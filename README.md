@@ -130,6 +130,21 @@ Full endpoint reference and design notes: **`docs/13_UE5_MCP_BRIDGE_PLUGIN.md`**
 
 ---
 
+## License
+
+**MIT** — see [`LICENSE`](LICENSE). MifBridge is entirely original code and does
+not include or link any GPL-licensed source, so you're free to use, modify, and
+redistribute it under the permissive MIT terms.
+
+It does link Unreal Engine at build time (the engine is covered by Epic's Unreal
+Engine EULA, not this license), and its `create_editable_child` endpoint calls an
+engine-side function from a cooked-editor engine fork — so that one endpoint needs
+the fork to build. At runtime only, it cooperates with the separate
+**MifKismetReconstructor** plugin (GPL-3.0) through an engine-provided delegate;
+that plugin is distributed separately and is not part of this MIT work.
+
+---
+
 ## Gotchas worth knowing
 
 - **Array‑library calls (`Array_Find`) won't stay typed — use a macro.** A raw `Array_Find` call node's wildcard pins can be forced to a type and compile clean, but the type **reverts to wildcard on save+reload**. For a durable key→value lookup over parallel arrays, use a **`ForEachLoop` macro + name‑compare + `GetArrayItem`** (macros/array nodes re‑resolve on reconstruct). `refresh_node` reproduces the reload, so use it to test durability before you cook.
