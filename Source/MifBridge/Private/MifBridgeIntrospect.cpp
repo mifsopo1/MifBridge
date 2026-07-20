@@ -389,8 +389,36 @@ namespace MifBridge
 			return;
 		}
 
+		// Honor Expose-on-Spawn / Instance-Editable (member variables only; locals have neither concept).
+		// Expose-on-Spawn implies Instance-Editable — a spawn pin the caller sets must be visible per-instance.
+		const bool bExposeOnSpawn = JBool(In, TEXT("exposeOnSpawn"), false);
+		const bool bInstanceEditable = JBool(In, TEXT("instanceEditable"), false) || bExposeOnSpawn;
+		bool bFlagged = false;
+		if (!Scope.Equals(TEXT("local"), ESearchCase::IgnoreCase) && (bInstanceEditable || bExposeOnSpawn))
+		{
+			for (FBPVariableDescription& Var : Blueprint->NewVariables)
+			{
+				if (Var.VarName != FName(*Name)) { continue; }
+				if (bInstanceEditable)
+				{
+					Var.PropertyFlags &= ~CPF_DisableEditOnInstance;      // uncheck "private" → editable per instance
+					Var.PropertyFlags |= (CPF_Edit | CPF_BlueprintVisible);
+				}
+				if (bExposeOnSpawn)
+				{
+					Var.PropertyFlags |= CPF_ExposeOnSpawn;
+					Var.SetMetaData(TEXT("ExposeOnSpawn"), TEXT("true"));
+				}
+				bFlagged = true;
+				break;
+			}
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		}
+
 		Out->SetStringField(TEXT("name"), Name); // canonical (trimmed) name
 		Out->SetStringField(TEXT("scope"), Scope);
+		Out->SetBoolField(TEXT("instanceEditable"), bInstanceEditable && bFlagged);
+		Out->SetBoolField(TEXT("exposeOnSpawn"), bExposeOnSpawn && bFlagged);
 		Out->SetObjectField(TEXT("type"), SerializePinType(PinType));
 	}
 

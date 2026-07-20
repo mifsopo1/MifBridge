@@ -13,9 +13,11 @@
 
 namespace MifBridge
 {
-	// { sourceAsset, childPath?, variant?: "child" | "sibling" | "uncooked" }
+	// { sourceAsset, childPath?, variant?: "child" | "sibling" | "uncooked" | "sibling_full" | "full" }
 	// sourceAsset: the cooked BP — pass its generated-class path (…/BP_Foo.BP_Foo_C) or the plain asset path.
-	// variant "child" = IS-A source (inherits CDO); "sibling"/"uncooked" = parent-class copy (CDO stamped).
+	// variant "child" = IS-A source (inherits CDO); "sibling"/"uncooked" = parent-class copy (CDO stamped);
+	// "sibling_full"/"full" = sibling whose Blueprint-parent chain is ALSO reconstructed into editable siblings
+	// (each saved as "<Ancestor>_Editable" beside the leaf), so no parent layer is left as cooked stubs.
 	void H_create_editable_child(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		const FString SourceAsset = JStr(In, TEXT("sourceAsset"));
@@ -43,6 +45,8 @@ namespace MifBridge
 
 		const FString Variant = JStr(In, TEXT("variant"), TEXT("child"));
 		const bool bAsChild = Variant.Equals(TEXT("child"), ESearchCase::IgnoreCase);
+		const bool bFullParent = Variant.Equals(TEXT("sibling_full"), ESearchCase::IgnoreCase)
+			|| Variant.Equals(TEXT("full"), ESearchCase::IgnoreCase);
 
 		FString TargetPath = JStr(In, TEXT("childPath"));
 		if (TargetPath.IsEmpty())
@@ -53,7 +57,7 @@ namespace MifBridge
 		}
 
 		FText Err;
-		UBlueprint* NewBP = CreateEditableBlueprintCopy(SourceBPGC, TargetPath, bAsChild, &Err);
+		UBlueprint* NewBP = CreateEditableBlueprintCopy(SourceBPGC, TargetPath, bAsChild, &Err, bFullParent);
 		if (!NewBP)
 		{
 			Fail(Out, FString::Printf(TEXT("create_editable_child failed: %s"), *Err.ToString()));
@@ -64,10 +68,11 @@ namespace MifBridge
 		Out->SetStringField(TEXT("assetPath"), TargetPath);
 		Out->SetStringField(TEXT("source"), SourceBPGC->GetPathName());
 		Out->SetBoolField(TEXT("asChild"), bAsChild);
+		Out->SetBoolField(TEXT("fullParent"), bFullParent);
 		if (NewBP->GeneratedClass) { Out->SetStringField(TEXT("class"), NewBP->GeneratedClass->GetPathName()); }
 		// Graphs are filled with decompiled nodes iff the MifKismetReconstructor delegate is bound;
 		// otherwise function/event graphs are signature-only stubs (see CompiledBlueprintReconstructor.h).
-		UE_LOG(LogMifBridge, Log, TEXT("create_editable_child: %s -> %s (child=%d)"),
-			*SourceBPGC->GetName(), *TargetPath, bAsChild ? 1 : 0);
+		UE_LOG(LogMifBridge, Log, TEXT("create_editable_child: %s -> %s (child=%d fullParent=%d)"),
+			*SourceBPGC->GetName(), *TargetPath, bAsChild ? 1 : 0, bFullParent ? 1 : 0);
 	}
 }
