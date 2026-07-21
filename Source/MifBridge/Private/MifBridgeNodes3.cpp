@@ -11,6 +11,7 @@
 #include "Engine/Blueprint.h"
 #include "Engine/TimelineTemplate.h"
 #include "K2Node_ClassDynamicCast.h"
+#include "K2Node_EditablePinBase.h"
 #include "K2Node_EnumLiteral.h"
 #include "K2Node_SwitchEnum.h"
 #include "K2Node_SwitchInteger.h"
@@ -191,6 +192,40 @@ namespace MifBridge
 
 	// --- add_switch_enum ----------------------------------------------------
 
+	// --- list_enum_values -------------------------------------------------------
+	// Returns the real enumerator names for a UENUM, so pin defaults on plain byte/enum pins
+	// (which need the exact name text, not a guess) can be set correctly on the first try.
+	void H_list_enum_values(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		const FString Name = JStr(In, TEXT("enum"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("enum is required"));
+			return;
+		}
+		UEnum* Enum = ResolveEnum(Name);
+		if (!Enum)
+		{
+			Fail(Out, FString::Printf(TEXT("enum not found: '%s'"), *Name));
+			return;
+		}
+		Out->SetStringField(TEXT("enum"), Enum->GetName());
+		Out->SetStringField(TEXT("path"), Enum->GetPathName());
+
+		TArray<TSharedPtr<FJsonValue>> Values;
+		const int32 Num = Enum->NumEnums();
+		for (int32 Index = 0; Index < Num; ++Index)
+		{
+			const FString ValueName = Enum->GetNameStringByIndex(Index);
+			if (ValueName.EndsWith(TEXT("_MAX")))
+			{
+				continue; // auto-generated sentinel, not a real value
+			}
+			Values.Add(MakeShared<FJsonValueString>(ValueName));
+		}
+		Out->SetArrayField(TEXT("values"), Values);
+	}
+
 	void H_add_switch_enum(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		UBlueprint* Blueprint = nullptr;
@@ -348,8 +383,32 @@ namespace MifBridge
 
 		Node->Modify();
 		Pin->PinType = NewType;
-		Node->PinConnectionListChanged(Pin); // let the node react to the retype
+
+		// Custom events / function entries / tunnels own their pin signature as a SEPARATE
+		// UserDefinedPins record (FUserPinInfo), independent of the live UEdGraphPin. Retyping
+		// only the live pin leaves that record stale, and compile then rejects the node outright
+		// ("Event node X is out-of-date. Please refresh it.") because refresh would just re-derive
+		// the old type from UserDefinedPins. Keep both in sync, then ReconstructNode (not just
+		// PinConnectionListChanged) so the node's cached signature actually reflects the new type.
+		if (UK2Node_EditablePinBase* EditableNode = Cast<UK2Node_EditablePinBase>(Node))
+		{
+			for (const TSharedPtr<FUserPinInfo>& UserPin : EditableNode->UserDefinedPins)
+			{
+				if (UserPin.IsValid() && UserPin->PinName == Pin->PinName)
+				{
+					UserPin->PinType = NewType;
+					break;
+				}
+			}
+			EditableNode->ReconstructNode();
+			Pin = FindPin(Node, PinName, EGPD_Input, /*bRequireDir*/ false); // node was rebuilt; re-resolve
+		}
+		else
+		{
+			Node->PinConnectionListChanged(Pin); // let the node react to the retype
+		}
+
 		MarkStructural(FBlueprintEditorUtils::FindBlueprintForNode(Node));
-		Out->SetObjectField(TEXT("pin"), SerializePin(Pin));
+		Out->SetObjectField(TEXT("pin"), Pin ? SerializePin(Pin) : MakeShared<FJsonObject>());
 	}
 }

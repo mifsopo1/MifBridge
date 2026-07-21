@@ -55,6 +55,12 @@ namespace MifBridge
 
 		// Spawn a delegate node bound to a dispatcher property. SetFromProperty MUST run
 		// before AllocateDefaultPins, so it happens before PlaceAndInit.
+		//
+		// Optional "targetClass": binds to a dispatcher declared on an EXTERNAL class instead of
+		// this Blueprint's own class (e.g. binding to a GameMode's multicast delegate from an
+		// unrelated actor) — mirrors the visible-Target-pin pattern the editor itself produces
+		// when you drag off a reference of that external type and pick "Bind Event to X". Without
+		// it, behavior is unchanged: self-context, dispatcher must be declared on this Blueprint.
 		template<typename TNode>
 		void SpawnDelegateNode(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 		{
@@ -65,13 +71,32 @@ namespace MifBridge
 				return;
 			}
 			const FString Dispatcher = JStr(In, TEXT("dispatcher"));
-			UClass* OwnerClass = Blueprint->SkeletonGeneratedClass ? Blueprint->SkeletonGeneratedClass : Blueprint->GeneratedClass;
+			const FString TargetClassName = JStr(In, TEXT("targetClass"));
+
+			UClass* OwnerClass = nullptr;
+			bool bSelfContext = true;
+			if (!TargetClassName.IsEmpty())
+			{
+				OwnerClass = ResolveClass(TargetClassName, Blueprint);
+				bSelfContext = false;
+				if (!OwnerClass)
+				{
+					Fail(Out, FString::Printf(TEXT("targetClass not found: '%s'"), *TargetClassName));
+					return;
+				}
+			}
+			else
+			{
+				OwnerClass = Blueprint->SkeletonGeneratedClass ? Blueprint->SkeletonGeneratedClass : Blueprint->GeneratedClass;
+			}
+
 			FMulticastDelegateProperty* Prop = OwnerClass
 				? CastField<FMulticastDelegateProperty>(OwnerClass->FindPropertyByName(FName(*Dispatcher)))
 				: nullptr;
 			if (!Prop)
 			{
-				Fail(Out, FString::Printf(TEXT("event dispatcher '%s' not found on this blueprint (add it with add_event_dispatcher, which compiles, first)"), *Dispatcher));
+				Fail(Out, FString::Printf(TEXT("event dispatcher '%s' not found on %s"), *Dispatcher,
+					OwnerClass ? *OwnerClass->GetName() : TEXT("(no class)")));
 				return;
 			}
 
@@ -79,7 +104,7 @@ namespace MifBridge
 			Graph->Modify();
 
 			TNode* Node = NewObject<TNode>(Graph);
-			Node->SetFromProperty(Prop, /*bSelfContext*/ true, OwnerClass);
+			Node->SetFromProperty(Prop, bSelfContext, OwnerClass);
 			PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
 
 			MarkStructural(Blueprint);

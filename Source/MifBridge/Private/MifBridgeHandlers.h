@@ -148,6 +148,8 @@ namespace MifBridge
 	MIF_DECL(create_function);
 	MIF_DECL(create_blueprint);
 	MIF_DECL(resolve_struct);
+	MIF_DECL(describe_class);
+	MIF_DECL(list_enum_values);
 
 	// Composite recipes (§10)
 	MIF_DECL(recipe_add_debug_print);
@@ -214,6 +216,13 @@ namespace MifBridge
 	MIF_DECL(add_tree_widget);
 	MIF_DECL(remove_tree_widget);
 	MIF_DECL(set_property);
+	MIF_DECL(get_property);
+	MIF_DECL(list_object_properties);
+
+	// Asset lifecycle — confirm-gated (delete/rename), /Game/-only, no dialogs
+	MIF_DECL(delete_asset);
+	MIF_DECL(rename_asset);
+	MIF_DECL(duplicate_asset);
 
 	// Reconstructor unification — engine editable-child (decompile = run_console mif.kr.Reconstruct)
 	MIF_DECL(create_editable_child);

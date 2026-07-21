@@ -21,6 +21,7 @@
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "UObject/SavePackage.h"
+#include "UObject/UnrealType.h" // TFieldIterator<FProperty>, FMulticastDelegateProperty (describe_class)
 #include "Engine/Engine.h"   // GEngine->Exec (run_console)
 #include "Editor.h"          // GEditor editor world
 
@@ -279,6 +280,115 @@ namespace MifBridge
 			Arr.Add(MakeShared<FJsonValueObject>(Json));
 		}
 		Out->SetArrayField(TEXT("functions"), Arr);
+	}
+
+	// --- describe_class -------------------------------------------------------
+	// Reflects over ANY resolvable class (native or Blueprint-generated) — its BlueprintCallable
+	// functions (with param names/types/direction), BlueprintVisible properties, and multicast
+	// delegates (dispatchers, with their signature params). Added after repeatedly having to
+	// fall back to reading decompiled/engine source just to find out whether a class exposed a
+	// particular function or dispatcher (e.g. hunting for a GameMode's player-join delegate).
+	// Optional "filter": substring match against function/property names.
+	void H_describe_class(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		const FString Name = JStr(In, TEXT("class"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("class is required"));
+			return;
+		}
+		UClass* Class = ResolveClass(Name, nullptr);
+		if (!Class)
+		{
+			Fail(Out, FString::Printf(TEXT("class not found: '%s'"), *Name));
+			return;
+		}
+		const FString Filter = JStr(In, TEXT("filter"));
+
+		Out->SetStringField(TEXT("class"), Class->GetName());
+		Out->SetStringField(TEXT("path"), Class->GetPathName());
+		Out->SetStringField(TEXT("parentClass"), Class->GetSuperClass() ? Class->GetSuperClass()->GetPathName() : FString());
+
+		TArray<TSharedPtr<FJsonValue>> Functions;
+		for (TFieldIterator<UFunction> FuncIt(Class); FuncIt; ++FuncIt)
+		{
+			UFunction* Func = *FuncIt;
+			if (!Func || !Func->HasAnyFunctionFlags(FUNC_BlueprintCallable) || Func->HasAnyFunctionFlags(FUNC_Delegate))
+			{
+				continue;
+			}
+			const FString FuncName = Func->GetName();
+			if (!Filter.IsEmpty() && !FuncName.Contains(Filter))
+			{
+				continue;
+			}
+
+			TArray<TSharedPtr<FJsonValue>> Params;
+			for (TFieldIterator<FProperty> PropIt(Func); PropIt && PropIt->HasAnyPropertyFlags(CPF_Parm); ++PropIt)
+			{
+				FProperty* Prop = *PropIt;
+				TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+				P->SetStringField(TEXT("name"), Prop->GetName());
+				P->SetStringField(TEXT("type"), Prop->GetCPPType());
+				const TCHAR* Direction = Prop->HasAnyPropertyFlags(CPF_ReturnParm) ? TEXT("return")
+					: (Prop->HasAnyPropertyFlags(CPF_OutParm) && !Prop->HasAnyPropertyFlags(CPF_ConstParm)) ? TEXT("out")
+					: TEXT("in");
+				P->SetStringField(TEXT("direction"), Direction);
+				Params.Add(MakeShared<FJsonValueObject>(P));
+			}
+
+			TSharedRef<FJsonObject> F = MakeShared<FJsonObject>();
+			F->SetStringField(TEXT("name"), FuncName);
+			F->SetBoolField(TEXT("isPure"), Func->HasAnyFunctionFlags(FUNC_BlueprintPure));
+			F->SetBoolField(TEXT("isStatic"), Func->HasAnyFunctionFlags(FUNC_Static));
+			F->SetArrayField(TEXT("params"), Params);
+			Functions.Add(MakeShared<FJsonValueObject>(F));
+		}
+		Out->SetArrayField(TEXT("functions"), Functions);
+
+		TArray<TSharedPtr<FJsonValue>> Properties;
+		TArray<TSharedPtr<FJsonValue>> Dispatchers;
+		for (TFieldIterator<FProperty> PropIt(Class); PropIt; ++PropIt)
+		{
+			FProperty* Prop = *PropIt;
+			if (!Prop)
+			{
+				continue;
+			}
+			const FString PropName = Prop->GetName();
+			if (!Filter.IsEmpty() && !PropName.Contains(Filter))
+			{
+				continue;
+			}
+
+			if (FMulticastDelegateProperty* Delegate = CastField<FMulticastDelegateProperty>(Prop))
+			{
+				TSharedRef<FJsonObject> D = MakeShared<FJsonObject>();
+				D->SetStringField(TEXT("name"), PropName);
+				TArray<TSharedPtr<FJsonValue>> Params;
+				if (UFunction* Sig = Delegate->SignatureFunction)
+				{
+					for (TFieldIterator<FProperty> SigIt(Sig); SigIt && SigIt->HasAnyPropertyFlags(CPF_Parm); ++SigIt)
+					{
+						TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+						P->SetStringField(TEXT("name"), SigIt->GetName());
+						P->SetStringField(TEXT("type"), SigIt->GetCPPType());
+						Params.Add(MakeShared<FJsonValueObject>(P));
+					}
+				}
+				D->SetArrayField(TEXT("params"), Params);
+				Dispatchers.Add(MakeShared<FJsonValueObject>(D));
+			}
+			else if (Prop->HasAnyPropertyFlags(CPF_BlueprintVisible))
+			{
+				TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+				P->SetStringField(TEXT("name"), PropName);
+				P->SetStringField(TEXT("type"), Prop->GetCPPType());
+				Properties.Add(MakeShared<FJsonValueObject>(P));
+			}
+		}
+		Out->SetArrayField(TEXT("properties"), Properties);
+		Out->SetArrayField(TEXT("dispatchers"), Dispatchers);
 	}
 
 	void H_find_nodes(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

@@ -29,6 +29,7 @@ public class MifBridge : ModuleRules
 			"Json",
 			"JsonUtilities",
 			"AssetRegistry",     // find/open blueprints by path
+			"AssetTools",        // headless rename/duplicate (IAssetTools::RenameAssets/DuplicateAsset)
 			"EditorSubsystem",
 			"ToolMenus",         // Start/Stop menu toggle
 			"Slate",

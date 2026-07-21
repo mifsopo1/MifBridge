@@ -77,6 +77,8 @@ namespace MifBridge
 			MIF_BIND(create_function);
 			MIF_BIND(create_blueprint);
 			MIF_BIND(resolve_struct);
+			MIF_BIND(describe_class);
+			MIF_BIND(list_enum_values);
 			// Composite recipes
 			MIF_BIND(recipe_add_debug_print);
 			MIF_BIND(recipe_reset_and_loop);
@@ -133,7 +135,13 @@ namespace MifBridge
 			MIF_BIND(add_tree_widget);
 			MIF_BIND(remove_tree_widget);
 			MIF_BIND(set_property);
+			MIF_BIND(get_property);
+			MIF_BIND(list_object_properties);
 			MIF_BIND(create_editable_child);
+			// Asset lifecycle
+			MIF_BIND(delete_asset);
+			MIF_BIND(rename_asset);
+			MIF_BIND(duplicate_asset);
 			// Compile / diagnostics
 			MIF_BIND(compile);
 			MIF_BIND(run_console);
@@ -163,6 +171,7 @@ namespace MifBridge
 			TEXT("resolve_struct"), TEXT("read_modloader_log"), TEXT("trigger_cook"),
 			TEXT("list_dispatchers"), TEXT("list_components"), TEXT("list_interfaces"),
 			TEXT("list_datatables"), TEXT("read_datatable"), TEXT("get_datatable_row"),
+			TEXT("get_property"), TEXT("list_object_properties"),
 			TEXT("compile"), TEXT("validate"), TEXT("run_console")
 		};
 		return ReadOnly.Contains(Endpoint);
@@ -179,7 +188,11 @@ namespace MifBridge
 			TEXT("create_function"), TEXT("create_blueprint"), TEXT("recipe_add_debug_print"), TEXT("batch"),
 			TEXT("add_event_dispatcher"),
 			TEXT("set_property"),          // widget-BP branch calls CompileBlueprint; opens its own tight write transaction
-			TEXT("create_editable_child")  // CreateEditableBlueprintCopy compiles + saves an asset
+			TEXT("create_editable_child"), // CreateEditableBlueprintCopy compiles + saves an asset
+			// Asset-registry-level ops (delete/rename/duplicate a whole package) manage their own
+			// GC/undo semantics internally — an outer FScopedTransaction over "the asset stopped
+			// existing" isn't meaningful the way it is for a graph edit.
+			TEXT("delete_asset"), TEXT("rename_asset"), TEXT("duplicate_asset")
 		};
 		return SelfManaged.Contains(Endpoint);
 	}
@@ -811,9 +824,23 @@ namespace MifBridge
 		Json->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Input ? TEXT("input") : TEXT("output"));
 		Json->SetObjectField(TEXT("type"), SerializePinType(Pin->PinType));
 
+		if (Pin->bHidden)
+		{
+			// Distinguishes "intentionally hidden + auto-defaulted (e.g. a WorldContext/self pin
+			// the compiler wires implicitly)" from "visible and genuinely unwired" — without this,
+			// an empty linkedTo on a hidden pin looks identical to a real bug from the JSON alone.
+			Json->SetBoolField(TEXT("hidden"), true);
+		}
+
 		if (!Pin->DefaultValue.IsEmpty())
 		{
 			Json->SetStringField(TEXT("default"), Pin->DefaultValue);
+		}
+		// FText-typed pins (PC_Text) store their literal in DefaultTextValue, not DefaultValue —
+		// without this, every Text pin with a real literal looks empty/unset over the API.
+		if (!Pin->DefaultTextValue.IsEmpty())
+		{
+			Json->SetStringField(TEXT("default"), Pin->DefaultTextValue.ToString());
 		}
 		if (Pin->DefaultObject)
 		{

@@ -109,24 +109,25 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 - **Loopback only.** Non‑loopback callers are rejected in‑handler (127.*/::1). The port must never be exposed off‑box.
 - **Shared‑secret token.** Every request must carry `X-Mif-Token` equal to the editor's token. **Change `MIF_BRIDGE_TOKEN` from the `dev` default** on both the editor and the server before using it for anything real, and don't commit the secret.
 - **Undo‑safe.** Every mutation is a transaction — Ctrl‑Z reverts it.
-- **Confirm‑gated destruction.** Deleting nodes/variables/functions/components/interfaces or writing DataTable rows requires an explicit `confirm=true`.
+- **Confirm‑gated destruction.** Deleting nodes/variables/functions/components/interfaces, deleting or renaming a whole asset, or writing DataTable rows all require an explicit `confirm=true`.
 - **Editor‑only.** The module never cooks into a shipped build.
 
 ---
 
-## Capabilities (79 tools, 1:1 with HTTP endpoints)
+## Capabilities (99 tools, 1:1 with HTTP endpoints)
 
-- **Session / assets** — open, list, save, back up Blueprints.
-- **Introspection** — list graphs/nodes/variables/functions, get a node's full pin detail, find nodes by class/title/function, resolve structs.
-- **Variables** — add / rename / remove / set‑default (member or local; array & set containers; object/class/soft/interface/enum types). *Map containers aren't supported.*
-- **Nodes** — function calls, variable get/set, branch, macro instances (e.g. ForEachLoop), get‑array‑item, override events, parent calls, casts, custom events, make/break struct, self, literals, sequence, spawn actor, get subsystem, make array, format text, get datatable row, comment, timeline, switch (enum/int/string), enum literal.
+- **Session / assets** — open, list, save, back up Blueprints; create new Blueprints (incl. function libraries, interfaces, macro libraries, widget blueprints); delete, rename, or duplicate any `/Game/` asset.
+- **Introspection** — list graphs/nodes/variables/functions, get a node's full pin detail, find nodes by class/title/function, resolve structs, describe a class's callable functions/properties/dispatchers, list enum values.
+- **Generic reflection** — read or write any `UObject`'s properties by dot-path (`get_property`/`set_property`) or dump every top-level property on an object (`list_object_properties`) — the same mechanism the Details panel uses, so it covers non-Blueprint assets too (DataAssets, `InputMappingContext`, `InputAction`, …).
+- **Variables** — add / rename / remove / set‑default (member or local; array & set containers; object/class/soft/interface/enum types; `instanceEditable`/`exposeOnSpawn` flags on member variables). *Map containers aren't supported.*
+- **Nodes** — function calls, variable get/set, branch, macro instances (e.g. ForEachLoop), get‑array‑item, override events, parent calls, casts, custom events, make/break struct, self, literals, sequence, spawn actor, get subsystem, make array, make map, format text, get datatable row, comment, timeline, switch (enum/int/string), enum literal, create widget.
 - **Pins / wiring** — connect, disconnect, reconnect, set pin default, set pin type, splice into an exec chain.
 - **Functions / events / interfaces / components / dispatchers / datatables** — create/implement/remove functions, add event dispatchers + call/bind, add/remove/list interfaces, add/list/remove SCS components + transforms, read datatables & write rows.
+- **Widget Blueprints** — toggle Is‑Variable, add/remove widget‑tree data bindings, add/remove tree widgets.
+- **Cooked‑BP reconstruction** — mint a persistent editable child/sibling of a cooked Blueprint (`create_editable_child`), optionally reconstructing its whole Blueprint‑parent chain into editable siblings too (`variant: "full"`) instead of leaving the parent layer as cooked stubs.
 - **Compile / diagnostics** — `compile` and `validate` return `{numErrors, numWarnings, messages:[{severity, text, nodeGuid, pinName}]}`.
 - **Batch & recipes** — run many ops with one final compile; higher‑level recipes (debug‑print splice, reset‑and‑loop, override‑and‑call‑parent, argmax‑over‑components).
 - **Pipeline hooks** — tail the UE4SS mod‑loader log; a plan‑only cook helper.
-
-Full endpoint reference and design notes: **`docs/13_UE5_MCP_BRIDGE_PLUGIN.md`**.
 
 ---
 
@@ -148,7 +149,8 @@ that plugin is distributed separately and is not part of this MIT work.
 ## Gotchas worth knowing
 
 - **Array‑library calls (`Array_Find`) won't stay typed — use a macro.** A raw `Array_Find` call node's wildcard pins can be forced to a type and compile clean, but the type **reverts to wildcard on save+reload**. For a durable key→value lookup over parallel arrays, use a **`ForEachLoop` macro + name‑compare + `GetArrayItem`** (macros/array nodes re‑resolve on reconstruct). `refresh_node` reproduces the reload, so use it to test durability before you cook.
-- **Compile‑heavy ops run alone.** `create_function`, `recipe_add_debug_print`, and `batch` compile outside the blanket transaction (a full compile reinstances the class). Don't nest them.
+- **Compile‑heavy ops run alone.** `create_function`, `recipe_add_debug_print`, `batch`, `set_property` (widget‑BP branch), and `create_editable_child` compile outside the blanket transaction (a full compile reinstances the class). Don't nest them.
+- **Asset lifecycle is `/Game/`‑only and self‑managed.** `delete_asset`/`rename_asset`/`duplicate_asset` act on whole packages via `IAssetTools`/`ObjectTools`, not the Blueprint graph API — they refuse anything outside `/Game/` and run headless (no confirmation dialogs to click). `delete_asset` and `rename_asset` require `confirm=true`; `duplicate_asset` doesn't, since it never destroys or overwrites existing data.
 - **Double‑loaded Blueprints** (some modded/cooked assets load as two copies with identical node GUIDs) need **`graphId`‑scoped** node resolution — pass `graphId` alongside `nodeGuid`.
 - **`add_literal` is object‑only** — scalar literals go via `set_pin_default`.
 - **Logging** — recipes use `PrintToModLoader` (hooked by UE4SS), because `PrintString` is stripped from shipping builds.
