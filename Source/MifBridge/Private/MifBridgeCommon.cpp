@@ -85,6 +85,7 @@ namespace MifBridge
 			MIF_BIND(list_mounted_containers);
 			MIF_BIND(find_assets);
 			MIF_BIND(describe_package);
+			MIF_BIND(diagnose_landscape);
 			// Composite recipes
 			MIF_BIND(recipe_add_debug_print);
 			MIF_BIND(recipe_reset_and_loop);

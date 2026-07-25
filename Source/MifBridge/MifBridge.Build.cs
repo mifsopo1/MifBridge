@@ -28,6 +28,7 @@ public class MifBridge : ModuleRules
 			"HTTPServer",        // FHttpServerModule / IHttpRouter
 			"Json",
 			"JsonUtilities",
+			"Landscape",         // ALandscapeProxy/ULandscapeComponent for diagnose_landscape
 			"AssetRegistry",     // find/open blueprints by path
 			"AssetTools",        // headless rename/duplicate (IAssetTools::RenameAssets/DuplicateAsset)
 			"EditorSubsystem",
