@@ -386,6 +386,35 @@ namespace MifBridge
 				{
 					Result->CreateUserDefinedPin(Pin.Key, Pin.Value, EGPD_Input, /*bUseUniqueName*/ true);
 				}
+
+				// Belt-and-braces: drop any duplicate same-name/same-direction pin, keeping a wired copy.
+				// The root cause is fixed in PlaceAndInit (UK2Node_FunctionResult::PostPlacedNewNode
+				// already allocates, and its AllocateDefaultPins re-CreatePin's PN_Execute with no guard),
+				// but this makes create_function self-healing if any other terminator ever behaves the same.
+				int32 DuplicatePinsRemoved = 0;
+				{
+					TSet<TPair<FName, int32>> Seen;
+					for (int32 i = Result->Pins.Num() - 1; i >= 0; --i)
+					{
+						UEdGraphPin* Pin = Result->Pins[i];
+						if (!Pin) { continue; }
+						const TPair<FName, int32> Key(Pin->PinName, (int32)Pin->Direction);
+						// Walk backwards, so the FIRST-declared pin is the one kept — unless a later
+						// duplicate is the wired one, in which case leave the wired copy alone.
+						if (Seen.Contains(Key) && Pin->LinkedTo.Num() == 0)
+						{
+							Result->Pins.RemoveAt(i);
+							Pin->MarkAsGarbage();
+							++DuplicatePinsRemoved;
+							continue;
+						}
+						Seen.Add(Key);
+					}
+				}
+				if (DuplicatePinsRemoved > 0)
+				{
+					Out->SetNumberField(TEXT("duplicatePinsRemoved"), DuplicatePinsRemoved);
+				}
 			}
 
 			MarkStructural(Blueprint);
@@ -429,10 +458,33 @@ namespace MifBridge
 		}
 
 		const FString ParentName = JStr(In, TEXT("parentClass"), TEXT("Actor"));
-		// blueprintType: "Normal" (default), "FunctionLibrary", "Interface", "MacroLibrary".
+		// blueprintType: "Normal" (default), "FunctionLibrary", "Interface", "MacroLibrary", "WidgetBlueprint".
 		// Library/interface types are NOT "blueprintable of a parent class" (CanCreateBlueprintOfClass rejects them),
 		// so they take a fixed base + the matching EBlueprintType and bypass that check.
 		const FString BpTypeStr = JStr(In, TEXT("blueprintType"), TEXT("Normal"));
+
+		// REJECT anything not on the list. The chain below used to fall through to a plain Blueprint for
+		// ANY unrecognised string, so blueprintType:"Widget" (a very natural guess for "WidgetBlueprint")
+		// silently produced a plain UBlueprint parented to UserWidget: no WidgetTree, no designer, and
+		// every widget endpoint failing afterwards on an asset that looked correct in the content browser.
+		{
+			static const TCHAR* const ValidTypes[] = {
+				TEXT("Normal"), TEXT("FunctionLibrary"), TEXT("Interface"), TEXT("MacroLibrary"), TEXT("WidgetBlueprint")
+			};
+			bool bKnownType = false;
+			for (const TCHAR* Valid : ValidTypes)
+			{
+				if (BpTypeStr.Equals(Valid, ESearchCase::IgnoreCase)) { bKnownType = true; break; }
+			}
+			if (!bKnownType)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("unknown blueprintType '%s'. Valid values: Normal (default), FunctionLibrary, Interface, ")
+					TEXT("MacroLibrary, WidgetBlueprint. (Note it is \"WidgetBlueprint\", not \"Widget\".)"), *BpTypeStr));
+				return;
+			}
+		}
+
 		EBlueprintType BpType = BPTYPE_Normal;
 		UClass* ParentClass = nullptr;
 		bool bLibraryLike = false;

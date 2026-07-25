@@ -178,11 +178,16 @@ namespace MifBridge
 		}
 		UWidgetTree* Tree = WBP->WidgetTree;
 
-		const FString ClassName = JStr(In, TEXT("widgetClass"));
-		UClass* WidgetClass = ResolveClass(ClassName, WBP);
-		if (!WidgetClass || !WidgetClass->IsChildOf(UWidget::StaticClass()))
+		// STRICT — an empty widgetClass used to resolve to the widget blueprint's OWN class, which
+		// IS a UWidget subclass, so the guard passed and the tree got a self-referencing child.
+		UClass* WidgetClass = ResolveClassStrictField(In, { TEXT("widgetClass"), TEXT("class") }, WBP, Out);
+		if (!WidgetClass)
 		{
-			Fail(Out, FString::Printf(TEXT("not a UWidget class: '%s'"), *ClassName));
+			return;
+		}
+		if (!WidgetClass->IsChildOf(UWidget::StaticClass()))
+		{
+			Fail(Out, FString::Printf(TEXT("not a UWidget class: '%s'"), *WidgetClass->GetName()));
 			return;
 		}
 

@@ -13,6 +13,8 @@
 #include "K2Node_CallFunction.h"
 #include "K2Node_CallParentFunction.h"
 #include "K2Node_DynamicCast.h"
+#include "K2Node_EditablePinBase.h"   // RemoveUserDefinedPinByName / UserDefinedPins (remove_pin)
+#include "K2Node_FunctionResult.h"    // sibling Return-node signature sync (remove_pin)
 #include "K2Node_Event.h"
 #include "K2Node_GetArrayItem.h"
 #include "K2Node_IfThenElse.h"
@@ -48,6 +50,74 @@ namespace MifBridge
 				return true;
 			}
 			return false;
+		}
+
+		// Point a variable get/set node at a property on ANOTHER class.
+		//
+		// SetExternalMember(Name, Class) alone is not enough to guarantee a resolved node:
+		// UK2Node_Variable::CreatePinForVariable bails and produces NO pins when
+		// FMemberReference::ResolveMember<FProperty> comes back null, which is exactly what happens
+		// when the property does not exist on the class handed in. That is how the bridge used to emit
+		// the "unresolved, pinless" node — the failure was silent, deferred to compile time, and the
+		// returned JSON looked plausible. Two fixes: (1) resolve against the SKELETON class, which is
+		// the one carrying freshly-added Blueprint variables before a full compile; (2) verify the
+		// property up front and refuse rather than emit a dead node.
+		//
+		// The FGuid overload of SetExternalMember makes the reference survive a later rename of the
+		// property on the target Blueprint (name-only references silently break).
+		bool PointAtExternalMember(FMemberReference& Reference, const FString& VarName, UClass* TargetClass, FString& OutError)
+		{
+			if (!TargetClass)
+			{
+				OutError = TEXT("null target class");
+				return false;
+			}
+
+			// Prefer the skeleton class: it is regenerated on every structural change, so a variable
+			// added moments ago exists there even though GeneratedClass is still stale.
+			UClass* ResolveAgainst = TargetClass;
+			if (UBlueprint* TargetBP = Cast<UBlueprint>(TargetClass->ClassGeneratedBy))
+			{
+				if (TargetBP->SkeletonGeneratedClass)
+				{
+					ResolveAgainst = TargetBP->SkeletonGeneratedClass;
+				}
+			}
+
+			const FName MemberName(*VarName);
+			FProperty* Property = ResolveAgainst->FindPropertyByName(MemberName);
+			if (!Property)
+			{
+				// Fall back to the display-name lookup the editor uses for renamed/redirected variables.
+				Property = FindFProperty<FProperty>(ResolveAgainst, MemberName);
+			}
+			if (!Property)
+			{
+				OutError = FString::Printf(
+					TEXT("property '%s' not found on class '%s' — describe_class {className:\"%s\"} lists what it has. ")
+					TEXT("(Without this check the node would be created unresolved and pinless.)"),
+					*VarName, *ResolveAgainst->GetName(), *ResolveAgainst->GetName());
+				return false;
+			}
+			if (!Property->HasAnyPropertyFlags(CPF_BlueprintVisible))
+			{
+				OutError = FString::Printf(
+					TEXT("property '%s' on '%s' is not BlueprintVisible, so a Blueprint graph cannot read it"),
+					*VarName, *ResolveAgainst->GetName());
+				return false;
+			}
+
+			FGuid MemberGuid;
+			if (UBlueprint::GetGuidFromClassByFieldName<FProperty>(ResolveAgainst, MemberName, MemberGuid) && MemberGuid.IsValid())
+			{
+				Reference.SetExternalMember(MemberName, ResolveAgainst, MemberGuid);
+			}
+			else
+			{
+				// Native properties have no Blueprint GUID — name-only is correct and stable for those.
+				Reference.SetExternalMember(MemberName, ResolveAgainst);
+			}
+			return true;
 		}
 
 		// Shared connect/reconnect body. When bBreakFirst is true both pins are cleared
@@ -180,19 +250,24 @@ namespace MifBridge
 		Blueprint->Modify();
 		Graph->Modify();
 
-		const FString TargetClassName = JStr(In, TEXT("targetClass"));
+		const FString TargetClassName = JStrAny(In, { TEXT("targetClass"), TEXT("class"), TEXT("ownerClass") });
 		UK2Node_VariableGet* Node = NewObject<UK2Node_VariableGet>(Graph);
 		if (!TargetClassName.IsEmpty())
 		{
 			// EXTERNAL target: read a property OFF another object (e.g. a spawned/passed actor's var), not self/local.
-			// SetExternalMember + a Target ("self") input pin the caller wires to the object ref. Mirrors add_variable_set.
+			// Gives the node a Target ("self") input pin the caller wires to the object ref.
 			UClass* TargetClass = ResolveClass(TargetClassName, Blueprint);
 			if (!TargetClass)
 			{
-				Fail(Out, FString::Printf(TEXT("targetClass not found: '%s'"), *TargetClassName));
+				Fail(Out, FString::Printf(TEXT("targetClass not found: '%s' (try the full class path, e.g. /Game/BP/BP_Foo.BP_Foo_C)"), *TargetClassName));
 				return;
 			}
-			Node->VariableReference.SetExternalMember(FName(*Var), TargetClass);
+			FString RefError;
+			if (!PointAtExternalMember(Node->VariableReference, Var, TargetClass, RefError))
+			{
+				Fail(Out, RefError);
+				return;
+			}
 		}
 		else
 		{
@@ -209,6 +284,13 @@ namespace MifBridge
 		if (TargetClassName.IsEmpty() && !BlueprintHasVariable(Blueprint, Var))
 		{
 			Out->SetStringField(TEXT("warning"), FString::Printf(TEXT("variable '%s' not found on this blueprint; the get node may be unresolved until it exists"), *Var));
+		}
+		// A variable node with no value pin never resolved. Say so in the response instead of
+		// returning a healthy-looking node that only fails at compile time.
+		if (Node->Pins.Num() == 0)
+		{
+			Out->SetStringField(TEXT("warning"), FString::Printf(
+				TEXT("get node for '%s' resolved to NO pins — the variable reference is dead. Check the name/targetClass, then remove_node and retry."), *Var));
 		}
 		EmitNode(Out, Node);
 	}
@@ -231,21 +313,26 @@ namespace MifBridge
 		Blueprint->Modify();
 		Graph->Modify();
 
-		const FString TargetClassName = JStr(In, TEXT("targetClass"));
+		const FString TargetClassName = JStrAny(In, { TEXT("targetClass"), TEXT("class"), TEXT("ownerClass") });
 		UK2Node_VariableSet* Node = NewObject<UK2Node_VariableSet>(Graph);
 		if (!TargetClassName.IsEmpty())
 		{
 			// EXTERNAL target: set a property on ANOTHER object (e.g. a spawned actor's exposed var), not a self/local.
-			// SetExternalMember points the node at TargetClass's property and gives it a Target ("self") input pin the
-			// caller wires to the object reference (e.g. SpawnActor's ReturnValue). Enables the MifModHelper spawn+set
-			// pattern (BrandosModHelper's AddMapMarker/AddNewShop/… set props on the spawned BP this way).
+			// Points the node at TargetClass's property and gives it a Target ("self") input pin the caller wires to
+			// the object reference (e.g. SpawnActor's ReturnValue). Enables the MifModHelper spawn+set pattern
+			// (BrandosModHelper's AddMapMarker/AddNewShop/… set props on the spawned BP this way).
 			UClass* TargetClass = ResolveClass(TargetClassName, Blueprint);
 			if (!TargetClass)
 			{
-				Fail(Out, FString::Printf(TEXT("targetClass not found: '%s'"), *TargetClassName));
+				Fail(Out, FString::Printf(TEXT("targetClass not found: '%s' (try the full class path, e.g. /Game/BP/BP_Foo.BP_Foo_C)"), *TargetClassName));
 				return;
 			}
-			Node->VariableReference.SetExternalMember(FName(*Var), TargetClass);
+			FString RefError;
+			if (!PointAtExternalMember(Node->VariableReference, Var, TargetClass, RefError))
+			{
+				Fail(Out, RefError);
+				return;
+			}
 		}
 		else
 		{
@@ -262,6 +349,12 @@ namespace MifBridge
 		if (TargetClassName.IsEmpty() && !BlueprintHasVariable(Blueprint, Var))
 		{
 			Out->SetStringField(TEXT("warning"), FString::Printf(TEXT("variable '%s' not found on this blueprint; the set node may be unresolved until it exists"), *Var));
+		}
+		// Exec-only pins mean the value pin never materialised — the reference is dead (see get).
+		if (Node->Pins.Num() == 0)
+		{
+			Out->SetStringField(TEXT("warning"), FString::Printf(
+				TEXT("set node for '%s' resolved to NO pins — the variable reference is dead. Check the name/targetClass, then remove_node and retry."), *Var));
 		}
 		EmitNode(Out, Node);
 	}
@@ -507,11 +600,14 @@ namespace MifBridge
 		{
 			return;
 		}
-		const FString TargetName = JStr(In, TEXT("targetClass"));
-		UClass* TargetClass = ResolveClass(TargetName, Blueprint);
+		// STRICT: an empty/absent class must not fall through to ResolveClass's "self" behaviour.
+		// It used to, so passing the wrong key (class / to / castTo / targetType instead of
+		// targetClass) produced a cast of the blueprint to ITSELF — which always succeeds, compiles
+		// clean, and is nearly invisible. Accept the common spellings; refuse the empty case.
+		UClass* TargetClass = ResolveClassStrictField(
+			In, { TEXT("targetClass"), TEXT("class"), TEXT("castTo"), TEXT("to"), TEXT("targetType") }, Blueprint, Out);
 		if (!TargetClass)
 		{
-			Fail(Out, FString::Printf(TEXT("target class not found: '%s'"), *TargetName));
 			return;
 		}
 
@@ -570,6 +666,149 @@ namespace MifBridge
 			Graph->RemoveNode(Node);
 		}
 		Out->SetStringField(TEXT("removed"), Guid);
+	}
+
+	// --- remove_pin ---------------------------------------------------------
+	//   in:  { node|nodeGuid, pin, graphId?, direction?: "input"|"output", confirm: true }
+	//   out: { removed, pin, kind: "userDefined"|"duplicate", node }
+	//
+	// Two jobs:
+	//  1. Delete a user-defined pin (function input/output, custom-event param, tunnel pin) — the
+	//     Details-panel X button. UK2Node_EditablePinBase::RemoveUserDefinedPinByName drops both the
+	//     live UEdGraphPin and its FUserPinInfo record; skipping the record would leave the node
+	//     "out-of-date" at compile because reconstruct re-derives pins FROM that record.
+	//  2. Delete a DUPLICATE pin — two pins sharing a name+direction where only one can be real.
+	//     This is the escape hatch for assets already carrying the spurious second "execute" pin that
+	//     create_function used to mint (see PlaceAndInit in MifBridgeCommon.cpp). We keep whichever
+	//     copy is wired and drop an unwired twin, so removing it can never break existing exec flow.
+	//
+	// A pin that is neither user-defined nor duplicated is REFUSED: engine-allocated pins are
+	// re-created by AllocateDefaultPins on the next reconstruct, so "removing" one is a lie that
+	// silently reverts. Say that instead of pretending.
+	void H_remove_pin(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("remove_pin requires confirm=true"));
+			return;
+		}
+		UEdGraphNode* Node = ResolveNodeField(In, TEXT("node"), Out);
+		if (!Node)
+		{
+			return;
+		}
+		const FString PinName = JStrAny(In, { TEXT("pin"), TEXT("pinName"), TEXT("name") });
+		if (PinName.IsEmpty())
+		{
+			Fail(Out, TEXT("pin is required (the pin name to remove)"));
+			return;
+		}
+
+		// Optional direction filter — needed when a node has same-named pins on both sides.
+		const FString DirStr = JStr(In, TEXT("direction"));
+		const bool bHasDir = !DirStr.IsEmpty();
+		const EEdGraphPinDirection WantDir = DirStr.StartsWith(TEXT("out")) ? EGPD_Output : EGPD_Input;
+
+		TArray<UEdGraphPin*> Matches;
+		for (UEdGraphPin* Pin : Node->Pins)
+		{
+			if (Pin && Pin->PinName.ToString().Equals(PinName, ESearchCase::IgnoreCase)
+				&& (!bHasDir || Pin->Direction == WantDir))
+			{
+				Matches.Add(Pin);
+			}
+		}
+		if (Matches.Num() == 0)
+		{
+			Fail(Out, FString::Printf(TEXT("pin not found on node: '%s'%s"), *PinName,
+				bHasDir ? *FString::Printf(TEXT(" (direction=%s)"), *DirStr) : TEXT("")));
+			return;
+		}
+
+		UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(Node);
+		UEdGraph* Graph = Cast<UEdGraph>(Node->GetOuter());
+		UK2Node_EditablePinBase* Editable = Cast<UK2Node_EditablePinBase>(Node);
+
+		const bool bUserDefined = Editable && Editable->UserDefinedPins.ContainsByPredicate(
+			[&PinName](const TSharedPtr<FUserPinInfo>& Info)
+			{
+				return Info.IsValid() && Info->PinName.ToString().Equals(PinName, ESearchCase::IgnoreCase);
+			});
+
+		if (Graph) { Graph->Modify(); }
+		Node->Modify();
+
+		FString Kind;
+		if (bUserDefined)
+		{
+			// Break links first so nothing holds a stale pointer, then drop pin + record.
+			for (UEdGraphPin* Pin : Matches)
+			{
+				K2()->BreakPinLinks(*Pin, /*bSendsNodeNotification*/ true);
+			}
+			Editable->RemoveUserDefinedPinByName(FName(*PinName));
+
+			// A function graph may have SEVERAL Return nodes; they all share one signature, so an
+			// output removed from one must be removed from the rest or the graph won't compile.
+			int32 SiblingsUpdated = 0;
+			if (Graph && Node->IsA<UK2Node_FunctionResult>())
+			{
+				TArray<UK2Node_FunctionResult*> Results;
+				Graph->GetNodesOfClass(Results);
+				for (UK2Node_FunctionResult* Sibling : Results)
+				{
+					if (Sibling && Sibling != Node)
+					{
+						Sibling->Modify();
+						Sibling->RemoveUserDefinedPinByName(FName(*PinName));
+						Sibling->ReconstructNode();
+						++SiblingsUpdated;
+					}
+				}
+			}
+			Editable->ReconstructNode();
+			Kind = TEXT("userDefined");
+			Out->SetNumberField(TEXT("siblingResultNodesUpdated"), SiblingsUpdated);
+		}
+		else if (Matches.Num() > 1)
+		{
+			// Duplicate cleanup. Keep a linked copy if there is exactly one; otherwise keep the first.
+			UEdGraphPin* Keep = nullptr;
+			for (UEdGraphPin* Pin : Matches)
+			{
+				if (Pin->LinkedTo.Num() > 0) { Keep = Pin; break; }
+			}
+			if (!Keep) { Keep = Matches[0]; }
+
+			int32 Removed = 0;
+			for (UEdGraphPin* Pin : Matches)
+			{
+				if (Pin == Keep) { continue; }
+				K2()->BreakPinLinks(*Pin, /*bSendsNodeNotification*/ false);
+				Node->Pins.Remove(Pin);
+				Pin->MarkAsGarbage();
+				++Removed;
+			}
+			Kind = TEXT("duplicate");
+			Out->SetNumberField(TEXT("duplicatesRemoved"), Removed);
+			Out->SetBoolField(TEXT("keptLinkedCopy"), Keep->LinkedTo.Num() > 0);
+		}
+		else
+		{
+			Fail(Out, FString::Printf(
+				TEXT("pin '%s' on %s is engine-allocated, not user-defined, and is not duplicated — it cannot be removed. ")
+				TEXT("AllocateDefaultPins would recreate it on the next reconstruct. Only user-defined pins ")
+				TEXT("(function/event/tunnel parameters) and duplicate pins can be deleted."),
+				*PinName, *Node->GetClass()->GetName()));
+			return;
+		}
+
+		MarkStructural(Blueprint);
+		Out->SetBoolField(TEXT("removed"), true);
+		Out->SetStringField(TEXT("pin"), PinName);
+		Out->SetStringField(TEXT("kind"), Kind);
+		Out->SetObjectField(TEXT("node"), SerializeNode(Node, /*bIncludePins*/ true));
+		UE_LOG(LogMifBridge, Log, TEXT("remove_pin: %s.%s (%s)"), *Node->GetName(), *PinName, *Kind);
 	}
 
 	void H_refresh_node(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

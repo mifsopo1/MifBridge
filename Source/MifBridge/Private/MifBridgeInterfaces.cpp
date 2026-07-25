@@ -26,16 +26,16 @@ namespace MifBridge
 		{
 			return;
 		}
-		const FString InterfaceName = JStr(In, TEXT("interface"));
-		UClass* InterfaceClass = ResolveClass(InterfaceName, Blueprint);
+		// STRICT — an empty name used to resolve to this blueprint's own class and then fail the
+		// IsInterfaceClass check with a confusing message about the blueprint itself.
+		UClass* InterfaceClass = ResolveClassStrictField(In, { TEXT("interface"), TEXT("interfaceClass"), TEXT("class") }, Blueprint, Out);
 		if (!InterfaceClass)
 		{
-			Fail(Out, FString::Printf(TEXT("interface class not found: '%s'"), *InterfaceName));
 			return;
 		}
 		if (!IsInterfaceClass(InterfaceClass))
 		{
-			Fail(Out, FString::Printf(TEXT("'%s' is not an interface class"), *InterfaceName));
+			Fail(Out, FString::Printf(TEXT("'%s' is not an interface class"), *InterfaceClass->GetName()));
 			return;
 		}
 
@@ -43,7 +43,7 @@ namespace MifBridge
 		const bool bOk = FBlueprintEditorUtils::ImplementNewInterface(Blueprint, FTopLevelAssetPath(InterfaceClass));
 		if (!bOk)
 		{
-			Fail(Out, FString::Printf(TEXT("could not implement '%s' (already implemented?)"), *InterfaceName));
+			Fail(Out, FString::Printf(TEXT("could not implement '%s' (already implemented?)"), *InterfaceClass->GetName()));
 			return;
 		}
 		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
@@ -64,16 +64,16 @@ namespace MifBridge
 		{
 			return;
 		}
-		const FString InterfaceName = JStr(In, TEXT("interface"));
-		UClass* InterfaceClass = ResolveClass(InterfaceName, Blueprint);
+		// STRICT — an empty name used to resolve to this blueprint's own class and then fail the
+		// IsInterfaceClass check with a confusing message about the blueprint itself.
+		UClass* InterfaceClass = ResolveClassStrictField(In, { TEXT("interface"), TEXT("interfaceClass"), TEXT("class") }, Blueprint, Out);
 		if (!InterfaceClass)
 		{
-			Fail(Out, FString::Printf(TEXT("interface class not found: '%s'"), *InterfaceName));
 			return;
 		}
 		if (!IsInterfaceClass(InterfaceClass))
 		{
-			Fail(Out, FString::Printf(TEXT("'%s' is not an interface class"), *InterfaceName));
+			Fail(Out, FString::Printf(TEXT("'%s' is not an interface class"), *InterfaceClass->GetName()));
 			return;
 		}
 
@@ -82,7 +82,7 @@ namespace MifBridge
 		FBlueprintEditorUtils::FindImplementedInterfaces(Blueprint, /*bGetAllInterfaces*/ false, Implemented);
 		if (!Implemented.Contains(InterfaceClass))
 		{
-			Fail(Out, FString::Printf(TEXT("'%s' is not implemented by this blueprint"), *InterfaceName));
+			Fail(Out, FString::Printf(TEXT("'%s' is not implemented by this blueprint"), *InterfaceClass->GetName()));
 			return;
 		}
 

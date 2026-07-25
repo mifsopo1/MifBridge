@@ -171,11 +171,11 @@ namespace MifBridge
 		{
 			return;
 		}
-		const FString TargetName = JStr(In, TEXT("targetClass"));
-		UClass* TargetClass = ResolveClass(TargetName, Blueprint);
+		// STRICT — an empty class must not silently resolve to this blueprint's own class (self-cast).
+		UClass* TargetClass = ResolveClassStrictField(
+			In, { TEXT("targetClass"), TEXT("class"), TEXT("castTo"), TEXT("to"), TEXT("targetType") }, Blueprint, Out);
 		if (!TargetClass)
 		{
-			Fail(Out, FString::Printf(TEXT("target class not found: '%s'"), *TargetName));
 			return;
 		}
 

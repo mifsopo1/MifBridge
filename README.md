@@ -39,7 +39,17 @@ The plugin answers each request on the game thread, applies it through the real 
 | Part | What it is | Where it lives |
 |---|---|---|
 | **MifBridge** (UE plugin) | The in‑editor HTTP bridge (C++) | `<YourProject>/Plugins/MifBridge/` |
-| **server.py** (MCP server) | FastMCP wrapper, 1 tool per endpoint | `tools/ue5-mcp-bridge/` |
+| **server.py** (MCP server) | FastMCP wrapper, 1 tool per endpoint | `<YourProject>/Plugins/MifBridge/tools/ue5-mcp-bridge/` |
+
+Both halves live in **this** repo on purpose. Every endpoint needs a `MIF_DECL` + `MIF_BIND` in the
+C++ **and** a matching `@mcp.tool` in `server.py`; when they lived in separate repos they drifted
+silently (82 tools against 102 endpoints). One repo, one commit, no drift. Verify parity with:
+
+```bash
+sed -n 's/.*MIF_BIND(\([a-z_0-9]*\)).*/\1/p' Source/MifBridge/Private/MifBridgeCommon.cpp | sort -u > /tmp/a
+sed -n 's/.*_post("\([a-z_0-9]*\)".*/\1/p' tools/ue5-mcp-bridge/server.py | sort -u > /tmp/b
+diff /tmp/a /tmp/b && echo "1:1 parity"
+```
 
 ---
 
@@ -114,16 +124,17 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 
 ---
 
-## Capabilities (99 tools, 1:1 with HTTP endpoints)
+## Capabilities (102 HTTP endpoints)
 
 - **Session / assets** — open, list, save, back up Blueprints; create new Blueprints (incl. function libraries, interfaces, macro libraries, widget blueprints); delete, rename, or duplicate any `/Game/` asset.
-- **Introspection** — list graphs/nodes/variables/functions, get a node's full pin detail, find nodes by class/title/function, resolve structs, describe a class's callable functions/properties/dispatchers, list enum values.
+- **Introspection** — list graphs/nodes/variables/functions, get a node's full pin detail, find nodes by class/title/function, resolve structs, describe a class's callable functions/properties/dispatchers, list enum values. Graph enumeration recurses into **nested** graphs — anim state machines, their states, transition rules, and collapsed/composite node bodies — which are addressed by a dotted `graphId` (`…::AnimGraph.Locomotion.Idle`).
+- **Animation assets** — `list_animations` (asset‑registry only, never loads) and `describe_animation`: notifies (including notify‑*state* windows and branching points), curves, sync markers, montage sections/slots, blend‑space axes and samples.
 - **Generic reflection** — read or write any `UObject`'s properties by dot-path (`get_property`/`set_property`) or dump every top-level property on an object (`list_object_properties`) — the same mechanism the Details panel uses, so it covers non-Blueprint assets too (DataAssets, `InputMappingContext`, `InputAction`, …).
-- **Variables** — add / rename / remove / set‑default (member or local; array & set containers; object/class/soft/interface/enum types; `instanceEditable`/`exposeOnSpawn` flags on member variables). *Map containers aren't supported.*
+- **Variables** — add / rename / remove / set‑default (member or local; array & set containers; object/class/soft/interface/enum types). `set_variable_flags` covers the whole Details‑panel flag set on member variables — **Replicated / RepNotify (auto‑creating the `OnRep_` graph) / replication condition**, **SaveGame**, transient, config, instance‑editable, blueprint‑read‑only, expose‑on‑spawn, advanced‑display, interp, deprecated, category, tooltip — and the same keys work inline on `add_variable`. `list_variables` reports the current flags back. *Map containers aren't supported.*
 - **Nodes** — function calls, variable get/set, branch, macro instances (e.g. ForEachLoop), get‑array‑item, override events, parent calls, casts, custom events, make/break struct, self, literals, sequence, spawn actor, get subsystem, make array, make map, format text, get datatable row, comment, timeline, switch (enum/int/string), enum literal, create widget.
-- **Pins / wiring** — connect, disconnect, reconnect, set pin default, set pin type, splice into an exec chain.
+- **Pins / wiring** — connect, disconnect, reconnect, set pin default, set pin type, splice into an exec chain, `remove_pin` (user‑defined parameter pins, and duplicate‑pin repair).
 - **Functions / events / interfaces / components / dispatchers / datatables** — create/implement/remove functions, add event dispatchers + call/bind, add/remove/list interfaces, add/list/remove SCS components + transforms, read datatables & write rows.
-- **Widget Blueprints** — toggle Is‑Variable, add/remove widget‑tree data bindings, add/remove tree widgets.
+- **Widget Blueprints** — toggle Is‑Variable, add/remove widget‑tree data bindings (`add_widget_binding`/`remove_widget_binding`), add/remove tree widgets (`add_tree_widget`/`remove_tree_widget`).
 - **Cooked‑BP reconstruction** — mint a persistent editable child/sibling of a cooked Blueprint (`create_editable_child`), optionally reconstructing its whole Blueprint‑parent chain into editable siblings too (`variant: "full"`) instead of leaving the parent layer as cooked stubs.
 - **Compile / diagnostics** — `compile` and `validate` return `{numErrors, numWarnings, messages:[{severity, text, nodeGuid, pinName}]}`.
 - **Batch & recipes** — run many ops with one final compile; higher‑level recipes (debug‑print splice, reset‑and‑loop, override‑and‑call‑parent, argmax‑over‑components).
@@ -146,10 +157,28 @@ that plugin is distributed separately and is not part of this MIT work.
 
 ---
 
-## Gotchas worth knowing
+## Docs
 
+- [`docs/02_GOTCHAS.md`](docs/02_GOTCHAS.md) — **parameter grammar and traps.** Accepted spellings
+  for node/class/pin parameters, the type grammar (including the `object:`/`class:`/`enum:` prefixes),
+  variable‑flag semantics, and cooked‑Blueprint behaviour. Read this before spending a probe.
+- [`docs/01_POSTMORTEMS.md`](docs/01_POSTMORTEMS.md) — symptom → root cause → fix → prevention for
+  every bug that cost real time.
+
+### The short version
+
+- **`float` is a true 32‑bit float.** It used to be an alias for `double`; if you have graphs that
+  passed `"float"` expecting 64‑bit, change them to `"double"`. This is what unblocks UMG
+  `TAttribute<float>` delegate bindings, which reject a double‑returning function.
+- **Cooked Blueprints have no graphs to read.** Cooking strips the `UBlueprint`; only the generated
+  class ships. `list_graphs`/`find_nodes` say so explicitly now and name the route out —
+  `mif.kr.Reconstruct` via `run_console` to read, `create_editable_child` to edit.
+- **Node parameters accept `nodeGuid` / `node` / `guid` / `nodeId` interchangeably**, and both
+  dashed and undashed GUIDs work everywhere. Endpoints taking *two* nodes keep distinct names.
+- **A required class parameter can no longer be omitted.** An empty class used to resolve to the
+  blueprint's own class — a silent self‑cast/self‑spawn that compiled clean.
 - **Array‑library calls (`Array_Find`) won't stay typed — use a macro.** A raw `Array_Find` call node's wildcard pins can be forced to a type and compile clean, but the type **reverts to wildcard on save+reload**. For a durable key→value lookup over parallel arrays, use a **`ForEachLoop` macro + name‑compare + `GetArrayItem`** (macros/array nodes re‑resolve on reconstruct). `refresh_node` reproduces the reload, so use it to test durability before you cook.
-- **Compile‑heavy ops run alone.** `create_function`, `recipe_add_debug_print`, `batch`, `set_property` (widget‑BP branch), and `create_editable_child` compile outside the blanket transaction (a full compile reinstances the class). Don't nest them.
+- **Compile‑heavy ops run alone.** `create_function`, `create_blueprint`, `recipe_add_debug_print`, `batch`, `set_property` (widget‑BP branch), `add_event_dispatcher`, and `create_editable_child` compile outside the blanket transaction (a full compile reinstances the class). Don't nest them.
 - **Asset lifecycle is `/Game/`‑only and self‑managed.** `delete_asset`/`rename_asset`/`duplicate_asset` act on whole packages via `IAssetTools`/`ObjectTools`, not the Blueprint graph API — they refuse anything outside `/Game/` and run headless (no confirmation dialogs to click). `delete_asset` and `rename_asset` require `confirm=true`; `duplicate_asset` doesn't, since it never destroys or overwrites existing data.
 - **Double‑loaded Blueprints** (some modded/cooked assets load as two copies with identical node GUIDs) need **`graphId`‑scoped** node resolution — pass `graphId` alongside `nodeGuid`.
 - **`add_literal` is object‑only** — scalar literals go via `set_pin_default`.

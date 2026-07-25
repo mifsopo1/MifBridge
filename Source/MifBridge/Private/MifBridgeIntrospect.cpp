@@ -24,6 +24,8 @@
 #include "UObject/UnrealType.h" // TFieldIterator<FProperty>, FMulticastDelegateProperty (describe_class)
 #include "Engine/Engine.h"   // GEngine->Exec (run_console)
 #include "Editor.h"          // GEditor editor world
+#include "GameFramework/Actor.h" // AActor::GetIsReplicated (replication sanity warning)
+#include "Engine/EngineTypes.h"  // ELifetimeCondition (replication condition)
 
 namespace MifBridge
 {
@@ -246,6 +248,9 @@ namespace MifBridge
 			{
 				Json->SetStringField(TEXT("default"), Var.DefaultValue);
 			}
+			// Replication / SaveGame / editability state, so set_variable_flags is verifiable
+			// without opening the Details panel.
+			Json->SetObjectField(TEXT("flags"), SerializeVariableFlags(Blueprint, Var));
 			// Flag names with trailing/leading whitespace or non-identifier bytes — the
 			// exact trap ("BestPotIndex ") that was invisible in the details panel.
 			FString Trimmed = NameStr;
@@ -438,6 +443,314 @@ namespace MifBridge
 
 	// --- Variables ----------------------------------------------------------
 
+	// Replication / SaveGame / editability flags.
+	//
+	// These are the checkboxes in the variable Details panel. Only SOME of them have an engine setter
+	// (SetVariableSaveGameFlag / SetVariableTransientFlag / ...); replication in particular has none —
+	// FBlueprintVarActionDetails::OnChangeReplication pokes the flag word returned by
+	// GetBlueprintVariablePropertyFlags directly, and stores the OnRep function name separately via
+	// SetBlueprintVariableRepNotifyFunc. We mirror that sequence exactly rather than inventing one.
+	// (BlueprintDetailsCustomization.cpp, UE 5.3: OnChangeReplication / ReplicationOnRepFuncChanged /
+	// OnChangeReplicationCondition.)
+
+	TSharedRef<FJsonObject> SerializeVariableFlags(UBlueprint* Blueprint, const FBPVariableDescription& Var)
+	{
+		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+		const uint64 F = Var.PropertyFlags;
+		J->SetBoolField(TEXT("replicated"), (F & CPF_Net) != 0);
+		J->SetBoolField(TEXT("repNotify"), (F & CPF_RepNotify) != 0);
+		if (Var.RepNotifyFunc != NAME_None)
+		{
+			J->SetStringField(TEXT("repNotifyFunction"), Var.RepNotifyFunc.ToString());
+		}
+		if (const UEnum* CondEnum = StaticEnum<ELifetimeCondition>())
+		{
+			J->SetStringField(TEXT("replicationCondition"), CondEnum->GetNameStringByValue((int64)Var.ReplicationCondition.GetValue()));
+		}
+		J->SetBoolField(TEXT("saveGame"), (F & CPF_SaveGame) != 0);
+		J->SetBoolField(TEXT("transient"), (F & CPF_Transient) != 0);
+		J->SetBoolField(TEXT("config"), (F & CPF_Config) != 0);
+		// "Instance Editable" is the ABSENCE of DisableEditOnInstance plus Edit — matching the checkbox.
+		J->SetBoolField(TEXT("instanceEditable"), (F & CPF_Edit) != 0 && (F & CPF_DisableEditOnInstance) == 0);
+		J->SetBoolField(TEXT("blueprintReadOnly"), (F & CPF_BlueprintReadOnly) != 0);
+		J->SetBoolField(TEXT("exposeOnSpawn"), (F & CPF_ExposeOnSpawn) != 0);
+		J->SetBoolField(TEXT("advancedDisplay"), (F & CPF_AdvancedDisplay) != 0);
+		J->SetBoolField(TEXT("interp"), (F & CPF_Interp) != 0);
+		J->SetBoolField(TEXT("deprecated"), (F & CPF_Deprecated) != 0);
+		J->SetStringField(TEXT("category"), Var.Category.ToString());
+		return J;
+	}
+
+	static FBPVariableDescription* FindMemberVariable(UBlueprint* Blueprint, const FName& VarName)
+	{
+		const int32 Index = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, VarName);
+		return Index != INDEX_NONE ? &Blueprint->NewVariables[Index] : nullptr;
+	}
+
+	bool ApplyVariableFlags(UBlueprint* Blueprint, const FName& VarName, const TSharedRef<FJsonObject>& In,
+		const TSharedRef<FJsonObject>& Out, FString& OutError)
+	{
+		if (!FindMemberVariable(Blueprint, VarName))
+		{
+			// Local (function-scope) variables have no replication/SaveGame concept at all: they live on
+			// the stack of one call, never on the CDO, so there is nothing for the net driver or
+			// SaveGame serializer to see. Say that instead of silently no-op'ing.
+			OutError = FString::Printf(
+				TEXT("'%s' is not a MEMBER variable of %s. These flags apply to member variables only ")
+				TEXT("(local/function-scope variables are never replicated or saved)."),
+				*VarName.ToString(), *Blueprint->GetName());
+			return false;
+		}
+
+		Blueprint->Modify();
+		bool bTouched = false;
+
+		// --- Replication -------------------------------------------------------------
+		// GetBlueprintVariablePropertyFlags returns a POINTER INTO NewVariables[i].PropertyFlags,
+		// so writing through it is the edit. Re-fetch after any call that could reallocate the array.
+		if (JHasAny(In, { TEXT("replicated"), TEXT("repNotifyFunction"), TEXT("repNotify") }))
+		{
+			uint64* FlagPtr = FBlueprintEditorUtils::GetBlueprintVariablePropertyFlags(Blueprint, VarName);
+			if (!FlagPtr)
+			{
+				OutError = FString::Printf(TEXT("could not access property flags for '%s'"), *VarName.ToString());
+				return false;
+			}
+
+			FString RepNotifyFn = JStr(In, TEXT("repNotifyFunction"));
+			RepNotifyFn.TrimStartAndEndInline();
+			const bool bWantRepNotify = !RepNotifyFn.IsEmpty() || JBool(In, TEXT("repNotify"), false);
+			// Asking for a RepNotify implies replication — the editor's RepNotify option sets CPF_Net too.
+			const bool bReplicated = JBool(In, TEXT("replicated"), bWantRepNotify) || bWantRepNotify;
+
+			if (bReplicated)
+			{
+				*FlagPtr |= CPF_Net;
+
+				if (bWantRepNotify)
+				{
+					// Default to the engine's own naming so the graph matches what the Details panel makes.
+					if (RepNotifyFn.IsEmpty())
+					{
+						RepNotifyFn = FString::Printf(TEXT("OnRep_%s"), *VarName.ToString());
+					}
+					if (!IsValidIdentifier(RepNotifyFn))
+					{
+						OutError = FString::Printf(TEXT("invalid repNotifyFunction '%s'"), *RepNotifyFn);
+						return false;
+					}
+					// The OnRep handler must EXIST or the compiler errors out. Mint the graph if absent —
+					// same as FBlueprintVarActionDetails::OnChangeReplication's RepNotify branch.
+					UEdGraph* FuncGraph = FindObject<UEdGraph>(Blueprint, *RepNotifyFn);
+					if (!FuncGraph)
+					{
+						FuncGraph = FBlueprintEditorUtils::CreateNewGraph(
+							Blueprint, FName(*RepNotifyFn), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+						FBlueprintEditorUtils::AddFunctionGraph<UClass>(Blueprint, FuncGraph, /*bIsUserCreated*/ false, static_cast<UClass*>(nullptr));
+						Out->SetStringField(TEXT("createdRepNotifyGraph"), RepNotifyFn);
+					}
+					FBlueprintEditorUtils::SetBlueprintVariableRepNotifyFunc(Blueprint, VarName, FName(*RepNotifyFn));
+					FlagPtr = FBlueprintEditorUtils::GetBlueprintVariablePropertyFlags(Blueprint, VarName);
+					if (FlagPtr) { *FlagPtr |= (CPF_RepNotify | CPF_Net); }
+				}
+				else
+				{
+					FBlueprintEditorUtils::SetBlueprintVariableRepNotifyFunc(Blueprint, VarName, NAME_None);
+					FlagPtr = FBlueprintEditorUtils::GetBlueprintVariablePropertyFlags(Blueprint, VarName);
+					if (FlagPtr) { *FlagPtr &= ~CPF_RepNotify; }
+				}
+			}
+			else
+			{
+				*FlagPtr &= ~CPF_Net;
+				FBlueprintEditorUtils::SetBlueprintVariableRepNotifyFunc(Blueprint, VarName, NAME_None);
+				FlagPtr = FBlueprintEditorUtils::GetBlueprintVariablePropertyFlags(Blueprint, VarName);
+				if (FlagPtr) { *FlagPtr &= ~CPF_RepNotify; }
+				if (FBPVariableDescription* Var = FindMemberVariable(Blueprint, VarName))
+				{
+					Var->ReplicationCondition = COND_None;   // mirrors the editor's None branch
+				}
+			}
+			bTouched = true;
+		}
+
+		// --- Replication condition (COND_*) -----------------------------------------
+		if (In->HasField(TEXT("replicationCondition")))
+		{
+			const FString CondStr = JStr(In, TEXT("replicationCondition"));
+			const UEnum* CondEnum = StaticEnum<ELifetimeCondition>();
+			int64 CondValue = CondEnum ? CondEnum->GetValueByNameString(CondStr) : INDEX_NONE;
+			if (CondValue == INDEX_NONE && CondEnum && !CondStr.StartsWith(TEXT("COND_")))
+			{
+				CondValue = CondEnum->GetValueByNameString(TEXT("COND_") + CondStr);
+			}
+			if (CondValue == INDEX_NONE)
+			{
+				OutError = FString::Printf(TEXT("unknown replicationCondition '%s' (expected an ELifetimeCondition, e.g. COND_None, COND_OwnerOnly, COND_SkipOwner, COND_InitialOnly)"), *CondStr);
+				return false;
+			}
+			FBPVariableDescription* Var = FindMemberVariable(Blueprint, VarName);
+			if (Var)
+			{
+				// The condition is only consulted when the property is actually replicated.
+				if ((Var->PropertyFlags & CPF_Net) == 0)
+				{
+					Out->SetStringField(TEXT("warning"),
+						TEXT("replicationCondition was set but the variable is not replicated — pass replicated=true for it to take effect"));
+				}
+				Var->ReplicationCondition = (ELifetimeCondition)CondValue;
+				bTouched = true;
+			}
+		}
+
+		// --- Engine-provided flag setters -------------------------------------------
+		if (In->HasField(TEXT("saveGame")))
+		{
+			FBlueprintEditorUtils::SetVariableSaveGameFlag(Blueprint, VarName, JBool(In, TEXT("saveGame")));
+			bTouched = true;
+		}
+		if (In->HasField(TEXT("transient")))
+		{
+			FBlueprintEditorUtils::SetVariableTransientFlag(Blueprint, VarName, JBool(In, TEXT("transient")));
+			bTouched = true;
+		}
+		if (In->HasField(TEXT("advancedDisplay")))
+		{
+			FBlueprintEditorUtils::SetVariableAdvancedDisplayFlag(Blueprint, VarName, JBool(In, TEXT("advancedDisplay")));
+			bTouched = true;
+		}
+		if (In->HasField(TEXT("deprecated")))
+		{
+			FBlueprintEditorUtils::SetVariableDeprecatedFlag(Blueprint, VarName, JBool(In, TEXT("deprecated")));
+			bTouched = true;
+		}
+		if (In->HasField(TEXT("interp")))
+		{
+			FBlueprintEditorUtils::SetInterpFlag(Blueprint, VarName, JBool(In, TEXT("interp")));
+			bTouched = true;
+		}
+		if (In->HasField(TEXT("blueprintReadOnly")))
+		{
+			FBlueprintEditorUtils::SetBlueprintPropertyReadOnlyFlag(Blueprint, VarName, JBool(In, TEXT("blueprintReadOnly")));
+			bTouched = true;
+		}
+		if (In->HasField(TEXT("category")))
+		{
+			const FString Category = JStr(In, TEXT("category"));
+			FBlueprintEditorUtils::SetBlueprintVariableCategory(Blueprint, VarName, nullptr, FText::FromString(Category));
+			bTouched = true;
+		}
+		if (In->HasField(TEXT("tooltip")))
+		{
+			FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, VarName, nullptr, TEXT("ToolTip"), JStr(In, TEXT("tooltip")));
+			bTouched = true;
+		}
+
+		// --- Flags with no engine setter: poke the description directly --------------
+		{
+			// exposeOnSpawn implies instanceEditable (a spawn pin the caller fills must be per-instance).
+			const bool bHasExpose = In->HasField(TEXT("exposeOnSpawn"));
+			const bool bHasEditable = In->HasField(TEXT("instanceEditable"));
+			const bool bExposeOnSpawn = JBool(In, TEXT("exposeOnSpawn"), false);
+			if (bHasExpose || bHasEditable || In->HasField(TEXT("config")))
+			{
+				FBPVariableDescription* Var = FindMemberVariable(Blueprint, VarName);
+				if (Var)
+				{
+					if (bHasEditable || bExposeOnSpawn)
+					{
+						if (JBool(In, TEXT("instanceEditable"), false) || bExposeOnSpawn)
+						{
+							Var->PropertyFlags &= ~CPF_DisableEditOnInstance;
+							Var->PropertyFlags |= (CPF_Edit | CPF_BlueprintVisible);
+						}
+						else
+						{
+							Var->PropertyFlags |= CPF_DisableEditOnInstance;
+						}
+					}
+					if (bHasExpose)
+					{
+						if (bExposeOnSpawn)
+						{
+							Var->PropertyFlags |= CPF_ExposeOnSpawn;
+							Var->SetMetaData(TEXT("ExposeOnSpawn"), TEXT("true"));
+						}
+						else
+						{
+							Var->PropertyFlags &= ~CPF_ExposeOnSpawn;
+							Var->RemoveMetaData(TEXT("ExposeOnSpawn"));
+						}
+					}
+					if (In->HasField(TEXT("config")))
+					{
+						if (JBool(In, TEXT("config"))) { Var->PropertyFlags |= CPF_Config; }
+						else                           { Var->PropertyFlags &= ~CPF_Config; }
+					}
+					bTouched = true;
+				}
+			}
+		}
+
+		if (bTouched)
+		{
+			// Skeleton regen — the FProperty carrying these flags is synthesised from NewVariables.
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		}
+
+		if (const FBPVariableDescription* Var = FindMemberVariable(Blueprint, VarName))
+		{
+			Out->SetObjectField(TEXT("flags"), SerializeVariableFlags(Blueprint, *Var));
+			// A replicated property does nothing unless the owning Actor itself replicates. This is the
+			// single most common "I ticked Replicated and nothing happened" cause, so surface it rather
+			// than flipping bReplicates behind the caller's back.
+			if ((Var->PropertyFlags & CPF_Net) != 0)
+			{
+				// Non-Actor blueprints (widgets, objects, components) fall out of the Cast and are
+				// correctly left alone — bReplicates is an Actor concept.
+				if (AActor* ActorCDO = Blueprint->GeneratedClass ? Cast<AActor>(Blueprint->GeneratedClass->GetDefaultObject()) : nullptr)
+				{
+					if (!ActorCDO->GetIsReplicated())
+					{
+						Out->SetStringField(TEXT("replicationWarning"),
+							TEXT("variable is replicated but the owning Actor has bReplicates=false — set it with "
+							     "set_property {propertyPath:\"bReplicates\", value:\"True\"} on the class default object, "
+							     "or the property will never be sent"));
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	//   in:  { blueprintId, name, replicated?, repNotify?, repNotifyFunction?, replicationCondition?,
+	//          saveGame?, transient?, config?, instanceEditable?, blueprintReadOnly?, exposeOnSpawn?,
+	//          advancedDisplay?, interp?, deprecated?, category?, tooltip? }
+	//   out: { name, flags:{...}, createdRepNotifyGraph?, replicationWarning? }
+	// Only keys actually PRESENT are applied, so this is a partial update — omitting a flag leaves it alone.
+	void H_set_variable_flags(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
+		if (!Blueprint)
+		{
+			return;
+		}
+		const FString Name = JStrAny(In, { TEXT("name"), TEXT("var"), TEXT("variable") });
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required (the member variable to flag)"));
+			return;
+		}
+
+		FString Error;
+		if (!ApplyVariableFlags(Blueprint, FName(*Name), In, Out, Error))
+		{
+			Fail(Out, Error);
+			return;
+		}
+		Out->SetStringField(TEXT("name"), Name);
+	}
+
 	void H_add_variable(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
@@ -499,36 +812,40 @@ namespace MifBridge
 			return;
 		}
 
-		// Honor Expose-on-Spawn / Instance-Editable (member variables only; locals have neither concept).
-		// Expose-on-Spawn implies Instance-Editable — a spawn pin the caller sets must be visible per-instance.
-		const bool bExposeOnSpawn = JBool(In, TEXT("exposeOnSpawn"), false);
-		const bool bInstanceEditable = JBool(In, TEXT("instanceEditable"), false) || bExposeOnSpawn;
-		bool bFlagged = false;
-		if (!Scope.Equals(TEXT("local"), ESearchCase::IgnoreCase) && (bInstanceEditable || bExposeOnSpawn))
+		// Apply any flags passed at creation time (replicated / repNotify / saveGame / instanceEditable /
+		// exposeOnSpawn / ...) through the SAME path set_variable_flags uses, so the two can never drift.
+		// Member variables only — locals have none of these concepts.
+		const bool bIsLocal = Scope.Equals(TEXT("local"), ESearchCase::IgnoreCase);
+		static const TCHAR* const FlagKeys[] = {
+			TEXT("replicated"), TEXT("repNotify"), TEXT("repNotifyFunction"), TEXT("replicationCondition"),
+			TEXT("saveGame"), TEXT("transient"), TEXT("config"), TEXT("instanceEditable"),
+			TEXT("blueprintReadOnly"), TEXT("exposeOnSpawn"), TEXT("advancedDisplay"), TEXT("interp"),
+			TEXT("deprecated"), TEXT("category"), TEXT("tooltip")
+		};
+		bool bAnyFlagRequested = false;
+		for (const TCHAR* Key : FlagKeys)
 		{
-			for (FBPVariableDescription& Var : Blueprint->NewVariables)
+			if (In->HasField(Key)) { bAnyFlagRequested = true; break; }
+		}
+
+		if (bAnyFlagRequested && bIsLocal)
+		{
+			Out->SetStringField(TEXT("warning"),
+				TEXT("flag options (replicated/saveGame/instanceEditable/...) were ignored: they apply to member variables only, and scope=local was requested"));
+		}
+		else if (bAnyFlagRequested)
+		{
+			FString FlagError;
+			if (!ApplyVariableFlags(Blueprint, FName(*Name), In, Out, FlagError))
 			{
-				if (Var.VarName != FName(*Name)) { continue; }
-				if (bInstanceEditable)
-				{
-					Var.PropertyFlags &= ~CPF_DisableEditOnInstance;      // uncheck "private" → editable per instance
-					Var.PropertyFlags |= (CPF_Edit | CPF_BlueprintVisible);
-				}
-				if (bExposeOnSpawn)
-				{
-					Var.PropertyFlags |= CPF_ExposeOnSpawn;
-					Var.SetMetaData(TEXT("ExposeOnSpawn"), TEXT("true"));
-				}
-				bFlagged = true;
-				break;
+				// The variable itself was created; report the flag failure without pretending it wasn't.
+				Fail(Out, FString::Printf(TEXT("variable '%s' was created but its flags could not be applied: %s"), *Name, *FlagError));
+				return;
 			}
-			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
 		}
 
 		Out->SetStringField(TEXT("name"), Name); // canonical (trimmed) name
 		Out->SetStringField(TEXT("scope"), Scope);
-		Out->SetBoolField(TEXT("instanceEditable"), bInstanceEditable && bFlagged);
-		Out->SetBoolField(TEXT("exposeOnSpawn"), bExposeOnSpawn && bFlagged);
 		Out->SetObjectField(TEXT("type"), SerializePinType(PinType));
 	}
 

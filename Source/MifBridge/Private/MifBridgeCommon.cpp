@@ -49,6 +49,7 @@ namespace MifBridge
 			MIF_BIND(rename_variable);
 			MIF_BIND(remove_variable);
 			MIF_BIND(set_variable_default);
+			MIF_BIND(set_variable_flags);
 			// Nodes
 			MIF_BIND(add_function_call);
 			MIF_BIND(add_variable_get);
@@ -68,6 +69,7 @@ namespace MifBridge
 			MIF_BIND(reconnect_pin);
 			MIF_BIND(set_pin_default);
 			MIF_BIND(splice_into_exec);
+			MIF_BIND(remove_pin);
 			// Nodes (phase 3 additions)
 			MIF_BIND(add_custom_event);
 			MIF_BIND(add_make_struct);
@@ -138,6 +140,9 @@ namespace MifBridge
 			MIF_BIND(get_property);
 			MIF_BIND(list_object_properties);
 			MIF_BIND(create_editable_child);
+			// Animation assets (read-only)
+			MIF_BIND(describe_animation);
+			MIF_BIND(list_animations);
 			// Asset lifecycle
 			MIF_BIND(delete_asset);
 			MIF_BIND(rename_asset);
@@ -172,6 +177,7 @@ namespace MifBridge
 			TEXT("list_dispatchers"), TEXT("list_components"), TEXT("list_interfaces"),
 			TEXT("list_datatables"), TEXT("read_datatable"), TEXT("get_datatable_row"),
 			TEXT("get_property"), TEXT("list_object_properties"),
+			TEXT("describe_animation"), TEXT("list_animations"),
 			TEXT("compile"), TEXT("validate"), TEXT("run_console")
 		};
 		return ReadOnly.Contains(Endpoint);
@@ -265,6 +271,44 @@ namespace MifBridge
 		return In->TryGetBoolField(Field, Value) ? Value : Default;
 	}
 
+	FString JStrAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, const FString& Default)
+	{
+		for (const TCHAR* Field : Fields)
+		{
+			FString Value;
+			if (In->TryGetStringField(Field, Value) && !Value.IsEmpty())
+			{
+				return Value;
+			}
+		}
+		return Default;
+	}
+
+	bool JBoolAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, bool Default)
+	{
+		for (const TCHAR* Field : Fields)
+		{
+			bool Value = false;
+			if (In->TryGetBoolField(Field, Value))
+			{
+				return Value;
+			}
+		}
+		return Default;
+	}
+
+	bool JHasAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields)
+	{
+		for (const TCHAR* Field : Fields)
+		{
+			if (In->HasField(Field))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// --- Resolution ---------------------------------------------------------
 
 	const UEdGraphSchema_K2* K2()
@@ -299,10 +343,71 @@ namespace MifBridge
 		UBlueprint* Blueprint = Cast<UBlueprint>(Obj);
 		if (!Blueprint)
 		{
-			OutError = FString::Printf(TEXT("blueprint not found: %s"), *P);
+			OutError = DescribeMissingBlueprint(P);
 			return nullptr;
 		}
 		return Blueprint;
+	}
+
+	FString DescribeMissingBlueprint(const FString& Path)
+	{
+		// "blueprint not found" is the wrong answer for a COOKED asset, and it is the single most
+		// misleading error the bridge produced: cooking strips the editor-only UBlueprint entirely and
+		// ships only the UBlueprintGeneratedClass, so list_graphs/find_nodes on a cooked BP reported
+		// "not found" for an asset that plainly exists. Separate the three cases.
+		FString P = Path;
+		P.TrimStartAndEndInline();
+
+		// Strip any object suffix to get the package name: /Game/A/BP_Foo.BP_Foo -> /Game/A/BP_Foo
+		FString PackageName = P;
+		{
+			FString Left, Right;
+			if (P.Split(TEXT("."), &Left, &Right))
+			{
+				PackageName = Left;
+			}
+		}
+
+		// Does a generated class exist at this path? Try the two spellings a cooked BP class takes.
+		const FString ShortName = FPackageName::GetShortName(PackageName);
+		UClass* GeneratedClass = nullptr;
+		for (const FString& Candidate : { PackageName + TEXT(".") + ShortName + TEXT("_C"), P })
+		{
+			if (UObject* Found = StaticLoadObject(UObject::StaticClass(), nullptr, *Candidate, nullptr, LOAD_NoWarn | LOAD_Quiet))
+			{
+				if (UClass* AsClass = Cast<UClass>(Found))
+				{
+					GeneratedClass = AsClass;
+					break;
+				}
+			}
+		}
+
+		if (GeneratedClass)
+		{
+			// ClassGeneratedBy is the editor back-pointer to the UBlueprint; it is null once cooked.
+			const bool bCooked = GeneratedClass->ClassGeneratedBy == nullptr;
+			return FString::Printf(
+				TEXT("'%s' resolves to the generated class '%s' but has no editable UBlueprint%s. ")
+				TEXT("Cooked packages strip Blueprint graphs, so list_graphs/list_nodes/find_nodes cannot ")
+				TEXT("read them. To READ the logic, decompile it: run_console {\"command\":\"mif.kr.Reconstruct %s\"} ")
+				TEXT("(MifKismetReconstructor; see also mif.kr.DumpBP / mif.kr.DumpFull / mif.kr.Events). ")
+				TEXT("To EDIT it, mint an editable copy first: create_editable_child {\"sourceAsset\":\"%s\", ")
+				TEXT("\"variant\":\"full\"} and point subsequent calls at the returned blueprintId."),
+				*P, *GeneratedClass->GetPathName(), bCooked ? TEXT(" (cooked)") : TEXT(""),
+				*ShortName, *GeneratedClass->GetPathName());
+		}
+
+		if (FPackageName::IsValidLongPackageName(PackageName) && FPackageName::DoesPackageExist(PackageName))
+		{
+			return FString::Printf(
+				TEXT("package '%s' exists but contains no UBlueprint (wrong asset type, or a cooked/stripped package). ")
+				TEXT("Use list_blueprints to confirm the path."), *PackageName);
+		}
+
+		return FString::Printf(
+			TEXT("blueprint not found: %s (no package at '%s' — check the path with list_blueprints; ")
+			TEXT("bare package paths like /Game/A/BP_Foo are accepted)"), *P, *PackageName);
 	}
 
 	UBlueprint* ResolveBlueprintField(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
@@ -321,21 +426,79 @@ namespace MifBridge
 		return Blueprint;
 	}
 
+	// Append Graph and everything nested underneath it.
+	//
+	// Nested graphs are NOT in the blueprint's four top-level arrays — they hang off the NODES:
+	// a collapsed/composite node owns UK2Node_Composite::BoundGraph, an anim state machine node owns
+	// the state-machine graph, each state owns its own animation graph, and each transition owns its
+	// rule graph. UEdGraphNode::GetSubGraphs() is the virtual that exposes them all uniformly.
+	//
+	// Without this recursion the bridge could not see inside ANY state machine or collapsed node —
+	// list_graphs/list_nodes/find_nodes simply reported the container node and stopped. That is what
+	// made animation blueprints look unreadable.
+	static void GatherGraphsRecursive(UEdGraph* Graph, TArray<UEdGraph*>& OutGraphs, TSet<UEdGraph*>& Visited)
+	{
+		if (!Graph || Visited.Contains(Graph))
+		{
+			return;   // cycle guard — a malformed asset must not hang the editor
+		}
+		Visited.Add(Graph);
+		OutGraphs.Add(Graph);
+
+		for (UEdGraphNode* Node : Graph->Nodes)
+		{
+			if (!Node)
+			{
+				continue;
+			}
+			for (UEdGraph* Sub : Node->GetSubGraphs())
+			{
+				GatherGraphsRecursive(Sub, OutGraphs, Visited);
+			}
+		}
+		// Belt-and-braces: some graph types track children in the array directly.
+		for (UEdGraph* Sub : Graph->SubGraphs)
+		{
+			GatherGraphsRecursive(Sub, OutGraphs, Visited);
+		}
+	}
+
 	void GatherGraphs(UBlueprint* Blueprint, TArray<UEdGraph*>& OutGraphs)
 	{
 		if (!Blueprint)
 		{
 			return;
 		}
-		for (UEdGraph* Graph : Blueprint->UbergraphPages) { if (Graph) OutGraphs.Add(Graph); }
-		for (UEdGraph* Graph : Blueprint->FunctionGraphs) { if (Graph) OutGraphs.Add(Graph); }
-		for (UEdGraph* Graph : Blueprint->MacroGraphs) { if (Graph) OutGraphs.Add(Graph); }
-		for (UEdGraph* Graph : Blueprint->DelegateSignatureGraphs) { if (Graph) OutGraphs.Add(Graph); }
+		TSet<UEdGraph*> Visited;
+		// Top-level order preserved (ubergraph, functions, macros, delegates); each root is followed
+		// immediately by its own nested graphs, so a caller reading the list top-down sees hierarchy.
+		for (UEdGraph* Graph : Blueprint->UbergraphPages)          { GatherGraphsRecursive(Graph, OutGraphs, Visited); }
+		for (UEdGraph* Graph : Blueprint->FunctionGraphs)          { GatherGraphsRecursive(Graph, OutGraphs, Visited); }
+		for (UEdGraph* Graph : Blueprint->MacroGraphs)             { GatherGraphsRecursive(Graph, OutGraphs, Visited); }
+		for (UEdGraph* Graph : Blueprint->DelegateSignatureGraphs) { GatherGraphsRecursive(Graph, OutGraphs, Visited); }
+	}
+
+	FString GraphNamePathOf(UBlueprint* Blueprint, UEdGraph* Graph)
+	{
+		// Dotted path from the blueprint down to Graph, e.g. "AnimGraph.Locomotion.Idle".
+		// Two state machines can each hold a state called "Idle", so a bare name is not a key.
+		// The outer chain alternates graph -> owning node -> parent graph, hence the Cast filter.
+		TArray<FString> Segments;
+		for (UObject* Outer = Graph; Outer && Outer != Blueprint; Outer = Outer->GetOuter())
+		{
+			if (UEdGraph* AsGraph = Cast<UEdGraph>(Outer))
+			{
+				Segments.Insert(AsGraph->GetName(), 0);
+			}
+		}
+		// A top-level graph yields exactly one segment, so its id is byte-identical to the pre-nesting
+		// format and every previously issued graphId keeps working.
+		return Segments.Num() > 0 ? FString::Join(Segments, TEXT(".")) : Graph->GetName();
 	}
 
 	FString GraphIdOf(UBlueprint* Blueprint, UEdGraph* Graph)
 	{
-		return Blueprint->GetPathName() + TEXT("::") + Graph->GetName();
+		return Blueprint->GetPathName() + TEXT("::") + GraphNamePathOf(Blueprint, Graph);
 	}
 
 	UEdGraph* ResolveGraph(const FString& GraphId, UBlueprint*& OutBlueprint, FString& OutError)
@@ -355,15 +518,50 @@ namespace MifBridge
 
 		TArray<UEdGraph*> Graphs;
 		GatherGraphs(OutBlueprint, Graphs);
+
+		// 1. Exact qualified path ("AnimGraph.Locomotion.Idle") — what GraphIdOf now emits.
 		for (UEdGraph* Graph : Graphs)
 		{
-			if (Graph->GetName() == Right)
+			if (GraphNamePathOf(OutBlueprint, Graph) == Right)
 			{
 				return Graph;
 			}
 		}
 
-		OutError = FString::Printf(TEXT("graph '%s' not found in %s"), *Right, *Left);
+		// 2. Bare leaf name — keeps every previously issued graphId working, and lets a caller name a
+		//    nested graph directly when it is unambiguous. Refuse to guess when it is not.
+		UEdGraph* Match = nullptr;
+		int32 MatchCount = 0;
+		for (UEdGraph* Graph : Graphs)
+		{
+			if (Graph->GetName() == Right)
+			{
+				Match = Graph;
+				++MatchCount;
+			}
+		}
+		if (MatchCount == 1)
+		{
+			return Match;
+		}
+		if (MatchCount > 1)
+		{
+			TArray<FString> Candidates;
+			for (UEdGraph* Graph : Graphs)
+			{
+				if (Graph->GetName() == Right)
+				{
+					Candidates.Add(GraphNamePathOf(OutBlueprint, Graph));
+				}
+			}
+			OutError = FString::Printf(
+				TEXT("graph name '%s' is ambiguous in %s — %d graphs share it (nested graphs: anim states, ")
+				TEXT("transition rules, collapsed nodes). Use the full dotted path: %s"),
+				*Right, *Left, MatchCount, *FString::Join(Candidates, TEXT(" | ")));
+			return nullptr;
+		}
+
+		OutError = FString::Printf(TEXT("graph '%s' not found in %s (list_graphs shows every graph, including nested ones, by its full dotted path)"), *Right, *Left);
 		return nullptr;
 	}
 
@@ -436,12 +634,29 @@ namespace MifBridge
 
 	UEdGraphNode* ResolveNodeField(const TSharedRef<FJsonObject>& In, const TCHAR* Field, const TSharedRef<FJsonObject>& Out)
 	{
-		const FString GuidStr = JStr(In, Field);
+		FString GuidStr = JStr(In, Field);
+		// The generic single-node field is spelled "nodeGuid" by some endpoints (move_node,
+		// remove_node, refresh_node, get_node) and "node" by others (disconnect_pin, set_pin_default,
+		// set_pin_type). Accept either — plus "guid"/"nodeId" — so a caller never has to remember which.
+		// Endpoints with MULTIPLE node params (srcNode/dstNode, afterNode/insertNode, the recipes)
+		// are deliberately excluded: aliasing there would let one node satisfy two distinct roles.
+		const bool bGenericField = FCString::Stricmp(Field, TEXT("node")) == 0
+			|| FCString::Stricmp(Field, TEXT("nodeGuid")) == 0;
+		if (GuidStr.IsEmpty() && bGenericField)
+		{
+			GuidStr = JStrAny(In, { TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId") });
+		}
 		if (GuidStr.IsEmpty())
 		{
-			Fail(Out, FString::Printf(TEXT("missing %s"), Field));
+			Fail(Out, bGenericField
+				? FString::Printf(TEXT("missing %s (accepted spellings: nodeGuid, node, guid, nodeId)"), Field)
+				: FString::Printf(TEXT("missing %s"), Field));
 			return nullptr;
 		}
+		// FGuid::Parse accepts BOTH the dashed (36-char) and undashed (32-char) forms, and every guid
+		// the bridge emits is FGuid::ToString()'s default EGuidFormats::Digits (undashed). So either
+		// spelling works on every endpoint — a "this one wants dashes" mismatch is really the
+		// field-NAME mismatch handled above.
 		// If a graphId is supplied, scope the node lookup to that graph's nodes. ResolveGraph
 		// picks the primary (editable) blueprint at the path, so this disambiguates the case
 		// where a second copy of the blueprint is loaded carrying the same NodeGuids.
@@ -480,6 +695,16 @@ namespace MifBridge
 		}
 		return Node;
 	}
+
+	// Nodes disagree on what to call their single value output: UK2Node_CallFunction uses
+	// "ReturnValue", UK2Node_FormatText uses "Result", UK2Node_MakeArray/MakeMap use "Array"/"Map",
+	// GetDataTableRow uses "Out Row". A caller who guesses wrong gets "pin not found" and has to spend
+	// a probe on get_node. These groups are interchangeable ONLY as a last resort (see below).
+	static const TCHAR* const OutputAliasGroups[][5] = {
+		{ TEXT("ReturnValue"), TEXT("Result"),  TEXT("Output"),  TEXT("OutputPin"), nullptr },
+		{ TEXT("Array"),       TEXT("OutArray"), nullptr,        nullptr,           nullptr },
+		{ TEXT("Out Row"),     TEXT("OutRow"),  TEXT("Row"),     nullptr,           nullptr },
+	};
 
 	UEdGraphPin* FindPin(UEdGraphNode* Node, const FString& PinName, EEdGraphPinDirection PreferDir, bool bRequireDir)
 	{
@@ -533,7 +758,53 @@ namespace MifBridge
 		{
 			return DirMatch;
 		}
-		return bRequireDir ? nullptr : AnyMatch;
+		if (AnyMatch)
+		{
+			return bRequireDir ? nullptr : AnyMatch;
+		}
+
+		// LAST RESORT ONLY — nothing matched by the caller's spelling. Try the alias group for the
+		// requested name and accept a hit only if it is UNAMBIGUOUS (exactly one pin on the node
+		// matches any alias in the group). Running this only after an exact miss means a node that
+		// genuinely has the requested pin is never redirected, so this can't silently retarget a
+		// working call; it can only rescue one that was already going to fail.
+		for (const TCHAR* const (&Group)[5] : OutputAliasGroups)
+		{
+			bool bNameInGroup = false;
+			for (int32 i = 0; i < 5 && Group[i]; ++i)
+			{
+				if (PinName.Equals(Group[i], ESearchCase::IgnoreCase)) { bNameInGroup = true; break; }
+			}
+			if (!bNameInGroup)
+			{
+				continue;
+			}
+
+			UEdGraphPin* AliasHit = nullptr;
+			int32 AliasCount = 0;
+			for (UEdGraphPin* Pin : Node->Pins)
+			{
+				if (!Pin || (bRequireDir && Pin->Direction != PreferDir))
+				{
+					continue;
+				}
+				for (int32 i = 0; i < 5 && Group[i]; ++i)
+				{
+					if (Pin->PinName.ToString().Equals(Group[i], ESearchCase::IgnoreCase))
+					{
+						AliasHit = Pin;
+						++AliasCount;
+						break;
+					}
+				}
+			}
+			if (AliasCount == 1)
+			{
+				return AliasHit;
+			}
+			break; // name belongs to this group and it didn't resolve cleanly; don't try other groups
+		}
+		return nullptr;
 	}
 
 	UEdGraphPin* SkipKnots(UEdGraphPin* Pin)
@@ -593,6 +864,41 @@ namespace MifBridge
 			}
 		}
 		return nullptr;
+	}
+
+	UClass* ResolveClassStrict(const FString& Name, UBlueprint* ContextBP, const TCHAR* ParamName, FString& OutError)
+	{
+		FString N = Name;
+		N.TrimStartAndEndInline();
+		if (N.IsEmpty())
+		{
+			// The whole point of this overload. ResolveClass("") returns ContextBP's OWN class, so a
+			// misspelled key (e.g. "class" instead of "targetClass") used to produce a node that
+			// silently targeted the blueprint itself — a self-cast that always succeeds, or a
+			// SpawnActor of the spawner. Both compile clean and are near-invisible in review.
+			OutError = FString::Printf(TEXT("'%s' is required and must name a class (an empty value would silently resolve to this blueprint's own class)"), ParamName);
+			return nullptr;
+		}
+		UClass* Resolved = ResolveClass(N, ContextBP);
+		if (!Resolved)
+		{
+			OutError = FString::Printf(TEXT("%s: class not found: '%s' (try the full path, e.g. /Game/BP/BP_Foo.BP_Foo_C)"), ParamName, *N);
+		}
+		return Resolved;
+	}
+
+	UClass* ResolveClassStrictField(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields,
+		UBlueprint* ContextBP, const TSharedRef<FJsonObject>& Out)
+	{
+		check(Fields.size() > 0);
+		const TCHAR* Primary = *Fields.begin();
+		FString Error;
+		UClass* Resolved = ResolveClassStrict(JStrAny(In, Fields), ContextBP, Primary, Error);
+		if (!Resolved)
+		{
+			Fail(Out, Error);
+		}
+		return Resolved;
 	}
 
 	UScriptStruct* ResolveStruct(const FString& Name)
@@ -695,9 +1001,21 @@ namespace MifBridge
 		{
 			OutType.PinCategory = UEdGraphSchema_K2::PC_Byte;
 		}
-		else if (L == TEXT("float") || L == TEXT("double") || L == TEXT("real"))
+		else if (L == TEXT("float") || L == TEXT("float32") || L == TEXT("single"))
 		{
-			// UE5 unified float→double: PC_Real + PC_Double subcategory.
+			// TRUE 32-bit float. In UE5 the category is always PC_Real and the WIDTH lives in the
+			// subcategory (EdGraphSchema_K2.h declares PC_Float and PC_Double as separate FNames).
+			// This used to map to PC_Double along with everything else, which made a real float pin
+			// unreachable — and a double-returning UFUNCTION fails UMG's delegate signature match for
+			// a TAttribute<float> property (PercentDelegate/OpacityDelegate...), so bindings couldn't
+			// be authored at all. float and double still interconnect via the schema's autocast.
+			OutType.PinCategory = UEdGraphSchema_K2::PC_Real;
+			OutType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
+		}
+		else if (L == TEXT("double") || L == TEXT("float64") || L == TEXT("real"))
+		{
+			// 64-bit. "real" stays an alias for double: that is what BP shows for an unqualified
+			// numeric pin in UE5, and it is what "float" resolved to before the split above.
 			OutType.PinCategory = UEdGraphSchema_K2::PC_Real;
 			OutType.PinSubCategory = UEdGraphSchema_K2::PC_Double;
 		}
@@ -730,7 +1048,16 @@ namespace MifBridge
 		}
 		else
 		{
-			OutError = FString::Printf(TEXT("unknown type: '%s'"), *T);
+			// The prefix grammar is not guessable from a bare "unknown type" — spell it out, because
+			// getting here on an object/class/enum name is almost always a missing prefix, not a typo.
+			OutError = FString::Printf(
+				TEXT("unknown type: '%s'. Scalars: bool|byte|int|int64|float|double|real|string|name|text ")
+				TEXT("(float = 32-bit, double/real = 64-bit). Struct/enum/class names may be given bare, but ")
+				TEXT("a REFERENCE needs a prefix: object:<ClassOrPath>, class:<C> (alias subclassof:), ")
+				TEXT("softobject:<C>, softclass:<C>, interface:<C>, enum:<E>. ")
+				TEXT("Paths work too, e.g. object:/Game/BP/BP_Foo.BP_Foo_C. Containers go in the separate ")
+				TEXT("'container' field (array|set)."),
+				*T);
 			return false;
 		}
 
@@ -786,7 +1113,20 @@ namespace MifBridge
 		Node->PostPlacedNewNode();
 		Node->NodePosX = X;
 		Node->NodePosY = Y;
-		Node->AllocateDefaultPins();
+
+		// Only allocate if PostPlacedNewNode didn't already. Most K2Nodes leave Pins empty there
+		// (engine's own FEdGraphSchemaAction_NewNode::CreateNode does the same two calls back-to-back),
+		// but the function TERMINATORS do not: UK2Node_FunctionResult::PostPlacedNewNode calls
+		// SyncWithEntryNode(), which sees a signature mismatch on a fresh node and ReconstructNode()s —
+		// fully allocating the pins. The follow-up AllocateDefaultPins then runs
+		//     CreatePin(EGPD_Input, PC_Exec, PN_Execute)
+		// with NO FindPin guard (K2Node_FunctionResult.cpp; contrast UK2Node_EditablePinBase::
+		// AllocateDefaultPins, which does check), producing a SECOND "execute" pin on every Return
+		// node create_function minted. That duplicate is what raised the permanent compile warning.
+		if (Node->Pins.Num() == 0)
+		{
+			Node->AllocateDefaultPins();
+		}
 	}
 
 	// --- JSON serializers ---------------------------------------------------

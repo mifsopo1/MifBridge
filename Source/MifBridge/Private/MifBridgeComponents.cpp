@@ -52,11 +52,15 @@ namespace MifBridge
 			return;
 		}
 
-		const FString ClassName = JStr(In, TEXT("componentClass"));
-		UClass* ComponentClass = ResolveClass(ClassName, Blueprint);
-		if (!ComponentClass || !ComponentClass->IsChildOf(UActorComponent::StaticClass()))
+		// STRICT — an empty componentClass used to resolve to the blueprint's own class.
+		UClass* ComponentClass = ResolveClassStrictField(In, { TEXT("componentClass"), TEXT("class") }, Blueprint, Out);
+		if (!ComponentClass)
 		{
-			Fail(Out, FString::Printf(TEXT("not an ActorComponent class: '%s'"), *ClassName));
+			return;
+		}
+		if (!ComponentClass->IsChildOf(UActorComponent::StaticClass()))
+		{
+			Fail(Out, FString::Printf(TEXT("not an ActorComponent class: '%s'"), *ComponentClass->GetName()));
 			return;
 		}
 

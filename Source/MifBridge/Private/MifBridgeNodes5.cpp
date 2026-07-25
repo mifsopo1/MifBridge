@@ -158,23 +158,49 @@ namespace MifBridge
 		// CompileBlueprint (below) reinstances and must NOT be inside a transaction, so the
 		// transaction closes at the end of this block. ErrText is declared outside so the
 		// parse result survives for the Fail message.
+		//
+		// ImportText_Direct parses IN PLACE and can consume/clear the destination before it decides the
+		// text is bad, so a rejected value used to WIPE the property it failed to set — a failed call
+		// was destructive. Import into a scratch copy first and only publish it on success; the real
+		// address is then never touched by a parse that fails.
 		FStringOutputDevice ErrText;
 		const TCHAR* R = nullptr;
+		bool bApplied = false;
 		{
-			FScopedTransaction Tx(NSLOCTEXT("MifBridge", "SetProperty", "Mif Bridge: set_property"));
-			LeafOwner->Modify();
-			LeafOwner->PreEditChange(Leaf);
+			// Scratch buffer holding one complete value (ArrayDim included — CopyCompleteValue and
+			// GetSize both span the whole static array, so a C-array UPROPERTY round-trips intact).
+			const int32 ValueSize = Leaf->GetSize();
+			void* Scratch = FMemory::Malloc(FMath::Max(ValueSize, 1), Leaf->GetMinAlignment());
+			Leaf->InitializeValue(Scratch);            // ctor: required before Copy/Import on struct/text/array
+			Leaf->CopyCompleteValue(Scratch, LeafAddr); // start from the CURRENT value, so a partial
+			                                            // import that only sets some struct members
+			                                            // behaves like the Details panel does.
 
-			R = Leaf->ImportText_Direct(*ImportStr, LeafAddr, LeafOwner, PPF_None, &ErrText);
+			R = Leaf->ImportText_Direct(*ImportStr, Scratch, LeafOwner, PPF_None, &ErrText);
 
-			FPropertyChangedEvent Evt(Leaf, EPropertyChangeType::ValueSet);
-			LeafOwner->PostEditChangeProperty(Evt);   // propagates to instances/archetype
-			LeafOwner->MarkPackageDirty();
-		}   // transaction commits here — BEFORE any compile
+			if (R != nullptr)
+			{
+				FScopedTransaction Tx(NSLOCTEXT("MifBridge", "SetProperty", "Mif Bridge: set_property"));
+				LeafOwner->Modify();
+				LeafOwner->PreEditChange(Leaf);
 
-		if (R == nullptr)
+				Leaf->CopyCompleteValue(LeafAddr, Scratch);   // publish
+
+				// Only fire the edit notification for a write that actually happened. It used to run
+				// unconditionally, so a failed import still told listeners/instances the value changed.
+				FPropertyChangedEvent Evt(Leaf, EPropertyChangeType::ValueSet);
+				LeafOwner->PostEditChangeProperty(Evt);       // propagates to instances/archetype
+				LeafOwner->MarkPackageDirty();
+				bApplied = true;
+			}
+
+			Leaf->DestroyValue(Scratch);
+			FMemory::Free(Scratch);
+		}   // transaction (if any) commits here — BEFORE any compile
+
+		if (!bApplied)
 		{
-			Fail(Out, FString::Printf(TEXT("ImportText_Direct failed for '%s' = '%s': %s"),
+			Fail(Out, FString::Printf(TEXT("ImportText_Direct failed for '%s' = '%s': %s (property left unchanged)"),
 				*PropertyPath, *ImportStr, *ErrText));
 			return;
 		}

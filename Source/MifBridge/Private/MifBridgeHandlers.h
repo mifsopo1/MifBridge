@@ -38,15 +38,31 @@ namespace MifBridge
 	double JNum(const TSharedRef<FJsonObject>& In, const TCHAR* Field, double Default = 0.0);
 	int32 JInt(const TSharedRef<FJsonObject>& In, const TCHAR* Field, int32 Default = 0);
 	bool JBool(const TSharedRef<FJsonObject>& In, const TCHAR* Field, bool Default = false);
+	/** First non-empty of several accepted spellings — lets an endpoint accept {"node"} and
+	 *  {"nodeGuid"} interchangeably instead of silently reading nothing. */
+	FString JStrAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, const FString& Default = FString());
+	/** As JBool, but tries several accepted spellings before falling back to Default. */
+	bool JBoolAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, bool Default = false);
+	/** True if ANY of the spellings is present (regardless of value) — distinguishes
+	 *  "caller explicitly passed false" from "caller omitted the field". */
+	bool JHasAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields);
 
 	// --- Resolution ---------------------------------------------------------
 	const UEdGraphSchema_K2* K2();
 
 	UBlueprint* ResolveBlueprint(const FString& Path, FString& OutError);
+	/** Graded "why isn't there a blueprint here" message: cooked (generated class only, graphs
+	 *  stripped — names the decompile/editable-copy route) vs wrong asset type vs no such package. */
+	FString DescribeMissingBlueprint(const FString& Path);
 	/** Reads "blueprintId" (or "path"); on failure writes error into Out and returns null. */
 	UBlueprint* ResolveBlueprintField(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out);
 
+	/** Every graph in the blueprint INCLUDING nested ones — collapsed/composite node bodies, anim
+	 *  state machines, their states, and transition rule graphs (reached via UEdGraphNode::GetSubGraphs). */
 	void GatherGraphs(UBlueprint* Blueprint, TArray<UEdGraph*>& OutGraphs);
+	/** Dotted path from the blueprint to the graph ("AnimGraph.Locomotion.Idle"). A top-level graph
+	 *  yields just its own name, so existing graphIds are unchanged. */
+	FString GraphNamePathOf(UBlueprint* Blueprint, UEdGraph* Graph);
 	FString GraphIdOf(UBlueprint* Blueprint, UEdGraph* Graph);
 	UEdGraph* ResolveGraph(const FString& GraphId, UBlueprint*& OutBlueprint, FString& OutError);
 	/** Reads "graphId"; on failure writes error into Out and returns null. */
@@ -61,7 +77,17 @@ namespace MifBridge
 	/** Follow a knot (reroute) chain to the first non-knot terminal pin. */
 	UEdGraphPin* SkipKnots(UEdGraphPin* Pin);
 
+	/** Resolve a class name. An EMPTY/"self" name resolves to ContextBP's own class — callers that
+	 *  require an explicit class must use ResolveClassStrict, or a typo'd param silently self-targets. */
 	UClass* ResolveClass(const FString& Name, UBlueprint* ContextBP);
+	/** ResolveClass, but an empty/whitespace name is an ERROR rather than "self". Use this wherever
+	 *  the class is mandatory (cast targets, spawn classes, component/interface classes): the empty
+	 *  case used to fall through to the blueprint's own class and produce a silent self-cast/self-spawn.
+	 *  ParamName is quoted in the error so the caller learns which key it should have passed. */
+	UClass* ResolveClassStrict(const FString& Name, UBlueprint* ContextBP, const TCHAR* ParamName, FString& OutError);
+	/** ResolveClassStrict + Fail(Out) on error. Returns null when it has already written the failure. */
+	UClass* ResolveClassStrictField(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields,
+		UBlueprint* ContextBP, const TSharedRef<FJsonObject>& Out);
 	UScriptStruct* ResolveStruct(const FString& Name);
 	bool MakePinType(const FString& TypeStr, const FString& Container, FEdGraphPinType& OutType, FString& OutError);
 	bool IsValidIdentifier(const FString& Name);
@@ -83,6 +109,16 @@ namespace MifBridge
 	/** Create an empty Blueprint function graph (entry + result terminators); set pure via entry ExtraFlags.
 	 *  Returns the graph or null+error. Caller adds user-defined pins to the entry/result nodes. */
 	UEdGraph* CreateFunctionGraph(UBlueprint* Blueprint, const FString& Name, bool bPure, FString& OutError);
+
+	/** Apply the member-variable flag set (replicated / repNotify / saveGame / transient / config /
+	 *  instanceEditable / blueprintReadOnly / exposeOnSpawn / advancedDisplay / interp / deprecated /
+	 *  category / tooltip) named in In onto Blueprint's variable VarName. Only keys actually present in
+	 *  In are touched, so it is safe to call for both create (add_variable) and update (set_variable_flags).
+	 *  Writes the resulting state into Out->"flags". Returns false + OutError on a hard failure. */
+	bool ApplyVariableFlags(UBlueprint* Blueprint, const FName& VarName, const TSharedRef<FJsonObject>& In,
+		const TSharedRef<FJsonObject>& Out, FString& OutError);
+	/** Serialize a member variable's current flag state (used by list_variables and set_variable_flags). */
+	TSharedRef<FJsonObject> SerializeVariableFlags(UBlueprint* Blueprint, const struct FBPVariableDescription& Var);
 
 	// --- Compile ------------------------------------------------------------
 	/** Compile the blueprint and write {ok,numErrors,numWarnings,messages[]} into Out.
@@ -117,6 +153,7 @@ namespace MifBridge
 	MIF_DECL(rename_variable);
 	MIF_DECL(remove_variable);
 	MIF_DECL(set_variable_default);
+	MIF_DECL(set_variable_flags);
 
 	// Nodes
 	MIF_DECL(add_function_call);
@@ -138,6 +175,7 @@ namespace MifBridge
 	MIF_DECL(reconnect_pin);
 	MIF_DECL(set_pin_default);
 	MIF_DECL(splice_into_exec);
+	MIF_DECL(remove_pin);
 
 	// Nodes (phase 3 additions)
 	MIF_DECL(add_custom_event);
@@ -218,6 +256,12 @@ namespace MifBridge
 	MIF_DECL(set_property);
 	MIF_DECL(get_property);
 	MIF_DECL(list_object_properties);
+
+	// Animation ASSET introspection (MifBridgeAnimation.cpp) — read-only.
+	// Animation BLUEPRINTS go through the normal graph endpoints; GatherGraphs recurses into
+	// nested graphs, so state machines / states / transition rules are reachable there.
+	MIF_DECL(describe_animation);
+	MIF_DECL(list_animations);
 
 	// Asset lifecycle — confirm-gated (delete/rename), /Game/-only, no dialogs
 	MIF_DECL(delete_asset);

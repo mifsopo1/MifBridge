@@ -62,11 +62,16 @@ namespace MifBridge
 		{
 			return;
 		}
-		const FString ClassName = JStr(In, TEXT("actorClass"));
-		UClass* ActorClass = ResolveClass(ClassName, Blueprint);
-		if (!ActorClass || !ActorClass->IsChildOf(AActor::StaticClass()))
+		// STRICT — an empty actorClass used to resolve to the blueprint's OWN class, and if that
+		// blueprint is an Actor the IsChildOf check below passes: a silent "spawn a copy of myself".
+		UClass* ActorClass = ResolveClassStrictField(In, { TEXT("actorClass"), TEXT("class") }, Blueprint, Out);
+		if (!ActorClass)
 		{
-			Fail(Out, FString::Printf(TEXT("not an Actor class: '%s'"), *ClassName));
+			return;
+		}
+		if (!ActorClass->IsChildOf(AActor::StaticClass()))
+		{
+			Fail(Out, FString::Printf(TEXT("not an Actor class: '%s'"), *ActorClass->GetName()));
 			return;
 		}
 
@@ -111,11 +116,16 @@ namespace MifBridge
 		{
 			return;
 		}
-		const FString ClassName = JStr(In, TEXT("widgetClass"));
-		UClass* WidgetClass = ResolveClass(ClassName, Blueprint);
-		if (!WidgetClass || !WidgetClass->IsChildOf(UUserWidget::StaticClass()))
+		// STRICT — see add_spawn_actor: on a Widget BP an empty widgetClass self-resolved and passed
+		// the IsChildOf check, silently creating a widget of the very blueprint doing the creating.
+		UClass* WidgetClass = ResolveClassStrictField(In, { TEXT("widgetClass"), TEXT("class") }, Blueprint, Out);
+		if (!WidgetClass)
 		{
-			Fail(Out, FString::Printf(TEXT("not a UserWidget class: '%s'"), *ClassName));
+			return;
+		}
+		if (!WidgetClass->IsChildOf(UUserWidget::StaticClass()))
+		{
+			Fail(Out, FString::Printf(TEXT("not a UserWidget class: '%s'"), *WidgetClass->GetName()));
 			return;
 		}
 
@@ -159,11 +169,14 @@ namespace MifBridge
 		{
 			return;
 		}
-		const FString ClassName = JStr(In, TEXT("subsystemClass"));
-		UClass* SubsystemClass = ResolveClass(ClassName, Blueprint);
-		if (!SubsystemClass || !SubsystemClass->IsChildOf(USubsystem::StaticClass()))
+		UClass* SubsystemClass = ResolveClassStrictField(In, { TEXT("subsystemClass"), TEXT("class") }, Blueprint, Out);
+		if (!SubsystemClass)
 		{
-			Fail(Out, FString::Printf(TEXT("not a Subsystem class: '%s'"), *ClassName));
+			return;
+		}
+		if (!SubsystemClass->IsChildOf(USubsystem::StaticClass()))
+		{
+			Fail(Out, FString::Printf(TEXT("not a Subsystem class: '%s'"), *SubsystemClass->GetName()));
 			return;
 		}
 
