@@ -189,6 +189,11 @@ namespace MifBridge
 	MIF_DECL(describe_class);
 	MIF_DECL(list_enum_values);
 
+	// Cooked / mounted-container introspection (MifBridgeCooked.cpp) - read-only.
+	MIF_DECL(list_mounted_containers);
+	MIF_DECL(find_assets);
+	MIF_DECL(describe_package);
+
 	// Composite recipes (§10)
 	MIF_DECL(recipe_add_debug_print);
 	MIF_DECL(recipe_reset_and_loop);

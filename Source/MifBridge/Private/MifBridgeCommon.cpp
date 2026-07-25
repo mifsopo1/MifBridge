@@ -81,6 +81,10 @@ namespace MifBridge
 			MIF_BIND(resolve_struct);
 			MIF_BIND(describe_class);
 			MIF_BIND(list_enum_values);
+
+			MIF_BIND(list_mounted_containers);
+			MIF_BIND(find_assets);
+			MIF_BIND(describe_package);
 			// Composite recipes
 			MIF_BIND(recipe_add_debug_print);
 			MIF_BIND(recipe_reset_and_loop);

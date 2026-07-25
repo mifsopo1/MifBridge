@@ -48,7 +48,14 @@ void FMifBridgeModule::StartupModule()
 
 	Server = MakeShared<FMifBridgeServer>(Port, Token);
 
-	if (CVarMifBridgeAutoStart.GetValueOnGameThread())
+	// modkit: this module loads in every editor-context process, including the headless UnrealEditor-Cmd.exe
+	// commandlet UAT spins up for cooking (e.g. via the Mod Packager). Auto-starting the HTTP listener there
+	// too meant every cook tried to bind the same hardcoded port as the interactive editor's own MifBridge
+	// instance, failed with "HttpListener unable to bind to 127.0.0.1:8791", and got counted as the cook's
+	// one fatal error - a real, working cook getting reported (and by Mod Packager, silently papered over
+	// with stale leftover output) as failed. A commandlet has no interactive session for MifBridge to serve
+	// anyway, so just don't start it there.
+	if (CVarMifBridgeAutoStart.GetValueOnGameThread() && !IsRunningCommandlet())
 	{
 		StartServer();
 	}
