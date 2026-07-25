@@ -14,7 +14,14 @@
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Editor.h"                 // GEditor
+#include "Engine/Texture2D.h"
+#include "EngineUtils.h"            // TActorIterator
 #include "HAL/PlatformFileManager.h"
+#include "LandscapeComponent.h"
+#include "LandscapeProxy.h"
+#include "MaterialShared.h"
+#include "Materials/MaterialInterface.h"
 #include "IO/IoDispatcher.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
@@ -334,5 +341,302 @@ namespace MifBridge
 			}
 			Out->SetArrayField(TEXT("exports"), ExportArr);
 		}
+	}
+
+	//   in:  { limit?: int (default 40) }
+	//   out: { world, proxyCount, componentCount, aggregate{...}, proxies[{...}] }
+	// Live per-component state for every landscape proxy in the EDITOR world. Built for the cooked-editor case
+	// where most LandscapeStreamingProxies never draw even though collision view shows the full terrain: the
+	// actor is present and selectable, so the real question is which stage between "component exists" and
+	// "pixels on screen" is failing, and what differs between a proxy that draws and one that doesn't.
+	//
+	// Per component it reports: whether a render-thread SceneProxy was created at all, whether the component is
+	// registered and flagged visible, whether its heightmap texture has any mip actually resident, and whether a
+	// material resolved. The heightmap residency is the interesting one - a heightmap with 0 resident mips
+	// yields no geometry from the landscape vertex shader, while collision (which reads separate cooked
+	// collision data, not the texture) stays perfect. That combination looks exactly like this bug.
+	void H_diagnose_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 40), 1, 1000);
+
+		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		if (!World)
+		{
+			Fail(Out, TEXT("no editor world"));
+			return;
+		}
+		Out->SetStringField(TEXT("world"), World->GetName());
+
+		// Use the world's own feature level rather than GMaxRHIFeatureLevel (which lives in the RHI module and
+		// would mean linking RHI into MifBridge just for this) - it's also the feature level these materials are
+		// actually being rendered at.
+		const ERHIFeatureLevel::Type WorldFeatureLevel = World->GetFeatureLevel();
+
+		int32 ProxyCount = 0, ComponentCount = 0;
+		int32 AggSceneProxy = 0, AggRegistered = 0, AggVisibleFlag = 0;
+		int32 AggHeightmapNull = 0, AggHeightmapZeroResident = 0, AggMaterialNull = 0, AggOverrideMaterial = 0;
+		int32 AggBadBounds = 0;
+		int32 AggNoMatResource = 0, AggNoShaderMap = 0, AggShaderMapInvalid = 0;
+		int32 AggWmTotal = 0, AggWmNone = 0, AggWmNull = 0, AggWmZeroResident = 0;
+		int32 AggNoLandscapeVF = 0, AggNoFixedGridVF = 0, AggHasXYOffsetVF = 0;
+
+		// Concrete material paths from each side of the landscape-VF split, so broken instances can be
+		// named rather than only counted. Each proxy owns its own LandscapeMaterialInstanceConstant_N
+		// objects, so the path identifies exactly which cooked instance is short of shaders.
+		TArray<FString> MatWithVF, MatWithoutVF;
+
+		TArray<TSharedPtr<FJsonValue>> ProxyArr;
+
+		for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
+		{
+			ALandscapeProxy* Proxy = *It;
+			if (!Proxy)
+			{
+				continue;
+			}
+			++ProxyCount;
+
+			int32 NumComp = 0, NumSceneProxy = 0, NumRegistered = 0, NumVisible = 0;
+			int32 NumHmNull = 0, NumHmZeroResident = 0, NumMatNull = 0, NumOverride = 0, NumBadBounds = 0;
+			int32 NumNoMatResource = 0, NumNoShaderMap = 0, NumShaderMapInvalid = 0;
+			int32 NumWmTotal = 0, NumWmNone = 0, NumWmNull = 0, NumWmZeroResident = 0;
+			int32 NumNoLandscapeVF = 0, NumNoFixedGridVF = 0, NumHasXYOffsetVF = 0;
+			FString WmFirstName; int32 WmFirstResident = -1, WmFirstMips = -1, WmFirstSizeX = -1;
+			double BoundsRadius = -1.0;
+			FVector BoundsOrigin = FVector::ZeroVector;
+			FVector BoundsExtent = FVector::ZeroVector;
+			// Details of the first heightmap found, as a representative sample for this proxy.
+			FString HmName;
+			int32 HmResident = -1, HmMips = -1, HmSizeX = -1;
+
+			for (ULandscapeComponent* Comp : Proxy->LandscapeComponents)
+			{
+				if (!Comp)
+				{
+					continue;
+				}
+				++NumComp;
+				++ComponentCount;
+
+				if (Comp->SceneProxy)       { ++NumSceneProxy; ++AggSceneProxy; }
+				if (Comp->IsRegistered())   { ++NumRegistered; ++AggRegistered; }
+				if (Comp->GetVisibleFlag()) { ++NumVisible;    ++AggVisibleFlag; }
+				if (Comp->OverrideMaterial) { ++NumOverride;   ++AggOverrideMaterial; }
+
+				// Weightmaps drive COLOUR (which layer is painted where); the heightmap above only drives
+				// geometry. Geometry being perfect while colour is flat/wrong on most plots points straight
+				// here, and this is the one input never checked so far.
+				const TArray<UTexture2D*>& Weightmaps = Comp->GetWeightmapTextures();
+				NumWmTotal += Weightmaps.Num();
+				AggWmTotal += Weightmaps.Num();
+				if (Weightmaps.Num() == 0)
+				{
+					++NumWmNone;
+					++AggWmNone;
+				}
+				for (UTexture2D* Wm : Weightmaps)
+				{
+					if (!Wm)
+					{
+						++NumWmNull;
+						++AggWmNull;
+						continue;
+					}
+					const int32 WmResident = Wm->GetNumResidentMips();
+					if (WmResident <= 0)
+					{
+						++NumWmZeroResident;
+						++AggWmZeroResident;
+					}
+					if (WmFirstResident < 0)
+					{
+						WmFirstName = Wm->GetName();
+						WmFirstResident = WmResident;
+						WmFirstMips = Wm->GetNumMips();
+						WmFirstSizeX = Wm->GetSizeX();
+					}
+				}
+
+				UTexture2D* Heightmap = Comp->GetHeightmap();
+				if (!Heightmap)
+				{
+					++NumHmNull;
+					++AggHeightmapNull;
+				}
+				else
+				{
+					const int32 Resident = Heightmap->GetNumResidentMips();
+					if (Resident <= 0)
+					{
+						++NumHmZeroResident;
+						++AggHeightmapZeroResident;
+					}
+					if (HmResident < 0)
+					{
+						HmName = Heightmap->GetName();
+						HmResident = Resident;
+						HmMips = Heightmap->GetNumMips();
+						HmSizeX = Heightmap->GetSizeX();
+					}
+				}
+
+				UMaterialInterface* MatIface = Comp->GetMaterialInstance(0, /*InDynamic*/ false);
+				if (!MatIface)
+				{
+					++NumMatNull;
+					++AggMaterialNull;
+				}
+				else
+				{
+					// The material object existing says nothing about whether it can actually DRAW. A cooked
+					// material whose shader map didn't load in this editor (the "Missing shader resource" class
+					// of problem) has a live UMaterialInstance but no usable shaders, so its draw produces
+					// nothing while every CPU-side check above still looks perfectly healthy. This is the only
+					// remaining thing that distinguishes a landscape component that renders from one that
+					// doesn't, and it matches a freshly-compiled material fixing some plots.
+					const FMaterialResource* Res = MatIface->GetMaterialResource(WorldFeatureLevel);
+					if (!Res)
+					{
+						++NumNoMatResource;
+						++AggNoMatResource;
+					}
+					else
+					{
+						FMaterialShaderMap* ShaderMap = Res->GetGameThreadShaderMap();
+						if (!ShaderMap)
+						{
+							++NumNoShaderMap;
+							++AggNoShaderMap;
+						}
+						else if (!ShaderMap->IsValidForRendering())
+						{
+							++NumShaderMapInvalid;
+							++AggShaderMapInvalid;
+						}
+						else
+						{
+							// A shader map can be present and "valid for rendering" while still containing no
+							// FMeshMaterialShaderMap for the vertex factory this component actually draws with.
+							// When that happens the base pass mesh processor cannot resolve shaders and silently
+							// drops the batch - no warning, no draw - which is indistinguishable from a healthy
+							// component in every other check here. Look the factories up by name so this file
+							// doesn't have to pull in LandscapeRender.h and the render-module link that implies.
+							static const FHashedName LandscapeVFName(TEXT("FLandscapeVertexFactory"));
+							static const FHashedName LandscapeXYOffsetVFName(TEXT("FLandscapeXYOffsetVertexFactory"));
+							static const FHashedName LandscapeFixedGridVFName(TEXT("FLandscapeFixedGridVertexFactory"));
+
+							// FLandscapeVertexFactory is the main pass; FLandscapeFixedGridVertexFactory is the
+							// RVT path. If the RVT one cooked but the main-pass one didn't, that pins the cause
+							// to what the cook decided this material would ever be drawn with.
+							const bool bHasLandscapeVF = ShaderMap->GetMeshShaderMap(LandscapeVFName) != nullptr;
+							const bool bHasXYOffsetVF = ShaderMap->GetMeshShaderMap(LandscapeXYOffsetVFName) != nullptr;
+							const bool bHasFixedGridVF = ShaderMap->GetMeshShaderMap(LandscapeFixedGridVFName) != nullptr;
+
+							if (!bHasLandscapeVF) { ++NumNoLandscapeVF; ++AggNoLandscapeVF; }
+							if (!bHasFixedGridVF) { ++NumNoFixedGridVF; ++AggNoFixedGridVF; }
+							if (bHasXYOffsetVF)   { ++NumHasXYOffsetVF; ++AggHasXYOffsetVF; }
+
+							TArray<FString>& Bucket = bHasLandscapeVF ? MatWithVF : MatWithoutVF;
+							if (Bucket.Num() < 8)
+							{
+								Bucket.AddUnique(MatIface->GetPathName());
+							}
+						}
+					}
+				}
+
+				// Bounds are the one thing that culls a primitive BEFORE view relevance / mesh gathering, so a
+				// component can be registered, visible, fully streamed and still never draw a pixel if these are
+				// degenerate or in the wrong place. Nothing above would reveal that.
+				const FBoxSphereBounds& B = Comp->Bounds;
+				if (B.SphereRadius <= 0.0 || B.BoxExtent.IsNearlyZero())
+				{
+					++NumBadBounds;
+					++AggBadBounds;
+				}
+				if (BoundsRadius < 0.0)
+				{
+					BoundsRadius = B.SphereRadius;
+					BoundsOrigin = B.Origin;
+					BoundsExtent = B.BoxExtent;
+				}
+			}
+
+			if (ProxyArr.Num() < Limit)
+			{
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetStringField(TEXT("name"), Proxy->GetName());
+				J->SetNumberField(TEXT("components"), NumComp);
+				J->SetNumberField(TEXT("withSceneProxy"), NumSceneProxy);
+				J->SetNumberField(TEXT("registered"), NumRegistered);
+				J->SetNumberField(TEXT("visibleFlag"), NumVisible);
+				J->SetNumberField(TEXT("heightmapNull"), NumHmNull);
+				J->SetNumberField(TEXT("heightmapZeroResident"), NumHmZeroResident);
+				J->SetNumberField(TEXT("materialNull"), NumMatNull);
+				J->SetNumberField(TEXT("overrideMaterial"), NumOverride);
+				J->SetNumberField(TEXT("badBounds"), NumBadBounds);
+				J->SetNumberField(TEXT("noMatResource"), NumNoMatResource);
+				J->SetNumberField(TEXT("noShaderMap"), NumNoShaderMap);
+				J->SetNumberField(TEXT("shaderMapInvalid"), NumShaderMapInvalid);
+				J->SetNumberField(TEXT("noLandscapeVF"), NumNoLandscapeVF);
+				J->SetNumberField(TEXT("noFixedGridVF"), NumNoFixedGridVF);
+				J->SetNumberField(TEXT("hasXYOffsetVF"), NumHasXYOffsetVF);
+				J->SetNumberField(TEXT("wmCount"), NumWmTotal);
+				J->SetNumberField(TEXT("wmNone"), NumWmNone);
+				J->SetNumberField(TEXT("wmNull"), NumWmNull);
+				J->SetNumberField(TEXT("wmZeroResident"), NumWmZeroResident);
+				J->SetStringField(TEXT("wmName"), WmFirstName);
+				J->SetNumberField(TEXT("wmResidentMips"), WmFirstResident);
+				J->SetNumberField(TEXT("wmNumMips"), WmFirstMips);
+				J->SetNumberField(TEXT("wmSizeX"), WmFirstSizeX);
+				J->SetNumberField(TEXT("boundsRadius"), BoundsRadius);
+				J->SetStringField(TEXT("boundsOrigin"), BoundsOrigin.ToString());
+				J->SetStringField(TEXT("boundsExtent"), BoundsExtent.ToString());
+				J->SetStringField(TEXT("hmName"), HmName);
+				J->SetNumberField(TEXT("hmResidentMips"), HmResident);
+				J->SetNumberField(TEXT("hmNumMips"), HmMips);
+				J->SetNumberField(TEXT("hmSizeX"), HmSizeX);
+				J->SetBoolField(TEXT("actorHidden"), Proxy->IsHidden());
+				ProxyArr.Add(MakeShared<FJsonValueObject>(J));
+			}
+		}
+
+		Out->SetNumberField(TEXT("proxyCount"), ProxyCount);
+		Out->SetNumberField(TEXT("componentCount"), ComponentCount);
+
+		TSharedRef<FJsonObject> Agg = MakeShared<FJsonObject>();
+		Agg->SetNumberField(TEXT("withSceneProxy"), AggSceneProxy);
+		Agg->SetNumberField(TEXT("registered"), AggRegistered);
+		Agg->SetNumberField(TEXT("visibleFlag"), AggVisibleFlag);
+		Agg->SetNumberField(TEXT("heightmapNull"), AggHeightmapNull);
+		Agg->SetNumberField(TEXT("heightmapZeroResident"), AggHeightmapZeroResident);
+		Agg->SetNumberField(TEXT("materialNull"), AggMaterialNull);
+		Agg->SetNumberField(TEXT("overrideMaterial"), AggOverrideMaterial);
+		Agg->SetNumberField(TEXT("badBounds"), AggBadBounds);
+		Agg->SetNumberField(TEXT("noMatResource"), AggNoMatResource);
+		Agg->SetNumberField(TEXT("noShaderMap"), AggNoShaderMap);
+		Agg->SetNumberField(TEXT("shaderMapInvalid"), AggShaderMapInvalid);
+		Agg->SetNumberField(TEXT("wmTotal"), AggWmTotal);
+		Agg->SetNumberField(TEXT("wmNone"), AggWmNone);
+		Agg->SetNumberField(TEXT("wmNull"), AggWmNull);
+		Agg->SetNumberField(TEXT("wmZeroResident"), AggWmZeroResident);
+		Agg->SetNumberField(TEXT("noLandscapeVF"), AggNoLandscapeVF);
+		Agg->SetNumberField(TEXT("noFixedGridVF"), AggNoFixedGridVF);
+		Agg->SetNumberField(TEXT("hasXYOffsetVF"), AggHasXYOffsetVF);
+		Out->SetObjectField(TEXT("aggregate"), Agg);
+
+		auto ToJsonStrings = [](const TArray<FString>& In)
+		{
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			for (const FString& S : In)
+			{
+				Arr.Add(MakeShared<FJsonValueString>(S));
+			}
+			return Arr;
+		};
+		Out->SetArrayField(TEXT("sampleMaterialsWithLandscapeVF"), ToJsonStrings(MatWithVF));
+		Out->SetArrayField(TEXT("sampleMaterialsWithoutLandscapeVF"), ToJsonStrings(MatWithoutVF));
+
+		Out->SetArrayField(TEXT("proxies"), ProxyArr);
 	}
 }
