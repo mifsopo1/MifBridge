@@ -194,6 +194,7 @@ namespace MifBridge
 	MIF_DECL(find_assets);
 	MIF_DECL(describe_package);
 	MIF_DECL(diagnose_landscape);
+	MIF_DECL(diagnose_landscape_draws);
 
 	// Composite recipes (§10)
 	MIF_DECL(recipe_add_debug_print);

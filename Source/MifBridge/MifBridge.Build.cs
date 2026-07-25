@@ -29,6 +29,8 @@ public class MifBridge : ModuleRules
 			"Json",
 			"JsonUtilities",
 			"Landscape",         // ALandscapeProxy/ULandscapeComponent for diagnose_landscape
+			"RenderCore",        // FShaderMapContent::GetNumShaders for the landscape shader-map diagnostic
+			"Renderer",          // FPrimitiveSceneInfo::StaticMeshCommandInfos for diagnose_landscape_draws
 			"AssetRegistry",     // find/open blueprints by path
 			"AssetTools",        // headless rename/duplicate (IAssetTools::RenameAssets/DuplicateAsset)
 			"EditorSubsystem",

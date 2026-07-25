@@ -86,6 +86,7 @@ namespace MifBridge
 			MIF_BIND(find_assets);
 			MIF_BIND(describe_package);
 			MIF_BIND(diagnose_landscape);
+			MIF_BIND(diagnose_landscape_draws);
 			// Composite recipes
 			MIF_BIND(recipe_add_debug_print);
 			MIF_BIND(recipe_reset_and_loop);
@@ -187,6 +188,7 @@ namespace MifBridge
 			// listing them here RunEndpoint wraps each in an FScopedTransaction, so a pure query
 			// pushes an empty entry onto the undo stack.
 			TEXT("list_mounted_containers"), TEXT("find_assets"), TEXT("describe_package"),
+			TEXT("diagnose_landscape"), TEXT("diagnose_landscape_draws"),
 			TEXT("compile"), TEXT("validate"), TEXT("run_console")
 		};
 		return ReadOnly.Contains(Endpoint);
