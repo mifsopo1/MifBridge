@@ -182,6 +182,10 @@ namespace MifBridge
 			TEXT("list_datatables"), TEXT("read_datatable"), TEXT("get_datatable_row"),
 			TEXT("get_property"), TEXT("list_object_properties"),
 			TEXT("describe_animation"), TEXT("list_animations"),
+			// Cooked-content introspection — declared read-only in MifBridgeHandlers.h; without
+			// listing them here RunEndpoint wraps each in an FScopedTransaction, so a pure query
+			// pushes an empty entry onto the undo stack.
+			TEXT("list_mounted_containers"), TEXT("find_assets"), TEXT("describe_package"),
 			TEXT("compile"), TEXT("validate"), TEXT("run_console")
 		};
 		return ReadOnly.Contains(Endpoint);

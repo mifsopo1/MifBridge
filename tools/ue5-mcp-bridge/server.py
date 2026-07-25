@@ -812,6 +812,31 @@ def remove_tree_widget(blueprint_id: str, widget_name: str) -> dict:
 
 
 # --------------------------------------------------------------------------
+# Cooked / mounted-container introspection (read-only)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def list_mounted_containers() -> dict:
+    "List the mounted pak/utoc containers and the resolved game install dir. Use this to see what cooked content is actually visible to the editor."
+    return _post("list_mounted_containers")
+
+
+@mcp.tool()
+def find_assets(cls: str = "", path_prefix: str = "", name_contains: str = "",
+                origin: str = "any", recursive_classes: bool = True, limit: int = 100) -> dict:
+    "Search the asset registry across loose AND cooked/mounted content. cls filters by class name, path_prefix by /Game/... prefix, name_contains by substring. origin = any|loose|cooked. Returns at most limit results."
+    return _post("find_assets", **{"class": cls or None}, pathPrefix=path_prefix or None,
+                 nameContains=name_contains or None, origin=origin,
+                 recursiveClasses=recursive_classes, limit=limit)
+
+
+@mcp.tool()
+def describe_package(package: str) -> dict:
+    "Describe a package by /Game/ path: the objects it contains, their classes, and whether it is cooked. Works on cooked packages whose Blueprint graphs are stripped."
+    return _post("describe_package", package=package)
+
+
+# --------------------------------------------------------------------------
 # Animation assets (read-only)
 # --------------------------------------------------------------------------
 
