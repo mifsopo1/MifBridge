@@ -484,6 +484,15 @@ namespace MifBridge
 		for (UEdGraph* Graph : Blueprint->FunctionGraphs)          { GatherGraphsRecursive(Graph, OutGraphs, Visited); }
 		for (UEdGraph* Graph : Blueprint->MacroGraphs)             { GatherGraphsRecursive(Graph, OutGraphs, Visited); }
 		for (UEdGraph* Graph : Blueprint->DelegateSignatureGraphs) { GatherGraphsRecursive(Graph, OutGraphs, Visited); }
+		// Interface functions implemented BY THIS blueprint live in ImplementedInterfaces[].Graphs, NOT in
+		// FunctionGraphs — so without this loop they are invisible to list_graphs/list_nodes/add_* and the
+		// whole interface is unusable from the bridge. (Overrides of an interface the PARENT implements DO
+		// land in FunctionGraphs, which is why GetObjectMeta/CheckFallback always worked and
+		// GetRadialOptions/PassRadialChoice did not.)
+		for (const FBPInterfaceDescription& Iface : Blueprint->ImplementedInterfaces)
+		{
+			for (UEdGraph* Graph : Iface.Graphs)                   { GatherGraphsRecursive(Graph, OutGraphs, Visited); }
+		}
 	}
 
 	FString GraphNamePathOf(UBlueprint* Blueprint, UEdGraph* Graph)
