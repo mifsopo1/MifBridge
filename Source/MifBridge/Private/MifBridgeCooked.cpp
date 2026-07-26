@@ -21,6 +21,12 @@
 #include "LandscapeComponent.h"
 #include "LandscapeProxy.h"
 #include "MaterialShared.h"
+#include "Materials/MaterialInstanceConstant.h"   // ULandscapeComponent::MaterialInstances element type
+#include "MeshPassProcessor.h"                    // FCachedMeshDrawCommandInfo, EMeshPass
+#include "PrimitiveSceneInfo.h"                   // FPrimitiveSceneInfo::StaticMeshCommandInfos
+#include "PrimitiveSceneProxy.h"                  // FPrimitiveSceneProxy::GetPrimitiveSceneInfo
+#include "StaticMeshBatch.h"                      // FStaticMeshBatchRelevance::ScreenSize / LODIndex
+#include "RenderingThread.h"                      // ENQUEUE_RENDER_COMMAND, FlushRenderingCommands
 #include "Materials/MaterialInterface.h"
 #include "IO/IoDispatcher.h"
 #include "Misc/FileHelper.h"
@@ -355,6 +361,74 @@ namespace MifBridge
 	// material resolved. The heightmap residency is the interesting one - a heightmap with 0 resident mips
 	// yields no geometry from the landscape vertex shader, while collision (which reads separate cooked
 	// collision data, not the texture) stays perfect. That combination looks exactly like this bug.
+	// Names every shader type actually present in a mesh shader map. There is no direct enumeration of
+	// a map's contents by name, so walk the global shader type registry and probe each type/permutation.
+	// Only worth running on a handful of maps - it is thousands of probes per call.
+	static void CollectShaderTypeNames(const FMeshMaterialShaderMap* Map, TArray<FString>& OutNames)
+	{
+		if (!Map)
+		{
+			return;
+		}
+		for (TLinkedList<FShaderType*>::TIterator It(FShaderType::GetTypeList()); It; It.Next())
+		{
+			FShaderType* Type = *It;
+			if (!Type)
+			{
+				continue;
+			}
+			const int32 NumPermutations = FMath::Max(1, Type->GetPermutationCount());
+			for (int32 P = 0; P < NumPermutations; ++P)
+			{
+				if (Map->HasShader(Type, P))
+				{
+					OutNames.Add(NumPermutations > 1
+						? FString::Printf(TEXT("%s [perm %d]"), Type->GetName(), P)
+						: FString(Type->GetName()));
+				}
+			}
+		}
+		OutNames.Sort();
+	}
+
+	// Shader counts + type names for every entry in a component's MaterialInstances, not just slot 0.
+	// Rendering picks AvailableMaterials[LODIndexToMaterialIndex[LOD]], and these components draw at
+	// LOD 2-3, so slot 0 is not necessarily the material that actually draws.
+	static TSharedRef<FJsonObject> DescribeMaterialSlot(UMaterialInterface* Mat, ERHIFeatureLevel::Type FeatureLevel, int32 SlotIndex, bool bWantNames)
+	{
+		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+		J->SetNumberField(TEXT("slot"), SlotIndex);
+		J->SetStringField(TEXT("material"), Mat ? Mat->GetPathName() : TEXT("<null>"));
+
+		const FMaterialResource* Res = Mat ? Mat->GetMaterialResource(FeatureLevel) : nullptr;
+		FMaterialShaderMap* ShaderMap = Res ? Res->GetGameThreadShaderMap() : nullptr;
+		if (!ShaderMap)
+		{
+			J->SetNumberField(TEXT("landscapeVFShaders"), -1);
+			return J;
+		}
+
+		static const FHashedName LandscapeVFName(TEXT("FLandscapeVertexFactory"));
+		static const FHashedName LandscapeFixedGridVFName(TEXT("FLandscapeFixedGridVertexFactory"));
+		const FMeshMaterialShaderMap* LandscapeVFMap = ShaderMap->GetMeshShaderMap(LandscapeVFName);
+
+		J->SetNumberField(TEXT("landscapeVFShaders"), LandscapeVFMap ? (int32)LandscapeVFMap->GetNumShaders() : -1);
+		J->SetBoolField(TEXT("hasFixedGridVF"), ShaderMap->GetMeshShaderMap(LandscapeFixedGridVFName) != nullptr);
+
+		if (bWantNames)
+		{
+			TArray<FString> Names;
+			CollectShaderTypeNames(LandscapeVFMap, Names);
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			for (const FString& N : Names)
+			{
+				Arr.Add(MakeShared<FJsonValueString>(N));
+			}
+			J->SetArrayField(TEXT("shaderTypes"), Arr);
+		}
+		return J;
+	}
+
 	void H_diagnose_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 40), 1, 1000);
@@ -385,6 +459,13 @@ namespace MifBridge
 		// objects, so the path identifies exactly which cooked instance is short of shaders.
 		TArray<FString> MatWithVF, MatWithoutVF;
 
+		// Per-component detail for the first few proxies that contain a mix of FixedGrid-capable and
+		// non-capable components. Those proxies render exactly one of their four quadrants, so comparing
+		// the four materials inside one proxy isolates what differs between a component that draws and
+		// one that doesn't, with layer content and everything else held constant.
+		TArray<TSharedPtr<FJsonValue>> ContrastArr;
+		const int32 MaxContrastProxies = 4;
+
 		TArray<TSharedPtr<FJsonValue>> ProxyArr;
 
 		for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
@@ -401,6 +482,10 @@ namespace MifBridge
 			int32 NumNoMatResource = 0, NumNoShaderMap = 0, NumShaderMapInvalid = 0;
 			int32 NumWmTotal = 0, NumWmNone = 0, NumWmNull = 0, NumWmZeroResident = 0;
 			int32 NumNoLandscapeVF = 0, NumNoFixedGridVF = 0, NumHasXYOffsetVF = 0;
+			TArray<TSharedPtr<FJsonValue>> CompDetails;
+			// Enumerating shader type names is expensive, so only gather it while we still might keep
+			// this proxy as a contrast sample.
+			const bool bWantDetail = (ContrastArr.Num() < MaxContrastProxies);
 			FString WmFirstName; int32 WmFirstResident = -1, WmFirstMips = -1, WmFirstSizeX = -1;
 			double BoundsRadius = -1.0;
 			FVector BoundsOrigin = FVector::ZeroVector;
@@ -480,6 +565,11 @@ namespace MifBridge
 					}
 				}
 
+				// Captured per component so the four components of one proxy can be compared side by side.
+				FString CompMatPath;
+				int32 CompLandscapeVFShaders = -1;
+				int32 CompHasLandscapeVF = -1, CompHasFixedGridVF = -1, CompHasXYOffsetVF = -1;
+
 				UMaterialInterface* MatIface = Comp->GetMaterialInstance(0, /*InDynamic*/ false);
 				if (!MatIface)
 				{
@@ -528,9 +618,19 @@ namespace MifBridge
 							// FLandscapeVertexFactory is the main pass; FLandscapeFixedGridVertexFactory is the
 							// RVT path. If the RVT one cooked but the main-pass one didn't, that pins the cause
 							// to what the cook decided this material would ever be drawn with.
-							const bool bHasLandscapeVF = ShaderMap->GetMeshShaderMap(LandscapeVFName) != nullptr;
+							const FMeshMaterialShaderMap* LandscapeVFMap = ShaderMap->GetMeshShaderMap(LandscapeVFName);
+							const bool bHasLandscapeVF = LandscapeVFMap != nullptr;
 							const bool bHasXYOffsetVF = ShaderMap->GetMeshShaderMap(LandscapeXYOffsetVFName) != nullptr;
 							const bool bHasFixedGridVF = ShaderMap->GetMeshShaderMap(LandscapeFixedGridVFName) != nullptr;
+
+							// The map merely existing is not enough - ShouldCache gates per shader TYPE, so a map
+							// can be present holding only depth/shadow shaders while the base pass permutation was
+							// skipped. That is exactly a silent no-draw, and only the count reveals it.
+							CompMatPath = MatIface->GetPathName();
+							CompLandscapeVFShaders = LandscapeVFMap ? (int32)LandscapeVFMap->GetNumShaders() : -1;
+							CompHasLandscapeVF = bHasLandscapeVF ? 1 : 0;
+							CompHasFixedGridVF = bHasFixedGridVF ? 1 : 0;
+							CompHasXYOffsetVF = bHasXYOffsetVF ? 1 : 0;
 
 							if (!bHasLandscapeVF) { ++NumNoLandscapeVF; ++AggNoLandscapeVF; }
 							if (!bHasFixedGridVF) { ++NumNoFixedGridVF; ++AggNoFixedGridVF; }
@@ -560,6 +660,46 @@ namespace MifBridge
 					BoundsOrigin = B.Origin;
 					BoundsExtent = B.BoxExtent;
 				}
+
+				TSharedRef<FJsonObject> C = MakeShared<FJsonObject>();
+				C->SetStringField(TEXT("component"), Comp->GetName());
+				C->SetStringField(TEXT("sectionBase"), FIntPoint(Comp->SectionBaseX, Comp->SectionBaseY).ToString());
+				C->SetStringField(TEXT("material"), CompMatPath);
+				C->SetNumberField(TEXT("landscapeVFShaders"), CompLandscapeVFShaders);
+				C->SetNumberField(TEXT("hasLandscapeVF"), CompHasLandscapeVF);
+				C->SetNumberField(TEXT("hasFixedGridVF"), CompHasFixedGridVF);
+				C->SetNumberField(TEXT("hasXYOffsetVF"), CompHasXYOffsetVF);
+
+				if (bWantDetail)
+				{
+					FString LodMap;
+					for (int32 i = 0; i < Comp->LODIndexToMaterialIndex.Num(); ++i)
+					{
+						LodMap += (i ? TEXT(",") : TEXT("")) + FString::FromInt(Comp->LODIndexToMaterialIndex[i]);
+					}
+					C->SetStringField(TEXT("lodIndexToMaterialIndex"), LodMap);
+
+					TArray<TSharedPtr<FJsonValue>> SlotArr;
+					for (int32 i = 0; i < Comp->MaterialInstances.Num(); ++i)
+					{
+						SlotArr.Add(MakeShared<FJsonValueObject>(
+							DescribeMaterialSlot(Comp->MaterialInstances[i].Get(), WorldFeatureLevel, i, /*bWantNames*/ true)));
+					}
+					C->SetArrayField(TEXT("materialSlots"), SlotArr);
+				}
+
+				CompDetails.Add(MakeShared<FJsonValueObject>(C));
+			}
+
+			// Only interesting where the proxy is split - all-drawing or all-black proxies tell us nothing
+			// about what distinguishes the two.
+			const bool bMixedProxy = (NumHasXYOffsetVF > 0) && (NumHasXYOffsetVF < NumComp);
+			if (bMixedProxy && ContrastArr.Num() < MaxContrastProxies)
+			{
+				TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+				P->SetStringField(TEXT("proxy"), Proxy->GetName());
+				P->SetArrayField(TEXT("components"), CompDetails);
+				ContrastArr.Add(MakeShared<FJsonValueObject>(P));
 			}
 
 			if (ProxyArr.Num() < Limit)
@@ -636,7 +776,242 @@ namespace MifBridge
 		};
 		Out->SetArrayField(TEXT("sampleMaterialsWithLandscapeVF"), ToJsonStrings(MatWithVF));
 		Out->SetArrayField(TEXT("sampleMaterialsWithoutLandscapeVF"), ToJsonStrings(MatWithoutVF));
+		Out->SetArrayField(TEXT("contrastProxies"), ContrastArr);
 
+		Out->SetArrayField(TEXT("proxies"), ProxyArr);
+	}
+
+	// Everything up to and including mesh-batch creation has been measured healthy for all 504 landscape
+	// components, yet most never appear in the base pass. The one stage never inspected is what the renderer
+	// actually caches for them: FPrimitiveSceneInfo::StaticMeshCommandInfos. A primitive with static meshes but
+	// no BasePass entry there had its draw command dropped during CacheMeshDrawCommands - which is silent, and
+	// is the only remaining explanation consistent with every other measurement.
+	void H_diagnose_landscape_draws(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 40), 1, 1000);
+
+		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		if (!World)
+		{
+			Fail(Out, TEXT("no editor world"));
+			return;
+		}
+		Out->SetStringField(TEXT("world"), World->GetName());
+
+		// One entry per registered static mesh: which LOD it is and the screen size the renderer compares
+		// against when choosing. A component can hold valid commands for LODs the renderer never selects.
+		struct FRel
+		{
+			int32 LODIndex = -1;
+			float ScreenSize = -1.0f;
+			bool bUseForMaterial = false;
+			bool bRenderToVirtualTexture = false;
+		};
+
+		struct FEntry
+		{
+			FString Proxy;
+			FString Component;
+			FIntPoint SectionBase = FIntPoint::ZeroValue;
+			FPrimitiveSceneProxy* SceneProxy = nullptr;
+			int32 StaticMeshes = -1;
+			int32 MdcTotal = -1;
+			int32 MdcBasePass = -1;
+			int32 MdcBasePassCached = -1;
+			int32 MdcDepthPass = -1;
+			TArray<FRel> Rels;
+		};
+		TArray<FEntry> Entries;
+
+		for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
+		{
+			ALandscapeProxy* Proxy = *It;
+			if (!Proxy)
+			{
+				continue;
+			}
+			for (ULandscapeComponent* Comp : Proxy->LandscapeComponents)
+			{
+				if (!Comp || !Comp->SceneProxy)
+				{
+					continue;
+				}
+				FEntry E;
+				E.Proxy = Proxy->GetName();
+				E.Component = Comp->GetName();
+				E.SectionBase = FIntPoint(Comp->SectionBaseX, Comp->SectionBaseY);
+				E.SceneProxy = Comp->SceneProxy;
+				Entries.Add(MoveTemp(E));
+			}
+		}
+
+		// StaticMeshCommandInfos is render-thread state. Read it on that thread and block, rather than racing
+		// the renderer from the game thread. Capturing by reference is safe because of the flush below.
+		ENQUEUE_RENDER_COMMAND(MifBridgeLandscapeDraws)(
+			[&Entries](FRHICommandListImmediate&)
+			{
+				for (FEntry& E : Entries)
+				{
+					FPrimitiveSceneInfo* Info = E.SceneProxy ? E.SceneProxy->GetPrimitiveSceneInfo() : nullptr;
+					if (!Info)
+					{
+						continue;
+					}
+					E.StaticMeshes = Info->StaticMeshes.Num();
+					E.MdcTotal = Info->StaticMeshCommandInfos.Num();
+					E.MdcBasePass = 0;
+					E.MdcBasePassCached = 0;
+					E.MdcDepthPass = 0;
+					for (const FCachedMeshDrawCommandInfo& C : Info->StaticMeshCommandInfos)
+					{
+						if (C.MeshPass == EMeshPass::BasePass)
+						{
+							++E.MdcBasePass;
+							// A command is only reachable at render time if it landed in one of these two stores.
+							if (C.CommandIndex != INDEX_NONE || C.StateBucketId != INDEX_NONE)
+							{
+								++E.MdcBasePassCached;
+							}
+						}
+						else if (C.MeshPass == EMeshPass::DepthPass)
+						{
+							++E.MdcDepthPass;
+						}
+					}
+
+					for (const FStaticMeshBatchRelevance& R : Info->StaticMeshRelevances)
+					{
+						FRel Rel;
+						Rel.LODIndex = R.LODIndex;
+						Rel.ScreenSize = R.ScreenSize;
+						Rel.bUseForMaterial = R.bUseForMaterial != 0;
+						Rel.bRenderToVirtualTexture = R.bRenderToVirtualTexture != 0;
+						E.Rels.Add(Rel);
+					}
+				}
+			});
+		FlushRenderingCommands();
+
+		int32 NoSceneInfo = 0, NoStaticMeshes = 0, NoBasePass = 0, NoBasePassCached = 0, HasBasePass = 0;
+		TMap<FString, int32> ProxyNoBasePass, ProxyHasBasePass;
+		for (const FEntry& E : Entries)
+		{
+			if (E.StaticMeshes < 0)          { ++NoSceneInfo; continue; }
+			if (E.StaticMeshes == 0)         { ++NoStaticMeshes; }
+			if (E.MdcBasePass == 0)          { ++NoBasePass;       ProxyNoBasePass.FindOrAdd(E.Proxy)++; }
+			else                             { ++HasBasePass;      ProxyHasBasePass.FindOrAdd(E.Proxy)++; }
+			if (E.MdcBasePassCached == 0)    { ++NoBasePassCached; }
+		}
+
+		TSharedRef<FJsonObject> Agg = MakeShared<FJsonObject>();
+		Agg->SetNumberField(TEXT("componentsWithSceneProxy"), Entries.Num());
+		Agg->SetNumberField(TEXT("noSceneInfo"), NoSceneInfo);
+		Agg->SetNumberField(TEXT("noStaticMeshes"), NoStaticMeshes);
+		Agg->SetNumberField(TEXT("withBasePassCommand"), HasBasePass);
+		Agg->SetNumberField(TEXT("withoutBasePassCommand"), NoBasePass);
+		Agg->SetNumberField(TEXT("basePassCommandNotCached"), NoBasePassCached);
+		Out->SetObjectField(TEXT("aggregate"), Agg);
+
+		// "Has at least one base pass command" is too coarse: landscape registers one static mesh per LOD and
+		// the renderer submits only the LOD it selects, so a component holding a command for just one LOD can
+		// still draw nothing. Report the spread of both counts.
+		TMap<int32, int32> StaticMeshHisto, BasePassHisto;
+		for (const FEntry& E : Entries)
+		{
+			if (E.StaticMeshes < 0) continue;
+			StaticMeshHisto.FindOrAdd(E.StaticMeshes)++;
+			BasePassHisto.FindOrAdd(E.MdcBasePass)++;
+		}
+		auto HistoToJson = [](const TMap<int32, int32>& H)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			for (const TPair<int32, int32>& P : H)
+			{
+				J->SetNumberField(FString::FromInt(P.Key), P.Value);
+			}
+			return J;
+		};
+		Out->SetObjectField(TEXT("staticMeshCountHistogram"), HistoToJson(StaticMeshHisto));
+		Out->SetObjectField(TEXT("basePassCommandCountHistogram"), HistoToJson(BasePassHisto));
+
+		// Emitted unconditionally: if every component turns out identical there is no "mixed" proxy to show,
+		// and we would otherwise learn nothing about what the renderer has to choose from.
+		auto DescribeEntry = [](const FEntry& E)
+		{
+			TSharedRef<FJsonObject> C = MakeShared<FJsonObject>();
+			C->SetStringField(TEXT("component"), E.Component);
+			C->SetStringField(TEXT("sectionBase"), E.SectionBase.ToString());
+			C->SetNumberField(TEXT("staticMeshes"), E.StaticMeshes);
+			C->SetNumberField(TEXT("mdcTotal"), E.MdcTotal);
+			C->SetNumberField(TEXT("mdcBasePass"), E.MdcBasePass);
+			C->SetNumberField(TEXT("mdcBasePassCached"), E.MdcBasePassCached);
+			C->SetNumberField(TEXT("mdcDepthPass"), E.MdcDepthPass);
+			TArray<TSharedPtr<FJsonValue>> RelArr;
+			for (const FRel& R : E.Rels)
+			{
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetNumberField(TEXT("lod"), R.LODIndex);
+				J->SetNumberField(TEXT("screenSize"), R.ScreenSize);
+				J->SetBoolField(TEXT("useForMaterial"), R.bUseForMaterial);
+				J->SetBoolField(TEXT("rvt"), R.bRenderToVirtualTexture);
+				RelArr.Add(MakeShared<FJsonValueObject>(J));
+			}
+			C->SetArrayField(TEXT("staticMeshRelevances"), RelArr);
+			return C;
+		};
+
+		TArray<TSharedPtr<FJsonValue>> SampleArr;
+		for (const FEntry& E : Entries)
+		{
+			if (SampleArr.Num() >= 8) break;
+			if (E.StaticMeshes < 0) continue;
+			TSharedRef<FJsonObject> C = DescribeEntry(E);
+			C->SetStringField(TEXT("proxy"), E.Proxy);
+			SampleArr.Add(MakeShared<FJsonValueObject>(C));
+		}
+		Out->SetArrayField(TEXT("sample"), SampleArr);
+
+		// Proxies whose components disagree on how many base pass commands they got - same actor, same
+		// terrain, different outcome. Compare on the count, not merely zero vs non-zero.
+		TMap<FString, TSet<int32>> ProxyBasePassCounts;
+		for (const FEntry& E : Entries)
+		{
+			if (E.StaticMeshes >= 0)
+			{
+				ProxyBasePassCounts.FindOrAdd(E.Proxy).Add(E.MdcBasePass);
+			}
+		}
+
+		TArray<TSharedPtr<FJsonValue>> MixedArr;
+		for (const TPair<FString, TSet<int32>>& Pair : ProxyBasePassCounts)
+		{
+			if (MixedArr.Num() >= 4 || Pair.Value.Num() < 2)
+			{
+				continue;
+			}
+			TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+			P->SetStringField(TEXT("proxy"), Pair.Key);
+			TArray<TSharedPtr<FJsonValue>> Comps;
+			for (const FEntry& E : Entries)
+			{
+				if (E.Proxy != Pair.Key || E.StaticMeshes < 0) continue;
+				Comps.Add(MakeShared<FJsonValueObject>(DescribeEntry(E)));
+			}
+			P->SetArrayField(TEXT("components"), Comps);
+			MixedArr.Add(MakeShared<FJsonValueObject>(P));
+		}
+		Out->SetArrayField(TEXT("mixedProxies"), MixedArr);
+
+		TArray<TSharedPtr<FJsonValue>> ProxyArr;
+		for (const TPair<FString, int32>& Pair : ProxyNoBasePass)
+		{
+			if (ProxyArr.Num() >= Limit) break;
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("proxy"), Pair.Key);
+			J->SetNumberField(TEXT("componentsWithoutBasePass"), Pair.Value);
+			J->SetNumberField(TEXT("componentsWithBasePass"), ProxyHasBasePass.FindRef(Pair.Key));
+			ProxyArr.Add(MakeShared<FJsonValueObject>(J));
+		}
 		Out->SetArrayField(TEXT("proxies"), ProxyArr);
 	}
 }

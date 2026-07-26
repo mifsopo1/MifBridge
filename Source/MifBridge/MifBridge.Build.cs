@@ -28,9 +28,11 @@ public class MifBridge : ModuleRules
 			"HTTPServer",        // FHttpServerModule / IHttpRouter
 			"Json",
 			"JsonUtilities",
-			"Landscape",         // ALandscape create/sculpt/paint + diagnose_landscape
+			"Landscape",         // ALandscape create/sculpt/paint + ALandscapeProxy diagnostics
 			"Foliage",           // LandscapeEdit.h includes InstancedFoliageActor.h from this module
 			"VirtualTexturingEditor", // RuntimeVirtualTexture::SetBounds for bind_landscape_rvt
+			"RenderCore",        // FShaderMapContent::GetNumShaders for the landscape shader-map diagnostic
+			"Renderer",          // FPrimitiveSceneInfo::StaticMeshCommandInfos for diagnose_landscape_draws
 			"AssetRegistry",     // find/open blueprints by path
 			"AssetTools",        // headless rename/duplicate (IAssetTools::RenameAssets/DuplicateAsset)
 			"NavigationSystem",  // ANavMeshBoundsVolume + UNavigationSystemV1::Build (navigation endpoints)
