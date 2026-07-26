@@ -33,6 +33,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "PlayInEditorDataTypes.h"        // FRequestPlaySessionParams
+#include "Settings/LevelEditorPlaySettings.h"  // multiplayer PIE topology (clients / net mode)
 #include "Misc/OutputDevice.h"
 #include "Misc/OutputDeviceRedirector.h"
 #include "HAL/CriticalSection.h"
@@ -200,6 +201,63 @@ namespace MifBridge
 			}
 		}
 
+		// ── Multiplayer topology ───────────────────────────────────────────────────────────────────
+		// The client count and net mode are NOT fields on FRequestPlaySessionParams — they live on
+		// ULevelEditorPlaySettings. The naive recipe is to mutate GetMutableDefault<>() (i.e. the user's
+		// actual Editor Preferences) and restore it in an OnEndPIE delegate. We don't: the params struct
+		// carries `EditorPlaySettings` ("nullptr means use the CDO"), and PlayLevel.cpp duplicates
+		// whatever it is handed into the transient package anyway (PlayLevel.cpp:953-962). So we pass a
+		// DUPLICATE of the CDO with our overrides on it — the session gets the topology and the user's
+		// saved preferences are never written to.
+		const int32 Players = FMath::Clamp(JInt(In, TEXT("players"), 1), 1, 8);
+		const FString NetModeStr = JStr(In, TEXT("netMode")).ToLower();
+		const bool bWantsMulti = (Players > 1) || !NetModeStr.IsEmpty();
+		if (bWantsMulti)
+		{
+			ULevelEditorPlaySettings* Settings = DuplicateObject<ULevelEditorPlaySettings>(
+				GetDefault<ULevelEditorPlaySettings>(), GetTransientPackage());
+			if (!Settings)
+			{
+				Fail(Out, TEXT("could not duplicate ULevelEditorPlaySettings for a multiplayer session"));
+				return;
+			}
+
+			// Default to listen server when more than one client was asked for: that is the topology a
+			// co-op mod actually ships into (one player hosts), and it needs no separate server process.
+			EPlayNetMode NetMode = EPlayNetMode::PIE_ListenServer;
+			if (NetModeStr == TEXT("standalone"))                                      { NetMode = EPlayNetMode::PIE_Standalone; }
+			else if (NetModeStr == TEXT("client") || NetModeStr == TEXT("dedicated"))   { NetMode = EPlayNetMode::PIE_Client; }
+			else if (!NetModeStr.IsEmpty()
+				  && NetModeStr != TEXT("listen") && NetModeStr != TEXT("listenserver"))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("unknown netMode '%s' — use 'standalone', 'listen' (listen server, the default ")
+					TEXT("when players>1) or 'client' (a dedicated server is spawned for you)"), *NetModeStr));
+				return;
+			}
+
+			Settings->SetPlayNumberOfClients(Players);
+			Settings->SetPlayNetMode(NetMode);
+			// One process = all client windows in this editor. Far faster to start, and it keeps every
+			// client's log in the SAME output — which is the whole point for us, since a co-op bug is
+			// usually "host did X, client didn't".
+			Settings->SetRunUnderOneProcess(JBool(In, TEXT("oneProcess"), true));
+			Settings->NewWindowWidth  = FMath::Clamp(JInt(In, TEXT("width"),  640), 64, 4096);
+			Settings->NewWindowHeight = FMath::Clamp(JInt(In, TEXT("height"), 360), 64, 4096);
+
+			Params.EditorPlaySettings = Settings;
+
+			const UEnum* ModeEnum = StaticEnum<EPlayNetMode>();
+			Out->SetNumberField(TEXT("players"), Players);
+			Out->SetStringField(TEXT("netMode"),
+				ModeEnum ? ModeEnum->GetNameStringByValue((int64)NetMode) : TEXT("?"));
+			Out->SetBoolField(TEXT("oneProcess"), JBool(In, TEXT("oneProcess"), true));
+			// Say explicitly that we did NOT touch saved preferences — otherwise the only way to know is
+			// to go and look at Editor Preferences.
+			Out->SetStringField(TEXT("settingsScope"),
+				TEXT("per-session duplicate — Editor Preferences were NOT modified"));
+		}
+
 		GEditor->RequestPlaySession(Params);
 
 		Out->SetBoolField(TEXT("requested"), true);
@@ -207,8 +265,9 @@ namespace MifBridge
 		Out->SetStringField(TEXT("note"),
 			TEXT("PIE start is deferred to the next editor tick — this call does NOT block. Poll pie_status until state=='running' before asserting on runtime state."));
 		WritePieStateInto(Out);
-		UE_LOG(LogMifBridge, Log, TEXT("start_pie: requested (%s)"),
-			JBool(In, TEXT("simulate"), false) ? TEXT("simulate") : TEXT("play"));
+		UE_LOG(LogMifBridge, Log, TEXT("start_pie: requested (%s, players=%d%s)"),
+			JBool(In, TEXT("simulate"), false) ? TEXT("simulate") : TEXT("play"),
+			Players, bWantsMulti ? TEXT(", multiplayer") : TEXT(""));
 	}
 
 	// --- stop_pie -----------------------------------------------------------
