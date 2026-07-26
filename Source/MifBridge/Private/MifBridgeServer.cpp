@@ -108,6 +108,9 @@ bool FMifBridgeServer::Start()
 	}
 
 	Http.StartAllListeners();
+	// Routes are now bound, once per name. Any later RegisterExternalEndpoint call would produce a
+	// dispatchable-but-unrouted endpoint, so the registry refuses from here on.
+	MifBridge::MarkRouteTableLive();
 	bRunning = true;
 	UE_LOG(LogMifBridge, Log, TEXT("Bound %d routes on port %d."), Routes.Num(), Port);
 	return true;

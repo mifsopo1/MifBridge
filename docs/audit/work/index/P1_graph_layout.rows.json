@@ -1,0 +1,119 @@
+[
+  {
+    "name": "format_graph",
+    "kind": "new",
+    "axis": "P1_graph_layout",
+    "tier": 0,
+    "u": 5,
+    "e": 3,
+    "r": 4,
+    "bucket": "transacted",
+    "asyncPair": null,
+    "newModules": [],
+    "pluginEnable": null,
+    "verdict": "CORRECTED",
+    "purpose": "Deterministic headless Sugiyama-lite layered-DAG layout of a K2 graph — fixes '40 spawned nodes heaped at origin' with zero new deps.",
+    "engineApi": "UEdGraphNode Pins/NodePosX/NodePosY/NodeWidth/NodeHeight/NodeGuid (EdGraphNode.h:278-393); UEdGraphPin LinkedTo/Direction (EdGraphPin.h:378,302); UK2Node::IsNodePure inline (K2Node.h:241); UEdGraphSchema_K2::PC_Exec (EdGraphSchema_K2.h:354); FEdGraphUtilities::CalculateApproximateNodeBoundaries UNREALED_API (EdGraphUtilities.h:130)",
+    "cooked": "cooked .pak Blueprints have stripped graphs (0 nodes) — behaves as '0 layout-able nodes'; full on loose and kr_*-reconstructed assets (primary customer)",
+    "prevents": null,
+    "overlaps": [],
+    "hazards": [
+      "Cyclic exec links via reroutes possible — break cycles at back-edges (BFS visited set), report cyclesBroken, never hang",
+      "Export-claim corrected: UEdGraphNode is MinimalAPI and UEdGraphPin unexported — fine, only public data members + COREUOBJECT_API Modify needed (same write path as move_node, MifBridgeNodes.cpp:678-693)"
+    ]
+  },
+  {
+    "name": "format_graph_ba_request",
+    "kind": "new",
+    "axis": "P1_graph_layout",
+    "tier": 2,
+    "u": 4,
+    "e": 3,
+    "r": 2,
+    "bucket": "self-managed",
+    "asyncPair": "format_graph_ba_status",
+    "newModules": ["BlueprintAssist"],
+    "pluginEnable": "BlueprintAssist",
+    "verdict": "CONFIRMED",
+    "purpose": "Pixel-quality format identical to pressing BlueprintAssist Format-All — real measured sizes; Plan A, requires editor UI open.",
+    "engineApi": "BringKismetToFocusAttentionOnObject UNREALED_API (KismetEditorUtilities.h:442); FBATabHandler::Get/GetAllGraphHandlers (BlueprintAssistTabHandler.h:18,21,34); FBAGraphHandler::AddPendingFormatNodes/FormatAllEvents/IsCalculatingNodeSize/HasActiveTransaction (BlueprintAssistGraphHandler.h:63-66,137,129,157); UBASettings::GetMutable/bCreateKnotNodes (BlueprintAssistSettings.h:144-147,215)",
+    "cooked": "refuses usefully — cooked-stripped graphs have no nodes; kr_* reconstructed BPs work (real loose UBlueprints)",
+    "prevents": null,
+    "overlaps": ["format_graph"],
+    "hazards": [
+      "MUST NOT run under blanket RunEndpoint transaction — FormatAllEvents opens its own multi-frame FScopedTransaction (BlueprintAssistGraphHandler.cpp:3350)",
+      "Couples MifBridge to a marketplace plugin — guard with Build.cs directory-existence check WITH_BLUEPRINT_ASSIST so bridge builds without BA",
+      "BA silently returns null formatters on read-only graphs (cpp:3426) — detect via zero moved nodes",
+      "Single-flight: second format job while one active must be refused",
+      "BA attach latency after editor-open unbounded from static reading — timeoutSec=30 needs live tuning (UNVERIFIED)"
+    ]
+  },
+  {
+    "name": "format_graph_ba_status",
+    "kind": "new",
+    "axis": "P1_graph_layout",
+    "tier": 2,
+    "u": 4,
+    "e": 4,
+    "r": 5,
+    "bucket": "read-only",
+    "asyncPair": "format_graph_ba_request",
+    "newModules": ["BlueprintAssist"],
+    "pluginEnable": "BlueprintAssist",
+    "verdict": "CONFIRMED",
+    "purpose": "Poll the Plan-A BA format job — phase, size progress, transaction state, moved-node diff vs request-time snapshot, bounds.",
+    "engineApi": "FBAGraphHandler::IsCalculatingNodeSize/GetNumberOfPendingNodesToCache/GetPendingNodeSizeProgress/HasActiveTransaction (BlueprintAssistGraphHandler.h:129,143,145,157) + bridge-side position snapshot diff",
+    "cooked": "n/a (mirrors request)",
+    "prevents": null,
+    "overlaps": [],
+    "hazards": [
+      "GetFormattingChangeData (h:184) deliberately unused — FBAFormattingChangeData has no export macro (BlueprintAssistNodeSizeChangeData.h:77), would not link; snapshot-diff instead"
+    ]
+  },
+  {
+    "name": "fit_comment_to_nodes",
+    "kind": "new",
+    "axis": "P1_graph_layout",
+    "tier": 1,
+    "u": 3,
+    "e": 4,
+    "r": 4,
+    "bucket": "transacted",
+    "asyncPair": null,
+    "newModules": ["AutoSizeComments"],
+    "pluginEnable": null,
+    "verdict": "CORRECTED",
+    "purpose": "Compute union rect of a node set and set comment bounds + membership so agent-made comments behave like human comments.",
+    "engineApi": "UEdGraphNode_Comment::AddNodeUnderComment/ClearNodesUnderComment/SetBounds/GetNodesUnderComment method-level UNREALED_API (EdGraphNode_Comment.h:102,105,108,111); FEdGraphUtilities::CalculateApproximateNodeBoundaries (EdGraphUtilities.h:130); optional FAutoSizeCommentsCacheFile::Get/UpdateNodesUnderComment (AutoSizeCommentsCacheFile.h:80,103)",
+    "cooked": "loose/reconstructed assets only — stripped graphs have nothing to fit around",
+    "prevents": "add_comment writes x/y/width/height blindly with no membership (MifBridgeNodes4.cpp:316-337)",
+    "overlaps": ["add_comment"],
+    "hazards": [
+      "NodesUnderComment is a PRIVATE non-UPROPERTY member (EdGraphNode_Comment.h:119-122) — membership is session-transient, not asset-serialized and not transaction-captured; ASC cache sync is the ONLY persistence, upgrading that dependency to strongly-recommended",
+      "list_object_properties cannot verify membership — verify via exported GetNodesUnderComment().Num() echoed as contained:N"
+    ]
+  },
+  {
+    "name": "export_graph_text",
+    "kind": "new",
+    "axis": "P1_graph_layout",
+    "tier": 1,
+    "u": 3,
+    "e": 5,
+    "r": 5,
+    "bucket": "read-only",
+    "asyncPair": null,
+    "newModules": [],
+    "pluginEnable": null,
+    "verdict": "CORRECTED",
+    "purpose": "Lossless T3D (clipboard-format) export of a graph or node subset — exact pin defaults, positions, classes; export only, no import.",
+    "engineApi": "FEdGraphUtilities::ExportNodesToText UNREALED_API static (EdGraphUtilities.h:110)",
+    "cooked": "stripped graphs export empty node list — return nodes:0, text:\"\" with cookedStripped:true note; full fidelity on loose/reconstructed assets",
+    "prevents": null,
+    "overlaps": ["list_nodes"],
+    "hazards": [
+      "CRASH hazard: ExportNodesToText contains check((LastOuter==ThisOuter)||(LastOuter==NULL)) (EdGraphUtilities.cpp:458-481) — mixed-outer nodes hard-crash; same-graph pre-validation of every nodeGuid is LOAD-BEARING and must run before the engine call",
+      "Impl calls UnMarkAllObjects(OBJECTMARK_TagExp|TagImp) — transient global annotation only, read-only bucket stands"
+    ]
+  }
+]

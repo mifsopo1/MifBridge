@@ -1,0 +1,21 @@
+# Windows-only Unreal plugin: keep CRLF in the working tree for every text file so the editor,
+# Visual Studio and GitHub Desktop all agree and nobody gets a whole-file diff from line endings.
+* text=auto eol=crlf
+
+# Explicit for the file types actually in this repo, so a new extension cannot slip through as LF.
+*.cpp   text eol=crlf
+*.h     text eol=crlf
+*.cs    text eol=crlf
+*.py    text eol=crlf
+*.md    text eol=crlf
+*.json  text eol=crlf
+*.ini   text eol=crlf
+*.uplugin text eol=crlf
+
+# Binary — never touch these.
+*.png   binary
+*.uasset binary
+*.umap  binary
+*.pdb   binary
+*.dll   binary
+*.lib   binary

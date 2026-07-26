@@ -904,6 +904,12 @@ def diagnose_landscape(limit: int = 40) -> dict:
     return _post("diagnose_landscape", limit=limit)
 
 
+@mcp.tool()
+def diagnose_landscape_draws(limit: int = 40) -> dict:
+    "Render-thread follow-up to diagnose_landscape: per-component cached mesh-draw-command counts (base pass vs depth pass) plus LOD screen sizes, for landscape components that pass every game-thread check yet never draw. Briefly blocks on a rendering-thread flush. limit caps the proxies listed, 1-1000."
+    return _post("diagnose_landscape_draws", limit=limit)
+
+
 # --------------------------------------------------------------------------
 # Navigation (nav mesh + nav-driven movement)
 # --------------------------------------------------------------------------
@@ -1084,7 +1090,7 @@ def create_material_instance(parent: str, path: str, scalars: dict = None,
 
 @mcp.tool()
 def set_material_parameter(material: str, scalars: dict = None, vectors: dict = None) -> dict:
-    "Set parameters on an existing MaterialInstanceConstant. Reports unknownParameters for names the PARENT material does not expose, rather than silently accepting a name that will never do anything."
+    "Set parameters on an existing MaterialInstanceConstant. scalars is {name: number}, vectors is {name: {r,g,b,a}} (also accepts {x,y,z,w} or [r,g,b,a]). Reports unknownParameters for names the PARENT material does not expose, rather than silently accepting a name that will never do anything - and if NONE of the names exist, or you pass neither scalars nor vectors, the call now ERRORS instead of returning ok:true/applied:0. Unknown keys are rejected by name (the HTTP endpoint also takes a singular {parameter, value} pair; through this tool use the maps). Texture and static-switch parameters are not supported here."
     return _post("set_material_parameter", material=material, scalars=scalars, vectors=vectors)
 
 
@@ -1328,6 +1334,224 @@ def create_editable_child(source_asset: str, child_path: str = "", variant: str 
                  childPath=child_path or None, variant=variant)
 
 
+# --------------------------------------------------------------------------
+# Spawn into a RUNNING PIE world (not the editor world)
+# (Relocated in Batch C: this block used to sit AFTER the __main__ guard, where
+#  mcp.run() blocks before it executes - the tool never registered at runtime.)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def spawn_actor_in_pie(actor_class: str, location: dict = None, rotation: dict = None,
+                       scale: dict = None, label: str = None, net_mode: str = "server") -> dict:
+    "Spawn an actor into the RUNNING PIE world. spawn_actor_in_level cannot do this - it goes through UEditorActorSubsystem, which serves the EDITOR world. Needed because a mod whose bootstrap is UE4SS (which does not run in the editor) otherwise never spawns under PIE, and placing the actor in the map does not survive a world travel. net_mode picks which PIE world when running multi-client: server (default - a replicated actor spawned here reaches every client), client, or any. Returns hasAuthority/replicates on the spawned actor plus a worlds array of every PIE world, so a wrong-role spawn is visible rather than silent. BeginPlay fires immediately; the actor is not saved to any map and dies with PIE. rotation is x/y/z = pitch/yaw/roll like every other MifBridge transform."
+    return _post("spawn_actor_in_pie", actorClass=actor_class, location=location,
+                 rotation=rotation, scale=scale, label=label, netMode=net_mode)
+
+
+# --------------------------------------------------------------------------
+# Undo introspection / rollback + dirty-package flows
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def list_transactions(limit: int = 20, offset: int = 0, include_objects: bool = False) -> dict:
+    "Inspect the editor undo buffer, newest first (offset 0 = newest). Returns queueLength, undoCount, currentIndex (= queueLength - undoCount - 1, the entry the next undo removes), canUndo/canRedo, undoBarrier, nextUndoTitle, and transactions[{index, id, title, context, primaryObject, recordCount, dataSizeBytes}]. include_objects=True adds every affected object path per entry (can be large). Use it to verify what a bridge mutation actually did and to pick a toIndex for undo_transactions."
+    return _post("list_transactions", limit=limit, offset=offset,
+                 includeObjects=include_objects or None)
+
+
+@mcp.tool()
+def undo_transactions(count: int = 1, to_index: int = None, allow_redo: bool = True) -> dict:
+    "Undo the last N editor transactions (count 1..50), or pass to_index to undo down until currentIndex == to_index (-1 = undo everything; capped at 50 steps per call - call again to continue). count and to_index are mutually exclusive. Returns undone, titlesUndone, stoppedEarly(+reason), and the new queueLength/undoCount/currentIndex. WARNING: undoing a Blueprint-touching transaction reinstances classes - RE-RESOLVE any cached object paths afterwards. allow_redo=False makes the undone steps unredoable."
+    return _post("undo_transactions",
+                 count=None if to_index is not None else count,
+                 toIndex=to_index, allowRedo=allow_redo)
+
+
+@mcp.tool()
+def redo_transactions(count: int = 1, to_index: int = None) -> dict:
+    "Redo the last N undone transactions (count 1..50), or pass to_index to redo up until currentIndex == to_index (capped at 50 steps per call). Returns redone, titlesRedone, stoppedEarly(+reason), and the new queue position. WARNING: the redo stack is fragile - ANY mutating bridge call between undo and redo wipes it (the engine discards redoable entries when a new transaction begins). The measure -> undo -> re-measure -> redo A/B loop only works if the middle steps are pure reads."
+    return _post("redo_transactions",
+                 count=None if to_index is not None else count,
+                 toIndex=to_index)
+
+
+@mcp.tool()
+def list_dirty_packages(kind: str = "all") -> dict:
+    "List every unsaved (dirty) package - what a crash would lose and what save_dirty_packages will touch. kind: content | world | all. Returns count, counts{world, content}, packages[{name, kind, origin(loose|container|new), saveable, assetClass?}]. origin=container means the dirty package lives only in a mounted game pak and can NEVER be saved (saveable=false - the red flag this endpoint exists to raise). World rows include each dirty map's MapBuildData package."
+    return _post("list_dirty_packages", kind=kind)
+
+
+@mcp.tool()
+def save_dirty_packages(maps: bool = True, content: bool = True, dry_run: bool = False) -> dict:
+    "Save EVERY dirty package in one prompt-free, checkout-free call (per-package saves; deliberately avoids the engine bulk path, whose failure dialog would deadlock the bridge's game thread). Returns neededSaving plus per-package results: saved[] (or wouldSave[] when dry_run), failed[{package, reason}] (e.g. read-only files), skipped[{package, reason}] (e.g. untitled maps - things the engine would drop silently), skippedCookedOrigin[] (dirty pak-only packages that can never be saved). Errors during PIE when maps=True - stop_pie first or pass maps=False."
+    return _post("save_dirty_packages", maps=maps, content=content,
+                 dryRun=dry_run or None)
+
+
+# --------------------------------------------------------------------------
+# Material graph authoring (Batch D) - create/edit/read/apply/poll.
+# NOTE: cooked base-game materials have NO expression graph (stripped at cook);
+# graph tools refuse on them - create_material / create_material_instance are
+# the routes that work against cooked content.
+# (This block sits ABOVE main()/the __main__ guard on purpose: a tool defined
+#  after mcp.run() starts never registers - the spawn_actor_in_pie lesson.)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def create_material(path: str, domain: str = "Surface", blend_mode: str = "Opaque",
+                    initial_texture: str = "") -> dict:
+    "Create a NEW master UMaterial asset at a /Game/ path. domain: Surface | DeferredDecal | LightFunction | Volume | PostProcess | UI. blend_mode: Opaque | Masked | Translucent | Additive | Modulate | AlphaComposite | AlphaHoldout. initial_texture (optional asset path) auto-adds a TextureSample wired to BaseColor (or Normal for normal maps). The initial shader compile is ASYNC - poll shader_compile_status. Errors if the path already exists."
+    return _post("create_material", path=path, domain=domain, blendMode=blend_mode,
+                 initialTexture=initial_texture or None)
+
+
+@mcp.tool()
+def create_material_function(path: str, description: str = "", expose_to_library: bool = None) -> dict:
+    "Create a NEW UMaterialFunction asset at a /Game/ path (reusable graph fragment; call it from materials via add_material_expression class=MaterialFunctionCall). Add FunctionInput/FunctionOutput expressions to define its interface. expose_to_library lists it in the material editor's function library."
+    return _post("create_material_function", path=path, description=description or None,
+                 exposeToLibrary=expose_to_library)
+
+
+@mcp.tool()
+def add_material_expression(path: str, expression_class: str, x: int = 0, y: int = 0,
+                            properties: dict = None, asset: str = "") -> dict:
+    "Add a node to a Material or MaterialFunction graph. expression_class accepts short names (ScalarParameter, VectorParameter, TextureSample, Multiply, Add, Lerp, TexCoord, Fresnel, FunctionInput, ...) or full MaterialExpression* names; unknown class errors with the 10 nearest matches. properties is a {name: value} object applied by reflection (e.g. {'ParameterName': 'Roughness', 'DefaultValue': 0.35} or {'Texture': '/Game/T_Rock'}); unknown property name = error, and a failed call adds NOTHING. asset (optional path) auto-wires TextureSample/MaterialFunctionCall/CollectionParameter nodes. Returns expressionName - the handle for connect/delete. Refuses on cooked materials (graph stripped at cook)."
+    return _post("add_material_expression", path=path, expressionClass=expression_class,
+                 x=x, y=y, properties=properties, asset=asset or None)
+
+
+@mcp.tool()
+def connect_material_expressions(path: str, from_expression: str, to_expression: str,
+                                 from_output: str = "", to_input: str = "") -> dict:
+    "Wire one expression's output into another expression's input inside a material/function graph. from_expression/to_expression each accept THREE forms: the exact object name (from add_material_expression/list_material_expressions), a ParameterName ('Tint'), or a class short name when the graph holds exactly ONE node of that class ('Multiply'). Two candidates under either alias = error listing them, never a guess; the response echoes the resolved OBJECT names. Empty pin names mean 'first pin'; masked outputs accept R/G/B/A. A failed connect echoes the target's input pins and the source's output pins so the next call can self-correct."
+    return _post("connect_material_expressions", path=path, fromExpression=from_expression,
+                 fromOutput=from_output or None, toExpression=to_expression,
+                 toInput=to_input or None)
+
+
+@mcp.tool()
+def connect_material_property(path: str, from_expression: str, material_property: str,
+                              from_output: str = "") -> dict:
+    "Wire an expression output into a MATERIAL OUTPUT pin - without this the graph never affects pixels. from_expression accepts the exact object name, a ParameterName, or a class short name unique in the graph (ambiguity errors with the candidates). material_property (MP_ prefix optional, case-insensitive): BaseColor, Roughness, Metallic, Specular, Normal, EmissiveColor, Opacity, OpacityMask, Anisotropy, Tangent, WorldPositionOffset, SubsurfaceColor, ClearCoat, ClearCoatRoughness, AmbientOcclusion, Refraction, CustomizedUVs0-7, PixelDepthOffset, ShadingModel, Displacement. Materials only (functions use FunctionOutput expressions). 'connect failed' usually means the property is disabled for the material's domain/blend mode (e.g. Opacity needs Translucent)."
+    return _post("connect_material_property", path=path, fromExpression=from_expression,
+                 fromOutput=from_output or None, materialProperty=material_property)
+
+
+@mcp.tool()
+def delete_material_expression(path: str, expression: str = "", delete_all: bool = False) -> dict:
+    "Remove one node (expression=<name>) or every node (delete_all=True) from a material/function graph; the engine disconnects it from everything first. Exactly one of the two must be given. expression accepts the exact object name, a ParameterName, or a class short name unique in the graph - an ambiguous alias ERRORS with the candidates rather than deleting a coin-flip node. Returns deleted + remaining counts."
+    return _post("delete_material_expression", path=path, expression=expression or None,
+                 deleteAll=delete_all or None)
+
+
+@mcp.tool()
+def list_material_expressions(path: str, include_connections: bool = True,
+                              include_properties: bool = True) -> dict:
+    "Read back a material/function graph: expressions[{name, class, index, x, y, properties{}, inputs[{input, from, fromOutput}]}], connectionCount, and (materials) propertyBindings[{property, from, fromOutput}] - the verification read for every graph mutation. On cooked materials returns numExpressions:0 with cooked:true (the graph is STRIPPED at cook, not empty - do not confuse the two)."
+    return _post("list_material_expressions", path=path,
+                 includeConnections=include_connections, includeProperties=include_properties)
+
+
+@mcp.tool()
+def layout_material_expressions(path: str) -> dict:
+    "Auto-arrange a material/function graph's nodes in a grid so a human opening the asset sees something readable. Only nodes REACHABLE from material property inputs (or function inputs/outputs) are moved - disconnected nodes stay put."
+    return _post("layout_material_expressions", path=path)
+
+
+@mcp.tool()
+def recompile_material(path: str) -> dict:
+    "Apply graph/parameter edits to the renderer - REQUIRED after add/connect/delete for the changes to reach pixels. Dispatches on asset class: UMaterial (non-blocking recompile core; deliberately avoids the engine library call, whose hidden tail runs garbage collection twice, opens a modal progress dialog, and busy-waits on debug shaders - each one lethal mid-HTTP-handler), UMaterialFunction (updates every material using it), or UMaterialInstanceConstant. Returns immediately with {compiling, numRemainingJobs}; shader compilation continues in the BACKGROUND - poll shader_compile_status until compiling=false. Refuses on cooked materials (shaders ship as fixed permutations)."
+    return _post("recompile_material", path=path)
+
+
+@mcp.tool()
+def shader_compile_status() -> dict:
+    "Poll the editor-wide shader compiler (GShaderCompilingManager): {compiling, numRemainingJobs, numOutstandingJobs, numPendingJobs}. THE poll half for recompile_material / create_material (and level-load shader churn). Numbers decrease toward zero; compiling=false with numRemainingJobs=0 means quiescent - safe to read get_material_stats-style numbers or capture pixels."
+    return _post("shader_compile_status")
+
+
+# --------------------------------------------------------------------------
+# Cooked-Blueprint reconstruction (Batch R) - kr_* endpoints.
+# These are NOT MifBridge built-ins: they are registered into the bridge at
+# editor startup by the MifKismetReconstructor plugin (self_audit reports them
+# with provider "MifKismetReconstructor"). If that plugin is absent every kr_*
+# call returns "unknown endpoint" and the rest of the bridge is unaffected.
+# They are the route to cooked Blueprint LOGIC, which list_graphs / list_nodes
+# structurally cannot read (cooking strips the editor-only UBlueprint).
+# (This block sits ABOVE main()/the __main__ guard on purpose: a tool defined
+#  after mcp.run() starts never registers - the spawn_actor_in_pie lesson.)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def kr_list_cooked_blueprints(path_contains: str = "/Game/", cooked_only: bool = True,
+                              include_widgets: bool = True, offset: int = 0,
+                              limit: int = 200) -> dict:
+    "Census of cooked Blueprint packages straight from the asset registry - the way to size and page the reconstructable corpus before touching it. path_contains is a SUBSTRING of the package name ('*' = every mounted root incl. DLC). Returns total (every Blueprint package before filtering), matched (after), returned, truncated, and blueprints[{objectPath, packageName, name, class, cooked, loaded, generatedClass}] sorted by package so consecutive pages neither overlap nor skip. Loads NOTHING - 'loaded' reports current editor state, not reachability. Rows prefer the *_C generated-class path, which is what every other kr_* tool takes. limit>2000 is refused, not clamped."
+    return _post("kr_list_cooked_blueprints", pathContains=path_contains,
+                 cookedOnly=cooked_only, includeWidgets=include_widgets,
+                 offset=offset, limit=limit)
+
+
+@mcp.tool()
+def kr_dump_blueprint(asset: str, function_filter: str = "", include_bytecode: bool = False,
+                      max_statements_per_function: int = 500, include_histogram: bool = True,
+                      include_properties: bool = True, include_events: bool = True,
+                      offset: int = 0, limit: int = 100) -> dict:
+    "Structure of a cooked BlueprintGeneratedClass as JSON: own functions (name, scriptBytes, numParams, flags), own properties, event thunks, the parent chain, and counts. asset = the objectPath, ideally the .<Name>_C class path. OUTPUT SIZE IS THE CONSTRAINT: by default NOTHING is disassembled (one cheap reflection pass); include_bytecode=True disassembles ONLY the functions on the returned page, and with no function_filter it force-caps limit at 10 and says so in note/effectiveLimit. max_statements_per_function truncates each array while still reporting totalStatements. opcodeHistogram keys are hex; each statement's 'Inst' field carries the readable name. Works on loose/uncooked Blueprints too (cooked:false says which you got). Use kr_disassemble_function for one function in full."
+    return _post("kr_dump_blueprint", asset=asset, functionFilter=function_filter or None,
+                 includeBytecode=include_bytecode,
+                 maxStatementsPerFunction=max_statements_per_function,
+                 includeHistogram=include_histogram, includeProperties=include_properties,
+                 includeEvents=include_events, offset=offset, limit=limit)
+
+
+@mcp.tool()
+def kr_disassemble_function(asset: str, function: str, statement_offset: int = 0,
+                            statement_limit: int = 2000, include_raw: bool = True) -> dict:
+    "THE tool for reading cooked Blueprint logic: one function's Kismet bytecode as a structured JSON statement stream. asset = the .<Name>_C class path, function = an exact OWN function name (inherited functions error with the parent class to call instead; near-miss names are listed). statement_offset/statement_limit page the STATEMENT ARRAY - each statement's StatementIndex field is a BYTE OFFSET into Script (that is what jump targets reference), so do not confuse the two. totalStatements is returned whether or not paginated, so pages concatenate exactly. include_raw=False strips each statement to {Inst, StatementIndex} for cheap control-flow views. An unknown opcode is a DEGRADE not an error: disassemblyFailed/failedOpcode/failedAtIndex plus every statement decoded before the abort."
+    return _post("kr_disassemble_function", asset=asset, function=function,
+                 statementOffset=statement_offset, statementLimit=statement_limit,
+                 includeRaw=include_raw)
+
+
+@mcp.tool()
+def kr_list_events(asset: str, kind: str = "all", include_frame_param_map: bool = True) -> dict:
+    "Event census of a cooked class: every event thunk with its kind, its RECOVERED ubergraph entry offset, param count, and the authoritative frame->param map (read out of the thunk's own bytecode - the generated frame property name must never be reconstructed by hand). kind filters all | event | bndEvt | inpActEvt | sequenceEvent. A Blueprint with no event graph returns ok:true, events:[], status:'NO_UBERGRAPH' - an EMPTY LIST, never an error. counts.realFunctions is own functions that call no ubergraph (ordinary functions, not failed events); rawPointerHits vs identityCalls exposes the gap between the byte-scan prefilter and confirmed calls. Events that fail recovery keep their row with recovered:false and a status reason."
+    return _post("kr_list_events", asset=asset, kind=kind,
+                 includeFrameParamMap=include_frame_param_map)
+
+
+@mcp.tool()
+def kr_analyze_ubergraph(asset: str, include_per_event: bool = True,
+                         include_offsets: bool = False) -> dict:
+    "Ubergraph slice analysis for ONE cooked Blueprint: prologue shape, per-event reachability, and the shared/unreached statement counts. Read-only - builds no graphs, mints nothing, compiles nothing. The number that matters is counts.sharedLatent: a latent statement (Delay/timeline) reached by more than one event cannot be split into per-event graphs faithfully, because Delay dedupes on CallbackTarget+UUID. Numbers are self-checkable: analysedStmts == reached1 + shared + unreached (echoed in the 'invariant' field); prologue statements and EndOfScript are excluded from analysedStmts on purpose, which is what keeps 'unreached' meaningful. walkCapHit=true means the counts are a LOWER BOUND; disasmAborted=true means they are PARTIAL. include_offsets adds the raw sharedLatent/unreached byte offsets."
+    return _post("kr_analyze_ubergraph", asset=asset, includePerEvent=include_per_event,
+                 includeOffsets=include_offsets)
+
+
+@mcp.tool()
+def kr_pin_type_from_property(class_path: str, property: str, self_scope: str = "") -> dict:
+    "Turn any class property into the exact type string add_variable / add_pin / create_function / set_pin_type accept - instead of guessing category/subcategory spellings. class_path takes a _C class path, a plain asset path, or a native class path (/Script/Engine.Actor). Returns TWO forms: pinType (the reconstructor's lossless FEdGraphPinType JSON) and bridgeType (the short grammar), plus bridgeContainer/bridgeValueType and a ready-to-paste addVariableExample. bridgeTypeUsable=false with bridgeTypeNote when a pin has no grammar spelling at all (delegates, wildcards, field paths) - never a plausible-looking string that would be rejected. Object/class refs are emitted as FULL PATHS, enums with the explicit 'enum:' prefix, and float vs double is read from the pin subcategory (getting that wrong breaks UMG TAttribute<float> bindings). Works on cooked assets: FProperty reflection survives cooking."
+    # "class" is a Python keyword, so the bridge key cannot be a named parameter here.
+    return _post("kr_pin_type_from_property",
+                 **{"class": class_path, "property": property, "selfScope": self_scope or None})
+
+
+@mcp.tool()
+def kr_reconstruct_request(source_asset: str, mode: str = "copy", variant: str = "",
+                           function: str = "", target_path: str = "") -> dict:
+    "Start the single kr job: decompile a cooked Blueprint's bytecode into editable K2 graphs. mode='copy' mints a whole persistent editable Blueprint (variant: child | sibling | uncooked | sibling_full | full) and SAVES it; mode='function' reconstructs ONE function into a scratch Blueprint under /Game/Reconstructed and leaves it dirty (save with save_dirty_packages). variant is copy-only and function is function-only - passing the wrong one is an ERROR, never ignored. Requesting the ubergraph in function mode is refused with the reason. Returns a jobId IMMEDIATELY: the work is deferred one tick and is ATOMIC (the HTTP listener is a game-thread ticker, so nothing is read off the socket while it runs - mid-job progress is impossible, not merely unimplemented). Poll kr_reconstruct_status. ONE job slot, no queue: a second request while one runs is REFUSED naming the running jobId."
+    return _post("kr_reconstruct_request", sourceAsset=source_asset, mode=mode,
+                 variant=variant or None, function=function or None,
+                 targetPath=target_path or None)
+
+
+@mcp.tool()
+def kr_reconstruct_status(job_id: str = "") -> dict:
+    "Poll the single kr job slot (omit job_id for the retained job). Returns state (queued|running|done|failed), phase, elapsedMs, functionsTotalEstimate vs functionsDone/functionsReconstructed/functionsDegraded, eventsDone/eventsReconstructed, nodesCreated, compile{measured, errors, warnings, firstError} and the kind-specific result{} (blueprintId, graph, graphNodes, clean, saved). compile.measured=false means nothing measured it - errors:0 there does NOT mean a clean compile; call validate on result.blueprintId for authoritative numbers. Exactly ONE record is retained, so poll-after-done works but is lost once the next request is accepted; an unknown job_id answers found:false naming the id that IS retained. Job records are in-memory only and do not survive an editor restart."
+    return _post("kr_reconstruct_status", jobId=job_id or None)
+
+
 def main():
     global DEBUG
     parser = argparse.ArgumentParser(description="MifBridge MCP server")
@@ -1340,14 +1564,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# --------------------------------------------------------------------------
-# Spawn into a RUNNING PIE world (not the editor world)
-# --------------------------------------------------------------------------
-
-@mcp.tool()
-def spawn_actor_in_pie(actor_class: str, location: dict = None, rotation: dict = None,
-                       scale: dict = None, label: str = None, net_mode: str = "server") -> dict:
-    "Spawn an actor into the RUNNING PIE world. spawn_actor_in_level cannot do this - it goes through UEditorActorSubsystem, which serves the EDITOR world. Needed because a mod whose bootstrap is UE4SS (which does not run in the editor) otherwise never spawns under PIE, and placing the actor in the map does not survive a world travel. net_mode picks which PIE world when running multi-client: server (default - a replicated actor spawned here reaches every client), client, or any. Returns hasAuthority/replicates on the spawned actor plus a worlds array of every PIE world, so a wrong-role spawn is visible rather than silent. BeginPlay fires immediately; the actor is not saved to any map and dies with PIE. rotation is x/y/z = pitch/yaw/roll like every other MifBridge transform."
-    return _post("spawn_actor_in_pie", actorClass=actor_class, location=location,
-                 rotation=rotation, scale=scale, label=label, netMode=net_mode)

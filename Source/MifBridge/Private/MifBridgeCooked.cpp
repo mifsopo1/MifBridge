@@ -48,6 +48,12 @@ namespace MifBridge
 			FPackageName::EPackageLocationFilter::FileSystem) == FPackageName::EPackageLocationFilter::None;
 	}
 
+	// Strict unknown-param rejection was born HERE in Batch B (find_assets accepted
+	// {"recursive": false} with ok:true and ignored it — docs/audit/03_GAPS_AND_RISKS.md §7.1)
+	// and promoted to the shared RejectUnknownParams in MifBridgeHandlers.h/MifBridgeCommon.cpp
+	// in Batch C, so every handler file rejects through ONE implementation. Callers below are
+	// unchanged.
+
 	// Mirrors ModKit_GetGameContainerDir() in IPlatformFilePak.cpp - the project-root text file naming the
 	// game install whose containers get mounted. Re-read here (rather than exposed from the engine) so this
 	// stays a read-only observer with no engine-side API to keep in sync.
@@ -83,6 +89,10 @@ namespace MifBridge
 	// in the normal mounted-pak list and are otherwise invisible from inside the editor.
 	void H_list_mounted_containers(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, {}, TEXT("(none - this endpoint takes no parameters)")))
+		{
+			return;
+		}
 		Out->SetBoolField(TEXT("ioDispatcherInitialized"), FIoDispatcher::IsInitialized());
 
 		FString ConfigPath;
@@ -180,9 +190,10 @@ namespace MifBridge
 		Out->SetObjectField(TEXT("assetCounts"), Counts);
 	}
 
-	//   in:  { class?: "DataTable"|"/Script/Engine.DataTable", pathPrefix?: "/Game/Blueprints",
+	//   in:  { class?: "DataTable"|"/Script/Engine.DataTable" (aliases: className, type),
+	//          pathPrefix?: "/Game/Blueprints",
 	//          nameContains?: "NPC", origin?: "container"|"loose"|"any", recursiveClasses?: bool (default true),
-	//          limit?: int (default 100) }
+	//          limit?: int (default 100) }   — any other key is rejected by name, never ignored
 	//   out: { count, truncated, assets[{ path, name, class, package, origin, loaded }] }
 	// The exploration workhorse: query the asset registry for base-game content without needing to know
 	// exact paths up front. Unlike list_blueprints (which only reports already-loaded UBlueprints), this
@@ -190,7 +201,18 @@ namespace MifBridge
 	// BlueprintGeneratedClass assets that have no UBlueprint wrapper at all.
 	void H_find_assets(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		const FString ClassName = JStr(In, TEXT("class"));
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("class"), TEXT("className"), TEXT("type"), TEXT("pathPrefix"), TEXT("nameContains"),
+			  TEXT("origin"), TEXT("recursiveClasses"), TEXT("limit") },
+			TEXT("class (aliases: className, type), pathPrefix, nameContains, origin, recursiveClasses, limit"),
+			{{ TEXT("recursive"),
+			   TEXT("not implemented - pathPrefix matching is ALWAYS recursive; recursiveClasses controls class-hierarchy matching") }}))
+		{
+			return;
+		}
+		// PM-001 house pattern: accept the spellings a caller would plausibly use for the class filter.
+		// 'className' was live-guessed during the audit and silently matched nothing.
+		const FString ClassName = JStrAny(In, { TEXT("class"), TEXT("className"), TEXT("type") });
 		const FString PathPrefix = JStr(In, TEXT("pathPrefix"));
 		const FString NameContains = JStr(In, TEXT("nameContains"));
 		const FString Origin = JStr(In, TEXT("origin"), TEXT("any"));
@@ -277,6 +299,10 @@ namespace MifBridge
 	// not, and what's inside it. This is the endpoint for "why does this base-game asset behave oddly".
 	void H_describe_package(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, { TEXT("package"), TEXT("path") }, TEXT("package (alias: path)")))
+		{
+			return;
+		}
 		FString PackageName = JStr(In, TEXT("package"));
 		if (PackageName.IsEmpty())
 		{
@@ -431,6 +457,10 @@ namespace MifBridge
 
 	void H_diagnose_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, { TEXT("limit") }, TEXT("limit")))
+		{
+			return;
+		}
 		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 40), 1, 1000);
 
 		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
@@ -788,6 +818,10 @@ namespace MifBridge
 	// is the only remaining explanation consistent with every other measurement.
 	void H_diagnose_landscape_draws(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, { TEXT("limit") }, TEXT("limit")))
+		{
+			return;
+		}
 		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 40), 1, 1000);
 
 		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;

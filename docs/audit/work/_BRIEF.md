@@ -104,7 +104,7 @@ an `## UNVERIFIED` section at the bottom of your axis file, never the main catal
 confidently wrong signature costs more than a missing entry. Cite what you READ, not what you
 remember about Unreal.
 
-## Already covered — diff every idea against this list (159 endpoints in source today)
+## Already covered — diff every idea against this list (160 endpoints in source today)
 
 add_bind_dispatcher add_branch add_break_struct add_call_dispatcher add_cast add_class_cast
 add_comment add_component add_create_widget add_custom_event add_enum_literal add_enum_value
@@ -133,8 +133,8 @@ run_console_captured save_blueprint save_level_as save_package scene_report scul
 select_level_actors self_audit set_actor_label set_actor_transform set_component_transform
 set_function_flags set_material_parameter set_pin_default set_pin_type set_property
 set_spline_points set_variable_default set_variable_flags set_viewport_camera
-set_widget_is_variable snap_actors_to_ground spawn_actor_in_level spawn_many splice_into_exec
-start_pie stop_pie trace_ground trigger_cook validate write_datatable_rows
+set_widget_is_variable snap_actors_to_ground spawn_actor_in_level spawn_actor_in_pie spawn_many
+splice_into_exec start_pie stop_pie trace_ground trigger_cook validate write_datatable_rows
 
 Notes on the covered set, so you don't re-propose what exists in another shape:
 - `set_property`/`get_property`/`list_object_properties` walk a dot-path from ANY objectPath —
@@ -142,8 +142,9 @@ Notes on the covered set, so you don't re-propose what exists in another shape:
   graph-node objects, placed actors. A huge share of "missing" capabilities are really just
   set_property with a documented objectPath. Only propose a dedicated endpoint over this route
   when it adds real value (validation, batching, index/key addressing, post-edit side effects).
-- `set_viewport_camera` / `get_viewport_camera` / `focus_viewport` exist in source (pending
-  editor rebuild). Editor-camera control is CLOSED — do not re-propose.
+- `set_viewport_camera` / `get_viewport_camera` / `focus_viewport` / `spawn_actor_in_pie` exist
+  in source (pending editor rebuild — live DLL serves 156 of the 160). Editor-camera control is
+  CLOSED and PIE-world actor spawning is COVERED — do not re-propose either.
 - Struct/enum authoring exists (create_struct/add_struct_member/…, create_enum/…).
 - `run_console` + `run_console_captured` cover every console command / CVar / exec.
 - `batch` composes endpoints; `validate` compiles+reports; PIE start/stop/status/actors exist

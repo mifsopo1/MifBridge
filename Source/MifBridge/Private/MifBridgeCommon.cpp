@@ -1,5 +1,8 @@
 // MifBridge — shared graph-edit helpers, resolution, serialization, and the dispatch core.
 #include "MifBridgeHandlers.h"
+#include "MifBridgeEndpointRegistry.h"      // Public/ — the provider registration interface
+#include "Dom/JsonObject.h"                 // FJsonObject is only FORWARD-DECLARED in the registry
+                                            // header (Json is a PRIVATE dep, MifBridge.Build.cs:39)
 #include "MifBridgeLog.h"
 
 #include "EdGraph/EdGraph.h"
@@ -222,15 +225,87 @@ namespace MifBridge
 			MIF_BIND(self_audit);
 			// Batch
 			MIF_BIND(batch);
+			// Undo introspection/rollback + dirty-package flows
+			MIF_BIND(list_transactions);
+			MIF_BIND(undo_transactions);
+			MIF_BIND(redo_transactions);
+			MIF_BIND(list_dirty_packages);
+			MIF_BIND(save_dirty_packages);
+			// Material graph authoring (Batch D)
+			MIF_BIND(create_material);
+			MIF_BIND(create_material_function);
+			MIF_BIND(add_material_expression);
+			MIF_BIND(connect_material_expressions);
+			MIF_BIND(connect_material_property);
+			MIF_BIND(delete_material_expression);
+			MIF_BIND(list_material_expressions);
+			MIF_BIND(layout_material_expressions);
+			MIF_BIND(recompile_material);
+			MIF_BIND(shader_compile_status);
 #undef MIF_BIND
 		}
 		return Map;
+	}
+
+	// --- External (provider-registered) endpoints ----------------------------
+	// Public/MifBridgeEndpointRegistry.h is the contract. Function-local static: initialised on first
+	// use, so a provider whose module loads at "Default" (MifKismetReconstructor.uplugin:17) can
+	// populate it before MifBridge's own StartupModule runs at "PostEngineInit" — the OS loader maps
+	// this DLL when the provider DLL loads, long before FMifBridgeModule::StartupModule.
+	// NOTHING in this block may touch module-startup state (server, routes, menus, token).
+	static TMap<FString, FExternalEndpointDesc>& ExternalRegistry()
+	{
+		static TMap<FString, FExternalEndpointDesc> Map;
+		return Map;
+	}
+
+	// Flipped by FMifBridgeServer::Start() once the route table is built (MifBridgeServer.cpp:88-108).
+	// Routes bind ONCE per name, so an endpoint registered after this point would be dispatchable by
+	// RunEndpoint but have no HTTP route — invisible with no error anywhere. Refuse it loudly instead.
+	static bool GbRouteTableLive = false;
+	void MarkRouteTableLive() { GbRouteTableLive = true; }
+
+	bool RegisterExternalEndpoint(FExternalEndpointDesc Desc, FString* OutError)
+	{
+		auto Reject = [OutError](const FString& Why) { if (OutError) { *OutError = Why; } return false; };
+
+		if (!IsInGameThread())          { return Reject(TEXT("RegisterExternalEndpoint must be called on the game thread (from your module's StartupModule)")); }
+		if (Desc.Name.IsEmpty())        { return Reject(TEXT("endpoint name is empty")); }
+		if (!Desc.Handler)              { return Reject(FString::Printf(TEXT("endpoint '%s' has no handler"), *Desc.Name)); }
+		if (Desc.Provider.IsEmpty())    { return Reject(FString::Printf(TEXT("endpoint '%s' has no Provider (self_audit attributes every external endpoint to a provider)"), *Desc.Name)); }
+		if (GbRouteTableLive)           { return Reject(FString::Printf(TEXT("endpoint '%s': route table already live — register from your module's StartupModule (routes bind once at server start)"), *Desc.Name)); }
+		if (Handlers().Contains(Desc.Name)) { return Reject(FString::Printf(TEXT("endpoint '%s' collides with a MifBridge built-in"), *Desc.Name)); }
+		if (const FExternalEndpointDesc* Existing = ExternalRegistry().Find(Desc.Name))
+		{
+			return Reject(FString::Printf(TEXT("endpoint '%s' already registered by provider '%s'"), *Desc.Name, *Existing->Provider));
+		}
+
+		const FString Name = Desc.Name;
+		ExternalRegistry().Add(Name, MoveTemp(Desc));
+		return true;
+	}
+
+	int32 UnregisterExternalEndpoints(const FString& Provider)
+	{
+		TArray<FString> Doomed;
+		for (const TPair<FString, FExternalEndpointDesc>& KV : ExternalRegistry())
+		{
+			if (KV.Value.Provider == Provider) { Doomed.Add(KV.Key); }
+		}
+		for (const FString& Name : Doomed) { ExternalRegistry().Remove(Name); }
+		return Doomed.Num();
 	}
 
 	TArray<FString> GetEndpointNames()
 	{
 		TArray<FString> Names;
 		Handlers().GetKeys(Names);
+		// Externals are first-class from here down: this single merge is what makes the route-bind
+		// loop (MifBridgeServer.cpp:88-108) and self_audit's endpoint list pick them up unchanged.
+		for (const TPair<FString, FExternalEndpointDesc>& KV : ExternalRegistry())
+		{
+			Names.AddUnique(KV.Key);
+		}
 		return Names;
 	}
 
@@ -246,6 +321,13 @@ namespace MifBridge
 			TEXT("list_dispatchers"), TEXT("list_components"), TEXT("list_interfaces"),
 			TEXT("list_datatables"), TEXT("read_datatable"), TEXT("get_datatable_row"),
 			TEXT("get_property"), TEXT("list_object_properties"),
+			// Pure reflection reads (audit 03_GAPS_AND_RISKS.md §7.6): describe_class walks
+			// TFieldIterator over a resolved class, list_enum_values reads UEnum name tables —
+			// neither calls Modify() or creates anything persistent. Left out of this set they
+			// were transacted, so EVERY call pushed an empty undo entry: exactly the undo-stack
+			// pollution this bucket exists to prevent. (describe_class may LoadObject the class;
+			// loading is not mutating — find_assets and the list_* endpoints already load here.)
+			TEXT("describe_class"), TEXT("list_enum_values"),
 			TEXT("describe_animation"), TEXT("list_animations"),
 			TEXT("list_struct_members"), TEXT("list_level_actors"),
 			// PIE start/stop only QUEUE a request — they mutate no asset and must not open a
@@ -264,9 +346,24 @@ namespace MifBridge
 			TEXT("list_mounted_containers"), TEXT("find_assets"), TEXT("describe_package"),
 			TEXT("diagnose_landscape"), TEXT("diagnose_landscape_draws"),
 			TEXT("self_audit"),
-			TEXT("compile"), TEXT("validate"), TEXT("run_console")
+			TEXT("compile"), TEXT("validate"), TEXT("run_console"),
+			// Undo-buffer + dirty-package introspection — pure queries of editor-session state.
+			// Transacting these would push an empty entry onto the very stack list_transactions
+			// exists to report (and list_dirty_packages must not dirty anything to list it).
+			TEXT("list_transactions"), TEXT("list_dirty_packages"),
+			// Material graph read-back + shader-compile poll (Batch D): pure queries. The poll in
+			// particular gets hammered in a loop after every recompile — transacting it would
+			// flood the undo stack with one empty entry per poll tick.
+			TEXT("list_material_expressions"), TEXT("shader_compile_status")
 		};
-		return ReadOnly.Contains(Endpoint);
+		if (ReadOnly.Contains(Endpoint)) { return true; }
+		// External endpoints declare exactly ONE bucket in their descriptor, so this fallback can
+		// never put a name in two buckets (policyContradictions stays structurally empty for them).
+		if (const FExternalEndpointDesc* Ext = ExternalRegistry().Find(Endpoint))
+		{
+			return Ext->Bucket == EEndpointBucket::ReadOnly;
+		}
+		return false;
 	}
 
 	// Endpoints that run a full FKismetEditorUtilities::CompileBlueprint (class reinstancing)
@@ -295,9 +392,38 @@ namespace MifBridge
 			TEXT("create_landscape"),
 			// Swapping or discarding the entire UWorld invalidates every object an outer
 			// transaction recorded — the same hazard class as compiling inside one.
-			TEXT("new_level"), TEXT("load_level"), TEXT("save_level_as")
+			TEXT("new_level"), TEXT("load_level"), TEXT("save_level_as"),
+			// Undo/redo REPLAY prior transactions: beginning one inside RunEndpoint's blanket
+			// transaction violates the engine's own invariant (ensure(!GIsTransacting) in
+			// UTransBuffer::BeginInternal, TransBuffer.h:74) — and an "undo the undo" entry is
+			// nonsense. Being here also makes IsCompileHeavyEndpoint true, which keeps them out
+			// of batch's single open transaction for the same reason. They can also trigger
+			// Blueprint reinstancing via PostUndo (EditorServer.cpp:1406) — the exact dead-CDO
+			// hazard this bucket exists to fence off.
+			TEXT("undo_transactions"), TEXT("redo_transactions"),
+			// Saving is not undoable, and a wrapping transaction would record package dirty-flag
+			// state into the undo stack (FTransaction::FPackageRecord, Transactor.h:240-254) —
+			// the asset-lifecycle precedent above applies.
+			TEXT("save_dirty_packages"),
+			// New-asset creation with explicit AssetCreated + MarkPackageDirty — the
+			// create_material_instance precedent (untransacted). create_material also enqueues
+			// the material's initial shader compile via PostEditChange.
+			TEXT("create_material"), TEXT("create_material_function"),
+			// Regenerates shader maps and updates every dependent instance
+			// (FMaterialUpdateContext). Shader-state teardown captured by an undo step is the
+			// same crash family as a full Blueprint compile inside an outer transaction — and
+			// per the D-axis Phase-2 verdict the engine's own RecompileMaterial tail runs
+			// CollectGarbage twice, which must never happen inside an open transaction either.
+			TEXT("recompile_material")
 		};
-		return SelfManaged.Contains(Endpoint);
+		if (SelfManaged.Contains(Endpoint)) { return true; }
+		// Mirror of the read-only fallback. IsCompileHeavyEndpoint derives from this function, so an
+		// external SelfManaged endpoint is fenced out of batch's open transaction for free.
+		if (const FExternalEndpointDesc* Ext = ExternalRegistry().Find(Endpoint))
+		{
+			return Ext->Bucket == EEndpointBucket::SelfManaged;
+		}
+		return false;
 	}
 
 	// --- self_audit ---------------------------------------------------------
@@ -311,6 +437,10 @@ namespace MifBridge
 		Names.Sort();
 
 		TArray<TSharedPtr<FJsonValue>> All, ReadOnly, SelfManaged, CompileHeavy, Transacted;
+		// Parallel object array. The flat `endpoints` string array (All) is deliberately NOT replaced:
+		// the README's MIF_BIND<->@mcp.tool diff and every existing consumer parse it. Additive only.
+		TArray<TSharedPtr<FJsonValue>> EndpointRows;
+		TMap<FString, int32> ProviderCounts;
 		for (const FString& Name : Names)
 		{
 			All.Add(MakeShared<FJsonValueString>(Name));
@@ -321,10 +451,35 @@ namespace MifBridge
 			if (IsCompileHeavyEndpoint(Name)) { CompileHeavy.Add(MakeShared<FJsonValueString>(Name)); }
 			// Everything else gets RunEndpoint's blanket transaction.
 			if (!bRO && !bSM) { Transacted.Add(MakeShared<FJsonValueString>(Name)); }
+
+			// Per-endpoint attribution: a built-in is owned by "MifBridge", an external by the
+			// provider that registered it — so endpoint drift is attributable to a plugin, not just
+			// noticed. Bucket is reported from the SAME predicates that dispatch uses, never from a
+			// second copy of the policy.
+			const FExternalEndpointDesc* Ext = ExternalRegistry().Find(Name);
+			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+			Row->SetStringField(TEXT("name"), Name);
+			Row->SetStringField(TEXT("provider"), Ext ? Ext->Provider : TEXT("MifBridge"));
+			Row->SetStringField(TEXT("bucket"), bRO ? TEXT("readOnly") : bSM ? TEXT("selfManaged") : TEXT("transacted"));
+			if (Ext && !Ext->Summary.IsEmpty()) { Row->SetStringField(TEXT("summary"), Ext->Summary); }
+			EndpointRows.Add(MakeShared<FJsonValueObject>(Row));
+			if (Ext) { ProviderCounts.FindOrAdd(Ext->Provider)++; }
 		}
 
 		Out->SetNumberField(TEXT("endpointCount"), Names.Num());
 		Out->SetArrayField(TEXT("endpoints"), All);
+		Out->SetArrayField(TEXT("endpointDetails"), EndpointRows);
+		Out->SetNumberField(TEXT("externalEndpointCount"), ExternalRegistry().Num());
+
+		TArray<TSharedPtr<FJsonValue>> Providers;
+		for (const TPair<FString, int32>& KV : ProviderCounts)
+		{
+			TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+			P->SetStringField(TEXT("provider"), KV.Key);
+			P->SetNumberField(TEXT("endpointCount"), KV.Value);
+			Providers.Add(MakeShared<FJsonValueObject>(P));
+		}
+		Out->SetArrayField(TEXT("externalProviders"), Providers);
 
 		TSharedRef<FJsonObject> Buckets = MakeShared<FJsonObject>();
 		Buckets->SetArrayField(TEXT("readOnly"), ReadOnly);
@@ -369,7 +524,10 @@ namespace MifBridge
 		Out->SetBoolField(TEXT("ok"), true);
 
 		const FHandlerFn* Fn = Handlers().Find(Endpoint);
-		if (!Fn)
+		// Built-ins win by construction — RegisterExternalEndpoint refuses a name that collides with
+		// one, so this lookup order can never shadow a built-in.
+		const FExternalEndpointDesc* Ext = Fn ? nullptr : ExternalRegistry().Find(Endpoint);
+		if (!Fn && !Ext)
 		{
 			Fail(Out, FString::Printf(TEXT("unknown endpoint: %s"), *Endpoint));
 			return;
@@ -380,16 +538,18 @@ namespace MifBridge
 
 		// Read-only endpoints and self-managed (compile-inside) endpoints run without the
 		// blanket transaction — the latter open their own scoped transactions internally.
+		// IsReadOnly/IsSelfManaged already consult the external registry, so ONE test covers both
+		// kinds and an external descriptor's bucket is honoured exactly as a built-in's TSet entry.
 		if (IsReadOnlyEndpoint(Endpoint) || IsSelfManagedEndpoint(Endpoint))
 		{
-			(*Fn)(In, Out);
+			if (Fn) { (*Fn)(In, Out); } else { Ext->Handler(In, Out); }
 			return;
 		}
 
 		// Every mutation the handler performs is captured in one transaction so the
 		// user can Ctrl-Z the whole bridge action.
 		FScopedTransaction Transaction(FText::Format(LOCTEXT("BridgeEditFmt", "Mif Bridge: {0}"), FText::FromString(Endpoint)));
-		(*Fn)(In, Out);
+		if (Fn) { (*Fn)(In, Out); } else { Ext->Handler(In, Out); }
 	}
 
 	// --- Result / JSON accessors -------------------------------------------
@@ -458,6 +618,19 @@ namespace MifBridge
 		return Default;
 	}
 
+	int32 JIntAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, int32 Default)
+	{
+		for (const TCHAR* Field : Fields)
+		{
+			int32 Value = Default;
+			if (In->TryGetNumberField(Field, Value))
+			{
+				return Value;
+			}
+		}
+		return Default;
+	}
+
 	bool JHasAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields)
 	{
 		for (const TCHAR* Field : Fields)
@@ -468,6 +641,49 @@ namespace MifBridge
 			}
 		}
 		return false;
+	}
+
+	// The ONE shared implementation of strict unknown-param rejection (see the header for the
+	// find_assets postmortem that motivated it). Promoted from a MifBridgeCooked.cpp file-local
+	// in Batch C so new handler files cannot grow divergent copies. Safe against transport noise:
+	// MifBridgeServer.cpp deserialises the POST body directly as the param object (the token
+	// travels in the X-Mif-Token header) and server.py's _post drops unset (None) kwargs, so
+	// In->Values holds only what the caller actually sent.
+	bool RejectUnknownParams(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out,
+		std::initializer_list<const TCHAR*> AcceptedKeys, const TCHAR* AcceptedSummary,
+		std::initializer_list<TPair<const TCHAR*, const TCHAR*>> KeyNotes)
+	{
+		TArray<FString> Unrecognised;
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : In->Values)
+		{
+			bool bKnown = false;
+			for (const TCHAR* Key : AcceptedKeys)
+			{
+				// Case-insensitive to match how JStr/JBool/JInt find fields (FString keys hash and
+				// compare case-insensitively), so a key that WOULD be honoured is never rejected.
+				if (Pair.Key.Equals(Key, ESearchCase::IgnoreCase)) { bKnown = true; break; }
+			}
+			if (bKnown)
+			{
+				continue;
+			}
+			const TCHAR* Note = nullptr;
+			for (const TPair<const TCHAR*, const TCHAR*>& KeyNote : KeyNotes)
+			{
+				if (Pair.Key.Equals(KeyNote.Key, ESearchCase::IgnoreCase)) { Note = KeyNote.Value; break; }
+			}
+			Unrecognised.Add(Note
+				? FString::Printf(TEXT("'%s' (%s)"), *Pair.Key, Note)
+				: FString::Printf(TEXT("'%s'"), *Pair.Key));
+		}
+		if (Unrecognised.Num() == 0)
+		{
+			return false;
+		}
+		Fail(Out, FString::Printf(TEXT("unrecognised parameter%s %s - accepted: %s"),
+			Unrecognised.Num() == 1 ? TEXT("") : TEXT("s"),
+			*FString::Join(Unrecognised, TEXT(", ")), AcceptedSummary));
+		return true;
 	}
 
 	// --- Resolution ---------------------------------------------------------

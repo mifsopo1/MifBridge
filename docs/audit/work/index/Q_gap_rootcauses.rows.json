@@ -1,0 +1,52 @@
+[
+  {
+    "name": "pie_status",
+    "kind": "behaviour_change",
+    "axis": "Q_gap_rootcauses",
+    "tier": 0,
+    "u": 5,
+    "e": 4,
+    "r": 5,
+    "bucket": "read-only",
+    "asyncPair": null,
+    "newModules": [],
+    "pluginEnable": null,
+    "verdict": "CORRECTED",
+    "purpose": "Truthful PIE state across full lifecycle (queued/starting/running/simulating/travelling/stopping/stopped) and all instances via context enumeration.",
+    "engineApi": "IsPlayingSessionInEditor/IsPlaySessionRequestQueued/IsPlaySessionInProgress/IsSimulatingInEditor/ShouldEndPlayMap/GetPlayInEditorSessionInfo (EditorEngine.h:1704-1745,1721); GetWorldContexts (Engine.h:3346); FWorldContext::World (Engine.h:466); UWorld::HasBegunPlay (World.cpp:5770); GetPIEWorldContext (EditorEngine.h:2446)",
+    "cooked": "works — PIE over cooked/pak-mounted maps is exactly the DDS2 flow; state derivation touches no asset data",
+    "prevents": "Agent aborts a live session because one poll said stopped — GEditor->PlayWorld null/stale during travel, client connect, multi-instance, throttling (Holes A-E)",
+    "overlaps": [],
+    "hazards": [
+      "GEditor->PlayWorld is a per-tick scratch pointer, never a liveness authority — must never be read",
+      "Out-of-process (Standalone Game) sessions are unobservable in-process by engine design (PlayLevelNewProcess.cpp:57-59) — document, don't fix",
+      "bIsSimulatingInEditor member is deprecated-in-practice — use IsSimulatingInEditor() accessor",
+      "If PIE contexts exist without session info, report state:\"unknown\" — never fabricate stopped while a PIE world exists"
+    ]
+  },
+  {
+    "name": "snap_actors_to_ground",
+    "kind": "behaviour_change",
+    "axis": "Q_gap_rootcauses",
+    "tier": 0,
+    "u": 4,
+    "e": 4,
+    "r": 4,
+    "bucket": "transacted",
+    "asyncPair": null,
+    "newModules": [],
+    "pluginEnable": null,
+    "verdict": "CONFIRMED",
+    "purpose": "Penetrating ECR_Overlap multi-trace so landscape is reachable through blocking geometry; per-actor diagnosis echo makes every miss self-explaining.",
+    "engineApi": "UWorld::LineTraceMultiByChannel (World.h:1965); FCollisionResponseParams(ECR_Overlap) (CollisionQueryParams.h:247); UPrimitiveComponent::GetCollisionResponseToChannel (PrimitiveComponent.h:2438); ALandscapeProxy::GetHeightAtLocation (LandscapeProxy.h:927)",
+    "cooked": "works — heightfield and static-mesh collision of pak-mounted content is live in the editor world; no asset data read",
+    "prevents": "112/303 unexplained misses on flat ground — first-blocking-hit truncation (World.h:1956) hides landscape behind roads/props/floors",
+    "overlaps": [],
+    "hazards": [
+      "Overlap-mode hits have bBlockingHit=false — the ground scan must not filter on it",
+      "maxHits cap can fill without a ground match — report reason:\"hit list truncated\", never a silent miss",
+      "LineTraceMultiByChannel cannot see past the first blocking hit under default responses — anti-pattern anywhere else in the bridge",
+      "ULandscapeHeightfieldCollisionComponent::GetHeight is not linkable (MinimalAPI) — use LANDSCAPE_API GetHeightAtLocation instead"
+    ]
+  }
+]

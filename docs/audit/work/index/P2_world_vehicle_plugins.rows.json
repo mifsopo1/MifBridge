@@ -1,0 +1,27 @@
+[
+  {
+    "name": "call_object_function",
+    "kind": "new",
+    "axis": "P2_world_vehicle_plugins",
+    "tier": 1,
+    "u": 5,
+    "e": 3,
+    "r": 3,
+    "bucket": "transacted",
+    "asyncPair": null,
+    "newModules": [],
+    "pluginEnable": null,
+    "verdict": "CONFIRMED",
+    "purpose": "Invoke a named UFUNCTION on any objectPath via reflection — the only lane that executes cooked-BP bytecode (e.g. 'Editor Apply Spline').",
+    "engineApi": "FindFunction (Object.h:1197); ProcessEvent (Object.h:1391); CallFunctionByNameWithArguments (Object.h:1419); ImportText_Direct (UnrealType.h:493-499); ExportText_Direct (UnrealType.h:599); FUNC_Native/FUNC_BlueprintCallable/FUNC_NetFuncFlags (Script.h:141,157,178); ParmsSize (Class.h:1795)",
+    "cooked": "WORKS — exists because cooked BP bytecode executes; native stubs of reconstructed plugins succeed but do nothing (isNative echo flags this)",
+    "prevents": "run_console 'ke ...' cannot address a single actor instance by path nor tokenise BP function names with spaces; add_function_call is graph-authoring only, no runtime invoke",
+    "overlaps": [],
+    "hazards": [
+      "STUB-NATIVE caveat: calling a native function of a reconstructed plugin executes the empty stub — succeeds, does nothing; response echoes isNative",
+      "Refuse net functions (FUNC_NetFuncFlags) and latent functions (meta=Latent) — cannot run inside a single bridge frame",
+      "Missing required args are zero-filled — response echoes argsDefaulted to expose silent zeros",
+      "Callees that compile Blueprints or tear down worlds are out of contract"
+    ]
+  }
+]

@@ -1,0 +1,90 @@
+[
+  {
+    "name": "get_game_feature_state",
+    "kind": "new",
+    "axis": "P3_sessions_misc_plugins",
+    "tier": 1,
+    "u": 4, "e": 4, "r": 5,
+    "bucket": "read-only",
+    "asyncPair": null,
+    "newModules": ["GameFeatures"],
+    "pluginEnable": null,
+    "verdict": "CONFIRMED",
+    "purpose": "Enumerate every game-feature plugin with exact state-machine state (incl. error states) — machine-readable DLC registration diagnosis.",
+    "engineApi": "UGameFeaturesSubsystem::GetPluginState (GameFeaturesSubsystem.h:509); GetPluginURLByName (:471); IsGameFeaturePluginActive (:438); IPluginManager::GetDiscoveredPlugins (IPluginManager.h:355)",
+    "cooked": "unaffected — reads state machines, not assets; today reports both DLCs ErrorRegistering (GFD assets only in cooked containers)",
+    "prevents": "DLC registration failures only visible by parsing the editor log",
+    "overlaps": [],
+    "hazards": [
+      "LexToString(EGameFeaturePluginState) unexported — regenerate name table from public GAME_FEATURE_PLUGIN_STATE_LIST X-macro (GameFeatureTypes.h:9-38)",
+      "No public enumerate-all API — iterate IPluginManager::GetDiscoveredPlugins filtered by GetPluginURLByName",
+      "Zero UFUNCTIONs on subsystem (live-verified) — C++ link against GameFeatures module is the only route"
+    ]
+  },
+  {
+    "name": "change_game_feature_state_request",
+    "kind": "new",
+    "axis": "P3_sessions_misc_plugins",
+    "tier": 2,
+    "u": 3, "e": 3, "r": 2,
+    "bucket": "self-managed",
+    "asyncPair": "change_game_feature_state_status",
+    "newModules": ["GameFeatures"],
+    "pluginEnable": null,
+    "verdict": "CORRECTED",
+    "purpose": "Drive a game-feature plugin to Installed/Registered/Loaded/Active; completion error code becomes machine-readable via the status pair.",
+    "engineApi": "UGameFeaturesSubsystem::ChangeGameFeatureTargetState (GameFeaturesSubsystem.h:428); FGameFeaturePluginChangeStateComplete (:159); FResult (GameFeaturePluginOperationResult.h:15-59)",
+    "cooked": "transitions content-agnostic; for these DLCs Registering fails (Plugin_Missing_GameFeatureData) until content layout fixed — endpoint is how you test the fix",
+    "prevents": null,
+    "overlaps": [],
+    "hazards": [
+      "NEVER call engine LexFromString on raw input — no-match defaults to Count + ensureAlwaysMsgf, then check() in ChangeGameFeatureTargetState can CRASH (cpp:136-158, :855-870); pre-validate the four literal strings",
+      "Registering/Loading stalls the game thread via WaitUntilComplete(0.0f) inside state-machine tick (GameFeaturePluginStateMachine.cpp:2226, :2384) — editor may hitch for full asset load",
+      "Completion delegate can fire synchronously inside the request call (policy-refusal paths, cpp:875-900) — latch-then-return design tolerates this",
+      "targetState=Active runs GameFeatureActions; refuse while pie_status.running unless force:true",
+      "Mounts/unmounts paks, scans asset registry, runs actions — non-transactable; handler must open NO transaction"
+    ]
+  },
+  {
+    "name": "change_game_feature_state_status",
+    "kind": "new",
+    "axis": "P3_sessions_misc_plugins",
+    "tier": 2,
+    "u": 3, "e": 3, "r": 2,
+    "bucket": "read-only",
+    "asyncPair": null,
+    "newModules": ["GameFeatures"],
+    "pluginEnable": null,
+    "verdict": "CORRECTED",
+    "purpose": "Poll a pending game-feature state change: {pending, done, ok, errorCode, errorText, currentState, targetState} from bridge-side latch.",
+    "engineApi": "UGameFeaturesSubsystem::GetPluginState (GameFeaturesSubsystem.h:509); UE::GameFeatures::FResult::GetError (GameFeaturePluginOperationResult.h:15-59)",
+    "cooked": "works — reads latch + fresh GetPluginState",
+    "prevents": null,
+    "overlaps": [],
+    "hazards": [
+      "No retroactive error detail: FResult of transitions the bridge did not initiate (e.g. startup auto-load) is unrecoverable — only error STATE is readable"
+    ]
+  },
+  {
+    "name": "render_asset_thumbnail",
+    "kind": "new",
+    "axis": "P3_sessions_misc_plugins",
+    "tier": 2,
+    "u": 3, "e": 3, "r": 3,
+    "bucket": "read-only",
+    "asyncPair": null,
+    "newModules": [],
+    "pluginEnable": null,
+    "verdict": "CONFIRMED",
+    "purpose": "Render a per-asset Content Browser-style thumbnail PNG so an agent can visually confirm an asset without loading a level.",
+    "engineApi": "ThumbnailTools::RenderThumbnail UNREALED_API (ObjectTools.h:709); LoadThumbnailFromPackage (:740); FObjectThumbnail::GetUncompressedImageData CORE_API (ObjectThumbnail.h:164); FImageUtils::SaveImageByExtension ENGINE_API (ImageUtils.h:106)",
+    "cooked": "degraded honestly — container textures/meshes/materials render; cooked BP-only assets fall back blank (report blank:true); LoadThumbnailFromPackage fallback dead for container assets (no thumbnail table)",
+    "prevents": "ThumbnailGenerator plugin route is dead (SDK-dump stub DLL)",
+    "overlaps": [],
+    "hazards": [
+      "flush:\"always\" runs FlushAsyncLoading + shader-compile wait + StreamAllResources (ObjectTools.cpp:5076-5089) — potentially multi-minute stall; \"never\" default is load-bearing",
+      "Call RenderThumbnail directly, NEVER GenerateThumbnailForObjectToSaveToDisk — it opens a modal FScopedSlowTask dialog (cpp:5218-5219)",
+      "Classes without a thumbnail renderer yield blank images — detect zero-variance buffer, return blank:true with package-thumbnail fallback"
+    ]
+  }
+]

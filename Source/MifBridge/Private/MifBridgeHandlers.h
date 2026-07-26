@@ -31,6 +31,10 @@ namespace MifBridge
 	/** True if the endpoint runs a full compile and therefore must never execute inside another
 	 *  endpoint's open transaction (batch uses this instead of its own literal list, which drifted). */
 	bool IsCompileHeavyEndpoint(const FString& Endpoint);
+	/** Called once by FMifBridgeServer::Start() after the route table is bound — after this,
+	 *  RegisterExternalEndpoint (Public/MifBridgeEndpointRegistry.h) refuses loudly instead of
+	 *  accepting an endpoint that would have no HTTP route (routes bind once per name). */
+	void MarkRouteTableLive();
 
 	// --- Result helpers -----------------------------------------------------
 	void Fail(const TSharedRef<FJsonObject>& Out, const FString& Message);
@@ -46,9 +50,25 @@ namespace MifBridge
 	FString JStrAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, const FString& Default = FString());
 	/** As JBool, but tries several accepted spellings before falling back to Default. */
 	bool JBoolAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, bool Default = false);
+	/** As JInt, but tries several accepted spellings before falling back to Default. Born file-local
+	 *  in MifBridgeUndo.cpp (Batch C) with a "local until a second file needs it" note; Batch D's
+	 *  add_material_expression is that second file, so it moved here per its own eviction clause. */
+	int32 JIntAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, int32 Default = 0);
 	/** True if ANY of the spellings is present (regardless of value) — distinguishes
 	 *  "caller explicitly passed false" from "caller omitted the field". */
 	bool JHasAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields);
+	/** Strict-params guard: fails Out (and returns true) naming EVERY key in In that is not in
+	 *  AcceptedKeys, listing the accepted set. The audit's #1 bug class, live-proven by find_assets
+	 *  (docs/audit/03_GAPS_AND_RISKS.md §7.1): an IGNORED parameter is worse than a rejected one —
+	 *  the caller gets ok:true and then debugs the wrong subsystem. Matching is case-insensitive to
+	 *  mirror how JStr/JBool/JInt find fields, so a key that WOULD be honoured is never rejected.
+	 *  KeyNotes explains a specific unknown key where "unrecognised" would mislead (an
+	 *  unimplemented capability rather than a typo). Born file-local in MifBridgeCooked.cpp
+	 *  (Batch B); promoted here in Batch C so every handler file shares ONE implementation
+	 *  (MifBridgeCommon.cpp) instead of drifting copies. */
+	bool RejectUnknownParams(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out,
+		std::initializer_list<const TCHAR*> AcceptedKeys, const TCHAR* AcceptedSummary,
+		std::initializer_list<TPair<const TCHAR*, const TCHAR*>> KeyNotes = {});
 
 	// --- Resolution ---------------------------------------------------------
 	const UEdGraphSchema_K2* K2();
@@ -381,6 +401,35 @@ namespace MifBridge
 
 	// Batch
 	MIF_DECL(batch);
+
+	// UNDO introspection/rollback + dirty-package flows (MifBridgeUndo.cpp) — editor-SESSION
+	// state, not any one asset. list_* are read-only; undo/redo/save_dirty_packages are
+	// SELF-MANAGED: an undo cannot begin inside an open transaction (ensure(!GIsTransacting),
+	// TransBuffer.h:74) and a save must not be recorded as an undoable step.
+	MIF_DECL(list_transactions);
+	MIF_DECL(undo_transactions);
+	MIF_DECL(redo_transactions);
+	MIF_DECL(list_dirty_packages);
+	MIF_DECL(save_dirty_packages);
+
+	// MATERIAL GRAPH AUTHORING (MifBridgeMaterials.cpp) — the audit's flagship Tier-0 loop:
+	// mint materials/functions, add/wire/delete expression nodes, read the graph back, apply
+	// via recompile, poll the async compile. Cooked materials have NO graph (UMaterialExpression
+	// is UCLASS 'Optional' — stripped at cook), so every graph endpoint refuses on cooked
+	// packages and the read degrades honestly (cooked:true). create_material/
+	// create_material_function/recompile_material are SELF-MANAGED (asset creation + shader-map
+	// regeneration must not ride the blanket transaction); list_material_expressions and
+	// shader_compile_status are read-only; the rest are transacted graph edits.
+	MIF_DECL(create_material);
+	MIF_DECL(create_material_function);
+	MIF_DECL(add_material_expression);
+	MIF_DECL(connect_material_expressions);
+	MIF_DECL(connect_material_property);
+	MIF_DECL(delete_material_expression);
+	MIF_DECL(list_material_expressions);
+	MIF_DECL(layout_material_expressions);
+	MIF_DECL(recompile_material);
+	MIF_DECL(shader_compile_status);
 
 #undef MIF_DECL
 }

@@ -19,6 +19,16 @@ public class MifBridge : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"UnrealEd",          // FKismetEditorUtilities, FBlueprintEditorUtils, editor subsystems
+			"MaterialEditor",    // UMaterialEditingLibrary (class-level MATERIALEDITOR_API) — material
+			                     // graph authoring, Batch D. First new module dep since the audit began
+			                     // (docs/audit/work/D_materials_rendering.md: editor-only, engine-core,
+			                     // no plugin gating; must never leak into a runtime module).
+			"RHI",               // GMaxRHIShaderPlatform (RHI_API, RHIShaderPlatform.h:86). Not used
+			                     // directly: it is the DEFAULT ARGUMENT of FMaterialUpdateContext's
+			                     // constructor (MaterialShared.h:2817), and default arguments are
+			                     // evaluated in the CALLER's translation unit — so recompile_material
+			                     // pulls the symbol in merely by writing `FMaterialUpdateContext Ctx;`.
+			                     // Anticipated by docs/audit/work/I_diagnostics.md (get_perf_stats).
 			"BlueprintGraph",    // UK2Node_* classes
 			"GraphEditor",       // graph helpers
 			"UMGEditor",         // UK2Node_CreateWidget (private header, see PrivateIncludePaths)
