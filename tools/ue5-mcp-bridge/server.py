@@ -160,11 +160,11 @@ def find_nodes(graph_id: str, by_class: str = "", by_title: str = "", by_functio
 # --------------------------------------------------------------------------
 
 @mcp.tool()
-def add_variable(blueprint_id: str, name: str, type: str, container: str = "",
+def add_variable(blueprint_id: str, name: str, type: str, container: str = "", value_type: str = "",
                  scope: str = "member", function: str = "", default: str = "") -> dict:
-    "Add a variable. name is trimmed+validated and the canonical name is returned. type e.g. int/float/bool/string/Vector/Guid/<Struct>/<Class>. container = array|set. scope = member|local (local needs function)."
+    "Add a variable. name is trimmed+validated and the canonical name is returned. type e.g. int/float/bool/string/Vector/Guid/<Struct>/<Class>. container = array|set|map. For a map, type is the KEY type and value_type is the VALUE type (e.g. type='name', container='map', value_type='int'). scope = member|local (local needs function)."
     return _post("add_variable", blueprintId=blueprint_id, name=name, type=type,
-                 container=container or None, scope=scope, function=function or None,
+                 container=container or None, valueType=value_type or None, scope=scope, function=function or None,
                  default=default or None)
 
 
@@ -192,9 +192,11 @@ def set_variable_default(blueprint_id: str, name: str, value: str) -> dict:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
-def add_function_call(graph_id: str, function: str, cls: str = "self", x: int = 0, y: int = 0) -> dict:
-    "Add a function/library call node. cls is the owning class ('self' for this Blueprint, or e.g. KismetSystemLibrary). Pin types are derived from the reflected UFunction."
-    return _post("add_function_call", graphId=graph_id, function=function, **{"class": cls}, x=x, y=y)
+def add_function_call(graph_id: str, function: str, cls: str = "self", x: int = 0, y: int = 0,
+                      as_message: bool = False) -> dict:
+    "Add a function/library call node. cls is the owning class ('self' for this Blueprint, or e.g. KismetSystemLibrary). Pin types are derived from the reflected UFunction. Automatically picks the correct UK2Node_CallFunction SUBCLASS the way the editor does - CallArrayFunction for UKismetArrayLibrary ops (so array wildcards resolve durably instead of reverting on reload), CallDataTableFunction, CommutativeAssociativeBinaryOperator, and Message for interface calls on an external target. The chosen class is returned as nodeClass. as_message forces the interface Message form."
+    return _post("add_function_call", graphId=graph_id, function=function, **{"class": cls}, x=x, y=y,
+                 asMessage=as_message or None)
 
 
 @mcp.tool()
@@ -503,9 +505,10 @@ def add_enum_literal(graph_id: str, enum_name: str, value: str = "", x: int = 0,
 
 
 @mcp.tool()
-def set_pin_type(node: str, pin: str, type: str, container: str = "") -> dict:
-    "Force a pin's type. type supports scalars, struct/class names, and prefixes class:X / object:X / softobject:X / softclass:X / interface:X / enum:X. container = array|set."
-    return _post("set_pin_type", node=node, pin=pin, type=type, container=container or None)
+def set_pin_type(node: str, pin: str, type: str, container: str = "", value_type: str = "") -> dict:
+    "Force a pin's type. type supports scalars (float is 32-bit, double/real 64-bit), struct/class names, and prefixes class:X / object:X / softobject:X / softclass:X / interface:X / enum:X. container = array|set|map; for a map, type is the KEY type and value_type is the VALUE type."
+    return _post("set_pin_type", node=node, pin=pin, type=type, container=container or None,
+                 valueType=value_type or None)
 
 
 # --------------------------------------------------------------------------
@@ -551,7 +554,7 @@ def add_component(blueprint_id: str, component_class: str, name: str = "", paren
 
 @mcp.tool()
 def list_components(blueprint_id: str) -> dict:
-    "List the Blueprint's SCS components (name, class, isRoot)."
+    "List the Blueprint's SCS components: name, class, isRoot, parent and attachSocket (so the attachment hierarchy is visible), plus templatePath. Pass templatePath as set_property's objectPath to edit that component's DEFAULTS - StaticMesh, Mobility, AnimClass, OverrideMaterials, collision, relative transform."
     return _post("list_components", blueprintId=blueprint_id)
 
 
@@ -699,6 +702,17 @@ def add_make_map(graph_id: str, num_inputs: int = 1, x: int = 0, y: int = 0) -> 
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def add_pin(name: str, type: str, graph_id: str = "", blueprint_id: str = "", function: str = "",
+            node_guid: str = "", container: str = "", value_type: str = "", direction: str = "input",
+            default: str = "") -> dict:
+    "Add a parameter to an EXISTING function or custom event - no more rebuilding the function to change its signature. Target by graph_id, blueprint_id + function, or node_guid (custom event). direction = input|output; a custom event has no outputs. For an output on a function with no Return node, one is created and wired from the entry's exec. Outputs are mirrored onto EVERY sibling Return node in the graph with the same name (they must match or it will not compile). Returns the final pin name, which may be uniquified if the name was taken."
+    return _post("add_pin", name=name, type=type, graphId=graph_id or None,
+                 blueprintId=blueprint_id or None, function=function or None,
+                 nodeGuid=node_guid or None, container=container or None,
+                 valueType=value_type or None, direction=direction, default=default or None)
+
+
+@mcp.tool()
 def remove_pin(node_guid: str, pin: str, graph_id: str = "", direction: str = "",
                confirm: bool = False) -> dict:
     "Remove a pin. Handles user-defined pins (function/event/tunnel parameters, syncing sibling Return nodes) and duplicate pins (keeps the wired copy). Engine-allocated pins are refused - AllocateDefaultPins would recreate them. direction = input|output disambiguates same-named pins. Requires confirm=True."
@@ -732,6 +746,50 @@ def set_variable_flags(blueprint_id: str, name: str,
 
 
 # --------------------------------------------------------------------------
+# Renaming functions, events and dispatchers
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def rename_function(new_name: str, graph_id: str = "", blueprint_id: str = "", old_name: str = "",
+                    confirm: bool = False) -> dict:
+    "Rename a Blueprint function graph. Repoints the entry/result terminators and any override graphs in CHILD blueprints; call sites in OTHER blueprints resolve by name and must be recompiled. Refuses a dispatcher signature graph (use rename_event_dispatcher). Requires confirm=True."
+    return _post("rename_function", newName=new_name, graphId=graph_id or None,
+                 blueprintId=blueprint_id or None, oldName=old_name or None, confirm=confirm)
+
+
+@mcp.tool()
+def rename_event(node_guid: str, new_name: str, confirm: bool = False) -> dict:
+    "Rename a Custom Event by node guid. Refuses an OVERRIDE event (its name is fixed by the parent declaration). Requires confirm=True."
+    return _post("rename_event", nodeGuid=node_guid, newName=new_name, confirm=confirm)
+
+
+@mcp.tool()
+def rename_event_dispatcher(blueprint_id: str, old_name: str, new_name: str,
+                            confirm: bool = False) -> dict:
+    "Rename an event dispatcher. A dispatcher is BOTH a signature graph and a backing delegate variable - this renames both, which is why rename_variable refuses to touch one. Requires confirm=True."
+    return _post("rename_event_dispatcher", blueprintId=blueprint_id, oldName=old_name,
+                 newName=new_name, confirm=confirm)
+
+
+# --------------------------------------------------------------------------
+# Function / event flags (RPC replication, access, purity)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def set_function_flags(blueprint_id: str = "", graph_id: str = "", function: str = "",
+                       node_guid: str = "",
+                       replicates: str = "", reliable: bool = None, access: str = "",
+                       pure: bool = None, is_const: bool = None, call_in_editor: bool = None,
+                       category: str = "", tooltip: str = "", keywords: str = "") -> dict:
+    "Set RPC/replication and access flags on a FUNCTION or a CUSTOM EVENT - the Details-panel Replicates dropdown, Reliable checkbox, access specifier, Pure/Const/CallInEditor, plus category/tooltip/keywords. Target it by node_guid (custom event), graph_id, or blueprint_id + function. replicates = none|multicast|server|client (aliases runOnServer/runOnClient/owningClient). PARTIAL UPDATE: omitted flags are left alone. REFUSES: a custom event that OVERRIDES a parent event (its flags come from the parent), pure/const on a custom event, and a node that is neither a custom event nor a function entry. Changing replicates runs a FULL COMPILE and returns it under 'compile'; other blueprints CALLING the function must be recompiled too before their call sites route over the network. Warns on RPC-with-bReplicates-false, reliable-without-replicates, and pure+RPC."
+    return _post("set_function_flags", blueprintId=blueprint_id or None, graphId=graph_id or None,
+                 function=function or None, nodeGuid=node_guid or None,
+                 replicates=replicates or None, reliable=reliable, access=access or None,
+                 pure=pure, isConst=is_const, callInEditor=call_in_editor,
+                 category=category or None, tooltip=tooltip or None, keywords=keywords or None)
+
+
+# --------------------------------------------------------------------------
 # Reflection (any UObject, not just Blueprints)
 # --------------------------------------------------------------------------
 
@@ -752,10 +810,14 @@ def set_property(object_path: str = "", blueprint_id: str = "", widget_name: str
 
 
 @mcp.tool()
-def list_object_properties(object_path: str = "", blueprint_id: str = "", widget_name: str = "") -> dict:
-    "Dump every top-level property on an object with its type and current value."
+def list_object_properties(object_path: str = "", blueprint_id: str = "", widget_name: str = "",
+                           name_contains: str = "", limit: int = 200,
+                           max_value_chars: int = 200) -> dict:
+    "Dump an object's top-level properties with type and current value. Filter with name_contains; limit caps the returned rows (matched reports the true total, truncated flags the cap). max_value_chars clips long values and sets valueClipped - large Blueprint actors have struct/curve properties tens of KB each, so an unbounded dump returns nothing. Use get_property for the full value of a single named property."
     return _post("list_object_properties", objectPath=object_path or None,
-                 blueprintId=blueprint_id or None, widgetName=widget_name or None)
+                 blueprintId=blueprint_id or None, widgetName=widget_name or None,
+                 nameContains=name_contains or None, limit=limit,
+                 maxValueChars=max_value_chars)
 
 
 @mcp.tool()
@@ -834,6 +896,363 @@ def find_assets(cls: str = "", path_prefix: str = "", name_contains: str = "",
 def describe_package(package: str) -> dict:
     "Describe a package by /Game/ path: the objects it contains, their classes, and whether it is cooked. Works on cooked packages whose Blueprint graphs are stripped."
     return _post("describe_package", package=package)
+
+
+@mcp.tool()
+def diagnose_landscape(limit: int = 40) -> dict:
+    "Report landscape proxies/components in the current editor world (diagnostics). limit caps the components listed, 1-1000."
+    return _post("diagnose_landscape", limit=limit)
+
+
+# --------------------------------------------------------------------------
+# Navigation (nav mesh + nav-driven movement)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def add_nav_volume(location: dict = None, size: dict = None, label: str = "NavBounds") -> dict:
+    "Place a NavMeshBoundsVolume defining where the nav mesh will generate. size is in WORLD UNITS (converted to brush scale internally - a volume's size comes from its brush, not a size property, which is the usual way this silently covers nothing). Call build_navmesh next."
+    return _post("add_nav_volume", location=location, size=size, label=label)
+
+
+@mcp.tool()
+def build_navmesh() -> dict:
+    "Start nav mesh generation. DOES NOT BLOCK - tiles are cooked over subsequent frames and this handler runs on the game thread. Poll nav_status until building=false and tiles>0. Fails clearly if there is no bounds volume."
+    return _post("build_navmesh")
+
+
+@mcp.tool()
+def nav_status() -> dict:
+    "Nav mesh state: hasNavSystem, boundsVolumes, navMeshActors, TILES, building, ready. Reports the tile count rather than just success - a mis-sized bounds volume builds 'successfully' with zero tiles and every later pathing call then fails for no visible reason. Warns explicitly in that case."
+    return _post("nav_status")
+
+
+@mcp.tool()
+def move_actor_to(actor_path: str, location: dict) -> dict:
+    "Issue a nav-driven move order to a pawn. Requires a running PIE session (AI controllers only exist at runtime) and a built nav mesh - both failure modes are reported distinctly."
+    return _post("move_actor_to", actorPath=actor_path, location=location)
+
+
+# --------------------------------------------------------------------------
+# World lifecycle, splines, ground snapping
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def new_level(partitioned: bool = False) -> dict:
+    "Create a fresh empty level. Forces bPromptUserToSave=FALSE - a modal 'save your changes?' dialog blocks the game thread, which is the same thread this bridge runs on, so a prompt would deadlock an unattended run. The new level is transient: call save_level_as before restarting the editor or it is lost."
+    return _post("new_level", partitioned=partitioned)
+
+
+@mcp.tool()
+def save_level_as(path: str) -> dict:
+    "Save the current level to a package path like '/Game/Maps/MyLevel'. Without this a level built over an hour evaporates when the editor restarts."
+    return _post("save_level_as", path=path)
+
+
+@mcp.tool()
+def load_level(path: str) -> dict:
+    "Load a level by package path ('/Game/Maps/MyLevel'). Discards unsaved changes without prompting, for the same deadlock reason as new_level."
+    return _post("load_level", path=path)
+
+
+@mcp.tool()
+def set_spline_points(actor_path: str, points: list, component: str = None, space: str = "world",
+                      point_type: str = "curve", closed_loop: bool = False,
+                      snap_to_ground: bool = False, ground_offset: float = 0.0) -> dict:
+    "Author a spline's points - THIS IS WHAT MAKES NPCs WALK. The game routes wandering NPCs along BP_SegmentedPathTaskMarker, whose PathSpline is a USplineComponent. points is [{x,y,z},...] (min 2). point_type: curve|linear|constant|curveClamped|curveCustomTangent. snap_to_ground traces each point down onto the terrain, since a route authored at a flat Z floats or buries itself on uneven ground."
+    return _post("set_spline_points", actorPath=actor_path, points=points, component=component,
+                 space=space, pointType=point_type, closedLoop=closed_loop,
+                 snapToGround=snap_to_ground, groundOffset=ground_offset)
+
+
+@mcp.tool()
+def get_spline_points(actor_path: str, component: str = None, space: str = "world") -> dict:
+    "Read a spline's points, length and closed-loop flag. Read-only; use to verify a patrol route."
+    return _post("get_spline_points", actorPath=actor_path, component=component, space=space)
+
+
+@mcp.tool()
+def snap_actors_to_ground(actor_paths: list = None, folder: str = None, label_contains: str = None,
+                          all: bool = False, offset: float = 0.0, align_to_normal: bool = False,
+                          trace_height: float = 100000.0) -> dict:
+    "Drop actors onto the terrain, one trace each, with the actor ITSELF excluded from the trace. Doing this from outside is both slow (one HTTP round-trip per actor) and wrong - a trace at a building's own XY hits its roof and 'snaps' it onto itself, climbing every call. Places the BOTTOM of each actor's bounds on the hit, so pivots that are not at the base still sit correctly. Landscapes are skipped. Requires a selector (actor_paths / folder / label_contains / all) - it refuses to guess."
+    return _post("snap_actors_to_ground", actorPaths=actor_paths, folder=folder,
+                 labelContains=label_contains, all=all, offset=offset,
+                 alignToNormal=align_to_normal, traceHeight=trace_height)
+
+
+# --------------------------------------------------------------------------
+# Landscape authoring (real terrain, not a stretched plane)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def create_landscape(location: dict = None, scale: dict = None, components_x: int = 8, components_y: int = 8,
+                     quads_per_section: int = 63, sections_per_component: int = 1,
+                     material: str = None, layers: list = None, height_mode: str = "flat",
+                     amplitude: float = 0.0, frequency: float = 2.0, seed: float = 0.0,
+                     label: str = "Landscape", folder: str = None) -> dict:
+    "Create a real ALandscape. This is the correct answer for ground - a stretched /Engine/BasicShapes/Plane smears one UV set over the whole surface (blurred corners) and a grid of tiles reads as a checkerboard. height_mode: flat|rolling|island; amplitude is in WORLD UNITS of relief. quads_per_section must be 7/15/31/63/127/255 or sections crack. layers is [{layerInfo: '/Game/.../X_LayerInfo', weight: 0..1}] - a layered landscape material with NOTHING painted renders as its fallback (usually black), so pass at least one layer."
+    return _post("create_landscape", location=location, scale=scale, componentsX=components_x,
+                 componentsY=components_y, quadsPerSection=quads_per_section,
+                 sectionsPerComponent=sections_per_component, material=material, layers=layers,
+                 heightMode=height_mode, amplitude=amplitude, frequency=frequency, seed=seed,
+                 label=label, folder=folder)
+
+
+@mcp.tool()
+def sculpt_landscape(center: dict, radius: float, mode: str = "flatten", amount: float = 0.0,
+                     falloff: float = 0.5, target_z: float = None, landscape: str = None) -> dict:
+    "Sculpt terrain in WORLD units. mode: raise|lower|flatten|smooth. center/radius/amount/target_z are all world units - the vertex-space conversion happens inside. falloff is the fraction of the radius that is feathered (0 = hard edge = a mesa with vertical walls, so it defaults to 0.5). flatten with no target_z levels to whatever height is under the brush centre. Use this to carve a building pad or a road corridor."
+    return _post("sculpt_landscape", center=center, radius=radius, mode=mode, amount=amount,
+                 falloff=falloff, targetZ=target_z, landscape=landscape)
+
+
+@mcp.tool()
+def paint_landscape(layer_info: str, center: dict, radius: float, weight: float = 1.0,
+                    falloff: float = 0.5, landscape: str = None) -> dict:
+    "Paint a landscape weight layer in WORLD units - this is what makes a road corridor read as dirt while the verge stays grass. layer_info is a LandscapeLayerInfoObject asset path and must be one of the layers the landscape's material declares. Weights normalise across layers, so painting one up pushes the others down (which is why there is no erase mode)."
+    return _post("paint_landscape", layerInfo=layer_info, center=center, radius=radius,
+                 weight=weight, falloff=falloff, landscape=landscape)
+
+
+@mcp.tool()
+def bind_landscape_rvt(runtime_virtual_textures: list, landscape: str = None, create_volumes: bool = True) -> dict:
+    "Bind runtime virtual textures to a landscape AND create the bounding volumes. A landscape material that samples an RVT renders its base colour BLACK unless both exist: the RVT in the landscape's array (what to draw into) and an ARuntimeVirtualTextureVolume in the level (where it applies). The editor's 'Create Volumes' button is pure UI - the bSetCreateRuntimeVirtualTextureVolumes property is a transient placeholder that does nothing when set. Verify with landscape_info."
+    return _post("bind_landscape_rvt", runtimeVirtualTextures=runtime_virtual_textures,
+                 landscape=landscape, createVolumes=create_volumes)
+
+
+@mcp.tool()
+def landscape_info() -> dict:
+    "Report every landscape in the editor world: world bounds, vertex resolution, scale, material, painted layers, materialLayers (what the MATERIAL declares - painting a layer not in this list succeeds and changes nothing), runtimeVirtualTextures (empty here means a black terrain if the material samples an RVT) and componentsWithoutWeightmap (non-zero means painted layer data never landed). Read-only. Call this before sculpt_landscape/paint_landscape - every world-space argument they take only makes sense against these bounds."
+    return _post("landscape_info")
+
+
+# --------------------------------------------------------------------------
+# Level-authoring throughput + material control
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def spawn_many(items: list, actor_class: str = "StaticMeshActor", mesh: str = "",
+               material: str = "", folder: str = "", label_prefix: str = "") -> dict:
+    "Spawn MANY actors in ONE call. items is a list of {x,y,z or location:{}, rotation:{} or yaw, scale (number or {}), label?, mesh?, material?}. Top-level mesh/material are the defaults; per-item values override. label_prefix names them '<prefix>_<index>' - without it every actor is 'StaticMeshActor_417', unfindable by label and invisible to anything that filters on one (snap_actors_to_ground's label_contains). Replaces the 2-HTTP-calls-per-actor pattern - a few hundred actors goes from minutes to seconds. Capped at 5000 per call; returns spawned/failed counts."
+    return _post("spawn_many", items=items, actorClass=actor_class, mesh=mesh or None,
+                 material=material or None, folder=folder or None,
+                 labelPrefix=label_prefix or None)
+
+
+@mcp.tool()
+def duplicate_actors(actor_paths: list = None, label_prefix: str = "", offset: dict = None,
+                     yaw_offset: float = 0.0, count: int = 1, label_suffix: str = "_copy",
+                     folder: str = "") -> dict:
+    "Duplicate a SET of actors with a positional offset - copy a whole finished building instead of re-placing every panel. Select sources by actor_paths[] or by label_prefix (e.g. 'B5_' grabs every piece of that building). count>1 makes a row, each offset by N*offset."
+    return _post("duplicate_actors", actorPaths=actor_paths, labelPrefix=label_prefix or None,
+                 offset=offset, yawOffset=yaw_offset, count=count,
+                 labelSuffix=label_suffix, folder=folder or None)
+
+
+@mcp.tool()
+def create_material_instance(parent: str, path: str, scalars: dict = None,
+                             vectors: dict = None) -> dict:
+    "Create a MaterialInstanceConstant asset from a parent material, with parameter overrides. This is how you fix UV tiling on large surfaces: derive an instance from the master material and override its tiling scalar, rather than being stuck with whatever the shipped instance happens to expose. scalars is {name: number}, vectors is {name: {r,g,b,a}}."
+    return _post("create_material_instance", parent=parent, path=path,
+                 scalars=scalars, vectors=vectors)
+
+
+@mcp.tool()
+def set_material_parameter(material: str, scalars: dict = None, vectors: dict = None) -> dict:
+    "Set parameters on an existing MaterialInstanceConstant. Reports unknownParameters for names the PARENT material does not expose, rather than silently accepting a name that will never do anything."
+    return _post("set_material_parameter", material=material, scalars=scalars, vectors=vectors)
+
+
+@mcp.tool()
+def add_foliage_instances(mesh: str, instances: list, label: str = "Foliage",
+                          folder: str = "") -> dict:
+    "Create ONE actor holding N instanced transforms of a mesh (HierarchicalInstancedStaticMesh) instead of N separate actors. This is how foliage is actually done - 90 grass actors is 90 draw setups and 90 outliner rows for something that should be one. instances is a list of {x,y,z,yaw?,scale?}."
+    return _post("add_foliage_instances", mesh=mesh, instances=instances,
+                 label=label, folder=folder or None)
+
+
+# --------------------------------------------------------------------------
+# Spatial awareness + visual feedback (numbers for correctness, pixels for taste)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def get_actor_bounds(actor_path: str) -> dict:
+    "World-space AABB of a PLACED actor: origin, extent, size, min, max. This accounts for the actor's SCALE, unlike the mesh asset's ExtendedBounds - a 1312u rock placed at scale 2.4 is 3150u, and that gap is how things end up swallowing buildings. Accepts actorPath, name or label."
+    return _post("get_actor_bounds", actorPath=actor_path)
+
+
+@mcp.tool()
+def check_overlaps(actor_path: str = "", name_contains: str = "", ignore_ground: bool = True,
+                   tolerance: float = 25.0) -> dict:
+    "Find actors intersecting each other. With no actor_path this is a WHOLE-SCENE audit - the 'what did I get wrong' call. Pure AABB math on bounds, no collision queries, so it works on meshes with no collision (most imported props in an editor world). tolerance ignores shallow touching, which is normal for foliage on ground."
+    return _post("check_overlaps", actorPath=actor_path or None, nameContains=name_contains or None,
+                 ignoreGround=ignore_ground, tolerance=tolerance)
+
+
+@mcp.tool()
+def trace_ground(x: float, y: float, from_z: float = 100000.0, ignore_actor: str = "") -> dict:
+    "Line-trace straight down at (x,y) to find ground height. Returns hit=false honestly when nothing is hit - editor-world collision is NOT guaranteed for imported meshes, and treating a miss as z=0 is how things end up floating."
+    return _post("trace_ground", x=x, y=y, fromZ=from_z, ignoreActor=ignore_actor or None)
+
+
+@mcp.tool()
+def capture_camera(location: dict = None, rotation: dict = None, look_at: dict = None,
+                   fov: float = 75.0, width: int = 1280, height: int = 720,
+                   name: str = "MifShot") -> dict:
+    "Render the scene from an ARBITRARY viewpoint to a PNG and return its path - does NOT move the user's viewport, so you can inspect while they keep working. Pass look_at instead of rotation to frame a point. Lit and tonemapped (SCS_FinalColorLDR). The file exists by the time this returns; 'exists' is verified, not assumed. Read the returned path to actually look at it."
+    return _post("capture_camera", location=location, rotation=rotation, lookAt=look_at,
+                 fov=fov, width=width, height=height, name=name)
+
+
+@mcp.tool()
+def scene_report(ground_z: float = 0.0, float_tolerance: float = 30.0,
+                 tall_warn_z: float = 1500.0) -> dict:
+    "One-call scene audit: actor count, total bounds, plus actors that are FLOATING above ground, SUNKEN below it, or suspiciously TALL (scale outliers). This is the call that catches the whole class of blind-placement mistakes before anyone has to look at a screenshot."
+    return _post("scene_report", groundZ=ground_z, floatTolerance=float_tolerance,
+                 tallWarnZ=tall_warn_z)
+
+
+# --------------------------------------------------------------------------
+# Play-In-Editor control and runtime observation
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def start_pie(simulate: bool = False, start_location: dict = None,
+              start_rotation: dict = None) -> dict:
+    "Start Play-In-Editor. DOES NOT BLOCK: the engine defers the start to its next tick, and this handler runs on the game thread, so waiting here would deadlock the very ticks PIE needs. Poll pie_status until state=='running' before asserting on runtime state. simulate=True runs the world WITHOUT possessing a pawn - better for observing systems tick, since it needs no PlayerStart and cannot fail on a missing GameMode."
+    return _post("start_pie", simulate=simulate or None, startLocation=start_location,
+                 startRotation=start_rotation)
+
+
+@mcp.tool()
+def stop_pie() -> dict:
+    "End the Play-In-Editor session. Also deferred - poll pie_status until state=='stopped'."
+    return _post("stop_pie")
+
+
+@mcp.tool()
+def pie_status() -> dict:
+    "PIE state: state (stopped|starting|running) where running means the world EXISTS and BeginPlay has happened (not merely that a session was requested - sessionActive reports that separately), running/startPending/stopPending/simulating, the PIE world name, elapsed timeSeconds, live actor count, and the possessed pawn + PlayerController when there is one. Also reports editorWorld alongside pieWorld, because during PIE there are TWO worlds and level endpoints see the editor one."
+    return _post("pie_status")
+
+
+@mcp.tool()
+def list_pie_actors(class_filter: str = "", name_contains: str = "", limit: int = 200) -> dict:
+    "List actors in the RUNNING PIE world (list_level_actors sees the editor world instead - during PIE they are different worlds with different actor paths). The returned actorPath is a LIVE object, so get_property against it reads the running value: that is how you assert on runtime state."
+    return _post("list_pie_actors", classFilter=class_filter or None,
+                 nameContains=name_contains or None, limit=limit)
+
+
+@mcp.tool()
+def run_console_captured(command: str, filter: str = "") -> dict:
+    "Run an editor/game console command AND capture its log output. run_console returns only whether a handler claimed the command; mif.kr.* commands log rather than writing to the Exec archive, so this brackets GLog for the duration of the call. Runs against the PIE world when playing, otherwise the editor world. Only output logged SYNCHRONOUSLY during the call is captured - async work reports nothing here."
+    return _post("run_console_captured", command=command, filter=filter or None)
+
+
+@mcp.tool()
+def self_audit() -> dict:
+    "The plugin reporting its OWN invariants from inside the running DLL: live endpoint count and names (the ones actually dispatching, not parsed from a header), each endpoint's transaction bucket (readOnly / selfManaged / transacted / compileHeavy), any policyContradictions (an endpoint in both readOnly and selfManaged - the latter would be silently ignored), healthy, plus buildDate/buildTime so a stale DLL is detectable."
+    return _post("self_audit")
+
+
+# --------------------------------------------------------------------------
+# Level / placed-actor editing (the level currently open in the editor)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def list_level_actors(class_filter: str = "", name_contains: str = "", folder: str = "",
+                      selected_only: bool = False, limit: int = 200) -> dict:
+    "List actors placed in the CURRENT level with actorPath, name, label, class, folder and transform. class_filter matches any class in the ancestry by substring, so 'StaticMeshActor' finds subclasses. Returns matched (the true total) alongside count, and truncated=true if limit was hit. actorPath is the handle every other level endpoint takes - and set_property accepts it as objectPath to edit per-instance properties."
+    return _post("list_level_actors", classFilter=class_filter or None,
+                 nameContains=name_contains or None, folder=folder or None,
+                 selectedOnly=selected_only or None, limit=limit)
+
+
+@mcp.tool()
+def spawn_actor_in_level(actor_class: str, location: dict = None, rotation: dict = None,
+                         scale: dict = None, label: str = "", folder: str = "",
+                         mesh: str = None) -> dict:
+    "Spawn an actor into the current level. actor_class may be a native class or a Blueprint class path (/Game/BP/BP_Foo.BP_Foo_C). location/rotation/scale take {x,y,z}; rotation is pitch/yaw/roll. mesh assigns a static mesh (spawn a StaticMeshActor for it) - it used to be accepted and silently dropped, producing an EMPTY actor that reported ok. Returns the new actorPath. The level is left DIRTY - call save_package on the map path to persist."
+    return _post("spawn_actor_in_level", actorClass=actor_class, location=location,
+                 rotation=rotation, scale=scale, label=label or None, folder=folder or None,
+                 mesh=mesh)
+
+
+@mcp.tool()
+def set_actor_transform(actor_path: str, location: dict = None, rotation: dict = None,
+                        scale: dict = None, relative: bool = False) -> dict:
+    "Move/rotate/scale a placed actor. Omitted components keep their current value, so this doubles as move-only. relative=True treats location and rotation as DELTAS instead of absolutes."
+    return _post("set_actor_transform", actorPath=actor_path, location=location,
+                 rotation=rotation, scale=scale, relative=relative or None)
+
+
+@mcp.tool()
+def set_actor_label(actor_path: str, label: str = "", folder: str = "") -> dict:
+    "Set a placed actor's World Outliner display label and/or its outliner folder. The label is not the object name; changing it is safe and breaks no references."
+    return _post("set_actor_label", actorPath=actor_path, label=label or None, folder=folder or None)
+
+
+@mcp.tool()
+def delete_level_actor(actor_path: str, confirm: bool = False) -> dict:
+    "Delete a placed actor from the current level. Requires confirm=True."
+    return _post("delete_level_actor", actorPath=actor_path, confirm=confirm)
+
+
+@mcp.tool()
+def select_level_actors(actor_paths: list = None, clear: bool = False) -> dict:
+    "Set the editor's actor selection (clear=True empties it first). Useful for handing off to a human mid-task - the selected actors get gizmos and drive the editor's own tooling. Returns the resulting selection."
+    return _post("select_level_actors", actorPaths=actor_paths, clear=clear or None)
+
+
+# --------------------------------------------------------------------------
+# User-defined structs and enums (Blueprint types, not native C++)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def create_struct(path: str, members: list = None) -> dict:
+    "Create a Blueprint user-defined struct at a /Game/ path. members is a list of {name, type, container?, valueType?, default?} using the same type grammar as add_variable. A struct must keep at least one member to compile, so the engine's placeholder is only removed once your own members exist."
+    return _post("create_struct", path=path, members=members or None)
+
+
+@mcp.tool()
+def list_struct_members(struct: str) -> dict:
+    "List a user-defined struct's members: name, friendlyName, guid, type, default, and invalid=true for any member whose type failed to resolve."
+    return _post("list_struct_members", struct=struct)
+
+
+@mcp.tool()
+def add_struct_member(struct: str, name: str, type: str, container: str = "",
+                      value_type: str = "", default: str = "") -> dict:
+    "Add a member to an existing user-defined struct. Same type grammar as add_variable (container = array|set|map, value_type for maps)."
+    return _post("add_struct_member", struct=struct, name=name, type=type,
+                 container=container or None, valueType=value_type or None,
+                 default=default or None)
+
+
+@mcp.tool()
+def remove_struct_member(struct: str, name: str = "", guid: str = "", confirm: bool = False) -> dict:
+    "Remove a member from a user-defined struct, by name or guid. Refuses to remove the last member (an empty struct will not compile). Requires confirm=True."
+    return _post("remove_struct_member", struct=struct, name=name or None,
+                 guid=guid or None, confirm=confirm)
+
+
+@mcp.tool()
+def create_enum(path: str, values: list = None) -> dict:
+    "Create a Blueprint user-defined enum at a /Game/ path. values is a list of display-name strings. The underlying FNames are engine-generated; the strings you pass become the display names, which is what Blueprint shows and what list_enum_values reports."
+    return _post("create_enum", path=path, values=values or None)
+
+
+@mcp.tool()
+def add_enum_value(enum: str, value: str) -> dict:
+    "Append an entry to a user-defined enum. value is the display name. Returns its index."
+    return _post("add_enum_value", enum=enum, value=value)
+
+
+@mcp.tool()
+def remove_enum_value(enum: str, value: str = "", index: int = None, confirm: bool = False) -> dict:
+    "Remove an entry from a user-defined enum, by display name or index. Refuses to remove the last one. WARNING: removing a non-final entry shifts every later index down, silently re-pointing anything that stored the enum by index - the response warns when this happens. Requires confirm=True."
+    return _post("remove_enum_value", enum=enum, value=value or None, index=index, confirm=confirm)
 
 
 # --------------------------------------------------------------------------

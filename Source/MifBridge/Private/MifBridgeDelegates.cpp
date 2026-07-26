@@ -44,7 +44,7 @@ namespace MifBridge
 					return false;
 				}
 				FEdGraphPinType PinType;
-				if (!MakePinType(JStr(Obj, TEXT("type")), JStr(Obj, TEXT("container")), PinType, OutError))
+				if (!MakePinType(JStr(Obj, TEXT("type")), JStr(Obj, TEXT("container")), PinType, OutError, JStr(Obj, TEXT("valueType"))))
 				{
 					return false;
 				}

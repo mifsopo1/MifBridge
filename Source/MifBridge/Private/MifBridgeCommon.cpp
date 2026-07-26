@@ -11,6 +11,7 @@
 #include "Engine/Blueprint.h"
 #include "K2Node_Knot.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "Misc/EngineVersion.h"   // FEngineVersion::Current() — build identity in self_audit
 #include "Misc/PackageName.h"
 #include "ScopedTransaction.h"
 #include "UObject/Class.h"
@@ -69,6 +70,7 @@ namespace MifBridge
 			MIF_BIND(reconnect_pin);
 			MIF_BIND(set_pin_default);
 			MIF_BIND(splice_into_exec);
+			MIF_BIND(add_pin);
 			MIF_BIND(remove_pin);
 			// Nodes (phase 3 additions)
 			MIF_BIND(add_custom_event);
@@ -77,6 +79,10 @@ namespace MifBridge
 			MIF_BIND(add_self);
 			MIF_BIND(add_literal);
 			MIF_BIND(create_function);
+			MIF_BIND(set_function_flags);
+			MIF_BIND(rename_function);
+			MIF_BIND(rename_event);
+			MIF_BIND(rename_event_dispatcher);
 			MIF_BIND(create_blueprint);
 			MIF_BIND(resolve_struct);
 			MIF_BIND(describe_class);
@@ -145,6 +151,57 @@ namespace MifBridge
 			MIF_BIND(get_property);
 			MIF_BIND(list_object_properties);
 			MIF_BIND(create_editable_child);
+			// Navigation
+			MIF_BIND(add_nav_volume);
+			MIF_BIND(build_navmesh);
+			MIF_BIND(nav_status);
+			MIF_BIND(move_actor_to);
+			// Level-authoring throughput + materials
+			MIF_BIND(spawn_many);
+			MIF_BIND(duplicate_actors);
+			MIF_BIND(create_material_instance);
+			MIF_BIND(set_material_parameter);
+			MIF_BIND(add_foliage_instances);
+			// Landscape authoring
+			MIF_BIND(create_landscape);
+			MIF_BIND(sculpt_landscape);
+			MIF_BIND(paint_landscape);
+			MIF_BIND(bind_landscape_rvt);
+			MIF_BIND(landscape_info);
+			// World lifecycle + splines + ground snapping
+			MIF_BIND(new_level);
+			MIF_BIND(save_level_as);
+			MIF_BIND(load_level);
+			MIF_BIND(set_spline_points);
+			MIF_BIND(get_spline_points);
+			MIF_BIND(snap_actors_to_ground);
+			// Spatial awareness + visual feedback
+			MIF_BIND(get_actor_bounds);
+			MIF_BIND(check_overlaps);
+			MIF_BIND(trace_ground);
+			MIF_BIND(capture_camera);
+			MIF_BIND(scene_report);
+			// PIE control + runtime observation
+			MIF_BIND(start_pie);
+			MIF_BIND(stop_pie);
+			MIF_BIND(pie_status);
+			MIF_BIND(list_pie_actors);
+			MIF_BIND(run_console_captured);
+			// Level / placed-actor editing
+			MIF_BIND(list_level_actors);
+			MIF_BIND(spawn_actor_in_level);
+			MIF_BIND(set_actor_transform);
+			MIF_BIND(set_actor_label);
+			MIF_BIND(delete_level_actor);
+			MIF_BIND(select_level_actors);
+			// User-defined struct / enum authoring
+			MIF_BIND(create_struct);
+			MIF_BIND(list_struct_members);
+			MIF_BIND(add_struct_member);
+			MIF_BIND(remove_struct_member);
+			MIF_BIND(create_enum);
+			MIF_BIND(add_enum_value);
+			MIF_BIND(remove_enum_value);
 			// Animation assets (read-only)
 			MIF_BIND(describe_animation);
 			MIF_BIND(list_animations);
@@ -156,6 +213,7 @@ namespace MifBridge
 			MIF_BIND(compile);
 			MIF_BIND(run_console);
 			MIF_BIND(validate);
+			MIF_BIND(self_audit);
 			// Batch
 			MIF_BIND(batch);
 #undef MIF_BIND
@@ -183,10 +241,22 @@ namespace MifBridge
 			TEXT("list_datatables"), TEXT("read_datatable"), TEXT("get_datatable_row"),
 			TEXT("get_property"), TEXT("list_object_properties"),
 			TEXT("describe_animation"), TEXT("list_animations"),
+			TEXT("list_struct_members"), TEXT("list_level_actors"),
+			// PIE start/stop only QUEUE a request — they mutate no asset and must not open a
+			// transaction (an undo entry spanning a world teardown is meaningless).
+			// Read-only spatial queries. capture_camera spawns a TRANSIENT actor it destroys again,
+			// so it dirties nothing and must not open a transaction either.
+			TEXT("nav_status"), TEXT("landscape_info"), TEXT("get_spline_points"),
+			TEXT("get_actor_bounds"), TEXT("check_overlaps"), TEXT("trace_ground"),
+			TEXT("capture_camera"), TEXT("scene_report"),
+			TEXT("start_pie"), TEXT("stop_pie"), TEXT("pie_status"),
+			TEXT("list_pie_actors"), TEXT("run_console_captured"),
 			// Cooked-content introspection — declared read-only in MifBridgeHandlers.h; without
 			// listing them here RunEndpoint wraps each in an FScopedTransaction, so a pure query
 			// pushes an empty entry onto the undo stack.
 			TEXT("list_mounted_containers"), TEXT("find_assets"), TEXT("describe_package"),
+			TEXT("diagnose_landscape"),
+			TEXT("self_audit"),
 			TEXT("compile"), TEXT("validate"), TEXT("run_console")
 		};
 		return ReadOnly.Contains(Endpoint);
@@ -202,14 +272,89 @@ namespace MifBridge
 		static const TSet<FString> SelfManaged = {
 			TEXT("create_function"), TEXT("create_blueprint"), TEXT("recipe_add_debug_print"), TEXT("batch"),
 			TEXT("add_event_dispatcher"),
+			// Changing a function's NET flags needs a full compile (skeleton regen builds no
+			// replication data and leaves call-site bytecode stale), so it opens its own tight
+			// transaction around the flag writes and compiles after it closes.
+			TEXT("set_function_flags"),
 			TEXT("set_property"),          // widget-BP branch calls CompileBlueprint; opens its own tight write transaction
 			TEXT("create_editable_child"), // CreateEditableBlueprintCopy compiles + saves an asset
 			// Asset-registry-level ops (delete/rename/duplicate a whole package) manage their own
 			// GC/undo semantics internally — an outer FScopedTransaction over "the asset stopped
 			// existing" isn't meaningful the way it is for a graph edit.
-			TEXT("delete_asset"), TEXT("rename_asset"), TEXT("duplicate_asset")
+			TEXT("delete_asset"), TEXT("rename_asset"), TEXT("duplicate_asset"),
+			// ALandscape::Import builds heightmap/weightmap TEXTURES and registers new components.
+			// Undoing that mid-flight leaves components pointing at freed textures — the same class
+			// of hazard as compiling a Blueprint inside a transaction.
+			TEXT("create_landscape"),
+			// Swapping or discarding the entire UWorld invalidates every object an outer
+			// transaction recorded — the same hazard class as compiling inside one.
+			TEXT("new_level"), TEXT("load_level"), TEXT("save_level_as")
 		};
 		return SelfManaged.Contains(Endpoint);
+	}
+
+	// --- self_audit ---------------------------------------------------------
+	// The plugin reporting its OWN invariants, from inside the running DLL. This is the piece that
+	// makes "is the bridge healthy?" answerable without reading source or trusting a stale doc:
+	// the endpoint list here is the one actually dispatching, not one parsed out of a header.
+	// Pair it with the MIF_BIND<->@mcp.tool diff in the README to catch wrapper drift.
+	void H_self_audit(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		TArray<FString> Names = GetEndpointNames();
+		Names.Sort();
+
+		TArray<TSharedPtr<FJsonValue>> All, ReadOnly, SelfManaged, CompileHeavy, Transacted;
+		for (const FString& Name : Names)
+		{
+			All.Add(MakeShared<FJsonValueString>(Name));
+			const bool bRO = IsReadOnlyEndpoint(Name);
+			const bool bSM = IsSelfManagedEndpoint(Name);
+			if (bRO) { ReadOnly.Add(MakeShared<FJsonValueString>(Name)); }
+			if (bSM) { SelfManaged.Add(MakeShared<FJsonValueString>(Name)); }
+			if (IsCompileHeavyEndpoint(Name)) { CompileHeavy.Add(MakeShared<FJsonValueString>(Name)); }
+			// Everything else gets RunEndpoint's blanket transaction.
+			if (!bRO && !bSM) { Transacted.Add(MakeShared<FJsonValueString>(Name)); }
+		}
+
+		Out->SetNumberField(TEXT("endpointCount"), Names.Num());
+		Out->SetArrayField(TEXT("endpoints"), All);
+
+		TSharedRef<FJsonObject> Buckets = MakeShared<FJsonObject>();
+		Buckets->SetArrayField(TEXT("readOnly"), ReadOnly);
+		Buckets->SetArrayField(TEXT("selfManaged"), SelfManaged);
+		Buckets->SetArrayField(TEXT("transacted"), Transacted);
+		Buckets->SetArrayField(TEXT("compileHeavy"), CompileHeavy);
+		Out->SetObjectField(TEXT("transactionBuckets"), Buckets);
+
+		// An endpoint in BOTH read-only and self-managed is a policy contradiction: RunEndpoint tests
+		// read-only first, so the self-managed intent would be silently ignored.
+		TArray<TSharedPtr<FJsonValue>> Contradictions;
+		for (const FString& Name : Names)
+		{
+			if (IsReadOnlyEndpoint(Name) && IsSelfManagedEndpoint(Name))
+			{
+				Contradictions.Add(MakeShared<FJsonValueString>(Name));
+			}
+		}
+		Out->SetArrayField(TEXT("policyContradictions"), Contradictions);
+		Out->SetBoolField(TEXT("healthy"), Contradictions.Num() == 0);
+
+		// Build identity, so a stale DLL is detectable rather than mystifying.
+		Out->SetStringField(TEXT("buildDate"), ANSI_TO_TCHAR(__DATE__));
+		Out->SetStringField(TEXT("buildTime"), ANSI_TO_TCHAR(__TIME__));
+		Out->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
+	}
+
+	bool IsCompileHeavyEndpoint(const FString& Endpoint)
+	{
+		// Anything that runs a full FKismetEditorUtilities::CompileBlueprint must not execute inside
+		// batch's single open transaction — reinstancing captured by an undo step restores a dead CDO
+		// and crashes. Derived from IsSelfManagedEndpoint rather than duplicated as a literal list:
+		// batch's old hardcoded set had already drifted, silently permitting compile, validate,
+		// create_blueprint, set_property, create_editable_child and the asset-lifecycle ops.
+		return IsSelfManagedEndpoint(Endpoint)
+			|| Endpoint == TEXT("compile")
+			|| Endpoint == TEXT("validate");
 	}
 
 	void RunEndpoint(const FString& Endpoint, const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
@@ -950,7 +1095,7 @@ namespace MifBridge
 		return nullptr;
 	}
 
-	bool MakePinType(const FString& TypeStr, const FString& Container, FEdGraphPinType& OutType, FString& OutError)
+	bool MakePinType(const FString& TypeStr, const FString& Container, FEdGraphPinType& OutType, FString& OutError, const FString& ValueTypeStr)
 	{
 		FString T = TypeStr;
 		T.TrimStartAndEndInline();
@@ -1090,7 +1235,35 @@ namespace MifBridge
 		}
 		else if (C == TEXT("map"))
 		{
-			OutError = TEXT("map container is not supported (needs a value type); use array/set/none");
+			// A map needs TWO types. Everything resolved above describes the KEY (PinCategory /
+			// PinSubCategory / PinSubCategoryObject); the VALUE lives in the separate PinValueType
+			// terminal. Without ValueTypeStr there is nothing to put there, so a map was previously
+			// rejected outright — which made TMap unexpressible in variables, function parameters and
+			// dispatcher signatures alike, since every typing path routes through here.
+			if (ValueTypeStr.IsEmpty())
+			{
+				OutError = TEXT("map container requires a value type — pass valueType (e.g. type='name', container='map', valueType='int'). The 'type' field is the KEY type.");
+				return false;
+			}
+			FEdGraphPinType ValuePinType;
+			FString ValueError;
+			if (!MakePinType(ValueTypeStr, FString(), ValuePinType, ValueError))
+			{
+				OutError = FString::Printf(TEXT("map valueType: %s"), *ValueError);
+				return false;
+			}
+			// Nested containers are not representable — a terminal type has no container field.
+			if (ValuePinType.ContainerType != EPinContainerType::None)
+			{
+				OutError = TEXT("map values cannot themselves be containers (no TMap<K, TArray<V>> in Blueprint) — wrap the value in a struct instead");
+				return false;
+			}
+			OutType.ContainerType = EPinContainerType::Map;
+			OutType.PinValueType = FEdGraphTerminalType::FromPinType(ValuePinType);
+		}
+		else if (!C.IsEmpty() && C != TEXT("none"))
+		{
+			OutError = FString::Printf(TEXT("unknown container '%s' (expected: array | set | map, or omit for a single value)"), *Container);
 			return false;
 		}
 
@@ -1165,7 +1338,25 @@ namespace MifBridge
 		{
 		case EPinContainerType::Array: Json->SetStringField(TEXT("container"), TEXT("array")); break;
 		case EPinContainerType::Set:   Json->SetStringField(TEXT("container"), TEXT("set")); break;
-		case EPinContainerType::Map:   Json->SetStringField(TEXT("container"), TEXT("map")); break;
+		case EPinContainerType::Map:
+			Json->SetStringField(TEXT("container"), TEXT("map"));
+			{
+				// For a map the top-level category describes the KEY; the value is a separate
+				// terminal type. Emitting only the key would make TMap<Name,int> read back as
+				// indistinguishable from TMap<Name,bool>.
+				TSharedRef<FJsonObject> ValueJson = MakeShared<FJsonObject>();
+				ValueJson->SetStringField(TEXT("category"), Type.PinValueType.TerminalCategory.ToString());
+				if (!Type.PinValueType.TerminalSubCategory.IsNone())
+				{
+					ValueJson->SetStringField(TEXT("subCategory"), Type.PinValueType.TerminalSubCategory.ToString());
+				}
+				if (Type.PinValueType.TerminalSubCategoryObject.IsValid())
+				{
+					ValueJson->SetStringField(TEXT("subObject"), Type.PinValueType.TerminalSubCategoryObject->GetName());
+				}
+				Json->SetObjectField(TEXT("valueType"), ValueJson);
+			}
+			break;
 		default: break;
 		}
 		if (Type.bIsReference)
@@ -1229,6 +1420,11 @@ namespace MifBridge
 		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 		Json->SetStringField(TEXT("guid"), Node->NodeGuid.ToString());
 		Json->SetStringField(TEXT("class"), Node->GetClass()->GetName());
+		// Full object path, so set_property/get_property can target the NODE itself. Details-panel-only
+		// node settings (anim transition CrossfadeDuration/BlendMode/PriorityOrder, cast purity, switch
+		// defaults) have no dedicated endpoint and are only reachable this way — and without the path
+		// emitted here, that route was undiscoverable.
+		Json->SetStringField(TEXT("objectPath"), Node->GetPathName());
 		Json->SetStringField(TEXT("title"), Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
 		Json->SetNumberField(TEXT("x"), Node->NodePosX);
 		Json->SetNumberField(TEXT("y"), Node->NodePosY);

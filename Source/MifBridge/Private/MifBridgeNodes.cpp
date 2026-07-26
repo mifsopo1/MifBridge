@@ -11,10 +11,18 @@
 #include "Engine/MemberReference.h"
 #include "HAL/FileManager.h"
 #include "K2Node_CallFunction.h"
+// Engine's node-class selection chain for add_function_call (mirrors UBlueprintFunctionNodeSpawner::Create).
+#include "K2Node_CallArrayFunction.h"                        // MD_ArrayParam — the whole UKismetArrayLibrary
+#include "K2Node_CallDataTableFunction.h"                    // MD_DataTablePin — retypes the row struct
+#include "K2Node_CallMaterialParameterCollectionFunction.h"  // MD_MaterialParameterCollectionFunction
+#include "K2Node_CommutativeAssociativeBinaryOperator.h"     // pure commutative ops grow input pins
+#include "K2Node_Message.h"                                  // interface calls on an external target
 #include "K2Node_CallParentFunction.h"
 #include "K2Node_DynamicCast.h"
 #include "K2Node_EditablePinBase.h"   // RemoveUserDefinedPinByName / UserDefinedPins (remove_pin)
-#include "K2Node_FunctionResult.h"    // sibling Return-node signature sync (remove_pin)
+#include "K2Node_CustomEvent.h"       // custom-event parameter target (add_pin)
+#include "K2Node_FunctionEntry.h"     // function inputs live here as EGPD_Output (add_pin)
+#include "K2Node_FunctionResult.h"    // sibling Return-node signature sync (add_pin / remove_pin)
 #include "K2Node_Event.h"
 #include "K2Node_GetArrayItem.h"
 #include "K2Node_IfThenElse.h"
@@ -224,11 +232,55 @@ namespace MifBridge
 		Blueprint->Modify();
 		Graph->Modify();
 
-		UK2Node_CallFunction* Node = NewObject<UK2Node_CallFunction>(Graph);
+		// Pick the SUBCLASS of UK2Node_CallFunction the engine would pick. Spawning a plain
+		// UK2Node_CallFunction for every function is wrong for whole families of nodes:
+		//
+		//   - Functions tagged MD_ArrayParam (the entire UKismetArrayLibrary: Array_Add, Array_Remove,
+		//     Array_Contains, Array_Length, Array_Find, Array_Insert, Array_Append, Array_Sort, ...)
+		//     need UK2Node_CallArrayFunction. It is the class that OWNS the wildcard-propagation logic
+		//     tying TargetArray's element type to the neighbouring pins. On a plain CallFunction the
+		//     wildcards can be forced to a type and will compile 0/0 — then silently revert to wildcard
+		//     on save+reload, because nothing re-resolves them on reconstruct. That reversion is the
+		//     long-standing "Array_Find won't stay typed, use a ForEachLoop macro instead" gotcha in
+		//     the README; it was never an Array_Find quirk, it was this line.
+		//   - MD_DataTablePin functions need UK2Node_CallDataTableFunction to retype the row struct.
+		//   - Commutative+pure operators need the class that grows extra input pins.
+		//
+		// Order mirrors UBlueprintFunctionNodeSpawner::Create exactly — the branches are not mutually
+		// exclusive in practice, so the sequence is the specification.
+		UClass* NodeClass = UK2Node_CallFunction::StaticClass();
+		{
+			const bool bIsPure = Function->HasAllFunctionFlags(FUNC_BlueprintPure);
+			const bool bHasArrayPointerParms       = Function->HasMetaData(FBlueprintMetadata::MD_ArrayParam);
+			const bool bIsCommutativeAssociative   = Function->HasMetaData(FBlueprintMetadata::MD_CommutativeAssociativeBinaryOperator);
+			const bool bIsMaterialParamCollection  = Function->HasMetaData(FBlueprintMetadata::MD_MaterialParameterCollectionFunction);
+			const bool bIsDataTableFunc            = Function->HasMetaData(FBlueprintMetadata::MD_DataTablePin);
+
+			if (bIsCommutativeAssociative && bIsPure)      { NodeClass = UK2Node_CommutativeAssociativeBinaryOperator::StaticClass(); }
+			else if (bIsMaterialParamCollection)           { NodeClass = UK2Node_CallMaterialParameterCollectionFunction::StaticClass(); }
+			else if (bIsDataTableFunc)                     { NodeClass = UK2Node_CallDataTableFunction::StaticClass(); }
+			else if (bHasArrayPointerParms)                { NodeClass = UK2Node_CallArrayFunction::StaticClass(); }
+			// UK2Node_PromotableOperator is deliberately NOT selected here: the engine gates it on
+			// FTypePromotion state that only exists once the editor's type-promotion registry is
+			// primed, and a promotable node spawned outside that path comes up with unresolved
+			// wildcard pins. The plain CallFunction it falls back to is correct and stable.
+		}
+
+		// Interface functions dispatch through a Message node, which tolerates a null/!Implements
+		// target at runtime instead of hard-failing. Only when calling on an EXTERNAL target.
+		const bool bWantMessage = JBoolAny(In, { TEXT("asMessage"), TEXT("message") }, false)
+			|| (TargetClass->HasAnyClassFlags(CLASS_Interface) && !ClassName.Equals(TEXT("self"), ESearchCase::IgnoreCase));
+
+		UK2Node_CallFunction* Node = bWantMessage
+			? NewObject<UK2Node_CallFunction>(Graph, UK2Node_Message::StaticClass())
+			: NewObject<UK2Node_CallFunction>(Graph, NodeClass);
 		Node->SetFromFunction(Function); // derives purity, self/target, param pins, containers
 		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
 
 		MarkStructural(Blueprint);
+		// Surface which class was chosen — otherwise "why is my array pin still a wildcard" is
+		// invisible from the response.
+		Out->SetStringField(TEXT("nodeClass"), Node->GetClass()->GetName());
 		EmitNode(Out, Node);
 	}
 
@@ -668,6 +720,247 @@ namespace MifBridge
 		Out->SetStringField(TEXT("removed"), Guid);
 	}
 
+	// --- add_pin ------------------------------------------------------------
+	//   in:  { graphId? | blueprintId+function? | nodeGuid? ,
+	//          name, type, container?, direction?: "input"|"output", default?, confirm? }
+	//   out: { pin, direction, nodeGuid, kind, createdResultNode?, siblingResultNodesUpdated }
+	//
+	// Adds a parameter to an EXISTING function or custom event. Without this, a signature was frozen
+	// at creation: adding one input meant remove_function + create_function (body destroyed) or
+	// remove_node + add_custom_event (every wire destroyed).
+	//
+	// The direction inversion is the thing to get right. A function's INPUTS live on the ENTRY node
+	// as EGPD_Output (the entry emits arguments into the graph); its OUTPUTS live on the RESULT node
+	// as EGPD_Input (the return consumes them). A custom event has inputs only, on the event node as
+	// EGPD_Output. Callers say "input"/"output" in function terms; this maps it.
+	//
+	// Mirrors FBlueprintGraphActionDetails::OnAddNewInputClicked / OnAddNewOutputClicked.
+	void H_add_pin(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		const FString RawName = JStrAny(In, { TEXT("name"), TEXT("pin"), TEXT("pinName") });
+		FString PinName = RawName;
+		PinName.TrimStartAndEndInline();
+		if (!IsValidIdentifier(PinName))
+		{
+			Fail(Out, FString::Printf(TEXT("invalid pin name '%s' (must match ^[A-Za-z_][A-Za-z0-9_]*$)"), *RawName));
+			return;
+		}
+
+		FEdGraphPinType PinType;
+		FString TypeError;
+		if (!MakePinType(JStr(In, TEXT("type")), JStr(In, TEXT("container")), PinType, TypeError, JStr(In, TEXT("valueType"))))
+		{
+			Fail(Out, TypeError);
+			return;
+		}
+
+		const FString DirStr = JStr(In, TEXT("direction"), TEXT("input")).ToLower();
+		const bool bWantOutput = DirStr.StartsWith(TEXT("out"));
+		if (!bWantOutput && !DirStr.StartsWith(TEXT("in")))
+		{
+			Fail(Out, FString::Printf(TEXT("unknown direction '%s' (expected: input | output)"), *DirStr));
+			return;
+		}
+
+		// --- Resolve the target -------------------------------------------------------
+		UBlueprint* Blueprint = nullptr;
+		UEdGraph* Graph = nullptr;
+		UK2Node_EditablePinBase* EntryLike = nullptr;   // function entry OR custom event
+		FString Kind;
+
+		const FString NodeGuid = JStrAny(In, { TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId") });
+		if (!NodeGuid.IsEmpty())
+		{
+			UEdGraphNode* Node = ResolveNodeField(In, TEXT("nodeGuid"), Out);
+			if (!Node)
+			{
+				return;
+			}
+			if (!Node->IsA<UK2Node_CustomEvent>() && !Node->IsA<UK2Node_FunctionEntry>())
+			{
+				Fail(Out, FString::Printf(
+					TEXT("node %s is a %s — add_pin targets a Custom Event or a function ENTRY node ")
+					TEXT("(for a function graph pass graphId or blueprintId+function instead)"),
+					*NodeGuid, *Node->GetClass()->GetName()));
+				return;
+			}
+			EntryLike = CastChecked<UK2Node_EditablePinBase>(Node);
+			Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(Node);
+			Graph = Cast<UEdGraph>(Node->GetOuter());
+			Kind = Node->IsA<UK2Node_CustomEvent>() ? TEXT("customEvent") : TEXT("function");
+		}
+		else
+		{
+			const FString GraphId = JStr(In, TEXT("graphId"));
+			if (!GraphId.IsEmpty())
+			{
+				Graph = ResolveGraphField(In, Out, Blueprint);
+				if (!Graph) { return; }
+			}
+			else
+			{
+				Blueprint = ResolveBlueprintField(In, Out);
+				if (!Blueprint) { return; }
+				const FString FunctionName = JStrAny(In, { TEXT("function"), TEXT("functionName") });
+				if (FunctionName.IsEmpty())
+				{
+					Fail(Out, TEXT("supply one of: nodeGuid (a custom event), graphId, or blueprintId + function"));
+					return;
+				}
+				for (UEdGraph* G : Blueprint->FunctionGraphs)
+				{
+					if (G && G->GetName() == FunctionName) { Graph = G; break; }
+				}
+				if (!Graph)
+				{
+					Fail(Out, FString::Printf(TEXT("function graph '%s' not found in %s"), *FunctionName, *Blueprint->GetName()));
+					return;
+				}
+			}
+			TArray<UK2Node_FunctionEntry*> Entries;
+			Graph->GetNodesOfClass(Entries);
+			if (Entries.Num() == 0)
+			{
+				Fail(Out, FString::Printf(TEXT("graph '%s' has no function entry node — address a custom event by nodeGuid instead"), *Graph->GetName()));
+				return;
+			}
+			EntryLike = Entries[0];
+			Kind = TEXT("function");
+		}
+
+		if (!Blueprint || !Graph)
+		{
+			Fail(Out, TEXT("could not resolve the owning blueprint/graph"));
+			return;
+		}
+
+		const bool bIsCustomEvent = EntryLike->IsA<UK2Node_CustomEvent>();
+		if (bWantOutput && bIsCustomEvent)
+		{
+			Fail(Out, TEXT("a custom event has no outputs — events are fire-and-forget. Use a function if you need a return value."));
+			return;
+		}
+
+		// The node itself decides whether this type/direction is legal (exec pins on a node that
+		// can't modify execution wires, container restrictions, ...). Ask before mutating.
+		const EEdGraphPinDirection Desired = bWantOutput ? EGPD_Input : EGPD_Output;
+		{
+			FText PinError;
+			UK2Node_EditablePinBase* Validator = EntryLike;
+			if (bWantOutput)
+			{
+				TArray<UK2Node_FunctionResult*> Results;
+				Graph->GetNodesOfClass(Results);
+				if (Results.Num() > 0) { Validator = Results[0]; }
+			}
+			if (!Validator->CanCreateUserDefinedPin(PinType, Desired, PinError))
+			{
+				Fail(Out, FString::Printf(TEXT("cannot add that pin: %s"), *PinError.ToString()));
+				return;
+			}
+		}
+
+		Blueprint->Modify();
+		Graph->Modify();
+
+		int32 SiblingsUpdated = 0;
+		bool bCreatedResultNode = false;
+		UEdGraphPin* NewPin = nullptr;
+		FName FinalName(*PinName);
+
+		// Reconstruct with orphan-pin saving off, then let the schema propagate the signature change —
+		// exactly what OnParamsChanged does. Skipping HandleParameterDefaultValueChanged leaves callers
+		// of the function stale.
+		auto FinishNode = [](UK2Node_EditablePinBase* Node)
+		{
+			const bool bPrev = Node->bDisableOrphanPinSaving;
+			Node->bDisableOrphanPinSaving = true;
+			Node->ReconstructNode();
+			Node->bDisableOrphanPinSaving = bPrev;
+			K2()->HandleParameterDefaultValueChanged(Node);
+		};
+
+		if (!bWantOutput)
+		{
+			EntryLike->Modify();
+			NewPin = EntryLike->CreateUserDefinedPin(FinalName, PinType, EGPD_Output, /*bUseUniqueName*/ true);
+			if (!NewPin)
+			{
+				Fail(Out, FString::Printf(TEXT("CreateUserDefinedPin failed for '%s'"), *PinName));
+				return;
+			}
+			FinalName = NewPin->PinName;   // may have been uniquified
+			FinishNode(EntryLike);
+		}
+		else
+		{
+			// Outputs live on the Result node(s). A void function has none — mint one, wired from the
+			// entry's exec, or the Return is unreachable and the out-param is never written.
+			TArray<UK2Node_FunctionResult*> Results;
+			Graph->GetNodesOfClass(Results);
+			if (Results.Num() == 0)
+			{
+				UK2Node_FunctionResult* Result = NewObject<UK2Node_FunctionResult>(Graph);
+				PlaceAndInit(Graph, Result, EntryLike->NodePosX + 800, EntryLike->NodePosY);
+				UEdGraphPin* EntryThen = FindPin(EntryLike, TEXT("then"), EGPD_Output, /*bRequireDir*/ true);
+				UEdGraphPin* ResultExec = FindPin(Result, TEXT("execute"), EGPD_Input, /*bRequireDir*/ true);
+				if (EntryThen && ResultExec && ResultExec->LinkedTo.Num() == 0)
+				{
+					K2()->TryCreateConnection(EntryThen, ResultExec);
+				}
+				bCreatedResultNode = true;
+				Graph->GetNodesOfClass(Results);
+			}
+			if (Results.Num() == 0)
+			{
+				Fail(Out, TEXT("could not create a function Result node for the new output"));
+				return;
+			}
+
+			// Uniquify ONCE against the primary, then apply that exact name to every sibling —
+			// letting each uniquify independently would give the same parameter different names on
+			// different Return nodes, which does not compile.
+			FinalName = Results[0]->CreateUniquePinName(FName(*PinName));
+			for (UK2Node_FunctionResult* Result : Results)
+			{
+				Result->Modify();
+				UEdGraphPin* Pin = Result->CreateUserDefinedPin(FinalName, PinType, EGPD_Input, /*bUseUniqueName*/ false);
+				if (!Pin)
+				{
+					Fail(Out, FString::Printf(TEXT("CreateUserDefinedPin failed for '%s' on a Return node"), *FinalName.ToString()));
+					return;
+				}
+				if (!NewPin) { NewPin = Pin; }
+				FinishNode(Result);
+				++SiblingsUpdated;
+			}
+		}
+
+		// Optional default for the new pin (inputs only — a return value has no literal default).
+		const FString Default = JStr(In, TEXT("default"));
+		if (!Default.IsEmpty() && NewPin && !bWantOutput)
+		{
+			K2()->TrySetDefaultValue(*NewPin, Default);
+		}
+
+		MarkStructural(Blueprint);
+
+		Out->SetStringField(TEXT("pin"), FinalName.ToString());
+		Out->SetStringField(TEXT("direction"), bWantOutput ? TEXT("output") : TEXT("input"));
+		Out->SetStringField(TEXT("kind"), Kind);
+		Out->SetStringField(TEXT("nodeGuid"), EntryLike->NodeGuid.ToString());
+		Out->SetObjectField(TEXT("type"), SerializePinType(PinType));
+		Out->SetNumberField(TEXT("resultNodesUpdated"), SiblingsUpdated);
+		if (bCreatedResultNode) { Out->SetBoolField(TEXT("createdResultNode"), true); }
+		if (FinalName.ToString() != PinName)
+		{
+			Out->SetStringField(TEXT("warning"), FString::Printf(
+				TEXT("'%s' was already taken; the pin was named '%s'"), *PinName, *FinalName.ToString()));
+		}
+		UE_LOG(LogMifBridge, Log, TEXT("add_pin: %s %s on %s"), *FinalName.ToString(),
+			bWantOutput ? TEXT("(out)") : TEXT("(in)"), *Graph->GetName());
+	}
+
 	// --- remove_pin ---------------------------------------------------------
 	//   in:  { node|nodeGuid, pin, graphId?, direction?: "input"|"output", confirm: true }
 	//   out: { removed, pin, kind: "userDefined"|"duplicate", node }
@@ -989,10 +1282,9 @@ namespace MifBridge
 				OpOut->SetBoolField(TEXT("ok"), true);
 				OpOut->SetStringField(TEXT("op"), OpName);
 
-				if (OpName == TEXT("batch") || OpName == TEXT("create_function") ||
-					OpName == TEXT("recipe_add_debug_print") || OpName == TEXT("add_event_dispatcher"))
+				if (OpName == TEXT("batch") || IsCompileHeavyEndpoint(OpName))
 				{
-					Fail(OpOut, FString::Printf(TEXT("op '%s' is not allowed inside batch (it runs a compile); call it standalone"), *OpName));
+					Fail(OpOut, FString::Printf(TEXT("op '%s' is not allowed inside batch (it runs a full compile, which must not happen inside batch's open transaction); call it standalone — batch already compiles once at the end via compileAtEnd"), *OpName));
 				}
 				else if (const FHandlerFn* Fn = Registry.Find(OpName))
 				{

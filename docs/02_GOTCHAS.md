@@ -94,8 +94,22 @@ softobject:<C>            softclass:<C>
 interface:<C>             enum:<E>
 ```
 
-Paths work: `object:/Game/BP/BP_Foo.BP_Foo_C`. Containers go in the separate `container` field
-(`array` | `set`). **`map` is not supported** — it needs a value type the grammar can't express.
+Paths work: `object:/Game/BP/BP_Foo.BP_Foo_C`. Containers go in the separate `container` field:
+`array` | `set` | `map`.
+
+**Maps need two types.** For `container: "map"`, the `type` field is the **key** and a separate
+`valueType` field is the **value**:
+
+```json
+{ "name": "ItemCounts", "type": "name", "container": "map", "valueType": "int" }
+```
+
+Underneath, the key occupies the usual `PinCategory`/`PinSubCategory` and the value goes into
+`FEdGraphPinType::PinValueType`. `SerializePinType` reports it back as a nested `valueType` object,
+so `TMap<Name,int>` and `TMap<Name,bool>` are distinguishable on read-back. This works everywhere
+typing does — `add_variable`, `add_pin`, `create_function` params, `add_event_dispatcher` params,
+`set_pin_type`. **Map values cannot themselves be containers** (Blueprint has no
+`TMap<K, TArray<V>>`); wrap the value in a struct instead.
 
 ---
 
@@ -144,7 +158,92 @@ category · tooltip
 
 ---
 
-## 5. Removing pins
+## 4b. Function / event flags
+
+`set_function_flags` covers the Details-panel controls for a **function graph or a custom event** —
+target it by `nodeGuid` (custom event), `graphId`, or `blueprintId` + `function`.
+
+```
+replicates: none | multicast | server | client      reliable
+access: public | protected | private                pure · const · callInEditor
+category · tooltip · keywords
+```
+
+Partial update, same contract as `set_variable_flags`. Things worth knowing:
+
+- **A replication change triggers a full compile**, and other blueprints that *call* the function
+  keep stale call-site bytecode until they are recompiled too. A skeleton regen is not enough —
+  the class's replication data and `NetFields` list are only built by a full compile.
+- **An overriding custom event is refused.** Its net flags come from the parent, which is why the
+  editor greys the whole row out. Change them on the declaring class.
+- `pure` and `const` are function-graph only; the panel hides them for events.
+- **UE 5.3's function-graph Details panel has no Replicates row at all** (it's gated on
+  `bIsCustomEvent`), so `set_function_flags` on a function graph exposes something the editor hides.
+  The flags are real and the compiler honours them — you just can't verify them by clicking.
+- Warnings, not errors, for: RPC on a non-replicated Actor; `reliable` without `replicates`; and
+  `pure` + RPC (which the compiler does *not* reject — it just zeroes the return value whenever the
+  call executes remotely).
+
+> **Making an event an RPC RENAMES it.** Verified live: a custom event called `MulticastBoom` came
+> back as **`Multicast_MulticastBoom`** after `replicates:"multicast"` — the engine prefixes the
+> function name to match the RPC convention. `Run on Server` and `Run on owning Client` prefix
+> similarly. The node GUID is stable, but anything holding the old *name* goes stale: a
+> `find_nodes {byTitle}`, a `set_function_flags {function:"..."}` by name, a call site addressed by
+> name. **Address the event by `nodeGuid` after changing its replication**, and re-read the returned
+> `target` to learn the new name.
+
+---
+
+## 4c. Array nodes and node-class selection
+
+`add_function_call` picks the same `UK2Node_CallFunction` **subclass** the engine would, and reports
+it back as `nodeClass`:
+
+| Function metadata | Node class |
+|---|---|
+| `MD_ArrayParam` (all of `UKismetArrayLibrary`) | `UK2Node_CallArrayFunction` |
+| `MD_DataTablePin` | `UK2Node_CallDataTableFunction` |
+| commutative + pure | `UK2Node_CommutativeAssociativeBinaryOperator` |
+| `MD_MaterialParameterCollectionFunction` | `UK2Node_CallMaterialParameterCollectionFunction` |
+| interface function on an external target (or `asMessage: true`) | `UK2Node_Message` |
+
+> **This supersedes the old "`Array_Find` won't stay typed" gotcha.** That was never an `Array_Find`
+> quirk — a plain `CallFunction` has none of the wildcard-propagation logic that ties `TargetArray`'s
+> element type to its neighbours, so forced types compiled `0/0` and then reverted to wildcard on
+> save+reload. `UK2Node_CallArrayFunction` owns that logic. Array Add/Remove/Contains/Length/Find/
+> Insert/Append/Sort are now directly authorable. The `ForEachLoop` macro workaround still works but
+> is no longer required. `refresh_node` remains the way to prove durability before you cook.
+
+`UK2Node_PromotableOperator` is deliberately **not** selected: the engine gates it on type-promotion
+registry state, and one spawned outside that path comes up with unresolved wildcards.
+
+---
+
+## 5. Adding and removing pins
+
+### `add_pin` — change a signature without rebuilding
+
+`add_pin {name, type, direction?, container?, default?}` plus a target: `graphId`,
+`blueprintId` + `function`, or `nodeGuid` (a custom event).
+
+**The direction inversion is the thing to know.** You say `input`/`output` in *function* terms and
+the endpoint maps it — but underneath, a function's inputs live on the **entry** node as
+`EGPD_Output` (the entry emits arguments into the graph) and its outputs live on the **Return** node
+as `EGPD_Input`. If you ever address those nodes directly, that is why the directions look backwards.
+
+- **A custom event has no outputs.** Events are fire-and-forget; `direction:"output"` is refused.
+- **Adding an output to a void function creates a Return node** and wires it from the entry's exec.
+  Without that link the Return is unreachable, the out-param is never written, and the value feeding
+  it is dead-code-eliminated — it compiles clean and does nothing.
+- **Outputs are mirrored onto every sibling Return node**, all with the *same* name. A graph with
+  several Return nodes shares one signature; letting each uniquify independently would give the same
+  parameter different names on different returns, which does not compile.
+- The name is uniquified if taken; the response reports the final name and a `warning` when it
+  differs from what you asked for.
+- `CanCreateUserDefinedPin` is consulted first, so an illegal type/direction fails before anything
+  is mutated.
+
+## 5b. Removing pins
 
 `remove_pin {node, pin, confirm:true, direction?}` handles exactly two cases:
 
@@ -155,6 +254,103 @@ category · tooltip
 
 Anything else is **refused**: engine-allocated pins are recreated by `AllocateDefaultPins` on the
 next reconstruct, so "removing" one would silently revert.
+
+---
+
+## 5c. User-defined structs and enums
+
+`create_struct` / `add_struct_member` / `remove_struct_member` / `list_struct_members`,
+`create_enum` / `add_enum_value` / `remove_enum_value`.
+
+**Blueprint types only.** Native C++ structs and enums cannot be edited — the endpoints refuse them
+with that reason rather than a generic "not found".
+
+Two engine quirks these endpoints hide, worth knowing if you inspect the assets directly:
+
+- **A struct member's real `VarName` is not what you typed.** The engine appends a GUID suffix; what
+  you see in the editor is the separate `FriendlyName`. Members are addressed internally by `FGuid`,
+  which is why `list_struct_members` returns one — it is the only stable handle across the recompile
+  that every edit triggers. `remove_struct_member` accepts either a name or a guid.
+- **An enum entry's `FName` is engine-generated too.** The text you pass to `create_enum` /
+  `add_enum_value` becomes the *display name* (`DisplayNameMap`), which is what Blueprint shows and
+  what `list_enum_values` reports.
+
+Both types must keep **at least one** member/entry or they will not compile, so removing the last
+one is refused. A freshly created struct ships with a placeholder member; it is only dropped once
+your own members exist.
+
+> **Removing a non-final enum entry shifts every later index down.** Anything that stored the enum
+> by index — switch-on-enum nodes, saved defaults — silently re-points to a different value. The
+> response warns when this happens; refresh affected switch nodes afterwards.
+
+---
+
+## 5d. Reflection routes that already work
+
+`set_property` / `get_property` / `list_object_properties` take **any** `objectPath` and walk a
+dot-path from it. That covers far more than it looks like it does — a capability audit found that a
+large share of apparent "gaps" were really just undiscoverable object paths. These all work today.
+
+### Class defaults (the CDO)
+
+Every class has a default object named `Default__<ClassName>`, outered to the package
+(`DEFAULT_OBJECT_PREFIX` in `ObjectMacros.h`). Point `set_property` at it to edit **Class Defaults**:
+
+```json
+{ "objectPath": "/Game/BP/BP_Scooter.Default__BP_Scooter_C",
+  "propertyPath": "bReplicates", "value": "True" }
+```
+
+This is the route for `bReplicates`, `NetUpdateFrequency`, `bAlwaysRelevant`, `InitialLifeSpan`,
+default variable values — anything the Class Defaults panel shows.
+
+### Component defaults
+
+An SCS component's editable template is outered to the **generated class** and named
+`<ComponentName>_GEN_VARIABLE` (`USimpleConstructionScript::ComponentTemplateNameSuffix`). The `:`
+separates the object from its subobject:
+
+```json
+{ "objectPath": "/Game/BP/BP_Scooter.BP_Scooter_C:Mesh_GEN_VARIABLE",
+  "propertyPath": "StaticMesh", "value": "/Game/Meshes/SM_Body.SM_Body" }
+```
+
+That sets every component default — `StaticMesh`, `Mobility`, `AnimClass`, `OverrideMaterials`,
+collision profile, relative transform. `list_components` reports the name; append the suffix.
+
+### Widget layout
+
+`add_tree_widget` places a widget; **all** of its layout is `set_property` on the widget template,
+via the `blueprintId` + `widgetName` form:
+
+```json
+{ "blueprintId": "/Game/UI/WBP_HUD.WBP_HUD", "widgetName": "HealthBar",
+  "propertyPath": "Slot.Anchors.Minimum", "value": "(X=0.5,Y=0.0)" }
+```
+
+`Slot.*` covers anchors, alignment, offsets, size rules and z-order — the slot class varies with the
+parent panel (`UCanvasPanelSlot`, `UHorizontalBoxSlot`, …), so `list_object_properties` on the
+widget is the fastest way to see what its slot actually exposes. Styles, brushes, fonts, colours and
+padding are all ordinary properties on the widget itself.
+
+> **Caveat:** the widget branch of `set_property` runs a **full compile on every write**, so laying
+> out one widget with four properties is four compiles. Batch what you can.
+
+### Node properties
+
+Details-panel-only node settings have no dedicated endpoint, but every node serialization now emits
+`objectPath` — feed it straight to `set_property`:
+
+```json
+{ "objectPath": "<objectPath from list_nodes>",
+  "propertyPath": "CrossfadeDuration", "value": "0.25" }
+```
+
+That covers anim transition `CrossfadeDuration` / `BlendMode` / `PriorityOrder`, cast purity, switch
+defaults, comment node colours — anything the node exposes as a `UPROPERTY`.
+`list_object_properties` against the same path enumerates what a given node class actually has.
+
+> After changing a property that affects a node's pins, call `refresh_node` so the node reconstructs.
 
 ---
 
@@ -208,10 +404,10 @@ A cooked ABP's AnimGraph is not bytecode — it is baked into `AnimNodePropertie
 
 ## 7. Behaviours that are not bugs
 
-- **`Array_Find` won't stay typed — use a macro.** A raw `Array_Find` call node's wildcard pins can
-  be forced to a type and compile clean, but revert to wildcard on save+reload. For a durable
-  key→value lookup over parallel arrays use `ForEachLoop` + name-compare + `GetArrayItem`.
-  `refresh_node` reproduces the reload — use it to test durability before you cook.
+- **Array-library calls are first-class now** — see §4c. The old "`Array_Find` won't stay typed, use
+  a `ForEachLoop` macro" rule no longer applies: the cause was the spawned node class, and it is
+  fixed. `refresh_node` still reproduces a reload reconstruct, so it remains the way to prove
+  durability before you cook.
 - **Compile-heavy ops run alone.** `create_function`, `create_blueprint`, `recipe_add_debug_print`,
   `batch`, `set_property` (widget-BP branch), `create_editable_child`, `add_event_dispatcher` and
   the asset-lifecycle ops compile outside the blanket transaction, because a full compile
@@ -224,3 +420,16 @@ A cooked ABP's AnimGraph is not bytecode — it is baked into `AnimNodePropertie
   `duplicate_asset` does not, since it never destroys anything.
 - **Logging** — recipes use `PrintToModLoader` (hooked by UE4SS), because `PrintString` is stripped
   from shipping builds.
+
+## Never silence a mutating call
+
+`delete_level_actor` requires `confirm: true`. A cleanup script that piped its output to `/dev/null`
+never saw `{"ok":false,"error":"delete_level_actor requires confirm=true"}` — so three landscapes
+accumulated on top of each other (plus a leftover UDS actor fighting the sky), and the resulting
+z-fighting and black sky got blamed on the landscape material for several rounds.
+
+Worse, `[ -n "$OLD" ] && api delete_level_actor ... >/dev/null && echo "removed"` prints "removed"
+regardless: `curl` exits 0 on any HTTP response, including a JSON body reporting failure.
+
+**Rule:** always parse `ok` from a mutating endpoint's response. Never `>/dev/null` a call that
+changes state, and never treat a transport-level exit code as the operation's result.

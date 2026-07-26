@@ -105,7 +105,13 @@ namespace MifBridge
 		}
 
 		UPackage* Package = Blueprint->GetOutermost();
-		const FString FileName = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
+		// A World must be written as .umap, NOT .uasset. GetAssetPackageExtension() is unconditional,
+		// so saving a map used to drop an M_Foo.uasset beside the real M_Foo.umap — and the resolver
+		// searches .uasset FIRST, so the stray file then silently shadowed the actual level on every
+		// later load. ContainsMap() is the same test the engine's own save path uses.
+		const FString FileName = FPackageName::LongPackageNameToFilename(
+			Package->GetName(),
+			Package->ContainsMap() ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
 
 		FSavePackageArgs SaveArgs;
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
@@ -133,7 +139,13 @@ namespace MifBridge
 		if (!Asset) { Fail(Out, FString::Printf(TEXT("asset not found: %s"), *Path)); return; }
 		UPackage* Package = Asset->GetOutermost();
 		Package->MarkPackageDirty();
-		const FString FileName = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
+		// A World must be written as .umap, NOT .uasset. GetAssetPackageExtension() is unconditional,
+		// so saving a map used to drop an M_Foo.uasset beside the real M_Foo.umap — and the resolver
+		// searches .uasset FIRST, so the stray file then silently shadowed the actual level on every
+		// later load. ContainsMap() is the same test the engine's own save path uses.
+		const FString FileName = FPackageName::LongPackageNameToFilename(
+			Package->GetName(),
+			Package->ContainsMap() ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
 		FSavePackageArgs SaveArgs;
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 		SaveArgs.SaveFlags = SAVE_NoError;
@@ -151,7 +163,13 @@ namespace MifBridge
 		}
 
 		UPackage* Package = Blueprint->GetOutermost();
-		const FString FileName = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
+		// A World must be written as .umap, NOT .uasset. GetAssetPackageExtension() is unconditional,
+		// so saving a map used to drop an M_Foo.uasset beside the real M_Foo.umap — and the resolver
+		// searches .uasset FIRST, so the stray file then silently shadowed the actual level on every
+		// later load. ContainsMap() is the same test the engine's own save path uses.
+		const FString FileName = FPackageName::LongPackageNameToFilename(
+			Package->GetName(),
+			Package->ContainsMap() ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
 		if (!FPaths::FileExists(FileName))
 		{
 			Fail(Out, FString::Printf(TEXT("asset not saved to disk yet, nothing to back up: %s"), *FileName));
@@ -770,7 +788,7 @@ namespace MifBridge
 
 		FEdGraphPinType PinType;
 		FString TypeError;
-		if (!MakePinType(JStr(In, TEXT("type")), JStr(In, TEXT("container")), PinType, TypeError))
+		if (!MakePinType(JStr(In, TEXT("type")), JStr(In, TEXT("container")), PinType, TypeError, JStr(In, TEXT("valueType"))))
 		{
 			Fail(Out, TypeError);
 			return;
@@ -874,6 +892,22 @@ namespace MifBridge
 			Fail(Out, FString::Printf(TEXT("invalid new name '%s'"), *NewName));
 			return;
 		}
+
+		// An event dispatcher is a PC_MCDelegate member variable PLUS a signature graph. Renaming
+		// only the variable — which is all RenameMemberVariable does — leaves the graph behind under
+		// the old name, and the next skeleton regen breaks the dispatcher. Refuse and redirect.
+		for (const FBPVariableDescription& Var : Blueprint->NewVariables)
+		{
+			if (Var.VarName.ToString() == OldName && Var.VarType.PinCategory == UEdGraphSchema_K2::PC_MCDelegate)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is the backing delegate of an event dispatcher, not a plain variable. ")
+					TEXT("Renaming it here would orphan the signature graph and break the dispatcher on the next compile — ")
+					TEXT("use rename_event_dispatcher, which renames both halves."), *OldName));
+				return;
+			}
+		}
+
 		Blueprint->Modify();
 		FBlueprintEditorUtils::RenameMemberVariable(Blueprint, FName(*OldName), FName(*NewName));
 		Out->SetStringField(TEXT("name"), NewName);

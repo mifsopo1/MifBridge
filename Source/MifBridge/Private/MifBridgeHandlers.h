@@ -28,6 +28,9 @@ namespace MifBridge
 	TArray<FString> GetEndpointNames();
 	/** Wrap the named handler in an editor-script guard + one transaction and run it. */
 	void RunEndpoint(const FString& Endpoint, const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out);
+	/** True if the endpoint runs a full compile and therefore must never execute inside another
+	 *  endpoint's open transaction (batch uses this instead of its own literal list, which drifted). */
+	bool IsCompileHeavyEndpoint(const FString& Endpoint);
 
 	// --- Result helpers -----------------------------------------------------
 	void Fail(const TSharedRef<FJsonObject>& Out, const FString& Message);
@@ -89,7 +92,11 @@ namespace MifBridge
 	UClass* ResolveClassStrictField(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields,
 		UBlueprint* ContextBP, const TSharedRef<FJsonObject>& Out);
 	UScriptStruct* ResolveStruct(const FString& Name);
-	bool MakePinType(const FString& TypeStr, const FString& Container, FEdGraphPinType& OutType, FString& OutError);
+	/** Build a pin type from the string grammar. Container is array|set|map (empty = single value).
+	 *  For container="map", TypeStr is the KEY type and ValueTypeStr is the VALUE type — a map needs
+	 *  both, the value going into FEdGraphPinType::PinValueType. */
+	bool MakePinType(const FString& TypeStr, const FString& Container, FEdGraphPinType& OutType, FString& OutError,
+		const FString& ValueTypeStr = FString());
 	bool IsValidIdentifier(const FString& Name);
 
 	// --- Node spawning ------------------------------------------------------
@@ -175,6 +182,7 @@ namespace MifBridge
 	MIF_DECL(reconnect_pin);
 	MIF_DECL(set_pin_default);
 	MIF_DECL(splice_into_exec);
+	MIF_DECL(add_pin);
 	MIF_DECL(remove_pin);
 
 	// Nodes (phase 3 additions)
@@ -184,6 +192,10 @@ namespace MifBridge
 	MIF_DECL(add_self);
 	MIF_DECL(add_literal);
 	MIF_DECL(create_function);
+	MIF_DECL(set_function_flags);
+	MIF_DECL(rename_function);
+	MIF_DECL(rename_event);
+	MIF_DECL(rename_event_dispatcher);
 	MIF_DECL(create_blueprint);
 	MIF_DECL(resolve_struct);
 	MIF_DECL(describe_class);
@@ -263,6 +275,79 @@ namespace MifBridge
 	MIF_DECL(get_property);
 	MIF_DECL(list_object_properties);
 
+	// NAVIGATION (MifBridgeNavigation.cpp) — nav bounds, mesh build, and nav-driven movement.
+	// Building is asynchronous: request then poll nav_status, never block.
+	MIF_DECL(add_nav_volume);
+	MIF_DECL(build_navmesh);
+	MIF_DECL(nav_status);
+	MIF_DECL(move_actor_to);
+
+	// Level-authoring throughput + material control (MifBridgeAuthoring.cpp). Each of these was a
+	// hard blocker when building a 426-actor town by hand.
+	MIF_DECL(spawn_many);
+	MIF_DECL(duplicate_actors);
+	MIF_DECL(create_material_instance);
+	MIF_DECL(set_material_parameter);
+	MIF_DECL(add_foliage_instances);
+
+	// LANDSCAPE authoring (MifBridgeLandscape.cpp) — real terrain, not a stretched plane.
+	// Every argument is in WORLD units; the vertex-space conversion lives inside the handlers.
+	// create_landscape is self-managed: Import() builds and registers heightmap/weightmap textures,
+	// which must not sit inside RunEndpoint's blanket transaction.
+	MIF_DECL(create_landscape);
+	MIF_DECL(sculpt_landscape);
+	MIF_DECL(paint_landscape);
+	MIF_DECL(bind_landscape_rvt);
+	MIF_DECL(landscape_info);
+
+	// WORLD lifecycle + spline authoring + ground snapping (MifBridgeWorld.cpp).
+	// new_level/load_level force bPromptUserToSave=false — a modal blocks the game thread, which is
+	// also the thread this HTTP server runs on, so a prompt here deadlocks an unattended run.
+	// set_spline_points is what makes NPCs walk: BP_SegmentedPathTaskMarker routes from its PathSpline.
+	MIF_DECL(new_level);
+	MIF_DECL(save_level_as);
+	MIF_DECL(load_level);
+	MIF_DECL(set_spline_points);
+	MIF_DECL(get_spline_points);
+	MIF_DECL(snap_actors_to_ground);
+
+	// SPATIAL awareness + VISUAL feedback (MifBridgeSpatial.cpp) — numbers for correctness,
+	// pixels for taste. These exist because a scene built blind came out wrong in ways that were
+	// all detectable from data.
+	MIF_DECL(get_actor_bounds);
+	MIF_DECL(check_overlaps);
+	MIF_DECL(trace_ground);
+	MIF_DECL(capture_camera);
+	MIF_DECL(scene_report);
+
+	// Play-In-Editor control + runtime observation (MifBridgePIE.cpp).
+	// start/stop are DEFERRED by the engine and these handlers run ON the game thread, so they
+	// request and return — the caller polls pie_status. Blocking here would deadlock PIE startup.
+	MIF_DECL(start_pie);
+	MIF_DECL(stop_pie);
+	MIF_DECL(pie_status);
+	MIF_DECL(list_pie_actors);
+	MIF_DECL(run_console_captured);
+
+	// LEVEL / placed-actor editing (MifBridgeLevel.cpp) — operates on the level currently open.
+	// The value is actorPath: set_property already edits a placed actor once you have one.
+	MIF_DECL(list_level_actors);
+	MIF_DECL(spawn_actor_in_level);
+	MIF_DECL(set_actor_transform);
+	MIF_DECL(set_actor_label);
+	MIF_DECL(delete_level_actor);
+	MIF_DECL(select_level_actors);
+
+	// User-defined STRUCT and ENUM authoring (MifBridgeUserTypes.cpp).
+	// Blueprint-only types; native C++ structs/enums cannot be edited.
+	MIF_DECL(create_struct);
+	MIF_DECL(list_struct_members);
+	MIF_DECL(add_struct_member);
+	MIF_DECL(remove_struct_member);
+	MIF_DECL(create_enum);
+	MIF_DECL(add_enum_value);
+	MIF_DECL(remove_enum_value);
+
 	// Animation ASSET introspection (MifBridgeAnimation.cpp) — read-only.
 	// Animation BLUEPRINTS go through the normal graph endpoints; GatherGraphs recurses into
 	// nested graphs, so state machines / states / transition rules are reachable there.
@@ -281,6 +366,9 @@ namespace MifBridge
 	MIF_DECL(compile);
 	MIF_DECL(run_console);
 	MIF_DECL(validate);
+
+	// Self-audit — the plugin reporting its own invariants from inside the running DLL.
+	MIF_DECL(self_audit);
 
 	// Batch
 	MIF_DECL(batch);

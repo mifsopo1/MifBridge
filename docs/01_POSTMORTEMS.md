@@ -150,3 +150,66 @@ mistake now succeeds instead of failing.
 **Prevention.** A helper with a convenience default is dangerous when the default is *plausible*.
 Where a value is mandatory, use an API that cannot express the default — hence a separate strict
 entry point rather than a flag on the existing one.
+
+---
+
+## `spawn_actor_in_level` silently discarded `mesh` — four ground rebuilds spent on the wrong problem
+
+**Symptom.** Spawning a road mesh to measure it returned `ok: true` with a valid `actorPath`, and
+`get_actor_bounds` then reported `hasBounds: false` and a size of `0 x 0 x 0` for every mesh tried.
+The obvious reading — "these cooked meshes can't be loaded from a container" — was wrong.
+
+**Root cause.** `H_spawn_actor_in_level` never read a `mesh` parameter at all. It spawned a bare
+`AStaticMeshActor` with no mesh assigned and reported success. `spawn_many` (a different file,
+`MifBridgeAuthoring.cpp`) *does* accept `mesh`, which is why bulk placement had always worked and
+single spawns had never been noticed as broken.
+
+**Fix.** `spawn_actor_in_level` now honours `mesh`/`staticMesh`, and fails loudly with a message
+naming the actor class when the class has no `UStaticMeshComponent`. Note the mobility dance: a
+spawned `StaticMeshActor` defaults to Static mobility, which refuses `SetStaticMesh` — the handler
+flips to Movable, assigns, and restores.
+
+**Prevention.** This is the same failure mode as the eight parameter-naming traps, and the same as
+the `blueprintType` bug: **an ignored parameter is worse than a rejected one**, because the caller
+gets a success response and then debugs the wrong subsystem. Any handler that accepts an optional
+parameter must either act on it or explain why it could not.
+
+**Cost.** Real cost was not the measurement detour but the four preceding ground rebuilds (stretched
+plane → mixed materials → tile grid → 2,116 instanced rock meshes). Each failed *differently*, which
+kept suggesting the next parameter tweak. The actual problem was a missing capability — see
+`08_LANDSCAPE.md`. **When repeated attempts at one goal each fail in a new way, stop tuning and ask
+what capability is absent.**
+
+---
+
+## Binding an RVT with no valid pages is worse than not binding one
+
+**Symptom.** Terrain rendered black with white speckle. Diagnosed as an unbound runtime virtual
+texture, since `DDS2_Landscape_MasterMat` samples one. Built `bind_landscape_rvt`, bound
+`RVT_IslaSombraLandscape` + `...Height`, created the volumes, verified all of it in `landscape_info`.
+Terrain stayed black — and every building and road in the level turned blown-out white.
+
+**Root cause.** The conclusion was backwards. Binding an RVT that has no valid pages does not fix the
+terrain; it breaks *every other material that samples that RVT*. Buildings and roads sample the
+landscape RVT to blend their bases into the ground, so they went from correct to white the moment the
+RVT existed but had nothing in it. Deleting the two `ARuntimeVirtualTextureVolume` actors restored
+buildings, roads and props immediately.
+
+**What actually proved it.** A `/Engine/BasicShapes/Cube` with `BasicShapeMaterial` spawned beside a
+building rendered perfectly — correct albedo, correct shading, correct cast shadow — while the
+building next to it was pure white and the ground was pure black. That single frame ruled out
+exposure, lighting and the capture pipeline in one shot, and pointed at "specific materials" rather
+than "the scene". Reach for a known-good reference object *early*; it is far cheaper than another
+round of cvar tweaking.
+
+**Fix.** Do not bind the shipped RVTs into a scratch level. The black terrain was a separate problem,
+solved by assigning a landscape material that does not sample an RVT — `set_property` on
+`LandscapeMaterial` applies in place, no rebuild needed.
+
+**Prevention.** `bind_landscape_rvt` is still correct *when the RVT is genuinely populated*, but its
+note must say what binding costs when it is not. An RVT is a scene-wide contract, not a per-actor
+setting: turning it on changes every material that reads it, including ones you were not looking at.
+
+**Cost.** Several rounds spent on exposure, sun angle, scalability and auto-exposure cvars — all of
+which were fine — because the failing thing (terrain) and the thing that broke (buildings) were never
+considered as one symptom with one cause.

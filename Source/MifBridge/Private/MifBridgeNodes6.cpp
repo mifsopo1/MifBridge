@@ -151,24 +151,63 @@ namespace MifBridge
 		UObject* Target = ResolveGenericTarget(In, Out);
 		if (!Target) return;
 
+		// Filtering and caps are NOT optional niceties here. Exporting every property of a large
+		// Blueprint actor is pathological: Ultra_Dynamic_Sky has ~545 properties, several of which
+		// are volumetric-cloud/curve structs whose ExportText runs to tens of kilobytes EACH. The
+		// unbounded version produced a response so large the request came back empty — the endpoint
+		// looked broken on exactly the objects you most want to inspect.
+		const FString NameFilter = JStrAny(In, { TEXT("nameContains"), TEXT("filter") });
+		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 200), 1, 5000);
+		// Long values are near-useless in a listing anyway — get_property returns the full value for
+		// a single named property, which is the right tool once you know what you want.
+		const int32 MaxValueChars = FMath::Clamp(JInt(In, TEXT("maxValueChars"), 200), 16, 100000);
+
 		TArray<TSharedPtr<FJsonValue>> Props;
+		int32 Matched = 0;
+		bool bTruncated = false;
 		for (TFieldIterator<FProperty> It(Target->GetClass()); It; ++It)
 		{
 			FProperty* Prop = *It;
 			if (!Prop) continue;
 
+			const FString PropName = Prop->GetName();
+			if (!NameFilter.IsEmpty() && !PropName.Contains(NameFilter))
+			{
+				continue;
+			}
+			++Matched;
+			if (Props.Num() >= Limit)
+			{
+				bTruncated = true;
+				continue;   // keep counting so the caller learns the real total
+			}
+
 			FString ValueStr;
 			Prop->ExportText_InContainer(0, ValueStr, Target, Target, Target, PPF_None);
+			bool bValueClipped = false;
+			if (ValueStr.Len() > MaxValueChars)
+			{
+				ValueStr = ValueStr.Left(MaxValueChars);
+				bValueClipped = true;
+			}
 
 			TSharedRef<FJsonObject> PropJson = MakeShared<FJsonObject>();
-			PropJson->SetStringField(TEXT("name"), Prop->GetName());
+			PropJson->SetStringField(TEXT("name"), PropName);
 			PropJson->SetStringField(TEXT("type"), Prop->GetCPPType());
 			PropJson->SetStringField(TEXT("value"), ValueStr);
+			if (bValueClipped)
+			{
+				// Say so rather than hand back a silently-cut value that looks complete.
+				PropJson->SetBoolField(TEXT("valueClipped"), true);
+			}
 			Props.Add(MakeShared<FJsonValueObject>(PropJson));
 		}
 
 		Out->SetStringField(TEXT("target"), Target->GetPathName());
 		Out->SetStringField(TEXT("class"), Target->GetClass()->GetName());
+		Out->SetNumberField(TEXT("count"), Props.Num());
+		Out->SetNumberField(TEXT("matched"), Matched);
+		Out->SetBoolField(TEXT("truncated"), bTruncated);
 		Out->SetArrayField(TEXT("properties"), Props);
 	}
 }

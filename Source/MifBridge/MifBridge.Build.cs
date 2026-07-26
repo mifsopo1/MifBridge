@@ -28,9 +28,13 @@ public class MifBridge : ModuleRules
 			"HTTPServer",        // FHttpServerModule / IHttpRouter
 			"Json",
 			"JsonUtilities",
-			"Landscape",         // ALandscapeProxy/ULandscapeComponent for diagnose_landscape
+			"Landscape",         // ALandscape create/sculpt/paint + diagnose_landscape
+			"Foliage",           // LandscapeEdit.h includes InstancedFoliageActor.h from this module
+			"VirtualTexturingEditor", // RuntimeVirtualTexture::SetBounds for bind_landscape_rvt
 			"AssetRegistry",     // find/open blueprints by path
 			"AssetTools",        // headless rename/duplicate (IAssetTools::RenameAssets/DuplicateAsset)
+			"NavigationSystem",  // ANavMeshBoundsVolume + UNavigationSystemV1::Build (navigation endpoints)
+			"AIModule",          // UAIBlueprintHelperLibrary::SimpleMoveToLocation (patrol / move_actor_to)
 			"EditorSubsystem",
 			"ToolMenus",         // Start/Stop menu toggle
 			"Slate",

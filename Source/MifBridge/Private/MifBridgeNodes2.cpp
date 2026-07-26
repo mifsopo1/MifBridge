@@ -10,6 +10,7 @@
 #include "Engine/Blueprint.h"
 #include "K2Node_BreakStruct.h"
 #include "K2Node_CustomEvent.h"
+#include "K2Node_EditablePinBase.h"   // shared base of FunctionEntry + CustomEvent (set_function_flags)
 #include "K2Node_FunctionEntry.h"
 #include "K2Node_FunctionResult.h"
 #include "K2Node_Literal.h"
@@ -26,6 +27,7 @@
 #include "Blueprint/UserWidget.h"                      // UUserWidget parent
 #include "Components/CanvasPanel.h"                    // UCanvasPanel root
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "GameFramework/Actor.h"    // AActor::GetIsReplicated — RPC sanity warning (set_function_flags)
 #include "Misc/PackageName.h"
 #include "ScopedTransaction.h"
 #include "UObject/Package.h"
@@ -99,7 +101,7 @@ namespace MifBridge
 					return false;
 				}
 				FEdGraphPinType PinType;
-				if (!MakePinType(JStr(Obj, TEXT("type")), JStr(Obj, TEXT("container")), PinType, OutError))
+				if (!MakePinType(JStr(Obj, TEXT("type")), JStr(Obj, TEXT("container")), PinType, OutError, JStr(Obj, TEXT("valueType"))))
 				{
 					return false;
 				}
@@ -434,6 +436,622 @@ namespace MifBridge
 			Out->SetStringField(TEXT("entryNodeGuid"), Entry->NodeGuid.ToString());
 		}
 		Out->SetObjectField(TEXT("compile"), CompileOut);
+	}
+
+	// --- rename_function / rename_event / rename_event_dispatcher ------------
+	//
+	// FBlueprintEditorUtils::RenameGraph does the heavy lifting for graphs: it renames the UEdGraph,
+	// repoints FunctionReference on the entry/result terminators, and fixes override graphs in CHILD
+	// blueprints. What it does NOT do is touch a delegate's backing member variable — a dispatcher is
+	// a signature graph PLUS a PC_MCDelegate variable, and renaming only one of the two breaks it.
+	// That asymmetry is why rename_event_dispatcher exists separately instead of being "rename the graph".
+
+	void H_rename_function(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("rename_function requires confirm=true"));
+			return;
+		}
+		UBlueprint* Blueprint = nullptr;
+		UEdGraph* Graph = nullptr;
+
+		const FString GraphId = JStr(In, TEXT("graphId"));
+		if (!GraphId.IsEmpty())
+		{
+			Graph = ResolveGraphField(In, Out, Blueprint);
+			if (!Graph) { return; }
+		}
+		else
+		{
+			Blueprint = ResolveBlueprintField(In, Out);
+			if (!Blueprint) { return; }
+			const FString OldName = JStrAny(In, { TEXT("oldName"), TEXT("function"), TEXT("name") });
+			if (OldName.IsEmpty())
+			{
+				Fail(Out, TEXT("supply graphId, or blueprintId + oldName"));
+				return;
+			}
+			for (UEdGraph* G : Blueprint->FunctionGraphs)
+			{
+				if (G && G->GetName() == OldName) { Graph = G; break; }
+			}
+			if (!Graph)
+			{
+				Fail(Out, FString::Printf(TEXT("function graph '%s' not found in %s"), *OldName, *Blueprint->GetName()));
+				return;
+			}
+		}
+
+		FString NewName = JStrAny(In, { TEXT("newName"), TEXT("to") });
+		NewName.TrimStartAndEndInline();
+		if (!IsValidIdentifier(NewName))
+		{
+			Fail(Out, FString::Printf(TEXT("invalid new function name '%s'"), *NewName));
+			return;
+		}
+		if (FBlueprintEditorUtils::IsDelegateSignatureGraph(Graph))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is an event-dispatcher signature graph, not a function — use rename_event_dispatcher, which also renames the backing delegate variable"),
+				*Graph->GetName()));
+			return;
+		}
+		const FString OldGraphName = Graph->GetName();
+		if (OldGraphName == NewName)
+		{
+			Fail(Out, TEXT("newName is the same as the current name"));
+			return;
+		}
+		for (UEdGraph* G : Blueprint->FunctionGraphs)
+		{
+			if (G && G->GetName() == NewName)
+			{
+				Fail(Out, FString::Printf(TEXT("a function named '%s' already exists"), *NewName));
+				return;
+			}
+		}
+
+		Blueprint->Modify();
+		FBlueprintEditorUtils::RenameGraph(Graph, NewName);
+		MarkStructural(Blueprint);
+
+		Out->SetStringField(TEXT("oldName"), OldGraphName);
+		Out->SetStringField(TEXT("name"), Graph->GetName());
+		Out->SetStringField(TEXT("graphId"), GraphIdOf(Blueprint, Graph));
+		// Call sites in OTHER blueprints resolve by name and do not auto-fix.
+		Out->SetStringField(TEXT("warning"),
+			TEXT("call sites in this blueprint are repointed automatically; callers in OTHER blueprints resolve by name and must be recompiled (or will show as errors)"));
+	}
+
+	void H_rename_event(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("rename_event requires confirm=true"));
+			return;
+		}
+		UEdGraphNode* Node = ResolveNodeField(In, TEXT("nodeGuid"), Out);
+		if (!Node)
+		{
+			return;
+		}
+		UK2Node_CustomEvent* Event = Cast<UK2Node_CustomEvent>(Node);
+		if (!Event)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("node is a %s — rename_event targets a Custom Event. (An OVERRIDE event's name comes from its parent and cannot be changed.)"),
+				*Node->GetClass()->GetName()));
+			return;
+		}
+		if (Event->IsOverride())
+		{
+			Fail(Out, TEXT("this event overrides a parent event — its name is fixed by the parent declaration"));
+			return;
+		}
+		FString NewName = JStrAny(In, { TEXT("newName"), TEXT("name"), TEXT("to") });
+		NewName.TrimStartAndEndInline();
+		if (!IsValidIdentifier(NewName))
+		{
+			Fail(Out, FString::Printf(TEXT("invalid new event name '%s'"), *NewName));
+			return;
+		}
+
+		const FString OldName = Event->CustomFunctionName.ToString();
+		UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(Node);
+		Event->Modify();
+		// OnRenameNode is the node's own rename entry point — it updates CustomFunctionName and
+		// keeps the node's cached title in sync. Setting CustomFunctionName directly would leave
+		// the title stale until the next reconstruct.
+		Event->OnRenameNode(NewName);
+		MarkStructural(Blueprint);
+
+		Out->SetStringField(TEXT("oldName"), OldName);
+		Out->SetStringField(TEXT("name"), Event->CustomFunctionName.ToString());
+		Out->SetStringField(TEXT("nodeGuid"), Event->NodeGuid.ToString());
+	}
+
+	void H_rename_event_dispatcher(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("rename_event_dispatcher requires confirm=true"));
+			return;
+		}
+		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
+		if (!Blueprint)
+		{
+			return;
+		}
+		const FString OldName = JStrAny(In, { TEXT("oldName"), TEXT("name"), TEXT("dispatcher") });
+		FString NewName = JStrAny(In, { TEXT("newName"), TEXT("to") });
+		NewName.TrimStartAndEndInline();
+		if (OldName.IsEmpty() || !IsValidIdentifier(NewName))
+		{
+			Fail(Out, FString::Printf(TEXT("oldName and a valid newName are required (got newName='%s')"), *NewName));
+			return;
+		}
+
+		UEdGraph* SignatureGraph = FBlueprintEditorUtils::GetDelegateSignatureGraphByName(Blueprint, FName(*OldName));
+		if (!SignatureGraph)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("event dispatcher '%s' not found in %s — list_dispatchers shows what exists"), *OldName, *Blueprint->GetName()));
+			return;
+		}
+
+		Blueprint->Modify();
+		// BOTH halves, or the dispatcher breaks: the signature graph carries the parameter list, the
+		// member variable is what call/bind nodes actually reference. RenameGraph does not touch the
+		// variable, and RenameMemberVariable does not touch the graph.
+		FBlueprintEditorUtils::RenameGraph(SignatureGraph, NewName);
+		FBlueprintEditorUtils::RenameMemberVariable(Blueprint, FName(*OldName), FName(*NewName));
+		MarkStructural(Blueprint);
+
+		Out->SetStringField(TEXT("oldName"), OldName);
+		Out->SetStringField(TEXT("name"), NewName);
+		Out->SetBoolField(TEXT("renamedSignatureGraph"), true);
+		Out->SetBoolField(TEXT("renamedDelegateVariable"), true);
+	}
+
+	// --- set_function_flags -------------------------------------------------
+	//
+	// RPC / replication and access flags on a FUNCTION or a CUSTOM EVENT — the "Replicates"
+	// dropdown (Not Replicated / Multicast / Run on Server / Run on owning Client), the "Reliable"
+	// checkbox, and the access specifier / pure / const / CallInEditor boxes beside them.
+	//
+	// One endpoint covers both node kinds because the engine does: FBlueprintGraphActionDetails::
+	// SetNetFlags takes a UK2Node_EditablePinBase and branches internally, since UK2Node_FunctionEntry
+	// and UK2Node_CustomEvent share that base. The storage differs — the entry node keeps flags in
+	// ExtraFlags (Get/Set/Add/ClearExtraFlags), the custom event in its public FunctionFlags word —
+	// so both branches are needed, exactly as the editor has them.
+	//
+	//   in:  { blueprintId?, graphId? | function? | nodeGuid? ,
+	//          replicates?: "none"|"multicast"|"server"|"client", reliable?,
+	//          access?: "public"|"protected"|"private", pure?, const?, callInEditor?,
+	//          category?, tooltip?, keywords? }
+	//   out: { target, kind:"function"|"customEvent", flags:{...}, warnings[] }
+	// Partial update, same contract as set_variable_flags: only keys present in In are touched.
+	namespace
+	{
+		// Mirrors FBlueprintGraphActionDetails::SetNetFlags (BlueprintDetailsCustomization.cpp).
+		// NetFlags is ONE of FUNC_NetMulticast / FUNC_NetServer / FUNC_NetClient, or 0 for "not
+		// replicated". FUNC_Net is set alongside the mode; all four are cleared first, so switching
+		// modes can never leave a stale second mode bit behind.
+		void ApplyNetFlags(UK2Node_EditablePinBase* Node, uint32 NetFlags)
+		{
+			const int32 FlagsToSet   = NetFlags ? (FUNC_Net | NetFlags) : 0;
+			const int32 FlagsToClear = FUNC_Net | FUNC_NetMulticast | FUNC_NetServer | FUNC_NetClient;
+
+			Node->Modify();
+			if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Node))
+			{
+				int32 Extra = Entry->GetExtraFlags();
+				Extra &= ~FlagsToClear;
+				Extra |= FlagsToSet;
+				Entry->SetExtraFlags(Extra);
+			}
+			else if (UK2Node_CustomEvent* Event = Cast<UK2Node_CustomEvent>(Node))
+			{
+				Event->FunctionFlags &= ~FlagsToClear;
+				Event->FunctionFlags |= FlagsToSet;
+			}
+		}
+
+		void ApplyFlagBit(UK2Node_EditablePinBase* Node, int32 Flag, bool bEnable)
+		{
+			Node->Modify();
+			if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Node))
+			{
+				if (bEnable) { Entry->AddExtraFlags(Flag); }
+				else         { Entry->ClearExtraFlags(Flag); }
+			}
+			else if (UK2Node_CustomEvent* Event = Cast<UK2Node_CustomEvent>(Node))
+			{
+				if (bEnable) { Event->FunctionFlags |= Flag; }
+				else         { Event->FunctionFlags &= ~Flag; }
+			}
+		}
+
+		// Access specifiers are mutually exclusive and live behind one mask. Clear all three, set one.
+		void ApplyAccessSpecifier(UK2Node_EditablePinBase* Node, int32 Specifier)
+		{
+			const int32 ClearMask = ~((int32)FUNC_AccessSpecifiers);
+			Node->Modify();
+			if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Node))
+			{
+				int32 Extra = Entry->GetExtraFlags();
+				Extra &= ClearMask;
+				Extra |= Specifier;
+				Entry->SetExtraFlags(Extra);
+			}
+			else if (UK2Node_Event* Event = Cast<UK2Node_Event>(Node))
+			{
+				Event->FunctionFlags &= ClearMask;
+				Event->FunctionFlags |= Specifier;
+			}
+		}
+
+		uint32 CurrentFlagsOf(UK2Node_EditablePinBase* Node)
+		{
+			if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Node))
+			{
+				return (uint32)Entry->GetExtraFlags();
+			}
+			if (UK2Node_CustomEvent* Event = Cast<UK2Node_CustomEvent>(Node))
+			{
+				return Event->FunctionFlags;
+			}
+			return 0;
+		}
+
+		// What the ENGINE will actually act on, as opposed to the raw stored word.
+		// UK2Node_CustomEvent::GetNetFlags() applies two corrections the raw field does not:
+		// an OVERRIDE inherits the parent's net flags, and any mode bit without FUNC_Net is zeroed.
+		// Reading the raw word would let the response claim "multicast" for a node the compiler
+		// treats as not replicated.
+		uint32 EffectiveFlagsOf(UK2Node_EditablePinBase* Node)
+		{
+			if (UK2Node_CustomEvent* Event = Cast<UK2Node_CustomEvent>(Node))
+			{
+				const uint32 NonNet = Event->FunctionFlags & ~((uint32)FUNC_NetFuncFlags);
+				return NonNet | Event->GetNetFlags();
+			}
+			return CurrentFlagsOf(Node);
+		}
+
+		TSharedRef<FJsonObject> SerializeFunctionFlags(uint32 F)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			// Mode is only meaningful WITH FUNC_Net — mirrors the engine's own sanitize, so a stray
+			// mode bit can't read back as replicated when the compiler will discard it.
+			const TCHAR* Mode = TEXT("none");
+			if (F & FUNC_Net)
+			{
+				if      (F & FUNC_NetMulticast) { Mode = TEXT("multicast"); }
+				else if (F & FUNC_NetServer)    { Mode = TEXT("server"); }
+				else if (F & FUNC_NetClient)    { Mode = TEXT("client"); }
+			}
+			J->SetStringField(TEXT("replicates"), Mode);
+			J->SetBoolField(TEXT("net"), (F & FUNC_Net) != 0);
+			J->SetBoolField(TEXT("reliable"), (F & FUNC_NetReliable) != 0);
+			// Report the access word through the mask so a corrupt two-bit combination surfaces as
+			// "invalid" instead of being masked by an if/else chain that reports the first bit it sees.
+			const uint32 AccessBits = F & (uint32)FUNC_AccessSpecifiers;
+			const TCHAR* AccessStr =
+				(AccessBits == FUNC_Public)    ? TEXT("public")    :
+				(AccessBits == FUNC_Protected) ? TEXT("protected") :
+				(AccessBits == FUNC_Private)   ? TEXT("private")   :
+				(AccessBits == 0)              ? TEXT("unspecified") : TEXT("invalid");
+			J->SetStringField(TEXT("access"), AccessStr);
+			J->SetBoolField(TEXT("pure"), (F & FUNC_BlueprintPure) != 0);
+			J->SetBoolField(TEXT("isConst"), (F & FUNC_Const) != 0);
+			J->SetBoolField(TEXT("static"), (F & FUNC_Static) != 0);
+			J->SetBoolField(TEXT("authorityOnly"), (F & FUNC_BlueprintAuthorityOnly) != 0);
+			return J;
+		}
+	}
+
+	void H_set_function_flags(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		// --- Resolve the target: a custom-event node, or a function graph's entry node ---------
+		UBlueprint* Blueprint = nullptr;
+		UK2Node_EditablePinBase* Target = nullptr;
+		FString Kind;
+		FString TargetName;
+
+		// "nodeId" is accepted by ResolveNodeField too — the selector must know every spelling or a
+		// caller using it silently falls through to the function-graph branch.
+		const FString NodeGuid = JStrAny(In, { TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId") });
+		if (!NodeGuid.IsEmpty())
+		{
+			UEdGraphNode* Node = ResolveNodeField(In, TEXT("nodeGuid"), Out);
+			if (!Node)
+			{
+				return;
+			}
+			// Require one of the two CONCRETE types. UK2Node_EditablePinBase alone is far too loose:
+			// FunctionResult, Tunnel, Composite, MacroInstance and plain (non-custom) Event all derive
+			// from it, would pass the cast, then match neither branch below — writing nothing while
+			// still reporting ok. Fail loudly instead of silently no-op'ing.
+			const bool bIsCustomEvent   = Node->IsA<UK2Node_CustomEvent>();
+			const bool bIsFunctionEntry = Node->IsA<UK2Node_FunctionEntry>();
+			if (!bIsCustomEvent && !bIsFunctionEntry)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("node %s is a %s — these flags apply only to a Custom Event or a function ENTRY node. ")
+					TEXT("For a function graph pass graphId or blueprintId+function instead."),
+					*NodeGuid, *Node->GetClass()->GetName()));
+				return;
+			}
+			Target = CastChecked<UK2Node_EditablePinBase>(Node);
+			Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(Node);
+			Kind = bIsCustomEvent ? TEXT("customEvent") : TEXT("function");
+			TargetName = Node->GetNodeTitle(ENodeTitleType::ListView).ToString();
+		}
+		else
+		{
+			// Address a function graph by graphId, or by blueprintId + function name.
+			UEdGraph* Graph = nullptr;
+			const FString GraphId = JStr(In, TEXT("graphId"));
+			if (!GraphId.IsEmpty())
+			{
+				Graph = ResolveGraphField(In, Out, Blueprint);
+				if (!Graph)
+				{
+					return;
+				}
+			}
+			else
+			{
+				Blueprint = ResolveBlueprintField(In, Out);
+				if (!Blueprint)
+				{
+					return;
+				}
+				const FString FunctionName = JStrAny(In, { TEXT("function"), TEXT("functionName"), TEXT("name") });
+				if (FunctionName.IsEmpty())
+				{
+					Fail(Out, TEXT("supply one of: nodeGuid (a custom event), graphId, or blueprintId + function"));
+					return;
+				}
+				for (UEdGraph* G : Blueprint->FunctionGraphs)
+				{
+					if (G && G->GetName() == FunctionName) { Graph = G; break; }
+				}
+				if (!Graph)
+				{
+					Fail(Out, FString::Printf(TEXT("function graph '%s' not found in %s"), *FunctionName, *Blueprint->GetName()));
+					return;
+				}
+			}
+
+			TArray<UK2Node_FunctionEntry*> Entries;
+			Graph->GetNodesOfClass(Entries);
+			if (Entries.Num() == 0)
+			{
+				Fail(Out, FString::Printf(TEXT("graph '%s' has no function entry node (is it an event graph? address custom events by nodeGuid)"), *Graph->GetName()));
+				return;
+			}
+			Target = Entries[0];
+			Kind = TEXT("function");
+			TargetName = Graph->GetName();
+		}
+
+		if (!Blueprint)
+		{
+			Fail(Out, TEXT("could not resolve the owning blueprint"));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Warnings;
+
+		// A custom event that OVERRIDES a parent event takes its net flags from the SUPER function —
+		// the editor disables the whole replication row for exactly this case
+		// ("Cannot alter a custom-event's replication settings when it overrides an event declared
+		// in a parent."). Writing them here would look like it worked and change nothing.
+		if (UK2Node_CustomEvent* AsEvent = Cast<UK2Node_CustomEvent>(Target))
+		{
+			if (AsEvent->IsOverride() && JHasAny(In, { TEXT("replicates"), TEXT("reliable") }))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' overrides a parent event, so its replication settings come from the parent and cannot be changed here (same rule as the Details panel). Change them on the declaring class."),
+					*TargetName));
+				return;
+			}
+		}
+
+		// Net changes need a full compile afterwards, so the mutations go in their OWN tight
+		// transaction and the compile happens after it closes (set_function_flags is registered in
+		// IsSelfManagedEndpoint, so RunEndpoint does not wrap us).
+		const bool bNetTouched = JHasAny(In, { TEXT("replicates"), TEXT("reliable") });
+		bool bTouched = false;
+		{
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "SetFunctionFlags", "Mif Bridge: set_function_flags"));
+		Blueprint->Modify();
+
+		// --- Replication mode --------------------------------------------------------
+		if (In->HasField(TEXT("replicates")))
+		{
+			const FString Mode = JStr(In, TEXT("replicates")).ToLower();
+			uint32 NetFlags = 0;
+			if      (Mode == TEXT("none") || Mode == TEXT("notreplicated") || Mode.IsEmpty()) { NetFlags = 0; }
+			else if (Mode == TEXT("multicast"))                                { NetFlags = FUNC_NetMulticast; }
+			else if (Mode == TEXT("server") || Mode == TEXT("runonserver"))    { NetFlags = FUNC_NetServer; }
+			else if (Mode == TEXT("client") || Mode == TEXT("runonclient")
+				  || Mode == TEXT("owningclient"))                             { NetFlags = FUNC_NetClient; }
+			else
+			{
+				Fail(Out, FString::Printf(
+					TEXT("unknown replicates value '%s' (expected: none | multicast | server | client)"), *Mode));
+				return;
+			}
+
+			// An RPC only does anything on a replicated Actor. Warn rather than silently flipping
+			// bReplicates on the caller's behalf.
+			if (NetFlags != 0)
+			{
+				if (!Blueprint->ParentClass || !Blueprint->ParentClass->IsChildOf(AActor::StaticClass()))
+				{
+					Warnings.Add(MakeShared<FJsonValueString>(
+						TEXT("RPCs only work on Actors (or their components); this blueprint's parent is not an AActor subclass, so the flag will have no effect")));
+				}
+				else if (AActor* CDO = Blueprint->GeneratedClass ? Cast<AActor>(Blueprint->GeneratedClass->GetDefaultObject()) : nullptr)
+				{
+					if (!CDO->GetIsReplicated())
+					{
+						Warnings.Add(MakeShared<FJsonValueString>(
+							TEXT("owning Actor has bReplicates=false — set it with set_property {propertyPath:\"bReplicates\", value:\"True\"} or the RPC will never be sent")));
+					}
+				}
+			}
+
+			ApplyNetFlags(Target, NetFlags);
+			bTouched = true;
+		}
+
+		// --- Reliable ----------------------------------------------------------------
+		if (In->HasField(TEXT("reliable")))
+		{
+			const bool bReliable = JBool(In, TEXT("reliable"));
+			// Reliable is only meaningful on a replicated function — the editor greys the checkbox
+			// out unless FUNC_Net is set (CanSetReliabilityProperty).
+			if (bReliable && (CurrentFlagsOf(Target) & FUNC_Net) == 0)
+			{
+				Warnings.Add(MakeShared<FJsonValueString>(
+					TEXT("reliable=true has no effect on a non-replicated function — pass replicates=multicast|server|client as well")));
+			}
+			ApplyFlagBit(Target, FUNC_NetReliable, bReliable);
+			bTouched = true;
+		}
+
+		// --- Access specifier ---------------------------------------------------------
+		if (In->HasField(TEXT("access")))
+		{
+			const FString Access = JStr(In, TEXT("access")).ToLower();
+			int32 Specifier = 0;
+			if      (Access == TEXT("public"))    { Specifier = FUNC_Public; }
+			else if (Access == TEXT("protected")) { Specifier = FUNC_Protected; }
+			else if (Access == TEXT("private"))   { Specifier = FUNC_Private; }
+			else
+			{
+				Fail(Out, FString::Printf(TEXT("unknown access '%s' (expected: public | protected | private)"), *Access));
+				return;
+			}
+			// Clear the WHOLE access mask, then set exactly one — mirroring
+			// FBlueprintGraphActionDetails::OnAccessSpecifierSelected. Both node kinds are BORN with
+			// FUNC_Public set (K2Node_CustomEvent.cpp ctor; BlueprintEditorUtils.h ExtraFunctionFlags),
+			// so merely setting FUNC_Private would leave Public|Private — an invalid two-bit access
+			// word that makes the compiler emit "Wrong access specifier" and the panel show "Error".
+			ApplyAccessSpecifier(Target, Specifier);
+			bTouched = true;
+		}
+
+		// --- Pure / const / CallInEditor ----------------------------------------------
+		// Both are function-graph concepts; the Details panel hides them for events
+		// (IsPureFunctionVisible / IsConstFunctionVisible both gate on Cast<UK2Node_FunctionEntry>).
+		// Writing them onto a custom event would set bits nothing ever reads.
+		if (In->HasField(TEXT("pure")))
+		{
+			if (!Target->IsA<UK2Node_FunctionEntry>())
+			{
+				Fail(Out, TEXT("'pure' applies to function graphs only — a custom event is never pure"));
+				return;
+			}
+			const bool bPure = JBool(In, TEXT("pure"));
+			if (bPure && (CurrentFlagsOf(Target) & FUNC_Net) != 0)
+			{
+				// Deliberately precise: the Blueprint compiler does NOT reject pure+RPC (there is no
+				// such check anywhere in Editor/KismetCompiler). What actually happens is worse —
+				// it compiles, then the call is routed by network callspace and its return value is
+				// zeroed whenever it executes remotely (ScriptCore.cpp ProcessInternal/ClearReturnValue).
+				Warnings.Add(MakeShared<FJsonValueString>(
+					TEXT("pure + RPC is not rejected by the compiler, but the return value is zeroed whenever the call executes remotely — you almost certainly want one or the other")));
+			}
+			ApplyFlagBit(Target, FUNC_BlueprintPure, bPure);
+			bTouched = true;
+		}
+		if (JHasAny(In, { TEXT("const"), TEXT("isConst") }))
+		{
+			if (!Target->IsA<UK2Node_FunctionEntry>())
+			{
+				Fail(Out, TEXT("'const' applies to function graphs only — a custom event has no const concept"));
+				return;
+			}
+			ApplyFlagBit(Target, FUNC_Const, JBoolAny(In, { TEXT("const"), TEXT("isConst") }));
+			bTouched = true;
+		}
+		if (In->HasField(TEXT("callInEditor")))
+		{
+			// CallInEditor is metadata on the entry node, not a FUNC_ flag.
+			if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Target))
+			{
+				Entry->Modify();
+				Entry->MetaData.bCallInEditor = JBool(In, TEXT("callInEditor"));
+				bTouched = true;
+			}
+			else
+			{
+				Warnings.Add(MakeShared<FJsonValueString>(TEXT("callInEditor applies to functions, not custom events — ignored")));
+			}
+		}
+
+		// --- Category / tooltip / keywords (entry-node metadata) -----------------------
+		if (UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Target))
+		{
+			if (In->HasField(TEXT("category")))
+			{
+				Entry->Modify();
+				Entry->MetaData.Category = FText::FromString(JStr(In, TEXT("category")));
+				bTouched = true;
+			}
+			if (In->HasField(TEXT("tooltip")))
+			{
+				Entry->Modify();
+				Entry->MetaData.ToolTip = FText::FromString(JStr(In, TEXT("tooltip")));
+				bTouched = true;
+			}
+			if (In->HasField(TEXT("keywords")))
+			{
+				Entry->Modify();
+				Entry->MetaData.Keywords = FText::FromString(JStr(In, TEXT("keywords")));
+				bTouched = true;
+			}
+		}
+
+		if (!bTouched)
+		{
+			Fail(Out, TEXT("no flags supplied — pass at least one of: replicates, reliable, access, pure, const, callInEditor, category, tooltip, keywords"));
+			return;
+		}
+
+		MarkStructural(Blueprint);
+		}   // tight transaction closes here — a full compile must never be captured by it
+
+		// A skeleton regen is enough for access/pure/const/metadata, but NOT for the NET flags: the
+		// replication machinery (SetUpRuntimeReplicationData, the class NetFields list) is only built
+		// by a full compile, and existing call sites keep their EX_LocalFinalFunction bytecode until
+		// they are recompiled too. So a replication change that only skeleton-regens looks applied and
+		// does nothing at runtime. Compile OUTSIDE the transaction (reinstancing + Ctrl-Z = dead CDO).
+		if (bNetTouched)
+		{
+			TSharedRef<FJsonObject> CompileOut = MakeShared<FJsonObject>();
+			CompileBlueprintInto(Blueprint, CompileOut);
+			Out->SetObjectField(TEXT("compile"), CompileOut);
+			// Callers of this function in OTHER blueprints keep stale call-site bytecode until they
+			// are themselves recompiled — say so rather than letting it be discovered at runtime.
+			Warnings.Add(MakeShared<FJsonValueString>(
+				TEXT("replication changed: other blueprints that CALL this function must be recompiled before their call sites route over the network")));
+		}
+
+		Out->SetStringField(TEXT("target"), TargetName);
+		Out->SetStringField(TEXT("kind"), Kind);
+		// Read back the EFFECTIVE state (GetNetFlags applies the engine's own sanitize + override
+		// inheritance), not the raw word, so the response can't claim "multicast" for something the
+		// compiler will treat as not replicated.
+		Out->SetObjectField(TEXT("flags"), SerializeFunctionFlags(EffectiveFlagsOf(Target)));
+		Out->SetArrayField(TEXT("warnings"), Warnings);
+		UE_LOG(LogMifBridge, Log, TEXT("set_function_flags: %s (%s)"), *TargetName, *Kind);
 	}
 
 	// Mint a fresh Blueprint asset. The bridge was built to EDIT existing BPs; this is the one thing it couldn't do,

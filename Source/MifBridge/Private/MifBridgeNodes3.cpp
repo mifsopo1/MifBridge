@@ -375,7 +375,7 @@ namespace MifBridge
 
 		FEdGraphPinType NewType;
 		FString TypeError;
-		if (!MakePinType(JStr(In, TEXT("type")), JStr(In, TEXT("container")), NewType, TypeError))
+		if (!MakePinType(JStr(In, TEXT("type")), JStr(In, TEXT("container")), NewType, TypeError, JStr(In, TEXT("valueType"))))
 		{
 			Fail(Out, TypeError);
 			return;

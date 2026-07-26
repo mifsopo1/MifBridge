@@ -162,6 +162,24 @@ namespace MifBridge
 					Json->SetStringField(TEXT("class"), Node->ComponentClass->GetName());
 				}
 				Json->SetBoolField(TEXT("isRoot"), Roots.Contains(Node));
+
+				// The component's editable TEMPLATE is what set_property must target to change a
+				// default (StaticMesh, Mobility, OverrideMaterials, collision, relative transform).
+				// Its path is derivable — <GeneratedClass>:<VarName>_GEN_VARIABLE — but nobody guesses
+				// that, so the whole capability read as missing. Emit it directly.
+				if (Node->ComponentTemplate)
+				{
+					Json->SetStringField(TEXT("templatePath"), Node->ComponentTemplate->GetPathName());
+				}
+				// Attachment parent, so the hierarchy is visible rather than a flat list.
+				if (USCS_Node* Parent = SCS->FindParentNode(Node))
+				{
+					Json->SetStringField(TEXT("parent"), Parent->GetVariableName().ToString());
+				}
+				if (Node->AttachToName != NAME_None)
+				{
+					Json->SetStringField(TEXT("attachSocket"), Node->AttachToName.ToString());
+				}
 				Arr.Add(MakeShared<FJsonValueObject>(Json));
 			}
 		}
