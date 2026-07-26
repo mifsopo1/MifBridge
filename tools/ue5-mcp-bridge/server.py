@@ -933,6 +933,30 @@ def move_actor_to(actor_path: str, location: dict) -> dict:
 
 
 # --------------------------------------------------------------------------
+# Viewport camera (what the USER sees, not a scene capture)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def set_viewport_camera(location: dict = None, rotation: dict = None, look_at: dict = None,
+                        fov: float = None, ortho: str = None, ortho_zoom: float = None) -> dict:
+    "Move the editor viewport camera the user is looking through. Distinct from capture_camera, which spawns a transient scene-capture and changes nothing on screen. look_at wins over rotation. ortho: top|bottom|front|back|left|right|perspective - orthographic top is the honest answer to 'show me the whole map', with no perspective falloff or far-clip surprises. rotation is x/y/z = pitch/yaw/roll like every other MifBridge transform."
+    return _post("set_viewport_camera", location=location, rotation=rotation, lookAt=look_at,
+                 fov=fov, ortho=ortho, orthoZoom=ortho_zoom)
+
+
+@mcp.tool()
+def focus_viewport(actor_path: str = None, folder: str = None, instant: bool = True) -> dict:
+    "Frame the viewport on an actor, a folder, or (with no target) the WHOLE level - the programmatic equivalent of select-all-then-F. Actors with zero extent (lights, markers) are skipped so one stray marker at the map edge cannot blow the framing out. Returns the bounds it framed."
+    return _post("focus_viewport", actorPath=actor_path, folder=folder, instant=instant)
+
+
+@mcp.tool()
+def get_viewport_camera() -> dict:
+    "Read the editor viewport camera: location, rotation, fov, whether it is perspective, and how many viewports exist. Read-only."
+    return _post("get_viewport_camera")
+
+
+# --------------------------------------------------------------------------
 # World lifecycle, splines, ground snapping
 # --------------------------------------------------------------------------
 
@@ -1316,3 +1340,14 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# --------------------------------------------------------------------------
+# Spawn into a RUNNING PIE world (not the editor world)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def spawn_actor_in_pie(actor_class: str, location: dict = None, rotation: dict = None,
+                       scale: dict = None, label: str = None, net_mode: str = "server") -> dict:
+    "Spawn an actor into the RUNNING PIE world. spawn_actor_in_level cannot do this - it goes through UEditorActorSubsystem, which serves the EDITOR world. Needed because a mod whose bootstrap is UE4SS (which does not run in the editor) otherwise never spawns under PIE, and placing the actor in the map does not survive a world travel. net_mode picks which PIE world when running multi-client: server (default - a replicated actor spawned here reaches every client), client, or any. Returns hasAuthority/replicates on the spawned actor plus a worlds array of every PIE world, so a wrong-role spawn is visible rather than silent. BeginPlay fires immediately; the actor is not saved to any map and dies with PIE. rotation is x/y/z = pitch/yaw/roll like every other MifBridge transform."
+    return _post("spawn_actor_in_pie", actorClass=actor_class, location=location,
+                 rotation=rotation, scale=scale, label=label, netMode=net_mode)

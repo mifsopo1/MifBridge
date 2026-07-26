@@ -54,6 +54,53 @@ namespace MifBridge
 			return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 		}
 
+		// With RunUnderOneProcess and >1 client there are SEVERAL PIE worlds in this process — a server
+		// and one per client — and GEditor->PlayWorld is only ever ONE of them. Spawning a replicated
+		// actor into a CLIENT world yields an actor that replicates nowhere, which is a silent wrong
+		// answer, so callers must be able to pick the world by net role.
+		const TCHAR* NetModeName(ENetMode Mode)
+		{
+			switch (Mode)
+			{
+			case NM_Standalone:      return TEXT("standalone");
+			case NM_ListenServer:    return TEXT("listenServer");
+			case NM_DedicatedServer: return TEXT("dedicatedServer");
+			case NM_Client:          return TEXT("client");
+			default:                 return TEXT("unknown");
+			}
+		}
+
+		void CollectPIEWorlds(TArray<UWorld*>& OutWorlds)
+		{
+			if (!GEngine)
+			{
+				return;
+			}
+			for (const FWorldContext& Ctx : GEngine->GetWorldContexts())
+			{
+				if (Ctx.WorldType == EWorldType::PIE && Ctx.World() != nullptr)
+				{
+					OutWorlds.Add(Ctx.World());
+				}
+			}
+		}
+
+		TSharedRef<FJsonObject> DescribePIEWorld(UWorld* W)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("world"), W->GetName());
+			J->SetStringField(TEXT("netMode"), NetModeName(W->GetNetMode()));
+			J->SetBoolField(TEXT("isServer"), W->GetNetMode() != NM_Client);
+			J->SetBoolField(TEXT("hasBegunPlay"), W->HasBegunPlay());
+			int32 Count = 0;
+			for (TActorIterator<AActor> It(W); It; ++It)
+			{
+				++Count;
+			}
+			J->SetNumberField(TEXT("actorCount"), Count);
+			return J;
+		}
+
 		void WritePieStateInto(const TSharedRef<FJsonObject>& Out)
 		{
 			// "running" MUST mean "the world exists and BeginPlay has happened", not merely "a session
@@ -411,4 +458,143 @@ namespace MifBridge
 		// work reports nothing here; tail the log instead.
 		Out->SetBoolField(TEXT("synchronousOnly"), true);
 	}
+
+	// --- spawn_actor_in_pie -------------------------------------------------
+	//   in:  { actorClass|class, location?, rotation?, scale?, label?, netMode? = "server" }
+	//   out: { actor:{...}, targetWorld:{...}, worlds:[...] }
+	//
+	// Why this exists: spawn_actor_in_level goes through UEditorActorSubsystem, which serves the EDITOR
+	// world — it cannot put an actor into a running game. This mod's real bootstrap is UE4SS spawning a
+	// ModActor at runtime, and UE4SS does not run in the editor, so without this there is no way to
+	// exercise the mod's actual BeginPlay under PIE. Placing the actor in the map instead does NOT work:
+	// DDS2 travels off the opened map on play (IslaSombra -> OpenWorld) and placed actors do not survive
+	// the travel.
+	void H_spawn_actor_in_pie(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		TArray<UWorld*> Worlds;
+		CollectPIEWorlds(Worlds);
+		// Always report what WAS available: on failure this is the difference between "no PIE running"
+		// and "PIE is up but not in the role you asked for".
+		{
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			for (UWorld* W : Worlds)
+			{
+				Arr.Add(MakeShared<FJsonValueObject>(DescribePIEWorld(W)));
+			}
+			Out->SetArrayField(TEXT("worlds"), Arr);
+		}
+		if (Worlds.Num() == 0)
+		{
+			Fail(Out, TEXT("no PIE world — not playing. start_pie, then poll pie_status until state=='running'."));
+			return;
+		}
+
+		// Default to the SERVER: a replicated actor spawned there reaches every client, which is the
+		// entire point of a co-op test. "client" exists only for deliberately asymmetric checks.
+		const FString Want = JStr(In, TEXT("netMode"), TEXT("server")).ToLower();
+		UWorld* Target = nullptr;
+		for (UWorld* W : Worlds)
+		{
+			const bool bIsServer = (W->GetNetMode() != NM_Client);
+			if (Want == TEXT("any")
+				|| (Want == TEXT("server") && bIsServer)
+				|| (Want == TEXT("client") && !bIsServer))
+			{
+				Target = W;
+				break;
+			}
+		}
+		if (!Target)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no PIE world matching netMode '%s' — see the 'worlds' array for what is running ")
+				TEXT("(valid: server, client, any)"), *Want));
+			return;
+		}
+		if (!Target->HasBegunPlay())
+		{
+			Fail(Out, TEXT("target PIE world has not begun play — poll pie_status until state=='running'"));
+			return;
+		}
+
+		UClass* ActorClass = ResolveClassStrictField(In, { TEXT("actorClass"), TEXT("class") },
+			nullptr, Out);
+		if (!ActorClass)
+		{
+			return; // ResolveClassStrictField already wrote the failure
+		}
+		if (!ActorClass->IsChildOf(AActor::StaticClass()))
+		{
+			Fail(Out, FString::Printf(TEXT("not an Actor class: '%s'"), *ActorClass->GetName()));
+			return;
+		}
+		if (ActorClass->HasAnyClassFlags(CLASS_Abstract))
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' is abstract and cannot be spawned"), *ActorClass->GetName()));
+			return;
+		}
+
+		FVector Location = FVector::ZeroVector;
+		FRotator Rotation = FRotator::ZeroRotator;
+		FVector Scale = FVector::OneVector;
+		bool bHasScale = false;
+		const TSharedPtr<FJsonObject>* Obj = nullptr;
+		if (In->TryGetObjectField(TEXT("location"), Obj) && Obj)
+		{
+			const TSharedRef<FJsonObject> L = Obj->ToSharedRef();
+			Location = FVector(JNum(L, TEXT("x")), JNum(L, TEXT("y")), JNum(L, TEXT("z")));
+		}
+		if (In->TryGetObjectField(TEXT("rotation"), Obj) && Obj)
+		{
+			// x/y/z = pitch/yaw/roll, matching spawn_actor_in_level.
+			const TSharedRef<FJsonObject> R = Obj->ToSharedRef();
+			Rotation = FRotator(JNum(R, TEXT("x")), JNum(R, TEXT("y")), JNum(R, TEXT("z")));
+		}
+		if (In->TryGetObjectField(TEXT("scale"), Obj) && Obj)
+		{
+			const TSharedRef<FJsonObject> S = Obj->ToSharedRef();
+			Scale = FVector(JNum(S, TEXT("x"), 1.0), JNum(S, TEXT("y"), 1.0), JNum(S, TEXT("z"), 1.0));
+			bHasScale = true;
+		}
+
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		AActor* Actor = Target->SpawnActor<AActor>(ActorClass, Location, Rotation, SpawnParams);
+		if (!Actor)
+		{
+			Fail(Out, FString::Printf(TEXT("SpawnActor returned null for '%s' in %s"),
+				*ActorClass->GetName(), *Target->GetName()));
+			return;
+		}
+		if (bHasScale)
+		{
+			Actor->SetActorScale3D(Scale);
+		}
+		const FString Label = JStr(In, TEXT("label"));
+		if (!Label.IsEmpty())
+		{
+#if WITH_EDITOR
+			Actor->SetActorLabel(Label);
+#endif
+		}
+
+		TSharedRef<FJsonObject> A = MakeShared<FJsonObject>();
+		A->SetStringField(TEXT("class"), ActorClass->GetPathName());
+		A->SetStringField(TEXT("name"), Actor->GetName());
+		A->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		// Report these rather than let the caller assume: a co-op test turns on exactly this.
+		A->SetBoolField(TEXT("hasAuthority"), Actor->HasAuthority());
+		A->SetBoolField(TEXT("replicates"), Actor->GetIsReplicated());
+		Out->SetObjectField(TEXT("actor"), A);
+		Out->SetObjectField(TEXT("targetWorld"), DescribePIEWorld(Target));
+		// A runtime spawn's BeginPlay fires immediately, unlike a placed actor's — say so, because the
+		// caller's next move is normally to assert on whatever BeginPlay was meant to do.
+		Out->SetStringField(TEXT("note"),
+			TEXT("spawned into the running PIE world; BeginPlay has already fired. Not saved to any map — "
+			     "it disappears when PIE stops."));
+		UE_LOG(LogMifBridge, Log, TEXT("spawn_actor_in_pie: %s -> %s (%s, authority=%d)"),
+			*ActorClass->GetName(), *Target->GetName(), NetModeName(Target->GetNetMode()),
+			Actor->HasAuthority() ? 1 : 0);
+	}
+
 }

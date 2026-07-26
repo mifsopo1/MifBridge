@@ -176,6 +176,10 @@ namespace MifBridge
 			MIF_BIND(set_spline_points);
 			MIF_BIND(get_spline_points);
 			MIF_BIND(snap_actors_to_ground);
+			// Viewport camera control
+			MIF_BIND(set_viewport_camera);
+			MIF_BIND(focus_viewport);
+			MIF_BIND(get_viewport_camera);
 			// Spatial awareness + visual feedback
 			MIF_BIND(get_actor_bounds);
 			MIF_BIND(check_overlaps);
@@ -187,6 +191,7 @@ namespace MifBridge
 			MIF_BIND(stop_pie);
 			MIF_BIND(pie_status);
 			MIF_BIND(list_pie_actors);
+			MIF_BIND(spawn_actor_in_pie);
 			MIF_BIND(run_console_captured);
 			// Level / placed-actor editing
 			MIF_BIND(list_level_actors);
@@ -248,6 +253,7 @@ namespace MifBridge
 			// Read-only spatial queries. capture_camera spawns a TRANSIENT actor it destroys again,
 			// so it dirties nothing and must not open a transaction either.
 			TEXT("nav_status"), TEXT("landscape_info"), TEXT("get_spline_points"),
+			TEXT("set_viewport_camera"), TEXT("focus_viewport"), TEXT("get_viewport_camera"),
 			TEXT("get_actor_bounds"), TEXT("check_overlaps"), TEXT("trace_ground"),
 			TEXT("capture_camera"), TEXT("scene_report"),
 			TEXT("start_pie"), TEXT("stop_pie"), TEXT("pie_status"),

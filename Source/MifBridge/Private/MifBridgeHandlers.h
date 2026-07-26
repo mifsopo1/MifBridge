@@ -312,6 +312,13 @@ namespace MifBridge
 	MIF_DECL(get_spline_points);
 	MIF_DECL(snap_actors_to_ground);
 
+	// VIEWPORT control (MifBridgeViewport.cpp) — moving the camera the USER sees, as opposed to
+	// capture_camera which spawns a transient scene-capture and changes nothing on screen.
+	// Read-only in the transaction sense: a camera move dirties no asset.
+	MIF_DECL(set_viewport_camera);
+	MIF_DECL(focus_viewport);
+	MIF_DECL(get_viewport_camera);
+
 	// SPATIAL awareness + VISUAL feedback (MifBridgeSpatial.cpp) — numbers for correctness,
 	// pixels for taste. These exist because a scene built blind came out wrong in ways that were
 	// all detectable from data.
@@ -328,6 +335,7 @@ namespace MifBridge
 	MIF_DECL(stop_pie);
 	MIF_DECL(pie_status);
 	MIF_DECL(list_pie_actors);
+	MIF_DECL(spawn_actor_in_pie);
 	MIF_DECL(run_console_captured);
 
 	// LEVEL / placed-actor editing (MifBridgeLevel.cpp) — operates on the level currently open.
