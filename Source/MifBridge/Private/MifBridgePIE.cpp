@@ -370,12 +370,49 @@ namespace MifBridge
 	// without any new inspection machinery.
 	void H_list_pie_actors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* PIEWorld = GetPIEWorld();
-		if (!PIEWorld)
+		// With RunUnderOneProcess and >1 client there are SEVERAL PIE worlds. This used to always serve
+		// GEditor->PlayWorld and SILENTLY IGNORE netMode, so asking for the client returned the server's
+		// actors — a confident wrong answer, and with co-op that is the whole measurement. Select by role
+		// like spawn_actor_in_pie does, and always report which world actually answered.
+		TArray<UWorld*> PIEWorlds;
+		CollectPIEWorlds(PIEWorlds);
+		if (PIEWorlds.Num() == 0)
 		{
 			Fail(Out, TEXT("no PIE world — not playing. start_pie, then poll pie_status until state=='running'."));
 			return;
 		}
+		{
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			for (UWorld* W : PIEWorlds) { Arr.Add(MakeShared<FJsonValueObject>(DescribePIEWorld(W))); }
+			Out->SetArrayField(TEXT("worlds"), Arr);
+		}
+
+		// Default "server" keeps every existing caller on the world they already got (PlayWorld is the
+		// server in a listen-server session), so this is additive, not a behaviour change under the feet.
+		const FString WantRole = JStr(In, TEXT("netMode"), TEXT("server")).ToLower();
+		UWorld* PIEWorld = nullptr;
+		for (UWorld* W : PIEWorlds)
+		{
+			const bool bIsServer = (W->GetNetMode() != NM_Client);
+			if (WantRole == TEXT("any")
+				|| (WantRole == TEXT("server") && bIsServer)
+				|| (WantRole == TEXT("client") && !bIsServer))
+			{
+				PIEWorld = W;
+				break;
+			}
+		}
+		if (!PIEWorld)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no PIE world matching netMode '%s' — see the 'worlds' array (valid: server, client, any)"),
+				*WantRole));
+			return;
+		}
+		// Report the role that answered, not just the world NAME — every PIE world here is called
+		// "Untitled", so the name alone cannot tell a caller which one they got.
+		Out->SetStringField(TEXT("netMode"), NetModeName(PIEWorld->GetNetMode()));
+		Out->SetBoolField(TEXT("isServer"), PIEWorld->GetNetMode() != NM_Client);
 
 		const FString ClassFilter  = JStr(In, TEXT("classFilter"));
 		const FString NameContains = JStr(In, TEXT("nameContains"));

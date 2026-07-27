@@ -656,6 +656,16 @@ namespace MifBridge
 		TArray<FString> Unrecognised;
 		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : In->Values)
 		{
+			// 'op' is the BATCH DISPATCHER's routing key, not a handler parameter: H_batch passes
+			// each op object to the handler verbatim, 'op' field included (MifBridgeNodes.cpp:1277).
+			// Without this, every endpoint carrying an unknown-param guard fails with
+			// "unrecognised parameter 'op'" the moment it is called inside batch — a regression the
+			// guards themselves introduced. Tolerated centrally so no call site has to remember it.
+			if (Pair.Key.Equals(TEXT("op"), ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+
 			bool bKnown = false;
 			for (const TCHAR* Key : AcceptedKeys)
 			{

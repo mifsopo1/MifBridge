@@ -605,15 +605,15 @@ def list_datatables(filter: str = "") -> dict:
 
 
 @mcp.tool()
-def read_datatable(path: str, max_rows: int = 500) -> dict:
-    "Read a DataTable: row struct, row names, and rows as JSON (capped at max_rows)."
-    return _post("read_datatable", path=path, maxRows=max_rows)
+def read_datatable(path: str, max_rows: int = 500, text_format: str = "export") -> dict:
+    "Read a DataTable: row struct, row names, and rows as JSON (capped at max_rows). text_format controls FText rendering: 'export' (default) is the engine's lossless NSLOCTEXT(\"ns\",\"key\",\"source\") form - round-trip safe, write it back through write_datatable_rows merge mode verbatim; 'simple' returns the plain display string (lossy - drops namespace/key, do not write it back expecting the same ids). Any other value is an error. The effective value is echoed back as textFormat, and an export-mode response that actually contains NSLOCTEXT carries a textNote explaining it is not corruption."
+    return _post("read_datatable", path=path, maxRows=max_rows, textFormat=text_format or None)
 
 
 @mcp.tool()
-def get_datatable_row(path: str, row_name: str) -> dict:
-    "Read a single DataTable row by name as JSON."
-    return _post("get_datatable_row", path=path, rowName=row_name)
+def get_datatable_row(path: str, row_name: str, text_format: str = "export") -> dict:
+    "Read a single DataTable row by name as JSON. text_format: 'export' (default, lossless NSLOCTEXT form) | 'simple' (plain display string, lossy). Echoed back as textFormat; export-mode rows containing NSLOCTEXT carry a textNote."
+    return _post("get_datatable_row", path=path, rowName=row_name, textFormat=text_format or None)
 
 
 # --------------------------------------------------------------------------
@@ -634,7 +634,7 @@ def remove_function(blueprint_id: str, name: str, confirm: bool = False) -> dict
 
 @mcp.tool()
 def write_datatable_rows(path: str, rows: list, replace: bool = False, confirm: bool = False) -> dict:
-    "Write DataTable rows (each a dict with a 'Name' field + row-struct fields). replace=True overwrites the whole table; otherwise rows are added/updated in place. Requires confirm=True."
+    "Write DataTable rows (each a dict with a 'Name' field + row-struct fields). replace=True overwrites the whole table; otherwise rows are added/updated in place. Requires confirm=True. FText asymmetry: merge mode (replace=False, the default) parses values through FJsonObjectConverter and accepts read_datatable's NSLOCTEXT export form verbatim; replace mode assigns a GENERATED localization id (namespace '<Table> [guid]', key '<Row>_<Column>') to any plain FText string, so those fields read back as NSLOCTEXT(...) - a successful replace on a row struct with FText returns textLocalizationNote saying so. Prefer merge unless you intend a full-table overwrite."
     return _post("write_datatable_rows", path=path, rows=rows, replace=replace, confirm=confirm)
 
 
@@ -1168,10 +1168,10 @@ def pie_status() -> dict:
 
 
 @mcp.tool()
-def list_pie_actors(class_filter: str = "", name_contains: str = "", limit: int = 200) -> dict:
+def list_pie_actors(class_filter: str = "", name_contains: str = "", limit: int = 200, net_mode: str = "server") -> dict:
     "List actors in the RUNNING PIE world (list_level_actors sees the editor world instead - during PIE they are different worlds with different actor paths). The returned actorPath is a LIVE object, so get_property against it reads the running value: that is how you assert on runtime state."
     return _post("list_pie_actors", classFilter=class_filter or None,
-                 nameContains=name_contains or None, limit=limit)
+                 nameContains=name_contains or None, limit=limit, netMode=net_mode)
 
 
 @mcp.tool()

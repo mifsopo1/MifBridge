@@ -1431,3 +1431,182 @@ kr_classify_drift, kr_batch_reconstruct) are Wave 3 step 2 and are NOT implement
 inert and harmless in this state; it is additive and changes no existing behaviour.
 
 **Verdict: COMPLETE — live count 176 → 183. MifKismetReconstructor is reachable over HTTP.**
+
+---
+
+## Batch E — DataTable FText readability (user-reported)
+
+**Report (verbatim, from a collaborator):** *"For the DataTable stuff, it was double wrapping the
+inputs, like the descriptions on my DataTable after it did edits included the NSLOC shit or whatever
+it is. Anyway I did a edit on my side to fix it, I'll review the code when I get home to see if it
+was a actual bug or just the AI using it wrong."*
+
+**No endpoints added.** MIF_DECL = MIF_BIND = **175** before and after; server.py tools **183**
+before and after (175 built-in + 8 external `kr_*`). This batch is parameters, response fields and
+docs only.
+
+### Diagnosis (verified live + against engine source)
+
+1. **READ path.** `H_read_datatable` / `H_get_datatable_row` called `Table->GetTableAsJSON()` with
+   DEFAULT flags. `UDataTable::GetTableAsJSON(const EDataTableExportFlags InDTExportFlags =
+   EDataTableExportFlags::None)` — `Engine/Classes/Engine/DataTable.h:328`. With `None`, every
+   `FText` exports via `ExportText_Direct`, i.e. the full lossless form
+   `NSLOCTEXT("ns","key","source")`. The readable branch is gated on
+   `EDataTableExportFlags::UseSimpleText` — `DataTableUtils.cpp:213-219`, flag documented at
+   `DataTableUtils.h:21` as *"Export text properties as their display string, rather than their
+   complex lossless form"*.
+2. **WRITE merge mode** (`replace:false`, the default) uses
+   `FJsonObjectConverter::JsonObjectToUStruct`, which parses the NSLOCTEXT export form correctly.
+   Round-trip safe. Verified live.
+3. **WRITE replace mode** (`replace:true`) uses `Table->CreateTableFromJSONString` →
+   `DataTableUtils::AssignStringToProperty` (`DataTableJSON.cpp:753/772`). A **plain** string
+   assigned to an `FText` there gets a **generated** namespace (`"<TableName> [<guid>]"`) and key
+   (`"<RowName>_<ColumnName>"`). So plain text written by replace becomes a *localized* `FText`,
+   which then READS BACK as `NSLOCTEXT(...)`. Verified live: a field holding
+   `"Plain description here"` came back as
+   `NSLOCTEXT("TestDT_Roundtrip [4819EC...]", "DOLAR_CurrencyDescription", "Plain description here")`.
+4. **It wraps ONCE and is stable.** Cycles 2 and 3 were byte-identical, which proves the stored
+   `FText` is genuinely localized rather than being re-wrapped each pass. The display string is
+   still correct and **the data is not corrupted**. What the user saw is the bridge's *read output*,
+   not damaged content — so the collaborator's local edit was treating a presentation problem as a
+   data problem.
+
+**Therefore the real defects are (a)** the read format is hostile and misleading, and **(b)** merge
+and replace have DIFFERENT `FText` semantics one flag apart, undocumented. Both are now addressed.
+
+### Fix
+
+`Source/MifBridge/Private/MifBridgeDataTables.cpp`
+
+- New file-local helpers in the anonymous namespace: `ResolveTextFormat`, `ContainsNsLocText`
+  (value + array overloads), `RowStructHasTextProperty`, plus the `kTextNote` / `kReplaceTextNote` /
+  `kTextFormatAccepted` strings. New includes: `DataTableUtils.h` (the flag enum),
+  `UObject/UnrealType.h` (`TFieldIterator<FTextProperty>`).
+- **`textFormat` on `read_datatable` and `get_datatable_row`.** Values `export` (DEFAULT — current
+  lossless NSLOCTEXT behaviour, round-trip safe) and `simple` (passes
+  `EDataTableExportFlags::UseSimpleText` to `GetTableAsJSON`). Alias spellings `textMode` and
+  `simpleText:true`. Values are matched case-insensitively after trim; an unrecognised **value** is
+  an error naming the accepted set (house rule — never a silent default). `textFormat` and
+  `simpleText` both present but disagreeing is also an error rather than a silent winner. The
+  effective value is echoed back as `textFormat`, in every branch.
+- **`textNote`** is added only when the mode is `export` AND the **emitted** JSON actually contains
+  `NSLOCTEXT(`. `read_datatable` scans post-truncation rows; `get_datatable_row` scans only the row
+  it returns. Clean tables and clean rows stay quiet.
+- **`textLocalizationNote`** on `write_datatable_rows` after a **successful** replace, gated on
+  `RowStructHasTextProperty(Table->GetRowStruct())` (`TFieldIterator<FTextProperty>`). It states the
+  generated namespace/key convention, that those fields will read back as `NSLOCTEXT(...)` in export
+  mode, and that merge mode does not do this. This is the undocumented asymmetry that produced the
+  report.
+- **`RejectUnknownParams`** added to all three handlers (none had it):
+  - `read_datatable` — `path, maxRows, textFormat, textMode, simpleText, op`
+  - `get_datatable_row` — `path, rowName, textFormat, textMode, simpleText, op`
+  - `write_datatable_rows` — `path, rows, replace, confirm, op`
+
+  `op` is in every list **deliberately**: `H_batch` dispatches by passing the whole op object
+  straight to the handler (`MifBridgeNodes.cpp:1278`), so a guard without `op` would reject every
+  batched call. This is a latent collision in the existing guarded endpoints too — see the note
+  below.
+- The `textFormat` parse runs **before** `LoadDataTable`, so a bad value never loads an asset.
+
+`tools/ue5-mcp-bridge/server.py` — `read_datatable` and `get_datatable_row` gain
+`text_format: str = "export"` (forwarded as `textFormat=text_format or None`, so an empty string
+means "omitted" per the `list_datatables` precedent); `write_datatable_rows` keeps its signature and
+documents the merge-vs-replace `FText` asymmetry in its docstring. All defs remain above the
+`if __name__` guard (verified: `ast.parse` clean, last top-level def line 1555, guard line 1565,
+zero defs below it).
+
+`docs/02_GOTCHAS.md` — new **§5e "FText in DataTables — NSLOCTEXT in reads is not corruption"**
+between §5d and §6, citing `DataTableUtils.cpp:213` and `DataTableUtils.h:21`, with the `textFormat`
+table, the merge-vs-replace table, and the rule *prefer merge (`replace:false`) unless you intend a
+full-table overwrite*. One cross-reference bullet added to §7 ("Behaviours that are not bugs"),
+which is the list a reader scans for exactly this symptom.
+
+### Live proof to run after the next build
+
+The editor was running during this batch, so nothing here is built yet. Run these against a
+DataTable whose row struct has an `FText` column (`TestDT_Roundtrip` was used for the diagnosis):
+
+1. **Simple mode returns the plain display string** —
+   `read_datatable {path:"<DT>", textFormat:"simple"}` → the `FText` column reads
+   `"Plain description here"`, response carries `textFormat:"simple"` and **no** `textNote`.
+2. **Default read is unchanged and now self-explaining** —
+   `read_datatable {path:"<DT>"}` → same column reads `NSLOCTEXT("<DT> [guid]", "<Row>_<Col>",
+   "Plain description here")`, response carries `textFormat:"export"` **and** `textNote`.
+3. **Aliases agree** — `read_datatable {path:"<DT>", textMode:"simple"}` and
+   `read_datatable {path:"<DT>", simpleText:true}` must both equal call 1 byte-for-byte.
+4. **Bad value is refused** — `read_datatable {path:"<DT>", textFormat:"plain"}` → `ok:false`,
+   error naming `export` and `simple`. **Not** a silent default.
+5. **Conflict is refused** — `read_datatable {path:"<DT>", textFormat:"export", simpleText:true}`
+   → `ok:false`, "conflicting text format".
+6. **Unknown key is refused** — `read_datatable {path:"<DT>", textFormatt:"simple"}` → `ok:false`
+   listing the accepted keys.
+7. **Row endpoint matches** — `get_datatable_row {path:"<DT>", rowName:"<Row>", textFormat:"simple"}`
+   vs the default call: same two outcomes as 1 and 2, `textNote` present only in export mode.
+8. **Replace warns** — `write_datatable_rows {path:"<DT>", rows:[...], replace:true, confirm:true}`
+   on a row struct with an `FText` → `replaced:true` **and** `textLocalizationNote`. The same call
+   against a table whose row struct has no `FText` must **not** carry it.
+9. **Merge still round-trips** — feed step 2's `NSLOCTEXT(...)` string straight back through
+   `write_datatable_rows {replace:false, confirm:true}` and re-read: byte-identical, and **no**
+   `textLocalizationNote` (merge never emits it).
+10. **Batch still works** — `batch {ops:[{op:"read_datatable", path:"<DT>"}]}` must succeed. If this
+    fails with "unrecognised parameter 'op'", the guard lists are wrong.
+
+### Finding worth a separate fix: `op` vs `RejectUnknownParams`
+
+Every previously guarded endpoint (`MifBridgeAuthoring.cpp`, `MifBridgeCooked.cpp`,
+`MifBridgeMaterials.cpp`, `MifBridgeUndo.cpp` — 20 call sites) omits `op` from its accepted-key
+list, while `H_batch` hands the handler the op object verbatim including its `op` key
+(`MifBridgeNodes.cpp:1278`). Any of those endpoints invoked **inside `batch`** therefore fails with
+"unrecognised parameter 'op'". Batch E works around it locally by accepting `op`; the systematic fix
+is to strip `op` in `H_batch` before dispatch, or to make `RejectUnknownParams` always tolerate it.
+Not done here — out of scope for a user-reported DataTable bug, and it touches the batch dispatcher.
+
+**Verdict: COMPLETE (source only, unbuilt). Endpoint counts unchanged — MIF_DECL 175, MIF_BIND 175,
+MCP tools 183.**
+
+### Batch E + `op` regression — BUILD PASS, ALL PROVEN (2026-07-27 ~08:00 ET)
+
+**Live: 183 endpoints, 8 external, 0 contradictions.**
+
+**Regression I introduced this session and fixed here.** The unknown-parameter guards added in
+Batches B/C/D reject any key not on their accepted list — but `H_batch` passes each op object to the
+handler VERBATIM, `op` field included (MifBridgeNodes.cpp:1277). So ~20 guarded endpoints had begun
+failing with "unrecognised parameter 'op'" the moment they were called inside `batch`: the
+strictness fix silently broke composition. Fixed centrally in `RejectUnknownParams`
+(MifBridgeCommon.cpp) by always tolerating `op`, with the dispatcher line cited, so no call site has
+to remember it. **Proven**: `batch {ops:[find_assets, get_datatable_row]}` now returns ok for both.
+Worth noting how it escaped — every proof this session exercised endpoints STANDALONE. Composition
+had no test. That is the gap to close next.
+
+**Batch E — DataTable FText readability (reported by Brando).** Diagnosis: not corruption.
+`GetTableAsJSON()` defaults to `EDataTableExportFlags::None`, which the engine documents as the
+"complex lossless form" (DataTableUtils.h:21, branch at DataTableUtils.cpp:213), so every FText
+reads back as `NSLOCTEXT("ns","key","source")`. Merge-mode writes parse that correctly (round-trip
+verified byte-identical); `replace:true` goes through a different importer
+(DataTableUtils::AssignStringToProperty via DataTableJSON.cpp:753/772) which gives a PLAIN string a
+generated localization id — so plain text becomes localized and thereafter reads as NSLOCTEXT.
+It wraps ONCE and is stable across further cycles (verified 3 cycles, byte-identical), which proves
+the stored FText is properly localized and its display string intact.
+Fix, all proven live:
+- `textFormat: "export" (default) | "simple"` on `read_datatable`/`get_datatable_row`
+  (aliases `textMode`, `simpleText`). Proven: simple → `"CurrencyName":"Dolary"`.
+- `textNote` attached only when NSLOCTEXT is actually present, explaining it is the lossless form,
+  not corruption, and that merge mode accepts it verbatim.
+- An unknown VALUE errors naming the accepted set (never a silent default). Proven.
+- `textLocalizationNote` on successful `replace` when the row struct has any FTextProperty,
+  documenting the merge/replace asymmetry. Proven.
+
+**Operational finding — a modal dialog takes the whole bridge down.** After this build the editor
+launched but every call returned nothing; the process was alive with
+`MainWindowTitle: "BA Welcome Screen"` (BlueprintAssist's launch popup). Because
+`FHttpServerModule` is a GAME-THREAD ticker, ANY modal window stops the bridge answering — the
+symptom looks like a crashed bridge but is a blocked game thread, and any plugin can cause it.
+Suppressed durably via `bShowWelcomeScreenOnLaunch=False` under
+`[/Script/BlueprintAssist.BASettings_EditorFeatures]` in
+`Saved/Config/WindowsEditor/EditorPerProjectUserSettings.ini` (gitignored; not part of any commit).
+This is a live instance of the hazard class 03_GAPS_AND_RISKS.md §2 catalogues for OUR endpoints —
+the same rule applies to third-party plugins we do not control.
+
+**Stale doc flagged, not fixed**: 00_ARCHITECTURE.md still says server.py lives in a separate repo
+(`GitHub/Eddie_v2/tools/ue5-mcp-bridge/`). That path does not exist; there is exactly one server.py,
+inside this plugin. Its "known sync hazard" section and 82-of-102 endpoint figures are obsolete.

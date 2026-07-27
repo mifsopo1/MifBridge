@@ -354,6 +354,59 @@ defaults, comment node colours — anything the node exposes as a `UPROPERTY`.
 
 ---
 
+## 5e. FText in DataTables — `NSLOCTEXT` in reads is not corruption
+
+A read that comes back with
+
+```json
+"Description": "NSLOCTEXT(\"DT_Currency [4819EC...]\", \"DOLAR_CurrencyDescription\", \"Plain description here\")"
+```
+
+looks like the bridge wrapped your string. It did not. **That is the engine's lossless FText export
+and the data is intact** — the display string is the *third* argument.
+
+### Why reads look like that
+
+`UDataTable::GetTableAsJSON` defaults to `EDataTableExportFlags::None`
+(`Engine/Classes/Engine/DataTable.h:328`). With `None`, every `FText` is written by
+`ExportText_Direct` in its complex lossless form. The readable alternative is gated on
+`EDataTableExportFlags::UseSimpleText` — *"Export text properties as their display string, rather
+than their complex lossless form"* (`DataTableUtils.h:21`), applied at `DataTableUtils.cpp:213`.
+`UseSimpleText` **drops the namespace and key**, so it is lossy and cannot be the default.
+
+### `textFormat` — pick your poison explicitly
+
+`read_datatable` and `get_datatable_row` take `textFormat`, aliases `textMode` and `simpleText: true`:
+
+| Value | FText comes back as | Round-trip |
+|---|---|---|
+| `export` (**default**) | `NSLOCTEXT("ns","key","source")` | Safe — `write_datatable_rows` merge mode accepts it verbatim |
+| `simple` | the display string only | **Lossy** — namespace/key are gone; writing it back mints new ids |
+
+An unrecognised *value* is an error naming the accepted set, never a silent fall back to the
+default. The effective value is echoed as `textFormat`, and an `export` response that actually
+contains `NSLOCTEXT(` carries a `textNote` saying it is not damage. Clean tables stay quiet.
+
+### The asymmetry that caused the bug report: merge vs replace
+
+`write_datatable_rows` has two modes that disagree about `FText`, **one flag apart**:
+
+| Mode | Parser | Plain `"some text"` in an `FText` column becomes |
+|---|---|---|
+| merge — `replace:false` (**default**) | `FJsonObjectConverter::JsonObjectToUStruct` | an unlocalized `FText`; NSLOCTEXT input round-trips exactly |
+| replace — `replace:true` | `CreateTableFromJSONString` → `DataTableUtils::AssignStringToProperty` (`DataTableJSON.cpp:753/772`) | a **localized** `FText` with a generated namespace `"<TableName> [<guid>]"` and key `"<RowName>_<ColumnName>"` |
+
+So a plain string written by **replace** reads back as `NSLOCTEXT(...)` — which is what the report
+described. It wraps **once** and is then stable (verified live: cycles 2 and 3 byte-identical),
+because the stored `FText` really is localized now. A successful replace on a row struct that holds
+any `FTextProperty` now returns `textLocalizationNote` stating this.
+
+> **Prefer merge (`replace:false`) unless you intend a full-table overwrite.** Merge is the
+> round-trip-safe mode; replace empties the table and re-imports, and re-localizes your `FText`
+> columns on the way in.
+
+---
+
 ## 6. Animation
 
 ### Animation Blueprints — nested graphs are now reachable
@@ -415,6 +468,8 @@ A cooked ABP's AnimGraph is not bytecode — it is baked into `AnimNodePropertie
   them.
 - **Double-loaded Blueprints** (some modded/cooked assets load as two copies with identical node
   GUIDs) need `graphId`-scoped node resolution — pass `graphId` alongside the node GUID.
+- **`NSLOCTEXT(...)` in a DataTable read is the engine's lossless FText export**, not a wrapped or
+  corrupted value — see §5e for `textFormat` and the merge-vs-replace asymmetry.
 - **`add_literal` is object-only** — scalar literals go via `set_pin_default`.
 - **Asset lifecycle is `/Game/`-only.** `delete_asset` / `rename_asset` require `confirm=true`;
   `duplicate_asset` does not, since it never destroys anything.
@@ -433,3 +488,26 @@ regardless: `curl` exits 0 on any HTTP response, including a JSON body reporting
 
 **Rule:** always parse `ok` from a mutating endpoint's response. Never `>/dev/null` a call that
 changes state, and never treat a transport-level exit code as the operation's result.
+
+## 8. The bridge stops answering but the editor is alive — look for a modal window
+
+`FHttpServerModule` is an `FTSTickerObjectBase` ticked on the **game thread**. Any modal window —
+ours, the engine's, or a third-party plugin's — spins its own loop, the tick stops, and the bridge
+stops reading the socket. Every call then times out with no response at all.
+
+The symptom is indistinguishable from "the bridge crashed", so check the process first:
+
+```bash
+powershell -NoProfile -Command "Get-Process UnrealEditor | Select-Object Id,MainWindowTitle"
+```
+
+A `MainWindowTitle` that is not the normal editor title is the answer. Real instance (2026-07-27):
+BlueprintAssist's launch popup (`MainWindowTitle: "BA Welcome Screen"`) blocked a whole automated
+build+prove cycle. Suppressed with `bShowWelcomeScreenOnLaunch=False` under
+`[/Script/BlueprintAssist.BASettings_EditorFeatures]` in
+`Saved/Config/WindowsEditor/EditorPerProjectUserSettings.ini`.
+
+**This is why every endpoint spec in `docs/audit/` must state its modal/blocking hazards** — an
+endpoint that opens a dialog does not merely fail, it takes the entire bridge down until a human
+clicks something, which in an unattended run means forever. See `03_GAPS_AND_RISKS.md` §2 for the
+inventory of engine calls that do this.
