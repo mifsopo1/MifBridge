@@ -7,10 +7,12 @@
 #include "DataTableEditorUtils.h"
 #include "DataTableUtils.h" // EDataTableExportFlags::UseSimpleText
 #include "Engine/DataTable.h"
+#include "Internationalization/Text.h"
 #include "JsonObjectConverter.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "UObject/TextProperty.h"
 #include "UObject/UnrealType.h" // TFieldIterator<FTextProperty>
 #include "UObject/UObjectGlobals.h"
 
@@ -30,8 +32,15 @@ namespace MifBridge
 		//     than their complex lossless form", DataTableUtils.h:21). UseSimpleText is LOSSY — it
 		//     drops the namespace and key — so "export" stays the DEFAULT and "simple" is opt-in.
 		//  2. write_datatable_rows' two modes disagree about FText, one flag apart.
-		//     Merge (replace:false) parses through FJsonObjectConverter::JsonObjectToUStruct, which
-		//     round-trips the NSLOCTEXT export form exactly. Replace (replace:true) goes through
+		//     Merge (replace:false) parses through FJsonObjectConverter::JsonObjectToUStruct. That
+		//     does NOT round-trip the export form: JsonObjectConverter.cpp:630-633 imports a JSON
+		//     string as FText::FromString ("assume this string is already localized, so import as
+		//     invariant"), so the entire NSLOCTEXT(...) literal becomes the display text and the
+		//     field reads back wrapped one level deeper. Measured live: 655 fields across exactly
+		//     the 11 tables that had been written this way, and zero in every table that had not.
+		//     RepairTextFromJson below re-imports those through FTextStringHelper after the
+		//     converter runs, which is what makes textFormat:"export" actually safe to write back.
+		//     Replace (replace:true) goes through
 		//     UDataTable::CreateTableFromJSONString -> DataTableUtils::AssignStringToProperty
 		//     (DataTableJSON.cpp:753/772), which gives a PLAIN string assigned to an FText a
 		//     generated namespace ("<TableName> [<guid>]") and key ("<RowName>_<ColumnName>").
@@ -39,9 +48,10 @@ namespace MifBridge
 		//     NSLOCTEXT(...). It wraps ONCE and is then stable — verified live across three cycles,
 		//     byte-identical from cycle 2 on, which is exactly what a genuinely localized FText does.
 		//
-		// The defects were therefore presentation and silence, not data loss: the read format was
-		// hostile, and the merge/replace asymmetry was undocumented. Hence textFormat + textNote +
-		// textLocalizationNote below.
+		// So two of the three defects were presentation and silence — the read format was hostile
+		// and the merge/replace asymmetry undocumented, hence textFormat + textNote +
+		// textLocalizationNote below — but the merge-mode import in (2) was genuine data loss and
+		// needed the repair pass, not just documentation.
 		const TCHAR* const kTextFormatExport = TEXT("export");
 		const TCHAR* const kTextFormatSimple = TEXT("simple");
 		const TCHAR* const kTextFormatAccepted =
@@ -187,6 +197,131 @@ namespace MifBridge
 		{
 			TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonText);
 			return FJsonSerializer::Deserialize(Reader, Out);
+		}
+
+		// --- FText round-trip repair -------------------------------------------
+		//
+		// read_datatable exports rows with UDataTable::GetTableAsJSON(), which writes FText
+		// through ExportTextItem — so a localised field comes out as NSLOCTEXT(...) or
+		// LOCTABLE(...). The write path below imports with FJsonObjectConverter, and that
+		// maps every JSON string onto FText::FromString, i.e. it treats the whole
+		// NSLOCTEXT(...) literal as the display text. A read → edit → write round-trip
+		// therefore wraps the field one level deeper every time, and the row ends up
+		// rendering its own export string in game.
+		//
+		// After the converter runs we walk the row and re-import any FText whose incoming
+		// string was an export literal, this time through FTextStringHelper so the
+		// namespace/key (or string-table reference) is preserved.
+
+		bool LooksLikeExportedText(const FString& Value)
+		{
+			return Value.StartsWith(TEXT("NSLOCTEXT("), ESearchCase::CaseSensitive)
+				|| Value.StartsWith(TEXT("LOCTEXT("), ESearchCase::CaseSensitive)
+				|| Value.StartsWith(TEXT("LOCTABLE("), ESearchCase::CaseSensitive)
+				|| Value.StartsWith(TEXT("INVTEXT("), ESearchCase::CaseSensitive)
+				|| Value.StartsWith(TEXT("LOCGEN_"), ESearchCase::CaseSensitive);
+		}
+
+		void RepairTextFromJson(const UStruct* Struct, void* Container, const TSharedRef<FJsonObject>& Json, int32& OutRepaired);
+
+		void RepairTextValue(FProperty* Prop, void* Addr, const TSharedPtr<FJsonValue>& Value, int32& OutRepaired)
+		{
+			if (!Value.IsValid() || Value->Type == EJson::Null)
+			{
+				return;
+			}
+
+			if (const FTextProperty* TextProp = CastField<FTextProperty>(Prop))
+			{
+				FString Exported;
+				if (!Value->TryGetString(Exported) || !LooksLikeExportedText(Exported))
+				{
+					return; // a genuine literal string — leave the converter's result alone
+				}
+				FText Imported;
+				if (FTextStringHelper::ReadFromBuffer(*Exported, Imported) != nullptr)
+				{
+					TextProp->SetPropertyValue(Addr, Imported);
+					++OutRepaired;
+				}
+				return;
+			}
+
+			if (const FStructProperty* StructProp = CastField<FStructProperty>(Prop))
+			{
+				const TSharedPtr<FJsonObject>* Sub = nullptr;
+				if (Value->TryGetObject(Sub) && Sub != nullptr)
+				{
+					RepairTextFromJson(StructProp->Struct, Addr, Sub->ToSharedRef(), OutRepaired);
+				}
+				return;
+			}
+
+			if (const FArrayProperty* ArrayProp = CastField<FArrayProperty>(Prop))
+			{
+				const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
+				if (!Value->TryGetArray(Items) || Items == nullptr)
+				{
+					return;
+				}
+				FScriptArrayHelper Helper(ArrayProp, Addr);
+				const int32 Count = FMath::Min(Helper.Num(), Items->Num());
+				for (int32 Index = 0; Index < Count; ++Index)
+				{
+					RepairTextValue(ArrayProp->Inner, Helper.GetRawPtr(Index), (*Items)[Index], OutRepaired);
+				}
+				return;
+			}
+
+			if (const FMapProperty* MapProp = CastField<FMapProperty>(Prop))
+			{
+				const TSharedPtr<FJsonObject>* Sub = nullptr;
+				if (!Value->TryGetObject(Sub) || Sub == nullptr)
+				{
+					return;
+				}
+				FScriptMapHelper Helper(MapProp, Addr);
+				for (int32 Index = 0; Index < Helper.GetMaxIndex(); ++Index)
+				{
+					if (!Helper.IsValidIndex(Index))
+					{
+						continue;
+					}
+					FString KeyText;
+					MapProp->KeyProp->ExportTextItem_Direct(KeyText, Helper.GetKeyPtr(Index), nullptr, nullptr, PPF_None);
+					if (const TSharedPtr<FJsonValue> Entry = (*Sub)->TryGetField(KeyText))
+					{
+						RepairTextValue(MapProp->ValueProp, Helper.GetValuePtr(Index), Entry, OutRepaired);
+					}
+				}
+				return;
+			}
+		}
+
+		void RepairTextFromJson(const UStruct* Struct, void* Container, const TSharedRef<FJsonObject>& Json, int32& OutRepaired)
+		{
+			for (TFieldIterator<FProperty> It(Struct); It; ++It)
+			{
+				FProperty* Prop = *It;
+				TSharedPtr<FJsonValue> Value = Json->TryGetField(Prop->GetName());
+				if (!Value.IsValid())
+				{
+					// GetTableAsJSON can emit the authored/display name, so fall back to a
+					// case-insensitive sweep rather than silently skipping the field.
+					for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Json->Values)
+					{
+						if (Pair.Key.Equals(Prop->GetName(), ESearchCase::IgnoreCase))
+						{
+							Value = Pair.Value;
+							break;
+						}
+					}
+				}
+				if (Value.IsValid())
+				{
+					RepairTextValue(Prop, Prop->ContainerPtrToValuePtr<void>(Container), Value, OutRepaired);
+				}
+			}
 		}
 	}
 
@@ -427,6 +562,7 @@ namespace MifBridge
 		// Merge/update mode: add or update each row in place.
 		int32 Added = 0;
 		int32 Updated = 0;
+		int32 TextRepaired = 0;
 		TArray<TSharedPtr<FJsonValue>> Warnings;
 		for (const TSharedPtr<FJsonValue>& Value : *Rows)
 		{
@@ -464,6 +600,9 @@ namespace MifBridge
 			FText FailReason;
 			if (FJsonObjectConverter::JsonObjectToUStruct(RowObj, Table->GetRowStruct(), Row, 0, 0, false, &FailReason))
 			{
+				// Undo the converter's FText::FromString handling for values that arrived as
+				// export literals, so a read/edit/write cycle doesn't re-wrap them.
+				RepairTextFromJson(Table->GetRowStruct(), Row, RowObj, TextRepaired);
 				bIsNew ? ++Added : ++Updated;
 			}
 			else
@@ -483,12 +622,74 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("added"), Added);
 		Out->SetNumberField(TEXT("updated"), Updated);
 		Out->SetNumberField(TEXT("rowCount"), Table->GetRowNames().Num());
+		Out->SetNumberField(TEXT("textFieldsPreserved"), TextRepaired);
 		if (Warnings.Num() > 0)
 		{
 			Out->SetArrayField(TEXT("warnings"), Warnings);
 		}
 #else
 		Fail(Out, TEXT("write requires an editor build"));
+#endif
+	}
+
+	// --- delete_datatable_rows (confirm-gated) ------------------------------
+	//
+	// Needed to rename a row: write the row under its new name, then drop the old one.
+	// The alternative — write_datatable_rows with replace=true — rebuilds the whole
+	// table through CreateTableFromJSONString, which empties it first and does not go
+	// through the FText repair above, so it is the more destructive option.
+
+	void H_delete_datatable_rows(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("delete_datatable_rows requires confirm=true"));
+			return;
+		}
+		UDataTable* Table = LoadDataTable(In, Out);
+		if (!Table)
+		{
+			return;
+		}
+
+#if WITH_EDITOR
+		const TArray<TSharedPtr<FJsonValue>>* Names = nullptr;
+		if (!In->TryGetArrayField(TEXT("rowNames"), Names) || Names == nullptr)
+		{
+			Fail(Out, TEXT("'rowNames' array is required"));
+			return;
+		}
+
+		int32 Deleted = 0;
+		TArray<TSharedPtr<FJsonValue>> Missing;
+		for (const TSharedPtr<FJsonValue>& Value : *Names)
+		{
+			FString RowName;
+			if (!Value.IsValid() || !Value->TryGetString(RowName) || RowName.IsEmpty())
+			{
+				continue;
+			}
+			const FName Key(*RowName);
+			if (Table->FindRowUnchecked(Key) == nullptr)
+			{
+				Missing.Add(MakeShared<FJsonValueString>(RowName));
+				continue;
+			}
+			FDataTableEditorUtils::RemoveRow(Table, Key);
+			++Deleted;
+		}
+
+		FDataTableEditorUtils::BroadcastPostChange(Table, FDataTableEditorUtils::EDataTableChangeInfo::RowList);
+		Table->MarkPackageDirty();
+
+		Out->SetNumberField(TEXT("deleted"), Deleted);
+		Out->SetNumberField(TEXT("rowCount"), Table->GetRowNames().Num());
+		if (Missing.Num() > 0)
+		{
+			Out->SetArrayField(TEXT("notFound"), Missing);
+		}
+#else
+		Fail(Out, TEXT("delete requires an editor build"));
 #endif
 	}
 }

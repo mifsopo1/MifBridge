@@ -135,6 +135,7 @@ namespace MifBridge
 			MIF_BIND(implement_interface_function);
 			MIF_BIND(remove_function);
 			MIF_BIND(write_datatable_rows);
+			MIF_BIND(delete_datatable_rows);
 			// Phase 3 completion — common nodes
 			MIF_BIND(add_sequence);
 			MIF_BIND(add_spawn_actor);

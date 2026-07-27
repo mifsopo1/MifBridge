@@ -274,6 +274,7 @@ namespace MifBridge
 	MIF_DECL(implement_interface_function);
 	MIF_DECL(remove_function);
 	MIF_DECL(write_datatable_rows);
+	MIF_DECL(delete_datatable_rows);
 
 	// Phase 3 completion — common nodes
 	MIF_DECL(add_sequence);
