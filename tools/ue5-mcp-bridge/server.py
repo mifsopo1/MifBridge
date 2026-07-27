@@ -638,6 +638,12 @@ def write_datatable_rows(path: str, rows: list, replace: bool = False, confirm: 
     return _post("write_datatable_rows", path=path, rows=rows, replace=replace, confirm=confirm)
 
 
+@mcp.tool()
+def delete_datatable_rows(path: str, row_names: list, confirm: bool = False) -> dict:
+    "Delete rows from a DataTable by name. row_names is a list of row-name strings. Requires confirm=True. Returns deleted (count), rowCount (rows left), and notFound (any names that were not present) - names that do not exist are skipped, not an error. Use this to RENAME a row: write_datatable_rows the row under its new name, then delete the old one. Prefer that over write_datatable_rows(replace=True), which rebuilds the whole table via CreateTableFromJSONString - it empties the table first and skips the FText repair path, so it is the more destructive option."
+    return _post("delete_datatable_rows", path=path, rowNames=row_names, confirm=confirm)
+
+
 # --------------------------------------------------------------------------
 # Phase 3 completion — common nodes
 # --------------------------------------------------------------------------
