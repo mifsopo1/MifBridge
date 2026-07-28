@@ -220,6 +220,9 @@ namespace MifBridge
 			MIF_BIND(delete_asset);
 			MIF_BIND(rename_asset);
 			MIF_BIND(duplicate_asset);
+			MIF_BIND(get_referencers);
+			MIF_BIND(get_dependencies);
+			MIF_BIND(audit_unused);
 			// Compile / diagnostics
 			MIF_BIND(compile);
 			MIF_BIND(run_console);

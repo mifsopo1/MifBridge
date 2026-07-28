@@ -389,6 +389,10 @@ namespace MifBridge
 	MIF_DECL(delete_asset);
 	MIF_DECL(rename_asset);
 	MIF_DECL(duplicate_asset);
+	// reference queries — the asset registry's dependency graph, exposed
+	MIF_DECL(get_referencers);
+	MIF_DECL(get_dependencies);
+	MIF_DECL(audit_unused);
 
 	// Reconstructor unification — engine editable-child (decompile = run_console mif.kr.Reconstruct)
 	MIF_DECL(create_editable_child);

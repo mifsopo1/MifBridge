@@ -1329,6 +1329,26 @@ def duplicate_asset(path: str, new_path: str) -> dict:
     return _post("duplicate_asset", path=path, newPath=new_path)
 
 
+@mcp.tool()
+def get_referencers(path: str) -> dict:
+    "Which packages reference this asset. Authoritative - reads the asset registry's dependency graph, so it is immune to the FName trap where a trailing _<digits> is stored as a separate number and a literal name search misses real references. Note it sees hard refs and soft object/class paths, but NOT a path stored as a plain string in a DataTable cell."
+    return _post("get_referencers", path=path)
+
+
+@mcp.tool()
+def get_dependencies(path: str) -> dict:
+    "Which packages this asset references (the inverse of get_referencers)."
+    return _post("get_dependencies", path=path)
+
+
+@mcp.tool()
+def audit_unused(path_prefix: str, cls: str = "", include_all: bool = False,
+                 limit: int = 4000, rescan: bool = False) -> dict:
+    "Find unused assets under a folder in one call. Returns, per asset, refs (total referencing packages) and extRefs (those outside its own folder). extRefs is the telling number: a cluster that only references itself has refs>0 but extRefs==0 and is just as unshipped as something with no references. include_all returns every asset rather than only the unreferenced; rescan forces a re-scan first so freshly-created assets are not reported dead."
+    return _post("audit_unused", pathPrefix=path_prefix, **{"class": cls or None},
+                 includeAll=include_all, limit=limit, rescan=rescan)
+
+
 # --------------------------------------------------------------------------
 # Cooked-Blueprint reconstruction
 # --------------------------------------------------------------------------
