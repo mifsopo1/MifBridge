@@ -77,7 +77,31 @@ namespace MifBridge
 			{
 				OutError = FString::Printf(
 					TEXT("user-defined struct not found: '%s'. Native C++ structs cannot be edited — this only works on Blueprint structs."), *P);
+				return nullptr;
 			}
+
+			// A COOKED struct loads perfectly well but carries no EditorData — that is editor-only and
+			// is stripped on cook. Every FStructureEditorUtils entry point (GetVarDesc,
+			// GetVarDescByGuid, AddVariable, RemoveVariable, …) CastChecked's EditorData, so touching a
+			// cooked struct is a FATAL cast rather than an error return:
+			//
+			//     Cast of nullptr to UserDefinedStructEditorData failed
+			//     FStructureEditorUtils::GetVarDesc()   StructureEditorUtils.cpp:648
+			//
+			// On a cooked-editor project EVERY base-game struct is cooked, so without this the struct
+			// endpoints hard-crash the editor on any of them. Rejected HERE rather than in each handler
+			// because list_struct_members / create_struct / add_struct_member / remove_struct_member all
+			// reach GetVarDesc by different routes. Hit for real 2026-07-27 (list_struct_members).
+			if (!Struct->EditorData)
+			{
+				OutError = FString::Printf(
+					TEXT("struct '%s' is COOKED — its editor-only data was stripped, so it cannot be ")
+					TEXT("inspected or edited. This works only on structs authored in this editor. ")
+					TEXT("To read a cooked struct's field names, read_datatable one row and take the keys."),
+					*P);
+				return nullptr;
+			}
+
 			return Struct;
 		}
 
@@ -274,6 +298,8 @@ namespace MifBridge
 			Fail(Out, Error);
 			return;
 		}
+		// (cooked structs are rejected up front by LoadUserStruct - see the EditorData guard there)
+
 		Out->SetStringField(TEXT("structPath"), Struct->GetPathName());
 		TArray<TSharedPtr<FJsonValue>> Members;
 		for (const FStructVariableDescription& D : FStructureEditorUtils::GetVarDesc(Struct))
