@@ -4,8 +4,10 @@
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
 
-#include "Async/Async.h"
+#include "Containers/Ticker.h"
 #include "Dom/JsonObject.h"
+#include "HAL/Event.h"
+#include "HAL/PlatformProcess.h"
 #include "HttpPath.h"
 #include "HttpServerConstants.h"
 #include "HttpServerModule.h"
@@ -58,6 +60,33 @@ namespace
 		Response->Code = Code;
 		return Response;
 	}
+
+	/**
+	 * State shared between a non-game-thread caller and the game-thread ticker that runs its
+	 * endpoint. Both sides hold a thread-safe shared ref; whichever releases last returns the
+	 * event to the pool. That matters on the timeout path: the waiter gives up while the
+	 * ticker may still be about to write Out and Trigger(), so neither side may unilaterally
+	 * free the event or the payload.
+	 */
+	struct FMifPendingCall
+	{
+		TSharedRef<FJsonObject> Out;
+		FEvent* Event;
+
+		FMifPendingCall()
+			: Out(MakeShared<FJsonObject>())
+			, Event(FPlatformProcess::GetSynchEventFromPool())
+		{
+		}
+
+		~FMifPendingCall()
+		{
+			FPlatformProcess::ReturnSynchEventToPool(Event);
+		}
+	};
+
+	/** Upper bound on how long an off-game-thread request will wait for the game thread. */
+	constexpr float MifOffThreadTimeoutSeconds = 120.0f;
 }
 
 FMifBridgeServer::FMifBridgeServer(int32 InPort, const FString& InToken)
@@ -197,20 +226,77 @@ bool FMifBridgeServer::HandleHttp(const FString& Endpoint, const FHttpServerRequ
 
 	MIF_DBG("-> %s %s", *Endpoint, *BodyStr);
 
-	// --- Hop to game thread: ALL UObject work happens there -----------------
-	FHttpResultCallback Callback = OnComplete;
-	AsyncTask(ENamedThreads::GameThread, [Endpoint, InRef, Callback]()
+	// --- Run the endpoint on the game thread, at a tick-safe point ----------
+	//
+	// Do NOT reach for AsyncTask(ENamedThreads::GameThread, ...) here. That enqueues onto the
+	// game thread's NAMED-THREAD task queue, which is pumped not only between frames but also
+	// from inside FTickTaskSequencer::ReleaseTickGroup() -> WaitUntilTasksComplete(): while a
+	// tick group waits on its tasks, the named thread happily services anything else queued to
+	// it. An endpoint that recompiles a Blueprint therefore reinstances actors in the MIDDLE of
+	// a tick group, and FTickTaskManager is left iterating FTickFunctions whose owning objects
+	// have just been trashed. The next one to execute lands on
+	//
+	//     EngineBaseTypes.h:409   check(!"Pure virtual not implemented")
+	//
+	// inside FTickFunctionTask::DoTask() - a hard crash whose stack contains no MifBridge frame
+	// at all, so it reads as a spontaneous editor failure. It reproduced on every compile-heavy
+	// request and was misread for a long time as a project-side teardown bug.
+	//
+	// FHttpServerModule derives from FTSTickerObjectBase, so this handler is ALREADY on the game
+	// thread, called from FTSTicker::GetCoreTicker().Tick() - which FEngineLoop::Tick() runs
+	// after GEngine->Tick() has completed the entire world tick, outside every tick group. That
+	// is precisely the safe point we want, so the real fix is to stop deferring and just run.
+	const auto RunAndReply = [&Endpoint, &InRef](const FHttpResultCallback& Reply, const TSharedRef<FJsonObject>& Out)
 	{
-		TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
-		MifBridge::RunEndpoint(Endpoint, InRef, Out);
-
 		const FString OutStr = JsonToString(Out);
 		MIF_DBG("<- %s %s", *Endpoint, *OutStr);
 
 		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(OutStr, TEXT("application/json"));
 		Response->Code = EHttpServerResponseCodes::Ok;
-		Callback(MoveTemp(Response));
-	});
+		Reply(MoveTemp(Response));
+	};
 
-	return true; // response delivered asynchronously
+	if (IsInGameThread())
+	{
+		TSharedRef<FJsonObject> Out = MakeShared<FJsonObject>();
+		MifBridge::RunEndpoint(Endpoint, InRef, Out);
+		RunAndReply(OnComplete, Out);
+		return true;
+	}
+
+	// Off the game thread: only reachable if the HTTP server is ever driven by another
+	// transport. Hand the work to the core ticker (FTSTicker is safe to add to from any
+	// thread) so it lands on the same post-world-tick safe point, and block here until it has
+	// run.
+	//
+	// The reply is issued from THIS thread on purpose. FHttpResultCallback is only valid for
+	// the duration of the handler call; capturing it and invoking it a frame later from the
+	// game thread dereferences freed state and faults. That was tried, and it turned a
+	// crash-on-compile into a crash-on-every-request.
+	TSharedRef<FMifPendingCall, ESPMode::ThreadSafe> Pending = MakeShared<FMifPendingCall, ESPMode::ThreadSafe>();
+
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda(
+		[Endpoint, InRef, Pending](float) -> bool
+		{
+			MifBridge::RunEndpoint(Endpoint, InRef, Pending->Out);
+			Pending->Event->Trigger();
+			return false; // one-shot
+		}), 0.0f);
+
+	const uint32 TimeoutMs = static_cast<uint32>(MifOffThreadTimeoutSeconds * 1000.0f);
+	if (!Pending->Event->Wait(TimeoutMs))
+	{
+		// The game thread never got to us. Do not touch Pending->Out - the ticker may still be
+		// about to write it. Pending's other reference keeps the payload and the event alive
+		// until that lambda is destroyed, so abandoning it here is safe.
+		TSharedRef<FJsonObject> Err = MakeShared<FJsonObject>();
+		Err->SetBoolField(TEXT("ok"), false);
+		Err->SetStringField(TEXT("error"),
+			FString::Printf(TEXT("timed out after %.0fs waiting for the game thread"), MifOffThreadTimeoutSeconds));
+		OnComplete(MakeJsonResponse(Err, EHttpServerResponseCodes::ServerError));
+		return true;
+	}
+
+	RunAndReply(OnComplete, Pending->Out);
+	return true;
 }

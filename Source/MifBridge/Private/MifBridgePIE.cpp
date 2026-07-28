@@ -4,11 +4,12 @@
 // a graph was structurally correct and compiled clean; nothing could prove it DID anything.
 //
 // ── The deadlock constraint, which shapes every endpoint here ──────────────────────────────────
-// MifBridgeServer dispatches each request with AsyncTask(ENamedThreads::GameThread, ...) and returns
-// immediately — so a handler body runs ON the game thread, mid-frame. PIE startup is DEFERRED: the
+// MifBridgeServer runs each handler inline on the game thread, from the core ticker — so a handler
+// body executes between frames, and nothing else advances while it runs. PIE startup is DEFERRED: the
 // engine consumes the queued request on a later editor tick (UEditorEngine::IsPlayingSessionInEditor
 // is documented as "false ... even if we would start next tick"). So a start_pie that waited for PIE
 // to come up would be blocking the very ticks that bring it up. That is an unconditional deadlock.
+// Running inline rather than deferring does not soften this: we still hold the game thread.
 //
 // Therefore: start_pie REQUESTS and returns immediately. The caller polls pie_status. Same for stop —
 // EndPlayMap() is unsafe from inside a stack frame like ours, and the engine says so, so we use
