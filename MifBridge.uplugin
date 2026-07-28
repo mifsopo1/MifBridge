@@ -19,5 +19,11 @@
 				"Win64"
 			]
 		}
+	],
+	"Plugins": [
+		{
+			"Name": "EnhancedInput",
+			"Enabled": true
+		}
 	]
 }

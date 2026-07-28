@@ -29,7 +29,10 @@ public class MifBridge : ModuleRules
 			                     // evaluated in the CALLER's translation unit — so recompile_material
 			                     // pulls the symbol in merely by writing `FMaterialUpdateContext Ctx;`.
 			                     // Anticipated by docs/audit/work/I_diagnostics.md (get_perf_stats).
-			"BlueprintGraph",    // UK2Node_* classes
+			"BlueprintGraph",
+			"InputBlueprintNodes", // UK2Node_EnhancedInputAction (add_enhanced_input_action)
+			"EnhancedInput",       // UInputAction / UInputMappingContext runtime types
+    // UK2Node_* classes
 			"GraphEditor",       // graph helpers
 			"UMGEditor",         // UK2Node_CreateWidget (private header, see PrivateIncludePaths)
 			"UMG",               // UUserWidget runtime class + Blueprint/UserWidget.h
