@@ -549,6 +549,13 @@ namespace MifBridge
 	// FEditorFileUtils::SaveLevel for world packages (the save_level_as path, runs the editor's
 	// pre/post-save-world hooks) and UPackage::SavePackage for everything else (the
 	// save_blueprint/save_package pattern, .umap-vs-.uasset extension included).
+	// FOURTH HAZARD, not in the enumeration above and not avoidable from here: for each dirty MAP,
+	// FEditorFileUtils::SaveLevel -> SaveWorld opens FScopedSlowTask ... MakeDialog(true)
+	// (FileHelpers.cpp:767-768). That is a progress window, not a user-blocking modal, but while it is
+	// up FFeedbackContextEditor ticks Slate only and never FTSTicker, so the HTTP server is
+	// unreachable for the duration of each map save. The read-only pre-check further up is what makes
+	// FileHelpers.cpp:756's FMessageDialog unreachable — that one IS closed — and
+	// GetDirtyWorldPackages / GetDirtyContentPackages really are GC-free as claimed.
 	void H_save_dirty_packages(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,

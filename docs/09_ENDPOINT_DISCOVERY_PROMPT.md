@@ -59,9 +59,14 @@ fail on cooked assets, and an endpoint that only works on loose assets must say 
 
    **For every endpoint you propose, state its bucket and justify it.**
 
-3. **Handlers run ON the game thread, mid-frame**, dispatched via
-   `AsyncTask(ENamedThreads::GameThread, …)` from the HTTP listener. Consequences:
-   - Blocking in a handler deadlocks the HTTP server.
+3. **Handlers run ON the game thread, SYNCHRONOUSLY and inline, POST-world-tick.** They are *not*
+   dispatched via `AsyncTask(ENamedThreads::GameThread, …)` — this brief used to say that and it was
+   backwards; the source comment says **"Do NOT reach for AsyncTask"** and explains why
+   (`MifBridgeServer.cpp:229-265`). `FHttpServerModule` is an `FTSTickerObjectBase`, so the handler is
+   already on the game thread, called from `FTSTicker::GetCoreTicker().Tick()` after
+   `GEngine->Tick()` has finished the whole world tick, outside every tick group. Consequences:
+   - Blocking in a handler deadlocks the HTTP server — and worse than an async model would: the
+     handler is holding the very ticker that would have to advance whatever it is waiting on.
    - Anything asynchronous (PIE start, navmesh build, shader compile, asset cook) must **request and
      return**, with a separate status endpoint to poll. Never wait.
    - Anything that tears down or swaps the `UWorld` must be **deferred a tick**

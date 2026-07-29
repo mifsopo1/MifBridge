@@ -95,6 +95,36 @@ namespace MifBridge
 		const bool bAutoPlay = JBool(In, TEXT("autoPlay"), false);
 		const bool bLoop = JBool(In, TEXT("loop"), false);
 
+		// ---- BATCH M: TRACK NAMES ARE CHECKED BEFORE THE NODE EXISTS -------------------
+		// The floatTracks[] validation used to run after the node and its UTimelineTemplate existed,
+		// on the strength of "RunEndpoint cancels the transaction on ok:false, so the half-made node
+		// goes with it". Cancel discards the undo entry; it never calls FTransaction::Apply
+		// (EditorTransaction.cpp:1387-1437), so floatTracks:["A",""] left a real timeline node and a
+		// real timeline variable in the blueprint from a call that reported failure. The names are
+		// plain JSON strings — nothing about checking them needs the node. See PM-007.
+		TArray<FString> WantedTracks;
+		{
+			const TArray<TSharedPtr<FJsonValue>>* Tracks = nullptr;
+			if (In->TryGetArrayField(TEXT("floatTracks"), Tracks) && Tracks)
+			{
+				int32 TrackOrdinal = INDEX_NONE;
+				for (const TSharedPtr<FJsonValue>& Value : *Tracks)
+				{
+					++TrackOrdinal;
+					FString TrackName;
+					if (!Value.IsValid() || !Value->TryGetString(TrackName) || TrackName.IsEmpty())
+					{
+						// Skipped in silence before Batch L, so floatTracks:["A","",{}] answered ok:true
+						// with one track.
+						Fail(Out, FString::Printf(
+							TEXT("floatTracks[%d] must be a non-empty string (a track name). Nothing was created - the array is checked before the timeline node exists."), TrackOrdinal));
+						return;
+					}
+					WantedTracks.Add(TrackName);
+				}
+			}
+		}
+
 		Blueprint->Modify();
 		EventGraph->Modify();
 
@@ -108,7 +138,27 @@ namespace MifBridge
 
 		TArray<FString> AddedTracks;
 		UTimelineTemplate* Template = Blueprint->FindTimelineTemplateByVariableName(Node->TimelineName);
-		if (Template)
+		if (!Template)
+		{
+			// length, autoPlay, loop and floatTracks[] ALL lived inside `if (Template)`, so a null
+			// template produced a bare timeline, ok:true, and a response that did not even contain a
+			// floatTracks key — every configuration the caller asked for discarded in one branch.
+			//
+			// BATCH M, option (c): this is the one failure the preflight above CANNOT predict — it
+			// depends on engine state after PostPlacedNewNode — and unwinding a timeline means undoing
+			// both a graph node and the blueprint's timeline bookkeeping, which the bridge has no safe
+			// API for. So SAY what is left behind instead of claiming a rollback that does not happen.
+			Out->SetStringField(TEXT("leftBehind"), Node->TimelineName.ToString());
+			Fail(Out, FString::Printf(
+				TEXT("the timeline node was created but its UTimelineTemplate could not be found by variable name '%s', ")
+				TEXT("so length/autoPlay/loop/floatTracks could not be applied. This usually means the name collides with ")
+				TEXT("an existing timeline or variable — try a different name. WHAT IS LEFT BEHIND: the timeline node '%s' ")
+				TEXT("IS in the event graph and this call does not remove it (a cancelled transaction discards the undo ")
+				TEXT("entry, it does not roll a creation back). Find it with list_nodes and remove it with delete_node ")
+				TEXT("before retrying, or the colliding name will still be taken."),
+				*Node->TimelineName.ToString(), *Node->TimelineName.ToString()));
+			return;
+		}
 		{
 			Template->bAutoPlay = bAutoPlay;
 			Template->bLoop = bLoop;
@@ -119,25 +169,17 @@ namespace MifBridge
 				Template->LengthMode = TL_TimelineLength;
 			}
 
-			// Optional float tracks (names). The curve is embedded in the template.
-			const TArray<TSharedPtr<FJsonValue>>* Tracks = nullptr;
-			if (In->TryGetArrayField(TEXT("floatTracks"), Tracks) && Tracks)
+			// Optional float tracks. Every name was validated above, so this loop cannot fail.
+			// The curve is embedded in the template.
+			for (const FString& TrackName : WantedTracks)
 			{
-				for (const TSharedPtr<FJsonValue>& Value : *Tracks)
-				{
-					FString TrackName;
-					if (!Value.IsValid() || !Value->TryGetString(TrackName) || TrackName.IsEmpty())
-					{
-						continue;
-					}
-					UCurveFloat* Curve = NewObject<UCurveFloat>(Template, NAME_None, RF_Transactional | RF_Public);
-					FTTFloatTrack NewTrack;
-					NewTrack.CurveFloat = Curve;
-					NewTrack.SetTrackName(FName(*TrackName), Template);
-					const int32 TrackIndex = Template->FloatTracks.Add(NewTrack);
-					Template->AddDisplayTrack(FTTTrackId(FTTTrackBase::TT_FloatInterp, TrackIndex));
-					AddedTracks.Add(TrackName);
-				}
+				UCurveFloat* Curve = NewObject<UCurveFloat>(Template, NAME_None, RF_Transactional | RF_Public);
+				FTTFloatTrack NewTrack;
+				NewTrack.CurveFloat = Curve;
+				NewTrack.SetTrackName(FName(*TrackName), Template);
+				const int32 TrackIndex = Template->FloatTracks.Add(NewTrack);
+				Template->AddDisplayTrack(FTTTrackId(FTTTrackBase::TT_FloatInterp, TrackIndex));
+				AddedTracks.Add(TrackName);
 			}
 		}
 
@@ -197,10 +239,21 @@ namespace MifBridge
 	// (which need the exact name text, not a guess) can be set correctly on the first try.
 	void H_list_enum_values(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		const FString Name = JStr(In, TEXT("enum"));
+		// server.py's list_enum_values tool has always posted `enumName`, and this handler read only
+		// `enum`, so every MCP call answered "enum is required" to a caller that supplied one. Note
+		// `enumName` is the plugin's USUAL spelling — add_switch_enum and add_enum_literal in this very
+		// file read it — so this endpoint was the odd one out, not the wrapper. Aliased here rather
+		// than changed in the wrapper for that reason, and guarded so the next drift is named.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("enum"), TEXT("enumName") },
+			TEXT("enum (alias: enumName)")))
+		{
+			return;
+		}
+		const FString Name = JStrAny(In, { TEXT("enum"), TEXT("enumName") });
 		if (Name.IsEmpty())
 		{
-			Fail(Out, TEXT("enum is required"));
+			Fail(Out, TEXT("enum is required (alias: enumName)"));
 			return;
 		}
 		UEnum* Enum = ResolveEnum(Name);
@@ -300,16 +353,35 @@ namespace MifBridge
 		Node->bHasDefaultPin = JBool(In, TEXT("hasDefault"), true);
 
 		// Case labels drive the case pins — populate PinNames before AllocateDefaultPins.
+		// `cases` was undocumented (no doc block on this handler) AND lenient: a non-string or empty
+		// entry was dropped in silence, so the switch came back with fewer case pins than the caller
+		// listed and nothing said which one was missing.
+		//   in:  { graphId, cases?: ["A","B"], caseSensitive?: false, hasDefault?: true, x?, y? }
+		//   out: { node:{...} }
 		const TArray<TSharedPtr<FJsonValue>>* Cases = nullptr;
 		if (In->TryGetArrayField(TEXT("cases"), Cases) && Cases)
 		{
+			int32 CaseOrdinal = INDEX_NONE;
 			for (const TSharedPtr<FJsonValue>& Value : *Cases)
 			{
+				++CaseOrdinal;
 				FString CaseName;
-				if (Value.IsValid() && Value->TryGetString(CaseName) && !CaseName.IsEmpty())
+				if (!Value.IsValid() || !Value->TryGetString(CaseName) || CaseName.IsEmpty())
 				{
-					Node->PinNames.Add(FName(*CaseName));
+					Fail(Out, FString::Printf(
+						TEXT("cases[%d] must be a non-empty string. Nothing was kept."), CaseOrdinal));
+					return;
 				}
+				if (Node->PinNames.Contains(FName(*CaseName)))
+				{
+					// A duplicate silently collapses into one pin, so the node would have fewer cases
+					// than the request listed — the same undercount, one step later.
+					Fail(Out, FString::Printf(
+						TEXT("cases[%d] '%s' is a duplicate; a switch cannot have two identical cases. Nothing was kept."),
+						CaseOrdinal, *CaseName));
+					return;
+				}
+				Node->PinNames.Add(FName(*CaseName));
 			}
 		}
 		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));

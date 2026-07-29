@@ -74,42 +74,10 @@ namespace MifBridge
 		return NewGraph;
 	}
 
-	namespace
-	{
-		// Parse a JSON array of {name, type, container?} into (name, pin-type) pairs.
-		bool ParsePinSpecs(const TSharedRef<FJsonObject>& In, const TCHAR* Field,
-			TArray<TPair<FName, FEdGraphPinType>>& OutPins, FString& OutError)
-		{
-			const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
-			if (!In->TryGetArrayField(Field, Arr) || Arr == nullptr)
-			{
-				return true; // absent = no pins, not an error
-			}
-			for (const TSharedPtr<FJsonValue>& Value : *Arr)
-			{
-				const TSharedPtr<FJsonObject>* ObjPtr = nullptr;
-				if (!Value.IsValid() || !Value->TryGetObject(ObjPtr) || ObjPtr == nullptr)
-				{
-					continue;
-				}
-				const TSharedRef<FJsonObject> Obj = ObjPtr->ToSharedRef();
-				FString PinName = JStr(Obj, TEXT("name"));
-				PinName.TrimStartAndEndInline();
-				if (!IsValidIdentifier(PinName))
-				{
-					OutError = FString::Printf(TEXT("invalid pin name '%s' in %s"), *PinName, Field);
-					return false;
-				}
-				FEdGraphPinType PinType;
-				if (!MakePinType(JStr(Obj, TEXT("type")), JStr(Obj, TEXT("container")), PinType, OutError, JStr(Obj, TEXT("valueType"))))
-				{
-					return false;
-				}
-				OutPins.Emplace(FName(*PinName), PinType);
-			}
-			return true;
-		}
-	}
+	// ParsePinSpecs moved to MifBridgeCommon.cpp (declared in MifBridgeHandlers.h). It was duplicated
+	// as ParseDispatcherParams in MifBridgeDelegates.cpp — same signature shape, effectively identical
+	// body — so the two disagreed only in error wording and in nothing that mattered until one of them
+	// got fixed. Do NOT re-add a local copy.
 
 	// --- resolve_struct -----------------------------------------------------
 
@@ -1058,10 +1026,28 @@ namespace MifBridge
 	// and it's what the reconstructor testbed needs (author a known graph → cook → reconstruct → diff = ground truth).
 	// SELF-MANAGED: CreateBlueprint + CompileBlueprint reinstance a class, which must never sit inside RunEndpoint's
 	// transaction (a later Ctrl-Z would restore a dead CDO and crash) — registered in IsSelfManagedEndpoint.
-	//   in:  { path: "/Game/MifTestbed/BP_Foo", parentClass?: "Actor" (default), overwrite?: false }
+	//   in:  { path: "/Game/MifTestbed/BP_Foo", parentClass?: "Actor" (default),
+	//          blueprintType?: "Normal" | FunctionLibrary | Interface | MacroLibrary | WidgetBlueprint }
 	//   out: { blueprintId, class, parentClass, eventGraphId? }
+	//
+	// This line used to advertise `overwrite?: false`, which NO line of the handler reads, and to omit
+	// `blueprintType`, which the handler does read (and whose absence from the contract caused PM-002).
+	// Both halves are true now, and `overwrite` is a named refusal in the guard below rather than a
+	// silently-dropped key that leaves the caller staring at "a Blueprint already exists" wondering why
+	// the flag they passed did nothing — the third instance of that class this session after
+	// create_material_instance.textures and duplicate_actors.rotationOffset.
 	void H_create_blueprint(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("parentClass"), TEXT("blueprintType") },
+			TEXT("path (must start with /Game/), parentClass (default \"Actor\"), blueprintType ")
+			TEXT("(Normal | FunctionLibrary | Interface | MacroLibrary | WidgetBlueprint)"),
+			{ { TEXT("overwrite"), TEXT("NOT supported — this endpoint refuses to clobber an existing asset. delete_asset the old one first, or pick a new path") },
+			  { TEXT("name"), TEXT("the asset name is the last segment of path") },
+			  { TEXT("parent"), TEXT("the base class parameter is called parentClass") } }))
+		{
+			return;
+		}
 		const FString Path = JStr(In, TEXT("path"));
 		if (Path.IsEmpty() || !Path.StartsWith(TEXT("/Game/")))
 		{

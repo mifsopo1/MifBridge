@@ -57,12 +57,11 @@ namespace MifBridge
 			return ((double)Height - 32768.0) * HeightStepWorld(ZScale);
 		}
 
-		UWorld* LandWorld()
-		{
-			// Landscapes are authored in the EDITOR world only; PIE inherits a copy that is thrown
-			// away on stop, so editing that copy would silently discard the work.
-			return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-		}
+		// LandWorld() was another spelling of "the editor world"; it is MifBridge::EditorWorld() now
+		// (declared in MifBridgeHandlers.h, defined once in MifBridgeCommon.cpp). Deliberately the
+		// EDITOR world and NOT the PIE-preferring ActiveWorld(): landscapes are authored in the editor
+		// world only, and PIE inherits a copy that is thrown away on stop, so editing that copy would
+		// silently discard the work.
 
 		ALandscape* FindLandscape(UWorld* World, const FString& Query)
 		{
@@ -110,7 +109,7 @@ namespace MifBridge
 	// inside one — undo would leave half-registered components pointing at freed textures.
 	void H_create_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = LandWorld();
+		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
 		// --- shape of the grid -------------------------------------------------
@@ -320,7 +319,7 @@ namespace MifBridge
 	// defaults to half the radius.
 	void H_sculpt_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = LandWorld();
+		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
 		ALandscape* Landscape = FindLandscape(World, JStrAny(In, { TEXT("landscape"), TEXT("actorPath") }));
@@ -341,6 +340,44 @@ namespace MifBridge
 		const FString Mode = JStr(In, TEXT("mode"), TEXT("flatten")).ToLower();
 		const double Amount = JNum(In, TEXT("amount"), 0.0);
 		const double Falloff = FMath::Clamp(JNum(In, TEXT("falloff"), 0.5), 0.0, 1.0);
+
+		// Validate mode BEFORE the per-vertex loop. The refusal used to live INSIDE the loop, so a
+		// brush that covered zero vertices (radius smaller than one quad) never reached it and an
+		// invalid mode answered ok:true, verticesTouched:0 — a typo'd verb reported as a successful
+		// no-op. Also name the argument/mode combinations that are silently ignored: `amount` is read
+		// only by raise/lower and `targetZ` only by flatten, so passing one to the wrong mode used to
+		// do nothing at all without saying so.
+		{
+			static const TCHAR* const kModes[] = { TEXT("raise"), TEXT("lower"), TEXT("flatten"), TEXT("smooth") };
+			bool bKnownMode = false;
+			for (const TCHAR* M : kModes) { if (Mode == M) { bKnownMode = true; break; } }
+			if (!bKnownMode)
+			{
+				Fail(Out, FString::Printf(TEXT("unknown mode '%s' — use raise, lower, flatten or smooth"), *Mode));
+				return;
+			}
+			const bool bUsesAmount  = (Mode == TEXT("raise") || Mode == TEXT("lower"));
+			const bool bUsesTargetZ = (Mode == TEXT("flatten"));
+			if (In->HasField(TEXT("amount")) && !bUsesAmount)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("amount is only used by mode raise/lower; mode '%s' would have ignored it. ")
+					TEXT("Use %s, or drop amount."), *Mode, bUsesTargetZ ? TEXT("targetZ") : TEXT("no height argument")));
+				return;
+			}
+			if (In->HasField(TEXT("targetZ")) && !bUsesTargetZ)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("targetZ is only used by mode flatten; mode '%s' would have ignored it. ")
+					TEXT("Use %s, or drop targetZ."), *Mode, bUsesAmount ? TEXT("amount") : TEXT("no height argument")));
+				return;
+			}
+			if (bUsesAmount && Amount == 0.0)
+			{
+				Fail(Out, FString::Printf(TEXT("mode '%s' needs a non-zero amount (world units) — with amount 0 every vertex would be written back unchanged and reported as touched"), *Mode));
+				return;
+			}
+		}
 
 		const FTransform ToWorld = Landscape->LandscapeActorToWorld();
 		const FVector Local = ToWorld.InverseTransformPosition(CenterWorld);
@@ -429,6 +466,9 @@ namespace MifBridge
 						HeightToWorld(Data[YP * W + X], ActorScale.Z));
 					Result = FMath::Lerp(Current, Avg, Alpha);
 				}
+				// Mode is validated BEFORE this loop now (see the pre-flight check above); this branch
+				// remains as a belt-and-braces assertion and can only be reached if the allowlist and
+				// this dispatch drift apart.
 				else
 				{
 					Fail(Out, FString::Printf(TEXT("unknown mode '%s' — use raise/lower/flatten/smooth"), *Mode));
@@ -481,7 +521,7 @@ namespace MifBridge
 	// pushes the others down — which is what you want and is why there is no "erase" mode.
 	void H_paint_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = LandWorld();
+		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
 		ALandscape* Landscape = FindLandscape(World, JStrAny(In, { TEXT("landscape"), TEXT("actorPath") }));
@@ -496,6 +536,32 @@ namespace MifBridge
 			Fail(Out, FString::Printf(
 				TEXT("could not load LandscapeLayerInfoObject '%s' — it must be one of the layers this landscape's material declares"),
 				*InfoPath));
+			return;
+		}
+
+		// The message above PROMISED this check and nothing performed it: LoadLayerInfo will happily
+		// LoadObject any ULandscapeLayerInfoObject from any path. Painting an unregistered layer does
+		// NOT no-op — FLandscapeEditDataInterface::SetAlphaData takes the UpdateLayerIdx == INDEX_NONE
+		// branch (LandscapeEditInterface.cpp:2797) and ALLOCATES A NEW WEIGHTMAP CHANNEL, and because
+		// bWeightAdjust normalises across layers it pushes the real layers' weights down. A later
+		// FixupWeightmaps deletes the allocation with a MapCheck warning (LandscapeEdit.cpp:929-931),
+		// so the paint appears, dims the layers you WERE using, and then vanishes — all under
+		// ok:true, verticesTouched:N. Same shape as the RVT postmortem: the endpoint succeeded and
+		// broke something the caller was not looking at.
+		if (Info->GetLayerInfoIndex(LayerInfo) == INDEX_NONE)
+		{
+			TArray<FString> Known;
+			for (const FLandscapeInfoLayerSettings& L : Info->Layers)
+			{
+				if (L.LayerInfoObj) { Known.Add(L.LayerInfoObj->GetPathName()); }
+				else if (L.LayerName != NAME_None) { Known.Add(FString::Printf(TEXT("%s (no LayerInfo asset assigned)"), *L.LayerName.ToString())); }
+			}
+			Fail(Out, FString::Printf(
+				TEXT("layer '%s' is not one of this landscape's layers, so painting it would allocate a stray weightmap ")
+				TEXT("channel, dim the layers that ARE in use, and then be garbage-collected by the next weightmap fixup. ")
+				TEXT("This landscape declares: %s. (landscape_info lists them.)"),
+				*InfoPath,
+				Known.Num() ? *FString::Join(Known, TEXT(", ")) : TEXT("<none — assign layers on the landscape material first>")));
 			return;
 		}
 
@@ -585,7 +651,7 @@ namespace MifBridge
 	// (FLandscapeProxyUIDetails::CreateRuntimeVirtualTextureVolume).
 	void H_bind_landscape_rvt(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = LandWorld();
+		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
 		ALandscape* Landscape = FindLandscape(World, JStrAny(In, { TEXT("landscape"), TEXT("actorPath") }));
@@ -674,7 +740,7 @@ namespace MifBridge
 	// arguments only makes sense against the bounds reported here.
 	void H_landscape_info(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = LandWorld();
+		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
 		TArray<TSharedPtr<FJsonValue>> Arr;

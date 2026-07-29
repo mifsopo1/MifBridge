@@ -579,7 +579,9 @@ deadlocks the editor. The traps cluster in four families:
 Distilled rule: grep every engine utility's .cpp for `FMessageDialog` / `EditorAddModalWindow` /
 `ShowModal` / `FScopedSlowTask`+`MakeDialog` **before** wiring it into a handler.
 
-**Blocking hazards (13 entries, §3).** Handlers run on the game thread mid-frame. The blacklist:
+**Blocking hazards (13 entries, §3).** Handlers run on the game thread synchronously and inline,
+post-world-tick (not "mid-frame", and not via `AsyncTask` — see `02_GOTCHAS.md` §8), so a blocking
+call takes the whole bridge down rather than just its own request. The blacklist:
 `GetStatistics` (blocks until that material's shaders compile), `BuildReflectionCaptures`
 (`FinishAllCompilation` — unbounded, plus a `check()` crash below SM5), `WaitForCompilationComplete`
 (also reached *implicitly* via Niagara `PreSave`), `FinishAllCompilation`/shader flushes generally,

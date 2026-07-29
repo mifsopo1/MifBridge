@@ -33,35 +33,20 @@ namespace MifBridge
 {
 	namespace
 	{
-		UWorld* SpatialWorld()
-		{
-			// Prefer the PIE world when playing so queries match what is actually running; fall back
-			// to the editor world for level-building, which is the normal case here.
-			if (GEditor && GEditor->PlayWorld) { return GEditor->PlayWorld; }
-			return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-		}
+		// ActiveWorld() is MifBridge::ActiveWorld() now — same policy (prefer the PIE world when
+		// playing so queries match what is actually running, fall back to the editor world for
+		// level-building), one definition instead of five near-copies with two different answers.
 
-		AActor* FindActorByPathOrLabel(UWorld* World, const FString& Query)
-		{
-			if (!World || Query.IsEmpty()) { return nullptr; }
-			for (TActorIterator<AActor> It(World); It; ++It)
-			{
-				AActor* A = *It;
-				if (!A || !IsValid(A)) { continue; }
-				if (A->GetPathName() == Query || A->GetName() == Query || A->GetActorLabel() == Query)
-				{
-					return A;
-				}
-			}
-			return nullptr;
-		}
+		// The actor finder moved to MifBridgeCommon.cpp as MifBridge::FindActorInWorld (declared in
+		// MifBridgeHandlers.h). FIVE byte-identical copies existed under five different names
+		// (FindActor, FindNavActor, FindActorByPathOrLabel, FindVpActor, FindWorldActor) — different
+		// names are not a build error, which is exactly why they survived, but it meant a fix to the
+		// path/name/label matching rule landed in one of five places. Do NOT add a sixth.
 
-		TSharedRef<FJsonObject> Vec3(const FVector& V)
-		{
-			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
-			J->SetNumberField(TEXT("x"), V.X); J->SetNumberField(TEXT("y"), V.Y); J->SetNumberField(TEXT("z"), V.Z);
-			return J;
-		}
+		// Vec3 moved to MifBridgeCommon.cpp (declared in MifBridgeHandlers.h). This file's FVector form
+		// and MifBridgeStreaming.cpp's 3-double form were BOTH in unity blob 2 already and compiled
+		// only because their arities differed — so they shared one cross-file overload set and any
+		// signature change on either side was an instant C2084. Both overloads now exist once.
 
 		// World-space AABB of a placed actor. bOnlyColliding=false so meshes WITHOUT collision still
 		// report their visual size — editor-world collision is unreliable for imported props, and a
@@ -81,8 +66,8 @@ namespace MifBridge
 	//   in:  { actorPath }   out: { origin, extent, size, min, max, hasBounds }
 	void H_get_actor_bounds(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = SpatialWorld();
-		AActor* A = FindActorByPathOrLabel(World, JStrAny(In, { TEXT("actorPath"), TEXT("actor"), TEXT("path") }));
+		UWorld* World = ActiveWorld();
+		AActor* A = FindActorInWorld(World, JStrAny(In, { TEXT("actorPath"), TEXT("actor"), TEXT("path") }));
 		if (!A) { Fail(Out, TEXT("actor not found (accepts actorPath, name or label)")); return; }
 
 		FVector Origin, Extent;
@@ -104,7 +89,7 @@ namespace MifBridge
 	// no collision at all (which is most imported props in an editor world).
 	void H_check_overlaps(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = SpatialWorld();
+		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
 		const FString Single = JStrAny(In, { TEXT("actorPath"), TEXT("actor") });
@@ -126,7 +111,7 @@ namespace MifBridge
 			if (ActorBox(A, B)) { Entries.Add({ A, B }); }
 		}
 
-		AActor* Target = Single.IsEmpty() ? nullptr : FindActorByPathOrLabel(World, Single);
+		AActor* Target = Single.IsEmpty() ? nullptr : FindActorInWorld(World, Single);
 		TArray<TSharedPtr<FJsonValue>> Pairs;
 		for (int32 i = 0; i < Entries.Num(); ++i)
 		{
@@ -164,7 +149,7 @@ namespace MifBridge
 	// how things end up floating.
 	void H_trace_ground(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = SpatialWorld();
+		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
 		// Accept BOTH {x,y} and {location:{x,y,z}}. Every other endpoint in this bridge takes a
@@ -191,7 +176,7 @@ namespace MifBridge
 		}
 
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(MifBridgeTraceGround), /*bTraceComplex*/ true);
-		if (AActor* Ignore = FindActorByPathOrLabel(World, JStrAny(In, { TEXT("ignoreActor"), TEXT("actorPath") })))
+		if (AActor* Ignore = FindActorInWorld(World, JStrAny(In, { TEXT("ignoreActor"), TEXT("actorPath") })))
 		{
 			Params.AddIgnoredActor(Ignore);
 		}
@@ -232,7 +217,7 @@ namespace MifBridge
 	// before returning, so the path handed back already exists — no poll-then-fetch dance.
 	void H_capture_camera(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = SpatialWorld();
+		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
 		FVector Loc(JNum(In, TEXT("x"), 0.0), JNum(In, TEXT("y"), 0.0), JNum(In, TEXT("z"), 500.0));
@@ -310,7 +295,7 @@ namespace MifBridge
 	// The single call that would have caught every mistake in the blind build. Run it after placing.
 	void H_scene_report(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = SpatialWorld();
+		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
 		const double GroundZ = JNum(In, TEXT("groundZ"), 0.0);

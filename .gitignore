@@ -6,3 +6,8 @@ DerivedDataCache/
 *.sln
 *.suo
 *.sdf
+
+# Python bytecode from the MCP layer (tools/ue5-mcp-bridge) — a .pyc was
+# committed once already; it is build output and must never be tracked.
+__pycache__/
+*.pyc

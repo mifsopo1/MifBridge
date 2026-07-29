@@ -43,7 +43,8 @@ The plugin answers each request on the game thread, applies it through the real 
 
 Both halves live in **this** repo on purpose. Every endpoint needs a `MIF_DECL` + `MIF_BIND` in the
 C++ **and** a matching `@mcp.tool` in `server.py`; when they lived in separate repos they drifted
-silently (82 tools against 102 endpoints). One repo, one commit, no drift. Verify parity with:
+silently. One repo, one commit, no drift — parity is currently exact at **203 tools against 203
+endpoints** (191 built-in + 12 registered by `MifKismetReconstructor`). Verify with:
 
 ```bash
 sed -n 's/.*MIF_BIND(\([a-z_0-9]*\)).*/\1/p' Source/MifBridge/Private/MifBridgeCommon.cpp | sort -u > /tmp/a
@@ -124,7 +125,7 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 
 ---
 
-## Capabilities (102 HTTP endpoints)
+## Capabilities (203 HTTP endpoints: 191 built-in + 12 external)
 
 - **Session / assets** — open, list, save, back up Blueprints; create new Blueprints (incl. function libraries, interfaces, macro libraries, widget blueprints); delete, rename, or duplicate any `/Game/` asset.
 - **Introspection** — list graphs/nodes/variables/functions, get a node's full pin detail, find nodes by class/title/function, resolve structs, describe a class's callable functions/properties/dispatchers, list enum values. Graph enumeration recurses into **nested** graphs — anim state machines, their states, transition rules, and collapsed/composite node bodies — which are addressed by a dotted `graphId` (`…::AnimGraph.Locomotion.Idle`).

@@ -175,6 +175,9 @@ Http.StartAllListeners();
 Stop everything in `ShutdownModule()`. Guard with a CVar/menu toggle so it isn't listening unless the user wants it.
 
 ### 6.2 The single most important rule: game-thread dispatch
+
+> **SUPERSEDED — DO NOT COPY THE PATTERN BELOW.** The `AsyncTask(ENamedThreads::GameThread, …)` hop was built, shipped, and removed: it enqueues onto the game thread's *named-thread* queue, which is also pumped from inside `FTickTaskSequencer::ReleaseTickGroup() -> WaitUntilTasksComplete()`, so a compile-heavy endpoint reinstanced actors **mid-tick-group** and the next `FTickFunction` hit `check(!"Pure virtual not implemented")` (`EngineBaseTypes.h:409`) with no MifBridge frame on the stack. As built, `FHttpServerModule` is an `FTSTickerObjectBase`, so the handler is **already** on the game thread — post-world-tick, outside every tick group — and runs **inline** with no hop at all. The source comment says *"Do NOT reach for AsyncTask"* (`MifBridgeServer.cpp:229-265`). The conclusion of this section (all `UObject` work on the game thread; `FEditorScriptExecutionGuard` inside) is still right; only the *mechanism* below is wrong. Current model: `docs/00_ARCHITECTURE.md` § *Threading* and `docs/02_GOTCHAS.md` §8.
+
 HTTP callbacks fire on an HTTP worker thread. **All** `UBlueprint`/`UEdGraph`/`UK2Node` access must run on the game thread or the editor crashes. Pattern:
 ```cpp
 auto Handler = [](const FHttpServerRequest& Req, const FHttpResultCallback& OnDone)

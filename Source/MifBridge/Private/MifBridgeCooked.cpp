@@ -54,6 +54,27 @@ namespace MifBridge
 	// in Batch C, so every handler file rejects through ONE implementation. Callers below are
 	// unchanged.
 
+	// ---------------------------------------------------------------- asset-row field naming
+	// GAP 8 (user report): "find_assets returns package vs path inconsistently, so callers guess."
+	// It was worse than inconsistent — the SAME key meant different things in different endpoints:
+	// find_assets."path" is an OBJECT path (/Game/X/Foo.Foo_C) while audit_unused."path" is a
+	// PACKAGE path (/Game/X/Foo). Feeding one endpoint's "path" straight into the other yields a
+	// silent "asset not found", and there was no key a caller could read blind and be sure of.
+	//
+	// The fix is ADDITIVE — every legacy key keeps its exact previous value, and every asset row
+	// additionally carries these two, which mean the same thing in EVERY endpoint:
+	//
+	//   objectPath  = /Game/X/Foo.Foo_C   the object inside the package. What set_property /
+	//                                     get_property / open_blueprint / describe_class take.
+	//   packageName = /Game/X/Foo         the package that holds it. What get_referencers /
+	//                                     get_dependencies / describe_package / delete_asset take.
+	//
+	// One writer, so no emitter can spell them differently or fill them in the wrong order.
+	// MifBridgeAssetOps.cpp holds the same three lines for the reason RejectUnknownParams was
+	// once duplicated: promoting means opening MifBridgeHandlers.h, the plugin's contract surface.
+	// EVICTION CLAUSE — promote it there the next time that header is edited, and if a THIRD file
+	// needs it, promote instead of copying again.
+
 	// Mirrors ModKit_GetGameContainerDir() in IPlatformFilePak.cpp - the project-root text file naming the
 	// game install whose containers get mounted. Re-read here (rather than exposed from the engine) so this
 	// stays a read-only observer with no engine-side API to keep in sync.
@@ -83,7 +104,14 @@ namespace MifBridge
 
 	//   in:  {}
 	//   out: { ioDispatcherInitialized, configPath, configFound, gameInstallDir, resolvedContainerDir,
-	//          containers[{ file, sizeBytes }], assetCounts{ total, containerOnly, loose, loaded } }
+	//          containerCount, containers[{ file, filePath, path, sizeBytes }],
+	//          assetCounts{ total, containerOnly, loose, loaded } }
+	//        NOT asset rows, and deliberately so: a container is a .utoc FILE, so `path` here is a
+	//        FILESYSTEM path (D:\...\pakchunk0.utoc), NOT a /Game/ package. `filePath` carries the
+	//        same value under a name that says which kind of path it is — "path" meaning three
+	//        different things across this file is exactly the GAP 8 complaint. See the asset-row
+	//        field naming block above; objectPath/packageName do not apply to a container.
+	//        (`containerCount` was already emitted and simply missing from this comment.)
 	// Answers "what base-game content do I actually have mounted right now, and did the mount work" - the
 	// IoStore containers are mounted straight through the IoDispatcher file backend, so they never show up
 	// in the normal mounted-pak list and are otherwise invisible from inside the editor.
@@ -157,6 +185,9 @@ namespace MifBridge
 				{
 					TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 					Json->SetStringField(TEXT("file"), FPaths::GetCleanFilename(Utoc));
+					// filePath is the self-describing spelling; `path` is the original key, kept
+					// byte-identical so existing callers do not break.
+					Json->SetStringField(TEXT("filePath"), Utoc);
 					Json->SetStringField(TEXT("path"), Utoc);
 					Json->SetNumberField(TEXT("sizeBytes"), static_cast<double>(PlatformFile.FileSize(*Utoc)));
 					ContainerArr.Add(MakeShared<FJsonValueObject>(Json));
@@ -194,7 +225,15 @@ namespace MifBridge
 	//          pathPrefix?: "/Game/Blueprints",
 	//          nameContains?: "NPC", origin?: "container"|"loose"|"any", recursiveClasses?: bool (default true),
 	//          limit?: int (default 100) }   — any other key is rejected by name, never ignored
-	//   out: { count, truncated, assets[{ path, name, class, package, origin, loaded }] }
+	//   out: { count, returned, truncated,
+	//          assets[{ objectPath, packageName, path, package, name, class, origin, loaded }] }
+	//        objectPath  = /Game/X/Foo.Foo_C — the object (feed this to set_property/open_blueprint)
+	//        packageName = /Game/X/Foo       — its package (feed this to get_referencers/describe_package)
+	//        `path` and `package` are the ORIGINAL keys, unchanged: path == objectPath and
+	//        package == packageName here. They are kept only for existing callers — new code should
+	//        read objectPath/packageName, because `path` does NOT mean the same thing in
+	//        audit_unused (there it is the PACKAGE path). See the asset-row field naming block above.
+	//        (`returned` was already emitted and simply missing from this comment.)
 	// The exploration workhorse: query the asset registry for base-game content without needing to know
 	// exact paths up front. Unlike list_blueprints (which only reports already-loaded UBlueprints), this
 	// reads the registry directly, so it sees cooked container content that was never loaded - including
@@ -277,11 +316,15 @@ namespace MifBridge
 				continue;
 			}
 
+			const FString AssetObjectPath = Asset.GetObjectPathString();
+			const FString AssetPackageName = Asset.PackageName.ToString();
+
 			TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
-			Json->SetStringField(TEXT("path"), Asset.GetObjectPathString());
+			EmitAssetIdentity(Json, AssetObjectPath, AssetPackageName);
+			Json->SetStringField(TEXT("path"), AssetObjectPath);        // legacy key: == objectPath
 			Json->SetStringField(TEXT("name"), Asset.AssetName.ToString());
 			Json->SetStringField(TEXT("class"), Asset.AssetClassPath.ToString());
-			Json->SetStringField(TEXT("package"), Asset.PackageName.ToString());
+			Json->SetStringField(TEXT("package"), AssetPackageName);    // legacy key: == packageName
 			Json->SetStringField(TEXT("origin"), bContainerOnly ? TEXT("container") : TEXT("loose"));
 			Json->SetBoolField(TEXT("loaded"), Asset.IsAssetLoaded());
 			Arr.Add(MakeShared<FJsonValueObject>(Json));
@@ -293,8 +336,17 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("assets"), Arr);
 	}
 
-	//   in:  { package: "/Game/Blueprints/Pawns/BP_BaseNPC" }  (an object path also works)
-	//   out: { package, origin, existsOnDisk, inRegistry, loaded, flags{...}, registryAssets[...], exports[...] }
+	//   in:  { package: "/Game/Blueprints/Pawns/BP_BaseNPC" }  (an object path also works)  (alias: path)
+	//   out: { package, packageName, origin, existsOnDisk, inRegistry, loaded, flags{...},
+	//          registryAssets[{ objectPath, packageName, path, package, name, class, origin, loaded }],
+	//          exports[{ objectPath, packageName, name, class }] }
+	//        Top level: `packageName` is the plugin-wide spelling, `package` the original key —
+	//        identical values, both are the PACKAGE path (/Game/X/Foo), never an object path.
+	//        registryAssets rows now carry the same eight keys find_assets emits, so ONE caller-side
+	//        parser handles both; `package`/`origin` are the additions. exports[] rows carry
+	//        objectPath (= UObject::GetPathName(), including any ":Subobject" — hand it straight to
+	//        set_property/get_property rather than rebuilding "<package>.<name>" yourself).
+	//        See the asset-row field naming block above for objectPath vs packageName.
 	// Tells you what a package actually IS in this session: cooked or not, container or loose, loaded or
 	// not, and what's inside it. This is the endpoint for "why does this base-game asset behave oddly".
 	void H_describe_package(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
@@ -323,6 +375,9 @@ namespace MifBridge
 
 		const FName PackageFName(*PackageName);
 		Out->SetStringField(TEXT("package"), PackageName);
+		// Same value under the plugin-wide spelling: a caller that reads packageName off ANY
+		// endpoint's response gets a package path, with no per-endpoint lookup table.
+		Out->SetStringField(TEXT("packageName"), PackageName);
 
 		const bool bContainerOnly = IsContainerOnlyPackage(PackageFName);
 		Out->SetBoolField(TEXT("existsOnDisk"), !bContainerOnly);
@@ -336,10 +391,19 @@ namespace MifBridge
 		TArray<TSharedPtr<FJsonValue>> RegistryArr;
 		for (const FAssetData& Asset : PackageAssets)
 		{
+			const FString AssetObjectPath = Asset.GetObjectPathString();
+			const FString AssetPackageName = Asset.PackageName.ToString();
+
 			TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
-			Json->SetStringField(TEXT("path"), Asset.GetObjectPathString());
+			EmitAssetIdentity(Json, AssetObjectPath, AssetPackageName);
+			Json->SetStringField(TEXT("path"), AssetObjectPath);        // legacy key: == objectPath
 			Json->SetStringField(TEXT("name"), Asset.AssetName.ToString());
 			Json->SetStringField(TEXT("class"), Asset.AssetClassPath.ToString());
+			// package + origin did not exist on this row and DO exist on find_assets rows. Adding
+			// them (rather than leaving two near-identical shapes) is the point of GAP 8: a caller
+			// should not need to know which endpoint produced a row to parse it.
+			Json->SetStringField(TEXT("package"), AssetPackageName);    // legacy-compatible: == packageName
+			Json->SetStringField(TEXT("origin"), bContainerOnly ? TEXT("container") : TEXT("loose"));
 			Json->SetBoolField(TEXT("loaded"), Asset.IsAssetLoaded());
 			RegistryArr.Add(MakeShared<FJsonValueObject>(Json));
 		}
@@ -367,6 +431,10 @@ namespace MifBridge
 			{
 				if (!Obj) { continue; }
 				TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+				// GetPathName() IS the objectPath every other endpoint accepts, subobject separator
+				// and all. Emitting only `name` forced the caller to rebuild "<package>.<name>",
+				// which is wrong for anything nested (":Mesh_GEN_VARIABLE" — docs/02_GOTCHAS.md §5d).
+				EmitAssetIdentity(Json, Obj->GetPathName(), PackageName);
 				Json->SetStringField(TEXT("name"), Obj->GetName());
 				Json->SetStringField(TEXT("class"), Obj->GetClass() ? Obj->GetClass()->GetPathName() : TEXT("<null>"));
 				ExportArr.Add(MakeShared<FJsonValueObject>(Json));
@@ -376,7 +444,13 @@ namespace MifBridge
 	}
 
 	//   in:  { limit?: int (default 40) }
-	//   out: { world, proxyCount, componentCount, aggregate{...}, proxies[{...}] }
+	//   out: { world, proxyCount, componentCount, aggregate{...}, proxies[{...}],
+	//          sampleMaterialsWithLandscapeVF[], sampleMaterialsWithoutLandscapeVF[], contrastProxies[] }
+	//        These are COMPONENT rows, not asset rows, so objectPath/packageName (see the asset-row
+	//        field naming block above) deliberately do not appear. Nothing here is keyed `path` or
+	//        `package`: `material` holds a full object path and says so by its own name, and
+	//        `proxy`/`component` are actor/component names. Left unchanged on purpose — GAP 8 is
+	//        about keys whose MEANING varied by endpoint, and none of these do.
 	// Live per-component state for every landscape proxy in the EDITOR world. Built for the cooked-editor case
 	// where most LandscapeStreamingProxies never draw even though collision view shows the full terrain: the
 	// actor is present and selectable, so the real question is which stage between "component exists" and
@@ -463,7 +537,7 @@ namespace MifBridge
 		}
 		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 40), 1, 1000);
 
-		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		UWorld* World = EditorWorld();
 		if (!World)
 		{
 			Fail(Out, TEXT("no editor world"));
@@ -816,6 +890,13 @@ namespace MifBridge
 	// actually caches for them: FPrimitiveSceneInfo::StaticMeshCommandInfos. A primitive with static meshes but
 	// no BasePass entry there had its draw command dropped during CacheMeshDrawCommands - which is silent, and
 	// is the only remaining explanation consistent with every other measurement.
+	// BLOCKING HAZARD, declared (docs/02_GOTCHAS.md requires every endpoint to state these, and this
+	// one stated none): the gather below ends in ENQUEUE_RENDER_COMMAND + FlushRenderingCommands(), a
+	// hard game/render-thread sync per call with the HTTP ticker stopped. It is bounded, but on a
+	// heavy landscape scene that is tens-to-hundreds of ms in which the bridge answers nothing at all.
+	// The raw FPrimitiveSceneProxy* pointers captured for that command are safe ONLY because nothing
+	// else runs on the game thread between the gather and the flush — do not introduce a yield, a
+	// load, or a deferred step between them.
 	void H_diagnose_landscape_draws(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out, { TEXT("limit") }, TEXT("limit")))
@@ -824,7 +905,7 @@ namespace MifBridge
 		}
 		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 40), 1, 1000);
 
-		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		UWorld* World = EditorWorld();
 		if (!World)
 		{
 			Fail(Out, TEXT("no editor world"));

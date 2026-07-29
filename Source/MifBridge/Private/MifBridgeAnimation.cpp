@@ -86,8 +86,15 @@ namespace MifBridge
 
 	// --- describe_animation -------------------------------------------------
 	//   in:  { assetPath: "/Game/.../AS_Run" }
-	//   out: { assetPath, class, type, skeleton?, playLength, rateScale, notifies[], syncMarkers[],
-	//          curves[], frameRate?, numKeys?, sections[]?, slots[]?, blendAxes[]?, samples[]? }
+	//   out: { assetPath, class, type, skeleton?, playLength, rateScale, notifyCount, notifies[],
+	//          syncMarkers[], curves[], frameRate?, numSampledKeys?, sections[]?, slots[]?,
+	//          blendAxes[]?, samples[]? }
+	//
+	// `numKeys?` was listed here and is emitted by no line of this plugin — a documented field a caller
+	// could branch on and never receive (verified: the literal appears nowhere else in the plugin).
+	// The key-count field this handler actually emits, for UAnimSequence only, is `numSampledKeys`
+	// (GetNumberOfSampledKeys). `notifyCount` was emitted and undocumented; both are corrected here
+	// rather than one of them being deleted, because the response shape is the contract.
 	//
 	// One endpoint across every UAnimationAsset type rather than four near-identical ones: the caller
 	// usually has a path and wants to know what is IN it, without first knowing which class it is.

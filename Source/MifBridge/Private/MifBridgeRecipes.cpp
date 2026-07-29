@@ -22,36 +22,37 @@ namespace MifBridge
 {
 	namespace
 	{
-		// Atomically insert Call into the exec chain after (AfterNode, AfterPin): the old
-		// downstream target(s) move to Call's exec-out. Returns the count moved.
+		// Resolve the three exec pins by name, then hand off to MifBridge::SpliceExecAfter, which
+		// validates the whole new shape with CanCreateConnection BEFORE it breaks anything and counts
+		// the links it actually made.
+		//
+		// This function's own comment used to say "Atomically insert" and it was not atomic: it broke
+		// the exec chain first, discarded both TryCreateConnection results, and returned
+		// OldTargets.Num() — so a refused connection left the chain severed while the caller was told
+		// splicedTargets:N. Returns the moved count, or -1 with OutError set on any failure.
 		int32 SpliceAfter(UEdGraphNode* AfterNode, const FString& AfterPinName,
-			UEdGraphNode* Call, const FString& CallInName, const FString& CallOutName)
+			UEdGraphNode* Call, const FString& CallInName, const FString& CallOutName, FString& OutError)
 		{
 			UEdGraphPin* AfterOut = FindPin(AfterNode, AfterPinName, EGPD_Output, /*bRequireDir*/ true);
 			UEdGraphPin* CallIn = FindPin(Call, CallInName, EGPD_Input, /*bRequireDir*/ true);
 			UEdGraphPin* CallOut = FindPin(Call, CallOutName, EGPD_Output, /*bRequireDir*/ true);
 			if (!AfterOut || !CallIn || !CallOut)
 			{
+				OutError = FString::Printf(TEXT("exec pin not found (%s='%s', %s='%s', %s='%s')"),
+					TEXT("afterPin"),  AfterOut ? TEXT("ok") : *AfterPinName,
+					TEXT("insertIn"),  CallIn   ? TEXT("ok") : *CallInName,
+					TEXT("insertOut"), CallOut  ? TEXT("ok") : *CallOutName);
 				return -1;
 			}
-			TArray<UEdGraphPin*> OldTargets = AfterOut->LinkedTo;
-			const UEdGraphSchema_K2* Schema = K2();
 			AfterNode->Modify();
 			Call->Modify();
-			Schema->BreakPinLinks(*AfterOut, true);
-			Schema->TryCreateConnection(AfterOut, CallIn);
-			for (UEdGraphPin* Target : OldTargets)
+
+			int32 Moved = 0;
+			if (!SpliceExecAfter(AfterOut, CallIn, CallOut, Moved, OutError))
 			{
-				if (Target)
-				{
-					if (UEdGraphNode* Owner = Target->GetOwningNodeUnchecked())
-					{
-						Owner->Modify();
-					}
-					Schema->TryCreateConnection(CallOut, Target);
-				}
+				return -1;
 			}
-			return OldTargets.Num();
+			return Moved;
 		}
 	}
 
@@ -139,20 +140,36 @@ namespace MifBridge
 				FString ResolveError;
 				if (UEdGraphNode* AfterNode = ResolveNode(AfterGuid, ResolveError))
 				{
+					FString SpliceError;
 					const int32 Moved = SpliceAfter(AfterNode, JStr(In, TEXT("afterPin"), TEXT("then")),
-						Call, TEXT("execute"), TEXT("then"));
+						Call, TEXT("execute"), TEXT("then"), SpliceError);
 					if (Moved < 0)
 					{
-						Out->SetStringField(TEXT("warning"), TEXT("could not splice: afterPin or the print node's exec pins were not found; node added unspliced"));
+						// The caller asked for the print node to be spliced into a specific place in the
+						// exec chain. Leaving a floating node and reporting ok:true with a warning is the
+						// silent-failure shape: the node exists, so a later "did it work" check on
+						// list_nodes passes, and the print never runs.
+						//
+						// Batch M, option (c). This endpoint is SELF-MANAGED and opens its own
+						// FScopedTransaction, which COMMITS when this returns — and even a cancel would
+						// only discard the undo entry, not remove the node (PM-007). Say so.
+						Fail(Out, FString::Printf(
+							TEXT("afterNode was given but the splice failed: %s WHAT IS LEFT BEHIND: the Print String node HAS been created in the graph, unwired, and is not removed by this failure. Remove it with delete_node, or wire it yourself with connect_pins."),
+							*SpliceError));
+						return;
 					}
-					else
-					{
-						Out->SetNumberField(TEXT("splicedTargets"), Moved);
-					}
+					Out->SetNumberField(TEXT("splicedTargets"), Moved);
 				}
 				else
 				{
-					Out->SetStringField(TEXT("warning"), FString::Printf(TEXT("afterNode not found: %s (node added unspliced)"), *AfterGuid));
+					Fail(Out, FString::Printf(
+						TEXT("afterNode '%s' not found, so the print node could not be spliced into the exec chain ")
+						TEXT("(a node that is never executed is not what was asked for). Omit afterNode to place an ")
+						TEXT("unwired node deliberately. WHAT IS LEFT BEHIND: the Print String node HAS been created ")
+						TEXT("in the graph, unwired, and is not removed by this failure (a self-managed transaction ")
+						TEXT("commits, and a cancel would only discard the undo entry - PM-007). Remove it with ")
+						TEXT("delete_node."), *AfterGuid));
+					return;
 				}
 			}
 
@@ -351,28 +368,24 @@ namespace MifBridge
 			return;
 		}
 
-		TArray<UEdGraphPin*> Upstreams = ParentExec->LinkedTo;
-
-		const UEdGraphSchema_K2* Schema = K2();
 		ParentNode->Modify();
 		ClusterEntry->Modify();
 		ClusterExit->Modify();
-		Schema->BreakPinLinks(*ParentExec, true);
-		for (UEdGraphPin* Upstream : Upstreams)
+
+		// Was: break ParentExec, then fire off TryCreateConnection calls and discard every result, then
+		// report upstreamCount = the number of links we INTENDED to move. A single refusal left the
+		// cluster orphaned and the parent unreachable, under ok:true. SpliceExecBefore approves the
+		// whole shape first and returns the count it actually wired.
+		int32 MovedUpstreams = 0;
+		FString SpliceError;
+		if (!SpliceExecBefore(ParentExec, EntryExecIn, ExitExecOut, MovedUpstreams, SpliceError))
 		{
-			if (Upstream)
-			{
-				if (UEdGraphNode* Owner = Upstream->GetOwningNodeUnchecked())
-				{
-					Owner->Modify();
-				}
-				Schema->TryCreateConnection(Upstream, EntryExecIn);
-			}
+			Fail(Out, SpliceError);
+			return;
 		}
-		Schema->TryCreateConnection(ExitExecOut, ParentExec);
 
 		MarkStructural(Blueprint);
-		Out->SetNumberField(TEXT("upstreamCount"), Upstreams.Num());
+		Out->SetNumberField(TEXT("upstreamCount"), MovedUpstreams);
 		Out->SetObjectField(TEXT("parentPin"), SerializePin(ParentExec));
 	}
 

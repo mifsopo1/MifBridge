@@ -1,6 +1,7 @@
 // MifBridge — module boot/shutdown + Tools menu Start/Stop toggle.
 #include "MifBridge.h"
 
+#include "MifBridgeHandlers.h"   // MifBridge::Subscribe/UnsubscribeCommandListObserver (Batch O)
 #include "MifBridgeLog.h"
 #include "MifBridgeServer.h"
 
@@ -60,6 +61,30 @@ void FMifBridgeModule::StartupModule()
 		StartServer();
 	}
 
+	// Batch O — start listening for command-list registrations BEFORE the editor UI is built.
+	//
+	// FInputBindingManager stores no command lists: RegisterCommandList only broadcasts and keeps
+	// nothing (InputBindingManager.cpp:561-569). FUICommandList::TryExecuteAction needs a live list,
+	// and the global ones (FLevelEditorModule::GetGlobalLevelEditorActions,
+	// IMainFrameModule::GetMainFrameCommandBindings) are in modules MifBridge does not depend on. The
+	// public OnRegisterCommandList multicast is the route that needs no new module dependency, and
+	// FIVE engine sites broadcast onto it: LevelEditor.cpp:281, MainFrameModule.cpp:600,
+	// SLevelViewport.cpp:1381, SContentBrowser.cpp:678, Sequencer.cpp:668-669.
+	//
+	// TIMING IS THE WHOLE POINT AND IT IS VERIFIED, NOT ASSUMED. A broadcast that happens before we
+	// subscribe is lost forever, because nothing stores it. PostEngineInit plugin modules load inside
+	// FEngineLoop::Init (LaunchEngineLoop.cpp:4838-4840), and EditorInit calls EngineLoop.Init() at
+	// UnrealEdGlobals.cpp:111 BEFORE loading MainFrame and building the editor UI at :171. So this
+	// line runs before all five broadcasts. Anything registered earlier is invisible, and
+	// list_editor_commands' commandListSource block says so rather than implying completeness.
+	//
+	// Skipped under a commandlet for the same reason the server is: there is no interactive UI to
+	// invoke, and FInputBindingManager::Get() would be constructed for nothing.
+	if (!IsRunningCommandlet())
+	{
+		MifBridge::SubscribeCommandListObserver();
+	}
+
 	// ToolMenus may not be ready yet at PostEngineInit; register through the startup callback.
 	UToolMenus::RegisterStartupCallback(
 		FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FMifBridgeModule::RegisterMenus));
@@ -72,6 +97,10 @@ void FMifBridgeModule::ShutdownModule()
 {
 	UToolMenus::UnRegisterStartupCallback(this);
 	UToolMenus::UnregisterOwner(this);
+
+	// Drop the OnRegisterCommandList subscription and the weak command-list cache. Leaving a delegate
+	// bound to a free function in an unloading DLL is a dangling call the next broadcast would make.
+	MifBridge::UnsubscribeCommandListObserver();
 
 	StopServer();
 	Server.Reset();

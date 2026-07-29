@@ -48,10 +48,8 @@ namespace MifBridge
 			return Clients.Num() > 0 ? Clients[0] : nullptr;
 		}
 
-		UWorld* VpWorld()
-		{
-			return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-		}
+		// EditorWorld() is MifBridge::EditorWorld() now — the level-editor viewport always shows the editor
+		// world, so this one is deliberately NOT the PIE-preferring ActiveWorld().
 
 		void WriteCamera(const TSharedRef<FJsonObject>& Out, FLevelEditorViewportClient* Client)
 		{
@@ -68,20 +66,11 @@ namespace MifBridge
 			Out->SetNumberField(TEXT("fov"), Client->ViewFOV);
 		}
 
-		AActor* FindVpActor(UWorld* World, const FString& Query)
-		{
-			if (!World || Query.IsEmpty()) { return nullptr; }
-			for (TActorIterator<AActor> It(World); It; ++It)
-			{
-				AActor* A = *It;
-				if (!A || !IsValid(A)) { continue; }
-				if (A->GetPathName() == Query || A->GetName() == Query || A->GetActorLabel() == Query)
-				{
-					return A;
-				}
-			}
-			return nullptr;
-		}
+		// The actor finder moved to MifBridgeCommon.cpp as MifBridge::FindActorInWorld (declared in
+		// MifBridgeHandlers.h). FIVE byte-identical copies existed under five different names
+		// (FindActor, FindNavActor, FindActorByPathOrLabel, FindVpActor, FindWorldActor) — different
+		// names are not a build error, which is exactly why they survived, but it meant a fix to the
+		// path/name/label matching rule landed in one of five places. Do NOT add a sixth.
 	}
 
 	// --- set_viewport_camera ------------------------------------------------
@@ -161,7 +150,7 @@ namespace MifBridge
 	{
 		FLevelEditorViewportClient* Client = ActiveLevelViewport();
 		if (!Client) { Fail(Out, TEXT("no level editor viewport available")); return; }
-		UWorld* World = VpWorld();
+		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
 		const FString ActorQuery = JStrAny(In, { TEXT("actorPath"), TEXT("actor") });
@@ -172,7 +161,7 @@ namespace MifBridge
 
 		if (!ActorQuery.IsEmpty())
 		{
-			AActor* A = FindVpActor(World, ActorQuery);
+			AActor* A = FindActorInWorld(World, ActorQuery);
 			if (!A) { Fail(Out, FString::Printf(TEXT("actor not found: '%s'"), *ActorQuery)); return; }
 			FVector Origin, Extent;
 			A->GetActorBounds(false, Origin, Extent);

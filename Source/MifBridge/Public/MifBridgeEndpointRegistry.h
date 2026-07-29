@@ -1,7 +1,11 @@
 // MifBridge — external endpoint registration for provider plugins.
 //
 // MifBridge's built-in endpoints are MIF_DECL'd in Private/MifBridgeHandlers.h and MIF_BIND'd into
-// the function-local static map in Private/MifBridgeCommon.cpp:29-245 (176 built-ins live). Providers
+// the function-local static map in Private/MifBridgeCommon.cpp (191 built-ins live; 12 external =
+// 203 endpoints total). Line numbers are deliberately NOT cited here any more: every one of the
+// seven this header used to carry had drifted, and a wrong citation is the MECHANISM of the
+// duplicate-helper bug class — the next reader jumps to the cited line, finds nothing, and writes a
+// local copy. Grep the symbol instead; `self_audit` reports the live counts. Providers
 // (MifKismetReconstructor and any future Mif* plugin) instead register named handlers HERE at their
 // own module startup. The endpoint exists only while its provider is installed; self_audit names the
 // provider per endpoint (endpointDetails[].provider / externalProviders[]).
@@ -27,8 +31,12 @@
 // menus or the token. Adding such a read would turn a working provider into a startup crash.
 //
 // Registration must also precede route binding: routes are bound ONCE per name from
-// GetEndpointNames() in FMifBridgeServer::Start() (Private/MifBridgeServer.cpp:88-108). Late
-// registration is refused loudly rather than being silently invisible.
+// GetEndpointNames() in FMifBridgeServer::Start(). Late registration is refused loudly rather than
+// being silently invisible.
+//
+// External endpoints are reachable from `batch` as well as directly: H_batch mirrors RunEndpoint's
+// resolution order (built-ins, then externals) via FindExternalHandler. Before that they answered
+// "unknown op" from inside ops[] while self_audit listed them as present.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -42,23 +50,26 @@ class FJsonObject;   // NOT an include: MifBridge lists "Json" as a PRIVATE depe
 
 namespace MifBridge
 {
-	// Same shape as the internal FHandlerFn (Private/MifBridgeHandlers.h:24). Game thread only —
+	// Same shape as the internal FHandlerFn (Private/MifBridgeHandlers.h). Game thread only —
 	// dispatch hops there in FMifBridgeServer::HandleHttp before calling RunEndpoint. The
-	// unrecognised-parameter-is-an-error contract (RejectUnknownParams,
-	// Private/MifBridgeHandlers.h:65-67) applies to external handlers identically; that helper is
-	// private to MifBridge, so a provider implements the equivalent guard locally.
+	// unrecognised-parameter-is-an-error contract (RejectUnknownParams, Private/MifBridgeHandlers.h)
+	// applies to external handlers identically; that helper is private to MifBridge, so a provider
+	// implements the equivalent guard locally.
 	using FExternalHandler = TFunction<void(const TSharedRef<FJsonObject>& /*In*/, const TSharedRef<FJsonObject>& /*Out*/)>;
 
 	// ONE bucket per endpoint, BY CONSTRUCTION. The twin-set contradiction class that self_audit
-	// polices for built-ins (policyContradictions, Private/MifBridgeCommon.cpp:390-401 — an endpoint
-	// listed in BOTH literal TSets) is unrepresentable here: a descriptor carries a single enum.
+	// polices for built-ins (policyContradictions — an endpoint listed in BOTH literal TSets) is
+	// unrepresentable here: a descriptor carries a single enum.
 	//   ReadOnly    — no blanket transaction (else every call pushes an empty undo entry)
 	//   SelfManaged — runs a full CompileBlueprint / asset save; opens its OWN tight transactions.
-	//                 Also makes IsCompileHeavyEndpoint true (Private/MifBridgeCommon.cpp:416, which
-	//                 derives from IsSelfManagedEndpoint), which keeps the endpoint out of batch's
-	//                 single open transaction — reinstancing captured by an undo step is a dead CDO.
-	//   Transacted  — RunEndpoint wraps the call in one FScopedTransaction
-	//                 (Private/MifBridgeCommon.cpp:445), so Ctrl-Z undoes the whole bridge action.
+	//                 Also makes IsCompileHeavyEndpoint true (it derives from IsSelfManagedEndpoint),
+	//                 which keeps the endpoint out of batch's single open transaction — reinstancing
+	//                 captured by an undo step is a dead CDO. One deliberate subtraction exists on the
+	//                 built-in side (set_property, whose compile lives in one branch only); externals
+	//                 have no such carve-out.
+	//   Transacted  — RunEndpoint wraps the call in one FScopedTransaction, so Ctrl-Z undoes the whole
+	//                 bridge action — and CANCELS it when the handler answers ok:false, so a handler
+	//                 that mutates and then fails is atomic rather than leaving a partial edit.
 	enum class EEndpointBucket : uint8 { ReadOnly, SelfManaged, Transacted };
 
 	struct FExternalEndpointDesc

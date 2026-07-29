@@ -28,12 +28,14 @@
 #include "K2Node_IfThenElse.h"
 #include "K2Node_Knot.h"
 #include "K2Node_MacroInstance.h"
+#include "K2Node_Variable.h"          // SetFromProperty — the engine's own "point this node at an FProperty"
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "ScopedTransaction.h"
+#include "UObject/UnrealType.h"      // FProperty flags + TFieldIterator (foreign-property resolution)
 
 namespace MifBridge
 {
@@ -60,20 +62,244 @@ namespace MifBridge
 			return false;
 		}
 
-		// Point a variable get/set node at a property on ANOTHER class.
+		// --- Foreign-property variable references (Batch G) ---------------------
 		//
-		// SetExternalMember(Name, Class) alone is not enough to guarantee a resolved node:
-		// UK2Node_Variable::CreatePinForVariable bails and produces NO pins when
-		// FMemberReference::ResolveMember<FProperty> comes back null, which is exactly what happens
-		// when the property does not exist on the class handed in. That is how the bridge used to emit
-		// the "unresolved, pinless" node — the failure was silent, deferred to compile time, and the
-		// returned JSON looked plausible. Two fixes: (1) resolve against the SKELETON class, which is
-		// the one carrying freshly-added Blueprint variables before a full compile; (2) verify the
-		// property up front and refuse rather than emit a dead node.
+		// Which way a variable node touches its property. The ENGINE validates the two directions
+		// with different predicates, so the bridge has to as well — see CheckMemberAccessible.
+		enum class EMemberAccess : uint8 { Read, Write };
+
+		/** Prefer the SKELETON class: it is regenerated on every structural change, so a variable
+		 *  added moments ago exists there even though GeneratedClass is still stale. Native classes
+		 *  have no skeleton and are returned unchanged. */
+		UClass* SkeletonPreferred(UClass* Class)
+		{
+			if (UBlueprint* OwningBP = Class ? Cast<UBlueprint>(Class->ClassGeneratedBy) : nullptr)
+			{
+				if (OwningBP->SkeletonGeneratedClass)
+				{
+					return OwningBP->SkeletonGeneratedClass;
+				}
+			}
+			return Class;
+		}
+
+		/** Find ANY reflected FProperty on a class — native UPROPERTY or Blueprint variable alike.
+		 *  FindPropertyByName walks the PropertyLink chain, which includes every inherited native
+		 *  property, so UChildActorComponent::ChildActorClass is reachable exactly like a BP member.
+		 *  FName comparison is case-insensitive, so "childactorclass" resolves too. */
+		FProperty* FindAnyProperty(UClass* Class, const FString& PropertyName)
+		{
+			if (!Class || PropertyName.IsEmpty())
+			{
+				return nullptr;
+			}
+			const FName MemberName(*PropertyName);
+			if (FProperty* Direct = Class->FindPropertyByName(MemberName))
+			{
+				return Direct;
+			}
+			// Fall back to the field lookup the editor uses for renamed/redirected variables.
+			return FindFProperty<FProperty>(Class, MemberName);
+		}
+
+		/** Up to six Blueprint-visible property names on Class whose spelling overlaps Wanted, so
+		 *  "property not found" names the near misses instead of only pointing at describe_class.
+		 *  When nothing overlaps it reports how many visible properties exist, which distinguishes
+		 *  "wrong name" from "wrong class" without a second round-trip. */
+		FString NearMissPropertyHint(UClass* Class, const FString& Wanted)
+		{
+			if (!Class)
+			{
+				return FString();
+			}
+			const FString WantedLower = Wanted.ToLower();
+			TArray<FString> Hits;
+			int32 VisibleCount = 0;
+			for (TFieldIterator<FProperty> It(Class, EFieldIteratorFlags::IncludeSuper); It; ++It)
+			{
+				FProperty* Property = *It;
+				if (!Property->HasAnyPropertyFlags(CPF_BlueprintVisible))
+				{
+					continue;
+				}
+				++VisibleCount;
+				const FString Name = Property->GetName();
+				const FString NameLower = Name.ToLower();
+				if (Hits.Num() < 6 && (NameLower.Contains(WantedLower) || WantedLower.Contains(NameLower)))
+				{
+					Hits.Add(Name);
+				}
+			}
+			if (Hits.Num() > 0)
+			{
+				return FString::Printf(TEXT(" Close matches: %s."), *FString::Join(Hits, TEXT(", ")));
+			}
+			return FString::Printf(TEXT(" It has %d Blueprint-visible propert%s."), VisibleCount, VisibleCount == 1 ? TEXT("y") : TEXT("ies"));
+		}
+
+		/** Name a BlueprintCallable accessor that WOULD work, so a refusal points at the way forward.
+		 *  UChildActorComponent::ChildActorClass is the motivating case: BlueprintReadOnly, but
+		 *  SetChildActorClass is UFUNCTION(BlueprintCallable) (ChildActorComponent.h:92-95). */
+		FString SuggestAccessor(UClass* Class, const FString& PropertyName, EMemberAccess Access)
+		{
+			if (!Class)
+			{
+				return FString();
+			}
+			TArray<FString> Candidates;
+			if (Access == EMemberAccess::Write)
+			{
+				Candidates.Add(TEXT("Set") + PropertyName);
+			}
+			else
+			{
+				Candidates.Add(TEXT("Get") + PropertyName);
+				Candidates.Add(PropertyName);
+			}
+			for (const FString& Candidate : Candidates)
+			{
+				UFunction* Function = Class->FindFunctionByName(FName(*Candidate));
+				if (Function && Function->HasAnyFunctionFlags(FUNC_BlueprintCallable | FUNC_BlueprintPure))
+				{
+					return FString::Printf(
+						TEXT(" '%s' IS BlueprintCallable though — add_function_call {class:\"%s\", function:\"%s\"} does what you want."),
+						*Candidate, *Class->GetName(), *Candidate);
+				}
+			}
+			return FString();
+		}
+
+		// The engine's OWN Blueprint-accessibility gate, applied BEFORE the node is built.
 		//
-		// The FGuid overload of SetExternalMember makes the reference survive a later rename of the
-		// property on the target Blueprint (name-only references silently break).
-		bool PointAtExternalMember(FMemberReference& Reference, const FString& VarName, UClass* TargetClass, FString& OutError)
+		// The failure it prevents, proven live before this change: add_variable_set pointed at
+		// UChildActorComponent::ChildActorClass (EditAnywhere, BlueprintReadOnly — ChildActorComponent.h:116)
+		// returned ok:true with a full pin list. Compiling the blueprint then reported
+		// "ChildActorComponent.ChildActorClass is not blueprint writable." Worse, that error is
+		// DEFERRED: an unwired Set node is pruned as isolated before validation runs, so the blueprint
+		// compiles 0 errors until the caller finally wires the exec pin — long after the ok:true that
+		// caused it. A bridge response that says ok and produces a node that cannot compile is exactly
+		// the "ok:true having done nothing useful" failure the house rules forbid.
+		//
+		// These are the exact predicates the COMPILER uses, so "accepted here" == "compiles there":
+		//   UK2Node_VariableGet::ValidateNodeDuringCompilation -> FBlueprintEditorUtils::IsPropertyReadableInBlueprint
+		//       (K2Node_VariableGet.cpp:425-457)
+		//   UK2Node_VariableSet::ValidateNodeDuringCompilation -> FBlueprintEditorUtils::IsPropertyWritableInBlueprint
+		//       (K2Node_VariableSet.cpp:421-457)
+		//   implementations at BlueprintEditorUtils.cpp:8786 (writable) and :8810 (readable)
+		//
+		// They are deliberately NOT re-implemented as CPF_ flag arithmetic: the Private verdict depends
+		// on the MD_Private *metadata* AND on whether the owning class was generated by THIS blueprint,
+		// neither of which a flag test can see. Note also that the engine's palette filter
+		// (UEdGraphSchema_K2::CanUserKismetAccessVariable, EdGraphSchema_K2.cpp:1228) additionally hides
+		// category-hidden properties — that one is NOT used here, because a category-hidden property
+		// still compiles fine and refusing it would refuse something that works.
+		bool CheckMemberAccessible(UBlueprint* ContextBP, UClass* OwnerScope, const FProperty* Property,
+			EMemberAccess Access, FString& OutError)
+		{
+			if (!Property)
+			{
+				OutError = TEXT("null property");
+				return false;
+			}
+			const FString PropertyName = Property->GetName();
+			const FString ClassName = OwnerScope ? OwnerScope->GetName() : TEXT("?");
+
+			if (Access == EMemberAccess::Read)
+			{
+				const FBlueprintEditorUtils::EPropertyReadableState State =
+					FBlueprintEditorUtils::IsPropertyReadableInBlueprint(ContextBP, Property);
+				if (State == FBlueprintEditorUtils::EPropertyReadableState::Readable)
+				{
+					return true;
+				}
+				if (State == FBlueprintEditorUtils::EPropertyReadableState::NotBlueprintVisible)
+				{
+					OutError = FString::Printf(
+						TEXT("property '%s' on '%s' is not Blueprint-visible (its UPROPERTY carries neither BlueprintReadOnly nor ")
+						TEXT("BlueprintReadWrite), so no graph may read it: a Get node here compiles to the error ")
+						TEXT("\"%s.%s is not blueprint visible\".%s"),
+						*PropertyName, *ClassName, *ClassName, *PropertyName, *SuggestAccessor(OwnerScope, PropertyName, Access));
+				}
+				else
+				{
+					OutError = FString::Printf(
+						TEXT("property '%s' on '%s' is Blueprint-private (meta=(BlueprintPrivate)) and '%s' was not generated by ")
+						TEXT("this blueprint, so only that class's own graphs may read it: a Get node here compiles to the error ")
+						TEXT("\"%s.%s is private and not accessible in this context\".%s"),
+						*PropertyName, *ClassName, *ClassName, *ClassName, *PropertyName, *SuggestAccessor(OwnerScope, PropertyName, Access));
+				}
+				return false;
+			}
+
+			const FBlueprintEditorUtils::EPropertyWritableState State =
+				FBlueprintEditorUtils::IsPropertyWritableInBlueprint(ContextBP, Property);
+			if (State == FBlueprintEditorUtils::EPropertyWritableState::Writable)
+			{
+				return true;
+			}
+			if (State == FBlueprintEditorUtils::EPropertyWritableState::BlueprintReadOnly)
+			{
+				OutError = FString::Printf(
+					TEXT("property '%s' on '%s' is BlueprintReadOnly — graphs may READ it but never write it: a Set node here ")
+					TEXT("compiles to the error \"%s.%s is not blueprint writable\". Use add_variable_get for the read.%s"),
+					*PropertyName, *ClassName, *ClassName, *PropertyName, *SuggestAccessor(OwnerScope, PropertyName, Access));
+			}
+			else if (State == FBlueprintEditorUtils::EPropertyWritableState::NotBlueprintVisible)
+			{
+				OutError = FString::Printf(
+					TEXT("property '%s' on '%s' is not Blueprint-visible (its UPROPERTY carries neither BlueprintReadOnly nor ")
+					TEXT("BlueprintReadWrite), so no graph may write it: a Set node here compiles to the error ")
+					TEXT("\"%s.%s is not blueprint writable\".%s"),
+					*PropertyName, *ClassName, *ClassName, *PropertyName, *SuggestAccessor(OwnerScope, PropertyName, Access));
+			}
+			else
+			{
+				OutError = FString::Printf(
+					TEXT("property '%s' on '%s' is Blueprint-private (meta=(BlueprintPrivate)) and '%s' was not generated by this ")
+					TEXT("blueprint, so only that class's own graphs may write it: a Set node here compiles to the error ")
+					TEXT("\"%s.%s is private and not accessible in this context\".%s"),
+					*PropertyName, *ClassName, *ClassName, *ClassName, *PropertyName, *SuggestAccessor(OwnerScope, PropertyName, Access));
+			}
+			return false;
+		}
+
+		// ResolveClass, plus the one retry a C++ class name needs.
+		//
+		// ResolveClass (MifBridgeCommon.cpp:1230) looks a bare name up with FindFirstObject<UClass>,
+		// which matches the UObject name ("ChildActorComponent") — NOT the C++ spelling. So the most
+		// natural guess for a native property owner, "UChildActorComponent", returned "class not found"
+		// (proven live). Retrying once with the leading U/A stripped costs nothing and cannot change any
+		// currently-succeeding resolution, because it only runs after the exact name has already failed.
+		// Kept file-local for now; if a second file needs it, promote it into ResolveClass itself rather
+		// than copying it (same eviction clause as JIntAny, MifBridgeHandlers.h:53).
+		UClass* ResolveClassAllowingCppPrefix(const FString& Name, UBlueprint* ContextBP)
+		{
+			if (UClass* Direct = ResolveClass(Name, ContextBP))
+			{
+				return Direct;
+			}
+			FString Trimmed = Name;
+			Trimmed.TrimStartAndEndInline();
+			if (Trimmed.Len() > 1 && (Trimmed[0] == TCHAR('U') || Trimmed[0] == TCHAR('A'))
+				&& FChar::IsUpper(Trimmed[1]) && !Trimmed.Contains(TEXT("/")) && !Trimmed.Contains(TEXT(".")))
+			{
+				return ResolveClass(Trimmed.RightChop(1), ContextBP);
+			}
+			return nullptr;
+		}
+
+		// Resolve + fully validate the property a variable node will point at on ANOTHER class — the
+		// whole point of the endpoint's targetClass parameter. Deliberately does NOT touch a node, so
+		// the caller can run it before any Modify()/NewObject and refuse without dirtying anything.
+		//
+		// Why an up-front property lookup rather than "set the name and hope":
+		// UK2Node_Variable::CreatePinForVariable (K2Node_Variable.cpp:93-140) bails at :133-137 and
+		// produces NO pins when FMemberReference::ResolveMember<FProperty> comes back null, which is
+		// exactly what happens when the property does not exist on the class handed in. That is how the
+		// bridge used to emit an "unresolved, pinless" node: silent, deferred to compile time, and the
+		// returned JSON looked plausible.
+		bool ResolveExternalMember(const FString& VarName, UClass* TargetClass, UBlueprint* ContextBP,
+			EMemberAccess Access, UClass*& OutOwnerScope, FProperty*& OutProperty, FString& OutError)
 		{
 			if (!TargetClass)
 			{
@@ -81,57 +307,245 @@ namespace MifBridge
 				return false;
 			}
 
-			// Prefer the skeleton class: it is regenerated on every structural change, so a variable
-			// added moments ago exists there even though GeneratedClass is still stale.
-			UClass* ResolveAgainst = TargetClass;
-			if (UBlueprint* TargetBP = Cast<UBlueprint>(TargetClass->ClassGeneratedBy))
-			{
-				if (TargetBP->SkeletonGeneratedClass)
-				{
-					ResolveAgainst = TargetBP->SkeletonGeneratedClass;
-				}
-			}
+			UClass* ResolveAgainst = SkeletonPreferred(TargetClass);
+			OutOwnerScope = ResolveAgainst;
 
-			const FName MemberName(*VarName);
-			FProperty* Property = ResolveAgainst->FindPropertyByName(MemberName);
-			if (!Property)
-			{
-				// Fall back to the display-name lookup the editor uses for renamed/redirected variables.
-				Property = FindFProperty<FProperty>(ResolveAgainst, MemberName);
-			}
+			FProperty* Property = FindAnyProperty(ResolveAgainst, VarName);
 			if (!Property)
 			{
 				OutError = FString::Printf(
-					TEXT("property '%s' not found on class '%s' — describe_class {className:\"%s\"} lists what it has. ")
+					TEXT("property '%s' not found on class '%s' — describe_class {className:\"%s\"} lists what it has.%s ")
 					TEXT("(Without this check the node would be created unresolved and pinless.)"),
-					*VarName, *ResolveAgainst->GetName(), *ResolveAgainst->GetName());
+					*VarName, *ResolveAgainst->GetName(), *ResolveAgainst->GetName(),
+					*NearMissPropertyHint(ResolveAgainst, VarName));
 				return false;
 			}
-			if (!Property->HasAnyPropertyFlags(CPF_BlueprintVisible))
+			if (!CheckMemberAccessible(ContextBP, ResolveAgainst, Property, Access, OutError))
 			{
-				OutError = FString::Printf(
-					TEXT("property '%s' on '%s' is not BlueprintVisible, so a Blueprint graph cannot read it"),
-					*VarName, *ResolveAgainst->GetName());
 				return false;
 			}
 
-			FGuid MemberGuid;
-			if (UBlueprint::GetGuidFromClassByFieldName<FProperty>(ResolveAgainst, MemberName, MemberGuid) && MemberGuid.IsValid())
+			OutProperty = Property;
+			return true;
+		}
+
+		// Point the node at that property.
+		//
+		// Why SetFromProperty rather than a hand-rolled SetExternalMember + GUID lookup:
+		// UK2Node_Variable::SetFromProperty (K2Node_Variable.cpp:87-91) does BOTH halves of the job.
+		//   1. FMemberReference::SetFromField<FProperty>(Property, /*bSelfContext*/ false, OwnerClass)
+		//      (MemberReference.h:108-142) records the owning class as the member parent, clears
+		//      bSelfContext, and looks the Blueprint member GUID up itself — so a later rename of the
+		//      property on a target BLUEPRINT does not break the reference, while a NATIVE property
+		//      (no GUID) correctly stays a name-only reference.
+		//   2. It sets SelfContextInfo = ESelfContextInfo::NotSelfContext, which the hand-rolled
+		//      SetExternalMember path left at its default. That field is half of the self-pin decision:
+		//      UK2Node_Variable::CreatePinForSelf (K2Node_Variable.cpp:142-213) computes
+		//      bSelfTarget = IsSelfContext() && (NotSelfContext != SelfContextInfo) at :151, then at
+		//      :200-206 creates the "self" pin (friendly name "Target") and hides it ONLY when
+		//      bSelfTarget. Non-self => a VISIBLE Target pin the caller wires the object into, which is
+		//      the pin that makes this a foreign-property access at all. The pin's class is normalised
+		//      to the property's owning class at :162-165, so passing a derived targetClass still
+		//      yields a correctly-typed Target.
+		void PointAtExternalMember(UK2Node_Variable* Node, FProperty* Property, UClass* OwnerScope)
+		{
+			Node->SetFromProperty(Property, /*bSelfContext*/ false, OwnerScope);
+		}
+
+		// Shared body for add_variable_get / add_variable_set.
+		//
+		// These were two near-identical copies differing only in node class, access direction and the
+		// word "get"/"set" in a warning. That is precisely how a fix lands on one and not the other —
+		// the read-only check below would have been trivial to add to the getter alone and leave the
+		// setter emitting nodes that cannot compile. One body, one behaviour.
+		//
+		// ORDER MATTERS: every refusal happens BEFORE the first Modify()/NewObject, so a rejected call
+		// leaves the blueprint untouched instead of recording a transaction for a node that was never
+		// placed.
+		void DoAddVariableNode(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out, EMemberAccess Access)
+		{
+			const bool bIsSet = (Access == EMemberAccess::Write);
+
+			if (RejectUnknownParams(In, Out,
+				{ TEXT("graphId"),
+				  TEXT("var"), TEXT("name"), TEXT("variable"), TEXT("varName"), TEXT("property"), TEXT("propertyName"), TEXT("member"),
+				  TEXT("targetClass"), TEXT("class"), TEXT("cls"), TEXT("className"), TEXT("ownerClass"), TEXT("objectClass"),
+				  TEXT("x"), TEXT("y") },
+				TEXT("graphId, var (aliases: name, variable, varName, property, propertyName, member), ")
+				TEXT("targetClass (aliases: class, cls, className, ownerClass, objectClass), x, y"),
+				{ { TEXT("graph"), TEXT("spell it graphId") },
+				  { TEXT("target"), TEXT("targetClass names the CLASS that owns the property; the OBJECT is wired into the node's Target pin with connect_pins, never passed here") },
+				  { TEXT("value"), TEXT("a Set node takes its value on a pin — place the node, then set_pin_default or connect_pins") },
+				  { TEXT("scope"), TEXT("scope is auto-detected: a variable declared on this function graph resolves as a local, anything else as a member") } }))
 			{
-				Reference.SetExternalMember(MemberName, ResolveAgainst, MemberGuid);
+				return;
+			}
+
+			UBlueprint* Blueprint = nullptr;
+			UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
+			if (!Graph)
+			{
+				return;
+			}
+
+			const FString Var = JStrAny(In, { TEXT("var"), TEXT("name"), TEXT("variable"), TEXT("varName"),
+				TEXT("property"), TEXT("propertyName"), TEXT("member") });
+			if (Var.IsEmpty())
+			{
+				Fail(Out, TEXT("var is required (the property name; accepted spellings: var, name, variable, varName, property, propertyName, member)"));
+				return;
+			}
+
+			const FString TargetClassName = JStrAny(In, { TEXT("targetClass"), TEXT("class"), TEXT("cls"),
+				TEXT("className"), TEXT("ownerClass"), TEXT("objectClass") });
+
+			// --- Validate everything BEFORE mutating -------------------------------------------
+			// Nothing below this point may Fail() once Modify() has run: a refused call must leave the
+			// blueprint (and the undo stack) exactly as it found it.
+			UClass* TargetClass = nullptr;
+			UClass* OwnerScope = nullptr;
+			FProperty* ExternalProperty = nullptr;
+			bool bIsLocal = false;
+			FGuid LocalGuid;
+			if (!TargetClassName.IsEmpty())
+			{
+				TargetClass = ResolveClassAllowingCppPrefix(TargetClassName, Blueprint);
+				if (!TargetClass)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("targetClass not found: '%s' — pass the UObject class name without its C++ prefix ")
+						TEXT("(ChildActorComponent, not UChildActorComponent), or the full path for a Blueprint class ")
+						TEXT("(/Game/BP/BP_Foo.BP_Foo_C)"), *TargetClassName));
+					return;
+				}
+				FString RefError;
+				if (!ResolveExternalMember(Var, TargetClass, Blueprint, Access, OwnerScope, ExternalProperty, RefError))
+				{
+					Fail(Out, RefError);
+					return;
+				}
 			}
 			else
 			{
-				// Native properties have no Blueprint GUID — name-only is correct and stable for those.
-				Reference.SetExternalMember(MemberName, ResolveAgainst);
+				// Auto-detect scope: a variable DECLARED on this function graph is a LOCAL and must resolve via
+				// SetLocalMember (SetSelfMember would search the class for a member of that name → "Could not find
+				// a variable named X" and an unresolved node). Anything else is a self member. No scope param needed.
+				LocalGuid = FBlueprintEditorUtils::FindLocalVariableGuidByName(Blueprint, Graph, FName(*Var));
+				bIsLocal = LocalGuid.IsValid();
+
+				// A self MEMBER can still be an inherited NATIVE property, and those carry real Blueprint
+				// accessibility rules — the same BlueprintReadOnly trap as the external path, just reached
+				// without a targetClass. Gate it when (and only when) the property actually resolves: a
+				// variable added moments ago may not be on the skeleton yet, and that case keeps its warning
+				// rather than becoming a hard refusal.
+				if (!bIsLocal)
+				{
+					UClass* SelfClass = Blueprint->SkeletonGeneratedClass;
+					if (!SelfClass)
+					{
+						SelfClass = Blueprint->GeneratedClass;
+					}
+					if (FProperty* SelfProperty = FindAnyProperty(SelfClass, Var))
+					{
+						FString AccessError;
+						if (!CheckMemberAccessible(Blueprint, SelfClass, SelfProperty, Access, AccessError))
+						{
+							Fail(Out, AccessError);
+							return;
+						}
+					}
+				}
 			}
-			return true;
+
+			// --- Mutate ------------------------------------------------------------------------
+			Blueprint->Modify();
+			Graph->Modify();
+
+			UK2Node_Variable* Node = bIsSet
+				? static_cast<UK2Node_Variable*>(NewObject<UK2Node_VariableSet>(Graph))
+				: static_cast<UK2Node_Variable*>(NewObject<UK2Node_VariableGet>(Graph));
+
+			if (ExternalProperty)
+			{
+				PointAtExternalMember(Node, ExternalProperty, OwnerScope);
+			}
+			else if (bIsLocal)
+			{
+				Node->VariableReference.SetLocalMember(FName(*Var), Graph->GetName(), LocalGuid);
+			}
+			else
+			{
+				Node->VariableReference.SetSelfMember(FName(*Var));
+			}
+			PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
+
+			MarkStructural(Blueprint);
+
+			// --- Structured, numerically checkable result --------------------------------------
+			// scope/targetPin are what a caller tests to confirm this is a FOREIGN property read
+			// rather than a self read: an external reference always exposes a visible "self" pin
+			// (K2Node_Variable.cpp:200-206) and that pin is what the object reference wires into.
+			const bool bExternal = (TargetClass != nullptr);
+			Out->SetStringField(TEXT("scope"), bExternal ? TEXT("external") : (bIsLocal ? TEXT("local") : TEXT("self")));
+			Out->SetStringField(TEXT("access"), bIsSet ? TEXT("write") : TEXT("read"));
+			Out->SetStringField(TEXT("var"), Var);
+			Out->SetNumberField(TEXT("pinCount"), Node->Pins.Num());
+			if (bExternal && ExternalProperty)
+			{
+				// The class the reference actually resolved against, plus the two flags a caller most
+				// often wants to know without a second describe_class round-trip.
+				Out->SetStringField(TEXT("memberClass"), OwnerScope ? OwnerScope->GetPathName() : FString());
+				Out->SetStringField(TEXT("memberProperty"), ExternalProperty->GetName());
+				Out->SetBoolField(TEXT("native"), ExternalProperty->IsNative());
+				Out->SetBoolField(TEXT("blueprintReadOnly"), ExternalProperty->HasAnyPropertyFlags(CPF_BlueprintReadOnly));
+			}
+			UEdGraphPin* SelfPin = Node->FindPin(UEdGraphSchema_K2::PN_Self, EGPD_Input);
+			Out->SetBoolField(TEXT("hasTargetPin"), SelfPin != nullptr && !SelfPin->bHidden);
+			if (SelfPin && !SelfPin->bHidden)
+			{
+				Out->SetStringField(TEXT("targetPin"), SelfPin->PinName.ToString());
+			}
+
+			if (!bExternal && !bIsLocal && !BlueprintHasVariable(Blueprint, Var))
+			{
+				Out->SetStringField(TEXT("warning"), FString::Printf(
+					TEXT("variable '%s' not found on this blueprint; the %s node may be unresolved until it exists"),
+					*Var, bIsSet ? TEXT("set") : TEXT("get")));
+			}
+			// A variable node with no pins never resolved. Say so in the response instead of returning a
+			// healthy-looking node that only fails at compile time.
+			if (Node->Pins.Num() == 0)
+			{
+				Out->SetStringField(TEXT("warning"), FString::Printf(
+					TEXT("%s node for '%s' resolved to NO pins — the variable reference is dead. Check the name/targetClass, then remove_node and retry."),
+					bIsSet ? TEXT("set") : TEXT("get"), *Var));
+			}
+			EmitNode(Out, Node);
 		}
 
 		// Shared connect/reconnect body. When bBreakFirst is true both pins are cleared
 		// before wiring (the wildcard-reset combo). Reports CanCreateConnection's reason.
 		void DoConnect(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out, bool bBreakFirst)
 		{
+			// The two NODE params keep their distinct names on purpose (docs/02_GOTCHAS.md:18):
+			// aliasing across roles would let one key satisfy both ends. The wrong guesses get a
+			// KeyNote naming the right key instead. The PIN params are per-role and are aliased.
+			if (RejectUnknownParams(In, Out,
+				{ TEXT("srcNode"), TEXT("srcPin"), TEXT("sourcePin"), TEXT("fromPin"),
+				  TEXT("dstNode"), TEXT("dstPin"), TEXT("destPin"), TEXT("toPin"),
+				  TEXT("graphId") },
+				TEXT("srcNode, srcPin (aliases: sourcePin, fromPin), dstNode, dstPin (aliases: destPin, toPin), graphId"),
+				{ { TEXT("from"), TEXT("spell it srcNode") },
+				  { TEXT("fromNode"), TEXT("spell it srcNode") },
+				  { TEXT("sourceNode"), TEXT("spell it srcNode") },
+				  { TEXT("to"), TEXT("spell it dstNode") },
+				  { TEXT("toNode"), TEXT("spell it dstNode") },
+				  { TEXT("destNode"), TEXT("spell it dstNode") },
+				  { TEXT("targetNode"), TEXT("spell it dstNode") } }))
+			{
+				return;
+			}
+
 			UEdGraphNode* SrcNode = ResolveNodeField(In, TEXT("srcNode"), Out);
 			if (!SrcNode)
 			{
@@ -143,16 +557,18 @@ namespace MifBridge
 				return;
 			}
 
-			UEdGraphPin* OutPin = FindPin(SrcNode, JStr(In, TEXT("srcPin")), EGPD_Output, /*bRequireDir*/ false);
-			UEdGraphPin* InPin = FindPin(DstNode, JStr(In, TEXT("dstPin")), EGPD_Input, /*bRequireDir*/ false);
+			const FString SrcPinName = JStrAny(In, { TEXT("srcPin"), TEXT("sourcePin"), TEXT("fromPin") });
+			const FString DstPinName = JStrAny(In, { TEXT("dstPin"), TEXT("destPin"), TEXT("toPin") });
+			UEdGraphPin* OutPin = FindPin(SrcNode, SrcPinName, EGPD_Output, /*bRequireDir*/ false);
+			UEdGraphPin* InPin = FindPin(DstNode, DstPinName, EGPD_Input, /*bRequireDir*/ false);
 			if (!OutPin)
 			{
-				Fail(Out, FString::Printf(TEXT("src pin not found: '%s'"), *JStr(In, TEXT("srcPin"))));
+				Fail(Out, FString::Printf(TEXT("src pin not found: '%s'"), *SrcPinName));
 				return;
 			}
 			if (!InPin)
 			{
-				Fail(Out, FString::Printf(TEXT("dst pin not found: '%s'"), *JStr(In, TEXT("dstPin"))));
+				Fail(Out, FString::Printf(TEXT("dst pin not found: '%s'"), *DstPinName));
 				return;
 			}
 
@@ -171,17 +587,22 @@ namespace MifBridge
 			OutOwner->Modify();
 			InOwner->Modify();
 
+			// ASK BEFORE DESTROYING. This test used to run AFTER the bBreakFirst block, so
+			// reconnect_pin on a disallowed pair broke both pins' existing wires and THEN returned
+			// ok:false — the caller is told the call failed and reasonably assumes nothing changed,
+			// while the graph it was rewiring has been taken apart. Same defect the three exec splices
+			// had. CanCreateConnection is a pure query, so hoisting it costs nothing.
+			const FPinConnectionResponse Response = Schema->CanCreateConnection(OutPin, InPin);
+			if (Response.Response == CONNECT_RESPONSE_DISALLOW)
+			{
+				Fail(Out, FString::Printf(TEXT("%s (nothing was disconnected)"), *Response.Message.ToString()));
+				return;
+			}
+
 			if (bBreakFirst)
 			{
 				Schema->BreakPinLinks(*OutPin, true);
 				Schema->BreakPinLinks(*InPin, true);
-			}
-
-			const FPinConnectionResponse Response = Schema->CanCreateConnection(OutPin, InPin);
-			if (Response.Response == CONNECT_RESPONSE_DISALLOW)
-			{
-				Fail(Out, Response.Message.ToString());
-				return;
 			}
 
 			const bool bConnected = Schema->TryCreateConnection(OutPin, InPin);
@@ -201,6 +622,25 @@ namespace MifBridge
 
 	void H_add_function_call(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// 'cls' is the documented trap: it was silently ignored, 'class' defaulted to "self", and the
+		// caller got "function 'X' not found on class 'SKEL_<TheirOwnBlueprint>_C'" — an error that
+		// names the wrong subsystem entirely (proven live before this change). Aliased AND guarded.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"),
+			  TEXT("class"), TEXT("cls"), TEXT("className"), TEXT("targetClass"), TEXT("ownerClass"),
+			  TEXT("function"), TEXT("functionName"), TEXT("func"), TEXT("method"),
+			  TEXT("asMessage"), TEXT("message"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("graphId, class (aliases: cls, className, targetClass, ownerClass; default \"self\"), ")
+			TEXT("function (aliases: functionName, func, method), asMessage (alias: message), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("target"), TEXT("the target OBJECT is wired into the node's self/Target pin with connect_pins; 'class' names the class that declares the function") },
+			  { TEXT("args"), TEXT("arguments are pins — place the node, then set_pin_default or connect_pins") },
+			  { TEXT("pure"), TEXT("purity comes from the UFUNCTION itself (BlueprintPure); it is not selectable here") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -208,24 +648,39 @@ namespace MifBridge
 			return;
 		}
 
-		const FString ClassName = JStr(In, TEXT("class"), TEXT("self"));
-		const FString FunctionName = JStr(In, TEXT("function"));
+		FString ClassName = JStrAny(In, { TEXT("class"), TEXT("cls"), TEXT("className"),
+			TEXT("targetClass"), TEXT("ownerClass") });
+		const bool bClassDefaulted = ClassName.IsEmpty();
+		if (bClassDefaulted)
+		{
+			ClassName = TEXT("self");
+		}
+		const FString FunctionName = JStrAny(In, { TEXT("function"), TEXT("functionName"), TEXT("func"), TEXT("method") });
 		if (FunctionName.IsEmpty())
 		{
-			Fail(Out, TEXT("function is required"));
+			Fail(Out, TEXT("function is required (accepted spellings: function, functionName, func, method)"));
 			return;
 		}
 
-		UClass* TargetClass = ResolveClass(ClassName, Blueprint);
+		UClass* TargetClass = ResolveClassAllowingCppPrefix(ClassName, Blueprint);
 		if (!TargetClass)
 		{
-			Fail(Out, FString::Printf(TEXT("class not found: '%s'"), *ClassName));
+			Fail(Out, FString::Printf(
+				TEXT("class not found: '%s' — pass the UObject class name without its C++ prefix ")
+				TEXT("(KismetSystemLibrary, not UKismetSystemLibrary), or the full path for a Blueprint class ")
+				TEXT("(/Game/BP/BP_Foo.BP_Foo_C)"), *ClassName));
 			return;
 		}
 		UFunction* Function = TargetClass->FindFunctionByName(FName(*FunctionName));
 		if (!Function)
 		{
-			Fail(Out, FString::Printf(TEXT("function '%s' not found on class '%s'"), *FunctionName, *TargetClass->GetName()));
+			// Say WHICH class was searched and, when it was only searched because no class key was
+			// given, say that too — otherwise a defaulted self-search reads as "the engine lost my function".
+			Fail(Out, FString::Printf(TEXT("function '%s' not found on class '%s'%s"),
+				*FunctionName, *TargetClass->GetName(),
+				bClassDefaulted
+					? TEXT(" — no class key was supplied (class/cls/className/targetClass/ownerClass), so the search defaulted to this blueprint's own class")
+					: TEXT("")));
 			return;
 		}
 
@@ -268,8 +723,17 @@ namespace MifBridge
 
 		// Interface functions dispatch through a Message node, which tolerates a null/!Implements
 		// target at runtime instead of hard-failing. Only when calling on an EXTERNAL target.
-		const bool bWantMessage = JBoolAny(In, { TEXT("asMessage"), TEXT("message") }, false)
-			|| (TargetClass->HasAnyClassFlags(CLASS_Interface) && !ClassName.Equals(TEXT("self"), ESearchCase::IgnoreCase));
+		//
+		// An EXPLICIT asMessage:false used to be overridden by the interface auto-path, so there was no
+		// way to author a non-Message interface call — and the guard on this endpoint ADVERTISES
+		// asMessage as honoured, which is the "accepted but ignored" shape 01_POSTMORTEMS.md says must
+		// never ship. JHasAny distinguishes "omitted" from "explicitly false"; an explicit false now
+		// suppresses the auto-path, and the response records which way it went (see `message` below).
+		const bool bMessageSpecified = JHasAny(In, { TEXT("asMessage"), TEXT("message") });
+		const bool bMessageRequested = JBoolAny(In, { TEXT("asMessage"), TEXT("message") }, false);
+		const bool bInterfaceOnExternal =
+			TargetClass->HasAnyClassFlags(CLASS_Interface) && !ClassName.Equals(TEXT("self"), ESearchCase::IgnoreCase);
+		const bool bWantMessage = bMessageSpecified ? bMessageRequested : bInterfaceOnExternal;
 
 		UK2Node_CallFunction* Node = bWantMessage
 			? NewObject<UK2Node_CallFunction>(Graph, UK2Node_Message::StaticClass())
@@ -278,141 +742,50 @@ namespace MifBridge
 		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
 
 		MarkStructural(Blueprint);
+		Out->SetBoolField(TEXT("message"), bWantMessage);
+		if (bMessageSpecified && !bMessageRequested && bInterfaceOnExternal)
+		{
+			// A deliberate non-Message interface call is legal but is NOT what the engine's UI would
+			// produce, and it hard-fails at runtime on a target that does not implement the interface.
+			Out->SetStringField(TEXT("note"),
+				TEXT("asMessage:false was honoured on an interface call against an external target: this is a direct call, "
+				     "so it will fail at runtime if the target does not implement the interface (a Message node would "
+				     "silently do nothing instead)"));
+		}
 		// Surface which class was chosen — otherwise "why is my array pin still a wildcard" is
 		// invisible from the response.
 		Out->SetStringField(TEXT("nodeClass"), Node->GetClass()->GetName());
 		EmitNode(Out, Node);
 	}
 
+	// --- add_variable_get / add_variable_set --------------------------------
+	//   in:  { graphId, var, targetClass?, x?, y? }   (see DoAddVariableNode for the alias set)
+	//   out: { node, scope: self|local|external, access: read|write, hasTargetPin, targetPin?,
+	//          memberClass?, native?, blueprintReadOnly?, pinCount }
+	//
+	// With targetClass these read/write a property on ANOTHER object — a spawned actor's variable, or
+	// a NATIVE UPROPERTY such as UChildActorComponent::ChildActorClass. The node gets a visible Target
+	// pin (K2Node_Variable.cpp:200-206) that the object reference wires into; without targetClass the
+	// scope is auto-detected as a graph local or a self member.
 	void H_add_variable_get(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UBlueprint* Blueprint = nullptr;
-		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
-		if (!Graph)
-		{
-			return;
-		}
-		const FString Var = JStr(In, TEXT("var"));
-		if (Var.IsEmpty())
-		{
-			Fail(Out, TEXT("var is required"));
-			return;
-		}
-
-		Blueprint->Modify();
-		Graph->Modify();
-
-		const FString TargetClassName = JStrAny(In, { TEXT("targetClass"), TEXT("class"), TEXT("ownerClass") });
-		UK2Node_VariableGet* Node = NewObject<UK2Node_VariableGet>(Graph);
-		if (!TargetClassName.IsEmpty())
-		{
-			// EXTERNAL target: read a property OFF another object (e.g. a spawned/passed actor's var), not self/local.
-			// Gives the node a Target ("self") input pin the caller wires to the object ref.
-			UClass* TargetClass = ResolveClass(TargetClassName, Blueprint);
-			if (!TargetClass)
-			{
-				Fail(Out, FString::Printf(TEXT("targetClass not found: '%s' (try the full class path, e.g. /Game/BP/BP_Foo.BP_Foo_C)"), *TargetClassName));
-				return;
-			}
-			FString RefError;
-			if (!PointAtExternalMember(Node->VariableReference, Var, TargetClass, RefError))
-			{
-				Fail(Out, RefError);
-				return;
-			}
-		}
-		else
-		{
-			// Auto-detect scope: a variable DECLARED on this function graph is a LOCAL and must resolve via SetLocalMember
-			// (SetSelfMember would search the class for a member of that name → "Could not find a variable named X" and an
-			// unresolved node). A member/instance variable falls through to SetSelfMember. No scope param needed.
-			const FGuid LocalGuid = FBlueprintEditorUtils::FindLocalVariableGuidByName(Blueprint, Graph, FName(*Var));
-			if (LocalGuid.IsValid()) { Node->VariableReference.SetLocalMember(FName(*Var), Graph->GetName(), LocalGuid); }
-			else                     { Node->VariableReference.SetSelfMember(FName(*Var)); }
-		}
-		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
-
-		MarkStructural(Blueprint);
-		if (TargetClassName.IsEmpty() && !BlueprintHasVariable(Blueprint, Var))
-		{
-			Out->SetStringField(TEXT("warning"), FString::Printf(TEXT("variable '%s' not found on this blueprint; the get node may be unresolved until it exists"), *Var));
-		}
-		// A variable node with no value pin never resolved. Say so in the response instead of
-		// returning a healthy-looking node that only fails at compile time.
-		if (Node->Pins.Num() == 0)
-		{
-			Out->SetStringField(TEXT("warning"), FString::Printf(
-				TEXT("get node for '%s' resolved to NO pins — the variable reference is dead. Check the name/targetClass, then remove_node and retry."), *Var));
-		}
-		EmitNode(Out, Node);
+		DoAddVariableNode(In, Out, EMemberAccess::Read);
 	}
 
 	void H_add_variable_set(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UBlueprint* Blueprint = nullptr;
-		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
-		if (!Graph)
-		{
-			return;
-		}
-		const FString Var = JStr(In, TEXT("var"));
-		if (Var.IsEmpty())
-		{
-			Fail(Out, TEXT("var is required"));
-			return;
-		}
-
-		Blueprint->Modify();
-		Graph->Modify();
-
-		const FString TargetClassName = JStrAny(In, { TEXT("targetClass"), TEXT("class"), TEXT("ownerClass") });
-		UK2Node_VariableSet* Node = NewObject<UK2Node_VariableSet>(Graph);
-		if (!TargetClassName.IsEmpty())
-		{
-			// EXTERNAL target: set a property on ANOTHER object (e.g. a spawned actor's exposed var), not a self/local.
-			// Points the node at TargetClass's property and gives it a Target ("self") input pin the caller wires to
-			// the object reference (e.g. SpawnActor's ReturnValue). Enables the MifModHelper spawn+set pattern
-			// (BrandosModHelper's AddMapMarker/AddNewShop/… set props on the spawned BP this way).
-			UClass* TargetClass = ResolveClass(TargetClassName, Blueprint);
-			if (!TargetClass)
-			{
-				Fail(Out, FString::Printf(TEXT("targetClass not found: '%s' (try the full class path, e.g. /Game/BP/BP_Foo.BP_Foo_C)"), *TargetClassName));
-				return;
-			}
-			FString RefError;
-			if (!PointAtExternalMember(Node->VariableReference, Var, TargetClass, RefError))
-			{
-				Fail(Out, RefError);
-				return;
-			}
-		}
-		else
-		{
-			// Auto-detect scope: a variable DECLARED on this function graph is a LOCAL and must resolve via SetLocalMember
-			// (SetSelfMember would search the class for a member of that name → "Could not find a variable named X" and an
-			// unresolved node). A member/instance variable falls through to SetSelfMember. No scope param needed.
-			const FGuid LocalGuid = FBlueprintEditorUtils::FindLocalVariableGuidByName(Blueprint, Graph, FName(*Var));
-			if (LocalGuid.IsValid()) { Node->VariableReference.SetLocalMember(FName(*Var), Graph->GetName(), LocalGuid); }
-			else                     { Node->VariableReference.SetSelfMember(FName(*Var)); }
-		}
-		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
-
-		MarkStructural(Blueprint);
-		if (TargetClassName.IsEmpty() && !BlueprintHasVariable(Blueprint, Var))
-		{
-			Out->SetStringField(TEXT("warning"), FString::Printf(TEXT("variable '%s' not found on this blueprint; the set node may be unresolved until it exists"), *Var));
-		}
-		// Exec-only pins mean the value pin never materialised — the reference is dead (see get).
-		if (Node->Pins.Num() == 0)
-		{
-			Out->SetStringField(TEXT("warning"), FString::Printf(
-				TEXT("set node for '%s' resolved to NO pins — the variable reference is dead. Check the name/targetClass, then remove_node and retry."), *Var));
-		}
-		EmitNode(Out, Node);
+		DoAddVariableNode(In, Out, EMemberAccess::Write);
 	}
 
 	void H_add_branch(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, { TEXT("graphId"), TEXT("x"), TEXT("y") }, TEXT("graphId, x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("condition"), TEXT("the Condition input is a pin — place the node, then set_pin_default or connect_pins") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -431,6 +804,18 @@ namespace MifBridge
 
 	void H_add_macro_instance(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"),
+			  TEXT("macroGraph"), TEXT("macro"), TEXT("macroName"), TEXT("name"),
+			  TEXT("macroPath"), TEXT("macroLibrary"), TEXT("library"), TEXT("path"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("graphId, macroGraph (aliases: macro, macroName, name), ")
+			TEXT("macroPath (aliases: macroLibrary, library, path), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -438,11 +823,15 @@ namespace MifBridge
 			return;
 		}
 
-		const FString MacroPath = JStr(In, TEXT("macroPath"), TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros"));
-		const FString MacroName = JStr(In, TEXT("macroGraph"));
+		FString MacroPath = JStrAny(In, { TEXT("macroPath"), TEXT("macroLibrary"), TEXT("library"), TEXT("path") });
+		if (MacroPath.IsEmpty())
+		{
+			MacroPath = TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros");
+		}
+		const FString MacroName = JStrAny(In, { TEXT("macroGraph"), TEXT("macro"), TEXT("macroName"), TEXT("name") });
 		if (MacroName.IsEmpty())
 		{
-			Fail(Out, TEXT("macroGraph is required (e.g. 'ForEachLoop')"));
+			Fail(Out, TEXT("macroGraph is required (e.g. 'ForEachLoop'; accepted spellings: macroGraph, macro, macroName, name)"));
 			return;
 		}
 
@@ -484,6 +873,14 @@ namespace MifBridge
 
 	void H_add_get_array_item(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, { TEXT("graphId"), TEXT("x"), TEXT("y") }, TEXT("graphId, x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("index"), TEXT("the index is a pin — the response names it as indexPin; use set_pin_default or connect_pins") },
+			  { TEXT("array"), TEXT("the array is a pin — the response names it as arrayPin; use connect_pins") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -522,6 +919,21 @@ namespace MifBridge
 
 	void H_add_override_event(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"),
+			  TEXT("event"), TEXT("eventName"), TEXT("name"), TEXT("function"), TEXT("functionName"),
+			  TEXT("interfaceOrParent"), TEXT("class"), TEXT("cls"), TEXT("className"), TEXT("parentClass"),
+			  TEXT("interface"), TEXT("ownerClass"), TEXT("targetClass"),
+			  TEXT("callParent"), TEXT("addParentCall"), TEXT("withParentCall"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("blueprintId (alias: path), event (aliases: eventName, name, function, functionName), ")
+			TEXT("interfaceOrParent (aliases: class, cls, className, parentClass, interface, ownerClass, targetClass), ")
+			TEXT("callParent (aliases: addParentCall, withParentCall), x, y"),
+			{ { TEXT("graphId"), TEXT("an override always lands in the blueprint's event graph — pass blueprintId instead") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -539,15 +951,17 @@ namespace MifBridge
 			return;
 		}
 
-		const FString InterfaceOrParent = JStr(In, TEXT("interfaceOrParent"));
-		const FString EventName = JStr(In, TEXT("event"));
+		const FString InterfaceOrParent = JStrAny(In, { TEXT("interfaceOrParent"), TEXT("class"), TEXT("cls"),
+			TEXT("className"), TEXT("parentClass"), TEXT("interface"), TEXT("ownerClass"), TEXT("targetClass") });
+		const FString EventName = JStrAny(In, { TEXT("event"), TEXT("eventName"), TEXT("name"),
+			TEXT("function"), TEXT("functionName") });
 		if (EventName.IsEmpty())
 		{
-			Fail(Out, TEXT("event is required"));
+			Fail(Out, TEXT("event is required (accepted spellings: event, eventName, name, function, functionName)"));
 			return;
 		}
 
-		UClass* HostClass = InterfaceOrParent.IsEmpty() ? Blueprint->ParentClass : ResolveClass(InterfaceOrParent, Blueprint);
+		UClass* HostClass = InterfaceOrParent.IsEmpty() ? Blueprint->ParentClass : ResolveClassAllowingCppPrefix(InterfaceOrParent, Blueprint);
 		if (!HostClass)
 		{
 			Fail(Out, FString::Printf(TEXT("interfaceOrParent class not found: '%s'"), *InterfaceOrParent));
@@ -584,7 +998,7 @@ namespace MifBridge
 		MarkStructural(Blueprint);
 		EmitNode(Out, Node);
 
-		if (JBool(In, TEXT("callParent"), false))
+		if (JBoolAny(In, { TEXT("callParent"), TEXT("addParentCall"), TEXT("withParentCall") }, false))
 		{
 			UK2Node_CallParentFunction* ParentNode = NewObject<UK2Node_CallParentFunction>(EventGraph);
 			ParentNode->SetFromFunction(EventFunction);
@@ -605,6 +1019,18 @@ namespace MifBridge
 
 	void H_add_parent_call(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"),
+			  TEXT("parentClass"), TEXT("class"), TEXT("cls"), TEXT("className"), TEXT("parent"), TEXT("ownerClass"), TEXT("targetClass"),
+			  TEXT("function"), TEXT("functionName"), TEXT("func"), TEXT("method"), TEXT("name"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("graphId, parentClass (aliases: class, cls, className, parent, ownerClass, targetClass; ")
+			TEXT("default = this blueprint's parent), function (aliases: functionName, func, method, name), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -612,15 +1038,17 @@ namespace MifBridge
 			return;
 		}
 
-		const FString ParentName = JStr(In, TEXT("parentClass"));
-		const FString FunctionName = JStr(In, TEXT("function"));
+		const FString ParentName = JStrAny(In, { TEXT("parentClass"), TEXT("class"), TEXT("cls"),
+			TEXT("className"), TEXT("parent"), TEXT("ownerClass"), TEXT("targetClass") });
+		const FString FunctionName = JStrAny(In, { TEXT("function"), TEXT("functionName"), TEXT("func"),
+			TEXT("method"), TEXT("name") });
 		if (FunctionName.IsEmpty())
 		{
-			Fail(Out, TEXT("function is required"));
+			Fail(Out, TEXT("function is required (accepted spellings: function, functionName, func, method, name)"));
 			return;
 		}
 
-		UClass* ParentClass = ParentName.IsEmpty() ? Blueprint->ParentClass : ResolveClass(ParentName, Blueprint);
+		UClass* ParentClass = ParentName.IsEmpty() ? Blueprint->ParentClass : ResolveClassAllowingCppPrefix(ParentName, Blueprint);
 		if (!ParentClass)
 		{
 			Fail(Out, FString::Printf(TEXT("parent class not found: '%s'"), *ParentName));
@@ -646,6 +1074,18 @@ namespace MifBridge
 
 	void H_add_cast(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"),
+			  TEXT("targetClass"), TEXT("class"), TEXT("cls"), TEXT("className"), TEXT("castTo"), TEXT("to"), TEXT("targetType"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("graphId, targetClass (aliases: class, cls, className, castTo, to, targetType), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("pure"), TEXT("add_cast always creates an IMPURE cast so the Cast Failed exec pin exists; there is no pure option here") },
+			  { TEXT("object"), TEXT("the object to cast is a pin — place the node, then connect_pins into its Object pin") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -657,7 +1097,8 @@ namespace MifBridge
 		// targetClass) produced a cast of the blueprint to ITSELF — which always succeeds, compiles
 		// clean, and is nearly invisible. Accept the common spellings; refuse the empty case.
 		UClass* TargetClass = ResolveClassStrictField(
-			In, { TEXT("targetClass"), TEXT("class"), TEXT("castTo"), TEXT("to"), TEXT("targetType") }, Blueprint, Out);
+			In, { TEXT("targetClass"), TEXT("class"), TEXT("cls"), TEXT("className"), TEXT("castTo"), TEXT("to"), TEXT("targetType") },
+			Blueprint, Out);
 		if (!TargetClass)
 		{
 			return;
@@ -677,6 +1118,13 @@ namespace MifBridge
 
 	void H_move_node(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId"), TEXT("graphId"), TEXT("x"), TEXT("y") },
+			TEXT("nodeGuid (aliases: node, guid, nodeId), graphId (optional, disambiguates a reused guid), x, y")))
+		{
+			return;
+		}
+
 		UEdGraphNode* Node = ResolveNodeField(In, TEXT("nodeGuid"), Out);
 		if (!Node)
 		{
@@ -694,6 +1142,13 @@ namespace MifBridge
 
 	void H_remove_node(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId"), TEXT("graphId"), TEXT("confirm") },
+			TEXT("nodeGuid (aliases: node, guid, nodeId), graphId (optional, disambiguates a reused guid), confirm (required, must be true)")))
+		{
+			return;
+		}
+
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("remove_node requires confirm=true"));
@@ -737,6 +1192,21 @@ namespace MifBridge
 	// Mirrors FBlueprintGraphActionDetails::OnAddNewInputClicked / OnAddNewOutputClicked.
 	void H_add_pin(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("pin"), TEXT("pinName"),
+			  TEXT("type"), TEXT("pinType"), TEXT("container"), TEXT("valueType"),
+			  TEXT("direction"), TEXT("dir"),
+			  TEXT("default"), TEXT("defaultValue"), TEXT("value"),
+			  TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId"),
+			  TEXT("graphId"), TEXT("blueprintId"), TEXT("path"), TEXT("function"), TEXT("functionName") },
+			TEXT("name (aliases: pin, pinName), type (alias: pinType), container, valueType, ")
+			TEXT("direction (alias: dir; input|output), default (aliases: defaultValue, value), ")
+			TEXT("and ONE target: nodeGuid (aliases: node, guid, nodeId) | graphId | blueprintId + function"),
+			{ { TEXT("confirm"), TEXT("add_pin is additive and needs no confirm; remove_pin is the one that does") } }))
+		{
+			return;
+		}
+
 		const FString RawName = JStrAny(In, { TEXT("name"), TEXT("pin"), TEXT("pinName") });
 		FString PinName = RawName;
 		PinName.TrimStartAndEndInline();
@@ -748,13 +1218,17 @@ namespace MifBridge
 
 		FEdGraphPinType PinType;
 		FString TypeError;
-		if (!MakePinType(JStr(In, TEXT("type")), JStr(In, TEXT("container")), PinType, TypeError, JStr(In, TEXT("valueType"))))
+		if (!MakePinType(JStrAny(In, { TEXT("type"), TEXT("pinType") }), JStr(In, TEXT("container")), PinType, TypeError, JStr(In, TEXT("valueType"))))
 		{
 			Fail(Out, TypeError);
 			return;
 		}
 
-		const FString DirStr = JStr(In, TEXT("direction"), TEXT("input")).ToLower();
+		FString DirStr = JStrAny(In, { TEXT("direction"), TEXT("dir") }).ToLower();
+		if (DirStr.IsEmpty())
+		{
+			DirStr = TEXT("input");
+		}
 		const bool bWantOutput = DirStr.StartsWith(TEXT("out"));
 		if (!bWantOutput && !DirStr.StartsWith(TEXT("in")))
 		{
@@ -913,7 +1387,9 @@ namespace MifBridge
 			}
 			if (Results.Num() == 0)
 			{
-				Fail(Out, TEXT("could not create a function Result node for the new output"));
+				// Batch M, option (c): a cancelled transaction discards the undo entry rather than
+				// rolling a node creation back (PM-007), so say what may be sitting in the graph.
+				Fail(Out, TEXT("could not create a function Result node for the new output. WHAT MAY BE LEFT BEHIND: a bare UK2Node_FunctionResult may already have been placed in this graph and is NOT removed by this failure - check with list_nodes and remove it with delete_node."));
 				return;
 			}
 
@@ -927,7 +1403,14 @@ namespace MifBridge
 				UEdGraphPin* Pin = Result->CreateUserDefinedPin(FinalName, PinType, EGPD_Input, /*bUseUniqueName*/ false);
 				if (!Pin)
 				{
-					Fail(Out, FString::Printf(TEXT("CreateUserDefinedPin failed for '%s' on a Return node"), *FinalName.ToString()));
+					// Batch M, option (c). Partial state is possible here and is NOT rolled back: a
+					// cancelled transaction discards the undo entry, it does not undo the pins already
+					// created on earlier Return nodes (PM-007). Unwinding would mean deleting user pins
+					// that may already be wired, which is remove_pin's confirm-gated job, not this
+					// handler's.
+					Fail(Out, FString::Printf(
+						TEXT("CreateUserDefinedPin failed for '%s' on a Return node (%d of %d sibling Return nodes had already been given the pin). WHAT IS LEFT BEHIND: those %d pins, and a Result node if this call created one. They are NOT removed - use remove_pin {confirm:true} on '%s' to undo them."),
+						*FinalName.ToString(), SiblingsUpdated, Results.Num(), SiblingsUpdated, *FinalName.ToString()));
 					return;
 				}
 				if (!NewPin) { NewPin = Pin; }
@@ -937,10 +1420,28 @@ namespace MifBridge
 		}
 
 		// Optional default for the new pin (inputs only — a return value has no literal default).
-		const FString Default = JStr(In, TEXT("default"));
+		// The schema silently refuses a literal that does not parse for the pin type, and add_pin's
+		// out: block never mentioned the default at all, so a rejected default was invisible in both
+		// directions. Report it; do not fail the whole call, because the PIN was created successfully
+		// and failing here would report failure over a pin that stays (a cancelled transaction
+		// discards the undo entry, it does not roll the pin back — PM-007).
+		const FString Default = JStrAny(In, { TEXT("default"), TEXT("defaultValue"), TEXT("value") });
 		if (!Default.IsEmpty() && NewPin && !bWantOutput)
 		{
-			K2()->TrySetDefaultValue(*NewPin, Default);
+			FString DefaultBefore, DefaultAfter, DefaultError;
+			bool bDefaultChanged = false;
+			const bool bDefaultOk = SetPinDefaultChecked(NewPin, Default, DefaultBefore, DefaultAfter, bDefaultChanged, DefaultError);
+			Out->SetStringField(TEXT("defaultAfter"), DefaultAfter);
+			Out->SetBoolField(TEXT("defaultApplied"), bDefaultOk && bDefaultChanged);
+			if (!bDefaultOk)
+			{
+				Out->SetStringField(TEXT("defaultError"), DefaultError);
+			}
+		}
+		else if (!Default.IsEmpty() && bWantOutput)
+		{
+			Out->SetStringField(TEXT("defaultError"),
+				TEXT("a default was supplied for an OUTPUT pin and was ignored — only input pins carry a literal default"));
 		}
 
 		MarkStructural(Blueprint);
@@ -980,6 +1481,15 @@ namespace MifBridge
 	// silently reverts. Say that instead of pretending.
 	void H_remove_pin(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"), TEXT("graphId"),
+			  TEXT("pin"), TEXT("pinName"), TEXT("name"), TEXT("direction"), TEXT("dir"), TEXT("confirm") },
+			TEXT("node (aliases: nodeGuid, guid, nodeId), graphId (optional), pin (aliases: pinName, name), ")
+			TEXT("direction (alias: dir; input|output), confirm (required, must be true)")))
+		{
+			return;
+		}
+
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("remove_pin requires confirm=true"));
@@ -998,7 +1508,7 @@ namespace MifBridge
 		}
 
 		// Optional direction filter — needed when a node has same-named pins on both sides.
-		const FString DirStr = JStr(In, TEXT("direction"));
+		const FString DirStr = JStrAny(In, { TEXT("direction"), TEXT("dir") });
 		const bool bHasDir = !DirStr.IsEmpty();
 		const EEdGraphPinDirection WantDir = DirStr.StartsWith(TEXT("out")) ? EGPD_Output : EGPD_Input;
 
@@ -1106,6 +1616,13 @@ namespace MifBridge
 
 	void H_refresh_node(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId"), TEXT("graphId") },
+			TEXT("nodeGuid (aliases: node, guid, nodeId), graphId (optional, disambiguates a reused guid)")))
+		{
+			return;
+		}
+
 		UEdGraphNode* Node = ResolveNodeField(In, TEXT("nodeGuid"), Out);
 		if (!Node)
 		{
@@ -1131,12 +1648,20 @@ namespace MifBridge
 
 	void H_disconnect_pin(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"), TEXT("graphId"),
+			  TEXT("pin"), TEXT("pinName"), TEXT("name") },
+			TEXT("node (aliases: nodeGuid, guid, nodeId), graphId (optional), pin (aliases: pinName, name)")))
+		{
+			return;
+		}
+
 		UEdGraphNode* Node = ResolveNodeField(In, TEXT("node"), Out);
 		if (!Node)
 		{
 			return;
 		}
-		const FString PinName = JStr(In, TEXT("pin"));
+		const FString PinName = JStrAny(In, { TEXT("pin"), TEXT("pinName"), TEXT("name") });
 		UEdGraphPin* Pin = FindPin(Node, PinName, EGPD_Input, /*bRequireDir*/ false);
 		if (!Pin)
 		{
@@ -1151,13 +1676,24 @@ namespace MifBridge
 
 	void H_set_pin_default(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// 'value' here vs 'default' on add_pin was a real in-file inconsistency; both now work on both.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"), TEXT("graphId"),
+			  TEXT("pin"), TEXT("pinName"), TEXT("name"),
+			  TEXT("value"), TEXT("default"), TEXT("defaultValue") },
+			TEXT("node (aliases: nodeGuid, guid, nodeId), graphId (optional), pin (aliases: pinName, name), ")
+			TEXT("value (aliases: default, defaultValue)")))
+		{
+			return;
+		}
+
 		UEdGraphNode* Node = ResolveNodeField(In, TEXT("node"), Out);
 		if (!Node)
 		{
 			return;
 		}
-		const FString PinName = JStr(In, TEXT("pin"));
-		const FString Value = JStr(In, TEXT("value"));
+		const FString PinName = JStrAny(In, { TEXT("pin"), TEXT("pinName"), TEXT("name") });
+		const FString Value = JStrAny(In, { TEXT("value"), TEXT("default"), TEXT("defaultValue") });
 		UEdGraphPin* Pin = FindPin(Node, PinName, EGPD_Input, /*bRequireDir*/ false);
 		if (!Pin)
 		{
@@ -1165,12 +1701,41 @@ namespace MifBridge
 			return;
 		}
 		Node->Modify();
-		K2()->TrySetDefaultValue(*Pin, Value);
+		// TrySetDefaultValue is void and the schema silently refuses a literal it cannot parse for the
+		// pin type, so set_pin_default {value:"banana"} on an int pin used to answer ok:true. The pin
+		// was re-serialised into the response, so the truth was IN the payload — but nothing said the
+		// write had not landed, and no caller diffs a serialised pin against its own request.
+		FString DefaultBefore, DefaultAfter, DefaultError;
+		bool bDefaultChanged = false;
+		if (!SetPinDefaultChecked(Pin, Value, DefaultBefore, DefaultAfter, bDefaultChanged, DefaultError))
+		{
+			Fail(Out, DefaultError);
+			return;
+		}
+		Out->SetStringField(TEXT("defaultBefore"), DefaultBefore);
+		Out->SetStringField(TEXT("defaultAfter"), DefaultAfter);
+		Out->SetBoolField(TEXT("changed"), bDefaultChanged);
 		Out->SetObjectField(TEXT("pin"), SerializePin(Pin));
 	}
 
 	void H_splice_into_exec(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// Two NODE params, so they keep distinct names (docs/02_GOTCHAS.md:18) — the pin params are
+		// per-role and take the obvious short spellings.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("afterNode"), TEXT("insertNode"), TEXT("graphId"),
+			  TEXT("afterPin"), TEXT("afterExecOut"),
+			  TEXT("insertExecIn"), TEXT("insertIn"), TEXT("execIn"),
+			  TEXT("insertExecOut"), TEXT("insertOut"), TEXT("execOut") },
+			TEXT("afterNode, insertNode, graphId (optional), afterPin (alias: afterExecOut; default \"then\"), ")
+			TEXT("insertExecIn (aliases: insertIn, execIn; default \"execute\"), ")
+			TEXT("insertExecOut (aliases: insertOut, execOut; default \"then\")"),
+			{ { TEXT("beforeNode"), TEXT("splice_into_exec inserts AFTER a node — pass afterNode") },
+			  { TEXT("node"), TEXT("this endpoint needs BOTH afterNode and insertNode; there is no single 'node'") } }))
+		{
+			return;
+		}
+
 		UEdGraphNode* AfterNode = ResolveNodeField(In, TEXT("afterNode"), Out);
 		if (!AfterNode)
 		{
@@ -1182,48 +1747,47 @@ namespace MifBridge
 			return;
 		}
 
-		UEdGraphPin* AfterOut = FindPin(AfterNode, JStr(In, TEXT("afterPin"), TEXT("then")), EGPD_Output, /*bRequireDir*/ true);
-		UEdGraphPin* InsertIn = FindPin(InsertNode, JStr(In, TEXT("insertExecIn"), TEXT("execute")), EGPD_Input, /*bRequireDir*/ true);
-		UEdGraphPin* InsertOut = FindPin(InsertNode, JStr(In, TEXT("insertExecOut"), TEXT("then")), EGPD_Output, /*bRequireDir*/ true);
+		const FString AfterPinName = JStrAny(In, { TEXT("afterPin"), TEXT("afterExecOut") }, TEXT("then"));
+		const FString InsertInName = JStrAny(In, { TEXT("insertExecIn"), TEXT("insertIn"), TEXT("execIn") }, TEXT("execute"));
+		const FString InsertOutName = JStrAny(In, { TEXT("insertExecOut"), TEXT("insertOut"), TEXT("execOut") }, TEXT("then"));
+
+		UEdGraphPin* AfterOut = FindPin(AfterNode, AfterPinName, EGPD_Output, /*bRequireDir*/ true);
+		UEdGraphPin* InsertIn = FindPin(InsertNode, InsertInName, EGPD_Input, /*bRequireDir*/ true);
+		UEdGraphPin* InsertOut = FindPin(InsertNode, InsertOutName, EGPD_Output, /*bRequireDir*/ true);
 		if (!AfterOut)
 		{
-			Fail(Out, FString::Printf(TEXT("afterPin (exec out) not found: '%s'"), *JStr(In, TEXT("afterPin"), TEXT("then"))));
+			Fail(Out, FString::Printf(TEXT("afterPin (exec out) not found: '%s'"), *AfterPinName));
 			return;
 		}
 		if (!InsertIn)
 		{
-			Fail(Out, FString::Printf(TEXT("insertExecIn not found: '%s'"), *JStr(In, TEXT("insertExecIn"), TEXT("execute"))));
+			Fail(Out, FString::Printf(TEXT("insertExecIn not found: '%s'"), *InsertInName));
 			return;
 		}
 		if (!InsertOut)
 		{
-			Fail(Out, FString::Printf(TEXT("insertExecOut not found: '%s'"), *JStr(In, TEXT("insertExecOut"), TEXT("then"))));
+			Fail(Out, FString::Printf(TEXT("insertExecOut not found: '%s'"), *InsertOutName));
 			return;
 		}
 
-		// Capture the current downstream target(s) before breaking the link.
-		TArray<UEdGraphPin*> OldTargets = AfterOut->LinkedTo;
-
-		const UEdGraphSchema_K2* Schema = K2();
 		AfterNode->Modify();
 		InsertNode->Modify();
 
-		Schema->BreakPinLinks(*AfterOut, true);
-		Schema->TryCreateConnection(AfterOut, InsertIn);
-		for (UEdGraphPin* Target : OldTargets)
+		// Was: BreakPinLinks first, then two TryCreateConnection calls whose bools were discarded, then
+		// reconnectedTargets = OldTargets.Num() — the number of links we MEANT to move, reported as if
+		// it were the number moved. A wrong pin type or an already-occupied single-link exec left the
+		// chain severed and still answered ok:true. SpliceExecAfter (MifBridgeCommon.cpp) validates the
+		// whole new shape with CanCreateConnection before breaking anything, and counts real successes.
+		int32 Reconnected = 0;
+		FString SpliceError;
+		if (!SpliceExecAfter(AfterOut, InsertIn, InsertOut, Reconnected, SpliceError))
 		{
-			if (Target)
-			{
-				if (UEdGraphNode* Owner = Target->GetOwningNodeUnchecked())
-				{
-					Owner->Modify();
-				}
-				Schema->TryCreateConnection(InsertOut, Target);
-			}
+			Fail(Out, SpliceError);
+			return;
 		}
 
 		MarkStructural(FBlueprintEditorUtils::FindBlueprintForNode(AfterNode));
-		Out->SetNumberField(TEXT("reconnectedTargets"), OldTargets.Num());
+		Out->SetNumberField(TEXT("reconnectedTargets"), Reconnected);
 		Out->SetObjectField(TEXT("afterPin"), SerializePin(AfterOut));
 	}
 
@@ -1231,28 +1795,65 @@ namespace MifBridge
 
 	void H_batch(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// Guards only batch's OWN envelope. Each op object is validated by the handler it dispatches to;
+		// RejectUnknownParams tolerates the routing key 'op' centrally (MifBridgeCommon.cpp:669).
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("ops"), TEXT("blueprintId"), TEXT("path"), TEXT("backup"), TEXT("compileAtEnd") },
+			TEXT("ops (array), blueprintId (alias: path), backup, compileAtEnd (default true)"),
+			{ { TEXT("operations"), TEXT("spell it ops") },
+			  { TEXT("graphId"), TEXT("graphId belongs on each op inside ops, not on the batch envelope") } }))
+		{
+			return;
+		}
+
 		const TArray<TSharedPtr<FJsonValue>>* Ops = nullptr;
 		if (!In->TryGetArrayField(TEXT("ops"), Ops) || Ops == nullptr)
 		{
 			Fail(Out, TEXT("batch requires an 'ops' array"));
 			return;
 		}
+		// An empty ops[] answered ok:true, opCount:0 — indistinguishable from a batch whose entries
+		// were all silently dropped (see the per-entry handling below). batch's response IS the audit
+		// trail, so "nothing to do" is a caller error worth naming.
+		if (Ops->Num() == 0)
+		{
+			Fail(Out, TEXT("'ops' is empty — batch has nothing to run. Pass at least one {op: ...} object."));
+			return;
+		}
 
 		// Optional backup of the top-level blueprintId before mutating.
-		const FString TopBlueprintId = JStr(In, TEXT("blueprintId"));
-		if (JBool(In, TEXT("backup"), false) && !TopBlueprintId.IsEmpty())
+		//
+		// This block used to be a degraded copy of H_backup_blueprint and could claim a backup that did
+		// not exist. It hardcoded FPackageName::GetAssetPackageExtension(), so for a World package the
+		// .uasset path never existed, FileExists was false, and backup:true produced NO backup at all
+		// while the batch proceeded to mutate; it discarded IFileManager::Copy's return value, so
+		// Out["backup"] could name a .bak that was never written; and an unresolvable or absent
+		// blueprintId skipped the whole thing in silence. A caller passes backup:true precisely because
+		// what follows is destructive, so every one of those is now a hard Fail BEFORE any op runs —
+		// the shared BackupPackage (MifBridgeCommon.cpp) is the single implementation.
+		const FString TopBlueprintId = JStrAny(In, { TEXT("blueprintId"), TEXT("path") });
+		if (JBool(In, TEXT("backup"), false))
 		{
-			FString ResolveError;
-			if (UBlueprint* BackupBP = ResolveBlueprint(TopBlueprintId, ResolveError))
+			if (TopBlueprintId.IsEmpty())
 			{
-				UPackage* Package = BackupBP->GetOutermost();
-				const FString FileName = FPackageName::LongPackageNameToFilename(Package->GetName(), FPackageName::GetAssetPackageExtension());
-				if (FPaths::FileExists(FileName))
-				{
-					IFileManager::Get().Copy(*(FileName + TEXT(".bak")), *FileName, true, true);
-					Out->SetStringField(TEXT("backup"), FileName + TEXT(".bak"));
-				}
+				Fail(Out, TEXT("backup:true needs blueprintId (alias: path) on the batch envelope — there is nothing to back up otherwise. Nothing was run."));
+				return;
 			}
+			FString ResolveError;
+			UBlueprint* BackupBP = ResolveBlueprint(TopBlueprintId, ResolveError);
+			if (!BackupBP)
+			{
+				Fail(Out, FString::Printf(TEXT("backup:true was requested but blueprintId '%s' did not resolve: %s. Nothing was run."),
+					*TopBlueprintId, *ResolveError));
+				return;
+			}
+			FString BackupPath, BackupError;
+			if (!BackupPackage(BackupBP->GetOutermost(), BackupPath, BackupError))
+			{
+				Fail(Out, FString::Printf(TEXT("backup:true was requested but the backup failed: %s. Nothing was run."), *BackupError));
+				return;
+			}
+			Out->SetStringField(TEXT("backup"), BackupPath);
 		}
 
 		TArray<TSharedPtr<FJsonValue>> Results;
@@ -1267,12 +1868,30 @@ namespace MifBridge
 		// disallowed here — call them standalone.
 		{
 			FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "Batch", "Mif Bridge: batch"));
+			// Marks "a batch transaction is open" for the duration, so a handler with ONE
+			// compile-heavy branch can refuse just that branch (set_property's widget-Blueprint path)
+			// instead of the whole endpoint being banned from batch, and so RejectUnknownParams
+			// tolerates the routing key 'op' only where batch actually injects it.
+			FBatchTransactionScope BatchScope;
 
+			int32 OpIndex = INDEX_NONE;
 			for (const TSharedPtr<FJsonValue>& OpValue : *Ops)
 			{
+				++OpIndex;
 				const TSharedPtr<FJsonObject>* OpObjectPtr = nullptr;
 				if (!OpValue.IsValid() || !OpValue->TryGetObject(OpObjectPtr) || OpObjectPtr == nullptr)
 				{
+					// A non-object entry (e.g. ops:["add_branch"] — strings instead of objects) used to
+					// `continue`, so it never appeared in results[] and opCount under-counted it:
+					// ok:true, opCount:0, results:[]. batch's response is the audit trail, so a dropped
+					// op has to be visible IN it, at its own index.
+					TSharedRef<FJsonObject> BadOut = MakeShared<FJsonObject>();
+					BadOut->SetBoolField(TEXT("ok"), true);
+					BadOut->SetNumberField(TEXT("index"), OpIndex);
+					Fail(BadOut, FString::Printf(
+						TEXT("ops[%d] is not an object — each entry must be {\"op\":\"<endpoint>\", ...}"), OpIndex));
+					bAllOk = false;
+					Results.Add(MakeShared<FJsonValueObject>(BadOut));
 					continue;
 				}
 				const TSharedRef<FJsonObject> OpIn = OpObjectPtr->ToSharedRef();
@@ -1280,9 +1899,18 @@ namespace MifBridge
 
 				TSharedRef<FJsonObject> OpOut = MakeShared<FJsonObject>();
 				OpOut->SetBoolField(TEXT("ok"), true);
+				OpOut->SetNumberField(TEXT("index"), OpIndex);
 				OpOut->SetStringField(TEXT("op"), OpName);
+				// The silent-ignore record (MifBridgeHandlers.h) is reset once per REQUEST by
+				// RunEndpoint, and batch is one request however many ops it runs — so attribute by
+				// delta, or op[7]'s bad parameter would be reported against op[0] as well.
+				const int32 ViolationsBeforeOp = NumParamTypeViolations();
 
-				if (OpName == TEXT("batch") || IsCompileHeavyEndpoint(OpName))
+				if (OpName.IsEmpty())
+				{
+					Fail(OpOut, FString::Printf(TEXT("ops[%d] has no 'op' — name the endpoint to call"), OpIndex));
+				}
+				else if (OpName == TEXT("batch") || IsCompileHeavyEndpoint(OpName))
 				{
 					Fail(OpOut, FString::Printf(TEXT("op '%s' is not allowed inside batch (it runs a full compile, which must not happen inside batch's open transaction); call it standalone — batch already compiles once at the end via compileAtEnd"), *OpName));
 				}
@@ -1290,17 +1918,40 @@ namespace MifBridge
 				{
 					(*Fn)(OpIn, OpOut); // runs inside the batch's single transaction
 				}
+				// Mirror RunEndpoint's resolution order: built-ins, THEN provider-registered endpoints.
+				// Without this second lookup every kr_* op answered "unknown op: 'kr_list_events'" for
+				// an endpoint self_audit lists as live — a confidently wrong statement about the
+				// bridge's own surface, and it made the reconstructor's batch-specific 'op' handling
+				// dead code. The compile-heavy ban above already consults the external registry (it
+				// derives from IsSelfManagedEndpoint), so external SelfManaged endpoints stay fenced
+				// out for free and no new policy is introduced here.
+				else if (const FHandlerFn* ExtFn = FindExternalHandler(OpName))
+				{
+					(*ExtFn)(OpIn, OpOut);
+				}
 				else
 				{
 					Fail(OpOut, FString::Printf(TEXT("unknown op: '%s'"), *OpName));
 				}
 
+				if (NumParamTypeViolations() > ViolationsBeforeOp)
+				{
+					Fail(OpOut, FString::Printf(
+						TEXT("ops[%d] ('%s') supplied a parameter of the wrong JSON type, which was IGNORED: %s. ")
+						TEXT("The op is reported failed rather than left looking successful; note that batch's single ")
+						TEXT("transaction still commits, so re-read anything this batch touched."),
+						OpIndex, *OpName, *DescribeParamTypeViolations()));
+				}
 				if (!IsOk(OpOut))
 				{
 					bAllOk = false;
 				}
 
 				// Track which blueprint each op touched so we can compile them once at the end.
+				// 'path' is checked as well as 'blueprintId' because the handlers' own guards now
+				// ADVERTISE it as an alias (add_pin, add_override_event); consulting only blueprintId
+				// meant an op addressed through `path` mutated the blueprint, left Touched empty, and
+				// returned compiles:[] — structurally modified and uncompiled, reported as ok:true.
 				FString ResolveError;
 				if (OpIn->HasField(TEXT("graphId")))
 				{
@@ -1310,9 +1961,9 @@ namespace MifBridge
 						Touched.Add(OpBlueprint);
 					}
 				}
-				else if (OpIn->HasField(TEXT("blueprintId")))
+				else if (JHasAny(OpIn, { TEXT("blueprintId"), TEXT("path") }))
 				{
-					if (UBlueprint* OpBlueprint = ResolveBlueprint(JStr(OpIn, TEXT("blueprintId")), ResolveError))
+					if (UBlueprint* OpBlueprint = ResolveBlueprint(JStrAny(OpIn, { TEXT("blueprintId"), TEXT("path") }), ResolveError))
 					{
 						Touched.Add(OpBlueprint);
 					}

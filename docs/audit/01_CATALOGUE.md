@@ -38,6 +38,46 @@ Tiers: 0 closes a known gap · 1 high leverage/low risk · 2 valuable, needs des
 |---|---|---|---|---|---|---|
 | 36 | 132 | 68 | 5 | 241 | 1 | 8 |
 
+## Delivery status — hand-maintained, and the generator must preserve this section
+
+_Added 2026-07-29. This index is generated from [work/](work/) and the rows below the Totals carry no
+delivery marker; a reader who assumed "the endpoint name answers, therefore the entry is delivered"
+got the wrong answer for eight rows. Authority for everything here is
+[work/R3_REMAINING_WORK.md](work/R3_REMAINING_WORK.md), which reconciled all 250 rows line by line
+against source and `self_audit` on 2026-07-28._
+
+| SHIPPED | SHIPPED (PARTIAL) | SUPERSEDED | WITHDRAWN | STILL OPEN | of rows |
+|---|---|---|---|---|---|
+| 34 | 2 | 9 | 2 | **203** | 250 |
+
+**34 rows delivered (32 unique endpoint names), plus 2 partially.** A previously circulating figure of
+**41** (in `07_SELF_AUDIT_FINDINGS.md` §6) was wrong: it treated a *behaviour-change* entry as
+delivered whenever the endpoint **NAME** was live. For these eight entries the name was live before
+this catalogue was written — the entry asks for a change to what the endpoint DOES — so a live name
+delivers nothing.
+
+**The 8 behaviour-change entries, individually.** Status is R3's (2026-07-28), re-verified against
+source on 2026-07-29. **Source line numbers are 2026-07-29 positions and drift as handlers are
+edited** — R3 cited `connect_pins` at `MifBridgeCommon.cpp:2052` and the same statement is now at
+`:3762`. Verify the statement, not the line.
+
+| Entry | Axis | Status | Evidence |
+|---|---|---|---|
+| `connect_pins` | C | **STILL OPEN** — specced change never landed | `MifBridgeCommon.cpp:3762` is still `const UEdGraphSchema_K2* Schema = K2();` inside `ConnectPinsChecked` (:3738). The hardcoded K2 CDO drives `BreakPinLinks` (:3773-3774), `CanCreateConnection` (:3777) and `TryCreateConnection` (:3783), so **a graph whose own schema is not a `UEdGraphSchema_K2` is asked the wrong object whether a connection is legal** — the AnimGraph state-machine family (`UAnimationStateMachineSchema : public UEdGraphSchema`) still cannot be wired by this endpoint. Reported as shipped; it is not. |
+| `add_component` | C | **STILL OPEN** | `MifBridgeComponents.cpp:76` is still `SCS->FindSCSNode(FName(*ParentName))` — own SCS only; an inherited or native parent name fails at `:79`. |
+| `list_variables` | C | **STILL OPEN** | `MifBridgeIntrospect.cpp:247` iterates `Blueprint->NewVariables` only and hardcodes `scope` to `"member"` at `:252`. Only `add_variable` understands `scope=local`. |
+| `rename_function` | C | **STILL OPEN** | No `graphType` is emitted anywhere in `MifBridgeNodes2.cpp`. (The `graphId` path does already reach macro graphs, so half the entry is documentation.) |
+| `read_modloader_log` | J | **STILL OPEN** | `MifBridgePipeline.cpp:82` still calls `PushLine`, which appends a bare `FJsonValueString` (:19-22). Raw lines, not structured events. File unchanged since 2026-07-11. |
+| `pie_status` | Q | **SHIPPED (PARTIAL)** | The `state` word + `HasBegunPlay` readiness landed (`MifBridgePIE.cpp:93-116`). The specced lifecycle words did **not**: `MifBridgePIE.cpp:114` emits only `running` / `starting` / `stopped`; `travelling`, `stopping` and `simulating` are not state words (`simulating` is a separate bool at `:112`). |
+| `snap_actors_to_ground` | Q | **SHIPPED (PARTIAL)** | Multi-trace + landscape/groundActor filter landed. The specced **penetrating** trace did not: `MifBridgeWorld.cpp:486` is `LineTraceMultiByChannel(..., ECC_WorldStatic, ...)`, which stops at the first blocking hit, so landscape under blocking geometry is still unreachable. |
+| `list_components` | C | **DELIVERED IN SOURCE ONLY — after the R3 pass** | R3 recorded STILL OPEN at 2026-07-28 23:11; Batch N implemented it at 2026-07-29 01:05 (`MifBridgeComponents.cpp` — three origins `ownSCS`/`parentBlueprintSCS`/`native`, per-row `origin` at `:279`, `nativeCount` at `:377`). **Batch N was source-only — nothing was built**, so this is not in a running DLL and `self_audit` will not show it until the next build. The entry's `source` field shipped as `origin` per R3 §3/S4. |
+
+Six of the eight are Tier 0. R3's own wording was *"six not at all, two partially"* — Batch N has
+since moved `list_components` out of the "not at all" column **in source**, leaving **5 not at all, 2
+partial, 1 in source but unbuilt**. All seven of the STILL OPEN / PARTIAL entries are open work, and
+the R3 totals above still stand as row counts: Batch N's `list_components` cannot move the SHIPPED
+column until it is in a built DLL.
+
 ## A — Editor core
 
 Full entries: [work/A_editor_core.md](work/A_editor_core.md) — plus 10 cited negative results and 6 UNVERIFIED items there.

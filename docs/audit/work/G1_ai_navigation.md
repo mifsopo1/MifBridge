@@ -582,7 +582,7 @@ reachable; NewObject with resolved UClass* needs no direct link).
 **Failure modes**:
 - Duplicate: GetKeyID(name) already valid ⇒ `"key '<name>' already exists on '<asset>' (or its parent chain) with type <cls>"`.
 - Cooked/pak-mounted asset ⇒ REFUSE: `"'<asset>' is cooked base-game content — added keys cannot be saved and derived-BB propagation would touch other cooked assets. duplicate_asset it into a loose package first"`.
-- Post-add IsValid()==false ⇒ transaction rolled back + `"key '<name>' conflicts with parent blackboard '<parent>' — pick another name"`.
+- Post-add IsValid()==false ⇒ **the handler must remove the key and the subobject it just created, itself** + `"key '<name>' conflicts with parent blackboard '<parent>' — pick another name"`. ⚠ **This line used to say "transaction rolled back". There is no such thing** — `RunEndpoint`'s `Transaction.Cancel()` discards the undo entry and reverts nothing (`EditorTransaction.cpp:1387-1437` never calls `FTransaction::Apply`; PM-007). Better still, do the parent-chain conflict check *before* the add, per PM-007 prevention rule 1 — the parent blackboard and its key names are all readable up front, so this failure never needs to happen after a mutation.
 **Cooked**: refuses (above) — the check is the same pak-mount test the cooked-content endpoints already use.
 **Verify**: list_blackboard_keys before/after: keyCount+1; new entry has requested name + resolved KeyType class; save_package then re-load (fresh editor session in Phase-2) shows the key persisted.
 **Score**: U2 E3 R3 → tier 2 — honest scope: without BT graph authoring this mainly serves NEW blackboards for RunBehaviorTree experiments and loose-copy editing.

@@ -55,7 +55,13 @@ public class MifBridge : ModuleRules
 			"Slate",
 			"SlateCore",
 			"Projects",
-			"Sockets"            // FInternetAddr for loopback peer enforcement
+			"Sockets",           // FInternetAddr for loopback peer enforcement
+			"InputCore"          // FKey / EKeys — send_editor_key and list_editor_commands report and
+			                     // synthesise key chords (Batch O). Runtime module, no plugin gating.
+			                     // Slate pulls InputCore in transitively for its own use, which is why
+			                     // the HEADERS resolved and only the LINK failed (LNK2019 on
+			                     // FKey::IsValid/IsModifierKey/ToString and EKeys::GetAllKeys) — a
+			                     // reminder that a compiling include is not a linked module.
 		});
 
 		// UK2Node_CreateWidget.h is a UMGEditor PRIVATE header (Nodes/); the module

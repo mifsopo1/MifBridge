@@ -33,25 +33,15 @@ namespace MifBridge
 {
 	namespace
 	{
-		UWorld* EditorWorld()
-		{
-			return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-		}
+		// EditorWorld() moved to MifBridgeCommon.cpp (declared in MifBridgeHandlers.h) — this copy and
+		// MifBridgeStreaming.cpp's were byte-identical and one unity-blob shift apart from a C2084.
+		// Do NOT re-add a file-local copy.
 
-		AActor* FindWorldActor(UWorld* World, const FString& Query)
-		{
-			if (!World || Query.IsEmpty()) { return nullptr; }
-			for (TActorIterator<AActor> It(World); It; ++It)
-			{
-				AActor* A = *It;
-				if (!A || !IsValid(A)) { continue; }
-				if (A->GetPathName() == Query || A->GetName() == Query || A->GetActorLabel() == Query)
-				{
-					return A;
-				}
-			}
-			return nullptr;
-		}
+		// The actor finder moved to MifBridgeCommon.cpp as MifBridge::FindActorInWorld (declared in
+		// MifBridgeHandlers.h). FIVE byte-identical copies existed under five different names
+		// (FindActor, FindNavActor, FindActorByPathOrLabel, FindVpActor, FindWorldActor) — different
+		// names are not a build error, which is exactly why they survived, but it meant a fix to the
+		// path/name/label matching rule landed in one of five places. Do NOT add a sixth.
 
 		// /Game/Maps/Foo -> <project>/Content/Maps/Foo.umap. Callers speak package paths like every
 		// other MifBridge endpoint; the filesystem path never leaks out.
@@ -119,11 +109,10 @@ namespace MifBridge
 			return nullptr;
 		}
 
-		bool ReadVec(const TSharedRef<FJsonObject>& Obj, FVector& Out)
-		{
-			Out = FVector(JNum(Obj, TEXT("x")), JNum(Obj, TEXT("y")), JNum(Obj, TEXT("z")));
-			return true;
-		}
+		// ReadVec is GONE — MifBridge::ReadVectorObject (MifBridgeCommon.cpp) now. It was a second
+		// copy of the reader that produced Batch L defect 1: JNum returns its default for a component
+		// that is PRESENT but not a number, so a spline point {"x":"oops","y":1,"z":2} became
+		// (0,1,2) and the spline was rebuilt through a point the caller never gave.
 	}
 
 	// --- new_level ----------------------------------------------------------
@@ -225,7 +214,7 @@ namespace MifBridge
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
-		AActor* Actor = FindWorldActor(World, JStrAny(In, { TEXT("actorPath"), TEXT("actor") }));
+		AActor* Actor = FindActorInWorld(World, JStrAny(In, { TEXT("actorPath"), TEXT("actor") }));
 		if (!Actor) { Fail(Out, TEXT("actor not found")); return; }
 
 		const FString CompName = JStrAny(In, { TEXT("component"), TEXT("componentName") });
@@ -252,19 +241,54 @@ namespace MifBridge
 		const bool bSnap = JBool(In, TEXT("snapToGround"), false);
 		const double GroundOffset = JNum(In, TEXT("groundOffset"), 0.0);
 
+		// snapToGround only ever worked in world space — the trace is a world-space line trace — and
+		// the local-space case silently ignored it. A patrol route that was supposed to sit on the
+		// terrain and does not is exactly the kind of wrong this endpoint must not answer ok:true to.
+		if (bSnap && !bWorld)
+		{
+			Fail(Out, TEXT("snapToGround needs space:\"world\" — the ground trace is a world-space line trace, and in ")
+				TEXT("local space it was silently ignored. Pass world-space points with snapToGround, or drop snapToGround."));
+			return;
+		}
+
+		// PARSE EVERY POINT FIRST. ClearSplinePoints used to run before any point was validated, and a
+		// non-object entry was skipped in silence — so the obvious guess points:[[0,0,0],[100,0,0]]
+		// (arrays instead of {x,y,z}) returned ok:true, pointCount:0 WITH THE EXISTING ROUTE DESTROYED.
+		// PM-003's shape on live NPC patrol routes. Nothing below touches the spline until every entry
+		// has been accepted.
+		TArray<FVector> Parsed;
+		Parsed.Reserve(Points->Num());
+		for (int32 i = 0; i < Points->Num(); ++i)
+		{
+			const TSharedPtr<FJsonValue>& Val = (*Points)[i];
+			const TSharedPtr<FJsonObject>* Obj = nullptr;
+			if (!Val.IsValid() || !Val->TryGetObject(Obj) || !Obj)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("points[%d] is not an object — every point must be {\"x\":..,\"y\":..,\"z\":..}. ")
+					TEXT("A bare [x,y,z] array is not accepted. The existing spline was NOT modified."), i));
+				return;
+			}
+			// Validated for EVERY point before ClearSplinePoints below — the existing spline is
+			// destroyed by that call, so a point that cannot be read has to stop us here.
+			FVector P = FVector::ZeroVector;
+			FString PointError;
+			if (!ReadVectorObject(Obj->ToSharedRef(), FString::Printf(TEXT("points[%d]"), i), P, PointError))
+			{
+				Fail(Out, FString::Printf(TEXT("%s The existing spline was NOT modified."), *PointError));
+				return;
+			}
+			Parsed.Add(P);
+		}
+
 		Actor->Modify();
 		Spline->Modify();
 		Spline->ClearSplinePoints(/*bUpdateSpline*/ false);
 
 		int32 Added = 0, Snapped = 0;
-		for (const TSharedPtr<FJsonValue>& Val : *Points)
+		for (FVector P : Parsed)
 		{
-			const TSharedPtr<FJsonObject>* Obj = nullptr;
-			if (!Val.IsValid() || !Val->TryGetObject(Obj) || !Obj) { continue; }
-			FVector P;
-			ReadVec(Obj->ToSharedRef(), P);
-
-			if (bSnap && bWorld)
+			if (bSnap)
 			{
 				FHitResult Hit;
 				FCollisionQueryParams Params(SCENE_QUERY_STAT(MifBridgeSplineSnap), /*bTraceComplex*/ true);
@@ -290,8 +314,19 @@ namespace MifBridge
 		Spline->MarkRenderStateDirty();
 		Actor->PostEditChange();
 
-		Out->SetNumberField(TEXT("pointCount"), Added);
+		// Read back from the component, not from the loop counter: pointCount must describe the spline,
+		// not our intent. (AddSplinePoint cannot silently drop, but the same rule applies everywhere.)
+		Out->SetNumberField(TEXT("pointCount"), Spline->GetNumberOfSplinePoints());
+		Out->SetNumberField(TEXT("pointsRequested"), Parsed.Num());
 		Out->SetNumberField(TEXT("snappedToGround"), Snapped);
+		if (bSnap && Snapped < Added)
+		{
+			// A trace that hit nothing leaves the point at its supplied Z. Silence here reads as
+			// "snapped" to a caller that asked for snapping.
+			Out->SetStringField(TEXT("warning"), FString::Printf(
+				TEXT("%d of %d points found no ground below them and kept their supplied Z (nothing was hit by the ")
+				TEXT("downward trace — check the points are above collision geometry)"), Added - Snapped, Added));
+		}
 		Out->SetStringField(TEXT("component"), Spline->GetName());
 		Out->SetNumberField(TEXT("length"), Spline->GetSplineLength());
 		Out->SetBoolField(TEXT("closedLoop"), bClosed);
@@ -306,7 +341,7 @@ namespace MifBridge
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
-		AActor* Actor = FindWorldActor(World, JStrAny(In, { TEXT("actorPath"), TEXT("actor") }));
+		AActor* Actor = FindActorInWorld(World, JStrAny(In, { TEXT("actorPath"), TEXT("actor") }));
 		if (!Actor) { Fail(Out, TEXT("actor not found")); return; }
 		USplineComponent* Spline = FindSpline(Actor, JStrAny(In, { TEXT("component"), TEXT("componentName") }));
 		if (!Spline) { Fail(Out, TEXT("actor has no matching USplineComponent")); return; }
@@ -360,16 +395,34 @@ namespace MifBridge
 		// Build the target set. Explicit paths win; otherwise filter, but never snap EVERYTHING by
 		// accident — an empty selector with all=false is an error, not a no-op that reports success.
 		TArray<AActor*> Targets;
+		TArray<TSharedPtr<FJsonValue>> NotFound;   // never let an unresolved path vanish
 		const TArray<TSharedPtr<FJsonValue>>* Paths = nullptr;
 		if (In->TryGetArrayField(TEXT("actorPaths"), Paths) && Paths)
 		{
+			// An entry that did not resolve used to be dropped in silence. With EVERY path bogus the
+			// else-branch below is never reached either, so Targets stayed empty and the response was
+			// ok:true, considered:0, snapped:0, missed:0 — a total no-op reported as success.
+			// select_level_actors already had the right shape (notFound[]); copied.
 			for (const TSharedPtr<FJsonValue>& V : *Paths)
 			{
 				FString P;
-				if (V.IsValid() && V->TryGetString(P) && !P.IsEmpty())
+				if (!V.IsValid() || !V->TryGetString(P) || P.IsEmpty())
 				{
-					if (AActor* A = FindWorldActor(World, P)) { Targets.Add(A); }
+					NotFound.Add(MakeShared<FJsonValueString>(TEXT("<non-string entry in actorPaths[]>")));
+					continue;
 				}
+				if (AActor* A = FindActorInWorld(World, P)) { Targets.Add(A); }
+				else { NotFound.Add(MakeShared<FJsonValueString>(P)); }
+			}
+			if (Targets.Num() == 0)
+			{
+				TArray<FString> Names;
+				for (const TSharedPtr<FJsonValue>& V : NotFound) { Names.Add(V->AsString()); }
+				Fail(Out, FString::Printf(
+					TEXT("none of the %d actorPaths[] entries resolved to an actor in the editor world (%s) — nothing to snap. ")
+					TEXT("list_level_actors shows what is placed; paths, names and labels are all accepted."),
+					NotFound.Num(), *FString::Join(Names, TEXT(", "))));
+				return;
 			}
 		}
 		else if (bAll || !Folder.IsEmpty() || !LabelContains.IsEmpty())
@@ -386,6 +439,13 @@ namespace MifBridge
 		else
 		{
 			Fail(Out, TEXT("pass actorPaths[], or folder/labelContains, or all:true — refusing to guess the target set"));
+			return;
+		}
+
+		if (Targets.Num() == 0)
+		{
+			// Reachable from the filter branch: folder/labelContains that match nothing.
+			Fail(Out, TEXT("the selector matched no actors — nothing to snap. Check folder / labelContains against list_level_actors."));
 			return;
 		}
 

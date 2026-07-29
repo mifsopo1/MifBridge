@@ -236,6 +236,17 @@ namespace MifBridge
 		Tree->SetFlags(RF_Transactional);
 		Tree->Modify();
 
+		// Placement keys are meaningful only on a canvas slot. Checked BEFORE the widget is constructed
+		// so a request that cannot be honoured does not leave anything behind: adding to a VerticalBox
+		// with x:100, y:50 used to return ok:true having ignored both.
+		const bool bWantsPlacement = JHasAny(In, { TEXT("x"), TEXT("y"), TEXT("autoSize") });
+		if (bWantsPlacement && bRootCase)
+		{
+			Fail(Out, TEXT("x/y/autoSize position a widget inside a CanvasPanel slot; the ROOT widget has no slot. ")
+				TEXT("Add a CanvasPanel as the root first, then add this widget to it."));
+			return;
+		}
+
 		UWidget* NewWidget = Tree->ConstructWidget<UWidget>(WidgetClass, WidgetName);
 		if (!NewWidget)
 		{
@@ -254,11 +265,25 @@ namespace MifBridge
 			UPanelSlot* Slot = Parent->AddChild(NewWidget); // null if panel is single-child and full
 			if (!Slot)
 			{
+				// ConstructWidget already ran, so failing here left an orphan UWidget in the tree's
+				// outer. RunEndpoint cancels the transaction on ok:false, but the object itself is not
+				// transaction-managed, so mark it garbage explicitly rather than relying on that.
+				NewWidget->MarkAsGarbage();
 				Fail(Out, FString::Printf(TEXT("AddChild failed on parent '%s' (single-child panel already full?)"), *Parent->GetName()));
 				return;
 			}
 			// Optional canvas placement (a fresh UCanvasPanelSlot already defaults to top-left anchors).
-			if (UCanvasPanelSlot* CSlot = Cast<UCanvasPanelSlot>(Slot))
+			UCanvasPanelSlot* CSlot = Cast<UCanvasPanelSlot>(Slot);
+			if (!CSlot && bWantsPlacement)
+			{
+				NewWidget->MarkAsGarbage();
+				Fail(Out, FString::Printf(
+					TEXT("x/y/autoSize apply to a CanvasPanel slot, but '%s' is a %s and gave this child a %s — they would ")
+					TEXT("have been ignored. Remove them, or parent this widget to a CanvasPanel."),
+					*Parent->GetName(), *Parent->GetClass()->GetName(), *Slot->GetClass()->GetName()));
+				return;
+			}
+			if (CSlot)
 			{
 				CSlot->SetPosition(FVector2D(JNum(In, TEXT("x")), JNum(In, TEXT("y"))));
 				if (JBool(In, TEXT("autoSize"), true))

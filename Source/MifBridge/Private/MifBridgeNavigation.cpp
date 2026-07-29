@@ -27,28 +27,15 @@ namespace MifBridge
 {
 	namespace
 	{
-		UWorld* NavWorld()
-		{
-			// Nav is built in the EDITOR world; PIE inherits it. Prefer PIE when playing so
-			// move_actor_to drives the live pawn rather than an editor stand-in.
-			if (GEditor && GEditor->PlayWorld) { return GEditor->PlayWorld; }
-			return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-		}
+		// ActiveWorld() was one of five file-local "current world" helpers, two of which preferred PIE and
+		// three of which did not. It is MifBridge::ActiveWorld() now (PIE-preferring, which is what nav
+		// wants: move_actor_to must drive the live pawn, not an editor stand-in).
 
-		AActor* FindNavActor(UWorld* World, const FString& Query)
-		{
-			if (!World || Query.IsEmpty()) { return nullptr; }
-			for (TActorIterator<AActor> It(World); It; ++It)
-			{
-				AActor* A = *It;
-				if (!A || !IsValid(A)) { continue; }
-				if (A->GetPathName() == Query || A->GetName() == Query || A->GetActorLabel() == Query)
-				{
-					return A;
-				}
-			}
-			return nullptr;
-		}
+		// The actor finder moved to MifBridgeCommon.cpp as MifBridge::FindActorInWorld (declared in
+		// MifBridgeHandlers.h). FIVE byte-identical copies existed under five different names
+		// (FindActor, FindNavActor, FindActorByPathOrLabel, FindVpActor, FindWorldActor) — different
+		// names are not a build error, which is exactly why they survived, but it meant a fix to the
+		// path/name/label matching rule landed in one of five places. Do NOT add a sixth.
 	}
 
 	// --- add_nav_volume -----------------------------------------------------
@@ -57,7 +44,7 @@ namespace MifBridge
 	// Places the region the nav mesh will be generated inside.
 	void H_add_nav_volume(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = NavWorld();
+		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
 		FVector Loc(0, 0, 0);
@@ -107,7 +94,7 @@ namespace MifBridge
 	// handler runs on the game thread, so it must NOT wait — poll nav_status, exactly like PIE.
 	void H_build_navmesh(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = NavWorld();
+		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
 		UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
@@ -138,7 +125,7 @@ namespace MifBridge
 	// with zero tiles, and every subsequent pathing call then fails for no visible reason.
 	void H_nav_status(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = NavWorld();
+		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
 		UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
@@ -176,7 +163,7 @@ namespace MifBridge
 	// nav mesh — both failure modes are reported distinctly so you know which one bit you.
 	void H_move_actor_to(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UWorld* World = NavWorld();
+		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 		if (!GEditor || !GEditor->PlayWorld)
 		{
@@ -184,7 +171,7 @@ namespace MifBridge
 			return;
 		}
 
-		AActor* Actor = FindNavActor(World, JStrAny(In, { TEXT("actorPath"), TEXT("actor") }));
+		AActor* Actor = FindActorInWorld(World, JStrAny(In, { TEXT("actorPath"), TEXT("actor") }));
 		if (!Actor) { Fail(Out, TEXT("actor not found in the PIE world")); return; }
 
 		APawn* Pawn = Cast<APawn>(Actor);

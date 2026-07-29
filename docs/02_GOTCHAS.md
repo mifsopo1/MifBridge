@@ -334,7 +334,11 @@ widget is the fastest way to see what its slot actually exposes. Styles, brushes
 padding are all ordinary properties on the widget itself.
 
 > **Caveat:** the widget branch of `set_property` runs a **full compile on every write**, so laying
-> out one widget with four properties is four compiles. Batch what you can.
+> out one widget with four properties is four compiles — and that branch **cannot be batched**: it
+> refuses itself inside `batch`, because reinstancing captured by batch's open transaction leaves a
+> dead CDO for the next Ctrl-Z. The `objectPath` branch (CDO edits, component templates, node
+> properties, placed actors) compiles nothing and **is** batchable; batch it freely. Until Batch K
+> the ban covered the whole endpoint, so this paragraph told you to do something the code refused.
 
 ### Node properties
 
@@ -461,11 +465,14 @@ A cooked ABP's AnimGraph is not bytecode — it is baked into `AnimNodePropertie
   a `ForEachLoop` macro" rule no longer applies: the cause was the spawned node class, and it is
   fixed. `refresh_node` still reproduces a reload reconstruct, so it remains the way to prove
   durability before you cook.
-- **Compile-heavy ops run alone.** `create_function`, `create_blueprint`, `recipe_add_debug_print`,
-  `batch`, `set_property` (widget-BP branch), `create_editable_child`, `add_event_dispatcher` and
-  the asset-lifecycle ops compile outside the blanket transaction, because a full compile
-  reinstances the class and a later Ctrl-Z over that would restore a dead CDO and crash. Don't nest
-  them.
+- **Compile-heavy ops run alone.** They compile outside the blanket transaction, because a full
+  compile reinstances the class and a later Ctrl-Z over that would restore a dead CDO and crash.
+  Don't nest them. The list that used to sit here named 8 of ~25 and had drifted — **do not read it
+  from a document at all.** `self_audit` reports the live set as `transactionBuckets.compileHeavy`,
+  computed from the same predicate `batch` refuses with (`IsCompileHeavyEndpoint`, which derives from
+  the self-managed bucket rather than a second literal list). As of Batch K that is every
+  self-managed endpoint plus `compile`/`validate`, **minus** `set_property`, which fences only its
+  widget branch (see §5d).
 - **Double-loaded Blueprints** (some modded/cooked assets load as two copies with identical node
   GUIDs) need `graphId`-scoped node resolution — pass `graphId` alongside the node GUID.
 - **`NSLOCTEXT(...)` in a DataTable read is the engine's lossless FText export**, not a wrapped or
@@ -491,9 +498,43 @@ changes state, and never treat a transport-level exit code as the operation's re
 
 ## 8. The bridge stops answering but the editor is alive — look for a modal window
 
-`FHttpServerModule` is an `FTSTickerObjectBase` ticked on the **game thread**. Any modal window —
-ours, the engine's, or a third-party plugin's — spins its own loop, the tick stops, and the bridge
-stops reading the socket. Every call then times out with no response at all.
+### The threading model, stated correctly
+
+**Handlers run SYNCHRONOUSLY, inline, inside `FHttpServerModule`'s own tick.** `FHttpServerModule`
+derives from `FTSTickerObjectBase`, so the request handler is *already* on the game thread when it is
+called — from `FTSTicker::GetCoreTicker().Tick()`, which `FEngineLoop::Tick()` runs **after
+`GEngine->Tick()` has completed the entire world tick**, outside every tick group. That is the
+safe point, and the handler simply runs there and replies. `MifBridgeServer.cpp:229-265`.
+
+> **This document previously said handlers are dispatched via
+> `AsyncTask(ENamedThreads::GameThread, …)`. That is backwards, and the source says so explicitly:
+> "Do NOT reach for AsyncTask".** `AsyncTask` enqueues onto the game thread's *named-thread task
+> queue*, which is pumped not only between frames but also from inside
+> `FTickTaskSequencer::ReleaseTickGroup() -> WaitUntilTasksComplete()` — so an endpoint that
+> recompiles a Blueprint reinstances actors **in the middle of a tick group**, leaving
+> `FTickTaskManager` iterating `FTickFunction`s whose owning objects have just been trashed. The next
+> one to execute lands on `check(!"Pure virtual not implemented")` (`EngineBaseTypes.h:409`) inside
+> `FTickFunctionTask::DoTask()` — a hard crash with **no MifBridge frame in the stack at all**, so it
+> reads as a spontaneous editor failure. It reproduced on every compile-heavy request and was misread
+> for a long time as a project-side teardown bug. The fix was to stop deferring, not to defer better.
+
+The only path that still hops is the off-game-thread one (reachable only if the HTTP server is ever
+driven by another transport): it hands the work to `FTSTicker` — the *same* post-world-tick point —
+and blocks until it has run, because `FHttpResultCallback` is valid only for the duration of the
+handler call. Capturing it and invoking it a frame later was tried and turned a crash-on-compile into
+a crash-on-every-request.
+
+### Why the modal/blocking hazard is WORSE than an async model, not better
+
+Any modal window — ours, the engine's, or a third-party plugin's — spins its own loop, the tick
+stops, and the bridge stops reading the socket. Every call then times out with no response at all.
+
+**Because handlers run inline in that same ticker, a blocking handler blocks the very ticker that
+would have to advance whatever it is waiting on.** There is no separate worker to keep answering, and
+nothing else pumps the wait: an endpoint that waits on a tick, a deferred callback, a streaming
+flush, or its own next frame is waiting on a ticker it is itself occupying. An async model would have
+degraded to "this one request is slow". This one degrades to "the whole bridge is gone until a human
+intervenes" — which in an unattended run means forever.
 
 The symptom is indistinguishable from "the bridge crashed", so check the process first:
 
@@ -511,3 +552,91 @@ build+prove cycle. Suppressed with `bShowWelcomeScreenOnLaunch=False` under
 endpoint that opens a dialog does not merely fail, it takes the entire bridge down until a human
 clicks something, which in an unattended run means forever. See `03_GAPS_AND_RISKS.md` §2 for the
 inventory of engine calls that do this.
+
+**A dialog is not the only way to stop the ticker.** Every handler runs *inline* in the ticker (see
+the threading model above), so any unbounded wait is the same outage with no dialog to click — and
+self-deadlocking, because the wait is holding the ticker that would satisfy it. Declared as of
+Batch K:
+
+| endpoint | what stops the ticker | disposition |
+|---|---|---|
+| `rename_variable` | `FSuppressableWarningDialog` when the variable has a RepNotify function (`BlueprintEditorUtils.cpp:4837`) | **CLOSED** — refused, pointing at `set_variable_flags {repNotify:false}`; the engine's modal path is now unreachable from HTTP |
+| `audit_unused` | `ScanPathsSynchronous` on a mount root; an unconditional `WaitForCompletion()`; `GetReferencers` per asset regardless of `limit` | **CLOSED** — three hard refusals (≥2 path segments for `rescan`, "registry still scanning" instead of waiting, 20000-asset cap) |
+| `set_sublevel_visibility`, `set_current_sublevel` | `SetLevelVisibility` → `FlushLevelStreaming()` → `FlushAsyncLoading()` (`World.cpp:4533`) | **DECLARED** — bounded in an editor world; moved to the self-managed bucket so the cascade is no longer captured by the blanket transaction |
+| `add_sublevel`, `set_sublevel_streaming` | `AddLevelToWorld`'s unconditional `FScopedSlowTask::MakeDialog()` (`EditorLevelUtils.cpp:387`) — Slate ticks, `FTSTicker` does not | **DECLARED** — both call sites defer, so no response is left pending, but concurrent requests stall |
+| `save_dirty_packages` | `SaveWorld`'s `FScopedSlowTask … MakeDialog(true)`, once per dirty map (`FileHelpers.cpp:767`) | **DECLARED** |
+| `diagnose_landscape_draws` | `FlushRenderingCommands()` — a game/render-thread sync per call | **DECLARED** — bounded, tens-to-hundreds of ms on a heavy scene |
+
+"Declared" means the endpoint's own comment block says so. "Closed" means the hazard cannot be
+reached by any HTTP request.
+
+---
+
+## 9. Numbers are strict, and a write is checked before it happens
+
+Two caller-visible rules changed in Batch L. Both came from live probes that returned `ok:true`
+about something the caller had not asked for; the full evidence is in
+[`audit/06_IMPLEMENTED.md`](audit/06_IMPLEMENTED.md) and [PM-006](01_POSTMORTEMS.md).
+
+### A supplied value of the wrong JSON type is an ERROR, never a default
+
+`set_actor_transform {location:{"x":"not-a-number","y":123,"z":456}}` used to answer `ok:true` and
+move the actor to `{700,123,456}` — `y` and `z` applied, `x` quietly left alone, and the response
+echoed that mixture as if it were the request. **Omitting a field still means "leave it alone".
+Supplying one the bridge cannot read is now a hard error naming the field path (`location.x`), the
+value and the expected type.**
+
+- Vectors take `{x,y,z}` **or** `[x,y,z]` everywhere now (`add_component` and
+  `set_component_transform` used to accept only the array form).
+- Rotators additionally take `{pitch,yaw,roll}`. `x/y/z` still means pitch/yaw/roll.
+- `scale` additionally takes a bare number, meaning uniform.
+- An unrecognised key **inside** a vector object is refused: `{"x":1,"y":2,"zz":3}` is a typo, not a
+  2D vector.
+- A wholly-numeric **string** is still accepted (`"12.5"`). A partly-numeric one is not: `"12abc"`
+  is refused because UE's parsers take the `12` and discard the rest without saying so.
+- The rule is enforced centrally, so it applies to every numeric and boolean parameter on every
+  endpoint — `limit`, `radius`, `fov`, `count`, `confirm` — not only to transforms. The response
+  carries `ignoredParameters` when it trips.
+
+> **`set_actor_transform {relative:true}` used to double the components you did NOT send.** It
+> seeded its deltas from the actor's current transform and then added the current transform again,
+> so `{relative:true, location:{"x":100}}` moved x by 100 and doubled y and z. Fixed; deltas seed
+> from zero.
+
+### `set_property` and friends check the value against the property TYPE before importing
+
+`override_inherited_component {properties:{"SphereRadius":"not-a-float"}}` used to answer
+`ok:true, applied:true, wanted:"0.000000"`. UE's float importer parsed the garbage as `0.0` and
+reported success, and the post-write verification then compared `0` against `0` and passed —
+**verifying that a write landed does not verify that the value was understood.**
+
+Now refused up front, with the reason and the accepted form:
+
+| kind | what is refused |
+|---|---|
+| numeric | anything that does not parse WHOLE — `"12abc"`, `"not-a-float"`, and **exponent form** (`"1e5"`), which UE's parser cannot read and would store as `1` |
+| bool | any word that is not `True/False/Yes/No/On/Off/1/0` — an unrecognised word used to import as **False** |
+| enum | any name that is not a real entry; the valid entries are LISTED in the error. A wrong name used to import as 0, the FIRST entry |
+| object / class ref | a path that does not resolve (soft refs are exempt — they legitimately name unloaded assets) |
+
+Structs and containers handed over as **export text** cannot be pre-checked; the response says so in
+`typeValidated:false` + `typeValidationNote` instead of implying otherwise. Send those as typed JSON
+and every leaf is checked individually.
+
+### `set_property` on a PLACED actor's component reruns its construction scripts
+
+That is engine behaviour, not a bridge choice: the `PreEditChange`/`PostEditChange` pair triggers
+`RerunConstructionScripts`, which destroys the component, renames it `TRASH_<Class>_N` and builds a
+replacement. The bridge now **re-resolves the component after the rerun** and verifies against the
+new object, reporting `reconstructed`, `retargetedTo` and `verifiedOn`; if it cannot re-resolve, the
+call FAILS as unverified rather than reporting `verified:true` about a destroyed object.
+
+Two consequences worth knowing:
+
+- An instance edit of a property `FComponentInstanceDataCache` does not carry — transient, no
+  `EditAnywhere`/`Interp`, a multicast delegate, or written by the construction script itself — will
+  now honestly fail. It cannot survive the rerun. **Edit the component template
+  (`…_GEN_VARIABLE`) instead**, which is also what makes the change apply to every instance.
+- The notification is `PostEditChangeChainProperty` now, not `PostEditChangeProperty`. It is a
+  strict superset (it calls the plain one at the end) and it is the only one that reaches archetype
+  instances, so a CDO edit propagates to already-placed actors instead of waiting for a reload.

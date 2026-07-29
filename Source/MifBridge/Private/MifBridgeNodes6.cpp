@@ -18,98 +18,20 @@
 
 namespace MifBridge
 {
-	// Same target-resolution rules as set_property (see MifBridgeNodes5.cpp), duplicated here
-	// rather than shared so this read-only file can't perturb the existing write path.
-	static UObject* ResolveGenericTarget(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
-	{
-		const FString ObjectPath = JStr(In, TEXT("objectPath"));
-		const FString WidgetName = JStr(In, TEXT("widgetName"));
-
-		if (!ObjectPath.IsEmpty())
-		{
-			FString P = ObjectPath; P.TrimStartAndEndInline();
-			UObject* Target = StaticLoadObject(UObject::StaticClass(), nullptr, *P, nullptr, LOAD_NoWarn | LOAD_Quiet);
-			if (!Target && !P.Contains(TEXT(".")))
-			{
-				// Accept a bare package path like /Game/Foo/Bar -> /Game/Foo/Bar.Bar
-				const FString Full = P + TEXT(".") + FPackageName::GetShortName(P);
-				Target = StaticLoadObject(UObject::StaticClass(), nullptr, *Full, nullptr, LOAD_NoWarn | LOAD_Quiet);
-			}
-			if (!Target) { Fail(Out, FString::Printf(TEXT("object not found: %s"), *ObjectPath)); return nullptr; }
-			return Target;
-		}
-		if (!WidgetName.IsEmpty())
-		{
-			UBlueprint* BP = ResolveBlueprintField(In, Out);   // reads blueprintId/path; writes Fail on miss
-			if (!BP) return nullptr;
-			UWidgetBlueprint* WidgetBP = Cast<UWidgetBlueprint>(BP);
-			if (!WidgetBP) { Fail(Out, FString::Printf(TEXT("'%s' is not a Widget Blueprint"), *BP->GetName())); return nullptr; }
-			if (!WidgetBP->WidgetTree) { Fail(Out, TEXT("widget blueprint has no WidgetTree")); return nullptr; }
-			UObject* Target = WidgetBP->WidgetTree->FindWidget(FName(*WidgetName));
-			if (!Target) { Fail(Out, FString::Printf(TEXT("widget '%s' not found in %s"), *WidgetName, *BP->GetName())); return nullptr; }
-			return Target;
-		}
-		Fail(Out, TEXT("supply either objectPath or (blueprintId + widgetName)"));
-		return nullptr;
-	}
-
-	// Walk "A.B.C" from Object, descending FStructProperty in-place and hopping FObjectProperty
-	// to the pointed-to UObject. Read-only mirror of set_property's ResolvePropertyPath.
-	static bool ResolveReadPropertyPath(UObject* Object, const FString& Path,
-		FProperty*& OutLeaf, const void*& OutLeafAddr, UObject*& OutLeafOwner, FString& OutError)
-	{
-		if (!Object) { OutError = TEXT("null target object"); return false; }
-
-		TArray<FString> Segs;
-		Path.ParseIntoArray(Segs, TEXT("."), true);
-		if (Segs.Num() == 0) { OutError = TEXT("empty propertyPath"); return false; }
-
-		UStruct* CurStruct = Object->GetClass();
-		const void* Container = Object;
-		UObject* LeafOwner = Object;
-
-		for (int32 i = 0; i < Segs.Num(); ++i)
-		{
-			FProperty* Prop = CurStruct->FindPropertyByName(FName(*Segs[i]));
-			if (!Prop)
-			{
-				OutError = FString::Printf(TEXT("property '%s' not found on '%s'"), *Segs[i], *CurStruct->GetName());
-				return false;
-			}
-			const void* ValuePtr = Prop->ContainerPtrToValuePtr<void>(const_cast<void*>(Container));
-
-			if (i == Segs.Num() - 1)
-			{
-				OutLeaf = Prop; OutLeafAddr = ValuePtr; OutLeafOwner = LeafOwner;
-				return true;
-			}
-
-			if (FStructProperty* SP = CastField<FStructProperty>(Prop))
-			{
-				CurStruct = SP->Struct;
-				Container = ValuePtr;
-			}
-			else if (FObjectPropertyBase* OP = CastField<FObjectPropertyBase>(Prop))
-			{
-				UObject* Inner = OP->GetObjectPropertyValue(ValuePtr);
-				if (!Inner)
-				{
-					OutError = FString::Printf(TEXT("object property '%s' is null; cannot descend"), *Segs[i]);
-					return false;
-				}
-				CurStruct = Inner->GetClass();
-				Container = Inner;
-				LeafOwner = Inner;
-			}
-			else
-			{
-				OutError = FString::Printf(TEXT("segment '%s' is not a struct or object ref (arrays/maps/sets unsupported mid-path)"), *Segs[i]);
-				return false;
-			}
-		}
-		OutError = TEXT("path traversal fell through");
-		return false;
-	}
+	// The target resolver and the dot-walk BOTH live in MifBridgeCommon.cpp now
+	// (MifBridge::ResolvePropertyTarget / MifBridge::ResolvePropertyPathEx, declared in
+	// MifBridgeHandlers.h).
+	//
+	// This file used to carry a local ResolveGenericTarget whose own comment said the copy was
+	// deliberate - "duplicated here rather than shared so this read-only file can't perturb the
+	// existing write path". That reasoning does not survive contact with PM-005: the two copies were
+	// already free to drift about what "objectPath" accepts, and Batch N added four more endpoints
+	// that need the same resolution, which would have made six. A read that resolves its target
+	// differently from the write that follows it is a worse failure than the one the fence was
+	// guarding against.
+	//
+	// (The read-only callers below take the walker's non-const address and simply bind it to a const
+	// pointer; there is no second const overload to drift.)
 
 	//   in:  { objectPath: "/Game/..." } OR { blueprintId: "...", widgetName: "MyText" }
 	//        propertyPath: "A.B.C" (dot path)
@@ -118,18 +40,29 @@ namespace MifBridge
 	// the Details panel) — readable for scalars, structs, arrays, enums, object refs alike.
 	void H_get_property(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		const FString PropertyPath = JStr(In, TEXT("propertyPath"));
-		if (PropertyPath.IsEmpty()) { Fail(Out, TEXT("propertyPath required (dot path, e.g. Font.Size)")); return; }
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("objectPath"), TEXT("actorPath"), TEXT("blueprintId"), TEXT("path"),
+			  TEXT("widgetName"), TEXT("propertyPath"), TEXT("property") },
+			TEXT("objectPath (alias actorPath) | (blueprintId or path) + widgetName, propertyPath (alias property)")))
+		{
+			return;
+		}
 
-		UObject* Target = ResolveGenericTarget(In, Out);
+		const FString PropertyPath = JStrAny(In, { TEXT("propertyPath"), TEXT("property") });
+		if (PropertyPath.IsEmpty()) { Fail(Out, TEXT("propertyPath required (dot path, e.g. Font.Size; element accessors: Keys[2].Value, SomeMap{Alpha})")); return; }
+
+		UObject* Target = ResolvePropertyTarget(In, Out);
 		if (!Target) return;
 
-		FProperty* Leaf = nullptr; const void* LeafAddr = nullptr; UObject* LeafOwner = nullptr; FString Error;
-		if (!ResolveReadPropertyPath(Target, PropertyPath, Leaf, LeafAddr, LeafOwner, Error))
+		FPropertyPathResolution Res;
+		FString Error;
+		if (!ResolvePropertyPathEx(Target, PropertyPath, Res, Error))
 		{
 			Fail(Out, Error);
 			return;
 		}
+		FProperty* Leaf = Res.Leaf; UObject* LeafOwner = Res.LeafOwner;
+		const void* LeafAddr = Res.LeafAddr;   // read-only from here down
 
 		FString ValueStr;
 		Leaf->ExportText_Direct(ValueStr, LeafAddr, LeafAddr, LeafOwner, PPF_None);
@@ -139,6 +72,30 @@ namespace MifBridge
 		Out->SetStringField(TEXT("leafProperty"), Leaf->GetName());
 		Out->SetStringField(TEXT("type"), Leaf->GetCPPType());
 		Out->SetStringField(TEXT("value"), ValueStr);
+		// "value" stays the engine's lossless export text (round-trip-safe, and existing callers
+		// read it), but export text is a hostile shape for a caller doing arithmetic or a filter:
+		// a bool arrives as the STRING "False" and an array as one "(\"A\",\"B\")" blob. That cost a
+		// 63-blueprint audit its correctness once — the strings are truthy in most languages, so
+		// every "is this flag set" test silently passed. "typed" is the same value as real JSON
+		// (bool/number/array/object). Shared writer with set_property (MifBridgeNodes5.cpp) so the
+		// two can never disagree about what a property means.
+		Out->SetField(TEXT("typed"), Res.bLeafIsElement
+			? PropertyValueToTypedJsonElement(Leaf, LeafAddr, LeafOwner)
+			: PropertyValueToTypedJson(Leaf, LeafAddr, LeafOwner));
+		// Batch N: element addressing. Stated rather than implied, because "OverrideMaterials[1]" and
+		// "OverrideMaterials" are different questions with different answers.
+		Out->SetBoolField(TEXT("isElement"), Res.bLeafIsElement);
+		if (Res.bLeafIsElement)
+		{
+			Out->SetStringField(TEXT("elementPath"), Res.ElementDescription);
+			Out->SetNumberField(TEXT("elementIndex"), Res.ElementIndex);
+			if (!Res.ElementOrdering.IsEmpty())
+			{
+				// A set/map index is a POSITION IN ITERATION ORDER, and that order is not stable across
+				// a rehash. Saying so is the difference between a usable index and a trap.
+				Out->SetStringField(TEXT("elementOrdering"), Res.ElementOrdering);
+			}
+		}
 	}
 
 	//   in:  { objectPath: "/Game/..." } OR { blueprintId: "...", widgetName: "MyText" }
@@ -148,7 +105,17 @@ namespace MifBridge
 	// Use get_property afterwards to descend into a specific struct/object field.
 	void H_list_object_properties(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		UObject* Target = ResolveGenericTarget(In, Out);
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("objectPath"), TEXT("actorPath"), TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"),
+			  TEXT("nameContains"), TEXT("filter"), TEXT("nameFilter"), TEXT("limit"), TEXT("maxValueChars") },
+			TEXT("objectPath (alias actorPath) | (blueprintId or path) + widgetName, nameContains (aliases filter, nameFilter), limit, maxValueChars"),
+			{{ TEXT("propertyPath"),
+			   TEXT("list_object_properties dumps ALL top-level properties; get_property reads ONE by dot path, and describe_property reports its flags/metadata/EditCondition") }}))
+		{
+			return;
+		}
+
+		UObject* Target = ResolvePropertyTarget(In, Out);
 		if (!Target) return;
 
 		// Filtering and caps are NOT optional niceties here. Exporting every property of a large
@@ -156,7 +123,7 @@ namespace MifBridge
 		// are volumetric-cloud/curve structs whose ExportText runs to tens of kilobytes EACH. The
 		// unbounded version produced a response so large the request came back empty — the endpoint
 		// looked broken on exactly the objects you most want to inspect.
-		const FString NameFilter = JStrAny(In, { TEXT("nameContains"), TEXT("filter") });
+		const FString NameFilter = JStrAny(In, { TEXT("nameContains"), TEXT("filter"), TEXT("nameFilter") });
 		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 200), 1, 5000);
 		// Long values are near-useless in a listing anyway — get_property returns the full value for
 		// a single named property, which is the right tool once you know what you want.

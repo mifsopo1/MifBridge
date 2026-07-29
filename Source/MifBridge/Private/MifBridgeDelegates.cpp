@@ -19,39 +19,11 @@ namespace MifBridge
 {
 	namespace
 	{
-		// Local copy of the pin-spec parser (kept file-local to avoid header/type coupling).
-		bool ParseDispatcherParams(const TSharedRef<FJsonObject>& In, const TCHAR* Field,
-			TArray<TPair<FName, FEdGraphPinType>>& OutPins, FString& OutError)
-		{
-			const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
-			if (!In->TryGetArrayField(Field, Arr) || Arr == nullptr)
-			{
-				return true;
-			}
-			for (const TSharedPtr<FJsonValue>& Value : *Arr)
-			{
-				const TSharedPtr<FJsonObject>* ObjPtr = nullptr;
-				if (!Value.IsValid() || !Value->TryGetObject(ObjPtr) || ObjPtr == nullptr)
-				{
-					continue;
-				}
-				const TSharedRef<FJsonObject> Obj = ObjPtr->ToSharedRef();
-				FString PinName = JStr(Obj, TEXT("name"));
-				PinName.TrimStartAndEndInline();
-				if (!IsValidIdentifier(PinName))
-				{
-					OutError = FString::Printf(TEXT("invalid param name '%s'"), *PinName);
-					return false;
-				}
-				FEdGraphPinType PinType;
-				if (!MakePinType(JStr(Obj, TEXT("type")), JStr(Obj, TEXT("container")), PinType, OutError, JStr(Obj, TEXT("valueType"))))
-				{
-					return false;
-				}
-				OutPins.Emplace(FName(*PinName), PinType);
-			}
-			return true;
-		}
+		// ParseDispatcherParams was a copy of MifBridgeNodes2.cpp's ParsePinSpecs; both are now
+		// MifBridge::ParsePinSpecs (MifBridgeCommon.cpp, declared in MifBridgeHandlers.h). The comment
+		// that used to justify the copy ("kept file-local to avoid header/type coupling") was not true:
+		// the shared header already forward-declares FEdGraphPinType and declares MakePinType, which is
+		// the only type coupling the parser has. Do NOT re-add a local copy.
 
 		// Spawn a delegate node bound to a dispatcher property. SetFromProperty MUST run
 		// before AllocateDefaultPins, so it happens before PlaceAndInit.
@@ -140,7 +112,7 @@ namespace MifBridge
 
 		TArray<TPair<FName, FEdGraphPinType>> Params;
 		FString ParseError;
-		if (!ParseDispatcherParams(In, TEXT("inputs"), Params, ParseError))
+		if (!ParsePinSpecs(In, TEXT("inputs"), Params, ParseError))
 		{
 			Fail(Out, ParseError);
 			return;

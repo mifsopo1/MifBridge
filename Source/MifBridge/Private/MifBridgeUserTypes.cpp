@@ -35,7 +35,10 @@ namespace MifBridge
 	namespace
 	{
 		// Shared guard for minting a new /Game/ asset: valid path, valid identifier, nothing there.
-		bool ValidateNewAssetPath(const FString& Path, FString& OutAssetName, FString& OutError)
+		// Was ValidateNewAssetPath — see the note on ValidateNewMaterialAssetPath in
+		// MifBridgeMaterials.cpp: same name, different signature, different failure convention, one
+		// unity-blob shift away from silently sharing an overload set.
+		bool ValidateNewUserTypePath(const FString& Path, FString& OutAssetName, FString& OutError)
 		{
 			if (Path.IsEmpty() || !Path.StartsWith(TEXT("/Game/")))
 			{
@@ -190,7 +193,7 @@ namespace MifBridge
 	{
 		const FString Path = JStr(In, TEXT("path"));
 		FString AssetName, PathError;
-		if (!ValidateNewAssetPath(Path, AssetName, PathError))
+		if (!ValidateNewUserTypePath(Path, AssetName, PathError))
 		{
 			Fail(Out, PathError);
 			return;
@@ -238,7 +241,14 @@ namespace MifBridge
 				MemberName.TrimStartAndEndInline();
 				if (!IsValidIdentifier(MemberName))
 				{
-					Fail(Out, FString::Printf(TEXT("invalid struct member name '%s'"), *MemberName));
+					// Batch M, option (c): the struct asset and its package already exist in memory at
+					// this point, and a cancelled transaction does not remove them (PM-007). They are
+					// never registered (AssetCreated/MarkPackageDirty are at the tail), so nothing
+					// reaches the content browser or disk - but the package path is taken for the rest
+					// of the editor session.
+					Fail(Out, FString::Printf(
+						TEXT("invalid struct member name '%s'. WHAT IS LEFT BEHIND: the UUserDefinedStruct and its package were already created in memory and are NOT removed; they are unregistered and unsaved, but retrying at the SAME path in this editor session will meet the existing object. Use a different path, or restart the editor."),
+						*MemberName));
 					return;
 				}
 				FEdGraphPinType PinType;
@@ -426,7 +436,7 @@ namespace MifBridge
 	{
 		const FString Path = JStr(In, TEXT("path"));
 		FString AssetName, PathError;
-		if (!ValidateNewAssetPath(Path, AssetName, PathError))
+		if (!ValidateNewUserTypePath(Path, AssetName, PathError))
 		{
 			Fail(Out, PathError);
 			return;

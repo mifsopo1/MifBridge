@@ -22,7 +22,8 @@
 #include "Misc/Paths.h"
 #include "UObject/SavePackage.h"
 #include "UObject/UnrealType.h" // TFieldIterator<FProperty>, FMulticastDelegateProperty (describe_class)
-#include "Engine/Engine.h"   // GEngine->Exec (run_console)
+#include "Engine/Engine.h"   // GEngine (run_console routes its Exec through MifBridge::RunEngineExec)
+#include "Engine/World.h"    // UWorld must be COMPLETE for World->GetName() in run_console's response
 #include "Editor.h"          // GEditor editor world
 #include "GameFramework/Actor.h" // AActor::GetIsReplicated (replication sanity warning)
 #include "Engine/EngineTypes.h"  // ELifetimeCondition (replication condition)
@@ -162,29 +163,17 @@ namespace MifBridge
 			return;
 		}
 
-		UPackage* Package = Blueprint->GetOutermost();
-		// A World must be written as .umap, NOT .uasset. GetAssetPackageExtension() is unconditional,
-		// so saving a map used to drop an M_Foo.uasset beside the real M_Foo.umap — and the resolver
-		// searches .uasset FIRST, so the stray file then silently shadowed the actual level on every
-		// later load. ContainsMap() is the same test the engine's own save path uses.
-		const FString FileName = FPackageName::LongPackageNameToFilename(
-			Package->GetName(),
-			Package->ContainsMap() ? FPackageName::GetMapPackageExtension() : FPackageName::GetAssetPackageExtension());
-		if (!FPaths::FileExists(FileName))
+		// The body that used to live here (ContainsMap branch, COPY_OK check, not-on-disk refusal) is
+		// now MifBridge::BackupPackage in MifBridgeCommon.cpp, because batch had a DEGRADED inline copy
+		// of it: hardcoded .uasset, discarded Copy()'s return, silent skip. One implementation means a
+		// caller passing backup:true to batch gets the same guarantees this endpoint already gave.
+		FString BackupPath, BackupError;
+		if (!BackupPackage(Blueprint->GetOutermost(), BackupPath, BackupError))
 		{
-			Fail(Out, FString::Printf(TEXT("asset not saved to disk yet, nothing to back up: %s"), *FileName));
+			Fail(Out, BackupError);
 			return;
 		}
-
-		const FString BackupName = FileName + TEXT(".bak");
-		if (IFileManager::Get().Copy(*BackupName, *FileName, /*bReplace*/ true, /*bEvenIfReadOnly*/ true) == COPY_OK)
-		{
-			Out->SetStringField(TEXT("backup"), BackupName);
-		}
-		else
-		{
-			Fail(Out, FString::Printf(TEXT("failed to write backup: %s"), *BackupName));
-		}
+		Out->SetStringField(TEXT("backup"), BackupPath);
 	}
 
 	// --- Introspection ------------------------------------------------------
@@ -314,10 +303,21 @@ namespace MifBridge
 	// Optional "filter": substring match against function/property names.
 	void H_describe_class(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		const FString Name = JStr(In, TEXT("class"));
+		// 'className' is not a courtesy alias: server.py's describe_class tool has always posted
+		// className, and this handler read only 'class', so EVERY MCP call to it answered
+		// "class is required" to a caller that plainly supplied a class — an error naming the wrong
+		// party, 100% of the time, surviving because the handler had no guard to name the mismatch.
+		// The alias fixes today's callers; the guard makes the next spelling drift loud instead.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("class"), TEXT("className"), TEXT("filter") },
+			TEXT("class (alias: className), filter (optional substring match)")))
+		{
+			return;
+		}
+		const FString Name = JStrAny(In, { TEXT("class"), TEXT("className") });
 		if (Name.IsEmpty())
 		{
-			Fail(Out, TEXT("class is required"));
+			Fail(Out, TEXT("class is required (alias: className)"));
 			return;
 		}
 		UClass* Class = ResolveClass(Name, nullptr);
@@ -604,7 +604,11 @@ namespace MifBridge
 			}
 			if (CondValue == INDEX_NONE)
 			{
-				OutError = FString::Printf(TEXT("unknown replicationCondition '%s' (expected an ELifetimeCondition, e.g. COND_None, COND_OwnerOnly, COND_SkipOwner, COND_InitialOnly)"), *CondStr);
+				// Batch M, option (c): the repNotify branch above may already have MINTED an OnRep
+				// function graph, and a cancelled transaction discards the undo entry rather than
+				// removing it (PM-007). The response already names it in createdRepNotifyGraph; say
+				// so here too, because the caller reads the error string first.
+				OutError = FString::Printf(TEXT("unknown replicationCondition '%s' (expected an ELifetimeCondition, e.g. COND_None, COND_OwnerOnly, COND_SkipOwner, COND_InitialOnly). If repNotify was also requested, an OnRep function graph may already have been created for it - see createdRepNotifyGraph in this response; it is NOT removed by this failure."), *CondStr);
 				return false;
 			}
 			FBPVariableDescription* Var = FindMemberVariable(Blueprint, VarName);
@@ -867,8 +871,44 @@ namespace MifBridge
 		Out->SetObjectField(TEXT("type"), SerializePinType(PinType));
 	}
 
+	// Member-variable names on a blueprint, for near-miss suggestions in not-found errors.
+	static TArray<FString> MemberVariableNames(UBlueprint* Blueprint)
+	{
+		TArray<FString> Names;
+		if (Blueprint)
+		{
+			for (const FBPVariableDescription& Var : Blueprint->NewVariables)
+			{
+				Names.Add(Var.VarName.ToString());
+			}
+		}
+		return Names;
+	}
+
+	// "inherited from AActor" when the name exists on the parent class rather than on this blueprint,
+	// otherwise empty. remove_variable/rename_variable only ever search Blueprint->NewVariables, and
+	// the engine calls they wrap early-return on a miss, so without this an inherited name produced a
+	// confident ok:true for a no-op.
+	static FString DescribeInheritedVariable(UBlueprint* Blueprint, const FString& Name)
+	{
+		if (!Blueprint || !Blueprint->ParentClass || Name.IsEmpty()) { return FString(); }
+		if (FProperty* Inherited = Blueprint->ParentClass->FindPropertyByName(FName(*Name)))
+		{
+			const UStruct* Owner = Inherited->GetOwnerStruct();
+			return Owner ? Owner->GetName() : Blueprint->ParentClass->GetName();
+		}
+		return FString();
+	}
+
 	void H_rename_variable(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("oldName"), TEXT("newName"), TEXT("confirm") },
+			TEXT("blueprintId (alias: path), oldName, newName, confirm=true"),
+			{ { TEXT("name"), TEXT("rename_variable needs BOTH oldName and newName; there is no single 'name'") } }))
+		{
+			return;
+		}
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("rename_variable requires confirm=true"));
@@ -893,28 +933,112 @@ namespace MifBridge
 			return;
 		}
 
+		// FBlueprintEditorUtils::RenameMemberVariable is VOID and early-returns when the variable does
+		// not exist (BlueprintEditorUtils.cpp:4823-4824), so the old code reported
+		// ok:true, name:"<NewName>" for a rename that never happened. Every refusal below exists
+		// because the engine's own answer to it is silence.
+		const int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*OldName));
+		if (VarIndex == INDEX_NONE)
+		{
+			const FString Inherited = DescribeInheritedVariable(Blueprint, OldName);
+			if (!Inherited.IsEmpty())
+			{
+				Fail(Out, FString::Printf(
+					TEXT("oldName '%s' is INHERITED from %s, not declared on '%s' — a blueprint cannot rename a ")
+					TEXT("variable it does not own. Rename it where it is declared, or add a new variable here."),
+					*OldName, *Inherited, *Blueprint->GetName()));
+				return;
+			}
+			Fail(Out, FString::Printf(TEXT("oldName: no member variable '%s' on '%s'%s — list_variables shows what exists"),
+				*OldName, *Blueprint->GetName(), *NearMissSuggestion(MemberVariableNames(Blueprint), OldName)));
+			return;
+		}
+
+		// FName comparison is case-insensitive, and RenameMemberVariable early-returns on equal names
+		// (BlueprintEditorUtils.cpp:4821) — which also means "fix the casing of Health to health" is
+		// not something this endpoint can do, so say so rather than reporting a rename that did not run.
+		if (FName(*OldName) == FName(*NewName))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("newName '%s' is the same variable name as oldName '%s' (blueprint variable names compare ")
+				TEXT("case-insensitively), so there is nothing to rename — the engine would silently do nothing."),
+				*NewName, *OldName));
+			return;
+		}
+		if (FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*NewName)) != INDEX_NONE)
+		{
+			Fail(Out, FString::Printf(TEXT("newName '%s' is already a member variable on '%s' — pick a free name"),
+				*NewName, *Blueprint->GetName()));
+			return;
+		}
+
+		const FBPVariableDescription& Var = Blueprint->NewVariables[VarIndex];
+
 		// An event dispatcher is a PC_MCDelegate member variable PLUS a signature graph. Renaming
 		// only the variable — which is all RenameMemberVariable does — leaves the graph behind under
 		// the old name, and the next skeleton regen breaks the dispatcher. Refuse and redirect.
-		for (const FBPVariableDescription& Var : Blueprint->NewVariables)
+		if (Var.VarType.PinCategory == UEdGraphSchema_K2::PC_MCDelegate)
 		{
-			if (Var.VarName.ToString() == OldName && Var.VarType.PinCategory == UEdGraphSchema_K2::PC_MCDelegate)
-			{
-				Fail(Out, FString::Printf(
-					TEXT("'%s' is the backing delegate of an event dispatcher, not a plain variable. ")
-					TEXT("Renaming it here would orphan the signature graph and break the dispatcher on the next compile — ")
-					TEXT("use rename_event_dispatcher, which renames both halves."), *OldName));
-				return;
-			}
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is the backing delegate of an event dispatcher, not a plain variable. ")
+				TEXT("Renaming it here would orphan the signature graph and break the dispatcher on the next compile — ")
+				TEXT("use rename_event_dispatcher, which renames both halves."), *OldName));
+			return;
+		}
+
+		// MODAL HAZARD — the reason this refusal exists at all. With a RepNotify function set,
+		// RenameMemberVariable calls VerifyUserWantsRepNotifyVariableNameChanged
+		// (BlueprintEditorUtils.cpp:4837), which pops an FSuppressableWarningDialog. Every bridge
+		// handler runs INLINE on the game thread inside the HTTP ticker (MifBridgeServer.cpp), so a
+		// modal stops the ticker: the socket is never read again and the WHOLE bridge hangs until a
+		// human clicks the dialog — the docs/02_GOTCHAS.md §8 failure that took the bridge down live.
+		// Worse, clicking "No" makes the engine revert the name (:4841) while this handler would still
+		// have answered ok:true. delete_asset passes bShowConfirmation=false to close the same class of
+		// hole; RenameMemberVariable offers no such flag, so the only safe move is to make the modal
+		// path UNREACHABLE from HTTP and tell the caller how to clear the gate themselves.
+		if (Var.RepNotifyFunc != NAME_None)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has a RepNotify function ('%s'), and the engine's rename path opens a MODAL dialog for that ")
+				TEXT("case. A modal blocks the game thread this HTTP server runs on, so it would hang the entire bridge ")
+				TEXT("until someone clicks it. Clear the RepNotify first with ")
+				TEXT("set_variable_flags {blueprintId, name:\"%s\", repNotify:false}, rename, then set it again."),
+				*OldName, *Var.RepNotifyFunc.ToString(), *OldName));
+			return;
 		}
 
 		Blueprint->Modify();
 		FBlueprintEditorUtils::RenameMemberVariable(Blueprint, FName(*OldName), FName(*NewName));
+
+		// READ BACK. The engine call is void; the only honest evidence the rename happened is that the
+		// new name now resolves and the old one does not.
+		const bool bNewPresent = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*NewName)) != INDEX_NONE;
+		const bool bOldGone    = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*OldName)) == INDEX_NONE;
+		if (!bNewPresent || !bOldGone)
+		{
+			// A cancelled transaction discards the undo entry; it does NOT undo the engine call above
+			// (PM-007). This branch means RenameMemberVariable did not take, so there is nothing to
+			// undo — but do not read the old comment here ("leaves the blueprint untouched") as a
+			// general guarantee, because it is not one.
+			Fail(Out, FString::Printf(
+				TEXT("rename of '%s' to '%s' did not take (after the call: newName present=%s, oldName gone=%s). ")
+				TEXT("Nothing was changed."),
+				*OldName, *NewName, bNewPresent ? TEXT("true") : TEXT("false"), bOldGone ? TEXT("true") : TEXT("false")));
+			return;
+		}
 		Out->SetStringField(TEXT("name"), NewName);
+		Out->SetStringField(TEXT("previousName"), OldName);
+		Out->SetBoolField(TEXT("renamed"), true);
 	}
 
 	void H_remove_variable(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("confirm") },
+			TEXT("blueprintId (alias: path), name, confirm=true")))
+		{
+			return;
+		}
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("remove_variable requires confirm=true"));
@@ -931,45 +1055,213 @@ namespace MifBridge
 			Fail(Out, TEXT("name is required"));
 			return;
 		}
+
+		// FBlueprintEditorUtils::RemoveMemberVariable is VOID and early-returns when the variable is
+		// absent (BlueprintEditorUtils.cpp:4609-4610), so {name:"Typo", confirm:true} used to answer
+		// ok:true, removed:"Typo" having removed nothing — a confirm-gated destructive endpoint whose
+		// success report was unconditional. delete_datatable_rows in this same plugin gets this right
+		// (it emits notFound[]); this is drift, not an unknown.
+		if (FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*Name)) == INDEX_NONE)
+		{
+			// Only NewVariables is searched by the engine call, so an inherited name is a guaranteed
+			// no-op and deserves its own answer rather than a bare "not found".
+			const FString Inherited = DescribeInheritedVariable(Blueprint, Name);
+			if (!Inherited.IsEmpty())
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is INHERITED from %s, not declared on '%s'. A blueprint cannot remove a variable it ")
+					TEXT("does not own — this call would have changed nothing. Remove it where it is declared."),
+					*Name, *Inherited, *Blueprint->GetName()));
+				return;
+			}
+			Fail(Out, FString::Printf(TEXT("no member variable '%s' on '%s'%s — list_variables shows what exists"),
+				*Name, *Blueprint->GetName(), *NearMissSuggestion(MemberVariableNames(Blueprint), Name)));
+			return;
+		}
+
 		Blueprint->Modify();
 		FBlueprintEditorUtils::RemoveMemberVariable(Blueprint, FName(*Name));
+
+		// READ BACK: the engine call reports nothing, so "removed" must be an observation.
+		if (FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*Name)) != INDEX_NONE)
+		{
+			// A cancelled transaction discards the undo entry; it does NOT undo the engine call above
+			// (PM-007). This branch means RemoveMemberVariable did not take, so there is nothing to
+			// undo — but do not read the old comment here as a general guarantee, because it is not one.
+			Fail(Out, FString::Printf(TEXT("'%s' is still a member variable after RemoveMemberVariable — nothing was removed"), *Name));
+			return;
+		}
 		Out->SetStringField(TEXT("removed"), Name);
+		Out->SetBoolField(TEXT("removedVerified"), true);
 	}
 
+	// --- set_variable_default ---------------------------------------------------
+	//   in:  { blueprintId|path, name, value (aliases: default, defaultValue) }
+	//   out: { name, valueBefore, valueAfter, changed, typeValidated }
+	//
+	// This endpoint destroyed the value it was meant to set. `JStr(In, "value")` returns "" both for a
+	// MISSING key and for any JSON value that is not a string (FJsonValue::TryGetString is false for
+	// array/object/bool/number — JsonValue.h:69), and the result was assigned to Var.DefaultValue
+	// unconditionally and then echoed back as `default`. So:
+	//   {name:"Health"}                        -> Health's default WIPED,       ok:true, default:""
+	//   {name:"Health", defaultValue:"100"}    -> wiped (add_variable spells the key `default`,
+	//                                             this endpoint spelled it `value`, neither guarded)
+	//   {name:"Items",  value:["a","b"]}       -> wiped, ok:true
+	//   {name:"Health", value:"banana"} on int -> stored verbatim, ok:true
+	// That is PM-003's class (a call that failed to specify destroyed what it was meant to set) plus
+	// the exact JSON-array bug set_property was already hardened against (MifBridgeNodes5.cpp:8-18).
+	//
+	// Now: the key must be PRESENT (all three spellings accepted), the value is routed through the
+	// SAME JsonToPropertyText converter set_property uses — against the variable's real FProperty, so
+	// an int gets int rules and an array gets array rules — and the response is a read-back of
+	// Var.DefaultValue before and after, never an echo of the request.
 	void H_set_variable_default(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("value"), TEXT("default"), TEXT("defaultValue") },
+			TEXT("blueprintId (alias: path), name, value (aliases: default, defaultValue)")))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
 			return;
 		}
 		const FString Name = JStr(In, TEXT("name"));
-		const FString Value = JStr(In, TEXT("value"));
 		if (Name.IsEmpty())
 		{
 			Fail(Out, TEXT("name is required"));
 			return;
 		}
 
-		Blueprint->Modify();
-		bool bFound = false;
-		for (FBPVariableDescription& Var : Blueprint->NewVariables)
+		// PRESENCE, not emptiness. An omitted value is a caller mistake, never an instruction to blank
+		// the default — that read is what wiped live defaults and reported success.
+		static const TCHAR* const ValueKeys[] = { TEXT("value"), TEXT("default"), TEXT("defaultValue") };
+		const TCHAR* PresentKey = nullptr;
+		TSharedPtr<FJsonValue> ValueJson;
+		for (const TCHAR* Key : ValueKeys)
 		{
-			if (Var.VarName.ToString() == Name)
+			if (const TSharedPtr<FJsonValue> Found = In->TryGetField(Key))
 			{
-				Var.DefaultValue = Value;
-				bFound = true;
-				break;
+				if (PresentKey)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("pass the new default ONCE: both '%s' and '%s' were supplied and they are aliases of the ")
+						TEXT("same parameter."), PresentKey, Key));
+					return;
+				}
+				PresentKey = Key;
+				ValueJson = Found;
 			}
 		}
-		if (!bFound)
+		if (!PresentKey)
 		{
-			Fail(Out, FString::Printf(TEXT("variable '%s' not found"), *Name));
+			Fail(Out, FString::Printf(
+				TEXT("value is required (aliases: default, defaultValue). Omitting it used to WIPE the default of '%s' and ")
+				TEXT("report ok:true; it is now refused. To clear a default deliberately, pass value:null."), *Name));
 			return;
 		}
+
+		const int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*Name));
+		if (VarIndex == INDEX_NONE)
+		{
+			const FString Inherited = DescribeInheritedVariable(Blueprint, Name);
+			if (!Inherited.IsEmpty())
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is INHERITED from %s, not declared on '%s'. A member-variable default cannot be set ")
+					TEXT("here — use set_property against the blueprint's CDO (objectPath: '%s') instead."),
+					*Name, *Inherited, *Blueprint->GetName(),
+					Blueprint->GeneratedClass ? *Blueprint->GeneratedClass->GetPathName() : TEXT("<compile first>")));
+				return;
+			}
+			Fail(Out, FString::Printf(TEXT("no member variable '%s' on '%s'%s — list_variables shows what exists"),
+				*Name, *Blueprint->GetName(), *NearMissSuggestion(MemberVariableNames(Blueprint), Name)));
+			return;
+		}
+
+		FBPVariableDescription& Var = Blueprint->NewVariables[VarIndex];
+		const FString ValueBefore = Var.DefaultValue;
+
+		// The variable's real reflection property carries the type rules. The skeleton class is
+		// regenerated on every structural change, so it has the variable even before a full compile;
+		// GeneratedClass is the fallback for a blueprint whose skeleton has not been rebuilt yet.
+		const FProperty* VarProp = nullptr;
+		if (Blueprint->SkeletonGeneratedClass) { VarProp = Blueprint->SkeletonGeneratedClass->FindPropertyByName(FName(*Name)); }
+		if (!VarProp && Blueprint->GeneratedClass) { VarProp = Blueprint->GeneratedClass->FindPropertyByName(FName(*Name)); }
+
+		FString NewText;
+		bool bTypeValidated = false;
+		const EJson ValueType = ValueJson.IsValid() ? ValueJson->Type : EJson::None;
+
+		if (ValueType == EJson::Null)
+		{
+			// The one deliberate way to blank a default. Explicit, so it is not the accident above.
+			NewText.Reset();
+			bTypeValidated = VarProp != nullptr;
+		}
+		else if (VarProp)
+		{
+			// SAME converter as set_property (MifBridgeNodes5.cpp, declared in MifBridgeHandlers.h):
+			// JSON arrays/objects/numbers/bools become the property's own export text, and anything
+			// that cannot convert faithfully — "banana" for an int, a JSON object for a float — is
+			// REFUSED naming the property and the form it wants, instead of being stored verbatim.
+			FString ConvError;
+			if (!JsonToPropertyText(ValueJson, VarProp, /*bDelimited*/ false, Blueprint->GeneratedClass
+					? Blueprint->GeneratedClass->GetDefaultObject(/*bCreateIfNeeded*/ false) : nullptr,
+					/*Depth*/ 0, Name, NewText, ConvError))
+			{
+				Fail(Out, FString::Printf(TEXT("%s (parameter '%s')"), *ConvError, PresentKey));
+				return;
+			}
+			bTypeValidated = true;
+		}
+		else if (ValueType == EJson::String)
+		{
+			// No reflection property to validate against (a blueprint whose skeleton has not been
+			// generated). A string is stored as-is — that is what this endpoint always did — but the
+			// response says the type was NOT checked rather than implying it was.
+			NewText = ValueJson->AsString();
+			Out->SetStringField(TEXT("warning"),
+				TEXT("the variable has no compiled reflection property yet, so the value was stored without type ")
+				TEXT("validation — run compile and re-read with list_variables to confirm it is legal for this type"));
+		}
+		else
+		{
+			// A non-string JSON value with no property to convert against is exactly the input that
+			// used to silently become "". Refuse it; do not guess an encoding.
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a JSON %s, and '%s' on '%s' has no compiled reflection property to convert it against ")
+				TEXT("(the blueprint has never been compiled). Compile the blueprint first, or pass the value as a ")
+				TEXT("string in UE export-text form."),
+				PresentKey, JsonTypeName(ValueType), *Name, *Blueprint->GetName()));
+			return;
+		}
+
+		Blueprint->Modify();
+		Var.DefaultValue = NewText;
 		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+		// READ BACK from the array, not from the local — the response must describe stored state.
+		const FString ValueAfter = Blueprint->NewVariables[VarIndex].DefaultValue;
+		if (ValueAfter != NewText)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' default did not take: wrote '%s', reads back '%s'. Nothing was changed."),
+				*Name, *NewText, *ValueAfter));
+			return;
+		}
+
 		Out->SetStringField(TEXT("name"), Name);
-		Out->SetStringField(TEXT("default"), Value);
+		Out->SetStringField(TEXT("valueBefore"), ValueBefore);
+		Out->SetStringField(TEXT("valueAfter"), ValueAfter);
+		// changed:false is not a failure here — unlike set_property's importer, a plain FString
+		// assignment cannot half-succeed, so an unchanged value means the default was already that.
+		Out->SetBoolField(TEXT("changed"), ValueAfter != ValueBefore);
+		Out->SetBoolField(TEXT("typeValidated"), bTypeValidated);
+		// Legacy field, now a READ-BACK rather than an echo of the request.
+		Out->SetStringField(TEXT("default"), ValueAfter);
 	}
 
 	// --- Compile read-back --------------------------------------------------
@@ -1049,17 +1341,102 @@ namespace MifBridge
 	}
 
 	// Execute an editor console command (e.g. "mif.kr.VerifyFidelity BP_Foo"). We are already on the game thread
-	// (RunEndpoint dispatched us there). The command's output goes to the editor log; the caller tails
-	// <Saved>/Logs/DrugDealerSimulator2.log to read it. This is what makes the reconstruct/verify loop drivable
+	// (RunEndpoint dispatched us there). This is what makes the reconstruct/verify loop drivable
 	// programmatically — without it, mif.kr.* commands could only be typed into the editor console by hand.
+	//
+	// BATCH O — WHY THERE IS NO SEPARATE `run_editor_exec`.
+	// The UI-automation spec (docs/audit/work/R2_UI_AUTOMATION.md §5.1) ranked a `run_editor_exec`
+	// endpoint third, over GEditor->Exec with a captured FStringOutputDevice and an editor-world
+	// target. That endpoint would have been a THIRD copy of "call UEngine::Exec and describe the
+	// result" — this one and run_console_captured are the first two — and a third copy of a shared
+	// behaviour is precisely the bug class PM-005 exists for. Everything it was supposed to ADD is
+	// therefore folded in HERE, additively:
+	//   * structured result — `execOutput` / `execOutputLines`: what the command wrote to its OWN
+	//     FOutputDevice, which is a different thing from the log lines run_console_captured brackets,
+	//     and the field means exactly that on both endpoints because both go through
+	//     MifBridge::RunEngineExec.
+	//   * editor-target routing — `world`: editor (default, unchanged) | pie | active.
+	//   * strict params — RejectUnknownParams, which this endpoint never had, so `run_console
+	//     {command:"x", target:"editor"}` used to answer ok:true having silently ignored `target`.
+	// Nothing was renamed: `command` and `executed` mean what they always meant, and captureOutput:false
+	// reproduces the old call byte for byte (Ar = *GLog).
+	//
+	// THE OUTPUT DEVICE TEES. run_console's documented workflow is "run it, then tail the log", so a
+	// capture that REPLACED *GLog would delete from the log exactly the output the caller was told to
+	// go and read. RunEngineExec forwards every Serialize to GLog and keeps a copy.
+	//
+	// MODAL DISPOSITION: an exec command is arbitrary registered code and CAN open a dialog (or block
+	// for minutes). This runs inline on the game thread, so a modal stops the ticker and this call
+	// never returns — docs/02_GOTCHAS.md §8, same as every other invoking endpoint. There is no
+	// deny-list here: the console surface is open-ended and a name-based list would be theatre. Use
+	// list_editor_commands {includeConsole:true} to see what a prefix actually offers before running it.
 	void H_run_console(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		const FString Cmd = JStr(In, TEXT("command"));
-		if (Cmd.IsEmpty()) { Fail(Out, TEXT("command is required")); return; }
-		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-		const bool bExecuted = GEngine ? GEngine->Exec(World, *Cmd) : false;
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("command"), TEXT("cmd"), TEXT("world"), TEXT("captureOutput") },
+			TEXT("command (alias: cmd), world (editor|pie|active; default editor), captureOutput (default true)"),
+			{ { TEXT("filter"), TEXT("log-line filtering belongs to run_console_captured, which brackets GLog; this endpoint returns the command's own output device text") } }))
+		{
+			return;
+		}
+
+		const FString Cmd = JStrAny(In, { TEXT("command"), TEXT("cmd") });
+		if (Cmd.IsEmpty())
+		{
+			Fail(Out, TEXT("command is required — the console command text, e.g. \"mif.kr.Reconstruct BP_Foo\" or \"stat unit\". list_editor_commands {includeConsole:true, consolePrefix:\"mif.\"} enumerates what is registered."));
+			return;
+		}
+
+		// Editor-target routing. Default is "editor", which is exactly what this endpoint always did.
+		const FString WorldWant = JStr(In, TEXT("world"), TEXT("editor")).ToLower();
+		UWorld* World = nullptr;
+		if (WorldWant == TEXT("editor"))
+		{
+			World = EditorWorld();
+		}
+		else if (WorldWant == TEXT("active"))
+		{
+			World = ActiveWorld();
+		}
+		else if (WorldWant == TEXT("pie"))
+		{
+			TArray<UWorld*> PIEWorlds;
+			CollectPIEWorlds(PIEWorlds);
+			if (PIEWorlds.Num() == 0)
+			{
+				Fail(Out, TEXT("world:\"pie\" was requested but no PIE world exists — nothing was executed. start_pie, then poll pie_status until state==\"running\", or use world:\"active\" to mean \"PIE if playing, else the editor world\"."));
+				return;
+			}
+			World = PIEWorlds[0];
+		}
+		else
+		{
+			Fail(Out, FString::Printf(
+				TEXT("world '%s' is not recognised — accepted values are editor (default; the editor world), pie (a running PIE world, refused when none exists) and active (PIE when playing, otherwise the editor world). An unrecognised value is an error, never a silent fall back to the default."),
+				*JStr(In, TEXT("world"))));
+			return;
+		}
+
+		const bool bCapture = JBool(In, TEXT("captureOutput"), true);
+		FString ExecText;
+		const bool bExecuted = RunEngineExec(World, Cmd, bCapture ? &ExecText : nullptr);
+
 		Out->SetStringField(TEXT("command"), Cmd);
 		Out->SetBoolField(TEXT("executed"), bExecuted);   // false = no handler claimed it (not necessarily an error)
+		Out->SetStringField(TEXT("worldTarget"), WorldWant);
+		Out->SetStringField(TEXT("world"), World ? World->GetName() : TEXT("<none>"));
+		Out->SetBoolField(TEXT("outputCaptured"), bCapture);
+		if (bCapture)
+		{
+			Out->SetStringField(TEXT("execOutput"), ExecText);
+			TArray<FString> Lines;
+			ExecText.ParseIntoArrayLines(Lines, /*bCullEmpty*/ false);
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			for (const FString& Line : Lines) { Arr.Add(MakeShared<FJsonValueString>(Line)); }
+			Out->SetArrayField(TEXT("execOutputLines"), Arr);
+			Out->SetStringField(TEXT("outputNote"),
+				TEXT("execOutput is what the command wrote to its OWN FOutputDevice, and it was ALSO forwarded to the editor log (the device tees). A command that reports via UE_LOG instead — most mif.kr.* commands do — writes nothing here: use run_console_captured, which brackets GLog, or tail <Saved>/Logs/."));
+		}
 		UE_LOG(LogMifBridge, Log, TEXT("run_console: %s -> %s"), *Cmd, bExecuted ? TEXT("handled") : TEXT("unhandled"));
 	}
 

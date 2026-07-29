@@ -17,6 +17,7 @@ Run:  python server.py [--debug]
 import argparse
 import os
 import sys
+from typing import Any
 
 import requests
 from mcp.server.fastmcp import FastMCP
@@ -170,6 +171,10 @@ def add_variable(blueprint_id: str, name: str, type: str, container: str = "", v
 
 @mcp.tool()
 def rename_variable(blueprint_id: str, old_name: str, new_name: str, confirm: bool = False) -> dict:
+    # NOTE: refuses when old_name does not exist (it used to report ok:true for a rename that never
+    # happened), when new_name equals old_name, and when the variable has a RepNotify function - the
+    # engine's rename path opens a modal dialog for that case, which would hang the whole bridge.
+    # Clear it first with set_variable_flags(rep_notify=False), rename, then set it again.
     "Rename a member variable. Requires confirm=True."
     return _post("rename_variable", blueprintId=blueprint_id, oldName=old_name,
                  newName=new_name, confirm=confirm)
@@ -182,8 +187,8 @@ def remove_variable(blueprint_id: str, name: str, confirm: bool = False) -> dict
 
 
 @mcp.tool()
-def set_variable_default(blueprint_id: str, name: str, value: str) -> dict:
-    "Set a member variable's default value (applied on next compile)."
+def set_variable_default(blueprint_id: str, name: str, value) -> dict:
+    "Set a member variable's default value (applied on next compile). value is REQUIRED and may be a string (UE export text) or typed JSON - a list for an array variable, an object for a struct, a number/bool for the matching type; it is converted against the variable's real property type and REFUSED if it cannot convert (an int variable rejects \"banana\" instead of storing it). Pass value=None to clear the default deliberately. Omitting value used to WIPE the existing default and report ok:true - that is now an error. Returns valueBefore/valueAfter/changed/typeValidated, all read back from the variable rather than echoed from the request."
     return _post("set_variable_default", blueprintId=blueprint_id, name=name, value=value)
 
 
@@ -200,15 +205,17 @@ def add_function_call(graph_id: str, function: str, cls: str = "self", x: int = 
 
 
 @mcp.tool()
-def add_variable_get(graph_id: str, var: str, x: int = 0, y: int = 0) -> dict:
-    "Add a 'get variable' node for a self member variable."
-    return _post("add_variable_get", graphId=graph_id, var=var, x=x, y=y)
+def add_variable_get(graph_id: str, var: str, target_class: str = "", x: int = 0, y: int = 0) -> dict:
+    "Add a 'get variable' node. With no target_class the scope is auto-detected (a variable declared on this function graph resolves as a LOCAL, anything else as a self member). target_class reads a property on ANOTHER object - a spawned actor's variable, or a NATIVE UPROPERTY like ChildActorComponent.ChildActorClass - and the node gets a visible Target pin to wire the object reference into. Pass the UObject class name WITHOUT its C++ prefix (ChildActorComponent, not UChildActorComponent) or a full Blueprint class path. Returns scope (self|local|external), access, hasTargetPin/targetPin, memberClass and native. READABILITY IS CHECKED HERE, the same way add_variable_set checks writability: an inherited property without CPF_BlueprintVisible, or one carrying meta=(BlueprintPrivate) on a parent Blueprint, is refused at placement rather than accepted and then failing at compile."
+    return _post("add_variable_get", graphId=graph_id, var=var,
+                 targetClass=target_class or None, x=x, y=y)
 
 
 @mcp.tool()
-def add_variable_set(graph_id: str, var: str, x: int = 0, y: int = 0) -> dict:
-    "Add a 'set variable' node for a self member variable."
-    return _post("add_variable_set", graphId=graph_id, var=var, x=x, y=y)
+def add_variable_set(graph_id: str, var: str, target_class: str = "", x: int = 0, y: int = 0) -> dict:
+    "Add a 'set variable' node. Same scope rules and target_class semantics as add_variable_get. WRITABILITY IS CHECKED HERE: a BlueprintReadOnly property is refused at placement instead of accepted and then failing at compile - and it only failed at compile once the node was WIRED, because the compiler prunes isolated nodes before validation, so an unwired bad node reported 0 errors."
+    return _post("add_variable_set", graphId=graph_id, var=var,
+                 targetClass=target_class or None, x=x, y=y)
 
 
 @mcp.tool()
@@ -291,9 +298,9 @@ def create_function(blueprint_id: str, name: str, inputs: list = None, outputs: 
 
 
 @mcp.tool()
-def create_blueprint(path: str, parent_class: str = "Actor", overwrite: bool = False) -> dict:
-    "Create a fresh Blueprint asset. path is a /Game/... object path (e.g. /Game/MifTestbed/BP_Foo); parent_class is a name or class path (default Actor). Compiles it and returns {blueprintId, class, parentClass, eventGraphId}. Fails if one already exists at path."
-    return _post("create_blueprint", path=path, parentClass=parent_class, overwrite=overwrite)
+def create_blueprint(path: str, parent_class: str = "Actor", blueprint_type: str = "Normal") -> dict:
+    "Create a fresh Blueprint asset. path is a /Game/... object path (e.g. /Game/MifTestbed/BP_Foo); parent_class is a name or class path (default Actor). blueprint_type is Normal (default), FunctionLibrary, Interface, MacroLibrary or WidgetBlueprint - an unrecognised value is refused rather than silently producing a plain Blueprint. Compiles it and returns {blueprintId, class, parentClass, eventGraphId}. Fails if one already exists at path: there is NO overwrite (the parameter used to exist here, was read by no line of the handler, and left callers wondering why the flag did nothing) - delete_asset the old one first."
+    return _post("create_blueprint", path=path, parentClass=parent_class, blueprintType=blueprint_type)
 
 
 @mcp.tool()
@@ -373,9 +380,9 @@ def validate_blueprint(blueprint_id: str) -> dict:
 
 
 @mcp.tool()
-def run_console(command: str) -> dict:
-    "Execute an editor console command (e.g. a mif.kr.* cvar-command) on the game thread. Returns {ok, command, executed}. Read the log tail for the command's output."
-    return _post("run_console", command=command)
+def run_console(command: str, world: str = "editor", capture_output: bool = True) -> dict:
+    "Execute an editor console command (e.g. a mif.kr.* cvar-command) on the game thread and return {ok, command, executed, world, execOutput, execOutputLines}. executed=false means NO handler claimed the command - it is not a claim about success. execOutput is what the command wrote to its OWN output device, and it was ALSO forwarded to the editor log (the capture tees, it does not replace GLog) - a command that reports via UE_LOG instead, which most mif.kr.* commands do, writes nothing there: use run_console_captured, which brackets GLog. world = editor (default) | pie (refused when not playing) | active (PIE if playing, else editor). There is deliberately no separate run_editor_exec: it would have been a third copy of the same UEngine::Exec call and everything it was meant to add is folded in here. HAZARD: an exec command is arbitrary registered code - if it opens a dialog or blocks, it stops the game-thread ticker this bridge runs on and THIS CALL NEVER RETURNS. list_editor_commands {includeConsole:true, consolePrefix:...} shows what a prefix offers before you run it."
+    return _post("run_console", command=command, world=world, captureOutput=capture_output)
 
 
 # --------------------------------------------------------------------------
@@ -546,16 +553,18 @@ def list_dispatchers(blueprint_id: str) -> dict:
 @mcp.tool()
 def add_component(blueprint_id: str, component_class: str, name: str = "", parent_name: str = "",
                   location: list = None, rotation: list = None, scale: list = None) -> dict:
-    "Add a component to an Actor Blueprint's SCS tree. Optional parent_name (attach under), and location/rotation([pitch,yaw,roll])/scale as [x,y,z]."
+    "Add a component to an Actor Blueprint's SCS tree. Optional parent_name (attach under), and location/rotation([pitch,yaw,roll])/scale as [x,y,z] or {x,y,z}. EVERY numeric field is strict now: a value you SUPPLY that is not a number is a hard error naming the field, the value and the expected type. It is never defaulted - location={\"x\":\"not-a-number\",\"y\":123,\"z\":456} used to return ok:true having applied y and z, kept the old x, and echoed the mixture back as if you had asked for it. A transform that cannot be read fails the call and the component is rolled back with it."
     return _post("add_component", blueprintId=blueprint_id, componentClass=component_class,
                  name=name or None, parentName=parent_name or None,
                  location=location or None, rotation=rotation or None, scale=scale or None)
 
 
 @mcp.tool()
-def list_components(blueprint_id: str) -> dict:
-    "List the Blueprint's SCS components: name, class, isRoot, parent and attachSocket (so the attachment hierarchy is visible), plus templatePath. Pass templatePath as set_property's objectPath to edit that component's DEFAULTS - StaticMesh, Mobility, AnimClass, OverrideMaterials, collision, relative transform."
-    return _post("list_components", blueprintId=blueprint_id)
+def list_components(blueprint_id: str, include_inherited: bool = True,
+                    include_native: bool = True, limit: int = 500) -> dict:
+    "List EVERY component reachable from a Blueprint, from all three origins, each row tagged with origin: 'ownSCS' (this Blueprint's own SimpleConstructionScript), 'parentBlueprintSCS' (inherited from a parent BLUEPRINT's SCS, anywhere up the chain) and 'native' (a C++ component on the parent class chain, read off the CDO). It used to walk the child's own SCS only, which is why get_inherited_component - a verb that resolves ONE component BY NAME - had no companion that could tell you the names. Every row carries owningClass, the endpoint to call next (route/endpoint) and a hint. templatePath means one thing everywhere: the objectPath to pass to set_property to change that component's defaults FOR THIS BLUEPRINT. For a NATIVE component that is the child CDO's own subobject, and the subobject name is NOT the property name (Mesh -> CharacterMesh0, CharacterMovement -> CharMoveComp, CapsuleComponent -> CollisionCylinder) - subobjectName carries it, resolved from the object rather than guessed. For an INHERITED component templatePath is present only once an override exists (overrideTemplatePath); until then it is deliberately absent, because the only other template is the PARENT asset's and writing there would change every other child - parentTemplatePath shows it read-only and route says override_inherited_component. Also reports canOverride (exactly what override_inherited_component will accept), editableWhenInherited (the extra editor-side fact), and the ownSCSCount / parentBlueprintSCSCount / nativeCount split. include_inherited and include_native default TRUE and exist only so a caller can ask for the old own-SCS-only shape back."
+    return _post("list_components", blueprintId=blueprint_id, includeInherited=include_inherited,
+                 includeNative=include_native, limit=limit)
 
 
 @mcp.tool()
@@ -565,9 +574,29 @@ def remove_component(blueprint_id: str, name: str, confirm: bool = False) -> dic
 
 
 @mcp.tool()
+def get_inherited_component(blueprint: str, component: str) -> dict:
+    "Discovery verb for an INHERITED component: reports origin (parentBlueprintSCS | native | ownSCS | notFound), whether an override template already exists, its objectPath, and the parent's original template. Creates nothing. For a NATIVE inherited component (e.g. a Character's Mesh) ICH does not apply - it returns the CDO-subobject path to use with set_property instead, because the property name and the subobject name differ (Mesh -> CharacterMesh0)."
+    return _post("get_inherited_component", blueprint=blueprint, component=component)
+
+
+@mcp.tool()
+def override_inherited_component(blueprint: str, component: str, properties: dict = None,
+                                 confirm: bool = False) -> dict:
+    "Create (or reuse) the per-child override template for a component inherited from a parent BLUEPRINT's SCS - the same delta the Details panel writes - and optionally apply properties to it. Only the properties you set are stored; everything else keeps inheriting. Returns overrideTemplatePath, usable as set_property's objectPath. Refuses native inherited components and names the CDO-subobject path instead. Each property reports applied/changed separately, so writing an identical value is applied:true, changed:false rather than a false failure - and typeValidated separately again, because those are different questions. A value is checked against the destination property's TYPE before the import: {\"SphereRadius\":\"not-a-float\"} used to answer ok:true, applied:true, wanted:\"0.000000\" - UE's float importer parsed the garbage as 0.0 and reported success, and the post-write check then compared 0 against 0 and passed. It is a hard error naming the property, the value and the expected form now. EVERY property is validated BEFORE the override template is minted, so a rejected call creates nothing at all: it answers created:false, nothingModified:true, outcome:\"preflight-rejected-nothing-created\" and the blueprint is untouched. (It used to mint the override first and validate second - a FAILED call permanently added an override to your blueprint, and the cancelled transaction did not remove it, because UTransBuffer::Cancel discards the undo entry rather than rolling anything back.) If a value still fails at write time for a reason no type check can predict - an engine clamp, a PostEditChangeProperty rejection - the override is removed again, but ONLY when this call created it: a pre-existing override is never deleted, and outcome/overrideRemovedOnFailure say which path was taken."
+    return _post("override_inherited_component", blueprint=blueprint, component=component,
+                 properties=properties or None, confirm=confirm)
+
+
+@mcp.tool()
+def revert_inherited_component(blueprint: str, component: str, confirm: bool = False) -> dict:
+    "Remove the child's override template so the component falls back to the parent's values. Requires confirm=True (it discards the overrides)."
+    return _post("revert_inherited_component", blueprint=blueprint, component=component, confirm=confirm)
+
+
+@mcp.tool()
 def set_component_transform(blueprint_id: str, name: str, location: list = None,
                             rotation: list = None, scale: list = None) -> dict:
-    "Set a scene component's relative transform. location/rotation([pitch,yaw,roll])/scale as [x,y,z]."
+    "Set a scene component's relative transform. location/rotation([pitch,yaw,roll])/scale as [x,y,z] or {x,y,z} (rotation also takes {pitch,yaw,roll}). EVERY numeric field is strict now: a value you SUPPLY that is not a number is a hard error naming the field, the value and the expected type. It is never defaulted - location={\"x\":\"not-a-number\",\"y\":123,\"z\":456} used to return ok:true having applied y and z, kept the old x, and echoed the mixture back as if you had asked for it. The array form used to be read with a JSON accessor that returns 0.0 for a string and cannot report that it did, so [\"oops\",1,2] became (0,1,2)."
     return _post("set_component_transform", blueprintId=blueprint_id, name=name,
                  location=location or None, rotation=rotation or None, scale=scale or None)
 
@@ -809,10 +838,12 @@ def get_property(object_path: str = "", blueprint_id: str = "", widget_name: str
 
 @mcp.tool()
 def set_property(object_path: str = "", blueprint_id: str = "", widget_name: str = "",
-                 property_path: str = "", value: str = "") -> dict:
-    "Write any UObject property by dot-path, the way the Details panel does. Bools accept true/false. A value that fails to parse leaves the property UNCHANGED. Target is either object_path, or blueprint_id + widget_name for a widget template (which recompiles)."
+                 property_path: str = "", value: Any = "", override_flag: str = "",
+                 enforce_clamps: bool = False) -> dict:
+    "Write any UObject property by dot-path, the way the Details panel does. Target is either object_path, or blueprint_id + widget_name for a widget template (which recompiles). value takes TWO forms: UE export text as a STRING (the original path, byte-for-byte unchanged), or TYPED JSON - a list for an array/set, a dict for a map/struct, a real number, a bool. Pass the typed form for containers: a JSON array used to be read as an empty string, and an empty buffer means 'EMPTY THE ARRAY' to the engine's array importer, which reported applied:true after WIPING it. Same shape fixed for JSON floats (the float import path has no 'nothing consumed' guard, so 0.5 wrote 0.0 and said ok) and for unresolvable object paths (imported 'successfully' as null). Returns valueForm, importText (the export text actually imported), valueBefore/valueAfter, typed (typed JSON read-back), changed, and elementsBefore/elementsAfter for containers. A value that fails to parse leaves the property UNCHANGED. TWO further guarantees: (1) typeValidated - the value is checked against the DESTINATION property's type BEFORE the import, because verifying that a write landed does not verify that the value was understood; \"not-a-float\" on a float used to import as 0.0, report success, and pass the post-write check by comparing 0 against 0. Numbers must parse WHOLE (no \"12abc\", no exponent form), bools must be a recognised literal, enums must be a real entry (the valid ones are listed in the error). Where a type cannot be pre-checked the response says so in typeValidationNote instead of implying it was. (2) verifiedOn/reconstructed/retargetedTo - writing to a PLACED actor's component reruns that actor's construction scripts, which destroys the component and renames it TRASH_*; the read-back is now taken from the RE-RESOLVED object, and if it cannot be re-resolved the call fails as UNVERIFIED rather than reporting verified:true about a dead object. notification/memberProperty/chainDepth report the edit notification, which is now PostEditChangeChainProperty - a strict superset of the old PostEditChangeProperty, and the only one that reaches archetype instances. THREE more: (3) EDITCONDITION - many engine properties are GATED, and writing one behind an unset flag is SILENTLY IGNORED by the engine (UStaticMeshComponent::MinLOD without bOverrideMinLOD is never read: StaticMeshRender.cpp:248; FPostProcessSettings has 423 more). The write lands in memory and the capability does not, which the post-write verification cannot see because the value genuinely changed. The companion flag is detected via meta=(EditCondition=...) - NOT the bOverride_ naming convention - and override_flag decides what happens: 'set' (the default) writes the flag alongside the value in the same transaction and REPORTS it in overrideFlagWritten{name,valueBefore,valueAfter} (valueAfter is a measured readback); 'refuse' fails naming the flag and its current value; 'ignore' writes anyway and warns. editCondition/editConditionKind/editConditionMet are always emitted, including as null when there is no gate. A condition this bridge cannot evaluate (anything beyond a single bool or its negation - 122 of 837 in Runtime/**.h) is reported as unevaluated, never guessed. (4) ELEMENT ADDRESSING - property_path now takes accessors: OverrideMaterials[1], FloatCurves[1].Keys[0].Value (a C-array UPROPERTY, not a TArray), ScalarParameterValues[ParameterInfo.Name=Roughness].ParameterValue (a linear find on a member), SomeMap{Alpha}.Threshold. Out-of-range names the index AND the actual length. A set index is a POSITION IN ITERATION ORDER and the response says so. Editing a set element checks for duplicates and rehashes. (5) CLAMPS - ClampMin/ClampMax are enforced ONLY by the panel's typed numeric setters, never by ImportText, so this endpoint can write a value the panel would refuse: it reports clampViolation by default and coerces (setting coerced:true) when enforce_clamps=True. UIMin/UIMax are slider bounds and are reported, never acted on."
     return _post("set_property", objectPath=object_path or None, blueprintId=blueprint_id or None,
-                 widgetName=widget_name or None, propertyPath=property_path, value=value)
+                 widgetName=widget_name or None, propertyPath=property_path, value=value,
+                 overrideFlag=override_flag or None, enforceClamps=enforce_clamps or None)
 
 
 @mcp.tool()
@@ -824,6 +855,52 @@ def list_object_properties(object_path: str = "", blueprint_id: str = "", widget
                  blueprintId=blueprint_id or None, widgetName=widget_name or None,
                  nameContains=name_contains or None, limit=limit,
                  maxValueChars=max_value_chars)
+
+
+# --------------------------------------------------------------------------
+# Details-panel parity (Batch N)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def describe_property(object_path: str = "", blueprint_id: str = "", widget_name: str = "",
+                      class_name: str = "", property_path: str = "", name_contains: str = "",
+                      limit: int = 200, max_value_chars: int = 200,
+                      include_metadata: bool = True, include_default: bool = True) -> dict:
+    "THE DISCOVERY LAYER for everything else on this axis: what the Details panel knows about a property and set_property could not tell you. Reports the authored specifier (EditAnywhere / EditDefaultsOnly / VisibleAnywhere / ... recovered from the CPF_* flags, so you can see that VisibleAnywhere is exactly CPF_Edit|CPF_EditConst - a property a human CANNOT edit and this bridge will happily write), the raw flags, every metadata key, Category/DisplayName/ToolTip, EditCondition plus its resolved companion flag and current met/unmet state, ClampMin/ClampMax/UIMin/UIMax/Multiple/ArrayClamp, EditFixedSize, Instanced + AllowedClasses/DisallowedClasses, GetOptions, Units, BitmaskEnum, ArrayDim, the container shape (kind, inner/key/value type, element count, key hashability), persistence ('saved' | 'transient' | 'duplicateTransient' | 'notSerialized' - three DIFFERENT lies: gone on reload, gone on copy/paste, not undoable), editableByHuman (the panel's own predicate recomputed, with notEditableReason), and differsFromDefault + defaultValue + defaultSource. Three forms: property_path for one property in full detail (element accessors work: OverrideMaterials[1], SomeMap{Alpha}); name_contains for a filtered survey; class_name to describe a TYPE with no instance (values then come from the CDO). On a COOKED package GetMetaDataMap() is null, so metadataAvailable comes back false and every meta field is ABSENT rather than an empty string - 'unknown' and 'no clamp' are different answers. Read-only."
+    return _post("describe_property", objectPath=object_path or None, blueprintId=blueprint_id or None,
+                 widgetName=widget_name or None, className=class_name or None,
+                 propertyPath=property_path or None, nameContains=name_contains or None,
+                 limit=limit, maxValueChars=max_value_chars,
+                 includeMetadata=include_metadata, includeDefault=include_default)
+
+
+@mcp.tool()
+def diff_properties_vs_default(object_path: str = "", blueprint_id: str = "", widget_name: str = "",
+                               name_contains: str = "", limit: int = 200, max_value_chars: int = 200,
+                               include_transient: bool = False, deep: bool = True) -> dict:
+    "What does this object actually OVERRIDE versus its archetype - the question the Details panel answers with a yellow arrow, and the single most useful read for auditing a Blueprint, a placed actor or a CDO. Computed the way the panel computes it: the archetype with a UClass->CDO hop first, FProperty::Identical with PPF_DeepComparison on instanced-object properties (set deep=False to skip that, and the response says it was skipped), and an ArrayDim loop for C-arrays. Each differing row carries value, defaultValue, defaultSource ('archetype' or 'constructed' - a property a child Blueprint added does not exist on the archetype at all, and the fallback is stated rather than hidden), the authored specifier, persistence and resettable. Transients are skipped by default because they always differ and drown the signal; include_transient=True keeps them. Emits the checkable invariant inspected == differing + matching + skippedTransient as countsConsistent. An object whose archetype is itself (the root CDO) is a stated RESULT with differing:0, not an error. Read-only."
+    return _post("diff_properties_vs_default", objectPath=object_path or None,
+                 blueprintId=blueprint_id or None, widgetName=widget_name or None,
+                 nameContains=name_contains or None, limit=limit, maxValueChars=max_value_chars,
+                 includeTransient=include_transient, deep=deep)
+
+
+@mcp.tool()
+def reset_property_to_default(object_path: str = "", property_path: str = "",
+                              force: bool = False) -> dict:
+    "The Details panel's yellow arrow: put a property back to its archetype default. Reports valueBefore / defaultValue / valueAfter / differedFromDefault / changed / defaultSource / archetype, and ASSERTS the invariant - after a successful reset valueAfter must equal defaultValue byte-for-byte under the same exporter, or the call fails. A property that already equals its default is reported (changed:false), not failed. Applies the two refusals the panel applies and a naive reset does not: CPF_Config properties have NO reset arrow (their value comes from an .ini, not the archetype) and CPF_EditFixedSize containers have none either. CPF_EditConst needs force=True. When the archetype does not carry the property at all - a variable a child Blueprint added - it falls back to a FRESHLY CONSTRUCTED default and says defaultSource:'constructed'. PM-003 safe: the default text is parsed into a scratch buffer before the notification bracket is opened, so a failed reset never touches the live value and never leaves a dangling component re-registration. Element accessors work. Transacted, so Ctrl-Z undoes it. Refuses the widget-template form (use set_property) and refuses a cooked package."
+    return _post("reset_property_to_default", objectPath=object_path or None,
+                 propertyPath=property_path, force=force or None)
+
+
+@mcp.tool()
+def edit_container(object_path: str = "", property_path: str = "", operation: str = "",
+                   index: int = None, count: int = None, key: str = "", new_key: str = "",
+                   value: Any = None, swap_with: int = None, new_size: int = None) -> dict:
+    "The element LIFECYCLE inside a TArray/TSet/TMap - the +, x, insert and clear buttons the Details panel has and set_property does not: operation = add | insert | remove | clear | swap | resize | setKey. (The verb is 'operation', not 'op': 'op' is batch's routing key and is tolerated centrally, so an endpoint using it would be un-diagnosable inside batch.) Element VALUES stay in set_property - address them with the new accessors, e.g. OverrideMaterials[1] or SomeMap{Alpha}. Guards, all applied BEFORE the first mutation because a cancelled transaction reverts nothing: index range checked against the real length and named in the error; CPF_EditFixedSize refuses every size-changing op and names the flag (the panel hides its add/remove buttons for the same reason); a map/set element type with no GetTypeHash is refused BY NAME rather than crashed on; a duplicate map key is REFUSED because FScriptMapHelper::AddPair overwrites silently, which would turn 'add' into 'replace' with no notice, and a duplicate set element likewise (the panel refuses both); every element value is parsed into a scratch buffer first (PM-003); the helper is re-resolved after any structural op, because AddValues/InsertValues reallocate; and the map/set is rehashed after any key or element change, or Find stops seeing entries the container still holds. Reports elementsBefore / elementsAfter / index / rehashed / changed, and treats a structural op that left the count unchanged as a FAILURE rather than a success. Transacted. Refuses the widget-template form and refuses a cooked package."
+    return _post("edit_container", objectPath=object_path or None, propertyPath=property_path,
+                 operation=operation, index=index, count=count, key=key or None,
+                 newKey=new_key or None, value=value, swapWith=swap_with, newSize=new_size)
 
 
 @mcp.tool()
@@ -885,14 +962,14 @@ def remove_tree_widget(blueprint_id: str, widget_name: str) -> dict:
 
 @mcp.tool()
 def list_mounted_containers() -> dict:
-    "List the mounted pak/utoc containers and the resolved game install dir. Use this to see what cooked content is actually visible to the editor."
+    "List the mounted pak/utoc containers and the resolved game install dir. Use this to see what cooked content is actually visible to the editor. containers[] rows carry filePath (the FILESYSTEM path of the .utoc) alongside the older path key, which holds the same value - unlike every other endpoint, where path/objectPath/packageName mean /Game/ paths."
     return _post("list_mounted_containers")
 
 
 @mcp.tool()
 def find_assets(cls: str = "", path_prefix: str = "", name_contains: str = "",
                 origin: str = "any", recursive_classes: bool = True, limit: int = 100) -> dict:
-    "Search the asset registry across loose AND cooked/mounted content. cls filters by class name, path_prefix by /Game/... prefix, name_contains by substring. origin = any|loose|cooked. Returns at most limit results."
+    "Search the asset registry across loose AND cooked/mounted content. cls filters by class name, path_prefix by /Game/... prefix, name_contains by substring. origin = any|loose|cooked. Returns at most limit results. Every row carries objectPath (/Game/X/Foo.Foo_C) and packageName (/Game/X/Foo) with those exact meanings plugin-wide - feed packageName to describe_package / get_referencers / audit_unused.exclude_referencers, objectPath to anything that loads the asset. The older path/package keys are still emitted with the same values."
     return _post("find_assets", **{"class": cls or None}, pathPrefix=path_prefix or None,
                  nameContains=name_contains or None, origin=origin,
                  recursiveClasses=recursive_classes, limit=limit)
@@ -900,7 +977,7 @@ def find_assets(cls: str = "", path_prefix: str = "", name_contains: str = "",
 
 @mcp.tool()
 def describe_package(package: str) -> dict:
-    "Describe a package by /Game/ path: the objects it contains, their classes, and whether it is cooked. Works on cooked packages whose Blueprint graphs are stripped."
+    "Describe a package by /Game/ path: the objects it contains, their classes, and whether it is cooked. Works on cooked packages whose Blueprint graphs are stripped. Emits packageName at the top level; registryAssets[] rows are now shaped identically to a find_assets row (objectPath, packageName, package, origin, name, class, loaded) and exports[] rows carry objectPath (GetPathName, so a subobject keeps its :Subobject suffix) + packageName."
     return _post("describe_package", package=package)
 
 
@@ -991,10 +1068,14 @@ def load_level(path: str) -> dict:
 
 
 @mcp.tool()
+# NOTE: every point is parsed BEFORE the existing spline is cleared, and a malformed entry is an
+# error naming its index - points=[[0,0,0],[100,0,0]] (bare arrays instead of {x,y,z}) used to return
+# ok:true/pointCount:0 having DESTROYED the existing route. snap_to_ground requires space="world"
+# (the ground trace is a world-space line trace); in local space it was silently ignored.
 def set_spline_points(actor_path: str, points: list, component: str = None, space: str = "world",
                       point_type: str = "curve", closed_loop: bool = False,
                       snap_to_ground: bool = False, ground_offset: float = 0.0) -> dict:
-    "Author a spline's points - THIS IS WHAT MAKES NPCs WALK. The game routes wandering NPCs along BP_SegmentedPathTaskMarker, whose PathSpline is a USplineComponent. points is [{x,y,z},...] (min 2). point_type: curve|linear|constant|curveClamped|curveCustomTangent. snap_to_ground traces each point down onto the terrain, since a route authored at a flat Z floats or buries itself on uneven ground."
+    "Author a spline's points - THIS IS WHAT MAKES NPCs WALK. The game routes wandering NPCs along BP_SegmentedPathTaskMarker, whose PathSpline is a USplineComponent. points is [{x,y,z},...] (min 2). point_type: curve|linear|constant|curveClamped|curveCustomTangent. snap_to_ground traces each point down onto the terrain, since a route authored at a flat Z floats or buries itself on uneven ground. Every point is validated BEFORE the existing spline is cleared: a component that is not a number fails the call naming points[N].<field>, rather than silently becoming 0 and bending the route through the origin."
     return _post("set_spline_points", actorPath=actor_path, points=points, component=component,
                  space=space, pointType=point_type, closedLoop=closed_loop,
                  snapToGround=snap_to_ground, groundOffset=ground_offset)
@@ -1037,7 +1118,7 @@ def create_landscape(location: dict = None, scale: dict = None, components_x: in
 @mcp.tool()
 def sculpt_landscape(center: dict, radius: float, mode: str = "flatten", amount: float = 0.0,
                      falloff: float = 0.5, target_z: float = None, landscape: str = None) -> dict:
-    "Sculpt terrain in WORLD units. mode: raise|lower|flatten|smooth. center/radius/amount/target_z are all world units - the vertex-space conversion happens inside. falloff is the fraction of the radius that is feathered (0 = hard edge = a mesa with vertical walls, so it defaults to 0.5). flatten with no target_z levels to whatever height is under the brush centre. Use this to carve a building pad or a road corridor."
+    "Sculpt terrain in WORLD units. mode: raise|lower|flatten|smooth. center/radius/amount/target_z are all world units - the vertex-space conversion happens inside. falloff is the fraction of the radius that is feathered (0 = hard edge = a mesa with vertical walls, so it defaults to 0.5). flatten with no target_z levels to whatever height is under the brush centre. Use this to carve a building pad or a road corridor. amount applies to raise/lower ONLY and target_z to flatten ONLY: passing one to the wrong mode is now an error rather than being silently ignored, and an unknown mode is rejected up front (it used to be checked inside the per-vertex loop, so a brush smaller than one quad never reached the check and returned ok:true/verticesTouched:0)."
     return _post("sculpt_landscape", center=center, radius=radius, mode=mode, amount=amount,
                  falloff=falloff, targetZ=target_z, landscape=landscape)
 
@@ -1045,7 +1126,7 @@ def sculpt_landscape(center: dict, radius: float, mode: str = "flatten", amount:
 @mcp.tool()
 def paint_landscape(layer_info: str, center: dict, radius: float, weight: float = 1.0,
                     falloff: float = 0.5, landscape: str = None) -> dict:
-    "Paint a landscape weight layer in WORLD units - this is what makes a road corridor read as dirt while the verge stays grass. layer_info is a LandscapeLayerInfoObject asset path and must be one of the layers the landscape's material declares. Weights normalise across layers, so painting one up pushes the others down (which is why there is no erase mode)."
+    "Paint a landscape weight layer in WORLD units - this is what makes a road corridor read as dirt while the verge stays grass. layer_info is a LandscapeLayerInfoObject asset path and must be one of the layers the landscape's material declares - that requirement is now ENFORCED (it was only ever promised in the error text). Painting an unregistered layer does not no-op: it allocates a stray weightmap channel, the weight normalisation dims the layers you WERE using, and a later fixup deletes the allocation - so the paint appeared, damaged the real layers, and then vanished, all under ok:true. landscape_info lists the legal layers. Weights normalise across layers, so painting one up pushes the others down (which is why there is no erase mode)."
     return _post("paint_landscape", layerInfo=layer_info, center=center, radius=radius,
                  weight=weight, falloff=falloff, landscape=landscape)
 
@@ -1070,7 +1151,7 @@ def landscape_info() -> dict:
 @mcp.tool()
 def spawn_many(items: list, actor_class: str = "StaticMeshActor", mesh: str = "",
                material: str = "", folder: str = "", label_prefix: str = "") -> dict:
-    "Spawn MANY actors in ONE call. items is a list of {x,y,z or location:{}, rotation:{} or yaw, scale (number or {}), label?, mesh?, material?}. Top-level mesh/material are the defaults; per-item values override. label_prefix names them '<prefix>_<index>' - without it every actor is 'StaticMeshActor_417', unfindable by label and invisible to anything that filters on one (snap_actors_to_ground's label_contains). Replaces the 2-HTTP-calls-per-actor pattern - a few hundred actors goes from minutes to seconds. Capped at 5000 per call; returns spawned/failed counts."
+    "Spawn MANY actors in ONE call. items is a list of {x,y,z or location:{}, rotation:{} or yaw, scale (number or {}), label?, mesh?, material?}. Top-level mesh/material are the defaults; per-item values override. label_prefix names them '<prefix>_<index>' - without it every actor is 'StaticMeshActor_417', unfindable by label and invisible to anything that filters on one (snap_actors_to_ground's label_contains). Replaces the 2-HTTP-calls-per-actor pattern - a few hundred actors goes from minutes to seconds. Capped at 5000 per call; returns spawned/failed counts. A transform component that is not a number now fails THAT item with a reason naming items[N].<field> and counts it in failed[], instead of defaulting to 0 and placing the actor at an address you did not give. Unrecognised keys inside an entry are still ignored - only the transform values are checked."
     return _post("spawn_many", items=items, actorClass=actor_class, mesh=mesh or None,
                  material=material or None, folder=folder or None,
                  labelPrefix=label_prefix or None)
@@ -1080,7 +1161,7 @@ def spawn_many(items: list, actor_class: str = "StaticMeshActor", mesh: str = ""
 def duplicate_actors(actor_paths: list = None, label_prefix: str = "", offset: dict = None,
                      yaw_offset: float = 0.0, count: int = 1, label_suffix: str = "_copy",
                      folder: str = "") -> dict:
-    "Duplicate a SET of actors with a positional offset - copy a whole finished building instead of re-placing every panel. Select sources by actor_paths[] or by label_prefix (e.g. 'B5_' grabs every piece of that building). count>1 makes a row, each offset by N*offset."
+    "Duplicate a SET of actors with a positional offset - copy a whole finished building instead of re-placing every panel. Select sources by actor_paths[] or by label_prefix (e.g. 'B5_' grabs every piece of that building). count>1 makes a row, each offset by N*offset. offset is strict: a component that is not a number fails the call instead of silently becoming 0, which would stack every copy on top of the original."
     return _post("duplicate_actors", actorPaths=actor_paths, labelPrefix=label_prefix or None,
                  offset=offset, yawOffset=yaw_offset, count=count,
                  labelSuffix=label_suffix, folder=folder or None)
@@ -1096,14 +1177,14 @@ def create_material_instance(parent: str, path: str, scalars: dict = None,
 
 @mcp.tool()
 def set_material_parameter(material: str, scalars: dict = None, vectors: dict = None) -> dict:
-    "Set parameters on an existing MaterialInstanceConstant. scalars is {name: number}, vectors is {name: {r,g,b,a}} (also accepts {x,y,z,w} or [r,g,b,a]). Reports unknownParameters for names the PARENT material does not expose, rather than silently accepting a name that will never do anything - and if NONE of the names exist, or you pass neither scalars nor vectors, the call now ERRORS instead of returning ok:true/applied:0. Unknown keys are rejected by name (the HTTP endpoint also takes a singular {parameter, value} pair; through this tool use the maps). Texture and static-switch parameters are not supported here."
+    "Set parameters on an existing MaterialInstanceConstant. scalars is {name: number}, vectors is {name: {r,g,b,a}} (also accepts {x,y,z,w} or [r,g,b,a]). Reports unknownParameters for names the PARENT material does not expose, rather than silently accepting a name that will never do anything - and if NONE of the names exist, or you pass neither scalars nor vectors, the call ERRORS instead of returning ok:true/applied:0. TWO DIFFERENT FAILURE MODES, do not confuse them: an UNKNOWN name is reported in unknownParameters[] and is not fatal on its own, but a MALFORMED value (a scalars entry that is not a number, a vectors entry that is not a colour) aborts the WHOLE call before any write - it used to skip that entry and apply the rest, so {\"Tiling\":4,\"Comment\":\"x\"} that returned ok:true/applied:1 now returns an error with zero writes. Unknown keys are rejected by name (the HTTP endpoint also takes a singular {parameter, value} pair; through this tool use the maps). Texture and static-switch parameters are not supported here."
     return _post("set_material_parameter", material=material, scalars=scalars, vectors=vectors)
 
 
 @mcp.tool()
 def add_foliage_instances(mesh: str, instances: list, label: str = "Foliage",
                           folder: str = "") -> dict:
-    "Create ONE actor holding N instanced transforms of a mesh (HierarchicalInstancedStaticMesh) instead of N separate actors. This is how foliage is actually done - 90 grass actors is 90 draw setups and 90 outliner rows for something that should be one. instances is a list of {x,y,z,yaw?,scale?}."
+    "Create ONE actor holding N instanced transforms of a mesh (HierarchicalInstancedStaticMesh) instead of N separate actors. This is how foliage is actually done - 90 grass actors is 90 draw setups and 90 outliner rows for something that should be one. instances is a list of {x,y,z,yaw?,scale?}. A transform component that is not a number fails the whole call naming instances[N].<field> and the transaction is cancelled, so no partial cluster is left behind reported as complete."
     return _post("add_foliage_instances", mesh=mesh, instances=instances,
                  label=label, folder=folder or None)
 
@@ -1209,7 +1290,7 @@ def list_level_actors(class_filter: str = "", name_contains: str = "", folder: s
 def spawn_actor_in_level(actor_class: str, location: dict = None, rotation: dict = None,
                          scale: dict = None, label: str = "", folder: str = "",
                          mesh: str = None) -> dict:
-    "Spawn an actor into the current level. actor_class may be a native class or a Blueprint class path (/Game/BP/BP_Foo.BP_Foo_C). location/rotation/scale take {x,y,z}; rotation is pitch/yaw/roll. mesh assigns a static mesh (spawn a StaticMeshActor for it) - it used to be accepted and silently dropped, producing an EMPTY actor that reported ok. Returns the new actorPath. The level is left DIRTY - call save_package on the map path to persist."
+    "Spawn an actor into the current level. actor_class may be a native class or a Blueprint class path (/Game/BP/BP_Foo.BP_Foo_C). location/rotation/scale take {x,y,z} (rotation also accepts {pitch,yaw,roll}, and scale accepts a bare number for uniform); rotation is pitch/yaw/roll. mesh assigns a static mesh (spawn a StaticMeshActor for it) - it used to be accepted and silently dropped, producing an EMPTY actor that reported ok. Transforms are validated BEFORE the spawn, so a bad component fails without leaving an actor behind. EVERY numeric field is strict now: a value you SUPPLY that is not a number is a hard error naming the field, the value and the expected type. It is never defaulted - location={\"x\":\"not-a-number\",\"y\":123,\"z\":456} used to return ok:true having applied y and z, kept the old x, and echoed the mixture back as if you had asked for it. Returns the new actorPath. The level is left DIRTY - call save_package on the map path to persist."
     return _post("spawn_actor_in_level", actorClass=actor_class, location=location,
                  rotation=rotation, scale=scale, label=label or None, folder=folder or None,
                  mesh=mesh)
@@ -1218,7 +1299,7 @@ def spawn_actor_in_level(actor_class: str, location: dict = None, rotation: dict
 @mcp.tool()
 def set_actor_transform(actor_path: str, location: dict = None, rotation: dict = None,
                         scale: dict = None, relative: bool = False) -> dict:
-    "Move/rotate/scale a placed actor. Omitted components keep their current value, so this doubles as move-only. relative=True treats location and rotation as DELTAS instead of absolutes."
+    "Move/rotate/scale a placed actor. Omitted components keep their current value, so this doubles as move-only; rotation accepts {x,y,z} or {pitch,yaw,roll}, and any of the three may also be [x,y,z]. relative=True treats location and rotation as DELTAS instead of absolutes - and REFUSES if scale is also passed, because there is no unambiguous relative scale. EVERY numeric field is strict now: a value you SUPPLY that is not a number is a hard error naming the field, the value and the expected type. It is never defaulted - location={\"x\":\"not-a-number\",\"y\":123,\"z\":456} used to return ok:true having applied y and z, kept the old x, and echoed the mixture back as if you had asked for it. A relative call now seeds its deltas from ZERO, so an omitted component means 'no delta'; it used to seed from the current transform and then add the current transform again, doubling every component you did NOT send. The response reports locationApplied/rotationApplied/scaleApplied so the echoed transform can never be misread as 'all three applied as requested'. Unknown parameters are rejected by name."
     return _post("set_actor_transform", actorPath=actor_path, location=location,
                  rotation=rotation, scale=scale, relative=relative or None)
 
@@ -1331,22 +1412,32 @@ def duplicate_asset(path: str, new_path: str) -> dict:
 
 @mcp.tool()
 def get_referencers(path: str) -> dict:
-    "Which packages reference this asset. Authoritative - reads the asset registry's dependency graph, so it is immune to the FName trap where a trailing _<digits> is stored as a separate number and a literal name search misses real references. Note it sees hard refs and soft object/class paths, but NOT a path stored as a plain string in a DataTable cell."
+    "Which packages reference this asset. Authoritative - reads the asset registry's dependency graph, so it is immune to the FName trap where a trailing _<digits> is stored as a separate number and a literal name search misses real references. Note it sees hard refs and soft object/class paths, but NOT a path stored as a plain string in a DataTable cell. package == packageName == the PACKAGE path you asked about (an object path is accepted and reduced), and every referencers[] entry is a PACKAGE path too - the registry graph is package-to-package, so there is no objectPath to give. Feed them straight into audit_unused's exclude_referencers."
     return _post("get_referencers", path=path)
 
 
 @mcp.tool()
 def get_dependencies(path: str) -> dict:
-    "Which packages this asset references (the inverse of get_referencers)."
+    "Which packages this asset references (the inverse of get_referencers). Same shape: package == packageName, and every dependencies[] entry is a PACKAGE path."
     return _post("get_dependencies", path=path)
 
 
 @mcp.tool()
 def audit_unused(path_prefix: str, cls: str = "", include_all: bool = False,
-                 limit: int = 4000, rescan: bool = False) -> dict:
-    "Find unused assets under a folder in one call. Returns, per asset, refs (total referencing packages) and extRefs (those outside its own folder). extRefs is the telling number: a cluster that only references itself has refs>0 but extRefs==0 and is just as unshipped as something with no references. include_all returns every asset rather than only the unreferenced; rescan forces a re-scan first so freshly-created assets are not reported dead."
+                 limit: int = 4000, rescan: bool = False,
+                 exclude_referencers: list = None) -> dict:
+    "Find unused assets under a folder in one call. Returns, per asset, objectPath + packageName (same spelling as find_assets), refs (total referencing packages) and extRefs (those outside its own folder). extRefs is the telling number: a cluster that only references itself has refs>0 but extRefs==0 and is just as unshipped as something with no references. include_all returns every asset rather than only the unreferenced; rescan forces a re-scan first so freshly-created assets are not reported dead. exclude_referencers names referencers whose reference DOES NOT COUNT toward 'used' - one dev-only test level that references everything otherwise makes every asset look alive. Each entry is an exact package path (/Game/DevTest/L_Scratch) or a folder prefix (/Game/DevTest/, trailing slash optional, matches everything beneath); an object path is reduced to its package, so a value pasted out of find_assets works unedited. A malformed entry is an ERROR naming it, never a silent skip."
+    # THREE REFUSALS EXIST TO KEEP THE BRIDGE ANSWERING (every handler runs inline on the game
+    # thread, so an unbounded scan takes the whole HTTP server offline for its duration):
+    #   - rescan=True is refused for a path_prefix of fewer than two segments (/Game, /) - forcing a
+    #     synchronous re-scan of a mount root is minutes of frozen editor;
+    #   - the call errors instead of waiting when the asset registry is still scanning (it used to
+    #     call WaitForCompletion unconditionally, even when rescan was not asked for);
+    #   - a path_prefix matching more than 20000 assets is refused, because referencers are queried
+    #     per asset regardless of `limit` (limit caps the reported rows, not the work).
     return _post("audit_unused", pathPrefix=path_prefix, **{"class": cls or None},
-                 includeAll=include_all, limit=limit, rescan=rescan)
+                 includeAll=include_all, limit=limit, rescan=rescan,
+                 excludeReferencers=exclude_referencers or None)
 
 
 # --------------------------------------------------------------------------
@@ -1368,10 +1459,11 @@ def create_editable_child(source_asset: str, child_path: str = "", variant: str 
 
 @mcp.tool()
 def spawn_actor_in_pie(actor_class: str, location: dict = None, rotation: dict = None,
-                       scale: dict = None, label: str = None, net_mode: str = "server") -> dict:
-    "Spawn an actor into the RUNNING PIE world. spawn_actor_in_level cannot do this - it goes through UEditorActorSubsystem, which serves the EDITOR world. Needed because a mod whose bootstrap is UE4SS (which does not run in the editor) otherwise never spawns under PIE, and placing the actor in the map does not survive a world travel. net_mode picks which PIE world when running multi-client: server (default - a replicated actor spawned here reaches every client), client, or any. Returns hasAuthority/replicates on the spawned actor plus a worlds array of every PIE world, so a wrong-role spawn is visible rather than silent. BeginPlay fires immediately; the actor is not saved to any map and dies with PIE. rotation is x/y/z = pitch/yaw/roll like every other MifBridge transform."
+                       scale: dict = None, label: str = None, net_mode: str = "server",
+                       mesh: str = None) -> dict:
+    "Spawn an actor into the RUNNING PIE world. spawn_actor_in_level cannot do this - it goes through UEditorActorSubsystem, which serves the EDITOR world. Needed because a mod whose bootstrap is UE4SS (which does not run in the editor) otherwise never spawns under PIE, and placing the actor in the map does not survive a world travel. net_mode picks which PIE world when running multi-client: server (default - a replicated actor spawned here reaches every client), client, or any. Returns hasAuthority/replicates on the spawned actor plus a worlds array of every PIE world, so a wrong-role spawn is visible rather than silent. BeginPlay fires immediately; the actor is not saved to any map and dies with PIE. rotation is x/y/z = pitch/yaw/roll like every other MifBridge transform. mesh assigns a static mesh (spawn a StaticMeshActor for it) - the same parameter spawn_actor_in_level takes, ported here because this endpoint was the unfixed sibling that still accepted it and silently dropped it, producing an EMPTY actor that reported ok."
     return _post("spawn_actor_in_pie", actorClass=actor_class, location=location,
-                 rotation=rotation, scale=scale, label=label, netMode=net_mode)
+                 rotation=rotation, scale=scale, label=label, netMode=net_mode, mesh=mesh)
 
 
 # --------------------------------------------------------------------------
@@ -1497,6 +1589,88 @@ def shader_compile_status() -> dict:
 
 
 # --------------------------------------------------------------------------
+# Enhanced Input authoring
+# (Registry drift: this endpoint has had MIF_DECL + MIF_BIND since Nodes7 landed
+#  but never got an @mcp.tool, so it was unreachable over MCP.)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: int = 0) -> dict:
+    "Add a UK2Node_EnhancedInputAction event node (the 'IA_Foo' node you normally get by right-clicking the graph and searching for the action asset) - the one node class the bridge could not author, which forced every Enhanced Input binding to be finished by hand. input_action is a UInputAction object path (/Game/X/IA_Foo.IA_Foo) or its package path (/Game/X/IA_Foo). Pins (Triggered/Started/Ongoing/Canceled/Completed plus a value pin typed by the action's ValueType) are generated FROM the action, so an unresolvable path is an error rather than a pin-less node."
+    return _post("add_enhanced_input_action", graphId=graph_id, inputAction=input_action, x=x, y=y)
+
+
+# --------------------------------------------------------------------------
+# Level streaming (Batch I) - sublevels in the editor world, level instances
+# in the running PIE world.
+#
+# list_sublevels is the READ half AND the poll endpoint for every mutation
+# here: streaming state changes land across frames, so the deferred verbs
+# return an opId and nothing blocks. Poll until pending clears / ready=true.
+# (This block sits ABOVE main()/the __main__ guard on purpose: a tool defined
+#  after mcp.run() starts never registers - the spawn_actor_in_pie lesson.)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def list_sublevels(world: str = "editor", net_mode: str = "server") -> dict:
+    "List the sublevels of a world: persistent{}, sublevels[{packagePath, objectPath, streamingClass, loaded, visible, editorVisible, pending, ...}], count/loadedCount/visibleCount/pendingCount, currentLevel, isPartitioned, ready, and ops[] (the deferred add/remove/streaming jobs and their state). world = editor|pie - during PIE there are TWO worlds and the editor verbs see the editor one; net_mode picks which PIE world when running multi-client and is only meaningful with world='pie'. THIS IS THE POLL ENDPOINT for add_sublevel / remove_sublevel / set_sublevel_streaming / set_sublevel_visibility / pie_load_level_instance / pie_unload_level_instance."
+    return _post("list_sublevels", world=world, netMode=net_mode)
+
+
+@mcp.tool()
+def add_sublevel(path: str, streaming_class: str = "alwaysloaded",
+                 location: dict = None, rotation: dict = None) -> dict:
+    "Add an existing map as a sublevel of the open world. path is a package path (/Game/Maps/TownDistrict). streaming_class = alwaysloaded | dynamic. location/rotation take {x,y,z}, rotation as pitch/yaw/roll like every other MifBridge transform. DEFERRED: returns requested/deferred/opId immediately and the engine work runs off a next-tick timer, because AddLevelToWorld flushes level streaming and re-registers a ULevel - a cascade that must not ride an undo transaction. Poll list_sublevels. Refuses BEFORE calling the engine in the two cases where the engine would open a MODAL dialog and deadlock the bridge: the path IS the persistent level, or it is already a sublevel (that one answers alreadyPresent:true, changed:false). A cooked .pak-only map has no loose .umap to add and is refused by name."
+    return _post("add_sublevel", path=path, streamingClass=streaming_class,
+                 location=location, rotation=rotation)
+
+
+@mcp.tool()
+def remove_sublevel(path: str, discard_unsaved: bool = False) -> dict:
+    "Remove a sublevel from the open world. DEFERRED (opId, poll list_sublevels) for a stronger reason than add_sublevel: RemoveLevelsFromWorld RESETS the transaction buffer, then forces a GC, then runs a stale-reference sweep that is FATAL when the buffer was reset - none of which may happen with the bridge's HTTP call frame on the stack. Expect undoBufferReset:true in the response: your undo history is gone afterwards, by the engine's design, not the bridge's. Refuses the persistent level (use load_level / new_level to change the open map). discard_unsaved drops unsaved changes in that sublevel instead of refusing."
+    return _post("remove_sublevel", path=path, discardUnsaved=discard_unsaved)
+
+
+@mcp.tool()
+def set_sublevel_visibility(path: str, visible: bool = None, should_be_loaded: bool = None,
+                            should_be_visible: bool = None, lighting_scenario: bool = None) -> dict:
+    "Flip a sublevel's flags: visible (EDITOR viewport visibility), should_be_loaded / should_be_visible (RUNTIME streaming intent), lighting_scenario. PARTIAL UPDATE - omitted flags are left alone, and a call that passes none of them is an error. EVERY write is READ BACK and compared: setters that do nothing are reported in ignored[{field, requested, actual, reason}] rather than echoed as success, and a call where NOTHING took is an ERROR. That is not belt-and-braces - ULevelStreamingAlwaysLoaded::ShouldBeLoaded() is hardcoded to return true, so should_be_loaded=False on an always-loaded sublevel (which is what add_sublevel creates by default) does nothing at all. Inline, not deferred, but the load/unload itself lands over later frames: check pending, then poll list_sublevels."
+    return _post("set_sublevel_visibility", path=path, visible=visible,
+                 shouldBeLoaded=should_be_loaded, shouldBeVisible=should_be_visible,
+                 lightingScenario=lighting_scenario)
+
+
+@mcp.tool()
+def set_current_sublevel(path: str) -> dict:
+    "Set which level new actors are spawned into. path is a sublevel's package path, or the literal 'persistent'. Without this sublevels are decoration: spawn_actor_in_level, spawn_many and duplicate_actors always land in whatever level is current. Returns currentLevel, previousLevel, changed."
+    return _post("set_current_sublevel", path=path)
+
+
+@mcp.tool()
+def set_sublevel_streaming(path: str, streaming_class: str) -> dict:
+    "Change a sublevel's streaming class: alwaysloaded | dynamic. DEFERRED (opId, poll list_sublevels) because SetStreamingClassForLevel does not edit a property - it REMOVES the ULevelStreaming and re-adds the level, returning a NEW object, and an object-identity swap mid-array is not an undoable property revert. Refuses when the sublevel is not loaded: the engine asserts (check(Level)) and takes the editor down rather than returning an error - load it with set_sublevel_visibility {should_be_loaded: True} first. Returns fromClass/toClass, and changed:false with no engine call when it is already that class."
+    return _post("set_sublevel_streaming", path=path, streamingClass=streaming_class)
+
+
+@mcp.tool()
+def pie_load_level_instance(path: str, location: dict = None, rotation: dict = None,
+                            visible: bool = True, net_mode: str = "server",
+                            name_override: str = "", temp_package: bool = False) -> dict:
+    "Stream a level into the RUNNING PIE world as an instance - test setup without a Lua command, and the counterpart to spawn_actor_in_pie. path is the SOURCE map's package path; location/rotation ({x,y,z}, pitch/yaw/roll) place the instance; net_mode picks which PIE world when running multi-client. name_override names the instance (otherwise one is generated); temp_package loads it into a transient package. The request runs INLINE and hands back the real handle (instanceName, objectPath) because the engine's LoadLevelInstance never blocks and never dialogs - but the STREAMING is async, so poll list_sublevels {world:'pie'} until it reports loaded/visible. The instance is not saved to any map and dies with PIE."
+    return _post("pie_load_level_instance", path=path, location=location, rotation=rotation,
+                 visible=visible, netMode=net_mode, nameOverride=name_override or None,
+                 tempPackage=temp_package)
+
+
+@mcp.tool()
+def pie_unload_level_instance(instance_name: str = "", object_path: str = "", path: str = "",
+                              net_mode: str = "server") -> dict:
+    "Unload a level instance from the running PIE world. Identify it by instance_name (what pie_load_level_instance returned), object_path, or path naming the SOURCE map - one of the three is required. Requests the unload and returns; the teardown happens over the following frames via the streaming update, so poll list_sublevels {world:'pie'}. An instance already being unloaded answers changed:false rather than erroring."
+    return _post("pie_unload_level_instance", instanceName=instance_name or None,
+                 objectPath=object_path or None, path=path or None, netMode=net_mode)
+
+
+# --------------------------------------------------------------------------
 # Cooked-Blueprint reconstruction (Batch R) - kr_* endpoints.
 # These are NOT MifBridge built-ins: they are registered into the bridge at
 # editor startup by the MifKismetReconstructor plugin (self_audit reports them
@@ -1574,8 +1748,119 @@ def kr_reconstruct_request(source_asset: str, mode: str = "copy", variant: str =
 
 @mcp.tool()
 def kr_reconstruct_status(job_id: str = "") -> dict:
-    "Poll the single kr job slot (omit job_id for the retained job). Returns state (queued|running|done|failed), phase, elapsedMs, functionsTotalEstimate vs functionsDone/functionsReconstructed/functionsDegraded, eventsDone/eventsReconstructed, nodesCreated, compile{measured, errors, warnings, firstError} and the kind-specific result{} (blueprintId, graph, graphNodes, clean, saved). compile.measured=false means nothing measured it - errors:0 there does NOT mean a clean compile; call validate on result.blueprintId for authoritative numbers. Exactly ONE record is retained, so poll-after-done works but is lost once the next request is accepted; an unknown job_id answers found:false naming the id that IS retained. Job records are in-memory only and do not survive an editor restart."
+    "Poll the single kr job slot - THE poll half for EVERY kr job kind (reconstruct, verify, classify, census, batch); there is no per-kind status endpoint. Omit job_id for the retained job. Returns kind, state (queued|running|done|failed), phase, elapsedMs, functionsTotalEstimate vs functionsDone/functionsReconstructed/functionsDegraded, eventsDone/eventsReconstructed, nodesCreated, compile{measured, errors, warnings, firstError} and the kind-specific result{}. compile.measured=false means nothing measured it - errors:0 there does NOT mean a clean compile; call validate on result.blueprintId for authoritative numbers. progressObservable says whether the counters can move mid-job: FALSE for the single-Blueprint kinds (reconstruct/verify/classify), which are ATOMIC because the HTTP listener is a game-thread ticker and reads nothing off the socket while they run; TRUE for the SLICED kinds (census/batch), which process one Blueprint per tick so result.bpDone genuinely advances across polls. Exactly ONE record is retained, so poll-after-done works but is lost once the next request is accepted; an unknown job_id answers found:false naming the id that IS retained. Job records are in-memory only and do not survive an editor restart."
     return _post("kr_reconstruct_status", jobId=job_id or None)
+
+
+# --------------------------------------------------------------------------
+# Wave 3 - the kr_* verify family. Turns "it compiled" into "it provably
+# behaves like the original": reconstruct a THROWAWAY TRANSIENT copy, compile
+# it, and diff the recompiled bytecode against the cooked original.
+#
+# All four mint nothing persistent - no asset is saved, registered or opened;
+# only the census/batch CSV under <ProjectSaved>/MifKr/ is written. All four
+# are deferred and poll through kr_reconstruct_status. There is ONE job slot
+# and no queue: a second request while one runs is REFUSED naming the runner.
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def kr_verify_fidelity(source_asset: str, classify_intentional: bool = True,
+                       allow_anim: bool = False) -> dict:
+    "Reconstruct a throwaway transient CHILD of a cooked Blueprint, compile it, and diff every reconstructed function's recompiled bytecode against the cooked original - the whole-Blueprint fidelity aggregate. source_asset is the .<Name>_C class path, the asset path, or the exact name. CHILD-ONLY BY DESIGN: there is no mode/variant parameter, because a sibling copy mints its components into the transient package, so every component reference differs by object path and reports systematic FALSE drift - a number that measures the mode, not the decompiler. A loose/authored Blueprint is deliberately accepted (author with the bridge, reconstruct, diff against what you built). Anim Blueprints are refused unless allow_anim, because the engine mints an anim source as a plain UBlueprint with no AnimGraph and every number would describe that degraded copy. Returns a jobId immediately; poll kr_reconstruct_status. result.fidelity.score is null (never 1.000) when nothing was scored, and the whole fidelity block is ABSENT when the copy failed to compile."
+    return _post("kr_verify_fidelity", sourceAsset=source_asset,
+                 classifyIntentional=classify_intentional, allowAnim=allow_anim)
+
+
+@mcp.tool()
+def kr_classify_drift(source_asset: str, function: str = "", classify_intentional: bool = True,
+                      allow_anim: bool = False) -> dict:
+    "kr_verify_fidelity decomposed PER FUNCTION: result.functions[{name, verdict, reasons[], detail}] with verdict in identical/equivalent/intentional/drift/missing/uncomparable, plus verdictCounts, reasonTally and consistent. For real drift it reports the ROOT-CAUSE edit rather than the first raw stream difference - one inserted statement re-ordinalises every later jump, so the first raw difference is usually a cascade artefact. `function` FILTERS THE REPORT ONLY; it does not narrow the work, because the pipeline is per-Blueprint and the whole verify runs regardless. This kind costs roughly TWICE kr_verify_fidelity (the verifier runs once for the aggregate and once per function), which is exactly what makes result.consistent an independent cross-check rather than a tautology. Same CHILD-ONLY rule and same anim gate as kr_verify_fidelity. Returns a jobId; poll kr_reconstruct_status."
+    return _post("kr_classify_drift", sourceAsset=source_asset, function=function or None,
+                 classifyIntentional=classify_intentional, allowAnim=allow_anim)
+
+
+@mcp.tool()
+def kr_drift_census(path_filter: str = "/Game/", start_index: int = 0, max_count: int = 50,
+                    classify_intentional: bool = True) -> dict:
+    "Fidelity verify across a path-filtered SET of cooked Blueprints with the classifier's census instrument (mif.kr.DriftCensus) forced on for the job, producing running corpus totals over HTTP plus the on-disk CSV of every UNCLAIMED drift edit - the data a rule author needs to decide which drift classes actually dominate, without babysitting a console for an hour. path_filter is a SUBSTRING of the package name ('*' = every mounted root). max_count defaults to 50 so an accidental whole-corpus run must be opt-in: pass 0 to ask for the entire filtered corpus explicitly. start_index is the crash-resume cursor - result.resumeHint is the value to pass if the editor dies mid-sweep. CHILD MODE ALWAYS, VERIFY ALWAYS, COOKED-ONLY (loose Blueprints are exactly what a corpus fidelity number must not dilute; anim Blueprints are excluded by the same rule as kr_verify_fidelity). SLICED one Blueprint per tick, so the bridge keeps answering and result.bpDone genuinely advances across polls of kr_reconstruct_status. Returns corpusFidelity/corpusAdjusted (null when nothing scored), skipTaxonomy{resolve,parent,mint} and censusCsvPath."
+    return _post("kr_drift_census", pathFilter=path_filter, startIndex=start_index,
+                 maxCount=max_count, classifyIntentional=classify_intentional)
+
+
+@mcp.tool()
+def kr_batch_reconstruct(path_filter: str = "/Game/", mode: str = "sibling", verify: bool = False,
+                         start_index: int = 0, max_blueprints: int = 0,
+                         classify_intentional: bool = True) -> dict:
+    "The regression sweep: reconstruct every matching cooked Blueprint into a throwaway copy, compile it, tally PASS/FAIL/SKIP with the three-way skip taxonomy, and write the engine harness's exact CSV. This is mif.kr.ReconstructAll over HTTP - except the console command blocks the editor for the whole run and this one is SLICED one Blueprint per tick, so the bridge keeps answering and progress is observable. path_filter is a substring of the package name ('*' = all); max_blueprints 0 means every match. mode = sibling (parent-class copy, the default and what the console sweep does) | child (IS-A the cooked class, the only mode fidelity is measurable in). verify REQUIRES mode='child' and is refused otherwise, loudly: a sibling copy mints its components into the transient package, so verify would emit systematic FALSE drift on every Blueprint and read as a decompiler regression. Nothing is ever saved - use kr_reconstruct_request mode='copy' for a persistent asset. Returns a jobId; poll kr_reconstruct_status."
+    return _post("kr_batch_reconstruct", pathFilter=path_filter, mode=mode, verify=verify,
+                 startIndex=start_index, maxBlueprints=max_blueprints,
+                 classifyIntentional=classify_intentional)
+
+
+# --------------------------------------------------------------------------
+# Batch O - EDITOR UI INVOCATION: invoke the ACTION, never the pixel.
+#
+# Reaching an editor affordance with no callable API - a third-party plugin's
+# toolbar button, a custom editor window, a Details-panel row nobody exposed.
+# Pixel clicking through the AutomationDriver is NOT implemented and will not
+# be added casually: it deadlocks the bridge if driven from a handler, warps
+# the user's real OS mouse pointer, steals window focus, dies when the editor
+# is minimised, and cannot address an engine Details row by identity at all
+# (no engine editor widget carries a driver id). The full decision, the
+# guardrails a future implementation would need, and the list of what cannot
+# be made safe are in docs/audit/06_IMPLEMENTED.md "Batch O".
+#
+# EVERY INVOKING TOOL BELOW CAN OPEN A MODAL. The bridge's HTTP server is a
+# game-thread ticker; a modal spins its own loop, the tick stops, the socket
+# stops being read, and the call NEVER RETURNS. A hang IS the symptom.
+# Diagnose from outside the process:
+#   powershell -NoProfile -Command "Get-Process UnrealEditor | Select-Object Id,MainWindowTitle"
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def list_editor_commands(context: str = "", command: str = "", filter: str = "",
+                         include_unbound: bool = True, include_can_execute: bool = False,
+                         include_console: bool = False, console_prefix: str = "",
+                         menu: str = "", section: str = "", limit: int = 400) -> dict:
+    "DISCOVERY for invoke_editor_command / send_editor_key. Three halves, each honest about what it can see. (a) BINDING CONTEXTS are genuinely ENUMERABLE: every FUICommandInfo in every registered TCommands<> context, with label, description, chord and whether a live command list maps it - this reaches third-party plugins with ZERO coupling (BlueprintAssist's ~150 commands list under context 'BlueprintAssistCommands' without the bridge linking against it). (b) CONSOLE OBJECTS, opt-in via include_console + console_prefix. (c) ONE NAMED MENU, opt-in via menu: its sections and entries with an invokeKind of command/submenu/decoration/unreachableOrToolUIAction - probe-only, because menu NAMES cannot be listed (UToolMenus keeps its registry in a private member). Read commandListSource.contextsWithLists: a context absent from it has no invokable list and invoke_editor_command will say so. include_can_execute runs each command's CanExecute predicate (third-party code) and is off by default; canExecute is null when unknown, never guessed. Invokes NOTHING."
+    return _post("list_editor_commands", context=context or None, command=command or None,
+                 filter=filter or None, includeUnbound=include_unbound,
+                 includeCanExecute=include_can_execute or None,
+                 includeConsole=include_console or None, consolePrefix=console_prefix or None,
+                 menu=menu or None, section=section or None, limit=limit)
+
+
+@mcp.tool()
+def invoke_editor_command(context: str, command: str, menu: str = "", section: str = "",
+                          entry: str = "", dry_run: bool = False, confirm: bool = False,
+                          allow_known_modal: bool = False) -> dict:
+    "Execute the FUIAction a menu entry or toolbar button is bound to - the same delegate a mouse click ends in, minus hit-testing, minus focus change, minus cursor. START WITH dry_run=True: it resolves the command, finds a live FUICommandList and reports CanExecute without firing anything. confirm=True is REQUIRED to actually execute; without it (and without dry_run) the call FAILS naming the parameter rather than answering ok:true having done nothing. A command whose CanExecute is false is refused, not invoked. A small VERIFIED deny-list of commands whose engine implementation opens a modal unconditionally is refused unless allow_known_modal=True. If the default route reports no live command list, pass menu/section/entry to take the action off a ToolMenus entry instead, or use send_editor_key with the command's chord (that is the only route to commands a plugin dispatches from its own IInputProcessor, which is how BlueprintAssist actually runs). HAZARD: the action is arbitrary third-party code and may open a modal, which stops the bridge until a human clicks - there is no way to prevent that from inside the process."
+    return _post("invoke_editor_command", context=context, command=command,
+                 menu=menu or None, section=section or None, entry=entry or None,
+                 dryRun=dry_run or None, confirm=confirm or None,
+                 allowKnownModal=allow_known_modal or None)
+
+
+@mcp.tool()
+def invoke_editor_tab(tab_id: str = "", manager: str = "global", major_tab: str = "",
+                      asset: str = "", probe: bool = False, probe_ids: list = None,
+                      include_known_ids: bool = True, as_inactive: bool = False) -> dict:
+    "Open an editor tab by id via FTabManager::TryInvokeTab - the route BlueprintAssist itself uses to open its own windows. 'Open a custom editor window' is one public call, no pixels. Call with NO tab_id (or probe=True) for DISCOVERY: it probes a curated seed of well-known ids plus anything in probe_ids plus a partial walk of the manager's workspace menu, and reports which ids this editor can actually spawn (probes[].hasSpawner) and which are already open. Tab ids CANNOT be enumerated - the registry and its lookup are both protected in the engine despite carrying the export macro - so probing is the honest primitive and every hasSpawner is a LIVE answer, not a claim from the seed list. manager selects which tab manager: 'global' (nomad/global tabs - OutputLog, ReferenceViewer, BADebugMenu...), 'majorTab' with major_tab='LevelEditor' (level-editor minor tabs such as LevelEditorSelectionDetails - the level Details panel), or 'assetEditor' with asset=<path of an OPEN asset> (Blueprint-editor tabs such as Inspector / MyBlueprint / Palette - the Blueprint Details panel). An unknown id is refused with near misses before anything is constructed. HAZARD: a tab spawner is third-party code and could show a dialog while building its widget - that is exactly how a BlueprintAssist popup took this bridge down once."
+    return _post("invoke_editor_tab", tabId=tab_id or None, manager=manager,
+                 majorTab=major_tab or None, asset=asset or None, probe=probe or None,
+                 probeIds=probe_ids or None, includeKnownIds=include_known_ids,
+                 asInactive=as_inactive or None)
+
+
+@mcp.tool()
+def send_editor_key(key: str, confirm: bool = False, dry_run: bool = False,
+                    modifiers: dict = None, user_index: int = 0, is_repeat: bool = False,
+                    character_code: int = 0, key_code: int = 0, send_key_up: bool = True) -> dict:
+    "Inject a key event through FSlateApplication::ProcessKeyDownEvent, which reaches registered IInputProcessors FIRST - the only route to commands a plugin dispatches from its own input processor rather than from a reachable FUICommandList. This is how BlueprintAssist's ~150 commands actually run. key is an FKey name ('Tab', 'F5', 'H', 'SpaceBar'), exactly the spelling list_editor_commands reports as chord.key; an unknown name is refused with near misses. confirm=True is REQUIRED (dry_run=True validates the key, the modifier reality and the current focus without sending). MODIFIED CHORDS ARE REFUSED, NOT FAKED: FSlateApplication::GetModifierKeys() reads the REAL platform keyboard, so a synthetic Ctrl+H is evaluated by any consumer written like BlueprintAssist's as bare H and would fire the wrong command silently - if you ask for modifiers the human is not physically holding, this fails and tells you to use invoke_editor_command instead. Down and up are sent together so a stalled call cannot strand a key down. HAZARD: the key runs whatever is bound to it, which the request does not name, and that can open a modal."
+    return _post("send_editor_key", key=key, confirm=confirm or None, dryRun=dry_run or None,
+                 modifiers=modifiers or None, userIndex=user_index or None,
+                 isRepeat=is_repeat or None, characterCode=character_code or None,
+                 keyCode=key_code or None, sendKeyUp=send_key_up)
 
 
 def main():

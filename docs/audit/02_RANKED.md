@@ -3,6 +3,11 @@
 _Generated from the verified index (work/index/*.rows.json) on 2026-07-26. Rank = U+E+R (each 1–5)._
 _Full specs: the axis files under [work/](work/); risks: [03_GAPS_AND_RISKS.md](03_GAPS_AND_RISKS.md)._
 
+> **Delivery status is NOT derivable from this file's rankings, and NOT from whether the endpoint name
+> is live.** The ✅ marks below cover Batch C only. For the 8 entries tagged *(behaviour change)* the
+> name was already live before the audit — see **Batch 0** below for their real status (5 still open,
+> 2 partial, 1 in source but unbuilt) and `01_CATALOGUE.md` § *Delivery status* for the evidence.
+
 ## Tier ranking
 
 ### Tier 0 — closes a known gap (36)
@@ -270,11 +275,31 @@ _Full specs: the axis files under [work/](work/); risks: [03_GAPS_AND_RISKS.md](
 
 ### Batch 0 — repairs to existing endpoints — 8 endpoints
 
-Zero new modules. Fix the defects the audit proved in the live bridge before adding surface: the six behaviour-change entries below, plus (from 03 §7) find_assets unknown-param strictness, server.py tool for diagnose_landscape_draws, bucket reclassification of describe_class/list_enum_values, and the editor rebuild that picks up the 4 in-source endpoints.
+Zero new modules. Fix the defects the audit proved in the live bridge before adding surface: the eight behaviour-change entries below, plus (from 03 §7) find_assets unknown-param strictness, server.py tool for diagnose_landscape_draws, bucket reclassification of describe_class/list_enum_values, and the editor rebuild that picks up the 4 in-source endpoints.
 
-`list_components`°, `pie_status`°, `connect_pins`°, `read_modloader_log`, `add_component`°, `list_variables`°, `rename_function`, `snap_actors_to_ground`°
+`list_components`° ◐, `pie_status`° ◑, `connect_pins`° ✗, `read_modloader_log` ✗, `add_component`° ✗, `list_variables`° ✗, `rename_function` ✗, `snap_actors_to_ground`° ◑
 
 _° = Tier 0 (6 in this batch)._
+
+> **Delivery status, added 2026-07-29 — none of these was delivered by its endpoint name going live.**
+> Every one of the eight names already answered before this catalogue was written; the entry asks for
+> a change to what the endpoint DOES. A count that treated the live name as delivery produced the
+> overstated "41 entries live today" in `07_SELF_AUDIT_FINDINGS.md` §6.
+>
+> - **✗ STILL OPEN — the specced change never landed** (5): `connect_pins`, `add_component`,
+>   `list_variables`, `rename_function`, `read_modloader_log`.
+>   The load-bearing one is `connect_pins`: `MifBridgeCommon.cpp:3762` is still
+>   `const UEdGraphSchema_K2* Schema = K2();`, so AnimGraph schema overrides still never run and the
+>   whole anim-state family remains unwireable. It was reported as shipped and is not.
+> - **◑ SHIPPED (PARTIAL)** (2): `pie_status` (readiness landed; the `travelling`/`stopping`/
+>   `simulating` state words did not — `MifBridgePIE.cpp:114`), `snap_actors_to_ground` (multi-trace
+>   landed; the penetrating trace did not — `MifBridgeWorld.cpp:486`).
+> - **◐ IN SOURCE ONLY** (1): `list_components` landed in Batch N on 2026-07-29, *after* the R3 pass
+>   recorded it open. **Batch N was source-only — nothing was built**, so it is not in a running DLL.
+>
+> Row-level totals over all 250 catalogue rows (`work/R3_REMAINING_WORK.md`, 2026-07-28): **34
+> SHIPPED · 2 SHIPPED (PARTIAL) · 9 SUPERSEDED · 2 WITHDRAWN · 203 STILL OPEN**. Per-entry evidence:
+> `01_CATALOGUE.md` § *Delivery status*.
 
 ### Batch 1 — zero-new-dependency endpoints — 145 endpoints
 

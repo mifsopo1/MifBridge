@@ -30,6 +30,8 @@
 #include "EngineUtils.h"                  // TActorIterator
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Components/StaticMeshComponent.h"  // spawn_actor_in_pie's mesh support (parity with spawn_actor_in_level)
+#include "Engine/StaticMesh.h"               // LoadObject<UStaticMesh>
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
@@ -50,10 +52,10 @@ namespace MifBridge
 			return GEditor ? GEditor->PlayWorld : nullptr;
 		}
 
-		UWorld* GetEditorWorld()
-		{
-			return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-		}
+		// GetEditorWorld() was the third byte-identical copy of the same two lines (the others were in
+		// MifBridgeStreaming.cpp and MifBridgeWorld.cpp, both named EditorWorld). It is now
+		// MifBridge::EditorWorld(), defined once in MifBridgeCommon.cpp — a differently-NAMED copy is
+		// not a build error, which is precisely why it survived three audits.
 
 		// With RunUnderOneProcess and >1 client there are SEVERAL PIE worlds in this process — a server
 		// and one per client — and GEditor->PlayWorld is only ever ONE of them. Spawning a replicated
@@ -71,20 +73,6 @@ namespace MifBridge
 			}
 		}
 
-		void CollectPIEWorlds(TArray<UWorld*>& OutWorlds)
-		{
-			if (!GEngine)
-			{
-				return;
-			}
-			for (const FWorldContext& Ctx : GEngine->GetWorldContexts())
-			{
-				if (Ctx.WorldType == EWorldType::PIE && Ctx.World() != nullptr)
-				{
-					OutWorlds.Add(Ctx.World());
-				}
-			}
-		}
 
 		TSharedRef<FJsonObject> DescribePIEWorld(UWorld* W)
 		{
@@ -137,11 +125,13 @@ namespace MifBridge
 				for (TActorIterator<AActor> It(PIEWorld); It; ++It) { ++ActorCount; }
 				Out->SetNumberField(TEXT("pieActorCount"), ActorCount);
 			}
-			if (UWorld* EditorWorld = GetEditorWorld())
+			// Local is NOT named EditorWorld: that is now the shared function's name, and a variable
+			// declared with that spelling would shadow it inside its own initialiser.
+			if (UWorld* EdWorld = EditorWorld())
 			{
 				// Named alongside pieWorld so the two-world split is visible, not something you
 				// discover by wondering why your actor edits did nothing.
-				Out->SetStringField(TEXT("editorWorld"), EditorWorld->GetName());
+				Out->SetStringField(TEXT("editorWorld"), EdWorld->GetName());
 			}
 		}
 
@@ -222,7 +212,7 @@ namespace MifBridge
 			Fail(Out, TEXT("a play session is already running or queued — call stop_pie first, or poll pie_status"));
 			return;
 		}
-		if (!GetEditorWorld())
+		if (!EditorWorld())
 		{
 			Fail(Out, TEXT("no editor world is open to play"));
 			return;
@@ -479,14 +469,22 @@ namespace MifBridge
 		}
 
 		UWorld* World = GetPIEWorld();
-		if (!World) { World = GetEditorWorld(); }
+		if (!World) { World = EditorWorld(); }
 
 		bool bExecuted = false;
+		FString ExecText;
 		{
 			FScopedLogCapture Capture;   // registered here, removed on scope exit whatever happens
-			bExecuted = GEngine ? GEngine->Exec(World, *Cmd) : false;
+			// Batch O: routed through MifBridge::RunEngineExec (MifBridgeCommon.cpp) so this module has
+			// exactly ONE UEngine::Exec call site — run_console is the other caller and a third copy is
+			// the PM-005 bug class. Behaviour is unchanged for `output`: the tee forwards every
+			// Serialize to GLog, which is where the default Ar (*GLog) sent it before, so FScopedLogCapture
+			// still sees precisely what it saw. `execOutput` is new and additive: the command's OWN
+			// output-device text, which is a different thing from the log lines bracketed here.
+			bExecuted = RunEngineExec(World, Cmd, &ExecText);
 			Capture.Emit(Out, JStr(In, TEXT("filter")));
 		}
+		Out->SetStringField(TEXT("execOutput"), ExecText);
 
 		Out->SetStringField(TEXT("command"), Cmd);
 		// false means no handler claimed it — not necessarily an error, and not a claim about output.
@@ -509,6 +507,21 @@ namespace MifBridge
 	// the travel.
 	void H_spawn_actor_in_pie(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// The unfixed sibling of the spawn_actor_in_level postmortem (docs/01_POSTMORTEMS.md): that
+		// endpoint's `mesh` fix and its strict-params guard were never swept across to this one, so
+		// {actorClass:"StaticMeshActor", mesh:"/Game/..."} reproduced the postmortem exactly — a bare
+		// AStaticMeshActor, ok:true, empty bounds, and the caller debugging the mesh asset.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorClass"), TEXT("class"), TEXT("location"), TEXT("rotation"), TEXT("scale"),
+			  TEXT("mesh"), TEXT("staticMesh"), TEXT("label"), TEXT("netMode") },
+			TEXT("actorClass (alias: class), location, rotation, scale, mesh (alias: staticMesh), label, ")
+			TEXT("netMode (server|client|any; default server)"),
+			{ { TEXT("material"), TEXT("not supported here — spawn the actor, then set_property on the mesh component's OverrideMaterials") },
+			  { TEXT("folder"), TEXT("folders are an editor-outliner concept; a PIE-spawned actor has none") } }))
+		{
+			return;
+		}
+
 		TArray<UWorld*> Worlds;
 		CollectPIEWorlds(Worlds);
 		// Always report what WAS available: on failure this is the difference between "no PIE running"
@@ -608,6 +621,44 @@ namespace MifBridge
 		{
 			Actor->SetActorScale3D(Scale);
 		}
+
+		// Ported verbatim in intent from spawn_actor_in_level: a mesh path that is accepted and dropped
+		// spawns an EMPTY StaticMeshActor and reports ok, and the caller only finds out when the actor
+		// has no bounds. Honour it, or say why it cannot be honoured — never neither.
+		const FString MeshPath = JStrAny(In, { TEXT("mesh"), TEXT("staticMesh") });
+		if (!MeshPath.IsEmpty())
+		{
+			UStaticMeshComponent* MeshComp = Actor->FindComponentByClass<UStaticMeshComponent>();
+			if (!MeshComp)
+			{
+				Actor->Destroy();
+				Fail(Out, FString::Printf(
+					TEXT("'%s' has no StaticMeshComponent, so mesh '%s' cannot be applied — spawn a StaticMeshActor instead"),
+					*ActorClass->GetName(), *MeshPath));
+				return;
+			}
+			UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *MeshPath);
+			if (!Mesh)
+			{
+				Actor->Destroy();
+				Fail(Out, FString::Printf(TEXT("could not load static mesh '%s'"), *MeshPath));
+				return;
+			}
+			// Spawned StaticMeshActors default to Static mobility, which refuses SetStaticMesh.
+			const EComponentMobility::Type OldMobility = MeshComp->Mobility;
+			MeshComp->SetMobility(EComponentMobility::Movable);
+			MeshComp->SetStaticMesh(Mesh);
+			MeshComp->SetMobility(OldMobility);
+			if (MeshComp->GetStaticMesh() != Mesh)
+			{
+				// Read back rather than assume: mobility rules or a native setter can refuse.
+				Actor->Destroy();
+				Fail(Out, FString::Printf(TEXT("mesh '%s' did not take on '%s' (the component still holds a different mesh); the actor was destroyed rather than left empty"),
+					*MeshPath, *ActorClass->GetName()));
+				return;
+			}
+		}
+
 		const FString Label = JStr(In, TEXT("label"));
 		if (!Label.IsEmpty())
 		{
@@ -623,6 +674,7 @@ namespace MifBridge
 		// Report these rather than let the caller assume: a co-op test turns on exactly this.
 		A->SetBoolField(TEXT("hasAuthority"), Actor->HasAuthority());
 		A->SetBoolField(TEXT("replicates"), Actor->GetIsReplicated());
+		if (!MeshPath.IsEmpty()) { A->SetStringField(TEXT("mesh"), MeshPath); }
 		Out->SetObjectField(TEXT("actor"), A);
 		Out->SetObjectField(TEXT("targetWorld"), DescribePIEWorld(Target));
 		// A runtime spawn's BeginPlay fires immediately, unlike a placed actor's — say so, because the

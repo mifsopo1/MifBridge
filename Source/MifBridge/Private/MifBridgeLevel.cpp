@@ -107,24 +107,15 @@ namespace MifBridge
 			return J;
 		}
 
-		// Accept {x,y,z} or a bare [x,y,z]; absent leaves Fallback untouched.
-		bool ReadVector(const TSharedRef<FJsonObject>& In, const TCHAR* Field, FVector& OutVec)
-		{
-			const TSharedPtr<FJsonObject>* ObjPtr = nullptr;
-			if (In->TryGetObjectField(Field, ObjPtr) && ObjPtr)
-			{
-				const TSharedRef<FJsonObject> Obj = ObjPtr->ToSharedRef();
-				OutVec = FVector(JNum(Obj, TEXT("x"), OutVec.X), JNum(Obj, TEXT("y"), OutVec.Y), JNum(Obj, TEXT("z"), OutVec.Z));
-				return true;
-			}
-			const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
-			if (In->TryGetArrayField(Field, Arr) && Arr && Arr->Num() >= 3)
-			{
-				OutVec = FVector((*Arr)[0]->AsNumber(), (*Arr)[1]->AsNumber(), (*Arr)[2]->AsNumber());
-				return true;
-			}
-			return false;
-		}
+		// The local ReadVector is GONE. It is MifBridge::ReadVectorField / ReadRotatorField /
+		// ReadScaleField now (declared in MifBridgeHandlers.h, defined once in MifBridgeCommon.cpp).
+		// It was the site of Batch L defect 1: `JNum(Obj, TEXT("x"), OutVec.X)` returned the fallback
+		// for a component that was PRESENT but not a number, so
+		// set_actor_transform {location:{"x":"not-a-number","y":123,"z":456}} answered ok:true and
+		// left the actor at {700,123,456} — y and z applied, x quietly kept, and the response echoed
+		// the mixture as if it had been asked for. The array branch was worse: FJsonValue::AsNumber()
+		// returns 0.0 for a string and cannot report that it did. Three sibling copies existed
+		// elsewhere (World/Components/Authoring); do not write a fourth.
 	}
 
 	// --- list_level_actors --------------------------------------------------
@@ -137,7 +128,7 @@ namespace MifBridge
 		{
 			return;
 		}
-		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		UWorld* World = EditorWorld();
 		if (!World)
 		{
 			Fail(Out, TEXT("no editor world is open"));
@@ -199,10 +190,26 @@ namespace MifBridge
 	}
 
 	// --- spawn_actor_in_level -----------------------------------------------
-	//   in:  { actorClass, location?, rotation?, scale?, label?, folder? }
+	//   in:  { actorClass (alias: class), location?, rotation?, scale?, mesh? (alias: staticMesh),
+	//          label?, folder? }
+	// Transforms are read STRICTLY and BEFORE the spawn: a supplied component that is not a number
+	// fails the call rather than becoming 0, and fails it without leaving an actor behind.
 	//   out: { actor:{...} }
+	//
+	// The in: line above used to omit `mesh`/`staticMesh` and the `class` alias for ~60 lines after the
+	// code started reading them — the contract comment is what an agent greps, so an undocumented
+	// parameter is an unusable one. And with no guard, `material:` was still silently dropped.
 	void H_spawn_actor_in_level(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorClass"), TEXT("class"), TEXT("location"), TEXT("rotation"), TEXT("scale"),
+			  TEXT("mesh"), TEXT("staticMesh"), TEXT("label"), TEXT("folder") },
+			TEXT("actorClass (alias: class), location, rotation, scale, mesh (alias: staticMesh), label, folder"),
+			{ { TEXT("material"), TEXT("not supported here — spawn the actor, then set_property on the mesh component's OverrideMaterials") },
+			  { TEXT("name"), TEXT("an actor's display name is 'label'; its object name is assigned by the engine") } }))
+		{
+			return;
+		}
 		UEditorActorSubsystem* Subsystem = ActorSubsystem(Out);
 		if (!Subsystem)
 		{
@@ -229,14 +236,20 @@ namespace MifBridge
 			return;
 		}
 
+		// Read and validate BEFORE spawning: a component the caller supplied and the bridge could not
+		// read must never become a default, and failing after the spawn would leave an actor behind.
 		FVector Location = FVector::ZeroVector;
-		FVector RotVec = FVector::ZeroVector;
+		FRotator Rotation = FRotator::ZeroRotator;   // x/y/z = pitch/yaw/roll, as SerializeActor emits
 		FVector Scale = FVector::OneVector;
-		ReadVector(In, TEXT("location"), Location);
-		const bool bHasRot = ReadVector(In, TEXT("rotation"), RotVec);
-		const bool bHasScale = ReadVector(In, TEXT("scale"), Scale);
-		// Rotation is read as x/y/z = pitch/yaw/roll, matching what SerializeActor emits.
-		const FRotator Rotation = bHasRot ? FRotator(RotVec.X, RotVec.Y, RotVec.Z) : FRotator::ZeroRotator;
+		FString ReadError;
+		if (ReadVectorField(In, TEXT("location"), Location, ReadError) == EJsonRead::Invalid
+			|| ReadRotatorField(In, TEXT("rotation"), Rotation, ReadError) == EJsonRead::Invalid
+			|| ReadScaleField(In, TEXT("scale"), Scale, ReadError) == EJsonRead::Invalid)
+		{
+			Fail(Out, FString::Printf(TEXT("%s Nothing was spawned."), *ReadError));
+			return;
+		}
+		const bool bHasScale = In->HasField(TEXT("scale"));
 
 		AActor* Actor = Subsystem->SpawnActorFromClass(ActorClass, Location, Rotation, /*bTransient*/ false);
 		if (!Actor)
@@ -299,10 +312,29 @@ namespace MifBridge
 	}
 
 	// --- set_actor_transform ------------------------------------------------
-	//   in:  { actorPath, location?, rotation?, scale?, relative? }
-	// Any omitted component keeps its current value, so this doubles as "move only".
+	//   in:  { actorPath (actor|path), location?, rotation?, scale?, relative? }
+	//   out: { actor:{...}, locationApplied, rotationApplied, scaleApplied, relative }
+	// location/scale take {x,y,z} or [x,y,z]; rotation additionally takes {pitch,yaw,roll}; scale
+	// additionally takes a bare number (uniform). Any omitted component keeps its current value, so
+	// this doubles as "move only" — but a component that is SUPPLIED and is not a number is a hard
+	// error, not a fallback (Batch L defect 1: {"x":"not-a-number","y":123,"z":456} used to answer
+	// ok:true having applied y and z and kept the old x, echoing the mixture as if it were asked for).
+	// `relative` applies to location and rotation ONLY — it is a delta, and there is no honest delta
+	// for scale (additive and multiplicative are both defensible and mean opposite things at 0). The
+	// combination used to be accepted with scale silently treated as absolute; it is refused now.
 	void H_set_actor_transform(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// This endpoint had no strict-params guard at all, which is how a misspelled key joined a
+		// mistyped component in producing a transform nobody asked for.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("path"), TEXT("location"), TEXT("rotation"),
+			  TEXT("scale"), TEXT("relative") },
+			TEXT("actorPath (aliases: actor, path), location, rotation, scale, relative"),
+			{ { TEXT("transform"), TEXT("pass location / rotation / scale as separate keys") },
+			  { TEXT("yaw"), TEXT("rotation accepts {pitch,yaw,roll} or {x,y,z} — there is no bare yaw here") } }))
+		{
+			return;
+		}
 		UEditorActorSubsystem* Subsystem = ActorSubsystem(Out);
 		if (!Subsystem)
 		{
@@ -314,28 +346,51 @@ namespace MifBridge
 			return;
 		}
 
-		FVector Location = Actor->GetActorLocation();
+		const FVector  CurLoc = Actor->GetActorLocation();
 		const FRotator CurRot = Actor->GetActorRotation();
-		FVector RotVec(CurRot.Pitch, CurRot.Yaw, CurRot.Roll);
-		FVector Scale = Actor->GetActorScale3D();
+		const bool bRelative = JBool(In, TEXT("relative"), false);
 
-		const bool bAny = ReadVector(In, TEXT("location"), Location)
-			| ReadVector(In, TEXT("rotation"), RotVec)
-			| ReadVector(In, TEXT("scale"), Scale);
-		if (!bAny)
+		// SEEDING. Absolute mode seeds from the actor's CURRENT transform, so an omitted component
+		// keeps its value ("move only"). Relative mode seeds from ZERO, because an omitted component
+		// means "no delta" — it used to seed from current here too and then ADD current again, so
+		// {relative:true, location:{"x":100}} doubled y and z. Same family as defect 1: a transform
+		// the caller never asked for, reported back as though they had.
+		FVector  Location = bRelative ? FVector::ZeroVector  : CurLoc;
+		FRotator Rotation = bRelative ? FRotator::ZeroRotator : CurRot;
+		FVector  Scale    = Actor->GetActorScale3D();
+
+		// STRICT, and BEFORE Modify(): a supplied component that is not a number is a hard error
+		// naming the field, the value and the expected type. It is never defaulted, and it never
+		// half-applies — a partial transform is precisely what defect 1 produced.
+		FString ReadError;
+		const EJsonRead LocRead   = ReadVectorField(In, TEXT("location"), Location, ReadError);
+		if (LocRead == EJsonRead::Invalid) { Fail(Out, FString::Printf(TEXT("%s The actor was NOT moved."), *ReadError)); return; }
+		const EJsonRead RotRead   = ReadRotatorField(In, TEXT("rotation"), Rotation, ReadError);
+		if (RotRead == EJsonRead::Invalid) { Fail(Out, FString::Printf(TEXT("%s The actor was NOT moved."), *ReadError)); return; }
+		const EJsonRead ScaleRead = ReadScaleField(In, TEXT("scale"), Scale, ReadError);
+		if (ScaleRead == EJsonRead::Invalid) { Fail(Out, FString::Printf(TEXT("%s The actor was NOT moved."), *ReadError)); return; }
+
+		if (LocRead != EJsonRead::Read && RotRead != EJsonRead::Read && ScaleRead != EJsonRead::Read)
 		{
 			Fail(Out, TEXT("supply at least one of location / rotation / scale"));
 			return;
 		}
 
-		if (JBool(In, TEXT("relative"), false))
+		if (bRelative)
 		{
+			if (In->HasField(TEXT("scale")))
+			{
+				Fail(Out, TEXT("relative:true applies to location and rotation only — it deltas them. There is no ")
+					TEXT("unambiguous 'relative scale' (additive vs multiplicative differ), and scale was previously ")
+					TEXT("applied as an ABSOLUTE here without saying so. Send scale in a separate call without relative."));
+				return;
+			}
 			// Deltas, not absolutes — the common "nudge it 100 units" case.
-			Location = Actor->GetActorLocation() + Location;
-			RotVec = FVector(CurRot.Pitch, CurRot.Yaw, CurRot.Roll) + RotVec;
+			Location = CurLoc + Location;
+			Rotation = CurRot + Rotation;
 		}
 
-		const FTransform NewTransform(FRotator(RotVec.X, RotVec.Y, RotVec.Z), Location, Scale);
+		const FTransform NewTransform(Rotation, Location, Scale);
 		Actor->Modify();
 		if (!Subsystem->SetActorTransform(Actor, NewTransform))
 		{
@@ -343,6 +398,12 @@ namespace MifBridge
 			return;
 		}
 
+		// Which components the CALLER actually supplied, so the echoed transform below can never be
+		// read as "all three were applied as requested".
+		Out->SetBoolField(TEXT("locationApplied"), LocRead == EJsonRead::Read);
+		Out->SetBoolField(TEXT("rotationApplied"), RotRead == EJsonRead::Read);
+		Out->SetBoolField(TEXT("scaleApplied"),    ScaleRead == EJsonRead::Read);
+		Out->SetBoolField(TEXT("relative"), bRelative);
 		Out->SetObjectField(TEXT("actor"), SerializeActor(Actor));
 	}
 

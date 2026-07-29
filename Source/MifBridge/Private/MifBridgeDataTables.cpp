@@ -541,6 +541,20 @@ namespace MifBridge
 			}
 			Out->SetBoolField(TEXT("replaced"), bReplaced);
 			Out->SetNumberField(TEXT("rowCount"), Table->GetRowNames().Num());
+			if (!bReplaced)
+			{
+				// The comment above says CreateTableFromJSONString early-returns WITHOUT emptying the
+				// table — and this path then returned with `replaced:false` and NO Fail, i.e. ok:true
+				// for a destructive call that changed nothing. `problems` was populated below, but a
+				// caller checking `ok` (which is what `ok` is for) saw success.
+				TArray<FString> Reasons;
+				for (const FString& P : Problems) { Reasons.Add(P); }
+				Fail(Out, FString::Printf(
+					TEXT("replace failed and the table was NOT modified: %s"),
+					Reasons.Num() ? *FString::Join(Reasons, TEXT("; "))
+					              : TEXT("CreateTableFromJSONString rejected the rows array (empty or unparseable)")));
+				// The problems array is still emitted below for detail.
+			}
 			// The undocumented merge-vs-replace asymmetry that produced the "double wrapping" report.
 			// Only raised when the row struct can actually hold an FText.
 			if (bReplaced && RowStructHasTextProperty(Table->GetRowStruct()))
@@ -569,6 +583,9 @@ namespace MifBridge
 			const TSharedPtr<FJsonObject>* RowObjPtr = nullptr;
 			if (!Value.IsValid() || !Value->TryGetObject(RowObjPtr) || RowObjPtr == nullptr)
 			{
+				// Dropped in silence, while the missing-'Name' case immediately below DID warn — two
+				// adjacent per-entry failures, one visible and one not.
+				Warnings.Add(MakeShared<FJsonValueString>(TEXT("row skipped: entry is not an object")));
 				continue;
 			}
 			const TSharedRef<FJsonObject> RowObj = RowObjPtr->ToSharedRef();
@@ -641,6 +658,18 @@ namespace MifBridge
 
 	void H_delete_datatable_rows(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// Its sibling write_datatable_rows has had this guard since Batch B; the destructive one in the
+		// same file did not, so a typo'd key on a row DELETE was silently ignored.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("rowNames"), TEXT("confirm") },
+			TEXT("path, rowNames[], confirm=true"),
+			{ { TEXT("rows"), TEXT("delete takes row NAMES, not row objects — pass rowNames:[\"A\",\"B\"]") },
+			  { TEXT("rowName"), TEXT("the parameter is the array rowNames[]; pass a single-element array") },
+			  { TEXT("dataTable"), TEXT("the datatable parameter is called path") },
+			  { TEXT("table"), TEXT("the datatable parameter is called path") } }))
+		{
+			return;
+		}
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("delete_datatable_rows requires confirm=true"));
@@ -660,14 +689,28 @@ namespace MifBridge
 			return;
 		}
 
+		if (Names->Num() == 0)
+		{
+			Fail(Out, TEXT("'rowNames' is empty — nothing to delete. Pass at least one row name."));
+			return;
+		}
+
 		int32 Deleted = 0;
 		TArray<TSharedPtr<FJsonValue>> Missing;
+		int32 NameOrdinal = INDEX_NONE;
 		for (const TSharedPtr<FJsonValue>& Value : *Names)
 		{
+			++NameOrdinal;
 			FString RowName;
 			if (!Value.IsValid() || !Value->TryGetString(RowName) || RowName.IsEmpty())
 			{
-				continue;
+				// Silently skipped, so rowNames:["A", 123] deleted one row and reported nothing about
+				// the other — on a confirm-gated destructive endpoint.
+				Fail(Out, FString::Printf(
+					TEXT("rowNames[%d] must be a non-empty string. %d row(s) were already deleted before this entry was ")
+					TEXT("reached; the whole call is reported as failed so the transaction rolls it back."),
+					NameOrdinal, Deleted));
+				return;
 			}
 			const FName Key(*RowName);
 			if (Table->FindRowUnchecked(Key) == nullptr)

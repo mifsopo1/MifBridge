@@ -105,11 +105,17 @@ After every batch assert `grep -c 'MIF_DECL(' … == grep -c 'MIF_BIND(' …`.
 State and justify the bucket for **every** endpoint you add. `self_audit` reports
 `policyContradictions`; it must stay empty.
 
-### 3. Handlers run ON the game thread, mid-frame
+### 3. Handlers run ON the game thread, synchronously and inline, POST-world-tick
 
-Dispatched via `AsyncTask(ENamedThreads::GameThread, …)`. Therefore:
+**Not** dispatched via `AsyncTask(ENamedThreads::GameThread, …)` — this brief used to say that and it
+was backwards. `FHttpServerModule` is an `FTSTickerObjectBase`, so the handler is already on the game
+thread, called from `FTSTicker::GetCoreTicker().Tick()` after `GEngine->Tick()` has completed the
+entire world tick, outside every tick group. The source comment reads **"Do NOT reach for AsyncTask"**
+and gives the crash it causes (`MifBridgeServer.cpp:229-265`: reinstancing mid-tick-group →
+`check(!"Pure virtual not implemented")`, `EngineBaseTypes.h:409`). Therefore:
 
-- **Never block.** Blocking deadlocks the HTTP listener.
+- **Never block.** Blocking deadlocks the HTTP listener, and does so harder than an async model
+  would: a blocking handler occupies the ticker that would have to advance whatever it waits on.
 - Anything asynchronous (PIE start, navmesh build, shader compile, cook, decompile of a large graph)
   must **request and return**, paired with a status endpoint to poll.
 - Anything that tears down or swaps the `UWorld` must be **deferred one tick** via

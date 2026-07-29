@@ -162,9 +162,13 @@ wiring it into a handler. Phase-2 found modals on "benign" paths in 6 of 12 axes
 
 ---
 
-## 3. Blocking / synchronous hazards (game-thread waits an endpoint must not trigger mid-frame)
+## 3. Blocking / synchronous hazards (game-thread waits an endpoint must not trigger)
 
-Handlers run ON the game thread, mid-frame (brief invariant 3). These calls stall or deadlock:
+Handlers run ON the game thread **synchronously and inline, post-world-tick** — not "mid-frame", and
+not via `AsyncTask`; brief invariant 3 has been corrected (`MifBridgeServer.cpp:229-265`). The
+hazard is *larger* under the real model, not smaller: a blocking handler occupies the `FTSTicker`
+that would have to advance whatever it is waiting on, so these calls stall or deadlock the whole
+bridge, not just their own request:
 
 | # | Hazard | Citation | Mitigation |
 |---|---|---|---|

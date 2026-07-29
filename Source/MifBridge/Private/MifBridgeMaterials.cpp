@@ -67,28 +67,12 @@ namespace MifBridge
 	namespace
 	{
 		// --- Cooked / container-origin detection --------------------------------
-		// PKG_Cooked first (authoritative flag), then container-origin: present in a mounted
-		// IoStore container but with no loose file. The IoDispatcher location is checked
-		// EXPLICITLY rather than inferring "no loose file => container", because a brand-new
-		// never-saved material also has no loose file — misreporting it as cooked would tell the
-		// caller their own fresh asset cannot be edited (the DirtyPackageOrigin lesson,
-		// MifBridgeUndo.cpp:84-103).
-		bool IsCookedOrContainerPackage(const UPackage* Package)
-		{
-			if (!Package)
-			{
-				return false;
-			}
-			if (Package->HasAnyPackageFlags(PKG_Cooked) || Package->bIsCookedForEditor)
-			{
-				return true;
-			}
-			const FPackagePath Path = FPackagePath::FromPackageNameUnchecked(Package->GetFName());
-			return FPackageName::DoesPackageExistEx(Path, FPackageName::EPackageLocationFilter::FileSystem)
-					== FPackageName::EPackageLocationFilter::None
-				&& FPackageName::DoesPackageExistEx(Path, FPackageName::EPackageLocationFilter::IoDispatcher)
-					!= FPackageName::EPackageLocationFilter::None;
-		}
+		// PROMOTED in Batch N to MifBridgeCommon.cpp as MifBridge::IsCookedOrContainerPackage
+		// (declared in MifBridgeHandlers.h), body unchanged, because edit_container and
+		// reset_property_to_default must refuse a cooked target on exactly the same test. A second
+		// cooked check under a second name is the PM-005 failure the compiler never reports: the two
+		// would have been free to disagree about whether a container-only asset is editable, in the
+		// one project where that is the common case. Do NOT re-add a local copy.
 
 		// One shared refusal text so every graph endpoint says exactly the same thing (spec
 		// negative #3 requires the error to state the stripping fact AND the two viable routes).
@@ -561,6 +545,17 @@ namespace MifBridge
 				if (T.Equals(TEXT("true"), ESearchCase::IgnoreCase)) { ImportStr = TEXT("True"); }
 				else if (T.Equals(TEXT("false"), ESearchCase::IgnoreCase)) { ImportStr = TEXT("False"); }
 			}
+			// Batch L, defect 2. This converter is a sibling of MifBridgeNodes5.cpp's — it emits text
+			// from the JSON value's shape rather than the destination property's type — so a string
+			// value reaches ImportText_Direct unchecked, exactly as override_inherited_component's did
+			// when "not-a-float" imported as 0.0 and reported success. The SHARED validator runs here
+			// too rather than a fourth copy of the rules (PM-005).
+			FString TypeError;
+			if (!ValidatePropertyText(Prop, ImportStr, Prop->GetName(), TypeError))
+			{
+				OutError = TypeError;
+				return false;
+			}
 
 			void* LeafAddr = Prop->ContainerPtrToValuePtr<void>(Expression);
 			FStringOutputDevice ErrText;
@@ -695,7 +690,13 @@ namespace MifBridge
 
 		// --- New-asset path validation (create_material / create_material_function) ------
 		// Returns false + Fail(Out) unless Path is a fresh /Game/ package path. AssetName out.
-		bool ValidateNewAssetPath(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out,
+		// Was ValidateNewAssetPath — the SAME NAME as a different function in MifBridgeUserTypes.cpp
+		// with a different signature AND a different failure convention (that one returns an error
+		// string; this one writes Fail(Out) itself). Co-located by a unity blob they would merge into
+		// one overload set, and a future 3-argument call added to this file would compile and silently
+		// run UserTypes' validation policy. Renamed apart rather than merged, because the two really do
+		// enforce different rules.
+		bool ValidateNewMaterialAssetPath(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out,
 			FString& OutPath, FString& OutAssetName)
 		{
 			OutPath = JStrAny(In, { TEXT("path"), TEXT("assetPath") });
@@ -748,7 +749,7 @@ namespace MifBridge
 		}
 
 		FString AssetPath, AssetName;
-		if (!ValidateNewAssetPath(In, Out, AssetPath, AssetName))
+		if (!ValidateNewMaterialAssetPath(In, Out, AssetPath, AssetName))
 		{
 			return;
 		}
@@ -870,7 +871,7 @@ namespace MifBridge
 		}
 
 		FString AssetPath, AssetName;
-		if (!ValidateNewAssetPath(In, Out, AssetPath, AssetName))
+		if (!ValidateNewMaterialAssetPath(In, Out, AssetPath, AssetName))
 		{
 			return;
 		}
