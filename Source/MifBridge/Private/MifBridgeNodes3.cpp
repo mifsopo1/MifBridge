@@ -17,6 +17,8 @@
 #include "K2Node_SwitchInteger.h"
 #include "K2Node_SwitchString.h"
 #include "K2Node_Timeline.h"
+#include "K2Node_CallArrayFunction.h"   // set_pin_type must REFUSE on these: the node re-derives its
+                                        // pin types from LinkedTo and wipes anything written directly
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "UObject/Class.h"
 
@@ -432,12 +434,30 @@ namespace MifBridge
 
 	void H_set_pin_type(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// The node-id aliases are NOT optional garnish: ResolveNodeField treats "node" as a GENERIC
+		// field and reads JStrAny(In, { nodeGuid, node, guid, nodeId }) (MifBridgeCommon.cpp:3280-3285),
+		// and its own failure text advertises all four. Listing only "node" here would make a
+		// {nodeGuid, ...} payload — which worked at 8e813fe — a hard "unrecognised parameter" failure.
+		// That is the same back-compat break this session removed from connect_pins, re-introduced one
+		// file over. Mirrors H_disconnect_pin's list (MifBridgeNodes.cpp:1673-1676).
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"),
+			  TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"),
+			  TEXT("pin"), TEXT("pinName"), TEXT("name"),
+			  TEXT("type"), TEXT("container"), TEXT("valueType") },
+			TEXT("graphId, node (aliases: nodeGuid, guid, nodeId), pin (aliases: pinName, name), ")
+			TEXT("type, container?, valueType?")))
+		{
+			return;
+		}
 		UEdGraphNode* Node = ResolveNodeField(In, TEXT("node"), Out);
 		if (!Node)
 		{
 			return;
 		}
-		const FString PinName = JStr(In, TEXT("pin"));
+		// JStrAny, not JStr: the guard above accepts pinName/name, so they must actually be READ.
+		// Accepting a key and never reading it is the silent-ignore bug class this module exists to kill.
+		const FString PinName = JStrAny(In, { TEXT("pin"), TEXT("pinName"), TEXT("name") });
 		UEdGraphPin* Pin = FindPin(Node, PinName, EGPD_Input, /*bRequireDir*/ false);
 		if (!Pin)
 		{
@@ -450,6 +470,53 @@ namespace MifBridge
 		if (!MakePinType(JStr(In, TEXT("type")), JStr(In, TEXT("container")), NewType, TypeError, JStr(In, TEXT("valueType"))))
 		{
 			Fail(Out, TypeError);
+			return;
+		}
+
+		// PREFLIGHT — refuse before mutating, rather than write-then-revert-then-lie.
+		//
+		// UK2Node_CallArrayFunction NEVER trusts its serialised pin types. AllocateDefaultPins forces
+		// the target array pin back to PC_Wildcard unconditionally (K2Node_CallArrayFunction.cpp:46)
+		// and ReallocatePinsDuringReconstruction calls it on every ReconstructNode (K2Node.cpp:647-651)
+		// — so on every load, every reconstruct and every cook. PostReconstructNode (:66-78) then
+		// re-derives the type from ONE input: whether the pin has a link. The LINK is the only durable
+		// state; the FEdGraphPinType is a cache that is overwritten before anything reads it.
+		//
+		// Worse, writing the type here used to be undone INSIDE THIS CALL. The
+		// PinConnectionListChanged below reaches :118-140, and for a pin with no link that path sets
+		// PinCategory back to PC_Wildcard (:134) and propagates the wipe to every sibling pin (:137).
+		// The handler then reported success. That is the silent no-op behind "array wildcards cannot be
+		// durably typed" — the reversion is immediate, not on reload.
+		//
+		// There is no fix available from this endpoint: the engine is doing the right thing for a node
+		// whose contract is "my type is whatever is wired into me". Say so, and name the actual route.
+		// SCOPE — deliberately narrow, for two independent reasons.
+		//
+		// (1) Correctness. The engine's wipe is NOT "any unlinked pin on the node". It fires only when
+		//     PinsToCheck.Contains(ChangedPin), where PinsToCheck is GetArrayTypeDependentPins(), and
+		//     only when NO pin in that set is linked (K2Node_CallArrayFunction.cpp:86-100, :123-130).
+		//     A plain non-array pin on the same node retypes fine, so refusing it would be wrong.
+		// (2) Linkage. UK2Node_CallArrayFunction is UCLASS(MinimalAPI), so ONLY members carrying
+		//     BLUEPRINTGRAPH_API link from this module. GetTargetArrayPin() does (K2Node_CallArrayFunction.h:50,
+		//     and MifBridgeNodes.cpp:921 already calls it). GetArrayTypeDependentPins() does NOT (:75) —
+		//     calling it here would be LNK2019, so the full dependent-pin set is simply unavailable to us.
+		//
+		// So: refuse only the target array pin, which is provably in PinsToCheck and provably wiped when
+		// nothing on the node is linked. Every other pin falls through to the verify-after-write below,
+		// which reports honestly if the node overrode us. Narrow preflight, general verify.
+		UK2Node_CallArrayFunction* ArrayNode = Cast<UK2Node_CallArrayFunction>(Node);
+		if (ArrayNode != nullptr && Pin == ArrayNode->GetTargetArrayPin() && Pin->LinkedTo.Num() == 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is an array-function node pin with nothing connected, and its type cannot be ")
+				TEXT("set directly. This node re-derives every pin type from what is wired into it and ")
+				TEXT("wipes the pin back to wildcard on load, on reconstruct and during cook, so a forced ")
+				TEXT("type would not survive — it would not even survive this call. Connect a typed array ")
+				TEXT("to the array pin instead (connect_pins), and the wildcard pins resolve from it."),
+				*PinName));
+			Out->SetBoolField(TEXT("nothingModified"), true);
+			Out->SetStringField(TEXT("outcome"), TEXT("preflight-rejected-nothing-created"));
+			Out->SetStringField(TEXT("route"), TEXT("connect_pins"));
 			return;
 		}
 
@@ -480,7 +547,37 @@ namespace MifBridge
 			Node->PinConnectionListChanged(Pin); // let the node react to the retype
 		}
 
+		// VERIFY AFTER WRITE. This handler used to emit SerializePin(Pin) without ever comparing it to
+		// what was asked for, so any node that re-derived its own pin types reported success while
+		// having silently reverted. Compare, and fail honestly when the node overrode us — the
+		// preflight above catches the one case we can name, this catches the ones we cannot.
+		// Mark BEFORE the verdict: Node->Modify() has already run, and the UK2Node_EditablePinBase path
+		// above also ran ReconstructNode(), so the blueprint really is mutated whether or not the type
+		// survived. Returning early without marking would leave it dirty-in-memory but unflagged.
 		MarkStructural(FBlueprintEditorUtils::FindBlueprintForNode(Node));
-		Out->SetObjectField(TEXT("pin"), Pin ? SerializePin(Pin) : MakeShared<FJsonObject>());
+
+		if (!Pin)
+		{
+			Fail(Out, TEXT("pin disappeared during retype (the node rebuilt itself and did not recreate "
+			              "this pin) - the retype did not stick"));
+			return;
+		}
+		if (!(Pin->PinType == NewType))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("retype of '%s' did not stick: the node overrode it. Requested '%s', pin is now '%s'. ")
+				TEXT("Nodes that derive their pin types from their connections ignore a directly written ")
+				TEXT("type; wire the pin instead."),
+				*PinName,
+				*NewType.PinCategory.ToString(),
+				*Pin->PinType.PinCategory.ToString()));
+			Out->SetObjectField(TEXT("pin"), SerializePin(Pin));
+			Out->SetBoolField(TEXT("reverted"), true);
+			return;
+		}
+
+		MarkStructural(FBlueprintEditorUtils::FindBlueprintForNode(Node));
+		Out->SetObjectField(TEXT("pin"), SerializePin(Pin));
+		Out->SetBoolField(TEXT("verified"), true);
 	}
 }

@@ -98,6 +98,44 @@ namespace MifBridge
 			return false;
 		}
 
+		// The SAME predicate as MifDetailsDiffersFromDefault, inverted, and made to say WHY. A write
+		// endpoint that claims `verified` has to distinguish three outcomes that a bool collapses into
+		// one: every element matches the default, some element does NOT match, or some element could
+		// not be compared at all. Only the first is a pass; the other two are both `verified:false`
+		// and a caller needs to be told which it got, because "the reset did not land" and "this call
+		// cannot tell you whether the reset landed" call for different next steps.
+		//
+		// Deliberately NOT a second copy of the compare loop: this is the one place that grew a
+		// reason string, and MifDetailsDiffersFromDefault stays the read-only predicate the describe
+		// and diff paths already use (PM-005 - do not grow a parallel helper, extend the family).
+		bool MifDetailsEqualsDefaultVerbose(const FProperty* Prop, const void* ValueAddr, const void* DefaultAddr,
+			bool bSingleElement, bool bDeep, FString& OutReason)
+		{
+			// Every one of these is "cannot be compared", never "equal". MifDetailsDiffersFromDefault
+			// answers false (i.e. "matches") for a null address, which is the right answer for a
+			// read-only differ and exactly the wrong one for a verification.
+			if (!Prop)        { OutReason = TEXT("the property could not be resolved for the read-back, so no element could be compared"); return false; }
+			if (!ValueAddr)   { OutReason = TEXT("the live value has no address to read back, so no element could be compared"); return false; }
+			if (!DefaultAddr) { OutReason = TEXT("no default value was materialised to compare against, so no element could be compared"); return false; }
+
+			uint32 PortFlags = 0;
+			if (bDeep && Prop->ContainsInstancedObjectProperty()) { PortFlags |= PPF_DeepComparison; }
+			const int32 Count = bSingleElement ? 1 : FMath::Max(Prop->ArrayDim, 1);
+			for (int32 i = 0; i < Count; ++i)
+			{
+				const uint8* A = (const uint8*)ValueAddr   + (SIZE_T)i * Prop->ElementSize;
+				const uint8* B = (const uint8*)DefaultAddr + (SIZE_T)i * Prop->ElementSize;
+				if (!Prop->Identical(A, B, PortFlags))
+				{
+					OutReason = (Count > 1)
+						? FString::Printf(TEXT("element [%d] of %d still differs from the default"), i, Count)
+						: FString(TEXT("the value still differs from the default"));
+					return false;
+				}
+			}
+			return true;
+		}
+
 		FString MifDetailsExportOne(const FProperty* Prop, const void* Addr, UObject* Owner)
 		{
 			FString S;
@@ -107,17 +145,89 @@ namespace MifBridge
 			return S;
 		}
 
+		// EVERY element of a property. For a fixed-size C-array UPROPERTY (FRichCurve FloatCurves[3])
+		// that is NOT what MifDetailsExportOne returns: FProperty::ExportText_Direct forwards exactly
+		// ONE value to ExportText_Internal (Property.cpp:1139-1164), and the ArrayDim loop lives in
+		// UStruct::ExportProperties, which emits separate `Foo(0)=`/`Foo(1)=` lines and is not reachable
+		// for a single property. A caller who addressed the WHOLE property must never be handed
+		// element 0 and told that is the value - which is what every text compare in this file used to
+		// do, verification included.
+		//
+		// REPORTING TEXT ONLY, and never round-tripped: ImportText_Direct is one element too
+		// (UnrealType.h:499-507), so the whole-C-array write path in reset_property_to_default copies
+		// the default VALUE instead of re-importing this string. The exact spelling of the join is
+		// therefore free. Byte-identical to MifDetailsExportOne whenever ArrayDim <= 1, which is why
+		// switching a call site over cannot change any existing single-element output.
+		FString MifDetailsExportAll(const FProperty* Prop, const void* Addr, UObject* Owner)
+		{
+			if (!Prop || !Addr) { return FString(); }
+			if (Prop->ArrayDim <= 1) { return MifDetailsExportOne(Prop, Addr, Owner); }
+			FString S = TEXT("(");
+			for (int32 i = 0; i < Prop->ArrayDim; ++i)
+			{
+				if (i > 0) { S += TEXT(","); }
+				S += MifDetailsExportOne(Prop, (const uint8*)Addr + (SIZE_T)i * Prop->ElementSize, Owner);
+			}
+			return S + TEXT(")");
+		}
+
+		// One correctly constructed/destructed instance of a property's value, ArrayDim-WIDE: GetSize()
+		// is ArrayDim * ElementSize (UnrealType.h:1027-1030) and InitializeValue / DestroyValue both
+		// span ArrayDim (UnrealType.h:929-941, TProperty override at :1369-1375), so one of these holds
+		// a WHOLE C-array UPROPERTY rather than one slot.
+		//
+		// MifBridgeNodes5.cpp:73 has FScratchValue, the same idea - but it is defined in that .cpp and
+		// is NOT declared in MifBridgeHandlers.h, so it is reachable from here only by accident of a
+		// unity blob, and re-declaring THAT name is the PM-005 collision this file's header comment
+		// warns about. Hence a distinct name and a deliberately file-local type. If a third caller ever
+		// needs one, PROMOTE FScratchValue to the header and delete this - do not grow a third copy.
+		//
+		// It exists here because reset_property_to_default now has to keep its staging buffer alive
+		// across the notification and the retarget in order to verify against it, and hand-freeing that
+		// at five exits is how a leak gets shipped.
+		struct FMifDetailsValueScratch
+		{
+			const FProperty* Prop = nullptr;
+			void*            Mem  = nullptr;
+
+			FMifDetailsValueScratch() = default;
+			explicit FMifDetailsValueScratch(const FProperty* InProp) { Init(InProp); }
+
+			// ONE-SHOT. A second call would strand the first allocation, so it refuses rather than leak.
+			void Init(const FProperty* InProp)
+			{
+				if (Mem != nullptr || InProp == nullptr) { return; }
+				Prop = InProp;
+				Mem  = FMemory::Malloc(FMath::Max(Prop->GetSize(), 1), Prop->GetMinAlignment());
+				if (Mem) { Prop->InitializeValue(Mem); }   // required before any Copy/Import on a struct
+			}
+			~FMifDetailsValueScratch()
+			{
+				if (Prop && Mem) { Prop->DestroyValue(Mem); }
+				FMemory::Free(Mem);
+			}
+			FMifDetailsValueScratch(const FMifDetailsValueScratch&) = delete;
+			FMifDetailsValueScratch& operator=(const FMifDetailsValueScratch&) = delete;
+		};
+
 		// The value a freshly constructed instance of this property would hold. Used when the
 		// archetype does not carry the property at all - a variable a child Blueprint added, for
 		// instance - mirroring FPropertyNode::GetDefaultValueAsString's fallback
 		// (PropertyNode.cpp:2432-2443). Reported as defaultSource:"constructed", never as if it had
 		// come from an archetype.
-		FString MifDetailsConstructedDefaultText(const FProperty* Prop, UObject* Owner)
+		//
+		// bWholeProperty must match how the CALLER addressed the property, because the text it is
+		// compared against is produced the same way: a caller holding one element of a C-array wants
+		// element 0's constructed default, and a caller holding the whole property wants all ArrayDim.
+		// Comparing an ExportAll against an ExportOne would report "differs" for every C-array there is.
+		FString MifDetailsConstructedDefaultText(const FProperty* Prop, UObject* Owner, bool bWholeProperty = true)
 		{
 			if (!Prop) { return FString(); }
 			void* Mem = FMemory::Malloc(FMath::Max(Prop->GetSize(), 1), Prop->GetMinAlignment());
 			Prop->InitializeValue(Mem);
-			const FString Text = MifDetailsExportOne(Prop, Mem, Owner);
+			const FString Text = bWholeProperty
+				? MifDetailsExportAll(Prop, Mem, Owner)
+				: MifDetailsExportOne(Prop, Mem, Owner);
 			Prop->DestroyValue(Mem);
 			FMemory::Free(Mem);
 			return Text;
@@ -357,7 +467,14 @@ namespace MifBridge
 			// --- current value + default ---
 			if (ValueAddr)
 			{
-				FString ValueText = MifDetailsExportOne(Prop, ValueAddr, Owner);
+				// ExportAll when the caller addressed the WHOLE property, ExportOne when it addressed one
+				// element: bSingleElement is exactly that distinction, and getting it backwards either
+				// reports element 0 as if it were a 3-element C-array's value or reads past the end of
+				// the one element the caller resolved. ExportAll is byte-identical to ExportOne for
+				// ArrayDim <= 1, so only C-array properties see any change here.
+				FString ValueText = bSingleElement
+					? MifDetailsExportOne(Prop, ValueAddr, Owner)
+					: MifDetailsExportAll(Prop, ValueAddr, Owner);
 				if (MaxValueChars > 0 && ValueText.Len() > MaxValueChars)
 				{
 					ValueText = ValueText.Left(MaxValueChars);
@@ -375,15 +492,21 @@ namespace MifBridge
 					bool bDiffers = false;
 					if (DefaultAddr)
 					{
-						DefaultText   = MifDetailsExportOne(Prop, DefaultAddr, Archetype);
+						DefaultText   = bSingleElement
+							? MifDetailsExportOne(Prop, DefaultAddr, Archetype)
+							: MifDetailsExportAll(Prop, DefaultAddr, Archetype);
 						DefaultSource = TEXT("archetype");
 						bDiffers      = MifDetailsDiffersFromDefault(Prop, ValueAddr, DefaultAddr, bSingleElement, /*bDeep*/ true);
 					}
 					else
 					{
-						DefaultText   = MifDetailsConstructedDefaultText(Prop, Owner);
+						// Both sides of this text compare must be produced the same way - see the
+						// bWholeProperty note on MifDetailsConstructedDefaultText.
+						DefaultText   = MifDetailsConstructedDefaultText(Prop, Owner, /*bWholeProperty*/ !bSingleElement);
 						DefaultSource = TEXT("constructed");
-						bDiffers      = !DefaultText.Equals(MifDetailsExportOne(Prop, ValueAddr, Owner), ESearchCase::CaseSensitive);
+						bDiffers      = !DefaultText.Equals(bSingleElement
+							? MifDetailsExportOne(Prop, ValueAddr, Owner)
+							: MifDetailsExportAll(Prop, ValueAddr, Owner), ESearchCase::CaseSensitive);
 					}
 					if (MaxValueChars > 0 && DefaultText.Len() > MaxValueChars) { DefaultText = DefaultText.Left(MaxValueChars); }
 					Row->SetStringField(TEXT("defaultValue"), DefaultText);
@@ -443,6 +566,138 @@ namespace MifBridge
 				return nullptr;
 			}
 			return Target;
+		}
+
+		// ---------------------------------------------------------------------------------------
+		// diff_properties_vs_default plumbing - the OPTIONAL `recursive` walk.
+		// ---------------------------------------------------------------------------------------
+
+		// Everything the walk carries, so the recursive signature stays readable and every counter has
+		// exactly one home.
+		//
+		// THE COUNTING RULE, which the emitted `countsConsistent` actually checks: every INSPECTED node
+		// ends up in exactly one of differing / matching / skippedTransient / expanded. `expanded` is a
+		// struct that was OPENED instead of reported, so it is not also counted as differing - and it is
+		// always 0 when recursive is false, which is why the shipped invariant
+		// inspected == differing + matching + skippedTransient still holds unchanged for every caller
+		// that does not ask for recursion.
+		struct FMifDetailsDiffWalk
+		{
+			UObject* ValueOwner   = nullptr;    // the object, for ExportText_Direct's Owner argument
+			UObject* DefaultOwner = nullptr;    // the archetype, same
+			int32 Limit           = 200;
+			int32 MaxValueChars   = 200;
+			bool  bIncludeTransient = false;
+			bool  bDeep             = true;
+			int32 MaxDepth          = 4;
+
+			int32 Inspected = 0, Differing = 0, Matching = 0, SkippedTransient = 0, Expanded = 0;
+			bool  bTruncated = false;
+			bool  bBudgetExhausted = false;
+			TArray<TSharedPtr<FJsonValue>> Rows;
+
+			// A ceiling on NODES VISITED, not on rows kept. A UScriptStruct cannot contain itself by
+			// value, so the graph is finite and this is not what makes the recursion terminate (MaxDepth
+			// and the finite struct graph are). It is what keeps a SYNCHRONOUS handler - these run inside
+			// the HTTP server's ticker - from walking every member of every FPostProcessSettings on a
+			// heavily-overridden actor before it answers.
+			// constexpr, not `static const`: it is passed to FString::Printf below, and a variadic call
+			// ODR-uses it - a plain in-class `static const int32` would then need an out-of-line
+			// definition and fail to link.
+			static constexpr int32 kNodeBudget = 20000;
+		};
+
+		// One row of the diff. Path is the DOTTED path (equal to the property name at the top level),
+		// which is what reset_property_to_default and set_property accept - a diff whose rows cannot be
+		// fed back to the verb that acts on them is a report, not a tool.
+		TSharedRef<FJsonObject> MifDetailsMakeDiffRow(const FProperty* Prop, const FString& Path,
+			const void* ValueAddr, const void* DefaultAddr, const FString& ConstructedDefaultText,
+			UObject* ValueOwner, UObject* DefaultOwner, int32 MaxValueChars)
+		{
+			// ExportAll, not ExportOne: `bDiffers` for these rows is FProperty::Identical over ArrayDim
+			// (bSingleElement is false at every call site here), so reporting element 0 as the value
+			// would state a difference the printed value cannot account for. Identical for ArrayDim <= 1.
+			FString ValueText = MifDetailsExportAll(Prop, ValueAddr, ValueOwner);
+			if (ValueText.Len() > MaxValueChars) { ValueText = ValueText.Left(MaxValueChars); }
+			FString DefaultText = DefaultAddr
+				? MifDetailsExportAll(Prop, DefaultAddr, DefaultOwner)
+				: ConstructedDefaultText;
+			if (DefaultText.Len() > MaxValueChars) { DefaultText = DefaultText.Left(MaxValueChars); }
+
+			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+			Row->SetStringField(TEXT("name"), Prop->GetName());
+			Row->SetStringField(TEXT("path"), Path);
+			Row->SetStringField(TEXT("type"), Prop->GetCPPType());
+			Row->SetStringField(TEXT("value"), ValueText);
+			Row->SetStringField(TEXT("defaultValue"), DefaultText);
+			Row->SetStringField(TEXT("defaultSource"), DefaultAddr ? TEXT("archetype") : TEXT("constructed"));
+			Row->SetStringField(TEXT("specifier"), MifDetailsAuthoredSpecifier(Prop));
+			Row->SetStringField(TEXT("persistence"), MifDetailsPersistence(Prop));
+			Row->SetBoolField(TEXT("resettable"),
+				!Prop->HasAnyPropertyFlags(CPF_Config) && !Prop->HasAnyPropertyFlags(CPF_EditFixedSize));
+			return Row;
+		}
+
+		// Recurse into the members of ONE struct, comparing the object's copy against the archetype's.
+		// Deliberately narrow, and each exclusion is a correctness requirement rather than caution:
+		//   - only into an FStructProperty, where ValueBase and DefaultBase are the SAME UStruct, so one
+		//     member offset addresses both. That is the entire safety argument, which is why nothing
+		//     else is descended into.
+		//   - NEVER into a TArray/TSet/TMap element: the object and its archetype hold different element
+		//     counts and different allocations, so there is no parallel address to compare against.
+		//     Containers stay leaves and are compared WHOLE by FProperty::Identical, which is correct.
+		//   - NEVER into a C-array member (ArrayDim > 1): every member address would need a per-element
+		//     path, and quietly using element 0 is exactly the blindness that made
+		//     reset_property_to_default report verified:true over an untouched override. Reported as a
+		//     leaf instead, where the ArrayDim-wide Identical already gives the right answer.
+		//   - NEVER through an object POINTER: that is a different object with a different archetype and
+		//     its own diff, not a child row of this one.
+		void MifDetailsWalkDiff(FMifDetailsDiffWalk& W, UStruct* Struct, const void* ValueBase,
+			const void* DefaultBase, const FString& PathPrefix, int32 Depth)
+		{
+			if (!Struct || !ValueBase || !DefaultBase) { return; }
+			for (TFieldIterator<FProperty> It(Struct); It; ++It)
+			{
+				FProperty* Prop = *It;
+				if (!Prop) { continue; }
+				if (W.Inspected >= FMifDetailsDiffWalk::kNodeBudget) { W.bBudgetExhausted = true; return; }
+				++W.Inspected;
+				if (!W.bIncludeTransient && Prop->HasAnyPropertyFlags(CPF_Transient))
+				{
+					++W.SkippedTransient;
+					continue;
+				}
+
+				const void* ValueAddr   = Prop->ContainerPtrToValuePtr<void>(ValueBase);
+				const void* DefaultAddr = Prop->ContainerPtrToValuePtr<void>(DefaultBase);
+				if (!MifDetailsDiffersFromDefault(Prop, ValueAddr, DefaultAddr, /*bSingleElement*/ false, W.bDeep))
+				{
+					++W.Matching;
+					continue;
+				}
+
+				const FString Path = PathPrefix.IsEmpty()
+					? Prop->GetName()
+					: (PathPrefix + TEXT(".") + Prop->GetName());
+				const FStructProperty* SP = CastField<FStructProperty>(Prop);
+				if (SP && SP->Struct && Prop->ArrayDim == 1 && Depth < W.MaxDepth)
+				{
+					const int32 DifferingBefore = W.Differing;
+					++W.Expanded;
+					MifDetailsWalkDiff(W, SP->Struct, ValueAddr, DefaultAddr, Path, Depth + 1);
+					if (W.Differing != DifferingBefore) { continue; }
+					// The struct compared NON-identical but no member of it did. That is a real answer,
+					// not a contradiction: FProperty::Identical on a UScriptStruct can route through a
+					// custom Identical op (TStructOpsTypeTraits) that is not a member-wise compare. Fall
+					// back to reporting the struct itself rather than count a difference with no row to
+					// explain it.
+					--W.Expanded;
+				}
+				++W.Differing;
+				if (W.Rows.Num() >= W.Limit) { W.bTruncated = true; continue; }
+				W.Rows.Add(MakeShared<FJsonValueObject>(MifDetailsMakeDiffRow(
+					Prop, Path, ValueAddr, DefaultAddr, FString(), W.ValueOwner, W.DefaultOwner, W.MaxValueChars)));
+			}
 		}
 
 		// ---------------------------------------------------------------------------------------
@@ -608,20 +863,31 @@ namespace MifBridge
 	// =============================================================================================
 	// diff_properties_vs_default - READ-ONLY
 	//   in:  { objectPath (actorPath) | blueprintId (path) + widgetName, nameContains (filter,
-	//          nameFilter)?, limit?, maxValueChars?, includeTransient?, deep? }
-	//   out: { inspected, differing, matching, skippedTransient, truncated, properties[] }
+	//          nameFilter)?, limit?, maxValueChars?, includeTransient?, deep?,
+	//          recursive (includeChildren)? }
+	//   out: { inspected, differing, matching, skippedTransient, expanded, truncated, recursive,
+	//          properties[] }
 	//
 	// "What does this object actually OVERRIDE?" - the question the panel answers with a yellow
 	// arrow and the bridge could not answer at all. The invariant
-	// inspected == differing + matching + skippedTransient is EMITTED, not implied.
+	// inspected == differing + matching + skippedTransient + expanded is EMITTED, not implied;
+	// `expanded` is 0 unless recursion was asked for, so the three-term form every existing caller
+	// checks still holds for them.
+	//
+	// `recursive` DEFAULTS TO FALSE and the top-level walk is untouched by it. Turned on, a struct
+	// property that differs is OPENED instead of reported and its differing members are reported in
+	// its place, each with a dotted `path` that reset_property_to_default accepts. It descends into
+	// STRUCT MEMBERS ONLY - see MifDetailsWalkDiff for why containers, C-arrays and object pointers
+	// are leaves and not an oversight.
 	// =============================================================================================
 	void H_diff_properties_vs_default(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("objectPath"), TEXT("actorPath"), TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"),
 			  TEXT("nameContains"), TEXT("filter"), TEXT("nameFilter"),
-			  TEXT("limit"), TEXT("maxValueChars"), TEXT("includeTransient"), TEXT("deep") },
-			TEXT("objectPath (alias actorPath) | (blueprintId or path) + widgetName, nameContains (aliases filter, nameFilter), limit, maxValueChars, includeTransient, deep")))
+			  TEXT("limit"), TEXT("maxValueChars"), TEXT("includeTransient"), TEXT("deep"),
+			  TEXT("recursive"), TEXT("includeChildren") },
+			TEXT("objectPath (alias actorPath) | (blueprintId or path) + widgetName, nameContains (aliases filter, nameFilter), limit, maxValueChars, includeTransient, deep, recursive (alias includeChildren)")))
 		{
 			return;
 		}
@@ -636,6 +902,12 @@ namespace MifBridge
 		// PPF_DeepComparison on an instanced-object property is the expensive case; bounded rather
 		// than merely hoped about, and the response says when it was disabled.
 		const bool bDeep            = JBool(In, TEXT("deep"), true);
+		// OPTIONAL and defaulting to FALSE, so a caller who does not ask for it gets exactly the
+		// top-level-only walk this endpoint has always done. When true, a struct property that differs
+		// is OPENED rather than reported, and its differing members are reported instead - which is what
+		// makes "Settings.BloomIntensity" appear as a row you can hand straight to
+		// reset_property_to_default, instead of one "Settings" row whose value is a 4KB struct literal.
+		const bool bRecursive       = JBoolAny(In, { TEXT("recursive"), TEXT("includeChildren") }, false);
 
 		MifDetailsEmitTargetKind(Target, Out);
 		UObject* Archetype = MifDetailsArchetypeOf(Target);
@@ -649,6 +921,8 @@ namespace MifBridge
 			Out->SetNumberField(TEXT("differing"), 0);
 			Out->SetNumberField(TEXT("matching"), 0);
 			Out->SetNumberField(TEXT("skippedTransient"), 0);
+			Out->SetNumberField(TEXT("expanded"), 0);
+			Out->SetBoolField(TEXT("recursive"), bRecursive);
 			Out->SetBoolField(TEXT("truncated"), false);
 			Out->SetArrayField(TEXT("properties"), TArray<TSharedPtr<FJsonValue>>());
 			Out->SetStringField(TEXT("note"), FString::Printf(
@@ -657,87 +931,150 @@ namespace MifBridge
 			return;
 		}
 
-		TArray<TSharedPtr<FJsonValue>> Rows;
-		int32 Inspected = 0, Differing = 0, Matching = 0, SkippedTransient = 0;
-		bool bTruncated = false;
+		FMifDetailsDiffWalk Walk;
+		Walk.ValueOwner       = Target;
+		Walk.DefaultOwner     = Archetype;
+		Walk.Limit            = Limit;
+		Walk.MaxValueChars    = MaxValueChars;
+		Walk.bIncludeTransient = bIncludeTransient;
+		Walk.bDeep            = bDeep;
 		for (TFieldIterator<FProperty> It(Target->GetClass()); It; ++It)
 		{
 			FProperty* Prop = *It;
 			if (!Prop) { continue; }
+			// The name filter selects TOP-LEVEL properties, as it always has. It is deliberately NOT
+			// re-applied to nested members: a caller filtering on "Bloom" wants the members of the
+			// struct it selected, not only the members that happen to repeat the word.
 			if (!NameFilter.IsEmpty() && !Prop->GetName().Contains(NameFilter)) { continue; }
-			++Inspected;
+			if (Walk.Inspected >= FMifDetailsDiffWalk::kNodeBudget) { Walk.bBudgetExhausted = true; break; }
+			++Walk.Inspected;
 			if (!bIncludeTransient && Prop->HasAnyPropertyFlags(CPF_Transient))
 			{
 				// Transients always differ and drown the signal.
-				++SkippedTransient;
+				++Walk.SkippedTransient;
 				continue;
 			}
 
 			const void* ValueAddr = Prop->ContainerPtrToValuePtr<void>(Target);
 			const void* DefaultAddr = nullptr;
-			FString DefaultText, DefaultSource;
+			FString ConstructedText;
 			bool bDiffers = false;
 			if (Archetype->GetClass()->FindPropertyByName(Prop->GetFName()))
 			{
 				DefaultAddr   = Prop->ContainerPtrToValuePtr<void>(Archetype);
-				DefaultSource = TEXT("archetype");
 				bDiffers      = MifDetailsDiffersFromDefault(Prop, ValueAddr, DefaultAddr, /*bSingleElement*/ false, bDeep);
 			}
 			else
 			{
-				DefaultText   = MifDetailsConstructedDefaultText(Prop, Target);
-				DefaultSource = TEXT("constructed");
-				bDiffers      = !DefaultText.Equals(MifDetailsExportOne(Prop, ValueAddr, Target), ESearchCase::CaseSensitive);
+				// No archetype ADDRESS at all, so there is nothing to recurse into: a constructed
+				// default is a text answer only. Both sides of this compare are produced by the same
+				// exporter (ExportAll), which is what makes it valid for a C-array UPROPERTY.
+				ConstructedText = MifDetailsConstructedDefaultText(Prop, Target, /*bWholeProperty*/ true);
+				bDiffers        = !ConstructedText.Equals(MifDetailsExportAll(Prop, ValueAddr, Target), ESearchCase::CaseSensitive);
 			}
 
-			if (!bDiffers) { ++Matching; continue; }
-			++Differing;
-			if (Rows.Num() >= Limit) { bTruncated = true; continue; }
+			if (!bDiffers) { ++Walk.Matching; continue; }
 
-			FString ValueText = MifDetailsExportOne(Prop, ValueAddr, Target);
-			if (ValueText.Len() > MaxValueChars) { ValueText = ValueText.Left(MaxValueChars); }
-			if (DefaultAddr) { DefaultText = MifDetailsExportOne(Prop, DefaultAddr, Archetype); }
-			if (DefaultText.Len() > MaxValueChars) { DefaultText = DefaultText.Left(MaxValueChars); }
-
-			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
-			Row->SetStringField(TEXT("name"), Prop->GetName());
-			Row->SetStringField(TEXT("type"), Prop->GetCPPType());
-			Row->SetStringField(TEXT("value"), ValueText);
-			Row->SetStringField(TEXT("defaultValue"), DefaultText);
-			Row->SetStringField(TEXT("defaultSource"), DefaultSource);
-			Row->SetStringField(TEXT("specifier"), MifDetailsAuthoredSpecifier(Prop));
-			Row->SetStringField(TEXT("persistence"), MifDetailsPersistence(Prop));
-			Row->SetBoolField(TEXT("resettable"),
-				!Prop->HasAnyPropertyFlags(CPF_Config) && !Prop->HasAnyPropertyFlags(CPF_EditFixedSize));
-			Rows.Add(MakeShared<FJsonValueObject>(Row));
+			const FStructProperty* SP = CastField<FStructProperty>(Prop);
+			if (bRecursive && DefaultAddr && SP && SP->Struct && Prop->ArrayDim == 1)
+			{
+				const int32 DifferingBefore = Walk.Differing;
+				++Walk.Expanded;
+				MifDetailsWalkDiff(Walk, SP->Struct, ValueAddr, DefaultAddr, Prop->GetName(), /*Depth*/ 1);
+				if (Walk.Differing != DifferingBefore) { continue; }
+				--Walk.Expanded;   // opened it and found nothing inside; report the struct itself
+			}
+			++Walk.Differing;
+			if (Walk.Rows.Num() >= Limit) { Walk.bTruncated = true; continue; }
+			Walk.Rows.Add(MakeShared<FJsonValueObject>(MifDetailsMakeDiffRow(
+				Prop, Prop->GetName(), ValueAddr, DefaultAddr, ConstructedText, Target, Archetype, MaxValueChars)));
 		}
 
-		Out->SetNumberField(TEXT("inspected"), Inspected);
-		Out->SetNumberField(TEXT("differing"), Differing);
-		Out->SetNumberField(TEXT("matching"), Matching);
-		Out->SetNumberField(TEXT("skippedTransient"), SkippedTransient);
-		Out->SetBoolField(TEXT("truncated"), bTruncated);
-		Out->SetArrayField(TEXT("properties"), Rows);
-		// The checkable invariant, emitted rather than implied.
-		Out->SetBoolField(TEXT("countsConsistent"), Inspected == (Differing + Matching + SkippedTransient));
+		Out->SetNumberField(TEXT("inspected"), Walk.Inspected);
+		Out->SetNumberField(TEXT("differing"), Walk.Differing);
+		Out->SetNumberField(TEXT("matching"), Walk.Matching);
+		Out->SetNumberField(TEXT("skippedTransient"), Walk.SkippedTransient);
+		Out->SetNumberField(TEXT("expanded"), Walk.Expanded);
+		Out->SetBoolField(TEXT("recursive"), bRecursive);
+		if (bRecursive) { Out->SetNumberField(TEXT("maxDepth"), Walk.MaxDepth); }
+		Out->SetBoolField(TEXT("truncated"), Walk.bTruncated);
+		Out->SetArrayField(TEXT("properties"), Walk.Rows);
+		if (Walk.bBudgetExhausted)
+		{
+			AddWarning(Out, FString::Printf(
+				TEXT("the walk stopped after visiting %d properties (the node budget) and did NOT finish, so `inspected` and `matching` ")
+				TEXT("under-report and an override past that point is not in this response. Narrow it with nameContains, or turn recursive off."),
+				FMifDetailsDiffWalk::kNodeBudget));
+		}
+		// The checkable invariant, emitted rather than implied. `expanded` (a struct that was opened
+		// instead of reported) is always 0 when recursion is off, so this reduces to the three-term
+		// form for every caller that does not pass recursive:true.
+		Out->SetBoolField(TEXT("countsConsistent"),
+			Walk.Inspected == (Walk.Differing + Walk.Matching + Walk.SkippedTransient + Walk.Expanded));
 	}
 
 	// =============================================================================================
 	// reset_property_to_default - TRANSACTED
-	//   in:  { objectPath (actorPath), propertyPath (property), force (allowEditConst)? }
+	//   in:  { objectPath (actorPath), propertyPath (property), force (allowEditConst)?,
+	//          overrideFlag (editCondition, override): set | refuse | ignore = "ignore" }
 	//   out: { target, propertyPath, valueBefore, defaultValue, valueAfter, differedFromDefault,
-	//          changed, defaultSource, archetype, verified, notification, ... }
+	//          changed, defaultSource, archetype, verified, notification, editConditionKind,
+	//          editCondition?, editConditionMet?, editConditionFlag?, overrideFlagUnmet?, arrayDim?,
+	//          archetypeShapeMismatch?, verifyFailure?, ... }
 	//
-	// The Details panel's yellow arrow. Two refusals the panel applies and a naive reset does not:
-	// CPF_Config properties have NO reset arrow and CPF_EditFixedSize containers have none either
-	// (FPropertyHandleBase::CanResetToDefault, PropertyHandleImpl.cpp:3421-3433).
+	// `force` waives exactly ONE refusal, the one it has always waived: CPF_EditConst. It does NOT
+	// touch the meta EditCondition gate. A previous revision of this handler overloaded it with that
+	// second meaning and refused a gated reset unless force:true - a new unconditional refusal on a
+	// shipped write endpoint, which broke every caller that had ever reset a gated property. That is
+	// the same breaking change this wave already reversed for edit_container (:1747-1780), and it is
+	// reversed here the same way.
+	//
+	// A closed meta EditCondition is answered by `overrideFlag`, spelled exactly as edit_container and
+	// set_property spell it (set | refuse | ignore, aliases editCondition / override) so ONE vocabulary
+	// covers all three write endpoints. It defaults to "ignore" - the pre-wave behaviour, minus the
+	// silence: the editCondition* fields are always reported and a closed gate always raises a warning.
+	// "set" is the one word this endpoint refuses rather than honours, because writing the companion
+	// flag would make a RESET turn a feature ON; see the gate block below. server.py's docstring still
+	// claims "force=True waives TWO refusals" (server.py:897) and does not pass `overrideFlag` at all -
+	// that file is owned elsewhere and both corrections are REPORTED rather than made. Nothing is broken
+	// meanwhile, precisely because the default is the shipped behaviour.
+	//
+	// ARCHETYPE SHAPE MISMATCH - a REFUSAL this endpoint can return that server.py does not yet
+	// document. When the path resolves on the object and on the archetype to properties with a
+	// different FField class, ArrayDim or ElementSize, the call fails with archetypeShapeMismatch:true
+	// and nothingModified:true. It is not a caller mistake and not a transient: everything downstream
+	// indexes the ARCHETYPE's memory with the LIVE leaf's ArrayDim/ElementSize, so comparing - and
+	// then copying - across mismatched declarations would read past the archetype's allocation. The
+	// realistic cause is a class that was reinstanced after a live C++/Blueprint change while a stale
+	// archetype is still referenced, or a child class redeclaring an inherited name with a different
+	// type. The actionable answers are in the error text: reopen/recompile the asset so the archetype
+	// is rebuilt, or write the intended value explicitly with set_property, which never touches the
+	// archetype's memory. server.py's docstring should name this refusal.
+	//
+	// VERIFICATION compares against the DEFAULT, never against the staged buffer. Those are the same
+	// bytes only on the whole-C-array branch, which copies the default wholesale; the other branch
+	// SEEDS staging from the live value and imports the default TEXT over it, so any member the
+	// default literal did not mention survives - and verifying against staging would then pass while
+	// the live value still differs from the actual default. That is a false `verified:true`, which is
+	// the one answer this endpoint must never give.
+	//
+	// The Details panel's yellow arrow. Refusals the panel applies and a naive reset does not:
+	// CPF_Config properties have NO reset arrow, CPF_EditFixedSize containers have none either
+	// (FPropertyHandleBase::CanResetToDefault, PropertyHandleImpl.cpp:3421-3433), and a row whose meta
+	// EditCondition is not met is greyed along with its arrow.
+	//
+	// C-ARRAYS. A leaf with ArrayDim > 1 addressed WHOLE ("FloatCurves", not "FloatCurves[2]") is reset
+	// across EVERY element, and verified across every element. Both used to collapse to element 0 while
+	// the difference DETECTION was already ArrayDim-wide, so a `float Foo[4]` whose only override was
+	// Foo[3] reported ok / verified:true with the override untouched. See the staging block below.
 	// =============================================================================================
 	void H_reset_property_to_default(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("objectPath"), TEXT("actorPath"), TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"),
-			  TEXT("propertyPath"), TEXT("property"), TEXT("force"), TEXT("allowEditConst") },
-			TEXT("objectPath (alias actorPath), propertyPath (alias property), force (alias allowEditConst)")))
+			  TEXT("propertyPath"), TEXT("property"), TEXT("force"), TEXT("allowEditConst"),
+			  TEXT("overrideFlag"), TEXT("editCondition"), TEXT("override") },
+			TEXT("objectPath (alias actorPath), propertyPath (alias property), force (alias allowEditConst), overrideFlag (set|refuse|ignore)")))
 		{
 			return;
 		}
@@ -749,6 +1086,24 @@ namespace MifBridge
 			return;
 		}
 		const bool bForce = JBoolAny(In, { TEXT("force"), TEXT("allowEditConst") }, false);
+
+		// The meta-EditCondition escape, spelled and validated exactly as edit_container spells it
+		// (:1692-1704) and set_property before it (MifBridgeNodes5.cpp:1000-1015): same key, same three
+		// words, same aliases, same PM-002 rule that a string-to-enum dispatch never has a silent
+		// default. The DEFAULT is "ignore", which is what this endpoint did before the gate was added, so
+		// no shipped caller changes behaviour. "set" is part of the shared vocabulary and is validated
+		// here, then REFUSED at the gate below rather than silently downgraded - the reason is there.
+		FString OverrideFlagMode = JStrAny(In, { TEXT("overrideFlag"), TEXT("editCondition"), TEXT("override") }, TEXT("ignore"));
+		OverrideFlagMode = OverrideFlagMode.TrimStartAndEnd().ToLower();
+		if (OverrideFlagMode != TEXT("set") && OverrideFlagMode != TEXT("refuse") && OverrideFlagMode != TEXT("ignore"))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("overrideFlag '%s' is not one of set | refuse | ignore. 'ignore' (the default) resets the property behind a closed ")
+				TEXT("meta EditCondition and WARNS that the engine will not read it; 'refuse' fails naming the flag; 'set' is refused by ")
+				TEXT("THIS endpoint, because a reset must never turn a feature on. Nothing was changed."),
+				*JStrAny(In, { TEXT("overrideFlag"), TEXT("editCondition"), TEXT("override") })));
+			return;
+		}
 
 		UObject* Target = MifDetailsResolveWritableTarget(In, Out, TEXT("reset_property_to_default"));
 		if (!Target) { return; }
@@ -763,7 +1118,9 @@ namespace MifBridge
 		// TRASH_<Class>_N, so its path is only readable now.
 		const FString TargetPathAtWrite = Target->GetPathName();
 
-		// --- the panel's two refusals, BEFORE anything is touched -----------------------
+		// --- the panel's FLAG refusals, BEFORE anything is touched ----------------------
+		// (the metadata one, EditCondition, follows immediately after and is answered by `overrideFlag`
+		//  rather than refused outright)
 		if (Leaf->HasAnyPropertyFlags(CPF_Config))
 		{
 			Fail(Out, FString::Printf(
@@ -792,28 +1149,223 @@ namespace MifBridge
 			return;
 		}
 
+		// --- the panel's THIRD gate: is the row's GATE open? -----------------------------
+		// Decided here, before any archetype work and long before any write, because a refusal must
+		// leave nothing behind and ORDER is the only mechanism for that (PM-007: a cancelled
+		// transaction reverts nothing at all). Same position set_property gates at
+		// (MifBridgeNodes5.cpp:1058-1082).
+		//
+		// The panel greys a gated row and its reset arrow TOGETHER, and the engine branches on the
+		// companion FLAG rather than on this member. So a reset behind a closed gate really does write
+		// memory - the old response was not lying about `verified` - and really does change nothing
+		// else. It is the implied EFFECT that was dishonest, and SILENCE is the whole of the defect.
+		//
+		// THREE ANSWERS, and the caller picks - the same key, the same three words and the same default
+		// as edit_container (:1747-1780), so the two endpoints are one mental model rather than two. The
+		// previous revision of this block refused UNCONDITIONALLY unless force:true, which is the
+		// identical breaking change this same wave identified and reversed for edit_container: a shipped
+		// write endpoint that had always reset gated properties began hard-failing, so every caller that
+		// reset one broke. The rule that settles it is not a preference - new behaviour is opt-in and
+		// the default is today's behaviour.
+		//
+		//   ignore (default) - perform the reset, report the gate, and WARN that the engine reads the
+		//                      companion FLAG and will not read this member until that flag is set.
+		//                      Pre-wave behaviour, minus the silence.
+		//   refuse           - fail, naming the flag and the value it needs. The strict behaviour, now
+		//                      opt-in rather than imposed.
+		//   set              - REFUSED here, where set_property and edit_container honour it. A caller
+		//                      handing set_property a VALUE for a gated member plausibly means "and turn
+		//                      the feature on"; "reset this to its default" carries no such intent, and
+		//                      writing the flag would make a RESET turn a feature ON, which no reset
+		//                      should ever do. The companion action for a reset is to RESET the flag as
+		//                      well - a second call to this same endpoint. Refused rather than silently
+		//                      downgraded to "ignore" (PM-002: no silent default).
+		//
+		// `force` is deliberately NOT consulted below. It means "waive CPF_EditConst", the one thing it
+		// has always meant; overloading it with this second gate is what made server.py's docstring
+		// wrong. That file is not this agent's to edit and the correction is REPORTED instead.
+		FEditConditionInfo EC;
+		InspectEditCondition(Leaf, Res.LeafContainerAddr, EC);
+		if (EC.bHasMeta)            { Out->SetStringField(TEXT("editCondition"), EC.MetaText); }
+		Out->SetStringField(TEXT("editConditionKind"), EC.Kind);
+		if (EC.bEvaluated)          { Out->SetBoolField(TEXT("editConditionMet"), EC.bMet); }
+		if (!EC.FlagName.IsEmpty()) { Out->SetStringField(TEXT("editConditionFlag"), EC.FlagName); }
+		// bEvaluated, NEVER bMet alone. An expression this bridge cannot parse comes back
+		// Kind:"unevaluated" with bMet DEFAULTED to true (MifBridgeHandlers.h:491,
+		// MifBridgeCommon.cpp:2319-2329), and so does a gated property addressed as an element of a
+		// dynamic container, which has no declaring container to find the sibling flag in
+		// (MifBridgeCommon.cpp:2351-2359). Both must pass through ungated rather than be refused on a
+		// guess.
+		const bool bGateClosed = EC.bEvaluated && !EC.bMet;
+		if (bGateClosed && OverrideFlagMode == TEXT("set"))
+		{
+			Out->SetStringField(TEXT("propertyPath"), PropertyPath);
+			Out->SetBoolField(TEXT("nothingModified"), true);
+			Fail(Out, FString::Printf(
+				TEXT("overrideFlag:\"set\" is not available on reset_property_to_default. '%s' is gated by meta EditCondition=\"%s\", and ")
+				TEXT("writing the companion flag '%s' = %s would make a RESET turn a feature ON - a change to a property you did not ")
+				TEXT("address, which no reset should ever make (set_property and edit_container accept \"set\" because a caller handing ")
+				TEXT("them a value plausibly means it; a reset does not). Reset '%s' itself with a second call to this endpoint - that is ")
+				TEXT("a reset's companion action - or pass overrideFlag:\"ignore\" (the default) to reset only '%s' behind the closed ")
+				TEXT("gate. Nothing was changed."),
+				*PropertyPath, *EC.MetaText, *EC.FlagName, EC.bRequiredFlagValue ? TEXT("True") : TEXT("False"),
+				*EC.FlagName, *PropertyPath));
+			return;
+		}
+		if (bGateClosed && OverrideFlagMode == TEXT("refuse"))
+		{
+			Out->SetStringField(TEXT("propertyPath"), PropertyPath);
+			Out->SetBoolField(TEXT("nothingModified"), true);
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is gated by meta EditCondition=\"%s\" and the companion flag '%s' is currently %s, so the Details panel greys ")
+				TEXT("the row and its reset arrow with it. The engine reads the FLAG, not this member, so resetting '%s' now would change ")
+				TEXT("memory and change nothing else. You asked for overrideFlag:\"refuse\". Reset or set '%s' instead - that is the edit ")
+				TEXT("the panel would have you make - or pass overrideFlag:\"ignore\" (the default) to reset behind the closed gate on ")
+				TEXT("purpose. Nothing was changed."),
+				*PropertyPath, *EC.MetaText, *EC.FlagName, EC.bRequiredFlagValue ? TEXT("False") : TEXT("True"),
+				*PropertyPath, *EC.FlagName));
+			return;
+		}
+		if (bGateClosed)
+		{
+			// Raised HERE rather than after the write, so it survives every later exit: a caller stopped
+			// by the archetype-shape refusal, or told the property already equals its default, still
+			// needs to know the row it addressed is one the engine is not reading. Phrased without
+			// tense for the same reason - whether a write lands is decided further down.
+			Out->SetBoolField(TEXT("overrideFlagUnmet"), true);
+			AddWarning(Out, FString::Printf(
+				TEXT("RESET BEHIND A CLOSED GATE: '%s' is gated by meta EditCondition=\"%s\" and the flag '%s' is %s, so the Details panel ")
+				TEXT("greys this row and its reset arrow and the engine reads the FLAG rather than this member. Resetting '%s' changes ")
+				TEXT("memory and changes nothing else. Reset or set '%s' as well to make it take effect; pass overrideFlag:\"refuse\" if ")
+				TEXT("you would rather be stopped than warned."),
+				*PropertyPath, *EC.MetaText, *EC.FlagName, EC.bRequiredFlagValue ? TEXT("False") : TEXT("True"),
+				*PropertyPath, *EC.FlagName));
+		}
+
 		// --- the default value ----------------------------------------------------------
+		// ALWAYS materialised as an ADDRESS, never as text alone. The constructed fallback used to be
+		// text-only, which forced the differ/verify compares down a text path - and text cannot see
+		// past element 0 of a C-array UPROPERTY (ExportText_Direct emits ONE element,
+		// Property.cpp:1139-1164). One address means ONE predicate below: FProperty::Identical over
+		// every element the caller addressed, for both values of defaultSource.
 		UObject* Archetype = MifDetailsArchetypeOf(Target);
 		FString DefaultText, DefaultSource;
 		FPropertyPathResolution DefaultRes;
 		FString DefaultError;
 		const void* DefaultAddr = nullptr;
+		FMifDetailsValueScratch ConstructedDefault;   // populated on the fallback branch only
 		if (Archetype && Archetype != Target && ResolvePropertyPathEx(Archetype, PropertyPath, DefaultRes, DefaultError))
 		{
+			// SHAPE GUARD, before anything reads THROUGH DefaultAddr. Everything below indexes the
+			// archetype's memory with the LIVE leaf's ArrayDim/ElementSize, so a differently-declared
+			// archetype property would compare - and then copy - past the end of the archetype's
+			// allocation. Normally the two are the very same FProperty; a reinstanced or child class is
+			// the case that makes this checked rather than assumed.
+			if (!DefaultRes.Leaf
+				|| DefaultRes.Leaf->GetClass()  != Leaf->GetClass()
+				|| DefaultRes.Leaf->ArrayDim    != Leaf->ArrayDim
+				|| DefaultRes.Leaf->ElementSize != Leaf->ElementSize)
+			{
+				Out->SetBoolField(TEXT("changed"), false);
+				Out->SetBoolField(TEXT("verified"), false);
+				Out->SetBoolField(TEXT("nothingModified"), true);
+				// Machine-readable, because "the archetype disagrees about the declaration" is a
+				// DIFFERENT refusal from every other failure this endpoint returns and a caller should
+				// not have to string-match to tell. Additive field; nothing existing changes shape.
+				Out->SetBoolField(TEXT("archetypeShapeMismatch"), true);
+				// Report every dimension that was checked, not just the one that happened to differ:
+				// a caller cannot act on "they are different" without being told HOW.
+				Fail(Out, FString::Printf(
+					TEXT("'%s' resolves on the object as %s [ArrayDim %d, ElementSize %d], but on the archetype '%s' as %s ")
+					TEXT("[ArrayDim %d, ElementSize %d]. Refusing to compare or copy across mismatched declarations: every read below ")
+					TEXT("indexes the ARCHETYPE's memory with the LIVE property's ArrayDim/ElementSize, so proceeding would read - and ")
+					TEXT("then write - past the end of the archetype's allocation. This is not a bad propertyPath; the path resolved on ")
+					TEXT("BOTH objects. It means the two declarations have drifted apart, which happens when a class was reinstanced ")
+					TEXT("after a live C++ or Blueprint change while a stale archetype is still referenced, or when a child class ")
+					TEXT("redeclares an inherited name with a different type. What to do: reopen or recompile the asset so the archetype ")
+					TEXT("is rebuilt and call this again, or write the intended value explicitly with set_property, which never touches ")
+					TEXT("the archetype's memory. Nothing was changed."),
+					*PropertyPath, *Leaf->GetClass()->GetName(), Leaf->ArrayDim, Leaf->ElementSize,
+					*Archetype->GetPathName(),
+					DefaultRes.Leaf ? *DefaultRes.Leaf->GetClass()->GetName() : TEXT("<unresolved>"),
+					DefaultRes.Leaf ? DefaultRes.Leaf->ArrayDim : 0,
+					DefaultRes.Leaf ? DefaultRes.Leaf->ElementSize : 0));
+				return;
+			}
 			DefaultAddr   = DefaultRes.LeafAddr;
-			DefaultText   = MifDetailsExportOne(DefaultRes.Leaf, DefaultRes.LeafAddr, DefaultRes.LeafOwner);
+			DefaultText   = Res.bLeafIsElement
+				? MifDetailsExportOne(DefaultRes.Leaf, DefaultRes.LeafAddr, DefaultRes.LeafOwner)
+				: MifDetailsExportAll(DefaultRes.Leaf, DefaultRes.LeafAddr, DefaultRes.LeafOwner);
 			DefaultSource = TEXT("archetype");
 		}
 		else
 		{
-			DefaultText   = MifDetailsConstructedDefaultText(Leaf, LeafOwner);
+			// The same buffer MifDetailsConstructedDefaultText builds, kept ALIVE instead of exported
+			// and dropped, so the compares below have an address to work with. For an element leaf only
+			// slot 0 is used, which is harmless: InitializeValue/DestroyValue span ArrayDim either way.
+			// For ArrayDim <= 1 the text this produces is byte-identical to what the old call returned.
+			ConstructedDefault.Init(Leaf);
+			DefaultAddr   = ConstructedDefault.Mem;
+			DefaultText   = Res.bLeafIsElement
+				? MifDetailsExportOne(Leaf, DefaultAddr, LeafOwner)
+				: MifDetailsExportAll(Leaf, DefaultAddr, LeafOwner);
 			DefaultSource = TEXT("constructed");
 		}
+		if (!DefaultAddr)
+		{
+			// Only reachable if the scratch allocation failed. Refuse rather than fall through: a null
+			// default makes MifDetailsDiffersFromDefault answer "false", which would report
+			// differedFromDefault:false / verified:true for a property nobody ever looked at.
+			Out->SetBoolField(TEXT("changed"), false);
+			Out->SetBoolField(TEXT("verified"), false);
+			Out->SetBoolField(TEXT("nothingModified"), true);
+			Fail(Out, FString::Printf(
+				TEXT("could not materialise a default value for '%s' to compare against, so this call cannot say whether a reset is ")
+				TEXT("needed or whether one landed. Nothing was changed."),
+				*PropertyPath));
+			return;
+		}
 
-		const FString BeforeText = MifDetailsExportOne(Leaf, LeafAddr, LeafOwner);
-		const bool bDiffered = DefaultAddr
-			? MifDetailsDiffersFromDefault(Leaf, LeafAddr, DefaultAddr, Res.bLeafIsElement, /*bDeep*/ true)
-			: !BeforeText.Equals(DefaultText, ESearchCase::CaseSensitive);
+		// OUR OWN COPY OF THE DEFAULT, taken BEFORE the write, because the verification at the bottom
+		// compares against the DEFAULT and DefaultAddr cannot be trusted to survive the write. On the
+		// archetype branch it points INTO the archetype's memory, and a construction-script rerun or a
+		// reinstance can free that out from under us; the constructed branch is already our memory but
+		// is snapshotted the same way so there is ONE comparand and ONE lifetime rule below rather
+		// than a branch nobody will remember to keep in step.
+		//
+		// This is what used to be missing. The verification compared against Staging.Mem - which the
+		// non-C-array branch builds by SEEDING from the live value and importing the default TEXT over
+		// it, so every member the default literal did not mention is carried over from the live value.
+		// Comparing the written value against that buffer asks "did the copy land", never "is this the
+		// default", and passes while the property still differs from its default. A false
+		// `verified:true` is the one answer this endpoint must never give.
+		//
+		// Element convention matches ConstructedDefault above: an element leaf uses slot 0 only, so
+		// CopySingleValue, and the compare below runs with bSingleElement=true. A whole property is
+		// ArrayDim-wide on both branches, so CopyCompleteValue.
+		FMifDetailsValueScratch DefaultSnapshot(Leaf);
+		if (!DefaultSnapshot.Mem)
+		{
+			Out->SetBoolField(TEXT("changed"), false);
+			Out->SetBoolField(TEXT("verified"), false);
+			Out->SetBoolField(TEXT("nothingModified"), true);
+			Fail(Out, FString::Printf(
+				TEXT("could not allocate a snapshot of the default for '%s', and without one this call could not verify a reset ")
+				TEXT("against the DEFAULT afterwards. Refusing rather than writing something it cannot check. Nothing was changed."),
+				*PropertyPath));
+			return;
+		}
+		if (Res.bLeafIsElement) { Leaf->CopySingleValue(DefaultSnapshot.Mem, DefaultAddr); }
+		else                    { Leaf->CopyCompleteValue(DefaultSnapshot.Mem, DefaultAddr); }
+
+		const FString BeforeText = Res.bLeafIsElement
+			? MifDetailsExportOne(Leaf, LeafAddr, LeafOwner)
+			: MifDetailsExportAll(Leaf, LeafAddr, LeafOwner);
+		// ONE predicate, for both values of defaultSource: FProperty::Identical over every element the
+		// caller addressed (MifDetailsDiffersFromDefault loops ArrayDim unless bSingleElement). The
+		// text fallback that used to sit on the constructed branch had exactly the element-0 blindness
+		// the write path had.
+		const bool bDiffered = MifDetailsDiffersFromDefault(Leaf, LeafAddr, DefaultAddr, Res.bLeafIsElement, /*bDeep*/ true);
 
 		Out->SetStringField(TEXT("propertyPath"), PropertyPath);
 		Out->SetStringField(TEXT("leafProperty"), Leaf->GetName());
@@ -865,15 +1417,51 @@ namespace MifBridge
 		// PreEditChange and then failing would leave UActorComponent::PreEditChange's
 		// FComponentReregisterContext un-consumed (ActorComponent.cpp:806-822 is matched only by
 		// ConsolidatedPostEditChange at :927-941) - a dangling registration on a live component.
-		void* Staging = FMemory::Malloc(FMath::Max(Leaf->GetSize(), 1), Leaf->GetMinAlignment());
-		Leaf->InitializeValue(Staging);
-		Leaf->CopySingleValue(Staging, LeafAddr);   // seed, so a partial default literal keeps the rest
+		//
+		// A WHOLE fixed-size C-array UPROPERTY has no text form to re-import. ExportText_Direct and
+		// ImportText_Direct are ONE element each (Property.cpp:1139-1164, UnrealType.h:499-507), so
+		// DefaultText describes element 0 and re-importing it could only ever restore element 0 - which
+		// is exactly what this handler used to do: differedFromDefault was already ArrayDim-correct
+		// (MifDetailsDiffersFromDefault with bSingleElement=false loops ArrayDim), so it PROVED that
+		// elements differed, fixed one, and then verified with a compare that could not see the others.
+		// Copy the default VALUE across all ArrayDim elements instead.
+		//
+		// THIS IS ONE CHANGE WITH THE PUBLISH BELOW, not two. CopyCompleteValue publishing a Staging
+		// that had only been SEEDED at element 0 would overwrite elements 1..N-1 with CONSTRUCTED
+		// defaults rather than the archetype's - a silent WRONG WRITE in place of a silent no-op, which
+		// is worse than the bug. Neither half is correct alone.
+		const bool bWholeCArray = (!Res.bLeafIsElement && Leaf->ArrayDim > 1);
+
+		FMifDetailsValueScratch Staging(Leaf);
+		if (!Staging.Mem)
+		{
+			Out->SetBoolField(TEXT("changed"), false);
+			Out->SetBoolField(TEXT("verified"), false);
+			Out->SetBoolField(TEXT("nothingModified"), true);
+			Fail(Out, FString::Printf(TEXT("could not allocate a staging buffer for '%s'. Nothing was changed."), *PropertyPath));
+			return;
+		}
 		FString StagedText, ImportError;
-		const bool bParsed = ImportPropertyTextSafely(Leaf, DefaultText, LeafAddr, Staging, LeafOwner, StagedText, ImportError);
+		bool bParsed = true;
+		if (bWholeCArray)
+		{
+			// DefaultAddr is shape-checked against Leaf above. No LeafArrayBase arithmetic is needed
+			// here: when bLeafIsElement is false, Res.LeafCArrayIndex is provably 0 - the walker assigns
+			// the C-array index only inside the branch that also sets bSegIsElement
+			// (MifBridgeCommon.cpp:1848-1874, SegCArrayIndex and bSegIsElement set together at :1868 and
+			// :1871) and copies the pair onto the leaf together (:2034-2035) - so LeafAddr IS the base of
+			// the array. set_property needs that arithmetic only because it runs the ELEMENT case through
+			// an ArrayDim-wide scratch, which this handler does not.
+			Leaf->CopyCompleteValue(Staging.Mem, DefaultAddr);   // all ArrayDim elements
+			StagedText = MifDetailsExportAll(Leaf, Staging.Mem, LeafOwner);
+		}
+		else
+		{
+			Leaf->CopySingleValue(Staging.Mem, LeafAddr);   // seed, so a partial default literal keeps the rest
+			bParsed = ImportPropertyTextSafely(Leaf, DefaultText, LeafAddr, Staging.Mem, LeafOwner, StagedText, ImportError);
+		}
 		if (!bParsed)
 		{
-			Leaf->DestroyValue(Staging);
-			FMemory::Free(Staging);
 			// PM-003: the parser only ever saw scratch memory, so the live value is untouched.
 			Out->SetBoolField(TEXT("changed"), false);
 			Out->SetBoolField(TEXT("verified"), false);
@@ -883,11 +1471,29 @@ namespace MifBridge
 			return;
 		}
 
+		// The FProperty the staging buffer was built and TYPED against. If a construction-script rerun
+		// retargets us onto a different declaration below, comparing live memory through that one
+		// against this buffer is not a comparison this endpoint can stand behind.
+		FProperty* const StagedLeaf = Leaf;
+
 		LeafOwner->Modify();
 		if (bChainBuilt) { LeafOwner->PreEditChange(EditChain); } else { LeafOwner->PreEditChange(Leaf); }
-		Leaf->CopySingleValue(LeafAddr, Staging);
-		Leaf->DestroyValue(Staging);
-		FMemory::Free(Staging);
+		// CopySingleValue publishes ONE element - a container row, or one slot of a C-array;
+		// CopyCompleteValue publishes all ArrayDim. set_property has branched exactly this way all
+		// along (MifBridgeNodes5.cpp:1247-1250) and this handler did not, which is how a reset of a
+		// `float Foo[4]` wrote element 0 and left elements 1..3 overridden. LeafAddr is the correct base
+		// for BOTH branches, and for ArrayDim == 1 the two calls are bit-identical, so no existing path
+		// changes behaviour.
+		if (Res.bLeafIsElement) { Leaf->CopySingleValue(LeafAddr, Staging.Mem); }
+		else                    { Leaf->CopyCompleteValue(LeafAddr, Staging.Mem); }
+		// Staging is NOT the comparand. It is kept alive only so StagedText's provenance is intact and
+		// so the failure message below can report what was published alongside what was expected;
+		// FMifDetailsValueScratch releases it at every exit from here on. The comparand is
+		// DefaultSnapshot - our own copy of the DEFAULT, taken before the write. Verifying against
+		// Staging was the false-pass: on this branch Staging is the live value with the default's TEXT
+		// imported over it, so it agrees with what was written by construction and can agree while the
+		// property still differs from its default. DefaultAddr itself is NOT read again from here on -
+		// reinstancing can invalidate the archetype's address, which is exactly why the snapshot exists.
 
 		FPropertyChangedEvent Evt(Leaf, EPropertyChangeType::ValueSet);
 		if (bChainBuilt)
@@ -937,20 +1543,65 @@ namespace MifBridge
 		Out->SetBoolField(TEXT("reconstructed"), bReconstructed);
 		Out->SetStringField(TEXT("verifiedOn"), LeafOwner->GetPathName());
 
-		const FString AfterText = MifDetailsExportOne(Leaf, LeafAddr, LeafOwner);
+		const FString AfterText = Res.bLeafIsElement
+			? MifDetailsExportOne(Leaf, LeafAddr, LeafOwner)
+			: MifDetailsExportAll(Leaf, LeafAddr, LeafOwner);
 		Out->SetStringField(TEXT("valueAfter"), AfterText);
 		Out->SetBoolField(TEXT("changed"), !AfterText.Equals(BeforeText, ESearchCase::CaseSensitive));
-		if (!AfterText.Equals(DefaultText, ESearchCase::CaseSensitive))
+		if (Leaf->ArrayDim > 1) { Out->SetNumberField(TEXT("arrayDim"), Leaf->ArrayDim); }
+
+		// A retarget after a construction-script rerun can hand back a DIFFERENT FProperty. Staging AND
+		// DefaultSnapshot were both built and typed against the one that existed before the write, so
+		// there is no comparison left that this endpoint can stand behind - say so rather than pass.
+		// Never a false ok. This is also what keeps the element loop below in bounds: a different
+		// declaration can carry a different ArrayDim/ElementSize, and the snapshot is sized for the old
+		// one.
+		if (Leaf != StagedLeaf)
 		{
-			// The invariant this endpoint stakes its ok on: after a successful reset the value must
-			// equal the default byte-for-byte under the SAME exporter. Reusing set_property's
-			// "import said success, readback says otherwise" failure shape.
 			Out->SetBoolField(TEXT("verified"), false);
 			Fail(Out, FString::Printf(
-				TEXT("reset of '%s' did NOT land: the default is '%s', the import produced '%s', and re-reading the property returned ")
-				TEXT("'%s'. Likely a native setter or PostEditChangeProperty adjusted the value. Compare valueBefore / defaultValue / ")
-				TEXT("valueAfter in this response."),
-				*PropertyPath, *DefaultText, *StagedText, *AfterText));
+				TEXT("the reset of '%s' was written, but the object was reconstructed and the path now resolves to a DIFFERENT FProperty ")
+				TEXT("declaration, so the live value cannot be compared against what was staged. The reset is UNVERIFIED - re-read the ")
+				TEXT("property with describe_property to confirm it."),
+				*PropertyPath));
+			return;
+		}
+
+		// THE INVARIANT THIS ENDPOINT STAKES ITS `ok` ON: after a successful reset the live value equals
+		// THE DEFAULT - FProperty::Identical, every element the caller addressed, against the snapshot
+		// of the default taken before the write.
+		//
+		// It is compared against the DEFAULT and not against Staging, and that is the whole point.
+		// Staging and the default are the same bytes ONLY on the bWholeCArray branch, which copies the
+		// default wholesale. The other branch seeds Staging from the LIVE value and imports the default
+		// TEXT over it, and ImportPropertyTextSafely preserves every member the default literal did not
+		// mention - so a Staging compare asks "did my copy land" (it always did, we performed it) while
+		// differedFromDefault above asked the real question against DefaultAddr. The two halves
+		// disagreed, and the half that decided `verified` was the one that could not fail. That is the
+		// false pass this lane was opened to remove.
+		//
+		// A text compare cannot carry the invariant either: ExportText_Direct emits ONE element
+		// (Property.cpp:1139-1164), so for a C-array UPROPERTY it puts element 0 against element 0 and
+		// returns equal no matter what elements 1..ArrayDim-1 hold.
+		FString VerifyFailure;
+		if (!MifDetailsEqualsDefaultVerbose(Leaf, LeafAddr, DefaultSnapshot.Mem, Res.bLeafIsElement, /*bDeep*/ true, VerifyFailure))
+		{
+			const FString CArrayNote = Leaf->ArrayDim > 1
+				? FString::Printf(TEXT(" (a fixed-size C-array of %d elements)"), Leaf->ArrayDim)
+				: FString();
+			Out->SetBoolField(TEXT("verified"), false);
+			// The reason, machine-readable beside the prose, because "it differs" and "it could not be
+			// compared" are different outcomes and only one of them means the write failed.
+			Out->SetStringField(TEXT("verifyFailure"), VerifyFailure);
+			Fail(Out, FString::Printf(
+				TEXT("reset of '%s'%s is NOT verified: %s. The default is '%s', the staged value was '%s', and re-reading the property ")
+				TEXT("returned '%s'. The comparison is FProperty::Identical against the DEFAULT over every element addressed - not ")
+				TEXT("against the staged buffer, and not a text compare of element 0. Either a native setter or PostEditChangeProperty ")
+				TEXT("adjusted the value after the write, or the default's exported text does not describe the whole default (a partial ")
+				TEXT("struct literal leaves the members it omits at their previous values). The write DID happen; only the claim that it ")
+				TEXT("produced the default is withheld. Compare valueBefore / defaultValue / valueAfter in this response, and re-read ")
+				TEXT("with describe_property."),
+				*PropertyPath, *CArrayNote, *VerifyFailure, *DefaultText, *StagedText, *AfterText));
 			return;
 		}
 		Out->SetBoolField(TEXT("verified"), true);
@@ -966,9 +1617,29 @@ namespace MifBridge
 	// edit_container - TRANSACTED
 	//   in:  { objectPath (actorPath), propertyPath (property),
 	//          operation (action): add | insert | remove | clear | swap | resize | setKey,
-	//          index (at)?, count?, key?, newKey?, value?, swapWith?, newSize? }
+	//          index (at)?, count?, key?, newKey?, value?, swapWith?, newSize?,
+	//          overrideFlag (editCondition, override): set | refuse | ignore = "ignore" }
 	//   out: { target, propertyPath, containerKind, operation, elementsBefore, elementsAfter,
-	//          index?, rehashed, changed, verified, ... }
+	//          index?, rehashed, changed, verified, editConditionKind?, editConditionMet?,
+	//          editConditionFlag?, overrideFlagWritten?, overrideFlagUnmet?, ... }
+	//
+	// GATES. CPF_EditFixedSize refuses the size-changing operations. A container whose meta
+	// EditCondition is not met is the panel's other gate - it greys the container and its +/x buttons
+	// together, and the engine reads the companion FLAG rather than the container, so an edit made
+	// behind a closed gate changes memory and changes nothing else.
+	//
+	// `overrideFlag` is how that gate is answered, spelled exactly as set_property spells it
+	// (set | refuse | ignore, aliases editCondition / override) so one vocabulary covers both write
+	// endpoints. It DEFAULTS TO "ignore" here where set_property defaults to "set", and the asymmetry
+	// is deliberate twice over: (1) back-compat - edit_container shipped performing the operation, so
+	// today's behaviour has to remain the default and every new behaviour has to be opt-in; (2) intent
+	// - set_property is handed a VALUE for the gated member, so "and turn the feature on" is a fair
+	// reading, whereas "append one element to this array" is not consent to enable the feature that
+	// owns the array. What changed is that "ignore" is no longer SILENT: the editCondition fields are
+	// always reported and a closed gate always raises a warning saying the edit will not be read.
+	// server.py does not expose `overrideFlag` on this tool yet, so "set" and "refuse" are unreachable
+	// over MCP until it does - that is a REPORTED change, not one made from this file. Nothing is
+	// broken meanwhile, precisely because the default is the shipped behaviour.
 	//
 	// NOTE ON THE PARAMETER NAME. The obvious name for the verb is `op` - and `op` is batch's own
 	// routing key, which RejectUnknownParams tolerates centrally (MifBridgeHandlers.h). An endpoint
@@ -982,8 +1653,9 @@ namespace MifBridge
 			  TEXT("propertyPath"), TEXT("property"),
 			  TEXT("operation"), TEXT("action"),
 			  TEXT("index"), TEXT("at"), TEXT("count"),
-			  TEXT("key"), TEXT("newKey"), TEXT("value"), TEXT("swapWith"), TEXT("newSize") },
-			TEXT("objectPath (alias actorPath), propertyPath (alias property), operation (alias action) = add|insert|remove|clear|swap|resize|setKey, index (alias at), count, key, newKey, value, swapWith, newSize"),
+			  TEXT("key"), TEXT("newKey"), TEXT("value"), TEXT("swapWith"), TEXT("newSize"),
+			  TEXT("overrideFlag"), TEXT("editCondition"), TEXT("override") },
+			TEXT("objectPath (alias actorPath), propertyPath (alias property), operation (alias action) = add|insert|remove|clear|swap|resize|setKey, index (alias at), count, key, newKey, value, swapWith, newSize, overrideFlag (set|refuse|ignore)"),
 			{{ TEXT("op"),
 			   TEXT("this endpoint's verb is 'operation' (alias 'action'), NOT 'op' - 'op' is batch's routing key and is tolerated centrally, so an endpoint that used it would be un-diagnosable inside batch") }}))
 		{
@@ -1011,6 +1683,22 @@ namespace MifBridge
 			// A string-to-enum dispatch must never have a silent default (PM-002).
 			Fail(Out, FString::Printf(TEXT("operation '%s' is not one of %s. Nothing was changed."),
 				*JStrAny(In, { TEXT("operation"), TEXT("action") }), kOps));
+			return;
+		}
+
+		// The meta-EditCondition escape, spelled and validated exactly as set_property spells it
+		// (MifBridgeNodes5.cpp:1000-1015): same three words, same aliases, same PM-002 rule that a
+		// string-to-enum dispatch never has a silent default. The DEFAULT differs - "ignore" here,
+		// "set" there - and the doc comment above says why.
+		FString OverrideFlagMode = JStrAny(In, { TEXT("overrideFlag"), TEXT("editCondition"), TEXT("override") }, TEXT("ignore"));
+		OverrideFlagMode = OverrideFlagMode.TrimStartAndEnd().ToLower();
+		if (OverrideFlagMode != TEXT("set") && OverrideFlagMode != TEXT("refuse") && OverrideFlagMode != TEXT("ignore"))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("overrideFlag '%s' is not one of set | refuse | ignore. 'ignore' (the default) performs the operation behind a ")
+				TEXT("closed meta EditCondition and WARNS that the engine will not read it; 'set' writes the companion flag in the same ")
+				TEXT("transaction and REPORTS it; 'refuse' fails naming the flag. Nothing was changed."),
+				*JStrAny(In, { TEXT("overrideFlag"), TEXT("editCondition"), TEXT("override") })));
 			return;
 		}
 
@@ -1050,6 +1738,87 @@ namespace MifBridge
 				*PropertyPath, *Operation, *PropertyPath));
 			return;
 		}
+
+		// EditCondition, the panel's other per-row gate, checked beside its sibling CPF_EditFixedSize
+		// refusal above and well before the "VALIDATE EVERYTHING BEFORE THE FIRST MUTATION" block and
+		// the first Modify() - a refusal must leave nothing behind, and order is the only mechanism
+		// (PM-007).
+		//
+		// THREE ANSWERS, and the caller picks. The previous revision of this block refused
+		// UNCONDITIONALLY, which was a breaking change on a shipped write endpoint: edit_container has
+		// always performed the operation regardless of this gate, and a caller editing a gated
+		// container suddenly got a hard failure with no way through from inside the endpoint. The rule
+		// that settles it is not a preference - new behaviour is opt-in and defaults to today's
+		// behaviour - so the refusal became `overrideFlag:"refuse"` and the DEFAULT is "ignore", which
+		// is what this endpoint has always done.
+		//
+		// What is NOT preserved is the silence. The old behaviour performed the edit and said nothing
+		// about the gate, so a caller could not tell an edit the engine reads from one it does not.
+		// "ignore" now always reports editConditionKind / editConditionMet / editConditionFlag and
+		// raises a warning naming the flag. The defect this lane was opened for was the SILENT no-op,
+		// and that is fixed without breaking anyone.
+		//
+		//   ignore (default) - perform the operation, report the gate, warn that the engine reads the
+		//                      FLAG and will not read this container until the flag is set.
+		//   set              - write the companion flag in the same transaction and the same
+		//                      Modify/PreEditChange..PostEditChange bracket the operation uses, then
+		//                      report it, exactly as set_property's overrideFlag:"set" does
+		//                      (MifBridgeNodes5.cpp:1240-1245). Written only AFTER the operation has
+		//                      actually mutated, never at this point: everything between here and the
+		//                      mutation can still refuse (index range, duplicate key, value parse), and
+		//                      PM-007 says a cancelled transaction reverts nothing at all, so a flag
+		//                      written here would survive a refusal that claims "nothing was changed".
+		//   refuse           - fail, naming the flag and the value it needs. This is the strict
+		//                      behaviour, now opt-in.
+		//
+		// `overrideFlag` rather than `force`: reset_property_to_default's `force` means "waive
+		// CPF_EditConst", one refusal and nothing else, while "set" writes a second property. One word
+		// cannot mean both, and inventing a third spelling for the same idea is how a vocabulary rots -
+		// so reset_property_to_default answers THIS gate with THIS key too (:1163-1243), differing only
+		// in that it refuses "set": a reset must never turn a feature on. server.py does not pass this parameter
+		// yet, so over MCP the default is the only reachable mode today - which is the shipped
+		// behaviour, so nothing is broken while that catches up. REPORTED, not edited from here.
+		//
+		// Leaf here is always the container MEMBER (anything else was refused above), so it is a
+		// declared member and Res.LeafContainerAddr is non-null except when the container is itself an
+		// element of another dynamic container - which InspectEditCondition reports as unevaluated
+		// (MifBridgeCommon.cpp:2351-2359). Hence bEvaluated && !bMet, never !bMet alone
+		// (MifBridgeHandlers.h:491): an unparseable expression defaults bMet to TRUE and must pass
+		// through ungated rather than be refused on a guess.
+		FEditConditionInfo EC;
+		InspectEditCondition(Leaf, Res.LeafContainerAddr, EC);
+		const bool bGateClosed = EC.bEvaluated && !EC.bMet;
+		if (bGateClosed && OverrideFlagMode == TEXT("refuse"))
+		{
+			Out->SetStringField(TEXT("propertyPath"), PropertyPath);
+			Out->SetStringField(TEXT("containerKind"), ContainerKind);
+			Out->SetStringField(TEXT("operation"), Operation);
+			Out->SetStringField(TEXT("editCondition"), EC.MetaText);
+			Out->SetStringField(TEXT("editConditionKind"), EC.Kind);
+			Out->SetStringField(TEXT("editConditionFlag"), EC.FlagName);
+			Out->SetBoolField(TEXT("editConditionMet"), false);
+			Out->SetBoolField(TEXT("nothingModified"), true);
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is gated by meta EditCondition=\"%s\" and the companion flag '%s' is currently %s, so the Details panel greys ")
+				TEXT("the container and its +/x buttons. The engine reads the FLAG, not this container, so operation '%s' would change ")
+				TEXT("memory and change nothing else. You asked for overrideFlag:\"refuse\". Pass overrideFlag:\"set\" to write '%s' = %s in ")
+				TEXT("the same transaction and then perform the operation, overrideFlag:\"ignore\" (the default) to perform it behind the ")
+				TEXT("closed gate on purpose, or set '%s' yourself with set_property first. Nothing was changed."),
+				*PropertyPath, *EC.MetaText, *EC.FlagName, EC.bRequiredFlagValue ? TEXT("False") : TEXT("True"),
+				*Operation, *EC.FlagName, EC.bRequiredFlagValue ? TEXT("True") : TEXT("False"), *EC.FlagName));
+			return;
+		}
+		// Always stated from here on, whichever mode is in force and whether or not the gate is closed -
+		// the silence is the half of the old behaviour that was genuinely wrong.
+		if (EC.bHasMeta)            { Out->SetStringField(TEXT("editCondition"), EC.MetaText); }
+		Out->SetStringField(TEXT("editConditionKind"), EC.Kind);
+		if (EC.bEvaluated)          { Out->SetBoolField(TEXT("editConditionMet"), EC.bMet); }
+		if (!EC.FlagName.IsEmpty()) { Out->SetStringField(TEXT("editConditionFlag"), EC.FlagName); }
+		// "set" needs a resolved FBoolProperty AND the address of the struct/object that declares it.
+		// Without either there is nothing to write, and that is reported at the end rather than
+		// silently downgraded to "ignore".
+		const bool bSetFlagAfterMutation = bGateClosed && OverrideFlagMode == TEXT("set")
+			&& EC.FlagProp != nullptr && Res.LeafContainerAddr != nullptr;
 
 		FProperty* ElementProp = AP ? AP->Inner : (SP ? SP->ElementProp : MP->ValueProp);
 		FProperty* KeyProp     = MP ? MP->KeyProp : nullptr;
@@ -1526,6 +2295,32 @@ namespace MifBridge
 			return;
 		}
 
+		// --- overrideFlag:"set" - the companion EditCondition flag -----------------------
+		// HERE, and not at the gate. Every branch above calls Modify() and PreEditChange() only once
+		// its own last possible refusal has passed, so this point is the first at which the operation
+		// is known to have happened: bDidMutate is true, the notification bracket is open, and the
+		// transaction is already dirty. Writing the flag at the gate instead would leave it set behind
+		// any of the later refusals - index out of range, duplicate key, a value that would not parse -
+		// each of which promises "Nothing was changed", and PM-007 is explicit that a cancelled
+		// transaction reverts nothing at all.
+		//
+		// Inside the bracket and firing NO notification of its own, for set_property's reason
+		// (MifBridgeNodes5.cpp:1236-1245): a second PostEditChange on a placed actor's component reruns
+		// the construction scripts mid-write and leaves LeafAddr dangling before the count below is
+		// read back. The container's own PostEditChangeProperty announces the object once, for both.
+		//
+		// LeafContainerAddr is the base of the struct/object DECLARING the container, which a container
+		// operation does not move - only the container's own element storage is reallocated.
+		bool bFlagWritten = false, bFlagBefore = false, bFlagAfter = false;
+		if (bSetFlagAfterMutation)
+		{
+			void* FlagAddr = EC.FlagProp->ContainerPtrToValuePtr<void>(Res.LeafContainerAddr);
+			bFlagBefore = EC.FlagProp->GetPropertyValue(FlagAddr);
+			EC.FlagProp->SetPropertyValue(FlagAddr, EC.bRequiredFlagValue);
+			bFlagAfter  = EC.FlagProp->GetPropertyValue(FlagAddr);   // MEASURED, not echoed
+			bFlagWritten = true;
+		}
+
 		// --- notify, with the ARRAY change type the panel would use ---------------------
 		FPropertyChangedEvent Evt(Leaf,
 			Operation == TEXT("add") || Operation == TEXT("insert") ? EPropertyChangeType::ArrayAdd :
@@ -1535,6 +2330,56 @@ namespace MifBridge
 			                                                          EPropertyChangeType::ValueSet);
 		LeafOwner->PostEditChangeProperty(Evt);
 		LeafOwner->MarkPackageDirty();
+
+		// --- what happened to the gate, said out loud ------------------------------------
+		// Emitted BEFORE the verification block below, so it survives on that block's failure path too:
+		// a caller told "the count did not change" still needs to know the container it edited is one
+		// the engine is not reading.
+		if (bFlagWritten)
+		{
+			TSharedRef<FJsonObject> FlagJson = MakeShared<FJsonObject>();
+			FlagJson->SetStringField(TEXT("name"), EC.FlagName);
+			FlagJson->SetBoolField(TEXT("valueBefore"), bFlagBefore);
+			FlagJson->SetBoolField(TEXT("valueAfter"), bFlagAfter);
+			Out->SetObjectField(TEXT("overrideFlagWritten"), FlagJson);
+			AddWarning(Out, FString::Printf(
+				TEXT("'%s' is gated by meta EditCondition=\"%s\"; you passed overrideFlag:\"set\", so the companion flag '%s' was %s and has ")
+				TEXT("been SET to %s in the SAME transaction as operation '%s' - one Ctrl-Z undoes both. This ENABLED the feature that owns ")
+				TEXT("the container, which is a change to a property other than the one you addressed. Pass overrideFlag:\"ignore\" (the ")
+				TEXT("default) if you wanted only the container touched."),
+				*PropertyPath, *EC.MetaText, *EC.FlagName,
+				bFlagBefore ? TEXT("True") : TEXT("False"),
+				EC.bRequiredFlagValue ? TEXT("True") : TEXT("False"), *Operation));
+		}
+		else if (bGateClosed)
+		{
+			// Covers "ignore" AND a "set" that had nothing to write (no resolved FBoolProperty, or the
+			// container is itself an element of a dynamic container so there is no declaring container
+			// to find the sibling in - MifBridgeCommon.cpp:2351-2359). Downgrading either to silence is
+			// what made this endpoint dishonest in the first place.
+			Out->SetBoolField(TEXT("overrideFlagUnmet"), true);
+			const FString CouldNotWrite = (OverrideFlagMode == TEXT("set"))
+				? FString::Printf(TEXT("You asked for overrideFlag:\"set\", but the flag could not be written: %s. "),
+					!EC.FlagProp ? TEXT("the companion property could not be resolved as a bool")
+					             : TEXT("the container has no declaring container address to find the sibling flag in"))
+				: FString();
+			AddWarning(Out, FString::Printf(
+				TEXT("EDITED BUT NOT READ BY THE ENGINE: '%s' is gated by meta EditCondition=\"%s\" and the flag '%s' is still %s, so the ")
+				TEXT("Details panel greys this container and its +/x buttons and the engine reads the FLAG rather than the container. ")
+				TEXT("Operation '%s' DID change memory and changed nothing else. %sSet '%s' to %s - with set_property, or by passing ")
+				TEXT("overrideFlag:\"set\" here - to make this edit take effect; pass overrideFlag:\"refuse\" if you would rather be ")
+				TEXT("stopped than warned."),
+				*PropertyPath, *EC.MetaText, *EC.FlagName, EC.bRequiredFlagValue ? TEXT("False") : TEXT("True"),
+				*Operation, *CouldNotWrite, *EC.FlagName, EC.bRequiredFlagValue ? TEXT("True") : TEXT("False")));
+		}
+		else if (EC.bHasMeta && !EC.bEvaluated && !EC.Note.IsEmpty())
+		{
+			// A gate this bridge could not evaluate passes through ungated rather than being refused on
+			// a guess (bEvaluated, never bMet alone - MifBridgeHandlers.h:491). Saying so is the whole
+			// difference between that and degrading silently.
+			AddWarning(Out, FString::Printf(
+				TEXT("'%s': %s The operation WAS performed; verify by hand that the condition holds."), *PropertyPath, *EC.Note));
+		}
 
 		// --- verify by COUNTING, which is the only claim a structural op can make -------
 		const int32 After = CountNow();

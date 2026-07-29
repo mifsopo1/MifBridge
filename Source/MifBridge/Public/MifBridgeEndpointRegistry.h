@@ -1,11 +1,14 @@
 // MifBridge — external endpoint registration for provider plugins.
 //
 // MifBridge's built-in endpoints are MIF_DECL'd in Private/MifBridgeHandlers.h and MIF_BIND'd into
-// the function-local static map in Private/MifBridgeCommon.cpp (191 built-ins live; 12 external =
-// 203 endpoints total). Line numbers are deliberately NOT cited here any more: every one of the
-// seven this header used to carry had drifted, and a wrong citation is the MECHANISM of the
-// duplicate-helper bug class — the next reader jumps to the cited line, finds nothing, and writes a
-// local copy. Grep the symbol instead; `self_audit` reports the live counts. Providers
+// the function-local static map in Private/MifBridgeCommon.cpp (199 built-ins live; 12 external =
+// 211 endpoints total, as of the 2026-07-29 build). Line numbers are deliberately NOT cited here any
+// more: every one of the seven this header used to carry had drifted, and a wrong citation is the
+// MECHANISM of the duplicate-helper bug class — the next reader jumps to the cited line, finds
+// nothing, and writes a local copy. The COUNTS on the line above are the same hazard and have already
+// drifted once (they read 191/203 through the whole 160→211 expansion, understating by 8); treat them
+// as a stale annotation, never as a fact to quote. Grep the symbol, or ask `self_audit`, which builds
+// its counts from the LIVE merged map and cannot drift. Providers
 // (MifKismetReconstructor and any future Mif* plugin) instead register named handlers HERE at their
 // own module startup. The endpoint exists only while its provider is installed; self_audit names the
 // provider per endpoint (endpointDetails[].provider / externalProviders[]).

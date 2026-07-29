@@ -996,6 +996,22 @@ namespace MifBridge
 	// Self-audit — the plugin reporting its own invariants from inside the running DLL.
 	MIF_DECL(self_audit);
 
+	// Per-endpoint parameter introspection (MifBridgeDescribe.cpp). A superset of ONE self_audit row:
+	// bucket/provider/compileHeavy/batchable plus the accepted-parameter set harvested from the
+	// RejectUnknownParams call sites. Its three states are never conflated — params_declared (the
+	// endpoint guards its input, so the set can be enumerated), params_not_declared (NO ROW exists in
+	// the harvested table, so acceptedParams is OMITTED rather than empty — an empty list would read as
+	// "takes no parameters"), and no_such_endpoint.
+	//
+	// params_not_declared claims ONLY "no row", never "no guard". Those are different, and an earlier
+	// revision of this comment asserted the second: it said the truth was "silently ignores anything it
+	// does not read". A missing row has two causes with OPPOSITE consequences — no guard (silently
+	// ignores) or a guard added after the harvest (strictly rejects) — and a static table cannot tell
+	// them apart. Ten endpoints were in the second case while the endpoint confidently reported the
+	// first. Do not reintroduce the stronger wording here or in server.py's tool description.
+	// Read-only: it calls no Modify() and creates nothing (see IsReadOnlyEndpoint).
+	MIF_DECL(describe_endpoint);
+
 	// Batch
 	MIF_DECL(batch);
 
@@ -1079,6 +1095,49 @@ namespace MifBridge
 	MIF_DECL(invoke_editor_command);
 	MIF_DECL(invoke_editor_tab);
 	MIF_DECL(send_editor_key);
+
+	// SOURCE MEDIA INGEST (MifBridgeImport.cpp). The bridge could author assets but never bring
+	// BYTES in - which is why 42 shop icon textures sit on disk as 4.7 KB header-only stubs (no
+	// .uexp, no .ubulk, no source PNG anywhere) and render black.
+	//
+	// import_texture has TWO ingest modes: {sourcePath} a file on disk, and {base64} raw bytes
+	// posted inline. The base64 mode is the load-bearing one - an agent that GENERATED an icon holds
+	// bytes and has no file to point at, and reimport cannot help because there is nothing to
+	// re-pull. With overwrite:true it re-Inits the EXISTING UTexture2D rather than replacing the
+	// object, so the widgets already referencing those stubs keep working.
+	//
+	// import_asset covers general source media (fbx, wav, psd, obj) via UAssetImportTask +
+	// IAssetTools::ImportAssetTasks. bAutomated is forced TRUE (it drives the
+	// TGuardValue<bool>(GIsRunningUnattendedScript, ...) at AssetTools.cpp:3045, which is what
+	// genuinely suppresses factory option dialogs) and bAsync forced FALSE (GetObjects() BLOCKS on an
+	// async import - AssetImportTask.h:78 - which is the cross-frame stall this server forbids).
+	// Task->Factory is ALWAYS set: Interchange is bypassed only when a factory is specified
+	// (AssetTools.cpp:3068-3071), so a null factory can route a PNG or FBX to the async path.
+	//
+	// reimport_asset re-pulls a recorded source and refuses HONESTLY when there is none, naming
+	// import_texture's base64 mode - a reimport that silently succeeded over a missing file would be
+	// the worst possible answer for the icons this batch exists to fix.
+	//
+	// set_texture_settings is not optional polish: an icon imported with world-texture defaults gets
+	// DXT compression, a full mip chain and streaming, so it paints blurry and colour-banded, which
+	// reads to a human as a failed import. Without it import_texture is half a solution.
+	//
+	// All four are SELF-MANAGED (see IsSelfManagedEndpoint in MifBridgeCommon.cpp).
+	MIF_DECL(import_texture);
+	MIF_DECL(import_asset);
+	MIF_DECL(reimport_asset);
+	MIF_DECL(set_texture_settings);
+
+	// Asset ICON rendering (MifBridgeThumbnail.cpp). ThumbnailTools::RenderThumbnail is fully
+	// SYNCHRONOUS, so there is no job slot and nothing to poll. Only write_thumbnail_texture
+	// produces an ASSET - it is the one that actually fills an empty icon stub, because a PNG
+	// cannot be referenced by a widget. render_thumbnail and thumbnail_capabilities are READ-ONLY
+	// (they write an image FILE under <ProjectSaved> and mutate no asset); write_thumbnail_texture
+	// and set_asset_thumbnail are SELF-MANAGED. Both bucket comments are in MifBridgeCommon.cpp.
+	MIF_DECL(render_thumbnail);
+	MIF_DECL(write_thumbnail_texture);
+	MIF_DECL(set_asset_thumbnail);
+	MIF_DECL(thumbnail_capabilities);
 
 #undef MIF_DECL
 }

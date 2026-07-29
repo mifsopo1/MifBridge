@@ -199,7 +199,7 @@ def set_variable_default(blueprint_id: str, name: str, value) -> dict:
 @mcp.tool()
 def add_function_call(graph_id: str, function: str, cls: str = "self", x: int = 0, y: int = 0,
                       as_message: bool = False) -> dict:
-    "Add a function/library call node. cls is the owning class ('self' for this Blueprint, or e.g. KismetSystemLibrary). Pin types are derived from the reflected UFunction. Automatically picks the correct UK2Node_CallFunction SUBCLASS the way the editor does - CallArrayFunction for UKismetArrayLibrary ops (so array wildcards resolve durably instead of reverting on reload), CallDataTableFunction, CommutativeAssociativeBinaryOperator, and Message for interface calls on an external target. The chosen class is returned as nodeClass. as_message forces the interface Message form."
+    "Add a function/library call node. cls is the owning class ('self' for this Blueprint, or e.g. KismetSystemLibrary). Pin types are derived from the reflected UFunction. Automatically picks the correct UK2Node_CallFunction SUBCLASS the way the editor does - CallArrayFunction for UKismetArrayLibrary ops (it OWNS the wildcard-propagation logic; on a plain CallFunction a forced element type silently reverts to wildcard on reload because nothing re-resolves it. Note the type is never PERSISTED even here - AllocateDefaultPins wipes it back to wildcard on every reconstruct and PostReconstructNode re-derives it purely from what is wired in, so it survives only while the connection does), CallDataTableFunction, CommutativeAssociativeBinaryOperator, and Message for interface calls on an external target. The chosen class is returned as nodeClass. as_message forces the interface Message form."
     return _post("add_function_call", graphId=graph_id, function=function, **{"class": cls}, x=x, y=y,
                  asMessage=as_message or None)
 
@@ -332,21 +332,25 @@ def refresh_node(node_guid: str) -> dict:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
-def connect_pins(src_node: str, src_pin: str, dst_node: str, dst_pin: str) -> dict:
-    "Wire src_node.src_pin (output) to dst_node.dst_pin (input). Fires the connection notification so wildcards resolve. Returns the schema's reason string if disallowed."
-    return _post("connect_pins", srcNode=src_node, srcPin=src_pin, dstNode=dst_node, dstPin=dst_pin)
+def connect_pins(src_node: str, src_pin: str, dst_node: str, dst_pin: str,
+                 graph_id: str = "") -> dict:
+    "Wire src_node.src_pin (output) to dst_node.dst_pin (input). Fires the connection notification so wildcards resolve. Returns the schema's reason string if disallowed. graph_id is '<blueprintPath>::<graphName>', exactly as open_blueprint / list_graphs / list_nodes return it, and it SCOPES node resolution: with it both guids are looked up in that one graph's node list, without it they go through a global scan that cannot disambiguate a second loaded copy of the same blueprint carrying identical NodeGuids. Optional and omitted from the request when blank, so the default behaviour is the global scan this tool has always done. (The endpoint also accepts a 'path' key for back-compat - accepted and IGNORED, never a graph selector - which is why it is deliberately NOT exposed here: graph_id is the parameter that actually chooses the graph.)"
+    return _post("connect_pins", srcNode=src_node, srcPin=src_pin, dstNode=dst_node, dstPin=dst_pin,
+                 graphId=graph_id or None)
 
 
 @mcp.tool()
-def disconnect_pin(node: str, pin: str) -> dict:
-    "Break all links on a pin."
-    return _post("disconnect_pin", node=node, pin=pin)
+def disconnect_pin(node: str, pin: str, graph_id: str = "") -> dict:
+    "Break all links on a pin. graph_id is '<blueprintPath>::<graphName>' from open_blueprint / list_graphs / list_nodes; it scopes the node guid lookup to that graph instead of the global scan, which is the only way to disambiguate two loaded copies of a blueprint sharing NodeGuids. Optional, omitted when blank. ('path' is accepted by the endpoint for back-compat and IGNORED - not exposed here; graph_id is the real selector.)"
+    return _post("disconnect_pin", node=node, pin=pin, graphId=graph_id or None)
 
 
 @mcp.tool()
-def reconnect_pin(src_node: str, src_pin: str, dst_node: str, dst_pin: str) -> dict:
-    "Break both pins then reconnect them — the wildcard-reset combo when a type is stuck."
-    return _post("reconnect_pin", srcNode=src_node, srcPin=src_pin, dstNode=dst_node, dstPin=dst_pin)
+def reconnect_pin(src_node: str, src_pin: str, dst_node: str, dst_pin: str,
+                  graph_id: str = "") -> dict:
+    "Break both pins then reconnect them — the wildcard-reset combo when a type is stuck. graph_id is '<blueprintPath>::<graphName>' from open_blueprint / list_graphs / list_nodes; it scopes both node guid lookups to that graph instead of the global scan. Optional, omitted when blank. ('path' is accepted by the endpoint for back-compat and IGNORED - not exposed here; graph_id is the real selector.)"
+    return _post("reconnect_pin", srcNode=src_node, srcPin=src_pin, dstNode=dst_node, dstPin=dst_pin,
+                 graphId=graph_id or None)
 
 
 @mcp.tool()
@@ -512,10 +516,11 @@ def add_enum_literal(graph_id: str, enum_name: str, value: str = "", x: int = 0,
 
 
 @mcp.tool()
-def set_pin_type(node: str, pin: str, type: str, container: str = "", value_type: str = "") -> dict:
-    "Force a pin's type. type supports scalars (float is 32-bit, double/real 64-bit), struct/class names, and prefixes class:X / object:X / softobject:X / softclass:X / interface:X / enum:X. container = array|set|map; for a map, type is the KEY type and value_type is the VALUE type."
+def set_pin_type(node: str, pin: str, type: str, container: str = "", value_type: str = "",
+                 graph_id: str = "") -> dict:
+    "Force a pin's type. type supports scalars (float is 32-bit, double/real 64-bit), struct/class names, and prefixes class:X / object:X / softobject:X / softclass:X / interface:X / enum:X. container = array|set|map; for a map, type is the KEY type and value_type is the VALUE type. graph_id is '<blueprintPath>::<graphName>' from open_blueprint / list_graphs / list_nodes; it scopes the node guid lookup to that graph instead of the global scan, which is the only way to disambiguate two loaded copies of a blueprint sharing NodeGuids. Optional, omitted when blank. REFUSES BEFORE MUTATING on an array-function node's target array pin with nothing connected: that node re-derives every pin type from what is wired into it and wipes the pin back to wildcard on load, on reconstruct and during cook - the forced type would not even survive this call - so the response is nothingModified:true with route:'connect_pins'. Wire a typed array to the array pin and the wildcards resolve from it."
     return _post("set_pin_type", node=node, pin=pin, type=type, container=container or None,
-                 valueType=value_type or None)
+                 valueType=value_type or None, graphId=graph_id or None)
 
 
 # --------------------------------------------------------------------------
@@ -560,11 +565,11 @@ def add_component(blueprint_id: str, component_class: str, name: str = "", paren
 
 
 @mcp.tool()
-def list_components(blueprint_id: str, include_inherited: bool = True,
+def list_components(blueprint_id: str, component: str = "", include_inherited: bool = True,
                     include_native: bool = True, limit: int = 500) -> dict:
-    "List EVERY component reachable from a Blueprint, from all three origins, each row tagged with origin: 'ownSCS' (this Blueprint's own SimpleConstructionScript), 'parentBlueprintSCS' (inherited from a parent BLUEPRINT's SCS, anywhere up the chain) and 'native' (a C++ component on the parent class chain, read off the CDO). It used to walk the child's own SCS only, which is why get_inherited_component - a verb that resolves ONE component BY NAME - had no companion that could tell you the names. Every row carries owningClass, the endpoint to call next (route/endpoint) and a hint. templatePath means one thing everywhere: the objectPath to pass to set_property to change that component's defaults FOR THIS BLUEPRINT. For a NATIVE component that is the child CDO's own subobject, and the subobject name is NOT the property name (Mesh -> CharacterMesh0, CharacterMovement -> CharMoveComp, CapsuleComponent -> CollisionCylinder) - subobjectName carries it, resolved from the object rather than guessed. For an INHERITED component templatePath is present only once an override exists (overrideTemplatePath); until then it is deliberately absent, because the only other template is the PARENT asset's and writing there would change every other child - parentTemplatePath shows it read-only and route says override_inherited_component. Also reports canOverride (exactly what override_inherited_component will accept), editableWhenInherited (the extra editor-side fact), and the ownSCSCount / parentBlueprintSCSCount / nativeCount split. include_inherited and include_native default TRUE and exist only so a caller can ask for the old own-SCS-only shape back."
-    return _post("list_components", blueprintId=blueprint_id, includeInherited=include_inherited,
-                 includeNative=include_native, limit=limit)
+    "List EVERY component reachable from a Blueprint, from all three origins, each row tagged with origin: 'ownSCS' (this Blueprint's own SimpleConstructionScript), 'parentBlueprintSCS' (inherited from a parent BLUEPRINT's SCS, anywhere up the chain) and 'native' (a C++ component on the parent class chain, read off the CDO). It used to walk the child's own SCS only, which is why get_inherited_component - a verb that resolves ONE component BY NAME - had no companion that could tell you the names. Every row carries owningClass, the endpoint to call next (route/endpoint) and a hint. templatePath means one thing everywhere: the objectPath to pass to set_property to change that component's defaults FOR THIS BLUEPRINT. For a NATIVE component that is the child CDO's own subobject, and the subobject name is NOT the property name (Mesh -> CharacterMesh0, CharacterMovement -> CharMoveComp, CapsuleComponent -> CollisionCylinder) - subobjectName carries it, resolved from the object rather than guessed. For an INHERITED component templatePath is present only once an override exists (overrideTemplatePath); until then it is deliberately absent, because the only other template is the PARENT asset's and writing there would change every other child - parentTemplatePath shows it read-only and route says override_inherited_component. Also reports canOverride (exactly what override_inherited_component will accept), editableWhenInherited (the extra editor-side fact), and the ownSCSCount / parentBlueprintSCSCount / nativeCount split. include_inherited and include_native default TRUE and exist only so a caller can ask for the old own-SCS-only shape back. NAME LOOKUP: pass component to ask ONE question - 'does this name exist here, and what can I do with it' - and get it answered in a form that cannot be confused with 'it exists but is not overridable'. canOverride:false is NEVER the discriminator (it is legitimately false for an own-SCS component, for a native one, and for an inherited one whose key or class check fails); exists and origin are. A known name answers requestedComponent + exists:true + origin + owningClass + componentClass + canOverride (+ canOverrideReason when false) + route at the TOP level, with that one row in components[]. An unknown name answers exists:false + origin:'notFound' + route:'none' + availableComponents[] (the names that DO exist, capped at 80) - and ok stays true, because the question was asked and answered. Names are matched as FNames (case-insensitive) and are the Details-panel variable names, not the subobject names. The origin filters are IGNORED for a named lookup, so include_native=False cannot turn a native component into 'no such component'. COOKED / CLASS TARGETS: targetKind is 'blueprint' or 'cookedClass' and is the ONLY discriminator - a generated-class path ('/Game/A/BP_Foo.BP_Foo_C') of an UNCOOKED blueprint resolves through UClass::ClassGeneratedBy to its editable UBlueprint and answers targetKind:'blueprint' with every route live. editableBlueprintExists says whether an editable UBlueprint backs the target and editableBlueprintPath names it - retarget writes at that path rather than minting a duplicate with create_editable_child. Only targetKind:'cookedClass' with editableBlueprintExists:false is genuinely cooked and read-only; there readOnly:true, every row reports canOverride:false with a reason and route:'create_editable_child', cookedClassPath names the class, targetNote explains it, nativeEnumerated:false means the native pass could not run (no constructed CDO, and one is deliberately not created for a read) so nativeCount:0 means 'not looked at' rather than 'none', and classGeneratedByPath appears when the generator exists but is not a UBlueprint. On a cooked target templatePath is ABSENT by design and cookedTemplatePath carries the archetype as a READ-ONLY reference - it must NOT be passed to set_property, because that package is pak-mounted and the write cannot be saved back."
+    return _post("list_components", blueprintId=blueprint_id, component=component or None,
+                 includeInherited=include_inherited, includeNative=include_native, limit=limit)
 
 
 @mcp.tool()
@@ -831,7 +836,7 @@ def set_function_flags(blueprint_id: str = "", graph_id: str = "", function: str
 @mcp.tool()
 def get_property(object_path: str = "", blueprint_id: str = "", widget_name: str = "",
                  property_path: str = "") -> dict:
-    "Read any UObject property by dot-path (e.g. Font.Size). Target is either object_path, or blueprint_id + widget_name for a widget template."
+    "Read any UObject property by dot-path (e.g. Font.Size). Target is either object_path, or blueprint_id + widget_name for a widget template. THE RESPONSE CARRIES TWO VALUES AND YOU ALMOST ALWAYS WANT THE SECOND. 'value' is the engine's lossless UE export text - round-trip-safe, exact for int64, and it keeps the NSLOCTEXT(...) form of an FText - which means a bool arrives as the STRING 'True'/'False' and an array as one '(\"A\",\"B\")' blob. Those strings are truthy in every scripting language, so an 'is this flag set' test written against 'value' silently passes for both values; that is exactly how a 63-blueprint audit read every disabled flag as enabled. 'typed' is the SAME value as real JSON: bools as booleans, numbers as numbers, arrays/sets as lists, maps/structs as objects (keyed by the reflected member name), enums as the entry NAME string, object refs as path strings (null only when the engine itself says None). Use 'typed' for any test, arithmetic or filter. It is also the shape set_property's value accepts, so get_property.typed -> set_property.value is a closed loop. Two lossy edges, and only two: FText comes back as the display string (the localisation form survives only in 'value'), and an int64 past 2^53 loses precision as a JSON number (again exact in 'value'). property_path takes element accessors - OverrideMaterials[1], FloatCurves[1].Keys[0].Value, ScalarParameterValues[ParameterInfo.Name=Roughness].ParameterValue, SomeMap{Alpha} - and the response says isElement, with elementPath/elementIndex, plus elementOrdering when the index is a POSITION IN ITERATION ORDER (a set or map), which is not stable across a rehash. Read-only."
     return _post("get_property", objectPath=object_path or None, blueprintId=blueprint_id or None,
                  widgetName=widget_name or None, propertyPath=property_path)
 
@@ -850,7 +855,7 @@ def set_property(object_path: str = "", blueprint_id: str = "", widget_name: str
 def list_object_properties(object_path: str = "", blueprint_id: str = "", widget_name: str = "",
                            name_contains: str = "", limit: int = 200,
                            max_value_chars: int = 200) -> dict:
-    "Dump an object's top-level properties with type and current value. Filter with name_contains; limit caps the returned rows (matched reports the true total, truncated flags the cap). max_value_chars clips long values and sets valueClipped - large Blueprint actors have struct/curve properties tens of KB each, so an unbounded dump returns nothing. Use get_property for the full value of a single named property."
+    "Dump an object's top-level properties with type and current value. Each row carries 'value' (UE export text, round-trip-safe, so a bool arrives as the STRING 'True' and a C-array UPROPERTY shows only element 0) and 'typed' (the same value as real JSON: bool/number/array/object, enums as the entry name, object refs as path strings, and a C-array complete) - use 'typed' for any test or arithmetic, and see get_property for the two lossy edges (FText display string, int64 past 2^53). It comes from the SAME emitter get_property and set_property use, so a row's 'typed' is the shape set_property's value accepts: list_object_properties row.typed -> set_property.value is the same closed loop as get_property.typed -> set_property.value. 'typed' is OMITTED, with typedOmitted:true on that row, whenever the row's value exceeded max_value_chars: the typed JSON of a curve or volumetric-cloud struct is no smaller than its export text and usually larger, so emitting it would reproduce the empty-response failure the caps exist to prevent. The response carries typedSupported:true, so a missing 'typed' is never confused with an older build - and a row from a build that has the field always has either 'typed' or typedOmitted:true, never neither. Filter with name_contains; limit caps the returned rows (matched reports the true total, truncated flags the cap). max_value_chars clips long values and sets valueClipped - large Blueprint actors have struct/curve properties tens of KB each, so an unbounded dump returns nothing; raise it (or use get_property, which is unclipped by construction) to get 'typed' for a large struct."
     return _post("list_object_properties", objectPath=object_path or None,
                  blueprintId=blueprint_id or None, widgetName=widget_name or None,
                  nameContains=name_contains or None, limit=limit,
@@ -877,30 +882,34 @@ def describe_property(object_path: str = "", blueprint_id: str = "", widget_name
 @mcp.tool()
 def diff_properties_vs_default(object_path: str = "", blueprint_id: str = "", widget_name: str = "",
                                name_contains: str = "", limit: int = 200, max_value_chars: int = 200,
-                               include_transient: bool = False, deep: bool = True) -> dict:
-    "What does this object actually OVERRIDE versus its archetype - the question the Details panel answers with a yellow arrow, and the single most useful read for auditing a Blueprint, a placed actor or a CDO. Computed the way the panel computes it: the archetype with a UClass->CDO hop first, FProperty::Identical with PPF_DeepComparison on instanced-object properties (set deep=False to skip that, and the response says it was skipped), and an ArrayDim loop for C-arrays. Each differing row carries value, defaultValue, defaultSource ('archetype' or 'constructed' - a property a child Blueprint added does not exist on the archetype at all, and the fallback is stated rather than hidden), the authored specifier, persistence and resettable. Transients are skipped by default because they always differ and drown the signal; include_transient=True keeps them. Emits the checkable invariant inspected == differing + matching + skippedTransient as countsConsistent. An object whose archetype is itself (the root CDO) is a stated RESULT with differing:0, not an error. Read-only."
+                               include_transient: bool = False, deep: bool = True,
+                               recursive: bool = False) -> dict:
+    "What does this object actually OVERRIDE versus its archetype - the question the Details panel answers with a yellow arrow, and the single most useful read for auditing a Blueprint, a placed actor or a CDO. Computed the way the panel computes it: the archetype with a UClass->CDO hop first, FProperty::Identical with PPF_DeepComparison on instanced-object properties (set deep=False to skip that, and the response says it was skipped), and an ArrayDim loop for C-arrays. Each differing row carries name, path, value, defaultValue, defaultSource ('archetype' or 'constructed' - a property a child Blueprint added does not exist on the archetype at all, and the fallback is stated rather than hidden), the authored specifier, persistence and resettable. Transients are skipped by default because they always differ and drown the signal; include_transient=True keeps them. recursive (alias include_children) defaults to FALSE, which is the top-level-only walk this tool has always done; set it True and a differing STRUCT is OPENED rather than reported, so you get a 'Settings.BloomIntensity' row - a path you can hand straight to reset_property_to_default or set_property - instead of one 'Settings' row whose value is a 4 KB struct literal. Recursion is deliberately narrow: only into an FStructProperty (where one member offset addresses both sides), never into a TArray/TSet/TMap element, never into a C-array member, never through an object pointer - those stay leaves and are compared whole. A struct that compares non-identical but whose members all match (a custom Identical op) falls back to reporting the struct itself. 'path' is the dotted path from the top-level property and is present on every row, recursive or not. The response echoes recursive, reports expanded (structs opened instead of reported) and, when recursive, maxDepth (the depth CAP the walk enforces, currently 4 - not the depth reached). The checkable invariant countsConsistent is now FOUR terms: inspected == differing + matching + skippedTransient + expanded. expanded is always 0 when recursive is off, so it reduces to the old three-term form for every caller that does not ask for it. A walk that hits the 20000-node budget warns and says so: inspected and matching then UNDER-report and an override past that point is not in the response - narrow it with name_contains or turn recursive off. An object whose archetype is itself (the root CDO) is a stated RESULT with differing:0, not an error. Read-only."
     return _post("diff_properties_vs_default", objectPath=object_path or None,
                  blueprintId=blueprint_id or None, widgetName=widget_name or None,
                  nameContains=name_contains or None, limit=limit, maxValueChars=max_value_chars,
-                 includeTransient=include_transient, deep=deep)
+                 includeTransient=include_transient, deep=deep, recursive=recursive or None)
 
 
 @mcp.tool()
 def reset_property_to_default(object_path: str = "", property_path: str = "",
-                              force: bool = False) -> dict:
-    "The Details panel's yellow arrow: put a property back to its archetype default. Reports valueBefore / defaultValue / valueAfter / differedFromDefault / changed / defaultSource / archetype, and ASSERTS the invariant - after a successful reset valueAfter must equal defaultValue byte-for-byte under the same exporter, or the call fails. A property that already equals its default is reported (changed:false), not failed. Applies the two refusals the panel applies and a naive reset does not: CPF_Config properties have NO reset arrow (their value comes from an .ini, not the archetype) and CPF_EditFixedSize containers have none either. CPF_EditConst needs force=True. When the archetype does not carry the property at all - a variable a child Blueprint added - it falls back to a FRESHLY CONSTRUCTED default and says defaultSource:'constructed'. PM-003 safe: the default text is parsed into a scratch buffer before the notification bracket is opened, so a failed reset never touches the live value and never leaves a dangling component re-registration. Element accessors work. Transacted, so Ctrl-Z undoes it. Refuses the widget-template form (use set_property) and refuses a cooked package."
+                              force: bool = False, override_flag: str = "") -> dict:
+    "The Details panel's yellow arrow: put a property back to its archetype default. Reports valueBefore / defaultValue / valueAfter / differedFromDefault / changed / defaultSource / archetype, and ASSERTS the invariant - after a successful reset valueAfter must equal defaultValue byte-for-byte under the same exporter, or the call fails. A property that already equals its default is reported (changed:false), not failed. Applies the two refusals the panel applies and a naive reset does not: CPF_Config properties have NO reset arrow (their value comes from an .ini, not the archetype) and CPF_EditFixedSize containers have none either. force=True waives exactly ONE refusal: CPF_EditConst (the panel greys the row). It has NO effect on a closed meta EditCondition - that is now override_flag's job, so the two meanings are not overloaded onto one boolean. override_flag takes set|refuse|ignore and DEFAULTS TO 'ignore', which is the pre-existing behaviour: the reset proceeds, and the closed gate is reported (overrideFlagUnmet:true plus a warning) rather than silently tolerated. Note the default differs deliberately from set_property's, whose default is 'set'. override_flag='refuse' is the strict path - it fails with nothingModified:true instead of writing behind a closed gate. override_flag='set' is REFUSED on this endpoint by design: writing the companion flag during a RESET would turn a feature ON, which is the opposite of resetting; reset the flag itself with a second call. editCondition / editConditionKind / editConditionMet / editConditionFlag are reported either way. A separate refusal is archetypeShapeMismatch:true with nothingModified:true, when the path resolves on the object and on the archetype to properties of different FField class, ArrayDim or ElementSize - typically a class reinstanced after a live C++/Blueprint change while a stale archetype is still referenced, or a child redeclaring an inherited name with a different type; recompile/reopen the asset, or write the value explicitly with set_property, which never touches the archetype's memory. When the archetype does not carry the property at all - a variable a child Blueprint added - it falls back to a FRESHLY CONSTRUCTED default and says defaultSource:'constructed'. PM-003 safe: the default text is parsed into a scratch buffer before the notification bracket is opened, so a failed reset never touches the live value and never leaves a dangling component re-registration. Element accessors work. Transacted, so Ctrl-Z undoes it. Refuses the widget-template form (use set_property) and refuses a cooked package."
     return _post("reset_property_to_default", objectPath=object_path or None,
-                 propertyPath=property_path, force=force or None)
+                 propertyPath=property_path, force=force or None,
+                 overrideFlag=override_flag or None)
 
 
 @mcp.tool()
 def edit_container(object_path: str = "", property_path: str = "", operation: str = "",
                    index: int = None, count: int = None, key: str = "", new_key: str = "",
-                   value: Any = None, swap_with: int = None, new_size: int = None) -> dict:
-    "The element LIFECYCLE inside a TArray/TSet/TMap - the +, x, insert and clear buttons the Details panel has and set_property does not: operation = add | insert | remove | clear | swap | resize | setKey. (The verb is 'operation', not 'op': 'op' is batch's routing key and is tolerated centrally, so an endpoint using it would be un-diagnosable inside batch.) Element VALUES stay in set_property - address them with the new accessors, e.g. OverrideMaterials[1] or SomeMap{Alpha}. Guards, all applied BEFORE the first mutation because a cancelled transaction reverts nothing: index range checked against the real length and named in the error; CPF_EditFixedSize refuses every size-changing op and names the flag (the panel hides its add/remove buttons for the same reason); a map/set element type with no GetTypeHash is refused BY NAME rather than crashed on; a duplicate map key is REFUSED because FScriptMapHelper::AddPair overwrites silently, which would turn 'add' into 'replace' with no notice, and a duplicate set element likewise (the panel refuses both); every element value is parsed into a scratch buffer first (PM-003); the helper is re-resolved after any structural op, because AddValues/InsertValues reallocate; and the map/set is rehashed after any key or element change, or Find stops seeing entries the container still holds. Reports elementsBefore / elementsAfter / index / rehashed / changed, and treats a structural op that left the count unchanged as a FAILURE rather than a success. Transacted. Refuses the widget-template form and refuses a cooked package."
+                   value: Any = None, swap_with: int = None, new_size: int = None,
+                   override_flag: str = "") -> dict:
+    "The element LIFECYCLE inside a TArray/TSet/TMap - the +, x, insert and clear buttons the Details panel has and set_property does not: operation = add | insert | remove | clear | swap | resize | setKey. (The verb is 'operation', not 'op': 'op' is batch's routing key and is tolerated centrally, so an endpoint using it would be un-diagnosable inside batch.) Element VALUES stay in set_property - address them with the new accessors, e.g. OverrideMaterials[1] or SomeMap{Alpha}. Guards, all applied BEFORE the first mutation because a cancelled transaction reverts nothing: index range checked against the real length and named in the error; CPF_EditFixedSize refuses every size-changing op and names the flag (the panel hides its add/remove buttons for the same reason); a map/set element type with no GetTypeHash is refused BY NAME rather than crashed on; a duplicate map key is REFUSED because FScriptMapHelper::AddPair overwrites silently, which would turn 'add' into 'replace' with no notice, and a duplicate set element likewise (the panel refuses both); every element value is parsed into a scratch buffer first (PM-003); the helper is re-resolved after any structural op, because AddValues/InsertValues reallocate; and the map/set is rehashed after any key or element change, or Find stops seeing entries the container still holds. Reports elementsBefore / elementsAfter / index / rehashed / changed, and treats a structural op that left the count unchanged as a FAILURE rather than a success. Transacted. Refuses the widget-template form and refuses a cooked package. THE OTHER GATE, and the reason an edit here can succeed and still do nothing: when the container's UPROPERTY meta EditCondition is not met the panel greys the container AND its +/x buttons together, and the engine branches on the companion FLAG rather than on the container - so an element you appended is in memory and is read by nothing. override_flag answers that gate and is spelled exactly as set_property spells it: set | refuse | ignore. It DEFAULTS TO 'ignore' where set_property defaults to 'set', deliberately - edit_container has always performed the operation so today's behaviour stays the default and every new behaviour is opt-in, and 'append one element to this array' is not consent to enable the feature that owns the array. 'ignore' performs the operation and is no longer SILENT: editConditionKind / editConditionMet / editConditionFlag are always reported and a closed gate always raises a warning saying the engine will not read the container until the flag is set. 'set' writes the companion flag in the SAME transaction and the same Modify/PreEditChange..PostEditChange bracket, only AFTER the operation has actually mutated (so a refusal on index range, duplicate key or value parse leaves no flag behind), and reports overrideFlagWritten; if the flag cannot be resolved it says overrideFlagUnmet:true rather than silently downgrading to 'ignore'. 'refuse' fails naming the flag and the value it needs, with nothingModified:true. Any other word is refused outright - a string-to-enum dispatch never has a silent default. Omitted from the request when blank, so the wire payload for existing callers is unchanged."
     return _post("edit_container", objectPath=object_path or None, propertyPath=property_path,
                  operation=operation, index=index, count=count, key=key or None,
-                 newKey=new_key or None, value=value, swapWith=swap_with, newSize=new_size)
+                 newKey=new_key or None, value=value, swapWith=swap_with, newSize=new_size,
+                 overrideFlag=override_flag or None)
 
 
 @mcp.tool()
@@ -1215,11 +1224,17 @@ def trace_ground(x: float, y: float, from_z: float = 100000.0, ignore_actor: str
 
 @mcp.tool()
 def capture_camera(location: dict = None, rotation: dict = None, look_at: dict = None,
-                   fov: float = 75.0, width: int = 1280, height: int = 720,
+                   use_viewport_camera: bool = False, fov: float = 0.0,
+                   width: int = 1280, height: int = 720,
                    name: str = "MifShot") -> dict:
-    "Render the scene from an ARBITRARY viewpoint to a PNG and return its path - does NOT move the user's viewport, so you can inspect while they keep working. Pass look_at instead of rotation to frame a point. Lit and tonemapped (SCS_FinalColorLDR). The file exists by the time this returns; 'exists' is verified, not assumed. Read the returned path to actually look at it."
+    "Render the scene from an ARBITRARY viewpoint to a PNG and return its path - does NOT move the user's viewport, so you can inspect while they keep working. THIS IS NOT THE EDITOR VIEWPORT CAMERA: set_viewport_camera / focus_viewport / pilot_actor drive the viewport and do not reach this endpoint. Pass use_viewport_camera=True to shoot from wherever they left the viewport - opt-in, because the default is still (0,0,500) looking down 25 degrees. EVERY response echoes cameraSource = explicit|viewport|default plus locationSource/rotationSource/fovSource: if you expected the viewport and got 'default', that is your answer. Explicit location/rotation/look_at win over the viewport seed. Pass look_at instead of rotation to frame a point. Lit and tonemapped (SCS_FinalColorLDR); the viewport's view mode, show flags and resolution are NOT applied. 'exists' and 'wroteFile' are verified, not assumed - wroteFile false means the PNG is a stale one of the same name. Read the returned path to actually look at it."
+    # fov defaults to 0.0, NOT 75.0: _post drops only None, so a non-zero default would send fov on
+    # EVERY call, fovSource would read "explicit" 100% of the time and the viewport's own FOV could
+    # never reach the capture. 0.0 is a safe sentinel because the C++ hard-refuses fov outside
+    # (0,180). 'use_viewport_camera or None' keeps the wire payload byte-identical for old callers.
     return _post("capture_camera", location=location, rotation=rotation, lookAt=look_at,
-                 fov=fov, width=width, height=height, name=name)
+                 useViewportCamera=use_viewport_camera or None, fov=fov or None,
+                 width=width, height=height, name=name)
 
 
 @mcp.tool()
@@ -1269,8 +1284,14 @@ def run_console_captured(command: str, filter: str = "") -> dict:
 
 @mcp.tool()
 def self_audit() -> dict:
-    "The plugin reporting its OWN invariants from inside the running DLL: live endpoint count and names (the ones actually dispatching, not parsed from a header), each endpoint's transaction bucket (readOnly / selfManaged / transacted / compileHeavy), any policyContradictions (an endpoint in both readOnly and selfManaged - the latter would be silently ignored), healthy, plus buildDate/buildTime so a stale DLL is detectable."
+    "The plugin reporting its OWN invariants from inside the running DLL: live endpoint count and names (the ones actually dispatching, not parsed from a header), each endpoint's transaction bucket (readOnly / selfManaged / transacted / compileHeavy), any policyContradictions (an endpoint in both readOnly and selfManaged - the latter would be silently ignored), healthy, plus buildDate/buildTime so a stale DLL is detectable. Also returns two change-detection signatures, because buildDate/buildTime move on EVERY rebuild including a comment-only one: surfaceSignature (16 hex chars folded over every endpoint's name|bucket|provider - always complete and deterministic, moves only when an endpoint is added/removed/renamed or a bucket/provider changes; check this one first) and paramSignature (folded over the accepted-parameter shapes of the strict-params guards; moves when a key is added to or removed from any accepted list, and NOT for a reorder, a case change or reworded errors). paramSignature is harvested LAZILY - a guard's shape is only seen once that endpoint has actually been called - so paramShapesObserved is returned alongside it and the two builds' paramSignature values are only comparable at equal paramShapesObserved, driven by the same call sequence."
     return _post("self_audit")
+
+
+@mcp.tool()
+def describe_endpoint(name: str) -> dict:
+    "Report what parameters an endpoint accepts, so you stop discovering them by calling endpoints wrong on purpose. Returns status = exactly one of three states, which are never conflated. 'params_declared': the endpoint guards its input - acceptedParams lists every accepted key, aliasGroups pairs each canonical key with its accepted aliases, distinctParams drops the aliases, acceptedSummary is the exact text the guard prints when it refuses, and commonMistakes maps frequently-guessed wrong keys to the right one. 'params_not_declared': there is NO ROW for this endpoint in describe_endpoint's harvested table, so its accepted set cannot be enumerated - acceptedParams is OMITTED, never empty, because an empty list would read as 'takes no parameters'. Read that status narrowly: a missing row has TWO possible causes with OPPOSITE consequences, and this endpoint cannot tell them apart. Either (a) the endpoint has no strict-params guard, in which case it SILENTLY IGNORES any key it does not read - a call can succeed while doing something you did not ask for; or (b) it gained a guard after the table was harvested, in which case it STRICTLY REJECTS unknown keys and an unexpected key is a hard error. Do not assume (a): ten endpoints were in state (b) at one point in this plugin's history and describe_endpoint asserted (a) about all of them. If it matters, read the handler. 'no_such_endpoint': ok:false, with near-miss suggestions. Most endpoints have no row, so expect the middle answer often - it is information, not a failure. The separate positive case of an endpoint that genuinely takes nothing is acceptedParams:[] with acceptsNoParameters:true. Also a superset of a self_audit row: provider, bucket (readOnly/selfManaged/transacted), compileHeavy, and batchable (which mirrors batch's real gate, so 'batch' itself reports false). Key matching is case-insensitive. guard cites the file:line the accepted set was harvested from; coverage reports how much of the surface is describable and flags any table row whose endpoint no longer exists."
+    return _post("describe_endpoint", name=name)
 
 
 # --------------------------------------------------------------------------
@@ -1861,6 +1882,127 @@ def send_editor_key(key: str, confirm: bool = False, dry_run: bool = False,
                  modifiers=modifiers or None, userIndex=user_index or None,
                  isRepeat=is_repeat or None, characterCode=character_code or None,
                  keyCode=key_code or None, sendKeyUp=send_key_up)
+
+
+# --------------------------------------------------------------------------
+# Source media ingest (MifBridgeImport.cpp) - the bridge could author assets
+# but never bring BYTES in. import_texture's base64 mode is the only route for
+# an icon that was GENERATED: there is no file on disk to point at, and
+# reimport_asset cannot help because there is nothing to re-pull.
+#
+# (This block sits ABOVE main()/the __main__ guard on purpose: a tool defined
+#  after mcp.run() starts never registers - the spawn_actor_in_pie lesson.)
+#
+# The Python arg names deliberately differ from the JSON field names to avoid
+# shadowing builtins/stdlib: image_format -> format, base64_data -> base64,
+# texture_filter -> filter. Each _post() call does the mapping, and _post drops
+# None values so every optional stays genuinely optional.
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def import_texture(dest_path: str, source_path: str = "", base64_data: str = "",
+                   image_format: str = "", overwrite: bool = None, save: bool = None,
+                   compression_settings: str = "", srgb: bool = None,
+                   lod_group: str = "", never_stream: bool = None,
+                   mip_gen_settings: str = "", texture_filter: str = "") -> dict:
+    "Create or REFILL a Texture2D from image bytes. TWO ingest modes - supply exactly one: source_path (a file on disk) or base64_data (the raw image bytes inline; use this when you generated the image and it was never written to a file). PNG, JPEG, BMP and TGA; a data: URI prefix and any newlines/whitespace inside base64_data are stripped for you. HDR/EXR/DDS/TIFF are refused here - use import_asset for those. overwrite:true re-initialises the EXISTING texture object IN PLACE, so everything already referencing it keeps working - this is how you fix a stub icon the UI already points at; without overwrite an existing asset is an error. Saves to disk by default. The response reports sourceDataBytes, sizeX/sizeY, numMips, pixelFormat and fileSizeBytes so you can tell a real texture from a header-only stub. For UI/shop icons pass lod_group='UI', compression_settings='UserInterface2D', mip_gen_settings='NoMipmaps', never_stream=True."
+    return _post("import_texture", destPath=dest_path,
+                 sourcePath=source_path or None, base64=base64_data or None,
+                 format=image_format or None, overwrite=overwrite, save=save,
+                 compressionSettings=compression_settings or None, srgb=srgb,
+                 lodGroup=lod_group or None, neverStream=never_stream,
+                 mipGenSettings=mip_gen_settings or None, filter=texture_filter or None)
+
+
+@mcp.tool()
+def import_asset(file: str, destination: str, name: str = "", factory: str = "",
+                 replace_existing: bool = None, replace_existing_settings: bool = None,
+                 save: bool = None) -> dict:
+    "Import a source media FILE (fbx, wav, psd, obj - anything a loaded editor factory accepts) into a /Game/ folder via UAssetImportTask. destination is a FOLDER, not an asset path; name defaults to the file stem. The factory is auto-resolved from the extension (highest ImportPriority wins) - pass factory to force a specific one; an unsupported extension errors with the full supported list. Always runs bAutomated=true and bAsync=false, so no import-options dialog can appear and nothing spans frames; a large FBX is one long frame. Returns one row per imported object with objectPath/packageName/class, plus dimensions, pixelFormat and sourceDataBytes for anything that came in as a texture. Refuses destinations that collide with container-only packages. For image bytes you hold in memory rather than a file, use import_texture."
+    return _post("import_asset", file=file, destination=destination,
+                 name=name or None, factory=factory or None,
+                 replaceExisting=replace_existing,
+                 replaceExistingSettings=replace_existing_settings, save=save)
+
+
+@mcp.tool()
+def reimport_asset(path: str, source_file: str = "", source_file_index: int = None,
+                   force_new_file: bool = None, save: bool = None) -> dict:
+    "Re-pull an imported asset from its recorded source file(s). source_file supplies or overrides the path when the original is gone or you want different content. Never opens a file picker: an asset with no recorded source, or whose every recorded source is missing from disk, is an ERROR that names import_texture's base64 mode as the route that actually works - which is the case for generated icons that were never backed by a file. The response lists every recorded source and whether it exists on disk, and for textures reports before/after dimensions plus a `changed` flag, so a reimport of an identical file is visible as such rather than as a silent no-op."
+    return _post("reimport_asset", path=path, sourceFile=source_file or None,
+                 sourceFileIndex=source_file_index, forceNewFile=force_new_file, save=save)
+
+
+@mcp.tool()
+def set_texture_settings(path: str, compression_settings: str = "", srgb: bool = None,
+                         lod_group: str = "", never_stream: bool = None,
+                         mip_gen_settings: str = "", texture_filter: str = "",
+                         save: bool = None) -> dict:
+    "Set a Texture2D's CompressionSettings / SRGB / LODGroup / NeverStream / MipGenSettings / Filter. Enum values accept the short form or the engine spelling ('UserInterface2D' or 'TC_UserInterface2D'; 'UI' or 'TEXTUREGROUP_UI'; 'NoMipmaps' or 'TMGS_NoMipmaps'; 'Nearest' or 'TF_Nearest'); an unknown value errors with the accepted list and the nearest matches. For UI/shop icons: lod_group='UI', compression_settings='UserInterface2D', mip_gen_settings='NoMipmaps', never_stream=True - world-texture defaults give icons DXT banding, unused mips and streaming pop, which reads as a failed import. Every requested field is read back after the rebuild and any value the engine overruled is an ERROR naming requested-vs-applied, never a silent success. Refuses on a texture with no source data (a stub), because settings cannot make an empty texture render - import_texture with overwrite:true is what that needs."
+    return _post("set_texture_settings", path=path,
+                 compressionSettings=compression_settings or None, srgb=srgb,
+                 lodGroup=lod_group or None, neverStream=never_stream,
+                 mipGenSettings=mip_gen_settings or None, filter=texture_filter or None,
+                 save=save)
+
+
+# --------------------------------------------------------------------------
+# Asset ICON rendering (MifBridgeThumbnail.cpp). ThumbnailTools::RenderThumbnail
+# is fully SYNCHRONOUS - there is no job slot and nothing to poll. Only
+# write_thumbnail_texture produces an ASSET; the other three render, preview or
+# preflight.
+#
+# (This block sits ABOVE main()/the __main__ guard on purpose: a tool defined
+#  after mcp.run() starts never registers - the spawn_actor_in_pie lesson.)
+#
+# NOTE the srgb / compression / lod_group / generate_mips defaults are None/""
+# on purpose, and it is NOT cosmetic: _post drops None keys, and the C++ refill
+# path uses JHasAny to decide whether a setting was SUPPLIED. If the wrapper
+# always sent srgb=True/compression="EditorIcon", every overwrite:true refill
+# would silently reset an existing stub's deliberate texture settings while
+# reporting them as if they had always been that way. height likewise defaults
+# to 0 -> `height or None` so the C++ default (height = width) survives.
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def thumbnail_capabilities(asset: str = "") -> dict:
+    "Preflight for the thumbnail endpoints. With no argument: whether this editor can render at all (canRender, canEverRender, rhiInitialized, thumbnailManager) plus size limits. With an asset path: its class, the UThumbnailRenderer the engine would use (renderer/hasRenderer), whether it already has a custom cached thumbnail, and whether it supports orbit camera control. hasRenderer:false means the Content Browser only shows it a generic class icon and render_thumbnail / write_thumbnail_texture will REFUSE rather than bake a black square - ask here first instead of debugging a failed bake. Also reports whether the ThumbnailGenerator plugin is loaded; MifBridge deliberately does not use it."
+    return _post("thumbnail_capabilities", asset=asset or None)
+
+
+@mcp.tool()
+def render_thumbnail(asset: str, width: int = 256, height: int = 0,
+                     orbit_pitch: float = None, orbit_yaw: float = None, orbit_zoom: float = None,
+                     flush_textures: bool = False, alpha: str = "opaque", name: str = "") -> dict:
+    "Render an asset's ICON the way the Content Browser does and write it as a PNG under <ProjectSaved>/MifBridge/Thumbnails. Mutates NO asset. Works on static/skeletal meshes, Blueprints, materials, particle systems, textures - anything with a registered thumbnail renderer (check thumbnail_capabilities). height defaults to width (icons are square); size is clamped to 8..2048. orbit_pitch/orbit_yaw/orbit_zoom aim the engine's own orbit camera (the one a human gets by dragging a Content Browser thumbnail) and are RESTORED afterwards, so the asset is not dirtied. alpha: opaque (default, force A=255) or asRendered - the response's alpha{} block reports min/max/transparent-pixel counts as actually rendered, because these renderers clear to opaque black and a cut-out icon is generally NOT available from this path. flush_textures:true forces full asset-compilation and streaming flushes for a sharp final bake and BLOCKS the whole editor (and this bridge) while it runs - expect read timeouts, use once, not in a loop. USE THIS FIRST to check the framing, then write_thumbnail_texture to bake it - this endpoint writes an image file only, not an asset."
+    return _post("render_thumbnail", asset=asset, width=width, height=height or None,
+                 orbitPitch=orbit_pitch, orbitYaw=orbit_yaw, orbitZoom=orbit_zoom,
+                 flushTextures=flush_textures, alpha=alpha, name=name or None)
+
+
+@mcp.tool()
+def write_thumbnail_texture(asset: str, texture_path: str, width: int = 256, height: int = 0,
+                            orbit_pitch: float = None, orbit_yaw: float = None, orbit_zoom: float = None,
+                            flush_textures: bool = False, alpha: str = "opaque",
+                            srgb: bool = None, compression: str = "", lod_group: str = "",
+                            generate_mips: bool = None, overwrite: bool = False, save: bool = True) -> dict:
+    "Render an asset's icon and WRITE IT AS A UTexture2D ASSET at texture_path - the endpoint that actually fills an empty icon stub, because a PNG cannot be referenced by a widget. Two modes. CREATE: texture_path does not exist -> new package + UTexture2D (compression defaults to EditorIcon/UserInterface2D uncompressed RGBA, lod_group UI, no mips - the right settings for a UI icon). REFILL: texture_path already exists and overwrite:true -> the EXISTING UTexture2D's source is replaced in place, so its object path and every widget/data-table/material already pointing at it keep working; settings you do NOT pass are left exactly as the stub's author set them. Refuses (without writing anything) if the destination exists and overwrite is false, if it is not a UTexture2D, or if it lives in a cooked package (FTextureSource is stripped at cook). The SOURCE asset may be cooked - cooked meshes render fine. save defaults true and the response is only ok after Source.IsValid(), the source dimensions, the object path and the .uasset on disk have all been re-read. SelfManaged, so `batch` refuses it: N icons is N calls, each fully verified. compression: EditorIcon | UserInterface2D | Default | VectorDisplacementmap | Grayscale. lod_group: UI | World | Character | none."
+    return _post("write_thumbnail_texture", asset=asset, texturePath=texture_path,
+                 width=width, height=height or None,
+                 orbitPitch=orbit_pitch, orbitYaw=orbit_yaw, orbitZoom=orbit_zoom,
+                 flushTextures=flush_textures, alpha=alpha, srgb=srgb,
+                 compression=compression or None, lodGroup=lod_group or None,
+                 generateMips=generate_mips, overwrite=overwrite, save=save)
+
+
+@mcp.tool()
+def set_asset_thumbnail(asset: str, width: int = 256, height: int = 0,
+                        orbit_pitch: float = None, orbit_yaw: float = None, orbit_zoom: float = None,
+                        flush_textures: bool = False, save: bool = False) -> dict:
+    "Set an asset's OWN Content Browser icon - the programmatic form of right-click > Capture Thumbnail. This is package METADATA, not an asset: it cannot be referenced by anything, is stripped at cook, and is a different thing from write_thumbnail_texture. Use it to make a folder of generated assets legible to a human. Refuses on cooked packages. save defaults false, so the thumbnail is cached in memory and the package is left dirty until save_package / save_dirty_packages runs - it is lost if the editor closes without one. Verified by reading the package's thumbnail map back after writing."
+    return _post("set_asset_thumbnail", asset=asset, width=width, height=height or None,
+                 orbitPitch=orbit_pitch, orbitYaw=orbit_yaw, orbitZoom=orbit_zoom,
+                 flushTextures=flush_textures, save=save)
 
 
 def main():

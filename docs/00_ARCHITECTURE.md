@@ -179,16 +179,21 @@ numbers and the path were wrong, and every endpoint in that "missing" list has h
 time. A stale hazard note is worse than none: it sends the next agent to fix drift that is not there
 and to edit a file that does not exist.
 
-**Actual, as of Batch K:**
+**Actual, as of Batch O (2026-07-29 build):**
 
 | thing | count |
 |---|---|
-| `MIF_DECL` in `Source/MifBridge/Private/MifBridgeHandlers.h` | **191** |
-| `MIF_BIND` in `Source/MifBridge/Private/MifBridgeCommon.cpp` | **191** (same name-set, diff empty both ways) |
-| `H_*` handler definitions across `Private/*.cpp` | **191** |
+| `MIF_DECL` in `Source/MifBridge/Private/MifBridgeHandlers.h` | **199** |
+| `MIF_BIND` in `Source/MifBridge/Private/MifBridgeCommon.cpp` | **199** (same name-set, diff empty both ways) |
+| `H_*` handler definitions across `Private/*.cpp` | **199** |
 | External (`kr_*`) endpoints registered by `MifKismetReconstructor` | **12** |
-| **Endpoints total** | **203** |
-| `@mcp.tool()` defs in `tools/ue5-mcp-bridge/server.py` | **203**, all above the `if __name__` guard |
+| **Endpoints total** | **211** |
+| `@mcp.tool()` defs in `tools/ue5-mcp-bridge/server.py` | **211**, all above the `if __name__` guard |
+
+> Counting `MIF_DECL` by raw `grep -o "MIF_DECL"` returns **201**, not 199 — it also matches the
+> `#define` and the `#undef` that bracket the block. Match the parenthesised form
+> (`grep -coE 'MIF_DECL\([a-z_0-9]+\)'`) or subtract 2. This table sat at 191/203 through the whole
+> 160→211 expansion, so treat any number written down here as stale until `self_audit` agrees.
 
 The wrapper lives at `Game/Plugins/MifBridge/tools/ue5-mcp-bridge/server.py` — **in this repo**,
 beside the plugin, which is what closed the drift. `self_audit` reports the live endpoint count from

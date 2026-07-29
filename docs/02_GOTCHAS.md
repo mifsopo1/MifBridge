@@ -640,3 +640,53 @@ Two consequences worth knowing:
 - The notification is `PostEditChangeChainProperty` now, not `PostEditChangeProperty`. It is a
   strict superset (it calls the plain one at the end) and it is the only one that reaches archetype
   instances, so a CDO edit propagates to already-placed actors instead of waiting for a reload.
+
+## 10. What destroys work, and what `ok:false` does not promise
+
+The single most important thing on this page:
+
+> **`ok:false` does NOT mean "nothing changed."**
+
+`RunEndpoint` wraps transacted endpoints in an `FScopedTransaction` and calls `Transaction.Cancel()`
+when a handler reports failure (`MifBridgeCommon.cpp:771`, `:802-805`). `Cancel` **discards the undo
+entry** — it never calls `FTransaction::Apply`, so it reverts nothing. Handlers that must be atomic
+were reordered to validate *before* they create, and those report
+`outcome: "preflight-rejected-nothing-created"`. Everything else may have written something.
+
+**Always re-read the target after a failed call.** Do not assume failure means no-op.
+
+`batch` is the sharpest case: it opens its own transaction (`MifBridgeNodes.cpp:1870`) and returns
+`ok:false` on the first failing op with **every prior successful op already committed**
+(`:1976`). Its own error text says so. A batch is not a unit of work.
+
+### Endpoints that discard unsaved work without asking
+
+| endpoint | what it does | undo? | confirm-gated? |
+|---|---|---|---|
+| `new_level` | discards unsaved edits in the current map | **no** | no |
+| `load_level` | same | **no** | no |
+
+`new_level` forces `bPromptUserToSave=false` (`MifBridgeWorld.cpp:135`, reasoning at `:120`). This is
+**deliberate and correct**: handlers run synchronously inside the HTTP server's ticker, so a
+"save your changes?" modal would freeze the editor *and* the bridge with it, and an unattended agent
+could never dismiss it. The cost is that the safety net is gone — there is nothing to undo, because
+the `UWorld` is torn down. Call `list_dirty_packages` first and decide deliberately.
+
+### Other things with no safety net
+
+- **`run_console`** executes arbitrary `UEngine::Exec` with a **deliberate no-deny-list policy**
+  (`MifBridgeIntrospect.cpp:1371` — "a name-based list would be theatre"). It also sits in the
+  **readOnly** bucket, so it does not even get the blanket transaction. Whatever the command does is
+  outside every guarantee on this page.
+- **`delete_asset`** is confirm-gated and `/Game/`-restricted (`MifBridgeAssetOps.cpp:78-80`) but
+  takes **no backup** — there are zero `BackupPackage` calls in that file. `backup_blueprint` exists;
+  call it yourself first.
+- **There is no version control over the content tree.** The only git repo in play covers the
+  plugin's own source. `Game/Content` is ~8.7 GB and unversioned, so a bad write there is recoverable
+  only from whatever backup the endpoint happened to take.
+
+### The rule this all reduces to
+
+Read the error text. It is written to be read — several handlers name exactly what they left behind.
+An agent that branches on `ok` alone and never reads `error`, `outcome` or `nothingModified` will
+eventually corrupt something quietly, which is the failure mode this whole document exists to prevent.

@@ -261,6 +261,7 @@ namespace MifBridge
 			MIF_BIND(run_console);
 			MIF_BIND(validate);
 			MIF_BIND(self_audit);
+			MIF_BIND(describe_endpoint);
 			// Batch
 			MIF_BIND(batch);
 			// Undo introspection/rollback + dirty-package flows
@@ -294,6 +295,16 @@ namespace MifBridge
 			MIF_BIND(invoke_editor_command);
 			MIF_BIND(invoke_editor_tab);
 			MIF_BIND(send_editor_key);
+			// Source media ingest (MifBridgeImport.cpp)
+			MIF_BIND(import_texture);
+			MIF_BIND(import_asset);
+			MIF_BIND(reimport_asset);
+			MIF_BIND(set_texture_settings);
+			// Asset icon rendering (MifBridgeThumbnail.cpp)
+			MIF_BIND(render_thumbnail);
+			MIF_BIND(write_thumbnail_texture);
+			MIF_BIND(set_asset_thumbnail);
+			MIF_BIND(thumbnail_capabilities);
 #undef MIF_BIND
 		}
 		return Map;
@@ -396,6 +407,14 @@ namespace MifBridge
 			// bCreateIfNecessary - so both belong here, or every call pushes an empty entry onto the very
 			// undo stack list_transactions exists to report.
 			TEXT("describe_property"), TEXT("diff_properties_vs_default"),
+			// Per-endpoint parameter introspection (MifBridgeDescribe.cpp). REQUIRED here, not
+			// optional: describe_endpoint calls no Modify(), loads nothing and creates nothing — it
+			// reads the live registry and a static table harvested from the RejectUnknownParams call
+			// sites. Without this entry RunEndpoint gives it the blanket transaction and EVERY call
+			// pushes an empty entry onto the undo stack, which is precisely what the describe_property
+			// comment directly above exists to prevent. Nothing is mis-reported meanwhile; it just
+			// litters undo — and "what parameters does this take?" is asked in a loop.
+			TEXT("describe_endpoint"),
 			// Pure reflection reads (audit 03_GAPS_AND_RISKS.md §7.6): describe_class walks
 			// TFieldIterator over a resolved class, list_enum_values reads UEnum name tables —
 			// neither calls Modify() or creates anything persistent. Left out of this set they
@@ -413,6 +432,15 @@ namespace MifBridge
 			TEXT("set_viewport_camera"), TEXT("focus_viewport"), TEXT("get_viewport_camera"),
 			TEXT("get_actor_bounds"), TEXT("check_overlaps"), TEXT("trace_ground"),
 			TEXT("capture_camera"), TEXT("scene_report"),
+			// Asset ICON rendering (MifBridgeThumbnail.cpp). Same bucket and same reason as
+			// capture_camera immediately above: they render and write an image FILE under
+			// <ProjectSaved> and mutate no asset. render_thumbnail additionally saves and RESTORES
+			// the asset's ThumbnailInfo around the render (the engine's own renderers clamp its
+			// OrbitZoom in place, ThumbnailHelpers.cpp:578-582), so it dirties nothing even for
+			// assets that own one — transacting it would push an empty undo entry per icon preview,
+			// and previewing in a loop is exactly how you pick a camera angle. Their two ASSET-
+			// WRITING siblings are SELF-MANAGED, not here — see IsSelfManagedEndpoint.
+			TEXT("render_thumbnail"), TEXT("thumbnail_capabilities"),
 			TEXT("start_pie"), TEXT("stop_pie"), TEXT("pie_status"),
 			TEXT("list_pie_actors"), TEXT("run_console_captured"),
 			// Cooked-content introspection — declared read-only in MifBridgeHandlers.h; without
@@ -524,6 +552,37 @@ namespace MifBridge
 			// also records an FPackageRecord for a package that has never existed on disk. The plugin's
 			// own rule (asset-lifecycle ops must not ride the blanket transaction) applies.
 			TEXT("create_material"), TEXT("create_material_function"), TEXT("create_material_instance"),
+			// SOURCE MEDIA INGEST (MifBridgeImport.cpp). import_texture and import_asset are the
+			// create_material / create_material_instance precedent exactly — CreatePackage,
+			// NewObject-or-factory an RF_Transactional asset, PostEditChange,
+			// FAssetRegistryModule::AssetCreated, MarkPackageDirty — plus a texture/mesh DDC build.
+			// MarkPackageDirty inside the blanket transaction records an FPackageRecord for a package
+			// that has never existed on disk, which is the same reason the asset creators above are
+			// here. reimport_asset replaces an asset's ENTIRE payload through factory code MifBridge
+			// did not write and cannot inspect, which may open its own FScopedTransaction — the
+			// invoke_editor_command hazard, one bucket up. set_texture_settings runs
+			// UTexture::PostEditChange, which tears down and rebuilds the texture resource and runs an
+			// FMaterialUpdateContext over every dependent material (Texture.cpp:783-818): resource and
+			// shader-state teardown captured by an undo step is the crash family recompile_material is
+			// in this set for.
+			//
+			// Being here also makes all four compile-heavy, so `batch` refuses them. That is correct:
+			// running a factory import inside batch's single open transaction is the same hazard.
+			TEXT("import_texture"), TEXT("import_asset"), TEXT("reimport_asset"),
+			TEXT("set_texture_settings"),
+			// Icon BAKING (MifBridgeThumbnail.cpp). write_thumbnail_texture does CreatePackage ->
+			// NewObject/FTextureSource::Init -> PostEditChange -> AssetCreated -> MarkPackageDirty,
+			// then blocks on FTextureCompilingManager and saves: the create_material precedent for
+			// the first half, the save_dirty_packages precedent for the second (saving is not
+			// undoable, and MarkPackageDirty inside a transaction records an FPackageRecord for a
+			// package that has never existed on disk). set_asset_thumbnail edits the package's
+			// thumbnail map and optionally saves — also not something an undo step can revert.
+			// Consequence, stated because it is a real cost: this makes both compile-heavy, so
+			// `batch` refuses them and filling N icon stubs is N HTTP calls.
+			//
+			// render_thumbnail and thumbnail_capabilities are NOT here — they write an image file
+			// and no asset, so they are read-only. See IsReadOnlyEndpoint.
+			TEXT("write_thumbnail_texture"), TEXT("set_asset_thumbnail"),
 			// DELIBERATE EXCEPTION, recorded so it does not read as an oversight: create_struct and
 			// create_enum also do CreatePackage -> NewObject -> AssetCreated -> MarkPackageDirty, and
 			// are NOT in this set. FStructureEditorUtils::AddVariable/RemoveVariable open their OWN
@@ -597,6 +656,54 @@ namespace MifBridge
 		return false;
 	}
 
+	// --- self_audit change detection ----------------------------------------
+	// buildDate/buildTime (emitted at the end of H_self_audit) come from __DATE__/__TIME__ and move on
+	// EVERY rebuild, including a comment-only one. They answer "is this DLL stale?" and nothing else. The
+	// two signatures below answer the question a caller actually has — "did the contract I coded against
+	// change?" — and deliberately do NOT move for a rebuild that changed no contract.
+	//
+	// Names are prefixed Mif/GMif because a unity build merges every unnamed namespace and every
+	// namespace-scope `static` in a blob into one scope, so a duplicated helper name across two .cpp
+	// files in this module is a hard C2084 (see the note in MifBridgeHandlers.h).
+
+	/** FNV-1a/64 over a canonical text rendering, as 16 lowercase hex chars. Not a security hash: it
+	 *  exists so "did the surface change?" is one string compare instead of a full list diff. */
+	static FString MifSignatureFold(const TArray<FString>& CanonicalLines)
+	{
+		uint64 Hash = 0xcbf29ce484222325ULL;
+		auto Mix = [&Hash](uint8 Byte)
+		{
+			Hash ^= static_cast<uint64>(Byte);
+			Hash *= 0x100000001b3ULL;
+		};
+		for (const FString& Line : CanonicalLines)
+		{
+			const int32 Len = Line.Len();
+			for (int32 i = 0; i < Len; ++i)
+			{
+				// Two bytes per code unit so a non-ASCII name can never alias an ASCII one. Every endpoint
+				// name and parameter key in this module is ASCII today; this only keeps that from being a
+				// silent assumption. Indexed rather than range-for so the null terminator is provably out.
+				const uint32 C = static_cast<uint32>(Line[i]);
+				Mix(static_cast<uint8>(C & 0xFF));
+				Mix(static_cast<uint8>((C >> 8) & 0xFF));
+			}
+			// Record separator, so {"ab","c"} and {"a","bc"} cannot fold to the same value.
+			Mix(static_cast<uint8>('\n'));
+		}
+		return FString::Printf(TEXT("%016llx"), Hash);
+	}
+
+	// Canonicalised accepted-parameter shapes observed this editor session, filled by RejectUnknownParams
+	// (further down this file) and read by H_self_audit (just below). Accepted-key lists are
+	// initializer_list literals INSIDE handler bodies, so RejectUnknownParams is the only point in the
+	// process that ever sees one — there is no way to enumerate them from H_self_audit without executing
+	// every handler. Hence a harvest, and hence it is lazy. Game thread only: every handler runs inline
+	// on the HTTP server's ticker.
+	// Deduped by the canonical shape string itself — see the harvest in RejectUnknownParams for why
+	// there is no cheaper per-call-site gate in front of it.
+	static TSet<FString> GMifObservedParamShapes;
+
 	// --- self_audit ---------------------------------------------------------
 	// The plugin reporting its OWN invariants, from inside the running DLL. This is the piece that
 	// makes "is the bridge healthy?" answerable without reading source or trusting a stale doc:
@@ -612,6 +719,10 @@ namespace MifBridge
 		// the README's MIF_BIND<->@mcp.tool diff and every existing consumer parse it. Additive only.
 		TArray<TSharedPtr<FJsonValue>> EndpointRows;
 		TMap<FString, int32> ProviderCounts;
+		// One canonical line per endpoint, folded into surfaceSignature below. Names is already sorted
+		// (just above), so the fold input is canonical for free.
+		TArray<FString> SurfaceLines;
+		SurfaceLines.Reserve(Names.Num());
 		for (const FString& Name : Names)
 		{
 			All.Add(MakeShared<FJsonValueString>(Name));
@@ -628,13 +739,18 @@ namespace MifBridge
 			// noticed. Bucket is reported from the SAME predicates that dispatch uses, never from a
 			// second copy of the policy.
 			const FExternalEndpointDesc* Ext = ExternalRegistry().Find(Name);
+			// Hoisted into locals only so the signature folds the SAME values the response reports —
+			// a second copy of these expressions is how the reported bucket and the folded bucket drift.
+			const FString Provider = Ext ? Ext->Provider : FString(TEXT("MifBridge"));
+			const FString Bucket = bRO ? TEXT("readOnly") : bSM ? TEXT("selfManaged") : TEXT("transacted");
 			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
 			Row->SetStringField(TEXT("name"), Name);
-			Row->SetStringField(TEXT("provider"), Ext ? Ext->Provider : TEXT("MifBridge"));
-			Row->SetStringField(TEXT("bucket"), bRO ? TEXT("readOnly") : bSM ? TEXT("selfManaged") : TEXT("transacted"));
+			Row->SetStringField(TEXT("provider"), Provider);
+			Row->SetStringField(TEXT("bucket"), Bucket);
 			if (Ext && !Ext->Summary.IsEmpty()) { Row->SetStringField(TEXT("summary"), Ext->Summary); }
 			EndpointRows.Add(MakeShared<FJsonValueObject>(Row));
 			if (Ext) { ProviderCounts.FindOrAdd(Ext->Provider)++; }
+			SurfaceLines.Add(Name + TEXT("|") + Bucket + TEXT("|") + Provider);
 		}
 
 		Out->SetNumberField(TEXT("endpointCount"), Names.Num());
@@ -672,10 +788,57 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("policyContradictions"), Contradictions);
 		Out->SetBoolField(TEXT("healthy"), Contradictions.Num() == 0);
 
-		// Build identity, so a stale DLL is detectable rather than mystifying.
+		// Build identity, so a stale DLL is detectable rather than mystifying. These move on EVERY
+		// rebuild, including a comment-only one — use the two signatures below to detect a CONTRACT
+		// change, not these.
 		Out->SetStringField(TEXT("buildDate"), ANSI_TO_TCHAR(__DATE__));
 		Out->SetStringField(TEXT("buildTime"), ANSI_TO_TCHAR(__TIME__));
 		Out->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
+
+		// surfaceSignature — ALWAYS complete and deterministic. Folded from the endpoint/bucket/provider
+		// data this handler just built, with no dependency on what has been called this session, so two
+		// DLLs can be compared the instant they load. Moves when an endpoint is added, removed or
+		// renamed, when a bucket is reclassified, or when a provider changes. Check this one first.
+		Out->SetStringField(TEXT("surfaceSignature"), MifSignatureFold(SurfaceLines));
+
+		// paramSignature — the ACCEPTED-PARAMETER shapes the strict-params guards validate payloads
+		// against. This is a PARTIAL-COVERAGE, RUNTIME-OBSERVED value, not a contract hash of the
+		// parameter surface. Read all four limits before relying on it:
+		//
+		//   1. COVERAGE. Only endpoints that call RejectUnknownParams are represented at all: 83 guard
+		//      sites against 199 registered endpoints (MIF_DECL/MIF_BIND). Adding, removing or renaming a
+		//      parameter on any of the unguarded majority moves NOTHING here.
+		//
+		//   2. OBSERVATION. Of the guarded ones, only sites that have actually RUN this session are in
+		//      the fold. Accepted-key lists are initializer_list literals inside handler bodies, so
+		//      RejectUnknownParams is the only code that ever sees one, and only once that guard has
+		//      executed. A freshly loaded DLL reports zero shapes and the set grows as endpoints are
+		//      exercised. paramShapesObserved is emitted alongside for exactly this reason: comparing
+		//      paramSignature between two builds is only well defined at equal coverage — same call
+		//      sequence driven against both, paramShapesObserved matching. surfaceSignature carries no
+		//      such caveat.
+		//
+		//   3. GRANULARITY. Shapes are keyed by the shape itself, not by endpoint name, so two endpoints
+		//      with identical accepted sets collapse to one entry (83 sites currently yield 79 distinct
+		//      shapes). Within the covered-and-observed set a key added or removed anywhere still moves
+		//      the value, but it does not name WHICH endpoint moved — attributing a shape to an endpoint
+		//      needs the endpoint name plumbed into RejectUnknownParams from both dispatchers (RunEndpoint
+		//      and batch, which dispatches straight out of Handlers() without recursing through
+		//      RunEndpoint).
+		//
+		//   4. BUILD CONFIGURATION. No longer a factor, but it was: the harvest used to gate on the
+		//      ADDRESS of a guard's AcceptedSummary literal, and MSVC pools byte-identical literals under
+		//      /GF, so colliding guard sites lost their shapes in optimised builds and kept them in
+		//      unoptimised ones. That gate is gone (see RejectUnknownParams below). If a pointer-identity
+		//      gate is ever reintroduced anywhere in this path, this caveat comes back with it.
+		//
+		// What it proves: if paramSignature MOVES, a covered, observed accepted list changed. It does NOT
+		// prove the converse — an unchanged value is not evidence the parameter surface is unchanged. It
+		// also ignores key reorders, case changes, reworded error text, and logic-only edits by design.
+		TArray<FString> ShapeLines = GMifObservedParamShapes.Array();
+		ShapeLines.Sort();
+		Out->SetStringField(TEXT("paramSignature"), MifSignatureFold(ShapeLines));
+		Out->SetNumberField(TEXT("paramShapesObserved"), ShapeLines.Num());
 	}
 
 	bool IsCompileHeavyEndpoint(const FString& Endpoint)
@@ -1254,6 +1417,39 @@ namespace MifBridge
 		std::initializer_list<const TCHAR*> AcceptedKeys, const TCHAR* AcceptedSummary,
 		std::initializer_list<TPair<const TCHAR*, const TCHAR*>> KeyNotes)
 	{
+		// Harvest this guard's accepted-key SHAPE for self_audit's paramSignature. This is the only place
+		// in the process that ever sees an accepted-key list. Canonicalised — lowercased and sorted — so a
+		// rebuild that merely reorders or re-cases a list does NOT move the signature; the match below is
+		// ESearchCase::IgnoreCase, so case genuinely carries no meaning here.
+		//
+		// There is deliberately NO per-call-site gate. This used to skip the work when the AcceptedSummary
+		// POINTER had been seen before, on the assumption that each guard site owns its own string literal.
+		// It does not: MSVC pools byte-identical string literals (/GF, on in every optimised configuration),
+		// so sites that share a summary share its address. Four pairs in this module do today —
+		// MifBridgeAssetOps.cpp:263/:294 ("path"), MifBridgeCooked.cpp:534/:902 ("limit"),
+		// MifBridgeNodes.cpp:804/:898 ("graphId, x, y"), and MifBridgeCooked.cpp:120 /
+		// MifBridgeMaterials.cpp:1667 ("(none - ...)"). Whichever ran first claimed the address and the
+		// other's shape was never harvested. Those four happen to carry IDENTICAL key lists right now, so
+		// nothing is lost today — which is precisely the danger: the moment anyone adds an alias to one
+		// side of a pair without also rewording its prose summary, that shape stops being harvested, with
+		// no compile error, no test failure, and a paramSignature that still looks healthy. A signature
+		// that silently misses shapes is worse than no signature, because callers trust it.
+		//
+		// The dedupe therefore lives where it is provably correct: GMifObservedParamShapes is a TSet keyed
+		// on the canonical shape STRING, so re-adding is idempotent and no two sites can alias each other.
+		// The cost is a lowercase + sort + join of at most ~21 short keys per guarded call, inside handlers
+		// that are about to touch assets or compile blueprints. It does not register.
+		{
+			TArray<FString> Canonical;
+			Canonical.Reserve(static_cast<int32>(AcceptedKeys.size()));
+			for (const TCHAR* Key : AcceptedKeys)
+			{
+				Canonical.Add(FString(Key).ToLower());
+			}
+			Canonical.Sort();
+			GMifObservedParamShapes.Add(FString::Join(Canonical, TEXT(",")));
+		}
+
 		TArray<FString> Unrecognised;
 		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : In->Values)
 		{

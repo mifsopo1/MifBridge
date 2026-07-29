@@ -523,6 +523,26 @@ namespace MifBridge
 			EmitNode(Out, Node);
 		}
 
+		// --- why 'path' is still accepted on connect_pins / reconnect_pin / disconnect_pin -------
+		//
+		// BACK-COMPAT, and nothing else. Before the strict-params guard landed those three silently
+		// dropped 'path', so long-lived caller payloads still carry it; the guard then turned every one
+		// of those payloads into "unrecognised parameter 'path'". A guard was added, not a parameter
+		// removed, so the fix is to keep 'path' in the accepted list. It is redundant: graphId is
+		// "<blueprintPath>::<graphName>" (GraphIdOf, MifBridgeCommon.cpp) and ResolveGraph resolves the
+		// blueprint from its left half, so no code in this file reads 'path'.
+		//
+		// It is ACCEPTED AND IGNORED — plainly, with no cross-check against graphId. An earlier revision
+		// failed the call when the two "disagreed", on the theory that a silently-ignored 'path' could
+		// point at a different asset than the one actually edited. That check compared raw strings while
+		// the resolvers normalise: ResolveBlueprint accepts "/Game/X/BP_Foo" and "/Game/X/BP_Foo.BP_Foo"
+		// and follows redirectors, so two spellings of the SAME asset read as a disagreement and a valid
+		// call was rejected. That is strictly worse than the bug being fixed — it turns a working payload
+		// into a hard failure, which is the exact breakage 'path' was restored to undo.
+		//
+		// If a caller ever needs 'path' HONOURED instead of ignored, plumb it through ResolveGraph so one
+		// normaliser sees both sides. Do not re-add a string-equality gate in front of the resolvers.
+
 		// Shared connect/reconnect body. When bBreakFirst is true both pins are cleared
 		// before wiring (the wildcard-reset combo). Reports CanCreateConnection's reason.
 		void DoConnect(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out, bool bBreakFirst)
@@ -530,11 +550,13 @@ namespace MifBridge
 			// The two NODE params keep their distinct names on purpose (docs/02_GOTCHAS.md:18):
 			// aliasing across roles would let one key satisfy both ends. The wrong guesses get a
 			// KeyNote naming the right key instead. The PIN params are per-role and are aliased.
+			// 'path' — back-compat only, accepted and ignored. See the 'path' note above.
 			if (RejectUnknownParams(In, Out,
 				{ TEXT("srcNode"), TEXT("srcPin"), TEXT("sourcePin"), TEXT("fromPin"),
 				  TEXT("dstNode"), TEXT("dstPin"), TEXT("destPin"), TEXT("toPin"),
-				  TEXT("graphId") },
-				TEXT("srcNode, srcPin (aliases: sourcePin, fromPin), dstNode, dstPin (aliases: destPin, toPin), graphId"),
+				  TEXT("graphId"), TEXT("path") },
+				TEXT("srcNode, srcPin (aliases: sourcePin, fromPin), dstNode, dstPin (aliases: destPin, toPin), ")
+				TEXT("graphId, path (back-compat only — accepted and ignored; graphId already names the blueprint)"),
 				{ { TEXT("from"), TEXT("spell it srcNode") },
 				  { TEXT("fromNode"), TEXT("spell it srcNode") },
 				  { TEXT("sourceNode"), TEXT("spell it srcNode") },
@@ -1648,10 +1670,12 @@ namespace MifBridge
 
 	void H_disconnect_pin(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// 'path' — back-compat only, accepted and ignored. See the 'path' note above.
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"), TEXT("graphId"),
-			  TEXT("pin"), TEXT("pinName"), TEXT("name") },
-			TEXT("node (aliases: nodeGuid, guid, nodeId), graphId (optional), pin (aliases: pinName, name)")))
+			  TEXT("pin"), TEXT("pinName"), TEXT("name"), TEXT("path") },
+			TEXT("node (aliases: nodeGuid, guid, nodeId), graphId (optional), pin (aliases: pinName, name), ")
+			TEXT("path (back-compat only — accepted and ignored; graphId already names the blueprint)")))
 		{
 			return;
 		}

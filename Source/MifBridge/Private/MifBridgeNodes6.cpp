@@ -99,7 +99,9 @@ namespace MifBridge
 	}
 
 	//   in:  { objectPath: "/Game/..." } OR { blueprintId: "...", widgetName: "MyText" }
-	//   out: { target, class, properties: [{name, type, value}] }
+	//   out: { target, class, typedSupported, properties: [{name, type, value, typed}] }
+	// `value` is export text (a bool is the STRING "True"); `typed` is the same value as real JSON.
+	// `typed` is omitted, with typedOmitted:true, for any row whose value hit maxValueChars.
 	// Dumps every top-level reflected property so an unfamiliar asset (DataAsset, InputAction,
 	// InputMappingContext, Actor, ...) can be surveyed without knowing field names up front.
 	// Use get_property afterwards to descend into a specific struct/object field.
@@ -166,6 +168,35 @@ namespace MifBridge
 			{
 				// Say so rather than hand back a silently-cut value that looks complete.
 				PropJson->SetBoolField(TEXT("valueClipped"), true);
+				// GATED — and deliberately NOT the way describe_property does it. Its survey form
+				// (MifBridgeDetails.cpp:440-448) clips `value` at maxValueChars and then emits `typed`
+				// unconditionally, so its cap only bounds the string half of a row. Copying that here
+				// would undo the reason this endpoint has caps at all (see :123-127): the typed JSON of
+				// a volumetric-cloud/curve struct is no smaller than its export text and usually
+				// larger (a key per member, recursed), so a 200-char `value` beside a 40 KB `typed` is
+				// the same empty-response failure with extra steps — on the one endpoint you hit FIRST
+				// on an unfamiliar object. docs/audit/06_IMPLEMENTED.md:1989-1991 specified this gate;
+				// describe_property's unconditional emit is the side that should move, and only its
+				// owner can move it.
+				//
+				// The gate IS the cost bound, so it is tested before typed is built: nothing walks a
+				// 545-property actor's curve structs on the game thread only to drop the result. A
+				// caller who wants typed for a big property raises maxValueChars, or asks get_property,
+				// which is unclipped by construction.
+				PropJson->SetBoolField(TEXT("typedOmitted"), true);
+			}
+			else
+			{
+				// WHOLE-property variant, not the Element one: these are top-level properties, so the
+				// ArrayDim loop inside is the correct reading. It also closes a second hole — `value`
+				// above is ExportText_InContainer(0, ...), which exports ONLY element 0 of a C-array
+				// UPROPERTY (`int32 Foo[4]`) and has been silently lossy there since this endpoint
+				// shipped. `value` keeps that exact shape because existing callers parse it; `typed` is
+				// the complete one. Same shared emitter as get_property/set_property, so a bool is a
+				// JSON bool and an array is a JSON array rather than the string "True" and one
+				// export-text blob.
+				PropJson->SetField(TEXT("typed"),
+					PropertyValueToTypedJson(Prop, Prop->ContainerPtrToValuePtr<void>(Target), Target));
 			}
 			Props.Add(MakeShared<FJsonValueObject>(PropJson));
 		}
@@ -175,6 +206,12 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("count"), Props.Num());
 		Out->SetNumberField(TEXT("matched"), Matched);
 		Out->SetBoolField(TEXT("truncated"), bTruncated);
+		// Every row from a build that has the change carries EITHER typed OR typedOmitted:true, never
+		// neither — so per row the two absences are already distinguishable. This flag covers the case
+		// that has no rows to reason from (a nameContains that matched nothing): with it, "typed is
+		// missing because it was too big" and "typed is missing because this build predates the field"
+		// can never be confused. Purely additive; old callers ignore it.
+		Out->SetBoolField(TEXT("typedSupported"), true);
 		Out->SetArrayField(TEXT("properties"), Props);
 	}
 }

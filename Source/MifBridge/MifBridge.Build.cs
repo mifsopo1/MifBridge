@@ -56,12 +56,28 @@ public class MifBridge : ModuleRules
 			"SlateCore",
 			"Projects",
 			"Sockets",           // FInternetAddr for loopback peer enforcement
-			"InputCore"          // FKey / EKeys — send_editor_key and list_editor_commands report and
+			"InputCore",         // FKey / EKeys — send_editor_key and list_editor_commands report and
 			                     // synthesise key chords (Batch O). Runtime module, no plugin gating.
 			                     // Slate pulls InputCore in transitively for its own use, which is why
 			                     // the HEADERS resolved and only the LINK failed (LNK2019 on
 			                     // FKey::IsValid/IsModifierKey/ToString and EKeys::GetAllKeys) — a
 			                     // reminder that a compiling include is not a linked module.
+			"ImageWrapper"       // IImageWrapperModule / IImageWrapper — import_texture decodes
+			                     // PNG/JPEG/BMP/TGA into FTextureSource for BOTH its file-path and its
+			                     // base64 ingest modes. NOT reachable transitively: Engine lists
+			                     // ImageWrapper under PrivateIncludePathModuleNames, which puts the
+			                     // headers on the include path for Engine's OWN translation units and
+			                     // exports nothing to ours — the same "a compiling include is not a
+			                     // linked module" trap as InputCore above, one line up.
+			                     //
+			                     // ImageCore needs no entry of its own — ImageWrapper already brings it
+			                     // in publicly (ImageWrapper.Build.cs:34) and IImageWrapper.h:9 includes
+			                     // ImageCore.h, so it is on the include path and linked transitively.
+			                     // (An earlier revision of this comment claimed ImageCore was being
+			                     // deliberately avoided by not calling FImageUtils::SaveImageByExtension.
+			                     // The avoidance is real — MifBridgeThumbnail.cpp uses
+			                     // PNGCompressImageArray + FFileHelper::SaveArrayToFile instead — but the
+			                     // stated reason was wrong, because ImageCore arrives regardless.)
 		});
 
 		// UK2Node_CreateWidget.h is a UMGEditor PRIVATE header (Nodes/); the module
