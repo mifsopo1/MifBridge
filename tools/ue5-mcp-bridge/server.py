@@ -163,7 +163,7 @@ def find_nodes(graph_id: str, by_class: str = "", by_title: str = "", by_functio
 @mcp.tool()
 def add_variable(blueprint_id: str, name: str, type: str, container: str = "", value_type: str = "",
                  scope: str = "member", function: str = "", default: str = "") -> dict:
-    "Add a variable. name is trimmed+validated and the canonical name is returned. type e.g. int/float/bool/string/Vector/Guid/<Struct>/<Class>. container = array|set|map. For a map, type is the KEY type and value_type is the VALUE type (e.g. type='name', container='map', value_type='int'). scope = member|local (local needs function)."
+    "Add a variable. name is trimmed+validated and the canonical name is returned. type e.g. int/float/bool/string/Vector/Guid/<Struct>/<Class>. container = array|set|map. For a map, type is the KEY type and value_type is the VALUE type (e.g. type='name', container='map', value_type='int'). scope = member|local (local needs function). REFERENCE TYPES: the class goes INSIDE the type string via a prefix, NOT in a separate parameter - type='object:SceneComponent' gives a variable typed to that class, which will connect to a SceneComponent pin; a bare type='object' gives a plain UObject, which will NOT. The prefixes are object:X (an instance reference), class:X and subclassof:X (a class reference / TSubclassOf), softobject:X and softclass:X (soft pointers). There is no class= / className= / parentClass= / objectClass= parameter and passing one is now a hard error naming this syntax, because it used to be accepted and silently dropped: the call returned ok:true and produced a plain UObject that could not be connected, which read as 'the bridge cannot type object variables'."
     return _post("add_variable", blueprintId=blueprint_id, name=name, type=type,
                  container=container or None, valueType=value_type or None, scope=scope, function=function or None,
                  default=default or None)
@@ -292,7 +292,7 @@ def add_literal(graph_id: str, object: str = "", x: int = 0, y: int = 0) -> dict
 
 @mcp.tool()
 def create_function(blueprint_id: str, name: str, inputs: list = None, outputs: list = None, pure: bool = False) -> dict:
-    "Create a Blueprint function graph. inputs/outputs are lists of {name, type, container?}. Inputs land on the entry node, outputs on the result node; compiles so the function is callable immediately."
+    "Create a NEW Blueprint function graph. inputs/outputs are lists of {name, type, container?} - the same type grammar as add_variable, so a reference parameter is type='object:SceneComponent'. Inputs land on the entry node, outputs on the result node; compiles so the function is callable immediately. THIS DOES NOT OVERRIDE. Passing a parent's function name used to create a colliding duplicate that only failed later, at compile, with six errors and nothing in the response pointing at the cause; it is now refused up front with nothingModified:true, conflictsWith, parentFunctionIsOverridable and route:'add_override_event'. To override a parent's event or BlueprintNativeEvent call add_override_event {event, parentClass?, callParent?} - it takes parentClass, this does not. To implement an interface member use implement_interface_function. For a new event rather than a function use add_custom_event."
     return _post("create_function", blueprintId=blueprint_id, name=name,
                  inputs=inputs or [], outputs=outputs or [], pure=pure)
 

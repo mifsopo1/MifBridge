@@ -775,6 +775,27 @@ namespace MifBridge
 
 	void H_add_variable(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// This guard is here because its ABSENCE cost a real user a working design. Wanting an object
+		// variable typed to a specific class, they tried `class`, `className`, `parentClass`,
+		// `objectClass` and `subType` alongside type:"object" — five spellings, all accepted, all
+		// silently dropped, every call reporting ok:true and producing a plain UObject that would not
+		// connect to a SceneComponent pin. They concluded the bridge could not type object variables
+		// and redesigned around it. It can: the class goes INSIDE the type string.
+		// The KeyNotes below turn that dead end into one round-trip.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"),
+			  TEXT("name"), TEXT("type"), TEXT("container"), TEXT("valueType"),
+			  TEXT("scope"), TEXT("function"), TEXT("default") },
+			TEXT("blueprintId (alias: path), name, type, container?, valueType?, scope? (member|local), ")
+			TEXT("function? (required when scope=local), default?"),
+			{ { TEXT("class"),       TEXT("the class belongs IN the type string, not in its own key: type:\"object:SceneComponent\". Prefixes: object:X, class:X, subclassof:X, softobject:X, softclass:X") },
+			  { TEXT("className"),   TEXT("use type:\"object:X\" (or class:X / subclassof:X / softobject:X / softclass:X)") },
+			  { TEXT("parentClass"), TEXT("add_variable does not take a parent class. For a typed object variable use type:\"object:X\"; to override a parent's event use add_override_event") },
+			  { TEXT("objectClass"), TEXT("use type:\"object:X\"") },
+			  { TEXT("subType"),     TEXT("use type:\"object:X\" for the referenced class, or valueType for a map's value type") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{

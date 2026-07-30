@@ -272,6 +272,24 @@ namespace MifBridge
 
 	void H_create_function(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// override/parentClass are NOT accepted, and saying so is the point. A user trying to override
+		// a parent function passed override:true and parentClass here; both were silently dropped, a
+		// plain new function was created with the parent's name, and the resulting collision produced
+		// six compile errors with nothing in the response hinting at the cause. They then probed nine
+		// invented endpoint names, all 404, and concluded the bridge could not do overrides at all —
+		// while add_override_event, which does exactly this and even takes parentClass, was already
+		// registered. The KeyNotes route that guess to the right endpoint on the first call.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"),
+			  TEXT("name"), TEXT("inputs"), TEXT("outputs"), TEXT("pure") },
+			TEXT("blueprintId (alias: path), name, inputs?, outputs?, pure?"),
+			{ { TEXT("override"),    TEXT("create_function makes a NEW function; it cannot override. Use add_override_event {event, parentClass?, callParent?} — naming a parent's function here creates a COLLIDING duplicate that fails to compile") },
+			  { TEXT("parentClass"), TEXT("create_function does not take a parent class. add_override_event accepts parentClass (aliases: class, interfaceOrParent, ownerClass, targetClass)") },
+			  { TEXT("interface"),   TEXT("to implement an interface function use implement_interface_function; to override a parent event use add_override_event") },
+			  { TEXT("event"),       TEXT("events live in the event graph — use add_custom_event for a new one, or add_override_event to override a parent's") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -284,6 +302,34 @@ namespace MifBridge
 		{
 			Fail(Out, FString::Printf(TEXT("invalid function name '%s'"), *Raw));
 			return;
+		}
+
+		// REFUSE A NAME THE PARENT ALREADY OWNS. Creating it anyway is what produced the six compile
+		// errors: the graph is added, the Blueprint compiles, and the collision only surfaces as
+		// "conflicts with a function in the parent" from the compiler — long after the ok:true.
+		if (UClass* ParentClass = Blueprint->ParentClass)
+		{
+			if (const UFunction* Clash = ParentClass->FindFunctionByName(FName(*Name)))
+			{
+				const bool bOverridable = Clash->HasAnyFunctionFlags(FUNC_BlueprintEvent)
+					|| (Clash->HasAnyFunctionFlags(FUNC_BlueprintCallable) && !Clash->HasAnyFunctionFlags(FUNC_Final));
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is already declared by the parent class '%s', so creating a new function ")
+					TEXT("with that name would produce a COLLIDING duplicate that fails to compile. %s"),
+					*Name, *ParentClass->GetPathName(),
+					bOverridable
+						? TEXT("That function is overridable — call add_override_event {event:\"<name>\", callParent:true} instead, which creates the override graph properly.")
+						: TEXT("That function is NOT overridable (it is final or not a BlueprintEvent), so pick a different name.")));
+				Out->SetBoolField(TEXT("nothingModified"), true);
+				Out->SetStringField(TEXT("outcome"), TEXT("preflight-rejected-nothing-created"));
+				Out->SetStringField(TEXT("conflictsWith"), Clash->GetPathName());
+				Out->SetBoolField(TEXT("parentFunctionIsOverridable"), bOverridable);
+				if (bOverridable)
+				{
+					Out->SetStringField(TEXT("route"), TEXT("add_override_event"));
+				}
+				return;
+			}
 		}
 
 		TArray<TPair<FName, FEdGraphPinType>> Inputs;

@@ -249,6 +249,24 @@ namespace MifBridge
 		static const TCHAR* const GMifDescKeys_add_sublevel[] = {
 			TEXT("path"), TEXT("packagePath"), TEXT("level"), TEXT("streamingClass"), TEXT("class"), TEXT("location"),
 			TEXT("rotation"), nullptr };
+		static const TCHAR* const GMifDescKeys_add_variable[] = {
+			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("type"), TEXT("container"), TEXT("valueType"),
+			TEXT("scope"), TEXT("function"), TEXT("default"), nullptr };
+		static const TCHAR* const GMifDescNotes_add_variable[] = {
+			TEXT("class"),       TEXT("the class belongs IN the type string, not in its own key: type:\"object:SceneComponent\". Prefixes: object:X, class:X, subclassof:X, softobject:X, softclass:X"),
+			TEXT("className"),   TEXT("use type:\"object:X\" (or class:X / subclassof:X / softobject:X / softclass:X)"),
+			TEXT("parentClass"), TEXT("add_variable does not take a parent class. For a typed object variable use type:\"object:X\"; to override a parent's event use add_override_event"),
+			TEXT("objectClass"), TEXT("use type:\"object:X\""),
+			TEXT("subType"),     TEXT("use type:\"object:X\" for the referenced class, or valueType for a map's value type"),
+			nullptr };
+		static const TCHAR* const GMifDescKeys_create_function[] = {
+			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("inputs"), TEXT("outputs"), TEXT("pure"), nullptr };
+		static const TCHAR* const GMifDescNotes_create_function[] = {
+			TEXT("override"),    TEXT("create_function makes a NEW function; it cannot override. Use add_override_event {event, parentClass?, callParent?}"),
+			TEXT("parentClass"), TEXT("create_function does not take a parent class. add_override_event accepts parentClass (aliases: class, interfaceOrParent, ownerClass, targetClass)"),
+			TEXT("interface"),   TEXT("to implement an interface function use implement_interface_function; to override a parent event use add_override_event"),
+			TEXT("event"),       TEXT("events live in the event graph - use add_custom_event for a new one, or add_override_event to override a parent's"),
+			nullptr };
 		static const TCHAR* const GMifDescKeys_add_variable_get[] = {
 			TEXT("graphId"), TEXT("var"), TEXT("name"), TEXT("variable"), TEXT("varName"), TEXT("property"),
 			TEXT("propertyName"), TEXT("member"), TEXT("targetClass"), TEXT("class"), TEXT("cls"), TEXT("className"),
@@ -681,6 +699,9 @@ namespace MifBridge
 			{ TEXT("add_sublevel"), GMifDescKeys_add_sublevel, nullptr,
 			  TEXT("path (packagePath, level), streamingClass (class: \"alwaysloaded\"|\"dynamic\"), location {x,y,z}, rotation {x,y,z}"),
 			  TEXT("MifBridgeStreaming.cpp"), 569, nullptr },
+			{ TEXT("add_variable"), GMifDescKeys_add_variable, GMifDescNotes_add_variable,
+			  TEXT("blueprintId (alias: path), name, type, container?, valueType?, scope? (member|local), function? (required when scope=local), default?"),
+			  TEXT("MifBridgeIntrospect.cpp"), 785, nullptr },
 			{ TEXT("add_variable_get"), GMifDescKeys_add_variable_get, GMifDescNotes_add_variable_get,
 			  TEXT("graphId, var (aliases: name, variable, varName, property, propertyName, member), targetClass (aliases: class, cls, className, ownerClass, objectClass), x, y"),
 			  TEXT("MifBridgeNodes.cpp"), 369, TEXT("DoAddVariableNode") },
@@ -708,6 +729,9 @@ namespace MifBridge
 			{ TEXT("create_blueprint"), GMifDescKeys_create_blueprint, GMifDescNotes_create_blueprint,
 			  TEXT("path (must start with /Game/), parentClass (default \"Actor\"), blueprintType (Normal | FunctionLibrary | Interface | MacroLibrary | WidgetBlueprint)"),
 			  TEXT("MifBridgeNodes2.cpp"), 1041, nullptr },
+			{ TEXT("create_function"), GMifDescKeys_create_function, GMifDescNotes_create_function,
+			  TEXT("blueprintId (alias: path), name, inputs?, outputs?, pure?"),
+			  TEXT("MifBridgeNodes2.cpp"), 285, nullptr },
 			{ TEXT("create_material"), GMifDescKeys_create_material, nullptr,
 			  TEXT("path (alias: assetPath), domain (alias: materialDomain), blendMode, initialTexture"),
 			  TEXT("MifBridgeMaterials.cpp"), 743, nullptr },
