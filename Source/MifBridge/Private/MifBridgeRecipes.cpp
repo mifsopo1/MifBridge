@@ -63,6 +63,20 @@ namespace MifBridge
 
 	void H_recipe_add_debug_print(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"),
+			  TEXT("message"), TEXT("functionName"), TEXT("messageParam"),
+			  TEXT("afterNode"), TEXT("afterPin"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("graphId, message, functionName (default PrintToModLoader), messageParam (default Message), ")
+			TEXT("afterNode, afterPin (default then), x, y"),
+			{ { TEXT("blueprintId"), TEXT("the print node lands in ONE graph - pass graphId from list_graphs, not the blueprint path") },
+			  { TEXT("text"), TEXT("the printed string is 'message'") },
+			  { TEXT("nodeGuid"), TEXT("the splice anchor is 'afterNode' - this endpoint creates its own node, it does not edit one") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -187,6 +201,21 @@ namespace MifBridge
 
 	void H_recipe_reset_and_loop(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"),
+			  TEXT("arrayVar"), TEXT("indexVar"), TEXT("scoreVar"),
+			  TEXT("indexInit"), TEXT("scoreInit"),
+			  TEXT("afterNode"), TEXT("afterPin"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("graphId, arrayVar, indexVar, scoreVar (omit to skip the score SET), indexInit (default -1), ")
+			TEXT("scoreInit (default -2.0), afterNode, afterPin (default then), x, y"),
+			{ { TEXT("blueprintId"), TEXT("this recipe builds nodes in ONE graph - pass graphId from list_graphs, not the blueprint path") },
+			  { TEXT("array"), TEXT("the array variable NAME is 'arrayVar'") },
+			  { TEXT("index"), TEXT("'indexVar' names the variable; 'indexInit' is the value it is reset to") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -332,6 +361,20 @@ namespace MifBridge
 
 	void H_recipe_splice_before_parent(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"),
+			  TEXT("parentNode"), TEXT("clusterEntry"), TEXT("clusterExit"),
+			  TEXT("clusterEntryExecIn"), TEXT("clusterExitExecOut") },
+			TEXT("graphId, parentNode, clusterEntry, clusterExit, clusterEntryExecIn (default execute), ")
+			TEXT("clusterExitExecOut (default then)"),
+			{ { TEXT("node"), TEXT("three DISTINCT nodes are required here - parentNode, clusterEntry, clusterExit - so there is no generic 'node' alias") },
+			  { TEXT("parentNodeGuid"), TEXT("spelled 'parentNode' on this endpoint (add_override_event RETURNS it as parentNodeGuid)") },
+			  { TEXT("entryNode"), TEXT("spelled 'clusterEntry'") },
+			  { TEXT("exitNode"), TEXT("spelled 'clusterExit'") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -395,6 +438,22 @@ namespace MifBridge
 
 	void H_recipe_argmax_over_components(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"),
+			  TEXT("loopBodyNode"), TEXT("loopBodyPin"),
+			  TEXT("scoreNode"), TEXT("scorePin"),
+			  TEXT("indexNode"), TEXT("indexPin"),
+			  TEXT("bestScoreVar"), TEXT("bestIndexVar"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("graphId, loopBodyNode, loopBodyPin (default 'Loop Body'), scoreNode, scorePin, indexNode, ")
+			TEXT("indexPin, bestScoreVar, bestIndexVar, x, y"),
+			{ { TEXT("node"), TEXT("three DISTINCT nodes are required here - loopBodyNode, scoreNode, indexNode - so there is no generic 'node' alias") },
+			  { TEXT("forEachNode"), TEXT("spelled 'loopBodyNode' here (recipe_reset_and_loop returns that guid as forEachNode)") },
+			  { TEXT("blueprintId"), TEXT("this recipe builds nodes in ONE graph - pass graphId from list_graphs, not the blueprint path") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)

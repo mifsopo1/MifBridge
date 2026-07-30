@@ -121,6 +121,14 @@ namespace MifBridge
 	// changes?" dialog here blocks the game thread — which also blocks this HTTP server.
 	void H_new_level(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, { TEXT("partitioned") },
+			TEXT("partitioned (bool, default false) - the only parameter; new_level takes no path"),
+			{ { TEXT("path"), TEXT("new_level does not take a path - it creates an unsaved transient map; pass path to save_level_as afterwards") },
+			  { TEXT("name"), TEXT("new_level does not name the map - the name comes from the path you give save_level_as") } }))
+		{
+			return;
+		}
+
 		if (!GEditor) { Fail(Out, TEXT("no GEditor")); return; }
 
 		const bool bPartitioned = JBool(In, TEXT("partitioned"), false);
@@ -147,6 +155,15 @@ namespace MifBridge
 	//   in:  { path:"/Game/Maps/MyLevel" }   out: { savedTo, packagePath }
 	void H_save_level_as(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("packagePath"), TEXT("assetPath") },
+			TEXT("path (aliases: packagePath, assetPath) - the package path to save the open level to, e.g. \"/Game/Maps/MyLevel\""),
+			{ { TEXT("level"), TEXT("use path - 'level' is the sublevel selector on the streaming endpoints; save_level_as always saves the OPEN persistent level") },
+			  { TEXT("filename"), TEXT("use path with a package path like \"/Game/Maps/MyLevel\" - the .umap filename is derived from it and is never passed in") } }))
+		{
+			return;
+		}
+
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 		ULevel* Level = World->PersistentLevel;
@@ -178,6 +195,15 @@ namespace MifBridge
 	// Discards unsaved changes without asking, for the same reason new_level does.
 	void H_load_level(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("packagePath"), TEXT("assetPath") },
+			TEXT("path (aliases: packagePath, assetPath) - the package path of the map to open, e.g. \"/Game/Maps/MyLevel\""),
+			{ { TEXT("level"), TEXT("use path - 'level' is the sublevel selector on the streaming endpoints; load_level opens a whole map") },
+			  { TEXT("filename"), TEXT("use path with a package path like \"/Game/Maps/MyLevel\" - the .umap filename is derived from it and is never passed in") } }))
+		{
+			return;
+		}
+
 		const FString PackagePath = JStrAny(In, { TEXT("path"), TEXT("packagePath"), TEXT("assetPath") });
 		if (PackagePath.IsEmpty()) { Fail(Out, TEXT("path is required, e.g. \"/Game/Maps/MyLevel\"")); return; }
 
@@ -211,6 +237,19 @@ namespace MifBridge
 	// Z either floats or buries itself the moment the ground is not level.
 	void H_set_spline_points(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("component"), TEXT("componentName"),
+			  TEXT("points"), TEXT("space"), TEXT("pointType"),
+			  TEXT("closedLoop"), TEXT("closed"), TEXT("loop"),
+			  TEXT("snapToGround"), TEXT("groundOffset") },
+			TEXT("actorPath (alias: actor), component (alias: componentName), points:[{x,y,z},...] (at least 2), space (\"world\"|\"local\"), pointType (\"curve\"|\"linear\"|\"constant\"|\"curveClamped\"|\"curveCustomTangent\"), closedLoop (aliases: closed, loop), snapToGround (bool, needs space:\"world\"), groundOffset (number)"),
+			{ { TEXT("offset"), TEXT("use groundOffset - 'offset' is snap_actors_to_ground's name for the same idea") },
+			  { TEXT("type"), TEXT("use pointType - it sets the interpolation type of every point written by this call") },
+			  { TEXT("tangents"), TEXT("not implemented - set_spline_points writes point LOCATIONS only; pointType:\"curveCustomTangent\" is accepted but the tangents themselves cannot be supplied here") } }))
+		{
+			return;
+		}
+
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
@@ -338,6 +377,15 @@ namespace MifBridge
 	//   in:  { actorPath, component?, space? }   out: { points[], length, closedLoop }
 	void H_get_spline_points(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("component"), TEXT("componentName"), TEXT("space") },
+			TEXT("actorPath (alias: actor), component (alias: componentName), space (\"world\"|\"local\", default world)"),
+			{ { TEXT("index"), TEXT("not supported - get_spline_points returns EVERY point; index into the returned points[] array") },
+			  { TEXT("points"), TEXT("not a parameter of this endpoint - points[] is what it RETURNS; use set_spline_points to write them") } }))
+		{
+			return;
+		}
+
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
@@ -377,6 +425,18 @@ namespace MifBridge
 	// "snaps" it onto itself, climbing further each call.
 	void H_snap_actors_to_ground(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPaths"), TEXT("folder"), TEXT("labelContains"), TEXT("all"),
+			  TEXT("offset"), TEXT("traceHeight"), TEXT("alignToNormal"),
+			  TEXT("groundActor"), TEXT("ground"), TEXT("allowAnyHit") },
+			TEXT("actorPaths:[...], folder, labelContains, all (bool), offset (number), traceHeight (number), alignToNormal (bool), groundActor (alias: ground), allowAnyHit (bool)"),
+			{ { TEXT("actorPath"), TEXT("use actorPaths:[...] - this endpoint snaps a SET, so the parameter is plural even for a single actor") },
+			  { TEXT("groundOffset"), TEXT("use offset - 'groundOffset' is set_spline_points' name for the same idea") },
+			  { TEXT("snapToGround"), TEXT("not a parameter - snapping IS what this endpoint does; choose the actors with actorPaths[], folder, labelContains or all:true") } }))
+		{
+			return;
+		}
+
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 

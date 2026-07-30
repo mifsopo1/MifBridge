@@ -18,6 +18,16 @@ namespace MifBridge
 
 	void H_implement_interface_function(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("function") },
+			TEXT("blueprintId (alias: path), function - the interface function name to add an implementation graph for"),
+			{ { TEXT("name"), TEXT("the interface function is 'function' here; 'name' is remove_function's key") },
+			  { TEXT("interface"), TEXT("not a parameter - the owning interface is looked up from the function name and REPORTED back as interfaceClass. The interface must already be implemented on the blueprint") },
+			  { TEXT("blueprint"), TEXT("the blueprint key is 'blueprintId' (alias: path)") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -77,6 +87,16 @@ namespace MifBridge
 
 	void H_remove_function(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("confirm") },
+			TEXT("blueprintId (alias: path), name - the function graph to delete, confirm - must be true"),
+			{ { TEXT("function"), TEXT("this endpoint's key is 'name'; 'function' is implement_interface_function's key") },
+			  { TEXT("force"), TEXT("the required acknowledgement is confirm:true") },
+			  { TEXT("graphId"), TEXT("remove_function matches the function graph by NAME on the given blueprint - it does not take a graphId") } }))
+		{
+			return;
+		}
+
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("remove_function requires confirm=true"));

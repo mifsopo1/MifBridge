@@ -19,6 +19,18 @@ namespace MifBridge
 {
 	void H_add_enhanced_input_action(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("inputAction"), TEXT("action"), TEXT("actionPath"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, inputAction (aliases: action, actionPath) - the UInputAction asset path, x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("blueprintId"), TEXT("this endpoint places a node in a GRAPH - pass graphId (list_graphs shows every graph by its full dotted path)") },
+			  { TEXT("inputActionPath"), TEXT("spell it inputAction (aliases: action, actionPath)") },
+			  { TEXT("class"), TEXT("pass the UInputAction ASSET path as inputAction, not a class") },
+			  { TEXT("trigger"), TEXT("the Triggered/Started/Ongoing/Canceled/Completed exec pins are generated from the action - place the node, then connect_pins") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)

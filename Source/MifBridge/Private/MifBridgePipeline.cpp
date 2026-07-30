@@ -28,6 +28,20 @@ namespace MifBridge
 
 	void H_read_modloader_log(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("lines"), TEXT("filter") },
+			TEXT("path (optional - defaults to the live DDS2 UE4SS.log), lines (tail size, 1-5000, default 80), filter (plain substring)"),
+			{ { TEXT("logPath"), TEXT("spell it path - or omit it entirely to tail the live DDS2 UE4SS.log") },
+			  { TEXT("file"), TEXT("spell it path") },
+			  { TEXT("maxLines"), TEXT("spell it lines - it is the tail size, clamped to 1-5000") },
+			  { TEXT("limit"), TEXT("spell it lines - it is the tail size, clamped to 1-5000") },
+			  { TEXT("tail"), TEXT("spell it lines - it is the tail size, clamped to 1-5000") },
+			  { TEXT("contains"), TEXT("spell it filter - a plain substring match, not a regex") },
+			  { TEXT("search"), TEXT("spell it filter - a plain substring match, not a regex") } }))
+		{
+			return;
+		}
+
 		FString Path = JStr(In, TEXT("path"));
 		if (Path.IsEmpty())
 		{
@@ -95,6 +109,18 @@ namespace MifBridge
 
 	void H_trigger_cook(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("mod"), TEXT("asset") },
+			TEXT("mod, asset - both optional, and both only fill placeholders in the returned command plan (this endpoint executes nothing)"),
+			{ { TEXT("modName"), TEXT("spell it mod") },
+			  { TEXT("assetPath"), TEXT("spell it asset - it is substituted into the retoc --filter argument") },
+			  { TEXT("path"), TEXT("spell it asset - it is substituted into the retoc --filter argument") },
+			  { TEXT("confirm"), TEXT("trigger_cook is plan-only and runs nothing, so there is nothing to confirm") },
+			  { TEXT("execute"), TEXT("trigger_cook is plan-only by design - run the returned plan yourself, out-of-editor") } }))
+		{
+			return;
+		}
+
 		const FString Mod = JStr(In, TEXT("mod"), TEXT("<ModName>"));
 		const FString Asset = JStr(In, TEXT("asset"), TEXT("<AssetName>"));
 

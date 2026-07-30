@@ -100,6 +100,16 @@ namespace MifBridge
 	// usually has a path and wants to know what is IN it, without first knowing which class it is.
 	void H_describe_animation(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("animation"), TEXT("asset") },
+			TEXT("assetPath (aliases: path, animation, asset) - the animation asset to describe, e.g. /Game/Anims/AS_Run"),
+			{ { TEXT("name"), TEXT("this endpoint needs an object PATH - assetPath (aliases: path, animation, asset). list_animations returns assetPath values you can paste straight in") },
+			  { TEXT("skeleton"), TEXT("not an input here - the skeleton is REPORTED in the response; to filter a LIST by skeleton use list_animations") },
+			  { TEXT("blueprintId"), TEXT("this reads animation DATA assets (sequence/montage/blend space/composite). For an Animation BLUEPRINT use list_graphs/list_nodes, which recurse into state machines and transition graphs") } }))
+		{
+			return;
+		}
+
 		const FString AssetPath = JStrAny(In, { TEXT("assetPath"), TEXT("path"), TEXT("animation"), TEXT("asset") });
 		if (AssetPath.IsEmpty())
 		{
@@ -271,6 +281,16 @@ namespace MifBridge
 	// Asset-registry only — does NOT load the assets, so it stays cheap on a large project.
 	void H_list_animations(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("filter"), TEXT("skeleton"), TEXT("limit") },
+			TEXT("filter (substring matched against the full object path), skeleton (substring matched against the registry's Skeleton tag), limit (default 200, max 5000)"),
+			{ { TEXT("nameContains"), TEXT("the substring filter here is 'filter', and it matches the FULL object path, not just the asset name") },
+			  { TEXT("path"), TEXT("there is no path/root parameter - put the folder in 'filter', e.g. filter:'/Game/Anims/'") },
+			  { TEXT("count"), TEXT("'count' is an OUTPUT field - the cap is 'limit' (default 200, max 5000); read 'truncated' to see whether you hit it") } }))
+		{
+			return;
+		}
+
 		const FString Filter = JStr(In, TEXT("filter"));
 		const FString SkeletonFilter = JStr(In, TEXT("skeleton"));
 		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 200), 1, 5000);

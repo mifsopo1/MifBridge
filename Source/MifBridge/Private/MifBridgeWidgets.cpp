@@ -51,6 +51,16 @@ namespace MifBridge
 	// we do NOT full-compile here (see file header). Mirrors SWidgetDetailsView::HandleIsVariableChanged.
 	void H_set_widget_is_variable(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), TEXT("isVariable") },
+			TEXT("blueprintId (alias: path), widgetName, isVariable (default true)"),
+			{ { TEXT("name"), TEXT("the widget parameter is called widgetName — the widget's FName in the tree, not its display label") },
+			  { TEXT("widget"), TEXT("spell it widgetName") },
+			  { TEXT("variableName"), TEXT("not settable here — the generated member variable is ALWAYS named after the widget itself; rename the widget to rename the variable") } }))
+		{
+			return;
+		}
+
 		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
 		if (!WBP)
 		{
@@ -84,6 +94,18 @@ namespace MifBridge
 	// (the fallback path). MemberGuid is resolved for rename-safety but is optional.
 	void H_add_widget_binding(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), TEXT("propertyName"), TEXT("functionName") },
+			TEXT("blueprintId (alias: path), widgetName, propertyName, functionName - all four required"),
+			{ { TEXT("property"), TEXT("spell it propertyName (the widget property to drive, e.g. \"Text\")") },
+			  { TEXT("function"), TEXT("spell it functionName (a pure UFUNCTION on the user widget, e.g. \"GetText\")") },
+			  { TEXT("widget"), TEXT("spell it widgetName") },
+			  { TEXT("kind"), TEXT("not settable — this endpoint only writes function bindings (EBindingKind::Function)") },
+			  { TEXT("sourcePath"), TEXT("not settable — SourcePath is deliberately left empty so the runtime binds via BindUFunction(functionName)") } }))
+		{
+			return;
+		}
+
 		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
 		if (!WBP)
 		{
@@ -137,6 +159,16 @@ namespace MifBridge
 	// matches via operator==). Mirrors OnRemoveBinding.
 	void H_remove_widget_binding(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), TEXT("propertyName") },
+			TEXT("blueprintId (alias: path), widgetName, propertyName - both required"),
+			{ { TEXT("functionName"), TEXT("not part of the identity — a binding is removed by widgetName + propertyName alone, whatever function it points at") },
+			  { TEXT("property"), TEXT("spell it propertyName") },
+			  { TEXT("widget"), TEXT("spell it widgetName") } }))
+		{
+			return;
+		}
+
 		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
 		if (!WBP)
 		{
@@ -171,6 +203,22 @@ namespace MifBridge
 	// generated class); the designer shows it live without one.
 	void H_add_tree_widget(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetClass"), TEXT("class"),
+			  TEXT("name"), TEXT("parentName"), TEXT("asRoot"),
+			  TEXT("x"), TEXT("y"), TEXT("autoSize") },
+			TEXT("blueprintId (alias: path), widgetClass (alias: class), name (optional, uniquified on collision), ")
+			TEXT("parentName or asRoot, and canvas-slot placement x, y, autoSize (default true)"),
+			{ { TEXT("widgetName"), TEXT("the NEW widget's name parameter is called name; widgetName is only a response field") },
+			  { TEXT("className"), TEXT("the class parameter is called widgetClass (alias: class)") },
+			  { TEXT("parent"), TEXT("spell it parentName — the FName of a UPanelWidget already in the tree") },
+			  { TEXT("position"), TEXT("pass the canvas-slot position as separate numbers x and y") },
+			  { TEXT("size"), TEXT("not implemented — the canvas slot is auto-sized; set the slot's Size with set_property after adding") },
+			  { TEXT("slot"), TEXT("slot properties beyond x/y/autoSize are not settable here — use set_property on the created widget's Slot") } }))
+		{
+			return;
+		}
+
 		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
 		if (!WBP)
 		{
@@ -305,6 +353,16 @@ namespace MifBridge
 	// UWidgetTree::RemoveWidget handles all three cases (child / root / named-slot).
 	void H_remove_tree_widget(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName") },
+			TEXT("blueprintId (alias: path), widgetName"),
+			{ { TEXT("name"), TEXT("the widget parameter is called widgetName") },
+			  { TEXT("widget"), TEXT("spell it widgetName") },
+			  { TEXT("recursive"), TEXT("not a parameter — RemoveWidget always takes the widget's whole subtree with it") } }))
+		{
+			return;
+		}
+
 		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
 		if (!WBP)
 		{

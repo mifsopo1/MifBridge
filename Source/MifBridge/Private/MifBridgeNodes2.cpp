@@ -83,6 +83,14 @@ namespace MifBridge
 
 	void H_resolve_struct(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, { TEXT("name") },
+			TEXT("name (bare name, C++ name or full path - e.g. Vector, FGuid, /Script/CoreUObject.Transform)"),
+			{ { TEXT("structName"), TEXT("resolve_struct spells it name; structName is what add_make_struct/add_break_struct use") },
+			  { TEXT("struct"),     TEXT("spell it name") },
+			  { TEXT("path"),       TEXT("pass the path as the VALUE of name - name accepts a bare name or a full struct path in the same field") } }))
+		{
+			return;
+		}
 		const FString Name = JStr(In, TEXT("name"));
 		if (Name.IsEmpty())
 		{
@@ -106,6 +114,13 @@ namespace MifBridge
 
 	void H_add_self(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, { TEXT("graphId"), TEXT("x"), TEXT("y") }, TEXT("graphId, x, y"),
+			{ { TEXT("graph"),       TEXT("spell it graphId") },
+			  { TEXT("blueprintId"), TEXT("a node is placed in a GRAPH - pass graphId (list_graphs shows every graph of a blueprint); the owning blueprint is inferred from it") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -124,6 +139,18 @@ namespace MifBridge
 
 	void H_add_custom_event(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("name"), TEXT("inputs"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, name, inputs? ([{name, type, container?, valueType?}] - the event's parameters), x, y"),
+			{ { TEXT("graph"),      TEXT("spell it graphId") },
+			  { TEXT("outputs"),    TEXT("a custom event's parameters ARE its output pins - list them under inputs; there is no outputs key here (create_function is the endpoint that has both)") },
+			  { TEXT("params"),     TEXT("spell it inputs") },
+			  { TEXT("parameters"), TEXT("spell it inputs") },
+			  { TEXT("eventName"),  TEXT("spell it name") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -171,6 +198,17 @@ namespace MifBridge
 
 	void H_add_make_struct(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("structName"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, structName, x, y"),
+			{ { TEXT("graph"),  TEXT("spell it graphId") },
+			  { TEXT("struct"), TEXT("spell it structName") },
+			  { TEXT("name"),   TEXT("the struct is named by structName; resolve_struct is the endpoint whose parameter is called name") },
+			  { TEXT("type"),   TEXT("spell it structName") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -204,6 +242,17 @@ namespace MifBridge
 
 	void H_add_break_struct(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("structName"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, structName, x, y"),
+			{ { TEXT("graph"),  TEXT("spell it graphId") },
+			  { TEXT("struct"), TEXT("spell it structName") },
+			  { TEXT("name"),   TEXT("the struct is named by structName; resolve_struct is the endpoint whose parameter is called name") },
+			  { TEXT("type"),   TEXT("spell it structName") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -235,6 +284,19 @@ namespace MifBridge
 
 	void H_add_literal(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("object"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, object (an asset OBJECT PATH; object-reference literals only), x, y"),
+			{ { TEXT("graph"),      TEXT("spell it graphId") },
+			  { TEXT("value"),      TEXT("add_literal makes an OBJECT-reference literal only - for a scalar (int/float/bool/string/name) place the consuming node and use set_pin_default on its pin instead") },
+			  { TEXT("path"),       TEXT("the asset path goes in object") },
+			  { TEXT("objectPath"), TEXT("spell it object") },
+			  { TEXT("asset"),      TEXT("spell it object") },
+			  { TEXT("type"),       TEXT("the literal's type comes from the resolved object's class; there is nothing to declare") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -462,6 +524,20 @@ namespace MifBridge
 
 	void H_rename_function(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// Both selector branches are accepted here: graphId addresses the graph directly, otherwise
+		// ResolveBlueprintField (blueprintId/path) + oldName looks it up by name.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("blueprintId"), TEXT("path"),
+			  TEXT("oldName"), TEXT("function"), TEXT("name"),
+			  TEXT("newName"), TEXT("to"), TEXT("confirm") },
+			TEXT("graphId, OR blueprintId (alias: path) + oldName (aliases: function, name); plus newName (alias: to), confirm (required, must be true)"),
+			{ { TEXT("from"),            TEXT("the current name is oldName (aliases: function, name) - only the destination has a short spelling ('to' = newName)") },
+			  { TEXT("graph"),           TEXT("spell it graphId") },
+			  { TEXT("newFunctionName"), TEXT("spell it newName (alias: to)") },
+			  { TEXT("dispatcher"),      TEXT("an event dispatcher is a signature graph PLUS a backing delegate variable - use rename_event_dispatcher, which renames both") } }))
+		{
+			return;
+		}
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("rename_function requires confirm=true"));
@@ -540,6 +616,19 @@ namespace MifBridge
 
 	void H_rename_event(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// graphId is listed because ResolveNodeField reads it too: when present it scopes the guid
+		// lookup to that graph, which is how a guid duplicated across loaded copies is disambiguated.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId"), TEXT("graphId"),
+			  TEXT("newName"), TEXT("name"), TEXT("to"), TEXT("confirm") },
+			TEXT("nodeGuid (aliases: node, guid, nodeId), graphId (optional, disambiguates a reused guid), newName (aliases: name, to), confirm (required, must be true)"),
+			{ { TEXT("oldName"),     TEXT("rename_event addresses the event by nodeGuid, not by its current name - only the new name is passed (newName, aliases: name, to)") },
+			  { TEXT("from"),        TEXT("rename_event addresses the event by nodeGuid; the destination is newName (aliases: name, to)") },
+			  { TEXT("event"),       TEXT("address the custom event by nodeGuid (aliases: node, guid, nodeId) - find_nodes locates it") },
+			  { TEXT("blueprintId"), TEXT("the owning blueprint is inferred from the node; pass graphId if the same guid exists in more than one loaded copy") } }))
+		{
+			return;
+		}
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("rename_event requires confirm=true"));
@@ -587,6 +676,16 @@ namespace MifBridge
 
 	void H_rename_event_dispatcher(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"),
+			  TEXT("oldName"), TEXT("name"), TEXT("dispatcher"),
+			  TEXT("newName"), TEXT("to"), TEXT("confirm") },
+			TEXT("blueprintId (alias: path), oldName (aliases: name, dispatcher), newName (alias: to), confirm (required, must be true)"),
+			{ { TEXT("from"),    TEXT("the current name is oldName (aliases: name, dispatcher) - only the destination has a short spelling ('to' = newName)") },
+			  { TEXT("graphId"), TEXT("a dispatcher is a signature GRAPH plus a backing delegate VARIABLE - it is addressed by blueprintId + oldName so both halves can be renamed together") } }))
+		{
+			return;
+		}
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("rename_event_dispatcher requires confirm=true"));
@@ -768,6 +867,29 @@ namespace MifBridge
 
 	void H_set_function_flags(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// All THREE selector spellings are live (nodeGuid+aliases, graphId, blueprintId+function), and
+		// 'const'/'isConst' are both read by the JHasAny/JBoolAny pair below — server.py sends isConst.
+		// The read-only members of the response's flags object (net, static, authorityOnly) get notes
+		// because a caller doing read-modify-write on that object would otherwise echo them straight back.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("graphId"),
+			  TEXT("function"), TEXT("functionName"), TEXT("name"),
+			  TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId"),
+			  TEXT("replicates"), TEXT("reliable"), TEXT("access"),
+			  TEXT("pure"), TEXT("const"), TEXT("isConst"), TEXT("callInEditor"),
+			  TEXT("category"), TEXT("tooltip"), TEXT("keywords") },
+			TEXT("target by nodeGuid (aliases: node, guid, nodeId), OR graphId, OR blueprintId (alias: path) + function (aliases: functionName, name); ")
+			TEXT("flags: replicates (none|multicast|server|client), reliable, access (public|protected|private), pure, const (alias: isConst), callInEditor, category, tooltip, keywords"),
+			{ { TEXT("replication"),   TEXT("spell it replicates (none | multicast | server | client)") },
+			  { TEXT("net"),           TEXT("read-only in the response - set the mode with replicates; FUNC_Net is derived from it and cannot be set on its own") },
+			  { TEXT("static"),        TEXT("read-only in the response - a Blueprint function's static-ness is not editable here") },
+			  { TEXT("authorityOnly"), TEXT("read-only in the response - not settable through this endpoint") },
+			  { TEXT("flags"),         TEXT("pass each flag as a TOP-LEVEL key (replicates, reliable, access, pure, const, callInEditor, category, tooltip, keywords); the response's 'flags' object is read-back only") },
+			  { TEXT("event"),         TEXT("address a custom event by nodeGuid (aliases: node, guid, nodeId); a function graph by graphId or blueprintId + function") } }))
+		{
+			return;
+		}
+
 		// --- Resolve the target: a custom-event node, or a function graph's entry node ---------
 		UBlueprint* Blueprint = nullptr;
 		UK2Node_EditablePinBase* Target = nullptr;

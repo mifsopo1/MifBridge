@@ -191,6 +191,17 @@ namespace MifBridge
 	//   out: { structPath, name, members[] }
 	void H_create_struct(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("members") },
+			TEXT("path (must start with /Game/ - the struct is named after the last segment), ")
+			TEXT("members[] (each: name, type, container?, valueType?, default?)"),
+			{ { TEXT("name"),       TEXT("the struct's name comes from the last segment of path - pass path:\"/Game/Types/S_Foo\"") },
+			  { TEXT("struct"),     TEXT("create_struct MAKES the struct; the new asset location goes in path. To edit an existing struct use add_struct_member") },
+			  { TEXT("structPath"), TEXT("the new asset location parameter is called path (structPath is what the response returns)") },
+			  { TEXT("fields"),     TEXT("the member list parameter is called members[]") } }))
+		{
+			return;
+		}
 		const FString Path = JStr(In, TEXT("path"));
 		FString AssetName, PathError;
 		if (!ValidateNewUserTypePath(Path, AssetName, PathError))
@@ -301,6 +312,12 @@ namespace MifBridge
 	//   in:  { struct: "/Game/Types/S_Foo" }   out: { structPath, members[] }
 	void H_list_struct_members(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("struct"), TEXT("structPath"), TEXT("path") },
+			TEXT("struct (aliases: structPath, path) - asset path of a Blueprint user-defined struct")))
+		{
+			return;
+		}
 		FString Error;
 		UUserDefinedStruct* Struct = LoadUserStruct(JStrAny(In, { TEXT("struct"), TEXT("structPath"), TEXT("path") }), Error);
 		if (!Struct)
@@ -324,6 +341,17 @@ namespace MifBridge
 	//   in:  { struct, name, type, container?, valueType?, default? }
 	void H_add_struct_member(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("struct"), TEXT("structPath"), TEXT("path"),
+			  TEXT("name"), TEXT("type"), TEXT("container"), TEXT("valueType"), TEXT("default") },
+			TEXT("struct (aliases: structPath, path), name, type, container?, valueType?, default?"),
+			{ { TEXT("class"),        TEXT("the class belongs IN the type string, not in its own key: type:\"object:SceneComponent\". Prefixes: object:X, class:X, subclassof:X, softobject:X, softclass:X") },
+			  { TEXT("subType"),      TEXT("use type:\"object:X\" for the referenced class, or valueType for a map's value type") },
+			  { TEXT("memberName"),   TEXT("the member name parameter is called name") },
+			  { TEXT("defaultValue"), TEXT("the parameter is called default") } }))
+		{
+			return;
+		}
 		FString Error;
 		UUserDefinedStruct* Struct = LoadUserStruct(JStrAny(In, { TEXT("struct"), TEXT("structPath"), TEXT("path") }), Error);
 		if (!Struct)
@@ -367,6 +395,16 @@ namespace MifBridge
 	//   in:  { struct, name? | guid?, confirm: true }
 	void H_remove_struct_member(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("struct"), TEXT("structPath"), TEXT("path"),
+			  TEXT("name"), TEXT("guid"), TEXT("confirm") },
+			TEXT("struct (aliases: structPath, path), name or guid, confirm=true"),
+			{ { TEXT("member"),     TEXT("the member is addressed by name or by guid") },
+			  { TEXT("memberName"), TEXT("the member name parameter is called name") },
+			  { TEXT("index"),      TEXT("struct members are addressed by name or guid, never by index - index is remove_enum_value's parameter") } }))
+		{
+			return;
+		}
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("remove_struct_member requires confirm=true"));
@@ -434,6 +472,18 @@ namespace MifBridge
 	//   out: { enumPath, name, values[] }
 	void H_create_enum(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("values") },
+			TEXT("path (must start with /Game/ - the enum is named after the last segment), ")
+			TEXT("values[] (entry display names, in order)"),
+			{ { TEXT("name"),     TEXT("the enum's name comes from the last segment of path - pass path:\"/Game/Types/E_Foo\"") },
+			  { TEXT("enum"),     TEXT("create_enum MAKES the enum; the new asset location goes in path. To extend an existing enum use add_enum_value") },
+			  { TEXT("enumPath"), TEXT("the new asset location parameter is called path (enumPath is what the response returns)") },
+			  { TEXT("entries"),  TEXT("the entry list parameter is called values[]") },
+			  { TEXT("members"),  TEXT("members[] is create_struct's parameter; an enum's entries go in values[]") } }))
+		{
+			return;
+		}
 		const FString Path = JStr(In, TEXT("path"));
 		FString AssetName, PathError;
 		if (!ValidateNewUserTypePath(Path, AssetName, PathError))
@@ -521,6 +571,15 @@ namespace MifBridge
 	// --- add_enum_value / remove_enum_value ---------------------------------
 	void H_add_enum_value(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("enum"), TEXT("enumPath"), TEXT("path"),
+			  TEXT("value"), TEXT("name"), TEXT("displayName") },
+			TEXT("enum (aliases: enumPath, path), value (aliases: name, displayName) - the display name of the one new entry"),
+			{ { TEXT("values"), TEXT("add_enum_value appends ONE entry; pass value:\"Ready\". The values[] array belongs to create_enum") },
+			  { TEXT("index"),  TEXT("the new entry is always appended; its index comes back in the response") } }))
+		{
+			return;
+		}
 		FString Error;
 		UUserDefinedEnum* Enum = LoadUserEnum(JStrAny(In, { TEXT("enum"), TEXT("enumPath"), TEXT("path") }), Error);
 		if (!Enum)
@@ -558,6 +617,15 @@ namespace MifBridge
 
 	void H_remove_enum_value(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("enum"), TEXT("enumPath"), TEXT("path"),
+			  TEXT("index"), TEXT("value"), TEXT("name"), TEXT("displayName"), TEXT("confirm") },
+			TEXT("enum (aliases: enumPath, path), index or value (aliases: name, displayName), confirm=true"),
+			{ { TEXT("guid"),   TEXT("enum entries are addressed by index or by value/display name, never by guid - guid is remove_struct_member's parameter") },
+			  { TEXT("values"), TEXT("remove_enum_value removes ONE entry; pass value:\"Ready\" or index:2") } }))
+		{
+			return;
+		}
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("remove_enum_value requires confirm=true"));

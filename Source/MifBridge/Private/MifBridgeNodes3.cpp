@@ -68,6 +68,22 @@ namespace MifBridge
 
 	void H_add_timeline(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// `path` is NOT decoration: ResolveBlueprintField falls back to it when blueprintId is absent
+		// (MifBridgeCommon.cpp:3043-3047), so omitting it here would turn a working {path:...} call into
+		// a hard "unrecognised parameter" failure.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"),
+			  TEXT("name"), TEXT("floatTracks"), TEXT("length"), TEXT("autoPlay"), TEXT("loop"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("blueprintId (alias: path), name?, floatTracks? (array of track name strings), length?, ")
+			TEXT("autoPlay? (default false), loop? (default false), x, y"),
+			{ { TEXT("graphId"), TEXT("add_timeline takes a blueprintId, not a graphId - the node is placed in the blueprint's own event graph") },
+			  { TEXT("tracks"), TEXT("spell it floatTracks (an array of non-empty track name strings)") },
+			  { TEXT("timelineName"), TEXT("spell it name; omit it entirely for an auto-generated unique name") },
+			  { TEXT("curve"), TEXT("a UCurveFloat is created per entry in floatTracks; you cannot supply one here") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -209,6 +225,22 @@ namespace MifBridge
 
 	void H_add_class_cast(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// The class aliases are exactly the five ResolveClassStrictField is called with below — no more.
+		// add_cast (MifBridgeNodes.cpp:1099) also reads cls/className; this endpoint does NOT, so listing
+		// them here would accept a key nothing reads, which is the silent-ignore bug this guard exists to
+		// stop. They get a KeyNote instead.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"),
+			  TEXT("targetClass"), TEXT("class"), TEXT("castTo"), TEXT("to"), TEXT("targetType"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("graphId, targetClass (aliases: class, castTo, to, targetType), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("cls"), TEXT("add_cast accepts cls, add_class_cast does not - use targetClass") },
+			  { TEXT("className"), TEXT("add_cast accepts className, add_class_cast does not - use targetClass") },
+			  { TEXT("object"), TEXT("the class value to cast is a pin - place the node, then connect_pins into its input pin") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -283,6 +315,19 @@ namespace MifBridge
 
 	void H_add_switch_enum(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// `enum` is deliberately NOT accepted: this handler reads JStr(In, "enumName") only, so accepting
+		// `enum` would take the key and then resolve an empty enum name. list_enum_values above is the
+		// endpoint that reads both. Named in the KeyNotes so the caller is told, not ignored.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("enumName"), TEXT("hasDefault"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, enumName, hasDefault? (default false), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("enum"), TEXT("spell it enumName here - list_enum_values takes either, this endpoint reads only enumName") },
+			  { TEXT("cases"), TEXT("the case pins come from the enum's own entries; list them with list_enum_values") },
+			  { TEXT("selection"), TEXT("the Selection input is a pin - place the node, then set_pin_default or connect_pins") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -313,6 +358,17 @@ namespace MifBridge
 
 	void H_add_switch_int(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("cases"), TEXT("startIndex"), TEXT("hasDefault"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, cases? (NUMBER of case pins, clamped 0-256), startIndex? (default 0), ")
+			TEXT("hasDefault? (default true), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("count"), TEXT("spell it cases (the number of case pins to create)") },
+			  { TEXT("caseLabels"), TEXT("an int switch has no labels - pass cases as a count and startIndex as the first value; add_switch_string is the one that takes an array") },
+			  { TEXT("selection"), TEXT("the Selection input is a pin - place the node, then set_pin_default or connect_pins") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -341,6 +397,16 @@ namespace MifBridge
 
 	void H_add_switch_string(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("cases"), TEXT("caseSensitive"), TEXT("hasDefault"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, cases? (ARRAY of non-empty, non-duplicate label strings), caseSensitive? (default false), ")
+			TEXT("hasDefault? (default true), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("caseLabels"), TEXT("spell it cases (an array of label strings)") },
+			  { TEXT("selection"), TEXT("the Selection input is a pin - place the node, then set_pin_default or connect_pins") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -396,6 +462,17 @@ namespace MifBridge
 
 	void H_add_enum_literal(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// Same as add_switch_enum: JStr(In, "enumName") is the only spelling this handler reads.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("enumName"), TEXT("value"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, enumName, value? (the enumerator NAME, e.g. \"NewEnumerator0\"), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("enum"), TEXT("spell it enumName here - list_enum_values takes either, this endpoint reads only enumName") },
+			  { TEXT("default"), TEXT("spell it value - and it is the enumerator name, not an index; get the exact text from list_enum_values") },
+			  { TEXT("enumerator"), TEXT("spell it value (the enumerator name from list_enum_values)") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)

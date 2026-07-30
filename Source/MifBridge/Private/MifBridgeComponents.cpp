@@ -277,6 +277,18 @@ namespace MifBridge
 
 	void H_add_component(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("componentClass"), TEXT("class"), TEXT("name"),
+			  TEXT("parentName"), TEXT("location"), TEXT("rotation"), TEXT("scale") },
+			TEXT("blueprintId (alias: path), componentClass (alias: class), name (optional - the new component's variable name), parentName (an EXISTING component to attach under), location, rotation, scale"),
+			{ { TEXT("componentName"), TEXT("spell it name - it is the NEW component's variable name") },
+			  { TEXT("component"), TEXT("spell it name for the new component, or parentName for the existing one to attach it under") },
+			  { TEXT("parent"), TEXT("spell it parentName - the EXISTING component the new one is attached under") },
+			  { TEXT("transform"), TEXT("pass location / rotation / scale as separate keys; there is no combined transform key") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -874,6 +886,15 @@ namespace MifBridge
 
 	void H_remove_component(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("confirm") },
+			TEXT("blueprintId (alias: path), name (the component's variable name), confirm (required true)"),
+			{ { TEXT("component"), TEXT("spell it name here - list_components takes 'component', remove_component takes 'name'") },
+			  { TEXT("componentName"), TEXT("spell it name") } }))
+		{
+			return;
+		}
+
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("remove_component requires confirm=true"));
@@ -908,6 +929,17 @@ namespace MifBridge
 
 	void H_set_component_transform(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("location"), TEXT("rotation"), TEXT("scale") },
+			TEXT("blueprintId (alias: path), name (the component's variable name), location, rotation, scale - each {x,y,z} or [x,y,z]"),
+			{ { TEXT("component"), TEXT("spell it name here - list_components takes 'component', set_component_transform takes 'name'") },
+			  { TEXT("componentName"), TEXT("spell it name") },
+			  { TEXT("relativeLocation"), TEXT("spell it location - the transform written here is already the RELATIVE one") },
+			  { TEXT("transform"), TEXT("pass location / rotation / scale as separate keys; there is no combined transform key") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{

@@ -119,6 +119,16 @@ namespace MifBridge
 	//   in:  { actorPath }   out: { origin, extent, size, min, max, hasBounds }
 	void H_get_actor_bounds(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("path") },
+			TEXT("actorPath (aliases: actor, path) — the PLACED actor to measure, given as an object path, object name or label"),
+			{ { TEXT("assetPath"), TEXT("bounds are read from the PLACED actor, not the mesh asset — the asset's ExtendedBounds ignore the actor's scale. Pass the actor as actorPath") },
+			  { TEXT("label"), TEXT("actorPath already accepts a label, an object name or a full path — use it") },
+			  { TEXT("onlyColliding"), TEXT("not a parameter — bounds always include non-colliding components, because editor-world collision is unreliable for imported props") } }))
+		{
+			return;
+		}
+
 		UWorld* World = ActiveWorld();
 		AActor* A = FindActorInWorld(World, JStrAny(In, { TEXT("actorPath"), TEXT("actor"), TEXT("path") }));
 		if (!A) { Fail(Out, TEXT("actor not found (accepts actorPath, name or label)")); return; }
@@ -142,6 +152,16 @@ namespace MifBridge
 	// no collision at all (which is most imported props in an editor world).
 	void H_check_overlaps(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("nameContains"), TEXT("ignoreGround"), TEXT("tolerance") },
+			TEXT("actorPath (alias: actor) to test ONE actor, or omit both for a whole-scene audit; nameContains, ignoreGround, tolerance"),
+			{ { TEXT("path"), TEXT("this endpoint takes actorPath (alias: actor) only — 'path' is accepted by get_actor_bounds, not here") },
+			  { TEXT("name"), TEXT("use nameContains for a substring filter over object names and labels, or actorPath to test a single actor") },
+			  { TEXT("depth"), TEXT("'depth' is an OUTPUT field on each reported pair — the input threshold is 'tolerance' (default 25)") } }))
+		{
+			return;
+		}
+
 		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
@@ -202,6 +222,17 @@ namespace MifBridge
 	// how things end up floating.
 	void H_trace_ground(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("x"), TEXT("y"), TEXT("fromZ"), TEXT("toZ"), TEXT("location"),
+			  TEXT("ignoreActor"), TEXT("actorPath") },
+			TEXT("x, y (or location:{x,y,z}, whose z seeds fromZ), fromZ, toZ, ignoreActor (alias: actorPath)"),
+			{ { TEXT("z"), TEXT("there is no top-level z — the trace START is 'fromZ' (default 100000) and the END is 'toZ' (default -100000). location:{x,y,z} also seeds fromZ from its z") },
+			  { TEXT("ignore"), TEXT("the key is 'ignoreActor' (alias: actorPath); it accepts an object path, object name or label") },
+			  { TEXT("channel"), TEXT("not a parameter — this always traces ECC_WorldStatic with complex collision") } }))
+		{
+			return;
+		}
+
 		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
@@ -585,6 +616,16 @@ namespace MifBridge
 	// The single call that would have caught every mistake in the blind build. Run it after placing.
 	void H_scene_report(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("groundZ"), TEXT("floatTolerance"), TEXT("tallWarnZ") },
+			TEXT("groundZ, floatTolerance, tallWarnZ — all optional; the scan itself always covers every actor in the active world"),
+			{ { TEXT("tolerance"), TEXT("the float/sunken threshold here is 'floatTolerance' (default 30) — 'tolerance' is check_overlaps' overlap-depth threshold") },
+			  { TEXT("nameContains"), TEXT("not supported — scene_report always scans the whole world; filter its floating/sunken/tooTall arrays caller-side, or use check_overlaps which does take nameContains") },
+			  { TEXT("actorPath"), TEXT("scene_report is whole-scene by design; for one actor use get_actor_bounds, or check_overlaps with actorPath") } }))
+		{
+			return;
+		}
+
 		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 

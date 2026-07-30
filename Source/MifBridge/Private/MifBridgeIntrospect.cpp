@@ -34,6 +34,17 @@ namespace MifBridge
 
 	void H_open_blueprint(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// ResolveBlueprintField reads blueprintId and falls back to path (MifBridgeCommon.cpp:3041-3047),
+		// and server.py's open_blueprint posts 'path' - so BOTH spellings must stay accepted here.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path) - the blueprint asset to open; returns blueprintId, name, class, parentClass and graphs"),
+			{ { TEXT("name"), TEXT("open_blueprint addresses the asset by path, e.g. path:\"/Game/Foo/BP_Bar\"; list_blueprints {filter} finds one by a name fragment first") },
+			  { TEXT("graphId"), TEXT("open_blueprint opens a whole blueprint and RETURNS its graphIds; to read one graph use list_nodes {graphId}") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -67,6 +78,15 @@ namespace MifBridge
 
 	void H_list_blueprints(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("filter") },
+			TEXT("filter (optional; substring matched against each blueprint's full object path - omit to list every blueprint, capped at 5000)"),
+			{ { TEXT("path"),  TEXT("list_blueprints takes no path - pass the path fragment as filter, e.g. filter:\"/Game/Blueprints/\"") },
+			  { TEXT("name"),  TEXT("matching runs against the FULL object path, so pass the name fragment as filter, e.g. filter:\"BP_Player\"") },
+			  { TEXT("limit"), TEXT("there is no limit parameter - the result is capped at 5000 entries; narrow it with filter") } }))
+		{
+			return;
+		}
 		const FString Filter = JStr(In, TEXT("filter"));
 
 		FAssetRegistryModule& Module = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
@@ -99,6 +119,15 @@ namespace MifBridge
 
 	void H_save_blueprint(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path) - writes the package that owns this blueprint back to disk, in place"),
+			{ { TEXT("savePath"), TEXT("save_blueprint has no save-as: it rewrites the blueprint's OWN package. To save a different asset use save_package {path}.") },
+			  { TEXT("compile"),  TEXT("save_blueprint does not compile - call compile {blueprintId} first if the blueprint has pending structural changes") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -134,6 +163,15 @@ namespace MifBridge
 	// bakes into a _P — the DataTable-redirect lane (repoint SoftEquipmentActorClass to a child + save + cook).
 	void H_save_package(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path") },
+			TEXT("path - the /Game/ object path of ANY asset; the package that owns it is marked dirty and written to disk"),
+			{ { TEXT("blueprintId"), TEXT("save_package addresses any asset by its /Game/ object path, so pass it as path. For a Blueprint, save_blueprint {blueprintId} does the same thing.") },
+			  { TEXT("package"),     TEXT("pass the ASSET's object path as path (e.g. /Game/Data/DT_Items) - the owning package is derived from it") },
+			  { TEXT("assetPath"),   TEXT("spell it path") } }))
+		{
+			return;
+		}
 		const FString Path = JStr(In, TEXT("path"));
 		if (Path.IsEmpty()) { Fail(Out, TEXT("path is required")); return; }
 		UObject* Asset = LoadObject<UObject>(nullptr, *Path);
@@ -157,6 +195,14 @@ namespace MifBridge
 
 	void H_backup_blueprint(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path) - copies the blueprint's package file on disk to a backup, returned as 'backup'"),
+			{ { TEXT("destination"), TEXT("backup_blueprint picks the backup location itself and reports it as 'backup' in the response; it takes no destination") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -180,6 +226,14 @@ namespace MifBridge
 
 	void H_list_graphs(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path) - lists every graph in the blueprint, nested ones included, with its graphId"),
+			{ { TEXT("graphId"), TEXT("list_graphs RETURNS graphIds, it does not take one - to read a single graph use list_nodes {graphId}") },
+			  { TEXT("filter"),  TEXT("list_graphs has no filter; it returns every graph. find_nodes {graphId, byTitle} searches inside one graph.") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -201,6 +255,17 @@ namespace MifBridge
 
 	void H_list_nodes(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// ResolveGraphField reads ONLY graphId (MifBridgeCommon.cpp:3205-3212); hideKnots is read here.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("hideKnots") },
+			TEXT("graphId ('<blueprintPath>::<graphName>', exactly as open_blueprint/list_graphs return it), hideKnots (default false; true skips reroute nodes)"),
+			{ { TEXT("graph"),       TEXT("spell it graphId") },
+			  { TEXT("blueprintId"), TEXT("list_nodes reads ONE graph - pass graphId from open_blueprint/list_graphs, not a blueprint path") },
+			  { TEXT("path"),        TEXT("this endpoint selects a GRAPH, so pass graphId ('<blueprintPath>::<graphName>'); a bare blueprint path does not name a graph") },
+			  { TEXT("hideReroute"), TEXT("spell it hideKnots (a reroute node is a UK2Node_Knot)") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -228,6 +293,18 @@ namespace MifBridge
 
 	void H_get_node(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// The node-id aliases are NOT garnish: ResolveNodeField treats "nodeGuid" as a GENERIC field and
+		// reads JStrAny(In, { nodeGuid, node, guid, nodeId }), and it also honours an optional graphId to
+		// scope the lookup (MifBridgeCommon.cpp:3272-3326). Listing only "nodeGuid" would turn a payload
+		// that works today into a hard "unrecognised parameter" failure - the set_pin_type break again.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId"), TEXT("graphId") },
+			TEXT("nodeGuid (aliases: node, guid, nodeId), graphId (optional - scopes the guid lookup to that one graph, the only way to disambiguate two loaded copies of a blueprint sharing NodeGuids)"),
+			{ { TEXT("pin"),         TEXT("get_node already returns EVERY pin on the node; there is no pin filter") },
+			  { TEXT("blueprintId"), TEXT("a node is addressed by its guid, not by its blueprint - pass graphId if you need to disambiguate two loaded copies") } }))
+		{
+			return;
+		}
 		UEdGraphNode* Node = ResolveNodeField(In, TEXT("nodeGuid"), Out);
 		if (!Node)
 		{
@@ -238,6 +315,15 @@ namespace MifBridge
 
 	void H_list_variables(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path) - lists the blueprint's MEMBER variables with name, type, default, flags and a suspiciousName marker"),
+			{ { TEXT("filter"), TEXT("list_variables has no filter; it returns every member variable") },
+			  { TEXT("scope"),  TEXT("list_variables reports member variables only (scope is always \"member\" in the response); a local variable lives on its function graph and is not listed here") },
+			  { TEXT("name"),   TEXT("list_variables lists them all - there is no single-variable lookup; read the entry you want out of variables[]") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -274,6 +360,14 @@ namespace MifBridge
 
 	void H_list_functions(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path) - lists the blueprint's own function graphs with name and graphId"),
+			{ { TEXT("filter"), TEXT("list_functions has no filter; it returns every function graph") },
+			  { TEXT("class"),  TEXT("list_functions reads a BLUEPRINT's own function graphs - to reflect over any class's BlueprintCallable functions use describe_class {class, filter}") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -416,6 +510,20 @@ namespace MifBridge
 
 	void H_find_nodes(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// ResolveGraphField reads ONLY graphId (MifBridgeCommon.cpp:3205-3212); the three by* filters
+		// are read below. An unlisted filter spelling used to be dropped silently, which returns EVERY
+		// node in the graph while looking like a successful search.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("byClass"), TEXT("byTitle"), TEXT("byFunction") },
+			TEXT("graphId, byClass (substring of the node's C++ class name), byTitle (substring of the node title), byFunction (substring of the called function name) - every filter is optional and they are ANDed"),
+			{ { TEXT("class"),       TEXT("spell it byClass, e.g. byClass:\"K2Node_CallFunction\"") },
+			  { TEXT("title"),       TEXT("spell it byTitle") },
+			  { TEXT("function"),    TEXT("spell it byFunction") },
+			  { TEXT("name"),        TEXT("find_nodes has no 'name': use byTitle for the node's displayed title, or byFunction for the name of the function it calls") },
+			  { TEXT("blueprintId"), TEXT("find_nodes searches ONE graph - pass graphId from open_blueprint/list_graphs") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -752,6 +860,33 @@ namespace MifBridge
 	// Only keys actually PRESENT are applied, so this is a partial update — omitting a flag leaves it alone.
 	void H_set_variable_flags(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// The flag keys are NOT read in this body - ApplyVariableFlags above reads every one of them
+		// (replicated/repNotify/repNotifyFunction/replicationCondition via JHasAny, the rest via
+		// HasField). They MUST all be listed or a working {replicated:true} call becomes a hard failure.
+		// blueprintId/path come from ResolveBlueprintField; name/var/variable from the JStrAny below.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"),
+			  TEXT("name"), TEXT("var"), TEXT("variable"),
+			  TEXT("replicated"), TEXT("repNotify"), TEXT("repNotifyFunction"), TEXT("replicationCondition"),
+			  TEXT("saveGame"), TEXT("transient"), TEXT("config"),
+			  TEXT("instanceEditable"), TEXT("blueprintReadOnly"), TEXT("exposeOnSpawn"),
+			  TEXT("advancedDisplay"), TEXT("interp"), TEXT("deprecated"),
+			  TEXT("category"), TEXT("tooltip") },
+			TEXT("blueprintId (alias: path), name (aliases: var, variable), then any of replicated, repNotify, ")
+			TEXT("repNotifyFunction, replicationCondition, saveGame, transient, config, instanceEditable, ")
+			TEXT("blueprintReadOnly, exposeOnSpawn, advancedDisplay, interp, deprecated, category, tooltip ")
+			TEXT("- PARTIAL UPDATE: only the keys actually present are applied, the rest are left alone"),
+			{ { TEXT("variableName"), TEXT("spell it name (aliases: var, variable)") },
+			  { TEXT("replicate"),    TEXT("spell it replicated - and repNotify:true already implies it") },
+			  { TEXT("editable"),     TEXT("spell it instanceEditable (the Details-panel \"Instance Editable\" checkbox)") },
+			  { TEXT("readOnly"),     TEXT("spell it blueprintReadOnly") },
+			  { TEXT("condition"),    TEXT("spell it replicationCondition - an ELifetimeCondition such as COND_OwnerOnly; the COND_ prefix is optional") },
+			  { TEXT("onRep"),        TEXT("spell it repNotifyFunction; omit it and repNotify:true mints OnRep_<Name> for you") },
+			  { TEXT("default"),      TEXT("set_variable_flags only sets flags - use set_variable_default {blueprintId, name, value} to change a variable's default") },
+			  { TEXT("type"),         TEXT("set_variable_flags cannot retype a variable; the type is fixed at add_variable {type:\"object:X\"} time") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -1353,6 +1488,15 @@ namespace MifBridge
 
 	void H_compile(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// CompileBlueprintInto takes no params of its own - blueprintId/path is the whole surface.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path) - compiles the blueprint and returns {ok, numErrors, numWarnings, messages[{severity,text,nodeGuid,pinName}]}"),
+			{ { TEXT("save"),   TEXT("compile does not write to disk - call save_blueprint {blueprintId} afterwards to persist") },
+			  { TEXT("dryRun"), TEXT("compile always commits the compiled class; validate {blueprintId} is the dry-run form and returns the same messages") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -1465,6 +1609,14 @@ namespace MifBridge
 	{
 		// validate == compile without saving. Neither compile nor validate writes the
 		// asset to disk; use save_blueprint to persist once the compile is clean.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path) - compiles WITHOUT saving and returns the same {ok, numErrors, numWarnings, messages[]} as compile, plus dryRun:true"),
+			{ { TEXT("dryRun"), TEXT("validate is ALWAYS a dry run and reports dryRun:true in the response; it is not an input") },
+			  { TEXT("save"),   TEXT("validate never writes to disk - run save_blueprint {blueprintId} once the compile is clean") } }))
+		{
+			return;
+		}
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{

@@ -202,6 +202,22 @@ namespace MifBridge
 	// REQUESTS the session and returns. Poll pie_status until state=="running".
 	void H_start_pie(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("simulate"), TEXT("startLocation"), TEXT("startRotation"), TEXT("players"),
+			  TEXT("netMode"), TEXT("oneProcess"), TEXT("width"), TEXT("height") },
+			TEXT("simulate, startLocation {x,y,z}, startRotation {x,y,z}, players (1-8), ")
+			TEXT("netMode (standalone|listen|client; default listen when players>1), oneProcess (default true), ")
+			TEXT("width, height (client window size, multiplayer only)"),
+			{ { TEXT("location"), TEXT("use startLocation — and note startRotation is only read when startLocation is supplied too") },
+			  { TEXT("rotation"), TEXT("use startRotation; it is only read when startLocation is supplied as well") },
+			  { TEXT("clients"), TEXT("use players (clamped to 1-8)") },
+			  { TEXT("level"), TEXT("PIE plays whatever level is already open — call load_level first, then start_pie") },
+			  { TEXT("map"), TEXT("PIE plays whatever level is already open — call load_level first, then start_pie") },
+			  { TEXT("wait"), TEXT("not supported: this handler runs on the game thread, so waiting for PIE would deadlock the ticks that start it. Poll pie_status until state=='running'") } }))
+		{
+			return;
+		}
+
 		if (!GEditor)
 		{
 			Fail(Out, TEXT("no editor"));
@@ -311,6 +327,13 @@ namespace MifBridge
 	// --- stop_pie -----------------------------------------------------------
 	void H_stop_pie(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, {}, TEXT("(none - this endpoint takes no parameters)"),
+			{ { TEXT("wait"), TEXT("not supported: the stop is deferred to the next editor tick and this handler holds the game thread. Poll pie_status until state=='stopped'") },
+			  { TEXT("force"), TEXT("not supported: RequestEndPlayMap is the only safe teardown from inside the ticker; EndPlayMap here would tear the world down under this callstack") } }))
+		{
+			return;
+		}
+
 		if (!GEditor)
 		{
 			Fail(Out, TEXT("no editor"));
@@ -336,6 +359,13 @@ namespace MifBridge
 	// --- pie_status ---------------------------------------------------------
 	void H_pie_status(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, {}, TEXT("(none - this endpoint takes no parameters)"),
+			{ { TEXT("netMode"), TEXT("this endpoint always reports GEditor->PlayWorld; use list_pie_actors {netMode:server|client|any} to address a specific PIE world") },
+			  { TEXT("waitFor"), TEXT("not supported: nothing can block here without stalling the ticks PIE needs. Call pie_status repeatedly instead") } }))
+		{
+			return;
+		}
+
 		WritePieStateInto(Out);
 
 		// Who is actually playing, when there is someone.
@@ -361,6 +391,16 @@ namespace MifBridge
 	// without any new inspection machinery.
 	void H_list_pie_actors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("classFilter"), TEXT("nameContains"), TEXT("limit"), TEXT("netMode") },
+			TEXT("classFilter, nameContains, limit (1-5000, default 200), netMode (server|client|any; default server)"),
+			{ { TEXT("class"), TEXT("use classFilter — a SUBSTRING matched against the actor's class and every super, not an exact class path") },
+			  { TEXT("world"), TEXT("use netMode (server|client|any) to pick which PIE world answers; the returned 'worlds' array shows what is running") },
+			  { TEXT("actorClass"), TEXT("use classFilter (substring match)") } }))
+		{
+			return;
+		}
+
 		// With RunUnderOneProcess and >1 client there are SEVERAL PIE worlds. This used to always serve
 		// GEditor->PlayWorld and SILENTLY IGNORE netMode, so asking for the client returned the server's
 		// actors — a confident wrong answer, and with co-op that is the whole measurement. Select by role
@@ -461,6 +501,16 @@ namespace MifBridge
 	// output is to sit on GLog for the duration of the call.
 	void H_run_console_captured(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("command"), TEXT("filter") },
+			TEXT("command, filter (substring; only log lines containing it are returned)"),
+			{ { TEXT("cmd"), TEXT("use command — the 'cmd' alias exists only on run_console, not here") },
+			  { TEXT("world"), TEXT("not selectable here: this endpoint runs against the PIE world when playing and the editor world otherwise. Use run_console {world:editor|pie|active} to choose") },
+			  { TEXT("captureOutput"), TEXT("capture is unconditional here — that is what this endpoint is for; run_console has the toggle") } }))
+		{
+			return;
+		}
+
 		const FString Cmd = JStr(In, TEXT("command"));
 		if (Cmd.IsEmpty())
 		{

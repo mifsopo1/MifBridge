@@ -20,6 +20,20 @@ namespace MifBridge
 	// (each saved as "<Ancestor>_Editable" beside the leaf), so no parent layer is left as cooked stubs.
 	void H_create_editable_child(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("sourceAsset"), TEXT("childPath"), TEXT("variant") },
+			TEXT("sourceAsset (the cooked BP - its _C class path or its asset path), childPath (destination; defaults to /Game/Mif/<Name>_Child or _Editable), variant: child | sibling | uncooked | sibling_full | full"),
+			{ { TEXT("blueprintId"), TEXT("spell it sourceAsset - pass the cooked BP's _C class path (/Game/X/BP_Foo.BP_Foo_C) or its asset path") },
+			  { TEXT("path"), TEXT("the SOURCE is sourceAsset; the DESTINATION is childPath") },
+			  { TEXT("source"), TEXT("spell it sourceAsset") },
+			  { TEXT("targetPath"), TEXT("spell it childPath") },
+			  { TEXT("asChild"), TEXT("there is no boolean form - it is variant:\"child\" (the default) vs variant:\"sibling\"") },
+			  { TEXT("fullParent"), TEXT("there is no boolean form - it is variant:\"sibling_full\" (alias: \"full\")") },
+			  { TEXT("name"), TEXT("the new asset's name comes from childPath - pass the full destination package path") } }))
+		{
+			return;
+		}
+
 		const FString SourceAsset = JStr(In, TEXT("sourceAsset"));
 		if (SourceAsset.IsEmpty())
 		{

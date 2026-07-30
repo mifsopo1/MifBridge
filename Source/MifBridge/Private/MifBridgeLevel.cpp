@@ -123,6 +123,15 @@ namespace MifBridge
 	//   out: { world, count, truncated, actors:[{actorPath, name, label, class, folder, location, rotation, scale}] }
 	void H_list_level_actors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("classFilter"), TEXT("nameContains"), TEXT("folder"), TEXT("selectedOnly"), TEXT("limit") },
+			TEXT("classFilter, nameContains, folder, selectedOnly, limit"),
+			{ { TEXT("class"), TEXT("the filter key here is 'classFilter' — a substring matched against the whole ancestry, not an exact class path") },
+			  { TEXT("labelContains"), TEXT("use nameContains — it matches the object name AND the Outliner label ('labelContains' is snap_actors_to_ground's key)") },
+			  { TEXT("filter"), TEXT("use nameContains ('filter'/'nameFilter' are the property-listing endpoints' aliases, not this one's)") } }))
+		{
+			return;
+		}
 		UEditorActorSubsystem* Subsystem = ActorSubsystem(Out);
 		if (!Subsystem)
 		{
@@ -412,6 +421,14 @@ namespace MifBridge
 	// The label is the World Outliner display name; it is NOT the object name and renaming it is safe.
 	void H_set_actor_label(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("path"), TEXT("label"), TEXT("folder") },
+			TEXT("actorPath (aliases: actor, path), label, folder"),
+			{ { TEXT("name"), TEXT("the World Outliner display name is 'label'; the object name is engine-assigned and is not renamed here") },
+			  { TEXT("newLabel"), TEXT("the key is 'label'") } }))
+		{
+			return;
+		}
 		UEditorActorSubsystem* Subsystem = ActorSubsystem(Out);
 		if (!Subsystem)
 		{
@@ -439,6 +456,14 @@ namespace MifBridge
 	//   in:  { actorPath, confirm: true }
 	void H_delete_level_actor(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("path"), TEXT("confirm") },
+			TEXT("actorPath (aliases: actor, path), confirm (must be true)"),
+			{ { TEXT("force"), TEXT("the confirmation key is 'confirm' and it must be true") },
+			  { TEXT("actorPaths"), TEXT("this deletes ONE actor — call it once per actor; 'actorPaths' is select_level_actors' key") } }))
+		{
+			return;
+		}
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("delete_level_actor requires confirm=true"));
@@ -472,6 +497,14 @@ namespace MifBridge
 	// is what lets a human take over mid-task without hunting for the actor.
 	void H_select_level_actors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPaths"), TEXT("clear") },
+			TEXT("actorPaths (array of full actor paths), clear"),
+			{ { TEXT("actorPath"), TEXT("the key here is the PLURAL 'actorPaths' and it takes an array — pass [path] for a single actor") },
+			  { TEXT("actors"), TEXT("the key is 'actorPaths'") } }))
+		{
+			return;
+		}
 		UEditorActorSubsystem* Subsystem = ActorSubsystem(Out);
 		if (!Subsystem)
 		{

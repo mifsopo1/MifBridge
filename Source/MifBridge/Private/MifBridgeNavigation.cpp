@@ -44,6 +44,16 @@ namespace MifBridge
 	// Places the region the nav mesh will be generated inside.
 	void H_add_nav_volume(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("location"), TEXT("size"), TEXT("label") },
+			TEXT("location {x,y,z}, size {x,y,z} (coverage in WORLD UNITS), label"),
+			{ { TEXT("scale"), TEXT("pass size in world units - the brush scale (size / 200) is computed for you") },
+			  { TEXT("extent"), TEXT("use size, which is the FULL coverage in world units, not a half-extent") },
+			  { TEXT("name"), TEXT("use label - it becomes the volume's outliner label") } }))
+		{
+			return;
+		}
+
 		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
@@ -94,6 +104,14 @@ namespace MifBridge
 	// handler runs on the game thread, so it must NOT wait — poll nav_status, exactly like PIE.
 	void H_build_navmesh(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, {},
+			TEXT("(none - this endpoint takes no parameters)"),
+			{ { TEXT("wait"), TEXT("not supported - generation is asynchronous; poll nav_status until building=false and tiles>0") },
+			  { TEXT("timeout"), TEXT("not supported - this call never blocks; poll nav_status instead") } }))
+		{
+			return;
+		}
+
 		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
@@ -125,6 +143,13 @@ namespace MifBridge
 	// with zero tiles, and every subsequent pathing call then fails for no visible reason.
 	void H_nav_status(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, {},
+			TEXT("(none - this endpoint takes no parameters)"),
+			{ { TEXT("world"), TEXT("not supported - nav_status always reports the active world (the PIE world while PIE is running); the world it used is echoed back as 'world'") } }))
+		{
+			return;
+		}
+
 		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 
@@ -163,6 +188,16 @@ namespace MifBridge
 	// nav mesh — both failure modes are reported distinctly so you know which one bit you.
 	void H_move_actor_to(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("location") },
+			TEXT("actorPath (alias: actor) - the pawn to move; location {x,y,z} - the goal"),
+			{ { TEXT("path"), TEXT("use actorPath (alias: actor) - this endpoint does not accept the bare 'path' spelling other actor endpoints allow") },
+			  { TEXT("destination"), TEXT("the goal goes in location {x,y,z}") },
+			  { TEXT("acceptanceRadius"), TEXT("not supported - SimpleMoveToLocation uses the engine's default acceptance radius") } }))
+		{
+			return;
+		}
+
 		UWorld* World = ActiveWorld();
 		if (!World) { Fail(Out, TEXT("no world")); return; }
 		if (!GEditor || !GEditor->PlayWorld)

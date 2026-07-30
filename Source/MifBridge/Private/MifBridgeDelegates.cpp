@@ -36,6 +36,24 @@ namespace MifBridge
 		template<typename TNode>
 		void SpawnDelegateNode(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 		{
+			// ONE guard serves add_call_dispatcher AND add_bind_dispatcher: this shared body is the
+			// whole of both handlers and they take an identical shape, so guarding here is the same
+			// pattern as DoAddVariableNode (MifBridgeNodes.cpp:369). Do NOT add a second guard in
+			// either H_ function — the key list would then have two places to drift apart.
+			if (RejectUnknownParams(In, Out,
+				{ TEXT("graphId"), TEXT("dispatcher"), TEXT("targetClass"), TEXT("x"), TEXT("y") },
+				TEXT("graphId, dispatcher, targetClass (optional — bind/call a dispatcher declared on that ")
+				TEXT("EXTERNAL class instead of this blueprint's own), x, y"),
+				{ { TEXT("graph"), TEXT("spell it graphId") },
+				  { TEXT("name"), TEXT("the existing dispatcher is named by 'dispatcher'; 'name' is add_event_dispatcher's key for CREATING one") },
+				  { TEXT("dispatcherName"), TEXT("spell it dispatcher") },
+				  { TEXT("blueprintId"), TEXT("graphId already names the blueprint — pass the graph the node lands in") },
+				  { TEXT("target"), TEXT("targetClass names the CLASS that declares the dispatcher; the OBJECT goes into the node's Target/self pin via connect_pins, never here") },
+				  { TEXT("event"), TEXT("the handler is wired into the bind node's Delegate pin — add_custom_event then connect_pins; this endpoint only places the node") } }))
+			{
+				return;
+			}
+
 			UBlueprint* Blueprint = nullptr;
 			UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 			if (!Graph)
@@ -88,6 +106,21 @@ namespace MifBridge
 
 	void H_add_event_dispatcher(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// blueprintId/path come from ResolveBlueprintField; 'inputs' is the array ParsePinSpecs reads
+		// (its per-entry keys name/type/container/valueType live INSIDE the array, not up here).
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("inputs") },
+			TEXT("blueprintId (alias: path), name, inputs (array of {name, type, container?, valueType?} — ")
+			TEXT("the dispatcher's signature parameters)"),
+			{ { TEXT("dispatcher"), TEXT("'dispatcher' names an EXISTING dispatcher on add_call_dispatcher/add_bind_dispatcher; the one being created here is named by 'name'") },
+			  { TEXT("params"), TEXT("spell it inputs (the response reports the count back as 'params')") },
+			  { TEXT("parameters"), TEXT("spell it inputs") },
+			  { TEXT("outputs"), TEXT("a dispatcher signature has inputs only — they surface as OUTPUT pins on the bound event") },
+			  { TEXT("graphId"), TEXT("a dispatcher belongs to the blueprint, not to one graph — pass blueprintId") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -194,6 +227,15 @@ namespace MifBridge
 
 	void H_list_dispatchers(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path)"),
+			{ { TEXT("graphId"), TEXT("list_dispatchers is blueprint-scoped — pass blueprintId") },
+			  { TEXT("filter"), TEXT("this endpoint takes no filter; it returns every dispatcher on the blueprint") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{

@@ -109,6 +109,24 @@ namespace MifBridge
 	// inside one — undo would leave half-registered components pointing at freed textures.
 	void H_create_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("location"), TEXT("scale"), TEXT("componentsX"), TEXT("componentsY"),
+			  TEXT("quadsPerSection"), TEXT("sectionsPerComponent"), TEXT("material"),
+			  TEXT("landscapeMaterial"), TEXT("layers"), TEXT("heightMode"), TEXT("amplitude"),
+			  TEXT("frequency"), TEXT("seed"), TEXT("label"), TEXT("folder") },
+			TEXT("location {x,y,z}, scale {x,y,z}, componentsX, componentsY, quadsPerSection (7|15|31|63|127|255), ")
+			TEXT("sectionsPerComponent (1|2), material (alias: landscapeMaterial), ")
+			TEXT("layers [{layerInfo (aliases: info, path), weight}], heightMode (\"flat\"|\"rolling\"|\"island\"), ")
+			TEXT("amplitude, frequency, seed, label, folder"),
+			{ { TEXT("name"), TEXT("use label - it sets the actor's display label") },
+			  { TEXT("position"), TEXT("use location {x,y,z}") },
+			  { TEXT("layerInfo"), TEXT("layers is an ARRAY of objects - pass layers:[{layerInfo:\"/Game/.../X_LayerInfo\", weight:0..1}]") },
+			  { TEXT("heightmap"), TEXT("importing a heightmap file is not supported - use heightMode (flat|rolling|island) with amplitude, frequency and seed") },
+			  { TEXT("rotation"), TEXT("not supported - the landscape is always spawned axis-aligned") } }))
+		{
+			return;
+		}
+
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
@@ -319,6 +337,22 @@ namespace MifBridge
 	// defaults to half the radius.
 	void H_sculpt_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("landscape"), TEXT("actorPath"), TEXT("center"), TEXT("radius"), TEXT("mode"),
+			  TEXT("amount"), TEXT("falloff"), TEXT("targetZ") },
+			TEXT("landscape (alias: actorPath; omit when there is only one), center {x,y} in WORLD units, ")
+			TEXT("radius (world units), mode (\"raise\"|\"lower\"|\"flatten\"|\"smooth\"), ")
+			TEXT("amount (world units, raise/lower ONLY), targetZ (a world Z, flatten ONLY), ")
+			TEXT("falloff (0..1 of the radius that is feathered)"),
+			{ { TEXT("strength"), TEXT("use amount (world units) with mode raise/lower") },
+			  { TEXT("height"), TEXT("use targetZ (a world Z) with mode flatten, or amount with mode raise/lower") },
+			  { TEXT("brushSize"), TEXT("use radius (world units)") },
+			  { TEXT("target"), TEXT("use targetZ - it is a world Z, not a vertex height") },
+			  { TEXT("z"), TEXT("center is an object - pass center:{x,y}; a flatten target is targetZ") } }))
+		{
+			return;
+		}
+
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
@@ -521,6 +555,22 @@ namespace MifBridge
 	// pushes the others down — which is what you want and is why there is no "erase" mode.
 	void H_paint_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("landscape"), TEXT("actorPath"), TEXT("layerInfo"), TEXT("layer"), TEXT("info"),
+			  TEXT("center"), TEXT("radius"), TEXT("weight"), TEXT("falloff") },
+			TEXT("landscape (alias: actorPath; omit when there is only one), ")
+			TEXT("layerInfo (aliases: layer, info) - a LandscapeLayerInfoObject ASSET PATH, ")
+			TEXT("center {x,y} in WORLD units, radius (world units), weight (0..1), ")
+			TEXT("falloff (0..1 of the radius that is feathered)"),
+			{ { TEXT("layerName"), TEXT("pass the LandscapeLayerInfoObject asset path as layerInfo - landscape_info lists the legal ones") },
+			  { TEXT("strength"), TEXT("use weight (0..1)") },
+			  { TEXT("alpha"), TEXT("use weight (0..1)") },
+			  { TEXT("brushSize"), TEXT("use radius (world units)") },
+			  { TEXT("erase"), TEXT("there is no erase mode - weights normalise across layers, so paint a DIFFERENT layer up to push this one down") } }))
+		{
+			return;
+		}
+
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
@@ -651,6 +701,17 @@ namespace MifBridge
 	// (FLandscapeProxyUIDetails::CreateRuntimeVirtualTextureVolume).
 	void H_bind_landscape_rvt(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("landscape"), TEXT("actorPath"), TEXT("runtimeVirtualTextures"), TEXT("createVolumes") },
+			TEXT("landscape (alias: actorPath; omit when there is only one), ")
+			TEXT("runtimeVirtualTextures [assetPath,...], createVolumes (bool, default true)"),
+			{ { TEXT("runtimeVirtualTexture"), TEXT("the key is PLURAL and takes an array - runtimeVirtualTextures:[assetPath], even for one") },
+			  { TEXT("rvt"), TEXT("use runtimeVirtualTextures:[assetPath,...]") },
+			  { TEXT("createVolume"), TEXT("the key is PLURAL - createVolumes (bool)") } }))
+		{
+			return;
+		}
+
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
@@ -740,6 +801,13 @@ namespace MifBridge
 	// arguments only makes sense against the bounds reported here.
 	void H_landscape_info(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, {}, TEXT("(none - this endpoint takes no parameters)"),
+			{ { TEXT("landscape"), TEXT("not supported - this endpoint always reports EVERY landscape in the editor world; filter the landscapes[] array by actorPath or label") },
+			  { TEXT("limit"), TEXT("not supported - every landscape is reported") } }))
+		{
+			return;
+		}
+
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 

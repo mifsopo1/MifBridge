@@ -30,6 +30,16 @@ namespace MifBridge
 
 	void H_add_sequence(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("x"), TEXT("y"), TEXT("outputs") },
+			TEXT("graphId, x, y, outputs (then_N exec pin count, 2-64, default 2)"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("numOutputs"), TEXT("spell it outputs (add_make_array/add_make_map use numInputs; Sequence uses outputs)") },
+			  { TEXT("pins"), TEXT("spell it outputs - it is the count of then_N exec pins") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -56,6 +66,17 @@ namespace MifBridge
 
 	void H_add_spawn_actor(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("actorClass"), TEXT("class"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, actorClass (alias: class), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("actor"), TEXT("SpawnActor takes the CLASS to spawn, not an instance - pass actorClass (e.g. /Game/BP/BP_Foo.BP_Foo_C)") },
+			  { TEXT("transform"), TEXT("SpawnTransform is a pin - place the node, then set_pin_default or connect_pins") },
+			  { TEXT("spawnTransform"), TEXT("SpawnTransform is a pin - place the node, then set_pin_default or connect_pins") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -110,6 +131,16 @@ namespace MifBridge
 	// creates W_MifModLoaded and passes its own name).
 	void H_add_create_widget(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("widgetClass"), TEXT("class"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, widgetClass (alias: class), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("widget"), TEXT("CreateWidget takes the CLASS to create - pass widgetClass (e.g. /Game/UI/W_Foo.W_Foo_C)") },
+			  { TEXT("owningPlayer"), TEXT("Owning Player is a pin - place the node, then set_pin_default or connect_pins") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -163,6 +194,15 @@ namespace MifBridge
 
 	void H_add_get_subsystem(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("subsystemClass"), TEXT("class"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, subsystemClass (alias: class), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("subsystem"), TEXT("spell it subsystemClass - it must name a USubsystem-derived CLASS") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -195,6 +235,17 @@ namespace MifBridge
 
 	void H_add_make_array(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("numInputs"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, numInputs (element pin count, 1-64, default 1), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("num"), TEXT("spell it numInputs") },
+			  { TEXT("count"), TEXT("spell it numInputs") },
+			  { TEXT("items"), TEXT("the element values are pins - place the node, then set_pin_default or connect_pins") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -218,6 +269,17 @@ namespace MifBridge
 	// (wildcard until wired). Needed for e.g. handler.Add(MakeMap(RecipeID -> TaskID)) — the MifModHelper crafting hook.
 	void H_add_make_map(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("numInputs"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, numInputs (entry count - each entry is one Key + Value pin pair, 1-64, default 1), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("numEntries"), TEXT("spell it numInputs - one 'input' is one Key/Value entry") },
+			  { TEXT("entries"), TEXT("spell it numInputs for the COUNT; the keys and values themselves are pins") },
+			  { TEXT("pairs"), TEXT("spell it numInputs for the COUNT; the keys and values themselves are pins") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -239,6 +301,17 @@ namespace MifBridge
 
 	void H_add_format_text(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("format"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, format (the literal Format text - its {tokens} create the argument pins), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("text"), TEXT("spell it format") },
+			  { TEXT("formatText"), TEXT("spell it format") },
+			  { TEXT("args"), TEXT("argument pins come from the {tokens} inside format - place the node, then set_pin_default or connect_pins") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -270,6 +343,17 @@ namespace MifBridge
 
 	void H_add_get_data_table_row(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("dataTable"), TEXT("rowName"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, dataTable (object path of the UDataTable), rowName, x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("table"), TEXT("spell it dataTable") },
+			  { TEXT("dataTablePath"), TEXT("spell it dataTable") },
+			  { TEXT("row"), TEXT("spell it rowName") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)
@@ -315,6 +399,17 @@ namespace MifBridge
 
 	void H_add_comment(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("x"), TEXT("y"), TEXT("width"), TEXT("height"), TEXT("text") },
+			TEXT("graphId, x, y, width (default 400, min 32), height (default 150, min 32), text (the comment body)"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("comment"), TEXT("spell it text") },
+			  { TEXT("nodeComment"), TEXT("spell it text") },
+			  { TEXT("color"), TEXT("not supported - the box takes the editor's default comment colour") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
 		if (!Graph)

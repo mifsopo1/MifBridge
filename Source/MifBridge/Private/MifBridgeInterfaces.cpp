@@ -21,6 +21,14 @@ namespace MifBridge
 
 	void H_add_interface(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("interface"), TEXT("interfaceClass"), TEXT("class") },
+			TEXT("blueprintId (alias: path), interface (aliases: interfaceClass, class)"),
+			{ { TEXT("confirm"), TEXT("add_interface is additive and needs no confirm; remove_interface is the one that requires it") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{
@@ -54,6 +62,15 @@ namespace MifBridge
 
 	void H_remove_interface(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("interface"), TEXT("interfaceClass"), TEXT("class"),
+			  TEXT("confirm") },
+			TEXT("blueprintId (alias: path), interface (aliases: interfaceClass, class), confirm (required true)"),
+			{ { TEXT("preserveFunctions"), TEXT("not supported - remove_interface always removes the interface's functions with it (bPreserveFunctions=false)") } }))
+		{
+			return;
+		}
+
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("remove_interface requires confirm=true"));
@@ -96,6 +113,15 @@ namespace MifBridge
 
 	void H_list_interfaces(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("includeInherited") },
+			TEXT("blueprintId (alias: path), includeInherited (default false)"),
+			{ { TEXT("inherited"), TEXT("spell it includeInherited") },
+			  { TEXT("limit"), TEXT("not supported - list_interfaces always returns every implemented interface") } }))
+		{
+			return;
+		}
+
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
 		if (!Blueprint)
 		{

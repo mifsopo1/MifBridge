@@ -75,6 +75,16 @@ namespace MifBridge
 	// bShowConfirmation=false so it can't block on a modal no one is there to click.
 	void H_delete_asset(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("confirm") },
+			TEXT("path (a /Game/ package or object path), confirm (required true)"),
+			{ { TEXT("packageName"), TEXT("spell it path - delete_asset takes the package under 'path'; an object path is accepted and reduced to its package") },
+			  { TEXT("objectPath"), TEXT("spell it path - the whole PACKAGE is deleted, not one object inside it") },
+			  { TEXT("force"), TEXT("there is no force - deletion is gated on confirm=true and still fails if the asset is still referenced") } }))
+		{
+			return;
+		}
+
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("delete_asset requires confirm=true"));
@@ -121,6 +131,16 @@ namespace MifBridge
 	// PackagePath/AssetName.AssetName) — same as the Content Browser's F2 rename / drag-to-folder.
 	void H_rename_asset(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("newPath"), TEXT("confirm") },
+			TEXT("path, newPath (the destination - its last segment is BOTH the destination folder and the new asset name), confirm (required true)"),
+			{ { TEXT("newName"), TEXT("there is no newName - put the whole destination in newPath (e.g. /Game/Foo/NewName); its last segment becomes the new asset name") },
+			  { TEXT("newPackageName"), TEXT("spell it newPath - newPackageName is a RESPONSE field only") },
+			  { TEXT("destination"), TEXT("spell it newPath") } }))
+		{
+			return;
+		}
+
 		if (!JBool(In, TEXT("confirm"), false))
 		{
 			Fail(Out, TEXT("rename_asset requires confirm=true"));
@@ -184,6 +204,16 @@ namespace MifBridge
 	// of clobbering if newPath is already taken).
 	void H_duplicate_asset(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("newPath") },
+			TEXT("path (the source asset), newPath (the destination - its last segment is BOTH the destination folder and the new asset name)"),
+			{ { TEXT("confirm"), TEXT("duplicate_asset needs no confirm - it never overwrites; it fails if newPath is already taken") },
+			  { TEXT("newName"), TEXT("there is no newName - put the whole destination in newPath (e.g. /Game/Foo/CopyName)") },
+			  { TEXT("overwrite"), TEXT("NOT supported - duplicate_asset fails rather than clobbering an existing asset; delete_asset the old one first") } }))
+		{
+			return;
+		}
+
 		const FString RawPath = JStr(In, TEXT("path"));
 		const FString NewPath = JStr(In, TEXT("newPath"));
 		if (RawPath.IsEmpty() || !RawPath.StartsWith(TEXT("/Game/")))

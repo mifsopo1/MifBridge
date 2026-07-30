@@ -81,6 +81,18 @@ namespace MifBridge
 	// far more useful of the two.
 	void H_set_viewport_camera(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("location"), TEXT("rotation"), TEXT("lookAt"), TEXT("fov"),
+			  TEXT("ortho"), TEXT("orthoZoom") },
+			TEXT("location:{x,y,z}, rotation:{x,y,z} = pitch/yaw/roll, lookAt:{x,y,z} (wins over rotation), fov, ortho (top/bottom/front/back/left/right/perspective), orthoZoom"),
+			{ { TEXT("x"), TEXT("there is no top-level x/y/z here - pass location:{x,y,z}; rotation and lookAt take the same nested form. capture_camera is the endpoint that also accepts the flat form") },
+			  { TEXT("zoom"), TEXT("the key is 'orthoZoom', and it only has an effect on an orthographic view - set ortho first") },
+			  { TEXT("orthographic"), TEXT("the key is 'ortho' and it takes a STRING: top/bottom/front/back/left/right/perspective") },
+			  { TEXT("actorPath"), TEXT("this endpoint sets an explicit transform - to frame an actor use focus_viewport, which takes actorPath") } }))
+		{
+			return;
+		}
+
 		FLevelEditorViewportClient* Client = ActiveLevelViewport();
 		if (!Client) { Fail(Out, TEXT("no level editor viewport available")); return; }
 
@@ -148,6 +160,18 @@ namespace MifBridge
 	// which is the "see everything at once" case.
 	void H_focus_viewport(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// 'all' is accepted and ignored: it is the documented (and actual) DEFAULT — omitting every
+		// target frames the whole level — and callers following the header comment already pass it.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("folder"), TEXT("all"), TEXT("instant") },
+			TEXT("actorPath (alias: actor) to frame ONE actor, folder to frame a folder subtree, all (or nothing at all) to frame the whole level, instant"),
+			{ { TEXT("path"), TEXT("the actor key is 'actorPath' (alias: actor); it accepts an object path, an object name or a label") },
+			  { TEXT("name"), TEXT("actorPath already matches on object name and label as well as full path - use it") },
+			  { TEXT("bounds"), TEXT("'bounds' is an OUTPUT field - the framing target is actorPath, folder, or nothing for the whole level") } }))
+		{
+			return;
+		}
+
 		FLevelEditorViewportClient* Client = ActiveLevelViewport();
 		if (!Client) { Fail(Out, TEXT("no level editor viewport available")); return; }
 		UWorld* World = EditorWorld();
@@ -210,6 +234,13 @@ namespace MifBridge
 	//   out: { location, rotation, perspective, fov, viewportCount }
 	void H_get_viewport_camera(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out, {},
+			TEXT("(none - this endpoint takes no parameters)"),
+			{ { TEXT("viewportIndex"), TEXT("not supported - this always reports the ACTIVE viewport, falling back to the first perspective one; viewportCount in the response says how many exist") } }))
+		{
+			return;
+		}
+
 		FLevelEditorViewportClient* Client = ActiveLevelViewport();
 		if (!Client) { Fail(Out, TEXT("no level editor viewport available")); return; }
 		WriteCamera(Out, Client);

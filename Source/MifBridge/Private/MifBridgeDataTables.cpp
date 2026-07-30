@@ -329,6 +329,18 @@ namespace MifBridge
 
 	void H_list_datatables(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("filter") },
+			TEXT("filter (optional substring matched against the full object path; omit to list every DataTable)"),
+			{ { TEXT("path"), TEXT("list_datatables takes filter, a substring of the object path - read_datatable is the one that takes path") },
+			  { TEXT("name"), TEXT("spell it filter - it is matched against the full object path, so a name substring works") },
+			  { TEXT("search"), TEXT("spell it filter") },
+			  { TEXT("limit"), TEXT("list_datatables is uncapped and takes no limit - narrow the result with filter") },
+			  { TEXT("maxRows"), TEXT("this endpoint lists tables, not rows - maxRows belongs to read_datatable") } }))
+		{
+			return;
+		}
+
 		const FString Filter = JStr(In, TEXT("filter"));
 		FAssetRegistryModule& Module = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
 		IAssetRegistry& Registry = Module.Get();
