@@ -413,6 +413,14 @@ namespace MifBridge
 		static const TCHAR* const GMifDescNotes_add_override_event[] = {
 			TEXT("graphId"), TEXT("an override always lands in the blueprint's event graph — pass blueprintId instead"),
 			nullptr };
+		static const TCHAR* const GMifDescKeys_add_component_bound_event[] = {
+			TEXT("blueprintId"), TEXT("path"), TEXT("component"), TEXT("dispatcher"), TEXT("delegate"),
+			TEXT("event"), TEXT("x"), TEXT("y"), nullptr };
+		static const TCHAR* const GMifDescNotes_add_component_bound_event[] = {
+			TEXT("targetClass"), TEXT("not needed here - the delegate's owner class is found automatically from the component's own type"),
+			TEXT("graphId"), TEXT("this always lands in the blueprint's event graph - pass blueprintId instead"),
+			TEXT("bind"), TEXT("for a delegate that ISN'T declared on a component (a custom event dispatcher, or one on the blueprint itself) use add_bind_dispatcher instead - this endpoint is specifically for per-component delegates like OnComponentBeginOverlap"),
+			nullptr };
 		static const TCHAR* const GMifDescKeys_add_parent_call[] = {
 			TEXT("graphId"), TEXT("parentClass"), TEXT("class"), TEXT("cls"), TEXT("className"),
 			TEXT("parent"), TEXT("ownerClass"), TEXT("targetClass"), TEXT("function"), TEXT("functionName"),
@@ -1613,6 +1621,9 @@ namespace MifBridge
 			{ TEXT("add_override_event"), GMifDescKeys_add_override_event, GMifDescNotes_add_override_event,
 			  TEXT("blueprintId (alias: path), event (aliases: eventName, name, function, functionName), interfaceOrParent (aliases: class, cls, className, parentClass, interface, ownerClass, targetClass), callParent (aliases: addParentCall, withParentCall), x, y"),
 			  TEXT("MifBridgeNodes.cpp"), 944, nullptr },
+			{ TEXT("add_component_bound_event"), GMifDescKeys_add_component_bound_event, GMifDescNotes_add_component_bound_event,
+			  TEXT("blueprintId (alias: path), component (the SCS/native component variable name), dispatcher (aliases: delegate, event), x, y"),
+			  TEXT("MifBridgeNodes.cpp"), 1058, nullptr },
 			{ TEXT("add_parent_call"), GMifDescKeys_add_parent_call, GMifDescNotes_add_parent_call,
 			  TEXT("graphId, parentClass (aliases: class, cls, className, parent, ownerClass, targetClass; default = this blueprint's parent), function (aliases: functionName, func, method, name), x, y"),
 			  TEXT("MifBridgeNodes.cpp"), 1044, nullptr },

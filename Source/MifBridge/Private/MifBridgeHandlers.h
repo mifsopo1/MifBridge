@@ -749,6 +749,7 @@ namespace MifBridge
 	MIF_DECL(add_macro_instance);
 	MIF_DECL(add_get_array_item);
 	MIF_DECL(add_override_event);
+	MIF_DECL(add_component_bound_event);
 	MIF_DECL(add_parent_call);
 	MIF_DECL(add_cast);
 	MIF_DECL(move_node);

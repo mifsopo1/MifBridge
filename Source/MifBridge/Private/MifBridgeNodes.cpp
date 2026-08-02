@@ -18,6 +18,7 @@
 #include "K2Node_CommutativeAssociativeBinaryOperator.h"     // pure commutative ops grow input pins
 #include "K2Node_Message.h"                                  // interface calls on an external target
 #include "K2Node_CallParentFunction.h"
+#include "K2Node_ComponentBoundEvent.h"  // add_component_bound_event — real per-component delegate binding
 #include "K2Node_DynamicCast.h"
 #include "K2Node_EditablePinBase.h"   // RemoveUserDefinedPinByName / UserDefinedPins (remove_pin)
 #include "K2Node_CustomEvent.h"       // custom-event parameter target (add_pin)
@@ -1037,6 +1038,122 @@ namespace MifBridge
 			Out->SetStringField(TEXT("parentNodeGuid"), ParentNode->NodeGuid.ToString());
 			Out->SetObjectField(TEXT("parentNode"), SerializeNode(ParentNode, /*bIncludePins*/ true));
 		}
+	}
+
+	// Creates a genuine UK2Node_ComponentBoundEvent - the exact node type the Blueprint editor
+	// produces from "Add Event > On <X> (<ComponentName>)" in the Components/My Blueprint panel
+	// (e.g. ClosePriximity's "On Component Begin Overlap"). This is NOT the same thing
+	// add_bind_dispatcher builds: that endpoint creates a generic K2Node_AddDelegate plus a
+	// separate CustomEvent, which only works for delegates whose every parameter is a plain
+	// value/object - it cannot bind a delegate like OnComponentBeginOverlap whose SweepResult
+	// parameter is passed by const-ref, because a hand-built CustomEvent can't be declared with
+	// that calling convention. UK2Node_ComponentBoundEvent sidesteps the problem entirely: it
+	// derives its pins directly from the delegate's own SignatureFunction (see
+	// InitializeComponentBoundEventParams in K2Node_ComponentBoundEvent.cpp), so by-ref struct
+	// params are handled correctly with no manual signature reconstruction at all.
+	//   in:  { blueprintId (alias: path), component, dispatcher (aliases: delegate, event), x, y }
+	//   out: { nodeGuid, node }
+	void H_add_component_bound_event(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("component"),
+			  TEXT("dispatcher"), TEXT("delegate"), TEXT("event"), TEXT("x"), TEXT("y") },
+			TEXT("blueprintId (alias: path), component (the SCS/native component variable name), ")
+			TEXT("dispatcher (aliases: delegate, event), x, y"),
+			{ { TEXT("targetClass"), TEXT("not needed here - the delegate's owner class is found automatically from the component's own type") },
+			  { TEXT("graphId"), TEXT("this always lands in the blueprint's event graph - pass blueprintId instead") } }))
+		{
+			return;
+		}
+
+		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
+		if (!Blueprint)
+		{
+			return;
+		}
+
+		UEdGraph* EventGraph = FBlueprintEditorUtils::FindEventGraph(Blueprint);
+		if (!EventGraph && Blueprint->UbergraphPages.Num() > 0)
+		{
+			EventGraph = Blueprint->UbergraphPages[0];
+		}
+		if (!EventGraph)
+		{
+			Fail(Out, TEXT("blueprint has no event graph to host the bound event"));
+			return;
+		}
+
+		const FString ComponentName = JStr(In, TEXT("component"));
+		if (ComponentName.IsEmpty())
+		{
+			Fail(Out, TEXT("component is required (the SCS/native component's variable name, e.g. \"ClosePriximity\")"));
+			return;
+		}
+		const FString DispatcherName = JStrAny(In, { TEXT("dispatcher"), TEXT("delegate"), TEXT("event") });
+		if (DispatcherName.IsEmpty())
+		{
+			Fail(Out, TEXT("dispatcher is required (aliases: delegate, event) - the multicast delegate property on the component's class, e.g. \"OnComponentBeginOverlap\""));
+			return;
+		}
+
+		UClass* SkeletonClass = Blueprint->SkeletonGeneratedClass ? Blueprint->SkeletonGeneratedClass : Blueprint->GeneratedClass;
+		if (!SkeletonClass)
+		{
+			Fail(Out, TEXT("blueprint has no generated/skeleton class yet - compile it at least once first"));
+			return;
+		}
+
+		FObjectProperty* ComponentProp = FindFProperty<FObjectProperty>(SkeletonClass, FName(*ComponentName));
+		if (!ComponentProp)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("component '%s' not found as a property on '%s' - it must be an SCS component on this blueprint or an inherited native component exposed as a UPROPERTY (check list_components)"),
+				*ComponentName, *SkeletonClass->GetName()));
+			return;
+		}
+		UClass* ComponentClass = ComponentProp->PropertyClass;
+		if (!ComponentClass)
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' is not an object-reference property"), *ComponentName));
+			return;
+		}
+
+		FMulticastDelegateProperty* DelegateProp = FindFProperty<FMulticastDelegateProperty>(ComponentClass, FName(*DispatcherName));
+		if (!DelegateProp)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("dispatcher '%s' not found on '%s' (the class of component '%s') - check describe_class's dispatchers list for that component's type"),
+				*DispatcherName, *ComponentClass->GetName(), *ComponentName));
+			return;
+		}
+
+		// Refuse a duplicate binding of the same component+delegate pair, mirroring the
+		// "already present" guard in H_add_override_event.
+		for (UEdGraphNode* Existing : EventGraph->Nodes)
+		{
+			if (UK2Node_ComponentBoundEvent* AsBound = Cast<UK2Node_ComponentBoundEvent>(Existing))
+			{
+				if (AsBound->ComponentPropertyName == ComponentProp->GetFName() && AsBound->DelegatePropertyName == DelegateProp->GetFName())
+				{
+					Fail(Out, FString::Printf(TEXT("a bound event for %s's %s already exists in this graph"), *ComponentName, *DispatcherName));
+					return;
+				}
+			}
+		}
+
+		Blueprint->Modify();
+		EventGraph->Modify();
+
+		UK2Node_ComponentBoundEvent* Node = NewObject<UK2Node_ComponentBoundEvent>(EventGraph);
+		// Sets ComponentPropertyName/DelegatePropertyName/DelegateOwnerClass/EventReference/
+		// CustomFunctionName - MUST run before PlaceAndInit's AllocateDefaultPins call below, since
+		// pin generation reads EventReference (set here from the delegate's own SignatureFunction).
+		Node->InitializeComponentBoundEventParams(ComponentProp, DelegateProp);
+		PlaceAndInit(EventGraph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
+
+		MarkStructural(Blueprint);
+		EmitNode(Out, Node);
+		UE_LOG(LogMifBridge, Log, TEXT("add_component_bound_event: %s.%s on %s"), *ComponentName, *DispatcherName, *Blueprint->GetPathName());
 	}
 
 	void H_add_parent_call(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

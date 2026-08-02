@@ -87,6 +87,7 @@ namespace MifBridge
 			MIF_BIND(add_macro_instance);
 			MIF_BIND(add_get_array_item);
 			MIF_BIND(add_override_event);
+			MIF_BIND(add_component_bound_event);
 			MIF_BIND(add_parent_call);
 			MIF_BIND(add_cast);
 			MIF_BIND(move_node);
