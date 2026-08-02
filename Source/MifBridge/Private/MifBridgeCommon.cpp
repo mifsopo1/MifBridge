@@ -113,6 +113,7 @@ namespace MifBridge
 			MIF_BIND(rename_event);
 			MIF_BIND(rename_event_dispatcher);
 			MIF_BIND(create_blueprint);
+			MIF_BIND(reparent_blueprint);
 			MIF_BIND(resolve_struct);
 			MIF_BIND(describe_class);
 			MIF_BIND(list_enum_values);
@@ -508,7 +509,7 @@ namespace MifBridge
 	static bool IsSelfManagedEndpoint(const FString& Endpoint)
 	{
 		static const TSet<FString> SelfManaged = {
-			TEXT("create_function"), TEXT("create_blueprint"), TEXT("recipe_add_debug_print"), TEXT("batch"),
+			TEXT("create_function"), TEXT("create_blueprint"), TEXT("reparent_blueprint"), TEXT("recipe_add_debug_print"), TEXT("batch"),
 			TEXT("add_event_dispatcher"),
 			// Changing a function's NET flags needs a full compile (skeleton regen builds no
 			// replication data and leaves call-site bytecode stale), so it opens its own tight

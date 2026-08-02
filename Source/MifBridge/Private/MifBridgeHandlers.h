@@ -777,6 +777,7 @@ namespace MifBridge
 	MIF_DECL(rename_event);
 	MIF_DECL(rename_event_dispatcher);
 	MIF_DECL(create_blueprint);
+	MIF_DECL(reparent_blueprint);
 	MIF_DECL(resolve_struct);
 	MIF_DECL(describe_class);
 	MIF_DECL(list_enum_values);

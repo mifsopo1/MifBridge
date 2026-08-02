@@ -19,6 +19,8 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "Engine/SCS_Node.h"                    // USCS_Node::Modify (reparent_blueprint)
+#include "Engine/SimpleConstructionScript.h"    // GetAllNodes (reparent_blueprint)
 #include "Kismet/BlueprintFunctionLibrary.h"   // UBlueprintFunctionLibrary — function-library base for create_blueprint
 #include "UObject/Interface.h"                  // UInterface — blueprint interface base
 #include "WidgetBlueprint.h"                          // UWidgetBlueprint — WidgetBlueprint create
@@ -1367,5 +1369,115 @@ namespace MifBridge
 			Out->SetStringField(TEXT("eventGraphId"), GraphIdOf(NewBP, EventGraph));
 		}
 		UE_LOG(LogMifBridge, Log, TEXT("create_blueprint: %s (parent %s)"), *NewBP->GetPathName(), *ParentClass->GetName());
+	}
+
+	// Reparent an EXISTING Blueprint to a new parent class - the programmatic equivalent of the
+	// Blueprint editor's Class Settings > "Parent Class" picker (FBlueprintEditor::
+	// ReparentBlueprint_NewParentChosen). create_blueprint above can only MINT a brand-new
+	// Blueprint; there was previously no way to change an EXISTING one's parent short of
+	// recreating it from scratch and manually re-porting every graph/variable/struct member by
+	// hand, which is exactly the wall this was added to get past.
+	// SELF-MANAGED: reparenting forces a full class reinstance (the old CDO/instances are
+	// discarded), which must never sit inside RunEndpoint's transaction - see IsSelfManagedEndpoint
+	// and the identical justification on H_create_blueprint above.
+	//   in:  { blueprintId (alias: path), newParentClass (alias: parentClass) }
+	//   out: { blueprintId, oldParentClass, newParentClass, changed, eventGraphId? }
+	void H_reparent_blueprint(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("newParentClass"), TEXT("parentClass") },
+			TEXT("blueprintId (alias: path), newParentClass (alias: parentClass)"),
+			{ { TEXT("newParent"), TEXT("spell it newParentClass (alias parentClass)") },
+			  { TEXT("class"), TEXT("the new parent class parameter is called newParentClass") } }))
+		{
+			return;
+		}
+
+		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
+		if (!Blueprint)
+		{
+			return;
+		}
+
+		FString NewParentName = JStr(In, TEXT("newParentClass"));
+		if (NewParentName.IsEmpty())
+		{
+			NewParentName = JStr(In, TEXT("parentClass"));
+		}
+		if (NewParentName.IsEmpty())
+		{
+			Fail(Out, TEXT("newParentClass required"));
+			return;
+		}
+
+		UClass* NewParentClass = ResolveClass(NewParentName, nullptr);
+		if (!NewParentClass)
+		{
+			Fail(Out, FString::Printf(TEXT("parent class '%s' not found"), *NewParentName));
+			return;
+		}
+
+		UClass* OldParentClass = Blueprint->ParentClass;
+		if (NewParentClass == OldParentClass)
+		{
+			Out->SetStringField(TEXT("blueprintId"), Blueprint->GetPathName());
+			Out->SetStringField(TEXT("oldParentClass"), OldParentClass ? OldParentClass->GetPathName() : TEXT("None"));
+			Out->SetStringField(TEXT("newParentClass"), NewParentClass->GetPathName());
+			Out->SetBoolField(TEXT("changed"), false);
+			return;
+		}
+
+		// Refuse a cycle: reparenting to your own generated class (or a child of it) would make the
+		// class its own ancestor.
+		if (Blueprint->GeneratedClass && NewParentClass->IsChildOf(Blueprint->GeneratedClass))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is this Blueprint's own generated class or a child of it - reparenting to it would create a cycle"),
+				*NewParentClass->GetPathName()));
+			return;
+		}
+
+		if (!FKismetEditorUtilities::CanCreateBlueprintOfClass(NewParentClass))
+		{
+			Fail(Out, FString::Printf(TEXT("cannot reparent to '%s' - not a Blueprintable class"), *NewParentClass->GetName()));
+			return;
+		}
+
+		// Mirrors FBlueprintEditor::ReparentBlueprint_NewParentChosen (BlueprintEditor.cpp) minus the
+		// interactive warning dialogs, sparse-class-data conform, and open-editor-instance bookkeeping
+		// (namespace imports, the subobject-editor tree refresh) that only matter for a live
+		// Blueprint Editor tab. Mutations go in their OWN tight transaction and the compile happens
+		// AFTER it closes - same idiom as H_set_function_flags earlier in this file.
+		{
+			FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "ReparentBlueprint", "Mif Bridge: reparent_blueprint"));
+			Blueprint->Modify();
+			if (USimpleConstructionScript* SCS = Blueprint->SimpleConstructionScript)
+			{
+				SCS->Modify();
+				for (USCS_Node* Node : SCS->GetAllNodes())
+				{
+					Node->Modify();
+				}
+			}
+
+			Blueprint->ParentClass = NewParentClass;
+
+			FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
+			FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+		}   // transaction closes here, BEFORE the compile
+
+		FKismetEditorUtilities::CompileBlueprint(Blueprint);   // outside any transaction (self-managed)
+		Blueprint->GetOutermost()->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("blueprintId"), Blueprint->GetPathName());
+		Out->SetStringField(TEXT("oldParentClass"), OldParentClass ? OldParentClass->GetPathName() : TEXT("None"));
+		Out->SetStringField(TEXT("newParentClass"), NewParentClass->GetPathName());
+		Out->SetBoolField(TEXT("changed"), true);
+		if (UEdGraph* EventGraph = FBlueprintEditorUtils::FindEventGraph(Blueprint))
+		{
+			Out->SetStringField(TEXT("eventGraphId"), GraphIdOf(Blueprint, EventGraph));
+		}
+		UE_LOG(LogMifBridge, Log, TEXT("reparent_blueprint: %s (%s -> %s)"), *Blueprint->GetPathName(),
+			OldParentClass ? *OldParentClass->GetName() : TEXT("None"), *NewParentClass->GetName());
 	}
 }

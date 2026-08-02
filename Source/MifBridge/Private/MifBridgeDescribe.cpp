@@ -623,6 +623,13 @@ namespace MifBridge
 			TEXT("name"), TEXT("the asset name is the last segment of path"),
 			TEXT("parent"), TEXT("the base class parameter is called parentClass"),
 			nullptr };
+		static const TCHAR* const GMifDescKeys_reparent_blueprint[] = {
+			TEXT("blueprintId"), TEXT("newParentClass"), nullptr };
+		static const TCHAR* const GMifDescNotes_reparent_blueprint[] = {
+			TEXT("newParent"), TEXT("spell it newParentClass (alias parentClass)"),
+			TEXT("class"), TEXT("the new parent class parameter is called newParentClass"),
+			TEXT("path"), TEXT("that names the TARGET blueprint (alias of blueprintId), not the new parent — the new parent is newParentClass"),
+			nullptr };
 		static const TCHAR* const GMifDescKeys_create_editable_child[] = {
 			TEXT("sourceAsset"), TEXT("childPath"), TEXT("variant"), nullptr };
 		static const TCHAR* const GMifDescNotes_create_editable_child[] = {
@@ -1690,6 +1697,9 @@ namespace MifBridge
 			{ TEXT("create_blueprint"), GMifDescKeys_create_blueprint, GMifDescNotes_create_blueprint,
 			  TEXT("path (must start with /Game/), parentClass (default \"Actor\"), blueprintType (Normal | FunctionLibrary | Interface | MacroLibrary | WidgetBlueprint)"),
 			  TEXT("MifBridgeNodes2.cpp"), 1209, nullptr },
+			{ TEXT("reparent_blueprint"), GMifDescKeys_reparent_blueprint, GMifDescNotes_reparent_blueprint,
+			  TEXT("blueprintId (alias: path), newParentClass (alias: parentClass)"),
+			  TEXT("MifBridgeNodes2.cpp"), 1385, nullptr },
 			{ TEXT("create_editable_child"), GMifDescKeys_create_editable_child, GMifDescNotes_create_editable_child,
 			  TEXT("sourceAsset (the cooked BP - its _C class path or its asset path), childPath (destination; defaults to /Game/Mif/<Name>_Child or _Editable), variant: child | sibling | uncooked | sibling_full | full"),
 			  TEXT("MifBridgeReconstruct.cpp"), 23, nullptr },
