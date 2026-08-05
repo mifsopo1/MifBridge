@@ -1216,10 +1216,9 @@ namespace MifBridge
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("graphId"),
 			  TEXT("targetClass"), TEXT("class"), TEXT("cls"), TEXT("className"), TEXT("castTo"), TEXT("to"), TEXT("targetType"),
-			  TEXT("x"), TEXT("y") },
-			TEXT("graphId, targetClass (aliases: class, cls, className, castTo, to, targetType), x, y"),
+			  TEXT("pure"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, targetClass (aliases: class, cls, className, castTo, to, targetType), pure? (default false), x, y"),
 			{ { TEXT("graph"), TEXT("spell it graphId") },
-			  { TEXT("pure"), TEXT("add_cast always creates an IMPURE cast so the Cast Failed exec pin exists; there is no pure option here") },
 			  { TEXT("object"), TEXT("the object to cast is a pin — place the node, then connect_pins into its Object pin") } }))
 		{
 			return;
@@ -1248,11 +1247,106 @@ namespace MifBridge
 
 		UK2Node_DynamicCast* Node = NewObject<UK2Node_DynamicCast>(Graph);
 		Node->TargetType = TargetClass;
-		Node->SetPurity(false); // impure cast: exposes exec then / Cast Failed pins
+		// pure:false (default) exposes exec + Cast Failed pins; pure:true is a data-only cast.
+		// This MUST run before PlaceAndInit, because AllocateDefaultPins reads bIsPureCast to decide
+		// whether to create the exec pins at all — and once they exist they are engine-allocated and
+		// cannot be removed afterwards (remove_pin refuses them by design).
+		//
+		// The absence of this option cost a real repair: replacing a graph's PURE casts with add_cast's
+		// impure ones left five nodes with unwired exec pins, which the compiler purges as
+		// "not connected to the execution chain" — taking every downstream variable node's Target with
+		// them and producing 13 errors whose text never mentions purity.
+		const bool bPure = JBool(In, TEXT("pure"), false);
+		Node->SetPurity(bPure);
 		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
 
 		MarkStructural(Blueprint);
 		EmitNode(Out, Node);
+		Out->SetBoolField(TEXT("pure"), Node->IsNodePure());
+	}
+
+	// --- set_cast_purity --------------------------------------------------------
+	//   in:  { graphId?, node (aliases: nodeGuid/guid/nodeId), pure }
+	//   out: { node, pure, execPinsBefore, execPinsAfter, changed }
+	//
+	// Converts an EXISTING cast between pure and impure. UK2Node_DynamicCast::SetPurity is the only
+	// correct route: the exec pins are engine-allocated by AllocateDefaultPins, so they can neither be
+	// removed (remove_pin refuses) nor added by hand, and writing bIsPureCast with set_property changes
+	// the flag WITHOUT reallocating the pins — leaving a node whose flag and pins disagree.
+	void H_set_cast_purity(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"), TEXT("pure") },
+			TEXT("graphId?, node (aliases: nodeGuid, guid, nodeId), pure"),
+			{ { TEXT("bIsPureCast"), TEXT("pass pure:true|false — writing bIsPureCast directly with set_property changes the flag but does NOT reallocate the exec pins") },
+			  { TEXT("impure"), TEXT("spell it pure:false") } }))
+		{
+			return;
+		}
+		if (!In->HasField(TEXT("pure")))
+		{
+			Fail(Out, TEXT("pure is required (true = data-only cast, false = exec + Cast Failed pins)"));
+			return;
+		}
+		UEdGraphNode* Node = ResolveNodeField(In, TEXT("node"), Out);
+		if (!Node) { return; }
+
+		UK2Node_DynamicCast* CastNode = Cast<UK2Node_DynamicCast>(Node);
+		if (!CastNode)
+		{
+			Fail(Out, FString::Printf(TEXT("node is a %s, not a cast node — there is no purity to set"), *Node->GetClass()->GetName()));
+			return;
+		}
+
+		auto CountExecPins = [](UK2Node_DynamicCast* N)
+		{
+			int32 Count = 0;
+			for (UEdGraphPin* P : N->Pins)
+			{
+				if (P && P->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec) { ++Count; }
+			}
+			return Count;
+		};
+
+		const bool bPure = JBool(In, TEXT("pure"), false);
+		const int32 Before = CountExecPins(CastNode);
+
+		Node->Modify();
+		if (UEdGraph* Graph = Node->GetGraph()) { Graph->Modify(); }
+
+		// SetPurity no-ops when the flag already matches, which is exactly the stuck state produced by
+		// a prior set_property write. Reconstruct unconditionally so the pins are rebuilt from the flag
+		// either way, rather than trusting a call that may legitimately do nothing.
+		CastNode->SetPurity(bPure);
+		CastNode->ReconstructNode();
+
+		if (UBlueprint* OwningBP = FBlueprintEditorUtils::FindBlueprintForNode(Node))
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(OwningBP);
+		}
+
+		// READ BACK: a pure cast must have ZERO exec pins. Anything else means the reallocation did
+		// not happen, and reporting success would hide a node whose flag and pins disagree.
+		const int32 After = CountExecPins(CastNode);
+		const bool bWantZero = bPure;
+		if (bWantZero && After != 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("purity was set to pure but the node still has %d exec pin(s) — the reallocation did not take. ")
+				TEXT("The node's flag and pins now disagree; do not rely on it."), After));
+			return;
+		}
+		if (!bWantZero && After == 0)
+		{
+			Fail(Out, TEXT("purity was set to impure but the node has no exec pins — the reallocation did not take."));
+			return;
+		}
+
+		Out->SetStringField(TEXT("node"), Node->NodeGuid.ToString(EGuidFormats::Digits));
+		Out->SetBoolField(TEXT("pure"), CastNode->IsNodePure());
+		Out->SetNumberField(TEXT("execPinsBefore"), Before);
+		Out->SetNumberField(TEXT("execPinsAfter"), After);
+		Out->SetBoolField(TEXT("changed"), Before != After);
 	}
 
 	void H_move_node(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

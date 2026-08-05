@@ -92,6 +92,7 @@ namespace MifBridge
 			MIF_BIND(add_component_bound_event);
 			MIF_BIND(add_parent_call);
 			MIF_BIND(add_cast);
+			MIF_BIND(set_cast_purity);
 			MIF_BIND(move_node);
 			MIF_BIND(remove_node);
 			MIF_BIND(refresh_node);

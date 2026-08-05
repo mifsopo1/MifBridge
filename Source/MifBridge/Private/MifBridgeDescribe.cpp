@@ -1404,6 +1404,13 @@ namespace MifBridge
 		static const TCHAR* const GMifDescKeys_set_variable_default[] = {
 			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("value"), TEXT("default"),
 			TEXT("defaultValue"), nullptr };
+		static const TCHAR* const GMifDescKeys_set_cast_purity[] = {
+			TEXT("graphId"), TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"), TEXT("pure"), nullptr };
+		static const TCHAR* const GMifDescNotes_set_cast_purity[] = {
+			TEXT("bIsPureCast"), TEXT("pass pure:true|false - writing bIsPureCast with set_property flips the flag but does NOT reallocate the exec pins, leaving flag and pins disagreeing"),
+			TEXT("impure"), TEXT("spell it pure:false"),
+			TEXT("targetClass"), TEXT("this endpoint only changes purity; to cast to a different class place a new node with add_cast"),
+			nullptr };
 		static const TCHAR* const GMifDescKeys_set_variable_type[] = {
 			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("type"), TEXT("container"),
 			TEXT("valueType"), TEXT("scope"), TEXT("function"), nullptr };
@@ -1564,8 +1571,11 @@ namespace MifBridge
 			  TEXT("graphId, dispatcher, targetClass (optional — bind/call a dispatcher declared on that EXTERNAL class instead of this blueprint's own), x, y"),
 			  TEXT("MifBridgeDelegates.cpp"), 43, TEXT("SpawnDelegateNode") },
 			{ TEXT("add_cast"), GMifDescKeys_add_cast, GMifDescNotes_add_cast,
-			  TEXT("graphId, targetClass (aliases: class, cls, className, castTo, to, targetType), x, y"),
+			  TEXT("graphId, targetClass (aliases: class, cls, className, castTo, to, targetType), pure? (default false - true makes a data-only cast with no exec pins), x, y"),
 			  TEXT("MifBridgeNodes.cpp"), 1099, nullptr },
+			{ TEXT("set_cast_purity"), GMifDescKeys_set_cast_purity, GMifDescNotes_set_cast_purity,
+			  TEXT("graphId?, node (aliases: nodeGuid, guid, nodeId), pure - converts an EXISTING cast between pure and impure, reallocating its exec pins"),
+			  TEXT("MifBridgeNodes.cpp"), 1250, nullptr },
 			{ TEXT("add_class_cast"), GMifDescKeys_add_class_cast, GMifDescNotes_add_class_cast,
 			  TEXT("graphId, targetClass (aliases: class, castTo, to, targetType), x, y"),
 			  TEXT("MifBridgeNodes3.cpp"), 232, nullptr },

@@ -754,6 +754,7 @@ namespace MifBridge
 	MIF_DECL(add_component_bound_event);
 	MIF_DECL(add_parent_call);
 	MIF_DECL(add_cast);
+	MIF_DECL(set_cast_purity);
 	MIF_DECL(move_node);
 	MIF_DECL(remove_node);
 	MIF_DECL(refresh_node);
