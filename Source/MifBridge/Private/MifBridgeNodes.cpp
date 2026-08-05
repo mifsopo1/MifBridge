@@ -18,6 +18,7 @@
 #include "K2Node_CommutativeAssociativeBinaryOperator.h"     // pure commutative ops grow input pins
 #include "K2Node_Message.h"                                  // interface calls on an external target
 #include "K2Node_CallParentFunction.h"
+#include "K2Node_ComponentBoundEvent.h"  // add_component_bound_event — real per-component delegate binding
 #include "K2Node_DynamicCast.h"
 #include "K2Node_EditablePinBase.h"   // RemoveUserDefinedPinByName / UserDefinedPins (remove_pin)
 #include "K2Node_CustomEvent.h"       // custom-event parameter target (add_pin)
@@ -1039,6 +1040,122 @@ namespace MifBridge
 		}
 	}
 
+	// Creates a genuine UK2Node_ComponentBoundEvent - the exact node type the Blueprint editor
+	// produces from "Add Event > On <X> (<ComponentName>)" in the Components/My Blueprint panel
+	// (e.g. ClosePriximity's "On Component Begin Overlap"). This is NOT the same thing
+	// add_bind_dispatcher builds: that endpoint creates a generic K2Node_AddDelegate plus a
+	// separate CustomEvent, which only works for delegates whose every parameter is a plain
+	// value/object - it cannot bind a delegate like OnComponentBeginOverlap whose SweepResult
+	// parameter is passed by const-ref, because a hand-built CustomEvent can't be declared with
+	// that calling convention. UK2Node_ComponentBoundEvent sidesteps the problem entirely: it
+	// derives its pins directly from the delegate's own SignatureFunction (see
+	// InitializeComponentBoundEventParams in K2Node_ComponentBoundEvent.cpp), so by-ref struct
+	// params are handled correctly with no manual signature reconstruction at all.
+	//   in:  { blueprintId (alias: path), component, dispatcher (aliases: delegate, event), x, y }
+	//   out: { nodeGuid, node }
+	void H_add_component_bound_event(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("component"),
+			  TEXT("dispatcher"), TEXT("delegate"), TEXT("event"), TEXT("x"), TEXT("y") },
+			TEXT("blueprintId (alias: path), component (the SCS/native component variable name), ")
+			TEXT("dispatcher (aliases: delegate, event), x, y"),
+			{ { TEXT("targetClass"), TEXT("not needed here - the delegate's owner class is found automatically from the component's own type") },
+			  { TEXT("graphId"), TEXT("this always lands in the blueprint's event graph - pass blueprintId instead") } }))
+		{
+			return;
+		}
+
+		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
+		if (!Blueprint)
+		{
+			return;
+		}
+
+		UEdGraph* EventGraph = FBlueprintEditorUtils::FindEventGraph(Blueprint);
+		if (!EventGraph && Blueprint->UbergraphPages.Num() > 0)
+		{
+			EventGraph = Blueprint->UbergraphPages[0];
+		}
+		if (!EventGraph)
+		{
+			Fail(Out, TEXT("blueprint has no event graph to host the bound event"));
+			return;
+		}
+
+		const FString ComponentName = JStr(In, TEXT("component"));
+		if (ComponentName.IsEmpty())
+		{
+			Fail(Out, TEXT("component is required (the SCS/native component's variable name, e.g. \"ClosePriximity\")"));
+			return;
+		}
+		const FString DispatcherName = JStrAny(In, { TEXT("dispatcher"), TEXT("delegate"), TEXT("event") });
+		if (DispatcherName.IsEmpty())
+		{
+			Fail(Out, TEXT("dispatcher is required (aliases: delegate, event) - the multicast delegate property on the component's class, e.g. \"OnComponentBeginOverlap\""));
+			return;
+		}
+
+		UClass* SkeletonClass = Blueprint->SkeletonGeneratedClass ? Blueprint->SkeletonGeneratedClass : Blueprint->GeneratedClass;
+		if (!SkeletonClass)
+		{
+			Fail(Out, TEXT("blueprint has no generated/skeleton class yet - compile it at least once first"));
+			return;
+		}
+
+		FObjectProperty* ComponentProp = FindFProperty<FObjectProperty>(SkeletonClass, FName(*ComponentName));
+		if (!ComponentProp)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("component '%s' not found as a property on '%s' - it must be an SCS component on this blueprint or an inherited native component exposed as a UPROPERTY (check list_components)"),
+				*ComponentName, *SkeletonClass->GetName()));
+			return;
+		}
+		UClass* ComponentClass = ComponentProp->PropertyClass;
+		if (!ComponentClass)
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' is not an object-reference property"), *ComponentName));
+			return;
+		}
+
+		FMulticastDelegateProperty* DelegateProp = FindFProperty<FMulticastDelegateProperty>(ComponentClass, FName(*DispatcherName));
+		if (!DelegateProp)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("dispatcher '%s' not found on '%s' (the class of component '%s') - check describe_class's dispatchers list for that component's type"),
+				*DispatcherName, *ComponentClass->GetName(), *ComponentName));
+			return;
+		}
+
+		// Refuse a duplicate binding of the same component+delegate pair, mirroring the
+		// "already present" guard in H_add_override_event.
+		for (UEdGraphNode* Existing : EventGraph->Nodes)
+		{
+			if (UK2Node_ComponentBoundEvent* AsBound = Cast<UK2Node_ComponentBoundEvent>(Existing))
+			{
+				if (AsBound->ComponentPropertyName == ComponentProp->GetFName() && AsBound->DelegatePropertyName == DelegateProp->GetFName())
+				{
+					Fail(Out, FString::Printf(TEXT("a bound event for %s's %s already exists in this graph"), *ComponentName, *DispatcherName));
+					return;
+				}
+			}
+		}
+
+		Blueprint->Modify();
+		EventGraph->Modify();
+
+		UK2Node_ComponentBoundEvent* Node = NewObject<UK2Node_ComponentBoundEvent>(EventGraph);
+		// Sets ComponentPropertyName/DelegatePropertyName/DelegateOwnerClass/EventReference/
+		// CustomFunctionName - MUST run before PlaceAndInit's AllocateDefaultPins call below, since
+		// pin generation reads EventReference (set here from the delegate's own SignatureFunction).
+		Node->InitializeComponentBoundEventParams(ComponentProp, DelegateProp);
+		PlaceAndInit(EventGraph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
+
+		MarkStructural(Blueprint);
+		EmitNode(Out, Node);
+		UE_LOG(LogMifBridge, Log, TEXT("add_component_bound_event: %s.%s on %s"), *ComponentName, *DispatcherName, *Blueprint->GetPathName());
+	}
+
 	void H_add_parent_call(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
@@ -1099,10 +1216,9 @@ namespace MifBridge
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("graphId"),
 			  TEXT("targetClass"), TEXT("class"), TEXT("cls"), TEXT("className"), TEXT("castTo"), TEXT("to"), TEXT("targetType"),
-			  TEXT("x"), TEXT("y") },
-			TEXT("graphId, targetClass (aliases: class, cls, className, castTo, to, targetType), x, y"),
+			  TEXT("pure"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, targetClass (aliases: class, cls, className, castTo, to, targetType), pure? (default false), x, y"),
 			{ { TEXT("graph"), TEXT("spell it graphId") },
-			  { TEXT("pure"), TEXT("add_cast always creates an IMPURE cast so the Cast Failed exec pin exists; there is no pure option here") },
 			  { TEXT("object"), TEXT("the object to cast is a pin — place the node, then connect_pins into its Object pin") } }))
 		{
 			return;
@@ -1131,11 +1247,106 @@ namespace MifBridge
 
 		UK2Node_DynamicCast* Node = NewObject<UK2Node_DynamicCast>(Graph);
 		Node->TargetType = TargetClass;
-		Node->SetPurity(false); // impure cast: exposes exec then / Cast Failed pins
+		// pure:false (default) exposes exec + Cast Failed pins; pure:true is a data-only cast.
+		// This MUST run before PlaceAndInit, because AllocateDefaultPins reads bIsPureCast to decide
+		// whether to create the exec pins at all — and once they exist they are engine-allocated and
+		// cannot be removed afterwards (remove_pin refuses them by design).
+		//
+		// The absence of this option cost a real repair: replacing a graph's PURE casts with add_cast's
+		// impure ones left five nodes with unwired exec pins, which the compiler purges as
+		// "not connected to the execution chain" — taking every downstream variable node's Target with
+		// them and producing 13 errors whose text never mentions purity.
+		const bool bPure = JBool(In, TEXT("pure"), false);
+		Node->SetPurity(bPure);
 		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
 
 		MarkStructural(Blueprint);
 		EmitNode(Out, Node);
+		Out->SetBoolField(TEXT("pure"), Node->IsNodePure());
+	}
+
+	// --- set_cast_purity --------------------------------------------------------
+	//   in:  { graphId?, node (aliases: nodeGuid/guid/nodeId), pure }
+	//   out: { node, pure, execPinsBefore, execPinsAfter, changed }
+	//
+	// Converts an EXISTING cast between pure and impure. UK2Node_DynamicCast::SetPurity is the only
+	// correct route: the exec pins are engine-allocated by AllocateDefaultPins, so they can neither be
+	// removed (remove_pin refuses) nor added by hand, and writing bIsPureCast with set_property changes
+	// the flag WITHOUT reallocating the pins — leaving a node whose flag and pins disagree.
+	void H_set_cast_purity(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"), TEXT("pure") },
+			TEXT("graphId?, node (aliases: nodeGuid, guid, nodeId), pure"),
+			{ { TEXT("bIsPureCast"), TEXT("pass pure:true|false — writing bIsPureCast directly with set_property changes the flag but does NOT reallocate the exec pins") },
+			  { TEXT("impure"), TEXT("spell it pure:false") } }))
+		{
+			return;
+		}
+		if (!In->HasField(TEXT("pure")))
+		{
+			Fail(Out, TEXT("pure is required (true = data-only cast, false = exec + Cast Failed pins)"));
+			return;
+		}
+		UEdGraphNode* Node = ResolveNodeField(In, TEXT("node"), Out);
+		if (!Node) { return; }
+
+		UK2Node_DynamicCast* CastNode = Cast<UK2Node_DynamicCast>(Node);
+		if (!CastNode)
+		{
+			Fail(Out, FString::Printf(TEXT("node is a %s, not a cast node — there is no purity to set"), *Node->GetClass()->GetName()));
+			return;
+		}
+
+		auto CountExecPins = [](UK2Node_DynamicCast* N)
+		{
+			int32 Count = 0;
+			for (UEdGraphPin* P : N->Pins)
+			{
+				if (P && P->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec) { ++Count; }
+			}
+			return Count;
+		};
+
+		const bool bPure = JBool(In, TEXT("pure"), false);
+		const int32 Before = CountExecPins(CastNode);
+
+		Node->Modify();
+		if (UEdGraph* Graph = Node->GetGraph()) { Graph->Modify(); }
+
+		// SetPurity no-ops when the flag already matches, which is exactly the stuck state produced by
+		// a prior set_property write. Reconstruct unconditionally so the pins are rebuilt from the flag
+		// either way, rather than trusting a call that may legitimately do nothing.
+		CastNode->SetPurity(bPure);
+		CastNode->ReconstructNode();
+
+		if (UBlueprint* OwningBP = FBlueprintEditorUtils::FindBlueprintForNode(Node))
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(OwningBP);
+		}
+
+		// READ BACK: a pure cast must have ZERO exec pins. Anything else means the reallocation did
+		// not happen, and reporting success would hide a node whose flag and pins disagree.
+		const int32 After = CountExecPins(CastNode);
+		const bool bWantZero = bPure;
+		if (bWantZero && After != 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("purity was set to pure but the node still has %d exec pin(s) — the reallocation did not take. ")
+				TEXT("The node's flag and pins now disagree; do not rely on it."), After));
+			return;
+		}
+		if (!bWantZero && After == 0)
+		{
+			Fail(Out, TEXT("purity was set to impure but the node has no exec pins — the reallocation did not take."));
+			return;
+		}
+
+		Out->SetStringField(TEXT("node"), Node->NodeGuid.ToString(EGuidFormats::Digits));
+		Out->SetBoolField(TEXT("pure"), CastNode->IsNodePure());
+		Out->SetNumberField(TEXT("execPinsBefore"), Before);
+		Out->SetNumberField(TEXT("execPinsAfter"), After);
+		Out->SetBoolField(TEXT("changed"), Before != After);
 	}
 
 	void H_move_node(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

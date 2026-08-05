@@ -413,6 +413,14 @@ namespace MifBridge
 		static const TCHAR* const GMifDescNotes_add_override_event[] = {
 			TEXT("graphId"), TEXT("an override always lands in the blueprint's event graph — pass blueprintId instead"),
 			nullptr };
+		static const TCHAR* const GMifDescKeys_add_component_bound_event[] = {
+			TEXT("blueprintId"), TEXT("path"), TEXT("component"), TEXT("dispatcher"), TEXT("delegate"),
+			TEXT("event"), TEXT("x"), TEXT("y"), nullptr };
+		static const TCHAR* const GMifDescNotes_add_component_bound_event[] = {
+			TEXT("targetClass"), TEXT("not needed here - the delegate's owner class is found automatically from the component's own type"),
+			TEXT("graphId"), TEXT("this always lands in the blueprint's event graph - pass blueprintId instead"),
+			TEXT("bind"), TEXT("for a delegate that ISN'T declared on a component (a custom event dispatcher, or one on the blueprint itself) use add_bind_dispatcher instead - this endpoint is specifically for per-component delegates like OnComponentBeginOverlap"),
+			nullptr };
 		static const TCHAR* const GMifDescKeys_add_parent_call[] = {
 			TEXT("graphId"), TEXT("parentClass"), TEXT("class"), TEXT("cls"), TEXT("className"),
 			TEXT("parent"), TEXT("ownerClass"), TEXT("targetClass"), TEXT("function"), TEXT("functionName"),
@@ -622,6 +630,13 @@ namespace MifBridge
 			TEXT("overwrite"), TEXT("NOT supported — this endpoint refuses to clobber an existing asset. delete_asset the old one first, or pick a new path"),
 			TEXT("name"), TEXT("the asset name is the last segment of path"),
 			TEXT("parent"), TEXT("the base class parameter is called parentClass"),
+			nullptr };
+		static const TCHAR* const GMifDescKeys_reparent_blueprint[] = {
+			TEXT("blueprintId"), TEXT("newParentClass"), nullptr };
+		static const TCHAR* const GMifDescNotes_reparent_blueprint[] = {
+			TEXT("newParent"), TEXT("spell it newParentClass (alias parentClass)"),
+			TEXT("class"), TEXT("the new parent class parameter is called newParentClass"),
+			TEXT("path"), TEXT("that names the TARGET blueprint (alias of blueprintId), not the new parent — the new parent is newParentClass"),
 			nullptr };
 		static const TCHAR* const GMifDescKeys_create_editable_child[] = {
 			TEXT("sourceAsset"), TEXT("childPath"), TEXT("variant"), nullptr };
@@ -1389,6 +1404,30 @@ namespace MifBridge
 		static const TCHAR* const GMifDescKeys_set_variable_default[] = {
 			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("value"), TEXT("default"),
 			TEXT("defaultValue"), nullptr };
+		static const TCHAR* const GMifDescKeys_set_cast_purity[] = {
+			TEXT("graphId"), TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"), TEXT("pure"), nullptr };
+		static const TCHAR* const GMifDescNotes_set_cast_purity[] = {
+			TEXT("bIsPureCast"), TEXT("pass pure:true|false - writing bIsPureCast with set_property flips the flag but does NOT reallocate the exec pins, leaving flag and pins disagreeing"),
+			TEXT("impure"), TEXT("spell it pure:false"),
+			TEXT("targetClass"), TEXT("this endpoint only changes purity; to cast to a different class place a new node with add_cast"),
+			nullptr };
+		static const TCHAR* const GMifDescKeys_set_variable_type[] = {
+			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("type"), TEXT("container"),
+			TEXT("valueType"), TEXT("scope"), TEXT("function"), nullptr };
+		static const TCHAR* const GMifDescNotes_set_variable_type[] = {
+			TEXT("class"), TEXT("the class belongs IN the type string: type:\"object:BP_Foo_C\". Prefixes: object:X, class:X, subclassof:X, softobject:X, softclass:X"),
+			TEXT("newType"), TEXT("spell it type"),
+			TEXT("targetClass"), TEXT("that is retarget_variable_node's key (repoint a NODE at another declaring class); to change the TYPE use type:\"object:X\""),
+			TEXT("node"), TEXT("set_variable_type retypes the VARIABLE declaration; to repoint one node use retarget_variable_node"),
+			nullptr };
+		static const TCHAR* const GMifDescKeys_retarget_variable_node[] = {
+			TEXT("graphId"), TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"),
+			TEXT("targetClass"), TEXT("class"), TEXT("self"), nullptr };
+		static const TCHAR* const GMifDescNotes_retarget_variable_node[] = {
+			TEXT("type"), TEXT("this changes WHICH CLASS declares the variable, not the pin type - use set_variable_type for the type"),
+			TEXT("var"), TEXT("the variable name comes from the node you name; to place a NEW node use add_variable_get/add_variable_set with targetClass"),
+			TEXT("pin"), TEXT("there is no pin argument - the whole node's FMemberReference is repointed and the node is reconstructed"),
+			nullptr };
 		static const TCHAR* const GMifDescKeys_set_variable_flags[] = {
 			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("var"), TEXT("variable"),
 			TEXT("replicated"), TEXT("repNotify"), TEXT("repNotifyFunction"), TEXT("replicationCondition"),
@@ -1532,8 +1571,11 @@ namespace MifBridge
 			  TEXT("graphId, dispatcher, targetClass (optional — bind/call a dispatcher declared on that EXTERNAL class instead of this blueprint's own), x, y"),
 			  TEXT("MifBridgeDelegates.cpp"), 43, TEXT("SpawnDelegateNode") },
 			{ TEXT("add_cast"), GMifDescKeys_add_cast, GMifDescNotes_add_cast,
-			  TEXT("graphId, targetClass (aliases: class, cls, className, castTo, to, targetType), x, y"),
+			  TEXT("graphId, targetClass (aliases: class, cls, className, castTo, to, targetType), pure? (default false - true makes a data-only cast with no exec pins), x, y"),
 			  TEXT("MifBridgeNodes.cpp"), 1099, nullptr },
+			{ TEXT("set_cast_purity"), GMifDescKeys_set_cast_purity, GMifDescNotes_set_cast_purity,
+			  TEXT("graphId?, node (aliases: nodeGuid, guid, nodeId), pure - converts an EXISTING cast between pure and impure, reallocating its exec pins"),
+			  TEXT("MifBridgeNodes.cpp"), 1250, nullptr },
 			{ TEXT("add_class_cast"), GMifDescKeys_add_class_cast, GMifDescNotes_add_class_cast,
 			  TEXT("graphId, targetClass (aliases: class, castTo, to, targetType), x, y"),
 			  TEXT("MifBridgeNodes3.cpp"), 232, nullptr },
@@ -1606,6 +1648,9 @@ namespace MifBridge
 			{ TEXT("add_override_event"), GMifDescKeys_add_override_event, GMifDescNotes_add_override_event,
 			  TEXT("blueprintId (alias: path), event (aliases: eventName, name, function, functionName), interfaceOrParent (aliases: class, cls, className, parentClass, interface, ownerClass, targetClass), callParent (aliases: addParentCall, withParentCall), x, y"),
 			  TEXT("MifBridgeNodes.cpp"), 944, nullptr },
+			{ TEXT("add_component_bound_event"), GMifDescKeys_add_component_bound_event, GMifDescNotes_add_component_bound_event,
+			  TEXT("blueprintId (alias: path), component (the SCS/native component variable name), dispatcher (aliases: delegate, event), x, y"),
+			  TEXT("MifBridgeNodes.cpp"), 1058, nullptr },
 			{ TEXT("add_parent_call"), GMifDescKeys_add_parent_call, GMifDescNotes_add_parent_call,
 			  TEXT("graphId, parentClass (aliases: class, cls, className, parent, ownerClass, targetClass; default = this blueprint's parent), function (aliases: functionName, func, method, name), x, y"),
 			  TEXT("MifBridgeNodes.cpp"), 1044, nullptr },
@@ -1690,6 +1735,9 @@ namespace MifBridge
 			{ TEXT("create_blueprint"), GMifDescKeys_create_blueprint, GMifDescNotes_create_blueprint,
 			  TEXT("path (must start with /Game/), parentClass (default \"Actor\"), blueprintType (Normal | FunctionLibrary | Interface | MacroLibrary | WidgetBlueprint)"),
 			  TEXT("MifBridgeNodes2.cpp"), 1209, nullptr },
+			{ TEXT("reparent_blueprint"), GMifDescKeys_reparent_blueprint, GMifDescNotes_reparent_blueprint,
+			  TEXT("blueprintId (alias: path), newParentClass (alias: parentClass)"),
+			  TEXT("MifBridgeNodes2.cpp"), 1385, nullptr },
 			{ TEXT("create_editable_child"), GMifDescKeys_create_editable_child, GMifDescNotes_create_editable_child,
 			  TEXT("sourceAsset (the cooked BP - its _C class path or its asset path), childPath (destination; defaults to /Game/Mif/<Name>_Child or _Editable), variant: child | sibling | uncooked | sibling_full | full"),
 			  TEXT("MifBridgeReconstruct.cpp"), 23, nullptr },
@@ -2080,6 +2128,12 @@ namespace MifBridge
 			{ TEXT("set_variable_default"), GMifDescKeys_set_variable_default, nullptr,
 			  TEXT("blueprintId (alias: path), name, value (aliases: default, defaultValue)"),
 			  TEXT("MifBridgeIntrospect.cpp"), 1276, nullptr },
+			{ TEXT("set_variable_type"), GMifDescKeys_set_variable_type, GMifDescNotes_set_variable_type,
+			  TEXT("blueprintId (alias: path), name, type, container?, valueType?, scope? (member|local), function? (required when scope=local) - retypes an EXISTING variable in place, keeping its Get/Set nodes"),
+			  TEXT("MifBridgeIntrospect.cpp"), 1300, nullptr },
+			{ TEXT("retarget_variable_node"), GMifDescKeys_retarget_variable_node, GMifDescNotes_retarget_variable_node,
+			  TEXT("graphId, node (aliases: nodeGuid, guid, nodeId), targetClass (alias: class) OR self:true - repoints one variable Get/Set node's FMemberReference at a different declaring class"),
+			  TEXT("MifBridgeIntrospect.cpp"), 1450, nullptr },
 			{ TEXT("set_variable_flags"), GMifDescKeys_set_variable_flags, GMifDescNotes_set_variable_flags,
 			  TEXT("blueprintId (alias: path), name (aliases: var, variable), then any of replicated, repNotify, repNotifyFunction, replicationCondition, saveGame, transient, config, instanceEditable, blueprintReadOnly, exposeOnSpawn, advancedDisplay, interp, deprecated, category, tooltip - PARTIAL UPDATE: only the keys actually present are applied, the rest are left alone"),
 			  TEXT("MifBridgeIntrospect.cpp"), 867, nullptr },

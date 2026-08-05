@@ -738,6 +738,8 @@ namespace MifBridge
 	MIF_DECL(add_variable);
 	MIF_DECL(rename_variable);
 	MIF_DECL(remove_variable);
+	MIF_DECL(set_variable_type);
+	MIF_DECL(retarget_variable_node);
 	MIF_DECL(set_variable_default);
 	MIF_DECL(set_variable_flags);
 
@@ -749,8 +751,10 @@ namespace MifBridge
 	MIF_DECL(add_macro_instance);
 	MIF_DECL(add_get_array_item);
 	MIF_DECL(add_override_event);
+	MIF_DECL(add_component_bound_event);
 	MIF_DECL(add_parent_call);
 	MIF_DECL(add_cast);
+	MIF_DECL(set_cast_purity);
 	MIF_DECL(move_node);
 	MIF_DECL(remove_node);
 	MIF_DECL(refresh_node);
@@ -777,6 +781,7 @@ namespace MifBridge
 	MIF_DECL(rename_event);
 	MIF_DECL(rename_event_dispatcher);
 	MIF_DECL(create_blueprint);
+	MIF_DECL(reparent_blueprint);
 	MIF_DECL(resolve_struct);
 	MIF_DECL(describe_class);
 	MIF_DECL(list_enum_values);

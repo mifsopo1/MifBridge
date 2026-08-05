@@ -77,6 +77,8 @@ namespace MifBridge
 			MIF_BIND(add_variable);
 			MIF_BIND(rename_variable);
 			MIF_BIND(remove_variable);
+			MIF_BIND(set_variable_type);
+			MIF_BIND(retarget_variable_node);
 			MIF_BIND(set_variable_default);
 			MIF_BIND(set_variable_flags);
 			// Nodes
@@ -87,8 +89,10 @@ namespace MifBridge
 			MIF_BIND(add_macro_instance);
 			MIF_BIND(add_get_array_item);
 			MIF_BIND(add_override_event);
+			MIF_BIND(add_component_bound_event);
 			MIF_BIND(add_parent_call);
 			MIF_BIND(add_cast);
+			MIF_BIND(set_cast_purity);
 			MIF_BIND(move_node);
 			MIF_BIND(remove_node);
 			MIF_BIND(refresh_node);
@@ -113,6 +117,7 @@ namespace MifBridge
 			MIF_BIND(rename_event);
 			MIF_BIND(rename_event_dispatcher);
 			MIF_BIND(create_blueprint);
+			MIF_BIND(reparent_blueprint);
 			MIF_BIND(resolve_struct);
 			MIF_BIND(describe_class);
 			MIF_BIND(list_enum_values);
@@ -514,7 +519,7 @@ namespace MifBridge
 	static bool IsSelfManagedEndpoint(const FString& Endpoint)
 	{
 		static const TSet<FString> SelfManaged = {
-			TEXT("create_function"), TEXT("create_blueprint"), TEXT("recipe_add_debug_print"), TEXT("batch"),
+			TEXT("create_function"), TEXT("create_blueprint"), TEXT("reparent_blueprint"), TEXT("recipe_add_debug_print"), TEXT("batch"),
 			TEXT("add_event_dispatcher"),
 			// Changing a function's NET flags needs a full compile (skeleton regen builds no
 			// replication data and leaves call-site bytecode stale), so it opens its own tight
