@@ -1404,6 +1404,23 @@ namespace MifBridge
 		static const TCHAR* const GMifDescKeys_set_variable_default[] = {
 			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("value"), TEXT("default"),
 			TEXT("defaultValue"), nullptr };
+		static const TCHAR* const GMifDescKeys_set_variable_type[] = {
+			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("type"), TEXT("container"),
+			TEXT("valueType"), TEXT("scope"), TEXT("function"), nullptr };
+		static const TCHAR* const GMifDescNotes_set_variable_type[] = {
+			TEXT("class"), TEXT("the class belongs IN the type string: type:\"object:BP_Foo_C\". Prefixes: object:X, class:X, subclassof:X, softobject:X, softclass:X"),
+			TEXT("newType"), TEXT("spell it type"),
+			TEXT("targetClass"), TEXT("that is retarget_variable_node's key (repoint a NODE at another declaring class); to change the TYPE use type:\"object:X\""),
+			TEXT("node"), TEXT("set_variable_type retypes the VARIABLE declaration; to repoint one node use retarget_variable_node"),
+			nullptr };
+		static const TCHAR* const GMifDescKeys_retarget_variable_node[] = {
+			TEXT("graphId"), TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"),
+			TEXT("targetClass"), TEXT("class"), TEXT("self"), nullptr };
+		static const TCHAR* const GMifDescNotes_retarget_variable_node[] = {
+			TEXT("type"), TEXT("this changes WHICH CLASS declares the variable, not the pin type - use set_variable_type for the type"),
+			TEXT("var"), TEXT("the variable name comes from the node you name; to place a NEW node use add_variable_get/add_variable_set with targetClass"),
+			TEXT("pin"), TEXT("there is no pin argument - the whole node's FMemberReference is repointed and the node is reconstructed"),
+			nullptr };
 		static const TCHAR* const GMifDescKeys_set_variable_flags[] = {
 			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("var"), TEXT("variable"),
 			TEXT("replicated"), TEXT("repNotify"), TEXT("repNotifyFunction"), TEXT("replicationCondition"),
@@ -2101,6 +2118,12 @@ namespace MifBridge
 			{ TEXT("set_variable_default"), GMifDescKeys_set_variable_default, nullptr,
 			  TEXT("blueprintId (alias: path), name, value (aliases: default, defaultValue)"),
 			  TEXT("MifBridgeIntrospect.cpp"), 1276, nullptr },
+			{ TEXT("set_variable_type"), GMifDescKeys_set_variable_type, GMifDescNotes_set_variable_type,
+			  TEXT("blueprintId (alias: path), name, type, container?, valueType?, scope? (member|local), function? (required when scope=local) - retypes an EXISTING variable in place, keeping its Get/Set nodes"),
+			  TEXT("MifBridgeIntrospect.cpp"), 1300, nullptr },
+			{ TEXT("retarget_variable_node"), GMifDescKeys_retarget_variable_node, GMifDescNotes_retarget_variable_node,
+			  TEXT("graphId, node (aliases: nodeGuid, guid, nodeId), targetClass (alias: class) OR self:true - repoints one variable Get/Set node's FMemberReference at a different declaring class"),
+			  TEXT("MifBridgeIntrospect.cpp"), 1450, nullptr },
 			{ TEXT("set_variable_flags"), GMifDescKeys_set_variable_flags, GMifDescNotes_set_variable_flags,
 			  TEXT("blueprintId (alias: path), name (aliases: var, variable), then any of replicated, repNotify, repNotifyFunction, replicationCondition, saveGame, transient, config, instanceEditable, blueprintReadOnly, exposeOnSpawn, advancedDisplay, interp, deprecated, category, tooltip - PARTIAL UPDATE: only the keys actually present are applied, the rest are left alone"),
 			  TEXT("MifBridgeIntrospect.cpp"), 867, nullptr },

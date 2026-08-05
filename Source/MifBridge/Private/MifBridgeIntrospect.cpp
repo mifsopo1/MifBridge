@@ -13,7 +13,9 @@
 #include "HAL/FileManager.h"
 #include "K2Node.h"
 #include "K2Node_CallFunction.h"
+#include "K2Node_FunctionEntry.h" // local variables live on the entry node (set_variable_type scope=local)
 #include "K2Node_Knot.h"
+#include "K2Node_Variable.h"      // FMemberReference retarget (retarget_variable_node)
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/CompilerResultsLog.h"
 #include "Kismet2/KismetEditorUtilities.h"
@@ -1249,6 +1251,298 @@ namespace MifBridge
 		}
 		Out->SetStringField(TEXT("removed"), Name);
 		Out->SetBoolField(TEXT("removedVerified"), true);
+	}
+
+	// Finds the function graph a local variable lives on, and its scope struct.
+	// Locals are stored on the function's K2Node_FunctionEntry, NOT in Blueprint->NewVariables,
+	// which is why list_variables/remove_variable (member-only) cannot see or touch them.
+	static UEdGraph* FindFunctionGraphByName(UBlueprint* Blueprint, const FString& FunctionName)
+	{
+		if (!Blueprint) { return nullptr; }
+		for (UEdGraph* Graph : Blueprint->FunctionGraphs)
+		{
+			if (Graph && Graph->GetName() == FunctionName) { return Graph; }
+		}
+		return nullptr;
+	}
+
+	// Reads a local variable's current pin type off the function entry node. Used for the
+	// before/after read-back: ChangeLocalVariableType is void like its member sibling.
+	static bool FindLocalVariableType(UEdGraph* FunctionGraph, const FName VarName, FEdGraphPinType& OutType)
+	{
+		if (!FunctionGraph) { return false; }
+		for (UEdGraphNode* Node : FunctionGraph->Nodes)
+		{
+			UK2Node_FunctionEntry* Entry = Cast<UK2Node_FunctionEntry>(Node);
+			if (!Entry) { continue; }
+			for (const FBPVariableDescription& Local : Entry->LocalVariables)
+			{
+				if (Local.VarName == VarName) { OutType = Local.VarType; return true; }
+			}
+		}
+		return false;
+	}
+
+	// --- set_variable_type ------------------------------------------------------
+	//   in:  { blueprintId|path, name, type, container?, valueType?, scope?, function? }
+	//   out: { name, scope, typeBefore, typeAfter, changed }
+	//
+	// The gap this fills: there was no way to RETYPE an existing variable. The only route was
+	// remove_variable + add_variable, which drops every Get/Set node referencing it and forces a
+	// manual rewire of each — and remove_variable is member-only, so a local could not be retyped
+	// at ALL. Retyping in place is exactly what the engine's own "change variable type" dropdown
+	// does: it keeps the nodes and reconnects what still type-checks.
+	void H_set_variable_type(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"),
+			  TEXT("type"), TEXT("container"), TEXT("valueType"),
+			  TEXT("scope"), TEXT("function") },
+			TEXT("blueprintId (alias: path), name, type, container?, valueType?, scope? (member|local), ")
+			TEXT("function? (required when scope=local)"),
+			{ { TEXT("class"),       TEXT("the class belongs IN the type string: type:\"object:BP_Foo_C\". Prefixes: object:X, class:X, subclassof:X, softobject:X, softclass:X") },
+			  { TEXT("newType"),     TEXT("spell it type") },
+			  { TEXT("targetClass"), TEXT("use type:\"object:X\" — targetClass is retarget_variable_node's key, for repointing a NODE at another class") } }))
+		{
+			return;
+		}
+		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
+		if (!Blueprint) { return; }
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty()) { Fail(Out, TEXT("name is required (the variable to retype)")); return; }
+
+		FEdGraphPinType NewType;
+		FString TypeError;
+		if (!MakePinType(JStr(In, TEXT("type")), JStr(In, TEXT("container")), NewType, TypeError, JStr(In, TEXT("valueType"))))
+		{
+			Fail(Out, TypeError);
+			return;
+		}
+
+		const FString Scope = JStr(In, TEXT("scope"), TEXT("member"));
+		const bool bLocal = Scope.Equals(TEXT("local"), ESearchCase::IgnoreCase);
+
+		FEdGraphPinType BeforeType;
+		UEdGraph* FunctionGraph = nullptr;
+
+		if (bLocal)
+		{
+			const FString FunctionName = JStr(In, TEXT("function"));
+			if (FunctionName.IsEmpty())
+			{
+				Fail(Out, TEXT("scope=local requires 'function' (the function graph the local lives on)"));
+				return;
+			}
+			FunctionGraph = FindFunctionGraphByName(Blueprint, FunctionName);
+			if (!FunctionGraph)
+			{
+				Fail(Out, FString::Printf(TEXT("function graph '%s' not found — list_graphs shows what exists"), *FunctionName));
+				return;
+			}
+			if (!FindLocalVariableType(FunctionGraph, FName(*Name), BeforeType))
+			{
+				Fail(Out, FString::Printf(TEXT("no local variable '%s' on function '%s'"), *Name, *FunctionName));
+				return;
+			}
+		}
+		else
+		{
+			const int32 VarIndex = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*Name));
+			if (VarIndex == INDEX_NONE)
+			{
+				// Same reasoning as remove_variable: ChangeMemberVariableType early-returns on a miss,
+				// so without this an inherited or misspelled name would report a retype that never ran.
+				const FString Inherited = DescribeInheritedVariable(Blueprint, Name);
+				if (!Inherited.IsEmpty())
+				{
+					Fail(Out, FString::Printf(
+						TEXT("'%s' is INHERITED from %s, not declared on '%s' — a blueprint cannot retype a variable it ")
+						TEXT("does not own. Retype it where it is declared."),
+						*Name, *Inherited, *Blueprint->GetName()));
+					return;
+				}
+				Fail(Out, FString::Printf(TEXT("no member variable '%s' on '%s'%s — list_variables shows what exists"),
+					*Name, *Blueprint->GetName(), *NearMissSuggestion(MemberVariableNames(Blueprint), Name)));
+				return;
+			}
+			BeforeType = Blueprint->NewVariables[VarIndex].VarType;
+		}
+
+		if (BeforeType == NewType)
+		{
+			// Not a failure, but say so plainly rather than reporting changed:true for a no-op.
+			Out->SetStringField(TEXT("name"), Name);
+			Out->SetStringField(TEXT("scope"), bLocal ? TEXT("local") : TEXT("member"));
+			Out->SetObjectField(TEXT("typeBefore"), SerializePinType(BeforeType));
+			Out->SetObjectField(TEXT("typeAfter"), SerializePinType(BeforeType));
+			Out->SetBoolField(TEXT("changed"), false);
+			Out->SetStringField(TEXT("note"), TEXT("variable already has this exact type — nothing was written"));
+			return;
+		}
+
+		Blueprint->Modify();
+		if (bLocal)
+		{
+			// ChangeLocalVariableType wants the SCOPE struct (the generated function), not the graph.
+			// The skeleton class is the scope the engine itself resolves locals against between
+			// compiles; fall back to the generated class if the skeleton has not been built yet.
+			UStruct* LocalScope = nullptr;
+			if (UClass* Skel = Blueprint->SkeletonGeneratedClass)
+			{
+				LocalScope = Skel->FindFunctionByName(FunctionGraph->GetFName());
+			}
+			if (!LocalScope && Blueprint->GeneratedClass)
+			{
+				LocalScope = Blueprint->GeneratedClass->FindFunctionByName(FunctionGraph->GetFName());
+			}
+			if (!LocalScope)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("could not resolve the scope struct for function '%s'. Compile the blueprint once, then retry — ")
+					TEXT("ChangeLocalVariableType needs the generated function to exist."), *FunctionGraph->GetName()));
+				return;
+			}
+			FBlueprintEditorUtils::ChangeLocalVariableType(Blueprint, LocalScope, FName(*Name), NewType);
+		}
+		else
+		{
+			FBlueprintEditorUtils::ChangeMemberVariableType(Blueprint, FName(*Name), NewType);
+		}
+
+		// READ BACK. Both engine calls are void and both early-return on rejection (e.g. a type the
+		// schema refuses), so "changed" has to be an observation, never an assumption.
+		FEdGraphPinType AfterType;
+		bool bFound = false;
+		if (bLocal)
+		{
+			bFound = FindLocalVariableType(FunctionGraph, FName(*Name), AfterType);
+		}
+		else
+		{
+			const int32 Idx = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*Name));
+			if (Idx != INDEX_NONE) { AfterType = Blueprint->NewVariables[Idx].VarType; bFound = true; }
+		}
+		if (!bFound)
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' could not be read back after the retype — the variable is missing. Nothing was verified."), *Name));
+			return;
+		}
+		if (!(AfterType == NewType))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("retype of '%s' did NOT take: the variable is still '%s' after the call. The schema rejected the ")
+				TEXT("requested type. Nothing was changed."),
+				*Name, *UEdGraphSchema_K2::TypeToText(AfterType).ToString()));
+			return;
+		}
+
+		Out->SetStringField(TEXT("name"), Name);
+		Out->SetStringField(TEXT("scope"), bLocal ? TEXT("local") : TEXT("member"));
+		Out->SetObjectField(TEXT("typeBefore"), SerializePinType(BeforeType));
+		Out->SetObjectField(TEXT("typeAfter"), SerializePinType(AfterType));
+		Out->SetBoolField(TEXT("changed"), true);
+		Out->SetStringField(TEXT("note"),
+			TEXT("existing Get/Set nodes were kept and reconstructed; links whose types no longer match were dropped by the schema — compile to see which"));
+	}
+
+	// --- retarget_variable_node -------------------------------------------------
+	//   in:  { graphId, node (aliases: nodeGuid/guid/nodeId), targetClass|self }
+	//   out: { node, variable, ownerBefore, ownerAfter, changed }
+	//
+	// A K2Node_VariableGet/Set carries an FMemberReference naming BOTH the variable and the class
+	// that declares it. set_pin_type can repaint the pins but leaves that reference pointing at the
+	// old class, which compiles as "Variable node ... uses an invalid target". This repoints the
+	// reference itself and reconstructs the node, which is the only thing that actually fixes it.
+	void H_retarget_variable_node(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("node"), TEXT("nodeGuid"), TEXT("guid"), TEXT("nodeId"),
+			  TEXT("targetClass"), TEXT("class"), TEXT("self") },
+			TEXT("graphId, node (aliases: nodeGuid, guid, nodeId), targetClass (alias: class) OR self:true"),
+			{ { TEXT("type"), TEXT("retarget_variable_node changes WHICH CLASS declares the variable, not the pin type — use set_variable_type for the type") },
+			  { TEXT("var"),  TEXT("the variable is taken from the node you name; to place a NEW node use add_variable_get/add_variable_set with targetClass") } }))
+		{
+			return;
+		}
+
+		UEdGraphNode* Node = ResolveNodeField(In, TEXT("node"), Out);
+		if (!Node) { return; }
+		UEdGraph* Graph = Node->GetGraph();
+
+		UK2Node_Variable* VarNode = Cast<UK2Node_Variable>(Node);
+		if (!VarNode)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("node '%s' is a %s, not a variable Get/Set — there is no variable reference to retarget"),
+				*Node->NodeGuid.ToString(EGuidFormats::Digits), *Node->GetClass()->GetName()));
+			return;
+		}
+
+		const FName VarName = VarNode->VariableReference.GetMemberName();
+		UClass* OwnerBefore = VarNode->VariableReference.GetMemberParentClass();
+		const bool bWantSelf = JBool(In, TEXT("self"), false);
+		const FString TargetClassStr = JStr(In, TEXT("targetClass"), JStr(In, TEXT("class")));
+
+		if (!bWantSelf && TargetClassStr.IsEmpty())
+		{
+			Fail(Out, TEXT("pass targetClass (the class that declares the variable) or self:true (this blueprint declares it)"));
+			return;
+		}
+
+		UClass* NewOwner = nullptr;
+		if (!bWantSelf)
+		{
+			UBlueprint* ContextBP = FBlueprintEditorUtils::FindBlueprintForNode(Node);
+			FString ClassError;
+			NewOwner = ResolveClassStrict(TargetClassStr, ContextBP, TEXT("targetClass"), ClassError);
+			if (!NewOwner)
+			{
+				Fail(Out, ClassError);
+				return;
+			}
+			// Refuse a retarget the compiler is guaranteed to reject, rather than writing it and
+			// letting the next compile report an "invalid target" the caller has to decode.
+			if (!NewOwner->FindPropertyByName(VarName))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("class '%s' has no property named '%s' — retargeting there would produce an invalid variable ")
+					TEXT("node. Nothing was changed."), *NewOwner->GetName(), *VarName.ToString()));
+				return;
+			}
+		}
+
+		Node->Modify();
+		Graph->Modify();
+		if (bWantSelf) { VarNode->VariableReference.SetSelfMember(VarName); }
+		else           { VarNode->VariableReference.SetExternalMember(VarName, NewOwner); }
+		VarNode->ReconstructNode();
+
+		if (UBlueprint* OwningBP = FBlueprintEditorUtils::FindBlueprintForNode(Node))
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(OwningBP);
+		}
+
+		// READ BACK: SetExternalMember/SetSelfMember are void.
+		UClass* OwnerAfter = VarNode->VariableReference.GetMemberParentClass();
+		const bool bSelfAfter = VarNode->VariableReference.IsSelfContext();
+		if (bWantSelf && !bSelfAfter)
+		{
+			Fail(Out, TEXT("retarget to self did not take — the node is still an external member reference. Nothing was verified."));
+			return;
+		}
+		if (!bWantSelf && OwnerAfter != NewOwner)
+		{
+			Fail(Out, FString::Printf(TEXT("retarget did not take: owner is still '%s'. Nothing was verified."),
+				OwnerAfter ? *OwnerAfter->GetName() : TEXT("<none>")));
+			return;
+		}
+
+		Out->SetStringField(TEXT("node"), Node->NodeGuid.ToString(EGuidFormats::Digits));
+		Out->SetStringField(TEXT("variable"), VarName.ToString());
+		Out->SetStringField(TEXT("ownerBefore"), OwnerBefore ? OwnerBefore->GetName() : TEXT("<self>"));
+		Out->SetStringField(TEXT("ownerAfter"), bSelfAfter ? TEXT("<self>") : (OwnerAfter ? OwnerAfter->GetName() : TEXT("<none>")));
+		Out->SetBoolField(TEXT("changed"), true);
 	}
 
 	// --- set_variable_default ---------------------------------------------------

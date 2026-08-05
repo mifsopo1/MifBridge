@@ -77,6 +77,8 @@ namespace MifBridge
 			MIF_BIND(add_variable);
 			MIF_BIND(rename_variable);
 			MIF_BIND(remove_variable);
+			MIF_BIND(set_variable_type);
+			MIF_BIND(retarget_variable_node);
 			MIF_BIND(set_variable_default);
 			MIF_BIND(set_variable_flags);
 			// Nodes

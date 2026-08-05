@@ -738,6 +738,8 @@ namespace MifBridge
 	MIF_DECL(add_variable);
 	MIF_DECL(rename_variable);
 	MIF_DECL(remove_variable);
+	MIF_DECL(set_variable_type);
+	MIF_DECL(retarget_variable_node);
 	MIF_DECL(set_variable_default);
 	MIF_DECL(set_variable_flags);
 
