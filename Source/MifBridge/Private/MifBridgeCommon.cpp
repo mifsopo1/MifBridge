@@ -305,6 +305,12 @@ namespace MifBridge
 			MIF_BIND(write_thumbnail_texture);
 			MIF_BIND(set_asset_thumbnail);
 			MIF_BIND(thumbnail_capabilities);
+			// Console / cvar
+			MIF_BIND(exec_console);
+			MIF_BIND(get_cvar);
+			MIF_BIND(set_cvar);
+			// Variable pin lists
+			MIF_BIND(add_node_pin);
 #undef MIF_BIND
 		}
 		return Map;

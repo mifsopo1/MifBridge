@@ -2005,41 +2005,6 @@ def set_asset_thumbnail(asset: str, width: int = 256, height: int = 0,
                  flushTextures=flush_textures, save=save)
 
 
-
-# --------------------------------------------------------------------------
-# Console / cvars, and variable pin lists.
-# exec_console/get_cvar/set_cvar exist so reconstruction flags (mif.kr.Events,
-# mif.kr.LatentResume — both ship default-OFF) can be read and flipped without
-# leaving the bridge; "is this a tool bug or a tool setting" was untestable before.
-# add_node_pin exists because Switch on Int ships with only a Default pin, a full
-# Sequence could not be extended, and Make Array could only size at creation.
-# --------------------------------------------------------------------------
-
-
-@mcp.tool()
-def exec_console(command: str) -> dict:
-    "Run a console command in the EDITOR and return what it printed. handled=false is normal for cvar assignments - verify with get_cvar."
-    return _post("exec_console", command=command)
-
-
-@mcp.tool()
-def get_cvar(name: str) -> dict:
-    "Read a console variable: its string/int/float/bool value and help text."
-    return _post("get_cvar", name=name)
-
-
-@mcp.tool()
-def set_cvar(name: str, value: str) -> dict:
-    "Set a console variable (SetByConsole). Returns before/after/changed; warns if the readback disagrees with what was asked for."
-    return _post("set_cvar", name=name, value=value)
-
-
-@mcp.tool()
-def add_node_pin(graph_id: str, node: str, count: int = 1) -> dict:
-    "Grow a node's variable pin list by `count`: Sequence (then_N), Make Array/Map/Set ([N]), Switch (case pins), Select, commutative maths ops. Returns addedPins[] and the full pins[]."
-    return _post("add_node_pin", graphId=graph_id, node=node, count=count)
-
-
 def main():
     global DEBUG
     parser = argparse.ArgumentParser(description="MifBridge MCP server")

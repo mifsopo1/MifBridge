@@ -241,8 +241,8 @@ namespace MifBridge
 			{ TEXT("actorPath"), TEXT("actor"), TEXT("component"), TEXT("componentName"),
 			  TEXT("points"), TEXT("space"), TEXT("pointType"),
 			  TEXT("closedLoop"), TEXT("closed"), TEXT("loop"),
-			  TEXT("snapToGround"), TEXT("groundOffset"), TEXT("skipPostEditChange") },
-			TEXT("actorPath (alias: actor), component (alias: componentName), points:[{x,y,z},...] (at least 2), space (\"world\"|\"local\"), pointType (\"curve\"|\"linear\"|\"constant\"|\"curveClamped\"|\"curveCustomTangent\"), closedLoop (aliases: closed, loop), snapToGround (bool, needs space:\"world\"), groundOffset (number), skipPostEditChange (bool - do NOT re-run the owning actor's construction script; REQUIRED on blueprints that rebuild their own spline)"),
+			  TEXT("snapToGround"), TEXT("groundOffset") },
+			TEXT("actorPath (alias: actor), component (alias: componentName), points:[{x,y,z},...] (at least 2), space (\"world\"|\"local\"), pointType (\"curve\"|\"linear\"|\"constant\"|\"curveClamped\"|\"curveCustomTangent\"), closedLoop (aliases: closed, loop), snapToGround (bool, needs space:\"world\"), groundOffset (number)"),
 			{ { TEXT("offset"), TEXT("use groundOffset - 'offset' is snap_actors_to_ground's name for the same idea") },
 			  { TEXT("type"), TEXT("use pointType - it sets the interpolation type of every point written by this call") },
 			  { TEXT("tangents"), TEXT("not implemented - set_spline_points writes point LOCATIONS only; pointType:\"curveCustomTangent\" is accepted but the tangents themselves cannot be supplied here") } }))
@@ -351,19 +351,7 @@ namespace MifBridge
 		// is O(n^2) for no benefit.
 		Spline->UpdateSpline();
 		Spline->MarkRenderStateDirty();
-
-		// PostEditChange() re-runs the owning actor's construction script. On every DDS2 blueprint whose
-		// construction script rebuilds its own spline (BP_CarRoadSpline, BP_SplineSidewalk,
-		// BP_QuestNPCWalkPath, BP_SegmentedPathTaskMarker) that DISCARDS the points just written - the
-		// call reports pointCount:N and an immediate read-back returns 2. skipPostEditChange:true keeps
-		// the authored points. The spline is already updated and its render state dirtied above, so the
-		// component is visually correct either way; what is skipped is only the actor-wide rebuild.
-		const bool bSkipPEC = JBool(In, TEXT("skipPostEditChange"), false);
-		if (!bSkipPEC)
-		{
-			Actor->PostEditChange();
-		}
-		Out->SetBoolField(TEXT("skippedPostEditChange"), bSkipPEC);
+		Actor->PostEditChange();
 
 		// Read back from the component, not from the loop counter: pointCount must describe the spline,
 		// not our intent. (AddSplinePoint cannot silently drop, but the same rule applies everywhere.)

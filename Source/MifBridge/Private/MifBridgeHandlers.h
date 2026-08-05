@@ -1138,6 +1138,13 @@ namespace MifBridge
 	MIF_DECL(write_thumbnail_texture);
 	MIF_DECL(set_asset_thumbnail);
 	MIF_DECL(thumbnail_capabilities);
+	// Console / cvar (MifBridgeConsole.cpp) — added so reconstruction flags like
+	// mif.kr.Events can be read and flipped without leaving the bridge.
+	MIF_DECL(exec_console);
+	MIF_DECL(get_cvar);
+	MIF_DECL(set_cvar);
+	// Variable pin lists (MifBridgeNodePins.cpp) — Sequence / Make Array / Switch / Select.
+	MIF_DECL(add_node_pin);
 
 #undef MIF_DECL
 }
