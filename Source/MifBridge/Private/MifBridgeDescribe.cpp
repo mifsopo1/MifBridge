@@ -777,6 +777,23 @@ namespace MifBridge
 		static const TCHAR* const GMifDescNotes_edit_container[] = {
 			TEXT("op"), TEXT("this endpoint's verb is 'operation' (alias 'action'), NOT 'op' - 'op' is batch's routing key and is tolerated centrally, so an endpoint that used it would be un-diagnosable inside batch"),
 			nullptr };
+		static const TCHAR* const GMifDescKeys_export_asset[] = {
+			TEXT("asset"), TEXT("path"), TEXT("assetPath"), TEXT("objectPath"),
+			TEXT("file"), TEXT("filename"), TEXT("outPath"),
+			TEXT("format"), TEXT("type"), TEXT("extension"),
+			TEXT("overwrite"), TEXT("replaceExisting"), TEXT("fbxCompatibility"),
+			TEXT("ascii"), TEXT("vertexColor"), TEXT("levelOfDetail"), TEXT("lod"),
+			TEXT("collision"), TEXT("exportSourceMesh"), TEXT("forceFrontXAxis"), nullptr };
+		static const TCHAR* const GMifDescNotes_export_asset[] = {
+			TEXT("destination"), TEXT("export_asset writes to a DISK path, not a /Game folder — spell it file. (destination means a /Game/... content folder in import_asset, and honouring it here would silently write a .fbx into a path that reads like a package.) Omit it entirely to get <ProjectSaved>/MifBridge/Export/<AssetName>.<ext>."),
+			TEXT("async"), TEXT("not implemented and deliberately so — this server runs handlers synchronously inside the HTTP ticker. UExporter has no async export; a large mesh makes one long frame, which is legal, and work that SPANS frames is not."),
+			TEXT("selected"), TEXT("not implemented — UAssetExportTask::bSelected filters an ACTOR SELECTION for level/object exports; this endpoint exports one named asset and always sends false."),
+			TEXT("options"), TEXT("not implemented as a free-form object — the FBX option fields are exposed individually (fbxCompatibility, ascii, vertexColor, levelOfDetail, collision, exportSourceMesh, forceFrontXAxis). No other exporter's option object is wired, and passing a raw object would defeat the type check that keeps the FBX options MODAL shut (EditorExporters.cpp:2129)."),
+			TEXT("base64"), TEXT("not supported — export_asset writes a FILE and reports its path and byte size. Read the bytes off disk at the returned `file`."),
+			TEXT("batch"), TEXT("not implemented — call once per asset. The FBX SDK instance is created and destroyed per export (EditorExporters.cpp:96-111), so batching inside one call would save nothing. export_asset IS read-only, so the `batch` ENDPOINT can drive several of these in one request."),
+			TEXT("save"), TEXT("not a parameter — export_asset writes a disk file and never touches the asset or its package, so there is nothing to save. (It is read-only for exactly that reason.)"),
+			TEXT("lodIndex"), TEXT("not implemented — the FBX exporter takes a bool (levelOfDetail: all LODs, or LOD0 only), not an index. Export with levelOfDetail:false for LOD0."),
+			nullptr };
 		static const TCHAR* const GMifDescKeys_find_assets[] = {
 			TEXT("class"), TEXT("className"), TEXT("type"), TEXT("pathPrefix"), TEXT("nameContains"),
 			TEXT("origin"), TEXT("recursiveClasses"), TEXT("limit"), nullptr };
@@ -1807,6 +1824,9 @@ namespace MifBridge
 			{ TEXT("edit_container"), GMifDescKeys_edit_container, GMifDescNotes_edit_container,
 			  TEXT("objectPath (alias actorPath), propertyPath (alias property), operation (alias action) = add|insert|remove|clear|swap|resize|setKey, index (alias at), count, key, newKey, value, swapWith, newSize, overrideFlag (set|refuse|ignore)"),
 			  TEXT("MifBridgeDetails.cpp"), 1651, nullptr },
+			{ TEXT("export_asset"), GMifDescKeys_export_asset, GMifDescNotes_export_asset,
+			  TEXT("asset (aliases: path, assetPath, objectPath), file (aliases: filename, outPath), format (aliases: type, extension), overwrite (alias: replaceExisting), fbxCompatibility, ascii, vertexColor, levelOfDetail (alias: lod), collision, exportSourceMesh, forceFrontXAxis"),
+			  TEXT("MifBridgeExport.cpp"), 303, nullptr },
 			{ TEXT("find_assets"), GMifDescKeys_find_assets, GMifDescNotes_find_assets,
 			  TEXT("class (aliases: className, type), pathPrefix, nameContains, origin, recursiveClasses, limit"),
 			  TEXT("MifBridgeCooked.cpp"), 243, nullptr },

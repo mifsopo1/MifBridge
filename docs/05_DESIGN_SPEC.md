@@ -1,6 +1,6 @@
 # 13 — UE5 MCP Bridge Plugin (design spec)
 
-**Status:** **Phase 0 + Phase 1 + Phase 2 + Phase 3 built & compiled** (2026-07-11). In-editor C++ plugin lives at `D:/DDS2SDK/Game/Plugins/MifBridge/` and compiles clean against the 5.3.2 source engine (`UnrealEditor-MifBridge.dll`, editor module, PostEngineInit; built via `Build.bat DrugDealerSimulator2Editor Win64 Development`). Python MCP server ships at `tools/ue5-mcp-bridge/` — **79 tools ↔ 79 endpoints, 1:1 parity**. Implemented: all §9 Phase-0/1 endpoints; the §10 recipes; `read_modloader_log`/`trigger_cook` (plan-only); the Phase-3 node gaps (`add_custom_event` incl. params, `add_make_struct`, `add_break_struct`, `add_self`, `add_literal`, `create_function`, `resolve_struct`); **Phase-3 breadth** — timelines (`add_timeline`), switches/cast/enum (`add_class_cast`, `add_switch_enum/int/string`, `add_enum_literal`, `set_pin_type`), event dispatchers (`add_event_dispatcher`, `add_call_dispatcher`, `add_bind_dispatcher`, `list_dispatchers`), components/SCS (`add_component`, `list_components`, `remove_component`, `set_component_transform`), interfaces (`add_interface`, `remove_interface`, `list_interfaces`), DataTables (`list_datatables`, `read_datatable`, `get_datatable_row`, **`write_datatable_rows`**); and **Phase-3 completion** — `implement_interface_function`, `remove_function`, and common nodes (`add_sequence`, `add_spawn_actor`, `add_get_subsystem`, `add_make_array`, `add_format_text`, `add_get_data_table_row`, `add_comment`). All with game-thread dispatch, per-action transactions, structured compiler read-back, and **three rounds of adversarial multi-agent review (all findings fixed — see §20)**. **Live-verified 2026-07-12:** the two make-or-break §15 tests PASS against the live editor — **#2 wildcard regression** (ForEach `Array` wildcard resolves to `StaticMeshComponent[]` on connect → compile 0/0) and **#6 structured compile-error read-back** (errors mapped to node guid + pin). Driven via curl on `127.0.0.1:8791` (token `dev`); details in §15 "Live results." Remaining §15 items (#1/#3/#4/#5/#7/#8) are lower-risk, to exercise during real graph work. **Nothing left to build:** the §4 pitfall catalog, §9 endpoint surface, §10 recipes, and §16 phasing are all covered. See **§20 — Build & Run (as-built)**. Original design notes follow.
+**Status:** **Phase 0 + Phase 1 + Phase 2 + Phase 3 built & compiled** (2026-07-11). In-editor C++ plugin lives at `D:/DDS2SDK/Game/Plugins/MifBridge/` and compiles clean against the 5.3.2 source engine (`UnrealEditor-MifBridge.dll`, editor module, PostEngineInit; built via `Build.bat DrugDealerSimulator2Editor Win64 Development`). Python MCP server ships at `tools/mcp-server/` — **79 tools ↔ 79 endpoints, 1:1 parity**. Implemented: all §9 Phase-0/1 endpoints; the §10 recipes; `read_modloader_log`/`trigger_cook` (plan-only); the Phase-3 node gaps (`add_custom_event` incl. params, `add_make_struct`, `add_break_struct`, `add_self`, `add_literal`, `create_function`, `resolve_struct`); **Phase-3 breadth** — timelines (`add_timeline`), switches/cast/enum (`add_class_cast`, `add_switch_enum/int/string`, `add_enum_literal`, `set_pin_type`), event dispatchers (`add_event_dispatcher`, `add_call_dispatcher`, `add_bind_dispatcher`, `list_dispatchers`), components/SCS (`add_component`, `list_components`, `remove_component`, `set_component_transform`), interfaces (`add_interface`, `remove_interface`, `list_interfaces`), DataTables (`list_datatables`, `read_datatable`, `get_datatable_row`, **`write_datatable_rows`**); and **Phase-3 completion** — `implement_interface_function`, `remove_function`, and common nodes (`add_sequence`, `add_spawn_actor`, `add_get_subsystem`, `add_make_array`, `add_format_text`, `add_get_data_table_row`, `add_comment`). All with game-thread dispatch, per-action transactions, structured compiler read-back, and **three rounds of adversarial multi-agent review (all findings fixed — see §20)**. **Live-verified 2026-07-12:** the two make-or-break §15 tests PASS against the live editor — **#2 wildcard regression** (ForEach `Array` wildcard resolves to `StaticMeshComponent[]` on connect → compile 0/0) and **#6 structured compile-error read-back** (errors mapped to node guid + pin). Driven via curl on `127.0.0.1:8791` (token `dev`); details in §15 "Live results." Remaining §15 items (#1/#3/#4/#5/#7/#8) are lower-risk, to exercise during real graph work. **Nothing left to build:** the §4 pitfall catalog, §9 endpoint surface, §10 recipes, and §16 phasing are all covered. See **§20 — Build & Run (as-built)**. Original design notes follow.
 
 > One-line thesis: **the failures we keep hitting are almost all artifacts of the clipboard-paste path, not of Blueprint graph editing itself.** Programmatic graph edits via the engine API (`TryCreateConnection`, `ReconstructNode`, real transactions) fire the pin-notification callbacks that paste skips — which is exactly what resolves wildcards, re-links variables, and expands macros. A bridge doesn't just save typing; it removes a whole class of bugs.
 
@@ -60,7 +60,7 @@ The user explicitly asked: cover everything we hit **and** anything we might. §
 [ Claude (this agent) ]
         │  MCP tool calls (stdio JSON-RPC)
         ▼
-[ MCP server: python, FastMCP ]        ← ships in repo: tools/ue5-mcp-bridge/server.py
+[ MCP server: python, FastMCP ]        ← ships in repo: tools/mcp-server/server.py
         │  HTTP POST JSON on 127.0.0.1:8791 (localhost only)
         ▼
 [ In-editor C++ plugin: "MifBridge" ]  ← D:/DDS2SDK/Game/Plugins/MifBridge/
@@ -400,7 +400,7 @@ Recipes are where the bridge stops being "an API" and becomes "Claude builds wor
 
 ## 11. MCP server layer (Python)
 
-`tools/ue5-mcp-bridge/server.py` — thin translator, no game logic:
+`tools/mcp-server/server.py` — thin translator, no game logic:
 ```python
 import os, requests
 from mcp.server.fastmcp import FastMCP
@@ -442,7 +442,7 @@ Project-scoped `.mcp.json` (or user `~/.claude` config):
   "mcpServers": {
     "mif-ue5": {
       "command": "python",
-      "args": ["C:/Users/andre/Documents/GitHub/Eddie_v2/tools/ue5-mcp-bridge/server.py"],
+      "args": ["<YourProject>/Plugins/MifBridge/tools/mcp-server/server.py"],
       "env": { "MIF_BRIDGE_URL": "http://127.0.0.1:8791/api", "MIF_BRIDGE_TOKEN": "<secret>" }
     }
   }
@@ -536,7 +536,7 @@ D:/DDS2SDK/Game/Plugins/MifBridge/          ← in-editor C++ plugin (editor-onl
         ├── MifBridgeIntrospect.cpp           (session/introspection/variables/compile read-back)
         └── MifBridgeNodes.cpp                (node create + pin wiring + batch)
 
-<repo>/tools/ue5-mcp-bridge/                    ← Python MCP server (thin wrapper)
+<repo>/tools/mcp-server/                    ← Python MCP server (thin wrapper)
 ├── server.py           (FastMCP, one tool per endpoint, env config, --debug)
 ├── requirements.txt    (mcp, requests)
 ├── README.md
@@ -559,7 +559,7 @@ same one that builds the rest of this source tree.
 2. Set `MIF_BRIDGE_TOKEN` in the editor's process env and the same value in the MCP server env; requests carry
    it as `X-Mif-Token`. Default `dev` on both sides. Non-loopback callers are rejected regardless.
    Optional `MIF_BRIDGE_PORT` overrides the port on the editor side.
-3. Wire `tools/ue5-mcp-bridge/mcp.json.sample` into `.mcp.json` (see the tool README).
+3. Wire `tools/mcp-server/mcp.json.sample` into `.mcp.json` (see the tool README).
 4. Debug tracing: `mif.BridgeDebug 1` in the editor console; `--debug` (or `MIF_BRIDGE_DEBUG=1`) on the server.
 
 ### Endpoint identifiers

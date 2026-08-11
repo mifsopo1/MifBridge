@@ -305,6 +305,11 @@ namespace MifBridge
 			MIF_BIND(import_asset);
 			MIF_BIND(reimport_asset);
 			MIF_BIND(set_texture_settings);
+			// Source media EGRESS (MifBridgeExport.cpp). No separate endpoint-name list to update:
+			// GetEndpointNames() derives from THIS map (and the external registry), and
+			// FMifBridgeServer::Start binds one /api/<name> route per entry — so this MIF_BIND is what
+			// mints /api/export_asset.
+			MIF_BIND(export_asset);
 			// Asset icon rendering (MifBridgeThumbnail.cpp)
 			MIF_BIND(render_thumbnail);
 			MIF_BIND(write_thumbnail_texture);
@@ -452,6 +457,19 @@ namespace MifBridge
 			// and previewing in a loop is exactly how you pick a camera angle. Their two ASSET-
 			// WRITING siblings are SELF-MANAGED, not here — see IsSelfManagedEndpoint.
 			TEXT("render_thumbnail"), TEXT("thumbnail_capabilities"),
+			// Asset EXPORT (MifBridgeExport.cpp). Same bucket and the same reason as the two directly
+			// above: it writes a FILE under <ProjectSaved> (or a caller-named path) and mutates NO
+			// UObject — no Modify(), no MarkPackageDirty, no PostEditChange, no package created. Its
+			// ingest siblings import_texture / import_asset are SELF-MANAGED because they create and
+			// dirty assets; export creates nothing, so putting it there would be wrong twice over.
+			//
+			// Two consequences, both deliberate. (1) RunEndpoint opens no FScopedTransaction for it, so
+			// exporting in a loop does not push one empty entry per call onto the undo stack — the same
+			// cost render_thumbnail is here to avoid, and exporting a batch of meshes to diff them
+			// outside the editor is exactly a loop. (2) IsCompileHeavyEndpoint derives from
+			// IsSelfManagedEndpoint, so staying READ-ONLY is also what keeps export_asset usable inside
+			// `batch`; bucketing it self-managed would have banned it there for no reason.
+			TEXT("export_asset"),
 			TEXT("start_pie"), TEXT("stop_pie"), TEXT("pie_status"),
 			TEXT("list_pie_actors"), TEXT("run_console_captured"),
 			// Cooked-content introspection — declared read-only in MifBridgeHandlers.h; without

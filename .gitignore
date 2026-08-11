@@ -7,7 +7,15 @@ DerivedDataCache/
 *.suo
 *.sdf
 
-# Python bytecode from the MCP layer (tools/ue5-mcp-bridge) — a .pyc was
-# committed once already; it is build output and must never be tracked.
+# Python bytecode from the MCP layer (tools/mcp-server) and the Blender addon
+# (tools/blender-addon) — a .pyc was committed once already; it is build output
+# and must never be tracked.
 __pycache__/
 *.pyc
+
+# Blender addon build output (tools/blender-addon/build_zip.py) and Blender's
+# rolling backups. The addon SOURCE under tools/blender-addon/MifBlender/ is
+# tracked — only the packaged artifact and .blend backups are not.
+tools/blender-addon/dist/
+*.blend1
+*.blend2

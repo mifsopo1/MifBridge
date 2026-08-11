@@ -31,7 +31,7 @@ the deliverable.
 | Plugin | `D:/DDS2SDK/Game/Plugins/MifBridge` |
 | Handler declarations | `Source/MifBridge/Private/MifBridgeHandlers.h` |
 | Handler registry | `Source/MifBridge/Private/MifBridgeCommon.cpp` |
-| Python MCP layer | `tools/ue5-mcp-bridge/server.py` |
+| Python MCP layer | `tools/mcp-server/server.py` |
 | Existing docs | `docs/00_ARCHITECTURE.md` … `docs/08_LANDSCAPE.md` |
 
 The game is *Drug Dealer Simulator 2*. Much of `/Game/**` is **cooked content mounted from .pak

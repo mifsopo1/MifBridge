@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "mif-ue5": {
+    "mif-bridge": {
       "command": "python",
-      "args": ["<YourProject>/Plugins/MifBridge/tools/ue5-mcp-bridge/server.py"],
+      "args": ["<YourProject>/Plugins/MifBridge/tools/mcp-server/server.py"],
       "env": {
         "MIF_BRIDGE_URL": "http://127.0.0.1:8791/api",
         "MIF_BRIDGE_TOKEN": "change-me-to-match-the-editor"

@@ -1,5 +1,10 @@
-# Windows-only Unreal plugin: keep CRLF in the working tree for every text file so the editor,
-# Visual Studio and GitHub Desktop all agree and nobody gets a whole-file diff from line endings.
+# The Unreal plugin is Windows-only: keep CRLF in the working tree for every text file so the
+# editor, Visual Studio and GitHub Desktop all agree and nobody gets a whole-file diff from line
+# endings.
+#
+# This now also applies to the cross-platform halves (tools/mcp-server, tools/blender-addon).
+# That is deliberate and harmless: CPython and Blender both read CRLF sources fine, and one
+# whole-repo rule beats a per-directory exception that someone forgets to extend.
 * text=auto eol=crlf
 
 # Explicit for the file types actually in this repo, so a new extension cannot slip through as LF.
@@ -12,6 +17,9 @@
 *.ini   text eol=crlf
 *.uplugin text eol=crlf
 
+*.txt   text eol=crlf
+*.toml  text eol=crlf
+
 # Binary — never touch these.
 *.png   binary
 *.uasset binary
@@ -19,3 +27,6 @@
 *.pdb   binary
 *.dll   binary
 *.lib   binary
+*.zip   binary
+*.blend binary
+*.fbx   binary

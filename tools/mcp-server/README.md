@@ -1,19 +1,34 @@
 # MifBridge MCP server
 
+> **This directory was `tools/ue5-mcp-bridge/` before 0.3.0.** It was renamed because the server is
+> no longer UE5-only. A forwarding shim is left at the old path so existing `.mcp.json` files keep
+> working — see [Upgrading from 0.2.0](../../README.md#upgrading-from-020--the-server-moved).
+
 Thin [FastMCP](https://github.com/modelcontextprotocol/python-sdk) wrapper over the in-editor
 **MifBridge** C++ plugin. It lets Claude build, wire, compile, and *read compiler errors back from*
 Blueprint graphs in the custom UE 5.3.2 source build — closing the feedback loop that the
 clipboard-paste workflow never had.
 
-Full design + endpoint reference: [`docs/13_UE5_MCP_BRIDGE_PLUGIN.md`](../../docs/13_UE5_MCP_BRIDGE_PLUGIN.md).
+It is also the single front end for MifBridge's **second backend** — the `MifBlender` addon on
+`127.0.0.1:8792` ([`../blender-addon/`](../blender-addon/)). Two transports, two choke-point
+functions (`_post` for Unreal, `_blender` for Blender), no shared dispatch. The Blender half ships
+as the `bl_*` tools plus the composing `mif_mesh_roundtrip`; `python ../parity_check.py` ties the
+`_blender("...")` call sites to the addon's op table and to each op's accepted-param set, which is
+the `bl_*` equivalent of the `MIF_DECL == MIF_BIND` compile-time tie.
+
+Full design + endpoint reference: [`docs/05_DESIGN_SPEC.md`](../../docs/05_DESIGN_SPEC.md);
+architecture and the add-an-endpoint checklist: [`docs/00_ARCHITECTURE.md`](../../docs/00_ARCHITECTURE.md).
 
 ```
-Claude ── MCP (stdio) ──► server.py ── HTTP POST 127.0.0.1:8791 ──► MifBridge (editor) ──► UnrealEd graph API
+                              ┌── HTTP POST 127.0.0.1:8791 ──► MifBridge (editor) ──► UnrealEd graph API
+Claude ── MCP (stdio) ──► server.py
+                              └── framed JSON 127.0.0.1:8792 ──► MifBlender (addon) ──► bpy / bmesh
+                                  (bl_* tools; see ../blender-addon/)
 ```
 
 ## Prerequisites
 
-1. **The editor is open** on `DrugDealerSimulator2.uproject` with the `MifBridge` plugin built and loaded.
+1. **The editor is open** on your `.uproject` with the `MifBridge` plugin built and loaded.
 2. **The bridge is listening** — it auto-starts on editor load; toggle it from **Tools ▸ Mif Bridge: Start/Stop**
    (the menu label shows the port when running). It binds `127.0.0.1:8791` and only accepts loopback callers.
 3. **Python 3.10+** with the deps below.
@@ -30,6 +45,22 @@ pip install -r requirements.txt
 | `MIF_BRIDGE_TOKEN` | `dev` | Shared secret; **must match** the editor's `MIF_BRIDGE_TOKEN` env var (sent as the `X-Mif-Token` header). |
 | `MIF_BRIDGE_TIMEOUT` | `30` | Per-request timeout (seconds). Raise it if a compile is slow. |
 | `MIF_BRIDGE_DEBUG` | *(unset)* | `1`/`true` to log request/response to **stderr** (same as `--debug`). |
+| `MIF_BLENDER_HOST` / `MIF_BLENDER_PORT` | `127.0.0.1` / `8792` | The `MifBlender` addon's socket. |
+| `MIF_BLENDER_TOKEN` | falls back to `MIF_BRIDGE_TOKEN` | Must match the addon preference. |
+| `MIF_BLENDER_CONNECT_TIMEOUT` | `3` | Reaching the socket at all. Sits just above the ~2 s Windows takes to report a refused loopback connect, so "Blender is not running" reports as *refused* rather than as a misleading connect timeout. |
+| `MIF_BLENDER_PROBE_TIMEOUT` | `5` | `bl_status` only, and it bounds **two** waits: the read, and the wait for the transport lock. |
+| `MIF_BLENDER_TIMEOUT` | `180` | Read timeout for every other Blender op. |
+
+**The timeout ladder has an owner.** The addon's own main-thread job timeout is 150 s and must stay
+**below** `MIF_BLENDER_TIMEOUT`, so Blender gives up first and the socket carries a real error. If
+the MCP abandons first it drops the socket while Blender goes on mutating the scene for the
+remainder of its own timeout, on behalf of a caller already told the op failed. Raise one, raise the
+other.
+
+**The Blender transport is one serialised socket.** A long op blocks the rest. `bl_status` (and
+`mif_mesh_roundtrip`'s step-0 probe) therefore bound their wait for the lock as well as for the
+read, and answer with *which* op holds the line and for how long — the tool you reach for when
+Blender is wedged must not be the tool wedged Blender makes unavailable.
 
 The editor reads `MIF_BRIDGE_TOKEN` (and optional `MIF_BRIDGE_PORT`) from its own process
 environment at startup, so set the same token on both sides.
@@ -49,6 +80,11 @@ Copy [`mcp.json.sample`](./mcp.json.sample) into your project-scoped `.mcp.json`
 `~/.claude` config) and set the token to match the editor. **Do not commit real secrets.**
 
 ## Tools (one per bridge endpoint)
+
+> **This list is a historical subset, kept for orientation — it is not the tool inventory.** It was
+> written when there were 79 tools; there are now **224**. The server itself is the only accurate
+> list. Get it with `grep -c '@mcp.tool()' server.py`, or check it against the plugin with the
+> parity command in the [root README](../../README.md#endpoint--tool-parity-with-a-second-backend-in-the-picture).
 
 - **Session/assets:** `open_blueprint`, `list_blueprints`, `save_blueprint`, `backup_blueprint`
 - **Introspection:** `list_graphs`, `list_nodes`, `get_node`, `list_variables`, `list_functions`, `find_nodes`, `resolve_struct`

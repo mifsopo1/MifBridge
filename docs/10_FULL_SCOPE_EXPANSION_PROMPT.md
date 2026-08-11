@@ -88,7 +88,7 @@ Every endpoint exists in exactly three places. Drift between them is a recurring
 
 - `MIF_DECL(name);` — `Source/MifBridge/Private/MifBridgeHandlers.h`
 - `MIF_BIND(name);` — `Source/MifBridge/Private/MifBridgeCommon.cpp`
-- `@mcp.tool() def name(...)` — `tools/ue5-mcp-bridge/server.py`
+- `@mcp.tool() def name(...)` — `tools/mcp-server/server.py`
 
 After every batch assert `grep -c 'MIF_DECL(' … == grep -c 'MIF_BIND(' …`.
 

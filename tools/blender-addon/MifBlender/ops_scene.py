@@ -1,0 +1,323 @@
+"""MifBlender ops: introspection, scene housekeeping, and the run_python hatch."""
+
+from __future__ import annotations
+
+import io
+import math
+import os
+import sys
+import traceback
+from contextlib import redirect_stdout, redirect_stderr
+
+import bpy
+
+from .ops_common import (
+    MifOpError, jsonable, object_info, mesh_counts, take, take_bool,
+    reject_unknown, get_object, UU_PER_BU,
+)
+
+ADDON_VERSION = (0, 1, 0)
+
+
+def _prefs():
+    addon = bpy.context.preferences.addons.get(__package__)
+    return addon.preferences if addon else None
+
+
+# ---------------------------------------------------------------------------
+# ping
+# ---------------------------------------------------------------------------
+
+def op_ping(params):
+    reject_unknown(params, {"echo"}, "ping")
+    from . import server as _server  # local import: avoids an import cycle
+
+    prefs = _prefs()
+    out = {
+        "pong": True,
+        "addon": "MifBlender",
+        "addonVersion": list(ADDON_VERSION),
+        "protocolVersion": _server.PROTOCOL_VERSION,
+        "blenderVersion": list(bpy.app.version),
+        "blenderVersionString": bpy.app.version_string,
+        "background": bpy.app.background,
+        "pid": os.getpid(),
+        "python": sys.version.split()[0],
+        "blendFile": bpy.data.filepath or None,
+        "sceneName": bpy.context.scene.name if bpy.context.scene else None,
+        "objectCount": len(bpy.data.objects),
+        "unitsPerBlenderUnit": UU_PER_BU,
+        "runPythonAllowed": bool(getattr(prefs, "allow_run_python", False)),
+        "ops": _server.op_names(),
+    }
+    echo = params.get("echo")
+    if echo is not None:
+        out["echo"] = jsonable(echo)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# list_objects
+# ---------------------------------------------------------------------------
+
+def op_list_objects(params):
+    reject_unknown(params, {"type", "objectType", "pattern", "detail"}, "list_objects")
+    want_type = take(params, "type", "objectType")
+    pattern = take(params, "pattern")
+    detail = take_bool(params, "detail", default=False)
+
+    if want_type is not None:
+        want_type = str(want_type).upper()
+
+    rows = []
+    for obj in bpy.data.objects:
+        if want_type and obj.type != want_type:
+            continue
+        if pattern and str(pattern).lower() not in obj.name.lower():
+            continue
+        if detail:
+            rows.append(object_info(obj))
+            continue
+        row = {"name": obj.name, "type": obj.type,
+               "inViewLayer": obj.name in bpy.context.view_layer.objects}
+        if obj.type == "MESH":
+            row["dimensionsBU"] = [round(float(v), 6) for v in obj.dimensions]
+            row.update(mesh_counts(obj))
+            row["materialSlots"] = [(s.material.name if s.material else None)
+                                    for s in obj.material_slots]
+        rows.append(row)
+
+    return {"count": len(rows), "objects": rows,
+            "filteredBy": {"type": want_type, "pattern": pattern}}
+
+
+# ---------------------------------------------------------------------------
+# scene_info
+# ---------------------------------------------------------------------------
+
+def op_scene_info(params):
+    """What is actually in this Blender right now, and is it safe to export from.
+
+    Read-only. Beyond the obvious census it reports scene.unit_settings, because
+    scale_length is a silent multiplier on every FBX this pipeline writes.
+
+      MEASURED on Blender 4.4.0 headless, factory startup, with the addon's own
+      FBX_EXPORT_ARGS: the same 10 BU cube exported at scale_length 1.0 reimports
+      at 10.0 BU, and exported at scale_length 0.01 reimports at 0.1 BU (object
+      scale 0.01). UnitScaleFactor stays 1.0 in the file BOTH times, so the
+      header does not give the mismatch away -- only the magnitudes do.
+
+    A round trip run in a scene with a non-default scale_length therefore comes
+    back 100x wrong while every ok:true in the chain stays true, which is why it
+    is a warning here rather than a footnote in a README.
+    """
+    reject_unknown(params, {"detail"}, "scene_info")
+    detail = take_bool(params, "detail", default=False)
+
+    scene = bpy.context.scene
+    view_layer = bpy.context.view_layer
+    units = scene.unit_settings if scene else None
+    active = view_layer.objects.active if view_layer else None
+
+    by_type = {}
+    for obj in bpy.data.objects:
+        by_type[obj.type] = by_type.get(obj.type, 0) + 1
+
+    if detail:
+        objects = [object_info(o) for o in bpy.data.objects]
+    else:
+        objects = [{"name": o.name, "type": o.type,
+                    "inViewLayer": bool(view_layer) and o.name in view_layer.objects}
+                   for o in bpy.data.objects]
+
+    warnings = []
+    scale_length = float(units.scale_length) if units else 1.0
+    if units is not None and abs(scale_length - 1.0) > 1e-9:
+        warnings.append(
+            "scene.unit_settings.scale_length is %g, not 1.0. MEASURED on 4.4.0: this "
+            "scales every FBX this addon writes by that factor while UnitScaleFactor in "
+            "the file stays 1.0 -- a 1000 uu tile would land in Unreal at %g uu and "
+            "nothing in the export would report an error. Set it back to 1.0 before "
+            "exporting, or expect the round trip's fidelity gate to abort."
+            % (scale_length, 1000.0 * scale_length))
+    if units is not None and units.system not in ("METRIC", "NONE"):
+        warnings.append(
+            "scene.unit_settings.system is %r. The centimetre reasoning this pipeline "
+            "rests on (1 BU = %g uu) was verified under METRIC only -- an IMPERIAL scene "
+            "is UNVERIFIED here." % (units.system, UU_PER_BU))
+
+    return {
+        "sceneName": scene.name if scene else None,
+        "blendFile": bpy.data.filepath or None,
+        "background": bpy.app.background,
+        "objectCount": len(bpy.data.objects),
+        "objectsByType": by_type,
+        "objects": objects,
+        "meshCount": by_type.get("MESH", 0),
+        "activeObject": active.name if active else None,
+        "selectedObjects": [o.name for o in bpy.context.selected_objects],
+        "viewLayerObjectCount": len(view_layer.objects) if view_layer else 0,
+        "collections": [c.name for c in bpy.data.collections],
+        "unitSettings": {
+            "system": units.system if units else None,
+            "systemRotation": units.system_rotation if units else None,
+            "scaleLength": scale_length,
+            "lengthUnit": units.length_unit if units else None,
+        },
+        "unrealUnitsPerBlenderUnit": UU_PER_BU,
+        "frameCurrent": scene.frame_current if scene else None,
+        "warnings": warnings,
+    }
+
+
+# ---------------------------------------------------------------------------
+# object_info
+# ---------------------------------------------------------------------------
+
+def op_object_info(params):
+    reject_unknown(params, {"object", "name"}, "object_info")
+    name = take(params, "object", "name", required=True, kind=str)
+    return {"object": object_info(get_object(name))}
+
+
+# ---------------------------------------------------------------------------
+# clear_scene / delete_object
+# ---------------------------------------------------------------------------
+
+def _delete(objs, purge):
+    names = [o.name for o in objs]
+    for obj in objs:
+        bpy.data.objects.remove(obj, do_unlink=True)
+    purged = 0
+    if purge:
+        # orphan meshes/materials left behind by the delete
+        for coll in (bpy.data.meshes, bpy.data.materials, bpy.data.images,
+                     bpy.data.armatures):
+            for datablock in list(coll):
+                if datablock.users == 0:
+                    coll.remove(datablock)
+                    purged += 1
+    return names, purged
+
+
+def op_clear_scene(params):
+    reject_unknown(params, {"type", "objectType", "purgeOrphans", "purge"}, "clear_scene")
+    want_type = take(params, "type", "objectType")
+    purge = take_bool(params, "purgeOrphans", "purge", default=True)
+    if want_type is not None:
+        want_type = str(want_type).upper()
+
+    targets = [o for o in bpy.data.objects if not want_type or o.type == want_type]
+    removed, purged = _delete(targets, purge)
+    return {"removed": removed, "removedCount": len(removed),
+            "orphansPurged": purged, "remaining": len(bpy.data.objects)}
+
+
+def op_delete_object(params):
+    reject_unknown(params, {"object", "name", "objects", "purgeOrphans", "purge"},
+                   "delete_object")
+    purge = take_bool(params, "purgeOrphans", "purge", default=False)
+    names = take(params, "objects")
+    if names is None:
+        names = [take(params, "object", "name", required=True, kind=str)]
+    if not isinstance(names, list):
+        raise MifOpError("'objects' must be a list of object names")
+
+    targets = [get_object(n) for n in names]
+    removed, purged = _delete(targets, purge)
+    return {"removed": removed, "removedCount": len(removed), "orphansPurged": purged}
+
+
+# ---------------------------------------------------------------------------
+# run_python  -- the escape hatch
+# ---------------------------------------------------------------------------
+
+RUN_PYTHON_HELP = (
+    "run_python is disabled. Enable it in Edit > Preferences > Add-ons > MifBlender "
+    "> 'Allow run_python'. It executes arbitrary code inside Blender with your user's "
+    "privileges -- only enable it on a machine you control."
+)
+
+
+def op_run_python(params):
+    """Execute arbitrary Python on the main thread.
+
+    Everything MifBlender does not have a first-class op for goes through here.
+    It runs on the main thread like every other op, so bpy is safe to touch.
+
+    Contract: whatever the code assigns to a module-level name `result` comes
+    back in the response, coerced to JSON-safe values. stdout and stderr are
+    captured. An exception is returned as ok:false with the traceback -- it does
+    NOT kill the connection.
+    """
+    reject_unknown(params, {"code", "script", "file", "filepath", "returnLocals"},
+                   "run_python")
+    prefs = _prefs()
+    if not getattr(prefs, "allow_run_python", False):
+        raise MifOpError(RUN_PYTHON_HELP)
+
+    code = take(params, "code", "script")
+    path = take(params, "file", "filepath")
+    if code is None and path is None:
+        raise MifOpError("run_python needs 'code' (a string) or 'file' (a path to a .py)")
+    if code is not None and path is not None:
+        raise MifOpError("pass 'code' or 'file', not both")
+    if path is not None:
+        if not os.path.isfile(path):
+            raise MifOpError("no such file: %s" % path)
+        with open(path, "r", encoding="utf-8") as handle:
+            code = handle.read()
+    if not isinstance(code, str):
+        raise MifOpError("'code' must be a string")
+
+    namespace = {
+        "__name__": "mifblender_run_python",
+        "bpy": bpy,
+        "math": math,
+        "result": None,
+    }
+    try:
+        import bmesh  # noqa: WPS433 - convenience for callers
+        namespace["bmesh"] = bmesh
+    except Exception:
+        pass
+    try:
+        import mathutils  # noqa: WPS433
+        namespace["mathutils"] = mathutils
+    except Exception:
+        pass
+
+    out_buf, err_buf = io.StringIO(), io.StringIO()
+    try:
+        with redirect_stdout(out_buf), redirect_stderr(err_buf):
+            exec(compile(code, "<mifblender:run_python>", "exec"), namespace)  # noqa: S102
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "error": "%s: %s" % (type(exc).__name__, exc),
+            "traceback": traceback.format_exc(),
+            "stdout": out_buf.getvalue(),
+            "stderr": err_buf.getvalue(),
+        }
+
+    response = {
+        "stdout": out_buf.getvalue(),
+        "stderr": err_buf.getvalue(),
+        "result": jsonable(namespace.get("result")),
+    }
+    if take_bool(params, "returnLocals", default=False):
+        response["names"] = sorted(
+            k for k in namespace
+            if not k.startswith("__") and k not in ("bpy", "bmesh", "mathutils", "math"))
+    return response
+
+
+OPS = {
+    "ping": op_ping,
+    "scene_info": op_scene_info,
+    "list_objects": op_list_objects,
+    "object_info": op_object_info,
+    "clear_scene": op_clear_scene,
+    "delete_object": op_delete_object,
+    "run_python": op_run_python,
+}

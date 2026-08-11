@@ -1133,6 +1133,42 @@ namespace MifBridge
 	MIF_DECL(reimport_asset);
 	MIF_DECL(set_texture_settings);
 
+	// SOURCE MEDIA EGRESS (MifBridgeExport.cpp). The mirror of the block above, and the half that did
+	// not exist: content could come IN but nothing could get OUT, so any workflow that edits geometry
+	// in an external DCC was blocked at step one. export_asset writes ONE asset to a disk file through
+	// UExporter::RunAssetExportTask; StaticMesh -> FBX is the verified path and everything else
+	// UExporter::FindExporter resolves is passed through with a warning that says so.
+	//
+	// READ-ONLY, not self-managed like its four ingest siblings — it writes a FILE and mutates no
+	// asset, which is the render_thumbnail precedent, not the import_texture one. Bucket comment in
+	// MifBridgeCommon.cpp.
+	//
+	// FOUR HAZARDS THE IMPORT SIDE DOES NOT HAVE, every one fatal if a later edit drops it (full
+	// citations in the handler's file header):
+	//   * The FBX exporter opens a MODAL unless BOTH Task->bAutomated is true AND Task->Options is a
+	//     real UFbxExportOption — GetAutomatedExportOptionsFbx casts Options and returns null on a
+	//     miss even when bAutomated is set (EditorExporters.cpp:2129-2136). And note WHICH guard
+	//     actually suppresses the dialog: FillExportOptions tests FApp::IsUnattended()
+	//     (FbxMainExport.cpp:188), NOT the GIsRunningUnattendedScript that import_asset relies on, so
+	//     the ingest block's mitigation does not transfer. The handler also calls
+	//     SetShowExportOption(false) as a belt, because UExporter's constructor defaults it to true.
+	//   * RunAssetExportTask returns TRUE on three paths that write no file (UnrealExporter.cpp
+	//     :320-323, :394-397, :364-407), so the FILE is the verdict, never the return value.
+	//   * ...and it deletes the destination on NONE of them, so a stat with no pre-image cannot tell a
+	//     fresh file from the previous run's leftovers — which, on a deterministic default path with
+	//     overwrite defaulting true, is every call after the first. The handler therefore photographs
+	//     every expected output (existence, timestamp, size) BEFORE the export and refuses a file that
+	//     did not move. Do NOT "fix" that by deleting the target first: it discards a good previous
+	//     export exactly when the new one has failed.
+	//   * RunAssetExportTask does not necessarily write Task->Filename. With GetFileCount() > 1 it
+	//     writes GetUniqueFilename(...) per index (UnrealExporter.cpp:366/:372) — UDIM and layered
+	//     virtual textures, and surround SoundWaves. The handler enumerates the expected SET from the
+	//     exporter and returns files[]; statting only Task->Filename reported a successful multi-file
+	//     export as "produced no usable file".
+	// The inverse trap: bWriteEmptyFiles MUST stay false. The FBX exporter writes the file itself and
+	// hands the caller an empty archive, so true would clobber the real FBX with a 0-byte one.
+	MIF_DECL(export_asset);
+
 	// Asset ICON rendering (MifBridgeThumbnail.cpp). ThumbnailTools::RenderThumbnail is fully
 	// SYNCHRONOUS, so there is no job slot and nothing to poll. Only write_thumbnail_texture
 	// produces an ASSET - it is the one that actually fills an empty icon stub, because a PNG

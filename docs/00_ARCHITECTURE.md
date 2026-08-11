@@ -1,6 +1,76 @@
 # MifBridge — architecture map
 
-Editor-only UE 5.3 plugin exposing a loopback HTTP API over Unreal's Blueprint graph API.
+Editor-only UE 5.3 plugin exposing a loopback HTTP API over Unreal's Blueprint graph API, plus the
+MCP server that fronts it.
+
+---
+
+## Repo layout — three installables, one repo
+
+Since 0.3.0 this repo ships three things, and only one of them is Unreal:
+
+| Path | What | Installed to |
+|---|---|---|
+| `MifBridge.uplugin`, `Source/` — **the repo root is the plugin** | UE editor plugin (C++) | `<Project>/Plugins/MifBridge/` |
+| `tools/mcp-server/` | The MCP server. Fronts **both** backends. | nowhere; referenced by path from `.mcp.json` |
+| `tools/blender-addon/` | `MifBlender` — the Blender backend. 12 ops. | Blender's addons dir, as a zip |
+
+The root is the UE plugin because Unreal locates a plugin by finding a `.uplugin` at the root of the
+plugin folder — a tidy `unreal-plugin/` subdirectory would mean nobody can clone this straight into
+`Plugins/`. Unreal never reads `tools/`, `docs/` or `.github/`: `FPluginDescriptor`
+(`Runtime/Projects/Public/PluginDescriptor.h`) has no field that enumerates or excludes directories,
+and the single module is `"Type": "Editor"`, so none of it can reach a cooked build either.
+
+`tools/ue5-mcp-bridge/` was renamed to `tools/mcp-server/` in 0.3.0 (the server is no longer
+UE5-only). A forwarding shim remains at the old path for existing `.mcp.json` files. **Everything
+under `docs/audit/` still says `ue5-mcp-bridge` on purpose** — those are dated records, not
+instructions, and rewriting them would falsify the history they exist to preserve.
+
+---
+
+## Two backends, one tool namespace
+
+```
+agent ──MCP stdio──► server.py ──┬── _post()     ──HTTP  127.0.0.1:8791/api ──► MifBridge  (UE, C++)
+                                 └── _blender()  ──TCP   127.0.0.1:8792     ──► MifBlender (Blender, py)
+                                                          (planned — not in 0.3.0)
+```
+
+| Tool prefix | Backend | Rule |
+|---|---|---|
+| *(none)* | Unreal, via `_post` | The default backend. **Do not rename these to `ue_*`** — it would break every existing workflow and doc for cosmetic symmetry. |
+| `kr_*` | Unreal, foreign provider (`MifKismetReconstructor`, registered at runtime) | Existing precedent that a prefix marks a provider. |
+| `bl_*` | Blender, via `_blender` | One tool per Blender op, same one-statement passthrough discipline. |
+| `mif_*` | Composes both | The **only** tools allowed to contain logic. |
+
+Two choke-point functions, **no shared dispatch** — a change to one backend cannot break the other.
+Both return the same `{ok, error}` envelope, so one error contract spans the pair, and neither one
+connects at MCP startup (a lazy connect is what keeps a closed Blender from wedging client startup).
+
+### The Blender transport is ONE serialised socket
+
+`_BL_LOCK` guards a persistent connection, so a second op cannot read the first op's response off a
+desynced stream. The consequence is that one long op blocks every other. Calls whose whole job is to
+**diagnose** that — `bl_status`, and `mif_mesh_roundtrip`'s step-0 probe — pass `_lock_timeout` and
+give up on the lock in 5 s, answering with the op that holds the line and for how long, which is
+itself the diagnosis. Real work takes the lock unbounded and queues, which is correct for it.
+
+Both `_timeout` (read) and `_lock_timeout` (lock) are transport-only and never reach the addon;
+`tools/parity_check.py` knows that via `BLENDER_TRANSPORT_KWARGS` so they are not mistaken for
+params an op must accept.
+
+### Timeout ladder — the addon gives up first
+
+| | default | owner |
+|---|---|---|
+| MCP connect | 3 s | `MIF_BLENDER_CONNECT_TIMEOUT` |
+| MCP probe (read **and** lock, `bl_status` only) | 5 s | `MIF_BLENDER_PROBE_TIMEOUT` |
+| **Addon main-thread job** | **150 s** | `MifBlender/server.py DEFAULT_JOB_TIMEOUT` |
+| MCP work read | 180 s | `MIF_BLENDER_TIMEOUT` |
+
+The addon number must stay **below** the MCP work number. Inverted — which it was, at 600 s against
+180 s — the MCP abandons the call and drops the socket while Blender goes on mutating the scene for
+another seven minutes on behalf of a caller already told the op failed. Raise one, raise the other.
 
 ---
 
@@ -94,12 +164,52 @@ has run.
 2. `MifBridgeCommon.cpp` — `MIF_BIND(name)` in `Handlers()`
 3. `MifBridgeCommon.cpp` — add to `IsReadOnlyEndpoint` **or** `IsSelfManagedEndpoint` if it qualifies
 4. `<some>.cpp` — define `H_name`
-5. `server.py` (separate repo: `Eddie_v2/tools/ue5-mcp-bridge/`) — the MCP tool wrapper
-6. `README.md` + `docs/02_GOTCHAS.md`
+5. `MifBridgeDescribe.cpp` — the per-endpoint key list + notes + `Summary` row. The `Summary` must be
+   **byte-identical** to the `AcceptedSummary` string the handler passes to `RejectUnknownParams`
+6. `tools/mcp-server/server.py` — the MCP tool wrapper (**in this repo**, beside the plugin)
+7. `README.md` + `docs/02_GOTCHAS.md`
 
 > Steps 1–2 are checkable: the `MIF_DECL` and `MIF_BIND` name sets must be identical, and a missing
-> `MIF_BIND` is a link error rather than a silent gap. **Step 5 is not checkable and drifts** — see
-> the sync warning below.
+> `MIF_BIND` is a link error rather than a silent gap. **Step 6 is not link-checkable** — run the
+> parity diff below instead.
+
+**Scope clause for the 1:1 rule, now that there are two backends.** "Every endpoint needs a
+`MIF_DECL` + `MIF_BIND` + `@mcp.tool`" was written when every tool was a UE endpoint. Restated: *the
+UE endpoint set and the set of endpoint strings passed to `_post()` must be identical.* Tools that
+call `_blender()` are outside **that** set by construction — they own no C++ endpoint — but they are
+**not** outside the discipline. They have their own parity set, below. `mif_*` tools compose and own
+nothing on either backend.
+
+### The Blender half has the same rule and its own checker
+
+`_blender("<op>")` is to `MifBlender.OPS` what `MIF_DECL` is to `MIF_BIND` — with one difference
+that cost the flagship round trip: **there is no compiler.** A missing `MIF_BIND` is a link error; a
+missing addon op is a runtime `"unknown endpoint"` discovered by a user. So the tie is a script:
+
+```bash
+python tools/parity_check.py            # exit 0 clean, 1 on any drift
+python tools/parity_check.py --verbose  # print the resolved op tables too
+```
+
+It parses both sides with `ast` — no `bpy`, no `fastmcp`, no editor — and runs three checks:
+
+| check | what it ties together |
+|---|---|
+| op parity | `_blender("...")` literals in `server.py` **==** the union of `ops_scene.OPS` + `ops_mesh.OPS`, both directions |
+| param parity | every kwarg each `_blender("op", …)` call site sends **∈** that op's `reject_unknown` accepted set |
+| UE parity | `MIF_BIND(...)` **==** `_post("...")` literals, minus the recorded exemptions — the `comm` recipe below, mechanised |
+
+**Fail-closed.** A computed op name, a `**kwargs` splat, or an accepted-key set the checker cannot
+read statically is reported as a *failure*, not skipped — a check that quietly could not run is the
+defect it exists to catch. Exemptions (`run_python` on the Blender side, the five toolless UE
+endpoints) are named, carry a reason, and are printed on every run, pass or fail.
+
+This exists because it was needed. Before it, `server.py` called three ops the addon did not have
+(`scene_info`, `select_edges`, `extrude_skirt` — and `mif_mesh_roundtrip` *defaulted* to the last
+one), and the one op both sides did have was sent `selector` and `preserveX`, neither of which is in
+its accepted set. Both classes are caught by the script in under a second. **Consequence for
+step 6 of the checklist above: if the new endpoint is a Blender op, `tools/parity_check.py` must be
+green before the commit.**
 
 ---
 
@@ -179,38 +289,55 @@ numbers and the path were wrong, and every endpoint in that "missing" list has h
 time. A stale hazard note is worse than none: it sends the next agent to fix drift that is not there
 and to edit a file that does not exist.
 
-**Actual, as of Batch O (2026-07-29 build):**
+**Actual, measured 2026-08-09 (0.3.0 working tree):**
 
 | thing | count |
 |---|---|
-| `MIF_DECL` in `Source/MifBridge/Private/MifBridgeHandlers.h` | **199** |
-| `MIF_BIND` in `Source/MifBridge/Private/MifBridgeCommon.cpp` | **199** (same name-set, diff empty both ways) |
-| `H_*` handler definitions across `Private/*.cpp` | **199** |
+| `MIF_DECL` in `Source/MifBridge/Private/MifBridgeHandlers.h` | **218** |
+| `MIF_BIND` in `Source/MifBridge/Private/MifBridgeCommon.cpp` | **218** (same name-set, diff empty both ways) |
 | External (`kr_*`) endpoints registered by `MifKismetReconstructor` | **12** |
-| **Endpoints total** | **211** |
-| `@mcp.tool()` defs in `tools/ue5-mcp-bridge/server.py` | **211**, all above the `if __name__` guard |
+| **Endpoints total** | **230** |
+| `@mcp.tool()` defs in `tools/mcp-server/server.py` | **237**, all above the `if __name__` guard |
+| — of which reach Unreal via `_post` | **225** (213 built-in + the 12 `kr_*`) |
+| — of which are Blender (`bl_*`) or composing (`mif_*`) | **12** — outside the parity set |
 
-> Counting `MIF_DECL` by raw `grep -o "MIF_DECL"` returns **201**, not 199 — it also matches the
-> `#define` and the `#undef` that bracket the block. Match the parenthesised form
-> (`grep -coE 'MIF_DECL\([a-z_0-9]+\)'`) or subtract 2. This table sat at 191/203 through the whole
-> 160→211 expansion, so treat any number written down here as stale until `self_audit` agrees.
+> Counting `MIF_DECL` by raw `grep -o "MIF_DECL"` overcounts — it also matches the `#define` and the
+> `#undef` that bracket the block. Match the parenthesised form (`grep -coE 'MIF_DECL\([a-z_0-9]+\)'`)
+> or subtract 2. This table sat at 191/203 through the whole 160→211 expansion, so treat any number
+> written down here as stale until `self_audit` agrees.
 
-The wrapper lives at `Game/Plugins/MifBridge/tools/ue5-mcp-bridge/server.py` — **in this repo**,
-beside the plugin, which is what closed the drift. `self_audit` reports the live endpoint count from
-the running DLL and is the authority over any number written down here.
+**225 ≠ 230, and the gap is real.** Five endpoints ship with a `MIF_DECL`, a `MIF_BIND` and a
+handler but **no MCP tool** — reachable over HTTP, invisible to an MCP client:
 
-Regenerate the parity diff (run from the plugin root):
+```
+add_component_bound_event   reparent_blueprint   retarget_variable_node
+set_cast_purity             set_variable_type
+```
+
+These pre-date 0.3.0. They are recorded here so the next audit reads a known delta instead of
+blaming whatever landed last.
+
+The wrapper lives at `Game/Plugins/MifBridge/tools/mcp-server/server.py` — **in this repo**, beside
+the plugin, which is what closed the drift. `self_audit` reports the live endpoint count from the
+running DLL and is the authority over any number written down here.
+
+Regenerate the parity diff (run from the plugin root). **`python tools/parity_check.py` does all of
+this and the Blender half too** — the shell recipe is kept because it is the thing the script was
+written from, and because it needs nothing but `sed` and `comm`:
 
 ```bash
 sed -n 's/.*MIF_BIND(\([a-z_0-9]*\)).*/\1/p' Source/MifBridge/Private/MifBridgeCommon.cpp | sort -u > /tmp/plugin.txt
-sed -n 's/.*_post("\([a-z_0-9]*\)".*/\1/p' tools/ue5-mcp-bridge/server.py | sort -u > /tmp/mcp.txt
-comm -23 /tmp/plugin.txt /tmp/mcp.txt   # endpoints with no tool  -> must be empty
+sed -n 's/.*_post("\([a-z_0-9]*\)".*/\1/p' tools/mcp-server/server.py                     | sort -u > /tmp/mcp.txt
+comm -23 /tmp/plugin.txt /tmp/mcp.txt   # endpoints with no tool  -> the 5 above, and nothing else
 comm -13 /tmp/plugin.txt /tmp/mcp.txt   # tools with no endpoint  -> the 12 kr_* externals, and nothing else
 ```
 
-The second diff is **not** empty by design: the 12 `kr_*` endpoints are registered at runtime by the
-provider plugin (`Public/MifBridgeEndpointRegistry.h`) and never appear in `MIF_BIND`. Anything else
-in that column is real drift.
+Neither column is empty, and both non-empties are accounted for above. **Grep `_post(`, not
+`@mcp.tool()`** — that is what makes the check survive a second backend: `bl_*` and `mif_*` tools
+carry the decorator but never call `_post`, so they correctly stay out of both columns. The 12 `kr_*`
+endpoints are registered at runtime by the provider plugin
+(`Public/MifBridgeEndpointRegistry.h`) and never appear in `MIF_BIND`. Anything else in either column
+is real drift.
 
 ---
 
