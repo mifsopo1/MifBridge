@@ -442,6 +442,15 @@ namespace MifBridge
 			TEXT("graph"), TEXT("spell it graphId"),
 			TEXT("blueprintId"), TEXT("a node is placed in a GRAPH - pass graphId (list_graphs shows every graph of a blueprint); the owning blueprint is inferred from it"),
 			nullptr };
+		static const TCHAR* const GMifDescKeys_add_simplified_collision[] = {
+			TEXT("path"), TEXT("shape"), nullptr };
+		static const TCHAR* const GMifDescNotes_add_simplified_collision[] = {
+			TEXT("objectPath"), TEXT("spell it path"),
+			TEXT("type"), TEXT("spell it shape"),
+			TEXT("replace"), TEXT("there is no replace - this endpoint is ADDITIVE. Call remove_collision first (the engine's own replace path is commented out in GeomFitUtils.cpp, so generating over existing collision silently stacks a second primitive)"),
+			TEXT("sphyl"), TEXT("spell it shape=capsule"),
+			nullptr };
+
 		static const TCHAR* const GMifDescKeys_add_sequence[] = {
 			TEXT("graphId"), TEXT("x"), TEXT("y"), TEXT("outputs"), nullptr };
 		static const TCHAR* const GMifDescNotes_add_sequence[] = {
@@ -1039,6 +1048,14 @@ namespace MifBridge
 			TEXT("path"), TEXT("new_level does not take a path - it creates an unsaved transient map; pass path to save_level_as afterwards"),
 			TEXT("name"), TEXT("new_level does not name the map - the name comes from the path you give save_level_as"),
 			nullptr };
+		static const TCHAR* const GMifDescKeys_open_asset_editor[] = {
+			TEXT("path"), nullptr };
+		static const TCHAR* const GMifDescNotes_open_asset_editor[] = {
+			TEXT("blueprintId"), TEXT("spell it path"),
+			TEXT("asset"), TEXT("spell it path"),
+			TEXT("focus"), TEXT("there is no focus - OpenEditorForAsset already brings the editor forward; alreadyOpen in the response says whether it was open before this call"),
+			nullptr };
+
 		static const TCHAR* const GMifDescKeys_open_blueprint[] = {
 			TEXT("blueprintId"), TEXT("path"), nullptr };
 		static const TCHAR* const GMifDescNotes_open_blueprint[] = {
@@ -1147,6 +1164,14 @@ namespace MifBridge
 			TEXT("askForNewFileIfMissing"), TEXT("not settable — it would open a file-picker MODAL, which freezes the editor and this bridge with it. Pass sourceFile instead."),
 			TEXT("showNotification"), TEXT("not settable — always false; the response IS the notification"),
 			nullptr };
+		static const TCHAR* const GMifDescKeys_remove_collision[] = {
+			TEXT("path"), TEXT("confirm"), nullptr };
+		static const TCHAR* const GMifDescNotes_remove_collision[] = {
+			TEXT("objectPath"), TEXT("spell it path"),
+			TEXT("mesh"), TEXT("spell it path"),
+			TEXT("shape"), TEXT("remove_collision takes no shape - it clears ALL simple collision. Use add_simplified_collision to add one back"),
+			nullptr };
+
 		static const TCHAR* const GMifDescKeys_remove_component[] = {
 			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("confirm"), nullptr };
 		static const TCHAR* const GMifDescNotes_remove_component[] = {
@@ -1680,6 +1705,9 @@ namespace MifBridge
 			{ TEXT("add_sequence"), GMifDescKeys_add_sequence, GMifDescNotes_add_sequence,
 			  TEXT("graphId, x, y, outputs (then_N exec pin count, 2-64, default 2)"),
 			  TEXT("MifBridgeNodes4.cpp"), 33, nullptr },
+			{ TEXT("add_simplified_collision"), GMifDescKeys_add_simplified_collision, GMifDescNotes_add_simplified_collision,
+			  TEXT("path (a UStaticMesh), shape (box|sphere|capsule|10dop-x|10dop-y|10dop-z|18dop|26dop)"),
+			  TEXT("MifBridgeCollision.cpp"), 143, nullptr },
 			{ TEXT("add_spawn_actor"), GMifDescKeys_add_spawn_actor, GMifDescNotes_add_spawn_actor,
 			  TEXT("graphId, actorClass (alias: class), x, y"),
 			  TEXT("MifBridgeNodes4.cpp"), 69, nullptr },
@@ -1962,6 +1990,9 @@ namespace MifBridge
 			{ TEXT("new_level"), GMifDescKeys_new_level, GMifDescNotes_new_level,
 			  TEXT("partitioned (bool, default false) - the only parameter; new_level takes no path"),
 			  TEXT("MifBridgeWorld.cpp"), 124, nullptr },
+			{ TEXT("open_asset_editor"), GMifDescKeys_open_asset_editor, GMifDescNotes_open_asset_editor,
+			  TEXT("path - the asset whose default editor to open. NOTE: this does NOT make that editor's commands reachable by invoke_editor_command; asset editor toolkits never register a command list (measured 2026-08-15). Use a direct endpoint instead, e.g. remove_collision / add_simplified_collision"),
+			  TEXT("MifBridgeUI.cpp"), 1508, nullptr },
 			{ TEXT("open_blueprint"), GMifDescKeys_open_blueprint, GMifDescNotes_open_blueprint,
 			  TEXT("blueprintId (alias: path) - the blueprint asset to open; returns blueprintId, name, class, parentClass and graphs"),
 			  TEXT("MifBridgeIntrospect.cpp"), 39, nullptr },
@@ -2013,6 +2044,9 @@ namespace MifBridge
 			{ TEXT("reimport_asset"), GMifDescKeys_reimport_asset, GMifDescNotes_reimport_asset,
 			  TEXT("path (aliases: assetPath, objectPath), sourceFile (aliases: file, newFile), sourceFileIndex, forceNewFile, save"),
 			  TEXT("MifBridgeImport.cpp"), 1390, nullptr },
+			{ TEXT("remove_collision"), GMifDescKeys_remove_collision, GMifDescNotes_remove_collision,
+			  TEXT("path (a UStaticMesh), confirm (required true)"),
+			  TEXT("MifBridgeCollision.cpp"), 84, nullptr },
 			{ TEXT("remove_component"), GMifDescKeys_remove_component, GMifDescNotes_remove_component,
 			  TEXT("blueprintId (alias: path), name (the component's variable name), confirm (required true)"),
 			  TEXT("MifBridgeComponents.cpp"), 889, nullptr },

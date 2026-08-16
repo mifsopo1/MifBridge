@@ -468,6 +468,23 @@ def set_variable_default(blueprint_id: str, name: str, value) -> dict:
     return _post("set_variable_default", blueprintId=blueprint_id, name=name, value=value)
 
 
+@mcp.tool()
+def set_variable_type(blueprint_id: str, name: str, type: str, container: str = "",
+                      value_type: str = "", scope: str = "member", function: str = "") -> dict:
+    "Retype an EXISTING variable's DECLARATION (every get/set node of it reconstructs to the new pin type). Same type grammar as add_variable: container = array|set|map, and for a map `type` is the KEY type with value_type the VALUE type. REFERENCE TYPES: the class goes INSIDE the type string - type='object:BP_Foo_C', not a separate class parameter. Prefixes: object:X (instance ref), class:X and subclassof:X (class ref / TSubclassOf), softobject:X and softclass:X (soft pointers). scope = member|local (local needs function). This changes the VARIABLE; to repoint a single NODE at a different declaring class use retarget_variable_node instead."
+    return _post("set_variable_type", blueprintId=blueprint_id, name=name, type=type,
+                 container=container or None, valueType=value_type or None,
+                 scope=scope, function=function or None)
+
+
+@mcp.tool()
+def retarget_variable_node(graph_id: str, node_guid: str, target_class: str = "",
+                           to_self: bool = None) -> dict:
+    "Repoint one variable get/set NODE at a different declaring class - the node's whole FMemberReference is rewritten and the node reconstructed. Pass to_self=True to point it back at the owning Blueprint instead of a named target_class. The variable NAME is taken from the node you name; there is NO pin argument. This changes WHICH CLASS declares the variable, NOT the pin type - to change the type use set_variable_type. To place a NEW node rather than repoint one, use add_variable_get/add_variable_set with their target class."
+    return _post("retarget_variable_node", graphId=graph_id, nodeGuid=node_guid,
+                 targetClass=target_class or None, self=to_self)
+
+
 # --------------------------------------------------------------------------
 # Nodes
 # --------------------------------------------------------------------------
@@ -537,6 +554,12 @@ def add_cast(graph_id: str, target_class: str, x: int = 0, y: int = 0) -> dict:
 
 
 @mcp.tool()
+def set_cast_purity(graph_id: str, node_guid: str, pure: bool) -> dict:
+    "Flip an existing Dynamic Cast node between pure and impure, REALLOCATING its pins - impure has execute/then/Cast Failed, pure has none of them and just outputs the cast result. Use this rather than writing bIsPureCast with set_property: that flips the flag without reallocating the exec pins, leaving the flag and the pins disagreeing. This only changes purity - to cast to a DIFFERENT class, place a new node with add_cast."
+    return _post("set_cast_purity", graphId=graph_id, nodeGuid=node_guid, pure=pure)
+
+
+@mcp.tool()
 def add_custom_event(graph_id: str, name: str, inputs: list = None, x: int = 0, y: int = 0) -> dict:
     "Add a custom event node (name validated). Optional inputs are event params: [{name,type,container?}]."
     return _post("add_custom_event", graphId=graph_id, name=name, inputs=inputs or [], x=x, y=y)
@@ -577,6 +600,12 @@ def create_function(blueprint_id: str, name: str, inputs: list = None, outputs: 
 def create_blueprint(path: str, parent_class: str = "Actor", blueprint_type: str = "Normal") -> dict:
     "Create a fresh Blueprint asset. path is a /Game/... object path (e.g. /Game/MifTestbed/BP_Foo); parent_class is a name or class path (default Actor). blueprint_type is Normal (default), FunctionLibrary, Interface, MacroLibrary or WidgetBlueprint - an unrecognised value is refused rather than silently producing a plain Blueprint. Compiles it and returns {blueprintId, class, parentClass, eventGraphId}. Fails if one already exists at path: there is NO overwrite (the parameter used to exist here, was read by no line of the handler, and left callers wondering why the flag did nothing) - delete_asset the old one first."
     return _post("create_blueprint", path=path, parentClass=parent_class, blueprintType=blueprint_type)
+
+
+@mcp.tool()
+def reparent_blueprint(blueprint_id: str, new_parent_class: str) -> dict:
+    "Reparent an existing Blueprint onto a different parent class and recompile. blueprint_id names the Blueprint being REPARENTED; new_parent_class is the class it will now inherit from (a name or a class path). Reparenting is destructive to anything the old parent supplied: nodes calling functions/variables that only existed on the previous parent break at compile, and inherited components from the old hierarchy go away - read the compile result rather than assuming it succeeded cleanly."
+    return _post("reparent_blueprint", blueprintId=blueprint_id, newParentClass=new_parent_class)
 
 
 @mcp.tool()
@@ -819,6 +848,14 @@ def add_call_dispatcher(graph_id: str, dispatcher: str, x: int = 0, y: int = 0) 
 def add_bind_dispatcher(graph_id: str, dispatcher: str, x: int = 0, y: int = 0) -> dict:
     "Add a Bind (Add) node for an event dispatcher."
     return _post("add_bind_dispatcher", graphId=graph_id, dispatcher=dispatcher, x=x, y=y)
+
+
+@mcp.tool()
+def add_component_bound_event(blueprint_id: str, component: str, dispatcher: str,
+                              event: str = "", x: int = 0, y: int = 0) -> dict:
+    "Add a component-bound event node - the red event node you get from a component's Details panel, e.g. OnComponentBeginOverlap on a named collision component. `component` is the component's name on this Blueprint and `dispatcher` is the delegate declared on that component's type; the delegate's owner class is resolved automatically from the component, so no target class is needed. Optional `event` names the generated event node. This ALWAYS lands in the Blueprint's event graph, so pass blueprint_id - there is no graph_id. For a delegate that is NOT declared on a component (a custom event dispatcher, or one on the Blueprint itself) use add_bind_dispatcher instead."
+    return _post("add_component_bound_event", blueprintId=blueprint_id, component=component,
+                 dispatcher=dispatcher, event=event or None, x=x, y=y)
 
 
 @mcp.tool()
@@ -1708,6 +1745,18 @@ def duplicate_asset(path: str, new_path: str) -> dict:
 
 
 @mcp.tool()
+def remove_collision(path: str, confirm: bool = False) -> dict:
+    "Clear ALL simple collision from a StaticMesh - the StaticMeshEditor's 'Remove Collision' button, reachable without opening that editor. Requires confirm=True because it destroys hand-authored convex hulls with no undo across HTTP. Returns removedPrimitives and hadCollision; a mesh that already had none is a success with removedPrimitives=0, not an error. Use this BEFORE add_simplified_collision when you mean to REPLACE collision rather than stack a second primitive on top. Do NOT try to do this with set_property on BodySetup.AggGeom: the property reads back changed but the engine's own path also runs FlushRenderingCommands and RefreshCollisionChange, and without the latter no StaticMeshComponent instanced from the mesh ever picks the change up."
+    return _post("remove_collision", path=path, confirm=confirm)
+
+
+@mcp.tool()
+def add_simplified_collision(path: str, shape: str) -> dict:
+    "Generate one simple collision primitive on a StaticMesh - the StaticMeshEditor's collision toolbar (Add Box/Sphere/Capsule/K-DOP Simplified Collision), reachable without opening that editor. shape: box | sphere | capsule | 10dop-x | 10dop-y | 10dop-z | 18dop | 26dop. Calls the engine's own generators with its own K-DOP direction tables, so the result is identical to the toolbar button. ADDITIVE - it does NOT replace existing collision: the engine's replace-or-cancel prompt is commented out in GeomFitUtils.cpp, so generating over a mesh that already has collision silently leaves you with TWO primitives. Call remove_collision first to replace. Returns primitivesBefore/primitivesAfter/added so you can verify which happened."
+    return _post("add_simplified_collision", path=path, shape=shape)
+
+
+@mcp.tool()
 def get_referencers(path: str) -> dict:
     "Which packages reference this asset. Authoritative - reads the asset registry's dependency graph, so it is immune to the FName trap where a trailing _<digits> is stored as a separate number and a literal name search misses real references. Note it sees hard refs and soft object/class paths, but NOT a path stored as a plain string in a DataTable cell. package == packageName == the PACKAGE path you asked about (an object path is accepted and reduced), and every referencers[] entry is a PACKAGE path too - the registry graph is package-to-package, so there is no objectPath to give. Feed them straight into audit_unused's exclude_referencers."
     return _post("get_referencers", path=path)
@@ -2125,6 +2174,12 @@ def list_editor_commands(context: str = "", command: str = "", filter: str = "",
                  includeCanExecute=include_can_execute or None,
                  includeConsole=include_console or None, consolePrefix=console_prefix or None,
                  menu=menu or None, section=section or None, limit=limit)
+
+
+@mcp.tool()
+def open_asset_editor(path: str) -> dict:
+    "Open an asset's default editor (StaticMesh, SkeletalMesh, Material, Animation, ...) programmatically. DOES NOT make that editor's commands reachable by invoke_editor_command - this was built expecting it would, and it was MEASURED FALSE: opening SM_Barrel's StaticMeshEditor left the cached contexts at [LevelViewport, ContentBrowser] with newContexts[] empty, and StaticMeshEditor.RemoveCollision still failed with cachedListsForContext:0. Root cause, verified in engine source: asset editor toolkits NEVER call FInputBindingManager::RegisterCommandList - only five call sites in all of Engine/Source/Editor do (SContentBrowser, LevelEditor, SLevelViewport, MainFrame, Sequencer) - so there is no broadcast to cache, at any time, however often you open it. For an asset-editor command use a DIRECT endpoint that calls the same engine function the button does: remove_collision / add_simplified_collision cover the static-mesh collision toolbar. What this IS good for: getting an editor open for a human to look at, or driving one of the five contexts that do register. newContexts[] is retained as live evidence - if a future engine version starts registering asset-editor lists, it shows up there first. NOT dialog-free: it opens real UI, and an asset that prompts on open can raise a modal, which stalls the game-thread ticker the bridge runs on."
+    return _post("open_asset_editor", path=path)
 
 
 @mcp.tool()
@@ -2676,6 +2731,88 @@ def bl_delete_object(object_name: str) -> dict:
 def bl_clear_scene() -> dict:
     "Delete every object in the Blender scene. bl_import_mesh already does this by default, so the usual reason to call it directly is to inspect a failed run's leftovers first and then reset. Not undo-able through this bridge."
     return _blender("clear_scene")
+
+
+@mcp.tool()
+def bl_run_python(code: str = "", file: str = "", return_locals: bool = False) -> dict:
+    "Execute Python inside Blender, on the main thread, so bpy is safe to touch. The escape hatch for everything MifBlender has no first-class op for - prefer a first-class op whenever one exists, because those have checked parameters and this does not. Pass EITHER code (a string) OR file (a path to a .py that Blender reads) - passing both is an error, as is passing neither. CONTRACT: whatever your code assigns to a module-level name `result` comes back in the response, coerced to JSON-safe values; a script that returns nothing useful is usually one that forgot to assign it. stdout and stderr are captured and returned. bpy, math, bmesh and mathutils are pre-imported into the namespace. An exception comes back as ok:false with the traceback and does NOT kill the connection, so a broken snippet is recoverable. GATED: the addon preference 'allow_run_python' must be ticked in Blender (Edit > Preferences > Add-ons > MifBlender) or every call refuses with instructions - that gate is the safety model, since this runs with Blender's full privileges, has no sandbox and no undo. It also holds the single serialised transport socket for its whole run, so an infinite loop here wedges Blender AND every other bl_* tool; bl_status is bounded at 5s precisely so it can still tell you that. Keep snippets short."
+    return _blender("run_python", code=code or None, file=file or None,
+                    returnLocals=return_locals or None)
+
+
+# --------------------------------------------------------------------------
+# GENERATION - local text/image -> 3D through ComfyUI, hosted in the addon.
+#
+# The chain is Flux.1 (prompt -> reference image) -> Hunyuan3D-2 shape (image ->
+# untextured mesh) -> Hunyuan3D-2 paint (mesh -> PBR textures baked from
+# multiview renders) -> imported into the open Blender scene. Nothing here calls
+# a paid API and nothing leaves the machine; it needs a local ComfyUI, by
+# default at 127.0.0.1:8188, with those custom nodes installed.
+#
+# It lives in the addon rather than a mod's tools/ directory because Blender is
+# where the result gets inspected and fixed, so the generator belongs on the same
+# side of the socket as the mesh ops that clean it up.
+#
+# ALWAYS call bl_gen_status first. These are long jobs - the defaults run to 600s
+# for an image and 3600s for a full asset - and a missing checkpoint should be
+# found before an hour of GPU time, not after.
+# --------------------------------------------------------------------------
+
+
+@mcp.tool()
+def bl_gen_status(host: str = "") -> dict:
+    "Is the local generator usable, and what is installed. FIRST call before any bl_gen_* work: it reports whether ComfyUI is reachable (default 127.0.0.1:8188, override with host) and which checkpoints and custom nodes are present. The generation ops validate their node inputs against ComfyUI's own /object_info rather than hardcoding them, because custom nodes change between commits and a workflow built on stale assumptions fails deep inside the run with a KeyError on a tensor - long after the interesting part started. This tool is how you find a missing Flux or Hunyuan3D checkpoint in one second instead of an hour into a job."
+    return _blender("gen_status", host=host or None)
+
+
+@mcp.tool()
+def bl_gen_image(prompt: str, seed: int = 0, variant: str = "schnell", width: int = 1024,
+                 height: int = 1024, steps: int = None, host: str = "",
+                 timeout: int = 600) -> dict:
+    "Prompt -> reference image via Flux.1, left in ComfyUI's output folder. Stage ONE of the chain; the returned image name is what bl_gen_mesh consumes. variant selects the Flux model ('schnell' is the fast default; 'dev' is slower and follows the prompt harder), and steps defaults to whatever suits the variant, so leave it alone unless you are deliberately trading quality for time. seed=0 means random - set it to a fixed number when you want to iterate on the same composition while changing something else. This is the cheap stage: get the reference image right here before spending shape and paint time on it, because every later stage inherits its framing and its mistakes."
+    return _blender("gen_image", prompt=prompt, seed=seed or None, variant=variant or None,
+                    width=width, height=height, steps=steps, host=host or None,
+                    timeout=timeout, _timeout=float(timeout) + 60.0)
+
+
+@mcp.tool()
+def bl_gen_mesh(image: str = "", image_path: str = "", prefix: str = "MifGen/mesh",
+                name: str = "", seed: int = 0, steps: int = 30, octree: int = 512,
+                guidance: float = 5.0, import_result: bool = True, host: str = "",
+                timeout: int = 1800) -> dict:
+    "Reference image -> untextured mesh via the Hunyuan3D-2 shape DiT. Stage TWO. Accepts EITHER image (a ComfyUI image ref, normally the name bl_gen_image returned) OR image_path (a local file). octree controls the reconstruction resolution - 512 is the default, higher costs time and memory for detail that a game asset often will not show. import_result defaults true so the mesh lands in the open Blender scene ready for bl_object_info and the mesh ops. NOTE THE OUTPUT IS BARE GEOMETRY: the shape DiT returns no materials, and a bare mesh needs a human to author them before it is worth anything, which is what bl_gen_texture exists to avoid. Long job - default 1800s."
+    return _blender("gen_mesh", image=image or None, imagePath=image_path or None,
+                    prefix=prefix or None, name=name or None, seed=seed or None,
+                    steps=steps, octree=octree, guidance=guidance,
+                    importResult=import_result, host=host or None,
+                    timeout=timeout, _timeout=float(timeout) + 60.0)
+
+
+@mcp.tool()
+def bl_gen_texture(mesh_path: str, image: str = "", image_path: str = "",
+                   prefix: str = "MifGen/mesh", name: str = "", seed: int = 0,
+                   steps: int = 15, view_size: int = 512, import_result: bool = True,
+                   host: str = "", timeout: int = 2400) -> dict:
+    "Existing mesh + reference image -> PBR textures baked on, via the Hunyuan3D-2 paint path (delight -> uv wrap -> multiview render -> sample -> bake). Stage THREE, and the stage that turns a generation into something droppable into a level. mesh_path is REQUIRED and is the mesh to paint; image/image_path supply the appearance reference, normally the same one the shape came from. view_size is the multiview render resolution. Long job - default 2400s, longer than the shape stage because it renders and samples several views before baking."
+    return _blender("gen_texture", meshPath=mesh_path, image=image or None,
+                    imagePath=image_path or None, prefix=prefix or None, name=name or None,
+                    seed=seed or None, steps=steps, viewSize=view_size,
+                    importResult=import_result, host=host or None,
+                    timeout=timeout, _timeout=float(timeout) + 60.0)
+
+
+@mcp.tool()
+def bl_gen_asset(prompt: str, name: str = "", seed: int = 0, variant: str = "schnell",
+                 texture: bool = True, width: int = 1024, height: int = 1024,
+                 shape_steps: int = 30, texture_steps: int = 15, octree: int = 512,
+                 guidance: float = 5.0, import_result: bool = True, host: str = "",
+                 timeout: int = 3600) -> dict:
+    "Prompt -> reference image -> mesh -> PBR texture -> imported into the scene. THE ONE CALL that produces something usable: it sequences bl_gen_image, bl_gen_mesh and bl_gen_texture and hands back the finished object. Set texture=false to stop at geometry when you only want the silhouette. name prefixes the ComfyUI outputs so a run's artifacts stay identifiable; seed=0 is random, so fix it to reproduce a result. shape_steps/texture_steps/octree/guidance tune the individual stages and are worth leaving alone until a default disappoints. THIS IS THE LONGEST JOB IN THE TOOLSET - default 3600s, and it holds the single Blender transport socket for the whole run, so every other bl_* tool blocks behind it (bl_status will tell you which op is holding the line and for how long). Call bl_gen_status first."
+    return _blender("gen_asset", prompt=prompt, name=name or None, seed=seed or None,
+                    variant=variant or None, texture=texture, width=width, height=height,
+                    shapeSteps=shape_steps, textureSteps=texture_steps, octree=octree,
+                    guidance=guidance, importResult=import_result, host=host or None,
+                    timeout=timeout, _timeout=float(timeout) + 60.0)
 
 
 # --------------------------------------------------------------------------

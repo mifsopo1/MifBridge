@@ -23,7 +23,12 @@ namespace MifBridge
 {
 	// Accept either a bare package path ("/Game/Foo/Bar") or an "asset.asset" path
 	// ("/Game/Foo/Bar.Bar") and normalize to the package path.
-	static FString NormalizePackagePath(const FString& InPath)
+	// NOT static, and declared in MifBridgeHandlers.h: MifBridgeCollision.cpp needs both of these,
+	// and while it happened to compile as a file-local static (the unity build merged the two .cpp
+	// into one translation unit), that is luck, not linkage — UBT regroups the unity blobs whenever
+	// files are added or removed. Same reasoning as EmitAssetIdentity, which was promoted to the
+	// header after duplicate file-local statics collided as C2084.
+	FString NormalizePackagePath(const FString& InPath)
 	{
 		FString P = InPath; P.TrimStartAndEndInline();
 		FString PackageOnly, AssetOnly;
@@ -35,7 +40,7 @@ namespace MifBridge
 	}
 
 	// Load the asset at Path, accepting either a bare package path or an explicit "asset.asset" path.
-	static UObject* LoadAssetLenient(const FString& Path)
+	UObject* LoadAssetLenient(const FString& Path)
 	{
 		UObject* Asset = StaticLoadObject(UObject::StaticClass(), nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
 		if (!Asset && !Path.Contains(TEXT(".")))

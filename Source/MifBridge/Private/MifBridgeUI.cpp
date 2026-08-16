@@ -1476,4 +1476,130 @@ namespace MifBridge
 		Out->SetStringField(TEXT("note"),
 			TEXT("downHandled is what Slate reported: true means a pre-processor or the focused widget consumed the event, false means nothing claimed it. Neither value says which command ran — verify the effect with the endpoint that reads the thing you expected to change."));
 	}
+
+	//   in:  { path: "/Game/..." }
+	//   out: { assetPath, assetClass, alreadyOpen, opened, contextsBefore[], contextsAfter[],
+	//          newContexts[], openAssetEditors[] }
+	//
+	// WHAT THIS DOES *NOT* DO — read this before reaching for it. It does NOT make an asset
+	// editor's commands reachable by invoke_editor_command. That was the intent (a user's
+	// suggestion, 2026-08-15) and it was MEASURED FALSE the day it was built:
+	// SM_Barrel's StaticMeshEditor was opened, openAssetEditors[] confirmed it, and the cached
+	// contexts stayed [LevelViewport, ContentBrowser] with newContexts[] empty across repeated
+	// calls. StaticMeshEditor.RemoveCollision still failed with cachedListsForContext:0.
+	//
+	// ROOT CAUSE (verified in D:/UE532, not inferred). The original diagnosis — "an asset editor
+	// only broadcasts its command list when opened" — is wrong. Those toolkits NEVER register a
+	// command list at all: in the whole of Engine/Source/Editor only FIVE call sites reach
+	// FInputBindingManager::RegisterCommandList — SContentBrowser.cpp, LevelEditor.cpp,
+	// SLevelViewport.cpp, MainFrameModule.cpp and Sequencer.cpp. StaticMeshEditor.cpp has none.
+	// An asset editor toolkit builds its own FUICommandList locally and never hands it over, so
+	// there is no broadcast for MifBridge to hear no matter when, or how often, it is opened.
+	// The permanently short cached-context list is a property of the engine, not a timing race.
+	//
+	// SO: for an asset-editor command, the answer is a DIRECT endpoint that calls the same engine
+	// function the button does — remove_collision / add_simplified_collision are exactly that for
+	// the static-mesh collision toolbar. Do not add "open the editor first" to any workflow
+	// expecting it to help; it will not.
+	//
+	// WHAT IT IS STILL GOOD FOR: opening an asset editor programmatically (getting a viewport up
+	// for a human to look at, or driving one of the five contexts that DO register). newContexts[]
+	// is kept because it is the live evidence for the paragraph above — if a future engine version
+	// starts registering asset-editor lists, this field is where that will show up first.
+	//
+	// This opens real editor UI, so unlike the rest of the plugin it is NOT dialog-free: an asset
+	// that prompts on open (missing source file, upgrade notice) can raise a modal, and a modal
+	// stalls the game-thread ticker this HTTP server runs on. Prefer a direct endpoint where one
+	// exists — remove_collision / add_simplified_collision cover the static-mesh collision toolbar
+	// without opening anything.
+	void H_open_asset_editor(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path") },
+			TEXT("path - the asset whose default editor to open (warms its FUICommandList so invoke_editor_command can reach that editor's commands)"),
+			{ { TEXT("blueprintId"), TEXT("spell it path") },
+			  { TEXT("asset"), TEXT("spell it path") },
+			  { TEXT("focus"), TEXT("there is no focus - OpenEditorForAsset already brings the editor forward; alreadyOpen in the response says whether it was open before this call") } }))
+		{
+			return;
+		}
+
+		const FString RawPath = JStr(In, TEXT("path"));
+		if (RawPath.IsEmpty())
+		{
+			Fail(Out, TEXT("open_asset_editor requires path"));
+			return;
+		}
+		if (!GEditor)
+		{
+			Fail(Out, TEXT("no GEditor - open_asset_editor needs a running editor"));
+			return;
+		}
+		UAssetEditorSubsystem* Sub = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+		if (!Sub)
+		{
+			Fail(Out, TEXT("UAssetEditorSubsystem unavailable"));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(RawPath);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: %s"), *RawPath));
+			return;
+		}
+
+		TArray<FName> Before;
+		GetCachedCommandListContexts(Before);
+		const bool bAlreadyOpen = (Sub->FindEditorForAsset(Asset, /*bFocusIfOpen*/ false) != nullptr);
+
+		const bool bOpened = Sub->OpenEditorForAsset(Asset);
+
+		TArray<FName> After;
+		GetCachedCommandListContexts(After);
+
+		auto EmitNames = [](const TArray<FName>& Names)
+		{
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			for (const FName& N : Names) { Arr.Add(MakeShared<FJsonValueString>(N.ToString())); }
+			return Arr;
+		};
+		TArray<FName> NewOnes;
+		for (const FName& N : After)
+		{
+			if (!Before.Contains(N)) { NewOnes.Add(N); }
+		}
+
+		Out->SetStringField(TEXT("assetPath"), NormalizePackagePath(RawPath));
+		Out->SetStringField(TEXT("assetClass"), Asset->GetClass()->GetName());
+		Out->SetBoolField(TEXT("alreadyOpen"), bAlreadyOpen);
+		Out->SetBoolField(TEXT("opened"), bOpened);
+		Out->SetArrayField(TEXT("contextsBefore"), EmitNames(Before));
+		Out->SetArrayField(TEXT("contextsAfter"), EmitNames(After));
+		Out->SetArrayField(TEXT("newContexts"), EmitNames(NewOnes));
+
+		TArray<UObject*> Edited = Sub->GetAllEditedAssets();
+		TArray<TSharedPtr<FJsonValue>> OpenArr;
+		for (UObject* Obj : Edited)
+		{
+			if (Obj) { OpenArr.Add(MakeShared<FJsonValueString>(Obj->GetPathName())); }
+		}
+		Out->SetArrayField(TEXT("openAssetEditors"), OpenArr);
+
+		if (NewOnes.Num() == 0)
+		{
+			// Do NOT soften this into "try again" - that was the original wording and it was
+			// wrong. Measured 2026-08-15: repeated opens never add an asset-editor context.
+			Out->SetStringField(TEXT("note"),
+				TEXT("No new command contexts - and for an asset editor that is EXPECTED, not a "
+				     "timing problem. Asset editor toolkits never call "
+				     "FInputBindingManager::RegisterCommandList at all (in the whole engine only "
+				     "SContentBrowser, LevelEditor, SLevelViewport, MainFrame and Sequencer do), "
+				     "so there is no broadcast to cache and invoke_editor_command will NOT reach "
+				     "this editor's commands however many times you open it. Use a direct endpoint "
+				     "that calls the same engine function as the button - e.g. remove_collision / "
+				     "add_simplified_collision for the static-mesh collision toolbar."));
+		}
+		UE_LOG(LogMifBridge, Log, TEXT("open_asset_editor: %s (%s) opened=%d alreadyOpen=%d newContexts=%d"),
+			*RawPath, *Asset->GetClass()->GetName(), bOpened ? 1 : 0, bAlreadyOpen ? 1 : 0, NewOnes.Num());
+	}
 }

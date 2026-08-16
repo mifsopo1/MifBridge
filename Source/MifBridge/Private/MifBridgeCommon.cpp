@@ -258,6 +258,10 @@ namespace MifBridge
 			MIF_BIND(delete_asset);
 			MIF_BIND(rename_asset);
 			MIF_BIND(duplicate_asset);
+			// Static-mesh simple collision (MifBridgeCollision.cpp) — the StaticMeshEditor
+			// toolbar equivalent, reachable without opening that editor.
+			MIF_BIND(remove_collision);
+			MIF_BIND(add_simplified_collision);
 			MIF_BIND(get_referencers);
 			MIF_BIND(get_dependencies);
 			MIF_BIND(audit_unused);
@@ -300,6 +304,7 @@ namespace MifBridge
 			MIF_BIND(invoke_editor_command);
 			MIF_BIND(invoke_editor_tab);
 			MIF_BIND(send_editor_key);
+			MIF_BIND(open_asset_editor);
 			// Source media ingest (MifBridgeImport.cpp)
 			MIF_BIND(import_texture);
 			MIF_BIND(import_asset);

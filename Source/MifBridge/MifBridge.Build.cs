@@ -83,5 +83,12 @@ public class MifBridge : ModuleRules
 		// UK2Node_CreateWidget.h is a UMGEditor PRIVATE header (Nodes/); the module
 		// dependency isn't enough — the private folder must be on the include path.
 		PrivateIncludePaths.Add(System.IO.Path.Combine(GetModuleDirectory("UMGEditor"), "Private"));
+
+		// GeomFitUtils.h is an UnrealEd PRIVATE header, but its collision generators
+		// (GenerateBoxAsSimpleCollision, GenerateKDopAsSimpleCollision, RefreshCollisionChange,
+		// ...) are all UNREALED_API, so they LINK fine — only the header is out of reach.
+		// remove_collision / add_simplified_collision need it (MifBridgeCollision.cpp); it also
+		// carries the KDopDir* direction tables, which are defined in the header itself.
+		PrivateIncludePaths.Add(System.IO.Path.Combine(GetModuleDirectory("UnrealEd"), "Private"));
 	}
 }

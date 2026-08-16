@@ -514,3 +514,147 @@ and the actor finder (**5**, under five different names).
 
 **Cost.** Two build breaks, one of them leaving the module unbuildable mid-session, plus the audit
 pass that had to enumerate blob membership by hand to work out how close the rest were.
+
+---
+
+## `splice_into_exec` on a MACRO INSTANCE pin crashes the editor (2026-08-13)
+
+**Symptom.** Editor died mid-request with
+
+```
+Assertion failed: OwningNode [File:D:\UE532\...\EdGraph\EdGraphPin.h] [Line: 427]
+  MifBridge::SpliceExecAfter()   MifBridgeCommon.cpp:2844
+  MifBridge::H_splice_into_exec() MifBridgeNodes.cpp:2018
+```
+
+**Repro.** `splice_into_exec` with `afterNode` = a `K2Node_MacroInstance` (a **ForEachLoop**) and
+`afterPin` = `"Completed"`. The same endpoint had just run **nine** times without incident in the
+same session against ordinary nodes — a `K2Node_Event`'s `then`, four `K2Node_IfThenElse` (`then` /
+`else`), and a `K2Node_SwitchEnum`'s per-value pins. Plain nodes are fine; the macro instance is not.
+
+**Root cause (INFERRED — not read from the source).** `SpliceExecAfter` walks the pin's existing
+links and dereferences `Pin->GetOwningNode()`. On a macro instance the exec pins are tunnel
+boundaries, and at least one linked pin reaches a node the splice code does not expect, so
+`OwningNode` fails its check. `MifBridgeCommon.cpp:2844` is the line to read before fixing — this
+explanation has NOT been verified against the source and must be confirmed there.
+
+**Cost.** The edited blueprint had compiled clean (0 errors / 0 warnings) but had **not been saved**,
+so an entire graph rewire was lost. Nothing was corrupted: the pre-edit `backup_blueprint` `.uasset.bak`
+was byte-identical to the on-disk original.
+
+**Prevention:**
+
+1. **Do not `splice_into_exec` onto a macro instance pin** (`ForEachLoop`, `ForLoop`, `WhileLoop`,
+   `IsValid`, `Gate`, `DoOnce`, `FlipFlop`, …). Wire it by hand instead — `disconnect_pin` the macro's
+   exec-out, then two `connect_pins` (macro → new node, new node → the original target). That is three
+   calls and does not touch the crashing path.
+2. **`save_blueprint` after every stage, never batch-then-save.** A clean compile is not durability.
+   This is the same lesson as the unsaved-struct crash — it recurred because the earlier fix was
+   remembered as being about *struct creation* rather than about *unsaved editor state in general*.
+3. If the editor does die, check `Saved/Autosaves/PackageRestoreData.json` before relaunching. It
+   makes the next launch show a restore modal that has hung this editor before (see
+   `dds2-editor-restore-modal-hang`); move it aside and redo the edit from a script instead.
+
+---
+
+## MifBlender generation: 3 node drifts, a half-blind validator, and a broken mesh handoff (2026-08-15)
+
+**Symptom.** `gen_asset` died 72 s in, at the first Hunyuan3D node:
+
+```
+node 'Hy3DGenerateMesh' has no input(s) attention_mode. It accepts: force_offload,
+guidance_scale, image, mask, pipeline, scheduler, seed, steps.
+```
+
+**Repro.** Any `gen_asset` / `gen_mesh` / `gen_texture` call against the currently installed
+ComfyUI-Hunyuan3DWrapper. The Flux half is unaffected — all 8 of its nodes still match.
+
+**Root cause.** Four separate defects, only the first of which announced itself:
+
+1. `Hy3DGenerateMesh` lost `attention_mode`; it moved to **`Hy3DModelLoader`**, where it is optional
+   (`sdpa` / `sageattn`). Setting it on the sampler is now a hard reject.
+2. `DownloadAndLoadHy3DDelightModel` gained a **required** `model` (`hunyuan3d-delight-v2-0`).
+3. `DownloadAndLoadHy3DPaintModel` gained a **required** `model` (`hunyuan3d-paint-v2-0`, or
+   `-turbo`). Both were being sent `"inputs": {}`, which used to mean "take the default".
+4. **`_check_inputs` only ever tested one direction.** It rejected inputs the node does not declare
+   and never checked that every *required* input is present. So drift 1 was caught instantly and
+   drifts 2 and 3 passed the addon's own validator, to fail at ComfyUI queue time — minutes in,
+   after the shape stage had already been paid for.
+
+**A fifth, independent defect** surfaced behind them: `op_gen_texture` passes an absolute
+`mesh_path` straight into `Hy3DUploadMesh.mesh`, but that input is an **enum over ComfyUI's `input`
+directory** (`{"mesh": [[]]}` — empty on a clean install). The addon has `_upload_image` for images
+and **no mesh equivalent**, so texturing a mesh that lives anywhere else is an unconditional
+`HTTP 400`. `gen_asset` routes through the same call, so the whole textured path was broken, not
+just the standalone op. Worse, ComfyUI puts the real reason in the *body* of the 400 — the bare
+`urllib` message is `HTTP Error 400: Bad Request`, which says nothing and cost a debug cycle.
+
+**Cost.** One failed run, one wrong root-cause call (the first reference image was blamed on framing
+before `PROMPT_SUFFIX` turned out to force `orthographic side profile` **deliberately** — the
+addon's stated reason is that a three-quarter view yields a subtly sheared mesh), and a stale
+deployed addon that masked the fix.
+
+**Prevention:**
+
+1. **`_check_inputs` now tests both directions** — unknown inputs *and* absent required ones. Drift
+   moves both ways; checking one way is worse than it looks, because it reads as coverage.
+2. **Audit every node in every workflow against `/object_info` at once, not one failure at a time.**
+   One query returned all three drifts in a second. Fixing only the node that happened to fail first
+   would have bought exactly one more minute before the next one.
+3. **A mesh handoff needs an upload helper.** Until `gen_texture` gets one, chain shape → paint in a
+   single graph (feed `Hy3DPostprocessMesh` straight into `Hy3DMeshUVWrap`) so the mesh never leaves
+   the workflow. That is also faster than a file round-trip. **`gen_texture` on a standalone mesh
+   path remains broken and is the open item here.**
+4. **Always read the body of a ComfyUI 400.** `urllib.error.HTTPError.read()` carries `node_errors`;
+   the exception's `str()` carries nothing.
+5. **The live addon is a real copy, not a junction.** It loads from
+   `%APPDATA%\Blender Foundation\Blender\4.4\scripts\addons\MifBlender\`, so editing the repo under
+   `tools/blender-addon/` changes nothing until it is synced and Blender is restarted. Verify with a
+   `grep` of the deployed file, not the repo one.
+
+**Also worth knowing: a `gen_*` call makes Blender show "Not Responding", and that is correct.**
+Every op runs inline on the main thread (`server.py::_drain_timer` → `_execute`) and `_wait` is a
+blocking `time.sleep(2.0)` poll loop, so a multi-minute generation owns the main thread throughout
+and the window never redraws. To keep Blender interactive, drive ComfyUI from the calling process
+and use the addon only for the (millisecond) import.
+
+---
+
+## `Build.bat` exits 0 when it never built anything (2026-08-15)
+
+**Symptom.** A plugin rebuild reported success — `[exited with code 0]`, no error — and the plugin's
+behaviour was unchanged, because the DLL had not been touched:
+
+```
+Total execution time: 0.44 seconds
+Unable to find project 'D:\UE532\Engine\Source\"D:\DDS2SDK\Game\DrugDealerSimulator2.uproject"'.
+[exited with code 0]
+```
+
+**Root cause.** The `-Project=` argument was passed with escaped inner quotes through
+`cmd /c "... -Project=\"D:\...\uproject\" ..."`. The quotes survived into the argument *value*, so UBT
+saw a path with literal `"` characters, failed to match it against any known project, and resolved it
+relative to the engine's `Source` directory. **It then exited 0.** Two independent tells that nothing
+happened: a **0.44 second** total execution time (a real incremental link is ~30 s) and no `Compile` /
+`Link` lines at all.
+
+**Cost.** Nearly reported a new C++ endpoint as built and ready to test. The next step would have been a
+live call against a DLL that did not contain it, and the resulting "unknown endpoint" would have been
+debugged as a binding problem rather than a build that never ran.
+
+**Prevention:**
+
+1. **Never trust `Build.bat`'s exit code. Verify the DLL's mtime moved.** This is already the rule in
+   memory `dds2-reconstructor-build-engine` ("verify DLL mtime moved") — it was written for a
+   *different* failure (building against the wrong engine) and applies verbatim here. Record the
+   timestamp *before* building so the comparison is possible:
+   ```bash
+   find "D:/DDS2SDK/Game" -name "UnrealEditor-MifBridge.dll" -printf "%TY-%Tm-%Td %TH:%TM  %s bytes\n"
+   ```
+2. **Do not quote `-Project=`.** None of these paths contain spaces, so the quotes buy nothing and
+   cost this. The form that works from bash:
+   ```bash
+   cmd //c "D:\UE532\Engine\Build\BatchFiles\Build.bat DrugDealerSimulator2Editor Win64 Development -Project=D:\DDS2SDK\Game\DrugDealerSimulator2.uproject -WaitMutex"
+   ```
+3. **A build that took under a second did not build.** Treat sub-second "success" as failure and read
+   the output before believing it.

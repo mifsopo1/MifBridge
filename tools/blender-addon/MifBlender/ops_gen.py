@@ -131,11 +131,20 @@ def _require_nodes(host, names):
 
 
 def _check_inputs(info, class_type, inputs):
-    """Reject an input the installed node does not declare."""
+    """Reject an input the installed node does not declare, AND a required one we omit.
+
+    Both halves matter and only the first existed at first. Drift moves in two
+    directions: the wrapper can DROP an input we still send (Hy3DGenerateMesh lost
+    attention_mode to Hy3DModelLoader) or ADD a required one we do not send
+    (DownloadAndLoadHy3DPaintModel and ...DelightModel both gained a required
+    'model'). Checking only for unknown inputs caught the first and sailed straight
+    past the second, which then failed at ComfyUI queue time -- minutes into the run,
+    after the shape stage had already been paid for. Cheap check, expensive omission.
+    """
     spec = info.get(class_type, {}).get("input", {})
-    accepted = set()
-    for group in ("required", "optional"):
-        accepted.update((spec.get(group) or {}).keys())
+    required = set((spec.get("required") or {}).keys())
+    accepted = set(required)
+    accepted.update((spec.get("optional") or {}).keys())
     if not accepted:
         return
     unknown = [k for k in inputs if k not in accepted]
@@ -144,6 +153,12 @@ def _check_inputs(info, class_type, inputs):
             "node '%s' has no input(s) %s. It accepts: %s. The wrapper changed under us - "
             "this is exactly the drift /object_info exists to catch."
             % (class_type, ", ".join(sorted(unknown)), ", ".join(sorted(accepted))))
+    absent = sorted(required - set(inputs))
+    if absent:
+        raise MifOpError(
+            "node '%s' requires input(s) %s which this workflow does not set. The wrapper "
+            "changed under us - this is exactly the drift /object_info exists to catch."
+            % (class_type, ", ".join(absent)))
 
 
 # ---------------------------------------------------------------------------
@@ -234,13 +249,15 @@ def _wf_shape(info, image_ref, prefix, seed, steps, octree, guidance):
     """
     wf = {
         "10": {"class_type": "Hy3DModelLoader",
-               "inputs": {"model": "hunyuan3d-dit-v2-0-fp16.safetensors"}},
+               # attention_mode moved here from Hy3DGenerateMesh in a wrapper update. It is
+               # selected on the LOADER now, so setting it on the sampler is a hard reject.
+               "inputs": {"model": "hunyuan3d-dit-v2-0-fp16.safetensors",
+                          "attention_mode": "sdpa"}},
         "11": {"class_type": "Hy3DGenerateMesh",
                # guidance_scale 5.0 is Tencent's value in both the upstream pipeline and
                # their gradio app; the wrapper defaults to kijai's 5.5.
                "inputs": {"pipeline": ["10", 0], "image": image_ref,
-                          "guidance_scale": guidance, "steps": steps, "seed": seed,
-                          "attention_mode": "sdpa"}},
+                          "guidance_scale": guidance, "steps": steps, "seed": seed}},
         "12": {"class_type": "Hy3DVAEDecode",
                "inputs": {"vae": ["10", 1], "latents": ["11", 0],
                           "box_v": 1.01, "octree_resolution": octree,
@@ -267,12 +284,17 @@ def _wf_texture(info, mesh_ref, image_ref, prefix, seed, steps, view_size):
     those back down, and finally lift PBR channels out of the bake.
     """
     wf = {
-        "20": {"class_type": "DownloadAndLoadHy3DDelightModel", "inputs": {}},
+        # Both download nodes gained a REQUIRED 'model' in a wrapper update; an empty
+        # inputs dict is now a queue-time rejection, not a "use the default".
+        "20": {"class_type": "DownloadAndLoadHy3DDelightModel",
+               "inputs": {"model": "hunyuan3d-delight-v2-0"}},
         "21": {"class_type": "Hy3DDelightImage",
                "inputs": {"delight_pipe": ["20", 0], "image": image_ref,
                           "steps": 50, "width": 512, "height": 512,
                           "cfg_image": 1.5, "seed": seed}},
-        "22": {"class_type": "DownloadAndLoadHy3DPaintModel", "inputs": {}},
+        # 'hunyuan3d-paint-v2-0-turbo' is the faster alternative if bake time ever hurts.
+        "22": {"class_type": "DownloadAndLoadHy3DPaintModel",
+               "inputs": {"model": "hunyuan3d-paint-v2-0"}},
         "23": {"class_type": "Hy3DMeshUVWrap", "inputs": {"trimesh": mesh_ref}},
         "24": {"class_type": "Hy3DCameraConfig",
                # Six orbit views plus top/bottom-ish elevations. Fewer views leaves seams on
@@ -524,7 +546,14 @@ def op_gen_texture(params):
     if image_path:
         image = _upload_image(host, str(image_path))
 
-    wf = {"5": {"class_type": "Hy3DUploadMesh", "inputs": {"mesh": str(mesh_path)}},
+    # Hy3DUploadMesh takes a name from ComfyUI's INPUT dir, not a path - so a mesh that
+    # exists on disk has to be uploaded first. A value that is NOT an existing file is
+    # passed straight through, so a caller who already knows an input-dir name still works.
+    mesh_ref = str(mesh_path)
+    if os.path.isfile(mesh_ref):
+        mesh_ref = _upload_mesh(host, mesh_ref)
+
+    wf = {"5": {"class_type": "Hy3DUploadMesh", "inputs": {"mesh": mesh_ref}},
           "9": {"class_type": "LoadImage", "inputs": {"image": str(image)}}}
     wf.update(_wf_texture(info, ["5", 0], ["9", 0], prefix, seed, steps, view_size))
     entry = _wait(host, _submit(host, wf), timeout)
@@ -598,9 +627,36 @@ def op_gen_asset(params):
 # ---------------------------------------------------------------------------
 
 def _upload_image(host, path):
-    """ComfyUI's /upload/image is multipart, not JSON - hand-rolled to avoid a dependency."""
+    """A local image file -> ComfyUI's input dir. Returns the name to use in LoadImage."""
+    return _upload_file(host, path, "image")
+
+
+def _upload_mesh(host, path):
+    """A local mesh file -> ComfyUI's input dir. Returns the name to use in Hy3DUploadMesh.
+
+    Hy3DUploadMesh's 'mesh' input is an ENUM over ComfyUI's INPUT directory (/object_info
+    reports {"mesh": [[]]} on a clean install), so handing it an absolute path - e.g. the
+    one Hy3DExportMesh just wrote into the OUTPUT dir - is an unconditional HTTP 400 at
+    queue time. That made gen_texture unusable for every realistic input, and gen_asset
+    with it, since gen_asset routes through op_gen_texture.
+
+    /upload/image is not image-only despite the name: verified 2026-08-15 by uploading a
+    9.3 MB .glb, which returned {"name": "...glb", "type": "input"} and landed in the
+    input dir. It is ComfyUI's generic ingest endpoint.
+    """
+    return _upload_file(host, path, "mesh")
+
+
+def _upload_file(host, path, kind):
+    """ComfyUI's /upload/image is multipart, not JSON - hand-rolled to avoid a dependency.
+
+    ONE implementation for both images and meshes: the two differed only in the error
+    string, and a second hand-rolled multipart body is a second place for the boundary
+    handling to be wrong. The form FIELD stays "image" for both - that is the field name
+    the endpoint requires, regardless of what the bytes are.
+    """
     if not os.path.isfile(path):
-        raise MifOpError("no such image: %s" % path)
+        raise MifOpError("no such %s: %s" % (kind, path))
     boundary = "----MifBlender%d" % int(time.time())
     name = os.path.basename(path)
     with open(path, "rb") as handle:

@@ -52,7 +52,14 @@ ROOT = os.path.dirname(HERE)
 
 MCP_SERVER = os.path.join(HERE, "mcp-server", "server.py")
 ADDON_DIR = os.path.join(HERE, "blender-addon", "MifBlender")
-ADDON_OP_MODULES = ("ops_scene.py", "ops_mesh.py")
+# EVERY module that contributes to the addon's op table must be listed here. A
+# module missing from this tuple is INVISIBLE to check 1: its ops read as
+# "registered nowhere", and — worse — a tool that legitimately calls one gets
+# reported as dead. That happened on 2026-08-15, when ops_gen.py (the ComfyUI
+# generation chain) was added to the addon and this tuple was not updated, so the
+# checker blamed five correct wrappers instead of itself. Cross-check against
+# server.py's `table.update(...)` calls, which are the real registry.
+ADDON_OP_MODULES = ("ops_scene.py", "ops_mesh.py", "ops_gen.py")
 
 UE_BIND_FILE = os.path.join(ROOT, "Source", "MifBridge", "Private", "MifBridgeCommon.cpp")
 
@@ -64,23 +71,25 @@ KNOWN_OP_ALIASES = {"bl_status": "ping"}
 # Addon ops with no _blender() call site, and why. An exemption is a DECISION,
 # so each one carries its reason and every run prints the list - a silent
 # allowlist is just drift with paperwork.
-BLENDER_TOOLLESS_EXEMPTIONS = {
-    "run_python": "arbitrary code execution, gated by an addon preference. Reachable over "
-                  "the socket for a human debugging Blender directly; deliberately not "
-                  "surfaced as an MCP tool. Confirm with Andre before adding one.",
-}
+# EMPTIED 2026-08-15 on Andre's explicit instruction: run_python is now wrapped as
+# bl_run_python, so removing the exemption is what puts it under the check-2 param
+# parity test rather than leaving it unverified. The safety model is unchanged and
+# does not live here - the addon preference `allow_run_python` still gates every
+# call, and the tool's own docstring carries the warnings.
+BLENDER_TOOLLESS_EXEMPTIONS = {}
 
 # Endpoints that ship with MIF_DECL + MIF_BIND + a handler and deliberately have
 # no @mcp.tool - HTTP-reachable, MCP-invisible. Recorded in
 # docs/00_ARCHITECTURE.md; subtracted here so a known delta is not reported as
 # fresh drift every run. Adding to this list is a decision, not a fix.
-UE_TOOLLESS_EXEMPTIONS = {
-    "add_component_bound_event",
-    "reparent_blueprint",
-    "retarget_variable_node",
-    "set_cast_purity",
-    "set_variable_type",
-}
+# EMPTIED 2026-08-15. These five sat here after being reported as uncovered on
+# 2026-08-12 - but they were WRAPPED the same day (docs/13 records "all five are
+# now wrapped, 0 uncovered") and nobody removed the exemptions. A stale exemption
+# is worse than a missing one: it would have suppressed the ue-parity error if a
+# wrapper were later deleted. The check below now catches this shape too.
+#   was: add_component_bound_event, reparent_blueprint, retarget_variable_node,
+#        set_cast_purity, set_variable_type
+UE_TOOLLESS_EXEMPTIONS = set()
 
 # _post targets registered at RUNTIME by the MifKismetReconstructor provider
 # plugin (Public/MifBridgeEndpointRegistry.h). They never appear in MIF_BIND and
@@ -402,6 +411,19 @@ def check_ue_parity(binds, post_endpoints: set, problems: list):
             "ue-parity",
             "UE_TOOLLESS_EXEMPTIONS lists '%s', which no longer has a MIF_BIND. A stale "
             "exemption hides real drift - remove it." % name))
+    # The OTHER way an exemption goes stale: the endpoint still exists AND has since
+    # been given a wrapper, so the exemption is not describing reality any more. It
+    # is worse than useless - it would SUPPRESS the ue-parity error if someone later
+    # deleted that wrapper. The Blender half has always checked this; the UE half did
+    # not, and on 2026-08-15 all five UE exemptions turned out to have been wrapped
+    # back on 2026-08-12, silently, with docs/13 already saying so.
+    covered = UE_TOOLLESS_EXEMPTIONS & post_endpoints
+    for name in sorted(covered):
+        problems.append(Problem(
+            "ue-parity",
+            "UE_TOOLLESS_EXEMPTIONS lists '%s', but server.py now calls _post(\"%s\"). "
+            "The exemption is stale and would mask the wrapper being deleted - remove "
+            "it from the list." % (name, name)))
 
 
 def main() -> int:

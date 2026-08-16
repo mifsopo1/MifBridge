@@ -194,6 +194,17 @@ namespace MifBridge
 	 *  unity build proved the point by failing on the duplicate definition (C2084). */
 	void EmitAssetIdentity(const TSharedRef<FJsonObject>& Row, const FString& ObjectPath, const FString& PackageName);
 
+	/** Path helpers shared by every endpoint that takes a /Game/ asset path. Defined in
+	 *  MifBridgeAssetOps.cpp. Promoted out of file-local `static` for the same reason as
+	 *  EmitAssetIdentity above: a second caller (MifBridgeCollision.cpp) compiled against them
+	 *  only because the unity build merged the two .cpp files into one translation unit. That is
+	 *  not linkage — UBT regroups the unity blobs whenever files are added or removed, so the
+	 *  next new file in Private/ could have broken the build with "identifier not found".
+	 *  NormalizePackagePath: "/Game/Foo/Bar.Bar" or "/Game/Foo/Bar" -> "/Game/Foo/Bar".
+	 *  LoadAssetLenient: loads from either spelling, quietly (no warning on a miss). */
+	FString NormalizePackagePath(const FString& InPath);
+	UObject* LoadAssetLenient(const FString& Path);
+
 	/** Every in-process PIE world, not just GEditor->PlayWorld. With RunUnderOneProcess and >1
 	 *  client there are SEVERAL, and PlayWorld is only ever one of them — answering for "the" PIE
 	 *  world without saying which is a silent wrong answer (the defect axis Q root-caused in
@@ -985,6 +996,12 @@ namespace MifBridge
 	MIF_DECL(delete_asset);
 	MIF_DECL(rename_asset);
 	MIF_DECL(duplicate_asset);
+	// Static-mesh simple collision. The StaticMeshEditor's collision toolbar cannot be reached
+	// through invoke_editor_command (its FUICommandList is only broadcast when that editor is
+	// actually opened), and writing BodySetup.AggGeom via set_property skips the propagation
+	// step, so these call the engine's own generators directly. See MifBridgeCollision.cpp.
+	MIF_DECL(remove_collision);
+	MIF_DECL(add_simplified_collision);
 	// reference queries — the asset registry's dependency graph, exposed
 	MIF_DECL(get_referencers);
 	MIF_DECL(get_dependencies);
@@ -1100,6 +1117,10 @@ namespace MifBridge
 	MIF_DECL(invoke_editor_command);
 	MIF_DECL(invoke_editor_tab);
 	MIF_DECL(send_editor_key);
+	// Opens an asset's default editor, which is the only way an asset-specific editor
+	// (StaticMesh, SkeletalMesh, Material, ...) ever broadcasts its FUICommandList — without
+	// that, invoke_editor_command resolves those commands but cannot execute them.
+	MIF_DECL(open_asset_editor);
 
 	// SOURCE MEDIA INGEST (MifBridgeImport.cpp). The bridge could author assets but never bring
 	// BYTES in - which is why 42 shop icon textures sit on disk as 4.7 KB header-only stubs (no
