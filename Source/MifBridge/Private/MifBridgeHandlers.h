@@ -880,6 +880,13 @@ namespace MifBridge
 	MIF_DECL(remove_widget_binding);
 	MIF_DECL(add_tree_widget);
 	MIF_DECL(remove_tree_widget);
+	// Widget-tree TOPOLOGY (MifBridgeWidgets.cpp). add/remove could create and delete but never read
+	// the shape or rearrange it, so callers were stuck at get_property "Slot" one widget at a time.
+	MIF_DECL(list_tree_widgets);
+	MIF_DECL(duplicate_tree_widget);
+	MIF_DECL(wrap_tree_widget);
+	MIF_DECL(move_tree_widget);
+
 	MIF_DECL(set_property);
 	MIF_DECL(get_property);
 	MIF_DECL(list_object_properties);

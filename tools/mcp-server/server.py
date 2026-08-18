@@ -1242,6 +1242,36 @@ def list_enum_values(enum_name: str) -> dict:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def list_tree_widgets(blueprint_id: str) -> dict:
+    "Dump the ENTIRE WidgetTree of a widget blueprint: name, class, parent, child index, slot class, is-variable flag, is-panel, child count. Read-only. This is what makes the tree addressable - every other tree endpoint takes a widget_name and there was previously no way to discover them. slot_class is the useful field: it tells you which layout properties exist at all (a UCanvasPanelSlot takes x/y, a UVerticalBoxSlot does not, which is exactly why add_tree_widget rejects x/y on a box parent)."
+    return _post("list_tree_widgets", blueprintId=blueprint_id)
+
+
+@mcp.tool()
+def duplicate_tree_widget(blueprint_id: str, widget_name: str, parent_name: str = None,
+                          index: int = None) -> dict:
+    "Clone a widget AND its whole subtree, preserving every property value, by riding the engine's own copy/paste text path (ExportWidgetsToText/ImportWidgetsFromText). parent_name defaults to the source's own parent - 'duplicate beside the original', matching the Designer's Duplicate. The clone's name is assigned by the paste path to stay unique; rename afterwards if you need a specific one. Compile to apply."
+    return _post("duplicate_tree_widget", blueprintId=blueprint_id, widgetName=widget_name,
+                 parentName=parent_name, index=index)
+
+
+@mcp.tool()
+def wrap_tree_widget(blueprint_id: str, widget_name: str, wrapper_class: str,
+                     wrapper_name: str = None) -> dict:
+    "The Designer's 'Wrap With': insert a new panel where the widget currently sits, then move the widget inside it. wrapper_class must be a UPanelWidget (CanvasPanel, VerticalBox, HorizontalBox, Overlay, SizeBox, Border...). Sibling order is preserved - the wrapper takes the original's exact child index. Handles the ROOT case, which has no parent slot to inherit. Compile to apply."
+    return _post("wrap_tree_widget", blueprintId=blueprint_id, widgetName=widget_name,
+                 wrapperClass=wrapper_class, wrapperName=wrapper_name)
+
+
+@mcp.tool()
+def move_tree_widget(blueprint_id: str, widget_name: str, parent_name: str = None,
+                     as_root: bool = False, index: int = None) -> dict:
+    "Reparent an EXISTING widget. add_tree_widget creates and remove_tree_widget deletes; without this, rearranging meant delete + recreate, losing every property already set on the widget. Pass parent_name or as_root. Refuses to move a panel into itself or its own descendant (that builds a cycle and the next tree walk never returns). Changes parentage ONLY - set slot layout afterwards with set_property on the widget's Slot. as_root DISPLACES any existing root: the old root and its whole subtree drop out of the hierarchy and stop rendering, so it requires replace_root=True and reports displaced_subtree_size. Compile to apply."
+    return _post("move_tree_widget", blueprintId=blueprint_id, widgetName=widget_name,
+                 parentName=parent_name, asRoot=as_root, index=index, replaceRoot=replace_root)
+
+
+@mcp.tool()
 def set_widget_is_variable(blueprint_id: str, widget_name: str, is_variable: bool = True) -> dict:
     "Toggle a widget's Is Variable flag. The generated member is named after the widget's FName, not its display label."
     return _post("set_widget_is_variable", blueprintId=blueprint_id, widgetName=widget_name,

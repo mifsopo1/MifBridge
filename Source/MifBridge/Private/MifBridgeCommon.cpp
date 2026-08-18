@@ -186,6 +186,11 @@ namespace MifBridge
 			MIF_BIND(remove_widget_binding);
 			MIF_BIND(add_tree_widget);
 			MIF_BIND(remove_tree_widget);
+			// Widget-tree topology
+			MIF_BIND(list_tree_widgets);
+			MIF_BIND(duplicate_tree_widget);
+			MIF_BIND(wrap_tree_widget);
+			MIF_BIND(move_tree_widget);
 			MIF_BIND(set_property);
 			MIF_BIND(get_property);
 			MIF_BIND(list_object_properties);
@@ -444,6 +449,7 @@ namespace MifBridge
 			// loading is not mutating — find_assets and the list_* endpoints already load here.)
 			TEXT("describe_class"), TEXT("list_enum_values"),
 			TEXT("describe_animation"), TEXT("list_animations"),
+			TEXT("list_tree_widgets"),
 			TEXT("list_struct_members"), TEXT("list_level_actors"),
 			// PIE start/stop only QUEUE a request — they mutate no asset and must not open a
 			// transaction (an undo entry spanning a world teardown is meaningless).

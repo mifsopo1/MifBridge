@@ -16,6 +16,9 @@
 #include "Engine/Blueprint.h"                      // UBlueprint::GetGuidFromClassByFieldName
 #include "Engine/BlueprintGeneratedClass.h"        // UBlueprintGeneratedClass (SkeletonGeneratedClass cast)
 #include "UObject/UObjectGlobals.h"                // MakeUniqueObjectName
+#include "WidgetBlueprintEditorUtils.h"            // Export/ImportWidgetsFromText - the headless copy/paste path
+#include "Components/PanelSlot.h"                  // UPanelSlot returned by AddChild/InsertChildAt
+#include "UObject/UObjectIterator.h"               // TObjectIterator - find tree-owned widgets the walk misses
 
 namespace MifBridge
 {
@@ -294,7 +297,6 @@ namespace MifBridge
 				TEXT("Add a CanvasPanel as the root first, then add this widget to it."));
 			return;
 		}
-
 		UWidget* NewWidget = Tree->ConstructWidget<UWidget>(WidgetClass, WidgetName);
 		if (!NewWidget)
 		{
@@ -322,12 +324,22 @@ namespace MifBridge
 			}
 			// Optional canvas placement (a fresh UCanvasPanelSlot already defaults to top-left anchors).
 			UCanvasPanelSlot* CSlot = Cast<UCanvasPanelSlot>(Slot);
+			// The slot type is only knowable AFTER AddChild (UPanelWidget::GetSlotClass is protected,
+			// so it cannot be asked in advance from outside the module). That made this check
+			// non-atomic: it returned ok:false having already parented the widget, and the caller
+			// found "BadLine" sitting in the tree after a failed call. Unwind before failing, so a
+			// rejected request genuinely leaves nothing behind.
+			if (!CSlot && bWantsPlacement)
+			{
+				Parent->RemoveChild(NewWidget);
+				Tree->RemoveWidget(NewWidget);
+			}
 			if (!CSlot && bWantsPlacement)
 			{
 				NewWidget->MarkAsGarbage();
 				Fail(Out, FString::Printf(
 					TEXT("x/y/autoSize apply to a CanvasPanel slot, but '%s' is a %s and gave this child a %s — they would ")
-					TEXT("have been ignored. Remove them, or parent this widget to a CanvasPanel."),
+					TEXT("have been ignored. Remove them, or parent this widget to a CanvasPanel. Nothing was created."),
 					*Parent->GetName(), *Parent->GetClass()->GetName(), *Slot->GetClass()->GetName()));
 				return;
 			}
@@ -383,6 +395,516 @@ namespace MifBridge
 
 		Out->SetBoolField(TEXT("removed"), bRemoved);
 		Out->SetStringField(TEXT("widgetName"), WidgetName);
+		Out->SetBoolField(TEXT("needsCompileToApply"), true);
+	}
+
+	// ---------------------------------------------------------------------------
+	// Tree topology: list, duplicate, wrap, move.
+	//
+	// These exist because the tree was effectively write-only: add created, remove deleted, and nothing
+	// could read the shape or rearrange it. Callers were reduced to get_property "Slot" one widget at a
+	// time, and only on Is-Variable-flagged widgets, since the rest have no member to address.
+	//
+	// The engine designer actions (FWidgetBlueprintEditorUtils::DuplicateWidgets / WrapWidgets) take a
+	// TSharedRef<FWidgetBlueprintEditor> — an OPEN asset editor — so they are unusable from a headless
+	// bridge. ExportWidgetsToText / ImportWidgetsFromText take only the UWidgetBlueprint, so duplicate
+	// rides the engine real copy/paste path (carrying the whole subtree and every property value);
+	// wrap and move do the panel surgery directly.
+	// ---------------------------------------------------------------------------
+
+	namespace
+	{
+		// True if Candidate is Root or anywhere beneath it. Re-parenting a panel into its own
+		// descendant builds a cycle, and the next tree walk never terminates.
+		static bool IsSelfOrDescendant(UWidget* Root, UWidget* Candidate)
+		{
+			if (!Root || !Candidate) { return false; }
+			if (Root == Candidate) { return true; }
+			UPanelWidget* Panel = Cast<UPanelWidget>(Root);
+			if (!Panel) { return false; }
+			for (int32 i = 0; i < Panel->GetChildrenCount(); ++i)
+			{
+				if (IsSelfOrDescendant(Panel->GetChildAt(i), Candidate)) { return true; }
+			}
+			return false;
+		}
+
+		// Detach from whatever holds the widget, reporting where it came from. Handles the ROOT case,
+		// which is not a panel child and would otherwise be silently left in place.
+		static void DetachFromParent(UWidgetTree* Tree, UWidget* Widget, FString& OutFromParent, int32& OutFromIndex)
+		{
+			OutFromIndex = INDEX_NONE;
+			OutFromParent = TEXT("");
+			if (UPanelWidget* Old = Widget->GetParent())
+			{
+				OutFromParent = Old->GetName();
+				OutFromIndex = Old->GetChildIndex(Widget);
+				Old->SetFlags(RF_Transactional);
+				Old->Modify();
+				Old->RemoveChild(Widget);
+			}
+			else if (Tree->RootWidget == Widget)
+			{
+				OutFromParent = TEXT("<root>");
+				Tree->RootWidget = nullptr;
+			}
+		}
+	}
+
+	// --- list_tree_widgets --------------------------------------------------
+	//   in:  { blueprintId | path }
+	//   out: { root, count, widgets:[{name,class,parent,index,slotClass,isVariable,isPanel,childCount}] }
+	// Read-only. The call that makes the rest of the tree addressable: every other tree endpoint takes a
+	// widgetName, and before this there was no way to discover them.
+	void H_list_tree_widgets(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path)"),
+			{ { TEXT("widgetName"), TEXT("this endpoint lists the WHOLE tree; there is no per-widget filter") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+		UWidgetTree* Tree = WBP->WidgetTree;
+
+		// Two sources, unioned, because neither alone tells the truth.
+		//   * GetAllWidgets walks from RootWidget via ForWidgetAndChildren, which reads
+		//     UPanelWidget::GetChildAt. A panel whose Slots carry a null Content therefore reports a
+		//     non-zero GetChildrenCount while contributing NOTHING to the walk — the tree silently
+		//     under-reports and a caller believes those widgets do not exist.
+		//   * The tree also owns widgets that are not under the root at all (named-slot content,
+		//     and anything orphaned by a failed edit).
+		// So: take the walk, then sweep every UWidget outered to the tree and mark whatever the walk
+		// missed as unreachable. A broken tree becomes a reported number instead of a silent absence.
+		TArray<UWidget*> All;
+		Tree->GetAllWidgets(All);
+		TSet<UWidget*> Reachable(All);
+
+		int32 NullSlots = 0;
+		for (TObjectIterator<UWidget> It; It; ++It)
+		{
+			UWidget* W = *It;
+			if (W && IsValid(W) && W->GetOuter() == Tree && !Reachable.Contains(W))
+			{
+				All.Add(W);
+			}
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		for (UWidget* W : All)
+		{
+			if (!W) { continue; }
+			int32 ChildIndex = INDEX_NONE;
+			UPanelWidget* Parent = UWidgetTree::FindWidgetParent(W, ChildIndex);
+
+			TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+			O->SetStringField(TEXT("name"), W->GetName());
+			O->SetStringField(TEXT("class"), W->GetClass()->GetPathName());
+			O->SetStringField(TEXT("classShort"), W->GetClass()->GetName());
+			O->SetStringField(TEXT("parent"), Parent ? Parent->GetName()
+				: (Tree->RootWidget == W ? TEXT("<root>") : TEXT("")));
+			O->SetNumberField(TEXT("index"), ChildIndex);
+			// The slot CLASS is the useful half: it says which layout properties even exist. A
+			// UCanvasPanelSlot takes x/y; a UVerticalBoxSlot does not, which is the whole reason
+			// add_tree_widget rejects x/y on a box parent.
+			O->SetStringField(TEXT("slotClass"), W->Slot ? W->Slot->GetClass()->GetName() : TEXT(""));
+			O->SetBoolField(TEXT("isVariable"), W->bIsVariable != 0);
+			O->SetBoolField(TEXT("reachable"), Reachable.Contains(W));
+			UPanelWidget* AsPanel = Cast<UPanelWidget>(W);
+			O->SetBoolField(TEXT("isPanel"), AsPanel != nullptr);
+			if (AsPanel)
+			{
+				const int32 SlotCount = AsPanel->GetChildrenCount();
+				// Count slots whose Content is null. childCount counts SLOTS; a null Content is a slot
+				// that exists with nothing in it, which is exactly what makes the walk skip a child.
+				int32 Live = 0;
+				for (int32 i = 0; i < SlotCount; ++i)
+				{
+					if (AsPanel->GetChildAt(i)) { ++Live; } else { ++NullSlots; }
+				}
+				O->SetNumberField(TEXT("childCount"), Live);
+				O->SetNumberField(TEXT("slotCount"), SlotCount);
+				if (Live != SlotCount) { O->SetNumberField(TEXT("emptySlots"), SlotCount - Live); }
+				O->SetBoolField(TEXT("canHaveMultipleChildren"), AsPanel->CanHaveMultipleChildren());
+			}
+			else
+			{
+				O->SetNumberField(TEXT("childCount"), 0);
+			}
+			Arr.Add(MakeShared<FJsonValueObject>(O));
+		}
+
+		Out->SetStringField(TEXT("root"), Tree->RootWidget ? Tree->RootWidget->GetName() : TEXT(""));
+		Out->SetNumberField(TEXT("count"), Arr.Num());
+		Out->SetNumberField(TEXT("reachableCount"), Reachable.Num());
+		Out->SetArrayField(TEXT("widgets"), Arr);
+		if (Arr.Num() != Reachable.Num())
+		{
+			Out->SetStringField(TEXT("warning"), FString::Printf(
+				TEXT("%d widget(s) are owned by the tree but NOT reachable from the root - they are listed with reachable:false. They will not render."),
+				Arr.Num() - Reachable.Num()));
+		}
+		if (NullSlots > 0)
+		{
+			Out->SetNumberField(TEXT("emptySlotTotal"), NullSlots);
+			Out->SetStringField(TEXT("slotWarning"), FString::Printf(
+				TEXT("%d panel slot(s) exist with NO content. childCount reports live children; slotCount reports slots. A gap between them means an edit left slots behind."),
+				NullSlots));
+		}
+	}
+
+	// --- duplicate_tree_widget ----------------------------------------------
+	//   in:  { blueprintId | path, widgetName, parentName?, index? }
+	//   out: { created:[...], primary, parent, index }
+	// Clones a widget AND its whole subtree through the engine copy/paste text path, so property values
+	// and child structure come along. parentName defaults to the source own parent — "duplicate beside
+	// the original", which is what the Designer Duplicate does.
+	void H_duplicate_tree_widget(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), TEXT("parentName"), TEXT("index") },
+			TEXT("blueprintId (alias: path), widgetName, parentName (optional - defaults to the source own parent), index (optional insert position)"),
+			{ { TEXT("newName"), TEXT("the clone name is assigned by the engine paste path to keep it unique; rename afterwards if you need a specific one") },
+			  { TEXT("widget"), TEXT("spell it widgetName") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+		UWidgetTree* Tree = WBP->WidgetTree;
+
+		const FString WidgetName = JStr(In, TEXT("widgetName"));
+		if (WidgetName.IsEmpty()) { Fail(Out, TEXT("widgetName is required")); return; }
+		UWidget* Source = Tree->FindWidget(FName(*WidgetName));
+		if (!Source) { Fail(Out, FString::Printf(TEXT("widget not found in tree: '%s'"), *WidgetName)); return; }
+
+		// Resolve the destination parent BEFORE cloning, so a bad parentName leaves nothing behind.
+		const FString ParentName = JStr(In, TEXT("parentName"));
+		UPanelWidget* Dest = nullptr;
+		if (!ParentName.IsEmpty())
+		{
+			UWidget* DestWidget = Tree->FindWidget(FName(*ParentName));
+			if (!DestWidget) { Fail(Out, FString::Printf(TEXT("parent widget not found: '%s'"), *ParentName)); return; }
+			Dest = Cast<UPanelWidget>(DestWidget);
+			if (!Dest) { Fail(Out, FString::Printf(TEXT("parent '%s' is not a panel (cannot hold children)"), *ParentName)); return; }
+		}
+		else
+		{
+			Dest = Source->GetParent();
+			if (!Dest)
+			{
+				Fail(Out, TEXT("source is the ROOT widget and has no parent to duplicate into - pass parentName"));
+				return;
+			}
+		}
+		if (!Dest->CanAddMoreChildren())
+		{
+			Fail(Out, FString::Printf(TEXT("parent '%s' is a single-child panel and is already full"), *Dest->GetName()));
+			return;
+		}
+
+		Tree->SetFlags(RF_Transactional);
+		Tree->Modify();
+		WBP->Modify();
+
+		// Export the SOURCE PLUS EVERY DESCENDANT. Exporting {Source} alone produced a clone whose
+		// slots existed but whose Content was null - a VerticalBox reporting slotCount 3 and
+		// childCount 0. The slot records travel with the panel; the child widgets only travel if they
+		// are in the exported set, so the paste rebuilt the slots pointing at nothing.
+		TArray<UWidget*> ToExport;
+		UWidgetTree::GetChildWidgets(Source, ToExport);   // includes Source itself
+		if (!ToExport.Contains(Source)) { ToExport.Insert(Source, 0); }
+
+		FString Exported;
+		FWidgetBlueprintEditorUtils::ExportWidgetsToText(ToExport, Exported);
+		TSet<UWidget*> Imported;
+		TMap<FName, UWidgetSlotPair*> SlotData;
+		FWidgetBlueprintEditorUtils::ImportWidgetsFromText(WBP, Exported, Imported, SlotData);
+		if (Imported.Num() == 0)
+		{
+			Fail(Out, FString::Printf(TEXT("copy/paste of '%s' produced no widgets"), *WidgetName));
+			return;
+		}
+
+		// Import brings the whole subtree in, but only the TOP of it needs parenting - the children
+		// already point at their cloned parents. The top is the one whose parent is outside the set.
+		UWidget* Primary = nullptr;
+		TArray<TSharedPtr<FJsonValue>> Created;
+		for (UWidget* W : Imported)
+		{
+			if (!W) { continue; }
+			Created.Add(MakeShared<FJsonValueString>(W->GetName()));
+			if (!Primary && !Imported.Contains(W->GetParent())) { Primary = W; }
+		}
+		if (!Primary) { Primary = *Imported.CreateIterator(); }
+
+		Dest->SetFlags(RF_Transactional);
+		Dest->Modify();
+		const int32 WantIndex = JHasAny(In, { TEXT("index") }) ? JInt(In, TEXT("index"), 0) : INDEX_NONE;
+		UPanelSlot* Slot = (WantIndex >= 0 && WantIndex <= Dest->GetChildrenCount())
+			? Dest->InsertChildAt(WantIndex, Primary)
+			: Dest->AddChild(Primary);
+		if (!Slot)
+		{
+			Fail(Out, FString::Printf(TEXT("failed to parent the clone under '%s'"), *Dest->GetName()));
+			return;
+		}
+
+		MarkStructural(WBP);
+		Out->SetArrayField(TEXT("created"), Created);
+		Out->SetStringField(TEXT("primary"), Primary->GetName());
+		Out->SetStringField(TEXT("parent"), Dest->GetName());
+		Out->SetNumberField(TEXT("index"), Dest->GetChildIndex(Primary));
+		Out->SetStringField(TEXT("slotClass"), Slot->GetClass()->GetName());
+		Out->SetNumberField(TEXT("sourceSubtreeSize"), ToExport.Num());
+		Out->SetNumberField(TEXT("clonedCount"), Created.Num());
+		if (Created.Num() != ToExport.Num())
+		{
+			Out->SetStringField(TEXT("warning"), FString::Printf(
+				TEXT("cloned %d widget(s) from a %d-widget subtree - the clone is INCOMPLETE. Verify with list_tree_widgets (emptySlots)."),
+				Created.Num(), ToExport.Num()));
+		}
+		Out->SetBoolField(TEXT("needsCompileToApply"), true);
+	}
+
+	// --- wrap_tree_widget ---------------------------------------------------
+	//   in:  { blueprintId | path, widgetName, wrapperClass, wrapperName? }
+	//   out: { wrapper, wrapped, parent, index, wasRoot }
+	// The Designer "Wrap With": insert a new panel where the widget sits, then move the widget inside it.
+	// Handles the ROOT case, which has no parent slot to inherit.
+	void H_wrap_tree_widget(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), TEXT("wrapperClass"), TEXT("wrapperName") },
+			TEXT("blueprintId (alias: path), widgetName, wrapperClass (a UPanelWidget class), wrapperName (optional)"),
+			{ { TEXT("class"), TEXT("spell it wrapperClass - the PANEL to wrap with, not the widget being wrapped") },
+			  { TEXT("panelClass"), TEXT("spell it wrapperClass") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+		UWidgetTree* Tree = WBP->WidgetTree;
+
+		const FString WidgetName = JStr(In, TEXT("widgetName"));
+		if (WidgetName.IsEmpty()) { Fail(Out, TEXT("widgetName is required")); return; }
+		UWidget* Target = Tree->FindWidget(FName(*WidgetName));
+		if (!Target) { Fail(Out, FString::Printf(TEXT("widget not found in tree: '%s'"), *WidgetName)); return; }
+
+		UClass* WrapperClass = ResolveClassStrictField(In, { TEXT("wrapperClass") }, nullptr, Out);
+		if (!WrapperClass) { return; }
+		if (!WrapperClass->IsChildOf(UPanelWidget::StaticClass()))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is not a UPanelWidget - only a panel can wrap a widget (try CanvasPanel, VerticalBox, HorizontalBox, Overlay, SizeBox, Border)"),
+				*WrapperClass->GetName()));
+			return;
+		}
+		if (WrapperClass->HasAnyClassFlags(CLASS_Abstract))
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' is abstract and cannot be constructed"), *WrapperClass->GetName()));
+			return;
+		}
+
+		// Capture the original position BEFORE any mutation.
+		UPanelWidget* OldParent = Target->GetParent();
+		const bool bTargetIsRoot = (Tree->RootWidget == Target);
+		const int32 OldIndex = OldParent ? OldParent->GetChildIndex(Target) : INDEX_NONE;
+		if (!OldParent && !bTargetIsRoot)
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' has no parent and is not the root - it is orphaned and cannot be wrapped"), *WidgetName));
+			return;
+		}
+
+		Tree->SetFlags(RF_Transactional);
+		Tree->Modify();
+		WBP->Modify();
+
+		const FString WrapperName = JStr(In, TEXT("wrapperName"));
+		UPanelWidget* Wrapper = Cast<UPanelWidget>(WrapperName.IsEmpty()
+			? Tree->ConstructWidget<UWidget>(WrapperClass)
+			: Tree->ConstructWidget<UWidget>(WrapperClass, FName(*WrapperName)));
+		if (!Wrapper) { Fail(Out, TEXT("failed to construct the wrapper panel")); return; }
+
+		if (OldParent)
+		{
+			OldParent->SetFlags(RF_Transactional);
+			OldParent->Modify();
+			OldParent->RemoveChild(Target);
+			// Put the wrapper back at the SAME index so sibling order survives.
+			if (!OldParent->InsertChildAt(OldIndex, Wrapper))
+			{
+				OldParent->AddChild(Wrapper);
+			}
+		}
+		else
+		{
+			Tree->RootWidget = Wrapper;
+		}
+
+		if (!Wrapper->AddChild(Target))
+		{
+			Fail(Out, FString::Printf(TEXT("wrapper '%s' refused the child (single-child panel already full?)"), *Wrapper->GetName()));
+			return;
+		}
+
+		MarkStructural(WBP);
+		Out->SetStringField(TEXT("wrapper"), Wrapper->GetName());
+		Out->SetStringField(TEXT("wrapperClass"), Wrapper->GetClass()->GetName());
+		Out->SetStringField(TEXT("wrapped"), Target->GetName());
+		Out->SetStringField(TEXT("parent"), OldParent ? OldParent->GetName() : TEXT("<root>"));
+		Out->SetNumberField(TEXT("index"), OldParent ? OldParent->GetChildIndex(Wrapper) : 0);
+		Out->SetBoolField(TEXT("wasRoot"), bTargetIsRoot);
+		Out->SetBoolField(TEXT("needsCompileToApply"), true);
+	}
+
+	// --- move_tree_widget ---------------------------------------------------
+	//   in:  { blueprintId | path, widgetName, parentName | asRoot, index? }
+	//   out: { widget, fromParent, fromIndex, toParent, index }
+	// Reparent an EXISTING widget. add_tree_widget creates and remove_tree_widget deletes; there was no
+	// way to move one, so rearranging meant delete + recreate, losing every property already set.
+	void H_move_tree_widget(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), TEXT("parentName"), TEXT("asRoot"), TEXT("index"),
+			  TEXT("replaceRoot"), TEXT("confirm") },
+			TEXT("blueprintId (alias: path), widgetName, parentName (the new parent panel) OR asRoot:true (+ replaceRoot:true if a root already exists), index (optional position within the new parent)"),
+			{ { TEXT("newParent"), TEXT("spell it parentName") },
+			  { TEXT("x"), TEXT("move changes PARENTAGE only; set slot layout afterwards with set_property on the widget Slot") },
+			  { TEXT("y"), TEXT("move changes PARENTAGE only; set slot layout afterwards with set_property on the widget Slot") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+		UWidgetTree* Tree = WBP->WidgetTree;
+
+		const FString WidgetName = JStr(In, TEXT("widgetName"));
+		if (WidgetName.IsEmpty()) { Fail(Out, TEXT("widgetName is required")); return; }
+		UWidget* Target = Tree->FindWidget(FName(*WidgetName));
+		if (!Target) { Fail(Out, FString::Printf(TEXT("widget not found in tree: '%s'"), *WidgetName)); return; }
+
+		const bool bAsRoot = JBool(In, TEXT("asRoot"), false);
+		const FString ParentName = JStr(In, TEXT("parentName"));
+		if (!bAsRoot && ParentName.IsEmpty())
+		{
+			Fail(Out, TEXT("pass parentName (the new parent panel) or asRoot:true"));
+			return;
+		}
+
+		UPanelWidget* Dest = nullptr;
+		if (!bAsRoot)
+		{
+			UWidget* DestWidget = Tree->FindWidget(FName(*ParentName));
+			if (!DestWidget) { Fail(Out, FString::Printf(TEXT("parent widget not found: '%s'"), *ParentName)); return; }
+			Dest = Cast<UPanelWidget>(DestWidget);
+			if (!Dest) { Fail(Out, FString::Printf(TEXT("parent '%s' is not a panel (cannot hold children)"), *ParentName)); return; }
+
+			// The check that matters: parenting a panel under itself or its own descendant builds a
+			// cycle, and the next tree walk never returns.
+			if (IsSelfOrDescendant(Target, Dest))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("cannot move '%s' into '%s' - that is itself or one of its own descendants, which would create a cycle"),
+					*WidgetName, *ParentName));
+				return;
+			}
+			if (Target->GetParent() != Dest && !Dest->CanAddMoreChildren())
+			{
+				Fail(Out, FString::Printf(TEXT("parent '%s' is a single-child panel and is already full"), *ParentName));
+				return;
+			}
+		}
+		else if (Tree->RootWidget == Target)
+		{
+			Fail(Out, TEXT("widget is already the root"));
+			return;
+		}
+		else if (Tree->RootWidget != nullptr)
+		{
+			// Promoting to root DISPLACES whatever is there, and the displaced root plus its entire
+			// subtree stop being part of the widget hierarchy - measured: a 12-widget tree became 5.
+			// That is a delete wearing a move's clothing, so it needs the same explicit opt-in every
+			// other destructive endpoint here demands. An earlier version only emitted a warning, and
+			// the warning was wrong as well: it claimed the old root was "still in the tree object".
+			if (!JBoolAny(In, { TEXT("replaceRoot"), TEXT("confirm") }, false))
+			{
+				TArray<UWidget*> Doomed;
+				UWidgetTree::GetChildWidgets(Tree->RootWidget, Doomed);
+				Fail(Out, FString::Printf(
+					TEXT("asRoot would displace the current root '%s' and drop it and its %d-widget subtree out of the hierarchy. ")
+					TEXT("Pass replaceRoot:true to accept that, or move '%s' under an existing panel instead."),
+					*Tree->RootWidget->GetName(), Doomed.Num(), *WidgetName));
+				return;
+			}
+		}
+
+		Tree->SetFlags(RF_Transactional);
+		Tree->Modify();
+		WBP->Modify();
+		Target->SetFlags(RF_Transactional);
+		Target->Modify();
+
+		// Size the displaced subtree BEFORE detaching. Measured after, the target has already left its
+		// old parent, so promoting the only child of the root reported "0-widget subtree" on the accept
+		// path while the refusal path (which runs first, undetached) correctly said 2.
+		int32 DisplacedSize = 0;
+		UWidget* PrevRootSnapshot = Tree->RootWidget;
+		if (bAsRoot && PrevRootSnapshot && PrevRootSnapshot != Target)
+		{
+			TArray<UWidget*> Doomed;
+			UWidgetTree::GetChildWidgets(PrevRootSnapshot, Doomed);
+			DisplacedSize = Doomed.Num();
+		}
+
+		FString FromParent;
+		int32 FromIndex = INDEX_NONE;
+		DetachFromParent(Tree, Target, FromParent, FromIndex);
+
+		int32 NewIndex = INDEX_NONE;
+		if (bAsRoot)
+		{
+			// Whatever was root becomes orphaned unless the caller re-homes it. Say so rather than
+			// silently dropping it out of the visible tree.
+			UWidget* PrevRoot = Tree->RootWidget;
+			const int32 Displaced = DisplacedSize;   // snapshot taken before detach
+			Tree->RootWidget = Target;
+			if (PrevRoot && PrevRoot != Target)
+			{
+				Out->SetStringField(TEXT("displacedRoot"), PrevRoot->GetName());
+				Out->SetNumberField(TEXT("displacedSubtreeSize"), Displaced);
+				Out->SetStringField(TEXT("warning"), FString::Printf(
+					TEXT("'%s' and its %d-widget subtree are no longer in the hierarchy and will not render. This was accepted via replaceRoot."),
+					*PrevRoot->GetName(), Displaced));
+			}
+			NewIndex = 0;
+		}
+		else
+		{
+			Dest->SetFlags(RF_Transactional);
+			Dest->Modify();
+			const int32 WantIndex = JHasAny(In, { TEXT("index") }) ? JInt(In, TEXT("index"), 0) : INDEX_NONE;
+			UPanelSlot* Slot = (WantIndex >= 0 && WantIndex <= Dest->GetChildrenCount())
+				? Dest->InsertChildAt(WantIndex, Target)
+				: Dest->AddChild(Target);
+			if (!Slot)
+			{
+				Fail(Out, FString::Printf(TEXT("failed to parent '%s' under '%s' - the widget is now DETACHED; re-add it"),
+					*WidgetName, *Dest->GetName()));
+				return;
+			}
+			NewIndex = Dest->GetChildIndex(Target);
+			Out->SetStringField(TEXT("slotClass"), Slot->GetClass()->GetName());
+		}
+
+		MarkStructural(WBP);
+		Out->SetStringField(TEXT("widget"), Target->GetName());
+		Out->SetStringField(TEXT("fromParent"), FromParent);
+		Out->SetNumberField(TEXT("fromIndex"), FromIndex);
+		Out->SetStringField(TEXT("toParent"), bAsRoot ? TEXT("<root>") : Dest->GetName());
+		Out->SetNumberField(TEXT("index"), NewIndex);
 		Out->SetBoolField(TEXT("needsCompileToApply"), true);
 	}
 }
