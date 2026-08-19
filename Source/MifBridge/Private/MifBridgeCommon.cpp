@@ -2,6 +2,7 @@
 #include "Engine/World.h"       // UWorld / EWorldType for CollectPIEWorlds
 #include "Engine/Engine.h"      // GEngine->GetWorldContexts for CollectPIEWorlds
 #include "MifBridgeHandlers.h"
+#include "Misc/ScopeExit.h"
 #include "MifBridgeEndpointRegistry.h"      // Public/ — the provider registration interface
 #include "Dom/JsonObject.h"                 // FJsonObject is only FORWARD-DECLARED in the registry
                                             // header (Json is a PRIVATE dep, MifBridge.Build.cs:39)
@@ -761,6 +762,7 @@ namespace MifBridge
 		TArray<TSharedPtr<FJsonValue>> EndpointRows;
 		TArray<TSharedPtr<FJsonValue>> NoParamRow;
 		int32 WithParamRow = 0;
+		int32 WithObserved = 0;
 		TMap<FString, int32> ProviderCounts;
 		// One canonical line per endpoint, folded into surfaceSignature below. Names is already sorted
 		// (just above), so the fold input is canonical for free.
@@ -791,7 +793,13 @@ namespace MifBridge
 			// the risk, not where it is. NOT a claim about guarding — see MifDescribeHasParamRow.
 			int32 ParamCount = 0;
 			const bool bHasRow = MifDescribeHasParamRow(Name, &ParamCount);
-			if (bHasRow) { ++WithParamRow; } else { NoParamRow.Add(MakeShared<FJsonValueString>(Name)); }
+			// A guard OBSERVED at runtime outranks the hand-harvested table: it is proof the endpoint
+			// rejects unknown keys, where the table is only a record that someone wrote it down.
+			TArray<FString> Observed;
+			const bool bObserved = MifDescribeObservedParams(Name, &Observed);
+			if (bObserved) { ++WithObserved; }
+			if (bHasRow) { ++WithParamRow; }
+			if (!bHasRow && !bObserved) { NoParamRow.Add(MakeShared<FJsonValueString>(Name)); }
 
 			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
 			Row->SetStringField(TEXT("name"), Name);
@@ -799,6 +807,8 @@ namespace MifBridge
 			Row->SetStringField(TEXT("bucket"), Bucket);
 			Row->SetBoolField(TEXT("hasParamTableRow"), bHasRow);
 			if (bHasRow) { Row->SetNumberField(TEXT("declaredParamCount"), ParamCount); }
+			Row->SetBoolField(TEXT("guardObservedAtRuntime"), bObserved);
+			if (bObserved) { Row->SetNumberField(TEXT("observedParamCount"), Observed.Num()); }
 			if (Ext && !Ext->Summary.IsEmpty()) { Row->SetStringField(TEXT("summary"), Ext->Summary); }
 			EndpointRows.Add(MakeShared<FJsonValueObject>(Row));
 			if (Ext) { ProviderCounts.FindOrAdd(Ext->Provider)++; }
@@ -817,10 +827,13 @@ namespace MifBridge
 		ParamCoverage->SetNumberField(TEXT("registeredEndpoints"), Names.Num());
 		ParamCoverage->SetNumberField(TEXT("tableRows"), MifDescribeParamRowCount());
 		ParamCoverage->SetNumberField(TEXT("withParamTableRow"), WithParamRow);
-		ParamCoverage->SetNumberField(TEXT("withoutParamTableRow"), NoParamRow.Num());
-		ParamCoverage->SetArrayField(TEXT("endpointsWithoutParamTableRow"), NoParamRow);
+		ParamCoverage->SetNumberField(TEXT("guardsObservedAtRuntime"), WithObserved);
+		ParamCoverage->SetNumberField(TEXT("withoutAnyEvidence"), NoParamRow.Num());
+		ParamCoverage->SetArrayField(TEXT("endpointsWithoutAnyEvidence"), NoParamRow);
 		ParamCoverage->SetStringField(TEXT("note"),
-			TEXT("withoutParamTableRow is an UPPER BOUND on endpoints that accept anything silently - never a count of them. ")
+			TEXT("withoutAnyEvidence counts endpoints with NEITHER a harvested table row NOR a guard observed at runtime. ")
+			TEXT("It is an UPPER BOUND on endpoints that accept anything silently - never a count of them: an endpoint that ")
+			TEXT("has simply never been called cannot have been observed. ")
 			TEXT("A missing row means the harvester found no RejectUnknownParams call site, which has two causes with OPPOSITE ")
 			TEXT("consequences: no guard (silently ignores), or a guard added after the harvest (strictly rejects). A static ")
 			TEXT("table cannot tell them apart, so this reports the TABLE, not the guard."));
@@ -963,6 +976,10 @@ namespace MifBridge
 	void RunEndpoint(const FString& Endpoint, const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		Out->SetBoolField(TEXT("ok"), true);
+
+		// Attribute any guard that runs inside this dispatch to THIS endpoint.
+		MifSetCurrentEndpoint(Endpoint);
+		ON_SCOPE_EXIT { MifSetCurrentEndpoint(FString()); };
 
 		const FHandlerFn* Fn = Handlers().Find(Endpoint);
 		// Built-ins win by construction — RegisterExternalEndpoint refuses a name that collides with
@@ -1482,6 +1499,25 @@ namespace MifBridge
 	// MifBridgeServer.cpp deserialises the POST body directly as the param object (the token
 	// travels in the X-Mif-Token header) and server.py's _post drops unset (None) kwargs, so
 	// In->Values holds only what the caller actually sent.
+	// Endpoint currently being dispatched, so RejectUnknownParams can attribute the guard it is
+	// running to the endpoint that owns it. Set/cleared by RunEndpoint around the handler call.
+	static FString GMifCurrentEndpoint;
+	static TMap<FString, TArray<FString>> GMifObservedParamsByEndpoint;
+
+	void MifSetCurrentEndpoint(const FString& Endpoint) { GMifCurrentEndpoint = Endpoint; }
+
+	bool MifDescribeObservedParams(const FString& Endpoint, TArray<FString>* OutKeys)
+	{
+		if (const TArray<FString>* Found = GMifObservedParamsByEndpoint.Find(Endpoint))
+		{
+			if (OutKeys) { *OutKeys = *Found; }
+			return true;
+		}
+		return false;
+	}
+
+	int32 MifDescribeObservedEndpointCount() { return GMifObservedParamsByEndpoint.Num(); }
+
 	bool RejectUnknownParams(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out,
 		std::initializer_list<const TCHAR*> AcceptedKeys, const TCHAR* AcceptedSummary,
 		std::initializer_list<TPair<const TCHAR*, const TCHAR*>> KeyNotes)
@@ -1517,6 +1553,18 @@ namespace MifBridge
 			}
 			Canonical.Sort();
 			GMifObservedParamShapes.Add(FString::Join(Canonical, TEXT(",")));
+
+			// Record the shape AGAINST ITS ENDPOINT, not just as an anonymous shape. This is the fix
+			// the describe header asks for: the static table is harvested by hand and goes stale the
+			// moment an endpoint is added, so an endpoint that DOES guard its input reads as one that
+			// might not. A guard can only be observed by running, so this fills in as endpoints are
+			// called and describe_endpoint/self_audit prefer it over the table.
+			// Safe as a plain static: handlers run synchronously on the game thread, one at a time,
+			// from the HTTP server's ticker - never concurrently. (MifBridgeServer.cpp:229-265.)
+			if (!GMifCurrentEndpoint.IsEmpty())
+			{
+				GMifObservedParamsByEndpoint.Add(GMifCurrentEndpoint, Canonical);
+			}
 		}
 
 		TArray<FString> Unrecognised;

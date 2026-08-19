@@ -1025,6 +1025,13 @@ namespace MifBridge
 	MIF_DECL(run_console);
 	MIF_DECL(validate);
 
+	/** Guards OBSERVED at runtime: RejectUnknownParams records its accepted-key list against the
+	 *  endpoint being dispatched, so an endpoint that has run at least once reports its real guard
+	 *  regardless of whether the hand-harvested table knows about it. Preferred over the table. */
+	bool MifDescribeObservedParams(const FString& Endpoint, TArray<FString>* OutKeys = nullptr);
+	int32 MifDescribeObservedEndpointCount();
+	void MifSetCurrentEndpoint(const FString& Endpoint);
+
 	/** True if the harvested parameter table has a row for this endpoint (and its key count via
 	 *  OutParamCount). "No row" is NOT "no guard" — see the describe_endpoint note below. */
 	bool MifDescribeHasParamRow(const FString& Endpoint, int32* OutParamCount = nullptr);
