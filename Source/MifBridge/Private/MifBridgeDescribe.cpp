@@ -2838,6 +2838,30 @@ namespace MifBridge
 		Out->SetObjectField(TEXT("harvest"), Harvest);
 	}
 
+
+	// Exposed so self_audit can report table COVERAGE without duplicating the table. Named for the
+	// TABLE, never for a guard: a missing row means the harvester found no RejectUnknownParams call
+	// site, and that has two causes with opposite consequences (no guard at all, or a guard added
+	// after the harvest). Ten endpoints were in the second case while an earlier revision confidently
+	// reported the first. Callers must not upgrade "no row" into "accepts anything".
+	bool MifDescribeHasParamRow(const FString& Endpoint, int32* OutParamCount)
+	{
+		const FMifDescribeRow* Row = MifDescribeFindRow(Endpoint);
+		if (!Row) { return false; }
+		if (OutParamCount)
+		{
+			int32 N = 0;
+			for (const TCHAR* const* K = Row->Keys; K && *K; ++K) { ++N; }
+			*OutParamCount = N;
+		}
+		return true;
+	}
+
+	int32 MifDescribeParamRowCount()
+	{
+		return (int32)UE_ARRAY_COUNT(GMifDescribeRows);
+	}
+
 #undef MIF_DESCRIBE_OWN_KEYS
 #undef MIF_DESCRIBE_OWN_SUMMARY
 }   // namespace MifBridge

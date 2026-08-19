@@ -1025,6 +1025,11 @@ namespace MifBridge
 	MIF_DECL(run_console);
 	MIF_DECL(validate);
 
+	/** True if the harvested parameter table has a row for this endpoint (and its key count via
+	 *  OutParamCount). "No row" is NOT "no guard" — see the describe_endpoint note below. */
+	bool MifDescribeHasParamRow(const FString& Endpoint, int32* OutParamCount = nullptr);
+	int32 MifDescribeParamRowCount();
+
 	// Self-audit — the plugin reporting its own invariants from inside the running DLL.
 	MIF_DECL(self_audit);
 

@@ -759,6 +759,8 @@ namespace MifBridge
 		// Parallel object array. The flat `endpoints` string array (All) is deliberately NOT replaced:
 		// the README's MIF_BIND<->@mcp.tool diff and every existing consumer parse it. Additive only.
 		TArray<TSharedPtr<FJsonValue>> EndpointRows;
+		TArray<TSharedPtr<FJsonValue>> NoParamRow;
+		int32 WithParamRow = 0;
 		TMap<FString, int32> ProviderCounts;
 		// One canonical line per endpoint, folded into surfaceSignature below. Names is already sorted
 		// (just above), so the fold input is canonical for free.
@@ -784,10 +786,19 @@ namespace MifBridge
 			// a second copy of these expressions is how the reported bucket and the folded bucket drift.
 			const FString Provider = Ext ? Ext->Provider : FString(TEXT("MifBridge"));
 			const FString Bucket = bRO ? TEXT("readOnly") : bSM ? TEXT("selfManaged") : TEXT("transacted");
+			// Whether the harvested parameter table has a row for this endpoint. Reported per-endpoint
+			// because the aggregate alone is not actionable: "23 without a row" tells you the size of
+			// the risk, not where it is. NOT a claim about guarding — see MifDescribeHasParamRow.
+			int32 ParamCount = 0;
+			const bool bHasRow = MifDescribeHasParamRow(Name, &ParamCount);
+			if (bHasRow) { ++WithParamRow; } else { NoParamRow.Add(MakeShared<FJsonValueString>(Name)); }
+
 			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
 			Row->SetStringField(TEXT("name"), Name);
 			Row->SetStringField(TEXT("provider"), Provider);
 			Row->SetStringField(TEXT("bucket"), Bucket);
+			Row->SetBoolField(TEXT("hasParamTableRow"), bHasRow);
+			if (bHasRow) { Row->SetNumberField(TEXT("declaredParamCount"), ParamCount); }
 			if (Ext && !Ext->Summary.IsEmpty()) { Row->SetStringField(TEXT("summary"), Ext->Summary); }
 			EndpointRows.Add(MakeShared<FJsonValueObject>(Row));
 			if (Ext) { ProviderCounts.FindOrAdd(Ext->Provider)++; }
@@ -797,6 +808,23 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("endpointCount"), Names.Num());
 		Out->SetArrayField(TEXT("endpoints"), All);
 		Out->SetArrayField(TEXT("endpointDetails"), EndpointRows);
+
+		// Parameter-table coverage. This is the health number that matters most here: silent parameter
+		// ignore is the most damaging bug class in this codebase, and this bounds how much of the
+		// surface could still be capable of it. It was previously reachable ONLY through
+		// describe_endpoint, one endpoint at a time, which is the wrong shape for a health check.
+		TSharedRef<FJsonObject> ParamCoverage = MakeShared<FJsonObject>();
+		ParamCoverage->SetNumberField(TEXT("registeredEndpoints"), Names.Num());
+		ParamCoverage->SetNumberField(TEXT("tableRows"), MifDescribeParamRowCount());
+		ParamCoverage->SetNumberField(TEXT("withParamTableRow"), WithParamRow);
+		ParamCoverage->SetNumberField(TEXT("withoutParamTableRow"), NoParamRow.Num());
+		ParamCoverage->SetArrayField(TEXT("endpointsWithoutParamTableRow"), NoParamRow);
+		ParamCoverage->SetStringField(TEXT("note"),
+			TEXT("withoutParamTableRow is an UPPER BOUND on endpoints that accept anything silently - never a count of them. ")
+			TEXT("A missing row means the harvester found no RejectUnknownParams call site, which has two causes with OPPOSITE ")
+			TEXT("consequences: no guard (silently ignores), or a guard added after the harvest (strictly rejects). A static ")
+			TEXT("table cannot tell them apart, so this reports the TABLE, not the guard."));
+		Out->SetObjectField(TEXT("paramTableCoverage"), ParamCoverage);
 		Out->SetNumberField(TEXT("externalEndpointCount"), ExternalRegistry().Num());
 
 		TArray<TSharedPtr<FJsonValue>> Providers;
