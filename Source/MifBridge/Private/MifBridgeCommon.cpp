@@ -259,6 +259,7 @@ namespace MifBridge
 			// Animation assets (read-only)
 			MIF_BIND(describe_animation);
 			MIF_BIND(list_animations);
+			MIF_BIND(add_anim_node);
 			// Asset lifecycle
 			MIF_BIND(delete_asset);
 			MIF_BIND(rename_asset);

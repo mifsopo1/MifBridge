@@ -597,9 +597,11 @@ def create_function(blueprint_id: str, name: str, inputs: list = None, outputs: 
 
 
 @mcp.tool()
-def create_blueprint(path: str, parent_class: str = "Actor", blueprint_type: str = "Normal") -> dict:
-    "Create a fresh Blueprint asset. path is a /Game/... object path (e.g. /Game/MifTestbed/BP_Foo); parent_class is a name or class path (default Actor). blueprint_type is Normal (default), FunctionLibrary, Interface, MacroLibrary or WidgetBlueprint - an unrecognised value is refused rather than silently producing a plain Blueprint. Compiles it and returns {blueprintId, class, parentClass, eventGraphId}. Fails if one already exists at path: there is NO overwrite (the parameter used to exist here, was read by no line of the handler, and left callers wondering why the flag did nothing) - delete_asset the old one first."
-    return _post("create_blueprint", path=path, parentClass=parent_class, blueprintType=blueprint_type)
+def create_blueprint(path: str, parent_class: str = "Actor", blueprint_type: str = "Normal",
+                     skeleton: str = None) -> dict:
+    "Create a fresh Blueprint asset. path is a /Game/... object path (e.g. /Game/MifTestbed/BP_Foo); parent_class is a name or class path (default Actor). blueprint_type is Normal (default), FunctionLibrary, Interface, MacroLibrary, WidgetBlueprint or AnimBlueprint - an unrecognised value is refused rather than silently producing a plain Blueprint. Compiles it and returns {blueprintId, class, parentClass, eventGraphId}. Fails if one already exists at path: there is NO overwrite (the parameter used to exist here, was read by no line of the handler, and left callers wondering why the flag did nothing) - delete_asset the old one first. AnimBlueprint REQUIRES skeleton=<USkeleton path>: an Animation Blueprint is a UAnimBlueprint carrying a TargetSkeleton, NOT a plain Blueprint parented to UAnimInstance - that variant gets an EventGraph and no AnimGraph, can never play an animation, and is now rejected with a pointer to this parameter."
+    return _post("create_blueprint", path=path, parentClass=parent_class, blueprintType=blueprint_type,
+                 skeleton=skeleton)
 
 
 @mcp.tool()
@@ -1739,6 +1741,12 @@ def remove_enum_value(enum: str, value: str = "", index: int = None, confirm: bo
 # --------------------------------------------------------------------------
 # Animation assets (read-only)
 # --------------------------------------------------------------------------
+
+@mcp.tool()
+def add_anim_node(graph_id: str, node_class: str, x: int = 0, y: int = 0) -> dict:
+    "Add any UAnimGraphNode_* node to an Animation Blueprint's graph - one endpoint for the whole family (SequencePlayer, Slot, StateMachine, BlendSpacePlayer, LayeredBoneBlend...). Works because UAnimGraphNode_Base derives from UK2Node, so anim nodes place and wire exactly like K2 nodes: use connect_pins, move_node, get_node, remove_node on them as normal. Pose DATA lives on the node's Node member, not on pins - set it afterwards with set_property, e.g. propertyPath='Node.Sequence' for a SequencePlayer or 'Node.SlotName' for a Slot."
+    return _post("add_anim_node", graphId=graph_id, nodeClass=node_class, x=x, y=y)
+
 
 @mcp.tool()
 def list_animations(filter: str = "", skeleton: str = "", limit: int = 200) -> dict:

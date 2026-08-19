@@ -998,6 +998,9 @@ namespace MifBridge
 	// nested graphs, so state machines / states / transition rules are reachable there.
 	MIF_DECL(describe_animation);
 	MIF_DECL(list_animations);
+	// One endpoint for the whole UAnimGraphNode_* family: UAnimGraphNode_Base derives from UK2Node,
+	// so anim nodes place and wire exactly like K2 nodes.
+	MIF_DECL(add_anim_node);
 
 	// Asset lifecycle — confirm-gated (delete/rename), /Game/-only, no dialogs
 	MIF_DECL(delete_asset);

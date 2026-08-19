@@ -30,6 +30,7 @@ public class MifBridge : ModuleRules
 			                     // pulls the symbol in merely by writing `FMaterialUpdateContext Ctx;`.
 			                     // Anticipated by docs/audit/work/I_diagnostics.md (get_perf_stats).
 			"BlueprintGraph",
+			"AnimGraph",         // UAnimGraphNode_* (derives from UK2Node) for add_anim_node
 			"InputBlueprintNodes", // UK2Node_EnhancedInputAction (add_enhanced_input_action)
 			"EnhancedInput",       // UInputAction / UInputMappingContext runtime types
     // UK2Node_* classes

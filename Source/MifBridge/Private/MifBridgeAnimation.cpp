@@ -9,6 +9,8 @@
 // Everything here reads UAnimSequence/UAnimMontage/UBlendSpace, which live in the Engine module —
 // no extra build dependency. Read-only: registered in IsReadOnlyEndpoint, no transaction.
 #include "MifBridgeHandlers.h"
+#include "Animation/AnimBlueprint.h"
+#include "AnimGraphNode_Base.h"
 #include "MifBridgeLog.h"
 
 #include "Animation/AnimationAsset.h"
@@ -337,5 +339,75 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("count"), Arr.Num());
 		Out->SetBoolField(TEXT("truncated"), bTruncated);   // never let a cap look like completeness
 		Out->SetArrayField(TEXT("animations"), Arr);
+	}
+
+	// --- add_anim_node ------------------------------------------------------
+	//   in:  { graphId, nodeClass (a UAnimGraphNode_* class), x?, y? }
+	//   out: { node:{...}, nodeClass, graph }
+	//
+	// ONE endpoint for the whole UAnimGraphNode_* family rather than one per node type. That works
+	// because UAnimGraphNode_Base derives from UK2Node (AnimGraphNode_Base.h:194), so an anim node
+	// places through exactly the same PlaceAndInit path as every K2 node, and its pins are ordinary
+	// UEdGraphPins - connect_pins, move_node, get_node and remove_node all already apply.
+	//
+	// The pose data lives in the node's `Node` member (an FAnimNode_* struct), NOT on pins: a
+	// SequencePlayer's animation is `Node.Sequence`, a Slot's name is `Node.SlotName`. Set those with
+	// set_property on the returned node, which is why this endpoint does not try to take them itself -
+	// there are dozens of node types and each has a different struct.
+	void H_add_anim_node(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("nodeClass"), TEXT("class"), TEXT("x"), TEXT("y") },
+			TEXT("graphId (the AnimGraph or a state/transition graph inside it), nodeClass (alias: class) - any UAnimGraphNode_* class, x/y (optional layout)"),
+			{ { TEXT("sequence"), TEXT("set the animation afterwards with set_property propertyPath=Node.Sequence on the returned node - the field differs per node type") },
+			  { TEXT("slotName"), TEXT("set it afterwards with set_property propertyPath=Node.SlotName on the returned node") },
+			  { TEXT("blueprintId"), TEXT("a node is added to a GRAPH; pass graphId (list_graphs shows them, e.g. \"AnimGraph\")") } }))
+		{
+			return;
+		}
+
+		UBlueprint* Blueprint = nullptr;
+		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
+		if (!Graph) { return; }
+
+		UClass* NodeClass = ResolveClassStrictField(In, { TEXT("nodeClass"), TEXT("class") }, Blueprint, Out);
+		if (!NodeClass) { return; }
+
+		if (!NodeClass->IsChildOf(UAnimGraphNode_Base::StaticClass()))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is not a UAnimGraphNode_* class. Anim graph nodes are things like AnimGraphNode_SequencePlayer, ")
+				TEXT("AnimGraphNode_Slot, AnimGraphNode_StateMachine, AnimGraphNode_BlendSpacePlayer. For ordinary K2 nodes use add_function_call and friends."),
+				*NodeClass->GetName()));
+			return;
+		}
+		if (NodeClass->HasAnyClassFlags(CLASS_Abstract))
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' is abstract and cannot be spawned"), *NodeClass->GetName()));
+			return;
+		}
+
+		// An anim node in a non-anim graph compiles to nothing and is a confusing thing to debug, so
+		// refuse it here rather than let it sit in an EventGraph looking placed.
+		if (!Blueprint->IsA<UAnimBlueprint>())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is not an Animation Blueprint, so it has no AnimGraph to hold anim nodes. ")
+				TEXT("Create one with create_blueprint blueprintType=AnimBlueprint skeleton=<USkeleton path>."),
+				*Blueprint->GetName()));
+			return;
+		}
+
+		UAnimGraphNode_Base* Node = NewObject<UAnimGraphNode_Base>(Graph, NodeClass, NAME_None, RF_Transactional);
+		if (!Node) { Fail(Out, FString::Printf(TEXT("failed to construct '%s'"), *NodeClass->GetName())); return; }
+
+		PlaceAndInit(Graph, Node, JInt(In, TEXT("x"), 0), JInt(In, TEXT("y"), 0));
+		MarkStructural(Blueprint);
+
+		EmitNode(Out, Node);
+		Out->SetStringField(TEXT("nodeClass"), NodeClass->GetPathName());
+		Out->SetStringField(TEXT("graph"), Graph->GetName());
+		Out->SetStringField(TEXT("note"),
+			TEXT("pose data lives on the node's Node member, not on pins - e.g. set_property propertyPath=Node.Sequence (SequencePlayer) or Node.SlotName (Slot). Wire poses with connect_pins as normal."));
 	}
 }

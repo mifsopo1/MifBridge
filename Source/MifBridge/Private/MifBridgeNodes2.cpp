@@ -1,6 +1,10 @@
 // MifBridge — phase-3 node endpoints: custom event, make/break struct, self, object literal,
 // function creation, and the resolve_struct introspection helper.
 #include "MifBridgeHandlers.h"
+#include "Animation/Skeleton.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimBlueprintGeneratedClass.h"
+#include "Animation/AnimBlueprint.h"
 #include "MifBridgeLog.h"
 
 #include "EdGraph/EdGraph.h"
@@ -1209,9 +1213,10 @@ namespace MifBridge
 	void H_create_blueprint(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("path"), TEXT("parentClass"), TEXT("blueprintType") },
+			{ TEXT("path"), TEXT("parentClass"), TEXT("blueprintType"), TEXT("skeleton"), TEXT("targetSkeleton") },
 			TEXT("path (must start with /Game/), parentClass (default \"Actor\"), blueprintType ")
-			TEXT("(Normal | FunctionLibrary | Interface | MacroLibrary | WidgetBlueprint)"),
+			TEXT("(Normal | FunctionLibrary | Interface | MacroLibrary | WidgetBlueprint | AnimBlueprint), ")
+			TEXT("skeleton (alias targetSkeleton) - REQUIRED for AnimBlueprint"),
 			{ { TEXT("overwrite"), TEXT("NOT supported — this endpoint refuses to clobber an existing asset. delete_asset the old one first, or pick a new path") },
 			  { TEXT("name"), TEXT("the asset name is the last segment of path") },
 			  { TEXT("parent"), TEXT("the base class parameter is called parentClass") } }))
@@ -1243,7 +1248,7 @@ namespace MifBridge
 		// every widget endpoint failing afterwards on an asset that looked correct in the content browser.
 		{
 			static const TCHAR* const ValidTypes[] = {
-				TEXT("Normal"), TEXT("FunctionLibrary"), TEXT("Interface"), TEXT("MacroLibrary"), TEXT("WidgetBlueprint")
+				TEXT("Normal"), TEXT("FunctionLibrary"), TEXT("Interface"), TEXT("MacroLibrary"), TEXT("WidgetBlueprint"), TEXT("AnimBlueprint")
 			};
 			bool bKnownType = false;
 			for (const TCHAR* Valid : ValidTypes)
@@ -1254,7 +1259,7 @@ namespace MifBridge
 			{
 				Fail(Out, FString::Printf(
 					TEXT("unknown blueprintType '%s'. Valid values: Normal (default), FunctionLibrary, Interface, ")
-					TEXT("MacroLibrary, WidgetBlueprint. (Note it is \"WidgetBlueprint\", not \"Widget\".)"), *BpTypeStr));
+					TEXT("MacroLibrary, WidgetBlueprint, AnimBlueprint. (Note it is \"WidgetBlueprint\", not \"Widget\".)"), *BpTypeStr));
 				return;
 			}
 		}
@@ -1263,6 +1268,8 @@ namespace MifBridge
 		UClass* ParentClass = nullptr;
 		bool bLibraryLike = false;
 		bool bWidget      = false;   // WidgetBlueprint via blueprintType=WidgetBlueprint
+		bool bAnim        = false;   // AnimBlueprint  via blueprintType=AnimBlueprint
+		USkeleton* AnimSkeleton = nullptr;
 		if (BpTypeStr.Equals(TEXT("FunctionLibrary"), ESearchCase::IgnoreCase))
 		{
 			BpType = BPTYPE_FunctionLibrary;
@@ -1295,9 +1302,47 @@ namespace MifBridge
 				return;
 			}
 		}
+		else if (BpTypeStr.Equals(TEXT("AnimBlueprint"), ESearchCase::IgnoreCase))
+		{
+			// An Animation Blueprint is a UAnimBlueprint, not a UBlueprint parented to UAnimInstance.
+			// The distinction is not cosmetic: only the UAnimBlueprint class type gets an AnimGraph,
+			// and a TargetSkeleton is mandatory - without one the asset has no bone space to compile
+			// against. Creating it the "obvious" way produced an EventGraph-only asset that reported
+			// success and could never play an animation.
+			BpType = BPTYPE_Normal;
+			bAnim  = true;
+			const FString AnimParent = JStr(In, TEXT("parentClass"), TEXT("AnimInstance"));
+			ParentClass = ResolveClass(AnimParent, nullptr);
+			if (ParentClass && !ParentClass->IsChildOf(UAnimInstance::StaticClass()))
+			{
+				Fail(Out, FString::Printf(TEXT("parentClass '%s' is not a UAnimInstance subclass"), *ParentClass->GetName()));
+				return;
+			}
+			const FString SkelPath = JStrAny(In, { TEXT("skeleton"), TEXT("targetSkeleton") });
+			if (SkelPath.IsEmpty())
+			{
+				Fail(Out, TEXT("skeleton is required for blueprintType=AnimBlueprint - an Animation Blueprint cannot exist without a TargetSkeleton. Pass the USkeleton asset path (find one with find_assets class=Skeleton)."));
+				return;
+			}
+			AnimSkeleton = LoadObject<USkeleton>(nullptr, *SkelPath);
+			if (!AnimSkeleton)
+			{
+				Fail(Out, FString::Printf(TEXT("could not load USkeleton '%s'"), *SkelPath));
+				return;
+			}
+		}
 		else
 		{
 			ParentClass = ResolveClass(ParentName, nullptr);
+			// Catch the near-miss that silently produced a graph-less asset: a plain Blueprint parented
+			// to UAnimInstance looks like an Animation Blueprint and is not one.
+			if (ParentClass && ParentClass->IsChildOf(UAnimInstance::StaticClass()))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is a UAnimInstance, so this would create a plain Blueprint with an EventGraph and NO AnimGraph - it could never play an animation. Pass blueprintType=AnimBlueprint together with skeleton=<USkeleton path>."),
+					*ParentClass->GetName()));
+				return;
+			}
 		}
 		if (!ParentClass)
 		{
@@ -1335,6 +1380,11 @@ namespace MifBridge
 			BpClass  = UWidgetBlueprint::StaticClass();
 			GenClass = UWidgetBlueprintGeneratedClass::StaticClass();
 		}
+		else if (bAnim)
+		{
+			BpClass  = UAnimBlueprint::StaticClass();
+			GenClass = UAnimBlueprintGeneratedClass::StaticClass();
+		}
 		UBlueprint* NewBP = FKismetEditorUtilities::CreateBlueprint(
 			ParentClass, Package, FName(*AssetName), BpType,
 			BpClass, GenClass, TEXT("MifBridge"));
@@ -1342,6 +1392,14 @@ namespace MifBridge
 		{
 			Fail(Out, TEXT("CreateBlueprint returned null"));
 			return;
+		}
+
+		if (bAnim)
+		{
+			// Set BEFORE the compile below: the AnimGraph is compiled against the skeleton, and a
+			// null TargetSkeleton at compile time produces an asset the editor refuses to open.
+			UAnimBlueprint* ABP = CastChecked<UAnimBlueprint>(NewBP);
+			ABP->TargetSkeleton = AnimSkeleton;
 		}
 
 		if (bWidget)

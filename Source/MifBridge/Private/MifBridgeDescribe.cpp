@@ -634,10 +634,12 @@ namespace MifBridge
 			TEXT("targetNode"), TEXT("spell it dstNode"),
 			nullptr };
 		static const TCHAR* const GMifDescKeys_create_blueprint[] = {
-			TEXT("path"), TEXT("parentClass"), TEXT("blueprintType"), nullptr };
+			TEXT("path"), TEXT("parentClass"), TEXT("blueprintType"),
+			TEXT("skeleton"), TEXT("targetSkeleton"), nullptr };
 		static const TCHAR* const GMifDescNotes_create_blueprint[] = {
 			TEXT("overwrite"), TEXT("NOT supported — this endpoint refuses to clobber an existing asset. delete_asset the old one first, or pick a new path"),
 			TEXT("name"), TEXT("the asset name is the last segment of path"),
+			TEXT("animBlueprint"), TEXT("spell it blueprintType=AnimBlueprint, and pass skeleton — an Animation Blueprint is a UAnimBlueprint with a TargetSkeleton, not a Blueprint parented to UAnimInstance"),
 			TEXT("parent"), TEXT("the base class parameter is called parentClass"),
 			nullptr };
 		static const TCHAR* const GMifDescKeys_reparent_blueprint[] = {
@@ -1778,7 +1780,7 @@ namespace MifBridge
 			  TEXT("srcNode, srcPin (aliases: sourcePin, fromPin), dstNode, dstPin (aliases: destPin, toPin), graphId, path (back-compat only — accepted and ignored; graphId already names the blueprint)"),
 			  TEXT("MifBridgeNodes.cpp"), 554, TEXT("DoConnect") },
 			{ TEXT("create_blueprint"), GMifDescKeys_create_blueprint, GMifDescNotes_create_blueprint,
-			  TEXT("path (must start with /Game/), parentClass (default \"Actor\"), blueprintType (Normal | FunctionLibrary | Interface | MacroLibrary | WidgetBlueprint)"),
+			  TEXT("path (must start with /Game/), parentClass (default \"Actor\"), blueprintType (Normal | FunctionLibrary | Interface | MacroLibrary | WidgetBlueprint | AnimBlueprint), skeleton (alias targetSkeleton - REQUIRED for AnimBlueprint)"),
 			  TEXT("MifBridgeNodes2.cpp"), 1209, nullptr },
 			{ TEXT("reparent_blueprint"), GMifDescKeys_reparent_blueprint, GMifDescNotes_reparent_blueprint,
 			  TEXT("blueprintId (alias: path), newParentClass (alias: parentClass)"),
