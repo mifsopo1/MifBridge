@@ -1573,18 +1573,42 @@ namespace MifBridge
 		int32 SiblingsUpdated = 0;
 		bool bCreatedResultNode = false;
 		UEdGraphPin* NewPin = nullptr;
+		// The node that owns the pin we will report/default. Held instead of a pin pointer because a
+		// node survives ReconstructNode() and a pin does not.
+		UK2Node_EditablePinBase* PinHost = nullptr;
 		FName FinalName(*PinName);
 
 		// Reconstruct with orphan-pin saving off, then let the schema propagate the signature change —
 		// exactly what OnParamsChanged does. Skipping HandleParameterDefaultValueChanged leaves callers
 		// of the function stale.
-		auto FinishNode = [](UK2Node_EditablePinBase* Node)
+		// ReconstructNode() DESTROYS AND REALLOCATES EVERY UEdGraphPin ON THE NODE. Any UEdGraphPin*
+		// captured before this call is dangling the instant it returns, and touching one is an
+		// access violation, not a recoverable error - MifBridge 0.4.0 shipped exactly that crash:
+		// add_pin captured the new pin, called FinishNode, then read the pin to apply `default`, and
+		// took the editor out with EXCEPTION_ACCESS_VIOLATION reading 0xffffffffffffffff.
+		//
+		// So this lambda takes the caller's pin pointer BY REFERENCE and nulls it. A stale pointer can
+		// then only be re-acquired deliberately (by name, below) - it cannot be used by accident,
+		// and the compiler no longer lets a future edit forget.
+		auto FinishNode = [](UK2Node_EditablePinBase* Node, UEdGraphPin*& InOutPinToInvalidate)
 		{
 			const bool bPrev = Node->bDisableOrphanPinSaving;
 			Node->bDisableOrphanPinSaving = true;
 			Node->ReconstructNode();
 			Node->bDisableOrphanPinSaving = bPrev;
 			K2()->HandleParameterDefaultValueChanged(Node);
+			InOutPinToInvalidate = nullptr;   // see above: it is freed memory now
+		};
+
+		// Re-acquire a user-defined pin by NAME after a reconstruct. Name survives the round trip;
+		// the pointer does not.
+		auto ReacquirePin = [](UK2Node_EditablePinBase* Node, const FName& Name) -> UEdGraphPin*
+		{
+			for (UEdGraphPin* P : Node->Pins)
+			{
+				if (P && P->PinName == Name) { return P; }
+			}
+			return nullptr;
 		};
 
 		if (!bWantOutput)
@@ -1596,8 +1620,9 @@ namespace MifBridge
 				Fail(Out, FString::Printf(TEXT("CreateUserDefinedPin failed for '%s'"), *PinName));
 				return;
 			}
-			FinalName = NewPin->PinName;   // may have been uniquified
-			FinishNode(EntryLike);
+			FinalName = NewPin->PinName;   // read BEFORE the reconstruct - the name is what survives
+			FinishNode(EntryLike, NewPin);            // NewPin is null after this, deliberately
+			NewPin = ReacquirePin(EntryLike, FinalName);
 		}
 		else
 		{
@@ -1630,6 +1655,7 @@ namespace MifBridge
 			// letting each uniquify independently would give the same parameter different names on
 			// different Return nodes, which does not compile.
 			FinalName = Results[0]->CreateUniquePinName(FName(*PinName));
+			PinHost = Results[0];
 			for (UK2Node_FunctionResult* Result : Results)
 			{
 				Result->Modify();
@@ -1646,8 +1672,9 @@ namespace MifBridge
 						*FinalName.ToString(), SiblingsUpdated, Results.Num(), SiblingsUpdated, *FinalName.ToString()));
 					return;
 				}
-				if (!NewPin) { NewPin = Pin; }
-				FinishNode(Result);
+				// Do NOT keep `Pin` across the reconstruct: it is freed by it. PinHost (Results[0])
+				// was captured above, and the pin is re-acquired from it by name after the loop.
+				FinishNode(Result, Pin);
 				++SiblingsUpdated;
 			}
 		}
@@ -1659,6 +1686,25 @@ namespace MifBridge
 		// and failing here would report failure over a pin that stays (a cancelled transaction
 		// discards the undo entry, it does not roll the pin back — PM-007).
 		const FString Default = JStrAny(In, { TEXT("default"), TEXT("defaultValue"), TEXT("value") });
+
+		// Last line of defence. If anything above left NewPin null (or a future edit reintroduces a
+		// reconstruct between here and the creation), re-acquire by name rather than dereferencing
+		// whatever the pointer happens to hold.
+		if (NewPin == nullptr && PinHost != nullptr && !FinalName.IsNone())
+		{
+			for (UEdGraphPin* P : PinHost->Pins)
+			{
+				if (P && P->PinName == FinalName) { NewPin = P; break; }
+			}
+		}
+		if (!Default.IsEmpty() && !bWantOutput && NewPin == nullptr)
+		{
+			// The pin was created - only the handle to it was lost. Say that, instead of crashing or
+			// silently dropping the default.
+			Out->SetStringField(TEXT("defaultError"), FString::Printf(
+				TEXT("pin '%s' was created but could not be re-acquired after the node reconstruct, so the default was not applied. The pin exists - set it with set_pin_default."),
+				*FinalName.ToString()));
+		}
 		if (!Default.IsEmpty() && NewPin && !bWantOutput)
 		{
 			FString DefaultBefore, DefaultAfter, DefaultError;
