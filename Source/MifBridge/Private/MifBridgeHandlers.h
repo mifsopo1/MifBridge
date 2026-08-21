@@ -1004,6 +1004,9 @@ namespace MifBridge
 
 	// Asset lifecycle — confirm-gated (delete/rename), /Game/-only, no dialogs
 	MIF_DECL(delete_asset);
+	// Separate from delete_asset ON PURPOSE: closing an editor can discard unsaved work, so the caller
+	// opts in rather than a delete doing it silently as a side effect.
+	MIF_DECL(close_asset_editors);
 	MIF_DECL(rename_asset);
 	MIF_DECL(duplicate_asset);
 	// Static-mesh simple collision. The StaticMeshEditor's collision toolbar cannot be reached

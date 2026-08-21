@@ -14,6 +14,9 @@
 #include "IAssetTools.h"
 #include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
+#include "Subsystems/AssetEditorSubsystem.h"
+#include "Editor.h"
+#include "Toolkits/IToolkit.h"
 #include "ObjectTools.h"
 #include "UObject/Package.h"      // UPackage - duplicate_asset reads newPackageName off GetOutermost()
 #include "UObject/UObjectGlobals.h"
@@ -119,10 +122,158 @@ namespace MifBridge
 		Out->SetBoolField(TEXT("deleted"), NumDeleted > 0);
 		if (NumDeleted == 0)
 		{
-			Fail(Out, FString::Printf(TEXT("delete reported 0 assets removed for '%s' (still referenced/in use?)"), *PackagePath));
+			// "still referenced/in use?" was a shrug: it named four different blockers at once and left
+			// the caller to guess which. Agents burned calls on GC, on invented console commands and on
+			// unrelated editor tooling while the actual holder was an OPEN ASSET EDITOR. Say which it is.
+			TArray<TSharedPtr<FJsonValue>> OpenEditors, Referencers, Rooted;
+			UAssetEditorSubsystem* AES = GEditor ? GEditor->GetEditorSubsystem<UAssetEditorSubsystem>() : nullptr;
+			for (const FAssetData& AD : AssetsToDelete)
+			{
+				UObject* Obj = AD.FastGetAsset(false);
+				if (!Obj) { continue; }
+				if (AES)
+				{
+					for (IAssetEditorInstance* Ed : AES->FindEditorsForAssetAndSubObjects(Obj))
+					{
+						if (Ed) { OpenEditors.Add(MakeShared<FJsonValueString>(Ed->GetEditorName().ToString())); }
+					}
+				}
+				// IsRooted ONLY. RF_Standalone is set on essentially every loaded asset, so including it
+				// made this list fire for the normal case and carry no information - a signal that is
+				// always on is noise, and it would have sent a reader chasing "rooted" when the real
+				// blocker was the referencer sitting right above it.
+				if (Obj->IsRooted())
+				{
+					Rooted.Add(MakeShared<FJsonValueString>(Obj->GetPathName()));
+				}
+			}
+			TArray<FName> Refs;
+			Registry.GetReferencers(FName(*PackagePath), Refs);
+			for (const FName& R : Refs) { Referencers.Add(MakeShared<FJsonValueString>(R.ToString())); }
+
+			TSharedRef<FJsonObject> Why = MakeShared<FJsonObject>();
+			Why->SetArrayField(TEXT("openAssetEditors"), OpenEditors);
+			Why->SetArrayField(TEXT("registryReferencers"), Referencers);
+			Why->SetArrayField(TEXT("rootedInMemory"), Rooted);
+			Out->SetObjectField(TEXT("blockedBy"), Why);
+
+			FString Hint;
+			if (OpenEditors.Num() > 0)
+			{
+				Hint = FString::Printf(TEXT(" %d asset editor(s) still hold it open - call close_asset_editors first."),
+					OpenEditors.Num());
+			}
+			else if (Referencers.Num() > 0)
+			{
+				Hint = FString::Printf(TEXT(" %d package(s) still reference it - see blockedBy.registryReferencers."),
+					Referencers.Num());
+			}
+			else if (Rooted.Num() > 0)
+			{
+				Hint = TEXT(" the object is ROOTED, so garbage collection will not release it.");
+			}
+			else
+			{
+				// All three checks clean and it STILL refused. Say that plainly rather than implying a
+				// cause we did not find: a transient in-memory handle is invisible from here.
+				Hint = TEXT(" no open editor, no registry referencer and not rooted - the holder is an in-memory"
+					TEXT(" handle this endpoint cannot see. An editor restart releases it."));
+			}
+			Fail(Out, FString::Printf(TEXT("delete reported 0 assets removed for '%s'.%s"), *PackagePath, *Hint));
 			return;
 		}
 		UE_LOG(LogMifBridge, Log, TEXT("delete_asset: %s (numDeleted=%d)"), *PackagePath, NumDeleted);
+	}
+
+
+	// --- close_asset_editors ------------------------------------------------
+	//   in:  { path (package or object path), confirm:true }
+	//   out: { packageName, hadOpenEditor, editorsFound, editorsClosed, stillOpen, editors[] }
+	//
+	// Deliberately SEPARATE from delete_asset rather than folded into it. Closing an open asset editor
+	// can discard unsaved work in that tab, and a delete that did it silently as a side effect would be
+	// exactly the hidden destruction this codebase gates behind confirm everywhere else. delete_asset
+	// therefore REPORTS the open editor and points here; the caller decides.
+	void H_close_asset_editors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("objectPath"), TEXT("assetPath"), TEXT("confirm") },
+			TEXT("path (aliases: objectPath, assetPath) - a /Game/ package or object path; confirm (required true)"),
+			{ { TEXT("all"), TEXT("closing EVERY asset editor is not offered - name the asset you mean") },
+			  { TEXT("force"), TEXT("there is no force; this finds an open editor or reports that there is none") } }))
+		{
+			return;
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("close_asset_editors requires confirm=true - an open editor may hold UNSAVED work and closing it discards that work without a prompt"));
+			return;
+		}
+		const FString Raw = JStrAny(In, { TEXT("path"), TEXT("objectPath"), TEXT("assetPath") });
+		if (Raw.IsEmpty() || !Raw.StartsWith(TEXT("/")))
+		{
+			Fail(Out, TEXT("path required (a /Game/ package or object path)"));
+			return;
+		}
+		UAssetEditorSubsystem* AES = GEditor ? GEditor->GetEditorSubsystem<UAssetEditorSubsystem>() : nullptr;
+		if (!AES) { Fail(Out, TEXT("no UAssetEditorSubsystem")); return; }
+
+		// Reduce an object path to its package and take every asset in it - the same addressing
+		// delete_asset uses, so "the thing I could not delete" and "the thing I am closing" cannot
+		// disagree about what they mean.
+		FString PackagePath = Raw;
+		int32 Dot = INDEX_NONE;
+		if (PackagePath.FindChar(TEXT('.'), Dot)) { PackagePath = PackagePath.Left(Dot); }
+
+		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		TArray<FAssetData> Assets;
+		Registry.GetAssetsByPackageName(FName(*PackagePath), Assets);
+		if (Assets.Num() == 0)
+		{
+			Fail(Out, FString::Printf(TEXT("no asset found at package '%s'"), *PackagePath));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Names;
+		int32 Found = 0, Closed = 0;
+		for (const FAssetData& AD : Assets)
+		{
+			// bLoad=false on purpose: an asset that is not loaded cannot have an editor open, and
+			// loading it here to ask would be a side effect nobody requested.
+			UObject* Obj = AD.FastGetAsset(false);
+			if (!Obj) { continue; }
+			const TArray<IAssetEditorInstance*> Editors = AES->FindEditorsForAssetAndSubObjects(Obj);
+			for (IAssetEditorInstance* Ed : Editors)
+			{
+				if (Ed) { ++Found; Names.Add(MakeShared<FJsonValueString>(Ed->GetEditorName().ToString())); }
+			}
+			if (Editors.Num() > 0) { Closed += AES->CloseAllEditorsForAsset(Obj); }
+		}
+
+		// Re-ask instead of assuming it took. CloseAllEditorsForAsset is a REQUEST and a toolkit can
+		// decline it (an open modal will). Reporting "closed" without re-checking would be the same
+		// ok-means-nothing failure this endpoint exists to end.
+		int32 StillOpen = 0;
+		for (const FAssetData& AD : Assets)
+		{
+			if (UObject* Obj = AD.FastGetAsset(false))
+			{
+				StillOpen += AES->FindEditorsForAssetAndSubObjects(Obj).Num();
+			}
+		}
+
+		Out->SetStringField(TEXT("packageName"), PackagePath);
+		Out->SetBoolField(TEXT("hadOpenEditor"), Found > 0);
+		Out->SetNumberField(TEXT("editorsFound"), Found);
+		Out->SetNumberField(TEXT("editorsClosed"), Closed);
+		Out->SetNumberField(TEXT("stillOpen"), StillOpen);
+		Out->SetArrayField(TEXT("editors"), Names);
+		if (StillOpen > 0)
+		{
+			Out->SetStringField(TEXT("warning"), FString::Printf(
+				TEXT("%d editor(s) refused to close - closing is a REQUEST a toolkit can decline (an open modal will do it). The asset is still held."),
+				StillOpen));
+		}
 	}
 
 	//   in:  { path: "/Game/...", newPath: "/Game/NewDir/NewName", confirm: true }

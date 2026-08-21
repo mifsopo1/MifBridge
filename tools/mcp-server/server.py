@@ -1765,6 +1765,12 @@ def describe_animation(asset_path: str) -> dict:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def close_asset_editors(path: str, confirm: bool = False) -> dict:
+    "Close every open asset editor holding an asset. Deliberately SEPARATE from delete_asset: closing an editor can discard unsaved work in that tab, so the caller opts in rather than a delete doing it silently. Requires confirm=True. Returns had_open_editor, editors_found, editors_closed, still_open and the editor names - closing is a REQUEST a toolkit can decline (an open modal will), so still_open is re-checked after the attempt rather than assumed to be zero. Use this when delete_asset reports blockedBy.openAssetEditors."
+    return _post("close_asset_editors", path=path, confirm=confirm)
+
+
+@mcp.tool()
 def delete_asset(path: str, confirm: bool = False) -> dict:
     "Delete a /Game/ asset package. Requires confirm=True."
     return _post("delete_asset", path=path, confirm=confirm)

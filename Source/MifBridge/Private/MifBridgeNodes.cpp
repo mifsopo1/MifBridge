@@ -1982,6 +1982,36 @@ namespace MifBridge
 			return;
 		}
 
+		// A MACRO INSTANCE as the ANCHOR takes the editor out. Not "fails" - the process is gone, with
+		// no crash dialog and the HTTP connection reset mid-call, so the caller cannot even see what
+		// happened. Reproduced twice in a row by a user against a DoOnce.
+		//
+		// Why: UK2Node_MacroInstance is a tunnel. Its exec pins are BOUNDARY pins whose links resolve
+		// into the macro's own inner graph, so the far side of AfterOut->LinkedTo can be a pin owned by
+		// a node in a DIFFERENT UEdGraph. SpliceExecAfter walks those links to re-home them and trips
+		// `Assertion failed: OwningNode`, which is a check(), not a recoverable error.
+		//
+		// This has been a documented "never do this" in docs/02_GOTCHAS.md for a long time and was
+		// enforced NOWHERE. A rule that costs an editor when broken belongs in the code: prose does not
+		// stop a caller who has not read it, and this endpoint is reachable by agents that never will.
+		// INSERTING a macro is fine and stays allowed - the user's own repro spliced a DoOnce IN
+		// successfully, compiled and saved; it was the next call, anchoring off that macro's Completed
+		// pin, that died.
+		if (const UK2Node_MacroInstance* AnchorMacro = Cast<UK2Node_MacroInstance>(AfterNode))
+		{
+			const UEdGraph* MacroGraph = AnchorMacro->GetMacroGraph();
+			Fail(Out, FString::Printf(
+				TEXT("refusing to splice AFTER the macro instance '%s'%s%s: a macro's exec pins are tunnel BOUNDARY pins, ")
+				TEXT("and re-homing their links crashes the editor outright (Assertion failed: OwningNode) - no error, no dialog, process gone. ")
+				TEXT("Wire past a macro instead: disconnect_pin on the macro's '%s' output, then connect_pins macro->newNode ")
+				TEXT("and connect_pins newNode->oldTarget. Inserting a macro (as insertNode) is fine and unaffected."),
+				*AnchorMacro->GetName(),
+				MacroGraph ? TEXT(" (") : TEXT(""),
+				MacroGraph ? *MacroGraph->GetName() : TEXT(""),
+				*JStrAny(In, { TEXT("afterPin"), TEXT("afterExecOut") }, TEXT("then"))));
+			return;
+		}
+
 		const FString AfterPinName = JStrAny(In, { TEXT("afterPin"), TEXT("afterExecOut") }, TEXT("then"));
 		const FString InsertInName = JStrAny(In, { TEXT("insertExecIn"), TEXT("insertIn"), TEXT("execIn") }, TEXT("execute"));
 		const FString InsertOutName = JStrAny(In, { TEXT("insertExecOut"), TEXT("insertOut"), TEXT("execOut") }, TEXT("then"));
@@ -2002,6 +2032,14 @@ namespace MifBridge
 		if (!InsertOut)
 		{
 			Fail(Out, FString::Printf(TEXT("insertExecOut not found: '%s'"), *InsertOutName));
+			return;
+		}
+
+		// Same refusal keyed on the PIN's owner rather than the node parameter, so an anchor reached by
+		// any other route cannot slip past the check above.
+		if (AfterOut->GetOwningNode() && AfterOut->GetOwningNode()->IsA<UK2Node_MacroInstance>())
+		{
+			Fail(Out, TEXT("afterPin belongs to a macro instance - see the refusal above; wire past it with disconnect_pin + two connect_pins"));
 			return;
 		}
 

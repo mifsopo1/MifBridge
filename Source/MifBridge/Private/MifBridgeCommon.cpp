@@ -263,6 +263,7 @@ namespace MifBridge
 			MIF_BIND(add_anim_node);
 			// Asset lifecycle
 			MIF_BIND(delete_asset);
+			MIF_BIND(close_asset_editors);
 			MIF_BIND(rename_asset);
 			MIF_BIND(duplicate_asset);
 			// Static-mesh simple collision (MifBridgeCollision.cpp) — the StaticMeshEditor
