@@ -565,6 +565,32 @@ namespace MifBridge
 			EnumerateBlueprintComponents(Blueprint, Rows, /*Cap*/ 0);
 		}
 
+		// Resolved ONCE for the whole response: "which component is the actor's real scene root, and
+		// where did it come from". Every isRoot / isOwnSCSRoot below is relative to this.
+		TSharedRef<FJsonObject> RootResolution = MakeShared<FJsonObject>();
+		if (!bCookedTarget && Blueprint && Blueprint->SimpleConstructionScript)
+		{
+			USimpleConstructionScript* SCS = Blueprint->SimpleConstructionScript;
+			USCS_Node* RootSCSNode = nullptr;
+			USceneComponent* SceneRoot = SCS->GetSceneRootComponentTemplate(true, &RootSCSNode);
+			RootResolution->SetNumberField(TEXT("ownSCSRootNodeCount"), SCS->GetRootNodes().Num());
+			RootResolution->SetStringField(TEXT("effectiveSceneRoot"),
+				SceneRoot ? SceneRoot->GetName() : TEXT(""));
+			// Where that root LIVES is the question isRoot could not answer. A root node in this
+			// blueprint's own SCS is a different situation from a root inherited from a parent
+			// blueprint or provided natively, and they need different handling by a caller.
+			const TCHAR* RootKind = TEXT("unknown");
+			if (!SceneRoot)                                   { RootKind = TEXT("none"); }
+			else if (RootSCSNode && SCS->GetRootNodes().Contains(RootSCSNode)) { RootKind = TEXT("own_scs"); }
+			else if (RootSCSNode)                             { RootKind = TEXT("inherited_scs"); }
+			else                                              { RootKind = TEXT("native_or_inherited_native"); }
+			RootResolution->SetStringField(TEXT("rootKind"), RootKind);
+			RootResolution->SetStringField(TEXT("note"),
+				TEXT("isRoot on a row means 'root of THIS blueprint's own SCS', not 'the actor's root'. "
+					 "effectiveSceneRoot is the actor's real root once inheritance is applied; a row whose "
+					 "attachmentResolution is inherited_root_fallback will hang beneath it at runtime."));
+		}
+
 		TArray<TSharedPtr<FJsonValue>> Arr;
 		int32 OwnCount = 0, ParentCount = 0, NativeCount = 0, Matched = 0;
 		bool bTruncated = false;
@@ -596,6 +622,76 @@ namespace MifBridge
 				Json->SetStringField(TEXT("classPath"), Row.ComponentClass->GetPathName());
 			}
 			Json->SetBoolField(TEXT("isRoot"), Row.bIsRoot);
+
+			// ROOT OF WHAT? isRoot alone is ambiguous, and that ambiguity was reported from production:
+			// a component added to a blueprint whose local SCS was previously EMPTY came back
+			// isRoot:true with AttachParent None, and nothing in the response said how it would attach
+			// beneath the INHERITED root at runtime. The caller could not prove the attachment before
+			// compiling and testing in a packaged build.
+			//
+			// A component template's AttachParent does not describe SCS hierarchy - the USCS_Node does.
+			// These fields separate the four things isRoot was conflating.
+			if (!bCookedTarget && bIsOwn && Blueprint && Blueprint->SimpleConstructionScript)
+			{
+				USimpleConstructionScript* SCS = Blueprint->SimpleConstructionScript;
+				if (USCS_Node* Node = SCS->FindSCSNode(Row.Name))
+				{
+					const bool bIsOwnSCSRoot = SCS->GetRootNodes().Contains(Node);
+					Json->SetBoolField(TEXT("isOwnSCSRoot"), bIsOwnSCSRoot);
+
+					// What the node DECLARES about its parent. None on a root node - which is exactly
+					// the case that used to look like "attached to nothing".
+					if (Node->ParentComponentOrVariableName != NAME_None)
+					{
+						Json->SetStringField(TEXT("declaredParentVariable"),
+							Node->ParentComponentOrVariableName.ToString());
+					}
+					if (Node->ParentComponentOwnerClassName != NAME_None)
+					{
+						Json->SetStringField(TEXT("parentOwnerClass"),
+							Node->ParentComponentOwnerClassName.ToString());
+					}
+					Json->SetBoolField(TEXT("parentIsNative"), Node->bIsParentComponentNative);
+
+					// parentKind names WHICH of the four possible parents this is, so a caller never
+					// has to infer it from a combination of booleans.
+					const TCHAR* ParentKind = TEXT("none");
+					if (Node->ParentComponentOrVariableName != NAME_None)
+					{
+						ParentKind = Node->bIsParentComponentNative ? TEXT("native_inherited")
+																	: TEXT("inherited_blueprint");
+					}
+					else if (!bIsOwnSCSRoot)
+					{
+						ParentKind = TEXT("own_scs_component");
+					}
+					Json->SetStringField(TEXT("parentKind"), ParentKind);
+
+					// The one a caller actually wants: what this will hang off at runtime. For an own
+					// SCS root with no declared parent, the engine attaches it beneath whatever the
+					// inherited/native scene root turns out to be.
+					if (USceneComponent* DeclaredParent = Node->GetParentComponentTemplate(Blueprint))
+					{
+						Json->SetStringField(TEXT("expectedRuntimeAttachParent"), DeclaredParent->GetName());
+						Json->SetStringField(TEXT("attachmentResolution"), TEXT("declared_parent"));
+					}
+					else if (bIsOwnSCSRoot)
+					{
+						USCS_Node* RootSCSNode = nullptr;
+						USceneComponent* SceneRoot =
+							SCS->GetSceneRootComponentTemplate(/*bShouldUseDefaultRoot*/ true, &RootSCSNode);
+						if (SceneRoot && SceneRoot->GetFName() != Row.Name)
+						{
+							Json->SetStringField(TEXT("expectedRuntimeAttachParent"), SceneRoot->GetName());
+							Json->SetStringField(TEXT("attachmentResolution"), TEXT("inherited_root_fallback"));
+						}
+						else
+						{
+							Json->SetStringField(TEXT("attachmentResolution"), TEXT("is_the_actor_root"));
+						}
+					}
+				}
+			}
 			if (Row.AttachParentNode)
 			{
 				Json->SetStringField(TEXT("parent"), Row.AttachParentNode->GetVariableName().ToString());
@@ -829,6 +925,7 @@ namespace MifBridge
 		Out->SetStringField(TEXT("inheritableComponentHandlerPath"), ICH ? ICH->GetPathName() : FString());
 		Out->SetNumberField(TEXT("existingOverrideCount"), ExistingOverrides);
 		Out->SetArrayField(TEXT("components"), Arr);
+		Out->SetObjectField(TEXT("rootResolution"), RootResolution);
 
 		// --- named lookup: the answer, at the top level, in a form that cannot be misread ---------
 		//
