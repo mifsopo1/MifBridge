@@ -1818,7 +1818,63 @@ namespace MifBridge
 		{
 			return;
 		}
+
+		// PERSISTENCE / MUTATION CONTRACT, reported rather than inferred.
+		// A caller was left guessing whether compile wrote to disk, dirtied the package, or
+		// restructured the source graphs - and had to infer it from editor stars, file timestamps and
+		// later disk hashes. Compiling MUTATES (it rebuilds the generated class and can reconstruct
+		// nodes) and NEVER SAVES. Both halves are now stated on every response, and the node census is
+		// taken either side so a GUID-sensitive caller knows when to refresh its snapshot.
+		UPackage* Package = Blueprint->GetOutermost();
+		const bool bDirtyBefore = Package && Package->IsDirty();
+
+		TArray<UEdGraph*> GraphsBefore;
+		GatherGraphs(Blueprint, GraphsBefore);
+		int32 NodesBefore = 0;
+		TSet<FGuid> GuidsBefore;
+		for (UEdGraph* G : GraphsBefore)
+		{
+			if (!G) { continue; }
+			NodesBefore += G->Nodes.Num();
+			for (UEdGraphNode* N : G->Nodes) { if (N) { GuidsBefore.Add(N->NodeGuid); } }
+		}
+
 		CompileBlueprintInto(Blueprint, Out);
+
+		TArray<UEdGraph*> GraphsAfter;
+		GatherGraphs(Blueprint, GraphsAfter);
+		int32 NodesAfter = 0, GuidsAdded = 0;
+		for (UEdGraph* G : GraphsAfter)
+		{
+			if (!G) { continue; }
+			NodesAfter += G->Nodes.Num();
+			for (UEdGraphNode* N : G->Nodes)
+			{
+				if (N && !GuidsBefore.Contains(N->NodeGuid)) { ++GuidsAdded; }
+			}
+		}
+
+		Out->SetBoolField(TEXT("compiled"), true);
+		// Flat false, always. compile has never written to disk and must not start: a caller that
+		// believes otherwise skips save_blueprint and loses the work on the next crash.
+		Out->SetBoolField(TEXT("savedToDisk"), false);
+		Out->SetStringField(TEXT("packagePath"), Package ? Package->GetName() : TEXT(""));
+		Out->SetBoolField(TEXT("packageDirtyBefore"), bDirtyBefore);
+		Out->SetBoolField(TEXT("packageDirtyAfter"), Package && Package->IsDirty());
+		Out->SetNumberField(TEXT("graphNodesBefore"), NodesBefore);
+		Out->SetNumberField(TEXT("graphNodesAfter"), NodesAfter);
+		Out->SetNumberField(TEXT("newNodeGuids"), GuidsAdded);
+		Out->SetBoolField(TEXT("graphStructureChanged"), NodesBefore != NodesAfter || GuidsAdded > 0);
+		if (NodesBefore != NodesAfter || GuidsAdded > 0)
+		{
+			Out->SetStringField(TEXT("structureNote"), FString::Printf(
+				TEXT("the SOURCE graphs changed across this compile (%d -> %d nodes, %d new NodeGuid(s)). ")
+				TEXT("Any node snapshot taken before this call is stale - re-read with list_nodes."),
+				NodesBefore, NodesAfter, GuidsAdded));
+		}
+		Out->SetStringField(TEXT("persistenceNote"),
+			TEXT("compile mutates the in-memory blueprint and its generated class; it does NOT write to disk. "
+				 "Call save_blueprint {blueprintId} to persist. A clean compile is not durability."));
 	}
 
 	// Execute an editor console command (e.g. "mif.kr.VerifyFidelity BP_Foo"). We are already on the game thread

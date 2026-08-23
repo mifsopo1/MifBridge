@@ -2639,6 +2639,32 @@ namespace MifBridge
 			// they reject unknown keys outright. A missing row cannot distinguish "no guard" from
 			// "guard added since the harvest", and the two behave oppositely, so this branch now names
 			// both possibilities and asserts neither.
+			// STATE 2a - OBSERVED AT RUNTIME. Before falling back to "unknown", ask whether this
+			// endpoint's guard has actually RUN this session. RejectUnknownParams records its accepted
+			// key list against the dispatching endpoint, which is direct evidence the handler guards
+			// its input - strictly better than the hand-harvested table, because it cannot go stale.
+			// This is what closes the reported gap: close_asset_editors and add_node_pin DO guard, and
+			// used to report "unknown" purely because nobody had regenerated the table.
+			{
+				TArray<FString> ObservedKeys;
+				if (MifDescribeObservedParams(Resolved, &ObservedKeys))
+				{
+					TArray<TSharedPtr<FJsonValue>> KeyArr;
+					for (const FString& K : ObservedKeys) { KeyArr.Add(MakeShared<FJsonValueString>(K)); }
+					Out->SetStringField(TEXT("status"), TEXT("params_observed"));
+					Out->SetStringField(TEXT("paramsSource"), TEXT("runtime"));
+					Out->SetArrayField(TEXT("acceptedParams"), KeyArr);
+					Out->SetNumberField(TEXT("acceptedParamCount"), KeyArr.Num());
+					Out->SetStringField(TEXT("note"), FString::Printf(
+						TEXT("'%s' has no row in the harvested table, but its RejectUnknownParams guard ran this ")
+						TEXT("session and these are the keys it accepted - so the endpoint DOES reject unknown ")
+						TEXT("parameters. Keys are reported lowercased and sorted (the guard matches case-insensitively). ")
+						TEXT("This is observed evidence, not a table lookup, and cannot go stale."),
+						*Resolved));
+					return;
+				}
+			}
+
 			Out->SetStringField(TEXT("status"), TEXT("params_not_declared"));
 			Out->SetStringField(TEXT("paramsSource"), TEXT("none"));
 			const bool bExternal = bHasAuditRow && !Provider.IsEmpty()

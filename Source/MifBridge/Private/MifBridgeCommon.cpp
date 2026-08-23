@@ -755,6 +755,29 @@ namespace MifBridge
 	// Pair it with the MIF_BIND<->@mcp.tool diff in the README to catch wrapper drift.
 	void H_self_audit(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// COMPACT MODE. The common use is a health check - healthy, contradictions, build stamp,
+		// counts, signatures - but the response also carries a row per endpoint plus the full
+		// without-evidence list, and the coverage fields added recently made that worse. At 240
+		// endpoints the full body is large enough that callers were writing it to a file and grepping
+		// it, which is an absurd way to ask "is the bridge healthy".
+		//
+		// Default stays FULL so no existing caller changes shape.
+		// self_audit took no parameters until compact mode, so it had no guard - and duly reported
+		// ITSELF in endpointsWithoutAnyEvidence. Now that it accepts input, it guards it like
+		// everything else, which also removes it from that list for the right reason.
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("summaryOnly"), TEXT("compact"), TEXT("includeEndpointDetails"), TEXT("includeEndpoints") },
+			TEXT("summaryOnly (alias: compact; default false) - health fields, counts and signatures only; "
+				 "includeEndpointDetails / includeEndpoints override it individually"),
+			{ { TEXT("verbose"), TEXT("the FULL response is the default; pass summaryOnly:true for the compact form") },
+			  { TEXT("endpoint"), TEXT("self_audit describes the whole surface - use describe_endpoint {endpoint} for one") } }))
+		{
+			return;
+		}
+		const bool bSummaryOnly = JBoolAny(In, { TEXT("summaryOnly"), TEXT("compact") }, false);
+		const bool bIncludeDetails = JBoolAny(In, { TEXT("includeEndpointDetails") }, !bSummaryOnly);
+		const bool bIncludeList = JBoolAny(In, { TEXT("includeEndpoints") }, !bSummaryOnly);
+
 		TArray<FString> Names = GetEndpointNames();
 		Names.Sort();
 
@@ -818,8 +841,8 @@ namespace MifBridge
 		}
 
 		Out->SetNumberField(TEXT("endpointCount"), Names.Num());
-		Out->SetArrayField(TEXT("endpoints"), All);
-		Out->SetArrayField(TEXT("endpointDetails"), EndpointRows);
+		if (bIncludeList) { Out->SetArrayField(TEXT("endpoints"), All); }
+		if (bIncludeDetails) { Out->SetArrayField(TEXT("endpointDetails"), EndpointRows); }
 
 		// Parameter-table coverage. This is the health number that matters most here: silent parameter
 		// ignore is the most damaging bug class in this codebase, and this bounds how much of the
@@ -831,7 +854,9 @@ namespace MifBridge
 		ParamCoverage->SetNumberField(TEXT("withParamTableRow"), WithParamRow);
 		ParamCoverage->SetNumberField(TEXT("guardsObservedAtRuntime"), WithObserved);
 		ParamCoverage->SetNumberField(TEXT("withoutAnyEvidence"), NoParamRow.Num());
-		ParamCoverage->SetArrayField(TEXT("endpointsWithoutAnyEvidence"), NoParamRow);
+		// Counts always; the NAMES only when the caller wants detail. The count answers "how much
+		// risk", the names answer "where" - a health check only needs the first.
+		if (bIncludeDetails) { ParamCoverage->SetArrayField(TEXT("endpointsWithoutAnyEvidence"), NoParamRow); }
 		ParamCoverage->SetStringField(TEXT("note"),
 			TEXT("withoutAnyEvidence counts endpoints with NEITHER a harvested table row NOR a guard observed at runtime. ")
 			TEXT("It is an UPPER BOUND on endpoints that accept anything silently - never a count of them: an endpoint that ")
@@ -853,10 +878,15 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("externalProviders"), Providers);
 
 		TSharedRef<FJsonObject> Buckets = MakeShared<FJsonObject>();
-		Buckets->SetArrayField(TEXT("readOnly"), ReadOnly);
-		Buckets->SetArrayField(TEXT("selfManaged"), SelfManaged);
-		Buckets->SetArrayField(TEXT("transacted"), Transacted);
-		Buckets->SetArrayField(TEXT("compileHeavy"), CompileHeavy);
+		// Bucket MEMBERSHIP is a name list too. Compact mode reports the sizes instead.
+		Buckets->SetNumberField(TEXT("readOnlyCount"), ReadOnly.Num());
+		Buckets->SetNumberField(TEXT("selfManagedCount"), SelfManaged.Num());
+		Buckets->SetNumberField(TEXT("transactedCount"), Transacted.Num());
+		Buckets->SetNumberField(TEXT("compileHeavyCount"), CompileHeavy.Num());
+		if (bIncludeDetails) { Buckets->SetArrayField(TEXT("readOnly"), ReadOnly); }
+		if (bIncludeDetails) { Buckets->SetArrayField(TEXT("selfManaged"), SelfManaged); }
+		if (bIncludeDetails) { Buckets->SetArrayField(TEXT("transacted"), Transacted); }
+		if (bIncludeDetails) { Buckets->SetArrayField(TEXT("compileHeavy"), CompileHeavy); }
 		Out->SetObjectField(TEXT("transactionBuckets"), Buckets);
 
 		// An endpoint in BOTH read-only and self-managed is a policy contradiction: RunEndpoint tests
