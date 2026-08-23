@@ -681,8 +681,12 @@ namespace MifBridge
 
 	// --- JSON serializers ---------------------------------------------------
 	TSharedRef<FJsonObject> SerializePinType(const FEdGraphPinType& Type);
-	TSharedRef<FJsonObject> SerializePin(const UEdGraphPin* Pin);
-	TSharedRef<FJsonObject> SerializeNode(const UEdGraphNode* Node, bool bIncludePins);
+	/** bResolveThroughKnots: emit the link's LOGICAL far end, following reroute chains, instead of the
+	 *  knot pin itself. Required whenever knots are filtered OUT of the node list, or the response
+	 *  references GUIDs it does not contain and reads as a corrupt graph. */
+	TSharedRef<FJsonObject> SerializePin(const UEdGraphPin* Pin, bool bResolveThroughKnots = false);
+	TSharedRef<FJsonObject> SerializeNode(const UEdGraphNode* Node, bool bIncludePins,
+		bool bResolveThroughKnots = false);
 
 	// --- Editor UI invocation (Batch O, MifBridgeUI.cpp) ---------------------
 	// FInputBindingManager enumerates COMMANDS but stores no command LISTS - RegisterCommandList is a
@@ -986,6 +990,7 @@ namespace MifBridge
 	// User-defined STRUCT and ENUM authoring (MifBridgeUserTypes.cpp).
 	// Blueprint-only types; native C++ structs/enums cannot be edited.
 	MIF_DECL(create_struct);
+	MIF_DECL(create_datatable);
 	MIF_DECL(list_struct_members);
 	MIF_DECL(add_struct_member);
 	MIF_DECL(remove_struct_member);

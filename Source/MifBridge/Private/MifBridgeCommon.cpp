@@ -251,6 +251,7 @@ namespace MifBridge
 			MIF_BIND(select_level_actors);
 			// User-defined struct / enum authoring
 			MIF_BIND(create_struct);
+			MIF_BIND(create_datatable);
 			MIF_BIND(list_struct_members);
 			MIF_BIND(add_struct_member);
 			MIF_BIND(remove_struct_member);
@@ -3354,6 +3355,10 @@ namespace MifBridge
 		// real owning blueprint, and refuse to guess when two live assets collide.
 		UEdGraphNode* Match = nullptr;
 		int32 MatchCount = 0;
+		// Collected so an ambiguity can NAME what collided instead of just asserting one. A caller told
+		// "ambiguous" with no candidates has to fall back to list_nodes over every graph and filter
+		// locally, which is exactly the expensive workaround this message should make unnecessary.
+		TArray<FString> Candidates;
 		UPackage* TransientPackage = GetTransientPackage();
 		for (TObjectIterator<UEdGraphNode> It; It; ++It)
 		{
@@ -3372,6 +3377,13 @@ namespace MifBridge
 			}
 			Match = Node;
 			++MatchCount;
+			if (UEdGraph* OwnerGraph = Cast<UEdGraph>(Node->GetOuter()))
+			{
+				UBlueprint* OwnerBP = FBlueprintEditorUtils::FindBlueprintForNode(Node);
+				Candidates.Add(FString::Printf(TEXT("%s::%s"),
+					OwnerBP ? *OwnerBP->GetPathName() : TEXT("<unknown blueprint>"),
+					*OwnerGraph->GetName()));
+			}
 		}
 		if (MatchCount == 1)
 		{
@@ -3379,7 +3391,9 @@ namespace MifBridge
 		}
 		if (MatchCount > 1)
 		{
-			OutError = FString::Printf(TEXT("ambiguous node guid %s matches %d loaded nodes (duplicate blueprints loaded?) — reopen the target blueprint or address it via its graph"), *GuidStr, MatchCount);
+			OutError = FString::Printf(
+				TEXT("ambiguous node guid %s matches %d loaded nodes. CANDIDATES: %s. Pass graphId (spelled exactly that, camelCase - over raw HTTP 'graph_id' is rejected) to scope the lookup to one of them; graphId turns this into an exact (graph, guid) match and never reports ambiguity."),
+				*GuidStr, MatchCount, *FString::Join(Candidates, TEXT(" | ")));
 			return nullptr;
 		}
 
@@ -3958,7 +3972,7 @@ namespace MifBridge
 		return Json;
 	}
 
-	TSharedRef<FJsonObject> SerializePin(const UEdGraphPin* Pin)
+	TSharedRef<FJsonObject> SerializePin(const UEdGraphPin* Pin, bool bResolveThroughKnots)
 	{
 		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 		Json->SetStringField(TEXT("name"), Pin->PinName.ToString());
@@ -3989,25 +4003,60 @@ namespace MifBridge
 		}
 
 		TArray<TSharedPtr<FJsonValue>> Links;
+		int32 ResolvedThroughKnots = 0;
 		for (UEdGraphPin* Linked : Pin->LinkedTo)
 		{
 			if (!Linked)
 			{
 				continue;
 			}
+			// When knots are being filtered out of the node list, emitting the raw link leaves the
+			// response referencing GUIDs it does not contain: a caller sees Branch.Condition wired to
+			// an unknown node and reasonably suspects a corrupt or partially-loaded graph. Follow the
+			// reroute chain to its LOGICAL far end so the response is internally resolvable, and say
+			// that we did.
+			UEdGraphPin* Emit = Linked;
+			bool bViaKnot = false;
+			if (bResolveThroughKnots && Cast<UK2Node_Knot>(Linked->GetOwningNodeUnchecked()))
+			{
+				UEdGraphPin* Terminal = SkipKnots(Linked);
+				// SkipKnots gives up on a fan-out (a knot output with several links) and returns the
+				// knot pin itself. Emitting that would recreate the dangling reference, so fall back to
+				// reporting the knot honestly rather than pretending it resolved.
+				if (Terminal && !Cast<UK2Node_Knot>(Terminal->GetOwningNodeUnchecked()))
+				{
+					Emit = Terminal;
+					bViaKnot = true;
+					++ResolvedThroughKnots;
+				}
+			}
+
 			TSharedRef<FJsonObject> LinkJson = MakeShared<FJsonObject>();
-			if (UEdGraphNode* Owner = Linked->GetOwningNodeUnchecked())
+			if (UEdGraphNode* Owner = Emit->GetOwningNodeUnchecked())
 			{
 				LinkJson->SetStringField(TEXT("node"), Owner->NodeGuid.ToString());
+				// A caller that filtered knots still needs to know one was in the path - the wire is
+				// logically direct but physically is not, which matters to anything that edits it.
+				if (bViaKnot) { LinkJson->SetBoolField(TEXT("viaKnots"), true); }
+				else if (bResolveThroughKnots && Cast<UK2Node_Knot>(Owner))
+				{
+					// Could not resolve (fan-out or broken chain): flag it rather than emit a silent
+					// dangling GUID.
+					LinkJson->SetBoolField(TEXT("unresolvedKnot"), true);
+				}
 			}
-			LinkJson->SetStringField(TEXT("pin"), Linked->PinName.ToString());
+			LinkJson->SetStringField(TEXT("pin"), Emit->PinName.ToString());
 			Links.Add(MakeShared<FJsonValueObject>(LinkJson));
 		}
 		Json->SetArrayField(TEXT("linkedTo"), Links);
+		if (ResolvedThroughKnots > 0)
+		{
+			Json->SetNumberField(TEXT("linksResolvedThroughKnots"), ResolvedThroughKnots);
+		}
 		return Json;
 	}
 
-	TSharedRef<FJsonObject> SerializeNode(const UEdGraphNode* Node, bool bIncludePins)
+	TSharedRef<FJsonObject> SerializeNode(const UEdGraphNode* Node, bool bIncludePins, bool bResolveThroughKnots)
 	{
 		TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 		Json->SetStringField(TEXT("guid"), Node->NodeGuid.ToString());
@@ -4028,7 +4077,7 @@ namespace MifBridge
 			{
 				if (Pin)
 				{
-					Pins.Add(MakeShared<FJsonValueObject>(SerializePin(Pin)));
+					Pins.Add(MakeShared<FJsonValueObject>(SerializePin(Pin, bResolveThroughKnots)));
 				}
 			}
 			Json->SetArrayField(TEXT("pins"), Pins);

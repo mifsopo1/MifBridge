@@ -21,7 +21,6 @@
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "EdGraph/EdGraphPin.h"   // FEdGraphPinType — complete type needed for ToPinType()/MakePinType
-#include "Engine/DataTable.h"
 #include "Engine/UserDefinedEnum.h"
 #include "Engine/UserDefinedStruct.h"
 #include "Kismet2/EnumEditorUtils.h"
@@ -308,114 +307,6 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("members"), Members);
 		UE_LOG(LogMifBridge, Log, TEXT("create_struct: %s (%d members)"), *Struct->GetPathName(), Members.Num());
 	}
-
-	// --- create_datatable ---------------------------------------------------
-	//   in:  { path: "/Game/Foo/DT_Bar", rowStruct: "RichTextStyleRow" }
-	//   out: { dataTablePath, name, rowStruct }
-	//
-	// WHY THIS EXISTS: the DataTable surface used to be rows-only (read/write/delete/list), so a
-	// table could be FILLED but never CREATED, and all three workarounds are closed:
-	//   * duplicate_asset applies its /Game/ guard to the SOURCE, so an engine- or plugin-mounted
-	//     table (e.g. /DDS2Casino/.../DT_CasinoTutorial_RichText) cannot be copied as a starting point;
-	//   * import_asset can name CSVImportFactory but cannot set AutomatedImportSettings.ImportRowStruct
-	//     (per-factory option objects are not exposed), and with Task->bAutomated=true UE takes the
-	//     automated branch, logs "A Data table row type must be specified" and imports nothing.
-	// See docs/06_OPEN_ISSUES_FROM_USE.md section 8.
-	//
-	// UDataTableFactory is deliberately NOT used: its only job over NewObject is ConfigureProperties(),
-	// which opens a MODAL struct picker. This server runs handlers synchronously inside the HTTP
-	// ticker, so a modal here would deadlock the bridge.
-	void H_create_datatable(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
-	{
-		if (RejectUnknownParams(In, Out,
-			{ TEXT("path"), TEXT("rowStruct"), TEXT("struct") },
-			TEXT("path (must start with /Game/ - the table is named after the last segment), ")
-			TEXT("rowStruct (alias: struct) - a struct deriving from FTableRowBase, by name or object path"),
-			{ { TEXT("name"),      TEXT("the table's name comes from the last segment of path - pass path:\"/Game/Foo/DT_Bar\"") },
-			  { TEXT("rows"),      TEXT("create_datatable only MAKES the empty table; fill it with write_datatable_rows") },
-			  { TEXT("rowType"),   TEXT("spell it rowStruct") },
-			  { TEXT("structPath"),TEXT("pass the row struct as rowStruct; path is the NEW table's location") } }))
-		{
-			return;
-		}
-
-		const FString Path = JStr(In, TEXT("path"));
-		FString AssetName, PathError;
-		if (!ValidateNewUserTypePath(Path, AssetName, PathError))
-		{
-			Fail(Out, PathError);
-			return;
-		}
-
-		FString RowStructName = JStr(In, TEXT("rowStruct"));
-		if (RowStructName.IsEmpty()) { RowStructName = JStr(In, TEXT("struct")); }
-		if (RowStructName.IsEmpty())
-		{
-			Fail(Out, TEXT("rowStruct is required (e.g. \"RichTextStyleRow\", \"RichImageRow\", ")
-				TEXT("or a user struct path like \"/Game/Types/S_MyRow\")"));
-			return;
-		}
-
-		// Accept a bare name, an F-prefixed name, or a full object path. ResolveStruct handles the
-		// first two; a /Game/ or /Script/ path has to be loaded directly.
-		UScriptStruct* RowStruct = ResolveStruct(RowStructName);
-		if (!RowStruct && RowStructName.StartsWith(TEXT("/")))
-		{
-			RowStruct = LoadObject<UScriptStruct>(nullptr, *RowStructName, nullptr, LOAD_NoWarn | LOAD_Quiet);
-			if (!RowStruct)
-			{
-				// user-defined structs live at <package>.<name>, so retry with the suffix appended
-				const FString Suffixed = RowStructName + TEXT(".") + FPackageName::GetLongPackageAssetName(RowStructName);
-				RowStruct = LoadObject<UScriptStruct>(nullptr, *Suffixed, nullptr, LOAD_NoWarn | LOAD_Quiet);
-			}
-		}
-		if (!RowStruct)
-		{
-			Fail(Out, FString::Printf(
-				TEXT("row struct '%s' not found. Pass a native struct name (RichTextStyleRow, RichImageRow), ")
-				TEXT("or a user struct's asset path (/Game/Types/S_MyRow)"), *RowStructName));
-			return;
-		}
-
-		// A DataTable whose row struct is not a FTableRowBase child loads but is unusable, and the
-		// editor reports it only when the table is opened - refuse it here instead.
-		if (!RowStruct->IsChildOf(FTableRowBase::StaticStruct()))
-		{
-			Fail(Out, FString::Printf(
-				TEXT("row struct '%s' does not derive from FTableRowBase, so it cannot be a DataTable row type"),
-				*RowStruct->GetName()));
-			return;
-		}
-
-		UPackage* Package = CreatePackage(*Path);
-		if (!Package)
-		{
-			Fail(Out, FString::Printf(TEXT("failed to create package '%s'"), *Path));
-			return;
-		}
-
-		UDataTable* Table = NewObject<UDataTable>(
-			Package, FName(*AssetName), RF_Public | RF_Standalone | RF_Transactional);
-		if (!Table)
-		{
-			Fail(Out, TEXT("NewObject<UDataTable> returned null"));
-			return;
-		}
-		Table->RowStruct = RowStruct;
-
-		FAssetRegistryModule::AssetCreated(Table);
-		Package->MarkPackageDirty();
-
-		Out->SetStringField(TEXT("dataTablePath"), Table->GetPathName());
-		Out->SetStringField(TEXT("name"), Table->GetName());
-		Out->SetStringField(TEXT("rowStruct"), RowStruct->GetPathName());
-		Out->SetNumberField(TEXT("rowCount"), 0);
-		Out->SetStringField(TEXT("note"),
-			TEXT("empty table created - fill it with write_datatable_rows, then save_dirty_packages"));
-		UE_LOG(LogMifBridge, Log, TEXT("create_datatable: %s (row struct %s)"),
-			*Table->GetPathName(), *RowStruct->GetName());
-	}
-
 
 	// --- list_struct_members ------------------------------------------------
 	//   in:  { struct: "/Game/Types/S_Foo" }   out: { structPath, members[] }

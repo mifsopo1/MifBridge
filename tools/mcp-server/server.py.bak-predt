@@ -1693,13 +1693,6 @@ def select_level_actors(actor_paths: list = None, clear: bool = False) -> dict:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
-def create_datatable(path: str, row_struct: str) -> dict:
-    "Create an EMPTY DataTable asset at a /Game/ path with the given row struct, then fill it with write_datatable_rows. row_struct takes a native struct name (RichTextStyleRow, RichImageRow), an F-prefixed name, or a user struct's asset path (/Game/Types/S_MyRow); it must derive from FTableRowBase. This exists because duplicate_asset refuses non-/Game/ sources and import_asset cannot set a CSV import's row struct, so there was previously no way to make a DataTable at all."
-    return _post("create_datatable", path=path, rowStruct=row_struct)
-
-
-
-@mcp.tool()
 def create_struct(path: str, members: list = None) -> dict:
     "Create a Blueprint user-defined struct at a /Game/ path. members is a list of {name, type, container?, valueType?, default?} using the same type grammar as add_variable. A struct must keep at least one member to compile, so the engine's placeholder is only removed once your own members exist."
     return _post("create_struct", path=path, members=members or None)

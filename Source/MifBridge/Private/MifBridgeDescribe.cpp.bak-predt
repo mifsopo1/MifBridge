@@ -706,15 +706,6 @@ namespace MifBridge
 			TEXT("texture"), TEXT("texture parameter overrides are NOT implemented — create the instance, then set TextureParameterValues with set_property"),
 			TEXT("material"), TEXT("the source material parameter is called parent (alias: parentMaterial)"),
 			nullptr };
-		static const TCHAR* const GMifDescKeys_create_datatable[] = {
-			TEXT("path"), TEXT("rowStruct"), TEXT("struct"), nullptr };
-		static const TCHAR* const GMifDescNotes_create_datatable[] = {
-			TEXT("name"), TEXT("the table's name comes from the last segment of path - pass path:\"/Game/Foo/DT_Bar\""),
-			TEXT("rows"), TEXT("create_datatable only MAKES the empty table; fill it with write_datatable_rows"),
-			TEXT("rowType"), TEXT("spell it rowStruct"),
-			TEXT("structPath"), TEXT("pass the row struct as rowStruct; path is the NEW table's location"),
-			nullptr };
-
 		static const TCHAR* const GMifDescKeys_create_struct[] = {
 			TEXT("path"), TEXT("members"), nullptr };
 		static const TCHAR* const GMifDescNotes_create_struct[] = {
@@ -1815,10 +1806,6 @@ namespace MifBridge
 			{ TEXT("create_material_instance"), GMifDescKeys_create_material_instance, GMifDescNotes_create_material_instance,
 			  TEXT("parent (alias: parentMaterial), path (must start with /Game/), scalars {name:number}, vectors {name:{r,g,b,a}}"),
 			  TEXT("MifBridgeAuthoring.cpp"), 448, nullptr },
-			{ TEXT("create_datatable"), GMifDescKeys_create_datatable, GMifDescNotes_create_datatable,
-			  TEXT("path (must start with /Game/ - the table is named after the last segment), rowStruct (alias: struct) - a struct deriving from FTableRowBase, by name or object path"),
-			  TEXT("MifBridgeUserTypes.cpp"), 328, nullptr },
-
 			{ TEXT("create_struct"), GMifDescKeys_create_struct, GMifDescNotes_create_struct,
 			  TEXT("path (must start with /Game/ - the struct is named after the last segment), members[] (each: name, type, container?, valueType?, default?)"),
 			  TEXT("MifBridgeUserTypes.cpp"), 194, nullptr },

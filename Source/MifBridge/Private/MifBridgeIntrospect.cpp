@@ -286,11 +286,33 @@ namespace MifBridge
 			{
 				continue;
 			}
-			Arr.Add(MakeShared<FJsonValueObject>(SerializeNode(Node, /*bIncludePins*/ true)));
+			// Resolve links through knots ONLY when knots are hidden. With hideKnots=false the knot
+			// nodes are present in the response, so the raw links are already resolvable and the
+			// caller should see the real topology.
+			Arr.Add(MakeShared<FJsonValueObject>(
+				SerializeNode(Node, /*bIncludePins*/ true, /*bResolveThroughKnots*/ bHideKnots)));
 		}
 		Out->SetStringField(TEXT("graphId"), GraphIdOf(Blueprint, Graph));
 		Out->SetNumberField(TEXT("count"), Arr.Num());
 		Out->SetArrayField(TEXT("nodes"), Arr);
+		if (bHideKnots)
+		{
+			int32 KnotsHidden = 0;
+			for (UEdGraphNode* N : Graph->Nodes)
+			{
+				if (N && N->IsA<UK2Node_Knot>()) { ++KnotsHidden; }
+			}
+			Out->SetNumberField(TEXT("knotsHidden"), KnotsHidden);
+			Out->SetBoolField(TEXT("linksResolvedThroughKnots"), true);
+			if (KnotsHidden > 0)
+			{
+				Out->SetStringField(TEXT("knotNote"), FString::Printf(
+					TEXT("%d reroute node(s) were omitted and every link through them was resolved to its logical far end (marked viaKnots). "
+						 "The response is self-contained: no linkedTo entry points at a node missing from nodes[]. "
+						 "A link that could NOT be resolved (a knot fan-out) is marked unresolvedKnot instead of silently dangling."),
+					KnotsHidden));
+			}
+		}
 	}
 
 	void H_get_node(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

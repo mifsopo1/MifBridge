@@ -372,17 +372,9 @@ namespace MifBridge
 
 		const FString RawPath = JStr(In, TEXT("path"));
 		const FString NewPath = JStr(In, TEXT("newPath"));
-		// The SOURCE may live under any mounted root. Requiring /Game/ here made every engine-,
-		// plugin- and GameFeature-mounted asset uncopyable, which blocks the normal modding move of
-		// using a shipped asset as a starting point - copying
-		// /DDS2Casino/GUI/Tutorials/DT_CasinoTutorial_RichText was refused for exactly this reason.
-		// Only the DESTINATION is restricted (below); that is the guard that matters, because it is
-		// the only one that writes. NOTE: rename_asset keeps its /Game/-only guard deliberately -
-		// renaming a shipped asset in place is not the same thing as copying one.
-		if (RawPath.IsEmpty() || !RawPath.StartsWith(TEXT("/")))
+		if (RawPath.IsEmpty() || !RawPath.StartsWith(TEXT("/Game/")))
 		{
-			Fail(Out, TEXT("path required, must be a mounted object or package path ")
-				TEXT("(e.g. /Game/Foo/Bar, /Engine/..., /DDS2Casino/...)"));
+			Fail(Out, TEXT("path required, must start with /Game/"));
 			return;
 		}
 		if (NewPath.IsEmpty() || !NewPath.StartsWith(TEXT("/Game/")))

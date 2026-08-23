@@ -25,7 +25,6 @@ Author's own priority ranking, "by what actually costs me time now". Status as o
 | — | No image/asset import endpoint | **FIXED + verified** — `import_texture` (file + base64), `import_asset`, `reimport_asset`, `set_texture_settings` |
 | — | No icon / thumbnail render endpoint (§6) | **FIXED + verified** — `render_thumbnail` 128×128 PNG in 46 ms; plus `write_thumbnail_texture`, `set_asset_thumbnail`, `thumbnail_capabilities` |
 | — | `set_viewport_camera` does not reach `capture_camera` (§7) | **FIXED + verified** — `useViewportCamera` opt-in; `cameraSource` echoes `default`/`explicit`/`viewport` |
-| — | **No way to CREATE a DataTable asset (§8)** | **IMPLEMENTED 2026-08-21, UNVERIFIED** — `create_datatable {path, rowStruct}` added; `duplicate_asset` now accepts a SOURCE under any mounted root. Built (DLL 18:51:20) but not yet exercised against a running editor |
 | — | `CallArrayFunction` wildcards (§5) | **PARTIAL** — `set_pin_type`'s silent revert is fixed; the `connect_pins` half is unresolved, see §5 |
 
 Note the ranking is by **cost now**, not by severity. §5 is the most severe item in the file — it
@@ -217,110 +216,6 @@ its own test. It can only be found by *using* the bridge, which is why this file
 and does not, B's response must name what it actually used. `capture_camera` should echo
 `cameraSource: "explicit" | "viewport" | "default"` so the composition gap is visible in the response
 rather than in the rendered image.
-
----
-
-## 8. Cannot CREATE a DataTable asset — three routes, all closed
-
-**Found in use 2026-08-21** (build `Aug 19 2026 17:00`, 239 endpoints) while building the EddieWiki
-in-game wiki. Blocks the whole `URichTextBlock` workstream, which needs two DataTables that do not
-exist yet:
-
-    /Game/MODS/EddieWiki_P/GUI/DT_EddieWikiTextStyles   row struct RichTextStyleRow
-    /Game/MODS/EddieWiki_P/GUI/DT_EddieWikiImages       row struct RichImageRow
-
-Without them a `URichTextBlock` has no style set and no image decorator source, so `<bold>` and
-`<img id="..."/>` markup renders literally and the result looks WORSE than plain TextBlocks. Every
-other part of that work is already verified reachable: `SetText`, `SetDefaultColorAndOpacity`,
-`SetAutoWrapText`, `SetTextStyleSet`, `SetDefaultFont` all resolve through `add_function_call`, and
-`DecoratorClasses` is settable through `set_property` and reads back correctly.
-
-**Route A — a dedicated endpoint.** Does not exist. The DataTable surface is rows-only:
-`read_datatable`, `write_datatable_rows`, `get_datatable_row`, `delete_datatable_rows`,
-`list_datatables`. Nothing creates the asset. Note the bridge DOES create other user types —
-`create_struct`, `create_enum`, `create_blueprint`, `create_material`, `create_material_instance`,
-`create_material_function`, `create_landscape` — so this is a gap in an otherwise-covered area, not
-a deliberate policy.
-
-**Route B — `duplicate_asset` an existing one.** Refused. The project's ONLY `RichTextStyleRow`
-table is the game's own `/DDS2Casino/GUI/Tutorials/DT_CasinoTutorial_RichText` (rows
-Default / Bold / Image), and it lives under a plugin mount, so:
-
-    duplicate_asset {path:"/DDS2Casino/GUI/Tutorials/DT_CasinoTutorial_RichText", newPath:"/Game/..."}
-    -> ok:false  "path required, must start with /Game/"
-
-The `/Game/`-only guard is reasonable for a WRITE destination but it is applied to the **source**
-too, which makes every engine-, plugin- and GameFeature-mounted asset uncopyable. `/DDS2Casino/`,
-`/ChristmasDlc/` and `/Engine/` are all unreachable as duplication sources today.
-
-**Route C — `import_asset` with an explicit factory.** Resolves the factory but cannot configure it.
-`import_asset` accepts `factory` by class name and will find `CSVImportFactory`, but its own
-KeyNotes already say per-factory option objects are not exposed:
-
-    "options": "not implemented - per-factory option objects (UFbxImportUI etc.) are not exposed yet"
-
-A DataTable import needs `UCSVImportFactory::AutomatedImportSettings.ImportRowStruct`, which is one
-of those option objects. The failure is at least SAFE and not a hang, because `H_import_asset` sets
-`Task->bAutomated = true` as a documented invariant, so UE takes the automated branch
-(`CSVImportFactory.cpp:246-251`):
-
-    else if (!bHaveInfo && IsAutomatedImport())
-    {
-        if (ImportSettings.ImportType == ECSV_DataTable && !ImportSettings.ImportRowStruct)
-            UE_LOG(LogCSVImportFactory, Error,
-                   TEXT("A Data table row type must be specified ... for automated import"));
-        bDoImport = false;
-    }
-
-i.e. it logs and does nothing. No modal, no editor hang — worth stating explicitly, since a factory
-dialog on a synchronous handler would deadlock the HTTP ticker.
-
-### FIXED 2026-08-21 — implemented, built, NOT yet verified against a live editor
-
-`create_datatable { path, rowStruct }` in `MifBridgeUserTypes.cpp`, beside `create_struct` and
-reusing its `ValidateNewUserTypePath` plus the shared `ResolveStruct`. Registered in all four
-places the 1:1 rule requires: `MIF_DECL` (MifBridgeHandlers.h), `MIF_BIND` (MifBridgeCommon.cpp),
-the `describe_endpoint` param + KeyNote table (MifBridgeDescribe.cpp), and the `@mcp.tool` wrapper
-(tools/mcp-server/server.py). Two implementation notes worth keeping:
-
-* **`UDataTableFactory` was deliberately NOT used.** Its only behaviour over
-  `NewObject<UDataTable>` is `ConfigureProperties()`, which opens a MODAL struct picker — and these
-  handlers run synchronously inside the HTTP ticker, so a modal would deadlock the bridge. The
-  handler does `NewObject<UDataTable>` + assign `RowStruct` + `FAssetRegistryModule::AssetCreated`.
-* **A row struct that is not an `FTableRowBase` child is refused up front**, because such a table
-  loads without complaint and only misbehaves when opened in the editor.
-
-`duplicate_asset` separately relaxed: the SOURCE may now be any mounted path, the DESTINATION is
-still `/Game/`-only. **`rename_asset` keeps its `/Game/`-only guard on purpose** — renaming a
-shipped asset in place is not the same operation as copying one. (An early revision of this change
-edited `rename_asset` by mistake, because the guard string is byte-identical in both functions.)
-
-Still to do: exercise it against a running editor, confirm `self_audit` reports 240 endpoints and
-`describe_endpoint {name:"create_datatable"}` reports `params_declared`.
-
-### Suggested fix — small, and the pattern already exists
-
-`UDataTableFactory` is trivially drivable and needs no options object
-(`Editor/UnrealEd/Classes/Factories/DataTableFactory.h:13-22`):
-
-    UCLASS() class UDataTableFactory : public UFactory
-        UPROPERTY(BlueprintReadWrite) TObjectPtr<const UScriptStruct> Struct;
-        virtual UObject* FactoryCreateNew(...) override;
-
-So `create_datatable { path, rowStruct }` is a near-copy of `create_struct` in
-`MifBridgeUserTypes.cpp`: resolve the `UScriptStruct` by name or path, `NewObject<UDataTableFactory>`,
-assign `Struct`, hand it to `IAssetTools::CreateAsset`. Reject a `rowStruct` that is not a
-`FTableRowBase` child, and return the created path so `write_datatable_rows` can fill it in the same
-script.
-
-**Second, separable fix:** allow `duplicate_asset` to READ from any mounted root while still
-requiring `/Game/` (or another writable root) for `newPath`. That alone would have unblocked this
-particular case, and it generalises — copying an engine or GameFeature asset as a starting point is
-a normal modding move.
-
-**Workaround until then:** create the two assets by hand in the editor (right-click ->
-Miscellaneous -> Data Table -> pick the row struct). `write_datatable_rows` can populate them
-afterwards, so only the creation step is manual.
 
 ---
 
