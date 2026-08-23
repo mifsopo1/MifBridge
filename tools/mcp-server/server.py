@@ -674,6 +674,35 @@ def splice_into_exec(after_node: str, insert_node: str, after_pin: str = "then",
                  afterPin=after_pin, insertExecIn=insert_exec_in, insertExecOut=insert_exec_out)
 
 
+@mcp.tool()
+def apply_graph_patch(graph_id: str, operations: list, dry_run: bool = False,
+                      stop_on_first_error: bool = True, allow_partial: bool = False) -> dict:
+    """Apply MANY dependent graph edits in ONE call, with real rollback.
+
+    Wiring a graph is dominated by connections, not node creation - a single driver graph can be 17
+    exec links, 20+ data links and a handful of pin defaults. One call each is slow, and a failure
+    partway through leaves the blueprint half-wired with no record of what landed. `batch` does not
+    help: it stops at the first failure with every prior op already committed.
+
+    operations[] entries (node = a NodeGuid inside graph_id):
+        {"op": "connect_pins",    "srcNode": guid, "srcPin": name, "dstNode": guid, "dstPin": name}
+        {"op": "disconnect_pin",  "node": guid, "pin": name, "direction": "input"|"output"}
+            direction is only needed when one name matches both an input and an output pin;
+            leave it off and an ambiguous name is refused rather than guessed at.
+        {"op": "set_pin_default", "node": guid, "pin": name, "value": "..."}
+
+    Every operation is resolved and schema-checked BEFORE anything is mutated, so a bad guid or an
+    illegal connection is refused with the graph untouched. If an operation still fails during apply,
+    the ones already applied are undone by replaying their inverses in reverse order - real rollback,
+    not a cancelled transaction (which reverts nothing). Pass allow_partial=True to keep partial work.
+
+    dry_run resolves and validates everything and mutates nothing - use it to check a large patch.
+    Node creation is NOT a patch op: create nodes with the add_* tools first, then wire them here.
+    """
+    return _post("apply_graph_patch", graphId=graph_id, operations=operations, dryRun=dry_run,
+                 stopOnFirstError=stop_on_first_error, allowPartial=allow_partial)
+
+
 # --------------------------------------------------------------------------
 # Compile / diagnostics
 # --------------------------------------------------------------------------

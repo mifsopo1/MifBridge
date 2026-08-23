@@ -103,6 +103,7 @@ namespace MifBridge
 			MIF_BIND(reconnect_pin);
 			MIF_BIND(set_pin_default);
 			MIF_BIND(splice_into_exec);
+			MIF_BIND(apply_graph_patch);
 			MIF_BIND(add_pin);
 			MIF_BIND(remove_pin);
 			// Nodes (phase 3 additions)

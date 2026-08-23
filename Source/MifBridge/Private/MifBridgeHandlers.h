@@ -780,6 +780,13 @@ namespace MifBridge
 	MIF_DECL(reconnect_pin);
 	MIF_DECL(set_pin_default);
 	MIF_DECL(splice_into_exec);
+	/** MANY DEPENDENT GRAPH EDITS AS ONE CALL, WITH REAL ROLLBACK.
+	 *  Wiring one driver graph cost ~17 exec + 20+ data connections + several defaults, each its own
+	 *  round trip, and a failure halfway left the blueprint half-wired with no way to tell what had
+	 *  landed. batch does NOT solve this: it commits every prior op and stops. Rollback here is an
+	 *  explicit inverse-operation journal replayed in reverse, NOT a cancelled transaction - Cancel()
+	 *  discards the undo entry and reverts nothing (PM-007). See MifBridgeGraphPatch.cpp. */
+	MIF_DECL(apply_graph_patch);
 	MIF_DECL(add_pin);
 	MIF_DECL(remove_pin);
 
