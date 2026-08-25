@@ -2961,7 +2961,28 @@ namespace MifBridge
 		}
 
 		// ---- only now is it safe to break ------------------------------------------------------
+		// CAPTURE BEFORE BREAKING. BreakPinLinks notifies every node on the far end of the links it
+		// destroys (PinConnectionListChanged unconditionally, NodeConnectionListChanged too because
+		// notification is on), and those handlers may ReconstructNode - which frees every pin on that
+		// node. OldTargets IS that far end, so holding those raw pointers across this call is the
+		// use-after-free that crashed the editor via add_pin. The engine's own comment in
+		// UEdGraphSchema_K2::BreakPinLinks says the target pin reference can be invalidated here.
+		const TArray<FMifPinRef> OldTargetRefs = CapturePins(OldTargets);
+		const FMifPinRef SourceOutRef = CapturePin(SourceOut);
+		const FMifPinRef InsertInRef = CapturePin(InsertIn);
+		const FMifPinRef InsertOutRef = CapturePin(InsertOut);
+
 		Schema->BreakPinLinks(*SourceOut, /*bSendsNodeNotification*/ true);
+
+		SourceOut = ResolvePin(SourceOutRef);
+		InsertIn = ResolvePin(InsertInRef);
+		InsertOut = ResolvePin(InsertOutRef);
+		if (!SourceOut || !InsertIn || !InsertOut)
+		{
+			OutError = TEXT("breaking the existing exec link rebuilt one of the nodes and a pin did not come back; ")
+					   TEXT("the exec chain is severed. Undo this call.");
+			return false;
+		}
 		if (!Schema->TryCreateConnection(SourceOut, InsertIn))
 		{
 			// CanCreateConnection approved it a moment ago, so this is a schema-side surprise rather
@@ -2974,17 +2995,21 @@ namespace MifBridge
 		}
 
 		TArray<FString> Unmoved;
-		for (UEdGraphPin* Target : OldTargets)
+		for (const FMifPinRef& TargetRef : OldTargetRefs)
 		{
+			// Re-resolve EVERY iteration: the previous TryCreateConnection can have rebuilt a node.
+			UEdGraphPin* Target = ResolvePin(TargetRef);
+			UEdGraphPin* Out = ResolvePin(InsertOutRef);
+			if (!Target || !Out) { Unmoved.Add(TargetRef.Describe()); continue; }
 			if (UEdGraphNode* Owner = Target->GetOwningNodeUnchecked()) { Owner->Modify(); }
-			if (Schema->TryCreateConnection(InsertOut, Target)) { ++OutMovedTargets; }
+			if (Schema->TryCreateConnection(Out, Target)) { ++OutMovedTargets; }
 			else { Unmoved.Add(DescribePin(Target)); }
 		}
 		if (Unmoved.Num() > 0)
 		{
 			OutError = FString::Printf(
 				TEXT("%d of %d downstream link(s) could not be re-attached to %s (%s); the exec chain is incomplete. Undo this call."),
-				Unmoved.Num(), OldTargets.Num(), *DescribePin(InsertOut), *FString::Join(Unmoved, TEXT(", ")));
+				Unmoved.Num(), OldTargetRefs.Num(), *InsertOutRef.Describe(), *FString::Join(Unmoved, TEXT(", ")));
 			return false;
 		}
 		return true;
@@ -3028,23 +3053,38 @@ namespace MifBridge
 			return false;
 		}
 
+		// CAPTURE BEFORE BREAKING - see the note in SpliceExecAfter. Upstreams are the far ends of the
+		// links about to be destroyed, so they are precisely the pins whose owners get notified and may
+		// rebuild. TargetIn is the pin the engine's own BreakPinLinks comment names as invalidated.
+		const TArray<FMifPinRef> UpstreamRefs = CapturePins(Upstreams);
+		const FMifPinRef TargetInRef = CapturePin(TargetIn);
+		const FMifPinRef EntryInRef = CapturePin(EntryIn);
+		const FMifPinRef ExitOutRef = CapturePin(ExitOut);
+
 		Schema->BreakPinLinks(*TargetIn, /*bSendsNodeNotification*/ true);
 
 		TArray<FString> Unmoved;
-		for (UEdGraphPin* Upstream : Upstreams)
+		for (const FMifPinRef& UpstreamRef : UpstreamRefs)
 		{
+			UEdGraphPin* Upstream = ResolvePin(UpstreamRef);
+			UEdGraphPin* Entry = ResolvePin(EntryInRef);
+			if (!Upstream || !Entry) { Unmoved.Add(UpstreamRef.Describe()); continue; }
 			if (UEdGraphNode* Owner = Upstream->GetOwningNodeUnchecked()) { Owner->Modify(); }
-			if (Schema->TryCreateConnection(Upstream, EntryIn)) { ++OutMovedUpstreams; }
+			if (Schema->TryCreateConnection(Upstream, Entry)) { ++OutMovedUpstreams; }
 			else { Unmoved.Add(DescribePin(Upstream)); }
 		}
-		const bool bTailConnected = Schema->TryCreateConnection(ExitOut, TargetIn);
+
+		UEdGraphPin* ExitOutNow = ResolvePin(ExitOutRef);
+		UEdGraphPin* TargetInNow = ResolvePin(TargetInRef);
+		const bool bTailConnected = ExitOutNow && TargetInNow
+			&& Schema->TryCreateConnection(ExitOutNow, TargetInNow);
 
 		if (Unmoved.Num() > 0 || !bTailConnected)
 		{
 			OutError = FString::Printf(
 				TEXT("splice-before did not complete: %d of %d upstream link(s) unmoved (%s), cluster exit connected=%s. ")
 				TEXT("The exec chain is incomplete — undo this call."),
-				Unmoved.Num(), Upstreams.Num(),
+				Unmoved.Num(), UpstreamRefs.Num(),
 				Unmoved.Num() ? *FString::Join(Unmoved, TEXT(", ")) : TEXT("-"),
 				bTailConnected ? TEXT("true") : TEXT("false"));
 			return false;
@@ -3505,6 +3545,57 @@ namespace MifBridge
 		{ TEXT("Array"),       TEXT("OutArray"), nullptr,        nullptr,           nullptr },
 		{ TEXT("Out Row"),     TEXT("OutRow"),  TEXT("Row"),     nullptr,           nullptr },
 	};
+
+	FString FMifPinRef::Describe() const
+	{
+		if (!bSet) { return TEXT("<unset pin ref>"); }
+		return FString::Printf(TEXT("%s.%s(%s)"),
+			*NodeGuid.ToString(EGuidFormats::DigitsWithHyphens), *PinName.ToString(),
+			Dir == EGPD_Input ? TEXT("in") : TEXT("out"));
+	}
+
+	FMifPinRef CapturePin(UEdGraphPin* Pin)
+	{
+		FMifPinRef R;
+		UEdGraphNode* Owner = Pin ? Pin->GetOwningNodeUnchecked() : nullptr;
+		if (Owner)
+		{
+			R.NodeGuid = Owner->NodeGuid;
+			R.PinName = Pin->PinName;
+			R.Dir = Pin->Direction;
+			R.Graph = Owner->GetGraph();
+			R.bSet = true;
+		}
+		return R;
+	}
+
+	UEdGraphPin* ResolvePin(const FMifPinRef& Ref)
+	{
+		UEdGraph* Graph = Ref.bSet ? Ref.Graph.Get() : nullptr;
+		if (!Graph) { return nullptr; }
+		for (UEdGraphNode* N : Graph->Nodes)
+		{
+			if (!N || N->NodeGuid != Ref.NodeGuid) { continue; }
+			for (UEdGraphPin* P : N->Pins)
+			{
+				if (P && P->PinName == Ref.PinName && P->Direction == Ref.Dir) { return P; }
+			}
+			return nullptr;   // node came back, this pin did not
+		}
+		return nullptr;
+	}
+
+	TArray<FMifPinRef> CapturePins(const TArray<UEdGraphPin*>& Pins)
+	{
+		TArray<FMifPinRef> Out;
+		Out.Reserve(Pins.Num());
+		for (UEdGraphPin* P : Pins)
+		{
+			FMifPinRef R = CapturePin(P);
+			if (R.bSet) { Out.Add(R); }
+		}
+		return Out;
+	}
 
 	UEdGraphPin* FindPin(UEdGraphNode* Node, const FString& PinName, EEdGraphPinDirection PreferDir, bool bRequireDir)
 	{

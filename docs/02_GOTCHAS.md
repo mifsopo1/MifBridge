@@ -772,6 +772,56 @@ replace semantics from a single call, `reconnect_pin` is the one to reach for.
 The wider lesson, and the third time this exact shape has bitten: **"the requested link exists" is not
 "the graph is how the caller asked for it."** Verify the postcondition, not the call.
 
+#### A pin pointer is unsafe across far more than `ReconstructNode()`
+
+The `add_pin` crash taught that `ReconstructNode()` destroys and reallocates every `UEdGraphPin` on a
+node. Auditing the rest of the module turned up a wider rule, stated by the engine itself in
+`UEdGraphSchema_K2::BreakPinLinks`:
+
+> `// cache this here, as BreakPinLinks can trigger a node reconstruction invalidating the TargetPin reference`
+
+`UEdGraphSchema::BreakPinLinks` calls `PinConnectionListChanged` on the owning node **unconditionally**
+and on every node at the far end of the links it destroys, then `NodeConnectionListChanged` on all of
+them when `bSendsNodeNotification` is true — which is the override `UK2Node_Select` uses to call
+`ReconstructNode()`. `TryCreateConnection` ends the same way.
+
+**So a `UEdGraphPin*` is unsafe across any of:** `ReconstructNode`, `BreakPinLinks`,
+`BreakAllPinLinks`, `TryCreateConnection`, `PinConnectionListChanged`, `RemovePin`. Passing
+`bSendsNodeNotification: false` narrows it but does not close it — `PinConnectionListChanged` still
+runs, and it can `RemovePin` an orphan.
+
+Four sites were holding pointers across exactly that, all in the shape *snapshot an array of pins,
+then loop over it calling something destructive*:
+
+| site | what it held | across |
+|---|---|---|
+| `remove_pin` (userDefined) | several pins on the **same** node | `BreakPinLinks(..., true)` |
+| `remove_pin` (dup cleanup) | same array | `BreakPinLinks(..., false)` |
+| `SpliceExecAfter` | the downstream targets | `BreakPinLinks` on their own link |
+| `SpliceExecBefore` | the upstreams **and `TargetIn`** | the pin the engine comment names |
+
+Use **`FMifPinRef`** (`MifBridgeHandlers.h`) — node guid + pin name + direction + graph. Node guid
+survives a rebuild and pins come back under the same names, so `CapturePin` before the destructive
+call and `ResolvePin` after, handling null: a pin that genuinely did not come back must be reported,
+never dereferenced. `CapturePins` does a whole array (e.g. a `LinkedTo` snapshot).
+
+`tools/scan_pinloops.py`-style greps will not catch every instance; the rule is the thing to hold.
+
+#### `add_pin direction=output` on a function with no Return node
+
+It always failed with *"cannot add that pin: Cannot add input pins to function entry node!"* — an
+error naming the wrong direction, about a node the pin was never going to land on. The preflight
+picked a `UK2Node_FunctionResult` to validate against, but when the function had none yet it fell
+back to the **entry** node and asked whether it would accept an `EGPD_Input`, which
+`UK2Node_FunctionEntry` refuses outright. The code that creates the Return node sat below and was
+never reached.
+
+A CDO is not a valid stand-in for the missing node: `UK2Node_FunctionTerminator::CanCreateUserDefinedPin`
+consults `IsEditable()` and `CanModifyExecutionWires()`, which are instance state. Both terminators
+share every check except one direction rule, so the fix asks the **entry** about the direction it
+accepts (`EGPD_Output`) — identical type/exec/editable question — and the direction rule is satisfied
+by construction, since the pin goes onto a Result node as an input.
+
 ### Endpoints that discard unsaved work without asking
 
 | endpoint | what it does | undo? | confirm-gated? |

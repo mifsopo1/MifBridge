@@ -590,6 +590,44 @@ namespace MifBridge
 	/** Follow a knot (reroute) chain to the first non-knot terminal pin. */
 	UEdGraphPin* SkipKnots(UEdGraphPin* Pin);
 
+	/** STABLE PIN IDENTITY — hold this, never a UEdGraphPin*, across anything that can rebuild a node.
+	 *
+	 *  A UEdGraphPin* does not survive ReconstructNode(): every pin is destroyed and reallocated. That
+	 *  crashed the editor once via add_pin. The hazard is wider than ReconstructNode, though — the
+	 *  engine says so itself in UEdGraphSchema_K2::BreakPinLinks:
+	 *
+	 *      // cache this here, as BreakPinLinks can trigger a node reconstruction invalidating the
+	 *      // TargetPin reference
+	 *
+	 *  BreakPinLinks calls PinConnectionListChanged on the owning node unconditionally, and
+	 *  NodeConnectionListChanged on every affected node when bSendsNodeNotification is true — which is
+	 *  the override UK2Node_Select uses to ReconstructNode(). TryCreateConnection ends the same way.
+	 *  So a pin pointer is unsafe across ANY of: ReconstructNode, BreakPinLinks, BreakAllPinLinks,
+	 *  TryCreateConnection, PinConnectionListChanged, RemovePin.
+	 *
+	 *  Node guid + pin name + direction survives, because a reconstructed node keeps its NodeGuid and
+	 *  recreates its pins under the same names. Capture before, Resolve after, and handle null — a pin
+	 *  that genuinely went away must be reported, not dereferenced. */
+	struct FMifPinRef
+	{
+		FGuid NodeGuid;
+		FName PinName;
+		EEdGraphPinDirection Dir = EGPD_Input;
+		TWeakObjectPtr<UEdGraph> Graph;
+		bool bSet = false;
+
+		/** Human-readable, for error text that has to name a pin that no longer exists. */
+		FString Describe() const;
+	};
+
+	/** Snapshot a pin's identity. Returns an unset ref for a null/orphaned pin. */
+	FMifPinRef CapturePin(UEdGraphPin* Pin);
+	/** Re-find the pin. EXACT match on name+direction — no alias fallbacks, because this ref was
+	 *  minted from a real pin, so anything else means it is gone. Null if it did not come back. */
+	UEdGraphPin* ResolvePin(const FMifPinRef& Ref);
+	/** Capture a whole array in one go (e.g. a pin's LinkedTo before breaking it). */
+	TArray<FMifPinRef> CapturePins(const TArray<UEdGraphPin*>& Pins);
+
 	/** Resolve a class name. An EMPTY/"self" name resolves to ContextBP's own class — callers that
 	 *  require an explicit class must use ResolveClassStrict, or a typo'd param silently self-targets. */
 	UClass* ResolveClass(const FString& Name, UBlueprint* ContextBP);

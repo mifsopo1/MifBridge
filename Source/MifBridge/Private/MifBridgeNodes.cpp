@@ -1554,13 +1554,37 @@ namespace MifBridge
 		{
 			FText PinError;
 			UK2Node_EditablePinBase* Validator = EntryLike;
+			EEdGraphPinDirection ValidateDir = Desired;
 			if (bWantOutput)
 			{
 				TArray<UK2Node_FunctionResult*> Results;
 				Graph->GetNodesOfClass(Results);
-				if (Results.Num() > 0) { Validator = Results[0]; }
+				if (Results.Num() > 0)
+				{
+					Validator = Results[0];
+				}
+				else
+				{
+					// NO RETURN NODE YET. One is created further down — that is the documented
+					// behaviour for adding an output to a function that has none. But this preflight
+					// then asked the ENTRY node whether it would accept an EGPD_Input, and
+					// UK2Node_FunctionEntry refuses any input outright ("Cannot add input pins to
+					// function entry node!"). So add_pin direction=output could NEVER succeed on a
+					// fresh function: it failed here, before reaching the code that would have made
+					// the Return node. The error even named the wrong direction, because it was
+					// answering a question about a node we were not going to put the pin on.
+					//
+					// A CDO is not a stand-in: UK2Node_FunctionTerminator's check consults
+					// IsEditable() and CanModifyExecutionWires(), which are instance state.
+					//
+					// Both terminators share every check except a single direction rule, so asking
+					// the entry about the direction IT accepts answers the identical type / exec /
+					// editable question. The direction rule is satisfied by construction — the pin
+					// goes onto a Result node as an input.
+					ValidateDir = EGPD_Output;
+				}
 			}
-			if (!Validator->CanCreateUserDefinedPin(PinType, Desired, PinError))
+			if (!Validator->CanCreateUserDefinedPin(PinType, ValidateDir, PinError))
 			{
 				Fail(Out, FString::Printf(TEXT("cannot add that pin: %s"), *PinError.ToString()));
 				return;
@@ -1824,10 +1848,21 @@ namespace MifBridge
 		if (bUserDefined)
 		{
 			// Break links first so nothing holds a stale pointer, then drop pin + record.
-			for (UEdGraphPin* Pin : Matches)
+			//
+			// The comment above was the intent; the loop did not achieve it. Matches holds SEVERAL pins
+			// on the SAME node, and BreakPinLinks with notification can rebuild that node
+			// (PinConnectionListChanged / NodeConnectionListChanged -> ReconstructNode), which frees
+			// every other pin in the array. Iteration two then dereferenced freed memory - the add_pin
+			// crash class. Capture identities first and re-resolve each time.
+			for (const FMifPinRef& Ref : CapturePins(Matches))
 			{
-				K2()->BreakPinLinks(*Pin, /*bSendsNodeNotification*/ true);
+				if (UEdGraphPin* Live = ResolvePin(Ref))
+				{
+					K2()->BreakPinLinks(*Live, /*bSendsNodeNotification*/ true);
+				}
 			}
+			// Matches may now be entirely stale; nothing below this point may dereference it.
+			Matches.Reset();
 			Editable->RemoveUserDefinedPinByName(FName(*PinName));
 
 			// A function graph may have SEVERAL Return nodes; they all share one signature, so an
@@ -1862,10 +1897,16 @@ namespace MifBridge
 			}
 			if (!Keep) { Keep = Matches[0]; }
 
+			// bSendsNodeNotification is false here, but that only suppresses NodeConnectionListChanged -
+			// PinConnectionListChanged still runs on both ends and can RemovePin an orphan. Resolve
+			// through identities rather than trusting the snapshot.
+			const FMifPinRef KeepRef = CapturePin(Keep);
 			int32 Removed = 0;
-			for (UEdGraphPin* Pin : Matches)
+			for (const FMifPinRef& Ref : CapturePins(Matches))
 			{
-				if (Pin == Keep) { continue; }
+				UEdGraphPin* Pin = ResolvePin(Ref);
+				if (!Pin) { continue; }
+				if (Pin == ResolvePin(KeepRef)) { continue; }
 				K2()->BreakPinLinks(*Pin, /*bSendsNodeNotification*/ false);
 				Node->Pins.Remove(Pin);
 				Pin->MarkAsGarbage();
