@@ -62,13 +62,14 @@ it off and write one line saying why it was dropped — do not leave it open to 
       real once contamination and correct-empties stop being counted. Budget hours, not minutes - the
       kr_* endpoints do genuine blueprint reconstruction even on garbage input, which is where run 4
       spent most of its time.
-- [ ] UMG WidgetAnimation authoring is missing entirely (reported 2026-08-25, QOLCrafting_P /
+- [x] UMG WidgetAnimation authoring is missing entirely (reported 2026-08-25, QOLCrafting_P /
       WBP_QOL_DropZone). Verified: nothing under Source/MifBridge mentions WidgetAnimation or
       MovieScene, and the three 'anim' endpoints (describe_animation, list_animations, add_anim_node)
       are all SKELETAL animation, not UMG. The report is correct.
-      NOT blocked on a Build.cs change, which is what I expected: UMG lists MovieScene and
-      MovieSceneTracks in PublicDependencyModuleNames and MifBridge already depends on UMG, so those
-      headers are reachable transitively. UMGEditor also publicly exposes Sequencer/SequencerCore.
+      WRONG, corrected after the fact: it WAS blocked on a Build.cs change. UMG does list
+      MovieScene/MovieSceneTracks publicly, but that propagates INCLUDE PATHS only - the headers
+      compiled and the LINK failed on UMovieScene::SetPlaybackRange and friends. Both modules are
+      now in MifBridge.Build.cs. Compiling is not linking - that file already says so twice.
       Shape: add_widget_animation, add_widget_animation_track, set_widget_animation_keys, and the two
       removes - or one apply_widget_animation_patch in the style of apply_graph_patch.
       The real difficulty is not the API surface, it is three invariants:
@@ -100,6 +101,18 @@ it off and write one line saying why it was dropped — do not leave it open to 
       (WidgetAnimation.cpp:157). A null or wrong Context TERMINATES THE EDITOR - same class as the
       FName 1023 assert, not a refusal. Headless there is no preview widget to hand it, so the context
       has to be constructed or resolved deliberately and checked before the call, never passed through.
+      DONE for the reported case (5813eac + 22be0d2): add_widget_animation, list_widget_animations,
+      add_widget_animation_track, set_widget_animation_keys. The report's ArrowLoop reproduces exactly
+      - 20fps, tick resolution 60000/1, keys on 0 / 30000 / 57000 / 69000 / 90000. The CastChecked
+      landmine is sidestepped by building the binding the way BindPossessableObject's plain-widget
+      branch does, which never reads Context; the ROOT widget case is refused, not approximated.
+      38 checks across two suites.
+- [ ] Widget animation: the other property tracks. Only RenderTransform.Translation is authorable and
+      anything else is refused BY NAME rather than ignored. Opacity, Margin, colour and visibility are
+      separate track classes; the plumbing built here (binding, section range, batch-validated keys,
+      seconds-to-ticks) generalises to them.
+- [ ] Widget animation: removal. There is no remove_widget_animation or remove_widget_animation_track,
+      so an animation authored by mistake can only be undone in the Designer.
 - [x] Re-run the endpoint sweep with the narrowed leak detector and the confirming-retry hang logic, and confirm or drop the unexplained recipe_reset_and_loop hang.
       Run 4 completed: 232 endpoints, 1 CRASH (duplicate_asset - the modal, now fixed in c190ae5),
       9 GHOST_OK (6 of them the fuzzer's own contamination, since fixed), 1 HANG.
