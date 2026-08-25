@@ -146,6 +146,8 @@ namespace MifBridge
 			MIF_BIND(add_reroute);
 			MIF_BIND(add_widget_animation);
 			MIF_BIND(list_widget_animations);
+			MIF_BIND(add_widget_animation_track);
+			MIF_BIND(set_widget_animation_keys);
 			MIF_BIND(add_class_cast);
 			MIF_BIND(add_switch_enum);
 			MIF_BIND(add_switch_int);

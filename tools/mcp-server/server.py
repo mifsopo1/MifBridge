@@ -541,6 +541,41 @@ def list_widget_animations(blueprint_id: str) -> dict:
 
 
 @mcp.tool()
+def add_widget_animation_track(blueprint_id: str, animation_name: str, widget_name: str,
+                               property: str = "RenderTransform.Translation") -> dict:
+    """Bind a widget into a UMG animation and give it a RenderTransform.Translation track.
+
+    Only RenderTransform.Translation is supported today, and asking for anything else is refused
+    rather than silently ignored. Creating the binding and the track are both idempotent: call it
+    twice and the second call reports createdBinding/createdTrack false.
+
+    The root widget is refused - the engine binds the preview UUserWidget for that case and there is
+    no preview widget outside the designer. Animate a child widget.
+    """
+    return _post("add_widget_animation_track", blueprintId=blueprint_id,
+                 animationName=animation_name, widgetName=widget_name, property=property)
+
+
+@mcp.tool()
+def set_widget_animation_keys(blueprint_id: str, animation_name: str, widget_name: str,
+                              channel: str = "Y", keys: list = None,
+                              replace: bool = True) -> dict:
+    """Key one translation channel of a widget's animation track.
+
+    keys is [{"time": seconds, "value": number, "interp": "cubic"|"linear"|"constant"}]. Times are
+    SECONDS and are converted to the MovieScene's tick space for you; the response reports each key in
+    both units so a bad conversion is visible. "cubic" uses the engine's Auto tangent, which is what
+    the UMG designer produces.
+
+    The whole batch is validated before anything is written, so a bad key cannot leave a half-keyed
+    curve. replace=True (the default) clears the channel first; pass False to append.
+    """
+    return _post("set_widget_animation_keys", blueprintId=blueprint_id,
+                 animationName=animation_name, widgetName=widget_name, channel=channel,
+                 keys=keys or [], replace=replace)
+
+
+@mcp.tool()
 def add_reroute(graph_id: str, x: int = 0, y: int = 0,
                 src_node: str = "", src_pin: str = "",
                 dst_node: str = "", dst_pin: str = "") -> dict:

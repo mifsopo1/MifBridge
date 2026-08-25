@@ -21,6 +21,12 @@
 #include "UObject/UObjectIterator.h"               // TObjectIterator - find tree-owned widgets the walk misses
 #include "Animation/WidgetAnimation.h"              // UWidgetAnimation, FWidgetAnimationBinding
 #include "MovieScene.h"                             // UMovieScene: display rate, tick resolution, playback range
+#include "Animation/MovieScene2DTransformTrack.h"    // UMovieScene2DTransformTrack (RenderTransform)
+#include "Animation/MovieScene2DTransformSection.h"  // FMovieSceneFloatChannel Translation[2]
+#include "Channels/MovieSceneFloatChannel.h"         // AddCubicKey / AddLinearKey / AddConstantKey
+#include "Tracks/MovieScenePropertyTrack.h"          // SetPropertyNameAndPath
+#include "MovieSceneBinding.h"                       // FMovieSceneBinding::GetTracks - object-bound
+                                                     // tracks are NOT in UMovieScene::GetTracks()
 
 namespace MifBridge
 {
@@ -81,7 +87,17 @@ namespace MifBridge
 				J->SetNumberField(TEXT("startTime"), TicksToSeconds(MS, Range.GetLowerBoundValue()));
 				J->SetNumberField(TEXT("endTime"), TicksToSeconds(MS, Range.GetUpperBoundValue()));
 			}
-			J->SetNumberField(TEXT("trackCount"), MS->GetTracks().Num());
+			// TRACKS LIVE IN TWO PLACES. UMovieScene::GetTracks() returns only the ROOT tracks; a
+			// track bound to a widget hangs off that binding instead. Counting only the former
+			// reported trackCount:0 for an animation with a working, keyed transform track - a false
+			// zero in the very field a caller would use to verify the track exists.
+			int32 TotalTracks = MS->GetTracks().Num();
+			for (const FMovieSceneBinding& Binding : MS->GetBindings())
+			{
+				TotalTracks += Binding.GetTracks().Num();
+			}
+			J->SetNumberField(TEXT("trackCount"), TotalTracks);
+			J->SetNumberField(TEXT("rootTrackCount"), MS->GetTracks().Num());
 			J->SetNumberField(TEXT("possessableCount"), MS->GetPossessableCount());
 
 			TArray<TSharedPtr<FJsonValue>> Bindings;
@@ -91,6 +107,22 @@ namespace MifBridge
 				BJ->SetStringField(TEXT("widgetName"), B.WidgetName.ToString());
 				BJ->SetStringField(TEXT("animationGuid"), B.AnimationGuid.ToString());
 				BJ->SetBoolField(TEXT("isRootWidget"), B.bIsRootWidget);
+				// Per-binding detail, so "which widget has which track" is answerable without a
+				// second call - and so a track attached to the WRONG binding is visible.
+				TArray<TSharedPtr<FJsonValue>> TrackNames;
+				for (const FMovieSceneBinding& Binding : MS->GetBindings())
+				{
+					if (Binding.GetObjectGuid() != B.AnimationGuid) { continue; }
+					for (UMovieSceneTrack* Track : Binding.GetTracks())
+					{
+						if (Track)
+						{
+							TrackNames.Add(MakeShared<FJsonValueString>(Track->GetClass()->GetName()));
+						}
+					}
+				}
+				BJ->SetNumberField(TEXT("trackCount"), TrackNames.Num());
+				BJ->SetArrayField(TEXT("tracks"), TrackNames);
 				Bindings.Add(MakeShared<FJsonValueObject>(BJ));
 			}
 			J->SetArrayField(TEXT("bindings"), Bindings);
@@ -119,6 +151,299 @@ namespace MifBridge
 			return nullptr;
 		}
 		return WBP;
+	}
+
+	namespace
+	{
+		// The one property this group supports today. Named explicitly rather than pretending to be
+		// generic: a caller asking for anything else gets told so, instead of getting an endpoint
+		// that appears to work and quietly only handles one track type.
+		const TCHAR* kSupportedProperty = TEXT("RenderTransform.Translation");
+
+		UWidget* FindWidgetByName(UWidgetBlueprint* WBP, const FString& Name)
+		{
+			return WBP->WidgetTree ? WBP->WidgetTree->FindWidget(FName(*Name)) : nullptr;
+		}
+
+		// The binding a widget already has in this animation, or an invalid guid.
+		FGuid ExistingBinding(UWidgetAnimation* Anim, const FString& WidgetName)
+		{
+			for (const FWidgetAnimationBinding& B : Anim->GetBindings())
+			{
+				if (B.WidgetName == FName(*WidgetName))
+				{
+					return B.AnimationGuid;
+				}
+			}
+			return FGuid();
+		}
+
+		UMovieScene2DTransformSection* FindTransformSection(UWidgetAnimation* Anim, const FGuid& Guid)
+		{
+			UMovieScene* MS = Anim->GetMovieScene();
+			if (!MS || !Guid.IsValid()) { return nullptr; }
+			for (UMovieSceneTrack* Track : MS->FindTracks(UMovieScene2DTransformTrack::StaticClass(), Guid))
+			{
+				for (UMovieSceneSection* Section : Track->GetAllSections())
+				{
+					if (UMovieScene2DTransformSection* S = Cast<UMovieScene2DTransformSection>(Section))
+					{
+						return S;
+					}
+				}
+			}
+			return nullptr;
+		}
+	}
+
+	// --- add_widget_animation_track -----------------------------------------
+	//   in:  { blueprintId | path, animationName, widgetName, property? }
+	//   out: { bindingGuid, created, trackClass, sectionClass, ... }
+	void H_add_widget_animation_track(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("animationName"), TEXT("widgetName"), TEXT("property") },
+			TEXT("blueprintId (alias: path), animationName, widgetName, property (only "
+				 "\"RenderTransform.Translation\" today, which is the default)"),
+			{ { TEXT("propertyPath"), TEXT("the parameter is 'property'") },
+			  { TEXT("channel"), TEXT("a track carries BOTH translation channels; pick X or Y when you key it, in set_widget_animation_keys") },
+			  { TEXT("widgetGuid"), TEXT("widgets are addressed by name here — list_widgets shows them") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+
+		const FString AnimName = JStr(In, TEXT("animationName"));
+		UWidgetAnimation* Anim = FindAnimation(WBP, AnimName);
+		if (!Anim || !Anim->GetMovieScene())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no animation named '%s' on this widget (list_widget_animations shows what is "
+					 "there). NOTHING was created."), *AnimName));
+			return;
+		}
+
+		const FString Property = JStr(In, TEXT("property"), kSupportedProperty);
+		if (Property != kSupportedProperty)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("property '%s' is not supported yet — this endpoint currently authors only '%s'. "
+					 "NOTHING was created."), *Property, kSupportedProperty));
+			return;
+		}
+
+		const FString WidgetName = JStr(In, TEXT("widgetName"));
+		UWidget* Widget = FindWidgetByName(WBP, WidgetName);
+		if (!Widget)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no widget named '%s' in this widget tree. NOTHING was created."), *WidgetName));
+			return;
+		}
+		if (WBP->WidgetTree->RootWidget == Widget)
+		{
+			// The root branch of BindPossessableObject binds the PREVIEW UUserWidget, which does not
+			// exist headless. Refuse rather than write a binding that means something else.
+			Fail(Out, TEXT("binding the ROOT widget is not supported headless — the engine binds the "
+						   "preview UUserWidget for that case and there is no preview widget here. "
+						   "Animate a child widget instead. NOTHING was created."));
+			return;
+		}
+
+		UMovieScene* MS = Anim->GetMovieScene();
+		WBP->Modify();
+		Anim->Modify();
+		MS->Modify();
+
+		FGuid Guid = ExistingBinding(Anim, WidgetName);
+		const bool bNewBinding = !Guid.IsValid();
+		if (bNewBinding)
+		{
+			Guid = MS->AddPossessable(WidgetName, Widget->GetClass());
+			// Replicates UWidgetAnimation::BindPossessableObject's plain-widget branch
+			// (WidgetAnimation.cpp:189-199) WITHOUT its CastChecked<UUserWidget>(Context) preamble,
+			// which would terminate the editor when handed the null context we necessarily have.
+			FWidgetAnimationBinding NewBinding;
+			NewBinding.AnimationGuid = Guid;
+			NewBinding.WidgetName = Widget->GetFName();
+			NewBinding.bIsRootWidget = false;
+			Anim->AnimationBindings.Add(NewBinding);
+		}
+
+		bool bCreatedTrack = false;
+		UMovieScene2DTransformSection* Section = FindTransformSection(Anim, Guid);
+		if (!Section)
+		{
+			UMovieScene2DTransformTrack* Track =
+				MS->AddTrack<UMovieScene2DTransformTrack>(Guid);
+			if (!Track)
+			{
+				Fail(Out, TEXT("could not add a 2D transform track to that binding. WHAT IS LEFT "
+							   "BEHIND: the widget binding, if this call created it — read it back "
+							   "with list_widget_animations."));
+				return;
+			}
+			Track->SetPropertyNameAndPath(TEXT("RenderTransform"), TEXT("RenderTransform"));
+			Section = Cast<UMovieScene2DTransformSection>(Track->CreateNewSection());
+			if (!Section)
+			{
+				Fail(Out, TEXT("the track was created but produced no section. WHAT IS LEFT BEHIND: "
+							   "an empty track on this binding."));
+				return;
+			}
+			// A section with no range evaluates nowhere. Match the animation's playback range so
+			// keys inside it actually play.
+			Section->SetRange(MS->GetPlaybackRange());
+			Track->AddSection(*Section);
+			bCreatedTrack = true;
+		}
+
+		// Verify by re-finding through the MovieScene rather than trusting the pointers above.
+		if (!FindTransformSection(Anim, Guid))
+		{
+			Fail(Out, TEXT("the track did not attach to the binding. Read the animation back with "
+						   "list_widget_animations before retrying."));
+			return;
+		}
+
+		MarkStructural(WBP);
+		Out->SetStringField(TEXT("bindingGuid"), Guid.ToString());
+		Out->SetStringField(TEXT("widgetName"), WidgetName);
+		Out->SetBoolField(TEXT("createdBinding"), bNewBinding);
+		Out->SetBoolField(TEXT("createdTrack"), bCreatedTrack);
+		Out->SetStringField(TEXT("property"), kSupportedProperty);
+		Out->SetStringField(TEXT("trackClass"), TEXT("MovieScene2DTransformTrack"));
+		Out->SetObjectField(TEXT("animation"), SerializeAnimation(Anim));
+	}
+
+	// --- set_widget_animation_keys ------------------------------------------
+	//   in:  { blueprintId | path, animationName, widgetName, channel, keys:[{time,value,interp?}], replace? }
+	//   out: { channel, keysBefore, keysAfter, keys:[{timeTick,time,value,interp}] }
+	void H_set_widget_animation_keys(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("animationName"), TEXT("widgetName"),
+			  TEXT("channel"), TEXT("keys"), TEXT("replace") },
+			TEXT("blueprintId (alias: path), animationName, widgetName, channel (\"X\" or \"Y\"), "
+				 "keys:[{time (SECONDS), value, interp: cubic|linear|constant}], replace (bool, "
+				 "default true — clears the channel first)"),
+			{ { TEXT("time"), TEXT("times go inside keys[], one per key, in seconds") },
+			  { TEXT("tangent"), TEXT("interp:\"cubic\" uses the engine's Auto tangent, which is what the UMG designer produces") },
+			  { TEXT("frame"), TEXT("keys are given in SECONDS and converted to tick space for you; list_widget_animations reports both") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+
+		const FString AnimName = JStr(In, TEXT("animationName"));
+		UWidgetAnimation* Anim = FindAnimation(WBP, AnimName);
+		if (!Anim || !Anim->GetMovieScene())
+		{
+			Fail(Out, FString::Printf(TEXT("no animation named '%s' on this widget."), *AnimName));
+			return;
+		}
+		const FString WidgetName = JStr(In, TEXT("widgetName"));
+		const FGuid Guid = ExistingBinding(Anim, WidgetName);
+		UMovieScene2DTransformSection* Section = FindTransformSection(Anim, Guid);
+		if (!Section)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no RenderTransform.Translation track in animation '%s' — call "
+					 "add_widget_animation_track first. NOTHING was changed."), *WidgetName, *AnimName));
+			return;
+		}
+
+		const FString ChannelStr = JStr(In, TEXT("channel"), TEXT("Y"));
+		int32 ChannelIndex = -1;
+		if (ChannelStr.Equals(TEXT("X"), ESearchCase::IgnoreCase)) { ChannelIndex = 0; }
+		else if (ChannelStr.Equals(TEXT("Y"), ESearchCase::IgnoreCase)) { ChannelIndex = 1; }
+		if (ChannelIndex < 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("channel must be \"X\" or \"Y\" (got '%s'). NOTHING was changed."), *ChannelStr));
+			return;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* Keys = nullptr;
+		if (!JArray(In, TEXT("keys"), Keys) || !Keys)
+		{
+			Fail(Out, TEXT("keys must be an array of {time, value, interp?}. NOTHING was changed."));
+			return;
+		}
+
+		UMovieScene* MS = Anim->GetMovieScene();
+		FMovieSceneFloatChannel& Channel = Section->Translation[ChannelIndex];
+		const int32 Before = Channel.GetNumKeys();
+
+		// PREFLIGHT the whole batch before touching the channel, so a bad key in the middle cannot
+		// leave a half-keyed curve behind.
+		struct FPendingKey { FFrameNumber Tick; double Time; float Value; FString Interp; };
+		TArray<FPendingKey> Pending;
+		for (int32 i = 0; i < Keys->Num(); ++i)
+		{
+			const TSharedPtr<FJsonValue>& V = (*Keys)[i];
+			const TSharedPtr<FJsonObject>* Obj = nullptr;
+			if (!V.IsValid() || !V->TryGetObject(Obj) || !Obj)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("keys[%d] is not an object — each key is {time, value, interp?}. NOTHING was "
+						 "changed."), i));
+				return;
+			}
+			double Time = 0.0, Value = 0.0;
+			if (!(*Obj)->TryGetNumberField(TEXT("time"), Time)
+				|| !(*Obj)->TryGetNumberField(TEXT("value"), Value))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("keys[%d] needs a numeric 'time' (seconds) and 'value'. NOTHING was changed."), i));
+				return;
+			}
+			FString Interp = TEXT("cubic");
+			(*Obj)->TryGetStringField(TEXT("interp"), Interp);
+			Interp = Interp.ToLower();
+			if (Interp != TEXT("cubic") && Interp != TEXT("linear") && Interp != TEXT("constant"))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("keys[%d] interp '%s' is not one of cubic, linear, constant. NOTHING was "
+						 "changed."), i, *Interp));
+				return;
+			}
+			Pending.Add({ SecondsToTicks(MS, Time), Time, static_cast<float>(Value), Interp });
+		}
+
+		Section->Modify();
+		if (JBool(In, TEXT("replace"), true))
+		{
+			Channel.Reset();
+		}
+		for (const FPendingKey& K : Pending)
+		{
+			if (K.Interp == TEXT("linear"))        { Channel.AddLinearKey(K.Tick, K.Value); }
+			else if (K.Interp == TEXT("constant")) { Channel.AddConstantKey(K.Tick, K.Value); }
+			else                                   { Channel.AddCubicKey(K.Tick, K.Value, RCTM_Auto); }
+		}
+
+		MarkStructural(WBP);
+
+		// Read the channel back rather than echoing the request. Times in BOTH units, because a wrong
+		// conversion is invisible in one and obvious in two.
+		TArray<TSharedPtr<FJsonValue>> Written;
+		TArrayView<const FFrameNumber> Times = Channel.GetTimes();
+		TArrayView<const FMovieSceneFloatValue> Values = Channel.GetValues();
+		for (int32 i = 0; i < Times.Num(); ++i)
+		{
+			TSharedRef<FJsonObject> KJ = MakeShared<FJsonObject>();
+			KJ->SetNumberField(TEXT("timeTick"), Times[i].Value);
+			KJ->SetNumberField(TEXT("time"), TicksToSeconds(MS, Times[i]));
+			KJ->SetNumberField(TEXT("value"), Values[i].Value);
+			Written.Add(MakeShared<FJsonValueObject>(KJ));
+		}
+		Out->SetStringField(TEXT("channel"), ChannelIndex == 0 ? TEXT("X") : TEXT("Y"));
+		Out->SetNumberField(TEXT("keysBefore"), Before);
+		Out->SetNumberField(TEXT("keysAfter"), Channel.GetNumKeys());
+		Out->SetArrayField(TEXT("keys"), Written);
 	}
 
 	// --- list_widget_animations ---------------------------------------------
