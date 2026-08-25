@@ -524,6 +524,23 @@ namespace MifBridge
 		int32 Snapped = 0, Missed = 0;
 		TArray<TSharedPtr<FJsonValue>> Moved;
 		int32 SkippedGround = 0;
+		int32 MissedDeepStack = 0;
+		int32 Pierced = 0;
+		const int32 MaxBlockersToPierce = 32;
+
+		// One place that decides what counts as ground, so the trace loop below stays readable.
+		auto IsGroundHit = [&](AActor* HitActor) -> bool
+		{
+			if (!HitActor) { return false; }
+			if (!GroundActorName.IsEmpty())
+			{
+				return HitActor->GetActorLabel() == GroundActorName
+					|| HitActor->GetName() == GroundActorName
+					|| HitActor->GetPathName() == GroundActorName;
+			}
+			if (HitActor->IsA<ALandscapeProxy>()) { return true; }
+			return bAllowAnyHit;   // the naive "first blocking hit", for scenes with no landscape
+		};
 		for (AActor* A : Targets)
 		{
 			// Never snap the ground itself. A landscape traced against the rest of the scene lands on
@@ -550,35 +567,58 @@ namespace MifBridge
 			const FVector Start(Loc.X, Loc.Y, Loc.Z + TraceHeight);
 			const FVector End(Loc.X, Loc.Y, Loc.Z - TraceHeight);
 
-			// MULTI-trace, then take the first hit that is actually GROUND. A single trace returns the
-			// nearest blocking hit, which is routinely another prop — a palm above a shack snaps onto
-			// its roof, a fence snaps onto the palm, and the scene walks upward a layer per call.
-			// "Snapped 309, missed 0" is then a completely truthful report of a completely wrong scene.
-			TArray<FHitResult> Hits;
-			World->LineTraceMultiByChannel(Hits, Start, End, ECC_WorldStatic, Params);
-
-			const FHitResult* Ground = nullptr;
-			for (const FHitResult& H : Hits)
+			// RE-TRACE PAST WHAT IS NOT GROUND, one blocker at a time.
+			//
+			// The point stands and has not changed: a palm above a shack must not snap onto its roof,
+			// a fence must not snap onto the palm, and the scene must not walk upward a layer per
+			// call. "Snapped 309, missed 0" would be a truthful report of a wrong scene.
+			//
+			// How that was enforced was wrong. This was one LineTraceMultiByChannel and a loop that
+			// picked the first landscape out of the results, written believing a MULTI trace sees
+			// everything along the ray. It does not - from World.h, on both multi variants: "Only the
+			// single closest blocking result will be generated, no tests will be done after that."
+			// Every static mesh blocks WorldStatic, so for any actor standing over another actor the
+			// array held exactly one hit, the prop, and the landscape underneath was never in it. The
+			// search then found no ground and the actor was reported missed. That is how 112 of 303
+			// actors on flat ground were skipped while the 191 over open landscape snapped fine: the
+			// old code did avoid stacking props, but by MISSING rather than by finding real ground.
+			//
+			// Ignoring each non-ground blocker and tracing again does what that comment claimed.
+			// Bounded, so an actor under a deep stack cannot spin; giving up is reported separately
+			// from an honest "there is nothing under this actor at all".
+			FHitResult Ground;
+			bool bFoundGround = false;
+			bool bGaveUp = false;
+			for (int32 Attempt = 0; ; ++Attempt)
 			{
-				AActor* HitActor = H.GetActor();
-				if (!HitActor) { continue; }
-				if (!GroundActorName.IsEmpty())
+				FHitResult H;
+				if (!World->LineTraceSingleByChannel(H, Start, End, ECC_WorldStatic, Params))
 				{
-					if (HitActor->GetActorLabel() == GroundActorName ||
-						HitActor->GetName() == GroundActorName ||
-						HitActor->GetPathName() == GroundActorName) { Ground = &H; break; }
-					continue;
+					break;   // open air all the way down
 				}
-				if (HitActor->IsA<ALandscapeProxy>()) { Ground = &H; break; }
-				if (bAllowAnyHit) { Ground = &H; break; }
+				AActor* HitActor = H.GetActor();
+				if (!HitActor) { break; }
+				if (IsGroundHit(HitActor))
+				{
+					Ground = H;
+					bFoundGround = true;
+					break;
+				}
+				if (Attempt >= MaxBlockersToPierce) { bGaveUp = true; break; }
+				// Not ground - ignore this actor and look under it. Ignoring the ACTOR rather than the
+				// component matters: a prop with several colliding meshes would otherwise be peeled
+				// one component per attempt and burn the whole budget on a single object.
+				Params.AddIgnoredActor(HitActor);
+				++Pierced;
 			}
-			if (!Ground)
+			if (!bFoundGround)
 			{
 				// Deliberately leave the actor alone rather than dropping it to Z=0 or onto a prop.
 				++Missed;
+				if (bGaveUp) { ++MissedDeepStack; }
 				continue;
 			}
-			const FHitResult& Hit = *Ground;
+			const FHitResult& Hit = Ground;
 
 			const double NewZ = Hit.ImpactPoint.Z + PivotToBottom + Offset;
 			if (!FMath::IsNearlyEqual(NewZ, Loc.Z, 0.01))
@@ -607,6 +647,9 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("missed"), Missed);
 		Out->SetNumberField(TEXT("considered"), Targets.Num());
 		Out->SetNumberField(TEXT("skippedGround"), SkippedGround);
+		// How many non-ground blockers had to be pierced to reach ground. Zero on an open scene, large
+		// on a dense one. Under the old multi-trace every one of these was a missed actor instead.
+		Out->SetNumberField(TEXT("blockersPierced"), Pierced);
 		Out->SetArrayField(TEXT("moved"), Moved);
 		Out->SetStringField(TEXT("groundRule"), GroundActorName.IsEmpty()
 			? (bAllowAnyHit ? TEXT("first blocking hit (allowAnyHit)") : TEXT("landscape only"))
@@ -616,6 +659,15 @@ namespace MifBridge
 			Out->SetStringField(TEXT("warning"), FString::Printf(
 				TEXT("%d actor(s) found no GROUND below them and were left untouched — not dropped to Z=0 and not stacked onto whatever prop happened to be under them. If this scene has no landscape, pass groundActor or allowAnyHit."),
 				Missed));
+			if (MissedDeepStack > 0)
+			{
+				Out->SetNumberField(TEXT("missedUnderDeepStack"), MissedDeepStack);
+				Out->SetStringField(TEXT("deepStackNote"), FString::Printf(
+					TEXT("%d of those sit under more than %d non-ground blockers, so the search gave up "
+						 "rather than keep digging. They are not 'nothing below' — the ground is just "
+						 "buried. Snap them with groundActor naming the surface you mean."),
+					MissedDeepStack, MaxBlockersToPierce));
+			}
 		}
 	}
 }
