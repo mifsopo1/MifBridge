@@ -1090,5 +1090,18 @@ namespace MifBridge
 		if (ScaleRead == EJsonRead::Read) { SceneTemplate->SetRelativeScale3D_Direct(Scale); }
 		FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
 		Out->SetStringField(TEXT("component"), Name);
+
+		// Report the transform the component ACTUALLY carries now. The _Direct setters write the
+		// field outright and cannot refuse, so this is not a silent-failure guard - it is so a caller
+		// can confirm the result without a second round trip, which is what set_actor_transform
+		// already does with locationApplied/rotationApplied/scaleApplied. Reading it back also states
+		// which of the three were written and which were left alone.
+		Out->SetBoolField(TEXT("locationApplied"), LocRead == EJsonRead::Read);
+		Out->SetBoolField(TEXT("rotationApplied"), RotRead == EJsonRead::Read);
+		Out->SetBoolField(TEXT("scaleApplied"), ScaleRead == EJsonRead::Read);
+		const FRotator NowRot = SceneTemplate->GetRelativeRotation();
+		Out->SetObjectField(TEXT("relativeLocation"), Vec3(SceneTemplate->GetRelativeLocation()));
+		Out->SetObjectField(TEXT("relativeRotation"), Vec3(NowRot.Pitch, NowRot.Yaw, NowRot.Roll));
+		Out->SetObjectField(TEXT("relativeScale"), Vec3(SceneTemplate->GetRelativeScale3D()));
 	}
 }

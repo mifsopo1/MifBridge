@@ -43,7 +43,7 @@
 //      after the call. A journal of raw UEdGraphPin* replayed later is therefore a use-after-free,
 //      the same bug class that already crashed this editor once via ReconstructNode (see
 //      docs/01_POSTMORTEMS.md, and the add_pin fix in MifBridgeNodes.cpp).
-//      -> NOTHING here stores a UEdGraphPin* across operations. Pins are recorded as FPinRef
+//      -> NOTHING here stores a UEdGraphPin* across operations. Pins are recorded as FMifPinRef
 //         (node guid + pin name + direction) and re-resolved from the graph at the moment of use.
 //
 //   4. MAKE_WITH_CONVERSION_NODE creates a whole extra node and wires A -> [conv] -> B, and
@@ -63,23 +63,14 @@ namespace MifBridge
 {
 	namespace
 	{
-		// STABLE PIN IDENTITY. A UEdGraphPin* is not safe to hold across a graph mutation (see the
-		// header note). Node guid + pin name + direction survives reconstruction, because a
-		// reconstructed node keeps its NodeGuid and recreates pins under the same names.
-		struct FPinRef
-		{
-			FGuid NodeGuid;
-			FName PinName;
-			EEdGraphPinDirection Dir = EGPD_Input;
-			bool bSet = false;
-
-			FString Describe() const
-			{
-				return FString::Printf(TEXT("%s.%s(%s)"), *NodeGuid.ToString(EGuidFormats::DigitsWithHyphens),
-					*PinName.ToString(), Dir == EGPD_Input ? TEXT("in") : TEXT("out"));
-			}
-		};
-
+		// Pin identity comes from the shared FMifPinRef in MifBridgeHandlers.h. This file used to
+		// define its own; the pin-lifetime audit needed the same idea in MifBridgeCommon and promoted
+		// it, leaving two implementations of one concept - exactly the drifting copies this module
+		// avoids elsewhere. They had already started to differ (the shared ref carries its own graph;
+		// the local one took the graph as a parameter everywhere).
+		//
+		// FindNodeInGraph stays: resolving a node by guid WITHIN one graph is this endpoint's own
+		// rule, and the reason the duplicate-guid ambiguity that bites get_node cannot occur here.
 		UEdGraphNode* FindNodeInGraph(UEdGraph* Graph, const FGuid& Guid)
 		{
 			if (!Graph || !Guid.IsValid()) { return nullptr; }
@@ -95,34 +86,6 @@ namespace MifBridge
 			FGuid Guid;
 			if (!FGuid::Parse(GuidStr, Guid)) { return nullptr; }
 			return FindNodeInGraph(Graph, Guid);
-		}
-
-		FPinRef MakeRef(UEdGraphPin* Pin)
-		{
-			FPinRef R;
-			if (Pin && Pin->GetOwningNodeUnchecked())
-			{
-				R.NodeGuid = Pin->GetOwningNodeUnchecked()->NodeGuid;
-				R.PinName = Pin->PinName;
-				R.Dir = Pin->Direction;
-				R.bSet = true;
-			}
-			return R;
-		}
-
-		// EXACT re-resolution: same name, same direction, no alias fallbacks. FindPin's friendly
-		// aliases are right for caller-supplied spellings and wrong here — this ref was minted from a
-		// real pin, so anything but an exact match means the pin is gone and we must say so.
-		UEdGraphPin* ResolveRef(UEdGraph* Graph, const FPinRef& Ref)
-		{
-			if (!Ref.bSet) { return nullptr; }
-			UEdGraphNode* Node = FindNodeInGraph(Graph, Ref.NodeGuid);
-			if (!Node) { return nullptr; }
-			for (UEdGraphPin* Pin : Node->Pins)
-			{
-				if (Pin && Pin->PinName == Ref.PinName && Pin->Direction == Ref.Dir) { return Pin; }
-			}
-			return nullptr;
 		}
 
 		// A pin's default value in all three of the forms the engine keeps it in.
@@ -195,10 +158,10 @@ namespace MifBridge
 		{
 			enum class EKind { Connected, Disconnected, DefaultSet } Kind;
 
-			FPinRef A;
-			FPinRef B;                       // Connected: the other end
-			TArray<FPinRef> PriorLinksA;
-			TArray<FPinRef> PriorLinksB;
+			FMifPinRef A;
+			FMifPinRef B;                       // Connected: the other end
+			TArray<FMifPinRef> PriorLinksA;
+			TArray<FMifPinRef> PriorLinksB;
 			FPinDefaults PriorDefaultsA;     // Connected wipes input defaults; DefaultSet overwrites them
 			FPinDefaults PriorDefaultsB;
 
@@ -208,22 +171,10 @@ namespace MifBridge
 			FString ShapeB;
 		};
 
-		TArray<FPinRef> RefsOf(const TArray<UEdGraphPin*>& Pins)
-		{
-			TArray<FPinRef> Out;
-			Out.Reserve(Pins.Num());
-			for (UEdGraphPin* P : Pins)
-			{
-				FPinRef R = MakeRef(P);
-				if (R.bSet) { Out.Add(R); }
-			}
-			return Out;
-		}
-
 		// Put a pin back to an exact prior link set. Reciprocal links are handled by Break/MakeLinkTo.
 		// Returns the number of prior links that could NOT be restored, so the caller can report an
 		// incomplete rollback instead of claiming a clean one.
-		int32 RestoreLinks(UEdGraph* Graph, UEdGraphPin* Pin, const TArray<FPinRef>& Prior)
+		int32 RestoreLinks(UEdGraphPin* Pin, const TArray<FMifPinRef>& Prior)
 		{
 			if (!Pin) { return Prior.Num(); }
 			// bNotifyNodes:true to MATCH THE FORWARD PATH. Apply goes through the schema, which calls
@@ -232,9 +183,9 @@ namespace MifBridge
 			// sibling default resets, orphan-pin cleanup) would drift out of sync with the wires.
 			Pin->BreakAllPinLinks(/*bNotifyNodes*/ true);
 			int32 Lost = 0;
-			for (const FPinRef& Ref : Prior)
+			for (const FMifPinRef& Ref : Prior)
 			{
-				if (UEdGraphPin* Other = ResolveRef(Graph, Ref))
+				if (UEdGraphPin* Other = ResolvePin(Ref))
 				{
 					Pin->MakeLinkTo(Other);
 					if (UEdGraphNode* ON = Other->GetOwningNodeUnchecked()) { ON->PinConnectionListChanged(Other); }
@@ -264,8 +215,8 @@ namespace MifBridge
 				FPatchUndo& U = Journal[i];
 
 				// Re-resolve EVERY pin at the moment of use. Never trust a pointer captured earlier.
-				UEdGraphPin* PinA = ResolveRef(Graph, U.A);
-				UEdGraphPin* PinB = U.B.bSet ? ResolveRef(Graph, U.B) : nullptr;
+				UEdGraphPin* PinA = ResolvePin(U.A);
+				UEdGraphPin* PinB = U.B.bSet ? ResolvePin(U.B) : nullptr;
 
 				if (!PinA || (U.B.bSet && !PinB))
 				{
@@ -281,15 +232,15 @@ namespace MifBridge
 				case FPatchUndo::EKind::Connected:
 					// Restore BOTH endpoints' links AND their defaults — connecting wipes the default
 					// on a newly-connected input pin (UK2Node::PinConnectionListChanged).
-					Rep.LostLinks += RestoreLinks(Graph, PinA, U.PriorLinksA);
-					Rep.LostLinks += RestoreLinks(Graph, PinB, U.PriorLinksB);
+					Rep.LostLinks += RestoreLinks(PinA, U.PriorLinksA);
+					Rep.LostLinks += RestoreLinks(PinB, U.PriorLinksB);
 					U.PriorDefaultsA.RestoreTo(PinA);
 					U.PriorDefaultsB.RestoreTo(PinB);
 					++Rep.Undone;
 					break;
 
 				case FPatchUndo::EKind::Disconnected:
-					Rep.LostLinks += RestoreLinks(Graph, PinA, U.PriorLinksA);
+					Rep.LostLinks += RestoreLinks(PinA, U.PriorLinksA);
 					++Rep.Undone;
 					break;
 
@@ -302,7 +253,7 @@ namespace MifBridge
 				// VERIFY, do not assume. A wildcard pin retyped by the forward connect may not revert,
 				// and the difference between "restored" and "looks restored" is the whole value of this
 				// endpoint. Re-resolve the owning nodes first: restoring links can itself reconstruct.
-				auto CheckShape = [&](const FPinRef& Ref, const FString& Expected, const TCHAR* Which)
+				auto CheckShape = [&](const FMifPinRef& Ref, const FString& Expected, const TCHAR* Which)
 				{
 					if (!Ref.bSet || Expected.IsEmpty()) { return; }
 					UEdGraphNode* Node = FindNodeInGraph(Graph, Ref.NodeGuid);
@@ -324,30 +275,30 @@ namespace MifBridge
 		}
 
 		// The set of pins currently feeding this pin, as stable refs, sorted for comparison.
-		TArray<FPinRef> SourcesOf(UEdGraphPin* Pin)
+		TArray<FMifPinRef> SourcesOf(UEdGraphPin* Pin)
 		{
-			TArray<FPinRef> Out;
+			TArray<FMifPinRef> Out;
 			if (!Pin) { return Out; }
 			for (UEdGraphPin* L : Pin->LinkedTo)
 			{
-				FPinRef R = MakeRef(L);
+				FMifPinRef R = CapturePin(L);
 				if (R.bSet) { Out.Add(R); }
 			}
 			return Out;
 		}
 
-		FString DescribeRefs(const TArray<FPinRef>& Refs)
+		FString DescribeRefs(const TArray<FMifPinRef>& Refs)
 		{
 			TArray<FString> Parts;
-			for (const FPinRef& R : Refs) { Parts.Add(R.Describe()); }
+			for (const FMifPinRef& R : Refs) { Parts.Add(R.Describe()); }
 			Parts.Sort();
 			return FString::Join(Parts, TEXT(", "));
 		}
 
-		TSharedPtr<FJsonValue> RefsToJson(const TArray<FPinRef>& Refs)
+		TSharedPtr<FJsonValue> RefsToJson(const TArray<FMifPinRef>& Refs)
 		{
 			TArray<TSharedPtr<FJsonValue>> Arr;
-			for (const FPinRef& R : Refs)
+			for (const FMifPinRef& R : Refs)
 			{
 				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
 				J->SetStringField(TEXT("node"), R.NodeGuid.ToString(EGuidFormats::Digits));
@@ -357,7 +308,7 @@ namespace MifBridge
 			return MakeShared<FJsonValueArray>(Arr);
 		}
 
-		bool RefEquals(const FPinRef& A, const FPinRef& B)
+		bool RefEquals(const FMifPinRef& A, const FMifPinRef& B)
 		{
 			return A.bSet && B.bSet && A.NodeGuid == B.NodeGuid && A.PinName == B.PinName && A.Dir == B.Dir;
 		}
@@ -447,7 +398,7 @@ namespace MifBridge
 		// here was a bad op discovered halfway through a 40-op build; finding it now costs nothing and
 		// leaves the graph untouched.
 		//
-		// Note what is stored: FPinRef, never UEdGraphPin*. Preflight runs against the graph as it is
+		// Note what is stored: FMifPinRef, never UEdGraphPin*. Preflight runs against the graph as it is
 		// NOW, but by the time op N applies, ops 0..N-1 have mutated it — and a mutation can reconstruct
 		// a node and free its pins. Re-resolving at apply time is what makes that safe.
 		// What to do when the destination input ALREADY has a source.
@@ -456,12 +407,12 @@ namespace MifBridge
 		struct FResolved
 		{
 			FString Op;
-			FPinRef A;
-			FPinRef B;
+			FMifPinRef A;
+			FMifPinRef B;
 			FString Value;
 			FString Error;
 			EExistingPolicy Policy = EExistingPolicy::Replace;
-			TArray<FPinRef> DstSourcesAtPreflight;
+			TArray<FMifPinRef> DstSourcesAtPreflight;
 		};
 		TArray<FResolved> Plan;
 		Plan.Reserve(Ops->Num());
@@ -547,8 +498,8 @@ namespace MifBridge
 					R.Error = FString::Printf(TEXT("%s pin not found"), SrcPin ? TEXT("dst") : TEXT("src"));
 					++PreflightErrors; Plan.Add(R); continue;
 				}
-				R.A = MakeRef(SrcPin);
-				R.B = MakeRef(DstPin);
+				R.A = CapturePin(SrcPin);
+				R.B = CapturePin(DstPin);
 				R.DstSourcesAtPreflight = SourcesOf(DstPin);
 
 				// existingLinkPolicy. Default REPLACE, because "connect X to Y" in a rewire means Y is
@@ -647,7 +598,7 @@ namespace MifBridge
 						if (!Pin) { R.Error = TEXT("pin not found"); ++PreflightErrors; }
 					}
 				}
-				R.A = MakeRef(Pin);
+				R.A = CapturePin(Pin);
 			}
 			else if (R.Op == TEXT("set_pin_default"))
 			{
@@ -665,7 +616,7 @@ namespace MifBridge
 						: TEXT("pin not found");
 					++PreflightErrors;
 				}
-				R.A = MakeRef(Pin);
+				R.A = CapturePin(Pin);
 			}
 			// no trailing else: an unrecognised op was already rejected by the op-name check above.
 			Plan.Add(R);
@@ -743,8 +694,8 @@ namespace MifBridge
 
 			// RE-RESOLVE. Preflight's pointers are from before any mutation; an earlier op in this same
 			// patch may have reconstructed the node and freed them.
-			UEdGraphPin* PinA = ResolveRef(Graph, R.A);
-			UEdGraphPin* PinB = R.B.bSet ? ResolveRef(Graph, R.B) : nullptr;
+			UEdGraphPin* PinA = ResolvePin(R.A);
+			UEdGraphPin* PinB = R.B.bSet ? ResolvePin(R.B) : nullptr;
 			if (!PinA || (R.B.bSet && !PinB))
 			{
 				++Failed;
@@ -790,14 +741,14 @@ namespace MifBridge
 				FPatchUndo U;
 				U.Kind = FPatchUndo::EKind::Connected;
 				U.A = R.A; U.B = R.B;
-				U.PriorLinksA = RefsOf(PinA->LinkedTo);
-				U.PriorLinksB = RefsOf(PinB->LinkedTo);
+				U.PriorLinksA = CapturePins(PinA->LinkedTo);
+				U.PriorLinksB = CapturePins(PinB->LinkedTo);
 				U.PriorDefaultsA = FPinDefaults::Capture(PinA);
 				U.PriorDefaultsB = FPinDefaults::Capture(PinB);
 				U.ShapeA = NodeShape(PinA->GetOwningNodeUnchecked());
 				U.ShapeB = NodeShape(PinB->GetOwningNodeUnchecked());
 
-				const TArray<FPinRef> SourcesBefore = SourcesOf(PinB);
+				const TArray<FMifPinRef> SourcesBefore = SourcesOf(PinB);
 
 				// EXPLICIT REPLACE. Left to the schema, whether the incumbent link survives depends on
 				// the CALLEE'S SIGNATURE: a self pin on an impure, no-return, non-latent function is a
@@ -809,10 +760,10 @@ namespace MifBridge
 				bool bBrokeForReplace = false;
 				if (R.Policy == EExistingPolicy::Replace && IsSingleSourceInput(PinB))
 				{
-					for (const FPinRef& Existing : SourcesBefore)
+					for (const FMifPinRef& Existing : SourcesBefore)
 					{
 						if (RefEquals(Existing, R.A)) { continue; }   // already the requested source
-						if (UEdGraphPin* Other = ResolveRef(Graph, Existing))
+						if (UEdGraphPin* Other = ResolvePin(Existing))
 						{
 							PinB->BreakLinkTo(Other);
 							if (UEdGraphNode* ON = Other->GetOwningNodeUnchecked()) { ON->PinConnectionListChanged(Other); }
@@ -821,8 +772,8 @@ namespace MifBridge
 					}
 					if (bBrokeForReplace) { PinB->GetOwningNode()->PinConnectionListChanged(PinB); }
 					// Breaking can reconstruct the node; re-resolve before connecting.
-					PinA = ResolveRef(Graph, R.A);
-					PinB = ResolveRef(Graph, R.B);
+					PinA = ResolvePin(R.A);
+					PinB = ResolvePin(R.B);
 					if (!PinA || !PinB)
 					{
 						++Failed;
@@ -843,11 +794,11 @@ namespace MifBridge
 					// VERIFY THE POSTCONDITION. "The requested link exists" is not the same as "the
 					// destination ends up how the caller asked", and reporting the first as success is
 					// exactly what hid this bug. Re-resolve: the connect may have reconstructed a node.
-					UEdGraphPin* NowB = ResolveRef(Graph, R.B);
-					const TArray<FPinRef> SourcesAfter = SourcesOf(NowB);
+					UEdGraphPin* NowB = ResolvePin(R.B);
+					const TArray<FMifPinRef> SourcesAfter = SourcesOf(NowB);
 
-					TArray<FPinRef> Foreign;
-					for (const FPinRef& Src : SourcesAfter)
+					TArray<FMifPinRef> Foreign;
+					for (const FMifPinRef& Src : SourcesAfter)
 					{
 						if (!RefEquals(Src, R.A)) { Foreign.Add(Src); }
 					}
@@ -896,7 +847,7 @@ namespace MifBridge
 				FPatchUndo U;
 				U.Kind = FPatchUndo::EKind::Disconnected;
 				U.A = R.A;
-				U.PriorLinksA = RefsOf(PinA->LinkedTo);   // copy BEFORE breaking, or there is nothing to restore
+				U.PriorLinksA = CapturePins(PinA->LinkedTo);   // copy BEFORE breaking, or there is nothing to restore
 				U.ShapeA = NodeShape(PinA->GetOwningNodeUnchecked());
 				const int32 Broke = PinA->LinkedTo.Num();
 

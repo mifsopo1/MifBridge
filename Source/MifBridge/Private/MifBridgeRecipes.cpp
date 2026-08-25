@@ -236,24 +236,19 @@ namespace MifBridge
 		const int32 X = JInt(In, TEXT("x"));
 		const int32 Y = JInt(In, TEXT("y"));
 
-		UObject* MacroObject = StaticLoadObject(UBlueprint::StaticClass(), nullptr,
-			TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros"), nullptr, LOAD_NoWarn);
-		UBlueprint* MacroLibrary = Cast<UBlueprint>(MacroObject);
-		UEdGraph* ForEachGraph = nullptr;
-		if (MacroLibrary)
-		{
-			for (UEdGraph* Candidate : MacroLibrary->MacroGraphs)
-			{
-				if (Candidate && Candidate->GetName() == TEXT("ForEachLoop"))
-				{
-					ForEachGraph = Candidate;
-					break;
-				}
-			}
-		}
+		// Shared resolver, not a hardcoded path. StandardMacros is only a PREFERENCE here - it is
+		// where ForEachLoop lives today, and if that ever stops being true the registry search finds
+		// it anyway. The literal-path form is what stopped a user finding "Switch Has Authority",
+		// which is in ActorMacros; copying the registry scan here instead of sharing it would be the
+		// drifting-copy problem this module avoids elsewhere.
+		UBlueprint* MacroLibrary = nullptr;
+		UEdGraph* ForEachGraph = ResolveMacroGraph(TEXT("ForEachLoop"),
+			TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros"), MacroLibrary);
 		if (!ForEachGraph)
 		{
-			Fail(Out, TEXT("ForEachLoop macro graph not found in StandardMacros"));
+			Fail(Out, TEXT("no macro graph named 'ForEachLoop' exists in any macro library the asset "
+						   "registry knows about, including StandardMacros. This recipe cannot build a "
+						   "loop without it."));
 			return;
 		}
 

@@ -130,6 +130,64 @@ def main():
     note("add_custom_event", types.get("Amount") == "int" and types.get("Who") == "string",
          "read-back carries the parameter TYPES needed to recreate", json.dumps(types)[:200])
 
+    # ---------------------------------------------------------------- branch
+    print("\n=== branch ===")
+    r = M.call("add_branch", {"graphId": graph, "x": 1200, "y": 100})
+    nd = M.call("get_node", {"nodeGuid": r.get("nodeGuid")}).get("node", {}) if r.get("nodeGuid") else {}
+    pins = [p.get("name") for p in nd.get("pins", [])]
+    note("add_branch", nd.get("class") == "K2Node_IfThenElse", "read-back names the node class",
+         str(nd.get("class")))
+    note("add_branch", "Condition" in pins and "then" in pins and "else" in pins,
+         "read-back exposes the branch pins", str(pins))
+
+    # ---------------------------------------------------------------- sequence
+    print("\n=== sequence ===")
+    r = M.call("add_sequence", {"graphId": graph, "x": 1200, "y": 300})
+    nd = M.call("get_node", {"nodeGuid": r.get("nodeGuid")}).get("node", {}) if r.get("nodeGuid") else {}
+    outs = [p.get("name") for p in nd.get("pins", []) if p.get("direction") == "output"]
+    note("add_sequence", nd.get("class") == "K2Node_ExecutionSequence",
+         "read-back names the node class", str(nd.get("class")))
+    note("add_sequence", len(outs) >= 2, "read-back exposes the numbered exec outputs", str(outs))
+
+    # ---------------------------------------------------------------- switch on int
+    print("\n=== switch ===")
+    r = M.call("add_switch_int", {"graphId": graph, "x": 1200, "y": 500})
+    nd = M.call("get_node", {"nodeGuid": r.get("nodeGuid")}).get("node", {}) if r.get("nodeGuid") else {}
+    note("add_switch_int", bool(nd.get("class")), "read-back names the node class",
+         json.dumps(nd)[:200])
+    note("add_switch_int", any("election" in (p.get("name") or "") or "Selection" in (p.get("name") or "")
+                               for p in nd.get("pins", [])),
+         "read-back exposes the selection pin",
+         str([p.get("name") for p in nd.get("pins", [])]))
+
+    # ---------------------------------------------------------------- spawn actor
+    print("\n=== spawn actor from class ===")
+    r = M.call("add_spawn_actor", {"graphId": graph, "actorClass": "StaticMeshActor", "x": 1600, "y": 100})
+    guid = r.get("nodeGuid")
+    nd = M.call("get_node", {"nodeGuid": guid}).get("node", {}) if guid else {}
+    blob = json.dumps(nd)
+    note("add_spawn_actor", bool(nd.get("class")), "read-back names the node class", blob[:200])
+    note("add_spawn_actor", "StaticMeshActor" in blob,
+         "read-back names the actor CLASS needed to recreate it",
+         "only the title/pins are present, so the class must be guessed: " + blob[:200])
+
+    # ---------------------------------------------------------------- timeline
+    print("\n=== timeline ===")
+    # add_timeline takes blueprintId, not graphId - a timeline node lives in the blueprint's own
+    # event graph. The endpoint says so plainly when given the wrong one; this test was the thing at
+    # fault, not the endpoint.
+    r = M.call("add_timeline", {"blueprintId": bpid, "name": "RTTimeline", "x": 1600, "y": 400,
+                                "floatTracks": ["Alpha"]})
+    guid = r.get("nodeGuid")
+    if guid:
+        nd = M.call("get_node", {"nodeGuid": guid}).get("node", {})
+        blob = json.dumps(nd)
+        note("add_timeline", "RTTimeline" in blob, "read-back names the timeline", blob[:200])
+        note("add_timeline", "Alpha" in blob,
+             "read-back names the tracks needed to recreate it", blob[:220])
+    else:
+        note("add_timeline", False, "timeline node was created", json.dumps(r)[:200])
+
     # ---------------------------------------------------------------- variable flags
     print("\n=== variable flags ===")
     M.call("set_variable_flags", {"blueprintId": bpid, "name": "RTVar",

@@ -675,9 +675,27 @@ namespace MifBridge
 		Event->OnRenameNode(NewName);
 		MarkStructural(Blueprint);
 
+		// VERIFY. OnRenameNode is void, and it declines a name that collides with an existing event
+		// rather than reporting anything. The post-rename name below was already being returned, so
+		// the truth was in the payload - but nothing compared it to the request, and no caller diffs
+		// a response field against what they just asked for. Renaming is this endpoint's whole job,
+		// so a rename that did not happen is a failure, not a footnote.
+		const FString ActualName = Event->CustomFunctionName.ToString();
 		Out->SetStringField(TEXT("oldName"), OldName);
-		Out->SetStringField(TEXT("name"), Event->CustomFunctionName.ToString());
+		Out->SetStringField(TEXT("name"), ActualName);
+		Out->SetStringField(TEXT("requestedName"), NewName);
 		Out->SetStringField(TEXT("nodeGuid"), Event->NodeGuid.ToString());
+
+		if (!ActualName.Equals(NewName, ESearchCase::CaseSensitive))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the rename did not take: the event is still called '%s', not '%s'. OnRenameNode "
+					 "declines a name that collides with another event in this blueprint and cannot "
+					 "report why, so this is read back rather than assumed. Check list_nodes for an "
+					 "existing '%s'."),
+				*ActualName, *NewName, *NewName));
+			return;
+		}
 	}
 
 	void H_rename_event_dispatcher(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

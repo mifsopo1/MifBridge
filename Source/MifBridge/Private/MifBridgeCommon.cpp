@@ -1265,6 +1265,77 @@ namespace MifBridge
 		}
 	}
 
+	UEdGraph* ResolveMacroGraph(const FString& GraphName, const FString& PreferredLibraryPath,
+		UBlueprint*& OutLibrary)
+	{
+		OutLibrary = nullptr;
+		if (GraphName.IsEmpty()) { return nullptr; }
+
+		auto Squash = [](const FString& In2)
+		{
+			FString S = In2;
+			S.ReplaceInline(TEXT(" "), TEXT(""));
+			S.ReplaceInline(TEXT("_"), TEXT(""));
+			return S.ToLower();
+		};
+		const FString Want = Squash(GraphName);
+
+		auto SearchLibrary = [&](UBlueprint* Lib) -> UEdGraph*
+		{
+			if (!Lib) { return nullptr; }
+			for (UEdGraph* Candidate : Lib->MacroGraphs)          // exact first
+			{
+				if (Candidate && Candidate->GetName() == GraphName) { return Candidate; }
+			}
+			for (UEdGraph* Candidate : Lib->MacroGraphs)          // then case/space insensitive
+			{
+				if (Candidate && Squash(Candidate->GetName()) == Want) { return Candidate; }
+			}
+			return nullptr;
+		};
+
+		if (!PreferredLibraryPath.IsEmpty())
+		{
+			UBlueprint* Lib = Cast<UBlueprint>(StaticLoadObject(
+				UBlueprint::StaticClass(), nullptr, *PreferredLibraryPath, nullptr, LOAD_NoWarn));
+			if (UEdGraph* Found = SearchLibrary(Lib))
+			{
+				OutLibrary = Lib;
+				return Found;
+			}
+		}
+
+		// Ask the registry rather than guessing paths. The BlueprintType tag is read off FAssetData,
+		// so nothing is loaded to decide what is a macro library; only the few that are get loaded.
+		IAssetRegistry& Registry =
+			FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		TArray<FAssetData> BlueprintAssets;
+		Registry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(),
+			BlueprintAssets, /*bSearchSubClasses*/ true);
+
+		int32 Searched = 0;
+		for (const FAssetData& Data : BlueprintAssets)
+		{
+			if (Searched > 64) { break; }                          // sanity bound
+			FString BpType;
+			if (!Data.GetTagValue(FBlueprintTags::BlueprintType, BpType)) { continue; }
+			if (BpType != TEXT("BPTYPE_MacroLibrary")) { continue; }
+
+			const FString LibPath = Data.GetObjectPathString();
+			if (LibPath == PreferredLibraryPath) { continue; }     // already searched
+			UBlueprint* Lib = Cast<UBlueprint>(StaticLoadObject(
+				UBlueprint::StaticClass(), nullptr, *LibPath, nullptr, LOAD_NoWarn));
+			if (!Lib) { continue; }
+			++Searched;
+			if (UEdGraph* Found = SearchLibrary(Lib))
+			{
+				OutLibrary = Lib;
+				return Found;
+			}
+		}
+		return nullptr;
+	}
+
 	bool JArray(const TSharedRef<FJsonObject>& In, const TCHAR* Field,
 		const TArray<TSharedPtr<FJsonValue>>*& OutArray)
 	{

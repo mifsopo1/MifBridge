@@ -167,6 +167,22 @@ namespace MifBridge
 	// implementation; every endpoint inherits it — including the ~20 open-coded
 	// FVector(JNum(O,"x"),JNum(O,"y"),JNum(O,"z")) readers in Landscape / Navigation / PIE / Spatial /
 	// Streaming / Viewport, which is how those are hardened without being individually rewritten.
+	/** Find a macro graph by name, wherever it actually lives.
+	 *
+	 *  Macro libraries are NOT all under /Engine/EditorBlueprintResources, and there is no single
+	 *  "standard" one: "Switch Has Authority" is in ActorMacros and ActorComponentMacros, and
+	 *  RenderToTextureMacros lives under ArtTools entirely. A hardcoded library path is a bug waiting
+	 *  for the macro to move - and it does not find a library the PROJECT defines at all, which is
+	 *  what a user is most likely to be reaching for.
+	 *
+	 *  Tries PreferredLibraryPath first (empty means skip straight to the search), then every
+	 *  Blueprint the asset registry reports as a macro library. Matching is exact first, then
+	 *  ignoring case and spaces - editor titles are spaced ("Switch Has Authority") and graph names
+	 *  sometimes are too, so neither spelling can be assumed. OutLibrary receives the library the
+	 *  graph was found in. Null when nothing matched. */
+	UEdGraph* ResolveMacroGraph(const FString& GraphName, const FString& PreferredLibraryPath,
+		UBlueprint*& OutLibrary);
+
 	/** Read an ARRAY field under the same silent-ignore rules the scalar readers follow.
 	 *
 	 *  The backstop above covers JNum/JInt/JBool. Arrays were the hole: TryGetArrayField returns

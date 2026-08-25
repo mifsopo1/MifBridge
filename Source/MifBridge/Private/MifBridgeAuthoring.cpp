@@ -408,7 +408,15 @@ namespace MifBridge
 					continue;
 				}
 				Copy->SetActorScale3D(Src->GetActorScale3D());
-				Copy->SetActorLabel(Src->GetActorLabel() + Suffix + (Count > 1 ? FString::FromInt(N) : FString()));
+				{
+					// void API, silent refusal - see SetActorLabelChecked. A copy the caller cannot
+					// find by the name they were given is worse than a copy with an odd name.
+					const FString Wanted = Src->GetActorLabel() + Suffix
+						+ (Count > 1 ? FString::FromInt(N) : FString());
+					FString ActualLabel, LabelNote;
+					SetActorLabelChecked(Copy, Wanted, ActualLabel, LabelNote);
+					if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
+				}
 				Copy->SetFolderPath(FName(*(Folder.IsEmpty() ? Src->GetFolderPath().ToString() : Folder)));
 
 				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();

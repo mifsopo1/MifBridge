@@ -34,7 +34,12 @@ import mifaudit as M
 FUZZ_KEY = "__mif_fuzz_key__"
 
 GHOST_GUID = "DEADBEEF00004444DEADBEEF00004444"
-GHOST_PATH = "/Game/_MifAudit_DoesNotExist/Nope"
+# UNIQUE PER RUN. A fixed ghost path stops being a ghost: the probe hands it to every endpoint
+# including create_blueprint, which is SUPPOSED to accept a path that does not exist yet - so run 1
+# created /Game/_MifAudit_DoesNotExist/Nope, and by run 2 that path resolved to a real Blueprint and
+# diff_properties_vs_default was reported for answering about an asset that genuinely existed. The
+# fuzzer was contaminating its own later results.
+GHOST_PATH = "/Game/_MifAuditGhost_%d/Nope" % int(time.time())
 
 WRONG_SHAPES = [
     {"__wrong": "object-where-scalar-expected"},

@@ -51,11 +51,42 @@ VERIFY_MARKERS = [
     "READ BACK", "VERIFY AFTER WRITE", "read back", "verify", "Verify",
     "Before", "After", "bChanged", "bDefaultChanged", "Checked(",
     "Compare", "postcondition",
+    # This module's own idiom for "I checked instead of trusting the call". It appears in the
+    # comments of handlers that DO verify, so leaving it out kept re-reporting fixed code.
+    "rather than assume", "not assume", "rather than assumed",
 ]
 
-# Mutation, in general terms - used to decide whether a handler is a write at all.
-MUTATION_HINTS = ["->Modify()", "MarkStructural", "MarkBlueprintAs", "NewObject<", "->Set",
-                  "AddPin", "RemovePin", "BreakPinLinks", "TryCreateConnection", "Destroy"]
+# Mutation of the WORLD, not of the response.
+#
+# This list used to contain "->Set", which matches `Out->SetStringField(...)`. Every endpoint builds
+# its response that way, so every read-only lister was reported as an unverified mutation and the
+# MEDIUM list came out ~90 long and almost entirely noise. Response building is not a side effect.
+MUTATION_HINTS = ["->Modify()", "MarkStructural", "MarkBlueprintAs", "NewObject<",
+                  "AddPin", "RemovePin", "BreakPinLinks", "TryCreateConnection", "Destroy",
+                  "SetActorLabel", "SetFolderPath", "TrySetDefaultValue", "ReconstructNode",
+                  "SpawnActor", "DeleteAsset", "RenameAsset", "->SetFlags", "SetPurity"]
+
+# Writes to the response object, which are never side effects on the world.
+RESPONSE_WRITE = re.compile(r"\b(Out|Json|J|Row|Args|Macro|Fn|Flags)->Set")
+
+
+def strip_response_writes(body):
+    return RESPONSE_WRITE.sub("<response>", body)
+
+
+def read_only_endpoints():
+    """The module's own readOnly bucket - those endpoints cannot have a postcondition."""
+    common = os.path.join(PRIV, "MifBridgeCommon.cpp")
+    try:
+        src = open(common, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return set()
+    i = src.find("IsReadOnlyEndpoint")
+    if i < 0:
+        return set()
+    # the literal list sits just above/below the predicate; take the nearest big TEXT("...") run
+    window = src[max(0, i - 6000): i + 6000]
+    return {m.lower() for m in re.findall(r'TEXT\("([a-z0-9_]+)"\)', window)}
 
 
 def handler_bodies():
@@ -70,8 +101,14 @@ def handler_bodies():
 
 
 def main():
+    readonly = read_only_endpoints()
     rows = []
+    skipped_readonly = 0
     for fn, name, body in handler_bodies():
+        if name.lower() in readonly:
+            skipped_readonly += 1
+            continue
+        body = strip_response_writes(body)
         mutates = any(h in body for h in MUTATION_HINTS)
         if not mutates:
             continue
@@ -108,6 +145,7 @@ def main():
             print("      %-22s %s" % (api, why))
 
     print("\n" + "=" * 80)
+    print("  skipped %d endpoint(s) the module declares read-only" % skipped_readonly)
     for sev in ("high", "medium", "low"):
         print("  %-8s %d" % (sev, sum(1 for r in rows if r[0] == sev)))
     print("  total    %d" % len(rows))

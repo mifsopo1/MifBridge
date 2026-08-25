@@ -903,6 +903,64 @@ added days earlier, both never wired into the tool layer. Also `add_cast.pure`, 
 `start_pie` multiplayer option, which matters because **a standalone PIE always has authority** and
 will make authority-gated replication code look like it works.
 
+#### The silent-ignore backstop did not cover arrays
+
+`MifBridgeHandlers.h` documents a backstop: `JNum`/`JInt`/`JBool` record a violation when a field is
+**present but the wrong JSON type**, and `RunEndpoint` turns any recording into a failed response. It
+describes itself as covering "EVERYTHING ELSE in one place". Arrays were never in it.
+
+`TryGetArrayField` returns false for *absent* and for *present but not an array* alike, so a handler
+takes its nothing-was-asked-for path either way:
+
+    select_level_actors  {"actorPaths": "/Game/Foo"}   ->   {"ok":true,"selected":0,"selection":[]}
+
+A call that did nothing at all, reported as success, never mentioning the parameter. Found by the
+endpoint fuzzer. Note the first triage of that finding was **wrong**: the handler does already report
+`notFound` for paths that fail to resolve — the array simply never reached it.
+
+Use **`JArray`** (`MifBridgeHandlers.h`) for every request-array read. Absent is quiet; present-but-wrong
+is recorded and fails the request, exactly like the scalar readers. All 19 sites go through it,
+including `ParsePinSpecs` and `UiReadStringArray`, which every pin-spec and string-array parameter in
+the module flows through.
+
+> The general lesson is worth more than the fix: a backstop that says it covers "everything" is worth
+> testing against a category nobody had in mind when it was written.
+
+#### Never hardcode a macro library path — use `ResolveMacroGraph`
+
+`recipe_reset_and_loop` loaded `StandardMacros` by literal path to find `ForEachLoop`. Harmless today,
+and the same shape that already rotted once: macro libraries are discovered from the asset registry
+because there are more of them than anyone remembers, including ones the *project* defines.
+
+`ResolveMacroGraph(GraphName, PreferredLibraryPath, OutLibrary)` tries the preferred library, then
+every macro library the registry knows, matching exactly first and then ignoring case and spacing.
+
+**`add_macro_instance` deliberately does NOT use it**, even though that would remove a near-duplicate.
+The two want opposite semantics: the recipe wants "find `ForEachLoop` wherever it lives" because there
+is one right answer and it is internal; `add_macro_instance` must **refuse** when the macro is not in
+the library the caller named and hand back the correct `macroPath`. Silently instantiating from a
+different library is exactly the confusion the Switch Has Authority report was about, so sharing the
+resolver there would trade a good error for a silent surprise.
+
+#### Auditing for unverified writes: what the tool gets wrong
+
+`tools/audit_postconditions.py` looks for the recurring defect — a handler that calls a UE API which
+cannot fail loudly, then reports `ok` because nothing threw. Two things about reading its output:
+
+* **It over-reports by construction.** Its first version flagged ~90 MEDIUM entries, almost all
+  noise, because its mutation list contained `->Set` — which matches `Out->SetStringField`. Every
+  endpoint builds its response that way, so every read-only lister looked like an unverified write.
+  It now ignores response writes and skips the module's own `readOnly` bucket.
+* **Creation is self-verifying; setters are not.** What survives is dominated by endpoints that make
+  something and return it — `NewObject` failing would have thrown. The entries that can genuinely
+  half-succeed are the **void setters**: `SetActorLabel`, `TrySetDefaultValue`, `SetMacroGraph`,
+  `OnRenameNode`, `SetPurity`. That is where to look.
+
+Fixed from its output: `rename_event` (OnRenameNode is void and declines a name that collides with
+another event, so a refused rename read as a successful one — renaming is that endpoint's whole job,
+so it now fails), `add_macro_instance` (a node whose `SetMacroGraph` did not take exists and does
+nothing), and `duplicate_actors` (labels through `SetActorLabelChecked`).
+
 ### Endpoints that discard unsaved work without asking
 
 | endpoint | what it does | undo? | confirm-gated? |

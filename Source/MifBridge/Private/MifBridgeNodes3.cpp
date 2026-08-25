@@ -146,16 +146,39 @@ namespace MifBridge
 		Blueprint->Modify();
 		EventGraph->Modify();
 
-		// Node-first: spawning the timeline node runs PostPlacedNewNode, which creates the
-		// UTimelineTemplate (name/GUID kept in sync). Set name + flags BEFORE PlaceAndInit.
+		// TEMPLATE FIRST, and explicitly.
+		//
+		// This used to place the node and expect PostPlacedNewNode to build the UTimelineTemplate.
+		// UK2Node_Timeline has no PostPlacedNewNode override - its only Post* override is
+		// PostPasteNode, and the template-creating code lives there, on the PASTE path. So placing a
+		// timeline node created no template, every call fell into the "template not found" branch,
+		// and the endpoint failed on a brand-new blueprint while blaming a name collision that did
+		// not exist. The editor's own Add Timeline action calls AddNewTimeline; so does this now.
+		//
+		// Creating the template BEFORE the node also turns the one failure the preflight could not
+		// predict into a checked one: AddNewTimeline returns null when the name is already taken,
+		// which is reported here with nothing left behind.
+		UTimelineTemplate* Template = FBlueprintEditorUtils::AddNewTimeline(Blueprint, TimelineName);
+		if (!Template)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("could not create a timeline named '%s' - the name is already taken by another "
+					 "timeline or variable on this blueprint. NOTHING was created; pick another name "
+					 "(list_variables shows what is taken)."),
+				*TimelineName.ToString()));
+			return;
+		}
+
 		UK2Node_Timeline* Node = NewObject<UK2Node_Timeline>(EventGraph);
 		Node->TimelineName = TimelineName;
-		Node->bAutoPlay = bAutoPlay;
-		Node->bLoop = bLoop;
+		Node->TimelineGuid = Template->TimelineGuid;   // node and template must agree, or DestroyNode
+													   // cannot find the template to clean up
 		PlaceAndInit(EventGraph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
 
 		TArray<FString> AddedTracks;
-		UTimelineTemplate* Template = Blueprint->FindTimelineTemplateByVariableName(Node->TimelineName);
+		// Re-resolve rather than trust the pointer across PlaceAndInit, and prove the node and the
+		// template really did end up agreeing on a name.
+		Template = Blueprint->FindTimelineTemplateByVariableName(Node->TimelineName);
 		if (!Template)
 		{
 			// length, autoPlay, loop and floatTracks[] ALL lived inside `if (Template)`, so a null

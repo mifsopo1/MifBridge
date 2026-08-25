@@ -1036,6 +1036,19 @@ namespace MifBridge
 		Node->SetMacroGraph(MacroGraph);
 		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
 
+		// SetMacroGraph is void. A macro instance whose graph reference did not take is a node that
+		// exists and does nothing - and it would be reported here as successfully created. The
+		// reference is what the whole node IS, so check it rather than assume.
+		if (!Node->GetMacroGraph())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the node was created but its macro reference did not take, so it points at no "
+					 "macro ('%s' in %s). It is in the graph and does nothing - remove it with "
+					 "delete_node."),
+				*MacroGraph->GetName(), *MacroPath));
+			return;
+		}
+
 		MarkStructural(Blueprint);
 		EmitNode(Out, Node);
 		Out->SetStringField(TEXT("macroGraphResolved"), MacroGraph->GetName());
