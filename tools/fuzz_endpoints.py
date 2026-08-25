@@ -70,6 +70,30 @@ def _is_search_key(k):
     return any(w in k.lower() for w in SEARCH_KEYS)
 
 
+# Field names that mean "I checked whether this exists". An endpoint that sets one of these to FALSE
+# has answered the question honestly, whatever else it returns.
+EXISTENCE_HINTS = ("exists", "found", "present")
+
+
+def reported_absent(r):
+    """True when the response EXPLICITLY says the thing is not there.
+
+    Run 5's survivors made the case: describe_package returns existsOnDisk:false and inRegistry:false,
+    get_dependencies and get_referencers return packageExists:false plus an existsNote. All three are
+    telling the truth in the response - a correct answer about a nonexistent thing, not a phantom
+    success - and flagging them sends someone to fix an endpoint that is already right.
+
+    Deliberately narrow: it needs a BOOLEAN whose NAME is about existence, and it must be false.
+    invoke_editor_tab's `enumerable: false` does not match, which is the point - that field is about
+    whether tab ids can be listed, not about whether the asset exists, and that endpoint DOES have a
+    real defect (it ignores 'asset' unless manager is "assetEditor").
+    """
+    for k, v in r.items():
+        if isinstance(v, bool) and not v and any(w in k.lower() for w in EXISTENCE_HINTS):
+            return True
+    return False
+
+
 def looked_and_found_nothing(ghosted_keys, r):
     """True when ok:true means "I searched and found nothing", which is a correct answer.
 
@@ -348,7 +372,7 @@ def main():
                 # its whole job - so "succeeded against a nonexistent path" is the correct answer
                 # there, not a finding. Flagging create_blueprint was this probe's own false positive.
                 creates = ep.startswith(("create_", "add_", "new_", "spawn_", "import_", "duplicate_"))
-                if r.get("ok") is True and not creates and not looked_and_found_nothing(ghosts, r):
+                if r.get("ok") is True and not creates and not looked_and_found_nothing(ghosts, r) and not reported_absent(r):
                     M.record("GHOST_OK", ep,
                              "reported success for references that do not exist (%s)"
                              % ", ".join(sorted(ghosts)),

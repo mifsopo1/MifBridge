@@ -59,6 +59,26 @@ def main():
         got = f(keys, payload)
         check(("skip:  " if want else "flag:  ") + name, got == want, "got=%s want=%s" % (got, want))
 
+    print("\n=== an endpoint that explicitly says 'not there' is answering, not phantom-succeeding ===")
+    # These payloads are the ACTUAL run-5 responses, trimmed. Three are correct answers about a
+    # nonexistent thing; the fourth is a real defect and must still be flagged.
+    absent = fz.reported_absent
+    real = [
+        ("describe_package reports existsOnDisk:false",
+         {"ok": True, "package": "/Game/ghost", "existsOnDisk": False, "inRegistry": False}, True),
+        ("get_dependencies reports packageExists:false",
+         {"ok": True, "count": 0, "dependencies": [], "packageExists": False}, True),
+        ("get_referencers reports packageExists:false",
+         {"ok": True, "count": 0, "referencers": [], "packageExists": False}, True),
+        ("invoke_editor_tab's enumerable:false is NOT an existence claim",
+         {"ok": True, "manager": "global", "enumerable": False}, False),
+    ]
+    for name, payload, want in real:
+        got = absent(payload)
+        check(("skip:  " if want else "flag:  ") + name, got == want, "got=%s want=%s" % (got, want))
+    check("a TRUE existence field is not an absence claim",
+          absent({"ok": True, "exists": True}) is False, "exists:true must not suppress")
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

@@ -61,11 +61,16 @@ it off and write one line saying why it was dropped — do not leave it open to 
       who meant an asset-editor tab and forgot to set manager gets a global operation and no warning.
       RejectUnknownParams cannot catch this - 'asset' IS a declared parameter; it is ignored by MODE.
       Found by run 5's ghost probe. Either refuse the combination or echo that the asset was unused.
-- [ ] Third calibration for the ghost detector: an endpoint that EXPLICITLY reports non-existence is
+- [x] Third calibration for the ghost detector: an endpoint that EXPLICITLY reports non-existence is
       answering honestly, not phantom-succeeding. Run 5 flagged describe_package (existsOnDisk:false,
       inRegistry:false), get_dependencies and get_referencers (packageExists:false plus an existsNote)
       - all three state the truth in the response and none is a defect. Treat a false existence-ish
       boolean the same way an empty search result is treated now.
+      Done. reported_absent() in fuzz_endpoints.py: a BOOLEAN whose NAME is about existence and is
+      false means the endpoint answered honestly. Narrow on purpose - invoke_editor_tab's
+      enumerable:false does NOT match, because that is about whether tab ids can be listed, and that
+      endpoint has a real defect that must stay flagged. 17 checks in test_fuzz_detector.py, using
+      the actual run-5 responses as fixtures.
 - [ ] Validation sweep against the FIXED build. Run 4 tested a binary that predates c190ae5 and used
       the ghost detector that predates ea37587, so it cannot show either fix working. A clean run
       should now give 0 CRASH, and the GHOST_OK bucket should collapse from 9 to the handful that are
