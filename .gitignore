@@ -19,3 +19,5 @@ __pycache__/
 tools/blender-addon/dist/
 *.blend1
 *.blend2
+tools/audit_findings.jsonl
+tools/fuzz_run*.log

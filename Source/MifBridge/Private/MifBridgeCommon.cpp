@@ -1007,6 +1007,81 @@ namespace MifBridge
 				  TEXT("completed before this check still stands — re-read the target before retrying.")));
 	}
 
+	namespace
+	{
+		// FName cannot hold more than NAME_SIZE-1 characters, and exceeding it is a check(), not an
+		// error return: UnrealNames.cpp:3020 asserts and takes the editor with it. 144 call sites in
+		// this module do FName(*SomeCallerString) with no length test, so ANY of them is a remote
+		// editor-kill from a single long parameter - which an agent can produce by accident simply by
+		// pasting the wrong buffer into a name field.
+		//
+		// Capping only "identifier-looking" keys would leave whichever key nobody thought of still
+		// lethal, so the rule is default-deny: every string is capped, and a parameter that genuinely
+		// carries a large payload must be named here deliberately.
+		const int32 MifMaxStringParam = NAME_SIZE - 1;   // 1023
+
+		bool MifIsLargePayloadKey(const FString& Key)
+		{
+			static const TCHAR* Allowed[] = {
+				TEXT("base64"), TEXT("data"), TEXT("bytes"), TEXT("content"), TEXT("payload"),
+				TEXT("json"), TEXT("csv"), TEXT("blob"), TEXT("source"), TEXT("script"),
+			};
+			for (const TCHAR* A : Allowed)
+			{
+				if (Key.Equals(A, ESearchCase::IgnoreCase)) { return true; }
+			}
+			return false;
+		}
+
+		// Returns false and fills OutError on the first over-long string. Recurses, because
+		// apply_graph_patch and the batch endpoints carry their identifiers inside nested arrays.
+		bool MifCheckStringLengths(const TSharedPtr<FJsonValue>& Value, const FString& KeyPath,
+			const FString& LeafKey, FString& OutError, int32 Depth = 0)
+		{
+			if (!Value.IsValid() || Depth > 12) { return true; }
+
+			if (Value->Type == EJson::String)
+			{
+				const FString Str = Value->AsString();
+				if (Str.Len() > MifMaxStringParam && !MifIsLargePayloadKey(LeafKey))
+				{
+					OutError = FString::Printf(
+						TEXT("parameter '%s' is %d characters; the limit is %d. Unreal's FName cannot ")
+						TEXT("hold more, and exceeding it ASSERTS and terminates the editor rather than ")
+						TEXT("returning an error, so this is refused before it reaches a handler. ")
+						TEXT("Shorten the value, or pass large content through a payload parameter."),
+						*KeyPath, Str.Len(), MifMaxStringParam);
+					return false;
+				}
+				return true;
+			}
+			if (Value->Type == EJson::Object)
+			{
+				const TSharedPtr<FJsonObject> Obj = Value->AsObject();
+				if (!Obj.IsValid()) { return true; }
+				for (const auto& KV : Obj->Values)
+				{
+					const FString Child = KeyPath.IsEmpty() ? KV.Key : (KeyPath + TEXT(".") + KV.Key);
+					if (!MifCheckStringLengths(KV.Value, Child, KV.Key, OutError, Depth + 1)) { return false; }
+				}
+				return true;
+			}
+			if (Value->Type == EJson::Array)
+			{
+				const TArray<TSharedPtr<FJsonValue>>& Arr = Value->AsArray();
+				for (int32 i = 0; i < Arr.Num(); ++i)
+				{
+					const FString Child = FString::Printf(TEXT("%s[%d]"), *KeyPath, i);
+					// The leaf key is inherited: a long string inside operations[] is still the
+					// operations payload, and is judged by the same rule.
+					if (!MifCheckStringLengths(Arr[i], Child, LeafKey, OutError, Depth + 1)) { return false; }
+				}
+				return true;
+			}
+			return true;
+		}
+	}
+
 	void RunEndpoint(const FString& Endpoint, const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		Out->SetBoolField(TEXT("ok"), true);
@@ -1023,6 +1098,21 @@ namespace MifBridge
 		{
 			Fail(Out, FString::Printf(TEXT("unknown endpoint: %s"), *Endpoint));
 			return;
+		}
+
+		// BEFORE ANY HANDLER RUNS. This has to precede dispatch: once a handler reaches
+		// FName(*Str) the process is already gone, so there is no later point at which this could be
+		// reported. Found by the endpoint fuzzer, which killed the editor on its first target.
+		{
+			FString LengthError;
+			for (const auto& KV : In->Values)
+			{
+				if (!MifCheckStringLengths(KV.Value, KV.Key, KV.Key, LengthError))
+				{
+					Fail(Out, LengthError);
+					return;
+				}
+			}
 		}
 
 		// Editor-only script paths are allowed inside this scope.

@@ -1,0 +1,222 @@
+"""Shared harness for long unattended audit runs against the SDK editor.
+
+Three jobs:
+
+  1. TALK TO THE RIGHT EDITOR. More than one Unreal editor is usually running on this machine
+     (the DDS2 SDK on D:/UE532, and unrelated projects on stock engines). Only the SDK editor loads
+     MifBridge, but "the bridge answered" is not proof of which process answered. Before any call,
+     `require_sdk_bridge()` resolves the PID listening on the bridge port and refuses unless its
+     command line names DrugDealerSimulator2.uproject.
+
+  2. SURVIVE CRASHES. Fuzzing an editor plugin crashes the editor - that is the point. The runner
+     detects a dead bridge, relaunches, and refuses to retry a call that has already killed the
+     editor once, so one bad endpoint cannot eat the whole run in a relaunch loop.
+
+  3. NOT LOSE FINDINGS. Everything goes to a JSONL file as it happens, never held only in memory.
+     A run that dies at hour four still leaves everything it learned on disk.
+
+SAFETY RULES BAKED IN, because this runs unattended:
+  * Scratch assets live under /Game/_MifAudit* and nothing else is touched.
+  * `confirm:true` is NEVER sent. Destructive endpoints are exercised only to check that they
+    REFUSE without it - which is a real test, and a safe one.
+  * Nothing is saved. save_* endpoints are on the deny list.
+"""
+import json
+import os
+import subprocess
+import time
+import urllib.error
+import urllib.request
+
+BRIDGE_PORT = 8791
+BASE = "http://127.0.0.1:%d/api" % BRIDGE_PORT
+TOKEN = "dev"
+UPROJECT = r"D:\DDS2SDK\Game\DrugDealerSimulator2.uproject"
+EDITOR_EXE = r"D:\UE532\Engine\Binaries\Win64\UnrealEditor.exe"
+PROJECT_MARKER = "DrugDealerSimulator2.uproject"
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+FINDINGS = os.path.join(HERE, "audit_findings.jsonl")
+
+# Endpoints this harness must never call unattended.
+DENY = {
+    # would end or restart the session the harness is driving
+    "quit_editor", "restart_editor", "shutdown",
+    # writes to disk - the standing rule for this project is that audits save nothing
+    "save_blueprint", "save_level", "save_level_as", "save_dirty_packages", "save_all",
+    "save_asset", "save_package",
+    # discards unsaved work in the open map without asking
+    "new_level", "load_level", "open_level",
+    # long-running or blocking; PIE in particular defers to the game thread
+    "start_pie", "stop_pie", "pie_load_level_instance", "pie_unload_level_instance",
+    "cook_content", "build_lighting", "build_navigation", "recompile_all",
+    # drives an external process
+    "run_console",
+}
+
+# Never send these keys, whatever the fuzz strategy says.
+FORBIDDEN_KEYS = {"confirm", "force", "discardunsaved", "overwrite", "replaceexisting", "save"}
+
+
+# --------------------------------------------------------------------------- editor identity
+def bridge_pid():
+    """PID listening on the bridge port, or None."""
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-NetTCPConnection -LocalPort %d -State Listen -ErrorAction SilentlyContinue"
+             " | Select-Object -First 1).OwningProcess" % BRIDGE_PORT],
+            capture_output=True, text=True, timeout=30).stdout.strip()
+        return int(out) if out.isdigit() else None
+    except Exception:
+        return None
+
+
+def process_cmdline(pid):
+    try:
+        return subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_Process -Filter 'ProcessId = %d').CommandLine" % pid],
+            capture_output=True, text=True, timeout=30).stdout.strip()
+    except Exception:
+        return ""
+
+
+def require_sdk_bridge():
+    """(ok, message). Refuses when the port is owned by anything but the SDK editor.
+
+    "The bridge answered" does not identify WHICH editor answered. Several are usually running,
+    and driving a fuzz run at the wrong one would be both useless and destructive.
+    """
+    pid = bridge_pid()
+    if pid is None:
+        return False, "nothing is listening on port %d" % BRIDGE_PORT
+    cmd = process_cmdline(pid)
+    if PROJECT_MARKER not in cmd:
+        return False, ("port %d is owned by pid %d, which is NOT the SDK editor: %s"
+                       % (BRIDGE_PORT, pid, cmd[:160]))
+    return True, "pid %d (%s)" % (pid, PROJECT_MARKER)
+
+
+def sdk_editor_pid():
+    """PID of the SDK editor process, running or not yet serving."""
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_Process -Filter \"Name = 'UnrealEditor.exe'\""
+             " | Where-Object { $_.CommandLine -like '*%s*' }"
+             " | Select-Object -First 1).ProcessId" % PROJECT_MARKER],
+            capture_output=True, text=True, timeout=30).stdout.strip()
+        return int(out) if out.isdigit() else None
+    except Exception:
+        return None
+
+
+def launch_editor():
+    subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         "Start-Process -FilePath '%s' -ArgumentList '\"%s\"'" % (EDITOR_EXE, UPROJECT)],
+        capture_output=True, text=True, timeout=60)
+
+
+def wait_for_bridge(timeout=900, quiet=False):
+    """Block until the SDK editor is serving. Returns True/False."""
+    start = time.time()
+    while time.time() - start < timeout:
+        ok, why = require_sdk_bridge()
+        if ok:
+            r = raw_post("self_audit", {"summaryOnly": True}, timeout=60)
+            if isinstance(r, dict) and r.get("ok"):
+                if not quiet:
+                    print("bridge up on %s - %d endpoints, built %s %s"
+                          % (why, r.get("endpointCount", -1), r.get("buildDate"), r.get("buildTime")))
+                return True
+        time.sleep(5)
+    return False
+
+
+def ensure_editor(max_relaunch=1):
+    """Bring the SDK editor back if it died. Returns True when serving."""
+    ok, _ = require_sdk_bridge()
+    if ok:
+        return True
+    for _ in range(max_relaunch):
+        if sdk_editor_pid() is None:
+            print("  [editor gone - relaunching]")
+            launch_editor()
+        if wait_for_bridge(timeout=900, quiet=True):
+            print("  [editor back]")
+            return True
+    return False
+
+
+# --------------------------------------------------------------------------- calls
+class Timeout(Exception):
+    pass
+
+
+class Dead(Exception):
+    pass
+
+
+def raw_post(endpoint, payload, timeout=60):
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(BASE + "/" + endpoint, data=body,
+                                 headers={"X-Mif-Token": TOKEN, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        try:
+            raw = e.read().decode("utf-8", "replace")
+        except Exception:
+            return {"ok": False, "error": "HTTP %s" % e.code, "_httpError": True}
+    except urllib.error.URLError as e:
+        raise Dead(str(e))
+    except Exception as e:
+        raise Timeout(str(e))
+    try:
+        return json.loads(raw)
+    except Exception:
+        # A non-JSON body from a JSON API is itself a finding.
+        return {"ok": False, "error": "non-JSON response", "_raw": raw[:400], "_badJson": True}
+
+
+def guarded_payload(payload):
+    return {k: v for k, v in (payload or {}).items() if k.lower() not in FORBIDDEN_KEYS}
+
+
+def call(endpoint, payload=None, timeout=60):
+    """Post, refusing forbidden keys and denied endpoints. Raises Dead/Timeout."""
+    if endpoint in DENY:
+        return {"ok": False, "error": "denied by harness", "_denied": True}
+    return raw_post(endpoint, guarded_payload(payload), timeout=timeout)
+
+
+# --------------------------------------------------------------------------- findings
+def record(kind, endpoint, detail, severity="medium", **extra):
+    """Append one finding. Written immediately - a run that dies keeps what it learned."""
+    row = {"kind": kind, "endpoint": endpoint, "severity": severity, "detail": detail}
+    row.update(extra)
+    with open(FINDINGS, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
+    return row
+
+
+def load_findings():
+    if not os.path.exists(FINDINGS):
+        return []
+    out = []
+    for ln in open(FINDINGS, encoding="utf-8"):
+        ln = ln.strip()
+        if ln:
+            try:
+                out.append(json.loads(ln))
+            except Exception:
+                pass
+    return out
+
+
+def endpoint_names():
+    r = raw_post("self_audit", {}, timeout=120)
+    return sorted(r.get("endpoints") or []) if isinstance(r, dict) else []
