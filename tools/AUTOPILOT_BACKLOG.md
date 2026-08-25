@@ -27,7 +27,7 @@ it off and write one line saying why it was dropped — do not leave it open to 
       of bug, not one endpoint. Check every endpoint that reaches AssetTools, ObjectTools, PackageTools
       or FEditorFileUtils. This is also the best remaining explanation for the old unexplained
       recipe_reset_and_loop hang.
-- [ ] The fuzzer's ghost path stops being a ghost DURING a run, not just between runs. It is unique per
+- [x] The fuzzer's ghost path stops being a ghost DURING a run, not just between runs. It is unique per
       run now, but create_blueprint legitimately creates it, so every later endpoint probed with that
       same path is being asked about something that exists. That is how duplicate_asset was handed an
       existing destination. Make the ghost unique per endpoint, or exclude creation endpoints from the
@@ -37,10 +37,15 @@ it off and write one line saying why it was dropped — do not leave it open to 
       is uncontaminated; describe_package, diff_properties_vs_default, find_assets, get_dependencies,
       get_referencers and invoke_editor_tab all come after 'c' and were asked about a path that by then
       really existed. invoke_editor_tab almost certainly OPENED it.
-- [ ] The ghost detector also flags endpoints whose ok:true is correct. A search over a prefix that
+- [x] The ghost detector also flags endpoints whose ok:true is correct. A search over a prefix that
       matches nothing (audit_unused, find_assets) legitimately returns ok:true with zero results -
       that is an empty result set, not a phantom success. Separate "answered about a thing that does
       not exist" from "correctly found nothing" or the bucket stays noise.
+      Both done in ea37587. The ghost path is per-ENDPOINT now, so nothing an earlier endpoint creates
+      can be in a later one's way. The empty-answer rule is decided by the GHOSTED KEY rather than the
+      payload: a prefix or filter that matched nothing is a correct empty, an identity that resolved to
+      nothing is a finding. That reproduces the hand triage of run 4 exactly. 12 checks in
+      tools/test_fuzz_detector.py, which runs offline with no editor.
 - [ ] Re-run the endpoint sweep with the narrowed leak detector and the confirming-retry hang logic, and confirm or drop the unexplained recipe_reset_and_loop hang.
 - [x] recipe_reset_and_loop hardcodes StandardMacros when resolving ForEachLoop — the same brittle pattern already fixed in add_macro_instance. Harmless today, but route it through the registry lookup.
 - [x] Extend audit_roundtrip.py to the node types it does not yet cover (branch, sequence, timeline, switch, spawn_actor, interface calls) — the two gaps it already found were both real.
