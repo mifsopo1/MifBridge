@@ -12,7 +12,9 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
+#include "CoreGlobals.h"                         // GIsRunningUnattendedScript
 #include "Misc/PackageName.h"
+#include "Templates/UnrealTemplate.h"            // TGuardValue (GIsRunningUnattendedScript)
 #include "Modules/ModuleManager.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "Editor.h"
@@ -115,7 +117,22 @@ namespace MifBridge
 			return;
 		}
 
-		const int32 NumDeleted = ObjectTools::DeleteAssets(AssetsToDelete, /*bShowConfirmation*/ false);
+		// bShowConfirmation:false is NOT enough on its own, for the same reason duplicate_asset's
+		// "headless" DuplicateAsset was not: the flag reaches the confirmation prompt and nothing else.
+		// ObjectTools::DeleteObjects opens an ungated FMessageDialog at ObjectTools.cpp:2833 when the
+		// OnAssetsCanDelete delegate vetoes the delete - which happens in ordinary situations, such as
+		// an asset editor still holding the asset open - and HandleFullyLoadingPackages can prompt too.
+		// A modal there would block the game thread and take the whole bridge down with it.
+		//
+		// Under the guard that dialog logs and returns its default instead, DeleteObjects returns 0,
+		// and this reports numDeleted:0 - a clean, readable failure rather than a hang. This endpoint
+		// is DENY-listed in the fuzzer, so the sweep could never have found this; it came out of
+		// auditing the pattern after duplicate_asset.
+		int32 NumDeleted = 0;
+		{
+			TGuardValue<bool> UnattendedGuard(GIsRunningUnattendedScript, true);
+			NumDeleted = ObjectTools::DeleteAssets(AssetsToDelete, /*bShowConfirmation*/ false);
+		}
 		Out->SetStringField(TEXT("path"), PackagePath);
 		Out->SetStringField(TEXT("packageName"), PackagePath);   // same value, unambiguous spelling
 		Out->SetNumberField(TEXT("numDeleted"), NumDeleted);
@@ -333,7 +350,17 @@ namespace MifBridge
 		IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
 		TArray<FAssetRenameData> Renames;
 		Renames.Add(FAssetRenameData(TWeakObjectPtr<UObject>(Asset), NewPackagePath, NewAssetName));
-		const bool bOk = AssetTools.RenameAssets(Renames);   // headless — no dialog, unlike RenameAssetsWithDialog
+
+		// NOT "headless — no dialog", which is what this line used to claim. Choosing the
+		// non-WithDialog entry point only suppresses the pickers; the VALIDATION inside AssetTools
+		// still calls FMessageDialog::Open directly for a name clash or an invalid path, and a modal
+		// on the game thread stops this bridge answering at all. See the long note on duplicate_asset
+		// below, where the sweep caught exactly that.
+		const bool bOk = [&]()
+		{
+			TGuardValue<bool> UnattendedGuard(GIsRunningUnattendedScript, true);
+			return AssetTools.RenameAssets(Renames);
+		}();
 
 		if (!bOk)
 		{
@@ -406,8 +433,40 @@ namespace MifBridge
 			return;
 		}
 
+		// REFUSE A TAKEN DESTINATION OURSELVES.
+		//
+		// This endpoint's own guard text promises it "never overwrites; it fails if newPath is already
+		// taken". It did not fail. AssetTools opened a modal asking a human whether to replace the
+		// existing object — "If you click 'Yes', the existing object will be deleted" — and the editor
+		// sat on that dialog forever. Handlers run synchronously inline on the game thread, so the
+		// whole bridge stopped answering and was reported as a crash.
+		if (FPackageName::DoesPackageExist(NewPath) || FindObject<UObject>(nullptr, *NewPath))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("newPath '%s' is already taken. duplicate_asset never overwrites — delete_asset ")
+				TEXT("the existing one first, or pick another name. NOTHING was created."), *NewPath));
+			return;
+		}
+
 		IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
-		UObject* NewAsset = AssetTools.DuplicateAsset(NewAssetName, NewPackagePath, Asset);   // headless — no dialog
+
+		// NOT "headless — no dialog". DuplicateAsset does pass bWithDialog=false, but that flag only
+		// reaches the OVERWRITE prompt in ObjectTools::DuplicateSingleObject. Before that,
+		// PerformDuplicateAsset calls CanCreateAsset (AssetTools.cpp:4287), which opens
+		// FMessageDialog::Open unconditionally for an invalid name, a clash with a map file, or an
+		// existing destination — and opens another itself if the source object is null.
+		//
+		// The check above removes the case the sweep actually hit. This guard covers the rest:
+		// FMessageDialog::Open shows UI only when !FApp::IsUnattended() && !GIsRunningUnattendedScript
+		// (MessageDialog.cpp:172), and otherwise logs and returns the DEFAULT — No for a YesNo, so the
+		// destructive "replace the existing object" answer is declined rather than blocked on. Same
+		// guard MifBridgeImport.cpp:1303 uses, and the same one the engine itself applies at
+		// AssetTools.cpp:3045.
+		UObject* NewAsset = nullptr;
+		{
+			TGuardValue<bool> UnattendedGuard(GIsRunningUnattendedScript, true);
+			NewAsset = AssetTools.DuplicateAsset(NewAssetName, NewPackagePath, Asset);
+		}
 		if (!NewAsset)
 		{
 			Fail(Out, FString::Printf(TEXT("duplicate failed: %s -> %s (target may already exist)"), *RawPath, *NewPath));
