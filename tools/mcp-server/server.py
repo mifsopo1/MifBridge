@@ -1749,6 +1749,20 @@ def describe_endpoint(name: str) -> dict:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def get_level_actor(actor_path: str) -> dict:
+    """Read one level actor back: transform, label, class, path.
+
+    Takes the actorPath from list_level_actors or spawn_actor_in_level. A label or object name works
+    too when it is unique - and because the response echoes the actorPath, you can see which actor a
+    label lookup actually resolved to instead of assuming the label was unique.
+
+    Use list_level_actors instead when you want several: that is one call over the whole level, where
+    this would be one call each.
+    """
+    return _post("get_level_actor", actorPath=actor_path)
+
+
+@mcp.tool()
 def list_level_actors(class_filter: str = "", name_contains: str = "", folder: str = "",
                       selected_only: bool = False, limit: int = 200) -> dict:
     "List actors placed in the CURRENT level with actorPath, name, label, class, folder and transform. class_filter matches any class in the ancestry by substring, so 'StaticMeshActor' finds subclasses. Returns matched (the true total) alongside count, and truncated=true if limit was hit. actorPath is the handle every other level endpoint takes - and set_property accepts it as objectPath to edit per-instance properties."

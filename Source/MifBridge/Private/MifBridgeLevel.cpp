@@ -118,6 +118,39 @@ namespace MifBridge
 		// elsewhere (World/Components/Authoring); do not write a fourth.
 	}
 
+	// --- get_level_actor ----------------------------------------------------
+	//   in:  { actorPath | actor | path }
+	//   out: { actor:{ actorPath, name, label, class, location, rotation, scale, ... } }
+	//
+	// The plural lister existed and this did not, so re-reading an actor you already have a handle for
+	// meant list_level_actors with nameContains and a client-side filter - a scan of every actor in
+	// the level to answer a question about one of them. Same shape as one element of that listing.
+	void H_get_level_actor(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("path") },
+			TEXT("actorPath (aliases: actor, path)"),
+			{ { TEXT("actorPaths"), TEXT("this reads ONE actor — for several, use list_level_actors, which is a single call over the whole level") },
+			  { TEXT("nameContains"), TEXT("that is list_level_actors' filter; this endpoint takes one exact handle (a label or object name is accepted too, if unique)") } }))
+		{
+			return;
+		}
+		UEditorActorSubsystem* Subsystem = ActorSubsystem(Out);
+		if (!Subsystem)
+		{
+			return;
+		}
+		AActor* Actor = ResolveActor(Subsystem, In, Out);
+		if (!Actor)
+		{
+			return;   // ResolveActor has already said what it could not find
+		}
+		// The echoed actorPath is what disambiguates a label lookup: ResolveActor's fallback takes the
+		// first actor whose label matches, and two actors may share a label. The caller can see which
+		// one it got rather than having to trust that the label was unique.
+		Out->SetObjectField(TEXT("actor"), SerializeActor(Actor));
+	}
+
 	// --- list_level_actors --------------------------------------------------
 	//   in:  { classFilter?, nameContains?, folder?, selectedOnly?, limit? }
 	//   out: { world, count, truncated, actors:[{actorPath, name, label, class, folder, location, rotation, scale}] }

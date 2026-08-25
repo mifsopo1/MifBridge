@@ -51,18 +51,30 @@ def spawn(label, x, y, z, sx=1.0, sy=1.0, sz=1.0):
 
 
 def actor_z(label):
-    """Read one actor's Z back.
+    """Read one actor's Z back, through get_level_actor, cross-checked against the lister.
 
-    There is no single-actor read endpoint - get_level_actor does not exist, which is what made the
-    first version of this helper return None for every call and turn five real assertions into
-    comparisons against nothing. Raise rather than return None: a test helper that quietly answers
-    "no idea" is how a vacuous suite passes.
+    This helper is why get_level_actor exists. Its first version called that endpoint on the
+    assumption it was there, got route_handler_not_found, returned None, and turned five real
+    assertions into None == None - they only failed loudly because the expected values were concrete
+    numbers. The endpoint was then added (243 endpoints), so the helper now uses it.
+
+    It still cross-checks against list_level_actors: two independent reads that must agree, so a bug
+    in either shows up here rather than being quietly trusted. Raise rather than return None - a test
+    helper that quietly answers "no idea" is how a vacuous suite passes.
     """
-    r = M.call("list_level_actors", {"nameContains": label})
-    for a in (r.get("actors") or []):
-        if a.get("label") == label:
-            return a["location"]["z"]
-    raise RuntimeError("could not read %s back: %s" % (label, json.dumps(r)[:300]))
+    one = M.call("get_level_actor", {"actorPath": label})
+    if not one.get("ok"):
+        raise RuntimeError("get_level_actor could not read %s: %s" % (label, json.dumps(one)[:300]))
+    z = one["actor"]["location"]["z"]
+
+    listed = M.call("list_level_actors", {"nameContains": label})
+    match = [a for a in (listed.get("actors") or []) if a.get("label") == label]
+    if len(match) != 1:
+        raise RuntimeError("the lister found %d actors labelled %s, not 1" % (len(match), label))
+    if abs(match[0]["location"]["z"] - z) > 0.001:
+        raise RuntimeError("get_level_actor and list_level_actors disagree on %s: %s vs %s"
+                           % (label, z, match[0]["location"]["z"]))
+    return z
 
 
 def put_z(path, z, x, y):

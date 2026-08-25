@@ -1068,6 +1068,9 @@ namespace MifBridge
 	// LEVEL / placed-actor editing (MifBridgeLevel.cpp) — operates on the level currently open.
 	// The value is actorPath: set_property already edits a placed actor once you have one.
 	MIF_DECL(list_level_actors);
+	/** Read ONE actor back by path (or label/name). The plural sibling exists; this did not, so the
+	 *  only way to re-read a handle you already hold was to scan the whole level and filter. */
+	MIF_DECL(get_level_actor);
 	MIF_DECL(spawn_actor_in_level);
 	MIF_DECL(set_actor_transform);
 	MIF_DECL(set_actor_label);

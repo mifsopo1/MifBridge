@@ -249,6 +249,7 @@ namespace MifBridge
 			MIF_BIND(run_console_captured);
 			// Level / placed-actor editing
 			MIF_BIND(list_level_actors);
+			MIF_BIND(get_level_actor);
 			MIF_BIND(spawn_actor_in_level);
 			MIF_BIND(set_actor_transform);
 			MIF_BIND(set_actor_label);
@@ -459,7 +460,7 @@ namespace MifBridge
 			TEXT("describe_class"), TEXT("list_enum_values"),
 			TEXT("describe_animation"), TEXT("list_animations"),
 			TEXT("list_tree_widgets"),
-			TEXT("list_struct_members"), TEXT("list_level_actors"),
+			TEXT("list_struct_members"), TEXT("list_level_actors"), TEXT("get_level_actor"),
 			// PIE start/stop only QUEUE a request — they mutate no asset and must not open a
 			// transaction (an undo entry spanning a world teardown is meaningless).
 			// Read-only spatial queries. capture_camera spawns a TRANSIENT actor it destroys again,
