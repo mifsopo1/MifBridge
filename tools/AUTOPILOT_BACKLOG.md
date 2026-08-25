@@ -23,10 +23,18 @@ it off and write one line saying why it was dropped — do not leave it open to 
 - [x] Work the audit_postconditions.py MEDIUM list: ~90 mutating handlers with no visible read-back. Triage for the ones where a silent failure would be invisible to the caller, fix those, and record the rest as understood.
 - [x] MifBridgeGraphPatch.cpp still carries a local FPinRef that duplicates the shared FMifPinRef in MifBridgeHandlers.h. Converge them so there is one implementation, per the module's own rule.
 - [x] The hideKnots fix has never been exercised — no endpoint creates a K2Node_Knot, so build a reroute chain some other way and prove it.
-- [ ] pie_status misreports a working PIE session. Reproduce and fix, or establish exactly what it is really reporting.
+- [x] pie_status misreports a working PIE session. Reproduce and fix, or establish exactly what it is really reporting.
 - [ ] snap_actors_to_ground misses ~112 of 303 actors on flat ground. Find out why before trusting it again.
 
 ## Done
+
+- [x] pie_status: cannot reproduce, and the fix is already in the code. Tested both ways against a
+      live editor - simulate mode and a real possessed-pawn session - and it reported stopped ->
+      running correctly within one poll each time, with pieActorCount and the pawn path populated.
+      The handler carries a comment describing exactly the defect the item was about:
+      IsPlayingSessionInEditor() goes true BEFORE the world exists, so polling on it reports running
+      while GetPIEWorld() is still null; it uses UWorld::HasBegunPlay() instead. The open item was
+      stale, carried forward from a note written before that change. Dropped rather than left to spin.
 
 - [x] hideKnots is finally exercised, by closing the gap that made it untestable. Reroute nodes were
       readable but not writable - list_nodes has hideKnots, SerializePin resolves through knot chains,
