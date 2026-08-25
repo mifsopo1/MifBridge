@@ -822,15 +822,15 @@ share every check except one direction rule, so the fix asks the **entry** about
 accepts (`EGPD_Output`) — identical type/exec/editable question — and the direction rule is satisfied
 by construction, since the pin goes onto a Result node as an input.
 
-#### There are THREE engine macro libraries, and `macroPath` defaults to only one
+#### Macro libraries are discovered from the ASSET REGISTRY, and `macroPath` defaults to one
 
 A user needed "Switch Has Authority", tried `SwitchHasAuthority` and `Switch Has Authority` at
 `add_macro_instance`, had both refused, and concluded from the refusals that the node must be a
 dedicated `K2Node` class needing a new endpoint. They later placed it by hand, read it back, saw
 `K2Node_MacroInstance`, and retracted the report themselves.
 
-The node was reachable the whole time. `/Engine/Content/EditorBlueprintResources/` holds **three**
-macro libraries:
+The node was reachable the whole time. `/Engine/Content/EditorBlueprintResources/` holds three of
+them:
 
 | library | contains |
 |---|---|
@@ -849,7 +849,15 @@ Three things now close the loop:
   `library`, `libraryName`, `displayTitle`, and `addMacroInstanceArgs` holding the exact
   `macroGraph` + `macroPath` to pass back. Copy those; do not re-derive them from the title.
 * **A miss lists `availableMacroGraphs`** for the requested library plus `didYouMean`, and **searches
-  the other two libraries** - `foundInOtherLibrary` names the exact `macroPath` to retry with.
+  every other macro library the asset registry knows** - `foundInOtherLibrary` names each exact
+  `macroPath` to retry with, and the error lists them all when a name exists in several (`Switch Has
+  Authority` is in both `ActorMacros` and `ActorComponentMacros`, which are NOT interchangeable).
+
+  > The first version of this hardcoded the three `EditorBlueprintResources` paths. An engine-wide
+  > search then turned up a fourth library - `ArtTools/RenderToTexture/Macros/RenderToTextureMacros`
+  > - that the list could never have reached. It rotted inside the session it was written in. The
+  > registry also covers macro libraries the PROJECT defines, which is what a user is most likely to
+  > be reaching for; the `BlueprintType` asset tag identifies them without loading anything.
 * **Matching ignores case and spacing**, so `switchhasauthority` resolves; the response says
   `matchedBy: "normalized"` when it was not an exact hit.
 

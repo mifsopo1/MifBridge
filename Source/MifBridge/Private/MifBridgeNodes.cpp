@@ -1,5 +1,7 @@
 // MifBridge — node creation, pin wiring, and batch endpoints (the graph-edit core).
 #include "MifBridgeHandlers.h"
+#include "AssetRegistry/IAssetRegistry.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "MifBridgeLog.h"
 
 #include "EdGraph/EdGraph.h"
@@ -931,37 +933,59 @@ namespace MifBridge
 				for (const FString& Nm : Near) { NearArr.Add(MakeShared<FJsonValueString>(Nm)); }
 				Out->SetArrayField(TEXT("didYouMean"), NearArr);
 			}
-			// SEARCH THE OTHER LIBRARIES. This is the reported case, and neither the caller nor I
-			// guessed it: "Switch Has Authority" is not in StandardMacros at all - it lives in
+			// SEARCH EVERY OTHER MACRO LIBRARY. This is the reported case, and neither the caller nor
+			// I guessed it: "Switch Has Authority" is not in StandardMacros at all - it lives in
 			// ActorMacros, and its graph name really does contain spaces. The user's second guess was
 			// the RIGHT NAME in the WRONG LIBRARY, and the old error mentioned only the name, so a run
-			// of failures read as "this is not a macro" rather than "look in another library".
-			// macroPath defaults to StandardMacros, so anything in the Actor libraries was effectively
-			// invisible to a caller who did not already know it was there.
-			static const TCHAR* KnownLibraries[] = {
-				TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros"),
-				TEXT("/Engine/EditorBlueprintResources/ActorMacros.ActorMacros"),
-				TEXT("/Engine/EditorBlueprintResources/ActorComponentMacros.ActorComponentMacros"),
-			};
+			// of failures read as "this is not a macro" rather than "look somewhere else".
+			// macroPath defaults to StandardMacros, so everything else was effectively invisible.
+			//
+			// ASK THE REGISTRY, do not hardcode. The first version of this listed the three libraries
+			// under /Engine/EditorBlueprintResources; an engine-wide search then found a fourth
+			// (ArtTools/RenderToTexture/Macros/RenderToTextureMacros) that the list could never reach.
+			// It rotted inside the session it was written in. The registry also covers macro libraries
+			// the PROJECT defines - which is what a user is most likely to be reaching for.
+			//
+			// The BlueprintType tag is read straight off FAssetData, so nothing is loaded to decide
+			// what is a macro library; only the few that are get loaded, and only on this failure path.
 			TArray<TSharedPtr<FJsonValue>> Elsewhere;
-			for (const TCHAR* LibPath : KnownLibraries)
 			{
-				if (FString(LibPath) == MacroPath) { continue; }
-				UBlueprint* OtherLib = Cast<UBlueprint>(
-					StaticLoadObject(UBlueprint::StaticClass(), nullptr, LibPath, nullptr, LOAD_NoWarn));
-				if (!OtherLib) { continue; }
-				for (UEdGraph* Candidate : OtherLib->MacroGraphs)
+				IAssetRegistry& Registry =
+					FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+				TArray<FAssetData> BlueprintAssets;
+				Registry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(),
+					BlueprintAssets, /*bSearchSubClasses*/ true);
+
+				int32 Searched = 0;
+				for (const FAssetData& Data : BlueprintAssets)
 				{
-					if (!Candidate) { continue; }
-					const FString CName = Candidate->GetName();
-					if (CName == MacroName || Squash(CName) == WantSquashed)
+					if (Searched > 64) { break; }   // sanity bound; there are only ever a handful
+					FString BpType;
+					if (!Data.GetTagValue(FBlueprintTags::BlueprintType, BpType)) { continue; }
+					if (BpType != TEXT("BPTYPE_MacroLibrary")) { continue; }
+
+					const FString LibPath = Data.GetObjectPathString();
+					if (LibPath == MacroPath) { continue; }   // already searched, above
+
+					UBlueprint* OtherLib = Cast<UBlueprint>(
+						StaticLoadObject(UBlueprint::StaticClass(), nullptr, *LibPath, nullptr, LOAD_NoWarn));
+					if (!OtherLib) { continue; }
+					++Searched;
+
+					for (UEdGraph* Candidate : OtherLib->MacroGraphs)
 					{
-						TSharedRef<FJsonObject> Hit = MakeShared<FJsonObject>();
-						Hit->SetStringField(TEXT("macroGraph"), CName);
-						Hit->SetStringField(TEXT("macroPath"), LibPath);
-						Elsewhere.Add(MakeShared<FJsonValueObject>(Hit));
+						if (!Candidate) { continue; }
+						const FString CName = Candidate->GetName();
+						if (CName == MacroName || Squash(CName) == WantSquashed)
+						{
+							TSharedRef<FJsonObject> Hit = MakeShared<FJsonObject>();
+							Hit->SetStringField(TEXT("macroGraph"), CName);
+							Hit->SetStringField(TEXT("macroPath"), LibPath);
+							Elsewhere.Add(MakeShared<FJsonValueObject>(Hit));
+						}
 					}
 				}
+				Out->SetNumberField(TEXT("otherLibrariesSearched"), Searched);
 			}
 			if (Elsewhere.Num() > 0)
 			{
@@ -976,13 +1000,24 @@ namespace MifBridge
 			if (Elsewhere.Num() > 0)
 			{
 				// Name the exact macroPath to retry with. One more call, not another guess.
-				const TSharedPtr<FJsonObject>* First = nullptr;
-				Elsewhere[0]->TryGetObject(First);
+				// A macro name can exist in SEVERAL libraries - "Switch Has Authority" is in both
+				// ActorMacros and ActorComponentMacros, and they are not interchangeable (one targets
+				// an Actor, the other a component). Naming just the first would send the caller to an
+				// arbitrary one, so list them all and let them choose.
+				TArray<FString> Paths;
+				for (const TSharedPtr<FJsonValue>& V : Elsewhere)
+				{
+					const TSharedPtr<FJsonObject>* Obj = nullptr;
+					if (V.IsValid() && V->TryGetObject(Obj) && Obj)
+					{
+						Paths.Add((*Obj)->GetStringField(TEXT("macroPath")));
+					}
+				}
 				Fail(Out, FString::Printf(
-					TEXT("macro graph '%s' is not in %s, but it EXISTS in %s - retry with macroPath:\"%s\". (macroPath defaults to StandardMacros, so the Actor macro libraries are easy to miss.) Every match is listed in foundInOtherLibrary."),
-					*MacroName, *MacroPath,
-					First ? *(*First)->GetStringField(TEXT("macroPath")) : TEXT("another library"),
-					First ? *(*First)->GetStringField(TEXT("macroPath")) : TEXT("")));
+					TEXT("macro graph '%s' is not in %s, but it EXISTS in %d other librar%s: %s. Retry with one of those as macroPath. (macroPath defaults to StandardMacros, so everything else is easy to miss%s.) Every match is listed in foundInOtherLibrary."),
+					*MacroName, *MacroPath, Paths.Num(), Paths.Num() == 1 ? TEXT("y") : TEXT("ies"),
+					*FString::Join(Paths, TEXT(", ")),
+					Paths.Num() > 1 ? TEXT("; these are NOT interchangeable - pick the one matching your target type") : TEXT("")));
 				return;
 			}
 			Fail(Out, FString::Printf(
