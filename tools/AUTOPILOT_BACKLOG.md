@@ -71,7 +71,7 @@ it off and write one line saying why it was dropped — do not leave it open to 
       enumerable:false does NOT match, because that is about whether tab ids can be listed, and that
       endpoint has a real defect that must stay flagged. 17 checks in test_fuzz_detector.py, using
       the actual run-5 responses as fixtures.
-- [ ] Work the audit_mode_params.py review list (18 handlers). It finds the invoke_editor_tab SHAPE:
+- [x] Work the audit_mode_params.py review list (18 handlers). It finds the invoke_editor_tab SHAPE:
       a parameter that is declared and valid but silently unused on some branch, which
       RejectUnknownParams structurally cannot catch because the parameter is not unknown - it is
       ignored by MODE. The list is already filtered to parameters never named in any refusal in their
@@ -81,6 +81,18 @@ it off and write one line saying why it was dropped — do not leave it open to 
       not enforced, so it is a milder instance - documented rather than silent. Decide per handler
       whether the doc string is enough or whether it should refuse like invoke_editor_tab now does.
       Not urgent; this is hygiene on a class of bug, not a live defect list.
+      WORKED, and closed with a decision rather than left to spin. The tool was sharpened three times,
+      each after it accused something innocent: refusal-mention filtering (sculpt_landscape DOES say
+      amount is raise/lower only), brace depth (it was listing every parameter of every mode-having
+      handler), and presence-guard exclusion (set_viewport_camera's location/rotation/lookAt sit
+      inside `if (TryGetObjectField(...))` and apply on every mode). 18 -> 12 rows, and none of the
+      passes lost invoke_editor_tab.
+      Spot-checked the survivors: most are ALIAS clusters (path/functionName/name are one argument
+      under three spellings) read through multi-line JStrAny that the line-based scan cannot see -
+      documented as a known limitation in the tool's header. The one genuine milder instance is
+      list_sublevels' netMode, which is DOCUMENTED as "only meaningful with world:pie" but not
+      enforced. No further fixes are warranted right now; the tool exists so the next instance is
+      found deliberately instead of by accident.
 - [ ] Validation sweep against the FIXED build. Run 4 tested a binary that predates c190ae5 and used
       the ghost detector that predates ea37587, so it cannot show either fix working. A clean run
       should now give 0 CRASH, and the GHOST_OK bucket should collapse from 9 to the handful that are

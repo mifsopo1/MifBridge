@@ -17,6 +17,19 @@ three passes escaping.
 
 Reading the output: a handler appearing here is NOT a bug. The question to ask of each row is
 "if I pass this parameter in the wrong mode, does anything tell me?"
+
+KNOWN LIMITATION, stated rather than discovered later. Alias parameters read through a MULTI-LINE
+`JStrAny(In, { TEXT("path"), TEXT("name"), ... })` are not recognised as reads, because the scan is
+line-based and the literals sit on continuation lines. That is why rows like set_function_flags list
+`path, functionName, name` - three spellings of one argument that IS read, on every path. Treat
+alias-looking clusters as probable false positives and check the resolver before believing them.
+
+The filters were each added because the tool accused something innocent:
+  * refusal-mention, after it listed sculpt_landscape, which DOES say amount is raise/lower only;
+  * brace depth, after it listed every parameter of every mode-having handler;
+  * presence-guard, after it accused set_viewport_camera, whose location/rotation/lookAt sit inside
+    `if (TryGetObjectField(...))` and are applied on every mode.
+Each pass cut noise without cutting the one row that started this - invoke_editor_tab.
 """
 import os
 import re
@@ -38,6 +51,39 @@ HANDLER = re.compile(r'^\tvoid (H_\w+)\(', re.M)
 # Everything the handler says when it refuses. A parameter named in one of these has been thought
 # about; a declared parameter that appears in no refusal at all is the invoke_editor_tab shape.
 FAIL_MSG = re.compile(r'Fail\s*\(\s*Out\s*,(.*?)\)\s*;', re.S)
+
+
+# Depth inside a handler body: 1 is the function's own braces, so a statement directly in the body
+# sits at 1 and anything within an if/else/loop is deeper.
+TOP_LEVEL = 1
+
+
+def presence_guarded(body, param):
+    """True when the handler explicitly tests whether this parameter was PASSED.
+
+    This is the difference between "inside a branch" and "inside a MODE branch", and getting it wrong
+    made the tool accuse set_viewport_camera: its location/rotation/lookAt sit inside
+    `if (In->TryGetObjectField(TEXT("location"), ...))`, which tests the parameter's own presence and
+    then applies it on every mode. That is deliberate handling, the opposite of a silent ignore.
+    """
+    for probe in ('TryGetObjectField(TEXT("%s")', 'TryGetArrayField(TEXT("%s")',
+                  'TryGetStringField(TEXT("%s")', 'TryGetNumberField(TEXT("%s")',
+                  'TryGetBoolField(TEXT("%s")', 'JHasAny(In, { TEXT("%s")'):
+        if (probe % param) in body:
+            return True
+    return False
+
+
+def read_depth(body, param):
+    """Shallowest brace depth at which this parameter is READ. Large number if it is never read."""
+    pattern = 'TEXT("%s")' % param
+    depth, best = 0, 99
+    for line in body.splitlines():
+        if pattern in line and ("JStr" in line or "JNum" in line or "JBool" in line
+                                or "JInt" in line or "JArray" in line):
+            best = min(best, depth)
+        depth += line.count("{") - line.count("}")
+    return best
 
 
 def handlers(text):
@@ -90,7 +136,20 @@ def main():
             unexplained = [p for p in others if p not in fails]
             if not unexplained:
                 continue
-            rows.append((fname, name[2:], modes, unexplained, len(others)))
+
+            # IS IT ACTUALLY CONDITIONAL? A parameter read at the handler's top level runs on every
+            # path, so it cannot be mode-ignored no matter how many modes the handler has. Only a
+            # read nested INSIDE a branch can be skipped.
+            #
+            # Without this, the tool lists every parameter of every mode-having handler and says
+            # nothing - which is a shrug dressed as a finding. Brace depth is a crude proxy for
+            # "inside a branch", and crude is fine here because the output is a review list: it
+            # narrows where to look, it does not decide.
+            conditional = [p for p in unexplained
+                           if read_depth(body, p) > TOP_LEVEL and not presence_guarded(body, p)]
+            if not conditional:
+                continue
+            rows.append((fname, name[2:], modes, conditional, len(others)))
 
     print("=" * 78)
     print("HANDLERS THAT BRANCH ON A MODE PARAMETER")
