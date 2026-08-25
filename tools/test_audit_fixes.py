@@ -114,6 +114,21 @@ def main():
         check("T44 bad enumerator is reported, not silently dropped",
               "valueError" in r or "valueApplied" in r, blob[:260])
 
+    # ------------------------------------------------------------------ T46 mode-dependent param
+    print("\n=== T46: invoke_editor_tab refuses an 'asset' it would have ignored ===")
+    # Found by the sweep's ghost probe. UiResolveTabManager returns early for manager:"global" and
+    # never reads the asset, so passing one with the DEFAULT manager did nothing and said nothing.
+    # RejectUnknownParams cannot catch it - 'asset' is a valid declared parameter, ignored by MODE.
+    # Any endpoint whose parameters mean different things in different modes has the same hole.
+    r = M.call("invoke_editor_tab", {"asset": "/Game/Whatever", "probe": True})
+    check("T46 refused rather than ignoring the asset", r.get("ok") is False, json.dumps(r)[:220])
+    check("T46 and it says why, naming the mode",
+          "assetEditor" in (r.get("error") or "") and "ignored" in (r.get("error") or ""),
+          (r.get("error") or "")[:220])
+    # The ordinary path must still work - a fix that refuses too much is its own defect.
+    ok = M.call("invoke_editor_tab", {"probe": True})
+    check("T46 the plain global form still works", ok.get("ok") is True, json.dumps(ok)[:200])
+
     print("\n=== T45: everything still compiles ===")
     c = M.call("compile", {"blueprintId": bpid})
     check("T45 compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,

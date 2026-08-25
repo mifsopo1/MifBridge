@@ -1192,9 +1192,31 @@ namespace MifBridge
 		Out->SetStringField(TEXT("enumerationNote"),
 			TEXT("tab ids cannot be ENUMERATED from a plugin: FTabManager::TabSpawner and HasTabSpawnerFor are both protected (TabManager.h:1113-1117) despite carrying SLATE_API. They can only be PROBED one at a time with the public HasTabSpawner (:981). probes[] below is a live probe of a curated seed plus anything you passed in probeIds[]; workspaceMenuTabIds[] is a real but PARTIAL enumeration (only spawners that were given a workspace-menu group appear)."));
 
+		// 'asset' IS ONLY READ WHEN manager IS "assetEditor".
+		//
+		// UiResolveTabManager returns early for manager:"global" and never looks at the asset, so
+		// passing one with the DEFAULT manager did nothing and said nothing. A caller who meant an
+		// asset-editor tab and forgot to set manager got a global tab operation under ok:true.
+		//
+		// RejectUnknownParams cannot catch this: 'asset' is a perfectly valid declared parameter. It
+		// is ignored by MODE, which is a blind spot in that guard - worth remembering, because any
+		// endpoint whose parameters mean different things in different modes has the same hole.
+		// Found by the endpoint sweep's ghost probe.
+		const FString AssetIn = JStr(In, TEXT("asset"));
+		if (!AssetIn.IsEmpty() && !ManagerIn.Equals(TEXT("assetEditor"), ESearchCase::IgnoreCase))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'asset' is only used when manager is \"assetEditor\", and manager here is "
+					 "\"%s\" — so the asset would have been ignored. Pass "
+					 "manager:\"assetEditor\" to target that asset's tab manager, or drop 'asset' "
+					 "to operate on the %s tab manager deliberately. NOTHING was done."),
+				*ManagerIn, *ManagerIn));
+			return;
+		}
+
 		FString MgrError;
 		const TSharedPtr<FTabManager> Manager = UiResolveTabManager(
-			ManagerIn, JStr(In, TEXT("majorTab")), JStr(In, TEXT("asset")), Out, MgrError);
+			ManagerIn, JStr(In, TEXT("majorTab")), AssetIn, Out, MgrError);
 		if (!Manager.IsValid()) { Fail(Out, MgrError); return; }
 
 		// Partial enumeration from the workspace menu.
