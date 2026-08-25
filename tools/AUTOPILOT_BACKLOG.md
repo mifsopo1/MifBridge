@@ -104,22 +104,22 @@ it off and write one line saying why it was dropped — do not leave it open to 
       Run 4 completed: 232 endpoints, 1 CRASH (duplicate_asset - the modal, now fixed in c190ae5),
       9 GHOST_OK (6 of them the fuzzer's own contamination, since fixed), 1 HANG.
       CONFIRMED, and no longer unexplained as to trigger: run 4 reproduced it on the ABSURD probe with
-      every parameter set to ' '. Recorded as HANG rather than CRASH, so the bridge was
+      every parameter set to ''. Recorded as HANG rather than CRASH, so the bridge was
       still alive on the confirming re-check - it did not die, it stopped answering that call.
-      Embedded NULs are the obvious suspect: an FString carrying   truncates at the C-string
+      Embedded NULs are the obvious suspect: an FString carrying  truncates at the C-string
       boundary in some paths and not others, so a length check and a copy can disagree. Reproduce it
       against a single endpoint before touching anything.
 - [x] recipe_reset_and_loop hangs on control characters in its parameters (see above). Find the actual
       blocking call. Do NOT assume it is the modal-dialog class - that is the fresh hypothesis and this
       hang predates the evidence for it.
       A static pass ruled out the obvious candidates rather than confirming one. Ruled OUT so far:
-        * Not "treated as empty". The probe tries "" FIRST and that does not hang; only " "
+        * Not "treated as empty". The probe tries "" FIRST and that does not hang; only ""
           does. The difference is that Len()==3 passes every IsEmpty() guard while *Str is empty as a
           C string, so it gets FURTHER than the empty case, not less far.
         * Not a graph-resolution scan. ResolveGraphField takes IsEmpty() as false and calls
           ResolveGraph, which Splits on "::" first and returns immediately when that fails. Fast path.
         * Not response truncation on an embedded NUL. FJsonSerializer escapes control characters, so
-          the body carries the six characters   and never a raw NUL byte - Content-Length and the
+          the body carries the six characters  and never a raw NUL byte - Content-Length and the
           payload agree.
       Strongest remaining hypothesis, and it is NOT endpoint-specific: handlers run synchronously
       inline on the game thread, so "hang" as the fuzzer measures it is a CLIENT-side timeout and can
@@ -129,7 +129,7 @@ it off and write one line saying why it was dropped — do not leave it open to 
       DROPPED - it is not an endpoint defect. tools/probe_recipe_hang.py sends the exact run-4 payload
       to an idle editor and it answers in 0.33s with "missing graphId". The empty-string control
       answers identically, which also DISPROVES the reasoning I had written above: IsEmpty() is in
-      fact true for " ", so it behaves exactly like "" rather than getting further. The
+      fact true for "", so it behaves exactly like "" rather than getting further. The
       input was never the trigger.
       What actually happened is the client-side-timeout explanation. Handlers run inline on the game
       thread, so a call queues behind whatever the editor is doing, and run 4 hit this endpoint right
