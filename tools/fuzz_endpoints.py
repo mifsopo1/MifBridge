@@ -34,12 +34,69 @@ import mifaudit as M
 FUZZ_KEY = "__mif_fuzz_key__"
 
 GHOST_GUID = "DEADBEEF00004444DEADBEEF00004444"
-# UNIQUE PER RUN. A fixed ghost path stops being a ghost: the probe hands it to every endpoint
-# including create_blueprint, which is SUPPOSED to accept a path that does not exist yet - so run 1
-# created /Game/_MifAudit_DoesNotExist/Nope, and by run 2 that path resolved to a real Blueprint and
-# diff_properties_vs_default was reported for answering about an asset that genuinely existed. The
-# fuzzer was contaminating its own later results.
-GHOST_PATH = "/Game/_MifAuditGhost_%d/Nope" % int(time.time())
+
+# UNIQUE PER RUN *AND* PER ENDPOINT.
+#
+# Per-run came first, because a fixed ghost path stopped being a ghost between runs: run 1 created
+# /Game/_MifAudit_DoesNotExist/Nope and by run 2 that path resolved to a real Blueprint, so an endpoint
+# was reported for correctly answering about an asset that existed.
+#
+# That fixed the wrong half. The probe hands its ghost to EVERY endpoint including create_blueprint,
+# which is supposed to accept a path that does not exist yet - there is a `creates` exclusion below so
+# it is not flagged for that, but not being flagged does not stop it creating the asset. And
+# endpoint_names() is sorted(), so create_blueprint runs at 'c' and everything after it is handed a
+# path that by then really exists.
+#
+# Run 4 is the proof: six of its seven GHOST_OK findings sit alphabetically after 'c' and were asked
+# about a path that existed; only audit_unused at 'a' ran before it. It is also how duplicate_asset was
+# handed an EXISTING destination, which is what raised the modal dialog that froze the editor.
+GHOST_RUN = int(time.time())
+
+
+def ghost_path(endpoint):
+    """A path no earlier endpoint in this run can have created, because only this one is given it."""
+    return "/Game/_MifAuditGhost_%d/%s_Nope" % (GHOST_RUN, endpoint)
+
+# Parameters that name a SET to search rather than a THING to resolve. A prefix or filter that matches
+# nothing legitimately returns ok:true with zero results; an identity that resolves to nothing should
+# fail. The payload alone cannot tell these apart - both are "ok:true and empty" - but the key that was
+# ghosted can, and it matches the hand triage of run 4 exactly: audit_unused and find_assets ghosted
+# pathPrefix (correct empties), while describe_package, get_dependencies, get_referencers,
+# diff_properties_vs_default and invoke_editor_tab ghosted an identity (real findings).
+SEARCH_KEYS = ("prefix", "folder", "contains", "filter", "query", "search", "pattern")
+
+
+def _is_search_key(k):
+    return any(w in k.lower() for w in SEARCH_KEYS)
+
+
+def looked_and_found_nothing(ghosted_keys, r):
+    """True when ok:true means "I searched and found nothing", which is a correct answer.
+
+    Requires BOTH: every ghosted key names a set to search rather than a thing to resolve, AND the
+    response carries no actual content. Flagging correct empties made the GHOST_OK bucket mostly noise
+    and buried the one finding that mattered - but suppressing on emptiness alone hides the real case,
+    an endpoint that resolves a nonexistent identity and answers about it anyway.
+
+    Strings are ignored on purpose: responses routinely echo the path they were asked about, and that
+    echo says nothing about whether anything was found.
+    """
+    if not ghosted_keys or not all(_is_search_key(k) for k in ghosted_keys):
+        return False
+    payload = {k: v for k, v in r.items()
+               if k not in ("ok", "endpoint", "note", "warning", "elapsedMs")}
+    for k, v in payload.items():
+        if isinstance(v, bool):
+            if v:
+                return False
+        elif isinstance(v, (int, float)):
+            if v != 0:
+                return False
+        elif isinstance(v, (list, dict)):
+            if len(v) > 0:
+                return False
+    return True
+
 
 WRONG_SHAPES = [
     {"__wrong": "object-where-scalar-expected"},
@@ -250,7 +307,7 @@ def main():
             if "guid" in kl or kl in ("node", "nodeid", "src", "dst", "srcnode", "dstnode"):
                 ghosts[k] = GHOST_GUID
             elif "path" in kl or kl in ("asset", "blueprintid", "graphid", "material", "level"):
-                ghosts[k] = GHOST_PATH
+                ghosts[k] = ghost_path(ep)
         if ghosts:
             status, r = probe(ep, "ghost", ghosts)
             if status == "dead":
@@ -265,7 +322,7 @@ def main():
                 # its whole job - so "succeeded against a nonexistent path" is the correct answer
                 # there, not a finding. Flagging create_blueprint was this probe's own false positive.
                 creates = ep.startswith(("create_", "add_", "new_", "spawn_", "import_", "duplicate_"))
-                if r.get("ok") is True and not creates:
+                if r.get("ok") is True and not creates and not looked_and_found_nothing(ghosts, r):
                     M.record("GHOST_OK", ep,
                              "reported success for references that do not exist (%s)"
                              % ", ".join(sorted(ghosts)),

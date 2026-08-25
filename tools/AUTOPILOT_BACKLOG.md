@@ -17,6 +17,30 @@ it off and write one line saying why it was dropped — do not leave it open to 
 - [x] From the postcondition triage: the setters and connectors are the MEDIUM entries that could still fail silently, unlike the creation ones. Check connect_material_expressions (the material analogue of connect_pins, which had exactly this defect), set_component_transform and set_actor_transform for whether a refused write is reported.
 
 - [x] select_level_actors: name the actorPaths that did not resolve. `selected:0` currently reads the same as "these exist and none matched", so a caller doing select-then-operate-on-selection gets an empty selection and no reason.
+- [ ] duplicate_asset hung the editor on a modal dialog (found by the sweep, logged as a crash).
+      Fix written, not yet built: destination pre-check plus TGuardValue on GIsRunningUnattendedScript
+      around both AssetTools calls. Build, test, commit.
+- [ ] AUDIT THE WHOLE SURFACE for reachable FMessageDialog paths. duplicate_asset and rename_asset both
+      claimed "headless - no dialog" and neither was: the non-WithDialog entry points only suppress the
+      PICKERS, while the validation inside AssetTools calls FMessageDialog::Open directly. A modal on
+      the game thread makes the bridge stop answering entirely and reads as a crash, so this is a class
+      of bug, not one endpoint. Check every endpoint that reaches AssetTools, ObjectTools, PackageTools
+      or FEditorFileUtils. This is also the best remaining explanation for the old unexplained
+      recipe_reset_and_loop hang.
+- [ ] The fuzzer's ghost path stops being a ghost DURING a run, not just between runs. It is unique per
+      run now, but create_blueprint legitimately creates it, so every later endpoint probed with that
+      same path is being asked about something that exists. That is how duplicate_asset was handed an
+      existing destination. Make the ghost unique per endpoint, or exclude creation endpoints from the
+      ghost probe.
+      The order makes it exactly diagnosable: endpoint_names() is sorted(), so create_blueprint at 'c'
+      contaminates every endpoint probed after it. Of run 4's GHOST_OK findings only audit_unused ('a')
+      is uncontaminated; describe_package, diff_properties_vs_default, find_assets, get_dependencies,
+      get_referencers and invoke_editor_tab all come after 'c' and were asked about a path that by then
+      really existed. invoke_editor_tab almost certainly OPENED it.
+- [ ] The ghost detector also flags endpoints whose ok:true is correct. A search over a prefix that
+      matches nothing (audit_unused, find_assets) legitimately returns ok:true with zero results -
+      that is an empty result set, not a phantom success. Separate "answered about a thing that does
+      not exist" from "correctly found nothing" or the bucket stays noise.
 - [ ] Re-run the endpoint sweep with the narrowed leak detector and the confirming-retry hang logic, and confirm or drop the unexplained recipe_reset_and_loop hang.
 - [x] recipe_reset_and_loop hardcodes StandardMacros when resolving ForEachLoop — the same brittle pattern already fixed in add_macro_instance. Harmless today, but route it through the registry lookup.
 - [x] Extend audit_roundtrip.py to the node types it does not yet cover (branch, sequence, timeline, switch, spawn_actor, interface calls) — the two gaps it already found were both real.
@@ -30,9 +54,11 @@ it off and write one line saying why it was dropped — do not leave it open to 
       Every static mesh blocks WorldStatic, so any actor over another actor had only the prop in its
       results and no ground was ever found. Now re-traces past each non-ground blocker, bounded at 32.
       11 checks in tools/test_snap_ground.py, including three that the fix must not break.
-- [ ] There is no single-actor read endpoint. get_level_actor does not exist; reading one actor's
+- [x] There is no single-actor read endpoint. get_level_actor does not exist; reading one actor's
       transform back means list_level_actors with nameContains and filtering client-side. Found by
       writing a test helper that called the endpoint it assumed was there and silently returned None.
+      Added. 243 endpoints, parity clean. The helper that exposed the gap now uses the endpoint and
+      cross-checks it against the lister, so the two reads have to agree.
 
 ## Done
 
