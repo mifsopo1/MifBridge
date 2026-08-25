@@ -658,3 +658,118 @@ debugged as a binding problem rather than a build that never ran.
    ```
 3. **A build that took under a second did not build.** Treat sub-second "success" as failure and read
    the output before believing it.
+
+## A modal dialog is a deadlock, and "no dialog" engine APIs still raise them (2026-08-25)
+
+**Symptom.** The endpoint sweep reported `duplicate_asset` as a **critical crasher** — "bridge died on
+well-formed but nonexistent references". The editor produced a crash dump
+(`EXCEPTION_ACCESS_VIOLATION`) and the user saw a fatal-error dialog.
+
+**It was not a crash.** The editor's own log named the real event:
+
+```
+Message dialog closed, result: Yes, title: Message,
+text: An object [Nope] of class [Blueprint] already exists in file [/Game/_MifAuditGhost_.../Nope].
+```
+
+`duplicate_asset` opened a **modal dialog** and the editor sat on it. MifBridge handlers run
+synchronously inline on the game thread, which is the same thread the HTTP server answers on, so a
+modal stops the bridge answering *anything*. From outside it is indistinguishable from a crash — and
+it is worse than a crash, because the editor looks alive. The access violation came later, from the
+fuzzer force-relaunching the unresponsive editor.
+
+**Root cause.** Two call sites carried the comment `// headless — no dialog`. That is wrong in a
+specific and general way:
+
+> In `AssetTools` and `ObjectTools`, the "no dialog" flag suppresses the **picker**, never the
+> **validation**.
+
+`IAssetTools::DuplicateAsset` really does pass `bWithDialog=false`, but that flag only reaches the
+*overwrite* prompt at the very end, inside `ObjectTools::DuplicateSingleObject`. Long before that,
+`PerformDuplicateAsset` calls `CanCreateAsset` (`AssetTools.cpp:4287`), which calls
+`FMessageDialog::Open` **unconditionally** for an invalid name, a clash with a map file, or an
+existing destination. `PerformDuplicateAsset` opens another itself if the source object is null.
+
+**The part that makes this severe, not merely annoying.** The dialog it raised was destructive:
+*"Do you want to replace the existing object? If you click 'Yes', the existing object will be
+deleted."* Meanwhile `duplicate_asset`'s own guard text promised it *"never overwrites; it fails if
+newPath is already taken"*. It did not fail. It waited for a human, and a "Yes" would have deleted the
+asset.
+
+**Cost.** An editor kill and a relaunch, a crash misattributed to a crasher that did not exist, and an
+hour of engine-source reading. Most of that hour was productive only because the *log* was read
+instead of the crash dump — the callstack was unsymbolicated and said nothing useful.
+
+**Fix.** Three sites, one root cause:
+
+* `duplicate_asset` — refuse a taken destination **before** calling AssetTools, so the documented
+  promise is real rather than incidental, plus the guard below.
+* `rename_asset` — same false claim, same guard.
+* `delete_asset` — **the one no sweep could have found.** It already passed `bShowConfirmation:false`,
+  and `ObjectTools.cpp:2833` opens a dialog that flag does not gate at all, fired whenever the
+  `OnAssetsCanDelete` delegate vetoes — which happens for ordinary reasons such as an asset editor
+  still holding the asset open. It is DENY-listed in the fuzzer; it was found by auditing the pattern
+  after the first one.
+
+The guard is `TGuardValue<bool>(GIsRunningUnattendedScript, true)`. `FMessageDialog::Open` shows UI
+only when `!FApp::IsUnattended() && !GIsRunningUnattendedScript` (`MessageDialog.cpp:172`); otherwise
+it logs and returns the **default** — `No` for a YesNo — so a destructive prompt is *declined* rather
+than blocked on.
+
+**Prevention:**
+
+1. **Treat every `AssetTools` / `ObjectTools` "no dialog" flag as covering the picker only.** Read the
+   validation path before believing a call is headless. `bWithDialog=false` and
+   `bShowConfirmation=false` both proved insufficient.
+2. **`tools/audit_modals.py`** now enforces this. It reports every MifBridge call into a known
+   prompting API as guarded or not, **and** re-verifies that the engine lines cited as proof still
+   contain what they are quoted as saying — so the audit cannot rot silently against a future engine.
+   Run it like `parity_check.py`.
+3. **A "crash" that produces no useful callstack may not be a crash.** Read
+   `Saved/Logs/<Project>.log` from the crash folder before the dump. The log named this in one line;
+   the dump was unsymbolicated addresses.
+4. **This was already documented, twice, and it still happened.** `02_GOTCHAS.md` section 8 is
+   titled *"The bridge stops answering but the editor is alive — look for a modal window"* and even
+   says the symptom is indistinguishable from a crash. `MifBridgeUndo.cpp:539` calls a modal on the
+   game thread *"a deadlock, not a dialog"*. What was missing was never the threading model — it was
+   knowing **which calls can prompt**, and that the "no dialog" flags do not cover validation. That
+   list is now a table in section 8 and is enforced by `tools/audit_modals.py`. A hazard documented
+   in the abstract does not prevent anything until it names the specific calls.
+
+
+## `snap_actors_to_ground` missed every actor standing over a prop (2026-08-25)
+
+**Symptom.** Reported as *"misses ~112 of 303 actors on flat ground"*. Reported honestly as `missed`,
+not as a wrong snap — the endpoint said so.
+
+**Root cause.** The handler traced once with `LineTraceMultiByChannel` and then searched the results
+for the first hit that was ground, on the stated belief that a MULTI trace sees everything along the
+ray where a single trace stops at the first blocker. From `Engine/World.h`, on **both** multi variants:
+
+> Only the single closest blocking result will be generated, no tests will be done after that
+
+A multi trace returns overlaps plus **one** blocking hit. Every static mesh blocks `WorldStatic`, so
+for an actor standing over another actor the results held exactly one hit — the prop — and the
+landscape underneath was never in them. The 191 that worked were over open landscape; the 112 that
+failed each had something beneath them.
+
+**What makes this worth recording.** The previous change was aimed at a *real* bug — a palm snapping
+onto a shack roof, the scene walking upward a layer per call — and it *did* stop that bug, by
+**missing** rather than by finding the real ground. So the symptom changed from "snapped wrong" to
+"missed", the fix looked like it worked, and the incorrect belief was written down as a confident
+comment that reads exactly like a correct one.
+
+**Fix.** Ignore each non-ground blocker and trace again, bounded at 32 so a deep stack cannot spin.
+Giving up is reported separately (`missedUnderDeepStack`) from an honest "there is nothing below this
+actor", because those are different problems with different fixes.
+
+**Prevention:**
+
+1. **A comment asserting what the engine does needs a test, not prose.** This is the same failure as
+   `add_timeline`, whose comment claimed `PostPlacedNewNode` built the timeline template on a node
+   with no such override. Both read as authoritative; neither was checked.
+2. **When a fix changes the symptom rather than removing it, suspect it.** "Snapped wrong" becoming
+   "missed" was the tell, and it was visible in the numbers for a while before anyone looked.
+3. `tools/test_snap_ground.py` builds a purpose-made column (floor, blocker, subject) and asserts the
+   subject lands on the **floor**, not on the blocker — plus three checks that the fix did not regress
+   into "snap onto whatever you hit first", which is the original bug.

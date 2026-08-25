@@ -459,6 +459,56 @@ A cooked ABP's AnimGraph is not bytecode — it is baked into `AnimNodePropertie
 
 ---
 
+## 6b. UMG WidgetAnimation — three things that fail SILENTLY
+
+Section 6 above is skeletal animation. UMG WidgetAnimation is a different system
+(`UWidgetAnimation : UMovieSceneSequence`) with its own traps, and all three of these report success
+while being wrong.
+
+**1. Times are `FFrameNumber` in TICK space — not seconds, not display frames.**
+
+A `UMovieScene` has a *display rate* (what the Sequencer UI shows, typically 20fps for UMG) and a
+*tick resolution* (how times are actually stored, typically **60000/1**). Keys and playback ranges are
+in ticks:
+
+```
+0.95 seconds  ->  57000 ticks     (0.95 * 60000)
+              ->  NOT 0.95
+              ->  NOT frame 19
+```
+
+Pass seconds or display frames and every key lands somewhere else while every call answers `ok:true`.
+The bridge converts for you, and `list_widget_animations` / `set_widget_animation_keys` report times
+in **both** units on purpose — a bad conversion is invisible in one unit and obvious in two.
+
+The playback range end is **exclusive**: the editor stores `end * tickResolution + 1`, so a 1.5s
+animation ends at tick `90001`. That `+1` is what `AnimationTabSummoner.cpp:589` does; matching it
+matters if you compare against a hand-authored animation.
+
+**2. A binding is TWO things, and half of one animates nothing.**
+
+A widget binding is an `FGuid` possessable in the `UMovieScene` **and** an entry in
+`UWidgetAnimation::AnimationBindings` mapping that guid to the widget's name. Create one without the
+other and the animation exists, compiles, plays, and moves nothing. Removal has the same requirement
+in reverse — drop both halves or you leave a binding that animates nothing.
+
+**3. `BindPossessableObject` will TERMINATE the editor if you call it headless.**
+
+`UWidgetAnimation::BindPossessableObject` is the documented way to keep those two halves in sync, and
+it opens with `CastChecked<UUserWidget>(Context)` (`WidgetAnimation.cpp:157`). `CastChecked` is a
+`check()` — a null or wrong-typed context **kills the process**, it does not refuse and does not
+return null. Outside the UMG Designer there is no preview widget to pass.
+
+Its plain-widget branch (`WidgetAnimation.cpp:189-199`) is four assignments and never reads `Context`
+at all, so MifBridge replicates exactly that. The **root widget** case genuinely does depend on the
+preview widget and is refused rather than approximated.
+
+**Bonus trap, in the read-back rather than the authoring:** `UMovieScene::GetTracks()` returns only
+**root** tracks. A track bound to a widget hangs off the binding
+(`FMovieSceneBinding::GetTracks()`), so counting only the former reports `trackCount: 0` for an
+animation with a working, keyed track — a false zero in the field you would use to verify the track
+exists.
+
 ## 7. Behaviours that are not bugs
 
 - **Array-library calls are first-class now** — see §4c. The old "`Array_Find` won't stay typed, use
@@ -571,6 +621,41 @@ Batch K:
 reached by any HTTP request.
 
 ---
+
+### WHICH engine calls raise one — the "no dialog" flag is not what you think
+
+Everything above was already written here before 2026-08-25, and it did not stop `duplicate_asset`
+freezing the editor that day. The missing piece was not the threading model; it was knowing **which
+calls can prompt**. State it as a rule:
+
+> In `AssetTools` and `ObjectTools`, a "no dialog" flag suppresses the **picker**, never the
+> **validation**.
+
+Confirmed cases, with the line that proves each:
+
+| Call | Flag that does NOT save you | Where it prompts anyway |
+|---|---|---|
+| `IAssetTools::DuplicateAsset` | `bWithDialog=false` | `PerformDuplicateAsset` → `CanCreateAsset`, `AssetTools.cpp:4287` — invalid name, map clash, or existing destination |
+| `IAssetTools::RenameAssets` | (the non-`WithDialog` entry point) | same `CanCreateAsset` validation |
+| `ObjectTools::DeleteAssets` | `bShowConfirmation=false` | `DeleteObjects`, `ObjectTools.cpp:2833` — fires when the `OnAssetsCanDelete` delegate vetoes, e.g. an asset editor still has the asset open |
+| `ObjectTools::DuplicateSingleObject` | `bPromptToOverwrite` gates only this one | `ObjectTools.cpp:866` — and it is **destructive**: "If you click 'Yes', the existing object will be deleted" |
+| `PromptUserIfExistingObject` | none — it always prompts | `Dialogs.cpp:911` |
+
+**The guard.** Wrap the call:
+
+```cpp
+TGuardValue<bool> UnattendedGuard(GIsRunningUnattendedScript, true);
+```
+
+`FMessageDialog::Open` shows UI only when `!FApp::IsUnattended() && !GIsRunningUnattendedScript`
+(`MessageDialog.cpp:172`); otherwise it logs and returns the **default** — `No` for a YesNo, so a
+destructive prompt is declined rather than waited on. Where the condition is predictable, check it
+yourself *first* so the caller gets a real reason instead of a generic failure.
+
+**Enforced, not just documented.** `tools/audit_modals.py` reports every MifBridge call into a known
+prompting API as guarded or not, **and** re-verifies that the engine lines cited above still contain
+what they are quoted as saying — so this table cannot rot silently against a future engine. Run it
+alongside `parity_check.py`.
 
 ## 9. Numbers are strict, and a write is checked before it happens
 
