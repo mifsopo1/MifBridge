@@ -119,9 +119,16 @@ it off and write one line saying why it was dropped — do not leave it open to 
       remove_widget_animation and remove_widget_animation_track, no confirm flag (undoable blueprint
       edits, matching remove_variable, not delete_asset). removeBinding drops BOTH halves of a binding.
       26 checks in test_widget_animation_props.py; 64 across the three UMG suites.
-- [ ] Widget animation: Visibility, the one deliberately left out. It is a bool channel
+- [x] Widget animation: Visibility, the one deliberately left out. It is a bool channel
       (UMovieSceneVisibilityTrack), so it needs a second key path alongside the float one. The
       refusal already names it as unsupported, so this is additive rather than a correction.
+      Done. UMovieSceneVisibilityTrack / UMovieSceneBoolSection, with its own key path rather than
+      forced through the float one: a bool channel is STEPPED, so 'interp' on a Visibility key is
+      REFUSED rather than accepted and ignored. A numeric 1/0 is accepted as a convenience and the
+      response reports back the boolean actually stored. 35 checks in test_widget_animation_props.py.
+      Worth noting: the check that asserted Visibility was UNSUPPORTED started failing the moment it
+      was implemented - a test correctly failing because the behaviour improved. Repointed at a
+      property with no mapping rather than deleted, since the refusal is the part worth pinning.
 - [x] Re-run the endpoint sweep with the narrowed leak detector and the confirming-retry hang logic, and confirm or drop the unexplained recipe_reset_and_loop hang.
       Run 4 completed: 232 endpoints, 1 CRASH (duplicate_asset - the modal, now fixed in c190ae5),
       9 GHOST_OK (6 of them the fuzzer's own contamination, since fixed), 1 HANG.

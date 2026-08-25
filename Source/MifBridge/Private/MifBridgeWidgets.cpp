@@ -27,6 +27,9 @@
 #include "Sections/MovieSceneFloatSection.h"         // GetChannel()
 #include "Tracks/MovieSceneColorTrack.h"             // ColorAndOpacity
 #include "Sections/MovieSceneColorSection.h"         // GetRed/Green/Blue/AlphaChannel()
+#include "Tracks/MovieSceneVisibilityTrack.h"        // Visibility (a BOOL track, not a float one)
+#include "Sections/MovieSceneBoolSection.h"          // GetChannel() -> FMovieSceneBoolChannel
+#include "Channels/MovieSceneBoolChannel.h"          // Reset / AddKeys / GetTimes / GetValues
 #include "Channels/MovieSceneFloatChannel.h"         // AddCubicKey / AddLinearKey / AddConstantKey
 #include "Tracks/MovieScenePropertyTrack.h"          // SetPropertyNameAndPath
 #include "MovieSceneBinding.h"                       // FMovieSceneBinding::GetTracks - object-bound
@@ -170,12 +173,14 @@ namespace MifBridge
 			const TCHAR* Name;          // what the caller passes
 			const TCHAR* PropertyPath;  // what the MovieScene property track binds to
 			const TCHAR* Channels;      // comma-separated, in engine order
+			bool bBool;                 // a BOOL channel, so stepped: no interpolation, no tangents
 		};
 
 		const FAnimProperty kAnimProperties[] = {
-			{ TEXT("RenderTransform.Translation"), TEXT("RenderTransform"),  TEXT("X,Y") },
-			{ TEXT("RenderOpacity"),               TEXT("RenderOpacity"),    TEXT("value") },
-			{ TEXT("ColorAndOpacity"),             TEXT("ColorAndOpacity"),  TEXT("R,G,B,A") },
+			{ TEXT("RenderTransform.Translation"), TEXT("RenderTransform"),  TEXT("X,Y"),     false },
+			{ TEXT("RenderOpacity"),               TEXT("RenderOpacity"),    TEXT("value"),   false },
+			{ TEXT("ColorAndOpacity"),             TEXT("ColorAndOpacity"),  TEXT("R,G,B,A"), false },
+			{ TEXT("Visibility"),                  TEXT("Visibility"),       TEXT("value"),   true  },
 		};
 
 		const FAnimProperty* FindAnimProperty(const FString& Name)
@@ -200,12 +205,26 @@ namespace MifBridge
 			if (Name == TEXT("RenderTransform.Translation")) { return UMovieScene2DTransformTrack::StaticClass(); }
 			if (Name == TEXT("RenderOpacity"))               { return UMovieSceneFloatTrack::StaticClass(); }
 			if (Name == TEXT("ColorAndOpacity"))             { return UMovieSceneColorTrack::StaticClass(); }
+			if (Name == TEXT("Visibility"))                  { return UMovieSceneVisibilityTrack::StaticClass(); }
 			return nullptr;
 		}
 
 		// The channel a caller named, on whichever section type this property uses. Returns null for
 		// a channel that does not belong to this property, which is how a typo becomes a refusal
 		// instead of a silent write to the wrong curve.
+		// Visibility's counterpart to ResolveChannel. Separate on purpose: a bool channel has no
+		// interpolation, so sharing one resolver would mean pretending a tangent mode applies to it.
+		FMovieSceneBoolChannel* ResolveBoolChannel(UMovieSceneSection* Section, const FString& Channel)
+		{
+			UMovieSceneBoolSection* B = Cast<UMovieSceneBoolSection>(Section);
+			if (!B) { return nullptr; }
+			if (Channel.IsEmpty() || Channel.Equals(TEXT("value"), ESearchCase::IgnoreCase))
+			{
+				return &B->GetChannel();
+			}
+			return nullptr;
+		}
+
 		FMovieSceneFloatChannel* ResolveChannel(UMovieSceneSection* Section, const FString& Channel)
 		{
 			if (UMovieScene2DTransformSection* T = Cast<UMovieScene2DTransformSection>(Section))
@@ -464,6 +483,108 @@ namespace MifBridge
 		// Default only makes sense per property: Y for a translation, the single curve for opacity.
 		const FString ChannelStr = JStr(In, TEXT("channel"),
 			FString(PropDef->Name).Equals(TEXT("RenderTransform.Translation")) ? TEXT("Y") : TEXT(""));
+
+		// ---------------------------------------------------------------- BOOL properties
+		// Visibility is a stepped bool channel. It gets its own path rather than being forced through
+		// the float one, because "interp" genuinely does not apply and accepting it would be a lie.
+		if (PropDef->bBool)
+		{
+			FMovieSceneBoolChannel* BoolChannel = ResolveBoolChannel(Section, ChannelStr);
+			if (!BoolChannel)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("channel '%s' is not one of this property's channels (%s = %s). NOTHING was "
+						 "changed."), *ChannelStr, PropDef->Name, PropDef->Channels));
+				return;
+			}
+
+			const TArray<TSharedPtr<FJsonValue>>* BKeys = nullptr;
+			if (!JArray(In, TEXT("keys"), BKeys) || !BKeys)
+			{
+				Fail(Out, TEXT("keys must be an array of {time, value}. NOTHING was changed."));
+				return;
+			}
+
+			UMovieScene* BMS = Anim->GetMovieScene();
+			const int32 BBefore = BoolChannel->GetNumKeys();
+			TArray<FFrameNumber> Times;
+			TArray<bool> Values;
+			for (int32 i = 0; i < BKeys->Num(); ++i)
+			{
+				const TSharedPtr<FJsonObject>* Obj = nullptr;
+				if (!(*BKeys)[i].IsValid() || !(*BKeys)[i]->TryGetObject(Obj) || !Obj)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("keys[%d] is not an object — each key is {time, value}. NOTHING was "
+							 "changed."), i));
+					return;
+				}
+				double Time = 0.0;
+				if (!(*Obj)->TryGetNumberField(TEXT("time"), Time))
+				{
+					Fail(Out, FString::Printf(
+						TEXT("keys[%d] needs a numeric 'time' in seconds. NOTHING was changed."), i));
+					return;
+				}
+				// REFUSE interp rather than ignore it. A bool channel is stepped; there is no cubic
+				// or linear, and quietly dropping a parameter the caller passed is the defect this
+				// module keeps finding in itself.
+				FString UnusedInterp;
+				if ((*Obj)->TryGetStringField(TEXT("interp"), UnusedInterp))
+				{
+					Fail(Out, FString::Printf(
+						TEXT("keys[%d] sets 'interp', but %s is a BOOL channel and is always stepped — "
+							 "there is no cubic or linear here. Remove it. NOTHING was changed."),
+						i, PropDef->Name));
+					return;
+				}
+				bool bValue = false;
+				double NumValue = 0.0;
+				if (!(*Obj)->TryGetBoolField(TEXT("value"), bValue))
+				{
+					// A caller reaching for 1/0 is being reasonable; take it, and report back what
+					// was actually stored so there is no ambiguity about the conversion.
+					if (!(*Obj)->TryGetNumberField(TEXT("value"), NumValue))
+					{
+						Fail(Out, FString::Printf(
+							TEXT("keys[%d] needs a boolean 'value' (true/false, or 1/0). NOTHING was "
+								 "changed."), i));
+						return;
+					}
+					bValue = (NumValue != 0.0);
+				}
+				Times.Add(SecondsToTicks(BMS, Time));
+				Values.Add(bValue);
+			}
+
+			Section->Modify();
+			if (JBool(In, TEXT("replace"), true))
+			{
+				BoolChannel->Reset();
+			}
+			BoolChannel->AddKeys(Times, Values);
+			MarkStructural(WBP);
+
+			TArray<TSharedPtr<FJsonValue>> BWritten;
+			TArrayView<const FFrameNumber> BTimes = BoolChannel->GetTimes();
+			TArrayView<const bool> BValues = BoolChannel->GetValues();
+			for (int32 i = 0; i < BTimes.Num(); ++i)
+			{
+				TSharedRef<FJsonObject> KJ = MakeShared<FJsonObject>();
+				KJ->SetNumberField(TEXT("timeTick"), BTimes[i].Value);
+				KJ->SetNumberField(TEXT("time"), TicksToSeconds(BMS, BTimes[i]));
+				KJ->SetBoolField(TEXT("value"), BValues[i]);
+				BWritten.Add(MakeShared<FJsonValueObject>(KJ));
+			}
+			Out->SetStringField(TEXT("property"), PropDef->Name);
+			Out->SetStringField(TEXT("channel"), TEXT("value"));
+			Out->SetBoolField(TEXT("stepped"), true);
+			Out->SetNumberField(TEXT("keysBefore"), BBefore);
+			Out->SetNumberField(TEXT("keysAfter"), BoolChannel->GetNumKeys());
+			Out->SetArrayField(TEXT("keys"), BWritten);
+			return;
+		}
+
 		FMovieSceneFloatChannel* ChannelPtr = ResolveChannel(Section, ChannelStr);
 		if (!ChannelPtr)
 		{

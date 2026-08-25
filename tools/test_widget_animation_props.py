@@ -83,12 +83,17 @@ def main():
           "keysAfter=%s - nonzero means the channel selector is not selecting" % r.get("keysAfter"))
 
     # ------------------------------------------------------------------ T93 unsupported
-    print("\n=== T93: an unsupported property is refused by name ===")
-    r = M.call("add_widget_animation_track", dict(A, property="Visibility"))
+    # This check used to name Visibility, and it started failing the moment Visibility was
+    # implemented - a test correctly failing because the behaviour improved. Repointed at a property
+    # that genuinely has no track mapping rather than deleted, because the REFUSAL is the thing worth
+    # pinning: an unknown property must be named and rejected, never accepted and ignored.
+    print("\n=== T93: a property with no track mapping is refused by name ===")
+    r = M.call("add_widget_animation_track", dict(A, property="ToolTipText"))
     check("T93 refused", r.get("ok") is False, json.dumps(r)[:200])
     check("T93 and it lists what IS supported",
-          "RenderOpacity" in (r.get("error") or "") and "ColorAndOpacity" in (r.get("error") or ""),
-          (r.get("error") or "")[:220])
+          all(w in (r.get("error") or "")
+              for w in ("RenderOpacity", "ColorAndOpacity", "Visibility")),
+          (r.get("error") or "")[:240])
 
     # ------------------------------------------------------------------ T94 wrong channel
     print("\n=== T94: a channel that belongs to a different property is refused ===")
@@ -135,6 +140,37 @@ def main():
           str([x.get("name") for x in (l.get("animations") or [])]))
     r = M.call("remove_widget_animation", {"blueprintId": bid, "animationName": "Fade"})
     check("T97 removing it twice is refused, not silently ok", r.get("ok") is False, json.dumps(r)[:200])
+
+    # ------------------------------------------------------------------ T99 visibility (bool)
+    print("\n=== T99: Visibility — a BOOL channel, so stepped and no interpolation ===")
+    M.call("add_widget_animation", {"blueprintId": bid, "name": "Blink", "endTime": 1.0})
+    V = {"blueprintId": bid, "animationName": "Blink", "widgetName": "Image_Arrow"}
+    t = M.call("add_widget_animation_track", dict(V, property="Visibility"))
+    check("T99 track created", t.get("ok") is True, json.dumps(t)[:220])
+    check("T99 it is a visibility track", t.get("trackClass") == "MovieSceneVisibilityTrack",
+          t.get("trackClass"))
+    k = M.call("set_widget_animation_keys", dict(V, property="Visibility",
+               keys=[{"time": 0.0, "value": True}, {"time": 0.5, "value": False},
+                     {"time": 0.75, "value": 1}]))
+    print("  ", json.dumps(k)[:320])
+    check("T99 three bool keys written", k.get("ok") is True and k.get("keysAfter") == 3,
+          json.dumps(k)[:220])
+    check("T99 it says the channel is stepped", k.get("stepped") is True, k.get("stepped"))
+    check("T99 ticks converted the same way as the float path",
+          [x.get("timeTick") for x in (k.get("keys") or [])] == [0, 30000, 45000],
+          str([x.get("timeTick") for x in (k.get("keys") or [])]))
+    check("T99 a numeric 1 is stored as true, and reported as true",
+          [x.get("value") for x in (k.get("keys") or [])] == [True, False, True],
+          str([x.get("value") for x in (k.get("keys") or [])]))
+    # The point: a parameter that cannot apply is REFUSED, not silently dropped.
+    bad = M.call("set_widget_animation_keys", dict(V, property="Visibility",
+                 keys=[{"time": 0.0, "value": True, "interp": "cubic"}]))
+    check("T99 interp on a bool channel is refused, not ignored", bad.get("ok") is False,
+          json.dumps(bad)[:200])
+    check("T99 and it explains why", "BOOL channel" in (bad.get("error") or ""),
+          (bad.get("error") or "")[:180])
+    still = M.call("set_widget_animation_keys", dict(V, property="Visibility", keys=[], replace=False))
+    check("T99 the refusal changed nothing", still.get("keysAfter") == 3, still.get("keysAfter"))
 
     # ------------------------------------------------------------------ T98 compiles
     print("\n=== T98: still compiles after all that ===")
