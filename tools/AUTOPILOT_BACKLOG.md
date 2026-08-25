@@ -24,7 +24,15 @@ it off and write one line saying why it was dropped — do not leave it open to 
 - [x] MifBridgeGraphPatch.cpp still carries a local FPinRef that duplicates the shared FMifPinRef in MifBridgeHandlers.h. Converge them so there is one implementation, per the module's own rule.
 - [x] The hideKnots fix has never been exercised — no endpoint creates a K2Node_Knot, so build a reroute chain some other way and prove it.
 - [x] pie_status misreports a working PIE session. Reproduce and fix, or establish exactly what it is really reporting.
-- [ ] snap_actors_to_ground misses ~112 of 303 actors on flat ground. Find out why before trusting it again.
+- [x] snap_actors_to_ground misses ~112 of 303 actors on flat ground. Find out why before trusting it again.
+      Fixed in 9f2e7d9. LineTraceMultiByChannel returns overlaps plus ONE blocking hit ("no tests will
+      be done after that", World.h) - it does not see past a blocker the way the code's comment said.
+      Every static mesh blocks WorldStatic, so any actor over another actor had only the prop in its
+      results and no ground was ever found. Now re-traces past each non-ground blocker, bounded at 32.
+      11 checks in tools/test_snap_ground.py, including three that the fix must not break.
+- [ ] There is no single-actor read endpoint. get_level_actor does not exist; reading one actor's
+      transform back means list_level_actors with nameContains and filtering client-side. Found by
+      writing a test helper that called the endpoint it assumed was there and silently returned None.
 
 ## Done
 
