@@ -56,6 +56,12 @@ it off and write one line saying why it was dropped — do not leave it open to 
       payload: a prefix or filter that matched nothing is a correct empty, an identity that resolved to
       nothing is a finding. That reproduces the hand triage of run 4 exactly. 12 checks in
       tools/test_fuzz_detector.py, which runs offline with no editor.
+- [ ] Validation sweep against the FIXED build. Run 4 tested a binary that predates c190ae5 and used
+      the ghost detector that predates ea37587, so it cannot show either fix working. A clean run
+      should now give 0 CRASH, and the GHOST_OK bucket should collapse from 9 to the handful that are
+      real once contamination and correct-empties stop being counted. Budget hours, not minutes - the
+      kr_* endpoints do genuine blueprint reconstruction even on garbage input, which is where run 4
+      spent most of its time.
 - [ ] UMG WidgetAnimation authoring is missing entirely (reported 2026-08-25, QOLCrafting_P /
       WBP_QOL_DropZone). Verified: nothing under Source/MifBridge mentions WidgetAnimation or
       MovieScene, and the three 'anim' endpoints (describe_animation, list_animations, add_anim_node)
@@ -94,7 +100,9 @@ it off and write one line saying why it was dropped — do not leave it open to 
       (WidgetAnimation.cpp:157). A null or wrong Context TERMINATES THE EDITOR - same class as the
       FName 1023 assert, not a refusal. Headless there is no preview widget to hand it, so the context
       has to be constructed or resolved deliberately and checked before the call, never passed through.
-- [ ] Re-run the endpoint sweep with the narrowed leak detector and the confirming-retry hang logic, and confirm or drop the unexplained recipe_reset_and_loop hang.
+- [x] Re-run the endpoint sweep with the narrowed leak detector and the confirming-retry hang logic, and confirm or drop the unexplained recipe_reset_and_loop hang.
+      Run 4 completed: 232 endpoints, 1 CRASH (duplicate_asset - the modal, now fixed in c190ae5),
+      9 GHOST_OK (6 of them the fuzzer's own contamination, since fixed), 1 HANG.
       CONFIRMED, and no longer unexplained as to trigger: run 4 reproduced it on the ABSURD probe with
       every parameter set to ' '. Recorded as HANG rather than CRASH, so the bridge was
       still alive on the confirming re-check - it did not die, it stopped answering that call.
