@@ -497,9 +497,32 @@ namespace MifBridge
 		const FString Value = JStr(In, TEXT("value"));
 		if (!Value.IsEmpty())
 		{
-			if (UEdGraphPin* EnumPin = Node->FindPin(UK2Node_EnumLiteral::GetEnumInputPinName()))
+			UEdGraphPin* EnumPin = Node->FindPin(UK2Node_EnumLiteral::GetEnumInputPinName());
+			if (!EnumPin)
 			{
-				K2()->TrySetDefaultValue(*EnumPin, Value);
+				Out->SetStringField(TEXT("valueWarning"),
+					TEXT("the node has no enum input pin, so 'value' was not applied"));
+			}
+			else
+			{
+				// TrySetDefaultValue is VOID and silently refuses a literal it cannot parse - the
+				// same defect set_pin_default was fixed for. An enumerator's DISPLAY name is not its
+				// internal name, so a caller reading the editor UI gets a value the schema quietly
+				// drops, and the node stays on the enum's first entry while this reports success.
+				FString Before, After, Err;
+				bool bChanged = false;
+				if (SetPinDefaultChecked(EnumPin, Value, Before, After, bChanged, Err))
+				{
+					Out->SetStringField(TEXT("valueApplied"), After);
+				}
+				else
+				{
+					Out->SetStringField(TEXT("valueApplied"), After);
+					Out->SetStringField(TEXT("valueError"), FString::Printf(
+						TEXT("'%s' was NOT accepted for this enum (%s); the pin is still '%s'. Use the "
+							 "enumerator's internal name - describe_enum lists them - not the display text."),
+						*Value, *Err, *After));
+				}
 			}
 		}
 

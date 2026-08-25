@@ -276,7 +276,12 @@ namespace MifBridge
 			const FString Label = JStr(Item, TEXT("label"));
 			if (!Label.IsEmpty())
 			{
-				Actor->SetActorLabel(Label);
+				{
+					// void API, silent refusal - see SetActorLabelChecked.
+					FString ActualLabel, LabelNote;
+					SetActorLabelChecked(Actor, Label, ActualLabel, LabelNote);
+					if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
+				}
 			}
 			else if (!LabelPrefix.IsEmpty())
 			{
@@ -861,7 +866,12 @@ namespace MifBridge
 
 		AActor* Holder = World->SpawnActor<AActor>();
 		if (!Holder) { Fail(Out, TEXT("failed to spawn holder actor")); return; }
-		Holder->SetActorLabel(JStr(In, TEXT("label"), TEXT("Foliage")));
+		{
+			FString ActualLabel, LabelNote;
+			SetActorLabelChecked(Holder, JStr(In, TEXT("label"), TEXT("Foliage")), ActualLabel, LabelNote);
+			Out->SetStringField(TEXT("labelActual"), ActualLabel);
+			if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
+		}
 		const FString Folder = JStr(In, TEXT("folder"));
 		if (!Folder.IsEmpty()) { Holder->SetFolderPath(FName(*Folder)); }
 

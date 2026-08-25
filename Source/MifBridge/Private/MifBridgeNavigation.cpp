@@ -75,7 +75,12 @@ namespace MifBridge
 
 		ANavMeshBoundsVolume* Volume = World->SpawnActor<ANavMeshBoundsVolume>(Loc, FRotator::ZeroRotator);
 		if (!Volume) { Fail(Out, TEXT("failed to spawn ANavMeshBoundsVolume")); return; }
-		Volume->SetActorLabel(JStr(In, TEXT("label"), TEXT("NavBounds")));
+		{
+			FString ActualLabel, LabelNote;
+			SetActorLabelChecked(Volume, JStr(In, TEXT("label"), TEXT("NavBounds")), ActualLabel, LabelNote);
+			Out->SetStringField(TEXT("labelActual"), ActualLabel);
+			if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
+		}
 
 		// The default builder brush is a 200-unit cube, so scale = desired / 200.
 		const FVector Scale(Size.X / 200.0, Size.Y / 200.0, Size.Z / 200.0);

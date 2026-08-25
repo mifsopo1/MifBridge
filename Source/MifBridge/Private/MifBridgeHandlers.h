@@ -620,6 +620,15 @@ namespace MifBridge
 		FString Describe() const;
 	};
 
+	/** Set an actor's label and report what it ACTUALLY ended up with.
+	 *
+	 *  AActor::SetActorLabel is void, TRIMS the string, and on a name the editor rejects it logs a
+	 *  warning and changes nothing. Echoing the requested label back is therefore reporting the
+	 *  caller's own input as a fact - and every later lookup by that label misses, because the actor
+	 *  is still called something else. Returns true when the actor now carries the requested label
+	 *  (after trimming); OutActual always holds the truth either way. */
+	bool SetActorLabelChecked(AActor* Actor, const FString& Wanted, FString& OutActual, FString& OutNote);
+
 	/** Snapshot a pin's identity. Returns an unset ref for a null/orphaned pin. */
 	FMifPinRef CapturePin(UEdGraphPin* Pin);
 	/** Re-find the pin. EXACT match on name+direction — no alias fallbacks, because this ref was

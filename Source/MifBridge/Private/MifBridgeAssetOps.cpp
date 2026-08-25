@@ -445,6 +445,18 @@ namespace MifBridge
 		return FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
 	}
 
+	namespace
+	{
+		// Is this package known to the registry at all? Cheap - metadata only, nothing is loaded.
+		bool PackageIsKnown(const FString& PackageName)
+		{
+			if (PackageName.IsEmpty()) { return false; }
+			TArray<FAssetData> Assets;
+			Registry().GetAssetsByPackageName(FName(*PackageName), Assets, /*bIncludeOnlyOnDiskAssets*/ false);
+			return Assets.Num() > 0;
+		}
+	}
+
 	//   in:  { path: "/Game/..." }   (an object path is accepted and reduced to its package)
 	//   out: { package, packageName, count, referencers[] }
 	//        package == packageName == the PACKAGE path of the asset you asked about, and every
@@ -476,6 +488,20 @@ namespace MifBridge
 		Out->SetStringField(TEXT("packageName"), Pkg);   // same value, plugin-wide spelling
 		Out->SetNumberField(TEXT("count"), Refs.Num());
 		Out->SetArrayField(TEXT("referencers"), Arr);
+
+		// DOES THE PACKAGE EVEN EXIST? The registry answers an unknown package with an empty list, not
+		// an error, so count:0 reads identically for "nothing points at this" and "there is no such
+		// asset". Those lead to opposite actions: the first is the standard justification for deleting
+		// something. A mistyped or stale path must not be able to look like a clean bill of health.
+		Out->SetBoolField(TEXT("packageExists"), PackageIsKnown(Pkg));
+		if (!PackageIsKnown(Pkg))
+		{
+			Out->SetStringField(TEXT("existsNote"), FString::Printf(
+				TEXT("no package '%s' is known to the asset registry, so count:0 means THE PATH DID NOT "
+					 "RESOLVE - not that the asset is unreferenced. Do not treat this as permission to "
+					 "delete anything. Check the path with find_assets."),
+				*Pkg));
+		}
 	}
 
 	//   in:  { path: "/Game/..." }   (an object path is accepted and reduced to its package)
@@ -507,6 +533,17 @@ namespace MifBridge
 		Out->SetStringField(TEXT("packageName"), Pkg);   // same value, plugin-wide spelling
 		Out->SetNumberField(TEXT("count"), Deps.Num());
 		Out->SetArrayField(TEXT("dependencies"), Arr);
+
+		// See get_referencers: an unknown package yields an empty list rather than an error, so
+		// count:0 has two very different meanings and the caller cannot tell them apart.
+		Out->SetBoolField(TEXT("packageExists"), PackageIsKnown(Pkg));
+		if (!PackageIsKnown(Pkg))
+		{
+			Out->SetStringField(TEXT("existsNote"), FString::Printf(
+				TEXT("no package '%s' is known to the asset registry, so count:0 means THE PATH DID NOT "
+					 "RESOLVE - not that this asset has no dependencies. Check the path with find_assets."),
+				*Pkg));
+		}
 	}
 
 	// ---------------------------------------------------------------- excludeReferencers (GAP 4)
@@ -840,6 +877,16 @@ namespace MifBridge
 		}
 
 		Out->SetNumberField(TEXT("scanned"), Assets.Num());
+		// scanned:0 alongside unusedCount:0 reads as "nothing is unused". Say which it actually is -
+		// the answer to "did my prefix match anything at all" changes what the caller does next, and
+		// a mistyped prefix currently looks identical to a clean bill of health.
+		if (Assets.Num() == 0)
+		{
+			Out->SetStringField(TEXT("scanNote"), FString::Printf(
+				TEXT("no assets matched pathPrefix '%s', so unusedCount:0 means THE PREFIX FOUND "
+					 "NOTHING - not that nothing is unused. Check the path with find_assets."),
+				*Prefix));
+		}
 		Out->SetNumberField(TEXT("unusedCount"), UnusedCount);
 		Out->SetNumberField(TEXT("unusedOnlyDueToExclusions"), NewlyUnusedCount);
 		Out->SetNumberField(TEXT("excludedReferencerCount"), ExcludedTotal);

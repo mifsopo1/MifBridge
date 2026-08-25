@@ -184,7 +184,25 @@ namespace MifBridge
 			if (ActorBox(A, B)) { Entries.Add({ A, B }); }
 		}
 
-		AActor* Target = Single.IsEmpty() ? nullptr : FindActorInWorld(World, Single);
+		// A NOT-FOUND actor must not degrade into a whole-scene audit. FindActorInWorld returns null
+		// both for "you did not ask for one" and for "the one you asked for is not here", and the
+		// filter below is skipped on null - so a mistyped actorPath silently widened the question from
+		// "does THIS actor overlap" to "list every overlap in the level", and answered ok:true with
+		// 108 pairs that had nothing to do with the request.
+		AActor* Target = nullptr;
+		if (!Single.IsEmpty())
+		{
+			Target = FindActorInWorld(World, Single);
+			if (!Target)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("actor not found: '%s'. Nothing was tested. Omit actorPath entirely for a "
+						 "whole-scene audit - leaving it in with a name that does not resolve would "
+						 "otherwise return every overlap in the level as though it were this actor's."),
+					*Single));
+				return;
+			}
+		}
 		TArray<TSharedPtr<FJsonValue>> Pairs;
 		for (int32 i = 0; i < Entries.Num(); ++i)
 		{

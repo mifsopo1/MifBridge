@@ -385,9 +385,31 @@ namespace MifBridge
 		const FString RowName = JStr(In, TEXT("rowName"));
 		if (!RowName.IsEmpty())
 		{
-			if (UEdGraphPin* RowPin = Node->GetRowNamePin())
+			UEdGraphPin* RowPin = Node->GetRowNamePin();
+			if (!RowPin)
 			{
-				K2()->TrySetDefaultValue(*RowPin, RowName);
+				Out->SetStringField(TEXT("rowNameWarning"),
+					TEXT("the node has no RowName pin, so 'rowName' was not applied"));
+			}
+			else
+			{
+				// Void API, silent refusal - see add_enum_literal and set_pin_default. A row name the
+				// table does not contain is dropped without complaint, leaving the node reading an
+				// empty row while this reports the row that was asked for.
+				FString Before, After, Err;
+				bool bChanged = false;
+				if (SetPinDefaultChecked(RowPin, RowName, Before, After, bChanged, Err))
+				{
+					Out->SetStringField(TEXT("rowNameApplied"), After);
+				}
+				else
+				{
+					Out->SetStringField(TEXT("rowNameApplied"), After);
+					Out->SetStringField(TEXT("rowNameError"), FString::Printf(
+						TEXT("row '%s' was NOT accepted (%s); the pin is still '%s'. read_datatable lists "
+							 "the rows this table actually has."),
+						*RowName, *Err, *After));
+				}
 			}
 		}
 

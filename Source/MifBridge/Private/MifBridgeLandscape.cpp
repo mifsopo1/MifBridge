@@ -303,7 +303,12 @@ namespace MifBridge
 		Landscape->RecreateCollisionComponents();
 		Landscape->PostEditChange();
 
-		Landscape->SetActorLabel(JStr(In, TEXT("label"), TEXT("Landscape")));
+		{
+			FString ActualLabel, LabelNote;
+			SetActorLabelChecked(Landscape, JStr(In, TEXT("label"), TEXT("Landscape")), ActualLabel, LabelNote);
+			Out->SetStringField(TEXT("labelActual"), ActualLabel);
+			if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
+		}
 		const FString Folder = JStr(In, TEXT("folder"));
 		if (!Folder.IsEmpty()) { Landscape->SetFolderPath(FName(*Folder)); }
 

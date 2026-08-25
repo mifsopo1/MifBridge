@@ -713,7 +713,12 @@ namespace MifBridge
 		if (!Label.IsEmpty())
 		{
 #if WITH_EDITOR
-			Actor->SetActorLabel(Label);
+			{
+				FString ActualLabel, LabelNote;
+				SetActorLabelChecked(Actor, Label, ActualLabel, LabelNote);
+				Out->SetStringField(TEXT("labelActual"), ActualLabel);
+				if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
+			}
 #endif
 		}
 

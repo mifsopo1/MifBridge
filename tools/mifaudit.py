@@ -82,7 +82,14 @@ def process_cmdline(pid):
         return ""
 
 
-def require_sdk_bridge():
+# Identity is resolved by spawning PowerShell twice, which costs about a second. Doing that once
+# per endpoint made the harness slower than the thing it was testing, so the verified PID is cached
+# and only re-resolved when the port owner CHANGES - which is exactly when identity could have moved
+# to a different editor. The cheap HTTP liveness check runs in between.
+_verified_pid = [None]
+
+
+def require_sdk_bridge(force=False):
     """(ok, message). Refuses when the port is owned by anything but the SDK editor.
 
     "The bridge answered" does not identify WHICH editor answered. Several are usually running,
@@ -90,12 +97,28 @@ def require_sdk_bridge():
     """
     pid = bridge_pid()
     if pid is None:
+        _verified_pid[0] = None
         return False, "nothing is listening on port %d" % BRIDGE_PORT
+    if not force and pid == _verified_pid[0]:
+        return True, "pid %d (cached)" % pid
     cmd = process_cmdline(pid)
     if PROJECT_MARKER not in cmd:
+        _verified_pid[0] = None
         return False, ("port %d is owned by pid %d, which is NOT the SDK editor: %s"
                        % (BRIDGE_PORT, pid, cmd[:160]))
+    _verified_pid[0] = pid
     return True, "pid %d (%s)" % (pid, PROJECT_MARKER)
+
+
+def bridge_responsive(timeout=8):
+    """Cheap liveness probe - no process spawning. Says nothing about identity."""
+    try:
+        raw_post("ping_or_audit_probe__", {}, timeout=timeout)
+        return True
+    except (Dead, Timeout):
+        return False
+    except Exception:
+        return True          # any JSON answer, including "unknown endpoint", means it is alive
 
 
 def sdk_editor_pid():
@@ -136,7 +159,13 @@ def wait_for_bridge(timeout=900, quiet=False):
 
 
 def ensure_editor(max_relaunch=1):
-    """Bring the SDK editor back if it died. Returns True when serving."""
+    """Bring the SDK editor back if it died. Returns True when serving.
+
+    Fast path first: if the bridge answers at all, and the port owner has not changed, there is
+    nothing to do and no process needs spawning.
+    """
+    if _verified_pid[0] is not None and bridge_responsive():
+        return True
     ok, _ = require_sdk_bridge()
     if ok:
         return True

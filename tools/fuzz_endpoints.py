@@ -44,8 +44,11 @@ WRONG_SHAPES = [
 ABSURD = ["", "x" * 65536, -2147483648, 2147483647, 1e308, "../../../../etc/passwd",
           "\x00\x01\x02", "%s%s%s%n", "'; DROP TABLE --"]
 
-LEAKY = ("Assertion failed", "\\Engine\\Source\\", "/Engine/Source/", "UE_LOG",
-         "Unhandled Exception", ".cpp:", "0x00000")
+# A leak is an accident, not a citation. This module deliberately explains engine behaviour by
+# pointing at the header that causes it ("TabManager.h:1113-1117"), so matching ".cpp:" flags the
+# documentation and misses nothing real. Keep only markers that cannot appear on purpose.
+LEAKY = ("Assertion failed", "Unhandled Exception", "EXCEPTION_ACCESS_VIOLATION",
+         "Fatal error", "0x00000", "Stack:")
 
 GENERIC_ERRORS = ("", "failed", "error", "failure", "invalid", "bad request", "unknown error")
 
@@ -89,7 +92,17 @@ def probe(endpoint, label, payload, timeout=45):
         alive, _ = M.require_sdk_bridge()
         if not alive:
             return "dead", None          # this probe is the killer, not a later one
-        return "hang", None
+        # SLOW IS NOT HUNG. The editor garbage-collects and rescans the asset registry on its own
+        # schedule, so a single timeout can be an unlucky moment rather than a property of the call.
+        # Confirm once with a longer budget before calling it a hang - an unreproducible hang in a
+        # report is worse than no report, because someone then goes looking for a bug that is not there.
+        try:
+            r = M.call(endpoint, payload, timeout=timeout * 3)
+            return "slow", r
+        except M.Dead:
+            return "dead", None
+        except M.Timeout:
+            return "hang", None
     except Exception as e:                                  # harness bug, not an endpoint finding
         return "harness-error", {"error": str(e)}
 
@@ -243,7 +256,11 @@ def main():
                 continue
             if status == "ok" and isinstance(r, dict):
                 blob = json.dumps(r)
-                if r.get("ok") is True:
+                # A CREATION endpoint is supposed to accept a path that does not exist yet - that is
+                # its whole job - so "succeeded against a nonexistent path" is the correct answer
+                # there, not a finding. Flagging create_blueprint was this probe's own false positive.
+                creates = ep.startswith(("create_", "add_", "new_", "spawn_", "import_", "duplicate_"))
+                if r.get("ok") is True and not creates:
                     M.record("GHOST_OK", ep,
                              "reported success for references that do not exist (%s)"
                              % ", ".join(sorted(ghosts)),

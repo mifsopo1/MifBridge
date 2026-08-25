@@ -30,8 +30,21 @@ Even filtered there is a real backlog, so failing on all of it would just get th
 Instead the accepted state is recorded in `param_reach_baseline.txt` and only ADDITIONS fail. Existing
 entries stay visible on every run; a newly-unreachable parameter breaks the build the day it appears.
 
-To accept a new entry deliberately (it really is an alias, or the tool covers it another way), run
-with --update-baseline and commit the change with the reason in the commit message.
+To accept a new entry deliberately, run with --update-baseline and put the reason in the commit
+message. Three legitimate reasons an accepted key is not sent, all present in today's baseline:
+
+  ALIAS          the tool sends another spelling of the same role (add_cast takes castTo / class /
+                 cls / to / targetType for what the tool sends as targetClass).
+  DELIBERATE     the endpoint offers a form the tool intentionally does not. set_material_parameter
+                 accepts a singular {parameter, value} pair AND scalar/vector maps; its docstring
+                 says outright "through this tool use the maps".
+  REFUSAL-ONLY   the key exists so the endpoint can give a GOOD error. reset_property_to_default and
+                 edit_container accept blueprintId/widgetName purely to recognise the widget-template
+                 form and say "use set_property" - accepting the key is how you get a useful refusal
+                 instead of a confusing one.
+
+So a baseline entry is not a to-do. Read the endpoint before treating one as a gap - I chased all
+three of the above before the docstrings said otherwise.
 """
 import os
 import re

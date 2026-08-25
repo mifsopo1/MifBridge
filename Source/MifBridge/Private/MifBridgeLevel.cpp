@@ -305,7 +305,14 @@ namespace MifBridge
 		const FString Label = JStr(In, TEXT("label"));
 		if (!Label.IsEmpty())
 		{
-			Actor->SetActorLabel(Label);
+			// Report what the actor is really called - the engine may trim it, or refuse it outright
+			// and leave the engine-assigned name in place. A caller that files away the label it
+			// asked for will not find this actor again.
+			FString ActualLabel, LabelNote;
+			SetActorLabelChecked(Actor, Label, ActualLabel, LabelNote);
+			Out->SetStringField(TEXT("labelRequested"), Label);
+			Out->SetStringField(TEXT("labelActual"), ActualLabel);
+			if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
 		}
 		const FString Folder = JStr(In, TEXT("folder"));
 		if (!Folder.IsEmpty())
@@ -447,9 +454,29 @@ namespace MifBridge
 			return;
 		}
 		Actor->Modify();
-		if (!Label.IsEmpty())  { Actor->SetActorLabel(Label); }
+
+		// SetActorLabel is void: it trims the name, validates it, and on rejection logs a warning and
+		// changes NOTHING. Echoing the requested label back would report the caller's own input as a
+		// fact, and every later lookup by that label would miss. Read it back instead.
+		FString ActualLabel, LabelNote;
+		bool bLabelOk = true;
+		if (!Label.IsEmpty())
+		{
+			bLabelOk = SetActorLabelChecked(Actor, Label, ActualLabel, LabelNote);
+			Out->SetStringField(TEXT("labelRequested"), Label);
+			Out->SetStringField(TEXT("labelActual"), ActualLabel);
+			if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
+		}
 		if (!Folder.IsEmpty()) { Actor->SetFolderPath(FName(*Folder)); }
 		Out->SetObjectField(TEXT("actor"), SerializeActor(Actor));
+
+		// Renaming IS this endpoint's job. Reporting ok for a rename that did not happen is the
+		// defect; the folder change (if any) has already been applied and is left in place.
+		if (!bLabelOk)
+		{
+			Fail(Out, LabelNote);
+			return;
+		}
 	}
 
 	// --- delete_level_actor -------------------------------------------------

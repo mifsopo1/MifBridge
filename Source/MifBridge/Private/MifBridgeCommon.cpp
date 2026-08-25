@@ -10,6 +10,7 @@
                                             // numeric readers below have to inspect BY TYPE, because
                                             // TryGetNumber's own coercions are what hid defect 1
 #include "MifBridgeLog.h"
+#include "Misc/App.h"
 
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
@@ -910,6 +911,20 @@ namespace MifBridge
 		Out->SetStringField(TEXT("buildDate"), ANSI_TO_TCHAR(__DATE__));
 		Out->SetStringField(TEXT("buildTime"), ANSI_TO_TCHAR(__TIME__));
 		Out->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
+
+		// WHICH PROJECT IS THIS? A client knows the port it dialled and nothing else. The bridge binds
+		// a fixed port, only one editor can hold it, and MifBridge is not loaded in every project - so
+		// a session working on project A can dial 8791 and silently drive project B's editor, with
+		// every call succeeding and landing in the wrong place. That is not hypothetical: it happened
+		// here, and included a save-all issued against a project the caller was not working on.
+		//
+		// Reporting the project lets a client ASSERT what it is talking to instead of assuming, which
+		// is the only defence a fixed port allows. MIF_BRIDGE_PORT exists for separating them, but a
+		// caller has to know it is talking to the wrong editor before it thinks to use it.
+		Out->SetStringField(TEXT("projectName"), FApp::GetProjectName());
+		Out->SetStringField(TEXT("projectPath"), FPaths::IsProjectFilePathSet()
+			? FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath())
+			: FString(TEXT("<not set>")));
 
 		// surfaceSignature — ALWAYS complete and deterministic. Folded from the endpoint/bucket/provider
 		// data this handler just built, with no dependency on what has been called this session, so two
@@ -3636,6 +3651,47 @@ namespace MifBridge
 		{ TEXT("Array"),       TEXT("OutArray"), nullptr,        nullptr,           nullptr },
 		{ TEXT("Out Row"),     TEXT("OutRow"),  TEXT("Row"),     nullptr,           nullptr },
 	};
+
+	bool SetActorLabelChecked(AActor* Actor, const FString& Wanted, FString& OutActual, FString& OutNote)
+	{
+		OutNote.Empty();
+		if (!Actor)
+		{
+			OutActual.Empty();
+			OutNote = TEXT("no actor");
+			return false;
+		}
+		if (Wanted.IsEmpty())
+		{
+			OutActual = Actor->GetActorLabel();
+			return true;                       // nothing requested; whatever it has is correct
+		}
+
+		const FString Before = Actor->GetActorLabel();
+		Actor->SetActorLabel(Wanted);
+		OutActual = Actor->GetActorLabel();
+
+		// The engine trims before validating, so compare against the trimmed request or a caller who
+		// passed padding gets told their label was rejected when it was merely tidied.
+		const FString WantedTrimmed = Wanted.TrimStartAndEnd();
+		if (OutActual.Equals(WantedTrimmed, ESearchCase::CaseSensitive))
+		{
+			if (!OutActual.Equals(Wanted, ESearchCase::CaseSensitive))
+			{
+				OutNote = FString::Printf(
+					TEXT("label was trimmed to '%s' (the engine strips surrounding whitespace)"), *OutActual);
+			}
+			return true;
+		}
+
+		OutNote = FString::Printf(
+			TEXT("the editor REFUSED the label '%s' and the actor is still called '%s'. SetActorLabel "
+				 "validates the name, and on rejection it logs a warning and changes nothing - it "
+				 "cannot report failure, so this is read back rather than assumed. Look the actor up "
+				 "by '%s', not by what was requested."),
+			*Wanted, *OutActual, *OutActual);
+		return false;
+	}
 
 	FString FMifPinRef::Describe() const
 	{
