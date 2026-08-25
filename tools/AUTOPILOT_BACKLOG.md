@@ -46,6 +46,25 @@ it off and write one line saying why it was dropped — do not leave it open to 
       payload: a prefix or filter that matched nothing is a correct empty, an identity that resolved to
       nothing is a finding. That reproduces the hand triage of run 4 exactly. 12 checks in
       tools/test_fuzz_detector.py, which runs offline with no editor.
+- [ ] UMG WidgetAnimation authoring is missing entirely (reported 2026-08-25, QOLCrafting_P /
+      WBP_QOL_DropZone). Verified: nothing under Source/MifBridge mentions WidgetAnimation or
+      MovieScene, and the three 'anim' endpoints (describe_animation, list_animations, add_anim_node)
+      are all SKELETAL animation, not UMG. The report is correct.
+      NOT blocked on a Build.cs change, which is what I expected: UMG lists MovieScene and
+      MovieSceneTracks in PublicDependencyModuleNames and MifBridge already depends on UMG, so those
+      headers are reachable transitively. UMGEditor also publicly exposes Sequencer/SequencerCore.
+      Shape: add_widget_animation, add_widget_animation_track, set_widget_animation_keys, and the two
+      removes - or one apply_widget_animation_patch in the style of apply_graph_patch.
+      The real difficulty is not the API surface, it is three invariants:
+        * TIME. The reported source is display rate 20fps with tick resolution 60000/1. Keys are
+          FFrameNumber in TICK space, so 0.95s is 57000 ticks, not frame 19 and not 0.95. Getting this
+          wrong puts every key on the wrong frame while every call still reports success.
+        * BINDING. A widget binding is an FGuid possessable in the UMovieScene plus the entry in
+          UWidgetAnimation::AnimationBindings that maps it to the widget name. Create one and not the
+          other and the animation exists, compiles, plays, and moves nothing.
+        * INTERPOLATION. Cubic/Auto is a per-key tangent mode on the float channel, separate from the
+          key value, and defaults to linear if not set.
+      Read-back must prove all three, not just that the objects exist.
 - [ ] Re-run the endpoint sweep with the narrowed leak detector and the confirming-retry hang logic, and confirm or drop the unexplained recipe_reset_and_loop hang.
 - [x] recipe_reset_and_loop hardcodes StandardMacros when resolving ForEachLoop — the same brittle pattern already fixed in add_macro_instance. Harmless today, but route it through the registry lookup.
 - [x] Extend audit_roundtrip.py to the node types it does not yet cover (branch, sequence, timeline, switch, spawn_actor, interface calls) — the two gaps it already found were both real.
