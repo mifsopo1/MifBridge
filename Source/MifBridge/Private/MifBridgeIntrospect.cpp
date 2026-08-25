@@ -628,6 +628,16 @@ namespace MifBridge
 		J->SetBoolField(TEXT("interp"), (F & CPF_Interp) != 0);
 		J->SetBoolField(TEXT("deprecated"), (F & CPF_Deprecated) != 0);
 		J->SetStringField(TEXT("category"), Var.Category.ToString());
+		// The tooltip is writable through set_variable_flags but was not reported anywhere, so it
+		// could be set and never read back to confirm it landed - found by the round-trip audit.
+		for (const FBPVariableMetaDataEntry& Meta : Var.MetaDataArray)
+		{
+			if (Meta.DataKey == FBlueprintMetadata::MD_Tooltip && !Meta.DataValue.IsEmpty())
+			{
+				J->SetStringField(TEXT("tooltip"), Meta.DataValue);
+				break;
+			}
+		}
 		return J;
 	}
 

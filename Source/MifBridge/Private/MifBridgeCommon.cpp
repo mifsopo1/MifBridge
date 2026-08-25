@@ -18,6 +18,7 @@
 #include "EdGraph/EdGraphSchema.h"
 #include "EdGraphSchema_K2.h"
 #include "K2Node_MacroInstance.h"
+#include "K2Node_CallFunction.h"
 #include "Editor.h"               // GEditor->GetEditorWorldContext() for the shared EditorWorld()
 #include "HAL/FileManager.h"      // IFileManager::Copy / COPY_OK for BackupPackage
 #include "Misc/OutputDevice.h"            // FOutputDevice — RunEngineExec's tee base
@@ -4338,6 +4339,39 @@ namespace MifBridge
 		Json->SetStringField(TEXT("title"), Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
 		Json->SetNumberField(TEXT("x"), Node->NodePosX);
 		Json->SetNumberField(TEXT("y"), Node->NodePosY);
+
+		// FUNCTION IDENTITY. A call node reported only a spaced display TITLE ("Print String"), so
+		// recreating it meant guessing the internal name by deleting spaces - the same guess that
+		// failed a user on "Switch Has Authority", and one that cannot work at all when the title is
+		// not the name with spaces inserted: K2_GetActorLocation displays as "Get Actor Location".
+		// The owning class was technically recoverable from the self pin's type, which is not the same
+		// as being reported and is absent for a static library call.
+		if (const UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node))
+		{
+			TSharedRef<FJsonObject> Fn = MakeShared<FJsonObject>();
+			const FMemberReference& Ref = CallNode->FunctionReference;
+			const FName MemberName = Ref.GetMemberName();
+			if (!MemberName.IsNone())
+			{
+				Fn->SetStringField(TEXT("name"), MemberName.ToString());
+			}
+			UClass* OwnerClass = Ref.GetMemberParentClass();
+			if (OwnerClass)
+			{
+				Fn->SetStringField(TEXT("ownerClass"), OwnerClass->GetName());
+				Fn->SetStringField(TEXT("ownerClassPath"), OwnerClass->GetPathName());
+			}
+			Fn->SetBoolField(TEXT("selfContext"), Ref.IsSelfContext());
+
+			// The exact values add_function_call wants. Copy these; do NOT derive them from the title.
+			TSharedRef<FJsonObject> Args = MakeShared<FJsonObject>();
+			if (!MemberName.IsNone()) { Args->SetStringField(TEXT("function"), MemberName.ToString()); }
+			Args->SetStringField(TEXT("class"),
+				Ref.IsSelfContext() || !OwnerClass ? TEXT("self") : OwnerClass->GetName());
+			Fn->SetObjectField(TEXT("addFunctionCallArgs"), Args);
+
+			Json->SetObjectField(TEXT("function"), Fn);
+		}
 
 		// MACRO IDENTITY. "class": "K2Node_MacroInstance" says the node is a macro instance and
 		// nothing about WHICH macro, so reading one back told a caller nothing it could act on. A
