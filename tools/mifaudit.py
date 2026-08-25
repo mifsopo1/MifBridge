@@ -142,9 +142,29 @@ def launch_editor():
         capture_output=True, text=True, timeout=60)
 
 
+def editor_window_title(pid):
+    """The editor's main window title, or None. A title that is not the usual one is the tell."""
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-Process -Id %d -ErrorAction SilentlyContinue).MainWindowTitle" % pid],
+            capture_output=True, text=True, timeout=20).stdout.strip()
+        return out or None
+    except Exception:
+        return None
+
+
 def wait_for_bridge(timeout=900, quiet=False):
-    """Block until the SDK editor is serving. Returns True/False."""
+    """Block until the SDK editor is serving. Returns True/False.
+
+    Distinguishes LOADING from BLOCKED. Both look the same from here - the port is bound and requests
+    time out - but they need opposite responses: one wants patience, the other will never resolve on
+    its own. A modal Slate window spins its own loop, so the ticker that serves this bridge stops
+    running while the socket keeps accepting (02_GOTCHAS.md section 8). That happened today behind a
+    project window titled "BA Welcome Screen", and waiting would have burned the full timeout.
+    """
     start = time.time()
+    warned = False
     while time.time() - start < timeout:
         ok, why = require_sdk_bridge()
         if ok:
@@ -153,6 +173,18 @@ def wait_for_bridge(timeout=900, quiet=False):
             try:
                 r = raw_post("self_audit", {"summaryOnly": True}, timeout=60)
             except (Dead, Timeout):
+                # After a grace period long enough for any honest cold start, a bound-but-silent port
+                # is worth naming rather than waiting out. Reported once, not every five seconds.
+                if not warned and time.time() - start > 240:
+                    warned = True
+                    pid = bridge_pid()
+                    title = editor_window_title(pid) if pid else None
+                    print("  [bridge port is bound but not answering after %ds]" % int(time.time() - start))
+                    if title:
+                        print("  [editor window title: %r]" % title)
+                        print("  [a title that is not the normal editor one means a MODAL is spinning")
+                        print("   its own loop, which stops the ticker that serves this bridge. That")
+                        print("   does not resolve on its own - see 02_GOTCHAS.md section 8.]")
                 time.sleep(5)
                 continue
             if isinstance(r, dict) and r.get("ok"):

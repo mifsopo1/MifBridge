@@ -56,7 +56,7 @@ it off and write one line saying why it was dropped — do not leave it open to 
       payload: a prefix or filter that matched nothing is a correct empty, an identity that resolved to
       nothing is a finding. That reproduces the hand triage of run 4 exactly. 12 checks in
       tools/test_fuzz_detector.py, which runs offline with no editor.
-- [ ] invoke_editor_tab silently ignores 'asset' unless manager is "assetEditor". ResolveTabManager
+- [x] invoke_editor_tab silently ignores 'asset' unless manager is "assetEditor". ResolveTabManager
       returns early for the default manager:"global" and never reads the asset argument, so a caller
       who meant an asset-editor tab and forgot to set manager gets a global operation and no warning.
       RejectUnknownParams cannot catch this - 'asset' IS a declared parameter; it is ignored by MODE.
@@ -93,12 +93,33 @@ it off and write one line saying why it was dropped — do not leave it open to 
       list_sublevels' netMode, which is DOCUMENTED as "only meaningful with world:pie" but not
       enforced. No further fixes are warranted right now; the tool exists so the next instance is
       found deliberately instead of by accident.
-- [ ] Validation sweep against the FIXED build. Run 4 tested a binary that predates c190ae5 and used
+- [x] trace_ground silently ignored an unresolvable ignoreActor. `if (AActor* Ignore =
+      FindActorInWorld(...)) { AddIgnoredActor(Ignore); }` - when the name resolved to nothing the if
+      never fired, the trace ran WITHOUT ignoring anything, and the caller got a confident hit:true
+      possibly against the very actor they asked to exclude. Second instance of the invoke_editor_tab
+      class, found by the same ghost probe in run 6.
+      BOTH DONE - built, tested (T46/T47 in test_audit_fixes.py, 22 checks green), committed. Each
+      test also asserts the ORDINARY path still works, because a fix that refuses too much is its own
+      defect. The resolve-or-skip pattern search converged: trace_ground was the ONLY place in 46k
+      lines where user input is resolved inside an `if` with no failing else; the one other match is
+      `if (!ResolveMaterialProperty(...))`, which is the correct shape.
+- [x] Validation sweep against the FIXED build. Run 4 tested a binary that predates c190ae5 and used
       the ghost detector that predates ea37587, so it cannot show either fix working. A clean run
       should now give 0 CRASH, and the GHOST_OK bucket should collapse from 9 to the handful that are
       real once contamination and correct-empties stop being counted. Budget hours, not minutes - the
       kr_* endpoints do genuine blueprint reconstruction even on garbage input, which is where run 4
       spent most of its time.
+      RUN 6 DONE, 238 endpoints against the fixed build:
+          CRASH     1 -> 0    duplicate_asset's modal, fixed in c190ae5
+          HANG      1 -> 0    recipe_reset_and_loop, proven to be a busy editor and not a defect
+          GHOST_OK  9 -> 6
+      Of the six, four are not defects: describe_package (existsOnDisk:false), get_dependencies and
+      get_referencers (packageExists:false plus a note) all state the truth - the third calibration
+      landed after this run started so it could not suppress them - and trigger_cook returns
+      executed:false, "Plan only", which is exactly what that endpoint does.
+      The two real ones are invoke_editor_tab and trace_ground, both the same silent-ignore class and
+      both fixed. That is the entire yield, and it is a good one: a crasher and a data-loss path in
+      run 4, two silent ignores in run 6.
 - [x] UMG WidgetAnimation authoring is missing entirely (reported 2026-08-25, QOLCrafting_P /
       WBP_QOL_DropZone). Verified: nothing under Source/MifBridge mentions WidgetAnimation or
       MovieScene, and the three 'anim' endpoints (describe_animation, list_animations, add_anim_node)

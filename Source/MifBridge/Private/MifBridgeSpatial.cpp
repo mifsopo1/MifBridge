@@ -278,9 +278,33 @@ namespace MifBridge
 		}
 
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(MifBridgeTraceGround), /*bTraceComplex*/ true);
-		if (AActor* Ignore = FindActorInWorld(World, JStrAny(In, { TEXT("ignoreActor"), TEXT("actorPath") })))
+
+		// AN ignoreActor THAT DOES NOT RESOLVE IS A REFUSAL, NOT A SHRUG.
+		//
+		// This used to be `if (AActor* Ignore = FindActorInWorld(...)) { AddIgnoredActor(Ignore); }`.
+		// When the name resolved to nothing the `if` simply did not fire, the trace ran WITHOUT
+		// ignoring anything, and the caller got a confident hit:true - quite possibly against the very
+		// actor they asked to exclude, which is the one answer they had ruled out.
+		//
+		// Same silent-ignore class as invoke_editor_tab's mode-dependent 'asset', and found the same
+		// way: the endpoint sweep's ghost probe handed it a path that does not exist and it answered
+		// ok:true. Note the XY case a few lines above already had this reasoning applied to it; the
+		// ignore path did not.
+		const FString IgnoreName = JStrAny(In, { TEXT("ignoreActor"), TEXT("actorPath") });
+		if (!IgnoreName.IsEmpty())
 		{
+			AActor* Ignore = FindActorInWorld(World, IgnoreName);
+			if (!Ignore)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("ignoreActor '%s' does not resolve to an actor in this world, so the trace "
+						 "would have run WITHOUT ignoring it and could have hit the very actor you "
+						 "asked to exclude. NOTHING was traced. Check the name with "
+						 "list_level_actors, or omit ignoreActor."), *IgnoreName));
+				return;
+			}
 			Params.AddIgnoredActor(Ignore);
+			Out->SetStringField(TEXT("ignoredActor"), Ignore->GetPathName());
 		}
 
 		FHitResult Hit;

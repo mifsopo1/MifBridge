@@ -129,6 +129,20 @@ def main():
     ok = M.call("invoke_editor_tab", {"probe": True})
     check("T46 the plain global form still works", ok.get("ok") is True, json.dumps(ok)[:200])
 
+    # ------------------------------------------------------------------ T47 silent ignore #2
+    print("\n=== T47: trace_ground refuses an ignoreActor that does not resolve ===")
+    # The old code was `if (AActor* Ignore = FindActorInWorld(...)) { AddIgnoredActor(Ignore); }`.
+    # An unresolvable name meant the if never fired, the trace ran WITHOUT ignoring anything, and the
+    # caller got a confident hit:true - possibly against the very actor they asked to exclude, which
+    # is the one answer they had ruled out. Same class as T46, found by the same ghost probe.
+    r = M.call("trace_ground", {"x": 0, "y": 0, "ignoreActor": "NoSuchActor_zzz"})
+    check("T47 refused rather than tracing anyway", r.get("ok") is False, json.dumps(r)[:220])
+    check("T47 and it explains the consequence",
+          "without ignoring" in (r.get("error") or "").lower(), (r.get("error") or "")[:200])
+    # A trace with no ignoreActor at all must still work - the ordinary path is the common one.
+    ok = M.call("trace_ground", {"x": 0, "y": 0})
+    check("T47 a plain trace still works", ok.get("ok") is True, json.dumps(ok)[:200])
+
     print("\n=== T45: everything still compiles ===")
     c = M.call("compile", {"blueprintId": bpid})
     check("T45 compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,
