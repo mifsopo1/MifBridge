@@ -107,12 +107,21 @@ it off and write one line saying why it was dropped — do not leave it open to 
       landmine is sidestepped by building the binding the way BindPossessableObject's plain-widget
       branch does, which never reads Context; the ROOT widget case is refused, not approximated.
       38 checks across two suites.
-- [ ] Widget animation: the other property tracks. Only RenderTransform.Translation is authorable and
+- [x] Widget animation: the other property tracks. Only RenderTransform.Translation is authorable and
       anything else is refused BY NAME rather than ignored. Opacity, Margin, colour and visibility are
       separate track classes; the plumbing built here (binding, section range, batch-validated keys,
       seconds-to-ticks) generalises to them.
-- [ ] Widget animation: removal. There is no remove_widget_animation or remove_widget_animation_track,
+- [x] Widget animation: removal. There is no remove_widget_animation or remove_widget_animation_track,
       so an animation authored by mistake can only be undone in the Designer.
+      Both done. RenderOpacity (float) and ColorAndOpacity (R/G/B/A) join the transform track - they
+      share FMovieSceneFloatChannel, so it was a table rather than a rewrite. Visibility is a BOOL
+      channel and is refused BY NAME with the supported list instead of half-working.
+      remove_widget_animation and remove_widget_animation_track, no confirm flag (undoable blueprint
+      edits, matching remove_variable, not delete_asset). removeBinding drops BOTH halves of a binding.
+      26 checks in test_widget_animation_props.py; 64 across the three UMG suites.
+- [ ] Widget animation: Visibility, the one deliberately left out. It is a bool channel
+      (UMovieSceneVisibilityTrack), so it needs a second key path alongside the float one. The
+      refusal already names it as unsupported, so this is additive rather than a correction.
 - [x] Re-run the endpoint sweep with the narrowed leak detector and the confirming-retry hang logic, and confirm or drop the unexplained recipe_reset_and_loop hang.
       Run 4 completed: 232 endpoints, 1 CRASH (duplicate_asset - the modal, now fixed in c190ae5),
       9 GHOST_OK (6 of them the fuzzer's own contamination, since fixed), 1 HANG.

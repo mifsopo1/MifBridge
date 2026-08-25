@@ -914,6 +914,8 @@ namespace MifBridge
 	MIF_DECL(list_widget_animations);
 	MIF_DECL(add_widget_animation_track);
 	MIF_DECL(set_widget_animation_keys);
+	MIF_DECL(remove_widget_animation);
+	MIF_DECL(remove_widget_animation_track);
 	MIF_DECL(add_class_cast);
 	MIF_DECL(add_switch_enum);
 	MIF_DECL(add_switch_int);

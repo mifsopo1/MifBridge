@@ -576,6 +576,30 @@ def set_widget_animation_keys(blueprint_id: str, animation_name: str, widget_nam
 
 
 @mcp.tool()
+def remove_widget_animation(blueprint_id: str, animation_name: str) -> dict:
+    """Remove a UMG animation from a Widget Blueprint.
+
+    No confirm flag: this is an undoable blueprint edit, not an asset deletion. Verified by re-finding
+    the animation afterwards rather than trusting the removal.
+    """
+    return _post("remove_widget_animation", blueprintId=blueprint_id, animationName=animation_name)
+
+
+@mcp.tool()
+def remove_widget_animation_track(blueprint_id: str, animation_name: str, widget_name: str,
+                                  property: str = "RenderTransform.Translation",
+                                  remove_binding: bool = False) -> dict:
+    """Remove one property track from a widget's binding in a UMG animation.
+
+    remove_binding=True also drops the widget's possessable AND its AnimationBindings entry - both
+    halves together, since removing one and not the other leaves a binding that animates nothing.
+    """
+    return _post("remove_widget_animation_track", blueprintId=blueprint_id,
+                 animationName=animation_name, widgetName=widget_name, property=property,
+                 removeBinding=remove_binding)
+
+
+@mcp.tool()
 def add_reroute(graph_id: str, x: int = 0, y: int = 0,
                 src_node: str = "", src_pin: str = "",
                 dst_node: str = "", dst_pin: str = "") -> dict:

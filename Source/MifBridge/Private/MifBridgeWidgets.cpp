@@ -23,6 +23,10 @@
 #include "MovieScene.h"                             // UMovieScene: display rate, tick resolution, playback range
 #include "Animation/MovieScene2DTransformTrack.h"    // UMovieScene2DTransformTrack (RenderTransform)
 #include "Animation/MovieScene2DTransformSection.h"  // FMovieSceneFloatChannel Translation[2]
+#include "Tracks/MovieSceneFloatTrack.h"             // RenderOpacity
+#include "Sections/MovieSceneFloatSection.h"         // GetChannel()
+#include "Tracks/MovieSceneColorTrack.h"             // ColorAndOpacity
+#include "Sections/MovieSceneColorSection.h"         // GetRed/Green/Blue/AlphaChannel()
 #include "Channels/MovieSceneFloatChannel.h"         // AddCubicKey / AddLinearKey / AddConstantKey
 #include "Tracks/MovieScenePropertyTrack.h"          // SetPropertyNameAndPath
 #include "MovieSceneBinding.h"                       // FMovieSceneBinding::GetTracks - object-bound
@@ -155,10 +159,81 @@ namespace MifBridge
 
 	namespace
 	{
-		// The one property this group supports today. Named explicitly rather than pretending to be
-		// generic: a caller asking for anything else gets told so, instead of getting an endpoint
-		// that appears to work and quietly only handles one track type.
-		const TCHAR* kSupportedProperty = TEXT("RenderTransform.Translation");
+		// WHAT CAN BE ANIMATED, and by which track. Named explicitly rather than pretending to be
+		// generic: a caller asking for anything else is told so, instead of getting an endpoint that
+		// appears to work and quietly handles only one track type.
+		//
+		// These three share FMovieSceneFloatChannel, which is the whole reason they can share one key
+		// path. Visibility is deliberately ABSENT - it is a bool channel and needs a different one.
+		struct FAnimProperty
+		{
+			const TCHAR* Name;          // what the caller passes
+			const TCHAR* PropertyPath;  // what the MovieScene property track binds to
+			const TCHAR* Channels;      // comma-separated, in engine order
+		};
+
+		const FAnimProperty kAnimProperties[] = {
+			{ TEXT("RenderTransform.Translation"), TEXT("RenderTransform"),  TEXT("X,Y") },
+			{ TEXT("RenderOpacity"),               TEXT("RenderOpacity"),    TEXT("value") },
+			{ TEXT("ColorAndOpacity"),             TEXT("ColorAndOpacity"),  TEXT("R,G,B,A") },
+		};
+
+		const FAnimProperty* FindAnimProperty(const FString& Name)
+		{
+			for (const FAnimProperty& P : kAnimProperties)
+			{
+				if (Name.Equals(P.Name, ESearchCase::IgnoreCase)) { return &P; }
+			}
+			return nullptr;
+		}
+
+		FString SupportedPropertyList()
+		{
+			TArray<FString> Names;
+			for (const FAnimProperty& P : kAnimProperties) { Names.Add(P.Name); }
+			return FString::Join(Names, TEXT(", "));
+		}
+
+		UClass* TrackClassFor(const FAnimProperty& P)
+		{
+			const FString Name(P.Name);
+			if (Name == TEXT("RenderTransform.Translation")) { return UMovieScene2DTransformTrack::StaticClass(); }
+			if (Name == TEXT("RenderOpacity"))               { return UMovieSceneFloatTrack::StaticClass(); }
+			if (Name == TEXT("ColorAndOpacity"))             { return UMovieSceneColorTrack::StaticClass(); }
+			return nullptr;
+		}
+
+		// The channel a caller named, on whichever section type this property uses. Returns null for
+		// a channel that does not belong to this property, which is how a typo becomes a refusal
+		// instead of a silent write to the wrong curve.
+		FMovieSceneFloatChannel* ResolveChannel(UMovieSceneSection* Section, const FString& Channel)
+		{
+			if (UMovieScene2DTransformSection* T = Cast<UMovieScene2DTransformSection>(Section))
+			{
+				if (Channel.Equals(TEXT("X"), ESearchCase::IgnoreCase)) { return &T->Translation[0]; }
+				if (Channel.Equals(TEXT("Y"), ESearchCase::IgnoreCase)) { return &T->Translation[1]; }
+				return nullptr;
+			}
+			if (UMovieSceneFloatSection* F = Cast<UMovieSceneFloatSection>(Section))
+			{
+				// A single-channel property. Accept the explicit name and the empty default, so a
+				// caller does not have to pass a channel for something that only has one.
+				if (Channel.IsEmpty() || Channel.Equals(TEXT("value"), ESearchCase::IgnoreCase))
+				{
+					return &F->GetChannel();
+				}
+				return nullptr;
+			}
+			if (UMovieSceneColorSection* Col = Cast<UMovieSceneColorSection>(Section))
+			{
+				if (Channel.Equals(TEXT("R"), ESearchCase::IgnoreCase)) { return &Col->GetRedChannel(); }
+				if (Channel.Equals(TEXT("G"), ESearchCase::IgnoreCase)) { return &Col->GetGreenChannel(); }
+				if (Channel.Equals(TEXT("B"), ESearchCase::IgnoreCase)) { return &Col->GetBlueChannel(); }
+				if (Channel.Equals(TEXT("A"), ESearchCase::IgnoreCase)) { return &Col->GetAlphaChannel(); }
+				return nullptr;
+			}
+			return nullptr;
+		}
 
 		UWidget* FindWidgetByName(UWidgetBlueprint* WBP, const FString& Name)
 		{
@@ -178,19 +253,24 @@ namespace MifBridge
 			return FGuid();
 		}
 
-		UMovieScene2DTransformSection* FindTransformSection(UWidgetAnimation* Anim, const FGuid& Guid)
+		UMovieSceneTrack* FindPropertyTrack(UWidgetAnimation* Anim, const FGuid& Guid, UClass* TrackClass)
 		{
 			UMovieScene* MS = Anim->GetMovieScene();
-			if (!MS || !Guid.IsValid()) { return nullptr; }
-			for (UMovieSceneTrack* Track : MS->FindTracks(UMovieScene2DTransformTrack::StaticClass(), Guid))
+			if (!MS || !Guid.IsValid() || !TrackClass) { return nullptr; }
+			for (UMovieSceneTrack* Track : MS->FindTracks(TrackClass, Guid))
 			{
-				for (UMovieSceneSection* Section : Track->GetAllSections())
-				{
-					if (UMovieScene2DTransformSection* S = Cast<UMovieScene2DTransformSection>(Section))
-					{
-						return S;
-					}
-				}
+				if (Track) { return Track; }
+			}
+			return nullptr;
+		}
+
+		UMovieSceneSection* FindPropertySection(UWidgetAnimation* Anim, const FGuid& Guid, UClass* TrackClass)
+		{
+			UMovieSceneTrack* Track = FindPropertyTrack(Anim, Guid, TrackClass);
+			if (!Track) { return nullptr; }
+			for (UMovieSceneSection* Section : Track->GetAllSections())
+			{
+				if (Section) { return Section; }
 			}
 			return nullptr;
 		}
@@ -203,8 +283,9 @@ namespace MifBridge
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("blueprintId"), TEXT("path"), TEXT("animationName"), TEXT("widgetName"), TEXT("property") },
-			TEXT("blueprintId (alias: path), animationName, widgetName, property (only "
-				 "\"RenderTransform.Translation\" today, which is the default)"),
+			TEXT("blueprintId (alias: path), animationName, widgetName, property "
+				 "(RenderTransform.Translation | RenderOpacity | ColorAndOpacity; "
+				 "default RenderTransform.Translation)"),
 			{ { TEXT("propertyPath"), TEXT("the parameter is 'property'") },
 			  { TEXT("channel"), TEXT("a track carries BOTH translation channels; pick X or Y when you key it, in set_widget_animation_keys") },
 			  { TEXT("widgetGuid"), TEXT("widgets are addressed by name here — list_widgets shows them") } }))
@@ -224,12 +305,21 @@ namespace MifBridge
 			return;
 		}
 
-		const FString Property = JStr(In, TEXT("property"), kSupportedProperty);
-		if (Property != kSupportedProperty)
+		const FString Property = JStr(In, TEXT("property"), TEXT("RenderTransform.Translation"));
+		const FAnimProperty* PropDef = FindAnimProperty(Property);
+		if (!PropDef)
 		{
 			Fail(Out, FString::Printf(
-				TEXT("property '%s' is not supported yet — this endpoint currently authors only '%s'. "
-					 "NOTHING was created."), *Property, kSupportedProperty));
+				TEXT("property '%s' is not supported. Authorable today: %s. (Visibility is a BOOL "
+					 "channel and is deliberately absent rather than half-working.) NOTHING was created."),
+				*Property, *SupportedPropertyList()));
+			return;
+		}
+		UClass* TrackClass = TrackClassFor(*PropDef);
+		if (!TrackClass)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("internal: no track class mapped for '%s'. NOTHING was created."), *Property));
 			return;
 		}
 
@@ -272,20 +362,25 @@ namespace MifBridge
 		}
 
 		bool bCreatedTrack = false;
-		UMovieScene2DTransformSection* Section = FindTransformSection(Anim, Guid);
+		UMovieSceneSection* Section = FindPropertySection(Anim, Guid, TrackClass);
 		if (!Section)
 		{
-			UMovieScene2DTransformTrack* Track =
-				MS->AddTrack<UMovieScene2DTransformTrack>(Guid);
+			UMovieSceneTrack* Track = MS->AddTrack(TrackClass, Guid);
 			if (!Track)
 			{
-				Fail(Out, TEXT("could not add a 2D transform track to that binding. WHAT IS LEFT "
-							   "BEHIND: the widget binding, if this call created it — read it back "
-							   "with list_widget_animations."));
+				Fail(Out, FString::Printf(
+					TEXT("could not add a %s to that binding. WHAT IS LEFT BEHIND: the widget "
+						 "binding, if this call created it — read it back with "
+						 "list_widget_animations."), *TrackClass->GetName()));
 				return;
 			}
-			Track->SetPropertyNameAndPath(TEXT("RenderTransform"), TEXT("RenderTransform"));
-			Section = Cast<UMovieScene2DTransformSection>(Track->CreateNewSection());
+			// A property track that does not know its property animates nothing. This is the step
+			// that makes the track point at RenderOpacity rather than at nothing in particular.
+			if (UMovieScenePropertyTrack* PropTrack = Cast<UMovieScenePropertyTrack>(Track))
+			{
+				PropTrack->SetPropertyNameAndPath(FName(PropDef->PropertyPath), PropDef->PropertyPath);
+			}
+			Section = Track->CreateNewSection();
 			if (!Section)
 			{
 				Fail(Out, TEXT("the track was created but produced no section. WHAT IS LEFT BEHIND: "
@@ -300,7 +395,7 @@ namespace MifBridge
 		}
 
 		// Verify by re-finding through the MovieScene rather than trusting the pointers above.
-		if (!FindTransformSection(Anim, Guid))
+		if (!FindPropertySection(Anim, Guid, TrackClass))
 		{
 			Fail(Out, TEXT("the track did not attach to the binding. Read the animation back with "
 						   "list_widget_animations before retrying."));
@@ -312,8 +407,9 @@ namespace MifBridge
 		Out->SetStringField(TEXT("widgetName"), WidgetName);
 		Out->SetBoolField(TEXT("createdBinding"), bNewBinding);
 		Out->SetBoolField(TEXT("createdTrack"), bCreatedTrack);
-		Out->SetStringField(TEXT("property"), kSupportedProperty);
-		Out->SetStringField(TEXT("trackClass"), TEXT("MovieScene2DTransformTrack"));
+		Out->SetStringField(TEXT("property"), PropDef->Name);
+		Out->SetStringField(TEXT("channels"), PropDef->Channels);
+		Out->SetStringField(TEXT("trackClass"), TrackClass->GetName());
 		Out->SetObjectField(TEXT("animation"), SerializeAnimation(Anim));
 	}
 
@@ -324,10 +420,11 @@ namespace MifBridge
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("blueprintId"), TEXT("path"), TEXT("animationName"), TEXT("widgetName"),
-			  TEXT("channel"), TEXT("keys"), TEXT("replace") },
-			TEXT("blueprintId (alias: path), animationName, widgetName, channel (\"X\" or \"Y\"), "
-				 "keys:[{time (SECONDS), value, interp: cubic|linear|constant}], replace (bool, "
-				 "default true — clears the channel first)"),
+			  TEXT("property"), TEXT("channel"), TEXT("keys"), TEXT("replace") },
+			TEXT("blueprintId (alias: path), animationName, widgetName, property "
+				 "(default RenderTransform.Translation), channel (X/Y for translation, R/G/B/A for "
+				 "ColorAndOpacity, omit for RenderOpacity), keys:[{time (SECONDS), value, "
+				 "interp: cubic|linear|constant}], replace (bool, default true — clears first)"),
 			{ { TEXT("time"), TEXT("times go inside keys[], one per key, in seconds") },
 			  { TEXT("tangent"), TEXT("interp:\"cubic\" uses the engine's Auto tangent, which is what the UMG designer produces") },
 			  { TEXT("frame"), TEXT("keys are given in SECONDS and converted to tick space for you; list_widget_animations reports both") } }))
@@ -344,25 +441,35 @@ namespace MifBridge
 			Fail(Out, FString::Printf(TEXT("no animation named '%s' on this widget."), *AnimName));
 			return;
 		}
+		const FString Property = JStr(In, TEXT("property"), TEXT("RenderTransform.Translation"));
+		const FAnimProperty* PropDef = FindAnimProperty(Property);
+		if (!PropDef)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("property '%s' is not supported. Authorable today: %s. NOTHING was changed."),
+				*Property, *SupportedPropertyList()));
+			return;
+		}
 		const FString WidgetName = JStr(In, TEXT("widgetName"));
 		const FGuid Guid = ExistingBinding(Anim, WidgetName);
-		UMovieScene2DTransformSection* Section = FindTransformSection(Anim, Guid);
+		UMovieSceneSection* Section = FindPropertySection(Anim, Guid, TrackClassFor(*PropDef));
 		if (!Section)
 		{
 			Fail(Out, FString::Printf(
-				TEXT("'%s' has no RenderTransform.Translation track in animation '%s' — call "
-					 "add_widget_animation_track first. NOTHING was changed."), *WidgetName, *AnimName));
+				TEXT("'%s' has no %s track in animation '%s' — call add_widget_animation_track first. "
+					 "NOTHING was changed."), *WidgetName, PropDef->Name, *AnimName));
 			return;
 		}
 
-		const FString ChannelStr = JStr(In, TEXT("channel"), TEXT("Y"));
-		int32 ChannelIndex = -1;
-		if (ChannelStr.Equals(TEXT("X"), ESearchCase::IgnoreCase)) { ChannelIndex = 0; }
-		else if (ChannelStr.Equals(TEXT("Y"), ESearchCase::IgnoreCase)) { ChannelIndex = 1; }
-		if (ChannelIndex < 0)
+		// Default only makes sense per property: Y for a translation, the single curve for opacity.
+		const FString ChannelStr = JStr(In, TEXT("channel"),
+			FString(PropDef->Name).Equals(TEXT("RenderTransform.Translation")) ? TEXT("Y") : TEXT(""));
+		FMovieSceneFloatChannel* ChannelPtr = ResolveChannel(Section, ChannelStr);
+		if (!ChannelPtr)
 		{
 			Fail(Out, FString::Printf(
-				TEXT("channel must be \"X\" or \"Y\" (got '%s'). NOTHING was changed."), *ChannelStr));
+				TEXT("channel '%s' is not one of this property's channels (%s = %s). NOTHING was "
+					 "changed."), *ChannelStr, PropDef->Name, PropDef->Channels));
 			return;
 		}
 
@@ -374,7 +481,7 @@ namespace MifBridge
 		}
 
 		UMovieScene* MS = Anim->GetMovieScene();
-		FMovieSceneFloatChannel& Channel = Section->Translation[ChannelIndex];
+		FMovieSceneFloatChannel& Channel = *ChannelPtr;
 		const int32 Before = Channel.GetNumKeys();
 
 		// PREFLIGHT the whole batch before touching the channel, so a bad key in the middle cannot
@@ -440,10 +547,141 @@ namespace MifBridge
 			KJ->SetNumberField(TEXT("value"), Values[i].Value);
 			Written.Add(MakeShared<FJsonValueObject>(KJ));
 		}
-		Out->SetStringField(TEXT("channel"), ChannelIndex == 0 ? TEXT("X") : TEXT("Y"));
+		Out->SetStringField(TEXT("property"), PropDef->Name);
+		Out->SetStringField(TEXT("channel"), ChannelStr.IsEmpty() ? TEXT("value") : *ChannelStr);
 		Out->SetNumberField(TEXT("keysBefore"), Before);
 		Out->SetNumberField(TEXT("keysAfter"), Channel.GetNumKeys());
 		Out->SetArrayField(TEXT("keys"), Written);
+	}
+
+	// --- remove_widget_animation --------------------------------------------
+	//   in:  { blueprintId | path, animationName }
+	//   out: { removed, remaining }
+	//
+	// No confirm flag, matching remove_variable and remove_node rather than delete_asset: this edits
+	// a blueprint inside RunEndpoint's transaction, which Ctrl-Z undoes. It does not delete an asset.
+	void H_remove_widget_animation(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("animationName") },
+			TEXT("blueprintId (alias: path), animationName"),
+			{ { TEXT("confirm"), TEXT("not needed — this is an undoable blueprint edit, not an asset deletion") },
+			  { TEXT("name"), TEXT("the parameter is animationName, to match add_widget_animation_track and set_widget_animation_keys") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+
+		const FString AnimName = JStr(In, TEXT("animationName"));
+		UWidgetAnimation* Anim = FindAnimation(WBP, AnimName);
+		if (!Anim)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no animation named '%s' on this widget. NOTHING was removed."), *AnimName));
+			return;
+		}
+
+		WBP->Modify();
+		WBP->Animations.Remove(Anim);
+
+		// Verify by re-finding, not by trusting Remove's return.
+		if (FindAnimation(WBP, AnimName))
+		{
+			Fail(Out, TEXT("the animation is still attached after removal. Read it back with "
+						   "list_widget_animations."));
+			return;
+		}
+
+		MarkStructural(WBP);
+		Out->SetStringField(TEXT("removed"), AnimName);
+		Out->SetNumberField(TEXT("remaining"), WBP->Animations.Num());
+	}
+
+	// --- remove_widget_animation_track --------------------------------------
+	//   in:  { blueprintId | path, animationName, widgetName, property?, removeBinding? }
+	//   out: { removedTrack, removedBinding, animation:{...} }
+	void H_remove_widget_animation_track(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("animationName"), TEXT("widgetName"),
+			  TEXT("property"), TEXT("removeBinding") },
+			TEXT("blueprintId (alias: path), animationName, widgetName, property (default "
+				 "RenderTransform.Translation), removeBinding (bool, default false — also drops the "
+				 "widget's possessable and AnimationBindings entry)"),
+			{ { TEXT("channel"), TEXT("a track carries all of a property's channels; there is no per-channel removal — key it empty instead") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+
+		const FString AnimName = JStr(In, TEXT("animationName"));
+		UWidgetAnimation* Anim = FindAnimation(WBP, AnimName);
+		if (!Anim || !Anim->GetMovieScene())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no animation named '%s' on this widget. NOTHING was removed."), *AnimName));
+			return;
+		}
+		const FString Property = JStr(In, TEXT("property"), TEXT("RenderTransform.Translation"));
+		const FAnimProperty* PropDef = FindAnimProperty(Property);
+		if (!PropDef)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("property '%s' is not supported. Authorable today: %s. NOTHING was removed."),
+				*Property, *SupportedPropertyList()));
+			return;
+		}
+		const FString WidgetName = JStr(In, TEXT("widgetName"));
+		const FGuid Guid = ExistingBinding(Anim, WidgetName);
+		if (!Guid.IsValid())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is not bound in animation '%s'. NOTHING was removed."), *WidgetName, *AnimName));
+			return;
+		}
+		UMovieSceneTrack* Track = FindPropertyTrack(Anim, Guid, TrackClassFor(*PropDef));
+		if (!Track)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no %s track in animation '%s'. NOTHING was removed."),
+				*WidgetName, PropDef->Name, *AnimName));
+			return;
+		}
+
+		UMovieScene* MS = Anim->GetMovieScene();
+		WBP->Modify();
+		Anim->Modify();
+		MS->Modify();
+		MS->RemoveTrack(*Track);
+
+		bool bRemovedBinding = false;
+		if (JBool(In, TEXT("removeBinding"), false))
+		{
+			// BOTH halves, or the binding is half-gone: the possessable lives in the MovieScene and
+			// the widget-name mapping lives in UWidgetAnimation::AnimationBindings. Removing one and
+			// not the other is the same split that makes a half-created binding animate nothing.
+			MS->RemovePossessable(Guid);
+			Anim->AnimationBindings.RemoveAll([&Guid](const FWidgetAnimationBinding& B)
+			{
+				return B.AnimationGuid == Guid;
+			});
+			bRemovedBinding = true;
+		}
+
+		if (FindPropertyTrack(Anim, Guid, TrackClassFor(*PropDef)))
+		{
+			Fail(Out, TEXT("the track is still on the binding after removal. Read the animation back "
+						   "with list_widget_animations."));
+			return;
+		}
+
+		MarkStructural(WBP);
+		Out->SetBoolField(TEXT("removedTrack"), true);
+		Out->SetBoolField(TEXT("removedBinding"), bRemovedBinding);
+		Out->SetStringField(TEXT("property"), PropDef->Name);
+		Out->SetObjectField(TEXT("animation"), SerializeAnimation(Anim));
 	}
 
 	// --- list_widget_animations ---------------------------------------------
