@@ -205,7 +205,7 @@ namespace MifBridge
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
 		const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
-		if (!In->TryGetArrayField(TEXT("items"), Items) || !Items || Items->Num() == 0)
+		if (!JArray(In, TEXT("items"), Items) || !Items || Items->Num() == 0)
 		{
 			Fail(Out, TEXT("items[] is required (each entry is one actor)"));
 			return;
@@ -350,7 +350,7 @@ namespace MifBridge
 		TArray<TSharedPtr<FJsonValue>> NotFound;
 		TArray<TSharedPtr<FJsonValue>> FailedSpawns;
 		const TArray<TSharedPtr<FJsonValue>>* Paths = nullptr;
-		if (In->TryGetArrayField(TEXT("actorPaths"), Paths) && Paths)
+		if (JArray(In, TEXT("actorPaths"), Paths) && Paths)
 		{
 			for (const TSharedPtr<FJsonValue>& V : *Paths)
 			{
@@ -825,7 +825,7 @@ namespace MifBridge
 		if (!Mesh) { Fail(Out, FString::Printf(TEXT("static mesh not found: %s"), *MeshPath)); return; }
 
 		const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
-		if (!In->TryGetArrayField(TEXT("instances"), Items) || !Items || Items->Num() == 0)
+		if (!JArray(In, TEXT("instances"), Items) || !Items || Items->Num() == 0)
 		{
 			Fail(Out, TEXT("instances[] is required"));
 			return;

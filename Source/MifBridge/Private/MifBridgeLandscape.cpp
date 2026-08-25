@@ -216,7 +216,7 @@ namespace MifBridge
 		TArray<FLandscapeImportLayerInfo> ImportLayers;
 		TArray<TSharedPtr<FJsonValue>> LayersOut;
 		const TArray<TSharedPtr<FJsonValue>>* LayerArr = nullptr;
-		if (In->TryGetArrayField(TEXT("layers"), LayerArr) && LayerArr)
+		if (JArray(In, TEXT("layers"), LayerArr) && LayerArr)
 		{
 			bool bFirst = true;
 			for (const TSharedPtr<FJsonValue>& Val : *LayerArr)
@@ -724,7 +724,7 @@ namespace MifBridge
 		if (!Landscape) { Fail(Out, TEXT("no landscape found — call create_landscape first")); return; }
 
 		const TArray<TSharedPtr<FJsonValue>>* Paths = nullptr;
-		if (!In->TryGetArrayField(TEXT("runtimeVirtualTextures"), Paths) || !Paths || Paths->Num() == 0)
+		if (!JArray(In, TEXT("runtimeVirtualTextures"), Paths) || !Paths || Paths->Num() == 0)
 		{
 			Fail(Out, TEXT("runtimeVirtualTextures:[assetPath,...] is required"));
 			return;

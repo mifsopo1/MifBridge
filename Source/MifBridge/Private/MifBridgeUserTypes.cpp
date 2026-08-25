@@ -229,7 +229,7 @@ namespace MifBridge
 		// A freshly minted struct ships with one placeholder member. Remove it only if the caller
 		// supplied their own — an empty struct does not compile, so leaving it is the safe default.
 		const TArray<TSharedPtr<FJsonValue>>* MemberArr = nullptr;
-		const bool bHasMembers = In->TryGetArrayField(TEXT("members"), MemberArr) && MemberArr && MemberArr->Num() > 0;
+		const bool bHasMembers = JArray(In, TEXT("members"), MemberArr) && MemberArr && MemberArr->Num() > 0;
 
 		TArray<TSharedPtr<FJsonValue>> Added;
 		TArray<TSharedPtr<FJsonValue>> Warnings;
@@ -626,7 +626,7 @@ namespace MifBridge
 		// name — the underlying FName is engine-generated and is NOT what the user sees.
 		const TArray<TSharedPtr<FJsonValue>>* ValueArr = nullptr;
 		TArray<FString> Wanted;
-		if (In->TryGetArrayField(TEXT("values"), ValueArr) && ValueArr)
+		if (JArray(In, TEXT("values"), ValueArr) && ValueArr)
 		{
 			for (const TSharedPtr<FJsonValue>& V : *ValueArr)
 			{

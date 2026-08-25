@@ -1265,6 +1265,26 @@ namespace MifBridge
 		}
 	}
 
+	bool JArray(const TSharedRef<FJsonObject>& In, const TCHAR* Field,
+		const TArray<TSharedPtr<FJsonValue>>*& OutArray)
+	{
+		OutArray = nullptr;
+		const TSharedPtr<FJsonValue> Value = FieldIfPresent(In, Field);
+		if (!Value.IsValid() || Value->Type == EJson::Null)
+		{
+			return false;                       // absent: the caller's "not asked for" path is right
+		}
+		if (Value->Type != EJson::Array)
+		{
+			// Present and wrong. Without this the handler cannot tell this from absent, and answers
+			// as though nothing had been requested - see JArray's note in the header.
+			RecordParamTypeViolation(Field, Value, TEXT("an array"));
+			return false;
+		}
+		OutArray = &Value->AsArray();
+		return true;
+	}
+
 	void ResetParamTypeViolations()
 	{
 		ParamTypeViolations().Reset();
@@ -2977,7 +2997,9 @@ namespace MifBridge
 		TArray<TPair<FName, FEdGraphPinType>>& OutPins, FString& OutError)
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
-		if (!In->TryGetArrayField(Field, Arr) || Arr == nullptr)
+		// JArray, not TryGetArrayField: a field that is PRESENT but not an array must be recorded,
+		// not treated as absent. See JArray's note in MifBridgeHandlers.h.
+		if (!JArray(In, Field, Arr) || Arr == nullptr)
 		{
 			return true; // absent = no pins, not an error
 		}

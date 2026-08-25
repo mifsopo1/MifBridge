@@ -528,7 +528,7 @@ namespace MifBridge
 
 #if WITH_EDITOR
 		const TArray<TSharedPtr<FJsonValue>>* Rows = nullptr;
-		if (!In->TryGetArrayField(TEXT("rows"), Rows) || Rows == nullptr)
+		if (!JArray(In, TEXT("rows"), Rows) || Rows == nullptr)
 		{
 			Fail(Out, TEXT("'rows' array is required (each row an object with a 'Name' field)"));
 			return;
@@ -695,7 +695,7 @@ namespace MifBridge
 
 #if WITH_EDITOR
 		const TArray<TSharedPtr<FJsonValue>>* Names = nullptr;
-		if (!In->TryGetArrayField(TEXT("rowNames"), Names) || Names == nullptr)
+		if (!JArray(In, TEXT("rowNames"), Names) || Names == nullptr)
 		{
 			Fail(Out, TEXT("'rowNames' array is required"));
 			return;

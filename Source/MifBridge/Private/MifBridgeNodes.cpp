@@ -2315,7 +2315,7 @@ namespace MifBridge
 		}
 
 		const TArray<TSharedPtr<FJsonValue>>* Ops = nullptr;
-		if (!In->TryGetArrayField(TEXT("ops"), Ops) || Ops == nullptr)
+		if (!JArray(In, TEXT("ops"), Ops) || Ops == nullptr)
 		{
 			Fail(Out, TEXT("batch requires an 'ops' array"));
 			return;

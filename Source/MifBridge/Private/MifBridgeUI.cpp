@@ -468,7 +468,9 @@ namespace MifBridge
 			TArray<FString>& Out, FString& OutError)
 		{
 			const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
-			if (!In->TryGetArrayField(Field, Arr) || !Arr) { return true; }
+			// JArray records a present-but-wrong-typed field; absent still returns quietly, which is
+			// what this helper's "true means no error" contract wants.
+			if (!JArray(In, Field, Arr) || !Arr) { return true; }
 			for (int32 i = 0; i < Arr->Num(); ++i)
 			{
 				const TSharedPtr<FJsonValue>& V = (*Arr)[i];

@@ -267,7 +267,7 @@ namespace MifBridge
 		}
 
 		const TArray<TSharedPtr<FJsonValue>>* Points = nullptr;
-		if (!In->TryGetArrayField(TEXT("points"), Points) || !Points || Points->Num() < 2)
+		if (!JArray(In, TEXT("points"), Points) || !Points || Points->Num() < 2)
 		{
 			Fail(Out, TEXT("points:[{x,y,z},...] is required and needs at least 2 entries"));
 			return;
@@ -469,7 +469,7 @@ namespace MifBridge
 		TArray<AActor*> Targets;
 		TArray<TSharedPtr<FJsonValue>> NotFound;   // never let an unresolved path vanish
 		const TArray<TSharedPtr<FJsonValue>>* Paths = nullptr;
-		if (In->TryGetArrayField(TEXT("actorPaths"), Paths) && Paths)
+		if (JArray(In, TEXT("actorPaths"), Paths) && Paths)
 		{
 			// An entry that did not resolve used to be dropped in silence. With EVERY path bogus the
 			// else-branch below is never reached either, so Targets stayed empty and the response was

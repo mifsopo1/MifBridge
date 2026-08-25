@@ -425,8 +425,8 @@ namespace MifBridge
 		if (!Schema) { Fail(Out, TEXT("graph has no schema")); return; }
 
 		const TArray<TSharedPtr<FJsonValue>>* Ops = nullptr;
-		if ((!In->TryGetArrayField(TEXT("operations"), Ops) || !Ops)
-			&& (!In->TryGetArrayField(TEXT("ops"), Ops) || !Ops))
+		if ((!JArray(In, TEXT("operations"), Ops) || !Ops)
+			&& (!JArray(In, TEXT("ops"), Ops) || !Ops))
 		{
 			Fail(Out, TEXT("operations[] is required (alias: ops)"));
 			return;

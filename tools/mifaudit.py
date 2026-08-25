@@ -148,7 +148,13 @@ def wait_for_bridge(timeout=900, quiet=False):
     while time.time() - start < timeout:
         ok, why = require_sdk_bridge()
         if ok:
-            r = raw_post("self_audit", {"summaryOnly": True}, timeout=60)
+            # An editor mid-load binds the port before it can answer, so the first probes time out.
+            # Waiting is the whole point of this function - a timeout here is not an error.
+            try:
+                r = raw_post("self_audit", {"summaryOnly": True}, timeout=60)
+            except (Dead, Timeout):
+                time.sleep(5)
+                continue
             if isinstance(r, dict) and r.get("ok"):
                 if not quiet:
                     print("bridge up on %s - %d endpoints, built %s %s"

@@ -545,7 +545,7 @@ namespace MifBridge
 		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
 		int32 Selected = 0;
 		TArray<TSharedPtr<FJsonValue>> Missing;
-		if (In->TryGetArrayField(TEXT("actorPaths"), Arr) && Arr)
+		if (JArray(In, TEXT("actorPaths"), Arr) && Arr)
 		{
 			for (const TSharedPtr<FJsonValue>& V : *Arr)
 			{

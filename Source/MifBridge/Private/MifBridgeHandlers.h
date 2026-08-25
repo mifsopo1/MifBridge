@@ -167,6 +167,19 @@ namespace MifBridge
 	// implementation; every endpoint inherits it — including the ~20 open-coded
 	// FVector(JNum(O,"x"),JNum(O,"y"),JNum(O,"z")) readers in Landscape / Navigation / PIE / Spatial /
 	// Streaming / Viewport, which is how those are hardened without being individually rewritten.
+	/** Read an ARRAY field under the same silent-ignore rules the scalar readers follow.
+	 *
+	 *  The backstop above covers JNum/JInt/JBool. Arrays were the hole: TryGetArrayField returns
+	 *  false for "absent" and for "present but not an array" alike, so a handler takes its
+	 *  nothing-was-asked-for path either way. select_level_actors handed actorPaths as a string
+	 *  answered ok:true / selected:0 / selection:[] - a call that did nothing, reported as success,
+	 *  never mentioning the parameter.
+	 *
+	 *  Returns true only when the field is present AND an array. Absent is quiet (false, no
+	 *  recording); present-but-wrong records a violation, which makes RunEndpoint fail the request. */
+	bool JArray(const TSharedRef<FJsonObject>& In, const TCHAR* Field,
+		const TArray<TSharedPtr<FJsonValue>>*& OutArray);
+
 	/** Clear the per-request record. Called by RunEndpoint before dispatch, never by a handler. */
 	void ResetParamTypeViolations();
 	/** How many "supplied but wrong JSON type" reads happened during this request. */

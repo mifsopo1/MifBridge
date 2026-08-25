@@ -123,7 +123,7 @@ namespace MifBridge
 		TArray<FString> WantedTracks;
 		{
 			const TArray<TSharedPtr<FJsonValue>>* Tracks = nullptr;
-			if (In->TryGetArrayField(TEXT("floatTracks"), Tracks) && Tracks)
+			if (JArray(In, TEXT("floatTracks"), Tracks) && Tracks)
 			{
 				int32 TrackOrdinal = INDEX_NONE;
 				for (const TSharedPtr<FJsonValue>& Value : *Tracks)
@@ -427,7 +427,7 @@ namespace MifBridge
 		//   in:  { graphId, cases?: ["A","B"], caseSensitive?: false, hasDefault?: true, x?, y? }
 		//   out: { node:{...} }
 		const TArray<TSharedPtr<FJsonValue>>* Cases = nullptr;
-		if (In->TryGetArrayField(TEXT("cases"), Cases) && Cases)
+		if (JArray(In, TEXT("cases"), Cases) && Cases)
 		{
 			int32 CaseOrdinal = INDEX_NONE;
 			for (const TSharedPtr<FJsonValue>& Value : *Cases)
