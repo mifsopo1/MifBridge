@@ -1,5 +1,7 @@
 // MifBridge — Phase 3 breadth graph nodes: timeline, class-cast, switches, enum literal, set_pin_type.
 #include "MifBridgeHandlers.h"
+#include "EdGraph/EdGraphSchema.h"
+#include "K2Node_Knot.h"
 #include "MifBridgeLog.h"
 
 #include "Components/TimelineComponent.h"
@@ -65,6 +67,140 @@ namespace MifBridge
 	}
 
 	// --- add_timeline -------------------------------------------------------
+
+	namespace
+	{
+		// Node by guid WITHIN one graph - the same rule apply_graph_patch uses, and the reason a
+		// duplicate guid across two loaded copies of a blueprint cannot be ambiguous here.
+		UEdGraphNode* FindNodeInGraphForReroute(UEdGraph* Graph, const FString& GuidStr)
+		{
+			FGuid Guid;
+			if (!Graph || !FGuid::Parse(GuidStr, Guid)) { return nullptr; }
+			for (UEdGraphNode* Node : Graph->Nodes)
+			{
+				if (Node && Node->NodeGuid == Guid) { return Node; }
+			}
+			return nullptr;
+		}
+	}
+
+	// --- add_reroute --------------------------------------------------------
+	//   in:  { graphId, x, y, srcNode?, srcPin?, dstNode?, dstPin? }
+	//   out: { nodeGuid, inputPin, outputPin, splicedInto?, node:{...} }
+	//
+	// With the four optional pins, the reroute is SPLICED into that existing link: the direct wire is
+	// replaced by src -> knot -> dst. Without them a bare reroute is placed for the caller to wire.
+	void H_add_reroute(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("x"), TEXT("y"),
+			  TEXT("srcNode"), TEXT("srcPin"), TEXT("dstNode"), TEXT("dstPin") },
+			TEXT("graphId, x, y, and optionally srcNode + srcPin + dstNode + dstPin to SPLICE the "
+				 "reroute into that existing link (src -> knot -> dst) instead of placing a bare one"),
+			{ { TEXT("knot"),   TEXT("a reroute IS a knot - this endpoint makes one; there is no separate 'knot' parameter") },
+			  { TEXT("between"), TEXT("name the link explicitly with srcNode + srcPin + dstNode + dstPin") } }))
+		{
+			return;
+		}
+
+		UBlueprint* Blueprint = nullptr;
+		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
+		if (!Graph) { return; }
+
+		// Resolve the splice endpoints BEFORE creating anything, so a bad reference leaves no node
+		// behind - a cancelled transaction discards the undo entry, it does not remove a creation.
+		const FString SrcNodeStr = JStr(In, TEXT("srcNode"));
+		const FString DstNodeStr = JStr(In, TEXT("dstNode"));
+		const bool bSplice = !SrcNodeStr.IsEmpty() || !DstNodeStr.IsEmpty();
+		UEdGraphPin* SrcPin = nullptr;
+		UEdGraphPin* DstPin = nullptr;
+		if (bSplice)
+		{
+			if (SrcNodeStr.IsEmpty() || DstNodeStr.IsEmpty())
+			{
+				Fail(Out, TEXT("splicing needs BOTH ends: srcNode + srcPin AND dstNode + dstPin. "
+							   "Omit all four to place a bare reroute. Nothing was created."));
+				return;
+			}
+			UEdGraphNode* SrcNode = FindNodeInGraphForReroute(Graph, SrcNodeStr);
+			UEdGraphNode* DstNode = FindNodeInGraphForReroute(Graph, DstNodeStr);
+			if (!SrcNode || !DstNode)
+			{
+				Fail(Out, FString::Printf(TEXT("%s not found in this graph. Nothing was created."),
+					SrcNode ? TEXT("dstNode") : TEXT("srcNode")));
+				return;
+			}
+			SrcPin = FindPin(SrcNode, JStr(In, TEXT("srcPin")), EGPD_Output, /*bRequireDir*/ true);
+			DstPin = FindPin(DstNode, JStr(In, TEXT("dstPin")), EGPD_Input, /*bRequireDir*/ true);
+			if (!SrcPin || !DstPin)
+			{
+				Fail(Out, FString::Printf(TEXT("%s pin not found. Nothing was created."),
+					SrcPin ? TEXT("dst") : TEXT("src")));
+				return;
+			}
+			if (!SrcPin->LinkedTo.Contains(DstPin))
+			{
+				Fail(Out, TEXT("those two pins are not connected, so there is no wire to splice a "
+							   "reroute into. Connect them first, or omit the four splice parameters "
+							   "to place a bare reroute. Nothing was created."));
+				return;
+			}
+		}
+
+		Blueprint->Modify();
+		Graph->Modify();
+
+		UK2Node_Knot* Knot = NewObject<UK2Node_Knot>(Graph);
+		PlaceAndInit(Graph, Knot, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
+
+		UEdGraphPin* KnotIn = Knot->GetInputPin();
+		UEdGraphPin* KnotOut = Knot->GetOutputPin();
+		if (!KnotIn || !KnotOut)
+		{
+			Fail(Out, TEXT("the reroute node was created but has no input/output pin. WHAT IS LEFT "
+						   "BEHIND: the node IS in the graph - find it with list_nodes and remove it "
+						   "with delete_node."));
+			return;
+		}
+
+		if (bSplice)
+		{
+			// Break the direct wire only after both new links are known to be legal, so a refusal
+			// cannot leave the graph disconnected.
+			const UEdGraphSchema* Schema = Graph->GetSchema();
+			if (Schema->CanCreateConnection(SrcPin, KnotIn).Response == CONNECT_RESPONSE_DISALLOW
+				|| Schema->CanCreateConnection(KnotOut, DstPin).Response == CONNECT_RESPONSE_DISALLOW)
+			{
+				Fail(Out, TEXT("the schema will not route this link through a reroute. The original "
+							   "wire is untouched. WHAT IS LEFT BEHIND: the reroute node is in the "
+							   "graph - remove it with delete_node."));
+				return;
+			}
+			SrcPin->BreakLinkTo(DstPin);
+			Schema->TryCreateConnection(SrcPin, KnotIn);
+			Schema->TryCreateConnection(KnotOut, DstPin);
+
+			// Verify, do not assume: a knot takes its type from what it is wired to, and a refusal
+			// here would leave a severed wire reported as a successful splice.
+			UEdGraphPin* NowIn = Knot->GetInputPin();
+			UEdGraphPin* NowOut = Knot->GetOutputPin();
+			const bool bWired = NowIn && NowOut
+				&& NowIn->LinkedTo.Contains(SrcPin) && NowOut->LinkedTo.Contains(DstPin);
+			Out->SetBoolField(TEXT("splicedInto"), bWired);
+			if (!bWired)
+			{
+				Fail(Out, TEXT("the reroute was placed but the wire did not route through it, and the "
+							   "original direct link has already been broken. The graph is "
+							   "disconnected at that point - read it back with list_nodes."));
+				return;
+			}
+		}
+
+		MarkStructural(Blueprint);
+		Out->SetStringField(TEXT("inputPin"), KnotIn->PinName.ToString());
+		Out->SetStringField(TEXT("outputPin"), KnotOut->PinName.ToString());
+		EmitNode(Out, Knot);
+	}
 
 	void H_add_timeline(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{

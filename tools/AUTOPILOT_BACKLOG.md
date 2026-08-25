@@ -22,11 +22,19 @@ it off and write one line saying why it was dropped — do not leave it open to 
 - [x] Extend audit_roundtrip.py to the node types it does not yet cover (branch, sequence, timeline, switch, spawn_actor, interface calls) — the two gaps it already found were both real.
 - [x] Work the audit_postconditions.py MEDIUM list: ~90 mutating handlers with no visible read-back. Triage for the ones where a silent failure would be invisible to the caller, fix those, and record the rest as understood.
 - [x] MifBridgeGraphPatch.cpp still carries a local FPinRef that duplicates the shared FMifPinRef in MifBridgeHandlers.h. Converge them so there is one implementation, per the module's own rule.
-- [ ] The hideKnots fix has never been exercised — no endpoint creates a K2Node_Knot, so build a reroute chain some other way and prove it.
+- [x] The hideKnots fix has never been exercised — no endpoint creates a K2Node_Knot, so build a reroute chain some other way and prove it.
 - [ ] pie_status misreports a working PIE session. Reproduce and fix, or establish exactly what it is really reporting.
 - [ ] snap_actors_to_ground misses ~112 of 303 actors on flat ground. Find out why before trusting it again.
 
 ## Done
+
+- [x] hideKnots is finally exercised, by closing the gap that made it untestable. Reroute nodes were
+      readable but not writable - list_nodes has hideKnots, SerializePin resolves through knot chains,
+      SkipKnots tunnels them, and nothing in the surface could create one. There is no paste/import
+      endpoint either, so a knot could not be conjured any other way. Added add_reroute, which also
+      splices into an existing wire (src -> knot -> dst) so a knot CHAIN is buildable. With a
+      two-knot chain in place, hideKnots removes both from the listing and the wire resolves end to
+      end to the real target - the first time that code has run against a real knot. Compiles clean.
 
 - [x] Extended audit_roundtrip to branch, sequence, switch, spawn_actor and timeline (13 checks -> 23),
       and it immediately found that add_timeline HAS NEVER WORKED. The handler assumed placing a

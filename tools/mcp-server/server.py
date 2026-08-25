@@ -512,6 +512,27 @@ def add_variable_set(graph_id: str, var: str, target_class: str = "", x: int = 0
 
 
 @mcp.tool()
+def add_reroute(graph_id: str, x: int = 0, y: int = 0,
+                src_node: str = "", src_pin: str = "",
+                dst_node: str = "", dst_pin: str = "") -> dict:
+    """Add a reroute (knot) node - the thing that keeps long wires readable.
+
+    Pass all four of src_node/src_pin/dst_node/dst_pin to SPLICE the reroute into a link that already
+    exists: the direct wire is replaced by src -> knot -> dst. Splice twice through the same wire and
+    you get a chain. Omit all four to place a bare reroute and wire it yourself with connect_pins.
+
+    Every guard runs before anything is created, and the splice is verified afterwards - a reroute
+    that failed to take the wire would otherwise leave the graph disconnected under an ok:true.
+
+    Reroutes were readable but not writable until now: list_nodes hide_knots, and the pin resolution
+    that tunnels through knot chains, all handle them.
+    """
+    return _post("add_reroute", graphId=graph_id, x=x, y=y,
+                 srcNode=src_node or None, srcPin=src_pin or None,
+                 dstNode=dst_node or None, dstPin=dst_pin or None)
+
+
+@mcp.tool()
 def add_branch(graph_id: str, x: int = 0, y: int = 0) -> dict:
     "Add a Branch (if/then/else) node."
     return _post("add_branch", graphId=graph_id, x=x, y=y)

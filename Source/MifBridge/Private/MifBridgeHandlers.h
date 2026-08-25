@@ -904,6 +904,10 @@ namespace MifBridge
 
 	// Phase 3 breadth — graph nodes
 	MIF_DECL(add_timeline);
+	/** Create a reroute (knot) node - the thing that keeps long wires readable.
+	 *  Readable-but-not-writable was the gap: list_nodes hideKnots, SerializePin's knot resolution
+	 *  and SkipKnots all handle reroutes, and nothing could produce one. */
+	MIF_DECL(add_reroute);
 	MIF_DECL(add_class_cast);
 	MIF_DECL(add_switch_enum);
 	MIF_DECL(add_switch_int);

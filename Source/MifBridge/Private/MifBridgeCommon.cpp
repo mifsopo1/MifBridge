@@ -143,6 +143,7 @@ namespace MifBridge
 			MIF_BIND(trigger_cook);
 			// Phase 3 breadth — graph nodes
 			MIF_BIND(add_timeline);
+			MIF_BIND(add_reroute);
 			MIF_BIND(add_class_cast);
 			MIF_BIND(add_switch_enum);
 			MIF_BIND(add_switch_int);
