@@ -56,6 +56,16 @@ it off and write one line saying why it was dropped — do not leave it open to 
       payload: a prefix or filter that matched nothing is a correct empty, an identity that resolved to
       nothing is a finding. That reproduces the hand triage of run 4 exactly. 12 checks in
       tools/test_fuzz_detector.py, which runs offline with no editor.
+- [ ] invoke_editor_tab silently ignores 'asset' unless manager is "assetEditor". ResolveTabManager
+      returns early for the default manager:"global" and never reads the asset argument, so a caller
+      who meant an asset-editor tab and forgot to set manager gets a global operation and no warning.
+      RejectUnknownParams cannot catch this - 'asset' IS a declared parameter; it is ignored by MODE.
+      Found by run 5's ghost probe. Either refuse the combination or echo that the asset was unused.
+- [ ] Third calibration for the ghost detector: an endpoint that EXPLICITLY reports non-existence is
+      answering honestly, not phantom-succeeding. Run 5 flagged describe_package (existsOnDisk:false,
+      inRegistry:false), get_dependencies and get_referencers (packageExists:false plus an existsNote)
+      - all three state the truth in the response and none is a defect. Treat a false existence-ish
+      boolean the same way an empty search result is treated now.
 - [ ] Validation sweep against the FIXED build. Run 4 tested a binary that predates c190ae5 and used
       the ghost detector that predates ea37587, so it cannot show either fix working. A clean run
       should now give 0 CRASH, and the GHOST_OK bucket should collapse from 9 to the handful that are
