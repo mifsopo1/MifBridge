@@ -475,6 +475,22 @@ def main() -> int:
 
     print("OK  %d addon ops, %d _blender call sites, %d _post endpoints, %d MIF_BIND. "
           "No drift." % (len(addon_ops), len(blender_calls), len(post_endpoints), len(binds or ())))
+
+    # CHECK 4: can the MCP tools SEND every parameter the UE endpoints ACCEPT?
+    # The three checks above compare endpoint NAMES on the UE side and parameters only for the
+    # Blender addon, so an endpoint growing a parameter the tool never exposes was invisible - which
+    # is how add_bind_dispatcher's targetClass stayed unreachable long enough for a user to report
+    # external dispatcher binding as a missing FEATURE. It was not missing; it was unwired.
+    # Ratcheted against a baseline, because the existing backlog is mostly alias spellings and
+    # failing on all of it would just get the check disabled. See tools/param_reach.py.
+    try:
+        import param_reach
+        print()
+        if param_reach.main() != 0:
+            return 1
+    except Exception as exc:                                  # never let this break the real checks
+        print("\n(param reach check unavailable: %s)" % exc)
+
     return 0
 
 

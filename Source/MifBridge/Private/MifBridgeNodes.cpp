@@ -866,18 +866,129 @@ namespace MifBridge
 			return;
 		}
 
+		// Match the internal graph name, but forgive the two ways a caller reasonably gets it wrong:
+		// case, and the spaces the EDITOR shows. Unreal displays "Switch Has Authority" for a graph
+		// named SwitchHasAuthority, and an agent that only ever sees the display name has nothing else
+		// to try. An exact-only match rejected both spellings, and the bare "not found" that followed
+		// was read as evidence the node was not a macro at all.
+		auto Squash = [](const FString& In2)
+		{
+			FString S = In2;
+			S.ReplaceInline(TEXT(" "), TEXT(""));
+			S.ReplaceInline(TEXT("_"), TEXT(""));
+			return S.ToLower();
+		};
+		const FString WantSquashed = Squash(MacroName);
+
 		UEdGraph* MacroGraph = nullptr;
+		FString MatchedBy;
 		for (UEdGraph* Candidate : MacroLibrary->MacroGraphs)
 		{
 			if (Candidate && Candidate->GetName() == MacroName)
 			{
 				MacroGraph = Candidate;
+				MatchedBy = TEXT("exact");
 				break;
 			}
 		}
 		if (!MacroGraph)
 		{
-			Fail(Out, FString::Printf(TEXT("macro graph '%s' not found in %s"), *MacroName, *MacroPath));
+			for (UEdGraph* Candidate : MacroLibrary->MacroGraphs)
+			{
+				if (Candidate && Squash(Candidate->GetName()) == WantSquashed)
+				{
+					MacroGraph = Candidate;
+					MatchedBy = TEXT("normalized (case and spaces ignored)");
+					break;
+				}
+			}
+		}
+		if (!MacroGraph)
+		{
+			// Say what IS there. "not found" alone forces the caller to guess again, and a run of
+			// failed guesses is what produced a confident, wrong conclusion about the node's type.
+			TArray<FString> Names;
+			for (UEdGraph* Candidate : MacroLibrary->MacroGraphs)
+			{
+				if (Candidate) { Names.Add(Candidate->GetName()); }
+			}
+			Names.Sort();
+
+			TArray<FString> Near;
+			for (const FString& Nm : Names)
+			{
+				const FString Sq = Squash(Nm);
+				if (Sq.Contains(WantSquashed) || WantSquashed.Contains(Sq)) { Near.Add(Nm); }
+			}
+
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			for (const FString& Nm : Names) { Arr.Add(MakeShared<FJsonValueString>(Nm)); }
+			Out->SetArrayField(TEXT("availableMacroGraphs"), Arr);
+			Out->SetNumberField(TEXT("availableCount"), Names.Num());
+			if (Near.Num() > 0)
+			{
+				TArray<TSharedPtr<FJsonValue>> NearArr;
+				for (const FString& Nm : Near) { NearArr.Add(MakeShared<FJsonValueString>(Nm)); }
+				Out->SetArrayField(TEXT("didYouMean"), NearArr);
+			}
+			// SEARCH THE OTHER LIBRARIES. This is the reported case, and neither the caller nor I
+			// guessed it: "Switch Has Authority" is not in StandardMacros at all - it lives in
+			// ActorMacros, and its graph name really does contain spaces. The user's second guess was
+			// the RIGHT NAME in the WRONG LIBRARY, and the old error mentioned only the name, so a run
+			// of failures read as "this is not a macro" rather than "look in another library".
+			// macroPath defaults to StandardMacros, so anything in the Actor libraries was effectively
+			// invisible to a caller who did not already know it was there.
+			static const TCHAR* KnownLibraries[] = {
+				TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros"),
+				TEXT("/Engine/EditorBlueprintResources/ActorMacros.ActorMacros"),
+				TEXT("/Engine/EditorBlueprintResources/ActorComponentMacros.ActorComponentMacros"),
+			};
+			TArray<TSharedPtr<FJsonValue>> Elsewhere;
+			for (const TCHAR* LibPath : KnownLibraries)
+			{
+				if (FString(LibPath) == MacroPath) { continue; }
+				UBlueprint* OtherLib = Cast<UBlueprint>(
+					StaticLoadObject(UBlueprint::StaticClass(), nullptr, LibPath, nullptr, LOAD_NoWarn));
+				if (!OtherLib) { continue; }
+				for (UEdGraph* Candidate : OtherLib->MacroGraphs)
+				{
+					if (!Candidate) { continue; }
+					const FString CName = Candidate->GetName();
+					if (CName == MacroName || Squash(CName) == WantSquashed)
+					{
+						TSharedRef<FJsonObject> Hit = MakeShared<FJsonObject>();
+						Hit->SetStringField(TEXT("macroGraph"), CName);
+						Hit->SetStringField(TEXT("macroPath"), LibPath);
+						Elsewhere.Add(MakeShared<FJsonValueObject>(Hit));
+					}
+				}
+			}
+			if (Elsewhere.Num() > 0)
+			{
+				Out->SetArrayField(TEXT("foundInOtherLibrary"), Elsewhere);
+			}
+
+			Out->SetStringField(TEXT("hint"),
+				TEXT("macroGraph is the INTERNAL graph name, which differs from the title the editor "
+					 "shows (\"Switch Has Authority\" is a graph named SwitchHasAuthority). To copy the "
+					 "exact value off an existing node, read it with get_node/list_nodes - a "
+					 "K2Node_MacroInstance now reports macro.addMacroInstanceArgs."));
+			if (Elsewhere.Num() > 0)
+			{
+				// Name the exact macroPath to retry with. One more call, not another guess.
+				const TSharedPtr<FJsonObject>* First = nullptr;
+				Elsewhere[0]->TryGetObject(First);
+				Fail(Out, FString::Printf(
+					TEXT("macro graph '%s' is not in %s, but it EXISTS in %s - retry with macroPath:\"%s\". (macroPath defaults to StandardMacros, so the Actor macro libraries are easy to miss.) Every match is listed in foundInOtherLibrary."),
+					*MacroName, *MacroPath,
+					First ? *(*First)->GetStringField(TEXT("macroPath")) : TEXT("another library"),
+					First ? *(*First)->GetStringField(TEXT("macroPath")) : TEXT("")));
+				return;
+			}
+			Fail(Out, FString::Printf(
+				TEXT("macro graph '%s' not found in %s (%d macro graphs available%s). This library's graph names are listed in availableMacroGraphs, and the other engine macro libraries were searched too."),
+				*MacroName, *MacroPath, Names.Num(),
+				Near.Num() ? *FString::Printf(TEXT("; closest: %s"), *FString::Join(Near, TEXT(", "))) : TEXT("")));
 			return;
 		}
 
@@ -892,6 +1003,8 @@ namespace MifBridge
 
 		MarkStructural(Blueprint);
 		EmitNode(Out, Node);
+		Out->SetStringField(TEXT("macroGraphResolved"), MacroGraph->GetName());
+		Out->SetStringField(TEXT("matchedBy"), MatchedBy);
 	}
 
 	void H_add_get_array_item(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

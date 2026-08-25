@@ -16,6 +16,7 @@
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraph/EdGraphSchema.h"
 #include "EdGraphSchema_K2.h"
+#include "K2Node_MacroInstance.h"
 #include "Editor.h"               // GEditor->GetEditorWorldContext() for the shared EditorWorld()
 #include "HAL/FileManager.h"      // IFileManager::Copy / COPY_OK for BackupPackage
 #include "Misc/OutputDevice.h"            // FOutputDevice — RunEngineExec's tee base
@@ -4191,6 +4192,44 @@ namespace MifBridge
 		Json->SetStringField(TEXT("title"), Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
 		Json->SetNumberField(TEXT("x"), Node->NodePosX);
 		Json->SetNumberField(TEXT("y"), Node->NodePosY);
+
+		// MACRO IDENTITY. "class": "K2Node_MacroInstance" says the node is a macro instance and
+		// nothing about WHICH macro, so reading one back told a caller nothing it could act on. A
+		// user with the display name "Switch Has Authority" guessed at add_macro_instance, was
+		// refused, and reasonably concluded from the refusals that the node must be a dedicated
+		// K2Node class needing a new endpoint - it was a macro all along. Emit the identity, and the
+		// exact arguments that recreate it, so inspection and creation actually connect.
+		if (const UK2Node_MacroInstance* MacroNode = Cast<UK2Node_MacroInstance>(Node))
+		{
+			TSharedRef<FJsonObject> Macro = MakeShared<FJsonObject>();
+			if (UEdGraph* MacroGraph = MacroNode->GetMacroGraph())
+			{
+				Macro->SetStringField(TEXT("graphName"), MacroGraph->GetName());
+				// GetSourceBlueprint() is the macro LIBRARY that owns the graph.
+				UBlueprint* Lib = MacroNode->GetSourceBlueprint();
+				if (Lib)
+				{
+					Macro->SetStringField(TEXT("library"), Lib->GetPathName());
+					Macro->SetStringField(TEXT("libraryName"), Lib->GetName());
+				}
+				// The two values add_macro_instance actually wants. Copy these; do NOT re-derive them
+				// from the display title - the title is spaced ("Switch Has Authority") and the graph
+				// name is not ("SwitchHasAuthority").
+				TSharedRef<FJsonObject> Args = MakeShared<FJsonObject>();
+				Args->SetStringField(TEXT("macroGraph"), MacroGraph->GetName());
+				if (Lib) { Args->SetStringField(TEXT("macroPath"), Lib->GetPathName()); }
+				Macro->SetObjectField(TEXT("addMacroInstanceArgs"), Args);
+			}
+			else
+			{
+				Macro->SetStringField(TEXT("note"),
+					TEXT("this macro instance's graph reference does not resolve - the macro library "
+						 "may be missing or unloaded, which is also why the node may show as an error"));
+			}
+			Macro->SetStringField(TEXT("displayTitle"),
+				Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
+			Json->SetObjectField(TEXT("macro"), Macro);
+		}
 
 		if (bIncludePins)
 		{

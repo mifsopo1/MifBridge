@@ -822,6 +822,79 @@ share every check except one direction rule, so the fix asks the **entry** about
 accepts (`EGPD_Output`) — identical type/exec/editable question — and the direction rule is satisfied
 by construction, since the pin goes onto a Result node as an input.
 
+#### There are THREE engine macro libraries, and `macroPath` defaults to only one
+
+A user needed "Switch Has Authority", tried `SwitchHasAuthority` and `Switch Has Authority` at
+`add_macro_instance`, had both refused, and concluded from the refusals that the node must be a
+dedicated `K2Node` class needing a new endpoint. They later placed it by hand, read it back, saw
+`K2Node_MacroInstance`, and retracted the report themselves.
+
+The node was reachable the whole time. `/Engine/Content/EditorBlueprintResources/` holds **three**
+macro libraries:
+
+| library | contains |
+|---|---|
+| `StandardMacros` | ForEachLoop, DoOnce, Gate, FlipFlop, IsValid, ... (24 graphs) |
+| `ActorMacros` | **Switch Has Authority**, Create and Assign RenderTarget |
+| `ActorComponentMacros` | **Switch Has Authority** |
+
+`macroPath` defaults to `StandardMacros`, so everything in the Actor libraries was invisible to a
+caller who did not already know it was there. Their *second* guess was the right name in the wrong
+library - and note the graph name genuinely **contains spaces**, so "guess the internal name by
+removing them" is wrong here too (`Do N` and `Create and Assign MID` are the same shape).
+
+Three things now close the loop:
+
+* **`list_nodes` / `get_node` report a `macro` block** on every `K2Node_MacroInstance` - `graphName`,
+  `library`, `libraryName`, `displayTitle`, and `addMacroInstanceArgs` holding the exact
+  `macroGraph` + `macroPath` to pass back. Copy those; do not re-derive them from the title.
+* **A miss lists `availableMacroGraphs`** for the requested library plus `didYouMean`, and **searches
+  the other two libraries** - `foundInOtherLibrary` names the exact `macroPath` to retry with.
+* **Matching ignores case and spacing**, so `switchhasauthority` resolves; the response says
+  `matchedBy: "normalized"` when it was not an exact hit.
+
+The general lesson: a *failed guess is not evidence about a node's type*. When an endpoint refuses a
+name, the refusal must say what it does know - the alternatives - or the caller's next inference is
+made from nothing.
+
+#### `add_bind_dispatcher` already binds EXTERNAL dispatchers, via `targetClass`
+
+Reported as a missing feature: binding `DDS2_GameMode.PlayerLoggedChanged` from another Blueprint
+failed with *"event dispatcher 'PlayerLoggedChanged' not found on SKEL_Modactor_C"*, and the caller
+concluded the endpoint had no way to name an external owner.
+
+The endpoint has accepted `targetClass` all along; the **MCP tool never passed it**, so an agent
+driving through MCP could not express the call. The capability existed and was unreachable - see the
+next section.
+
+    add_bind_dispatcher(graph_id, "PlayerLoggedChanged", target_class="DDS2_GameMode")
+    connect_pins(cast_node, "AsDDS2GameMode", bind_node, "self")   # the Target pin
+    # then add_custom_event with the delegate signature -> its OutputDelegate into "Delegate"
+
+`targetClass` names the CLASS that declares the dispatcher, never the object; the object goes into
+the node's Target pin with `connect_pins`. `describe_class` reads the delegate's parameter list.
+
+#### An endpoint can accept a parameter no tool can send
+
+The two halves of the surface drift independently. `parity_check.py` compared endpoint **names** on
+the UE side and checked parameters only for the Blender addon, so "endpoint grows a parameter, MCP
+tool never exposes it" was invisible - which is how `targetClass` above stayed unreachable long
+enough to be reported as a missing feature.
+
+`tools/param_reach.py` now checks it, and runs as part of `parity_check.py`. It reads the accepted
+keys out of each handler's `RejectUnknownParams` list and the sent keys out of every `_post()` call
+site. Most of the difference is alias spellings, so it **ratchets**: the accepted backlog lives in
+`tools/param_reach_baseline.txt` and only additions fail. Accept a new one deliberately with
+`python tools/param_reach.py --update-baseline`.
+
+Its first run found, besides `targetClass`: `self_audit.summaryOnly` (the compact mode built because
+the full response was too large to read) and `trace_ground.location` (added after top-level `x`/`y`
+silently ignored `location:{}` and ran a whole terrain investigation at the world origin) - both
+added days earlier, both never wired into the tool layer. Also `add_cast.pure`, `get_node.graphId`
+(the only way to disambiguate two loaded copies of a Blueprint sharing NodeGuids) and every
+`start_pie` multiplayer option, which matters because **a standalone PIE always has authority** and
+will make authority-gated replication code look like it works.
+
 ### Endpoints that discard unsaved work without asking
 
 | endpoint | what it does | undo? | confirm-gated? |

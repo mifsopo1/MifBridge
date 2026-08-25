@@ -408,9 +408,9 @@ def list_nodes(graph_id: str, hide_knots: bool = False) -> dict:
 
 
 @mcp.tool()
-def get_node(node_guid: str) -> dict:
-    "Return full detail (all pins, types, links) for a single node by guid."
-    return _post("get_node", nodeGuid=node_guid)
+def get_node(node_guid: str, graph_id: str = "") -> dict:
+    "Return full detail (all pins, types, links) for a single node by guid. graph_id scopes the lookup to one graph - the only way to disambiguate two loaded copies of a Blueprint that share NodeGuids, which otherwise reports an ambiguous match."
+    return _post("get_node", nodeGuid=node_guid, graphId=graph_id or None)
 
 
 @mcp.tool()
@@ -548,9 +548,10 @@ def add_parent_call(graph_id: str, function: str, parent_class: str = "", x: int
 
 
 @mcp.tool()
-def add_cast(graph_id: str, target_class: str, x: int = 0, y: int = 0) -> dict:
-    "Add a Dynamic Cast node to target_class (impure: exposes exec then / Cast Failed)."
-    return _post("add_cast", graphId=graph_id, targetClass=target_class, x=x, y=y)
+def add_cast(graph_id: str, target_class: str, pure: bool = False, x: int = 0, y: int = 0) -> dict:
+    "Add a Dynamic Cast node to target_class. Impure by default (exec then / Cast Failed pins); pure=True drops the exec pins and exposes a bool success output instead - use it inside a pure function or when the cast feeds a data pin only."
+    return _post("add_cast", graphId=graph_id, targetClass=target_class,
+                 pure=pure or None, x=x, y=y)
 
 
 @mcp.tool()
@@ -668,10 +669,12 @@ def set_pin_default(node: str, pin: str, value: str) -> dict:
 
 @mcp.tool()
 def splice_into_exec(after_node: str, insert_node: str, after_pin: str = "then",
-                     insert_exec_in: str = "execute", insert_exec_out: str = "then") -> dict:
-    "Atomically insert a node into an exec chain: after_node.after_pin -> insert_node, and insert_node -> the old downstream target(s)."
+                     insert_exec_in: str = "execute", insert_exec_out: str = "then",
+                     graph_id: str = "") -> dict:
+    "Atomically insert a node into an exec chain: after_node.after_pin -> insert_node, and insert_node -> the old downstream target(s). graph_id scopes both node guid lookups to one graph."
     return _post("splice_into_exec", afterNode=after_node, insertNode=insert_node,
-                 afterPin=after_pin, insertExecIn=insert_exec_in, insertExecOut=insert_exec_out)
+                 afterPin=after_pin, insertExecIn=insert_exec_in, insertExecOut=insert_exec_out,
+                 graphId=graph_id or None)
 
 
 @mcp.tool()
@@ -881,15 +884,42 @@ def add_event_dispatcher(blueprint_id: str, name: str, inputs: list = None) -> d
 
 
 @mcp.tool()
-def add_call_dispatcher(graph_id: str, dispatcher: str, x: int = 0, y: int = 0) -> dict:
-    "Add a Call node for an event dispatcher (broadcasts it). The dispatcher must already exist + be compiled."
-    return _post("add_call_dispatcher", graphId=graph_id, dispatcher=dispatcher, x=x, y=y)
+def add_call_dispatcher(graph_id: str, dispatcher: str, target_class: str = "",
+                        x: int = 0, y: int = 0) -> dict:
+    """Add a Call node for an event dispatcher (broadcasts it). Must already exist + be compiled.
+
+    target_class broadcasts a dispatcher declared on ANOTHER class instead of this Blueprint's own.
+    The node then shows a Target pin: place it, then connect_pins the object reference into Target.
+    target_class names the CLASS that declares the dispatcher - never the object.
+    """
+    return _post("add_call_dispatcher", graphId=graph_id, dispatcher=dispatcher,
+                 targetClass=target_class or None, x=x, y=y)
 
 
 @mcp.tool()
-def add_bind_dispatcher(graph_id: str, dispatcher: str, x: int = 0, y: int = 0) -> dict:
-    "Add a Bind (Add) node for an event dispatcher."
-    return _post("add_bind_dispatcher", graphId=graph_id, dispatcher=dispatcher, x=x, y=y)
+def add_bind_dispatcher(graph_id: str, dispatcher: str, target_class: str = "",
+                        x: int = 0, y: int = 0) -> dict:
+    """Add a Bind (Add) node for an event dispatcher.
+
+    target_class binds a dispatcher declared on ANOTHER class - the equivalent of dragging off an
+    object reference in the editor and picking "Bind Event to X". Without it the dispatcher must be
+    declared on the Blueprint being edited, and the call fails with
+    "event dispatcher 'X' not found on SKEL_<ThisBlueprint>_C".
+
+    target_class names the CLASS that declares the dispatcher, never the object. Wire the object
+    itself into the node's Target pin afterwards with connect_pins - e.g. from a Cast To
+    DDS2_GameMode node's "As DDS2 Game Mode" output.
+
+    Full external-bind sequence:
+        1. add_bind_dispatcher(graph_id, "PlayerLoggedChanged", target_class="DDS2_GameMode")
+        2. connect_pins(cast_node, "AsDDS2GameMode", bind_node, "self")   # the Target pin
+        3. add_custom_event(...) with the delegate's signature, then connect_pins its
+           OutputDelegate into the bind node's Delegate pin
+        4. connect_pins the cast's exec into the bind node's exec
+    Use describe_class(target_class) to read the delegate's parameter list for step 3.
+    """
+    return _post("add_bind_dispatcher", graphId=graph_id, dispatcher=dispatcher,
+                 targetClass=target_class or None, x=x, y=y)
 
 
 @mcp.tool()
@@ -1602,9 +1632,21 @@ def check_overlaps(actor_path: str = "", name_contains: str = "", ignore_ground:
 
 
 @mcp.tool()
-def trace_ground(x: float, y: float, from_z: float = 100000.0, ignore_actor: str = "") -> dict:
-    "Line-trace straight down at (x,y) to find ground height. Returns hit=false honestly when nothing is hit - editor-world collision is NOT guaranteed for imported meshes, and treating a miss as z=0 is how things end up floating."
-    return _post("trace_ground", x=x, y=y, fromZ=from_z, ignoreActor=ignore_actor or None)
+def trace_ground(x: float = None, y: float = None, location: dict = None,
+                 from_z: float = 100000.0, to_z: float = -100000.0,
+                 ignore_actor: str = "") -> dict:
+    """Line-trace straight down to find ground height.
+
+    Pass either x/y or location={"x":..,"y":..,"z":..} (its z seeds from_z). The response echoes the
+    coordinates actually traced - check them. Passing a location the endpoint ignored is how an
+    entire terrain investigation once got run at the world origin and concluded the ground was flat
+    everywhere.
+
+    Returns hit=false honestly when nothing is hit: editor-world collision is NOT guaranteed for
+    imported meshes, and treating a miss as z=0 is how things end up floating.
+    """
+    return _post("trace_ground", x=x, y=y, location=location, fromZ=from_z, toZ=to_z,
+                 ignoreActor=ignore_actor or None)
 
 
 @mcp.tool()
@@ -1636,10 +1678,12 @@ def scene_report(ground_z: float = 0.0, float_tolerance: float = 30.0,
 
 @mcp.tool()
 def start_pie(simulate: bool = False, start_location: dict = None,
-              start_rotation: dict = None) -> dict:
-    "Start Play-In-Editor. DOES NOT BLOCK: the engine defers the start to its next tick, and this handler runs on the game thread, so waiting here would deadlock the very ticks PIE needs. Poll pie_status until state=='running' before asserting on runtime state. simulate=True runs the world WITHOUT possessing a pawn - better for observing systems tick, since it needs no PlayerStart and cannot fail on a missing GameMode."
+              start_rotation: dict = None, players: int = None, net_mode: str = "",
+              one_process: bool = None, width: int = None, height: int = None) -> dict:
+    "Start Play-In-Editor. DOES NOT BLOCK: the engine defers the start to its next tick, and this handler runs on the game thread, so waiting here would deadlock the very ticks PIE needs. Poll pie_status until state=='running' before asserting on runtime state. simulate=True runs the world WITHOUT possessing a pawn - better for observing systems tick, since it needs no PlayerStart and cannot fail on a missing GameMode. For replication work: players (1-8) and net_mode (standalone|listen|client, defaulting to listen when players>1) launch a real multiplayer session, one_process (default True) keeps the clients in this process, and width/height size the client windows. Testing anything RepNotify / RunOnServer / NetMulticast needs players>1 - a standalone PIE always has authority and will make authority-gated code look like it works."
     return _post("start_pie", simulate=simulate or None, startLocation=start_location,
-                 startRotation=start_rotation)
+                 startRotation=start_rotation, players=players, netMode=net_mode or None,
+                 oneProcess=one_process, width=width, height=height)
 
 
 @mcp.tool()
@@ -1668,9 +1712,9 @@ def run_console_captured(command: str, filter: str = "") -> dict:
 
 
 @mcp.tool()
-def self_audit() -> dict:
-    "The plugin reporting its OWN invariants from inside the running DLL: live endpoint count and names (the ones actually dispatching, not parsed from a header), each endpoint's transaction bucket (readOnly / selfManaged / transacted / compileHeavy), any policyContradictions (an endpoint in both readOnly and selfManaged - the latter would be silently ignored), healthy, plus buildDate/buildTime so a stale DLL is detectable. Also returns two change-detection signatures, because buildDate/buildTime move on EVERY rebuild including a comment-only one: surfaceSignature (16 hex chars folded over every endpoint's name|bucket|provider - always complete and deterministic, moves only when an endpoint is added/removed/renamed or a bucket/provider changes; check this one first) and paramSignature (folded over the accepted-parameter shapes of the strict-params guards; moves when a key is added to or removed from any accepted list, and NOT for a reorder, a case change or reworded errors). paramSignature is harvested LAZILY - a guard's shape is only seen once that endpoint has actually been called - so paramShapesObserved is returned alongside it and the two builds' paramSignature values are only comparable at equal paramShapesObserved, driven by the same call sequence."
-    return _post("self_audit")
+def self_audit(summary_only: bool = False) -> dict:
+    "The plugin reporting its OWN invariants from inside the running DLL: live endpoint count and names (the ones actually dispatching, not parsed from a header), each endpoint's transaction bucket (readOnly / selfManaged / transacted / compileHeavy), any policyContradictions (an endpoint in both readOnly and selfManaged - the latter would be silently ignored), healthy, plus buildDate/buildTime so a stale DLL is detectable. Also returns two change-detection signatures, because buildDate/buildTime move on EVERY rebuild including a comment-only one: surfaceSignature (16 hex chars folded over every endpoint's name|bucket|provider - always complete and deterministic, moves only when an endpoint is added/removed/renamed or a bucket/provider changes; check this one first) and paramSignature (folded over the accepted-parameter shapes of the strict-params guards; moves when a key is added to or removed from any accepted list, and NOT for a reorder, a case change or reworded errors). paramSignature is harvested LAZILY - a guard's shape is only seen once that endpoint has actually been called - so paramShapesObserved is returned alongside it and the two builds' paramSignature values are only comparable at equal paramShapesObserved, driven by the same call sequence. summary_only=True returns ONLY the health fields, counts and signatures - the full response carries a row per endpoint plus bucket membership and runs tens of KB, which is an absurd amount to read just to ask whether the bridge is healthy."
+    return _post("self_audit", summaryOnly=summary_only or None)
 
 
 @mcp.tool()
