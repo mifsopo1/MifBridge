@@ -908,6 +908,10 @@ namespace MifBridge
 	 *  Readable-but-not-writable was the gap: list_nodes hideKnots, SerializePin's knot resolution
 	 *  and SkipKnots all handle reroutes, and nothing could produce one. */
 	MIF_DECL(add_reroute);
+	/** UMG WidgetAnimation authoring. Reported gap: the surface could not create or edit one at all,
+	 *  and the three existing 'anim' endpoints are SKELETAL animation, not UMG. */
+	MIF_DECL(add_widget_animation);
+	MIF_DECL(list_widget_animations);
 	MIF_DECL(add_class_cast);
 	MIF_DECL(add_switch_enum);
 	MIF_DECL(add_switch_int);

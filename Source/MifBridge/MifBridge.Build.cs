@@ -37,6 +37,12 @@ public class MifBridge : ModuleRules
 			"GraphEditor",       // graph helpers
 			"UMGEditor",         // UK2Node_CreateWidget (private header, see PrivateIncludePaths)
 			"UMG",               // UUserWidget runtime class + Blueprint/UserWidget.h
+			"MovieScene",        // UMovieScene for add_widget_animation / list_widget_animations.
+			                     // NOT redundant with "UMG" even though UMG lists MovieScene in its
+			                     // PublicDependencyModuleNames: that propagates INCLUDE PATHS, so the
+			                     // MovieScene headers compile without this line and then fail at LINK
+			                     // with unresolved UMovieScene::SetPlaybackRange / GetPossessableCount
+			                     // / GetPrivateStaticClass. Compiling is not linking.
 			"Kismet",            // blueprint editor helpers (kept for safety)
 			"KismetCompiler",    // compile results struct
 			"HTTPServer",        // FHttpServerModule / IHttpRouter

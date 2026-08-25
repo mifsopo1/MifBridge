@@ -512,6 +512,35 @@ def add_variable_set(graph_id: str, var: str, target_class: str = "", x: int = 0
 
 
 @mcp.tool()
+def add_widget_animation(blueprint_id: str, name: str, start_time: float = 0.0,
+                         end_time: float = 1.0, display_rate: int = 20) -> dict:
+    """Create a UMG WidgetAnimation on a Widget Blueprint.
+
+    Times are SECONDS here and are converted to the MovieScene's tick space for you. That conversion
+    is the thing to be careful about when reading results back: a MovieScene stores times as ticks
+    (typically 60000/1), so a key at 0.95s is tick 57000 and display frame 19. list_widget_animations
+    reports the range in BOTH ticks and seconds so a wrong conversion is visible rather than silent.
+
+    Fails if the name is taken or if endTime is not after startTime, and creates nothing in either
+    case. The animation is attached to the blueprint before returning - an animation that exists but
+    is not in WidgetBlueprint->Animations would compile fine and simply not be there.
+    """
+    return _post("add_widget_animation", blueprintId=blueprint_id, name=name,
+                 startTime=start_time, endTime=end_time, displayRate=display_rate)
+
+
+@mcp.tool()
+def list_widget_animations(blueprint_id: str) -> dict:
+    """List a Widget Blueprint's UMG animations, with everything needed to verify one.
+
+    Per animation: name and display label, display rate, tick resolution, the playback range in both
+    ticks and seconds, track and possessable counts, and the widget bindings (widget name, guid, and
+    whether it is the root widget).
+    """
+    return _post("list_widget_animations", blueprintId=blueprint_id)
+
+
+@mcp.tool()
 def add_reroute(graph_id: str, x: int = 0, y: int = 0,
                 src_node: str = "", src_pin: str = "",
                 dst_node: str = "", dst_pin: str = "") -> dict:

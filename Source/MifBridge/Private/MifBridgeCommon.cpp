@@ -144,6 +144,8 @@ namespace MifBridge
 			// Phase 3 breadth — graph nodes
 			MIF_BIND(add_timeline);
 			MIF_BIND(add_reroute);
+			MIF_BIND(add_widget_animation);
+			MIF_BIND(list_widget_animations);
 			MIF_BIND(add_class_cast);
 			MIF_BIND(add_switch_enum);
 			MIF_BIND(add_switch_int);
@@ -461,6 +463,7 @@ namespace MifBridge
 			TEXT("describe_animation"), TEXT("list_animations"),
 			TEXT("list_tree_widgets"),
 			TEXT("list_struct_members"), TEXT("list_level_actors"), TEXT("get_level_actor"),
+			TEXT("list_widget_animations"),
 			// PIE start/stop only QUEUE a request — they mutate no asset and must not open a
 			// transaction (an undo entry spanning a world teardown is meaningless).
 			// Read-only spatial queries. capture_camera spawns a TRANSIENT actor it destroys again,

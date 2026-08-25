@@ -19,9 +19,85 @@
 #include "WidgetBlueprintEditorUtils.h"            // Export/ImportWidgetsFromText - the headless copy/paste path
 #include "Components/PanelSlot.h"                  // UPanelSlot returned by AddChild/InsertChildAt
 #include "UObject/UObjectIterator.h"               // TObjectIterator - find tree-owned widgets the walk misses
+#include "Animation/WidgetAnimation.h"              // UWidgetAnimation, FWidgetAnimationBinding
+#include "MovieScene.h"                             // UMovieScene: display rate, tick resolution, playback range
 
 namespace MifBridge
 {
+	namespace
+	{
+		// Seconds -> FFrameNumber in TICK space. The single most load-bearing conversion in this
+		// group: a MovieScene stores times as ticks (typically 60000/1), NOT as display frames and
+		// NOT as seconds. At 20fps display and 60000 tick resolution, 0.95s is 57000 ticks and frame
+		// 19. Feeding it 0.95, or 19, puts the key somewhere else entirely and reports success.
+		FFrameNumber SecondsToTicks(const UMovieScene* MovieScene, double Seconds)
+		{
+			return (Seconds * MovieScene->GetTickResolution()).FrameNumber;
+		}
+
+		double TicksToSeconds(const UMovieScene* MovieScene, FFrameNumber Ticks)
+		{
+			return MovieScene->GetTickResolution().AsSeconds(FFrameTime(Ticks));
+		}
+
+		UWidgetAnimation* FindAnimation(UWidgetBlueprint* WBP, const FString& Name)
+		{
+			for (UWidgetAnimation* Anim : WBP->Animations)
+			{
+				if (Anim && (Anim->GetFName() == FName(*Name) || Anim->GetDisplayLabel() == Name))
+				{
+					return Anim;
+				}
+			}
+			return nullptr;
+		}
+
+		// Everything a caller needs to VERIFY the animation, not merely that one exists. The time
+		// fields are emitted in both ticks and seconds on purpose - a wrong conversion is invisible
+		// in one unit and obvious in two.
+		TSharedRef<FJsonObject> SerializeAnimation(UWidgetAnimation* Anim)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("name"), Anim->GetFName().ToString());
+			J->SetStringField(TEXT("displayLabel"), Anim->GetDisplayLabel());
+			UMovieScene* MS = Anim->GetMovieScene();
+			if (!MS)
+			{
+				// Reported rather than skipped: an animation without a MovieScene is exactly the
+				// half-created state this endpoint family exists to make impossible.
+				J->SetBoolField(TEXT("hasMovieScene"), false);
+				return J;
+			}
+			J->SetBoolField(TEXT("hasMovieScene"), true);
+			const FFrameRate Display = MS->GetDisplayRate();
+			const FFrameRate Tick = MS->GetTickResolution();
+			J->SetStringField(TEXT("displayRate"), FString::Printf(TEXT("%d/%d"), Display.Numerator, Display.Denominator));
+			J->SetStringField(TEXT("tickResolution"), FString::Printf(TEXT("%d/%d"), Tick.Numerator, Tick.Denominator));
+			const TRange<FFrameNumber> Range = MS->GetPlaybackRange();
+			if (Range.HasLowerBound() && Range.HasUpperBound())
+			{
+				J->SetNumberField(TEXT("startTick"), Range.GetLowerBoundValue().Value);
+				J->SetNumberField(TEXT("endTick"), Range.GetUpperBoundValue().Value);
+				J->SetNumberField(TEXT("startTime"), TicksToSeconds(MS, Range.GetLowerBoundValue()));
+				J->SetNumberField(TEXT("endTime"), TicksToSeconds(MS, Range.GetUpperBoundValue()));
+			}
+			J->SetNumberField(TEXT("trackCount"), MS->GetTracks().Num());
+			J->SetNumberField(TEXT("possessableCount"), MS->GetPossessableCount());
+
+			TArray<TSharedPtr<FJsonValue>> Bindings;
+			for (const FWidgetAnimationBinding& B : Anim->GetBindings())
+			{
+				TSharedRef<FJsonObject> BJ = MakeShared<FJsonObject>();
+				BJ->SetStringField(TEXT("widgetName"), B.WidgetName.ToString());
+				BJ->SetStringField(TEXT("animationGuid"), B.AnimationGuid.ToString());
+				BJ->SetBoolField(TEXT("isRootWidget"), B.bIsRootWidget);
+				Bindings.Add(MakeShared<FJsonValueObject>(BJ));
+			}
+			J->SetArrayField(TEXT("bindings"), Bindings);
+			return J;
+		}
+	}
+
 	// Resolve "blueprintId"/"path" and require it to be a UWidgetBlueprint. On failure
 	// writes the error into Out and returns null (same convention as ResolveBlueprintField).
 	static UWidgetBlueprint* ResolveWidgetBlueprintField(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
@@ -43,6 +119,117 @@ namespace MifBridge
 			return nullptr;
 		}
 		return WBP;
+	}
+
+	// --- list_widget_animations ---------------------------------------------
+	//   in:  { blueprintId | path }
+	//   out: { count, animations:[{name, displayRate, tickResolution, start/endTick, start/endTime, ...}] }
+	void H_list_widget_animations(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path") },
+			TEXT("blueprintId (alias: path) of a Widget Blueprint"),
+			{ { TEXT("animationName"), TEXT("this lists them all — there is no single-animation read; the listing carries the full detail for each") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		for (UWidgetAnimation* Anim : WBP->Animations)
+		{
+			if (Anim)
+			{
+				Arr.Add(MakeShared<FJsonValueObject>(SerializeAnimation(Anim)));
+			}
+		}
+		Out->SetNumberField(TEXT("count"), Arr.Num());
+		Out->SetArrayField(TEXT("animations"), Arr);
+	}
+
+	// --- add_widget_animation -----------------------------------------------
+	//   in:  { blueprintId | path, name, startTime?, endTime?, displayRate? }
+	//   out: { animation:{...} }
+	void H_add_widget_animation(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"),
+			  TEXT("startTime"), TEXT("endTime"), TEXT("displayRate") },
+			TEXT("blueprintId (alias: path), name, startTime (seconds, default 0), endTime (seconds, "
+				 "default 1), displayRate (fps, default 20)"),
+			{ { TEXT("fps"), TEXT("the parameter is displayRate, in frames per second") },
+			  { TEXT("duration"), TEXT("give endTime instead — the range is start..end, not a length") },
+			  { TEXT("tickResolution"), TEXT("not settable here; the engine's default is used and list_widget_animations reports it, because keys are authored in TICK space") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty() || !IsValidIdentifier(Name))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("name must be a valid identifier (got '%s'). NOTHING was created."), *Name));
+			return;
+		}
+		if (FindAnimation(WBP, Name))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("this widget blueprint already has an animation named '%s'. NOTHING was created; "
+					 "list_widget_animations shows what is there."), *Name));
+			return;
+		}
+
+		const double StartTime = JNum(In, TEXT("startTime"), 0.0);
+		const double EndTime = JNum(In, TEXT("endTime"), 1.0);
+		const int32 Fps = JInt(In, TEXT("displayRate"), 20);
+		if (EndTime <= StartTime)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("endTime (%f) must be greater than startTime (%f). NOTHING was created."),
+				EndTime, StartTime));
+			return;
+		}
+		if (Fps <= 0)
+		{
+			Fail(Out, TEXT("displayRate must be a positive number of frames per second. NOTHING was created."));
+			return;
+		}
+
+		WBP->Modify();
+
+		// Mirrors AnimationTabSummoner.cpp:589. Order matters: the MovieScene is outered to the
+		// ANIMATION, and the animation is not part of the asset until Animations.Add below.
+		UWidgetAnimation* Anim = NewObject<UWidgetAnimation>(WBP, FName(), RF_Transactional);
+		Anim->SetDisplayLabel(Name);
+		Anim->Rename(*Name);
+		Anim->MovieScene = NewObject<UMovieScene>(Anim, FName(*Name), RF_Transactional);
+		Anim->MovieScene->SetDisplayRate(FFrameRate(Fps, 1));
+		Anim->MovieScene->SetPlaybackRange(TRange<FFrameNumber>(
+			SecondsToTicks(Anim->MovieScene, StartTime),
+			SecondsToTicks(Anim->MovieScene, EndTime) + 1));   // +1 as the editor does — end is exclusive
+		Anim->MovieScene->GetEditorData().WorkStart = StartTime;
+		Anim->MovieScene->GetEditorData().WorkEnd = EndTime;
+
+		// THE LINE THAT MAKES IT REAL. Without this the animation exists, compiles, and is not in
+		// the widget - the failure mode this whole endpoint is written to avoid.
+		WBP->Animations.Add(Anim);
+
+		// Verify rather than assume, and specifically verify MEMBERSHIP by re-finding it through the
+		// blueprint rather than reusing the pointer we already hold.
+		UWidgetAnimation* ReadBack = FindAnimation(WBP, Name);
+		if (!ReadBack || !ReadBack->GetMovieScene())
+		{
+			Fail(Out, TEXT("the animation was created but did not attach to the blueprint. WHAT IS "
+						   "LEFT BEHIND: an orphaned UWidgetAnimation object; re-read with "
+						   "list_widget_animations before retrying."));
+			return;
+		}
+
+		MarkStructural(WBP);
+		Out->SetObjectField(TEXT("animation"), SerializeAnimation(ReadBack));
 	}
 
 	// --- set_widget_is_variable --------------------------------------------
