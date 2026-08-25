@@ -323,6 +323,56 @@ namespace MifBridge
 			return Rep;
 		}
 
+		// The set of pins currently feeding this pin, as stable refs, sorted for comparison.
+		TArray<FPinRef> SourcesOf(UEdGraphPin* Pin)
+		{
+			TArray<FPinRef> Out;
+			if (!Pin) { return Out; }
+			for (UEdGraphPin* L : Pin->LinkedTo)
+			{
+				FPinRef R = MakeRef(L);
+				if (R.bSet) { Out.Add(R); }
+			}
+			return Out;
+		}
+
+		FString DescribeRefs(const TArray<FPinRef>& Refs)
+		{
+			TArray<FString> Parts;
+			for (const FPinRef& R : Refs) { Parts.Add(R.Describe()); }
+			Parts.Sort();
+			return FString::Join(Parts, TEXT(", "));
+		}
+
+		TSharedPtr<FJsonValue> RefsToJson(const TArray<FPinRef>& Refs)
+		{
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			for (const FPinRef& R : Refs)
+			{
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetStringField(TEXT("node"), R.NodeGuid.ToString(EGuidFormats::Digits));
+				J->SetStringField(TEXT("pin"), R.PinName.ToString());
+				Arr.Add(MakeShared<FJsonValueObject>(J));
+			}
+			return MakeShared<FJsonValueArray>(Arr);
+		}
+
+		bool RefEquals(const FPinRef& A, const FPinRef& B)
+		{
+			return A.bSet && B.bSet && A.NodeGuid == B.NodeGuid && A.PinName == B.PinName && A.Dir == B.Dir;
+		}
+
+		// EXEC INPUTS ARE LEGITIMATELY MULTI-SOURCE. Several exec outputs converging on one input is
+		// ordinary fan-in, and the engine never auto-breaks it
+		// (bBreakExistingDueToDataInput = !IsExecPin(*InputPin) && ...). Any "one source per input"
+		// policy must therefore skip exec pins or it would silently destroy valid graphs.
+		bool IsSingleSourceInput(UEdGraphPin* Pin)
+		{
+			return Pin
+				&& Pin->Direction == EGPD_Input
+				&& Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec;
+		}
+
 		// Which CanCreateConnection verdicts this endpoint is willing to apply. MAKE_WITH_CONVERSION_NODE
 		// and MAKE_WITH_PROMOTION are deliberately NOT here: they create nodes / rewrite pin types, and
 		// an inverse journal cannot honestly undo either. Refusing at preflight beats applying something
@@ -400,6 +450,9 @@ namespace MifBridge
 		// Note what is stored: FPinRef, never UEdGraphPin*. Preflight runs against the graph as it is
 		// NOW, but by the time op N applies, ops 0..N-1 have mutated it — and a mutation can reconstruct
 		// a node and free its pins. Re-resolving at apply time is what makes that safe.
+		// What to do when the destination input ALREADY has a source.
+		enum class EExistingPolicy { Replace, Preserve, Reject };
+
 		struct FResolved
 		{
 			FString Op;
@@ -407,6 +460,8 @@ namespace MifBridge
 			FPinRef B;
 			FString Value;
 			FString Error;
+			EExistingPolicy Policy = EExistingPolicy::Replace;
+			TArray<FPinRef> DstSourcesAtPreflight;
 		};
 		TArray<FResolved> Plan;
 		Plan.Reserve(Ops->Num());
@@ -447,7 +502,8 @@ namespace MifBridge
 				if (R.Op == TEXT("connect_pins"))
 				{
 					for (const TCHAR* K : { TEXT("srcnode"), TEXT("src"), TEXT("srcpin"), TEXT("sourcepin"),
-											TEXT("dstnode"), TEXT("dst"), TEXT("dstpin"), TEXT("destpin") })
+											TEXT("dstnode"), TEXT("dst"), TEXT("dstpin"), TEXT("destpin"),
+											TEXT("existinglinkpolicy"), TEXT("replaceexisting") })
 					{ Allowed.Add(K); }
 				}
 				else if (R.Op == TEXT("disconnect_pin"))
@@ -493,6 +549,38 @@ namespace MifBridge
 				}
 				R.A = MakeRef(SrcPin);
 				R.B = MakeRef(DstPin);
+				R.DstSourcesAtPreflight = SourcesOf(DstPin);
+
+				// existingLinkPolicy. Default REPLACE, because "connect X to Y" in a rewire means Y is
+				// fed by X - and leaving it to the schema made the result depend on the callee's
+				// signature (impure + no return value => the self pin appends instead of replacing),
+				// which is not something a caller can reasonably predict per-operation.
+				{
+					FString Pol = JStr(O, TEXT("existingLinkPolicy")).ToLower();
+					if (Pol.IsEmpty() && O->HasField(TEXT("replaceExisting")))
+					{
+						Pol = JBool(O, TEXT("replaceExisting"), true) ? TEXT("replace") : TEXT("preserve");
+					}
+					if (Pol.IsEmpty() || Pol == TEXT("replace")) { R.Policy = EExistingPolicy::Replace; }
+					else if (Pol == TEXT("preserve"))            { R.Policy = EExistingPolicy::Preserve; }
+					else if (Pol == TEXT("reject"))              { R.Policy = EExistingPolicy::Reject; }
+					else
+					{
+						R.Error = FString::Printf(
+							TEXT("existingLinkPolicy '%s' is not replace, preserve or reject"), *Pol);
+						++PreflightErrors; Plan.Add(R); continue;
+					}
+				}
+
+				// REJECT is decided here, before anything is mutated, and names what is in the way.
+				if (R.Policy == EExistingPolicy::Reject
+					&& IsSingleSourceInput(DstPin) && R.DstSourcesAtPreflight.Num() > 0)
+				{
+					R.Error = FString::Printf(
+						TEXT("destination is already fed by %s and existingLinkPolicy is 'reject' - pass 'replace' to take it over, or 'preserve' to add alongside"),
+						*DescribeRefs(R.DstSourcesAtPreflight));
+					++PreflightErrors; Plan.Add(R); continue;
+				}
 
 				// Ask the schema NOW whether this connection is legal, and whether it is a KIND of
 				// connection this endpoint can undo. This is the check that turns a mid-build surprise
@@ -585,6 +673,7 @@ namespace MifBridge
 
 		TArray<TSharedPtr<FJsonValue>> Results;
 		auto Emit = [&Results](int32 Index, const FString& Op, bool bOk, const FString& Detail)
+			-> TSharedRef<FJsonObject>
 		{
 			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
 			J->SetNumberField(TEXT("index"), Index);
@@ -592,14 +681,30 @@ namespace MifBridge
 			J->SetBoolField(TEXT("ok"), bOk);
 			if (!Detail.IsEmpty()) { J->SetStringField(bOk ? TEXT("detail") : TEXT("error"), Detail); }
 			Results.Add(MakeShared<FJsonValueObject>(J));
+			return J;   // so a connect op can attach its before/after source sets
 		};
 
 		if (bDryRun || (PreflightErrors > 0 && !bAllowPartial))
 		{
 			for (int32 i = 0; i < Plan.Num(); ++i)
 			{
-				Emit(i, Plan[i].Op, Plan[i].Error.IsEmpty(),
-					 Plan[i].Error.IsEmpty() ? TEXT("would apply") : Plan[i].Error);
+				const FResolved& Pl = Plan[i];
+				FString Detail = TEXT("would apply");
+				if (Pl.Error.IsEmpty() && Pl.Op == TEXT("connect_pins") && Pl.DstSourcesAtPreflight.Num() > 0)
+				{
+					// The reported case: a dry run that said "would apply" for a destination that was
+					// ALREADY fed by something else, and never mentioned it. Say what will happen to
+					// the incumbent link, since that is the part a rewire actually cares about.
+					Detail = FString::Printf(
+						TEXT("would apply - destination is ALREADY fed by %s; policy '%s' will %s"),
+						*DescribeRefs(Pl.DstSourcesAtPreflight),
+						Pl.Policy == EExistingPolicy::Replace ? TEXT("replace")
+							: (Pl.Policy == EExistingPolicy::Preserve ? TEXT("preserve") : TEXT("reject")),
+						Pl.Policy == EExistingPolicy::Replace
+							? TEXT("REMOVE the existing link(s) so the new source is the only one")
+							: TEXT("KEEP them, leaving the destination with more than one source"));
+				}
+				Emit(i, Pl.Op, Pl.Error.IsEmpty(), Pl.Error.IsEmpty() ? Detail : Pl.Error);
 			}
 			Out->SetBoolField(TEXT("dryRun"), bDryRun);
 			Out->SetNumberField(TEXT("operations"), Plan.Num());
@@ -679,8 +784,9 @@ namespace MifBridge
 				PinA->GetOwningNode()->Modify();
 				PinB->GetOwningNode()->Modify();
 
-				// Snapshot BEFORE the call - afterwards the broken links are gone and the input pin's
-				// default has already been wiped by PinConnectionListChanged.
+				// Snapshot BEFORE anything - afterwards the broken links are gone and the input pin's
+				// default has already been wiped by PinConnectionListChanged. This snapshot also covers
+				// the explicit break below, so rollback restores links this endpoint removed itself.
 				FPatchUndo U;
 				U.Kind = FPatchUndo::EKind::Connected;
 				U.A = R.A; U.B = R.B;
@@ -690,24 +796,94 @@ namespace MifBridge
 				U.PriorDefaultsB = FPinDefaults::Capture(PinB);
 				U.ShapeA = NodeShape(PinA->GetOwningNodeUnchecked());
 				U.ShapeB = NodeShape(PinB->GetOwningNodeUnchecked());
-				const int32 PriorACount = PinA->LinkedTo.Num();
-				const int32 PriorBCount = PinB->LinkedTo.Num();
+
+				const TArray<FPinRef> SourcesBefore = SourcesOf(PinB);
+
+				// EXPLICIT REPLACE. Left to the schema, whether the incumbent link survives depends on
+				// the CALLEE'S SIGNATURE: a self pin on an impure, no-return, non-latent function is a
+				// legal multi-target pin, so the schema APPENDS instead of breaking
+				// (EdGraphSchema_K2.cpp:2112 bMultipleSelfException). That produced a rewire where
+				// 4 of 12 destinations replaced and 8 kept both sources, all reported ok. Breaking here
+				// makes the outcome depend on the caller's stated intent instead.
+				// Exec inputs are excluded - exec fan-in is legal and must not be torn down.
+				bool bBrokeForReplace = false;
+				if (R.Policy == EExistingPolicy::Replace && IsSingleSourceInput(PinB))
+				{
+					for (const FPinRef& Existing : SourcesBefore)
+					{
+						if (RefEquals(Existing, R.A)) { continue; }   // already the requested source
+						if (UEdGraphPin* Other = ResolveRef(Graph, Existing))
+						{
+							PinB->BreakLinkTo(Other);
+							if (UEdGraphNode* ON = Other->GetOwningNodeUnchecked()) { ON->PinConnectionListChanged(Other); }
+							bBrokeForReplace = true;
+						}
+					}
+					if (bBrokeForReplace) { PinB->GetOwningNode()->PinConnectionListChanged(PinB); }
+					// Breaking can reconstruct the node; re-resolve before connecting.
+					PinA = ResolveRef(Graph, R.A);
+					PinB = ResolveRef(Graph, R.B);
+					if (!PinA || !PinB)
+					{
+						++Failed;
+						const FString Why = TEXT("clearing the destination's existing link reconstructed the node and the pin is gone");
+						if (FirstError.IsEmpty()) { FirstError = FString::Printf(TEXT("op %d (%s): %s"), i, *R.Op, *Why); }
+						Journal.Add(U);          // the break DID happen - it must be rollback-able
+						Emit(i, R.Op, false, Why);
+						if (bStopOnFirst) { break; }
+						continue;
+					}
+				}
 
 				bOk = Schema->TryCreateConnection(PinA, PinB);
 				if (bOk)
 				{
 					Journal.Add(U);
-					// Say when this connection REPLACED an existing one. Single-link pins do that
-					// silently, and a caller reading "ok" has no other way to learn a wire was displaced.
-					// Re-resolve first: the connection may have reconstructed either node.
-					UEdGraphPin* NowA = ResolveRef(Graph, R.A);
+
+					// VERIFY THE POSTCONDITION. "The requested link exists" is not the same as "the
+					// destination ends up how the caller asked", and reporting the first as success is
+					// exactly what hid this bug. Re-resolve: the connect may have reconstructed a node.
 					UEdGraphPin* NowB = ResolveRef(Graph, R.B);
-					const int32 Displaced =
-						  FMath::Max(0, PriorACount - (NowA ? NowA->LinkedTo.Num() - 1 : PriorACount))
-						+ FMath::Max(0, PriorBCount - (NowB ? NowB->LinkedTo.Num() - 1 : PriorBCount));
-					Detail = FString::Printf(TEXT("%s -> %s%s"),
-						*R.A.PinName.ToString(), *R.B.PinName.ToString(),
-						Displaced > 0 ? *FString::Printf(TEXT(" (replaced %d existing link(s))"), Displaced) : TEXT(""));
+					const TArray<FPinRef> SourcesAfter = SourcesOf(NowB);
+
+					TArray<FPinRef> Foreign;
+					for (const FPinRef& Src : SourcesAfter)
+					{
+						if (!RefEquals(Src, R.A)) { Foreign.Add(Src); }
+					}
+					const bool bIsSingle = IsSingleSourceInput(NowB);
+
+					if (R.Policy == EExistingPolicy::Replace && bIsSingle && Foreign.Num() > 0)
+					{
+						// Asked to take the pin over and did not. Fail rather than report success.
+						bOk = false;
+						Detail = FString::Printf(
+							TEXT("connected, but the destination is STILL fed by %s. existingLinkPolicy 'replace' could not clear it, so this op is reported failed rather than as a successful rewire."),
+							*DescribeRefs(Foreign));
+					}
+					else
+					{
+						Detail = FString::Printf(TEXT("%s -> %s"), *R.A.PinName.ToString(), *R.B.PinName.ToString());
+						if (bBrokeForReplace)
+						{
+							Detail += FString::Printf(TEXT(" (REPLACED %s)"), *DescribeRefs(SourcesBefore));
+						}
+						else if (Foreign.Num() > 0)
+						{
+							// preserve, or a legitimately multi-source pin such as an exec input.
+							Detail += FString::Printf(
+								TEXT(" (APPENDED - destination now has %d sources, also fed by %s)"),
+								SourcesAfter.Num(), *DescribeRefs(Foreign));
+						}
+						TSharedRef<FJsonObject> Row = Emit(i, R.Op, true, Detail);
+						Row->SetBoolField(TEXT("destinationWasOccupied"), SourcesBefore.Num() > 0);
+						Row->SetBoolField(TEXT("replacedExisting"), bBrokeForReplace);
+						Row->SetBoolField(TEXT("appendedToExisting"), !bBrokeForReplace && Foreign.Num() > 0);
+						Row->SetField(TEXT("sourcesBefore"), RefsToJson(SourcesBefore));
+						Row->SetField(TEXT("sourcesAfter"), RefsToJson(SourcesAfter));
+						++Applied;
+						continue;   // row already emitted
+					}
 				}
 				else
 				{

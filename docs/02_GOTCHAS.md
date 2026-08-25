@@ -726,6 +726,52 @@ and had to be redone. To force a genuine mid-apply failure, use the wildcard tri
 `int` into `Array_Add.NewItem`, then a `string` into the same pin — legal at preflight, illegal by
 the time it runs. Assert `preflightErrors == 0` and `rolledBack > 0` before trusting the result.
 
+#### A `self` pin can legally take MORE THAN ONE source, and that decides replace vs append
+
+Reported from production: a 12-connection rewire returned `12/12 OK`, but a read-back showed 4
+destinations replaced cleanly and **8 left carrying both the old and the new source**. All 12
+destinations were ordinary object-reference input pins named `self`.
+
+Not corruption — deliberate engine behaviour.
+`UEdGraphSchema_K2::DetermineConnectionResponseOfCompatibleTypedPins`
+(`EdGraphSchema_K2.cpp:2106-2150`) skips the break-existing step when **all** of:
+
+* the destination is already linked, and
+* `IsSelfPin(*InputPin)`, and
+* `OwningNode->AllowMultipleSelfs(false)` is true, and
+* neither pin is a container, and
+* no existing link is an array
+
+…then it falls through to plain `CONNECT_RESPONSE_MAKE` — **append, not replace**. UE uses that to
+expand one call over several targets.
+
+For `UK2Node_CallFunction`, `AllowMultipleSelfs` is `CanFunctionSupportMultipleTargets`: **no return
+value, impure, and not latent**. So the outcome is decided by the *callee's signature*:
+
+| destination | signature | multi-target? | engine does |
+|---|---|---|---|
+| `Setup.self`, `SetVisibility.self` | impure, no return | yes | **appends** — 2 sources |
+| `Get btnRemoveSubstance.self` | has a return value | no | **replaces** — 1 source |
+
+Two visually identical `self` pins, opposite results. A caller cannot predict this per-operation, so
+`apply_graph_patch` no longer leaves it to the schema: **`existingLinkPolicy` defaults to `replace`**
+and explicitly clears the incumbent link first. `preserve` opts into multi-target; `reject` refuses
+and names what is in the way. Every connect result now carries `sourcesBefore`, `sourcesAfter`,
+`replacedExisting` and `appendedToExisting`, and a `replace` that failed to clear the pin is reported
+**failed** rather than as a successful rewire.
+
+> **Exec inputs are exempt, and must stay exempt.** Several exec outputs converging on one exec input
+> is ordinary fan-in; the engine never auto-breaks it (`bBreakExistingDueToDataInput` is gated on
+> `!IsExecPin(*InputPin)`). A blanket "one source per input" rule would silently tear down valid
+> graphs. The policy only touches non-exec inputs.
+
+The standalone endpoints already encoded this distinction: `connect_pins` is
+`DoConnect(bBreakFirst=false)` and **`reconnect_pin` is `DoConnect(bBreakFirst=true)`**. If you want
+replace semantics from a single call, `reconnect_pin` is the one to reach for.
+
+The wider lesson, and the third time this exact shape has bitten: **"the requested link exists" is not
+"the graph is how the caller asked for it."** Verify the postcondition, not the call.
+
 ### Endpoints that discard unsaved work without asking
 
 | endpoint | what it does | undo? | confirm-gated? |

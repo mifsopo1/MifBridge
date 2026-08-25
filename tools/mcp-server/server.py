@@ -685,7 +685,18 @@ def apply_graph_patch(graph_id: str, operations: list, dry_run: bool = False,
     help: it stops at the first failure with every prior op already committed.
 
     operations[] entries (node = a NodeGuid inside graph_id):
-        {"op": "connect_pins",    "srcNode": guid, "srcPin": name, "dstNode": guid, "dstPin": name}
+        {"op": "connect_pins",    "srcNode": guid, "srcPin": name, "dstNode": guid, "dstPin": name,
+                                  "existingLinkPolicy": "replace"|"preserve"|"reject"}
+            existingLinkPolicy decides what happens when the DESTINATION INPUT is already fed by
+            something else. Default "replace": the incumbent link is removed so the new source is
+            the only one. This is not the same as letting the schema decide - a `self` pin on an
+            impure, no-return function is a legal MULTI-TARGET pin, so the engine APPENDS there and
+            REPLACES on an otherwise identical pin whose function returns a value. Left to the
+            schema, whether a rewire replaces or double-links depends on the callee's signature.
+            "preserve" keeps the incumbent (opt in to multi-target); "reject" refuses and names it.
+            Exec inputs are never touched by this policy - exec fan-in is legal.
+            Each connect result reports sourcesBefore/sourcesAfter, replacedExisting and
+            appendedToExisting, and a "replace" that failed to clear the pin is reported FAILED.
         {"op": "disconnect_pin",  "node": guid, "pin": name, "direction": "input"|"output"}
             direction is only needed when one name matches both an input and an output pin;
             leave it off and an ambiguous name is refused rather than guessed at.
