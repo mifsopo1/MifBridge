@@ -109,7 +109,7 @@ it off and write one line saying why it was dropped — do not leave it open to 
       Embedded NULs are the obvious suspect: an FString carrying   truncates at the C-string
       boundary in some paths and not others, so a length check and a copy can disagree. Reproduce it
       against a single endpoint before touching anything.
-- [ ] recipe_reset_and_loop hangs on control characters in its parameters (see above). Find the actual
+- [x] recipe_reset_and_loop hangs on control characters in its parameters (see above). Find the actual
       blocking call. Do NOT assume it is the modal-dialog class - that is the fresh hypothesis and this
       hang predates the evidence for it.
       A static pass ruled out the obvious candidates rather than confirming one. Ruled OUT so far:
@@ -126,6 +126,18 @@ it off and write one line saying why it was dropped — do not leave it open to 
       simply mean the editor was busy longer than the timeout. The kr_* band proves the editor can be
       busy for minutes at a stretch. Before blaming this endpoint, re-probe it in isolation against an
       idle editor and bisect the parameters one at a time.
+      DROPPED - it is not an endpoint defect. tools/probe_recipe_hang.py sends the exact run-4 payload
+      to an idle editor and it answers in 0.33s with "missing graphId". The empty-string control
+      answers identically, which also DISPROVES the reasoning I had written above: IsEmpty() is in
+      fact true for " ", so it behaves exactly like "" rather than getting further. The
+      input was never the trigger.
+      What actually happened is the client-side-timeout explanation. Handlers run inline on the game
+      thread, so a call queues behind whatever the editor is doing, and run 4 hit this endpoint right
+      after the kr_* band, which reconstructs blueprints for real even on garbage input. The fuzzer's
+      confirming retry (45s then 135s) was not enough to see through it.
+      Fixed the instrument rather than the endpoint: a HANG finding now times a trivial endpoint
+      immediately afterwards and records the number, so "this call is hung" and "the editor was busy"
+      stop looking identical in the report.
 
 
 - [x] recipe_reset_and_loop hardcodes StandardMacros when resolving ForEachLoop — the same brittle pattern already fixed in add_macro_instance. Harmless today, but route it through the registry lookup.

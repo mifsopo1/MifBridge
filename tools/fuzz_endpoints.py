@@ -164,7 +164,25 @@ def probe(endpoint, label, payload, timeout=45):
         except M.Dead:
             return "dead", None
         except M.Timeout:
-            return "hang", None
+            # STILL not necessarily this endpoint's fault. Handlers run inline on the game thread, so
+            # a call queues behind whatever the EDITOR is doing - a long GC, an asset-registry rescan,
+            # or work an earlier endpoint deferred to a later tick rather than finishing inline. The
+            # kr_* endpoints reconstruct blueprints for real even on garbage input and can hold the
+            # thread for minutes.
+            #
+            # This mattered: run 4 reported recipe_reset_and_loop as a hang, and probing it in
+            # isolation against an idle editor answered in 0.33s with the exact same payload. The
+            # endpoint was fine; the editor was busy. Measure that instead of guessing, by timing a
+            # trivial endpoint right afterwards, and carry the number into the finding so nobody goes
+            # hunting for a bug that is not there.
+            idle_ms = None
+            try:
+                t0 = time.time()
+                M.call("self_audit", {}, timeout=30)
+                idle_ms = int((time.time() - t0) * 1000)
+            except Exception:
+                pass
+            return "hang", {"__editor_probe_ms": idle_ms}
     except Exception as e:                                  # harness bug, not an endpoint finding
         return "harness-error", {"error": str(e)}
 
@@ -291,8 +309,16 @@ def main():
                     counts["CRASH"] = counts.get("CRASH", 0) + 1
                     break
                 if status == "hang":
-                    M.record("HANG", ep, "no response with parameters set to %r"
-                             % (val if not isinstance(val, str) or len(val) < 40 else "<64KB string>",),
+                    busy = (r or {}).get("__editor_probe_ms")
+                    note = ""
+                    if busy is not None:
+                        note = ("; a trivial endpoint answered in %dms right after, so the EDITOR was "
+                                "responsive and this call specifically was not" % busy) if busy < 2000                             else ("; a trivial endpoint also took %dms right after, so the editor was "
+                                  "busy generally - do not blame this endpoint without an isolated "
+                                  "re-probe" % busy)
+                    M.record("HANG", ep, "no response with parameters set to %r%s"
+                             % (val if not isinstance(val, str) or len(val) < 40 else "<64KB string>",
+                                note),
                              severity="high", probe="absurd")
                     counts["HANG"] = counts.get("HANG", 0) + 1
             if ep in crashers:
