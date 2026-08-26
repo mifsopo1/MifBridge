@@ -593,6 +593,27 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       the calls — an expression that reports an index but never appears, or a connection that reports
       success while `connectionCount` stays zero, is the failure worth catching.
 
+- [x] **Cooked-asset sweep — a branch the adversarial sweep structurally could not reach.**
+      `tools/cooked_sweep.py`. **883 calls across 285 endpoints against REAL cooked assets, zero
+      crashes.**
+
+      `fuzz_endpoints.py` hands every endpoint a GHOST path, so it tests the "not found" branch and
+      nothing else. It has never asked what happens against a real COOKED asset — and that is the
+      branch that matters, because DDS2 is a cooked game: nearly every asset a modder touches is
+      cooked, so the untested case was also the common one.
+
+      §6c of the gotchas records why that branch is dangerous rather than merely empty: a cooked
+      `UUserDefinedStruct` hits a `CastChecked` that terminates the editor, a cooked `UMaterial` has no
+      expression graph behind a null-check-free deref, and a cooked `UNiagaraSystem` crashed on
+      duplication. Two of the three are fatal.
+
+      The sweep picks a real cooked asset per class from the live registry and feeds it to every
+      endpoint whose parameters plausibly want that class — deliberately conservative, since handing a
+      Material to something expecting a Blueprint tests argument validation rather than the cooked
+      hazard and would bury real findings in noise. Read-only by construction: `confirm` is never sent,
+      the DENY list still applies, nothing is saved. A crash is treated as a finding, recorded with the
+      exact asset that caused it so the repro is one call, and the editor is relaunched to continue.
+
 ## Deliberately not pursuing
 
 - [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add
