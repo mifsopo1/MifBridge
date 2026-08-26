@@ -563,11 +563,16 @@ def list_widget_animations(blueprint_id: str) -> dict:
 @mcp.tool()
 def add_widget_animation_track(blueprint_id: str, animation_name: str, widget_name: str,
                                property: str = "RenderTransform.Translation") -> dict:
-    """Bind a widget into a UMG animation and give it a RenderTransform.Translation track.
+    """Bind a widget into a UMG animation and give it a property track.
 
-    Only RenderTransform.Translation is supported today, and asking for anything else is refused
-    rather than silently ignored. Creating the binding and the track are both idempotent: call it
-    twice and the second call reports createdBinding/createdTrack false.
+    Three properties are authorable: RenderTransform.Translation (a 2D transform track),
+    RenderOpacity (a float track) and ColorAndOpacity (a colour track). Visibility is deliberately
+    absent - it is a bool channel and would be half-working. Anything else is refused by name rather
+    than silently ignored. Key the track afterwards with set_widget_animation_keys, passing the SAME
+    property.
+
+    Creating the binding and the track are both idempotent: call it twice and the second call reports
+    createdBinding/createdTrack false.
 
     The root widget is refused - the engine binds the preview UUserWidget for that case and there is
     no preview widget outside the designer. Animate a child widget.
@@ -579,8 +584,13 @@ def add_widget_animation_track(blueprint_id: str, animation_name: str, widget_na
 @mcp.tool()
 def set_widget_animation_keys(blueprint_id: str, animation_name: str, widget_name: str,
                               channel: str = "Y", keys: list = None,
-                              replace: bool = True) -> dict:
-    """Key one translation channel of a widget's animation track.
+                              replace: bool = True,
+                              property: str = "RenderTransform.Translation") -> dict:
+    """Key one channel of a widget's animation track.
+
+    property picks WHICH track to key and must match one you created with
+    add_widget_animation_track: RenderTransform.Translation (channel X or Y), ColorAndOpacity
+    (channel R, G, B or A), or RenderOpacity (leave channel empty - it is a single float).
 
     keys is [{"time": seconds, "value": number, "interp": "cubic"|"linear"|"constant"}]. Times are
     SECONDS and are converted to the MovieScene's tick space for you; the response reports each key in
@@ -592,7 +602,7 @@ def set_widget_animation_keys(blueprint_id: str, animation_name: str, widget_nam
     """
     return _post("set_widget_animation_keys", blueprintId=blueprint_id,
                  animationName=animation_name, widgetName=widget_name, channel=channel,
-                 keys=keys or [], replace=replace)
+                 keys=keys or [], replace=replace, property=property)
 
 
 @mcp.tool()
@@ -1801,6 +1811,24 @@ def trace(start: dict, end: dict = None, direction: dict = None, distance: float
                  shape=shape, radius=radius, halfExtent=half_extent, halfHeight=half_height,
                  channel=channel, traceComplex=trace_complex, multi=multi,
                  ignoreActors=ignore_actors or [], draw=draw, drawDuration=draw_duration)
+
+
+@mcp.tool()
+def capture_viewport(path: str = "") -> dict:
+    """Capture the pixels the editor is ACTUALLY drawing right now.
+
+    Different question from capture_camera, which spawns its own transient scene-capture actor with
+    its own show flags and view mode. This is the real viewport: the user's camera, the current view
+    mode (wireframe stays wireframe), the real show flags. For "does my change look right", this is
+    the one you want.
+
+    Synchronous - it reads the viewport backbuffer rather than queuing a screenshot request, so the
+    file exists when the call returns.
+
+    Reports realtime and, if every pixel is black, says so explicitly: a minimised or occluded editor
+    never draws a frame, and a black PNG would otherwise look like a picture of an empty scene.
+    """
+    return _post("capture_viewport", path=path)
 
 
 @mcp.tool()

@@ -35,11 +35,14 @@ add_pin.pin
 add_sublevel.level
 apply_graph_patch.ops
 audit_unused.ignorereferencers
+audition_sound.sound
 bind_landscape_rvt.actorpath
 capture_camera.fromviewport
 capture_camera.x
 capture_camera.y
 capture_camera.z
+capture_viewport.file
+capture_viewport.name
 connect_material_expressions.material
 delete_material_expression.material
 delete_material_expression.name
@@ -84,9 +87,11 @@ import_texture.replaceexisting
 import_texture.texturegroup
 layout_material_expressions.material
 list_material_expressions.material
+list_material_parameters.material
 list_object_properties.actorpath
 list_object_properties.filter
 list_object_properties.namefilter
+list_sockets.mesh
 list_transactions.count
 list_transactions.include_objects
 list_transactions.max
@@ -133,6 +138,7 @@ sculpt_landscape.actorpath
 self_audit.compact
 self_audit.includeendpointdetails
 self_audit.includeendpoints
+set_collision.component
 set_current_sublevel.level
 set_function_flags.name
 set_material_parameter.name

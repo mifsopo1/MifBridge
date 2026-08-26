@@ -28,6 +28,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
+#include "ImageUtils.h"              // PNGCompressImageArray - same path capture_camera/thumbnails use
+#include "Misc/FileHelper.h"
+#include "UnrealClient.h"            // FViewport::ReadPixels - the real backbuffer
+#include "RenderingThread.h"        // FlushRenderingCommands - the forced redraw must land before ReadPixels
 #include "NavigationSystem.h"        // nav queries: project a point, find a path, raycast
 #include "NavigationPath.h"          // UNavigationPath returned by FindPathToLocationSynchronously
 #include "Sound/SoundBase.h"         // audition_sound
@@ -324,6 +328,160 @@ namespace MifBridge
 				}
 			}
 			return EditorWorld();
+		}
+	}
+
+	// --- capture_viewport ----------------------------------------------------
+	//   in:  { path?, viewport? }
+	//   out: { file, width, height, bytes, realtime, allBlack?, viewportType }
+	//
+	// The pixels the editor is ACTUALLY drawing, as distinct from capture_camera's transient
+	// ASceneCapture2D - a different camera with its own show flags and view mode. That split is
+	// documented at the top of this file and has misled someone before.
+	void H_capture_viewport(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("name"), TEXT("file") },
+			TEXT("path (alias: name, file) - where to write the PNG; defaults to "
+				 "Saved/MifBridge/Viewport.png"),
+			{ { TEXT("location"), TEXT("this captures the CURRENT viewport - move it first with set_viewport_camera, or use capture_camera to shoot from an arbitrary point without disturbing the user's view") },
+			  { TEXT("resolution"), TEXT("the capture is the viewport's own size; resize the editor window to change it") },
+			  { TEXT("showUI"), TEXT("not supported - this reads the 3D viewport's backbuffer, which never contains the editor's surrounding UI") } }))
+		{
+			return;
+		}
+		if (!GEditor)
+		{
+			Fail(Out, TEXT("no editor"));
+			return;
+		}
+		FViewport* Viewport = GEditor->GetActiveViewport();
+		if (!Viewport)
+		{
+			Fail(Out, TEXT("no active editor viewport - the editor has no focused level viewport to "
+						   "read. Click a viewport, or use capture_camera, which does not need one."));
+			return;
+		}
+
+		const FIntPoint Size = Viewport->GetSizeXY();
+		if (Size.X <= 0 || Size.Y <= 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the active viewport reports a %dx%d size, so there is nothing to read - it is "
+					 "probably minimised."), Size.X, Size.Y));
+			return;
+		}
+
+		// FORCE A REDRAW FIRST. This is not belt-and-braces, it is the whole correctness of the
+		// endpoint. A viewport that is not realtime - which is any level viewport once the editor
+		// loses focus - does not redraw on its own, so the backbuffer still holds whatever was last
+		// drawn. Without this, moving the camera with set_viewport_camera and capturing returned a
+		// BYTE-IDENTICAL image while cameraLocation below dutifully reported the NEW position: a
+		// frame from one camera, labelled with another. Caught by test_capture_viewport T194.
+		Viewport->Invalidate();
+		Viewport->Draw();
+		FlushRenderingCommands();   // the draw is queued to the render thread; ReadPixels must not race it
+
+		TArray<FColor> Pixels;
+		if (!Viewport->ReadPixels(Pixels) || Pixels.Num() == 0)
+		{
+			Fail(Out, TEXT("reading the viewport's pixels failed - the backbuffer was not available. "
+						   "This happens when the editor window is minimised or fully occluded."));
+			return;
+		}
+
+		// ReadPixels returns the BACKBUFFER: whatever was last drawn. An idle, occluded or minimised
+		// editor has not redrawn, so a capture can be stale or blank while every other field says
+		// success.
+		//
+		// The first version of this checked for ALL BLACK. Then the first real capture came back
+		// almost entirely WHITE - a blank viewport with nothing but the axis gizmo - and sailed
+		// straight past the check. Blank is blank whatever colour it is, so this measures UNIFORMITY
+		// instead: what fraction of the frame is the single most common colour.
+		// FORCE ALPHA OPAQUE - and this one is not cosmetic. ReadPixels returns the backbuffer's
+		// alpha channel, which in the editor is not coverage: it is whatever the renderer left there,
+		// and it is ~0 almost everywhere. PNGCompressImageArray writes it out verbatim, so the file
+		// was a FULLY TRANSPARENT PNG - 343523 of 343620 pixels at alpha 0 when this was found. Every
+		// field said success, the RGB really was a correct render of the scene, and any viewer that
+		// honours alpha showed a blank page. It was mistaken for an empty scene twice before the
+		// alpha channel was actually looked at.
+		int32 Distinct = 0;
+		TMap<uint32, int32> Histogram;
+		for (FColor& Px : Pixels)
+		{
+			Px.A = 255;
+			const uint32 Key = (uint32(Px.R) << 16) | (uint32(Px.G) << 8) | uint32(Px.B);
+			int32& N = Histogram.FindOrAdd(Key);
+			++N;
+		}
+		Distinct = Histogram.Num();
+		int32 TopCount = 0;
+		uint32 TopColour = 0;
+		for (const TPair<uint32, int32>& Pair : Histogram)
+		{
+			if (Pair.Value > TopCount) { TopCount = Pair.Value; TopColour = Pair.Key; }
+		}
+		const double Uniformity = Pixels.Num() > 0 ? double(TopCount) / double(Pixels.Num()) : 1.0;
+
+		FString Name = JStrAny(In, { TEXT("path"), TEXT("name"), TEXT("file") });
+		if (Name.IsEmpty()) { Name = TEXT("Viewport"); }
+		const FString Dir = FPaths::ProjectSavedDir() / TEXT("MifBridge");
+		FPlatformFileManager::Get().GetPlatformFile().CreateDirectoryTree(*Dir);
+		const FString FullPath = FPaths::ConvertRelativePathToFull(
+			Dir / (FPaths::MakeValidFileName(FPaths::GetBaseFilename(Name)) + TEXT(".png")));
+
+		TArray64<uint8> Png;
+		FImageUtils::PNGCompressImageArray(Size.X, Size.Y,
+			TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
+		if (Png.Num() == 0)
+		{
+			Fail(Out, FString::Printf(TEXT("PNG compression produced no data for %dx%d"), Size.X, Size.Y));
+			return;
+		}
+		if (!FFileHelper::SaveArrayToFile(Png, *FullPath))
+		{
+			Fail(Out, FString::Printf(TEXT("failed to write %s (check disk space and that the path is "
+										   "writable)"), *FullPath));
+			return;
+		}
+
+		Out->SetStringField(TEXT("file"), FullPath);
+		Out->SetNumberField(TEXT("width"), Size.X);
+		Out->SetNumberField(TEXT("height"), Size.Y);
+		Out->SetNumberField(TEXT("bytes"), Png.Num());
+		// Provenance, echoed for the same reason capture_camera echoes cameraSource: so that "which
+		// camera is this?" is answerable from the JSON rather than only from the picture.
+		Out->SetStringField(TEXT("source"), TEXT("editor viewport backbuffer"));
+		// Stated so a caller knows the frame was drawn for THIS call rather than found lying around.
+		Out->SetBoolField(TEXT("forcedRedraw"), true);
+		if (FEditorViewportClient* Client = static_cast<FEditorViewportClient*>(Viewport->GetClient()))
+		{
+			Out->SetBoolField(TEXT("realtime"), Client->IsRealtime());
+			Out->SetObjectField(TEXT("cameraLocation"), Vec3(Client->GetViewLocation()));
+			const FRotator R = Client->GetViewRotation();
+			Out->SetObjectField(TEXT("cameraRotation"), Vec3(FVector(R.Pitch, R.Yaw, R.Roll)));
+			if (!Client->IsRealtime())
+			{
+				Out->SetStringField(TEXT("realtimeNote"),
+					TEXT("this viewport is NOT realtime, so it does not redraw on its own. This capture "
+						 "forced a redraw before reading, so the pixels DO match the camera reported "
+						 "here - but anything that animates only while ticking (particles, sequences, "
+						 "scrolling materials) will look frozen."));
+			}
+		}
+		// Reported ALWAYS, not only when it looks wrong, so a caller can judge for itself rather than
+		// trust a threshold someone picked.
+		Out->SetNumberField(TEXT("distinctColours"), Distinct);
+		Out->SetNumberField(TEXT("uniformity"), Uniformity);
+		Out->SetStringField(TEXT("dominantColour"), FString::Printf(TEXT("#%06X"), TopColour));
+		if (Uniformity > 0.98)
+		{
+			Out->SetBoolField(TEXT("looksBlank"), true);
+			Out->SetStringField(TEXT("blankNote"), FString::Printf(
+				TEXT("%.1f%% of this frame is the single colour %s, so it is almost certainly BLANK "
+					 "rather than a picture of the scene - a minimised or occluded editor never draws, "
+					 "and an empty or unlit view looks the same. The file was still written."),
+				Uniformity * 100.0, *FString::Printf(TEXT("#%06X"), TopColour)));
 		}
 	}
 

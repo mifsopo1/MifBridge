@@ -248,6 +248,7 @@ namespace MifBridge
 			MIF_BIND(trace);
 			MIF_BIND(draw_debug);
 			MIF_BIND(get_perf_stats);
+			MIF_BIND(capture_viewport);
 			MIF_BIND(audition_sound);
 			MIF_BIND(nav_project_point);
 			MIF_BIND(nav_find_path);

@@ -1102,6 +1102,38 @@ the `UWorld` is torn down. Call `list_dirty_packages` first and decide deliberat
   plugin's own source. `Game/Content` is ~8.7 GB and unversioned, so a bad write there is recoverable
   only from whatever backup the endpoint happened to take.
 
+
+## 11. Captured images can be wrong in ways the JSON cannot see
+
+Both of these were found in `capture_viewport` by looking at the picture and measuring it, not by
+reading the code. Both returned `ok: true` with every field correct. They are recorded here because
+the cause is in the engine's API contract, so anything else that reads pixels will hit them too.
+
+- **`FViewport::ReadPixels` returns the BACKBUFFER, not a fresh render.** A viewport that is not
+  realtime — which is any level viewport once the editor loses focus — does not redraw on its own.
+  Move the camera with `set_viewport_camera`, capture, and you get a byte-identical image of the OLD
+  view while the response reports the NEW camera position: a frame from one camera, labelled with
+  another. `Viewport->Invalidate(); Viewport->Draw(); FlushRenderingCommands();` before reading is
+  what makes the pixels and the reported camera describe the same thing. `capture_viewport` does
+  this and says so with `forcedRedraw: true`.
+
+- **The backbuffer's alpha channel is not coverage.** It is leftover renderer state, and it was 0 on
+  99.97% of pixels. `FImageUtils::PNGCompressImageArray` writes `FColor.A` out verbatim, so the
+  result was a fully transparent PNG — correct RGB underneath, blank page in any viewer that honours
+  alpha. Force `Px.A = 255` before compressing. `capture_camera` (which goes through
+  `UKismetRenderingLibrary::ExportRenderTarget`) and the thumbnail path were both checked and are
+  opaque already; this bites the `ReadPixels` route specifically.
+
+- **A blank-frame check that only tests for BLACK will not fire.** The transparent capture composited
+  to WHITE over its viewer's background and sailed straight past an all-black guard — twice, and
+  both times it was read as "the scene must be empty". Measure UNIFORMITY instead: the fraction of
+  the frame that is the single most common colour. `capture_viewport` reports `distinctColours`,
+  `uniformity` and `dominantColour` on **every** response rather than only when it thinks something
+  is wrong, so a caller can apply its own judgement instead of trusting a threshold someone picked.
+
+The general form: an image endpoint that reports a path, a size and a byte count has verified none of
+those things describe a usable picture. If it matters, open the file and measure it.
+
 ### The rule this all reduces to
 
 Read the error text. It is written to be read — several handlers name exactly what they left behind.

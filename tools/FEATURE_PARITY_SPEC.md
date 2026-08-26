@@ -218,11 +218,52 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       Replicates `FWidgetBlueprintEditorUtils::RenameWidget` rather than calling it, because that
       needs a live `FWidgetBlueprintEditor` (the asset open in the designer). What is skipped as a
       result — the designer preview and DesiredFocusWidget — is reported, not hidden. 20 checks.
-- [ ] **Screenshot of what is ACTUALLY rendered** (audit: HIGH). `capture_camera` spawns its own
-      `ASceneCapture2D`, which is a different camera from the editor viewport with different show
-      flags and view mode — the file header already documents that split and it has burned someone
-      before. An endpoint that captures the real viewport (and the PIE viewport) answers "what does
-      this look like right now" rather than "what does a fresh capture actor see".
+- [x] **Screenshot of what is ACTUALLY rendered** — `capture_viewport`. Reads the real editor
+      viewport backbuffer, so it answers "what does this look like right now" with the user's own
+      camera, view mode and show flags, where `capture_camera` answers "what would a fresh
+      `ASceneCapture2D` see". Synchronous via `FViewport::ReadPixels` rather than
+      `FScreenshotRequest`, which resolves at end-of-frame and would hand back a path to a file that
+      does not exist yet. 34 checks.
+
+      Two silent failures were found by testing it rather than by reading it, and both are worth
+      remembering because both reported `ok: true` with correct-looking JSON:
+
+      * **A stale frame labelled with the wrong camera.** A viewport that is not realtime — which is
+        any level viewport once the editor loses focus — does not redraw on its own. Moving the
+        camera and capturing returned a BYTE-IDENTICAL image while `cameraLocation` faithfully
+        reported the new position. Fixed by forcing `Invalidate` + `Draw` + `FlushRenderingCommands`
+        before reading, and the response now says `forcedRedraw: true`.
+      * **A fully transparent PNG.** `ReadPixels` returns the backbuffer's alpha, which in the editor
+        is leftover renderer state, not coverage — it was 0 on 99.97% of pixels, and
+        `PNGCompressImageArray` wrote it out verbatim. Correct RGB underneath, blank page in any
+        viewer that honours alpha. It was misread as "the scene is empty" twice before the channel
+        was actually measured. `capture_camera` and the thumbnail path were both checked and are
+        opaque already; this was ours alone.
+
+      The blank-frame guard started as an all-black check, which the pale frame sailed straight past.
+      It now measures UNIFORMITY — the fraction of the frame that is the single most common colour —
+      and reports `distinctColours`, `uniformity` and `dominantColour` on EVERY response, not only
+      when it decides something is wrong, so a caller can judge for itself.
+
+- [ ] **No endpoint authors an IK Rig or an IK Retargeter.** (Raised by Andre, 2026-08-25.) Confirmed:
+      the only endpoint whose name matches is `retarget_variable_node`, which retargets a Blueprint
+      variable node and is an unrelated name collision. The registry has zero `IKRigDefinition` and
+      zero `IKRetargeter` assets anywhere — and that zero was checked against a class that DOES
+      resolve (`ControlRigBlueprint` returns 2, both engine plugin function libraries rather than
+      game content), so it is a real absence and not an unregistered-class artifact.
+
+      The demand case is not editing rigs DDS2 already ships, because it ships none. It is IMPORT.
+      The project carries several unrelated skeletons — `UE4_Mannequin_Skeleton`, `SK_Mannequin`,
+      `DDS2_CharacterSkeleton`, plus vehicle and animal ones (cat, Akita, Dalmatian, Doberman,
+      Labrador) — and an animation bought or downloaded against the UE4 Mannequin, which is the most
+      common source of both, has no path onto the DDS2 character today. That is a normal thing for a
+      modder to want and it is currently impossible through the bridge.
+
+      Before building, settle two things the same way the Foliage item is being settled. First
+      whether `IKRig` and `IKRigEditor` are enabled in this project at all — nothing above proves the
+      modules are loaded, only that no assets exist. Second whether authoring a retargeter without
+      the editor's chain-mapping UI produces anything usable, or whether the honest scope is narrower:
+      create the two assets, set source and target meshes, and report the chains for a human to map.
 - [ ] **Foliage — and settle the disagreement first.** The bucket agent rated `AInstancedFoliageActor`
       + `UFoliageType` HIGH; the synthesiser's closing line says "Skip Foliage". Do not build either
       way until that is resolved: check whether DDS2's foliage is actually painted through the Foliage

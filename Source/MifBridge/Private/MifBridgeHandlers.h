@@ -1072,6 +1072,10 @@ namespace MifBridge
 	 *  the EDITOR's and say so. */
 	MIF_DECL(get_perf_stats);
 	/** Hear a sound through the editor's preview device. 3771 SoundWaves and no way to audition one. */
+	/** The pixels the editor is ACTUALLY drawing - real view mode, real show flags, the user's own
+	 *  camera. capture_camera shoots from a separate transient capture actor and is a different
+	 *  question. */
+	MIF_DECL(capture_viewport);
 	MIF_DECL(audition_sound);
 	/** Is this point on the nav mesh, and how far off was it? */
 	MIF_DECL(nav_project_point);
