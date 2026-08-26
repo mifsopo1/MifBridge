@@ -681,6 +681,27 @@ actually be deleted.
 FIXED ALREADY: the response no longer lies about it. `removed` now reflects whether anything was
 removed, and a duplicateNote says plainly that the pin is still on the node.
 
+UPDATE, after trying to reach it rather than assuming. THE BROKEN PATH IS NOT REACHABLE THROUGH THIS
+BRIDGE AT ALL. Three routes to a same-name same-direction pin were tried and every one is blocked:
+  - add_pin on the Entry path passes bUseUniqueName TRUE, so a second pin of the same name is renamed.
+  - the sibling Return-node route (FinalName is uniquified against Results[0] only, then applied to
+    every sibling with bUseUniqueName FALSE) would produce one if a SIBLING already held the name -
+    but reaching that asymmetry needs a second Return node, and there is no add_node or
+    add_return_node endpoint to place one.
+  - the cross-direction case (an input and an output sharing a name) is renamed too: asking for an
+    input 'Same' then an output 'Same' yields 'Same' on the entry and 'Same1' on the result, and
+    remove_pin then takes branch A (kind userDefined), not the duplicate branch.
+
+So Matches.Num() > 1 fires only on state this bridge cannot create: the add_pin crash residue its own
+comment names, or hand-editing in the editor. That is real - the comment was written from a real
+incident - but it is much rarer than a reachable API path, and it lowers the severity considerably.
+
+DECLINED on that basis. The reporting fix stands and is the part that matters: if the state ever does
+arise, the caller is told the truth instead of being told the duplicate was cleaned up. Writing an
+untestable addressing fix into pin manipulation - which has taken the editor down before - to serve a
+path the bridge cannot produce is a bad trade. If someone later adds an add_node endpoint, the route
+opens and this should be revisited.
+
 NOT FIXED: the addressing itself, deliberately. Reaching the real case needs two pins with the same
 name AND direction on one node, which this bridge cannot create on demand - so a fix cannot be tested
 here. Pin manipulation across BreakPinLinks has taken the editor down before (see the pin-pointer audit

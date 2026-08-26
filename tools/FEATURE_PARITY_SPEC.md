@@ -46,11 +46,18 @@ Never work from a typed list — one was fabricated once and a third of it was i
 - [x] **Runtime Console** — `exec_console`, `run_console`, `run_console_captured`.
 - [x] **Editor Utilities** — editor commands, tabs, key sends.
 
-- [ ] **remove_pin cannot address a same-direction duplicate (issue O).** The reporting is fixed; the
+- [~] **remove_pin cannot address a same-direction duplicate (issue O).** The reporting is fixed; the
   addressing is not. Needs index-based pin removal against the live Node->Pins array with re-validation
   after every BreakPinLinks, plus a way to manufacture a same-name same-direction duplicate to test it.
   Left unwritten on purpose - pin manipulation has crashed the editor before and this case cannot be
   reproduced on demand here.
+  DECLINED after trying to reach the broken path rather than assuming. All three routes to a same-name
+  same-direction pin are blocked by the bridge itself: add_pin uniquifies on the Entry path, the
+  sibling Return-node asymmetry needs a second Return node and no endpoint can place one, and the
+  cross-direction case is renamed too (input 'Same' + output 'Same' gives 'Same' and 'Same1'). The
+  duplicate branch therefore only fires on state produced outside this bridge - crash residue or hand
+  editing. The reporting fix is committed and is the part that matters. Revisit if an add_node endpoint
+  is ever added, which would open the sibling route.
 ## Gaps worth closing
 
 - [x] **Every DEFERRED engine call escapes the modal backstop — a hole in the safety net itself.**
