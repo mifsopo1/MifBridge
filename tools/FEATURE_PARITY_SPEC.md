@@ -264,12 +264,34 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       modules are loaded, only that no assets exist. Second whether authoring a retargeter without
       the editor's chain-mapping UI produces anything usable, or whether the honest scope is narrower:
       create the two assets, set source and target meshes, and report the chains for a human to map.
-- [ ] **Foliage — and settle the disagreement first.** The bucket agent rated `AInstancedFoliageActor`
-      + `UFoliageType` HIGH; the synthesiser's closing line says "Skip Foliage". Do not build either
-      way until that is resolved: check whether DDS2's foliage is actually painted through the Foliage
-      system or is static-mesh instances placed some other way. `add_foliage_instances` already
-      exists, so the question is what it does NOT cover. If the answer is "nothing a modder needs",
-      decline it with that finding rather than building on a HIGH rating nobody has tested.
+- [x] **Foliage** — `add_foliage_instances` gained a `foliageType` mode. The disagreement is
+      settled in the bucket agent's favour, on evidence rather than on either rating: DDS2 ships **42**
+      `FoliageType_InstancedStaticMesh` assets and 7 `LandscapeGrassType`, so the game does paint
+      through the Foliage system. The synthesiser's "Skip Foliage" was wrong.
+
+      What the existing endpoint did NOT cover turned out to be most of it. Despite the name, it never
+      touched the Foliage system — it spawned a bare `AActor` with a
+      `HierarchicalInstancedStaticMeshComponent`. Useful (one draw setup instead of 90) but it does not
+      appear in Foliage edit mode, and it inherits no cull distance, density, scaling or wind from any
+      type. So all 42 of the game's own foliage types were unreachable, and anything added this way
+      matched at two metres and culled wrongly at range.
+
+      Extended rather than duplicated, per the "find the existing one and extend it" rule: `mesh` and
+      `foliageType` are mutually exclusive, the response reports which `mode` ran, and mesh mode now
+      states outright that it is not the Foliage system. Foliage mode reports `requested` alongside
+      `instanceCount` so a placement the type itself rejected is visible. 30 checks, including that the
+      IFA is findable in the world afterwards and that `totalForType` ACCUMULATES across calls — a
+      mode that quietly built a second holder actor would pass a naive check and fail both.
+
+      The read side was deliberately NOT built. `find_assets` + `list_object_properties` already return
+      all 125 properties of a cooked FoliageType, and cooked foliage types keep their data (they are in
+      the safe half of §6c). That is the audit's own lesson about category-shaped gaps collapsing
+      into discoverability, applied to itself.
+
+      Cost one editor crash, recorded as PM-009: `AInstancedFoliageActor::AddFoliageInfo` is public,
+      exported and plainly named, and returns an `FFoliageInfo` whose `Implementation` is null, which
+      the next `AddInstance` dereferences. `AddFoliageType` is the real API. It also returns a possibly
+      DIFFERENT `UFoliageType` than you passed, which would have been the same bug again but silent.
 - [ ] **Typed read of Niagara User parameters** (audit: HIGH, and I declined the write side).
       Reading works through `get_property` but the shape is a redirect map keyed by
       `(Name="Color",TypeDefHandle=(...))`, which is hostile. A read-only `list_niagara_user_parameters`

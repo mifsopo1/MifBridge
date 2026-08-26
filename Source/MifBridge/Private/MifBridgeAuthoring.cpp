@@ -32,6 +32,9 @@
 #include "EngineUtils.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "InstancedFoliageActor.h"     // AInstancedFoliageActor - what Foliage edit mode paints into
+#include "InstancedFoliage.h"          // FFoliageInfo / FFoliageInstance
+#include "FoliageType.h"               // UFoliageType - the settings painted foliage inherits
 #include "Materials/MaterialInstanceConstant.h"
 #include "Materials/MaterialInterface.h"
 #include "Factories/MaterialInstanceConstantFactoryNew.h"
@@ -954,8 +957,11 @@ namespace MifBridge
 	void H_add_foliage_instances(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("mesh"), TEXT("staticMesh"), TEXT("instances"), TEXT("label"), TEXT("folder") },
-			TEXT("mesh (alias: staticMesh), instances[] (required), label, folder"),
+			{ TEXT("mesh"), TEXT("staticMesh"), TEXT("foliageType"), TEXT("type"),
+			  TEXT("instances"), TEXT("label"), TEXT("folder") },
+			TEXT("EITHER mesh (alias: staticMesh) for a standalone instanced-mesh actor, OR foliageType "
+				 "(alias: type) to place into the level's real Foliage system; instances[] (required), "
+				 "label and folder (mesh mode only)"),
 			{ { TEXT("material"), TEXT("not implemented — the HISM uses the mesh's own materials; override them with set_property on the component afterwards") },
 			  { TEXT("transforms"), TEXT("the array parameter is called instances[]") } }))
 		{
@@ -965,9 +971,50 @@ namespace MifBridge
 		UWorld* World = EditorWorld();
 		if (!World) { Fail(Out, TEXT("no editor world")); return; }
 
+		// TWO MODES, and they produce genuinely different things.
+		//   mesh        -> a standalone holder actor with a HISM, in the Foliage system in name only.
+		//   foliageType -> instances in the level's AInstancedFoliageActor, which is what Foliage edit
+		//                  mode paints into and what carries the type's culling, density and scaling.
 		const FString MeshPath = JStrAny(In, { TEXT("mesh"), TEXT("staticMesh") });
-		UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *MeshPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
-		if (!Mesh) { Fail(Out, FString::Printf(TEXT("static mesh not found: %s"), *MeshPath)); return; }
+		const FString TypePath = JStrAny(In, { TEXT("foliageType"), TEXT("type") });
+		if (!MeshPath.IsEmpty() && !TypePath.IsEmpty())
+		{
+			Fail(Out, TEXT("mesh and foliageType are alternatives, not a pair - mesh builds a standalone "
+						   "instanced-mesh actor, foliageType places into the level's Foliage system. "
+						   "Pass one. NOTHING was created."));
+			return;
+		}
+		if (MeshPath.IsEmpty() && TypePath.IsEmpty())
+		{
+			Fail(Out, TEXT("one of mesh or foliageType is required. foliageType places one of the game's "
+						   "own painted foliage types (find_assets with class=FoliageType_InstancedStaticMesh "
+						   "lists them) so the instances inherit that type's cull distance, density and "
+						   "scaling; mesh builds a plain instanced-mesh actor that inherits none of it. "
+						   "NOTHING was created."));
+			return;
+		}
+
+		UStaticMesh* Mesh = nullptr;
+		UFoliageType* FoliageType = nullptr;
+		if (!TypePath.IsEmpty())
+		{
+			FoliageType = LoadObject<UFoliageType>(nullptr, *TypePath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+			if (!FoliageType)
+			{
+				// Named rather than generic: the commonest mistake is passing the static mesh the
+				// foliage type wraps, which loads fine as a mesh and not at all as a type.
+				Fail(Out, FString::Printf(
+					TEXT("no FoliageType at %s. This must be a UFoliageType asset (find_assets with "
+						 "class=FoliageType_InstancedStaticMesh lists them), NOT the static mesh it "
+						 "wraps - pass that as 'mesh' instead. NOTHING was created."), *TypePath));
+				return;
+			}
+		}
+		else
+		{
+			Mesh = LoadObject<UStaticMesh>(nullptr, *MeshPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+			if (!Mesh) { Fail(Out, FString::Printf(TEXT("static mesh not found: %s"), *MeshPath)); return; }
+		}
 
 		const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
 		if (!JArray(In, TEXT("instances"), Items) || !Items || Items->Num() == 0)
@@ -1009,6 +1056,103 @@ namespace MifBridge
 			}
 		}
 
+		// ---- FOLIAGE-SYSTEM MODE ------------------------------------------------------
+		// NOT routed through the static AInstancedFoliageActor::AddInstances. That one looks like the
+		// obvious call - it is even BlueprintCallable - but it carries no FOLIAGE_API and the class has
+		// no wholesale export macro, so it compiles here and fails at LINK. Every function below is
+		// individually FOLIAGE_API marked. Build.cs documents this same trap for InputCore and
+		// ImageWrapper; it is the third time it has come up.
+		if (FoliageType)
+		{
+			AInstancedFoliageActor* IFA =
+				AInstancedFoliageActor::GetInstancedFoliageActorForCurrentLevel(World, /*bCreateIfNone=*/true);
+			if (!IFA)
+			{
+				Fail(Out, TEXT("could not get or create an InstancedFoliageActor for the current level. "
+							   "NOTHING was created."));
+				return;
+			}
+			IFA->Modify();
+
+			// AddFoliageType, NOT AddFoliageInfo. AddFoliageInfo allocates the FFoliageInfo, sets its
+			// IFA back-pointer, and stops - it never creates Implementation, which is the first thing
+			// FFoliageInfo::AddInstance dereferences. The engine only ever calls AddFoliageInfo from
+			// inside AddFoliageType, which follows it with CreateImplementation and then check()s the
+			// result. Calling it directly crashed the editor with an access violation on 0x0 at
+			// InstancedFoliage.cpp:2294.
+			//
+			// AddFoliageType also RETURNS the type actually registered, which is not always the one
+			// passed in: a foliage-type blueprint, or a type neither owned by this IFA nor an asset in
+			// its own right, gets DuplicateObject'd into the actor. Everything below therefore uses the
+			// returned pointer - keying instances by the original would silently target a different
+			// FFoliageInfo than the one just prepared.
+			const bool bCreatedInfo = (IFA->FindInfo(FoliageType) == nullptr);
+			FFoliageInfo* Info = nullptr;
+			UFoliageType* RegisteredType = IFA->AddFoliageType(FoliageType, &Info);
+			if (!Info || !RegisteredType)
+			{
+				Fail(Out, TEXT("the level's InstancedFoliageActor would not accept this foliage type. "
+							   "NOTHING was created."));
+				return;
+			}
+			// The engine check()s this, and a check() inside a handler terminates the editor rather
+			// than returning an error. Refuse instead.
+			if (!Info->Implementation.IsValid())
+			{
+				Fail(Out, TEXT("this foliage type registered with the level but produced no foliage "
+							   "implementation, so instances cannot be added to it. NOTHING was created."));
+				return;
+			}
+
+			// Counted BEFORE and AFTER, so the response reports what was actually added rather than
+			// what was asked for. Those differ if the type refuses a placement, and a caller that
+			// only ever sees its own request number would never find out.
+			const int32 Before = Info->Instances.Num();
+			for (const FTransform& Xform : Xforms)
+			{
+				FFoliageInstance Inst;
+				Inst.SetInstanceWorldTransform(Xform);
+				Info->AddInstance(RegisteredType, Inst);
+			}
+			Info->Refresh(/*Async=*/false, /*Force=*/true);
+			const int32 After = Info->Instances.Num();
+
+			Out->SetStringField(TEXT("mode"), TEXT("foliageSystem"));
+			Out->SetStringField(TEXT("foliageActorPath"), IFA->GetPathName());
+			Out->SetStringField(TEXT("foliageType"), RegisteredType->GetPathName());
+			if (RegisteredType != FoliageType)
+			{
+				// Visible rather than surprising: the level now owns its own copy, and edits to the
+				// source asset will not reach these instances.
+				Out->SetStringField(TEXT("requestedFoliageType"), FoliageType->GetPathName());
+				Out->SetStringField(TEXT("typeNote"),
+					TEXT("the level registered its OWN COPY of this foliage type rather than the asset "
+						 "you named - the engine duplicates types that are not standalone assets into "
+						 "the InstancedFoliageActor. These instances follow the copy, so later edits to "
+						 "the source asset will not affect them."));
+			}
+			Out->SetBoolField(TEXT("createdFoliageInfo"), bCreatedInfo);
+			Out->SetNumberField(TEXT("requested"), Xforms.Num());
+			Out->SetNumberField(TEXT("instanceCount"), After - Before);
+			Out->SetNumberField(TEXT("totalForType"), After);
+			if (After - Before != Xforms.Num())
+			{
+				Out->SetStringField(TEXT("countNote"), FString::Printf(
+					TEXT("asked for %d instances and the foliage type accepted %d. The difference was "
+						 "rejected by the type itself, not dropped here."), Xforms.Num(), After - Before));
+			}
+			if (!JStr(In, TEXT("label")).IsEmpty() || !JStr(In, TEXT("folder")).IsEmpty())
+			{
+				Out->SetStringField(TEXT("labelNote"),
+					TEXT("label and folder were ignored: in foliageType mode there is no holder actor to "
+						 "name - the instances go into the level's shared InstancedFoliageActor."));
+			}
+			UE_LOG(LogMifBridge, Log, TEXT("add_foliage_instances: %d instances of foliage type %s"),
+				After - Before, *FoliageType->GetName());
+			return;
+		}
+
+		// ---- STANDALONE INSTANCED-MESH MODE -------------------------------------------
 		AActor* Holder = World->SpawnActor<AActor>();
 		if (!Holder) { Fail(Out, TEXT("failed to spawn holder actor")); return; }
 		{
@@ -1036,9 +1180,18 @@ namespace MifBridge
 		const int32 Added = Xforms.Num();
 		HISM->MarkRenderStateDirty();
 
+		Out->SetStringField(TEXT("mode"), TEXT("instancedMeshActor"));
 		Out->SetStringField(TEXT("actorPath"), Holder->GetPathName());
 		Out->SetStringField(TEXT("label"), Holder->GetActorLabel());
 		Out->SetNumberField(TEXT("instanceCount"), Added);
+		// Said plainly, because the endpoint name has implied otherwise since Batch D: this actor is
+		// NOT in the Foliage system. It will not appear in Foliage edit mode and it inherits no cull
+		// distance, density or scaling from any foliage type.
+		Out->SetStringField(TEXT("modeNote"),
+			TEXT("this is a standalone actor with a HierarchicalInstancedStaticMeshComponent, NOT the "
+				 "Foliage system - it does not appear in Foliage edit mode and inherits none of a "
+				 "FoliageType's cull distance, density or scaling. Pass foliageType instead of mesh to "
+				 "place into the level's real foliage."));
 		UE_LOG(LogMifBridge, Log, TEXT("add_foliage_instances: %d instances of %s"), Added, *Mesh->GetName());
 	}
 }

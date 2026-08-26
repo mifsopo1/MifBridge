@@ -82,6 +82,61 @@ Newest first.
 
 ---
 
+## PM-009 — a public engine "add" function that allocates but does not initialise, and the crash two lines later
+
+**Symptom.** The first live call to the new `foliageType` mode of `add_foliage_instances` killed the
+editor outright. From the test harness it looked like a network fault —
+`ConnectionResetError: [WinError 10054] An existing connection was forcibly closed` — because the
+process holding the HTTP server had gone. The log had the real story:
+`EXCEPTION_ACCESS_VIOLATION reading address 0x0000000000000000` in
+`FFoliageInfo::AddInstancesImpl()` at `InstancedFoliage.cpp:2294`, one frame below
+`H_add_foliage_instances`.
+
+**Root cause.** Line 2294 is the FIRST statement of `AddInstancesImpl`:
+
+```cpp
+Implementation->PreAddInstances(InSettings, InNewInstances.Num());
+```
+
+`Implementation` was null. `AInstancedFoliageActor::AddFoliageInfo` — which is public, `FOLIAGE_API`,
+plainly named, and returns a live `FFoliageInfo&` — sets only the `IFA` back-pointer and the update
+GUID (`InstancedFoliage.cpp:3013-3021`) and returns. It never creates `Implementation`. The engine
+itself never calls it on its own: the only caller is `AddFoliageType`, which follows every branch with
+
+```cpp
+if (Info && !Info->Implementation.IsValid())
+{
+    Info->CreateImplementation(FoliageType);
+    check(Info->Implementation.IsValid());
+}
+```
+
+So the struct is deliberately half-built, and the initialisation lives in the wrapper rather than in
+the thing named "Add". Reading the header alone cannot show that — both functions are exported, both
+have plausible names, and the one that looks lower-level is the one that does not work.
+
+**Second bug found while fixing the first.** `AddFoliageType` RETURNS a `UFoliageType*`, and it is not
+always the one passed in. For a foliage-type blueprint, or a type that is neither an asset nor already
+owned by the actor, it `DuplicateObject`s the type into the IFA and registers the copy
+(`InstancedFoliage.cpp:3777-3801`). Adding instances against the original pointer would have keyed a
+different `FFoliageInfo` than the one just prepared — the same bug again, but silent instead of fatal.
+The handler now uses the returned pointer throughout, and reports `requestedFoliageType` plus a note
+when the two differ, because the level owning its own copy means later edits to the source asset will
+not reach the placed instances.
+
+**Fix.** Call `AddFoliageType(Type, &Info)`, use its return value as the type for every subsequent
+`AddInstance`, and refuse with an error if `Info->Implementation` is still invalid afterwards. That
+last guard matters on its own: the engine asserts this with `check()`, and a `check()` inside a
+handler terminates the editor instead of returning `ok:false`.
+
+**Prevention.** The general shape, and it is not specific to Foliage: **an exported engine function
+named `Add*` or `Create*` is not necessarily a complete constructor.** Before calling one from a
+handler, find who calls it inside the engine. If the only in-engine caller is a wrapper that does more
+work afterwards, that extra work is not optional and the wrapper is the real API. This is the same
+lesson as the `FOLIAGE_API` linkage check three paragraphs earlier in the same handler — reading the
+header tells you a symbol exists, not that calling it is correct.
+
+
 ## PM-007 — a FAILED call permanently added an override, because a cancelled transaction undoes nothing
 
 **Symptom.** `override_inherited_component {blueprint:"…/NPC_MifAmbient", component:"Influence",

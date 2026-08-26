@@ -1748,10 +1748,35 @@ def set_material_parameter(material: str, scalars: dict = None, vectors: dict = 
 
 
 @mcp.tool()
-def add_foliage_instances(mesh: str, instances: list, label: str = "Foliage",
-                          folder: str = "") -> dict:
-    "Create ONE actor holding N instanced transforms of a mesh (HierarchicalInstancedStaticMesh) instead of N separate actors. This is how foliage is actually done - 90 grass actors is 90 draw setups and 90 outliner rows for something that should be one. instances is a list of {x,y,z,yaw?,scale?}. A transform component that is not a number fails the whole call naming instances[N].<field> and the transaction is cancelled, so no partial cluster is left behind reported as complete."
-    return _post("add_foliage_instances", mesh=mesh, instances=instances,
+def add_foliage_instances(instances: list, mesh: str = "", foliage_type: str = "",
+                          label: str = "Foliage", folder: str = "") -> dict:
+    """Place N instanced transforms in one call instead of N separate actors.
+
+    Pass EITHER mesh OR foliage_type - they build different things, and the response says which via
+    the mode field.
+
+    foliage_type places into the level's real AInstancedFoliageActor, the same one Foliage edit mode
+    paints into, so the instances inherit that type's cull distance, density, scaling and wind. This
+    is the one to use when adding to a level that already has foliage, because it will match rather
+    than merely resemble. Find the available types with
+    find_assets(class="FoliageType_InstancedStaticMesh"); note they may live outside /Game/. Pass the
+    FoliageType asset, not the static mesh it wraps. label and folder do not apply - there is no
+    holder actor - and the response says so if you send them.
+
+    mesh builds a standalone actor with a HierarchicalInstancedStaticMeshComponent. Still one draw
+    setup and one outliner row instead of 90, but it is NOT in the Foliage system: it will not appear
+    in Foliage edit mode and inherits none of a FoliageType's settings.
+
+    instances is a list of {x,y,z,yaw?,scale?}. A transform component that is not a number fails the
+    WHOLE call, naming instances[N].<field>, with nothing created - the array is parsed before
+    anything is spawned, because the transaction cancel this used to rely on does not roll a spawn
+    back (PM-007).
+
+    In foliage_type mode the response reports requested alongside instanceCount, so a placement the
+    foliage type itself rejected is visible rather than silently absorbed.
+    """
+    return _post("add_foliage_instances", instances=instances,
+                 mesh=mesh or None, foliageType=foliage_type or None,
                  label=label, folder=folder or None)
 
 
