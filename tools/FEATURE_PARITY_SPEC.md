@@ -693,6 +693,63 @@ engine has no such class registered in this build, which is as definitive as it 
       have no expression graph, cooked Niagara crashes on duplicate. Cook keeps runtime data and drops
       editor data, and editor-side operations fall into the gap.
 
+## Hunt round three, 2026-08-26 — questions rather than families
+
+The spec has nothing left open, and the families hunted in round two came back clean. So this round
+aimed the same lens — *does this report success while doing something else* — at whole QUESTIONS that
+applied to every endpoint at once, rather than at one family at a time. The handlers read this round
+(`undo_transactions`, `set_texture_settings`, the thumbnail family) were genuinely careful; the value
+was in questions nobody had asked of any of them.
+
+- [x] **Does a modal ever reach a caller who cannot click it?** It did, and it was the worst failure
+      the bridge has. `set_variable_type` opened a "Change Variable Type" warning whenever the
+      variable had ANY referencing node — the endpoint's entire purpose — and a modal on the game
+      thread stops the HTTP ticker, so the bridge answered nothing again. PM-011. Closed twice over:
+      `FMifScopedDialogSuppression` for that endpoint, and `RunEndpoint` now runs EVERY handler under
+      `GIsRunningUnattendedScript`, which is what `UEditorAssetSubsystem` does for the same shape of
+      API. `audit_modals.py` models both dialog classes now; it had modelled only `FMessageDialog`,
+      which is why it missed this one. `audit_blocking.py` covers the other way the bridge stops
+      answering — an unbounded wait — which had no tool at all. 0 undeclared.
+
+- [x] **Does UNDO put back what an endpoint changed?** All nine checked restore exactly, including a
+      four-operation `apply_graph_patch` that reverts wholly in one undo. `tools/test_undo_integrity.py`.
+      Clean, and recorded as a result.
+
+- [x] **Does something that LOOKS like a read leave a mark?** Measured by dirty packages, which is
+      what the editor consults to decide what a save would write. 50 of 64 exercised, none dirtied
+      anything. `tools/audit_read_purity.py` NAMES the 14 it could not exercise and says they are not
+      evidence — "0 findings" across mostly-failed calls is an untested result, not a clean one.
+
+- [x] **What does the SECOND identical call do?** This found a real bug. `add_component` twice with
+      the same name returned ok twice and left `Turret` AND `Turret1`; its three siblings all refuse a
+      taken name. Now consistent, checked against the engine's own `GenerateNewComponentName` so the
+      rule cannot drift. `tools/test_idempotence.py`.
+
+- [x] **And the mirror question** — what does removing something twice do? The `remove_*` family
+      answered consistently, and the question exposed a GAP rather than a bug: there was no
+      `remove_event_dispatcher`, though everything else in that family has a remover. Built it: both
+      halves, refuses a partial removal, reports how many call/bind nodes it orphans. **286 endpoints.**
+
+- [x] **Thumbnails and textures — the two rendering families with no suite.** Thumbnails came back
+      clean: the orbit parameters each change the rendered bytes (the `capture_viewport` stale-frame
+      failure), and the alpha channel is measured rather than assumed. Textures turned up a small real
+      one: `set_texture_settings` recommended `compressionSettings:UserInterface2D` in four help
+      strings and its own parser refused it, because that is the DETAILS-PANEL name for
+      `TC_EditorIcon` and the parser matched authored names only. Fixed in the shared enum parser, so
+      `lodGroup`, `mipGenSettings` and `filter` gain it too.
+
+**What this round taught about method.** Aiming at a question rather than a family found more, because
+the families are in good shape and the questions were not being asked of any of them. Two of the
+findings came from the same shape — *an engine "add" that takes a name and hands back a different
+one, reporting success* — in unrelated subsystems (`GenerateNewComponentName`,
+`GetUniqueRetargetChainName`). Worth carrying forward as a standing suspicion rather than a fact
+about components.
+
+Also worth carrying forward, from nearly reverting a good change: **never compare timings across two
+editor sessions without checking focus.** UE throttles Slate's tick when the editor is not the
+foreground window, and per-call latency IS one tick. The suite set looked 3x slower after a commit;
+with focus restored that build was FASTER than the baseline it was being blamed against.
+
 ## Method note
 
 Every gap above was seeded from a mechanical map of the competitor's categories onto
