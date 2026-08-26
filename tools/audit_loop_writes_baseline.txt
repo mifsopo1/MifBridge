@@ -1,33 +1,6 @@
 # Per-item writes to a single-valued response field, accepted deliberately.
 # Regenerate with: python tools/audit_loop_writes.py --update-baseline
-MifBridgeAnimation.cpp:note
-MifBridgeAnimation.cpp:skeleton
-MifBridgeAuthoring.cpp:countNote
-MifBridgeAuthoring.cpp:labelNote
-MifBridgeAuthoring.cpp:requestedFoliageType
-MifBridgeAuthoring.cpp:typeNote
 MifBridgeDataTables.cpp:row
 MifBridgeDataTables.cpp:textNote
-MifBridgeDetails.cpp:note
-MifBridgeDetails.cpp:nothingModified
-MifBridgeGraphPatch.cpp:note
-MifBridgeIKRig.cpp:goalNote
-MifBridgeIKRig.cpp:unmappedNote
-MifBridgeIntrospect.cpp:knotNote
-MifBridgeMaterials.cpp:compiling
-MifBridgeMaterials.cpp:numRemainingJobs
 MifBridgeMaterials.cpp:property
-MifBridgeNodes.cpp:defaultError
 MifBridgeNodes.cpp:ok
-MifBridgeNodes2.cpp:duplicatePinsRemoved
-MifBridgePIE.cpp:droppedLines
-MifBridgePIE.cpp:pieWorld
-MifBridgePIE.cpp:timeSeconds
-MifBridgeThumbnail.cpp:requestedHeight
-MifBridgeThumbnail.cpp:requestedWidth
-MifBridgeThumbnail.cpp:sizeNote
-MifBridgeUI.cpp:invoked
-MifBridgeUI.cpp:note
-MifBridgeUI.cpp:resolvedVia
-MifBridgeUI.cpp:resolvedVia
-MifBridgeWidgets.cpp:note

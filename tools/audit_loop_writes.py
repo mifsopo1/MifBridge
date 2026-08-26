@@ -44,11 +44,23 @@ BASELINE = os.path.join(HERE, "audit_loop_writes_baseline.txt")
 NL = chr(10)
 
 # The two sites that motivated the tool. If the scan cannot find these, the scan is broken.
-KNOWN = [("MifBridgeAuthoring.cpp", 306, "labelNote"),
-         ("MifBridgeAuthoring.cpp", 455, "labelNote")]
+# Sites the scan MUST find, asserted on every run. The original two (MifBridgeAuthoring labelNote,
+# lines 306 and 455) were the bug that motivated this tool and were FIXED on 2026-08-26, so they no
+# longer exist to anchor against - the self-check correctly refused a green result until this list was
+# updated, which is the whole point of it.
+#
+# These replacements are genuine in-loop writes that are CORRECT, which makes them stable anchors: they
+# are not going to be fixed away. MifBridgeNodes ok is an any-failure accumulator writing false
+# repeatedly (idempotent); MifBridgeDataTables row writes once and returns on the next line.
+KNOWN = [("MifBridgeNodes.cpp", 2583, "ok"),
+         ("MifBridgeDataTables.cpp", 489, "row")]
 
 # (?<![A-Za-z0-9_]) so OpOut->Set / RowOut->Set / SubOut->Set do not match: those are per-item objects
 # and writing to them inside a loop is exactly right.
+TAB_CH = chr(9)
+# a line whose first non-tab content opens a loop
+LOOP_RE = re.compile("^" + chr(9) + "*(for|while)" + chr(92) + "s*" + chr(92) + "(")
+
 WRITE = re.compile(r'(?<![A-Za-z0-9_])Out->Set(\w*)Field\s*\(\s*TEXT\("([^"]+)"')
 
 
@@ -58,6 +70,22 @@ def scan():
         name = os.path.basename(path)
         text = io.open(path, encoding="utf-8", errors="replace").read()
         lines = text.replace(chr(13) + NL, NL).split(NL)
+        # Span of every loop BODY in this file, by brace matching. Done once per file rather than
+        # per candidate: it is O(lines) and the alternative is re-walking for every write.
+        loop_ranges = []
+        for li, lc in enumerate(lines):
+            if not LOOP_RE.match(lc):
+                continue
+            depth, k, opened = 0, li, False
+            while k < len(lines):
+                depth += lines[k].count(chr(123)) - lines[k].count(chr(125))
+                if chr(123) in lines[k]:
+                    opened = True
+                if opened and depth <= 0:
+                    break
+                k += 1
+            if opened:
+                loop_ranges.append((li, k))
         for i, ln in enumerate(lines, 1):
             # SKIP COMMENTS. This file's comments quote the code they replaced - the labelNote fix
             # left a line reading `//   Out->SetStringField(TEXT("labelNote"), LabelNote);` directly
@@ -77,12 +105,18 @@ def scan():
             # `if` nested in a handler, which is not a loop.
             if tabs < 4:
                 continue
-            ctx = lines[max(0, i - 41):i - 1]
-            if any(re.match(r"^\t{2,%d}(for|while)\s*\(" % (tabs - 1), c) for c in ctx):
-                # KEYED ON file:field, NOT ON THE LINE NUMBER. A ratcheted baseline keyed by line
-                # raises a false alarm every time anything above a site is edited: adding a six-line
-                # comment moved four entries and the tool reported them as newly discovered. The line
-                # is still shown, for finding the thing - it just is not what identity means here.
+            # INSIDE THE LOOP BODY, decided by BRACE MATCHING rather than a heuristic.
+            #
+            # Two earlier attempts got this wrong and both are worth remembering. Looking back for any
+            # for-statement within 40 lines also flags writes that FOLLOW a loop - that is how the
+            # foliage sites and remove_pin's duplicateNote were reported, each executing once after its
+            # loop finished. Then comparing INDENTATION failed the other way: a write nested inside an
+            # if within a loop meets the if's brace first, which is strictly shallower but is not a
+            # for, so every site was rejected and the scan found nothing at all.
+            #
+            # loop_ranges (computed once per file, above) holds the [open, close] line span of every
+            # loop BODY, matched on braces. A write is in a loop exactly when its line falls in one.
+            if any(lo < i <= hi for lo, hi in loop_ranges):
                 found.append(("%s:%s" % (name, m.group(2)), i))
     return sorted(found)
 
