@@ -78,6 +78,34 @@ Never work from a typed list — one was fabricated once and a third of it was i
   false claims in both suite docstrings ('lives in memory only', 'vanishes when the editor restarts')
   are corrected too, because that belief is what stopped anyone looking. Verified: run both suites and
   Content has zero files afterwards. Empty directories remain and are harmless.
+
+## Field reports merged from the Curfew (UE 5.7) deployment, 2026-08-26
+
+- [ ] **save_package on a World Partition map saves the map and NONE of its actors, silently.** The
+  most valuable item in the batch and it nearly cost a session: 409 actors stayed dirty in memory
+  behind an accurate ok:true and would have been lost on reload. The fix is cheap - when the target is
+  a partitioned world, report the count of still-dirty external actor packages and name
+  save_dirty_packages.
+- [ ] **save_dirty_packages cannot commit a DELETED package and reports it as failure.** 915 external
+  actor packages whose actors were destroyed stayed on disk, reported as failed saves with a
+  speculative in-flight reason that was simply wrong. World Partition reloads them as ghost actors.
+  Route through UEditorLoadingAndSavingUtils::SaveDirtyPackages, which handles deletions in the same
+  pass, or at minimum detect a package whose outer object is gone and say that instead of guessing.
+- [ ] **There is no list_endpoints.** describe_endpoint needs a name you already have, so discovery
+  means grepping plugin source - that is how delete_level_actor was found, after three wrong guesses.
+  Add list_endpoints {filter?} returning names plus the one-line summary describe_endpoint already has.
+- [ ] **trace_ground and list_level_actors read DIFFERENT worlds during PIE** and neither says which.
+  Together they read as catastrophic when nothing is wrong. Echo the world operated on, the way
+  capture_camera echoes cameraSource.
+- [ ] **get_property cannot reach UBodySetup::AggGeom**, so collision primitive shape is unreachable.
+  Neither AggGeom nor aggregate_geom resolves.
+- [ ] **list_level_actors truncation is honest in the response but invisible in describe_endpoint.** A
+  cleanup routine reported clearing 200/200 while 43 actors remained. Mention truncated in the summary.
+- [ ] **No engine-version guards exist anywhere in the source.** No ENGINE_MINOR_VERSION, nothing. It
+  builds for 5.3.2 and 5.7 only because every API it touches happens to exist in both. This is the
+  first thing that breaks as breadth grows toward parity, and it needs a policy before it does.
+- [ ] **The Curfew copy is vendored, not linked.** Two divergent lines of development, 230 endpoints
+  against 274, and issues filed in one repo invisible to the other. Decide how they sync.
 ## Gaps worth closing
 
 - [x] **Every DEFERRED engine call escapes the modal backstop — a hole in the safety net itself.**

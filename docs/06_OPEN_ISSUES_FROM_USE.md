@@ -974,3 +974,131 @@ later failures announce that nothing was created. The FIRST such message (the IF
 null) is accurate; the ones after it are not. PM-007 means there is no rollback to make them true, so
 the message has to change rather than the behaviour.
 
+---
+
+# MERGED FROM THE CURFEW DEPLOYMENT (UE 5.7), 2026-08-26
+
+MifBridge is vendored into D:/RoguelikeDealerGame rather than cloned from this repo, so a second line
+of development and issue-filing has been running there against UE 5.7 and never reached this file.
+That copy is at 230 endpoints to this one's 274. Everything below was hit for real while building a
+city in L_City_P and is reproduced verbatim - it is the general-UE5 use case this tool is FOR, and two
+of the items are silent-success bugs of exactly the class hunted here all night.
+
+Nothing below has been actioned in this repo yet; each has a spec item.
+# Found in use — CURFEW city building, 2026-08-25/26
+
+Filed from a long session laying a street grid, ground, alleys, buildings and props into
+`L_City_P`. Every item below was hit for real and cost time; none came from reading source.
+
+## 1. `save_package` on a World Partition map saves the map and NONE of its actors — silently
+
+**This nearly cost a session's work and is the most valuable item here.**
+
+`L_City_P` is a World Partition map with One-File-Per-Actor. Every actor lives in its own package
+under `Content/__ExternalActors__`. A script placed 409 actors and called:
+
+    save_package {path: "/Game/CF/Maps/L_City_P"}   -> ok:true
+
+The map package was indeed written. All 409 actors stayed **dirty in memory**, and would have been
+lost on the next level reload. On disk the actor count stayed at 223 and nothing had been written
+for half an hour. The correct call is `save_dirty_packages {maps:true, content:true}`, which wrote
+**418 packages** and took the count to 641.
+
+`ok:true` was accurate — the requested package *was* saved — which is exactly what makes it
+dangerous. **Suggested fix:** when `save_package` targets a map that `UWorld::IsPartitionedWorld()`,
+return a `note` naming the count of still-dirty external actor packages, e.g.
+`"note": "3 dirty external actor package(s) remain — use save_dirty_packages"`. Cheap, and it turns
+a silent data-loss trap into a one-line warning.
+
+## 2. No endpoint enumeration — `list_endpoints` 404s
+
+`describe_endpoint` is excellent, but it needs a name you already have. There is no
+`list_endpoints`, so discovering what exists means grepping
+`Source/MifBridge/Private/MifBridgeDescribe.cpp` in the plugin. That is how `delete_level_actor`
+was eventually found, after guessing `delete_actor`, `destroy_actor` and `remove_actor` — three
+round trips that a listing would have saved.
+
+**Suggested fix:** `list_endpoints {filter?}` returning names plus the one-line summary
+`describe_endpoint` already holds.
+
+## 3. `list_level_actors` defaults to 200 and truncates
+
+Default `limit` is 200. The response is honest — `count:200, matched:239, truncated:true` — but a
+caller that reads only `actors` gets a silently short list. This bit a cleanup routine that
+reported "cleared 200/200" while 43 actors remained.
+
+Not a defect so much as a sharp edge; the fields to check are there. **Suggested fix:** mention
+`truncated` in the `describe_endpoint` summary so it is visible without reading a response first.
+
+## 4. `get_property` cannot reach `UBodySetup::AggGeom`
+
+    get_property {objectPath: "...Mesh_Props_Barrier_01", propertyPath: "body_setup"}   -> ok
+    ... then AggGeom / aggregate_geom on the BodySetup                                   -> fails
+
+    "BodySetup: Failed to find property 'aggregate_geom' for attribute 'aggregate_geom'"
+
+Neither `AggGeom` nor the snake_case form resolves, so collision primitive counts are unreachable
+through the bridge. Worked around by spawning the mesh and reading
+`get_actor_bounds(bOnlyCollidingComponents=true)`, which answers "does it collide" but not "with
+what shape". Relevant to any question about whether a prop blocks a pawn.
+
+## 5. `spawn_actor_in_level` requires `actorClass` even when `staticMesh` is given
+
+Not a bug, and the error is genuinely good:
+
+    "'actorClass' is required and must name a class (an empty value would silently resolve to
+     this blueprint's own class)"
+
+Filed as a **positive example**. It states the requirement *and* the reason the permissive
+behaviour would be worse. The Blueprint-class form needs the full generated path
+(`/Game/.../BP_Foo.BP_Foo_C`) and that error says so too. More endpoints should read like these.
+
+## 6. `save_dirty_packages` refusing during PIE — also correct
+
+    "cannot save map packages during PIE — stop_pie first (or pass maps=false for a
+     content-only save)"
+
+Names the cause and both remedies. Worth keeping as the house style.
+
+## 7. Note on `trace_ground` versus `list_level_actors` during PIE
+
+These read **different worlds**. With PIE running, `trace_ground` hits the PIE world while
+`list_level_actors` reports the editor world — which, in a World Partition map with no cells
+resident, is empty. The combination reads as catastrophic ("ground exists but zero actors, and
+spawns return null") when nothing is wrong at all. Both behaviours are defensible; the confusion
+is real. **Suggested fix:** have both echo which world they operated on, the way `capture_camera`
+echoes `cameraSource`.
+
+## 8. `save_dirty_packages` cannot commit a DELETED package — and reports it as a failure
+
+Destroying actors in an OFPA map leaves their external-actor packages needing **deletion**, not
+saving. `save_dirty_packages` calls SavePackage on a package with no object left in it, which
+fails, so:
+
+    save_dirty_packages {maps:true, content:true}
+      -> ok:true, saved:0, failed:915
+         reason: "save failed (see editor log; still referenced by an in-flight operation?)"
+
+The guessed reason is misleading — nothing was in flight. 915 `.uasset` files stayed on disk with
+their actors already destroyed in memory, which World Partition would load back as ghost actors
+next session.
+
+`EditorAssetLibrary.delete_asset` does NOT reach them either: external actor packages are not in
+the asset registry as ordinary assets, so `does_asset_exist` returns false and `delete_asset`
+returns false for every one.
+
+**What works** is the engine's own call, which handles deletions as part of the same pass:
+
+    unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, True)   -> True
+
+That took the level from 1141 actor files to 226 — exactly the pre-existing content — in one call.
+
+**Suggested fix:** have `save_dirty_packages` route through
+`FEditorFileUtils::SaveDirtyPackages` / `UEditorLoadingAndSavingUtils::SaveDirtyPackages` rather
+than iterating SavePackage itself, so deletions are handled; or at minimum detect a package whose
+outer object is gone and report `"needs deletion, not save"` instead of a speculative in-flight
+message.
+
+**Sharp edge worth documenting either way:** `does_asset_exist` answers a question about the asset
+registry, not about a file on disk. Treating "not in the registry" as "already deleted" made my
+first cleanup pass report 915 successful deletions while changing nothing at all.
