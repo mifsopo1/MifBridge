@@ -136,7 +136,6 @@ has run.
 | `MifBridgeNodes5.cpp` | Generic reflection property get/set (`set_property` dot-path walker) |
 | `MifBridgeWidgets.cpp` | `UWidgetBlueprint` — Is-Variable, bindings, widget tree |
 | `MifBridgeAnimation.cpp` | Animation **asset** introspection (read-only) |
-| `MifBridgeCooked.cpp` | Mounted-container / cooked-package introspection |
 | `MifBridgeDelegates / Components / Interfaces / DataTables / AssetOps` | Their namesakes |
 | `MifBridgeRecipes.cpp` | Composite multi-node recipes |
 | `MifBridgeNodes7.cpp` | Later node additions (the `Nodes*` split is chronological, not thematic) |
@@ -157,6 +156,20 @@ has run.
 | `MifBridgeAssetOps.cpp` | Asset lifecycle (delete/rename/duplicate), referencers, dependencies, `audit_unused` |
 | `MifBridgeReconstruct.cpp` | `create_editable_child` — **requires the engine fork** (`CompiledBlueprintReconstructor.h`) |
 | `MifBridgePipeline.cpp` | Mod-loader log tail, cook helper |
+| `MifBridgeCollision.cpp` | Collision profiles and per-component collision; simplified collision generation via UnrealEd's private `GeomFitUtils.h` |
+| `MifBridgeConsole.cpp` | `exec_console`, `get_cvar`, `set_cvar` — console and CVar access, distinct from `run_console` which is deliberately unguarded |
+| `MifBridgeDetails.cpp` | The Details panel's read/compare/reset verbs: `describe_property`, `diff_properties_vs_default`, `reset_property_to_default`, `edit_container` |
+| `MifBridgeExport.cpp` | `export_asset` — the outbound half of the Blender round trip |
+| `MifBridgeFunctions.cpp` | `implement_interface_function`, `remove_function` |
+| `MifBridgeGraphPatch.cpp` | `apply_graph_patch` — many dependent graph edits in one call, with a real inverse journal. Atomicity CANNOT come from the transaction system here (PM-007), so this keeps its own |
+| `MifBridgeImport.cpp` | `import_texture` (file and base64), `import_asset`, `reimport_asset`, `set_texture_settings` |
+| `MifBridgeNodePins.cpp` | `add_node_pin` — adding a pin to an existing node, as opposed to wiring two that exist |
+| `MifBridgeThumbnail.cpp` | Thumbnail render and write. Writes PNG via `PNGCompressImageArray` + `FFileHelper` rather than `SaveImageByExtension`, to stay off a module dependency |
+| `MifBridgeUI.cpp` | Editor UI surface: commands, tabs, synthesised key chords, opening asset editors |
+| `MifBridgeSkeleton.cpp` | `list_bones` — the bone hierarchy of a Skeleton or SkeletalMesh. Nothing else could name a bone: `ReferenceSkeleton` is a plain C++ member, so reflection cannot reach it |
+| `MifBridgeIKRig.cpp` | IK Rig and IK Retargeter authoring — retarget root, chains, goals, solvers, chain mapping. Compiled conditionally behind `MIF_WITH_IKRIG`; the endpoints stay REGISTERED on an engine without the plugin and refuse with that reason |
+| `MifBridgeNiagara.cpp` | `list_niagara_user_parameters` — reads a parameter store's values without a Niagara module dependency. The store holds THREE parallel arrays behind one offset list (§12 of the gotchas) |
+| `MifBridgeDescribe.cpp` | `describe_endpoint` — the endpoint's own parameter contract, read from the same declaration the guard uses, so documentation cannot drift from enforcement |
 
 ### Adding an endpoint — files that MUST stay in sync
 
