@@ -153,6 +153,31 @@ def _post(endpoint: str, **payload) -> dict:
             "error": f"non-JSON response (HTTP {response.status_code})",
             "body": response.text[:2000],
         }
+    # An endpoint the running DLL does not have never reaches MifBridge's own error handling. Routes
+    # are bound one per endpoint (MifBridgeServer.cpp), so an unknown path is answered by Epic's HTTP
+    # router with {"errorCode": "...route_handler_not_found", "errorMessage": ""} - no `ok`, and an
+    # EMPTY message. A caller checking r["ok"] gets None and one reading r["error"] gets nothing.
+    #
+    # The realistic way to meet this is not a typo, it is DRIFT: this file gains a tool and the editor
+    # is still running a DLL built before it. That deserves to say so, since the fix is a rebuild and
+    # nothing in the raw response hints at it.
+    if isinstance(data, dict) and "ok" not in data:
+        code = str(data.get("errorCode") or "")
+        if "route_handler_not_found" in code or response.status_code == 404:
+            return {
+                "ok": False,
+                "error": (
+                    f"the running editor has no endpoint named '{endpoint}'. Its MifBridge build is "
+                    f"probably older than this MCP server - rebuild the plugin, or call self_audit to "
+                    f"see the endpoint list the editor actually has."
+                ),
+                "errorCode": code or f"HTTP {response.status_code}",
+            }
+        if code:
+            # Any other bare errorCode from the HTTP layer: pass it through in a shape the caller can
+            # actually test, rather than a dict with no `ok` in it.
+            return {"ok": False, "error": data.get("errorMessage") or code, "errorCode": code}
+
     _log("<-", endpoint, data)
     return data
 
