@@ -1698,11 +1698,13 @@ def load_level(path: str) -> dict:
 # (the ground trace is a world-space line trace); in local space it was silently ignored.
 def set_spline_points(actor_path: str, points: list, component: str = None, space: str = "world",
                       point_type: str = "curve", closed_loop: bool = False,
-                      snap_to_ground: bool = False, ground_offset: float = 0.0) -> dict:
-    "Author a spline's points - THIS IS WHAT MAKES NPCs WALK. The game routes wandering NPCs along BP_SegmentedPathTaskMarker, whose PathSpline is a USplineComponent. points is [{x,y,z},...] (min 2). point_type: curve|linear|constant|curveClamped|curveCustomTangent. snap_to_ground traces each point down onto the terrain, since a route authored at a flat Z floats or buries itself on uneven ground. Every point is validated BEFORE the existing spline is cleared: a component that is not a number fails the call naming points[N].<field>, rather than silently becoming 0 and bending the route through the origin."
+                      snap_to_ground: bool = False, ground_offset: float = 0.0,
+                      skip_post_edit_change: bool = False) -> dict:
+    "Author a spline's points - THIS IS WHAT MAKES NPCs WALK. The game routes wandering NPCs along BP_SegmentedPathTaskMarker, whose PathSpline is a USplineComponent. points is [{x,y,z},...] (min 2). point_type: curve|linear|constant|curveClamped|curveCustomTangent. snap_to_ground traces each point down onto the terrain, since a route authored at a flat Z floats or buries itself on uneven ground. Every point is validated BEFORE the existing spline is cleared: a component that is not a number fails the call naming points[N].<field>, rather than silently becoming 0 and bending the route through the origin. skip_post_edit_change=True is REQUIRED on any blueprint whose construction script rebuilds its own spline - BP_CarRoadSpline, BP_SplineSidewalk, BP_QuestNPCWalkPath and BP_SegmentedPathTaskMarker all do. Without it PostEditChange re-runs the construction script, which THROWS AWAY the points just written: the call still returns ok with the right pointCount and a read-back returns 2."
     return _post("set_spline_points", actorPath=actor_path, points=points, component=component,
                  space=space, pointType=point_type, closedLoop=closed_loop,
-                 snapToGround=snap_to_ground, groundOffset=ground_offset)
+                 snapToGround=snap_to_ground, groundOffset=ground_offset,
+                 skipPostEditChange=skip_post_edit_change)
 
 
 @mcp.tool()
@@ -1714,11 +1716,13 @@ def get_spline_points(actor_path: str, component: str = None, space: str = "worl
 @mcp.tool()
 def snap_actors_to_ground(actor_paths: list = None, folder: str = None, label_contains: str = None,
                           all: bool = False, offset: float = 0.0, align_to_normal: bool = False,
-                          trace_height: float = 100000.0) -> dict:
-    "Drop actors onto the terrain, one trace each, with the actor ITSELF excluded from the trace. Doing this from outside is both slow (one HTTP round-trip per actor) and wrong - a trace at a building's own XY hits its roof and 'snaps' it onto itself, climbing every call. Places the BOTTOM of each actor's bounds on the hit, so pivots that are not at the base still sit correctly. Landscapes are skipped. Requires a selector (actor_paths / folder / label_contains / all) - it refuses to guess."
+                          trace_height: float = 100000.0, ground_actor: str = None,
+                          allow_any_hit: bool = False) -> dict:
+    "Drop actors onto the terrain, one trace each, with the actor ITSELF excluded from the trace. Doing this from outside is both slow (one HTTP round-trip per actor) and wrong - a trace at a building's own XY hits its roof and 'snaps' it onto itself, climbing every call. Places the BOTTOM of each actor's bounds on the hit, so pivots that are not at the base still sit correctly. Landscapes are skipped. Requires a selector (actor_paths / folder / label_contains / all) - it refuses to guess. By DEFAULT only a Landscape counts as ground, so furniture dropped onto a floor, table or counter finds nothing: pass ground_actor='<label, name or path of the surface>' to nominate that actor as the ground, or allow_any_hit=True to accept the first thing hit."
     return _post("snap_actors_to_ground", actorPaths=actor_paths, folder=folder,
                  labelContains=label_contains, all=all, offset=offset,
-                 alignToNormal=align_to_normal, traceHeight=trace_height)
+                 alignToNormal=align_to_normal, traceHeight=trace_height,
+                 groundActor=ground_actor, allowAnyHit=allow_any_hit)
 
 
 # --------------------------------------------------------------------------

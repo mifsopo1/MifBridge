@@ -39,7 +39,20 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     passes = 1 if "--once" in sys.argv else 2
     if args:
-        suites = [s for s in suites if any(a in s for a in args)]
+        # A FILTER THAT MATCHES NOTHING IS AN ERROR, NOT AN EMPTY PASS. Every argument that does not
+        # start with -- is a suite-name substring, so a mistyped flag VALUE lands here as a filter:
+        # `--passes 2` filters on "2", matches no suite, and the runner then prints
+        #   0 run(s) across 0 suites, 0 failed, 0 took the editor down
+        # which reads exactly like a clean regression. That happened on 2026-08-26 and a batch of six
+        # fixes was momentarily believed to be verified when nothing had run at all. Same shape as the
+        # Build.bat postmortem: a success report from a step that never executed.
+        wanted = [s for s in suites if any(a in s for a in args)]
+        if not wanted:
+            print("no suite matches %s" % (args,))
+            print("(if you meant a flag, note only --once and --help are flags; everything else is"
+                  " treated as a suite-name filter)")
+            return 2
+        suites = wanted
 
     # Claim the editor for the duration. See mifaudit.warn_if_sweep_running for why: a second process
     # driving the same editor corrupts THIS run's results, not just its own, because the undo buffer

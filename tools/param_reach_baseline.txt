@@ -173,15 +173,12 @@ set_pin_type.name
 set_property.editcondition
 set_property.respectclamps
 set_retarget_chain_mapping.retargeter
-set_spline_points.skipposteditchange
 set_sublevel_streaming.level
 set_sublevel_visibility.level
 set_texture_settings.texturegroup
 set_variable_default.default
 set_variable_flags.var
 set_variable_flags.variable
-snap_actors_to_ground.ground
-snap_actors_to_ground.groundactor
 splice_into_exec.afterexecout
 splice_into_exec.insertin
 splice_into_exec.insertout
