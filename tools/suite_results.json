@@ -1,10 +1,19 @@
 [
  {
+  "suite": "test_anim_nodes.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 13   FAIL 0",
+  "seconds": 6.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_array_wildcard_durability.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 6.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -22,7 +31,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 8.4,
+  "seconds": 8.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -31,7 +40,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 7.1,
+  "seconds": 7.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -40,7 +49,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 7.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -76,7 +85,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 60.0,
+  "seconds": 60.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -148,7 +157,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 12.0,
+  "seconds": 12.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -198,6 +207,15 @@
   "tail": ""
  },
  {
+  "suite": "test_landscape_info.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 18   FAIL 0",
+  "seconds": 6.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_list_bones.py",
   "pass": 1,
   "rc": 0,
@@ -229,7 +247,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 12.7,
+  "seconds": 12.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -238,7 +256,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 9.7,
+  "seconds": 10.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -270,6 +288,15 @@
   "tail": ""
  },
  {
+  "suite": "test_niagara.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 53   FAIL 0",
+  "seconds": 8.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_niagara_params.py",
   "pass": 1,
   "rc": 0,
@@ -288,11 +315,20 @@
   "tail": ""
  },
  {
+  "suite": "test_perf_stats.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 25   FAIL 0",
+  "seconds": 8.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_pinlifetime.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 10.4,
+  "seconds": 18.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -301,7 +337,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 13.0,
+  "seconds": 24.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_ported_anim.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 19   FAIL 0",
+  "seconds": 12.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -310,7 +355,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 8.0,
+  "seconds": 15.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -319,7 +364,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 8.0,
+  "seconds": 14.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_report_intake.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 34   FAIL 0",
+  "seconds": 0.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -328,7 +382,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 8.0,
+  "seconds": 14.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -337,7 +391,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 15.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -346,7 +400,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 26.0,
+  "seconds": 49.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_sequencer.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 35   FAIL 0",
+  "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -355,7 +418,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 8.5,
+  "seconds": 14.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -364,7 +427,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 24.3,
+  "seconds": 46.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -373,7 +436,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 5.3,
+  "seconds": 9.8,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_spawn_many.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 27   FAIL 0",
+  "seconds": 16.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -382,7 +454,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 10.7,
+  "seconds": 19.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -391,7 +463,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 8.3,
+  "seconds": 16.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -400,7 +472,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.4,
+  "seconds": 12.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_timeline.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 12.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -409,7 +490,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 10.3,
+  "seconds": 17.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -418,7 +499,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 8.3,
+  "seconds": 14.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -427,7 +508,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 90.7,
+  "seconds": 71.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_unknown_endpoint.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -436,7 +526,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 5.4,
+  "seconds": 0.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -445,7 +535,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 15.0,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -454,7 +544,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -463,7 +553,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 11.0,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -472,7 +562,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -481,7 +571,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 11.4,
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_anim_nodes.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 13   FAIL 0",
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -490,7 +589,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 6.3,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -499,7 +598,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -508,7 +607,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 9.0,
+  "seconds": 10.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -517,7 +616,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 8.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -526,7 +625,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.3,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -535,7 +634,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 13.7,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -544,7 +643,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 15.7,
+  "seconds": 16.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -553,7 +652,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 6.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -562,7 +661,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 57.7,
+  "seconds": 59.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -607,7 +706,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 9.3,
+  "seconds": 8.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -616,7 +715,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 0.2,
+  "seconds": 0.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -684,11 +783,20 @@
   "tail": ""
  },
  {
+  "suite": "test_landscape_info.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 18   FAIL 0",
+  "seconds": 6.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_list_bones.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 14.0,
+  "seconds": 13.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -706,7 +814,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 10.3,
+  "seconds": 10.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -724,7 +832,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 9.7,
+  "seconds": 10.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -742,7 +850,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 5.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -752,6 +860,15 @@
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
   "seconds": 11.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_niagara.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 53   FAIL 0",
+  "seconds": 8.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -774,6 +891,15 @@
   "tail": ""
  },
  {
+  "suite": "test_perf_stats.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 25   FAIL 0",
+  "seconds": 8.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_pinlifetime.py",
   "pass": 2,
   "rc": 0,
@@ -788,6 +914,15 @@
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
   "seconds": 13.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_ported_anim.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 19   FAIL 0",
+  "seconds": 7.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -810,6 +945,15 @@
   "tail": ""
  },
  {
+  "suite": "test_report_intake.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 34   FAIL 0",
+  "seconds": 0.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_reroute.py",
   "pass": 2,
   "rc": 0,
@@ -823,7 +967,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 7.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -832,7 +976,16 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 25.7,
+  "seconds": 25.9,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_sequencer.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 35   FAIL 0",
+  "seconds": 4.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -850,7 +1003,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 24.3,
+  "seconds": 24.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -864,11 +1017,20 @@
   "tail": ""
  },
  {
+  "suite": "test_spawn_many.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 27   FAIL 0",
+  "seconds": 9.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_structs.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 10.7,
+  "seconds": 10.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -877,7 +1039,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 8.3,
+  "seconds": 9.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -886,7 +1048,16 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.4,
+  "seconds": 7.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_timeline.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 7.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -913,7 +1084,16 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 90.4,
+  "seconds": 18.6,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_unknown_endpoint.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 5.3,
   "editorSurvived": true,
   "tail": ""
  },

@@ -1362,6 +1362,11 @@ namespace MifBridge
 	// MIF_WITH_NIAGARA and compile a named refusal when it is absent - registered on every engine.
 	MIF_DECL(describe_niagara_system);
 	MIF_DECL(list_niagara_emitters);
+
+	// GAME FEATURES (MifBridgeGameFeatures.cpp). Also plugin-guarded. Note the version split recorded
+	// in that file: GetPluginState is 5.7-ONLY, so `state` is derived from the four portable predicates.
+	MIF_DECL(list_game_feature_plugins);
+	MIF_DECL(describe_game_feature_plugin);
 	MIF_DECL(add_sublevel);
 	MIF_DECL(remove_sublevel);
 	MIF_DECL(set_sublevel_visibility);

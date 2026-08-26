@@ -49,6 +49,7 @@
 #include "K2Node_Knot.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Misc/EngineVersion.h"   // FEngineVersion::Current() — build identity in self_audit
+#include "MifBridgeVersion.h"      // MIF_ENGINE_AT_LEAST - see docs/02_GOTCHAS.md section 14
 #include "Misc/PackageName.h"
 #include "Misc/PackagePath.h"     // FPackagePath for IsCookedOrContainerPackage
 #include "ScopedTransaction.h"
@@ -364,6 +365,8 @@ namespace MifBridge
 			MIF_BIND(describe_level_sequence);
 			MIF_BIND(describe_niagara_system);
 			MIF_BIND(list_niagara_emitters);
+			MIF_BIND(list_game_feature_plugins);
+			MIF_BIND(describe_game_feature_plugin);
 			MIF_BIND(add_sublevel);
 			MIF_BIND(remove_sublevel);
 			MIF_BIND(set_sublevel_visibility);
@@ -984,6 +987,14 @@ namespace MifBridge
 		Out->SetStringField(TEXT("buildDate"), ANSI_TO_TCHAR(__DATE__));
 		Out->SetStringField(TEXT("buildTime"), ANSI_TO_TCHAR(__TIME__));
 		Out->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
+		// The string above is the full build identity and needs PARSING to compare. These three are the
+		// same numbers already broken out, because every caller that cares about engine version cares in
+		// order to make a >= comparison, and making each one write its own parser is how they disagree.
+		// This matters more here than in most plugins: MifBridge targets 5.3 and 5.7 at once and the two
+		// differ in BOTH directions (gotchas section 14), so a caller genuinely does need to branch.
+		Out->SetNumberField(TEXT("engineMajor"), ENGINE_MAJOR_VERSION);
+		Out->SetNumberField(TEXT("engineMinor"), ENGINE_MINOR_VERSION);
+		Out->SetNumberField(TEXT("enginePatch"), ENGINE_PATCH_VERSION);
 
 		// The modal backstop, observed rather than asserted. This handler runs through RunEndpoint like
 		// every other, so reading the flag HERE reports what a handler actually sees. False means the

@@ -2918,6 +2918,18 @@ def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: i
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def list_game_feature_plugins(name_contains: str = None, active_only: bool = False) -> dict:
+    "List the project's Game Feature plugins - how content is added to a shipped game without patching the base game - with their derived state and the raw predicates behind it. IMPORTANT: `state` is DERIVED from installed/registered/loaded/active, because the engine's own GetPluginState exists only on UE 5.7 and not on 5.3; stateFlags carries the raw predicates. gameFeaturePluginCount and totalDiscoveredPlugins are reported so a filtered list never reads as completeness."
+    return _post("list_game_feature_plugins", nameContains=name_contains, activeOnly=active_only)
+
+
+@mcp.tool()
+def describe_game_feature_plugin(name: str) -> dict:
+    "Describe one Game Feature plugin by NAME (like 'DDS2Casino'), not by asset path: its derived state, descriptor fields, and modules. A plugin that exists but is not a game feature is ANSWERED rather than refused, with isGameFeature false - 'this is not a game feature' is the useful answer to that question. detectedBy says which test matched: the subsystem, the ExplicitlyLoaded descriptor flag, or both."
+    return _post("describe_game_feature_plugin", name=name)
+
+
+@mcp.tool()
 def describe_niagara_system(path: str) -> dict:
     "Describe a NiagaraSystem: how many emitters it has and how many are actually ENABLED. A disabled emitter is invisible at runtime and perfectly visible in the editor, which is a common source of 'the effect does nothing', so the enabled and disabled counts are reported separately. If a system reports zero emitters and its package is COOKED, that may mean its editor-only emitter data was stripped rather than that the effect is empty."
     return _post("describe_niagara_system", path=path)
