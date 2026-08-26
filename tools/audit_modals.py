@@ -158,6 +158,55 @@ def enclosing_function_start(lines, idx):
     return max(0, idx - 60)
 
 
+
+# --------------------------------------------------------------------------- deferred work
+# THE GUARD DOES NOT SURVIVE A DEFERRAL, and that is invisible in the source unless you look for it.
+# RunEndpoint wraps every handler in TGuardValue<bool>(GIsRunningUnattendedScript, true) so a modal is
+# cancelled rather than left hanging the ticker. A TGuardValue RESTORES ON SCOPE EXIT - so a handler
+# that schedules its real work for a later tick and returns immediately runs that work with the guard
+# already gone.
+#
+# Six handlers do exactly that, and they must: new_level and load_level swap the UWorld, which cannot
+# happen while FTickTaskManager is iterating the level list, and the sublevel mutators defer for the
+# same reason. Deferring is right; losing the guard was not noticed until a source hunt found it.
+#
+# MifDeferToNextTick re-arms the guard inside the lambda. This check exists so the next deferral added
+# to this module cannot quietly skip it - the failure would be a modal reaching a caller who cannot
+# click it, which is the worst outcome this bridge has (PM-011), and no suite can catch it because
+# every one of those endpoints is on the audit harness DENY list.
+DEFER_HELPER = "MifDeferToNextTick"
+RAW_DEFER = "SetTimerForNextTick"
+
+
+def check_deferrals():
+    """Every deferral must go through the guarded helper. Returns the offending (file, line) list."""
+    bad = []
+    for fname in sorted(os.listdir(SRC)):
+        if not fname.endswith(".cpp"):
+            continue
+        with open(os.path.join(SRC, fname), encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+        for i, line in enumerate(lines):
+            if RAW_DEFER not in line or is_in_string_literal(line, RAW_DEFER):
+                continue
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*"):
+                continue
+            # A TRAILING comment counts too. The first version of this check flagged
+            #   #include "TimerManager.h"   // SetTimerForNextTick - MifDeferToNextTick
+            # because it only looked for a comment at the START of the line. A probe that reports its
+            # own documentation as a defect is the kind that gets skimmed past, which is exactly how a
+            # real finding gets missed.
+            comment = line.find("//")
+            if comment != -1 and comment < line.find(RAW_DEFER):
+                continue
+            # The helper's own definition is the one legitimate raw use.
+            if DEFER_HELPER in chr(10).join(lines[max(0, i - 12):i]):
+                continue
+            bad.append((fname, i + 1, stripped[:90]))
+    return bad
+
+
 def main():
     print("=" * 78)
     print("CITATIONS  (a claim about the engine that nothing re-checks is just a comment)")
@@ -256,7 +305,23 @@ def main():
 
     print()
     print("=" * 78)
-    print("guarded %d   unguarded %d   citation drift %d" % (guarded, len(unguarded), drift))
+    print("DEFERRED WORK - the guard does not survive a deferral")
+    print("=" * 78)
+    raw = check_deferrals()
+    if raw:
+        for fname, ln, text in raw:
+            print("  UNGUARDED DEFERRAL  %s:%d" % (fname, ln))
+            print("                      %s" % text)
+        print("  Route these through %s, which re-arms GIsRunningUnattendedScript" % DEFER_HELPER)
+        print("  INSIDE the lambda. A TGuardValue restores on scope exit, so work scheduled for a")
+        print("  later tick runs with the backstop already unwound.")
+    else:
+        print("  every deferral goes through %s - the guard survives to where the work runs" % DEFER_HELPER)
+
+    print()
+    print("=" * 78)
+    print("guarded %d   unguarded %d   citation drift %d   unguarded deferrals %d"
+          % (guarded, len(unguarded), drift, len(raw)))
     if unguarded:
         print()
         print("An unguarded prompter freezes the bridge, it does not fail it.")
@@ -266,7 +331,7 @@ def main():
         print("which turns a hang into a silent refusal. Where the condition is predictable, check it")
         print("first so the caller gets a real reason instead of a generic failure.")
     print("=" * 78)
-    return 1 if (unguarded or drift) else 0
+    return 1 if (unguarded or drift or raw) else 0
 
 
 if __name__ == "__main__":

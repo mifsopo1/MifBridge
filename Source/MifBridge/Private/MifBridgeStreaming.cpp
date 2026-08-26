@@ -652,7 +652,7 @@ namespace MifBridge
 		TWeakObjectPtr<UWorld> WeakWorld(World);
 		// Location/Rotation are captured rather than a built FTransform: FTransform is 16-byte
 		// aligned and a delegate's payload allocation is not the place to rely on that.
-		GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateLambda(
+		MifDeferToNextTick(
 			[WeakWorld, PackageName, StreamingClass, Location, Rotation, OpId]()
 		{
 			UWorld* W = WeakWorld.Get();
@@ -683,7 +683,7 @@ namespace MifBridge
 				return;
 			}
 			FinishOp(OpId, true, FString(), Added->GetPathName());
-		}));
+		});
 
 		Out->SetBoolField(TEXT("requested"), true);
 		Out->SetBoolField(TEXT("deferred"), true);
@@ -784,7 +784,7 @@ namespace MifBridge
 
 		const int32 OpId = BeginOp(TEXT("remove_sublevel"), ResolvedName);
 		TWeakObjectPtr<UWorld> WeakWorld(World);
-		GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateLambda(
+		MifDeferToNextTick(
 			[WeakWorld, ResolvedName, bDiscardUnsaved, OpId]()
 		{
 			UWorld* W = WeakWorld.Get();
@@ -827,7 +827,7 @@ namespace MifBridge
 			FinishOp(OpId, bRemoved,
 				bRemoved ? FString() : FString(TEXT("RemoveLevelFromWorld returned false")),
 				bRemoved ? FString(TEXT("undo buffer was reset")) : FString());
-		}));
+		});
 
 		Out->SetBoolField(TEXT("requested"), true);
 		Out->SetBoolField(TEXT("deferred"), true);
@@ -1195,7 +1195,7 @@ namespace MifBridge
 		const int32 OpId = BeginOp(TEXT("set_sublevel_streaming"), ResolvedName);
 		const FString OldObjectPath = LS->GetPathName();
 		TWeakObjectPtr<UWorld> WeakWorld(World);
-		GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateLambda(
+		MifDeferToNextTick(
 			[WeakWorld, ResolvedName, NewClass, OpId]()
 		{
 			UWorld* W = WeakWorld.Get();
@@ -1227,7 +1227,7 @@ namespace MifBridge
 				return;
 			}
 			FinishOp(OpId, true, FString(), Replacement->GetPathName());
-		}));
+		});
 
 		Out->SetBoolField(TEXT("requested"), true);
 		Out->SetBoolField(TEXT("deferred"), true);

@@ -48,7 +48,7 @@ Never work from a typed list — one was fabricated once and a third of it was i
 
 ## Gaps worth closing
 
-- [ ] **Every DEFERRED engine call escapes the modal backstop — a hole in the safety net itself.**
+- [x] **Every DEFERRED engine call escapes the modal backstop — a hole in the safety net itself.**
       `RunEndpoint` runs each handler under `TGuardValue<bool>(GIsRunningUnattendedScript, true)`, and
       a TGuardValue **restores on scope exit**. Six handlers schedule their real work with
       `GEditor->GetTimerManager()->SetTimerForNextTick(...)` and answer immediately, so the deferred

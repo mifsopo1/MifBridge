@@ -241,6 +241,27 @@ namespace MifBridge
 	 *  level streaming selects worlds the same way list_pie_actors does. */
 	void CollectPIEWorlds(TArray<UWorld*>& OutWorlds);
 
+	// --- deferring work to the next tick, WITHOUT losing the modal backstop ----
+	// RunEndpoint wraps every handler in TGuardValue<bool>(GIsRunningUnattendedScript, true) so an
+	// engine call that opens a modal is cancelled rather than hanging the ticker. A TGuardValue
+	// RESTORES ON SCOPE EXIT - so a handler that schedules its real work for a later tick and returns
+	// immediately runs that work with the guard already gone.
+	//
+	// Six handlers do exactly that, and they must: new_level and load_level swap the UWorld, which
+	// cannot happen while FTickTaskManager is still iterating the level list (it trips
+	// `Assertion failed: !LevelList.Contains(TickTaskLevel)` and takes the editor with it), and the
+	// sublevel mutators defer for the same reason. Deferring is correct; losing the guard was not
+	// noticed.
+	//
+	// It is not hypothetical for those sites. 02_GOTCHAS.md section 8 records that AddLevelToWorld
+	// opens an unconditional FScopedSlowTask::MakeDialog plus a LevelAlreadyExistsInWorldWarning, and
+	// FEditorFileUtils::LoadMap can raise save prompts. Every one of these endpoints is on the audit
+	// harness DENY list, so no suite has ever driven them and nothing caught it.
+	//
+	// Use this instead of calling SetTimerForNextTick directly: it re-arms the guard INSIDE the lambda,
+	// where the work actually happens.
+	void MifDeferToNextTick(TFunction<void()> Work);
+
 	// --- Modal dialog suppression (the bridge's worst hang) -------------------
 	// Every handler runs INLINE on the game thread inside the HTTP ticker (MifBridgeServer.cpp), so an
 	// engine call that opens a modal does not merely "show a dialog" - it STOPS THE TICKER. The socket

@@ -3,6 +3,7 @@
 #include "Engine/Engine.h"      // GEngine->GetWorldContexts for CollectPIEWorlds
 #include "MifBridgeHandlers.h"
 #include "Misc/ScopeExit.h"
+#include "TimerManager.h"                    // SetTimerForNextTick - MifDeferToNextTick
 #include "MifBridgeEndpointRegistry.h"      // Public/ — the provider registration interface
 #include "Dom/JsonObject.h"                 // FJsonObject is only FORWARD-DECLARED in the registry
                                             // header (Json is a PRIVATE dep, MifBridge.Build.cs:39)
@@ -1286,6 +1287,22 @@ namespace MifBridge
 		{
 			Transaction.Cancel();
 		}
+	}
+
+	// --- deferring work to the next tick -------------------------------------
+	// Contract and reasoning on the declaration in MifBridgeHandlers.h. The whole point is the
+	// TGuardValue INSIDE the lambda: without it the deferred work runs on a later tick with the
+	// backstop already unwound, which is the one place a modal can still reach a caller who cannot
+	// click it.
+	void MifDeferToNextTick(TFunction<void()> Work)
+	{
+		if (!GEditor) { return; }
+		GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateLambda(
+			[Work = MoveTemp(Work)]()
+			{
+				TGuardValue<bool> UnattendedGuard(GIsRunningUnattendedScript, true);
+				Work();
+			}));
 	}
 
 	// --- Modal dialog suppression -------------------------------------------

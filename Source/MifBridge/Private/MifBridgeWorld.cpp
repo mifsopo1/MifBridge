@@ -138,10 +138,10 @@ namespace MifBridge
 		// that while FTickTaskManager is still iterating the level list trips
 		//   Assertion failed: !LevelList.Contains(TickTaskLevel)  (TickTaskManager.cpp:1458)
 		// and takes the editor with it. Scheduling for the next tick lets the current tick unwind first.
-		GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateLambda([bPartitioned]()
+		MifDeferToNextTick([bPartitioned]()
 		{
 			if (GEditor) { GEditor->CreateNewMapForEditing(/*bPromptUserToSave*/ false, bPartitioned); }
-		}));
+		});
 
 		Out->SetBoolField(TEXT("requested"), true);
 		Out->SetBoolField(TEXT("partitioned"), bPartitioned);
@@ -216,10 +216,10 @@ namespace MifBridge
 		}
 
 		// Deferred for the same reason as new_level — LoadMap also swaps the UWorld.
-		GEditor->GetTimerManager()->SetTimerForNextTick(FTimerDelegate::CreateLambda([Filename]()
+		MifDeferToNextTick([Filename]()
 		{
 			FEditorFileUtils::LoadMap(Filename, /*LoadAsTemplate*/ false, /*bShowProgress*/ false);
-		}));
+		});
 
 		Out->SetBoolField(TEXT("requested"), true);
 		Out->SetStringField(TEXT("packagePath"), PackagePath);
