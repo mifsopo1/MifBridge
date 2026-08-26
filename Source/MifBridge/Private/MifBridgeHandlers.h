@@ -912,6 +912,9 @@ namespace MifBridge
 	 *  and the three existing 'anim' endpoints are SKELETAL animation, not UMG. */
 	MIF_DECL(add_widget_animation);
 	MIF_DECL(list_widget_animations);
+	/** Rename a widget AND every place that stores its old name - bindings, animation bindings, the
+	 *  possessables behind them, navigation, and graph references. */
+	MIF_DECL(rename_tree_widget);
 	MIF_DECL(add_widget_animation_track);
 	MIF_DECL(set_widget_animation_keys);
 	MIF_DECL(remove_widget_animation);

@@ -530,6 +530,26 @@ def add_widget_animation(blueprint_id: str, name: str, start_time: float = 0.0,
 
 
 @mcp.tool()
+def rename_tree_widget(blueprint_id: str, widget_name: str, new_name: str) -> dict:
+    """Rename a widget in a Widget Blueprint's tree, carrying the name through everything.
+
+    The rename is the easy part. A widget's name is also recorded in its property bindings, in every
+    animation's AnimationBindings, in the MovieScene POSSESSABLE behind each of those, in its
+    navigation bindings, and in every graph node that gets or sets it as a variable. Missing any of
+    them fails silently - most sharply the possessable, where the animation still compiles, still
+    plays, and animates nothing.
+
+    The response reports bindingsUpdated, animationBindingsUpdated and possessablesRenamed so you can
+    see the rename carried through rather than assume it.
+
+    Not done, because both need the asset open in the UMG designer: the designer's preview widget and
+    DesiredFocusWidget. Compile afterwards for the generated class to pick the rename up.
+    """
+    return _post("rename_tree_widget", blueprintId=blueprint_id, widgetName=widget_name,
+                 newName=new_name)
+
+
+@mcp.tool()
 def list_widget_animations(blueprint_id: str) -> dict:
     """List a Widget Blueprint's UMG animations, with everything needed to verify one.
 

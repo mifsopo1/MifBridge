@@ -207,11 +207,17 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       volume over a spawned cube built 8 tiles that project to nothing), so the POSITIVE branches are
       unexercised. Worth running against a real DDS2 level before trusting a positive answer — noted
       in the test file's header too.
-- [ ] **Rename a widget inside the WidgetTree** (audit: HIGH). And carry the rename through every
-      place that stores the old name — bindings, animation `AnimationBindings` entries, and any graph
-      node referring to it. That last part is the whole difficulty and the whole value: a rename that
-      updates the tree and not the animation bindings leaves an animation that compiles, plays, and
-      animates nothing (the same split `add_widget_animation_track` had to handle).
+- [x] **Rename a widget inside the WidgetTree** — `rename_tree_widget` added. The rename is one
+      line; the endpoint is the five OTHER places a widget's name is stored, each of which fails
+      silently: property bindings (a string), each animation's `FWidgetAnimationBinding` (an FName),
+      the MovieScene POSSESSABLE behind it, navigation bindings, and every graph node that gets or
+      sets it as a variable (`FBlueprintEditorUtils::ReplaceVariableReferences`).
+      The possessable is the sharp one and the test asserts it by number: rename the binding and not
+      the possessable and the animation still compiles, still plays, and animates nothing — the same
+      two-halves split `add_widget_animation_track` had to handle.
+      Replicates `FWidgetBlueprintEditorUtils::RenameWidget` rather than calling it, because that
+      needs a live `FWidgetBlueprintEditor` (the asset open in the designer). What is skipped as a
+      result — the designer preview and DesiredFocusWidget — is reported, not hidden. 20 checks.
 - [ ] **Screenshot of what is ACTUALLY rendered** (audit: HIGH). `capture_camera` spawns its own
       `ASceneCapture2D`, which is a different camera from the editor viewport with different show
       flags and view mode — the file header already documents that split and it has burned someone

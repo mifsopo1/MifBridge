@@ -21,6 +21,8 @@
 #include "UObject/UObjectIterator.h"               // TObjectIterator - find tree-owned widgets the walk misses
 #include "Animation/WidgetAnimation.h"              // UWidgetAnimation, FWidgetAnimationBinding
 #include "MovieScene.h"                             // UMovieScene: display rate, tick resolution, playback range
+#include "Kismet2/BlueprintEditorUtils.h"            // ReplaceVariableReferences - graph refs to the old name
+#include "MovieScenePossessable.h"                   // renaming the possessable behind an animation binding
 #include "Animation/MovieScene2DTransformTrack.h"    // UMovieScene2DTransformTrack (RenderTransform)
 #include "Animation/MovieScene2DTransformSection.h"  // FMovieSceneFloatChannel Translation[2]
 #include "Tracks/MovieSceneFloatTrack.h"             // RenderOpacity
@@ -803,6 +805,142 @@ namespace MifBridge
 		Out->SetBoolField(TEXT("removedBinding"), bRemovedBinding);
 		Out->SetStringField(TEXT("property"), PropDef->Name);
 		Out->SetObjectField(TEXT("animation"), SerializeAnimation(Anim));
+	}
+
+	// --- rename_tree_widget --------------------------------------------------
+	//   in:  { blueprintId | path, widgetName, newName }
+	//   out: { renamed, bindingsUpdated, animationBindingsUpdated, possessablesRenamed, ... }
+	//
+	// Renaming the widget is one line; carrying the name through the five other places that store it
+	// is the endpoint. Replicates FWidgetBlueprintEditorUtils::RenameWidget, which cannot be called
+	// directly because it requires a live FWidgetBlueprintEditor - the asset open in the designer.
+	void H_rename_tree_widget(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), TEXT("name"), TEXT("newName") },
+			TEXT("blueprintId (alias: path), widgetName (alias: name) — the widget to rename, newName"),
+			{ { TEXT("oldName"), TEXT("the widget to rename is 'widgetName'; 'newName' is what to call it") },
+			  { TEXT("rename"), TEXT("the parameter is newName") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+
+		const FString OldName = JStrAny(In, { TEXT("widgetName"), TEXT("name") });
+		const FString NewName = JStr(In, TEXT("newName"));
+		if (OldName.IsEmpty() || NewName.IsEmpty())
+		{
+			Fail(Out, TEXT("widgetName and newName are both required. NOTHING was renamed."));
+			return;
+		}
+		if (OldName == NewName)
+		{
+			Fail(Out, TEXT("widgetName and newName are the same. NOTHING was renamed."));
+			return;
+		}
+		if (!IsValidIdentifier(NewName))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("newName '%s' is not a valid identifier. NOTHING was renamed."), *NewName));
+			return;
+		}
+
+		const FName OldFName(*OldName);
+		const FName NewFName(*NewName);
+		UWidget* Widget = WBP->WidgetTree->FindWidget(OldFName);
+		if (!Widget)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no widget named '%s' in this widget tree (list_tree_widgets shows them). "
+					 "NOTHING was renamed."), *OldName));
+			return;
+		}
+		// A collision would produce two widgets answering to one name, which is worse than a refusal.
+		if (WBP->WidgetTree->FindWidget(NewFName))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("this widget tree already has a widget named '%s'. NOTHING was renamed."), *NewName));
+			return;
+		}
+
+		WBP->Modify();
+		Widget->Modify();
+		WBP->WidgetTree->Modify();
+
+		// 1. the object itself
+		Widget->Rename(*NewName, nullptr, REN_DontCreateRedirectors);
+
+		// 2. graph variable and event references. A widget marked IsVariable has a generated member
+		// variable, and every Get/Set node and event in the graph refers to it by NAME.
+		FBlueprintEditorUtils::ReplaceVariableReferences(WBP, OldFName, NewFName);
+
+		// 3. property bindings, whose ObjectName is the widget name as a STRING
+		int32 BindingsUpdated = 0;
+		for (FDelegateEditorBinding& B : WBP->Bindings)
+		{
+			if (B.ObjectName == OldName)
+			{
+				B.ObjectName = NewName;
+				++BindingsUpdated;
+			}
+		}
+
+		// 4. animation bindings AND the possessables behind them. BOTH HALVES, or the animation
+		// compiles, plays, and animates nothing - the same split add_widget_animation_track handles.
+		int32 AnimBindingsUpdated = 0, PossessablesRenamed = 0;
+		for (UWidgetAnimation* Anim : WBP->Animations)
+		{
+			if (!Anim) { continue; }
+			for (FWidgetAnimationBinding& AB : Anim->AnimationBindings)
+			{
+				if (AB.WidgetName != OldFName) { continue; }
+				AB.WidgetName = NewFName;
+				++AnimBindingsUpdated;
+				UMovieScene* MS = Anim->GetMovieScene();
+				if (!MS) { continue; }
+				MS->Modify();
+				// Only when the binding is the WIDGET itself. A slot binding's possessable is named
+				// for the slot, not the widget, and renaming it would be wrong.
+				if (AB.SlotWidgetName == NAME_None)
+				{
+					if (FMovieScenePossessable* P = MS->FindPossessable(AB.AnimationGuid))
+					{
+						P->SetName(NewName);
+						++PossessablesRenamed;
+					}
+				}
+			}
+		}
+
+		// 5. the widget's own navigation bindings
+		if (Widget->Navigation)
+		{
+			Widget->Navigation->TryToRenameBinding(OldFName, NewFName);
+		}
+
+		// Verify by re-finding through the tree rather than trusting the Rename call.
+		if (!WBP->WidgetTree->FindWidget(NewFName))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the widget was renamed but '%s' cannot be found in the tree afterwards - read it "
+					 "back with list_tree_widgets before doing anything else."), *NewName));
+			return;
+		}
+
+		MarkStructural(WBP);
+		Out->SetBoolField(TEXT("renamed"), true);
+		Out->SetStringField(TEXT("oldName"), OldName);
+		Out->SetStringField(TEXT("newName"), NewName);
+		Out->SetStringField(TEXT("widgetClass"), Widget->GetClass()->GetName());
+		// Counts, so the caller can SEE the rename carried through rather than assume it.
+		Out->SetNumberField(TEXT("bindingsUpdated"), BindingsUpdated);
+		Out->SetNumberField(TEXT("animationBindingsUpdated"), AnimBindingsUpdated);
+		Out->SetNumberField(TEXT("possessablesRenamed"), PossessablesRenamed);
+		Out->SetStringField(TEXT("note"),
+			TEXT("graph variable and event references were rewritten too. NOT done: the UMG designer's "
+				 "preview widget and DesiredFocusWidget, both of which need the asset open in the "
+				 "designer. Compile to see the rename take effect on the generated class."));
 	}
 
 	// --- list_widget_animations ---------------------------------------------
