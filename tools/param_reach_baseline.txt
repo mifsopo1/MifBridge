@@ -88,6 +88,7 @@ import_texture.texturegroup
 layout_material_expressions.material
 list_material_expressions.material
 list_material_parameters.material
+list_niagara_user_parameters.system
 list_object_properties.actorpath
 list_object_properties.filter
 list_object_properties.namefilter

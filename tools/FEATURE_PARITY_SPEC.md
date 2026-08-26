@@ -292,12 +292,41 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       exported and plainly named, and returns an `FFoliageInfo` whose `Implementation` is null, which
       the next `AddInstance` dereferences. `AddFoliageType` is the real API. It also returns a possibly
       DIFFERENT `UFoliageType` than you passed, which would have been the same bug again but silent.
-- [ ] **Typed read of Niagara User parameters** (audit: HIGH, and I declined the write side).
-      Reading works through `get_property` but the shape is a redirect map keyed by
-      `(Name="Color",TypeDefHandle=(...))`, which is hostile. A read-only `list_niagara_user_parameters`
-      returning `{name, type, value}` is cheap, needs no module dependency if it reshapes what
-      reflection already returns, and is genuinely useful. The WRITE side stays declined until someone
-      has a real reason — that territory has already crashed the editor once.
+- [x] **Typed read of Niagara User parameters** — `list_niagara_user_parameters`. 36 checks.
+
+      The spec was right that the shape is hostile and my earlier decision-log note claiming
+      "reading already works through get_property, with types" was wrong. It does not. `get_property`
+      returns 8830 characters in which the NAMES are reachable
+      (`ExposedParameters.SortedParameterOffsets[0].Name` resolves fine) and the VALUES are not: they
+      are a flat byte array indexed by offset, typed only by `RegisteredTypeIndex`, an index into a C++
+      singleton with no reflection surface. So "what is `User.Spawn Rate` set to" was genuinely
+      unanswerable by any composition of existing endpoints.
+
+      No Niagara module dependency, on purpose. Linking it to resolve the type registry would mean the
+      whole plugin fails to load anywhere Niagara is not compiled in, which is a poor trade for one
+      read — of 38 NiagaraSystem assets here, 27 are Ultra Dynamic Sky, 4 are engine templates, 3 are
+      Oceanology/Water, and 4 are DDS2's own. The asset is recognised by class NAME, the same string
+      discipline the cooked-Niagara duplication guard uses.
+
+      **Nothing is guessed, in either of the two places it would have been easy to.** A byte width
+      cannot tell float from int32 from bool, so all three readings are returned side by side rather
+      than one being picked — on this project typeIndex 88 holds collision channels whose float
+      reading is denormal garbage (1.4e-45) and typeIndex 89 holds bools stored as -1, whose float bits
+      are NaN. And `typeIndex` is passed through untranslated, with `valueTypeIndices` reported so a
+      caller can cross-reference indices between assets themselves.
+
+      The bug worth remembering, caught by the suite and not by reading: a parameter store has THREE
+      parallel arrays (`ParameterData`, `DataInterfaces`, `UObjects`) behind ONE offset list, so an
+      Offset is a byte position for a value and an ARRAY INDEX for an object, with nothing saying which.
+      Three parameters on one asset all report `Offset=0`. Taking widths across them gave a float a
+      width of one byte. The first asset tested had both object arrays empty, which is exactly why it
+      looked correct. The fix classifies by a provable rule and then VERIFIES it by tiling, reporting
+      `parameterLayoutVerified` and WITHHOLDING values when it fails — 30 of 38 systems verify, 7 have
+      no parameters, and 1 is genuinely ambiguous and says so with instructions.
+
+      The write side stays declined, and reading makes that more defensible rather than less: in a
+      cooked-game mod you do not edit the asset, you call `SetNiagaraVariableFloat`/`Vec3`/`Bool` on the
+      spawned component from Blueprint — and the exact name string this returns is what those take.
 
 ## Deliberately not pursuing
 

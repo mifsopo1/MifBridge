@@ -2474,6 +2474,28 @@ def delete_material_expression(path: str, expression: str = "", delete_all: bool
 
 
 @mcp.tool()
+def list_niagara_user_parameters(path: str, name_contains: str = "") -> dict:
+    """Read a NiagaraSystem's User. parameters, with their VALUES.
+
+    The names alone are already reachable via get_property on
+    ExposedParameters.SortedParameterOffsets. The values are not: they live in a flat byte array
+    indexed by offset, typed only by an opaque index into a runtime registry that has no reflection
+    surface. This is the call that answers "what is User.Spawn Rate actually set to".
+
+    The type is NOT guessed. sizeBytes is exact - it comes from the gap to the next parameter - but a
+    four-byte value could be a float, an int32 or a bool, and the store does not say which. So all
+    three readings are returned side by side (asFloat, asInt32, asBool), and 2/3/4-float values come
+    back as asFloats. typeIndex is passed through untranslated for the same reason; it is stable
+    within a build, so it is a usable discriminator once you have learned it.
+
+    Read-only, and the write side is deliberately not implemented. In a cooked-game mod you do not
+    edit the asset anyway - you call SetNiagaraVariableFloat/Vec3/Bool on the spawned component from
+    Blueprint, and the exact name string this returns is what those take.
+    """
+    return _post("list_niagara_user_parameters", path=path, nameContains=name_contains or None)
+
+
+@mcp.tool()
 def list_material_parameters(path: str, types: list = None, group: str = "") -> dict:
     """List the parameters a Material or MaterialInstance EXPOSES.
 

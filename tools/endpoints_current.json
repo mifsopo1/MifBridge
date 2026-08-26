@@ -149,6 +149,7 @@
  "list_material_expressions",
  "list_material_parameters",
  "list_mounted_containers",
+ "list_niagara_user_parameters",
  "list_nodes",
  "list_object_properties",
  "list_pie_actors",
