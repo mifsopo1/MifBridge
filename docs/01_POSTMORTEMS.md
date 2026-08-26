@@ -5,6 +5,58 @@ Newest first.
 
 ---
 
+## PM-012 — the harness knew what was happening and did not say it (2026-08-26)
+
+**Symptom.** A full two-pass sweep appeared to stop. `test_transactions.py` sat for 568 seconds with
+**0s CPU over a 4s sample, no TCP connections and no child processes**, while the editor stayed idle
+and answered every other caller instantly. The log showed nothing at all — not the suite's name, not a
+warning, not a partial result. Working out merely *which suite* was stuck took a `Get-CimInstance`
+query against process command lines.
+
+**Root cause — three separate holes, one shape.** None of them is the stall itself, which is still
+unexplained. All three are why the stall was unreadable:
+
+1. **`run_all_suites` printed a suite's name only when it FINISHED.** A suite that hangs therefore
+   produces no line whatsoever, and the log simply stops mid-run. Indistinguishable from the runner
+   itself dying.
+2. **`wait_for_bridge` reported "port bound but not answering" — and said nothing when the IDENTITY
+   check failed.** That branch slept 5s and looped, silently, for the full 900-second timeout. The
+   reason was in hand the entire time: `require_sdk_bridge` *returns* it, and the loop threw it away.
+3. **The log was block-buffered.** `run_all_suites` was launched without `-u`, so a stalled run flushed
+   nothing — a zero-length log for minutes at a time, which is exactly when you most want output.
+
+Each one independently converts "the harness is telling you something" into "the harness is silent".
+
+**Fix.** Name the suite *before* running it, flushed. Print the identity-check reason once after a 60s
+grace, and again only if it changes. Run the sweep with `python -u`. Say so on the timeout path rather
+than leaving `rc=-99` to be interpreted.
+
+**And a fourth hole, found by walking into it.** Nothing stopped a second process driving the same
+editor. Mid-sweep I ran `test_transactions` by hand; it issued `undo_transactions` against the
+**global** undo stack, reverted work belonging to whichever suite the sweep was inside, and turned
+`test_idempotence` red *in the sweep's own results*. Neither run's failures named the cause — mine
+reported a variable that would not stay deleted, the sweep reported an unrelated idempotence check.
+`run_all_suites` now holds `.sweep-lock` and exports `MIF_SWEEP` so its own children are exempt by
+construction; everything else gets warned through `wait_for_bridge`. A **stale** lock from a dead
+sweep is ignored — liveness is checked, not inferred from the file existing, or one crash would wedge
+the harness forever.
+
+**Prevention:**
+
+1. **A long-running harness must narrate before it blocks, not after it succeeds.** Every one of these
+   holes is the same mistake: the information existed and was only emitted on the happy path.
+2. **A retry loop that can fail for two different reasons must report both.** `wait_for_bridge`
+   carefully distinguished LOADING from BLOCKED and then said nothing about the third case.
+3. **Anything that owns a shared resource should say so.** The undo buffer is one stack for the whole
+   editor, so "suites run sequentially" is only true if nothing else is running.
+4. **Record the disproofs.** Ten PowerShell processes were alive during the stall and looked exactly
+   like a leak from mifaudit's six `subprocess.run` calls. They shared one unrelated parent and the
+   oldest was five days old. `stdin=subprocess.DEVNULL` was added anyway — it closes a real hole — but
+   it is labelled hardening, not a fix, because the cause is still unknown and a plausible story that
+   was ruled out is worth more written down than forgotten.
+
+---
+
 ## PM-011 — `set_variable_type` hung the whole bridge on an ordinary three-call sequence (2026-08-26)
 
 **Symptom.** `set_variable_type` never returned. Not an error, not a crash — no response at all, and
