@@ -1367,6 +1367,12 @@ namespace MifBridge
 	// in that file: GetPluginState is 5.7-ONLY, so `state` is derived from the four portable predicates.
 	MIF_DECL(list_game_feature_plugins);
 	MIF_DECL(describe_game_feature_plugin);
+
+	// DATA LAYERS - the WRITE half (MifBridgeStreaming.cpp). Unblocked 2026-08-26 when Andre
+	// authorised the DataLayerEditor dependency. SetDataLayerVisibility returns VOID, so both of
+	// these read the state back and report verified separately from changed.
+	MIF_DECL(set_data_layer_visibility);
+	MIF_DECL(set_data_layer_loaded_in_editor);
 	MIF_DECL(add_sublevel);
 	MIF_DECL(remove_sublevel);
 	MIF_DECL(set_sublevel_visibility);

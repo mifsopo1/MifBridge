@@ -89,7 +89,17 @@ Never work from a typed list — one was fabricated once and a third of it was i
   UE_DEPRECATED(5.3) pointing at exactly that class, and a deprecated-in-5.3 call is a 5.7 build break
   waiting to happen - which is not hypothetical, since IsPendingKillOrUnreachable broke exactly that way
   earlier today. Verified live on both a non-partitioned and a partitioned world.
-- [ ] **The WRITE half of Data Layers - UNBLOCKED 2026-08-26, this item's premise is now stale.**
+- [x] **PARTLY DONE 2026-08-26: the two editor-state writes shipped; the two membership writes did not.**
+  DELIVERED: set_data_layer_visibility and set_data_layer_loaded_in_editor. Both read the state BACK
+  after writing and report `verified` separately from `changed`, because SetDataLayerVisibility returns
+  VOID - the exact shape behind docs/06 issue 14. test_data_layer_writes.py, 14 assertions.
+  NOT DELIVERED, and deliberately: AddActorsToDataLayer / RemoveActorsFromDataLayer. Those change actor
+  MEMBERSHIP, which is content rather than editor state, and testing them means mutating a real World
+  Partition map. Filed separately below rather than written blind.
+  HONEST GAP: the write path is UNTESTED. The scratch world has zero Data Layers - they exist only in
+  World Partition maps - and the standing rule is not to open Andre's real maps. The suite asserts the
+  contracts and REPORTS the write path as not exercised rather than passing vacuously.
+  ORIGINAL:
   Andre authorised editing MifBridge.Build.cs ("do it all"), and "DataLayerEditor" is now a declared
   dependency (Build.cs:109). The write API was re-verified in BOTH engine trees and is identical in
   each: SetDataLayerVisibility (5.3:456, 5.7:504), SetDataLayerIsLoadedInEditor (5.3:493, 5.7:541),
@@ -1125,7 +1135,19 @@ contradicts this file, the analysis wins — it read the code and this file matc
   _blender call sites before writing anything new - the same read-before-write rule that applies to the
   UE handlers.
 
-- [ ] **Cover the `droppedByValidation` path in set_blendspace_samples with a scratch BlendSpace.**
+- [~] **DECLINED 2026-08-26: the `droppedByValidation` path is UNREACHABLE through this endpoint.**
+  This item was filed hours before the finding behind it was corrected, and the corrected finding
+  removes the item. AddSample -> ValidateSampleValue -> IsTooCloseToExistingSamplePoint calls the SAME
+  IsSameSamplePoint predicate at the SAME threshold that ValidateSampleData's dedup uses, so a
+  duplicate point is refused into rejected[] and never reaches the dedup pass. Confirmed live on a
+  scratch BlendSpace: two samples at one point gave rejected 2, droppedByValidation 0.
+  Writing a test for that path would be testing a branch the engine cannot enter from here. The
+  reconciliation code stays as belt-and-braces for samples arriving by another route, but it is not
+  worth a test it can never exercise.
+  WHAT REPLACED IT is already done: the real defect was bIsValid - ValidateSampleData marks samples
+  invalid WITHOUT removing them, so they count toward sampleCount and contribute nothing. That is now
+  reported per sample plus an always-emitted invalidCount, and asserted in test_ported_anim.py T574.
+  ORIGINAL:
   Issue 14 in docs/06 was fixed on 2026-08-26 - samples the engine deleted are no longer reported as
   added - but only the STRUCTURAL invariants are tested (test_ported_anim.py T574: addedCount equals
   len(samples[]), sampleCount never less than what samples[] claims). The actual drop path needs two
@@ -1186,3 +1208,15 @@ first, Blender after.
 Noted while checking: MifBlender's default port is 8792 (server.py:77-84), and Blender on this machine
 is listening on 8793. Either the addon is configured differently or 8793 is a different addon - the
 docstring warns 9876 is the third-party blender-mcp. Worth confirming when the Blender phase starts.
+
+- [ ] **Data Layer actor MEMBERSHIP writes, and a way to test the layer writes at all.**
+  AddActorsToDataLayer (5.3:223, 5.7:262) and RemoveActorsFromDataLayer (5.3:243, 5.7:282) are verified
+  present in both trees, so this is not blocked on the engine. It is blocked on having somewhere safe
+  to run it: membership is CONTENT, not editor state, and the only World Partition maps here are
+  Andre's real ones.
+  The same gap blocks proving the two writes that DID ship - their happy path has never executed,
+  because the scratch world has no Data Layers.
+  What is actually needed first is a scratch World Partition level with a couple of throwaway Data
+  Layers. Creating one needs new_level, which is on the audit DENY list, so this needs Andre to either
+  make such a level once by hand or say the DENY list may be relaxed for it. Do not relax that list
+  unilaterally.

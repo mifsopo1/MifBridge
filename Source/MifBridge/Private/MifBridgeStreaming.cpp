@@ -122,6 +122,7 @@
 #include "TimerManager.h"
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"                  // IsValid
+#include "DataLayer/DataLayerEditorSubsystem.h"       // the WRITE half - see the block at the end
 
 namespace MifBridge
 {
@@ -1583,6 +1584,213 @@ namespace MifBridge
 		{
 			Out->SetStringField(TEXT("note"),
 				TEXT("the world has a DataLayerManager but no Data Layer instances - none have been created yet."));
+		}
+	}
+
+	// =====================================================================================
+	// DATA LAYERS - THE WRITE HALF.
+	//
+	// The read half (list_data_layers, above) shipped first, and this was blocked on a Build.cs
+	// dependency the agent was not authorised to add. Andre authorised it on 2026-08-26 and
+	// "DataLayerEditor" is now declared (MifBridge.Build.cs:109), so the blocker is gone.
+	//
+	// EVERY engine call below was verified in BOTH trees before use:
+	//   UDataLayerEditorSubsystem::Get()                                   5.3:75   5.7:96
+	//   void SetDataLayerVisibility(UDataLayerInstance*, bool)             5.3:456  5.7:504
+	//   bool SetDataLayerIsLoadedInEditor(UDataLayerInstance*, bool, bool) 5.3:493  5.7:541
+	//   void UDataLayerManager::ForEachDataLayerInstance(
+	//            TFunctionRef<bool(UDataLayerInstance*)>)                  5.3:89   5.7:120
+	//   bool UDataLayerInstance::IsVisible()                               5.3:136  5.7:169
+	//   bool UDataLayerInstance::IsEffectiveVisible()                      5.3:139  5.7:172
+	//   bool UDataLayerInstance::IsLoadedInEditor()                        5.3:79   5.7:103
+	// The only difference between the trees is declaration-side UE_API vs plain, which does not
+	// affect calling code - see docs/02_GOTCHAS.md section 14.
+	//
+	// SetDataLayerVisibility RETURNS VOID, which is exactly the shape that produced issue 14: call an
+	// engine API that cannot fail loudly, then report ok because nothing threw. So both endpoints here
+	// READ THE STATE BACK after writing, and report before/after/changed/verified separately.
+	//
+	// GetDataLayerInstance returns a CONST pointer, so the non-const ForEachDataLayerInstance overload
+	// is what yields a mutable instance. That is why resolution below is a loop and not a lookup.
+
+	// Shared resolver. Matches the short name first (what the Outliner shows) then the FName, so a
+	// caller can pass either without knowing which one the layer was authored with.
+	static UDataLayerInstance* MifResolveDataLayer(UWorld* World, const FString& Name,
+												   const TSharedRef<FJsonObject>& Out)
+	{
+		UDataLayerManager* Manager = UDataLayerManager::GetDataLayerManager(World);
+		if (!Manager)
+		{
+			Fail(Out, World->IsPartitionedWorld()
+				? TEXT("this partitioned world has no DataLayerManager")
+				: TEXT("this is not a World Partition map, so it has no Data Layers. Sublevels are the "
+					   "equivalent here - use list_sublevels."));
+			return nullptr;
+		}
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required - a Data Layer short name. list_data_layers enumerates them."));
+			return nullptr;
+		}
+
+		UDataLayerInstance* Found = nullptr;
+		TArray<FString> Available;
+		Manager->ForEachDataLayerInstance([&Found, &Available, &Name](UDataLayerInstance* Instance)
+		{
+			if (!Instance) { return true; }
+			const FString Short = Instance->GetDataLayerShortName();
+			Available.Add(Short);
+			if (Short == Name || Instance->GetDataLayerFName().ToString() == Name)
+			{
+				Found = Instance;
+				return false;      // stop iterating
+			}
+			return true;
+		});
+
+		if (!Found)
+		{
+			// Listing what IS present beats a bare not-found: the usual cause is a short-name versus
+			// FName mismatch, and seeing the real names makes that obvious at once.
+			Fail(Out, FString::Printf(
+				TEXT("no Data Layer named '%s' in this world. Present: %s"),
+				*Name, Available.Num() ? *FString::Join(Available, TEXT(", ")) : TEXT("(none)")));
+			return nullptr;
+		}
+		return Found;
+	}
+
+	static UDataLayerEditorSubsystem* MifDataLayerEditor(const TSharedRef<FJsonObject>& Out)
+	{
+		// Returns a POINTER in both trees - unlike UGameFeaturesSubsystem::Get, which dereferences
+		// unchecked - so this is an ordinary null check rather than a workaround.
+		UDataLayerEditorSubsystem* Sub = UDataLayerEditorSubsystem::Get();
+		if (!Sub)
+		{
+			Fail(Out, TEXT("the DataLayerEditor subsystem is not available - it exists only in an "
+						   "editor build with a loaded world."));
+		}
+		return Sub;
+	}
+
+	// --- set_data_layer_visibility -------------------------------------------
+	//   in:  { name (aliases: dataLayer, layer), visible }
+	//   out: { name, before, after, changed, verified, effectiveVisible, note? }
+	void H_set_data_layer_visibility(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("dataLayer"), TEXT("layer"), TEXT("visible") },
+			TEXT("name (aliases: dataLayer, layer) - a Data Layer short name; visible (bool, required)"),
+			{ { TEXT("loaded"), TEXT("that is set_data_layer_loaded_in_editor - an UNLOADED layer is not in memory at all, which is not the same as hidden") },
+			  { TEXT("level"), TEXT("Data Layers belong to the World Partition map, not a sublevel - use the sublevel endpoints for those") } }))
+		{
+			return;
+		}
+
+		UWorld* World = EditorWorld();
+		if (!World) { Fail(Out, TEXT("no editor world")); return; }
+		if (!In->HasField(TEXT("visible")))
+		{
+			Fail(Out, TEXT("visible is required (bool). Omitting it would make this a read, and "
+						   "list_data_layers already reports visibility."));
+			return;
+		}
+		const bool bWant = JBool(In, TEXT("visible"), true);
+
+		UDataLayerInstance* Layer = MifResolveDataLayer(
+			World, JStrAny(In, { TEXT("name"), TEXT("dataLayer"), TEXT("layer") }), Out);
+		if (!Layer) { return; }
+		UDataLayerEditorSubsystem* Sub = MifDataLayerEditor(Out);
+		if (!Sub) { return; }
+
+		const bool bBefore = Layer->IsVisible();
+		Sub->SetDataLayerVisibility(Layer, bWant);    // VOID - hence the read-back on the next line
+		const bool bAfter = Layer->IsVisible();
+
+		Out->SetStringField(TEXT("name"), Layer->GetDataLayerShortName());
+		Out->SetBoolField(TEXT("before"), bBefore);
+		Out->SetBoolField(TEXT("after"), bAfter);
+		// changed is about the WORLD; verified is about the REQUEST. Setting a layer to the value it
+		// already held is changed:false AND verified:true - a successful no-op, not a failure.
+		Out->SetBoolField(TEXT("changed"), bBefore != bAfter);
+		Out->SetBoolField(TEXT("verified"), bAfter == bWant);
+		// A layer can be visible in its own right and still render nothing because a parent is hidden.
+		// Reporting only IsVisible would say "visible" about something nobody can see.
+		Out->SetBoolField(TEXT("effectiveVisible"), Layer->IsEffectiveVisible());
+
+		if (bAfter != bWant)
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("the write did NOT take: asked for %s and the layer still reports %s. "
+					 "SetDataLayerVisibility returns void, so this is caught by reading the state back "
+					 "rather than by trusting the call."),
+				bWant ? TEXT("visible") : TEXT("hidden"), bAfter ? TEXT("visible") : TEXT("hidden")));
+		}
+		else if (bAfter && !Layer->IsEffectiveVisible())
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("this layer is now visible but NOT effectively visible - a parent layer is hidden, "
+					 "so nothing will render. Make the parent visible too."));
+		}
+	}
+
+	// --- set_data_layer_loaded_in_editor --------------------------------------
+	//   in:  { name (aliases: dataLayer, layer), loaded, fromUserChange? }
+	//   out: { name, before, after, changed, verified, engineReturned, note? }
+	void H_set_data_layer_loaded_in_editor(const TSharedRef<FJsonObject>& In,
+										   const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("dataLayer"), TEXT("layer"), TEXT("loaded"), TEXT("fromUserChange") },
+			TEXT("name (aliases: dataLayer, layer); loaded (bool, required); fromUserChange (default "
+				 "true - mirrors what the Outliner does, and the engine records the distinction)"),
+			{ { TEXT("visible"), TEXT("that is set_data_layer_visibility - loading and visibility are different things") } }))
+		{
+			return;
+		}
+
+		UWorld* World = EditorWorld();
+		if (!World) { Fail(Out, TEXT("no editor world")); return; }
+		if (!In->HasField(TEXT("loaded")))
+		{
+			Fail(Out, TEXT("loaded is required (bool). list_data_layers already reports the current state."));
+			return;
+		}
+		const bool bWant = JBool(In, TEXT("loaded"), true);
+		const bool bUser = JBool(In, TEXT("fromUserChange"), true);
+
+		UDataLayerInstance* Layer = MifResolveDataLayer(
+			World, JStrAny(In, { TEXT("name"), TEXT("dataLayer"), TEXT("layer") }), Out);
+		if (!Layer) { return; }
+		UDataLayerEditorSubsystem* Sub = MifDataLayerEditor(Out);
+		if (!Sub) { return; }
+
+		const bool bBefore = Layer->IsLoadedInEditor();
+		// This one DOES return a bool - but "the engine returned true" and "the state is what you asked
+		// for" are different questions, so both are reported rather than trusting the return alone.
+		const bool bEngineSaidOk = Sub->SetDataLayerIsLoadedInEditor(Layer, bWant, bUser);
+		const bool bAfter = Layer->IsLoadedInEditor();
+
+		Out->SetStringField(TEXT("name"), Layer->GetDataLayerShortName());
+		Out->SetBoolField(TEXT("before"), bBefore);
+		Out->SetBoolField(TEXT("after"), bAfter);
+		Out->SetBoolField(TEXT("changed"), bBefore != bAfter);
+		Out->SetBoolField(TEXT("verified"), bAfter == bWant);
+		Out->SetBoolField(TEXT("engineReturned"), bEngineSaidOk);
+
+		if (bAfter != bWant)
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("the write did NOT take: asked for loaded=%s and the layer still reports %s "
+					 "(the engine call returned %s)."),
+				bWant ? TEXT("true") : TEXT("false"), bAfter ? TEXT("true") : TEXT("false"),
+				bEngineSaidOk ? TEXT("true") : TEXT("false")));
+		}
+		else if (bBefore != bAfter)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("actors in this layer were loaded or unloaded in the EDITOR only. That is editor "
+					 "state, not a content change, and nothing was saved."));
 		}
 	}
 }

@@ -2918,6 +2918,20 @@ def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: i
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def set_data_layer_visibility(name: str, visible: bool) -> dict:
+    "Show or hide a World Partition Data Layer in the editor. Reports before/after/changed plus a separate `verified` flag, because the underlying SetDataLayerVisibility returns VOID and cannot fail loudly - verified:false means the write did not take. Also reports effectiveVisible: a layer can be visible in its own right and still render nothing because a parent layer is hidden. Editor state only; nothing is saved."
+    return _post("set_data_layer_visibility", name=name, visible=visible)
+
+
+@mcp.tool()
+def set_data_layer_loaded_in_editor(name: str, loaded: bool,
+                                    from_user_change: bool = True) -> dict:
+    "Load or unload a World Partition Data Layer's actors in the EDITOR. This is not the same as visibility - an unloaded layer is not in memory at all, where a hidden one is. Reports before/after/changed, a separate `verified` flag read back off the layer, and `engineReturned` (what the engine call itself said), because those are different questions. Editor state only; nothing is saved."
+    return _post("set_data_layer_loaded_in_editor", name=name, loaded=loaded,
+                 fromUserChange=from_user_change)
+
+
+@mcp.tool()
 def list_game_feature_plugins(name_contains: str = None, active_only: bool = False) -> dict:
     "List the project's Game Feature plugins - how content is added to a shipped game without patching the base game - with their derived state and the raw predicates behind it. IMPORTANT: `state` is DERIVED from installed/registered/loaded/active, because the engine's own GetPluginState exists only on UE 5.7 and not on 5.3; stateFlags carries the raw predicates. gameFeaturePluginCount and totalDiscoveredPlugins are reported so a filtered list never reads as completeness."
     return _post("list_game_feature_plugins", nameContains=name_contains, activeOnly=active_only)
