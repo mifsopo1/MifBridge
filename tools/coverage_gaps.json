@@ -26,7 +26,6 @@
   "add_timeline",
   "add_widget_binding",
   "backup_blueprint",
-  "batch",
   "bind_landscape_rvt",
   "build_navmesh",
   "close_asset_editors",
@@ -42,7 +41,6 @@
   "diff_properties_vs_default",
   "disconnect_pin",
   "duplicate_actors",
-  "duplicate_tree_widget",
   "edit_container",
   "exec_console",
   "export_asset",
@@ -54,7 +52,6 @@
   "get_perf_stats",
   "get_spline_points",
   "import_asset",
-  "import_texture",
   "invoke_editor_command",
   "kr_analyze_ubergraph",
   "kr_batch_reconstruct",
@@ -80,7 +77,6 @@
   "load_level",
   "move_actor_to",
   "move_node",
-  "move_tree_widget",
   "nav_status",
   "new_level",
   "open_asset_editor",
@@ -90,11 +86,7 @@
   "pie_status",
   "pie_unload_level_instance",
   "read_modloader_log",
-  "recipe_add_debug_print",
-  "recipe_argmax_over_components",
   "recipe_override_and_call_parent",
-  "recipe_reset_and_loop",
-  "recipe_splice_before_parent",
   "reconnect_pin",
   "redo_transactions",
   "reimport_asset",
@@ -102,11 +94,9 @@
   "remove_function",
   "remove_struct_member",
   "remove_sublevel",
-  "remove_tree_widget",
   "remove_variable",
   "remove_widget_binding",
   "rename_event",
-  "render_thumbnail",
   "reparent_blueprint",
   "reset_property_to_default",
   "resolve_struct",
@@ -130,18 +120,14 @@
   "set_spline_points",
   "set_sublevel_streaming",
   "set_sublevel_visibility",
-  "set_texture_settings",
   "set_variable_default",
   "set_widget_is_variable",
   "spawn_actor_in_pie",
   "spawn_many",
   "start_pie",
   "stop_pie",
-  "thumbnail_capabilities",
   "trigger_cook",
-  "validate",
-  "wrap_tree_widget",
-  "write_thumbnail_texture"
+  "validate"
  ],
  "covered": {
   "add_bind_dispatcher": [
@@ -241,7 +227,8 @@
    "test_rename_widget.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation_props.py",
-   "test_widget_animation_track.py"
+   "test_widget_animation_track.py",
+   "test_widget_tree.py"
   ],
   "add_variable": [
    "test_array_wildcard_durability.py",
@@ -300,6 +287,9 @@
   "auto_map_retarget_chains": [
    "test_ik_authoring.py"
   ],
+  "batch": [
+   "test_modal_hazards.py"
+  ],
   "capture_camera": [
    "test_capture_viewport.py"
   ],
@@ -322,6 +312,7 @@
    "test_modal_hazards.py",
    "test_node_spawns.py",
    "test_pinlifetime.py",
+   "test_recipes.py",
    "test_rename_widget.py",
    "test_reroute.py",
    "test_rollback_real.py",
@@ -331,7 +322,8 @@
    "test_widget_anim_recreate.py",
    "test_widget_animation.py",
    "test_widget_animation_props.py",
-   "test_widget_animation_track.py"
+   "test_widget_animation_track.py",
+   "test_widget_tree.py"
   ],
   "connect_material_expressions": [
    "test_material_graph.py"
@@ -354,7 +346,8 @@
    "test_create_asset.py",
    "test_ik_authoring.py",
    "test_ik_goals_solvers.py",
-   "test_ik_rig.py"
+   "test_ik_rig.py",
+   "test_textures.py"
   ],
   "create_blueprint": [
    "test_array_wildcard_durability.py",
@@ -372,6 +365,7 @@
    "test_modal_hazards.py",
    "test_node_spawns.py",
    "test_pinlifetime.py",
+   "test_recipes.py",
    "test_rename_widget.py",
    "test_reroute.py",
    "test_rollback_real.py",
@@ -381,7 +375,8 @@
    "test_widget_anim_recreate.py",
    "test_widget_animation.py",
    "test_widget_animation_props.py",
-   "test_widget_animation_track.py"
+   "test_widget_animation_track.py",
+   "test_widget_tree.py"
   ],
   "create_datatable": [
    "test_confirm_gated.py",
@@ -423,6 +418,7 @@
    "test_modal_hazards.py",
    "test_node_spawns.py",
    "test_pinlifetime.py",
+   "test_recipes.py",
    "test_rename_widget.py",
    "test_reroute.py",
    "test_rollback_real.py",
@@ -460,6 +456,9 @@
    "test_material_write.py",
    "test_modal_guard.py"
   ],
+  "duplicate_tree_widget": [
+   "test_widget_tree.py"
+  ],
   "find_assets": [
    "test_audio_nav.py",
    "test_create_asset.py",
@@ -472,7 +471,9 @@
    "test_material_write.py",
    "test_niagara_params.py",
    "test_set_struct_member.py",
-   "test_sockets_ai.py"
+   "test_sockets_ai.py",
+   "test_textures.py",
+   "test_thumbnails.py"
   ],
   "get_datatable_row": [
    "test_datatables.py"
@@ -510,6 +511,9 @@
   ],
   "implement_interface_function": [
    "test_interfaces.py"
+  ],
+  "import_texture": [
+   "test_textures.py"
   ],
   "invoke_editor_tab": [
    "test_audit_fixes.py"
@@ -559,6 +563,7 @@
    "test_interfaces.py",
    "test_modal_hazards.py",
    "test_node_spawns.py",
+   "test_recipes.py",
    "test_undo_integrity.py"
   ],
   "list_ik_rig": [
@@ -593,6 +598,7 @@
    "test_graph_patch.py",
    "test_node_spawns.py",
    "test_pinlifetime.py",
+   "test_recipes.py",
    "test_reroute.py",
    "test_rollback_real.py",
    "test_selfpin.py",
@@ -612,7 +618,8 @@
    "test_undo_integrity.py"
   ],
   "list_tree_widgets": [
-   "test_rename_widget.py"
+   "test_rename_widget.py",
+   "test_widget_tree.py"
   ],
   "list_variables": [
    "test_components_dispatchers.py",
@@ -626,6 +633,9 @@
    "test_widget_animation.py",
    "test_widget_animation_props.py"
   ],
+  "move_tree_widget": [
+   "test_widget_tree.py"
+  ],
   "nav_find_path": [
    "test_audio_nav.py"
   ],
@@ -638,6 +648,18 @@
   "read_datatable": [
    "test_confirm_gated.py",
    "test_datatables.py"
+  ],
+  "recipe_add_debug_print": [
+   "test_recipes.py"
+  ],
+  "recipe_argmax_over_components": [
+   "test_recipes.py"
+  ],
+  "recipe_reset_and_loop": [
+   "test_recipes.py"
+  ],
+  "recipe_splice_before_parent": [
+   "test_recipes.py"
   ],
   "recompile_material": [
    "test_material_graph.py"
@@ -676,6 +698,9 @@
   "remove_pin": [
    "test_pinlifetime.py"
   ],
+  "remove_tree_widget": [
+   "test_widget_tree.py"
+  ],
   "remove_widget_animation": [
    "test_widget_anim_recreate.py",
    "test_widget_animation_props.py"
@@ -698,6 +723,10 @@
   "rename_variable": [
    "test_confirm_gated.py",
    "test_modal_hazards.py"
+  ],
+  "render_thumbnail": [
+   "test_textures.py",
+   "test_thumbnails.py"
   ],
   "revert_inherited_component": [
    "test_inherited_components.py"
@@ -767,6 +796,10 @@
   "set_struct_member": [
    "test_set_struct_member.py"
   ],
+  "set_texture_settings": [
+   "test_textures.py",
+   "test_thumbnails.py"
+  ],
   "set_variable_flags": [
    "test_modal_hazards.py",
    "test_undo_integrity.py"
@@ -800,6 +833,9 @@
   "splice_into_exec": [
    "test_pinlifetime.py"
   ],
+  "thumbnail_capabilities": [
+   "test_thumbnails.py"
+  ],
   "trace": [
    "test_trace_debug.py"
   ],
@@ -809,9 +845,15 @@
   "undo_transactions": [
    "test_undo_integrity.py"
   ],
+  "wrap_tree_widget": [
+   "test_widget_tree.py"
+  ],
   "write_datatable_rows": [
    "test_confirm_gated.py",
    "test_datatables.py"
+  ],
+  "write_thumbnail_texture": [
+   "test_thumbnails.py"
   ]
  }
 }
