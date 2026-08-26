@@ -3,19 +3,18 @@ fuzzing 275 endpoints
 
   ... 25/275  (clean)
   ... 50/275  (clean)
-  ... 75/275  (GHOST_OK=1)
-  ... 100/275  (GHOST_OK=1)
-  ... 125/275  (GHOST_OK=1)
-  ... 150/275  (GHOST_OK=1)
-  ... 175/275  (GHOST_OK=1)
-  ... 200/275  (GHOST_OK=1)
-  ... 225/275  (GHOST_OK=1)
-  ... 250/275  (GHOST_OK=1)
-  ... 275/275  (GHOST_OK=1)
+  ... 75/275  (clean)
+  ... 100/275  (clean)
+  ... 125/275  (clean)
+  ... 150/275  (clean)
+  ... 175/275  (clean)
+  ... 200/275  (clean)
+  ... 225/275  (clean)
+  ... 250/275  (clean)
+  ... 275/275  (clean)
 
 ========================================================================
 fuzz complete: 275 endpoints
-  GHOST_OK       1
 
 findings appended to D:\DDS2SDK\Game\Plugins\MifBridge\tools\audit_findings.jsonl
 ========================================================================

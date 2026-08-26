@@ -113,6 +113,32 @@ def executed_nothing(r):
     return False
 
 
+# An OUTPUT DESTINATION is not a reference. capture_viewport's `path` is the PNG file to WRITE, so a
+# path that does not exist yet is not merely acceptable, it is the normal case - and answering ok:true
+# is the correct answer, not a phantom success. The `creates` prefix rule above catches the asset-side
+# version of this (create_/add_/import_...), but capture_viewport is not named like a creator and
+# writes to the filesystem rather than to /Game.
+#
+# Listed as explicit (endpoint, key) pairs rather than by guessing at key names, because `path` means
+# "the thing to act on" almost everywhere else and a blanket exemption on the word would blind the
+# probe to the real findings it exists for. Each entry says what the key actually is.
+OUTPUT_DESTINATIONS = {
+    ("capture_viewport", "path"):        "the PNG file to write, not an asset to find",
+    ("render_thumbnail", "path"):        "output image path",
+    ("write_thumbnail_texture", "outputPath"): "the texture asset to CREATE",
+    ("export_asset", "outputPath"):      "the file to write the export to",
+    ("export_asset", "path"):            "output file path",
+    ("backup_blueprint", "outputPath"):  "where to put the backup",
+}
+
+
+def writes_to_that_path(ep, ghosted_keys):
+    """True when every ghosted key on this endpoint names a file to WRITE rather than a thing to find."""
+    if not ghosted_keys:
+        return False
+    return all((ep, k) in OUTPUT_DESTINATIONS for k in ghosted_keys)
+
+
 def looked_and_found_nothing(ghosted_keys, r):
     """True when ok:true means "I searched and found nothing", which is a correct answer.
 
@@ -392,6 +418,7 @@ def main():
                 # there, not a finding. Flagging create_blueprint was this probe's own false positive.
                 creates = ep.startswith(("create_", "add_", "new_", "spawn_", "import_", "duplicate_"))
                 if (r.get("ok") is True and not creates
+                        and not writes_to_that_path(ep, ghosts)
                         and not looked_and_found_nothing(ghosts, r)
                         and not reported_absent(r)
                         and not executed_nothing(r)):
