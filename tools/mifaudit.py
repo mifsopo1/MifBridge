@@ -180,8 +180,27 @@ def wait_for_bridge(timeout=900, quiet=False):
     """
     start = time.time()
     warned = False
+    identity_warned = False
+    last_why = ""
     while time.time() - start < timeout:
         ok, why = require_sdk_bridge()
+        # THE SILENT PATH. Everything below reports when the port is bound but not ANSWERING; nothing
+        # reported when require_sdk_bridge kept saying no. That path sleeps 5s and loops, so a caller
+        # got no output whatsoever for the full 900s - a quarter-hour stall indistinguishable from a
+        # hang, which is exactly what it looked like when test_transactions wedged for 568s during a
+        # full run while the editor sat idle and answered everything else.
+        #
+        # Whatever the reason, it is IN `why` already; the loop simply never printed it. Said once,
+        # after a grace period long enough for an honest relaunch, and again only if the reason
+        # CHANGES - a message every five seconds would be its own kind of useless.
+        if not ok:
+            grace = time.time() - start > 60
+            if grace and (not identity_warned or why != last_why):
+                identity_warned = True
+                last_why = why
+                print("  [waiting %ds - the bridge is not usable yet: %s]" % (int(time.time() - start), why))
+                print("  [this is the identity check, not a slow editor. If it does not change, the")
+                print("   port is owned by another editor or nothing is listening at all.]")
         if ok:
             # An editor mid-load binds the port before it can answer, so the first probes time out.
             # Waiting is the whole point of this function - a timeout here is not an error.
