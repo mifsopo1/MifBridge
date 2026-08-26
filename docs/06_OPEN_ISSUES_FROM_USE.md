@@ -664,6 +664,30 @@ validates the AUTHORED name — but for a `UUserDefinedEnum` the authored names 
 its bool return is discarded. Same class as the `add_enum_value` bug fixed on 2026-08-25, which was
 closed by reading the applied display name back.
 
+**O. remove_pin cannot remove a same-direction duplicate - the exact case its duplicate branch is for.**
+
+The branch at MifBridgeNodes.cpp:2051 exists to clean up two pins sharing a name, which is the residue
+an add_pin crash leaves behind. It resolves pins through identities rather than raw pointers, correctly,
+because BreakPinLinks can reconstruct a node underneath you. But ResolvePin (MifBridgeCommon.cpp:3952)
+matches on (NodeGuid, PinName, Direction) and returns the FIRST pin satisfying it.
+
+For two GENUINE duplicates - same node, same name, same direction - every captured ref is byte-identical
+to KeepRef. So ResolvePin(Ref) and ResolvePin(KeepRef) both return the same first pin, the
+`if (Pin == ResolvePin(KeepRef)) continue;` guard fires on every iteration, and Removed stays 0. The
+second duplicate is unreachable through an identity ref by construction. Only a CROSS-DIRECTION pair -
+an input and an output sharing a name, which is not really a duplicate - has a differing Dir and can
+actually be deleted.
+
+FIXED ALREADY: the response no longer lies about it. `removed` now reflects whether anything was
+removed, and a duplicateNote says plainly that the pin is still on the node.
+
+NOT FIXED: the addressing itself, deliberately. Reaching the real case needs two pins with the same
+name AND direction on one node, which this bridge cannot create on demand - so a fix cannot be tested
+here. Pin manipulation across BreakPinLinks has taken the editor down before (see the pin-pointer audit
+in the git history, four sites). Writing an untestable fix into that is how the crash happens. Whoever
+takes it will need to address pins by INDEX into the live Node->Pins array rather than by identity,
+re-validating after every BreakPinLinks, and will need a way to manufacture the duplicate first.
+
 **N. A discarded-bool sweep: 299 candidates, and the scan cannot resolve overloads.**
 
 RESOLVED 2026-08-26. All 28 candidates surviving the conventional-discard filter were triaged with the

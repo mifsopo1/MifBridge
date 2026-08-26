@@ -46,6 +46,11 @@ Never work from a typed list — one was fabricated once and a third of it was i
 - [x] **Runtime Console** — `exec_console`, `run_console`, `run_console_captured`.
 - [x] **Editor Utilities** — editor commands, tabs, key sends.
 
+- [ ] **remove_pin cannot address a same-direction duplicate (issue O).** The reporting is fixed; the
+  addressing is not. Needs index-based pin removal against the live Node->Pins array with re-validation
+  after every BreakPinLinks, plus a way to manufacture a same-name same-direction duplicate to test it.
+  Left unwritten on purpose - pin manipulation has crashed the editor before and this case cannot be
+  reproduced on demand here.
 ## Gaps worth closing
 
 - [x] **Every DEFERRED engine call escapes the modal backstop — a hole in the safety net itself.**
