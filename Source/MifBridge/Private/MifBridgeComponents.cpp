@@ -321,6 +321,39 @@ namespace MifBridge
 		}
 		const FName VarName = Name.IsEmpty() ? NAME_None : FName(*Name);
 
+		// A NAME THE CALLER ASKED FOR IS A NAME THEY EXPECT TO GET. SCS->CreateNode runs the requested
+		// name through GenerateNewComponentName, which quietly returns "Turret1" when "Turret" is
+		// taken - so add_component answered ok:true for a component the caller never asked for. The
+		// response does carry the real name, but nothing marks it as different from the request, and a
+		// caller who does not compare believes they have "Turret". Worse, a setup script run twice
+		// silently accumulates Turret, Turret1, Turret2, which is the same repeat-run trap that broke
+		// five suites in one night.
+		//
+		// Its three siblings all refuse this: add_variable ("name already in use"), create_function
+		// ("function already exists") and add_event_dispatcher. add_component was the odd one out, so
+		// this is consistency rather than a new policy - and it matches add_enum_value, which rolls
+		// back and fails when the applied name differs from the requested one.
+		//
+		// Asked of the ENGINE rather than reimplemented: GenerateNewComponentName IS the rule
+		// CreateNode applies, so this cannot drift from it. Checked BEFORE Modify()/CreateNode, so a
+		// refusal leaves the blueprint untouched rather than relying on the transaction to undo it,
+		// which PM-007 established it will not do.
+		//
+		// An OMITTED name is untouched by this: NAME_None means "engine, pick one", and it still does.
+		if (VarName != NAME_None)
+		{
+			const FName Applied = SCS->GenerateNewComponentName(ComponentClass, VarName);
+			if (Applied != VarName)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("a component named '%s' already exists on '%s' - the engine would have added it as '%s' ")
+					TEXT("instead, which is not what was asked for. Nothing was added. Pick another name, omit ")
+					TEXT("'name' to let the engine choose one, or edit the existing component."),
+					*Name, *Blueprint->GetName(), *Applied.ToString()));
+				return;
+			}
+		}
+
 		// Resolve the parent BEFORE creating the node so a bad parentName fails cleanly
 		// instead of silently attaching the new component as a root.
 		const FString ParentName = JStr(In, TEXT("parentName"));

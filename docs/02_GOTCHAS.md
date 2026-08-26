@@ -1320,6 +1320,23 @@ three were found by reading the implementations; none is visible from the header
   `IKRetargeter.h:18`). The live mapping is `ChainSettings`. A `set_property` write to `ChainMapping`
   succeeds and is read by nothing.
 
+- **`SCS->CreateNode` silently RENAMES too, and this one is not an IK call at all.** The requested
+  component name goes through `USimpleConstructionScript::GenerateNewComponentName`, which returns
+  `Turret1` when `Turret` is taken. `add_component` then answered **ok:true** for a component the
+  caller never asked for. The response does carry the real name, but nothing marks it as different
+  from the request, so a caller who does not compare believes they have `Turret` — and a setup script
+  replayed twice quietly grows `Turret`, `Turret1`, `Turret2`. Its three siblings all refuse a taken
+  name (`add_variable`, `create_function`, `add_event_dispatcher`), so `add_component` was the odd one
+  out; it now asks `GenerateNewComponentName` what it *would* pick and refuses when that differs,
+  before anything is created. An OMITTED name still means "engine, pick one" and still auto-numbers.
+  Covered by `tools/test_idempotence.py`.
+
+**Two of these are the same engine idiom, in unrelated subsystems.** `GetUniqueRetargetChainName` and
+`GenerateNewComponentName` both take a desired name, return a *different* one on collision, and report
+success. Whenever an engine "add" takes a name and hands one back, assume they can differ and compare
+them — the second instance here was found by asking the question the first one had already taught, not
+by reading the code again.
+
 The general form, and it is the same lesson as §11 and PM-009: **a controller is not a setter.** The
 engine's editor calls these in a particular order and does work between them. Before driving one from
 a handler, read its implementation and its in-engine callers — the header will not tell you that a
