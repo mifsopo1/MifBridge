@@ -534,6 +534,28 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       and `add_make_struct` refuses it, because breaking needs only read access while making needs
       every member writable from Blueprint.
 
+- [x] **The confirm-gated success paths — eleven endpoints that had no coverage at all.**
+      `tools/scratch_confirm.py` + `tools/test_confirm_gated.py`, 33 checks.
+
+      Every suite written tonight ended with the same note: the SUCCESS path of some destructive verb
+      is unexercised, because it needs `confirm=true` and the audit harness strips `confirm` alongside
+      `save` and `force`. That guard is right — it is why an unattended run cannot destroy a real asset
+      — but the cost had reached roughly eleven endpoints, and they are exactly the ones where a silent
+      failure costs most.
+
+      Resolved without weakening it. `confirm` is sent only when EVERY path in the payload lies under
+      `/Game/_Mif`, checked mechanically, including paths buried in nested dicts and lists. `save` keeps
+      NO exemption, because it is the one flag that turns a disposable test artefact into a real asset.
+      A payload with no path at all is refused rather than allowed — absence of evidence is not evidence
+      of safety, and an endpoint addressed only by guid could be pointing anywhere. The guard is
+      self-tested against ten cases including a real path nested inside a scratch payload, and T340
+      re-checks it in the suite before anything is trusted to it.
+
+      What the tests ask is not "did it return ok" but whether the dangerous part actually happened:
+      a renamed variable takes its Get and Set nodes with it; a removed component PROMOTES its child
+      rather than taking it along; removing the middle enum entry leaves the survivors' own names
+      intact rather than shifting them; a written DataTable row reads back. All clean.
+
 ## Deliberately not pursuing
 
 - [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add

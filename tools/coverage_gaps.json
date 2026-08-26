@@ -2,8 +2,6 @@
  "uncovered": [
   "add_anim_node",
   "add_branch",
-  "add_break_struct",
-  "add_cast",
   "add_class_cast",
   "add_comment",
   "add_component_bound_event",
@@ -16,7 +14,6 @@
   "add_literal",
   "add_make_array",
   "add_make_map",
-  "add_make_struct",
   "add_material_expression",
   "add_nav_volume",
   "add_node_pin",
@@ -25,13 +22,11 @@
   "add_sequence",
   "add_simplified_collision",
   "add_spawn_actor",
-  "add_struct_member",
   "add_sublevel",
   "add_switch_enum",
   "add_switch_int",
   "add_switch_string",
   "add_timeline",
-  "add_variable_set",
   "add_widget_binding",
   "backup_blueprint",
   "batch",
@@ -116,7 +111,6 @@
   "reimport_asset",
   "remove_collision",
   "remove_function",
-  "remove_node",
   "remove_struct_member",
   "remove_sublevel",
   "remove_tree_widget",
@@ -170,8 +164,14 @@
   "add_bind_dispatcher": [
    "test_macro_dispatch.py"
   ],
+  "add_break_struct": [
+   "test_node_spawns.py"
+  ],
   "add_call_dispatcher": [
    "test_components_dispatchers.py"
+  ],
+  "add_cast": [
+   "test_node_spawns.py"
   ],
   "add_component": [
    "test_collision.py",
@@ -179,6 +179,7 @@
    "test_inherited_components.py"
   ],
   "add_custom_event": [
+   "test_node_spawns.py",
    "test_pinlifetime.py"
   ],
   "add_enum_literal": [
@@ -221,6 +222,9 @@
   "add_macro_instance": [
    "test_macro_dispatch.py"
   ],
+  "add_make_struct": [
+   "test_node_spawns.py"
+  ],
   "add_override_event": [
    "test_graph_patch.py"
   ],
@@ -229,6 +233,9 @@
   ],
   "add_reroute": [
    "test_reroute.py"
+  ],
+  "add_struct_member": [
+   "test_node_spawns.py"
   ],
   "add_tree_widget": [
    "test_rename_widget.py",
@@ -239,6 +246,7 @@
   "add_variable": [
    "test_array_wildcard_durability.py",
    "test_graph_patch.py",
+   "test_node_spawns.py",
    "test_rollback_real.py",
    "test_selfpin.py",
    "test_v3_apply.py"
@@ -246,9 +254,13 @@
   "add_variable_get": [
    "test_array_wildcard_durability.py",
    "test_graph_patch.py",
+   "test_node_spawns.py",
    "test_rollback_real.py",
    "test_selfpin.py",
    "test_v3_apply.py"
+  ],
+  "add_variable_set": [
+   "test_node_spawns.py"
   ],
   "add_widget_animation": [
    "test_rename_widget.py",
@@ -296,6 +308,7 @@
    "test_inherited_components.py",
    "test_interfaces.py",
    "test_macro_dispatch.py",
+   "test_node_spawns.py",
    "test_pinlifetime.py",
    "test_rename_widget.py",
    "test_reroute.py",
@@ -334,6 +347,7 @@
    "test_interfaces.py",
    "test_macro_dispatch.py",
    "test_modal_guard.py",
+   "test_node_spawns.py",
    "test_pinlifetime.py",
    "test_rename_widget.py",
    "test_reroute.py",
@@ -359,6 +373,7 @@
    "test_material_write.py"
   ],
   "create_struct": [
+   "test_node_spawns.py",
    "test_set_struct_member.py"
   ],
   "delete_asset": [
@@ -371,6 +386,7 @@
    "test_macro_dispatch.py",
    "test_material_write.py",
    "test_modal_guard.py",
+   "test_node_spawns.py",
    "test_pinlifetime.py",
    "test_rename_widget.py",
    "test_reroute.py",
@@ -390,7 +406,8 @@
    "test_sockets_ai.py"
   ],
   "describe_endpoint": [
-   "test_graph_patch.py"
+   "test_graph_patch.py",
+   "test_node_spawns.py"
   ],
   "describe_package": [
    "test_fuzz_detector.py",
@@ -430,6 +447,7 @@
    "test_array_wildcard_durability.py",
    "test_graph_patch.py",
    "test_macro_dispatch.py",
+   "test_node_spawns.py",
    "test_pinlifetime.py",
    "test_reroute.py",
    "test_rollback_real.py",
@@ -485,7 +503,8 @@
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_components_dispatchers.py",
-   "test_interfaces.py"
+   "test_interfaces.py",
+   "test_node_spawns.py"
   ],
   "list_ik_rig": [
    "test_ik_authoring.py",
@@ -514,6 +533,7 @@
   ],
   "list_nodes": [
    "test_graph_patch.py",
+   "test_node_spawns.py",
    "test_pinlifetime.py",
    "test_reroute.py",
    "test_rollback_real.py",
@@ -570,6 +590,9 @@
   ],
   "remove_interface": [
    "test_interfaces.py"
+  ],
+  "remove_node": [
+   "test_node_spawns.py"
   ],
   "remove_pin": [
    "test_pinlifetime.py"
