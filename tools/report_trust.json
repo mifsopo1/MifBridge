@@ -9,5 +9,15 @@
     "- a GitHub login is not proof of identity by itself, and this grants that account the ability to",
     "make this machine run editor operations unattended."
   ],
-  "trusted": []
+  "trusted": [
+    "631Brando",
+    "theinfector"
+  ],
+  "_who": [
+    "631Brando  - Brando, author of the DDS2 SDK this plugin is built against.",
+    "theinfector - Infected, the QOLCrafting_P mod team who sent the relevance review on 2026-08-26.",
+    "Both logins were confirmed to EXIST on GitHub before being added. That is all the verification",
+    "possible from this side: a login existing does not prove it belongs to the person Andre talks to.",
+    "Andre asserted both identities on 2026-08-26 and that is the basis for trusting them."
+  ]
 }

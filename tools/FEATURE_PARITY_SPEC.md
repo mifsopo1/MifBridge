@@ -61,12 +61,29 @@ Never work from a typed list — one was fabricated once and a third of it was i
   unloadable mesh swallowed twice, and mesh/material silently ignored for non-StaticMeshActors).
   Being in no suite is exactly how the edit_container swap bug survived.
 - [x] **get_perf_stats has no suite.** Lowest of the four - a read whose wrong answer misleads rather
-- [ ] **The World Partition branch of landscape_info is still unproven.** test_landscape_info covers
+- [~] **The World Partition branch of landscape_info is still unproven.** test_landscape_info covers
   the parameter contract and the accounting identity on a landscape it creates, and cross-checks it
   against both a reflection read and diagnose_landscape - but proxyCount>0, proxyComponents>0 and the
   componentsNote that fires when components==0 are exactly what 73c4b8e fixed, and reaching them needs
   a World Partition map with streaming proxies. The only ones here are real DDS2 maps. This is a good
   first task for the downstream report loop once it is switched on.
+  DECLINED as unreachable from here, after actually trying rather than assuming. A World Partition
+  LEVEL is reachable - new_level partitioned:true produces a genuine one (WorldPartition,
+  WorldPartitionMiniMap and WorldDataLayers actors all present) and a landscape was created in it.
+  But that landscape is a single ALandscape with 16 components and NO streaming proxies: under World
+  Partition a landscape only splits into ALandscapeStreamingProxy actors when its GRID SIZE is
+  changed, and that is not automatic on creation.
+  The engine exposes ULandscapeSubsystem::ChangeGridSize, so an endpoint would be cheap - but judged
+  against DDS2 cooked-game modding it is not worth one. A modder works with terrain the game already
+  ships, and new terrain from create_landscape is fine unproxied. Adding an endpoint whose only
+  purpose is to make a test reachable is breadth for testing's sake.
+  The only proxied terrain on this machine is inside Andre's real DDS2 maps, which must not be opened.
+  So the right verifier is the downstream consumer, who has real World Partition terrain and for whom
+  this is a READ-ONLY check. It is the natural first task for the report loop once it is switched on.
+  WHAT IS PROVEN: the parameter contract, the accounting identity, componentScope, and agreement with
+  both a reflection read and diagnose_landscape - in a partitioned level as well as an ordinary one.
+  WHAT IS NOT: the arithmetic when proxyCount > 0, and the componentsNote that fires when the parent
+  owns zero components. That is the case 73c4b8e fixed.
 - [x] **Audit the 31 remaining "NOTHING was created" claims.** Two foliage sites were corrected today
 - [x] **labelNote overwrites itself in two loops.** MifBridgeAuthoring.cpp:306 and :455 write it as a
 - [x] **Triage the discarded-bool sweep (issue N).** 299 bare-statement calls to bool-returning engine
