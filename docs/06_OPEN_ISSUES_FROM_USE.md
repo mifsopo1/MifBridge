@@ -1,5 +1,33 @@
 # MifBridge — open issues found in use
 
+## FILE BUGS HERE
+
+**This file is where a session reports a MifBridge defect found while USING it.** Not a commit
+message, not a postmortem — those come after, and neither is somewhere a person looks to ask "what is
+broken right now".
+
+Add a row to the status table below and a numbered section underneath with:
+
+- what you called and what came back, verbatim
+- the build (`self_audit` reports `surfaceSignature` and the endpoint count; it does NOT report a git
+  hash, so say so rather than guessing which commit you were on)
+- the asset and project, so it can be reproduced
+- whether anything was SAVED, because that decides whether work is at risk
+- a minimal reproduction if you have one
+
+Then say so in the session so it is not only in a file. A crash report gets fixed the same day; a
+report in a commit message gets found in a month.
+
+Related files, so nothing is filed in the wrong one:
+
+| file | what belongs in it |
+|---|---|
+| `06_OPEN_ISSUES_FROM_USE.md` (this one) | a defect found in use, open or recently closed |
+| `01_POSTMORTEMS.md` | the root cause AFTER a bug is understood, and how to avoid the class of it |
+| `02_GOTCHAS.md` | engine behaviour that is not a bug but will bite the next person |
+| `tools/FEATURE_PARITY_SPEC.md` | a missing capability, rather than something broken |
+
+
 **Provenance:** written by the plugin author 2026-07-29 during a long BotanistExpansion session, from
 actual use rather than from reading the code. Every item was re-tested by the author against build
 `Jul 29 02:56` (211 endpoints). Reproduced here verbatim below the status table, because a report
@@ -27,6 +55,11 @@ Author's own priority ranking, "by what actually costs me time now". Status as o
 | — | `set_viewport_camera` does not reach `capture_camera` (§7) | **FIXED + verified** — `useViewportCamera` opt-in; `cameraSource` echoes `default`/`explicit`/`viewport` |
 | — | **No way to CREATE a DataTable asset (§8)** | **IMPLEMENTED 2026-08-21, UNVERIFIED** — `create_datatable {path, rowStruct}` added; `duplicate_asset` now accepts a SOURCE under any mounted root. Built (DLL 18:51:20) but not yet exercised against a running editor |
 | — | `CallArrayFunction` wildcards (§5) | **PARTIAL** — `set_pin_type`'s silent revert is fixed; the `connect_pins` half is unresolved, see §5 |
+| — | **remove then recreate a WidgetAnimation of the same name CRASHED the editor (§9)** | **FIXED + verified 2026-08-26** — the removed UObject stayed alive holding its name; `remove_widget_animation` now frees it and reports `objectNameReusable`, `add_widget_animation` refuses a held name instead of asserting, and `set_widget_animation_range` removes the need for the destructive sequence. PM-010, 43 checks |
+| — | UMG WidgetAnimation authoring was unavailable | **FIXED + verified 2026-08-25** — `add_widget_animation`, `add_widget_animation_track`, `set_widget_animation_keys`, `remove_widget_animation*`, `rename_tree_widget`. All three animatable properties reachable |
+| — | `set_widget_animation_keys` could only ever animate translation | **FIXED + verified 2026-08-25** — the C++ supported RenderOpacity and ColorAndOpacity all along; the MCP tool never exposed `property` and the sibling docstring said they did not exist |
+| — | Macro discovery used a hardcoded library list | **FIXED** — discovered from the asset registry instead (94ae2f5) |
+| — | A pin pointer is unsafe across `BreakPinLinks` | **FIXED** — four sites audited and fixed (cdcd8d6) |
 
 Note the ranking is by **cost now**, not by severity. §5 is the most severe item in the file — it
 produces a build that is green in the editor and dead in the shipped game — but it is worked around
@@ -323,6 +356,42 @@ Miscellaneous -> Data Table -> pick the row struct). `write_datatable_rows` can 
 afterwards, so only the creation step is manual.
 
 ---
+
+## 9. Removing then recreating a WidgetAnimation of the same name crashed the editor
+
+**Reported** 2026-08-25 from QOLCrafting_P / `WBP_QOL_DropZone`, animation `ArrowLoop`, crash GUID
+`UECC-Windows-2A82EB2E400C3FC119CD1E859837B612_0000`. **Fixed and verified** 2026-08-26.
+
+`remove_widget_animation` returned `{"ok": true, "removed": "ArrowLoop", "remaining": 0}` and the very
+next `add_widget_animation` with the same name killed the editor:
+
+```
+Fatal error: Obj.cpp line 265
+Renaming an object WidgetAnimation ...:WidgetAnimation_0
+on top of an existing object WidgetAnimation ...:ArrowLoop is not allowed
+```
+
+One missing line. `WBP->Animations.Remove(Anim)` detaches the animation from the array and leaves the
+UObject alive under the same outer, still owning the name. The engine's own delete path does the
+missing step with the reason in a comment (`AnimationTabSummoner.cpp:823-829`): rename to the transient
+package first. `add_widget_animation` had been written by mirroring the CREATE path in that same file,
+thirty lines above, and the DELETE path was never read.
+
+Also worth keeping: the remove handler DID verify itself, by re-finding the animation in
+`WBP->Animations`, and that check passed the whole time the bug existed. **A read-back that queries a
+different structure than the one the next operation will consult proves nothing.** Full write-up in
+`01_POSTMORTEMS.md` PM-010.
+
+Fixed three ways, one per failure the report identified: `remove_widget_animation` frees the name and
+reports `objectNameReusable` separately from `removedFromAnimationsArray`; `add_widget_animation`
+refuses before mutating when the name is held; and `set_widget_animation_range` was added so the
+destructive sequence is not needed to change a playback range — which is all the reporter wanted.
+Regression: `tools/test_widget_anim_recreate.py`, 43 checks, running the cycle three times because a
+name-holding leak usually survives one round.
+
+**The report was excellent and made the fix cheap.** It gave the exact sequence, the assertion text,
+the stack, the source-level cause, the data-durability position, and three suggested fixes — all three
+of which were implemented. That is the standard to file at.
 
 ## Not MifBridge, but adjacent
 

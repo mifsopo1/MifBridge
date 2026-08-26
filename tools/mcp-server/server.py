@@ -2357,6 +2357,102 @@ def list_retarget_chain_mapping(path: str) -> dict:
 
 
 @mcp.tool()
+def list_ik_solver_types() -> dict:
+    """List the IK Rig solver classes this engine build has.
+
+    Needed because the names are NOT guessable: the full-body solver is IKRigFBIKSolver while its
+    siblings are IKRig_LimbSolver, IKRig_PoleSolver, IKRig_BodyMover and IKRig_SetTransform.
+
+    Reports class names rather than the friendly labels the IK Rig editor shows. That label comes from
+    GetNiceName(), whose base implementation asserts, so a custom solver class that does not override
+    it would terminate the editor - it is deliberately never called.
+    """
+    return _post("list_ik_solver_types")
+
+
+@mcp.tool()
+def add_ik_solver(path: str, solver_class: str) -> dict:
+    """Add a solver to an IK Rig. list_ik_solver_types shows the available classes.
+
+    Solvers are addressed by INDEX everywhere else, and indices SHIFT when an earlier solver is
+    removed - re-read with list_ik_rig after any remove_ik_solver. Set the solver\'s bone span with
+    set_ik_solver, then connect goals to it with set_ik_goal_solver_connection.
+    """
+    return _post("add_ik_solver", path=path, solverClass=solver_class)
+
+
+@mcp.tool()
+def remove_ik_solver(path: str, index: int) -> dict:
+    """Remove a solver from an IK Rig by index.
+
+    Every later solver shifts DOWN by one afterwards, and any goal connected only to this solver
+    becomes inert. An out-of-range index is refused with the actual solver count rather than a bare
+    "invalid index".
+    """
+    return _post("remove_ik_solver", path=path, index=index)
+
+
+@mcp.tool()
+def set_ik_solver(path: str, index: int, root_bone: str = "", end_bone: str = "",
+                  enabled: bool = None) -> dict:
+    """Set a solver\'s root bone, end bone and/or enabled flag.
+
+    Both bones are validated BEFORE either is written, so a bad end_bone cannot leave a solver with a
+    new root and its old end. Not every solver type uses every field - a LimbSolver derives its end
+    from the goal rather than an explicit end bone - so the response reads the values back off the
+    solver and adds refusedNote naming any field the solver declined. The bone names being valid and
+    the solver ignoring them are different things.
+    """
+    return _post("set_ik_solver", path=path, index=index,
+                 rootBone=root_bone or None, endBone=end_bone or None, enabled=enabled)
+
+
+@mcp.tool()
+def add_ik_goal(path: str, name: str, bone: str) -> dict:
+    """Add an IK goal (an effector target) to a bone on an IK Rig.
+
+    The engine call neither sanitises nor uniquifies the name - unlike retarget chains - and returns
+    the same empty answer for "that name is taken" and "no such bone". Both are checked here so the
+    refusal says which, and the name is run through the engine\'s own sanitiser first; the response
+    reports name, requestedName and a sanitised flag.
+
+    A goal connected to no solver does NOTHING and the rig still initialises - the engine only warns.
+    Connect it with set_ik_goal_solver_connection, and list_ik_rig will flag it until you do.
+    """
+    return _post("add_ik_goal", path=path, name=name, bone=bone)
+
+
+@mcp.tool()
+def remove_ik_goal(path: str, name: str) -> dict:
+    """Remove an IK goal. Lists the goals that DO exist if the name is unknown."""
+    return _post("remove_ik_goal", path=path, name=name)
+
+
+@mcp.tool()
+def set_ik_goal_bone(path: str, name: str, bone: str) -> dict:
+    """Move an existing IK goal to a different bone.
+
+    The underlying call returns the same false for "no such goal" and "no such bone", so both are
+    checked first and the error says which. Reports previousBone alongside the new one.
+    """
+    return _post("set_ik_goal_bone", path=path, name=name, bone=bone)
+
+
+@mcp.tool()
+def set_ik_goal_solver_connection(path: str, name: str, solver_index: int,
+                                  connected: bool = True) -> dict:
+    """Connect an IK goal to a solver, or disconnect it with connected=False.
+
+    This is the step that makes a goal do anything: an unconnected goal is inert and the engine treats
+    that as a warning at most, so nothing else will tell you it was missed. The connection is read
+    back after writing rather than trusted from the return value, and the response reports
+    connectedToAnySolver so you can see whether the goal now reaches anything at all.
+    """
+    return _post("set_ik_goal_solver_connection", path=path, name=name,
+                 solverIndex=solver_index, connected=connected)
+
+
+@mcp.tool()
 def list_ik_rig(path: str) -> dict:
     """Read an IKRigDefinition AND check whether it would actually work.
 
@@ -2366,8 +2462,18 @@ def list_ik_rig(path: str) -> dict:
     naming bones that do not exist, or a chain whose end bone is not a descendant of its start bone so
     there is no chain between them at all. All of those return ok:true when written.
 
-    Reports previewMesh, boneCount, refPoseCount, retargetRoot and every chain with its own valid flag,
-    plus an overall `valid` and a `problems` list saying what is wrong in words.
+    Reports previewMesh, boneCount, refPoseCount, retargetRoot, every chain with its own valid flag,
+    and the rig\'s solvers and goals - including which solvers each goal reaches, since a goal wired to
+    none is inert and the engine only warns about it.
+
+    `purpose` says whether this rig is set up for retargeting, for IK, for both, or for nothing yet: a
+    rig needs only the half it is used for, and demanding chains from an IK-only rig would call a
+    perfectly good one invalid. `valid` and `problems` are judged against that purpose.
+
+    `runtimeInitialized` is the ENGINE\'s own verdict - the rig is actually handed to UIKRigProcessor
+    and initialised - with the engine\'s errors and warnings surfaced. It is skipped, with the reason
+    given, when the structural checks already failed: handing a structurally inconsistent rig to the
+    engine can hit an assert that terminates the editor rather than returning an error.
 
     IK Rig is UE5-only. On an engine without the plugin this endpoint still exists and refuses with
     that reason, so you can tell "no IK Rig here" from "no such endpoint".

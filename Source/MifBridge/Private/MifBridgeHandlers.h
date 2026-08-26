@@ -1140,6 +1140,15 @@ namespace MifBridge
 	/** IK Rig / IK Retargeter authoring. Registered on EVERY engine; on one without the IKRig
 	 *  plugin (UE4) they refuse with that reason rather than not existing. */
 	MIF_DECL(list_ik_rig);
+	/** The IK half of an IK Rig: goals and solvers. Retargeting needs neither. */
+	MIF_DECL(list_ik_solver_types);
+	MIF_DECL(add_ik_solver);
+	MIF_DECL(remove_ik_solver);
+	MIF_DECL(set_ik_solver);
+	MIF_DECL(add_ik_goal);
+	MIF_DECL(remove_ik_goal);
+	MIF_DECL(set_ik_goal_bone);
+	MIF_DECL(set_ik_goal_solver_connection);
 	MIF_DECL(set_ik_rig_mesh);
 	MIF_DECL(set_ik_rig_retarget_root);
 	MIF_DECL(add_ik_retarget_chain);

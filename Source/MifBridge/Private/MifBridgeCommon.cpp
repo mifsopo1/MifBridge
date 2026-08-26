@@ -286,6 +286,14 @@ namespace MifBridge
 			MIF_BIND(list_sockets);
 			MIF_BIND(list_bones);
 			MIF_BIND(list_ik_rig);
+			MIF_BIND(list_ik_solver_types);
+			MIF_BIND(add_ik_solver);
+			MIF_BIND(remove_ik_solver);
+			MIF_BIND(set_ik_solver);
+			MIF_BIND(add_ik_goal);
+			MIF_BIND(remove_ik_goal);
+			MIF_BIND(set_ik_goal_bone);
+			MIF_BIND(set_ik_goal_solver_connection);
 			MIF_BIND(set_ik_rig_mesh);
 			MIF_BIND(set_ik_rig_retarget_root);
 			MIF_BIND(add_ik_retarget_chain);

@@ -389,9 +389,22 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       cooked-game mod you do not edit the asset, you call `SetNiagaraVariableFloat`/`Vec3`/`Bool` on the
       spawned component from Blueprint — and the exact name string this returns is what those take.
 
-- [ ] **IK Rig GOALS and SOLVERS authoring** — not built, and the API reconnaissance turned up three
-      editor-killing asserts on that path which are recorded here so nobody walks into them. Nothing
-      currently shipped touches goals or solvers, so none of these is live today.
+- [x] **IK Rig GOALS and SOLVERS authoring** — 8 endpoints, 53 checks. The IK half of an IK Rig; the
+      retargeting endpoints author a root and chains, which is everything retargeting needs and none of
+      what IK needs. `list_ik_solver_types`, `add_ik_solver`, `remove_ik_solver`, `set_ik_solver`,
+      `add_ik_goal`, `remove_ik_goal`, `set_ik_goal_bone`, `set_ik_goal_solver_connection`, plus
+      `list_ik_rig` extended to report solvers, goals and which solvers each goal reaches.
+
+      The three editor-killing asserts recorded on this item were AVOIDED rather than guarded.
+      `SetGoalCurrentTransform` is not exposed at all (it sets a preview pose, so nothing is lost);
+      `GetSolverUniqueName` is never called, so solvers are reported by class name; and `AddNewGoal`'s
+      two indistinguishable failures are pre-checked separately so the refusal says which.
+
+      Building it caught a real bug in the validator shipped hours earlier: it demanded retarget chains
+      and a retarget root from EVERY rig, which called a perfectly good IK-only rig invalid — and
+      because a failed structural check gates the engine probe, the one answer that would have settled
+      it never ran. `list_ik_rig` now reports `purpose` (retargeting / IK / both / nothing yet) and
+      judges the rig against it.
 
       * `UIKRigController::SetGoalCurrentTransform` does `check(Goal)`
         (`IKRigController.cpp:1243-1244`). Passing an unknown goal name TERMINATES the editor. Any

@@ -94,11 +94,16 @@ def main():
     check("T230 it reads", r.get("ok") is True, json.dumps(r)[:160])
     check("T230 an empty rig is NOT valid", r.get("valid") is False, r.get("valid"))
     check("T230 it says the mesh is missing", "no mesh has been assigned" in p, p[:150])
-    check("T230 it says the retarget root is missing", "no retarget root" in p, p[:150])
-    check("T230 it says there are no chains", "no retarget chains" in p, p[:150])
+    # An empty rig is not "missing a retarget root" - it has not been pointed at either purpose yet.
+    # Reporting a missing root on a rig that may be meant for IK is what marked valid IK-only rigs
+    # invalid, so the message is now about the rig doing nothing at all.
+    check("T230 it says the rig does nothing yet", "does nothing" in p, p[:200])
+    check("T230 naming both halves it could serve",
+          "retarget" in p and "solve IK" in p, p[:220])
+    check("T230 and purpose says so too", r.get("purpose") == "nothing yet", r.get("purpose"))
     # Each problem names the endpoint that fixes it - a validator that only says "invalid" is a riddle.
     check("T230 each problem names what to do about it",
-          "set_ik_rig_mesh" in p and "add_ik_retarget_chain" in p, p[:200])
+          "set_ik_rig_mesh" in p and "add_ik_retarget_chain" in p and "add_ik_solver" in p, p[:250])
 
     # ------------------------------------------------------------------ T231 skeleton integrity
     print("\n=== T231: a hand-written skeleton is caught ===")
