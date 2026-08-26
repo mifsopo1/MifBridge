@@ -23,6 +23,7 @@
 // verified) and docs/audit/work/B_assets_registry.md (list_dirty_packages — B owns it per the
 // ratified dedup; FEditorFileUtils trio at FileHelpers.h:402/:409/:417).
 #include "MifBridgeHandlers.h"
+#include "UObject/UObjectHash.h"   // ForEachObjectWithPackage - save_dirty_packages tells an empty package from a failed save
 #include "MifBridgeLog.h"
 
 #include "Editor.h"                 // GEditor (Editor.h pulls in UEditorEngine)
@@ -593,7 +594,7 @@ namespace MifBridge
 			FEditorFileUtils::GetDirtyContentPackages(Packages);
 		}
 
-		TArray<TSharedPtr<FJsonValue>> Saved, WouldSave, Failed, Skipped, SkippedCookedOrigin;
+		TArray<TSharedPtr<FJsonValue>> Saved, WouldSave, Failed, Skipped, SkippedCookedOrigin, NeedsDeletion;
 		auto AddReasonRow = [](TArray<TSharedPtr<FJsonValue>>& Arr, const FString& Name, const FString& Reason)
 		{
 			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
@@ -646,6 +647,33 @@ namespace MifBridge
 				continue;
 			}
 
+			// Pre-scan 4: A PACKAGE WITH NOTHING LEFT IN IT NEEDS DELETING, NOT SAVING. Destroying actors
+			// in a One-File-Per-Actor map leaves their external-actor packages dirty and EMPTY. SavePackage
+			// on an empty package fails, and this handler used to attach a guessed reason to that failure -
+			// "still referenced by an in-flight operation?" - which was simply untrue. A real session hit
+			// 915 of these at once and was told 915 speculative lies; the .uasset files stayed on disk and
+			// World Partition would have loaded them back as ghost actors.
+			//
+			// Reported rather than deleted here. Deleting a package is not what an endpoint called
+			// save_dirty_packages should do unasked, and the caller can now see exactly which ones need it.
+			int32 LiveObjects = 0;
+			ForEachObjectWithPackage(Package, [&LiveObjects](UObject* Obj)
+				{
+					if (Obj && !Obj->IsPendingKillOrUnreachable())
+					{
+						++LiveObjects;
+					}
+					return LiveObjects == 0;   // stop as soon as one is found
+				}, /*bIncludeNestedObjects*/ false);
+			if (LiveObjects == 0)
+			{
+				AddReasonRow(NeedsDeletion, Name,
+					TEXT("nothing left in this package to save - its object was destroyed, so it needs "
+						 "DELETING rather than saving. Common on One-File-Per-Actor maps after destroying "
+						 "actors. The file is still on disk and World Partition will load it back."));
+				continue;
+			}
+
 			bool bSaved = false;
 			if (UWorld* World = UWorld::FindWorldInPackage(Package))
 			{
@@ -669,7 +697,11 @@ namespace MifBridge
 			}
 			else
 			{
-				AddReasonRow(Failed, Name, TEXT("save failed (see editor log; still referenced by an in-flight operation?)"));
+				// NO GUESSING. This used to append "still referenced by an in-flight operation?", which read
+				// as a diagnosis and was wrong every time it mattered. The empty-package case above is now
+				// caught by name; whatever reaches here is genuinely unexplained, and saying so is more
+				// useful than a plausible invention.
+				AddReasonRow(Failed, Name, TEXT("SavePackage returned false and gave no reason - see the editor log for this package. It is NOT the empty-package case, which is reported separately as needsDeletion."));
 			}
 		}
 
@@ -686,5 +718,14 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("failed"), Failed);
 		Out->SetArrayField(TEXT("skipped"), Skipped);
 		Out->SetArrayField(TEXT("skippedCookedOrigin"), SkippedCookedOrigin);
+		Out->SetArrayField(TEXT("needsDeletion"), NeedsDeletion);
+		if (NeedsDeletion.Num() > 0)
+		{
+			Out->SetStringField(TEXT("needsDeletionNote"), FString::Printf(
+				TEXT("%d package(s) have nothing left in them and cannot be SAVED - their objects were ")
+				TEXT("destroyed and the files are still on disk. They are listed separately from failed[] ")
+				TEXT("because a failed save and a package awaiting deletion are different problems."),
+				NeedsDeletion.Num()));
+		}
 	}
 }
