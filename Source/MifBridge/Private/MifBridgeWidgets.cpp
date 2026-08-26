@@ -1558,6 +1558,26 @@ namespace MifBridge
 			return;
 		}
 
+		// WHAT ELSE GOES WITH IT. RemoveWidget takes the widget's whole SUBTREE - the reject-hint above
+		// says so for anyone who passes recursive:true - but the response said only removed:true, so
+		// removing one container and removing a container holding twelve widgets were indistinguishable
+		// answers. duplicate_tree_widget in this same family reports `created` and `clonedCount`; the
+		// destructive half should be at least as forthcoming as the constructive one.
+		//
+		// NAMES are collected, not pointers, and BEFORE the call: afterwards the widgets are out of the
+		// tree and there is nothing left to walk.
+		TArray<UWidget*> Doomed;
+		UWidgetTree::GetChildWidgets(Widget, Doomed);   // includes Widget itself
+		TArray<TSharedPtr<FJsonValue>> DoomedNames;
+		DoomedNames.Add(MakeShared<FJsonValueString>(WidgetName));
+		for (const UWidget* W : Doomed)
+		{
+			if (W && W != Widget)
+			{
+				DoomedNames.Add(MakeShared<FJsonValueString>(W->GetFName().ToString()));
+			}
+		}
+
 		WBP->WidgetTree->SetFlags(RF_Transactional);
 		WBP->WidgetTree->Modify();
 		const bool bRemoved = WBP->WidgetTree->RemoveWidget(Widget);
@@ -1565,6 +1585,18 @@ namespace MifBridge
 
 		Out->SetBoolField(TEXT("removed"), bRemoved);
 		Out->SetStringField(TEXT("widgetName"), WidgetName);
+		if (bRemoved)
+		{
+			Out->SetNumberField(TEXT("removedCount"), DoomedNames.Num());
+			Out->SetArrayField(TEXT("removedWidgets"), DoomedNames);
+			if (DoomedNames.Num() > 1)
+			{
+				Out->SetStringField(TEXT("note"), FString::Printf(
+					TEXT("%d widget(s) were removed - '%s' and its whole subtree. RemoveWidget is always ")
+					TEXT("recursive; there is no option to keep the children."),
+					DoomedNames.Num(), *WidgetName));
+			}
+		}
 		Out->SetBoolField(TEXT("needsCompileToApply"), true);
 	}
 
