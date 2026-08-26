@@ -1134,3 +1134,55 @@ contradicts this file, the analysis wins — it read the code and this file matc
   needs a Skeleton, since a BlendSpace cannot exist without one, and it is not yet established that
   create_asset can set it. Establish that first; the endpoint is fixed either way, this is about
   proving it stays fixed.
+
+---
+
+## Non-endpoint hardening - approved by Andre 2026-08-26
+
+These are NOT endpoints and do not move the parity count. Andre approved all four after asking what
+was worth having beyond endpoints, given the competitor ships an in-editor application. Each one is
+here because something already went wrong without it, not because the competitor has it.
+
+- [ ] **Plugin-side safety gate - the real gap.**
+  Today "no saving assets, no PIE, scratch under /Game/_Mif* only" is enforced by the AGENT's
+  discipline plus tools/scratch_confirm.py. NOTHING in the C++ would refuse a save_package call. If a
+  future session, or Infected running the bridge, ignores the convention, there is no guard. Make it
+  structural: the bridge starts read-only and destructive operations need an explicit unlock. This is
+  the highest-value item because it is the only place the design depends on good behaviour rather than
+  enforcing it. CONSTRAINT: the 64 existing suites DO write and DO create scratch assets - the default
+  mode must not break them, and how they keep working has to be part of the design, not an afterthought.
+
+- [ ] **Branded in-editor panel - purple and grey, live view.**
+  Andre's words: "a purple and grey mifbridge branded ineditor panel that shows whats happening in live
+  time". Bridge up/down, port, last N calls with timings, what is currently dirty, and a pause toggle.
+  HARD CONSTRAINT: headless is an ADVANTAGE of this design, not a limitation - the bridge opens and
+  closes the editor and survives its crashes. The panel must be strictly OPTIONAL and must never become
+  load-bearing. It must not break commandlet or headless operation. This is observability, NOT control;
+  we are not migrating toward the competitor's in-editor model.
+
+- [ ] **Watchdog and crash journal.**
+  When add_anim_node crash-killed the editor there was no in-editor signal and no record of which call
+  did it - it had to be reconstructed (PM-013). Record the endpoint BEFORE the handler runs, flushed to
+  disk so it survives a hard kill, and auto-relaunch on death. run_all_suites already does a version of
+  the relaunch; it just is not available outside the harness, so reuse rather than reimplement.
+
+- [ ] **Versioned release path, to replace vendoring.**
+  Measured cost of not having it: the Curfew copy drifted 62 endpoints behind (284 vs 222) with 11
+  source files missing, unnoticed for weeks. A tagged release plus an update script and an engine
+  compatibility matrix would have prevented all of it. Becomes necessary rather than nice the moment
+  Brando or Infected run it.
+
+### Decided 2026-08-26: ONE session for both UE and Blender, not two
+
+Andre asked whether the Blender side should run in a separate session. Answer is no, and the decisive
+reason is NOT merge conflicts. tools/mcp-server/server.py is one 4265-line module holding both tool
+surfaces - 296 UE tools calling _post (lines 386-3394), 17 bl_* tools calling _blender (3398-3821), and
+mif_mesh_roundtrip (3838) which drives BOTH - registered on a single FastMCP object (server.py:110).
+The regions are ~430 lines apart so git would auto-merge; text collision was never the risk. The real
+reason is that parity_check.py is a SINGLE verification gate that cannot certify one half while the
+other is mid-edit. It is one codebase, not two with a bridge between them. Sequencing stands: UE parity
+first, Blender after.
+
+Noted while checking: MifBlender's default port is 8792 (server.py:77-84), and Blender on this machine
+is listening on 8793. Either the addon is configured differently or 8793 is a different addon - the
+docstring warns 9876 is the third-party blender-mcp. Worth confirming when the Blender phase starts.
