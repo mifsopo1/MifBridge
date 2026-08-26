@@ -139,7 +139,10 @@ if not HAS_PATCH:
     print("ENDPOINT MISSING - the editor is running an old DLL. Aborting.")
     sys.exit(2)
 
-BP = "/Game/_MifPatchTest/BP_PatchTest"
+# Per-RUN unique. A fixed scratch path passes once and fails every time after, because unsaved
+# scratch assets live until the editor process ends - so this was green all night and failed
+# the moment a full suite run happened twice without a restart in between.
+BP = "/Game/_MifPatchTest/BP_PatchTest_%d" % int(time.time() % 100000)
 print("\n=== setup: create test blueprint ===")
 post("delete_asset", path=BP, confirm=True)   # clean slate; ignore result
 bp = post("create_blueprint", path=BP, parentClass="Actor")
