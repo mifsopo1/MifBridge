@@ -24,3 +24,4 @@ tools/fuzz_run*.log
 
 # scratch dumps produced while auditing the MIF_BIND registry
 Source/MifBridge/Private/bound_tmp.txt
+tools/audit_findings.pre-night-sweep.jsonl

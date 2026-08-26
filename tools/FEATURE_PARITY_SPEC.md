@@ -421,12 +421,13 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       Build this only if goals or solvers are actually wanted — pure retargeting, which is what the
       shipped endpoints do, needs neither.
 
-- [ ] **Night regression: every `tools/test_*.py` green against the current build.** 31 suites, and a
-      lot of shared code moved today - `list_ik_rig`'s validation changed twice, `remove_widget_animation`
-      changed, the MCP surface changed. One suite (test_ik_rig) already broke from a change made hours
-      after it was written, so the others are worth running rather than assumed. Finish condition: every
-      suite passes, or a failure is understood and either the code or the test is fixed with the reason
-      recorded.
+- [x] **Night regression: every `tools/test_*.py` green.** 31 suites, 0 failures, 0 editor deaths,
+      against the 285-endpoint build. Worth running rather than assuming: a lot of shared code had moved
+      that day, and `test_ik_rig` had already broken from a change made hours after it was written.
+      `tools/run_all_suites.py` runs them sequentially - they all drive one editor, and two suites making
+      scratch assets at once would interleave in ways that make a failure impossible to attribute. It
+      relaunches the editor if a suite kills it and RECORDS that it had to, because a suite that takes
+      the editor down is the headline of the report rather than a footnote.
 
 - [ ] **Full crash/hang sweep across all endpoints.** The last full sweep covered 238; there are 285
       now, so roughly 47 have never been swept - the IK family, the Niagara read, list_bones,

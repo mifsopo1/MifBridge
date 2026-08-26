@@ -261,9 +261,18 @@ def call(endpoint, payload=None, timeout=60):
 
 
 # --------------------------------------------------------------------------- findings
+# One id per PROCESS, stamped on every finding. Without it the findings file - which is cumulative,
+# append-only and untracked - cannot tell this run's results from last week's. That cost real time
+# once: seven findings were triaged as current, and establishing that they WERE current came down to
+# noticing that one endpoint named in them had not existed a few hours earlier. A timestamp answers it
+# in a second.
+RUN_ID = "%s-%d" % (time.strftime("%Y%m%dT%H%M%S"), os.getpid())
+
+
 def record(kind, endpoint, detail, severity="medium", **extra):
     """Append one finding. Written immediately - a run that dies keeps what it learned."""
-    row = {"kind": kind, "endpoint": endpoint, "severity": severity, "detail": detail}
+    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "runId": RUN_ID,
+           "kind": kind, "endpoint": endpoint, "severity": severity, "detail": detail}
     row.update(extra)
     with open(FINDINGS, "a", encoding="utf-8") as f:
         f.write(json.dumps(row) + "\n")
