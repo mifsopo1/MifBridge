@@ -145,6 +145,7 @@
  "list_enum_values",
  "list_functions",
  "list_graphs",
+ "list_ik_rig",
  "list_interfaces",
  "list_level_actors",
  "list_material_expressions",

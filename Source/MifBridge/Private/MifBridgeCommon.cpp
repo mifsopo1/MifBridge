@@ -284,6 +284,7 @@ namespace MifBridge
 			MIF_BIND(describe_animation);
 			MIF_BIND(list_sockets);
 			MIF_BIND(list_bones);
+			MIF_BIND(list_ik_rig);
 			MIF_BIND(describe_behavior_tree);
 			MIF_BIND(list_blackboard_keys);
 			MIF_BIND(list_animations);

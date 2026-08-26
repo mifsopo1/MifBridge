@@ -2207,6 +2207,25 @@ def list_animations(filter: str = "", skeleton: str = "", limit: int = 200) -> d
 
 
 @mcp.tool()
+def list_ik_rig(path: str) -> dict:
+    """Read an IKRigDefinition AND check whether it would actually work.
+
+    This does not echo the asset's fields back - it validates them. Every field an IK Rig holds can
+    be written directly with set_property, and doing so produces an asset that reads back perfectly
+    and is broken: a skeleton whose parallel arrays have drifted, a missing reference pose, chains
+    naming bones that do not exist, or a chain whose end bone is not a descendant of its start bone so
+    there is no chain between them at all. All of those return ok:true when written.
+
+    Reports previewMesh, boneCount, refPoseCount, retargetRoot and every chain with its own valid flag,
+    plus an overall `valid` and a `problems` list saying what is wrong in words.
+
+    IK Rig is UE5-only. On an engine without the plugin this endpoint still exists and refuses with
+    that reason, so you can tell "no IK Rig here" from "no such endpoint".
+    """
+    return _post("list_ik_rig", path=path)
+
+
+@mcp.tool()
 def list_bones(path: str, name_contains: str = "", root: str = "",
                include_transforms: bool = False) -> dict:
     """List the bones of a Skeleton or SkeletalMesh, with the hierarchy.

@@ -27,6 +27,11 @@
 		{
 			"Name": "EnhancedInput",
 			"Enabled": true
+		},
+		{
+			"Name": "IKRig",
+			"Enabled": true,
+			"Optional": true
 		}
 	]
 }

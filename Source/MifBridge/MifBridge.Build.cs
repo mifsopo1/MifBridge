@@ -90,6 +90,42 @@ public class MifBridge : ModuleRules
 			                     // stated reason was wrong, because ImageCore arrives regardless.)
 		});
 
+		// ---- IK Rig: present in UE5, ABSENT IN UE4 ------------------------------------------
+		// This plugin is also run against UE4, where the IKRig plugin does not exist. An
+		// unconditional dependency would stop the WHOLE of MifBridge loading there, which is a far
+		// worse outcome than losing five endpoints, so the plugin is detected rather than assumed.
+		//
+		// MIF_WITH_IKRIG is defined either way. MifBridgeIKRig.cpp compiles a real implementation when
+		// it is 1 and an explicit "this engine build has no IK Rig" refusal when it is 0 - the
+		// endpoints stay REGISTERED in both cases, because a missing endpoint tells a caller nothing
+		// while a refusal that names the reason tells them everything. It also keeps the three-way
+		// MIF_DECL/MIF_BIND/@mcp.tool parity intact on every engine.
+		//
+		// Both modules are needed and they are not interchangeable: UIKRigDefinition and UIKRetargeter
+		// are /Script/IKRig (Runtime), while UIKRigController and UIKRetargeterController - which is
+		// where all the authoring lives - are /Script/IKRigEditor (Editor). Verified against the live
+		// editor with describe_class rather than inferred from the folder layout.
+		string IKRigDescriptor = System.IO.Path.Combine(
+			EngineDirectory, "Plugins", "Animation", "IKRig", "IKRig.uplugin");
+		bool bHasIKRig = System.IO.File.Exists(IKRigDescriptor);
+		PublicDefinitions.Add("MIF_WITH_IKRIG=" + (bHasIKRig ? "1" : "0"));
+		if (bHasIKRig)
+		{
+			PrivateDependencyModuleNames.AddRange(new string[]
+			{
+				"IKRig",         // UIKRigDefinition, UIKRetargeter, FBoneChain, FRetargetDefinition
+				"IKRigEditor"    // UIKRigController / UIKRetargeterController. BOTH are class-level
+				                 // IKRIGEDITOR_API, so unlike AInstancedFoliageActor every member is
+				                 // linkable and there is no per-member export trap here.
+			});
+		}
+		else
+		{
+			System.Console.WriteLine(
+				"MifBridge: IKRig plugin not found at " + IKRigDescriptor +
+				" - the IK Rig endpoints will compile as unavailable-on-this-engine refusals.");
+		}
+
 		// UK2Node_CreateWidget.h is a UMGEditor PRIVATE header (Nodes/); the module
 		// dependency isn't enough — the private folder must be on the include path.
 		PrivateIncludePaths.Add(System.IO.Path.Combine(GetModuleDirectory("UMGEditor"), "Private"));
