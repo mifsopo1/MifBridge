@@ -301,6 +301,32 @@ bridge since Batch K may have left a partial edit on an asset while telling the 
 
 ---
 
+### PM-007 now has a regression test (added 2026-08-26)
+
+`tools/test_inherited_components.py`, 37 checks. The fix described above had been in the handler for
+weeks with nothing exercising it - and its symptom is invisible from the caller's side, because the
+call correctly reports failure. A documented fix with no regression test is one the next person to
+reorder that function can quietly undo.
+
+The test asserts the postcondition rather than the return value: after a refused override, does
+`get_inherited_component` still report `overrideExists: false`. That is a different question from "did
+it fail", and it is the one PM-007 was about.
+
+Writing it turned up that there are TWO rejection paths, not one:
+
+* **Pre-flight** - the value fails the type check against the parent template (unknown property, text
+  into a float, a struct into a bool). This is PM-007's path, and its message ends "NOTHING WAS
+  CREATED OR MODIFIED".
+* **Engine-apply** - the value passes pre-flight and the engine itself refuses it (garbage into
+  `RelativeScale3D`). Its message says "did not apply" and promises nothing about what was left.
+
+Both are tested, and both in their PARTIAL form - one good property alongside one bad - because a
+half-applied batch is the shape a whole-batch check would wave through. All four leave
+`overrideExists:false` and `existingOverrideCount:0`.
+
+A note for anyone extending it: `revert_inherited_component` requires `confirm=true`, which the audit
+harness strips, so only its refusal is covered. That gap is stated in the suite rather than hidden.
+
 ## PM-006 — a write was verified, and the value was still garbage
 
 **Symptom.** `override_inherited_component {component:"Influence", properties:{"SphereRadius":"not-a-float"}}`
