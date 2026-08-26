@@ -425,6 +425,41 @@ namespace MifBridge
 			return;
 		}
 
+		// DUPLICATING A COOKED NIAGARA ASSET CRASHES THE EDITOR, inside Niagara's own code:
+		//
+		//   FVersionedNiagaraEmitterData::PostLoad -> UNiagaraEmitter::PostLoad
+		//   -> UNiagaraSystem::PostLoad -> UpdateSystemAfterLoad
+		//   EXCEPTION_ACCESS_VIOLATION reading 0x30
+		//
+		// Cook strips editor-only emitter data; duplication re-runs PostLoad on the copy, which
+		// dereferences it. There is no MifBridge frame at the top of that stack, so it reads as a
+		// spontaneous editor death rather than as something this endpoint did.
+		//
+		// READING a cooked Niagara system is fine - get_property walks its ExposedParameters and
+		// add_function_call reaches the runtime surface. It is DUPLICATION that dies, because that is
+		// what re-runs PostLoad. Same family as the cooked-struct guard in MifBridgeUserTypes.cpp.
+		//
+		// Checked by CLASS NAME rather than by type on purpose: recognising an asset in order to
+		// REFUSE it does not justify taking a dependency on the whole Niagara plugin module, and a
+		// string check keeps working in a build where Niagara is not compiled in at all.
+		{
+			const FString AssetClassName = Asset->GetClass()->GetName();
+			const bool bNiagara = AssetClassName == TEXT("NiagaraSystem")
+				|| AssetClassName == TEXT("NiagaraEmitter");
+			const UPackage* SrcPackage = Asset->GetOutermost();
+			const bool bCooked = SrcPackage && SrcPackage->HasAnyPackageFlags(PKG_Cooked);
+			if (bNiagara && bCooked)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is a COOKED %s, and duplicating one CRASHES the editor inside Niagara's "
+						 "own PostLoad — cook strips the editor-only emitter data that the copy's "
+						 "PostLoad then dereferences. Refused rather than attempted. Reading it is "
+						 "safe: get_property reaches ExposedParameters and add_function_call reaches "
+						 "the runtime Niagara surface."), *RawPath, *AssetClassName));
+				return;
+			}
+		}
+
 		const FString NewPackagePath = FPackageName::GetLongPackagePath(NewPath);
 		const FString NewAssetName = FPackageName::GetLongPackageAssetName(NewPath);
 		if (!IsValidIdentifier(NewAssetName))

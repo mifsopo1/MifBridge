@@ -228,10 +228,30 @@ engine has no such class registered in this build, which is as definitive as it 
       (which is what a shipped mod actually contains), `run_console_captured` scrapes real per-emitter
       particle counts from `fx.Niagara.DumpComponents`, and spawning/binding a NiagaraComponent works
       today. No Niagara-named endpoint and no module dependency, and it still works.
-- [ ] **Niagara User parameters** — the one genuine Niagara gap:
-      `get_niagara_user_parameters` / `set_niagara_user_parameter`. It is the only route to PERSISTED
-      user-parameter overrides that survive into a `_P` pak, and the read half gives an agent
-      something to verify against.
+- [~] **Niagara User parameters** — declined, and the investigation was worth more than the endpoint
+      would have been.
+      READING already works: `get_property` on a system's `ExposedParameters` returns the user
+      parameters with names and types (`User.Color`, `User.FoamOpacity`, `User.FoamWidthLeft` on
+      BoatFoamTrail). It is an awkward shape — a redirect map keyed by
+      `(Name="Color",TypeDefHandle=(...))` — so a dedicated endpoint would be ERGONOMICS, not
+      capability. Combined with `add_function_call` reaching the whole runtime Niagara surface, the
+      category is functional.
+      The audit called the write side "cheap to build". That did not survive contact: probing this
+      territory CRASHED THE EDITOR, and the crash was not where anyone would have looked — see below.
+      Writing a persisted override is not something to guess at on the strength of an estimate.
+- [x] **Cooked Niagara duplication crashes the editor — found and guarded.** `duplicate_asset` on a
+      cooked NiagaraSystem access-violates inside Niagara's own code:
+      `FVersionedNiagaraEmitterData::PostLoad` -> `UNiagaraEmitter::PostLoad` ->
+      `UNiagaraSystem::UpdateSystemAfterLoad`, reading 0x30. Cook strips the editor-only emitter data
+      that the copy's PostLoad dereferences. No MifBridge frame at the top of that stack, so it reads
+      as a spontaneous editor death.
+      READING a cooked Niagara asset is safe; DUPLICATION is what re-runs PostLoad and dies. Now
+      refused with that explanation. Checked by class NAME rather than type, deliberately: recognising
+      an asset in order to refuse it does not justify a dependency on the whole Niagara plugin module,
+      and the string check keeps working where Niagara is not compiled in.
+      Third member of a family now: cooked structs assert in FStructureEditorUtils, cooked materials
+      have no expression graph, cooked Niagara crashes on duplicate. Cook keeps runtime data and drops
+      editor data, and editor-side operations fall into the gap.
 
 ## Method note
 
