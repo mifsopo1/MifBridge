@@ -39,13 +39,23 @@ def check(name, cond, detail=""):
 
 
 def pin_types(graph, node):
-    """name -> type string for every pin on a node, read back through the bridge."""
+    """name -> category for every pin on a node, read back through the bridge.
+
+    get_node nests the pins under "node", and each pin nests its type under "type" as
+    {category, container, subObject}. The first version of this read r["pins"] and p["category"],
+    which are both absent - so it saw NO pins, found NO wildcards, and every assertion below passed
+    while measuring an empty dict. A green suite that observed nothing is worse than no suite, and it
+    is exactly the failure this file was written to catch in someone else.
+    """
     r = M.call("get_node", {"graphId": graph, "nodeGuid": node})
+    node_obj = r.get("node") or {}
+    pins = node_obj.get("pins") or []
     out = {}
-    for p in (r.get("pins") or []):
-        out[p.get("name")] = "%s<%s>" % (p.get("category") or p.get("type") or "?",
-                                         p.get("subCategoryObject") or p.get("subCategory") or "")
-    return out, r
+    for p in pins:
+        t = p.get("type") or {}
+        out[p.get("name")] = "%s%s" % (t.get("category") or "?",
+                                       "[" + t["container"] + "]" if t.get("container") else "")
+    return out, node_obj
 
 
 def main():
@@ -79,8 +89,10 @@ def main():
     # ------------------------------------------------------------------ T280 the wildcard resolves
     print("\n=== T280: connecting an array to a library call resolves its wildcard ===")
     getter = M.call("add_variable_get", {"graphId": graph, "var": "Numbers", "x": 0, "y": 0})
+    # The class key is required: Array_* live on UKismetArrayLibrary, not on the blueprint, and the
+    # endpoint refuses rather than guessing - which is the right call and worth the extra argument.
     call = M.call("add_function_call", {"graphId": graph, "function": "Array_Length",
-                                        "x": 400, "y": 0})
+                                        "class": "KismetArrayLibrary", "x": 400, "y": 0})
     check("T280 a variable getter is created", getter.get("ok") is True, json.dumps(getter)[:150])
     check("T280 an Array_Length call is created", call.get("ok") is True, json.dumps(call)[:150])
     if not (getter.get("ok") and call.get("ok")):
@@ -91,7 +103,12 @@ def main():
 
     before_types, before_raw = pin_types(graph, cnode)
     wildcard_pins = [k for k, v in before_types.items() if "wildcard" in v.lower()]
-    print("   wildcard pins before connecting: %s" % (wildcard_pins or "(none)"))
+    print("   pins before connecting: %s" % json.dumps(before_types))
+    # NON-VACUITY GUARD. Everything below asks whether a wildcard stayed resolved; if none was ever
+    # observed, those questions have no subject and passing them proves nothing.
+    check("T280 a wildcard pin was actually observed", bool(wildcard_pins),
+          "no wildcard on an unconnected Array_Length - either the reader is wrong again or this "
+          "engine spawns it pre-typed, and either way the rest of this suite is vacuous")
 
     conn = M.call("connect_pins", {"graphId": graph,
                                    "srcNode": gnode, "srcPin": "Numbers",
@@ -117,10 +134,9 @@ def main():
     # THE assertion the whole file exists for.
     check("T281 the pin is STILL typed after the reconstruct", not post_wild,
           "reverted to wildcard: %s -- this REPRODUCES 06_OPEN_ISSUES §5" % post_wild)
-    check("T281 and the connection survived",
-          any((p.get("name") == "TargetArray" and p.get("linkedTo"))
-              for p in (post_raw.get("pins") or [])) or not post_wild,
-          json.dumps(post_raw)[:200])
+    linked = [p.get("name") for p in (post_raw.get("pins") or []) if p.get("linkedTo")]
+    check("T281 and the connection survived the reconstruct", "TargetArray" in linked,
+          "pins still linked after refresh: %s" % linked)
 
     # ------------------------------------------------------------------ T282 does it compile
     print("\n=== T282: and the blueprint compiles ===")

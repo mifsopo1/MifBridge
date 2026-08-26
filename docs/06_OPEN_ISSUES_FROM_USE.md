@@ -54,7 +54,7 @@ Author's own priority ranking, "by what actually costs me time now". Status as o
 | — | No icon / thumbnail render endpoint (§6) | **FIXED + verified** — `render_thumbnail` 128×128 PNG in 46 ms; plus `write_thumbnail_texture`, `set_asset_thumbnail`, `thumbnail_capabilities` |
 | — | `set_viewport_camera` does not reach `capture_camera` (§7) | **FIXED + verified** — `useViewportCamera` opt-in; `cameraSource` echoes `default`/`explicit`/`viewport` |
 | — | **No way to CREATE a DataTable asset (§8)** | **IMPLEMENTED 2026-08-21, UNVERIFIED** — `create_datatable {path, rowStruct}` added; `duplicate_asset` now accepts a SOURCE under any mounted root. Built (DLL 18:51:20) but not yet exercised against a running editor |
-| — | `CallArrayFunction` wildcards (§5) | **PARTIAL** — `set_pin_type`'s silent revert is fixed; the `connect_pins` half is unresolved, see §5 |
+| — | `CallArrayFunction` wildcards (§5) | **RECONSTRUCT HALF VERIFIED FIXED 2026-08-26** — a wildcard `TargetArray` resolves on connect and SURVIVES `refresh_node`, which §4c of the gotchas nominates as the durability proxy. Reproduction: `tools/test_array_wildcard_durability.py`, 11 checks. The COOK half is still unverified — a cook cannot be run from the bridge. See §5 |
 | — | **remove then recreate a WidgetAnimation of the same name CRASHED the editor (§9)** | **FIXED + verified 2026-08-26** — the removed UObject stayed alive holding its name; `remove_widget_animation` now frees it and reports `objectNameReusable`, `add_widget_animation` refuses a held name instead of asserting, and `set_widget_animation_range` removes the need for the destructive sequence. PM-010, 43 checks |
 | — | UMG WidgetAnimation authoring was unavailable | **FIXED + verified 2026-08-25** — `add_widget_animation`, `add_widget_animation_track`, `set_widget_animation_keys`, `remove_widget_animation*`, `rename_tree_widget`. All three animatable properties reachable |
 | — | `set_widget_animation_keys` could only ever animate translation | **FIXED + verified 2026-08-25** — the C++ supported RenderOpacity and ColorAndOpacity all along; the MCP tool never exposed `property` and the sibling docstring said they did not exist |
@@ -179,17 +179,41 @@ are good now — but it costs a round-trip per unknown endpoint, and with 211 en
 
 ---
 
-## 5. `CallArrayFunction` wildcards still cannot be durably typed
+## 5. `CallArrayFunction` wildcards — the reconstruct half is fixed; the cook half is unproven
 
-`Array_Find` / `Add` / `Clear` / `Contains` connect and compile, but the pin stays wildcard, the node
-is reconstructed on save/cook, and the containing function then fails to compile during the cook and
-is **stubbed** — so the editor says fine and the shipped game silently does nothing.
+**Original report.** `Array_Find` / `Add` / `Clear` / `Contains` connect and compile, but the pin
+stays wildcard, the node is reconstructed on save/cook, and the containing function then fails to
+compile during the cook and is **stubbed** — so the editor says fine and the shipped game silently
+does nothing. The triage note asked for a reproduction before any fix was attempted.
 
-Long-standing rather than new, but it remains the single biggest constraint on what can be authored
-through the bridge; every array operation has to be hand-built as a `ForEach`.
+**2026-08-26 — the reproduction exists and the reconstruct half PASSES.**
+`tools/test_array_wildcard_durability.py`, 11 checks, against the 285-endpoint build:
 
-> **Triage note.** Most severe item in this file: green in editor, dead in the build, with no signal
-> at either end. Needs a reproduction before any fix is attempted.
+| step | observed |
+|---|---|
+| `Array_Length` spawned, unconnected | `TargetArray` is `wildcard[array]` |
+| int-array variable connected to it | resolves to `int[array]` |
+| `refresh_node` (the reconstruct) | **still `int[array]`**, and the link survives |
+| `compile` | 0 errors |
+
+This is what §4c of `02_GOTCHAS.md` already claimed — that the cause was the spawned node class and
+that it is fixed — so the two documents were contradicting each other on this file's most severe item,
+and the gotchas one was right. That is worth more than the fix: **two docs disagreeing about whether
+the worst known defect is live is itself a defect**, and it stood for weeks because nobody made the
+five-minute reproduction the triage note asked for.
+
+**What is still NOT proven, and why the entry is downgraded rather than closed.** A cook cannot be run
+from the bridge, so the failure this report actually describes — stubbed *during cook* — has not been
+reproduced or refuted. `refresh_node` is the proxy §4c itself nominates for durability, and it is a
+proxy, not the cook. If someone sees a stubbed array function in a shipped build again, this entry is
+where to reopen it, and the reproduction above is the starting point rather than a blank page.
+
+A note on the reproduction itself, because it nearly shipped green and meaningless: its first version
+read `r["pins"]` and `pin["category"]`, and `get_node` nests pins under `node` and the type under
+`type`. So it saw no pins, found no wildcards, and every assertion passed while measuring an empty
+dict. It now asserts that a wildcard was actually OBSERVED before asking whether it survived —
+a suite that proves nothing is worse than no suite, and this one was written to catch exactly that
+class of thing in other people's code.
 
 ---
 
