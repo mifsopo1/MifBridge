@@ -23,6 +23,7 @@
 #include "MifBridgeLog.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetRegistry/IAssetRegistry.h"      // GetAssetByObjectPath - create_asset verifies registration through the registry, not the object hash
 #include "EdGraph/EdGraphPin.h"   // FEdGraphPinType — complete type needed for ToPinType()/MakePinType
 #include "Engine/DataTable.h"
 #include "Engine/UserDefinedEnum.h"
@@ -732,10 +733,27 @@ namespace MifBridge
 
 		// Verify through the registry rather than trusting the pointer we already hold: "created" and
 		// "registered" are the two different things this endpoint exists to keep together.
-		if (!FindObject<UObject>(nullptr, *Asset->GetPathName()))
+		// ASK THE REGISTRY, NOT THE OBJECT HASH. This used to be
+		//   if (!FindObject<UObject>(nullptr, *Asset->GetPathName()))
+		// which reads the global UObject hash - where NewObject above has already put the asset - so it
+		// was self-confirming and could never observe whether registration happened. The comment above it
+		// promised a registry check and the code did not perform one.
+		//
+		// It matters because AssetCreated is void and has two silent early-outs: it does nothing at all
+		// when NewAsset->IsAsset() is false, and it skips the FAssetData construction and every
+		// AssetAdded broadcast when ShouldSkipAsset() is true. IsAsset() is virtual and false for several
+		// concrete classes this endpoint accepts - it only gates out CLASS_Abstract, AActor,
+		// UActorComponent and UBlueprint - so this is reachable from the endpoint own parameters rather
+		// than hypothetical. The result would be exactly the ghost asset the comment above says these
+		// lines exist to prevent, reported back as prevented.
+		const bool bInRegistry = IAssetRegistry::GetChecked()
+			.GetAssetByObjectPath(FSoftObjectPath(Asset)).IsValid();
+		if (!bInRegistry)
 		{
-			Fail(Out, TEXT("the asset was created but cannot be found by path afterwards - it would not "
-						   "survive a restart. Read it back with find_assets before relying on it."));
+			Fail(Out, TEXT("the asset was created in memory but the Asset Registry did not take it, so it "
+						   "is a GHOST: it will answer get_property and set_property perfectly, never appear "
+						   "in find_assets or save_dirty_packages, and evaporate on restart. The usual cause "
+						   "is a class whose IsAsset() returns false. Pick a different class."));
 			return;
 		}
 

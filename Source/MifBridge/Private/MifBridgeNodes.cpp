@@ -2006,6 +2006,8 @@ namespace MifBridge
 		Node->Modify();
 
 		FString Kind;
+		// Branch A (user-defined) removes unconditionally; the duplicate branch below decides for itself.
+		bool bDidRemove = true;
 		if (bUserDefined)
 		{
 			// Break links first so nothing holds a stale pointer, then drop pin + record.
@@ -2076,6 +2078,28 @@ namespace MifBridge
 			Kind = TEXT("duplicate");
 			Out->SetNumberField(TEXT("duplicatesRemoved"), Removed);
 			Out->SetBoolField(TEXT("keptLinkedCopy"), Keep->LinkedTo.Num() > 0);
+			// THIS BRANCH CANNOT CURRENTLY REMOVE A SAME-DIRECTION DUPLICATE, which is the case it exists
+			// for. ResolvePin matches on (NodeGuid, PinName, Direction) and returns the FIRST pin
+			// satisfying it, so for two genuine duplicates every captured ref is identical to KeepRef,
+			// `Pin == ResolvePin(KeepRef)` is true on every iteration, and Removed stays 0. Only a
+			// cross-direction pair (an input and an output sharing a name, not really a duplicate) has a
+			// differing Dir and can actually be deleted.
+			//
+			// The addressing fix is NOT written here on purpose: reaching the real case needs two pins
+			// with the same name AND direction, which this bridge cannot create on demand, and pin
+			// manipulation across BreakPinLinks has taken the editor down before. Writing an untestable
+			// fix into that is how the crash happens. See issue O in docs/06_OPEN_ISSUES_FROM_USE.md.
+			//
+			// What IS fixed is the lie: the response no longer claims a removal that did not happen.
+			bDidRemove = (Removed > 0);
+			if (!bDidRemove)
+			{
+				Out->SetStringField(TEXT("duplicateNote"),
+					TEXT("NOTHING was removed. These pins share a name AND a direction, and this endpoint "
+						 "cannot currently address the second one - it resolves pins by (node, name, direction) "
+						 "and every lookup returns the same first pin. The duplicate is still on the node. Do "
+						 "not treat this as cleaned up."));
+			}
 		}
 		else
 		{
@@ -2088,7 +2112,7 @@ namespace MifBridge
 		}
 
 		MarkStructural(Blueprint);
-		Out->SetBoolField(TEXT("removed"), true);
+		Out->SetBoolField(TEXT("removed"), bDidRemove);
 		Out->SetStringField(TEXT("pin"), PinName);
 		Out->SetStringField(TEXT("kind"), Kind);
 		Out->SetObjectField(TEXT("node"), SerializeNode(Node, /*bIncludePins*/ true));
