@@ -67,10 +67,10 @@ def main():
     if not ok:
         print("refusing to run: %s" % why)
         return 2
-    print("target: %s" % why)
+    print("target: %s" % why, flush=True)
 
     assets = sample_assets()
-    print("cooked samples: %s" % ", ".join("%s=%d" % (k, len(v)) for k, v in sorted(assets.items())))
+    print("cooked samples: %s" % ", ".join("%s=%d" % (k, len(v)) for k, v in sorted(assets.items())), flush=True)
     if not assets:
         print("no cooked assets found - nothing to sweep")
         return 3
@@ -115,14 +115,19 @@ def main():
                          "the editor died against a real cooked %s: %s" % (cls, asset),
                          severity="critical", probe="cooked", sample=json.dumps(payload))
                 findings.append((ep, cls, asset))
-                print("  CRASH  %-32s %s (%s)" % (ep, cls, asset))
+                print("  CRASH  %-32s %s (%s)" % (ep, cls, asset), flush=True)
                 M.launch_editor()
                 if not M.wait_for_bridge(timeout=900):
-                    print("  editor did not come back - stopping")
+                    print("  editor did not come back - stopping", flush=True)
                     return 1
                 break     # do not keep hammering an endpoint that just killed the editor
-        if checked and checked % 60 == 0:
-            print("  ... %d calls, %d crash(es)" % (checked, crashes))
+        # FLUSHED, AND IT NAMES THE ENDPOINT. Without flush this whole sweep is invisible until the
+        # process ends: ~900 calls produced a 0-byte log for ten minutes, and if the editor had died
+        # in the middle there would have been nothing to say WHERE. That is the failure PM-012 is
+        # about - the harness knew and did not say - and the same fix run_all_suites already carries.
+        # The endpoint name matters as much as the count: the last line printed is the call that hung.
+        if checked and checked % 25 == 0:
+            print("  ... %d calls, %d crash(es), at %s" % (checked, crashes, ep), flush=True)
 
     print("")
     print("=" * 72)
