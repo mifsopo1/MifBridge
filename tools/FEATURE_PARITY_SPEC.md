@@ -161,16 +161,18 @@ where they disagree this section wins.
       creation — fixed with the FileSystem filter; and `FindObject(nullptr, <package path>)` resolves
       the UPACKAGE, which exists in memory the moment anything touches that path including a previous
       failed attempt, so it now looks for the ASSET inside. 20 checks in tools/test_create_asset.py.
-- [ ] **`set_struct_member`** — rename / retype / re-default, GUID-addressed. Today a member's name and
-      type are a one-way door: the only escape is remove + re-add, which mints a new GUID, APPENDS to
-      the end, reorders the struct, breaks every Make/Break Struct pin, and drops that column from
-      every row of every dependent DataTable.
-      Two hard requirements from the audit: reuse `LoadUserStruct`'s cooked-struct guard, because every
-      `FStructureEditorUtils` entry point `CastChecked`s EditorData and will HARD-CRASH the editor on a
-      cooked struct — which is every base-game DDS2 struct; and report how many dependent DataTable
-      rows were rewritten rather than returning a bare ok.
-      Worth noting this repo already specced it: `docs/audit/work/H_data.md:572` proposes
-      `set_struct_member`, verdict CONFIRMED, never built.
+- [x] **`set_struct_member`** — built. Rename, retype and re-default in place, addressed by name or
+      GUID. The point is what it PRESERVES: the member's GUID and its position, both of which
+      remove + re-add destroys — a new GUID breaks every Make/Break Struct pin bound to it, and the
+      append reorders the struct. The tests assert the GUID and order are unchanged, because a version
+      that quietly did remove+re-add underneath would pass "the name changed" and fail those.
+      The cooked guard held: pointed at a real base-game struct (`UnlockShareData`) it refuses and
+      explains, and the test then asserts the editor is still answering — every FStructureEditorUtils
+      entry point CastCheckeds the stripped EditorData, so a failed guard is a fatal cast, not an
+      error return. Retyping reports `dependentDataTables` and warns, because that column has been
+      reset in every row of every table built on the struct and the caller cannot see it from here.
+      22 checks in tools/test_set_struct_member.py. This closes docs/audit/work/H_data.md:572, specced
+      and CONFIRMED long ago and never built.
 
 ## Deliberately not pursuing
 

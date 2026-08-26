@@ -2020,6 +2020,30 @@ def list_struct_members(struct: str) -> dict:
 
 
 @mcp.tool()
+def set_struct_member(struct: str, member: str = "", guid: str = "", new_name: str = "",
+                      type: str = "", container: str = "", value_type: str = "",
+                      default: str = "") -> dict:
+    """Rename, retype or re-default an EXISTING member of a Blueprint struct, in place.
+
+    Without this the only correction is remove + re-add, which mints a new GUID, APPENDS the member at
+    the end, reorders the struct, breaks every Make/Break Struct pin, and drops that column from every
+    row of every dependent DataTable. Fixing a typo was genuinely expensive.
+
+    Address the member by name or by guid (list_struct_members shows both). Pass at least one of
+    new_name, type or default.
+
+    Only works on Blueprint structs. A COOKED struct - which is every base-game DDS2 struct - is
+    refused, and that refusal is a safety feature: the engine's struct editing API asserts on a cooked
+    struct's stripped editor data rather than returning an error.
+
+    RETYPING IS DESTRUCTIVE DOWNSTREAM. The response reports dependentDataTables and warns when a
+    retype has reset that column in every row of every table built on the struct.
+    """
+    return _post("set_struct_member", struct=struct, member=member, guid=guid, newName=new_name,
+                 type=type, container=container, valueType=value_type, default=default)
+
+
+@mcp.tool()
 def add_struct_member(struct: str, name: str, type: str, container: str = "",
                       value_type: str = "", default: str = "") -> dict:
     "Add a member to an existing user-defined struct. Same type grammar as add_variable (container = array|set|map, value_type for maps)."

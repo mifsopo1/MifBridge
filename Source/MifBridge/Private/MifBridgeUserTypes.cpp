@@ -420,6 +420,200 @@ namespace MifBridge
 	}
 
 
+	// --- set_struct_member ---------------------------------------------------
+	//   in:  { struct, member, newName?, type?, container?, valueType?, default? }
+	//   out: { member:{...}, renamed?, retyped?, redefaulted?, dependentDataTables:[...] }
+	//
+	// Rename / retype / re-default in place. Without this the only correction is remove + re-add,
+	// which mints a new GUID, APPENDS the member at the end, reorders the struct, breaks every
+	// Make/Break Struct pin and drops that column from every row of every dependent DataTable.
+	//
+	// LoadUserStruct is load-bearing: every FStructureEditorUtils entry point CastChecked's EditorData,
+	// which is stripped on cook, so a cooked struct is a FATAL cast rather than an error - and every
+	// base-game DDS2 struct is cooked.
+	void H_set_struct_member(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("struct"), TEXT("structPath"), TEXT("path"), TEXT("member"), TEXT("memberName"),
+			  TEXT("guid"), TEXT("newName"), TEXT("type"), TEXT("container"), TEXT("valueType"),
+			  TEXT("default") },
+			TEXT("struct (aliases: structPath, path), member (alias: memberName, or guid), and at least "
+				 "one of newName, type (+container/valueType), default"),
+			{ { TEXT("name"), TEXT("ambiguous here - 'member' names the member to change and 'newName' is what to call it") },
+			  { TEXT("index"), TEXT("members are addressed by NAME or GUID, not position; reordering is not supported (it would change every Make/Break Struct pin order)") },
+			  { TEXT("rename"), TEXT("the parameter is newName") } }))
+		{
+			return;
+		}
+
+		FString Error;
+		UUserDefinedStruct* Struct = LoadUserStruct(
+			JStrAny(In, { TEXT("struct"), TEXT("structPath"), TEXT("path") }), Error);
+		if (!Struct)
+		{
+			Fail(Out, Error);
+			return;
+		}
+
+		// Address by GUID if given, otherwise by friendly name. GUID is exact; the name is what a
+		// caller has in hand after list_struct_members.
+		const FString Wanted = JStrAny(In, { TEXT("member"), TEXT("memberName") });
+		const FString WantedGuid = JStr(In, TEXT("guid"));
+		if (Wanted.IsEmpty() && WantedGuid.IsEmpty())
+		{
+			Fail(Out, TEXT("member (or guid) is required - name the member to change. "
+						   "list_struct_members shows both. NOTHING was changed."));
+			return;
+		}
+
+		FGuid Guid;
+		const TArray<FStructVariableDescription>& Descs = FStructureEditorUtils::GetVarDesc(Struct);
+		for (const FStructVariableDescription& D : Descs)
+		{
+			if (!WantedGuid.IsEmpty())
+			{
+				if (D.VarGuid.ToString() == WantedGuid) { Guid = D.VarGuid; break; }
+			}
+			else if (D.FriendlyName == Wanted)
+			{
+				Guid = D.VarGuid;
+				break;
+			}
+		}
+		if (!Guid.IsValid())
+		{
+			TArray<FString> Have;
+			for (const FStructVariableDescription& D : Descs) { Have.Add(D.FriendlyName); }
+			Fail(Out, FString::Printf(
+				TEXT("no member '%s' on %s. It has: %s. NOTHING was changed."),
+				*(WantedGuid.IsEmpty() ? Wanted : WantedGuid), *Struct->GetPathName(),
+				Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		const bool bWantRename = In->HasField(TEXT("newName"));
+		const bool bWantRetype = In->HasField(TEXT("type"));
+		const bool bWantDefault = In->HasField(TEXT("default"));
+		if (!bWantRename && !bWantRetype && !bWantDefault)
+		{
+			Fail(Out, TEXT("nothing to change - pass at least one of newName, type or default. "
+						   "NOTHING was changed."));
+			return;
+		}
+
+		// COUNT THE BLAST RADIUS BEFORE TOUCHING ANYTHING. Retyping a column re-defaults it in every
+		// row of every DataTable built on this struct, and a caller who is not told will not look.
+		TArray<TSharedPtr<FJsonValue>> Dependents;
+		{
+			FAssetRegistryModule& ARM = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+			TArray<FName> Referencers;
+			ARM.Get().GetReferencers(FName(*Struct->GetOutermost()->GetName()), Referencers);
+			for (const FName& R : Referencers)
+			{
+				TArray<FAssetData> Assets;
+				ARM.Get().GetAssetsByPackageName(R, Assets);
+				for (const FAssetData& A : Assets)
+				{
+					if (A.AssetClassPath.GetAssetName() == FName(TEXT("DataTable")))
+					{
+						Dependents.Add(MakeShared<FJsonValueString>(A.GetObjectPathString()));
+					}
+				}
+			}
+		}
+
+		Struct->Modify();
+		bool bRenamed = false, bRetyped = false, bRedefaulted = false;
+
+		if (bWantRename)
+		{
+			const FString NewName = JStr(In, TEXT("newName"));
+			if (NewName.IsEmpty() || !IsValidIdentifier(NewName))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("newName '%s' is not a valid identifier. NOTHING was changed."), *NewName));
+				return;
+			}
+			bRenamed = FStructureEditorUtils::RenameVariable(Struct, Guid, NewName);
+			if (!bRenamed)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("rename to '%s' was refused - the name is probably already used by another "
+						 "member. NOTHING was changed."), *NewName));
+				return;
+			}
+		}
+
+		if (bWantRetype)
+		{
+			FEdGraphPinType PinType;
+			FString TypeError;
+			if (!MakePinType(JStr(In, TEXT("type")), JStr(In, TEXT("container")), PinType, TypeError,
+				JStr(In, TEXT("valueType"))))
+			{
+				Fail(Out, TypeError);
+				return;
+			}
+			bRetyped = FStructureEditorUtils::ChangeVariableType(Struct, Guid, PinType);
+			if (!bRetyped)
+			{
+				Fail(Out, TEXT("the type change was refused. A struct cannot contain itself, and some "
+							   "types are not valid as struct members."));
+				return;
+			}
+		}
+
+		if (bWantDefault)
+		{
+			const FString Default = JStr(In, TEXT("default"));
+			bRedefaulted = FStructureEditorUtils::ChangeVariableDefaultValue(Struct, Guid, Default);
+			if (!bRedefaulted)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("default value '%s' was refused for this member's type."), *Default));
+				return;
+			}
+		}
+
+		// READ IT BACK. The mutators return a bool, and reporting ok on that alone is the shape that
+		// let add_timeline claim success for years without ever creating a timeline.
+		const FStructVariableDescription* After = nullptr;
+		for (const FStructVariableDescription& D : FStructureEditorUtils::GetVarDesc(Struct))
+		{
+			if (D.VarGuid == Guid) { After = &D; break; }
+		}
+		if (!After)
+		{
+			Fail(Out, TEXT("the member vanished from the struct after the change - re-read it with "
+						   "list_struct_members before doing anything else."));
+			return;
+		}
+
+		TSharedRef<FJsonObject> MJ = MakeShared<FJsonObject>();
+		MJ->SetStringField(TEXT("name"), After->FriendlyName);
+		MJ->SetStringField(TEXT("guid"), After->VarGuid.ToString());
+		MJ->SetStringField(TEXT("category"), After->Category.ToString());
+		if (!After->SubCategory.IsNone()) { MJ->SetStringField(TEXT("subCategory"), After->SubCategory.ToString()); }
+		MJ->SetStringField(TEXT("default"), After->DefaultValue);
+		Out->SetObjectField(TEXT("member"), MJ);
+		Out->SetBoolField(TEXT("renamed"), bRenamed);
+		Out->SetBoolField(TEXT("retyped"), bRetyped);
+		Out->SetBoolField(TEXT("redefaulted"), bRedefaulted);
+		Out->SetStringField(TEXT("struct"), Struct->GetPathName());
+		Out->SetNumberField(TEXT("dependentDataTableCount"), Dependents.Num());
+		Out->SetArrayField(TEXT("dependentDataTables"), Dependents);
+		if (Dependents.Num() > 0 && bRetyped)
+		{
+			// Naming them is the point - this is data loss the caller cannot see from here.
+			Out->SetStringField(TEXT("warning"), FString::Printf(
+				TEXT("this member was RETYPED and %d DataTable(s) are built on this struct. Every row "
+					 "of each has had that column reset to the new type's default. Check them with "
+					 "read_datatable before saving."), Dependents.Num()));
+		}
+		UE_LOG(LogMifBridge, Log, TEXT("set_struct_member: %s.%s (rename=%d retype=%d default=%d)"),
+			*Struct->GetName(), *After->FriendlyName, bRenamed ? 1 : 0, bRetyped ? 1 : 0, bRedefaulted ? 1 : 0);
+	}
+
 	// --- create_asset --------------------------------------------------------
 	//   in:  { path, class }
 	//   out: { assetPath, name, class, note }

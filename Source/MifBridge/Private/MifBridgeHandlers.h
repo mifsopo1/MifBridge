@@ -1100,6 +1100,9 @@ namespace MifBridge
 	/** Instantiate a UDataAsset-style class at a /Game path. create_blueprint could author a DataAsset
 	 *  CLASS that nothing was able to instantiate; this closes that asymmetry. */
 	MIF_DECL(create_asset);
+	/** Rename / retype / re-default an EXISTING struct member. Without it the only correction is
+	 *  remove + re-add, which reorders the struct and drops the column from every dependent row. */
+	MIF_DECL(set_struct_member);
 	MIF_DECL(list_struct_members);
 	MIF_DECL(add_struct_member);
 	MIF_DECL(remove_struct_member);
