@@ -1408,3 +1408,92 @@ are already mapped". `force` is the conventional name for bypassing a destructiv
 the audit harness that tests this bridge strips it from every payload alongside `confirm`, `save` and
 `overwrite`. Every `force:true` arrived as `false`, the endpoint did half of what was asked, and it
 reported success. It is now `remapExisting`. Reserve `force` for things that genuinely need a guard.
+
+---
+
+## 14. The engine-version trap cuts BOTH ways
+
+MifBridge is built on a cooked UE 5.3.2 editor and is ALSO run daily on UE 5.7 (Curfew). Every handler
+has to compile on both. The failure is always the same shape - a symbol that exists in one tree and not
+the other - but it arrives from two opposite directions, and only one of them is intuitive.
+
+### Direction A: 5.3 has it, 5.7 DELETED it
+
+The familiar one. You write against the editor in front of you, it compiles, and the 5.7 build breaks.
+
+| Symbol | What happened |
+|---|---|
+| `IAssetRegistry::GetAssetsByClass(FName, ...)` | `UE_DEPRECATED(5.1)` in 5.3, **deleted** in 5.7. Pass `GetClassPathName()`. |
+| `UObject::IsPendingKillOrUnreachable()` | deprecated in 5.3, gone in 5.7. Use `IsValid(Obj)`. |
+| `UDataLayerSubsystem::GetDataLayerInstances` | `UE_DEPRECATED(5.3)`. Use `UDataLayerManager`. |
+
+A 5.3 deprecation warning is a 5.7 BUILD BREAK. Treat every one as an error, not a warning - one of
+these shipped on 2026-08-26 and would have broken the build Curfew depends on.
+
+### Direction B: 5.7 has it, 5.3 NEVER DID
+
+The one that is easy to miss, because nothing warns you. If you verify an API by reading the 5.7 tree -
+or by remembering how the subsystem works in a modern engine - you can pick a member that simply does
+not exist in 5.3. There is no deprecation notice to catch it, because nothing was deprecated. It
+compiles cleanly on 5.7 and fails outright on 5.3, which is the engine the SDK actually runs on.
+
+Found while writing the Game Features family (2026-08-26):
+
+| Symbol | Availability |
+|---|---|
+| `UGameFeaturesSubsystem::GetPluginState` | **5.7 only** (:686). Absent in 5.3. |
+| `UGameFeaturesSubsystem::ForEachGameFeature` | **5.7 only** (:467). |
+| `UGameFeaturesSubsystem::GetPluginURLByName` | **5.7 only** (:637). |
+| `UGameFeaturesSubsystem::IsGameFeaturePluginMounted` | **5.7 only** (:556). |
+
+`GetPluginState` is the instructive case: it returns the exact state enum in one call and is precisely
+what the endpoint wants to report. Using it would have been the obvious, clean implementation - and it
+would not build on 5.3. The endpoint instead DERIVES state from the four predicates that exist in both
+(`IsGameFeaturePlugin{Installed,Registered,Loaded,Active}`) and says so in its own response, so no
+caller mistakes a derived answer for the engine's own.
+
+### The facility for when the subset is not enough
+
+`Source/MifBridge/Private/MifBridgeVersion.h` provides `MIF_ENGINE_AT_LEAST(Major, Minor)`,
+`MIF_ENGINE_BEFORE(...)` and `MIF_ENGINE_5_7_PLUS`. Before it existed there was no version guard
+anywhere in this plugin, so the only options were the common subset or dropping a feature - which is
+why Mover was dropped.
+
+**Use it sparingly.** A guarded branch is code that only ONE build ever compiles, so the other branch
+is unverified until somebody builds on that engine. Preference order:
+
+1. Use an API present in both. Verify in BOTH trees, record the line numbers.
+2. If the newer engine has a better answer, keep the common subset as the baseline and let the guard
+   ADD to it. **Never let the two branches produce differently-shaped output** - if 5.3 returns one set
+   of fields and 5.7 another, every caller has to branch on engine version and the bridge has exported
+   its problem to its consumers instead of solving it.
+3. Only guard a whole feature out when it is impossible on the older engine, and make that build
+   REFUSE BY NAME rather than silently omit the endpoint - the same contract `MIF_WITH_*` uses for an
+   absent plugin.
+
+`self_audit` reports `engineMajor` / `engineMinor` / `enginePatch` as numbers alongside the existing
+`engineVersion` string, because every caller that cares about the version cares in order to make a
+`>=` comparison, and making each one write its own parser is how they end up disagreeing.
+
+### The rule this reduces to
+
+**Verify every engine symbol in BOTH trees before using it, and record the line numbers in the file.**
+Not one tree. Not the tree the editor in front of you happens to be. The line numbers matter because
+they make the next person's re-verification cheap, and because they prove the check was actually done
+rather than assumed.
+
+Two more differences that look alarming and are NOT problems, recorded so nobody burns time on them:
+
+* **Export macro style changed.** 5.3 writes `class GAMEFEATURES_API UGameFeaturesSubsystem` (whole
+  class); 5.7 writes `class UGameFeaturesSubsystem` with `UE_API` per member. That is declaration-side
+  only - calling code is identical. But beware the related REAL trap: a `UCLASS(MinimalAPI)` such as
+  `UNiagaraSystem` exports only `StaticClass()`, so each member needs its own `NIAGARA_API` or the code
+  compiles and fails at LINK.
+* **Plugins move between trees.** GameFeatures is under `Plugins/Experimental/` in 5.3 and
+  `Plugins/Runtime/` in 5.7 - promoted out of experimental. The module name is unchanged. This is why
+  `MifBridge.Build.cs` finds plugin descriptors by RECURSIVE SEARCH for `<Name>.uplugin` rather than by
+  hardcoded path: the hardcoded path would have silently stopped finding it on 5.7.
+
+See also `MIF_WITH_*` in `MifBridge.Build.cs`: where a whole PLUGIN may be absent, the endpoint stays
+registered and compiles a named refusal rather than vanishing. A missing endpoint tells a caller
+nothing; a refusal that names the plugin tells them everything.

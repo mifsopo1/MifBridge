@@ -89,7 +89,16 @@ Never work from a typed list — one was fabricated once and a third of it was i
   UE_DEPRECATED(5.3) pointing at exactly that class, and a deprecated-in-5.3 call is a 5.7 build break
   waiting to happen - which is not hypothetical, since IsPendingKillOrUnreachable broke exactly that way
   earlier today. Verified live on both a non-partitioned and a partitioned world.
-- [ ] **The WRITE half of Data Layers needs a Build.cs dependency I must not add.**
+- [ ] **The WRITE half of Data Layers - UNBLOCKED 2026-08-26, this item's premise is now stale.**
+  Andre authorised editing MifBridge.Build.cs ("do it all"), and "DataLayerEditor" is now a declared
+  dependency (Build.cs:109). The write API was re-verified in BOTH engine trees and is identical in
+  each: SetDataLayerVisibility (5.3:456, 5.7:504), SetDataLayerIsLoadedInEditor (5.3:493, 5.7:541),
+  AddActorsToDataLayer (5.3:223, 5.7:262), RemoveActorsFromDataLayer (5.3:243, 5.7:282). The only
+  difference is declaration-side UE_API vs plain, which does not affect calling code. Nothing blocks
+  this now except writing it. NOTE for whoever picks it up: these writes mutate the LOADED WORLD, so
+  they need a scratch level rather than one of Andre's real maps, and the standing no-save rule still
+  applies.
+  ORIGINAL, now historical:
   create/rename/delete a Data Layer, and add/remove actors from one, all live on
   UDataLayerEditorSubsystem in the DataLayerEditor module, which MifBridge does not depend on.
   MifBridge.Build.cs is not this agent's file, so the need is REPORTED: adding "DataLayerEditor" to
@@ -185,7 +194,29 @@ Never work from a typed list — one was fabricated once and a third of it was i
   IK Rig APIs missing and every one was an artefact of CRLF line endings in a temp file.
   builds for 5.3.2 and 5.7 only because every API it touches happens to exist in both. This is the
   first thing that breaks as breadth grows toward parity, and it needs a policy before it does.
-- [ ] **The Curfew copy is vendored, not linked.** Two divergent lines of development, 230 endpoints
+- [ ] **The Curfew copy is vendored, not linked.** MEASURED 2026-08-26 (late), replacing the earlier
+  rough figure in this item with real numbers, because this needs Andre's decision and he should not
+  have to re-derive it:
+
+  | | SDK (this tree) | Curfew (vendored) |
+  |---|---|---|
+  | distinct endpoints (MIF_BIND) | **284** | **222** |
+  | source files | 58 | 47 |
+
+  * Curfew is **62 endpoints behind**. Nothing is ahead: ZERO endpoints now exist only on the Curfew
+    side, so the drift is one-directional since the earlier merge brought its two back.
+  * 11 whole source files are missing there, including the entire IK Rig, Landscape, Sequencer,
+    Niagara and Game Features work.
+  * **The number that actually makes the case: of the 47 source files the two trees SHARE, 33 differ
+    and only 14 are identical.** That is not a copy running slightly behind, it is two divergent trees.
+  * The vendored copy is committed INSIDE the Curfew git repo (its HEAD is a Curfew commit), so it is
+    plain vendored source rather than a submodule - which is why nothing ever warned that it drifted.
+
+  This is a decision for Andre, not something to change unilaterally: it touches how his other project
+  consumes the plugin. The recommendation given to him was a versioned release plus an update script
+  rather than a submodule, because a submodule would force a git workflow onto a game project that does
+  not currently need one. ORIGINAL note follows:
+  Two divergent lines of development, 230 endpoints
   EVIDENCE GATHERED 2026-08-26, decision still Andre's. Diffing the two endpoint sets:
     274 here, 230 in Curfew, 228 shared.
     46 endpoints here have NEVER been compiled against 5.7 - the whole IK Rig family, all
@@ -1063,3 +1094,12 @@ Every gap above was seeded from a mechanical map of the competitor's categories 
 `endpoints_current.json`. A 13-agent workflow is separately auditing the same question by READING the
 handlers, with each claimed gap adversarially verified before it counts. Where that analysis
 contradicts this file, the analysis wins — it read the code and this file matched substrings.
+
+- [ ] **MifBlender - the Blender side, AFTER the UE position is comfortable.**
+  Andre's direction, 2026-08-26: "one improvement we will also do for mifbridge is the mifblender,
+  after we get comfortable with our position move to blender mifbridge side". Sequencing is explicit -
+  UE parity first, Blender second. This is NOT greenfield: parity_check.py already tracks 17 addon ops
+  and 24 _blender call sites, so there is an existing surface to extend and an existing parity contract
+  to keep. Do not start this while UE items remain open, and when it does start, read the addon and the
+  _blender call sites before writing anything new - the same read-before-write rule that applies to the
+  UE handlers.

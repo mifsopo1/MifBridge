@@ -181,9 +181,19 @@ def special_payloads(ep, acc, ctx, assets):
             out.append({"path": assets[cls][0]})
     for cls, name, key in (("IKRigDefinition", "list_ik_rig", "rig"),
                            ("IKRetargeter", "list_retarget_chain_mapping", "retargeter"),
-                           ("NiagaraSystem", "list_niagara_user_parameters", "system")):
+                           ("NiagaraSystem", "list_niagara_user_parameters", "system"),
+                           # These four take `path`. They were added 2026-08-26 and were reported as
+                           # "attempted only" until they were listed here - a new read is not covered
+                           # by this sweep unless it is fed, and silence looks identical to purity.
+                           ("NiagaraSystem", "describe_niagara_system", "path"),
+                           ("NiagaraSystem", "list_niagara_emitters", "path"),
+                           ("LevelSequence", "describe_level_sequence", "path")):
         if ep == name and assets.get(cls):
             out.append({key: assets[cls][0]})
+    if ep == "describe_game_feature_plugin":
+        # Addressed by plugin NAME, not asset path. MifBridge itself always exists and is deliberately
+        # NOT a game feature, which exercises the answered-not-refused branch.
+        out.append({"name": "MifBridge"})
     if fx.get("dataTable") and ep == "get_datatable_row":
         out.append({"path": fx["dataTable"], "rowName": "PureRow"})
     if fx.get("splineActor") and ep == "get_spline_points":
@@ -239,7 +249,7 @@ def dirty_set():
 # describe_behavior_tree, list_blackboard_keys, list_ik_rig, list_retarget_chain_mapping and
 # list_niagara_user_parameters can never be exercised and are reported as "attempted only" forever.
 EXTRA_CLASSES = ("BehaviorTree", "BlackboardData", "IKRigDefinition", "IKRetargeter",
-                 "NiagaraSystem")
+                 "NiagaraSystem", "LevelSequence")
 
 
 def sample_assets():
