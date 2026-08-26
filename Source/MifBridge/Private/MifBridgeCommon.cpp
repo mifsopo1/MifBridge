@@ -362,6 +362,8 @@ namespace MifBridge
 			MIF_BIND(list_data_layers);
 			MIF_BIND(list_level_sequences);
 			MIF_BIND(describe_level_sequence);
+			MIF_BIND(describe_niagara_system);
+			MIF_BIND(list_niagara_emitters);
 			MIF_BIND(add_sublevel);
 			MIF_BIND(remove_sublevel);
 			MIF_BIND(set_sublevel_visibility);

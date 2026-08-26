@@ -2918,6 +2918,20 @@ def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: i
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def describe_niagara_system(path: str) -> dict:
+    "Describe a NiagaraSystem: how many emitters it has and how many are actually ENABLED. A disabled emitter is invisible at runtime and perfectly visible in the editor, which is a common source of 'the effect does nothing', so the enabled and disabled counts are reported separately. If a system reports zero emitters and its package is COOKED, that may mean its editor-only emitter data was stripped rather than that the effect is empty."
+    return _post("describe_niagara_system", path=path)
+
+
+@mcp.tool()
+def list_niagara_emitters(path: str, name_contains: str = None,
+                          include_disabled: bool = True) -> dict:
+    "List a NiagaraSystem's emitters with their index, name, GUID and enabled state. Address an emitter by INDEX rather than name where you can: names are not guaranteed unique within a system. totalEmitters is the unfiltered count, so a filtered list can never be mistaken for the whole thing."
+    return _post("list_niagara_emitters", path=path, nameContains=name_contains,
+                 includeDisabled=include_disabled)
+
+
+@mcp.tool()
 def list_level_sequences(filter: str = None, limit: int = 0) -> dict:
     "List the project's LevelSequence assets - cutscenes. Pure Asset Registry, so it LOADS NOTHING and cannot trip the cooked-asset hazards that loading an editor asset can. filter is a substring matched against the full object path. Always check registryStillScanning: at editor startup the registry is still discovering assets, so a low or zero count can mean 'not finished looking' rather than 'none exist'. matched is the true total even when limit truncates the list."
     return _post("list_level_sequences", filter=filter, limit=limit)

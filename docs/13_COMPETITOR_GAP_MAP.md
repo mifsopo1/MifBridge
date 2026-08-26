@@ -49,14 +49,29 @@ what they built on top of it.
 | `PythonExt` | not needed; the bridge IS the scripting surface |
 | `InputExt` | add_enhanced_input_action, list_input_mappings |
 
-### Engine capability we have NOTHING for (14)
+### Started since this map was written (2)
+
+| Module | Subsystem | What landed | Still missing |
+|---|---|---|---|
+| `CinematicsExt` | Sequencer / LevelSequence | `list_level_sequences`, `describe_level_sequence` | tracks, sections, bindings by name; all writes |
+| `NiagaraExt` | Niagara | `describe_niagara_system`, `list_niagara_emitters` (+ the pre-existing `list_niagara_user_parameters`) | renderers, per-emitter detail, component overrides, all writes |
+
+Both are READ-ONLY on purpose. Reads are safe, testable against real content and immediately useful;
+a write into a MovieScene or a Niagara graph needs a rollback story this project has not built yet, and
+PM-007 records that `FTransaction::Cancel()` does not provide one for free. Niagara is additionally
+sharp: gotchas section 6c has a cooked `UNiagaraSystem` killing the editor, so nothing here duplicates,
+reinitialises or compiles a system.
+
+The Build.cs bottleneck this map called "the real one" is GONE - all 14 subsystems below now have their
+module dependencies declared, guarded by `MIF_WITH_*` so a missing plugin refuses by name instead of
+stopping the whole plugin from loading. Writing handlers is now the only remaining cost.
+
+### Engine capability we have NOTHING for (12)
 
 This is the actual roadmap. Ordered by judged value for DDS2 **and** Curfew, not by their list order.
 
 | Module | Subsystem | Why it matters here | Build.cs cost |
 |---|---|---|---|
-| `CinematicsExt` | Sequencer / LevelSequence | cutscenes, camera work; both projects want it | needs `LevelSequence` |
-| `NiagaraExt` | Niagara authoring | we have ONE read endpoint; effects are everywhere | needs `Niagara`, `NiagaraEditor` |
 | `AudioExt` | MetaSounds, audio | we have `audition_sound` and nothing else | needs `AudioExtensions`/`MetasoundEngine` |
 | `GASExt` | Gameplay Ability System | Curfew is a roguelike; GAS is the natural fit | needs `GameplayAbilities` |
 | `GeometryScriptExt` | Geometry Script | procedural mesh work | needs `GeometryScriptingCore` |
@@ -82,14 +97,15 @@ four times as four separate tool calls; that is one endpoint here. If their gran
 crew, GDD, scanners, and their own MCP bridge. Nothing to match there unless we decide to build an app,
 which is a different argument.
 
-**3. The remaining gap is 14 engine subsystems, and 13 of them are gated on Build.cs.** Almost every one
-needs a module dependency MifBridge does not currently declare. That is the real bottleneck — not
-writing handlers, but deciding which subsystems are worth pulling in. `MifBridge.Build.cs` is Andre's
-file, so that list is his call.
+**3. The Build.cs bottleneck is resolved.** When this map was written, 13 of the 14 subsystems needed a
+module dependency MifBridge did not declare, and that - not writing handlers - was the bottleneck.
+Andre authorised the change on 2026-08-26 and all 14 are now declared, each behind a `MIF_WITH_*` guard
+so an absent plugin produces a named refusal rather than stopping MifBridge from loading at all.
+Only `Mover` is deliberately left out: it is 5.7-only and needs an `ENGINE_MINOR_VERSION` guard first.
 
 ## Suggested order, if the goal is parity
 
-1. **Niagara** and **Sequencer** — both projects want them, both are unambiguous wins.
+1. ~~**Niagara** and **Sequencer**~~ — both STARTED, read halves delivered 2026-08-26.
 2. **Game Features** — the one on this list that is *about modding*, which is DDS2's whole case.
 3. **GAS** — Curfew-shaped.
 4. **Water**, **Vehicles** — DDS2 has both already in content.

@@ -1357,6 +1357,11 @@ namespace MifBridge
 	// Niagara these need no MIF_WITH_* guard - it ships with every build and cannot be disabled.
 	MIF_DECL(list_level_sequences);
 	MIF_DECL(describe_level_sequence);
+
+	// NIAGARA (MifBridgeNiagara2.cpp). Niagara IS a plugin, so unlike Sequencer these sit behind
+	// MIF_WITH_NIAGARA and compile a named refusal when it is absent - registered on every engine.
+	MIF_DECL(describe_niagara_system);
+	MIF_DECL(list_niagara_emitters);
 	MIF_DECL(add_sublevel);
 	MIF_DECL(remove_sublevel);
 	MIF_DECL(set_sublevel_visibility);
