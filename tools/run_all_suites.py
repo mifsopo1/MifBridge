@@ -51,6 +51,12 @@ def main():
         if not M.wait_for_bridge(timeout=600):
             M.launch_editor()
             M.wait_for_bridge(timeout=900)
+        # NAMED BEFORE IT RUNS, not after. The result line is printed when a suite FINISHES, so a
+        # suite that hangs produces no line at all and the log simply stops - which is how a
+        # 568-second stall in test_transactions looked like nothing happening, and cost a round of
+        # process-hunting to attribute. flush because a stalled run is exactly when the buffer will
+        # not be flushed for you.
+        print("  [%d] %-32s running..." % (which, name), flush=True)
         t0 = time.time()
         try:
             r = subprocess.run([sys.executable, name], capture_output=True, text=True,
@@ -59,6 +65,9 @@ def main():
             rc = r.returncode
         except subprocess.TimeoutExpired:
             out, rc = "TIMEOUT after %ds" % TIMEOUT, -99
+            print("  [%d] %-32s TIMED OUT after %ds - killed. The suite hung; the editor may be "
+                  "fine. Run it standalone to see whether it needs a full run's accumulated state."
+                  % (which, name, TIMEOUT), flush=True)
         dt = time.time() - t0
         line = next((l for l in out.splitlines() if l.startswith("PASS ")), "")
         alive = M.bridge_responsive()
