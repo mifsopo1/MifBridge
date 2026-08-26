@@ -848,7 +848,56 @@ namespace MifBridge
 				O->SetObjectField(TEXT("worldMax"), Mx);
 			}
 
-			O->SetNumberField(TEXT("components"), L->LandscapeComponents.Num());
+			// COUNT THE STREAMING PROXIES TOO, or a World Partition landscape reports zero.
+			//
+			// ALandscape derives from ALandscapeProxy, and under World Partition the terrain's
+			// components live on ALandscapeStreamingProxy actors rather than on the parent - so
+			// L->LandscapeComponents is genuinely EMPTY for the parent of a partitioned landscape.
+			// Reporting that alone said `components: 0` for a 2017x2017 terrain: true, and it reads as
+			// a broken landscape. diagnose_landscape iterates ALandscapeProxy and saw 896 components
+			// in the same world where this endpoint reported ~640 across 11 actors, and neither
+			// response said which question it had answered. Filed as issue 11.
+			//
+			// Matched on LandscapeGuid, which every proxy of one landscape shares
+			// (LandscapeProxy.h:936), so a world holding several landscapes attributes each proxy to
+			// the right parent instead of summing them all onto the first.
+			const int32 OwnComponents = L->LandscapeComponents.Num();
+			int32 ProxyComponents = 0;
+			int32 ProxyCount = 0;
+			// Counted in the same pass, because componentsWithoutWeightmap below has to answer about
+			// the same set of components as `components` does or the two disagree in a new way.
+			int32 ProxyNoWeightmap = 0;
+			{
+				const FGuid ThisGuid = L->GetLandscapeGuid();
+				for (TActorIterator<ALandscapeProxy> PIt(World); PIt; ++PIt)
+				{
+					ALandscapeProxy* P = *PIt;
+					if (!P || !IsValid(P) || P == L) { continue; }
+					if (!ThisGuid.IsValid() || P->GetLandscapeGuid() != ThisGuid) { continue; }
+					++ProxyCount;
+					ProxyComponents += P->LandscapeComponents.Num();
+					for (ULandscapeComponent* PComp : P->LandscapeComponents)
+					{
+						if (PComp && PComp->GetWeightmapTextures().Num() == 0) { ++ProxyNoWeightmap; }
+					}
+				}
+			}
+
+			O->SetNumberField(TEXT("components"), OwnComponents);
+			O->SetNumberField(TEXT("proxyCount"), ProxyCount);
+			O->SetNumberField(TEXT("proxyComponents"), ProxyComponents);
+			O->SetNumberField(TEXT("totalComponents"), OwnComponents + ProxyComponents);
+			// Say which question was answered, rather than leaving two plausible numbers side by side.
+			O->SetStringField(TEXT("componentScope"), ProxyCount > 0
+				? TEXT("partitioned - `components` is this actor's own; `totalComponents` includes its streaming proxies")
+				: TEXT("all components belong to this actor; there are no streaming proxies"));
+			if (OwnComponents == 0 && ProxyComponents > 0)
+			{
+				O->SetStringField(TEXT("componentsNote"), FString::Printf(
+					TEXT("components:0 is correct and does NOT mean the landscape is broken - this is a World Partition ")
+					TEXT("landscape and all %d of its components live on %d streaming proxy actor(s). Use totalComponents."),
+					ProxyComponents, ProxyCount));
+			}
 			O->SetStringField(TEXT("material"),
 				L->LandscapeMaterial ? L->LandscapeMaterial->GetPathName() : TEXT(""));
 
@@ -880,6 +929,18 @@ namespace MifBridge
 				if (Comp && Comp->GetWeightmapTextures().Num() == 0) { ++NoWeightmap; }
 			}
 			O->SetNumberField(TEXT("componentsWithoutWeightmap"), NoWeightmap);
+			// Same scope split as `components` above. A ratio out of nothing is not a diagnosis, so
+			// when the parent owns no components say so instead of letting a bare 0 read as "healthy".
+			O->SetNumberField(TEXT("proxyComponentsWithoutWeightmap"), ProxyNoWeightmap);
+			O->SetNumberField(TEXT("totalComponentsWithoutWeightmap"), NoWeightmap + ProxyNoWeightmap);
+			if (OwnComponents == 0)
+			{
+				O->SetStringField(TEXT("componentsWithoutWeightmapNote"), ProxyComponents > 0
+					? TEXT("componentsWithoutWeightmap:0 is out of ZERO components and means nothing here - ")
+					  TEXT("read totalComponentsWithoutWeightmap, which covers the streaming proxies.")
+					: TEXT("componentsWithoutWeightmap:0 is out of ZERO components and means nothing - ")
+					  TEXT("this landscape actor has no components at all."));
+			}
 
 			TArray<TSharedPtr<FJsonValue>> Layers;
 			if (ULandscapeInfo* Info = L->GetLandscapeInfo())

@@ -48,7 +48,11 @@ Never work from a typed list — one was fabricated once and a third of it was i
 
 ## Gaps worth closing
 
-- [ ] **`landscape_info` under-reports a World Partition landscape, and does not say so.** It iterates
+- [x] **`landscape_info` under-reports a World Partition landscape, and does not say so.** FIXED
+      2026-08-26: it now counts the streaming proxies' components too, matched on `LandscapeGuid`, and
+      reports `proxyCount` / `proxyComponents` / `totalComponents` plus a `componentScope` saying which
+      question was answered. Verified live: `landscape_info` and `diagnose_landscape` now agree on 256
+      components for the same world, where before they said ~640 and 896. Original finding: It iterates
       `TActorIterator<ALandscape>` (parent actors only) while `diagnose_landscape` iterates
       `TActorIterator<ALandscapeProxy>` (parents plus `ALandscapeStreamingProxy`). On the open world
       that is 11 landscapes / ~640 components against 75 proxies / 896 components, both `ok:true`. The

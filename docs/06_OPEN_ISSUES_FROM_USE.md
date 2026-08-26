@@ -46,7 +46,7 @@ Author's own priority ranking, "by what actually costs me time now". Status as o
 
 | rank | issue | status |
 |---|---|---|
-| 11 | `landscape_info` vs `diagnose_landscape` disagree on component counts (World Partition proxies) | **OPEN** — filed 2026-08-26, see section 11; `landscape_info` counts only parent `ALandscape` actors, so a World Partition terrain reports `components: 0` |
+| 11 | `landscape_info` vs `diagnose_landscape` disagree on component counts (World Partition proxies) | **FIXED + verified** 2026-08-26 — `landscape_info` now counts streaming proxies matched on `LandscapeGuid` and reports `proxyCount` / `proxyComponents` / `totalComponents` / `componentScope`; both endpoints now agree on 256 for the same world |
 | 1 | Parameter drift (`path` dropped from `connect_pins` / `disconnect_pin`) | **FIXED + verified** — `path` accepted on `connect_pins`, `disconnect_pin`, `reconnect_pin`; `self_audit` now emits `surfaceSignature` / `paramSignature` |
 | 2 | `list_components` returns empty for a cooked parent | **FIXED + verified** — `BP_PlantPot` returns 12 components (was 0), `targetKind:"cookedClass"`, each with a reason and `route` |
 | 3 | `get_property` returns bools as strings | **FIXED + verified** — see the split below; `list_object_properties` now emits `typed` |
@@ -520,8 +520,9 @@ This is the same shape as the five "current world" helpers that had silently spl
 (`02_GOTCHAS.md`): two readers of one fact, each correct about a different question, with nothing in
 either response naming the question.
 
-**Not yet fixed** — found with under an hour left in the night shift, and a C++ change to a landscape
-read plus a full regression was not something to start at 07:00. Filed rather than rushed.
+**FIXED 2026-08-26**, right after filing — the fix was small enough to do properly after all. Item 1
+below is what shipped; items 2 and 3 shipped with it. Verified live: both endpoints now report **256**
+components for the same world.
 
 **The fix worth making,** in order of value:
 
