@@ -3,7 +3,7 @@
   "suite": "test_array_wildcard_durability.py",
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -11,7 +11,7 @@
   "suite": "test_audio_nav.py",
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -19,7 +19,7 @@
   "suite": "test_audit_fixes.py",
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 4.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -27,7 +27,7 @@
   "suite": "test_capture_viewport.py",
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 3.4,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -35,7 +35,7 @@
   "suite": "test_collision.py",
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -43,7 +43,15 @@
   "suite": "test_components_dispatchers.py",
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 3.7,
+  "seconds": 2.8,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_confirm_gated.py",
+  "rc": 0,
+  "summary": "PASS 33   FAIL 0",
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -51,7 +59,7 @@
   "suite": "test_create_asset.py",
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 3.7,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -59,7 +67,7 @@
   "suite": "test_datatables.py",
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 4.7,
+  "seconds": 4.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -67,7 +75,7 @@
   "suite": "test_enums.py",
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -75,7 +83,7 @@
   "suite": "test_foliage_modes.py",
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -91,7 +99,7 @@
   "suite": "test_graph_patch.py",
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 0.8,
+  "seconds": 0.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -99,7 +107,7 @@
   "suite": "test_ik_authoring.py",
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 3.5,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -107,7 +115,7 @@
   "suite": "test_ik_goals_solvers.py",
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 3.5,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -115,7 +123,7 @@
   "suite": "test_ik_rig.py",
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -123,7 +131,7 @@
   "suite": "test_inherited_components.py",
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -131,7 +139,7 @@
   "suite": "test_interfaces.py",
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -139,7 +147,7 @@
   "suite": "test_list_bones.py",
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -147,7 +155,7 @@
   "suite": "test_macro_dispatch.py",
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 0.5,
+  "seconds": 0.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -155,7 +163,7 @@
   "suite": "test_material_params.py",
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -163,7 +171,7 @@
   "suite": "test_material_write.py",
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -171,7 +179,7 @@
   "suite": "test_modal_guard.py",
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -179,7 +187,15 @@
   "suite": "test_niagara_params.py",
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_node_spawns.py",
+  "rc": 0,
+  "summary": "PASS 42   FAIL 0",
+  "seconds": 4.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -187,7 +203,7 @@
   "suite": "test_pinlifetime.py",
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 0.6,
+  "seconds": 0.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -195,7 +211,7 @@
   "suite": "test_rename_widget.py",
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -203,7 +219,7 @@
   "suite": "test_reroute.py",
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -219,7 +235,7 @@
   "suite": "test_selfpin.py",
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 1.5,
+  "seconds": 1.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -227,7 +243,7 @@
   "suite": "test_set_struct_member.py",
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.6,
+  "seconds": 3.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -235,7 +251,7 @@
   "suite": "test_snap_ground.py",
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 3.8,
+  "seconds": 4.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -243,7 +259,7 @@
   "suite": "test_sockets_ai.py",
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -251,7 +267,7 @@
   "suite": "test_trace_debug.py",
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -259,7 +275,7 @@
   "suite": "test_v3_apply.py",
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 0.4,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -267,7 +283,7 @@
   "suite": "test_widget_anim_recreate.py",
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 3.4,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -275,7 +291,7 @@
   "suite": "test_widget_animation.py",
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },

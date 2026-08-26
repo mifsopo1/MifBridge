@@ -47,7 +47,11 @@ def main():
     # ------------------------------------------------------------------ T141 the one that matters
     print("\n=== T141 [not just ok:true]: it is REGISTERED, not merely in memory ===")
     ap = r.get("assetPath")
-    f = M.call("find_assets", {"pathPrefix": "/Game/_MifAsset/", "limit": 10})
+    # A HIGH limit, not 10. Scratch assets accumulate within an editor session - nothing here is
+    # saved, so they only vanish on restart - and with ten already present from earlier runs the new
+    # asset fell off the end of the page and the test reported the registry could not see it. The
+    # assertion was about registration, and it was measuring pagination.
+    f = M.call("find_assets", {"pathPrefix": "/Game/_MifAsset/", "limit": 500})
     found = [a.get("path") for a in (f.get("assets") or [])]
     # Without FAssetRegistryModule::AssetCreated the object works perfectly and is invisible here.
     check("T141 the asset registry can see it", ap in found,
