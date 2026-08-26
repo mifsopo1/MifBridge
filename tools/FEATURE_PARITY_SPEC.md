@@ -245,25 +245,56 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       and reports `distinctColours`, `uniformity` and `dominantColour` on EVERY response, not only
       when it decides something is wrong, so a caller can judge for itself.
 
-- [ ] **No endpoint authors an IK Rig or an IK Retargeter.** (Raised by Andre, 2026-08-25.) Confirmed:
-      the only endpoint whose name matches is `retarget_variable_node`, which retargets a Blueprint
-      variable node and is an unrelated name collision. The registry has zero `IKRigDefinition` and
-      zero `IKRetargeter` assets anywhere — and that zero was checked against a class that DOES
-      resolve (`ControlRigBlueprint` returns 2, both engine plugin function libraries rather than
-      game content), so it is a real absence and not an unregistered-class artifact.
+- [x] **`list_bones`** — the prerequisite that fell out of investigating the IK Rig question, and a
+      gap in its own right. Nothing in the bridge could name a bone.
+      `USkeleton::ReferenceSkeleton` is a plain C++ member rather than a UPROPERTY, so reflection
+      cannot reach it; `get_property` on a Skeleton returns `BoneTree`, which holds per-bone
+      retargeting modes and no names. `describe_animation` has curves and notifies but no tracks, and
+      `list_sockets` reports things that attach TO bones without enumerating them. No new module
+      dependency. Reports the hierarchy, and says WHICH reference skeleton it read, because a mesh and
+      its skeleton can hold different bones. 36 checks.
+- [~] **IK Rig / IK Retargeter authoring** — not pursued. Andre raised this one, so it is a judgement
+      he should overrule if he wants it: the mechanism is entirely available, but the DDS2 need it was
+      meant to serve turned out not to exist.
 
-      The demand case is not editing rigs DDS2 already ships, because it ships none. It is IMPORT.
-      The project carries several unrelated skeletons — `UE4_Mannequin_Skeleton`, `SK_Mannequin`,
-      `DDS2_CharacterSkeleton`, plus vehicle and animal ones (cat, Akita, Dalmatian, Doberman,
-      Labrador) — and an animation bought or downloaded against the UE4 Mannequin, which is the most
-      common source of both, has no path onto the DDS2 character today. That is a normal thing for a
-      modder to want and it is currently impossible through the bridge.
+      **The mechanism is available, and that was worth establishing.** `UIKRigController` and
+      `UIKRetargeterController` are both class-level `IKRIGEDITOR_API`, so unlike the Foliage case
+      every member is linkable with no per-member trap. Between them they cover the whole loop:
+      `SetSkeletalMesh`, `SetRetargetRoot`, `AddRetargetChain`, `SetIKRig(source|target)`,
+      `SetPreviewMesh`, and `AutoMapChains` with Exact or Fuzzy (levenshtein) matching. The IKRig
+      plugin is `EnabledByDefault: True` and its editor module loads at `PostEngineInit`, the same
+      phase as MifBridge. So this item's open question — whether a retargeter can be authored without
+      the chain-mapping UI — is answered YES.
 
-      Before building, settle two things the same way the Foliage item is being settled. First
-      whether `IKRig` and `IKRigEditor` are enabled in this project at all — nothing above proves the
-      modules are loaded, only that no assets exist. Second whether authoring a retargeter without
-      the editor's chain-mapping UI produces anything usable, or whether the honest scope is narrower:
-      create the two assets, set source and target meshes, and report the chains for a human to map.
+      **Why it is declined anyway.** The case for it was IMPORT: bringing an animation authored
+      against another skeleton onto the DDS2 character. Measured with the new `list_bones`, that case
+      does not exist. `DDS2_CharacterSkeleton`, `SK_Mannequin` and `SK_Mannequin_Arms_Skeleton` are all
+      161-bone UE5-Mannequin-structure rigs with **identical bone sets and identical parentage — zero
+      bones differ**. They are the same rig. Retargeting between them is not a translation problem, and
+      an IK Rig would be an elaborate way to map every bone onto itself.
+
+      What IS missing for that workflow is far smaller and already reachable: `CompatibleSkeletons` is
+      empty on all three, and it is a `CPF_Edit`, saved `TArray<TSoftObjectPtr<USkeleton>>` that
+      `set_property` can write. (Verified as editable and saved; NOT written, because that would mutate
+      a shipped game asset and the audit rules here keep writes to scratch.)
+
+      The skeletons that genuinely differ are the animals and vehicles — cat 50 bones, cow 40, dogs
+      50–54, bicycle 9, scooter 10. Cross-species retargeting is what an IK Rig would actually buy
+      here, and human-to-dog animation transfer is not a DDS2 modding need anyone has raised.
+
+      **Reopen if** the goal is animal or vehicle retargeting, or bringing in content from a genuinely
+      foreign rig (Mixamo, another game). The mechanism is proven and the prerequisite is now built, so
+      it would be a build rather than an investigation.
+- [~] **The CityAnimations pack ships a mangled skeleton.** Found by `list_bones` rather than looked
+      for. `/Game/Animations/AssetPacks/CityAnimations/.../UE4_Mannequin_Skeleton` is not a 68-bone UE4
+      mannequin at all: it is a 161-bone skeleton in which **61 bones are named `<realname><index>`**
+      — `spine_012`, `index_02_l10`, `ik_hand_r67` — alongside the correctly-named originals, which
+      are also present. That is a CONTENT defect, not a bridge one, so nothing here is blocked by it,
+      but any animation retargeted through that skeleton will behave oddly. Andre should decide whether
+      to repair it or stop using it before anything is built that reads it.
+      Marked as not-pursued rather than left open because it is not a bridge capability at all:
+      repairing or replacing a shipped content asset is Andre's call, and nothing in MifBridge
+      is blocked meanwhile. The finding is recorded here so it is not lost.
 - [x] **Foliage** — `add_foliage_instances` gained a `foliageType` mode. The disagreement is
       settled in the bucket agent's favour, on evidence rather than on either rating: DDS2 ships **42**
       `FoliageType_InstancedStaticMesh` assets and 7 `LandscapeGrassType`, so the game does paint
