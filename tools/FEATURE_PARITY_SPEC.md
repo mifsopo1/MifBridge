@@ -429,11 +429,20 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       relaunches the editor if a suite kills it and RECORDS that it had to, because a suite that takes
       the editor down is the headline of the report rather than a footnote.
 
-- [ ] **Full crash/hang sweep across all endpoints.** The last full sweep covered 238; there are 285
-      now, so roughly 47 have never been swept - the IK family, the Niagara read, list_bones,
-      capture_viewport, the foliage mode, set_widget_animation_range. Finish condition: every endpoint
-      called once with a benign payload, zero crashes and zero hangs, and anything found filed in
-      docs/06_OPEN_ISSUES_FROM_USE.md.
+- [x] **Full crash/hang sweep across all endpoints** — clean. 274 endpoints swept (the other 11 sit
+      on the harness DENY list: PIE, the saves, `run_console`), five adversarial probes each. **Zero
+      crashes, zero hangs, zero bad responses, zero unguarded keys, zero leaks.**
+
+      Two `GHOST_OK`, and only one of them new: `trigger_cook`, which is a false positive — it executes
+      nothing, returns `executed:false` and a command plan for a human, and its `asset` parameter only
+      substitutes into a `--filter` argument in the returned string. An `executed_nothing()` exclusion
+      was added to the sweep for it, because one false positive in a report of one teaches you the
+      report is noise.
+
+      A separate lesson came out of triaging it. The findings file is cumulative, append-only and
+      untracked, and rows carried no timestamp, so stale results could not be told from current ones —
+      several steps went into establishing that seven rows predated the very exclusion written to
+      suppress them. `record()` now stamps `ts` and `runId`.
 
 - [ ] **Silent-failure hunt across families not yet adversarially tested.** The most productive lens
       all session has been "does this report success while doing something else" - it found the
@@ -442,7 +451,21 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       rather than by reading. Finish condition: each family either gets a finding filed or is recorded
       as checked, so the morning knows what was covered.
 
-- [ ] **DataTable family: no suite covers any of it, and one endpoint is flagged UNVERIFIED.**
+- [x] **DataTable family** — `tools/test_datatables.py`, 23 checks, and `create_datatable` is now
+      verified after five days marked UNVERIFIED. It creates a table with a real row struct, and the
+      table is confirmed through a DIFFERENT endpoint than the one that made it — a creator confirming
+      its own work is the weakest possible evidence. `read_datatable` was cross-checked against
+      `get_datatable_row` row by row on a real 268-row DDS2 table, and a nonexistent row name is
+      refused rather than fabricated.
+
+      **A deliberate coverage gap remains, and it is recorded in the suite rather than hidden.** The
+      success paths of `write_datatable_rows` and `delete_datatable_rows` are NOT exercised: both
+      require `confirm=true`, and the audit harness strips `confirm` from every payload alongside
+      `save` and `force`. Bypassing that guard to test a write would defeat the point of having it on
+      an unattended run. Closing it properly needs someone running with the guard relaxed against a
+      scratch table.
+
+      Superseded framing, kept because the measurement was the useful part:
       Measured, not guessed: `tools/coverage_gaps.py` shows 188 of 285 endpoints are never named in a
       test suite, and all six DataTable endpoints are among them - `create_datatable`, `read_datatable`,
       `write_datatable_rows`, `delete_datatable_rows`, `get_datatable_row`, `list_datatables`. This is

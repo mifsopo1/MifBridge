@@ -75,13 +75,16 @@ def main():
         print("\ncannot continue without a table")
         return 1
     print("   created with rowStruct: %s" % str(used_struct)[:80])
-    table = made.get("assetPath") or made.get("path")
+    # create_datatable answers with dataTablePath, not assetPath - checked against the real
+    # response rather than assumed, after assuming wrongly once.
+    table = made.get("dataTablePath") or made.get("assetPath") or made.get("path")
     check("T270 it returns the asset path", bool(table), json.dumps(made)[:170])
     # Verified through a DIFFERENT endpoint than the one that made it - a creator confirming its own
     # work is the weakest possible evidence.
     listed = M.call("list_datatables", {})
-    paths = [d.get("path") or d.get("assetPath") for d in (listed.get("datatables")
-                                                           or listed.get("tables") or [])]
+    entries = listed.get("datatables") or listed.get("tables") or listed.get("assets") or []
+    paths = [(d.get("path") or d.get("assetPath") or d.get("dataTablePath") or "")
+             if isinstance(d, dict) else str(d) for d in entries]
     check("T270 and a SEPARATE endpoint can see it",
           any(table.split(".")[0] in (x or "") for x in paths),
           "not among %d listed tables" % len(paths))
@@ -148,8 +151,13 @@ def main():
     ):
         q = M.call("read_datatable", payload)
         check("T271b %s refused" % label, q.get("ok") is False, json.dumps(q)[:140])
-        check("T271b %s says something actionable" % label,
-              len(q.get("error") or "") > 20, (q.get("error") or "")[:120])
+        # Judged on CONTENT, not length. An earlier version required more than 20 characters and
+        # failed "path is required", which is short and perfectly actionable - the assertion was
+        # measuring prose, not usefulness.
+        err = (q.get("error") or "").lower()
+        check("T271b %s names what to do" % label,
+              any(w in err for w in ("required", "not found", "no asset", "no such", "expected")),
+              (q.get("error") or "")[:120])
     notatable = (M.call("find_assets", {"class": "Material", "limit": 1}).get("assets") or [{}])[0].get("path")
     q = M.call("read_datatable", {"path": notatable})
     check("T271b a non-DataTable asset is refused by class",

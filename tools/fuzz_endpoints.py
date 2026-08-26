@@ -94,6 +94,25 @@ def reported_absent(r):
     return False
 
 
+def executed_nothing(r):
+    """True when the endpoint plainly says it DID nothing.
+
+    trigger_cook returns executed:false and a command plan for a human to run - its `asset` parameter
+    only substitutes into a --filter argument in the returned string. Handing it a nonexistent asset
+    produces a correct plan mentioning a nonexistent asset, which is the right answer, not a phantom
+    success. It was the only new finding in a 274-endpoint sweep, and one false positive in a report
+    of one teaches you the report is noise.
+
+    Narrow on purpose: it wants a BOOLEAN named for execution that is false. A response merely lacking
+    content does not qualify - that case is looked_and_found_nothing's, and conflating them would hide
+    an endpoint that really did resolve a ghost and act on it.
+    """
+    for k, v in r.items():
+        if isinstance(v, bool) and not v and k.lower() in ("executed", "ran", "applied", "performed"):
+            return True
+    return False
+
+
 def looked_and_found_nothing(ghosted_keys, r):
     """True when ok:true means "I searched and found nothing", which is a correct answer.
 
@@ -372,7 +391,10 @@ def main():
                 # its whole job - so "succeeded against a nonexistent path" is the correct answer
                 # there, not a finding. Flagging create_blueprint was this probe's own false positive.
                 creates = ep.startswith(("create_", "add_", "new_", "spawn_", "import_", "duplicate_"))
-                if r.get("ok") is True and not creates and not looked_and_found_nothing(ghosts, r) and not reported_absent(r):
+                if (r.get("ok") is True and not creates
+                        and not looked_and_found_nothing(ghosts, r)
+                        and not reported_absent(r)
+                        and not executed_nothing(r)):
                     M.record("GHOST_OK", ep,
                              "reported success for references that do not exist (%s)"
                              % ", ".join(sorted(ghosts)),
