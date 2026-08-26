@@ -1,0 +1,34 @@
+name: Bridge report
+description: Report a MifBridge endpoint that fails, hangs, or reports success while doing something else
+title: '[bridge] '
+labels: [bridge-report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports on this label may be picked up and worked automatically.
+
+        Two things make that safe, and both need your help:
+
+        1. The JSON block below is the ONLY part that ever gets replayed. Prose is read, never run.
+        2. Asset paths you name are rewritten into scratch space before anything executes, so your
+           own assets are never opened. That means the repro tests the SHAPE of the bug. If a bug
+           only happens on one specific asset, say so in the notes - that one needs a human.
+  - type: textarea
+    id: report
+    attributes:
+      label: The report
+      description: Exactly one fenced json block. endpoint, payload, expected and actual are required.
+      value: |
+        ```json
+        {
+          "endpoint": "set_spline_points",
+          "payload": {"actorPath": "/Game/Your/BP_Thing.BP_Thing", "points": [{"x": 0, "y": 0, "z": 0}]},
+          "expected": "what you expected to happen",
+          "actual": "what actually happened",
+          "dll": "the built <date> string from self_audit",
+          "notes": "anything else - read by a human, never executed"
+        }
+        ```
+    validations:
+      required: true

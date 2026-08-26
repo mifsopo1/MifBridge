@@ -1,0 +1,13 @@
+{
+  "_comment": [
+    "Logins listed in 'trusted' may have their bridge-report issues AUTO-PROCESSED: fetched,",
+    "sanitised, replayed against a scratch editor, fixed and committed without a human in the loop.",
+    "Everything else is labelled and left alone. This list is the security boundary of the whole",
+    "autonomous loop - schema validation catches mistakes, this catches adversaries.",
+    "EMPTY BY DEFAULT AND ON PURPOSE. A missing or malformed file also means nobody is trusted, so",
+    "the loop fails closed. Add a login only when you know it belongs to the person you think it does",
+    "- a GitHub login is not proof of identity by itself, and this grants that account the ability to",
+    "make this machine run editor operations unattended."
+  ],
+  "trusted": []
+}
