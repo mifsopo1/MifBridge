@@ -57,6 +57,23 @@ def fingerprint(bid, graph):
     cs = M.call("list_components", {"blueprintId": bid}).get("components") or []
     gs = M.call("list_graphs", {"blueprintId": bid}).get("graphs") or []
     ns = M.call("list_nodes", {"graphId": graph}).get("nodes") or [] if graph else []
+
+    # PINS TOO - connections and pin defaults. Without these the fingerprint cannot see a wiring
+    # change at all, and the first run of T372 proved it: connect_pins and a four-operation
+    # apply_graph_patch both came back "changed nothing observable". They had changed plenty; this
+    # function was not looking. The non-vacuity guard caught it rather than handing out a free pass,
+    # which is the whole reason that guard is there.
+    pinstate = []
+    for n in ns:
+        guid = n.get("guid") or n.get("nodeGuid")
+        if not guid:
+            continue
+        gn = M.call("get_node", {"graphId": graph, "nodeGuid": guid})
+        nd = gn.get("node") or gn
+        for pin in (nd.get("pins") or []):
+            pinstate.append(norm({"node": guid, "pin": pin.get("name"),
+                                  "default": pin.get("default"),
+                                  "linkedTo": sorted(norm(x) for x in (pin.get("linkedTo") or []))}))
     ifs = M.call("list_interfaces", {"blueprintId": bid}).get("interfaces") or []
     return norm({
         "vars": sorted(norm(v) for v in vs),
@@ -64,6 +81,7 @@ def fingerprint(bid, graph):
         "graphs": sorted((g.get("name") or "") for g in gs),
         "nodes": sorted(norm({k: n.get(k) for k in ("title", "guid", "nodeClass")}) for n in ns),
         "ifaces": sorted(norm(i) for i in ifs),
+        "pins": sorted(pinstate),
     })
 
 
@@ -158,6 +176,35 @@ def main():
     one_case("T371 set_variable_type", bid, g,
              lambda: M.call("set_variable_type", {"blueprintId": bid, "name": "Flags_%d" % st,
                                                   "type": "float"}))
+
+    print("")
+    print("=== T372: multi-edit operations, where undo is most likely to half-revert ===")
+    # apply_graph_patch performs MANY dependent edits in one call. The question this asks is whether
+    # ONE undo takes the whole patch back, or only its last operation - a patch that half-reverts is
+    # worse than one that does not revert at all, because the graph is then in a state the caller
+    # never asked for and did not see.
+    nodes = []
+    for i in range(3):
+        r = M.call("add_function_call", {"graphId": g, "function": "PrintString",
+                                         "class": "KismetSystemLibrary",
+                                         "x": 400 + 300 * i, "y": 600})
+        if r.get("ok"):
+            nodes.append(r.get("nodeGuid"))
+    check("T372 three nodes exist to patch", len(nodes) == 3, "got %d" % len(nodes))
+
+    if len(nodes) == 3:
+        one_case("T372 connect_pins", bid, g,
+                 lambda: M.call("connect_pins", {"graphId": g, "srcNode": nodes[0], "srcPin": "then",
+                                                 "dstNode": nodes[1], "dstPin": "execute"}))
+        one_case("T372 apply_graph_patch (4 ops)", bid, g,
+                 lambda: M.call("apply_graph_patch", {"graphId": g, "operations": [
+                     {"op": "connect_pins", "srcNode": nodes[0], "srcPin": "then",
+                      "dstNode": nodes[1], "dstPin": "execute"},
+                     {"op": "connect_pins", "srcNode": nodes[1], "srcPin": "then",
+                      "dstNode": nodes[2], "dstPin": "execute"},
+                     {"op": "set_pin_default", "node": nodes[1], "pin": "InString", "value": "A"},
+                     {"op": "set_pin_default", "node": nodes[2], "pin": "InString", "value": "B"},
+                 ]}))
 
     print("")
     print("=" * 72)
