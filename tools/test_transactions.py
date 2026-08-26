@@ -33,6 +33,24 @@ def check(name, cond, detail=""):
     print(("  PASS  " if cond else "  FAIL  ") + name + ("" if cond else "   " + str(detail)))
 
 
+
+def step(msg):
+    """Progress marker, flushed.
+
+    This suite wedged for 568 seconds inside a full two-pass run on 2026-08-26 and could not be
+    reproduced standalone (21/21 twice, same editor session). The editor was idle and answering other
+    callers instantly throughout, so it was not the bridge. With no output between assertions there
+    was no way to tell WHICH call it died on, and the whole diagnosis came down to process-hunting.
+    These markers make the next occurrence self-locating: the last line printed is the call that hung.
+
+    It is the only suite besides test_undo_integrity that touches the GLOBAL undo buffer, and 46 of
+    the 53 suites run before it alphabetically - so by the time it runs it inherits a buffer holding
+    every transaction they made, and twice that on the second pass. That is the leading suspect and
+    the reason the markers name the transaction calls specifically.
+    """
+    print("      . %s" % msg, flush=True)
+
+
 def main():
     if not M.wait_for_bridge(timeout=900):
         print("bridge never came up")
@@ -54,6 +72,7 @@ def main():
     # ------------------------------------------------------------------ T470 the reader
     print("")
     print("=== T470: list_transactions reports numbers that actually move ===")
+    step("list_transactions {}")
     lt = M.call("list_transactions", {})
     check("T470 it answers", lt.get("ok") is True, json.dumps(lt)[:200])
     check("T470 and reports where the undo cursor is",
@@ -70,6 +89,22 @@ def main():
     check("T471 the variable is added", a.get("ok") is True and has_var(), json.dumps(a)[:180])
     before = M.call("list_transactions", {})
 
+    # OWN THE TOP OF THE STACK, OR SAY SO. This suite undoes ONE step and expects that step to be its
+    # own add_variable. The undo buffer is GLOBAL: 46 of the 53 suites run before this one, and
+    # anything else transacting - another process driving the same editor, a background autosave - can
+    # land on top between the add and the undo. When that happens the undo silently reverts something
+    # else and T471's remaining assertions all fail in a confusing cascade, which is exactly what
+    # happened when a manual run was started while a sweep was in flight: five failures, none of them
+    # naming the real cause.
+    #
+    # list_transactions reports nextUndoTitle, so the assumption is cheap to CHECK rather than make.
+    top = (M.call("list_transactions", {"limit": 1}) or {}).get("nextUndoTitle") or ""
+    check("T471 this suite owns the top of the undo stack", "add_variable" in top,
+          "nextUndoTitle is %r, not this suite's add_variable - something else transacted in between, "
+          "so the undo below would revert the WRONG thing. Is another process driving this editor?"
+          % top)
+
+    step("undo_transactions count=1")
     u = M.call("undo_transactions", {"count": 1})
     check("T471 the undo succeeds", u.get("ok") is True, json.dumps(u)[:200])
     check("T471 and reports how many steps it took", u.get("undone") == 1, json.dumps(u)[:200])
@@ -86,6 +121,7 @@ def main():
           % (before.get("currentIndex"), during.get("currentIndex"),
              before.get("undoCount"), during.get("undoCount")))
 
+    step("redo_transactions count=1")
     r = M.call("redo_transactions", {"count": 1})
     check("T471 the redo succeeds", r.get("ok") is True, json.dumps(r)[:220])
     check("T471 and reports how many it redid", r.get("redone") == 1, json.dumps(r)[:200])
@@ -102,6 +138,7 @@ def main():
     # ------------------------------------------------------------------ T472 nothing to redo
     print("")
     print("=== T472: redo with nothing left to redo is an answer, not an error ===")
+    step("redo_transactions count=1 (nothing left)")
     q = M.call("redo_transactions", {"count": 1})
     check("T472 it answers rather than failing", isinstance(q.get("ok"), bool), json.dumps(q)[:200])
     if q.get("ok"):
@@ -117,6 +154,7 @@ def main():
     print("=== T473: out-of-range requests are refused ===")
     q = M.call("undo_transactions", {"count": 0})
     check("T473 count:0 is refused", q.get("ok") is False, json.dumps(q)[:180])
+    step("undo_transactions count=9999 (expect refusal)")
     q = M.call("undo_transactions", {"count": 9999})
     check("T473 an absurd count is refused rather than walking the whole history",
           q.get("ok") is False, json.dumps(q)[:180])
