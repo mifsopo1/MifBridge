@@ -459,7 +459,20 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
 
       35 suites now, all green, no editor deaths.
 
-- [ ] **Continue the hunt: interfaces, dispatchers, the rest of the component family.** Still named in
+- [x] **Hunt round two: interfaces, dispatchers, components — all three clean.** 50 checks across
+      `tools/test_interfaces.py` (21) and `tools/test_components_dispatchers.py` (29). Recorded as a
+      result rather than passed over: five families were hunted tonight off `coverage_gaps.py`, three
+      were clean and two were not, and knowing which is which is worth as much as the fixes when
+      someone is deciding where to spend an evening.
+
+      Two assertions from these are worth keeping. `add_interface` CONFORMS the blueprint, creating a
+      function graph per non-event interface function — so the meaningful question is not "was it
+      added" but "can the blueprint answer its functions afterwards", which a conform that silently did
+      nothing would fail. And `set_component_transform`'s per-field `locationApplied` /
+      `rotationApplied` / `scaleApplied` flags are asserted in BOTH directions, because a flag that is
+      always true carries no information.
+
+      Superseded framing, kept because the aiming method was the useful part: Still named in
       no suite: `add_interface` / `implement_interface_function` / `list_interfaces` /
       `remove_interface`; `add_call_dispatcher` / `list_dispatchers` / `rename_event_dispatcher`;
       `remove_component` / `set_component_transform` / `add_component_bound_event`. Same method — read
