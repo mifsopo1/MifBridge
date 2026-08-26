@@ -292,6 +292,8 @@ namespace MifBridge
 			MIF_BIND(describe_animation);
 			MIF_BIND(list_sockets);
 			MIF_BIND(list_bones);
+			MIF_BIND(set_blendspace_samples);
+			MIF_BIND(set_bone_translation_retargeting);
 			MIF_BIND(list_ik_rig);
 			MIF_BIND(list_ik_solver_types);
 			MIF_BIND(add_ik_solver);

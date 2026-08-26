@@ -2575,6 +2575,20 @@ def list_blackboard_keys(path: str) -> dict:
 
 
 @mcp.tool()
+def set_blendspace_samples(asset_path: str, samples: list, clear: bool = True) -> dict:
+    "Place animation samples in a BlendSpace. samples is [{animation, x, y?}] - each entry names an AnimSequence and its position on the blend axes; y is ignored by a 1D BlendSpace. clear (default true) wipes the existing samples first, so the call is a full replace rather than an append. The AXES themselves are not set here: use set_property with propertyPath=BlendParameters[0].Max (also .Min, .DisplayName, .GridNum). Ported from the UE 5.7 deployment where it was written and used."
+    return _post("set_blendspace_samples", assetPath=asset_path, samples=samples, clear=clear)
+
+
+@mcp.tool()
+def set_bone_translation_retargeting(skeleton_path: str, bone_name: str, mode: str,
+                                     children_too: bool = False) -> dict:
+    "Set how a Skeleton retargets a bone's TRANSLATION. mode is one of Animation, Skeleton, AnimationScaled, AnimationRelative or OrientAndScale. This is what stops a retargeted character sinking through the floor or drifting: the root and pelvis usually want AnimationScaled or OrientAndScale while most bones want Skeleton. children_too applies the same mode down the whole subtree, which is normally what you want for a limb. Ported from the UE 5.7 deployment where it was written and used."
+    return _post("set_bone_translation_retargeting", skeletonPath=skeleton_path, boneName=bone_name,
+                 mode=mode, childrenToo=children_too)
+
+
+@mcp.tool()
 def describe_animation(asset_path: str) -> dict:
     "Describe an animation asset: skeleton, playLength, notifies (with notify-state windows and branching points), curves. Plus per type - sequence: frameRate/numSampledKeys/additive/syncMarkers; montage: blend times, sections (with nextSection) and slot segments; blendSpace: axes and samples. For an animation BLUEPRINT use list_graphs/list_nodes instead - nested state machines and transition graphs are included."
     return _post("describe_animation", assetPath=asset_path)

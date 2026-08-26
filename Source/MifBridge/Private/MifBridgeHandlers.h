@@ -1199,6 +1199,9 @@ namespace MifBridge
 	/** The bone hierarchy of a Skeleton or SkeletalMesh. Nothing else could name a bone:
 	 *  ReferenceSkeleton is not a UPROPERTY, so reflection cannot reach it. */
 	MIF_DECL(list_bones);
+	// Ported from the Curfew (UE 5.7) deployment on 2026-08-26 - written there, never reached this repo.
+	MIF_DECL(set_blendspace_samples);
+	MIF_DECL(set_bone_translation_retargeting);
 	/** IK Rig / IK Retargeter authoring. Registered on EVERY engine; on one without the IKRig
 	 *  plugin (UE4) they refuse with that reason rather than not existing. */
 	MIF_DECL(list_ik_rig);

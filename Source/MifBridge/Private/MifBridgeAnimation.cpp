@@ -707,4 +707,279 @@ namespace MifBridge
 		Out->SetStringField(TEXT("note"),
 			TEXT("pose data lives on the node's Node member, not on pins - e.g. set_property propertyPath=Node.Sequence (SequencePlayer) or Node.SlotName (Slot). Wire poses with connect_pins as normal."));
 	}
+	// --- PORTED FROM THE CURFEW (UE 5.7) DEPLOYMENT, 2026-08-26 ---------------
+	// These two were written against UE 5.7 in D:/RoguelikeDealerGame, where MifBridge is VENDORED
+	// rather than cloned, so they never reached this repo. Found by diffing the two endpoint sets:
+	// 46 endpoints here had never been compiled against 5.7, and these 2 existed only there.
+	// Work was being lost in both directions.
+	//
+	// Ported verbatim. Every engine call they make - UBlendSpace::AddSample/DeleteSample/ResampleData/
+	// ValidateSampleData and USkeleton::GetBoneTranslationRetargetingMode/GetReferenceSkeleton - exists
+	// unchanged in 5.3, and Curfew's include set is a subset of this file's, so nothing needed adapting.
+
+	// --- set_blendspace_samples ---------------------------------------------
+	//   in:  { assetPath, samples:[{ animation, x, y? }], clear? (default true) }
+	//   out: { path, sampleCount, samples:[{ animation, x, y }] }
+	//
+	// WHY THIS EXISTS: UBlendSpace::AddSample is ENGINE_API C++ but is NOT exposed to Unreal's
+	// Python bindings — UBlendSpace1D has no add_sample attribute at all. So a blend space could
+	// be CREATED from a script and then never filled, which is a blend space that silently
+	// outputs nothing. That is a real hole: locomotion is the first animation any project needs
+	// and it cannot be automated without this.
+	//
+	// The AXIS is deliberately not taken here. BlendParameters is a UPROPERTY, so set_property
+	// with propertyPath=BlendParameters[0].Max already reaches it, and duplicating that would be
+	// a second way to do one thing.
+	//
+	// Samples must be UAnimSequence: AddSample takes that type specifically, and a montage or a
+	// composite in a blend space is not a thing the engine supports.
+	void H_set_blendspace_samples(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("blendSpace"), TEXT("samples"), TEXT("clear") },
+			TEXT("assetPath (aliases: path, blendSpace), samples[] of { animation, x, y? }, clear (default true)"),
+			{ { TEXT("axis"), TEXT("set the axis with set_property propertyPath=BlendParameters[0].Max (also .Min, .DisplayName, .GridNum)") },
+			  { TEXT("animation"), TEXT("samples is an ARRAY of objects, each with its own animation and x") } }))
+		{
+			return;
+		}
+
+		FString Path;
+		for (const TCHAR* Key : { TEXT("assetPath"), TEXT("path"), TEXT("blendSpace") })
+		{
+			if (In->TryGetStringField(Key, Path) && !Path.IsEmpty()) { break; }
+		}
+		if (Path.IsEmpty()) { Fail(Out, TEXT("assetPath is required")); return; }
+
+		UObject* Asset = LoadAssetLoose(Path);
+		UBlendSpace* BS = Cast<UBlendSpace>(Asset);
+		if (!BS)
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' is not a UBlendSpace (loaded: %s)"),
+				*Path, Asset ? *Asset->GetClass()->GetName() : TEXT("nothing")));
+			return;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* Samples = nullptr;
+		if (!In->TryGetArrayField(TEXT("samples"), Samples) || !Samples)
+		{
+			Fail(Out, TEXT("samples[] is required - each entry { animation, x, y? }"));
+			return;
+		}
+
+		BS->Modify();
+
+		// Clear by default. Re-running a setup script should converge on the same blend space
+		// rather than stacking a second copy of every sample on top of the first.
+		bool bClear = true;
+		In->TryGetBoolField(TEXT("clear"), bClear);
+		if (bClear)
+		{
+			for (int32 i = BS->GetBlendSamples().Num() - 1; i >= 0; --i)
+			{
+				BS->DeleteSample(i);
+			}
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Added;
+		TArray<FString> Rejected;
+
+		for (const TSharedPtr<FJsonValue>& V : *Samples)
+		{
+			const TSharedPtr<FJsonObject>* Obj = nullptr;
+			if (!V.IsValid() || !V->TryGetObject(Obj) || !Obj) { continue; }
+
+			FString AnimPath;
+			(*Obj)->TryGetStringField(TEXT("animation"), AnimPath);
+			UAnimSequence* Seq = Cast<UAnimSequence>(LoadAssetLoose(AnimPath));
+			if (!Seq)
+			{
+				Rejected.Add(FString::Printf(TEXT("%s: not a UAnimSequence"), *AnimPath));
+				continue;
+			}
+
+			// A sample whose skeleton does not match is accepted by AddSample and then produces
+			// a broken pose at runtime, which is a miserable thing to debug. Refuse it here.
+			if (BS->GetSkeleton() && Seq->GetSkeleton() != BS->GetSkeleton())
+			{
+				Rejected.Add(FString::Printf(TEXT("%s: skeleton '%s' does not match the blend space's '%s'"),
+					*Seq->GetName(),
+					Seq->GetSkeleton() ? *Seq->GetSkeleton()->GetName() : TEXT("none"),
+					*BS->GetSkeleton()->GetName()));
+				continue;
+			}
+
+			double X = 0.0, Y = 0.0;
+			(*Obj)->TryGetNumberField(TEXT("x"), X);
+			(*Obj)->TryGetNumberField(TEXT("y"), Y);
+
+			const int32 Index = BS->AddSample(Seq, FVector(X, Y, 0.0));
+			if (Index == INDEX_NONE)
+			{
+				// Almost always an out-of-range value: AddSample refuses a sample outside the
+				// axis, so say so rather than reporting a bare failure.
+				Rejected.Add(FString::Printf(
+					TEXT("%s: AddSample refused (%.2f, %.2f) - usually outside the axis range; widen it with set_property BlendParameters[0].Min/.Max first"),
+					*Seq->GetName(), X, Y));
+				continue;
+			}
+
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("animation"), Seq->GetPathName());
+			J->SetNumberField(TEXT("x"), X);
+			J->SetNumberField(TEXT("y"), Y);
+			Added.Add(MakeShared<FJsonValueObject>(J));
+		}
+
+		// Rebuilds the triangulation / grid. Without it the samples exist but nothing interpolates
+		// between them, which looks exactly like the samples not having been added.
+		BS->ValidateSampleData();
+
+		// ResampleData is THE call, and its absence is what produced a T-pose that survived
+		// every other check.
+		//
+		// Its own comment: "Runs triangulation/segmentation to update our grid and
+		// BlendSpaceData structures." A blend space evaluates by looking up GridSamples, NOT
+		// SampleData - so samples without a rebuilt grid interpolate to nothing and the node
+		// emits no pose at all. The mesh then falls back to its reference pose, which reads as
+		// a T-pose and looks for all the world like a missing animation or a broken skeleton.
+		// Everything else verified clean while this was wrong: three samples on disk, correct
+		// skeletons everywhere, a correctly wired graph compiling with zero errors.
+		BS->ResampleData();
+
+		// PostEditChangeProperty, not just MarkPackageDirty.
+		//
+		// Learned the hard way: the first run of this endpoint reported three samples, the
+		// in-memory asset genuinely had three, the save reported success - and the samples were
+		// not in the file. The axis, which had been set through set_property (and therefore got
+		// a PostEditChangeProperty), persisted from the same session. SampleData is a
+		// UPROPERTY with editor-side derived data hanging off it; writing it without telling
+		// the property system leaves the asset in a state the serialiser can drop.
+		if (FProperty* SampleProp = UBlendSpace::StaticClass()->FindPropertyByName(TEXT("SampleData")))
+		{
+			FPropertyChangedEvent Changed(SampleProp, EPropertyChangeType::ValueSet);
+			BS->PostEditChangeProperty(Changed);
+		}
+
+		BS->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("path"), BS->GetPathName());
+		Out->SetNumberField(TEXT("sampleCount"), BS->GetBlendSamples().Num());
+		Out->SetArrayField(TEXT("samples"), Added);
+		if (Rejected.Num() > 0)
+		{
+			// ok:true with rejected entries would read as success. Report them loudly.
+			TArray<TSharedPtr<FJsonValue>> R;
+			for (const FString& S : Rejected) { R.Add(MakeShared<FJsonValueString>(S)); }
+			Out->SetArrayField(TEXT("rejected"), R);
+		}
+		Out->SetStringField(TEXT("note"),
+			TEXT("save_package to persist. Set the axis with set_property propertyPath=BlendParameters[0].Max"));
+	}
+
+	// --- set_bone_translation_retargeting -------------------------------------
+	//   in:  { skeletonPath, boneName, mode, childrenToo? }
+	//   out: { skeleton, bone, boneIndex, before, after }
+	//
+	// WHY THIS EXISTS: USkeleton::BoneTree is a read-only UPROPERTY from Python, so a bone's
+	// translation retargeting mode simply cannot be set from a script - and that mode is the
+	// only lever that stops a bone using the ANIMATION's translation.
+	//
+	// The concrete failure it fixes, measured 2026-08-24: retargeting the GASP locomotion put
+	// the clips' travel on the PELVIS instead of the root (the retarget root is the pelvis and
+	// the Root Motion op was disabled), while bForceRootLock pinned the root at the origin. So
+	// the body walked 831 cm away from the capsule over a 4.000 s walk cycle and snapped back
+	// at every loop. Setting the pelvis to SKELETON makes it take translation from the
+	// reference pose, which removes the drift outright without touching a single clip.
+	//
+	// Modes: Animation, Skeleton, AnimationScaled, AnimationRelative, OrientAndScale.
+	void H_set_bone_translation_retargeting(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("skeletonPath"), TEXT("path"), TEXT("boneName"), TEXT("bone"), TEXT("mode"), TEXT("childrenToo") },
+			TEXT("skeletonPath (alias: path), boneName (alias: bone), mode {Animation|Skeleton|AnimationScaled|AnimationRelative|OrientAndScale}, childrenToo (default false)"),
+			{}))
+		{
+			return;
+		}
+
+		FString Path;
+		for (const TCHAR* Key : { TEXT("skeletonPath"), TEXT("path") })
+		{
+			if (In->TryGetStringField(Key, Path) && !Path.IsEmpty()) { break; }
+		}
+		if (Path.IsEmpty()) { Fail(Out, TEXT("skeletonPath is required")); return; }
+
+		UObject* Asset = LoadAssetLoose(Path);
+		USkeleton* Skel = Cast<USkeleton>(Asset);
+		if (!Skel)
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' is not a USkeleton (loaded: %s)"),
+				*Path, Asset ? *Asset->GetClass()->GetName() : TEXT("nothing")));
+			return;
+		}
+
+		FString BoneName;
+		for (const TCHAR* Key : { TEXT("boneName"), TEXT("bone") })
+		{
+			if (In->TryGetStringField(Key, BoneName) && !BoneName.IsEmpty()) { break; }
+		}
+		if (BoneName.IsEmpty()) { Fail(Out, TEXT("boneName is required")); return; }
+
+		const int32 BoneIndex = Skel->GetReferenceSkeleton().FindBoneIndex(FName(*BoneName));
+		if (BoneIndex == INDEX_NONE)
+		{
+			Fail(Out, FString::Printf(TEXT("bone '%s' not found on %s"), *BoneName, *Skel->GetName()));
+			return;
+		}
+
+		FString ModeStr = TEXT("Skeleton");
+		In->TryGetStringField(TEXT("mode"), ModeStr);
+		EBoneTranslationRetargetingMode::Type Mode = EBoneTranslationRetargetingMode::Skeleton;
+		if      (ModeStr.Equals(TEXT("Animation"), ESearchCase::IgnoreCase))         { Mode = EBoneTranslationRetargetingMode::Animation; }
+		else if (ModeStr.Equals(TEXT("Skeleton"), ESearchCase::IgnoreCase))          { Mode = EBoneTranslationRetargetingMode::Skeleton; }
+		else if (ModeStr.Equals(TEXT("AnimationScaled"), ESearchCase::IgnoreCase))   { Mode = EBoneTranslationRetargetingMode::AnimationScaled; }
+		else if (ModeStr.Equals(TEXT("AnimationRelative"), ESearchCase::IgnoreCase)) { Mode = EBoneTranslationRetargetingMode::AnimationRelative; }
+		else if (ModeStr.Equals(TEXT("OrientAndScale"), ESearchCase::IgnoreCase))    { Mode = EBoneTranslationRetargetingMode::OrientAndScale; }
+		else
+		{
+			Fail(Out, FString::Printf(TEXT("unknown mode '%s'"), *ModeStr));
+			return;
+		}
+
+		auto ModeName = [](EBoneTranslationRetargetingMode::Type M) -> FString
+		{
+			switch (M)
+			{
+			case EBoneTranslationRetargetingMode::Animation:         return TEXT("Animation");
+			case EBoneTranslationRetargetingMode::Skeleton:          return TEXT("Skeleton");
+			case EBoneTranslationRetargetingMode::AnimationScaled:   return TEXT("AnimationScaled");
+			case EBoneTranslationRetargetingMode::AnimationRelative: return TEXT("AnimationRelative");
+			case EBoneTranslationRetargetingMode::OrientAndScale:    return TEXT("OrientAndScale");
+			default:                                                 return TEXT("Unknown");
+			}
+		};
+
+		const FString Before = ModeName(Skel->GetBoneTranslationRetargetingMode(BoneIndex));
+
+		bool bChildrenToo = false;
+		In->TryGetBoolField(TEXT("childrenToo"), bChildrenToo);
+
+		Skel->Modify();
+		Skel->SetBoneTranslationRetargetingMode(BoneIndex, Mode, bChildrenToo);
+		Skel->MarkPackageDirty();
+
+		// Read it BACK off the asset rather than reporting what we asked for - ok:true has
+		// never been proof in this project.
+		const FString After = ModeName(Skel->GetBoneTranslationRetargetingMode(BoneIndex));
+
+		Out->SetStringField(TEXT("skeleton"), Skel->GetPathName());
+		Out->SetStringField(TEXT("bone"), BoneName);
+		Out->SetNumberField(TEXT("boneIndex"), BoneIndex);
+		Out->SetStringField(TEXT("before"), Before);
+		Out->SetStringField(TEXT("after"), After);
+		Out->SetBoolField(TEXT("changed"), Before != After);
+		Out->SetStringField(TEXT("note"), TEXT("save_package to persist."));
+	}
+
 }

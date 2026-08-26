@@ -145,6 +145,15 @@ Never work from a typed list — one was fabricated once and a third of it was i
   builds for 5.3.2 and 5.7 only because every API it touches happens to exist in both. This is the
   first thing that breaks as breadth grows toward parity, and it needs a policy before it does.
 - [ ] **The Curfew copy is vendored, not linked.** Two divergent lines of development, 230 endpoints
+  EVIDENCE GATHERED 2026-08-26, decision still Andre's. Diffing the two endpoint sets:
+    274 here, 230 in Curfew, 228 shared.
+    46 endpoints here have NEVER been compiled against 5.7 - the whole IK Rig family, all
+       WidgetAnimation authoring, Niagara, BehaviorTree/Blackboard, sockets, collision, nav, trace.
+       IK Rig and Niagara APIs churn hardest between engine versions, so that is where a 5.7 build
+       breaks first.
+    2 endpoints existed ONLY in Curfew - set_blendspace_samples and set_bone_translation_retargeting.
+       Now ported back, with a suite. Work was being lost in BOTH directions, which is the actual
+       argument for fixing the sync rather than any one missing feature.
   against 274, and issues filed in one repo invisible to the other. Decide how they sync.
 ## Gaps worth closing
 

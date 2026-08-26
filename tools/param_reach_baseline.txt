@@ -151,6 +151,7 @@ sculpt_landscape.actorpath
 self_audit.compact
 self_audit.includeendpointdetails
 self_audit.includeendpoints
+set_blendspace_samples.blendspace
 set_collision.component
 set_current_sublevel.level
 set_function_flags.name
