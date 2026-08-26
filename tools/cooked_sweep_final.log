@@ -1,0 +1,8 @@
+target: pid 22920 (DrugDealerSimulator2.uproject)
+cooked samples: AnimSequence=3, Blueprint=3, DataTable=3, Material=3, MaterialInstanceConstant=3, NiagaraSystem=3, SkeletalMesh=3, StaticMesh=3, Texture2D=3, UserDefinedEnum=3, UserDefinedStruct=3
+  ... 180 calls, 0 crash(es)
+
+========================================================================
+cooked sweep: 904 calls across 286 endpoints, 0 crash(es)
+nothing died against a real cooked asset.
+========================================================================

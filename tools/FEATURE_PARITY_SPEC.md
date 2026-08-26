@@ -738,6 +738,28 @@ was in questions nobody had asked of any of them.
       `TC_EditorIcon` and the parser matched authored names only. Fixed in the shared enum parser, so
       `lodGroup`, `mipGenSettings` and `filter` gain it too.
 
+- [x] **Pins, function flags, node search, transactions — the last four families with no suite.**
+      One fix and three clean. `set_function_flags` did not say its change waits for a COMPILE: the
+      flags live on the function's entry node (which is what it writes and reads back), but what
+      executes is the generated class, so `describe_class` answers the pre-compile value and a caller
+      checking their own write concludes it failed. Measured false / false / true across the compile.
+      It now reports `needsCompileToApply`, as the widget-tree endpoints already did.
+
+      The other three hold, including the one with history: `set_pin_type`'s silent revert is properly
+      closed — a node that derives pin types from its connections puts the wildcard back, and the
+      endpoint now FAILS naming both what was asked and what the pin actually is. Undo and redo both
+      work end to end. Worth knowing from `find_nodes`: `byClass` matches the C++ CLASS and `byTitle`
+      matches what you SEE, and they differ for the commonest node there is — a Branch node's class is
+      `K2Node_IfThenElse`, so searching `byClass:"Branch"` correctly finds nothing, which reads like an
+      empty graph rather than a wrong query.
+
+- [x] **Whole-surface re-verification after the night's C++ changes.** Seven source files changed, so
+      the broad sweeps were re-run against the final build rather than trusting the suites:
+      **904 calls across 286 endpoints against real COOKED assets, 0 crashes**; parity clean (286 MCP
+      tools ↔ 286 endpoints, no drift); `audit_modals` 7 guarded / 0 unguarded / 0 citation drift;
+      `audit_blocking` 0 undeclared; `audit_read_purity` 0 reads dirtied a package.
+      **104 runs across 52 suites, 0 failed, 0 took the editor down.**
+
 **What this round taught about method.** Aiming at a question rather than a family found more, because
 the families are in good shape and the questions were not being asked of any of them. Two of the
 findings came from the same shape — *an engine "add" that takes a name and hands back a different
