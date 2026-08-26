@@ -2895,6 +2895,12 @@ def shader_compile_status() -> dict:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def list_input_mappings(path: str) -> dict:
+    "Read an InputMappingContext: which key is bound to which Input Action, with the triggers and modifiers on each mapping. This answers the question that comes BEFORE add_enhanced_input_action - that places the event node for an action, but nothing could tell you what the action is bound to, or what else shares the key. path takes either the package (/Game/Input/IMC_Default) or the object path (/Game/Input/IMC_Default.IMC_Default). Triggers and modifiers are reported by class name; their settings are ordinary UPROPERTYs, so get_property on the object path reaches them."
+    return _post("list_input_mappings", path=path)
+
+
+@mcp.tool()
 def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: int = 0) -> dict:
     "Add a UK2Node_EnhancedInputAction event node (the 'IA_Foo' node you normally get by right-clicking the graph and searching for the action asset) - the one node class the bridge could not author, which forced every Enhanced Input binding to be finished by hand. input_action is a UInputAction object path (/Game/X/IA_Foo.IA_Foo) or its package path (/Game/X/IA_Foo). Pins (Triggered/Started/Ongoing/Canceled/Completed plus a value pin typed by the action's ValueType) are generated FROM the action, so an unresolvable path is an error rather than a pin-less node."
     return _post("add_enhanced_input_action", graphId=graph_id, inputAction=input_action, x=x, y=y)

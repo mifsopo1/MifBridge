@@ -94,6 +94,7 @@ layout_material_expressions.material
 list_bones.mesh
 list_bones.skeleton
 list_ik_rig.rig
+list_input_mappings.context
 list_material_expressions.material
 list_material_parameters.material
 list_niagara_user_parameters.system

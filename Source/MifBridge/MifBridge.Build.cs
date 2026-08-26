@@ -90,6 +90,91 @@ public class MifBridge : ModuleRules
 			                     // stated reason was wrong, because ImageCore arrives regardless.)
 		});
 
+		// ---- BREADTH BATCH, 2026-08-26: ENGINE modules -----------------------------------
+		// Andre asked for every subsystem the competitor covers. Kept as a SEPARATE AddRange so the
+		// list above stays as it was and this batch can be read, or reverted, on its own.
+		//
+		// These six ship with every build of the engine - verified by locating each one's .Build.cs
+		// under Engine/Source in BOTH 5.3.2 and 5.7 - so an unconditional dependency is safe. The
+		// fourteen PLUGIN modules are detected below instead, for exactly the reason the IK Rig block
+		// records: an unconditional dependency on an absent plugin stops the WHOLE of MifBridge
+		// loading, which is far worse than losing the endpoints it would have added.
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"LevelSequence",     // ULevelSequence / ALevelSequenceActor - Sequencer reads and authoring
+			"MovieSceneTools",   // sequencer editor helpers LevelSequence itself does not export
+			"GameplayTags",      // FGameplayTag / UGameplayTagsManager - useful alone, required by GAS
+			"MediaAssets",       // UMediaPlayer / UMediaSource
+			"AudioExtensions",   // audio interfaces shared by MetaSounds and the base audio path
+			"DataLayerEditor"    // UDataLayerEditorSubsystem - the WRITE half of Data Layers, which
+			                     // list_data_layers could not reach. Reported as a needed dependency
+			                     // earlier today, now authorised.
+		});
+
+		// ---- BREADTH BATCH: PLUGIN modules, detected not assumed --------------------------
+		// Same contract as IK Rig below. For each: define MIF_WITH_<NAME> either way, and add the
+		// dependency only when the plugin's descriptor is actually on disk. The handlers compile a real
+		// implementation when the define is 1 and a named refusal when it is 0, so the endpoints stay
+		// REGISTERED on every engine and the three-way MIF_DECL/MIF_BIND/@mcp.tool parity holds.
+		//
+		// Every descriptor path below was verified to exist in BOTH 5.3.2 and 5.7 before being written.
+		// SEARCH FOR THE DESCRIPTOR, DO NOT HARDCODE ITS PATH. Plugins graduate out of Experimental
+		// between engine versions: GeometryScripting, GameFeatures and ModularGameplay are all under
+		// Plugins/Experimental in 5.3.2 and Plugins/Runtime in 5.7. A hardcoded path would have set
+		// their define to 0 on 5.7 and silently dropped three whole families - a clean-looking build
+		// with the endpoints quietly refusing, which is the exact failure this project keeps finding.
+		// Searching by descriptor NAME survives the move in either direction.
+		System.Func<string, string> FindPluginDescriptor = (PluginName) =>
+		{
+			string Root = System.IO.Path.Combine(EngineDirectory, "Plugins");
+			if (!System.IO.Directory.Exists(Root)) { return null; }
+			string[] Hits = System.IO.Directory.GetFiles(
+				Root, PluginName + ".uplugin", System.IO.SearchOption.AllDirectories);
+			return Hits.Length > 0 ? Hits[0] : null;
+		};
+
+		System.Action<string, string, string[]> AddPluginModules = (Define, PluginName, Modules) =>
+		{
+			string Found = FindPluginDescriptor(PluginName);
+			bool bHas = !string.IsNullOrEmpty(Found);
+			PublicDefinitions.Add(Define + "=" + (bHas ? "1" : "0"));
+			if (bHas)
+			{
+				PrivateDependencyModuleNames.AddRange(Modules);
+			}
+			else
+			{
+				System.Console.WriteLine("MifBridge: plugin '" + PluginName +
+					"' not found under Engine/Plugins - its endpoints will compile as " +
+					"unavailable-on-this-engine refusals.");
+			}
+		};
+
+		AddPluginModules("MIF_WITH_NIAGARA", "Niagara",
+			new string[] { "Niagara", "NiagaraEditor" });
+		AddPluginModules("MIF_WITH_GAS", "GameplayAbilities",
+			new string[] { "GameplayAbilities" });
+		AddPluginModules("MIF_WITH_GEOMETRYSCRIPT", "GeometryScripting",
+			new string[] { "GeometryScriptingCore", "GeometryScriptingEditor" });
+		AddPluginModules("MIF_WITH_GAMEFEATURES", "GameFeatures",
+			new string[] { "GameFeatures" });
+		AddPluginModules("MIF_WITH_MODULARGAMEPLAY", "ModularGameplay",
+			new string[] { "ModularGameplay" });
+		AddPluginModules("MIF_WITH_MVVM", "ModelViewViewModel",
+			new string[] { "ModelViewViewModel" });
+		AddPluginModules("MIF_WITH_WATER", "Water",
+			new string[] { "Water" });
+		AddPluginModules("MIF_WITH_VEHICLES", "ChaosVehiclesPlugin",
+			new string[] { "ChaosVehicles" });
+		AddPluginModules("MIF_WITH_MASSENTITY", "MassEntity",
+			new string[] { "MassEntity" });
+		AddPluginModules("MIF_WITH_LIVELINK", "LiveLink",
+			new string[] { "LiveLink" });
+		AddPluginModules("MIF_WITH_LEVELSNAPSHOTS", "LevelSnapshots",
+			new string[] { "LevelSnapshots" });
+		AddPluginModules("MIF_WITH_METASOUND", "Metasound",
+			new string[] { "MetasoundEngine" });
+
 		// ---- IK Rig: present in UE5, ABSENT IN UE4 ------------------------------------------
 		// This plugin is also run against UE4, where the IKRig plugin does not exist. An
 		// unconditional dependency would stop the WHOLE of MifBridge loading there, which is a far
