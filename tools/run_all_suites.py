@@ -41,6 +41,17 @@ def main():
     if args:
         suites = [s for s in suites if any(a in s for a in args)]
 
+    # Claim the editor for the duration. See mifaudit.warn_if_sweep_running for why: a second process
+    # driving the same editor corrupts THIS run's results, not just its own, because the undo buffer
+    # is one stack for the whole editor.
+    try:
+        with open(M.SWEEP_LOCK, "w") as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
+    os.environ["MIF_SWEEP"] = str(os.getpid())   # inherited by every suite launched below, so they
+                                                 # are exempt from their own interlock by construction
+
     results = []
     note = " - the second pass is what catches state surviving between runs" if passes > 1 else ""
     print("running %d suites, %d pass(es) each%s" % (len(suites), passes, note))
@@ -79,6 +90,11 @@ def main():
                         "tail": "\n".join(out.splitlines()[-25:]) if rc != 0 else ""})
         print("  [%d] %-32s rc=%-4s %-22s %5.1fs%s"
               % (which, name, rc, line.strip(), dt, "" if alive else "   EDITOR DIED"))
+
+    try:
+        os.remove(M.SWEEP_LOCK)
+    except Exception:
+        pass
 
     with open(os.path.join(here, "suite_results.json"), "w") as f:
         json.dump(results, f, indent=1)

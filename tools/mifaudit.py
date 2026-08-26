@@ -169,6 +169,54 @@ def editor_window_title(pid):
         return None
 
 
+
+# --------------------------------------------------------------------------- sweep interlock
+# A full sweep OWNS the editor. Suites share global editor state - most importantly the undo buffer,
+# which is a single stack for the whole editor - so a second process driving the same editor does not
+# merely produce its own wrong answers, it corrupts the sweep's.
+#
+# Demonstrated rather than theorised, on 2026-08-26: a manual test_transactions run started while a
+# sweep was in flight issued undo_transactions against the global stack, reverted work belonging to
+# whichever suite the sweep was mid-way through, and turned test_idempotence red in the sweep's own
+# results. Neither run's failures named the cause.
+#
+# run_all_suites writes SWEEP_LOCK and puts its pid in MIF_SWEEP for the suites it launches, so its
+# own children are exempt by construction. Anything else starting while the lock is held gets told.
+SWEEP_LOCK = os.path.join(HERE, ".sweep-lock")
+
+
+def sweep_owner():
+    """Pid of a running sweep that this process is NOT part of, or None."""
+    if os.environ.get("MIF_SWEEP"):
+        return None                      # launched BY the sweep; the lock is ours
+    try:
+        pid = int(open(SWEEP_LOCK).read().strip())
+    except Exception:
+        return None
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-Process -Id %d -ErrorAction SilentlyContinue) -ne $null" % pid],
+            capture_output=True, text=True, timeout=20).stdout.strip()
+        return pid if out.lower().startswith("true") else None
+    except Exception:
+        return None                      # cannot tell - do not cry wolf
+
+
+def warn_if_sweep_running():
+    """Loudly, once. Not a refusal: a human who means it should still be able to run one suite."""
+    pid = sweep_owner()
+    if pid is None:
+        return False
+    print("")
+    print("  !! A FULL SWEEP IS RUNNING (pid %d) AND OWNS THIS EDITOR." % pid)
+    print("  !! Suites share global editor state - the undo buffer above all - so running this now")
+    print("  !! will corrupt BOTH this run's results and the sweep's, and neither set of failures")
+    print("  !! will say why. Wait for it, or stop it first.")
+    print("")
+    return True
+
+
 def wait_for_bridge(timeout=900, quiet=False):
     """Block until the SDK editor is serving. Returns True/False.
 
@@ -178,6 +226,7 @@ def wait_for_bridge(timeout=900, quiet=False):
     running while the socket keeps accepting (02_GOTCHAS.md section 8). That happened today behind a
     project window titled "BA Welcome Screen", and waiting would have burned the full timeout.
     """
+    warn_if_sweep_running()
     start = time.time()
     warned = False
     identity_warned = False
