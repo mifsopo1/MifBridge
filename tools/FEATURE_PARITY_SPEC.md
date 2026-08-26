@@ -1,5 +1,15 @@
 # MifBridge feature parity spec
 
+> **GOAL, set by Andre on 2026-08-26.** MifBridge is a GENERAL UE5 tool that happens to be built on a
+> cooked editor. It must work on regular editors too - it is used daily on UE 5.7 for Curfew. The end
+> goal is PARITY with the competitor's 1400+ tools across both, over months of autonomous work if
+> needed.
+>
+> This SUPERSEDES the older line below about breadth not being the goal. Breadth IS the goal now.
+> What has not changed: an endpoint only counts when it is built, tested and committed, and a tool
+> that reports success while doing nothing is worse than a missing one.
+
+
 What this is: MifBridge's surface measured against the ~50 categories Ultimate Engine CoPilot
 advertises (gamedevcore.com/features, "1,450+ tools across 56 categories"). The Stop hook
 `~/.claude/hooks/autopilot-continue.js` reads this file and keeps working while anything is still

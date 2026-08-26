@@ -777,6 +777,31 @@ list_transactions carries queueLength (824 next to a returned 1), diagnose_lands
 total under a field name the scan was not looking for. A second hard-coded cap in add_macro_instance
 turned out to be a line number my regex mistook for a bound.
 
+**S. describe_endpoint hid capability from the callers most likely to need it.** FIXED.
+
+Five rows in the describe table listed fewer keys than their handler actually accepts. Two of them hid
+whole capabilities rather than aliases:
+  set_material_parameter   omitted textures, switches, association, index
+  add_foliage_instances    omitted foliageType/type - an entire second mode of the endpoint
+  set_spline_points        omitted skipPostEditChange, which its OWN handler documents as REQUIRED on
+                           blueprints that rebuild their own spline
+  add_cast                 omitted pure
+  reparent_blueprint       omitted parentClass/path (aliases; the primary spellings were listed)
+
+This matters more than a stale comment. describe_endpoint is the MACHINE-READABLE contract - what an
+agent consults before deciding whether an endpoint can do something. A key missing from a comment costs
+a human one read of the source; a key missing from this table means the capability does not exist for
+anyone who discovers by asking.
+
+The bridge cannot catch this itself, and says so in its own coverage note: staleTableRows detects only
+the opposite direction, and a guard with no row 'leaves no runtime trace and is NOT detectable from
+inside the DLL'. True from inside; trivial from outside, where the source and the running build can be
+compared. tools/audit_describe_drift.py now does exactly that, with a self-check that refuses to report
+a clean result if either the source walk or the live query has stopped working.
+
+Same shape as the param-reach backlog, one layer up: there the capability existed and no MCP tool could
+SEND it; here it existed and no caller could FIND OUT it existed.
+
 **N. A discarded-bool sweep: 299 candidates, and the scan cannot resolve overloads.**
 
 RESOLVED 2026-08-26. All 28 candidates surviving the conventional-discard filter were triaged with the
