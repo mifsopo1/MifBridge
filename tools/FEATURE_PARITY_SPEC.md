@@ -421,6 +421,26 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       Build this only if goals or solvers are actually wanted — pure retargeting, which is what the
       shipped endpoints do, needs neither.
 
+- [ ] **Night regression: every `tools/test_*.py` green against the current build.** 31 suites, and a
+      lot of shared code moved today - `list_ik_rig`'s validation changed twice, `remove_widget_animation`
+      changed, the MCP surface changed. One suite (test_ik_rig) already broke from a change made hours
+      after it was written, so the others are worth running rather than assumed. Finish condition: every
+      suite passes, or a failure is understood and either the code or the test is fixed with the reason
+      recorded.
+
+- [ ] **Full crash/hang sweep across all endpoints.** The last full sweep covered 238; there are 285
+      now, so roughly 47 have never been swept - the IK family, the Niagara read, list_bones,
+      capture_viewport, the foliage mode, set_widget_animation_range. Finish condition: every endpoint
+      called once with a benign payload, zero crashes and zero hangs, and anything found filed in
+      docs/06_OPEN_ISSUES_FROM_USE.md.
+
+- [ ] **Silent-failure hunt across families not yet adversarially tested.** The most productive lens
+      all session has been "does this report success while doing something else" - it found the
+      transparent PNG, the stale viewport frame, the three-space Niagara offsets, the null-solver crash
+      and the WidgetAnimation name leak. Pick families with no dedicated suite and test them that way
+      rather than by reading. Finish condition: each family either gets a finding filed or is recorded
+      as checked, so the morning knows what was covered.
+
 ## Deliberately not pursuing
 
 - [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add

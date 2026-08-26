@@ -1,5 +1,3 @@
-// TRACKED COPY. The live hook runs from ~/.claude/hooks/autopilot-continue.js - this copy exists so
-// the hook is versioned next to the spec it reads. If you change one, change both.
 #!/usr/bin/env node
 /**
  * Stop hook: keep working while the FEATURE PARITY SPEC still has open items.
@@ -22,6 +20,12 @@
  *   4. THE ITERATION CAP.     After MAX_CONTINUES it gives up, so an item that can never be finished
  *                             cannot loop forever. Resets when the spec is met or the run stops.
  *
+ * NIGHT SHIFT. NIGHT_UNTIL holds an epoch-ms deadline. While it exists and has not passed, the hook
+ * blocks even with an EMPTY spec - otherwise a run asked to cover eight hours would end the moment
+ * the spec hit zero at 2am. When the deadline passes the hook DELETES the file itself and reverts to
+ * normal behaviour; a deadline needing manual cleanup is one that quietly runs for a week. The kill
+ * switch is still checked first, so AUTOPILOT_OFF stops a night shift instantly.
+ *
  * Exit 0 with {"decision":"block","reason":...} keeps the turn alive and feeds reason back as the
  * next instruction.
  */
@@ -38,7 +42,11 @@ const PROJECT_ROOT = "d:/dds2sdk/game/plugins/mifbridge";
 const SPEC = "D:/DDS2SDK/Game/Plugins/MifBridge/tools/FEATURE_PARITY_SPEC.md";
 const OFF_SWITCH = path.join(HOME, ".claude", "AUTOPILOT_OFF");
 const COUNTER = path.join(HOME, ".claude", ".autopilot-count");
+const NIGHT_UNTIL = path.join(HOME, ".claude", "AUTOPILOT_UNTIL");
 const MAX_CONTINUES = 60;
+// A night shift is bounded by the CLOCK, so the iteration cap is only a backstop against a loop
+// that cannot make progress. Still finite.
+const MAX_CONTINUES_NIGHT = 500;
 
 function allowStop(systemMessage) {
   try { fs.unlinkSync(COUNTER); } catch (_) {}
@@ -64,6 +72,23 @@ if (fs.existsSync(OFF_SWITCH)) {
   allowStop("Parity autopilot: OFF switch present (" + OFF_SWITCH + ") - stopping.");
 }
 
+// --- 1b. night shift ------------------------------------------------------
+// Deliberately AFTER the kill switch: AUTOPILOT_OFF must win over a deadline, or an overnight run
+// could not be stopped without deleting two files.
+let nightMsLeft = 0;
+if (fs.existsSync(NIGHT_UNTIL)) {
+  let deadline = 0;
+  try { deadline = parseInt(fs.readFileSync(NIGHT_UNTIL, "utf8").trim(), 10) || 0; } catch (_) {}
+  if (deadline > Date.now()) {
+    nightMsLeft = deadline - Date.now();
+  } else {
+    // Self-clearing. Cleaned up here rather than left for someone to notice.
+    try { fs.unlinkSync(NIGHT_UNTIL); } catch (_) {}
+    allowStop("Parity autopilot: the night shift deadline has passed - stopping, and the deadline "
+      + "file has been removed.");
+  }
+}
+
 // --- 2. the spec ----------------------------------------------------------
 let text = "";
 try {
@@ -82,7 +107,7 @@ const open = lines
 const met = lines.filter((l) => /^\s*-\s*\[x\]\s*\S/i.test(l)).length;
 const declined = lines.filter((l) => /^\s*-\s*\[~\]\s*\S/.test(l)).length;
 
-if (open.length === 0) {
+if (open.length === 0 && nightMsLeft === 0) {
   allowStop(
     "Parity autopilot: spec is met - " + met + " covered, " + declined +
     " deliberately declined, 0 open. Stopping."
@@ -90,20 +115,38 @@ if (open.length === 0) {
 }
 
 // --- 3. iteration cap -----------------------------------------------------
+const cap = nightMsLeft > 0 ? MAX_CONTINUES_NIGHT : MAX_CONTINUES;
 const count = readCount() + 1;
-if (count > MAX_CONTINUES) {
+if (count > cap) {
   allowStop(
-    "Parity autopilot: hit the " + MAX_CONTINUES + "-continue cap with " + open.length +
+    "Parity autopilot: hit the " + cap + "-continue cap with " + open.length +
     " item(s) still open. Stopping so this cannot loop forever - reset by deleting " + COUNTER + "."
   );
 }
 try { fs.writeFileSync(COUNTER, String(count)); } catch (_) {}
 
 const next = open.slice(0, 5).map((s, i) => "  " + (i + 1) + ". " + s.slice(0, 150)).join("\n");
+const hoursLeft = (nightMsLeft / 3600000).toFixed(1);
+const nightBanner = nightMsLeft > 0
+  ? ("NIGHT SHIFT: " + hoursLeft + "h left before the deadline. Andre is asleep and asked for a full "
+     + "night of autonomous work, so do NOT stop even if the spec empties.\n"
+     + "  * Prefer work with a clear finish condition over open-ended searching: run a suite, fix "
+     + "what it finds, commit, move on.\n"
+     + "  * If the spec empties, the standing night work is regression and hunting, not new breadth:\n"
+     + "      run every tools/test_*.py against the live editor and fix what broke;\n"
+     + "      sweep all endpoints for crashes and hangs (the last full sweep covered 238 of them);\n"
+     + "      hunt for endpoints that report success while doing something else, which has been the\n"
+     + "      most productive lens all session.\n"
+     + "  * File anything found in docs/06_OPEN_ISSUES_FROM_USE.md, and add real work back to the\n"
+     + "    spec as new '- [ ]' lines so the morning has a record.\n"
+     + "  * Commit and push as you go. A night of work in one unpushed lump is a night at risk.\n"
+     + "  * Do NOT save assets, start PIE, or touch anything outside the SDK editor.\n\n")
+  : "";
 const reason =
+  nightBanner +
   "Feature-parity autopilot is on. The spec has " + open.length + " open item(s) (" + met +
-  " covered, " + declined + " declined) - continue " + count + "/" + MAX_CONTINUES +
-  ". Do NOT stop - pick up the next one:\n" +
+  " covered, " + declined + " declined) - continue " + count + "/" + cap +
+  (open.length ? ". Do NOT stop - pick up the next one:\n" : ".\n") +
   next +
   (open.length > 5 ? "\n  ... and " + (open.length - 5) + " more" : "") +
   "\n\nThe spec is " + SPEC + ". Rules:\n" +
