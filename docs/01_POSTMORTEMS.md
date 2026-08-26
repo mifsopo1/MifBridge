@@ -1070,3 +1070,50 @@ actor", because those are different problems with different fixes.
 3. `tools/test_snap_ground.py` builds a purpose-made column (floor, blocker, subject) and asserts the
    subject lands on the **floor**, not on the blocker — plus three checks that the fix did not regress
    into "snap onto whatever you hit first", which is the original bug.
+
+## A guard that checked the blueprint while its comment promised the graph (2026-08-26)
+
+**Symptom.** `add_anim_node` aimed at the EventGraph of a valid Animation Blueprint terminated the
+editor mid-request. The caller saw a closed socket; the log said:
+
+```
+Fatal error: [Casts.cpp:10] Cast of EdGraph /Game/_MifAnim/ABP_66339:EventGraph to AnimationGraph failed
+  FAnimStateMachineNodeNameValidator::FAnimStateMachineNodeNameValidator()  AnimGraphNode_StateMachineBase.cpp:46
+  UAnimGraphNode_StateMachineBase::MakeNameValidator()
+  UAnimGraphNode_StateMachineBase::PostPlacedNewNode()
+  MifBridge::H_add_anim_node()                                             MifBridgeAnimation.cpp:676
+```
+
+**Root cause.** The handler carried this guard:
+
+```cpp
+// An anim node in a non-anim GRAPH compiles to nothing and is a confusing thing to debug, so
+// refuse it here rather than let it sit in an EventGraph looking placed.
+if (!Blueprint->IsA<UAnimBlueprint>())
+```
+
+The comment describes a check on the GRAPH. The code performs one on the BLUEPRINT. An Animation
+Blueprint has both an AnimGraph and an EventGraph, so a node aimed at the EventGraph of a perfectly
+valid ABP passed the guard. `PostPlacedNewNode` then built a name validator that CastChecks its graph
+to `UAnimationGraph`, and a failed `CastChecked` terminates the process rather than returning null.
+
+**The gap between the comment and the code was the gap between an error message and a dead editor.**
+
+**Cost.** One editor, and it was found only because the issue was re-opened and PROBED. It had already
+been filed as a documentation mismatch and dismissed once as a false positive - on the reasoning that
+a guard was present, without asking what the guard actually checked.
+
+**Prevention:**
+
+1. **A guard's comment is a claim about behaviour and needs a test, not prose.** This is the same
+   lesson as the snap_actors_to_ground postmortem, arrived at from the other side: there the code was
+   right and the comment was vague; here the comment was right and the code was narrower. Both were
+   invisible until something executed them. test_anim_nodes T550 is that test.
+2. **Check the thing the engine will touch.** The node is placed in a GRAPH and its PostPlacedNewNode
+   casts that GRAPH. Validating the owning asset instead is validating a proxy for the real question.
+3. **A `CastChecked` in engine code reached from a handler is a live grenade.** gotchas section 6c
+   already records this for cooked assets; this is the same hazard from a different direction - the
+   object was perfectly valid, it was simply the wrong TYPE for where it was being used.
+4. **When a filed issue is dismissed as a false positive, the dismissal deserves the same standard of
+   evidence as the finding.** Reading that a guard exists is not the same as establishing it guards
+   the thing the comment names.

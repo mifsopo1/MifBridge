@@ -24,6 +24,7 @@
 #include "BehaviorTree/Blackboard/BlackboardKeyType.h"
 #include "Animation/AnimBlueprint.h"
 #include "AnimGraphNode_Base.h"
+#include "AnimationGraphSchema.h"   // UAnimationGraphSchema - add_anim_node checks the GRAPH, not just the blueprint (PM-013)
 #include "MifBridgeLog.h"
 
 #include "Animation/AnimationAsset.h"
@@ -659,14 +660,38 @@ namespace MifBridge
 			return;
 		}
 
-		// An anim node in a non-anim graph compiles to nothing and is a confusing thing to debug, so
-		// refuse it here rather than let it sit in an EventGraph looking placed.
+		// THIS GUARD USED TO CHECK THE BLUEPRINT AND THE COMMENT PROMISED THE GRAPH, AND THAT GAP KILLED
+		// THE EDITOR. An Animation Blueprint has BOTH an AnimGraph and an EventGraph, so
+		//   add_anim_node { graphId: <the ABP's EventGraph>, nodeClass: AnimGraphNode_StateMachine }
+		// passed a blueprint-level check and went straight into PlaceAndInit. PostPlacedNewNode on a
+		// state machine builds a name validator that does CastChecked<UAnimationGraph>(GetGraph())
+		// (AnimGraphNode_StateMachineBase.cpp:46), the cast fails on an EventGraph, and CastChecked
+		// TERMINATES THE PROCESS rather than returning null:
+		//   Fatal error: Cast of EdGraph ...:EventGraph to AnimationGraph failed
+		// Not an error response - a dead editor, mid-request. See PM-013.
+		//
+		// So the check is on the GRAPH, which is what the node actually touches. The blueprint check
+		// stays as the first arm because it produces the more useful message for the common mistake of
+		// aiming at an ordinary Blueprint.
 		if (!Blueprint->IsA<UAnimBlueprint>())
 		{
 			Fail(Out, FString::Printf(
 				TEXT("'%s' is not an Animation Blueprint, so it has no AnimGraph to hold anim nodes. ")
 				TEXT("Create one with create_blueprint blueprintType=AnimBlueprint skeleton=<USkeleton path>."),
 				*Blueprint->GetName()));
+			return;
+		}
+		if (!Graph->GetSchema() || !Graph->GetSchema()->IsA<UAnimationGraphSchema>())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("graph '%s' is not an animation graph - it is a %s. An Animation Blueprint has an ")
+				TEXT("EventGraph as well as an AnimGraph, and anim nodes belong ONLY in the AnimGraph or a ")
+				TEXT("state/transition graph inside it. Placing one here would terminate the editor: the ")
+				TEXT("node's PostPlacedNewNode CastChecks its graph to UAnimationGraph and a failed ")
+				TEXT("CastChecked is fatal, not an error. Pass the AnimGraph's graphId - list_graphs shows ")
+				TEXT("it. NOTHING was created."),
+				*Graph->GetName(),
+				Graph->GetSchema() ? *Graph->GetSchema()->GetClass()->GetName() : TEXT("graph with no schema")));
 			return;
 		}
 
