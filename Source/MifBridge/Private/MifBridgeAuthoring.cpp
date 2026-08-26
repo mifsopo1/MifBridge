@@ -243,6 +243,26 @@ namespace MifBridge
 		UMaterialInterface* SharedMat = DefaultMat.IsEmpty() ? nullptr
 			: LoadObject<UMaterialInterface>(nullptr, *DefaultMat, nullptr, LOAD_NoWarn | LOAD_Quiet);
 
+		// A PATH THAT WILL NOT LOAD IS SWALLOWED TWICE, so say it once. LOAD_NoWarn|LOAD_Quiet kills the
+		// engine's own log line, and the assignment below is guarded by `if (Mesh && ...)` - so a
+		// misspelled mesh produced actors with NO mesh and a response reporting spawned:N. For a
+		// modder placing props that is the whole job silently not done.
+		if (!DefaultMesh.IsEmpty() && !SharedMesh)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("mesh '%s' could not be loaded, so every actor would have been spawned WITHOUT a mesh. "
+					 "Nothing was spawned. Check the path with find_assets - it wants an object path like "
+					 "/Game/Meshes/SM_Foo.SM_Foo."), *DefaultMesh));
+			return;
+		}
+		if (!DefaultMat.IsEmpty() && !SharedMat)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("material '%s' could not be loaded, so every actor would have been spawned with the "
+					 "mesh's default material instead. Nothing was spawned."), *DefaultMat));
+			return;
+		}
+
 		TArray<TSharedPtr<FJsonValue>> Made;
 		TArray<TSharedPtr<FJsonValue>> Errors;
 		int32 Failed = 0;
@@ -293,6 +313,20 @@ namespace MifBridge
 			if (!Folder.IsEmpty()) { Actor->SetFolderPath(FName(*Folder)); }
 
 			// Mesh / material: per-item override wins, else the shared default.
+			//
+			// ONLY A StaticMeshActor HAS ONE. mesh/material are accepted on every path but applied only
+			// inside this cast, so asking for a mesh while spawning some other actor class was accepted
+			// and silently dropped - the mode-dependent silent-ignore that audit_mode_params.py exists
+			// to find. Reported per item rather than failing the whole call: the actor itself spawned
+			// fine and the caller may simply have passed a default that does not apply to this row.
+			if (!Cast<AStaticMeshActor>(Actor)
+				&& (!DefaultMesh.IsEmpty() || !DefaultMat.IsEmpty()
+					|| !JStr(Item, TEXT("mesh")).IsEmpty() || !JStr(Item, TEXT("material")).IsEmpty()))
+			{
+				Errors.Add(MakeShared<FJsonValueString>(FString::Printf(
+					TEXT("'%s' is a %s, not a StaticMeshActor, so mesh/material were IGNORED for it - it "
+						 "spawned without them."), *Actor->GetActorLabel(), *Actor->GetClass()->GetName())));
+			}
 			if (AStaticMeshActor* SMA = Cast<AStaticMeshActor>(Actor))
 			{
 				UStaticMesh* Mesh = SharedMesh;
@@ -1091,16 +1125,29 @@ namespace MifBridge
 			UFoliageType* RegisteredType = IFA->AddFoliageType(FoliageType, &Info);
 			if (!Info || !RegisteredType)
 			{
-				Fail(Out, TEXT("the level's InstancedFoliageActor would not accept this foliage type. "
-							   "NOTHING was created."));
+				// NOT "nothing was created". GetInstancedFoliageActorForCurrentLevel was called above
+				// with bCreateIfNone=true, so by this point an AInstancedFoliageActor may have been
+				// SPAWNED into the level, and AddFoliageType may have registered a type on it. PM-007
+				// means there is no rollback to make the old wording true, so the wording changes
+				// instead. An error that promises more than it delivers is worse than one that admits
+				// the mess.
+				Fail(Out, TEXT("the level's InstancedFoliageActor would not accept this foliage type. No "
+							   "INSTANCES were created. Note that an InstancedFoliageActor may have been "
+							   "added to the level to get this far (it is created on demand), and it is not "
+							   "removed by this failure - it is harmless and the editor reuses it."));
 				return;
 			}
 			// The engine check()s this, and a check() inside a handler terminates the editor rather
 			// than returning an error. Refuse instead.
 			if (!Info->Implementation.IsValid())
 			{
+				// Same correction as above, and more so: this branch is reached only AFTER
+				// AddFoliageType has already registered the type on the actor, so "nothing" was
+				// definitely wrong here.
 				Fail(Out, TEXT("this foliage type registered with the level but produced no foliage "
-							   "implementation, so instances cannot be added to it. NOTHING was created."));
+							   "implementation, so instances cannot be added to it. No INSTANCES were "
+							   "created - but the foliage TYPE has been registered on the level's "
+							   "InstancedFoliageActor and is not removed by this failure."));
 				return;
 			}
 

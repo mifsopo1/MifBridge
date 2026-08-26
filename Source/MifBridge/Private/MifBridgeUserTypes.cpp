@@ -986,7 +986,24 @@ namespace MifBridge
 					TEXT("'%s' is not a valid enumerator display name here (duplicate?); the entry kept its generated name"), *Wanted[Index])));
 				continue;
 			}
-			FEnumEditorUtils::SetEnumeratorDisplayName(Enum, Index, FText::FromString(Wanted[Index]));
+			// USE THE RETURN VALUE. The pre-check above is IsProperNameForUserDefinedEnumerator, which
+			// validates the AUTHORED name - and for a UUserDefinedEnum the authored names are always
+			// NewEnumeratorN, so that check has essentially nothing to reject and effectively always
+			// passes. The gate that actually matters is inside SetEnumeratorDisplayName:
+			// IsEnumeratorDisplayNameValid, which refuses a duplicate DISPLAY name (EnumEditorUtils.cpp
+			// :496-501). Its bool was discarded, so a refused name left the entry as NewEnumeratorN
+			// while the caller was told nothing - the chosen name lives ONLY in the display name, so
+			// that is the whole value of the call being silently lost.
+			//
+			// Same class as the add_enum_value bug closed on 2026-08-25, which was fixed by reading the
+			// applied display name back rather than trusting the write.
+			if (!FEnumEditorUtils::SetEnumeratorDisplayName(Enum, Index, FText::FromString(Wanted[Index])))
+			{
+				Warnings.Add(MakeShared<FJsonValueString>(FString::Printf(
+					TEXT("'%s' was refused as a display name (a duplicate of another entry?); entry %d kept its "
+						 "generated name. The name you asked for is NOT set - read the enum back with "
+						 "list_enum_values before relying on it."), *Wanted[Index], Index)));
+			}
 		}
 
 		FAssetRegistryModule::AssetCreated(Enum);

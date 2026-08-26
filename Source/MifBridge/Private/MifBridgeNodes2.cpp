@@ -801,12 +801,43 @@ namespace MifBridge
 		// variable, and RenameMemberVariable does not touch the graph.
 		FBlueprintEditorUtils::RenameGraph(SignatureGraph, NewName);
 		FBlueprintEditorUtils::RenameMemberVariable(Blueprint, FName(*OldName), FName(*NewName));
+
+		// READ BACK BOTH HALVES. These two flags used to be literal `true`, over engine calls that give
+		// no answer: RenameMemberVariable is VOID and early-returns silently when the variable is
+		// absent or the names already match (BlueprintEditorUtils.cpp:4609-4610), and RenameGraph
+		// reports nothing either. rename_variable reads back for exactly this reason, and its comment
+		// says so; this endpoint asserted instead.
+		//
+		// A HALF rename is the specific disaster, and the comment directly above says why: the
+		// signature graph carries the parameter list and the member variable is what call/bind nodes
+		// reference, so one renamed without the other leaves a dispatcher that resolves under two
+		// different names and breaks on the next compile. remove_event_dispatcher verifies both halves;
+		// so does this now.
+		const bool bGraphRenamed =
+			(FBlueprintEditorUtils::GetDelegateSignatureGraphByName(Blueprint, FName(*NewName)) != nullptr)
+			&& (FBlueprintEditorUtils::GetDelegateSignatureGraphByName(Blueprint, FName(*OldName)) == nullptr);
+		const bool bVarRenamed =
+			(FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*NewName)) != INDEX_NONE)
+			&& (FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*OldName)) == INDEX_NONE);
+
 		MarkStructural(Blueprint);
+
+		if (!bGraphRenamed || !bVarRenamed)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("rename of dispatcher '%s' to '%s' did not complete (signature graph renamed=%s, delegate ")
+				TEXT("variable renamed=%s). The blueprint may now hold HALF a rename, which resolves under two ")
+				TEXT("names and breaks on the next compile - check list_dispatchers and list_variables before ")
+				TEXT("doing anything else. A cancelled transaction does not undo this (PM-007)."),
+				*OldName, *NewName,
+				bGraphRenamed ? TEXT("yes") : TEXT("no"), bVarRenamed ? TEXT("yes") : TEXT("no")));
+			return;
+		}
 
 		Out->SetStringField(TEXT("oldName"), OldName);
 		Out->SetStringField(TEXT("name"), NewName);
-		Out->SetBoolField(TEXT("renamedSignatureGraph"), true);
-		Out->SetBoolField(TEXT("renamedDelegateVariable"), true);
+		Out->SetBoolField(TEXT("renamedSignatureGraph"), bGraphRenamed);
+		Out->SetBoolField(TEXT("renamedDelegateVariable"), bVarRenamed);
 	}
 
 	// --- remove_event_dispatcher ------------------------------------------------

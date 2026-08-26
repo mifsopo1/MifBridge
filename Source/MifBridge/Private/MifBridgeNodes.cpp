@@ -2508,6 +2508,26 @@ namespace MifBridge
 						Touched.Add(OpBlueprint);
 					}
 				}
+				// A THIRD ADDRESSING FORM: by NODE alone. rename_event and set_function_flags both take
+				// nodeGuid (aliases node/guid/nodeId) with no graphId and no blueprintId, mutate the
+				// blueprint that owns the node, and used to leave Touched empty - so compileAtEnd
+				// skipped them and the response reported ok with compiles:[] over a blueprint left
+				// structurally modified and uncompiled.
+				//
+				// This is the SAME bug the comment above records being fixed for `path`: an addressing
+				// form was added to the handlers and the tracking here was not revisited. It is masked
+				// whenever the caller passes a top-level blueprintId to batch, which is why it survived.
+				else if (JHasAny(OpIn, { TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId") }))
+				{
+					const FString NodeGuid = JStrAny(OpIn, { TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId") });
+					if (UEdGraphNode* OpNode = ResolveNode(NodeGuid, ResolveError))
+					{
+						if (UBlueprint* OpBlueprint = FBlueprintEditorUtils::FindBlueprintForNode(OpNode))
+						{
+							Touched.Add(OpBlueprint);
+						}
+					}
+				}
 
 				Results.Add(MakeShared<FJsonValueObject>(OpOut));
 			}
