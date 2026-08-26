@@ -1065,6 +1065,9 @@ namespace MifBridge
 	MIF_DECL(trace);
 	/** Debug shapes in the viewport: the visual half of "numbers for correctness, pixels for taste". */
 	MIF_DECL(draw_debug);
+	/** Scene cost census plus editor-side counters. The census is the reliable half; the timings are
+	 *  the EDITOR's and say so. */
+	MIF_DECL(get_perf_stats);
 	MIF_DECL(capture_camera);
 	MIF_DECL(scene_report);
 

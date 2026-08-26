@@ -23,7 +23,14 @@
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
 
-#include "DrawDebugHelpers.h"      // DrawDebugLine/Sphere/Box/Point/DirectionalArrow/String
+#include "Components/LightComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "DrawDebugHelpers.h"
+#include "HAL/PlatformMemory.h"     // FPlatformMemory::GetStats - process memory
+#include "Misc/App.h"               // FApp::GetDeltaTime
+#include "RHIStats.h"               // GNumDrawCallsRHI / GNumPrimitivesDrawnRHI      // DrawDebugLine/Sphere/Box/Point/DirectionalArrow/String
 #include "Editor.h"
 #include "EditorViewportClient.h"   // FEditorViewportClient - GetViewLocation/GetViewRotation/ViewFOV
 #include "Engine/Engine.h"
@@ -315,6 +322,119 @@ namespace MifBridge
 			}
 			return EditorWorld();
 		}
+	}
+
+	// --- get_perf_stats ------------------------------------------------------
+	//   in:  { }
+	//   out: { editorTiming:{...}, rhi:{...}, memory:{...}, scene:{...}, caveat }
+	//
+	// "Is this mod expensive?" had no answer from the bridge except for landscape. This gives one,
+	// while being explicit about which half of it means anything.
+	void H_get_perf_stats(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out, { },
+			TEXT("(no parameters)"),
+			{ { TEXT("world"), TEXT("this always measures the world the editor is currently showing; start_pie first if you want PIE numbers, and check pieRunning in the response") },
+			  { TEXT("reset"), TEXT("the RHI counters are the engine's own and are not resettable from here - compare two calls instead") } }))
+		{
+			return;
+		}
+
+		bool bPie = false;
+		UWorld* World = SpatialWorld(bPie);
+		if (!World) { Fail(Out, TEXT("no world")); return; }
+
+		// --- timing. Reported, but fenced with a caveat, because these are EDITOR frames.
+		TSharedRef<FJsonObject> Timing = MakeShared<FJsonObject>();
+		const double Delta = FApp::GetDeltaTime();
+		Timing->SetNumberField(TEXT("lastFrameMs"), Delta * 1000.0);
+		Timing->SetNumberField(TEXT("impliedFps"), Delta > 0.0 ? 1.0 / Delta : 0.0);
+		Out->SetObjectField(TEXT("editorTiming"), Timing);
+
+		// --- RHI counters. Per-GPU arrays; index 0 is the one that matters on a single-GPU box.
+		TSharedRef<FJsonObject> Rhi = MakeShared<FJsonObject>();
+		Rhi->SetNumberField(TEXT("drawCalls"), GNumDrawCallsRHI[0]);
+		Rhi->SetNumberField(TEXT("primitivesDrawn"), GNumPrimitivesDrawnRHI[0]);
+		Out->SetObjectField(TEXT("rhi"), Rhi);
+
+		// --- process memory.
+		const FPlatformMemoryStats Mem = FPlatformMemory::GetStats();
+		TSharedRef<FJsonObject> MemJ = MakeShared<FJsonObject>();
+		MemJ->SetNumberField(TEXT("usedPhysicalMB"), (double)Mem.UsedPhysical / (1024.0 * 1024.0));
+		MemJ->SetNumberField(TEXT("peakUsedPhysicalMB"), (double)Mem.PeakUsedPhysical / (1024.0 * 1024.0));
+		MemJ->SetNumberField(TEXT("availablePhysicalMB"), (double)Mem.AvailablePhysical / (1024.0 * 1024.0));
+		Out->SetObjectField(TEXT("memory"), MemJ);
+
+		// --- THE HONEST HALF. A census of what is in the level is a property of the CONTENT, not of
+		// who is looking at it or what the editor happens to be drawing this frame. These are the
+		// numbers that actually decide whether a mod is expensive, and they are reproducible.
+		int32 Actors = 0, StaticMeshes = 0, SkeletalMeshes = 0, Lights = 0, Primitives = 0;
+		int32 ShadowCastingLights = 0, TranslucentOrMasked = 0;
+		int64 TriangleEstimate = 0;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			AActor* A = *It;
+			if (!A || !IsValid(A)) { continue; }
+			++Actors;
+			TArray<UActorComponent*> Comps;
+			A->GetComponents(Comps);
+			for (UActorComponent* Comp : Comps)
+			{
+				if (UStaticMeshComponent* SMC = Cast<UStaticMeshComponent>(Comp))
+				{
+					++StaticMeshes;
+					if (UStaticMesh* Mesh = SMC->GetStaticMesh())
+					{
+						if (Mesh->GetRenderData() && Mesh->GetRenderData()->LODResources.Num() > 0)
+						{
+							TriangleEstimate += Mesh->GetRenderData()->LODResources[0].GetNumTriangles();
+						}
+					}
+				}
+				else if (Cast<USkeletalMeshComponent>(Comp)) { ++SkeletalMeshes; }
+				if (ULightComponent* LC = Cast<ULightComponent>(Comp))
+				{
+					++Lights;
+					if (LC->CastShadows) { ++ShadowCastingLights; }
+				}
+				if (UPrimitiveComponent* PC = Cast<UPrimitiveComponent>(Comp))
+				{
+					++Primitives;
+					for (int32 i = 0; i < PC->GetNumMaterials(); ++i)
+					{
+						if (UMaterialInterface* MI = PC->GetMaterial(i))
+						{
+							const EBlendMode Blend = MI->GetBlendMode();
+							if (Blend != BLEND_Opaque) { ++TranslucentOrMasked; }
+						}
+					}
+				}
+			}
+		}
+		TSharedRef<FJsonObject> Scene = MakeShared<FJsonObject>();
+		Scene->SetNumberField(TEXT("actors"), Actors);
+		Scene->SetNumberField(TEXT("primitiveComponents"), Primitives);
+		Scene->SetNumberField(TEXT("staticMeshComponents"), StaticMeshes);
+		Scene->SetNumberField(TEXT("skeletalMeshComponents"), SkeletalMeshes);
+		Scene->SetNumberField(TEXT("lights"), Lights);
+		Scene->SetNumberField(TEXT("shadowCastingLights"), ShadowCastingLights);
+		Scene->SetNumberField(TEXT("nonOpaqueMaterialSlots"), TranslucentOrMasked);
+		Scene->SetNumberField(TEXT("lod0TriangleEstimate"), (double)TriangleEstimate);
+		Out->SetObjectField(TEXT("scene"), Scene);
+
+		Out->SetStringField(TEXT("world"), World->GetName());
+		Out->SetBoolField(TEXT("pieRunning"), bPie);
+		// Say plainly which numbers are worth anything. Reporting editor frame times as if they were
+		// the game's would be worse than reporting nothing.
+		Out->SetStringField(TEXT("caveat"),
+			TEXT("editorTiming and rhi describe THE EDITOR rendering its own viewport - UI, gizmos and "
+				 "selection outlines included - and they are not the game's performance. Treat them as "
+				 "a relative signal between two calls, never as an absolute. The 'scene' census is the "
+				 "reliable half: it is a property of the content and is reproducible."));
+		Out->SetStringField(TEXT("sceneNote"),
+			TEXT("lod0TriangleEstimate sums LOD0 of every static mesh COMPONENT, so an instanced or "
+				 "repeated mesh is counted once per placement, which is what draw cost cares about. It "
+				 "ignores skeletal meshes, foliage instances and Nanite fallbacks."));
 	}
 
 	// --- trace ---------------------------------------------------------------

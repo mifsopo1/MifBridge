@@ -1781,6 +1781,24 @@ def trace(start: dict, end: dict = None, direction: dict = None, distance: float
 
 
 @mcp.tool()
+def get_perf_stats() -> dict:
+    """Answer "is this mod expensive?" with numbers.
+
+    Returns four groups. The SCENE CENSUS is the one to trust: actors, primitive components, static
+    and skeletal mesh components, lights, shadow-casting lights, non-opaque material slots, and a
+    LOD0 triangle estimate. Those are properties of the content, reproducible, and are what actually
+    decides cost.
+
+    editorTiming and rhi describe the EDITOR drawing its own viewport - UI, gizmos and selection
+    outlines included - and are NOT the game's performance. Use them as a relative signal between two
+    calls, never as an absolute. The response says so itself.
+
+    memory is process-wide physical usage for the whole editor.
+    """
+    return _post("get_perf_stats")
+
+
+@mcp.tool()
 def draw_debug(shape: str = "point", start: dict = None, end: dict = None, center: dict = None,
                radius: float = 100.0, extent: dict = None, text: str = "",
                color: str = "green", duration: float = 5.0, thickness: float = 2.0) -> dict:

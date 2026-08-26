@@ -62,8 +62,12 @@ fail silently if this were done carelessly".
       colours, duration and thickness. Reports which world it drew into and whether PIE is running,
       because a shape drawn into the editor world is invisible during PIE and the call succeeds
       either way. `persistent` is refused on purpose: nothing can clear a persistent shape.
-- [ ] **Insights & Profiling** — nothing beyond `diagnose_landscape_draws`. Basic frame/draw-call/
-      memory stats would let an agent answer "is this mod expensive?" instead of guessing.
+- [x] **Insights & Profiling** — `get_perf_stats` added. Scene census (actors, primitive/static/
+      skeletal components, lights, shadow-casting lights, non-opaque material slots, LOD0 triangle
+      estimate), RHI draw calls and primitives, process memory, editor frame timing. The census is the
+      reliable half and the response says so: editor timings include the editor's own UI and gizmos
+      and are NOT the game's performance, so reporting them unqualified would be worse than reporting
+      nothing.
 - [x] **Behavior Trees / Blackboard** — `describe_behavior_tree` and `list_blackboard_keys` added,
       read-only. The tree walks depth-first with depth/name/class/kind/decorator-count, resolves which
       blackboard it uses, and is bounded at 2000 nodes so a corrupt asset cannot hang the game thread
@@ -110,6 +114,50 @@ unsupported and go looking for a `set_component_property` that does not need to 
       `componentName` or `component` gets a hint naming the exact sequence and three concrete examples
       (an AudioComponent's Sound, a CharacterMovement's MaxWalkSpeed, BodyInstance.bSimulatePhysics).
       The MCP docstring documents the same route. No new endpoint - there does not need to be one.
+
+## From the 13-agent verified audit (2026-08-25)
+
+92 agents, 18 confirmed gaps, **60 refuted**. That refutation rate is the result worth stating: 60
+candidate gaps died under adversarial verification, each one an implementation that would have
+duplicated something already there. The audit read handlers; the seeding above matched substrings, so
+where they disagree this section wins.
+
+- [ ] **`list_material_parameters` — the single confirmed HIGH, build it first.** There is no way to
+      ask a material or material instance what parameters it exposes. `list_material_expressions`
+      correctly returns `cooked:true, numExpressions:0` on every shipped DDS2 master material, because
+      cooking strips the expression graph. `list_object_properties` on a MIC returns only what someone
+      already overrode — useless for finding a knob you have not touched.
+      The point that makes this specifically valuable HERE: `FMaterialCachedParameters` **survives
+      cook**, so this is one of the few introspection paths that still works on shipped content. Over
+      `UMaterialInterface::GetAllParametersOfType` / `GetAllScalarParameterInfo` /
+      `GetAllVectorParameterInfo` / `GetAllTextureParameterInfo` / `GetAllStaticSwitchParameterInfo`,
+      all ENGINE_API, no new module deps.
+      Silent failure to defend against: reporting a name WITHOUT its `EMaterialParameterAssociation`
+      and index. A LayerParameter echoed as Global makes every later `set_material_parameter` build
+      the wrong `FMaterialParameterInfo`, get `false` back, and the modder concludes the parameter
+      does not exist.
+- [ ] **Texture and static-switch support in `set_material_parameter` / `create_material_instance`** —
+      one work item with the above, not a separate row. Enumeration will surface parameter types the
+      write side explicitly rejects, and a list where a third of the entries are read-only is worse
+      than no list.
+- [ ] **`create_asset`** — nothing can instantiate a `UDataAsset` / `UPrimaryDataAsset` subclass at a
+      /Game path, so `create_blueprint` can author a DataAsset class that can then never be
+      instantiated. Medium, not high: `duplicate_asset` + `set_property` already mints one for any
+      class with an existing instance to seed from. Use bare `NewObject` + `FAssetRegistryModule::
+      AssetCreated` + `MarkPackageDirty`, mirroring `create_datatable` — and note the real modal
+      hazard is `CanCreateAsset`'s FMessageDialog, which is exactly what froze `duplicate_asset`.
+      Silent failure: skipping AssetCreated/MarkPackageDirty yields an in-memory object that answers
+      get/set_property perfectly, never appears in `find_assets`, and evaporates on restart.
+- [ ] **`set_struct_member`** — rename / retype / re-default, GUID-addressed. Today a member's name and
+      type are a one-way door: the only escape is remove + re-add, which mints a new GUID, APPENDS to
+      the end, reorders the struct, breaks every Make/Break Struct pin, and drops that column from
+      every row of every dependent DataTable.
+      Two hard requirements from the audit: reuse `LoadUserStruct`'s cooked-struct guard, because every
+      `FStructureEditorUtils` entry point `CastChecked`s EditorData and will HARD-CRASH the editor on a
+      cooked struct — which is every base-game DDS2 struct; and report how many dependent DataTable
+      rows were rewritten rather than returning a bare ok.
+      Worth noting this repo already specced it: `docs/audit/work/H_data.md:572` proposes
+      `set_struct_member`, verdict CONFIRMED, never built.
 
 ## Deliberately not pursuing
 
@@ -158,10 +206,17 @@ engine has no such class registered in this build, which is as definitive as it 
       work would make it cheap when that day comes.
 - [~] **Control Rig / IK & Retarget / Vertex Animation** — declined, and the count backs it: **2**
       ControlRigBlueprints in the whole game. Nothing to mod.
-- [ ] **Niagara (read + parameters only)** — resolved the other way. DDS2 has **38** NiagaraSystems,
-      so VFX is real content a modder will touch. Worth: list systems, describe a system's emitters
-      and user parameters, and SET user parameters on a spawned component. NOT worth: authoring
-      emitters or modules from scratch, which is a graph editor's job.
+- [x] **Niagara — mostly already covered, and a category count would have scored it zero.** The
+      13-agent audit found the reflection dot-path walker descends
+      `EmitterHandles[0].VersionedInstance.Emitter.VersionData[0].RendererProperties[0].Material` on a
+      SHIPPED COOKED effect, `add_function_call` reaches the whole BlueprintCallable Niagara surface
+      (which is what a shipped mod actually contains), `run_console_captured` scrapes real per-emitter
+      particle counts from `fx.Niagara.DumpComponents`, and spawning/binding a NiagaraComponent works
+      today. No Niagara-named endpoint and no module dependency, and it still works.
+- [ ] **Niagara User parameters** — the one genuine Niagara gap:
+      `get_niagara_user_parameters` / `set_niagara_user_parameter`. It is the only route to PERSISTED
+      user-parameter overrides that survive into a `_P` pak, and the read half gives an agent
+      something to verify against.
 
 ## Method note
 
