@@ -57,7 +57,7 @@ Never work from a typed list — one was fabricated once and a third of it was i
 - [x] **landscape_info: the same shape.** 73c4b8e fixed it reporting components:0 for a World
   Partition terrain; no suite covers it. Named as relevant to the exterior terrain around the
   planned hideout.
-- [ ] **spawn_many has no suite.** Two silent-failure fixes are sitting unbuilt in it right now (an
+- [x] **spawn_many has no suite.** Two silent-failure fixes are sitting unbuilt in it right now (an
   unloadable mesh swallowed twice, and mesh/material silently ignored for non-StaticMeshActors).
   Being in no suite is exactly how the edit_container swap bug survived.
 - [x] **get_perf_stats has no suite.** Lowest of the four - a read whose wrong answer misleads rather
