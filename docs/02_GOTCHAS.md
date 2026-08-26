@@ -1331,6 +1331,30 @@ three were found by reading the implementations; none is visible from the header
   before anything is created. An OMITTED name still means "engine, pick one" and still auto-numbers.
   Covered by `tools/test_idempotence.py`.
 
+### An enum's AUTHORED name and its DETAILS-PANEL name are different strings
+
+`TC_EditorIcon` is what the reflection system stores. **"UserInterface2D (RGBA)"** is what the Details
+panel shows for it (`TextureDefines.h:353`). A person configuring an icon reads the editor UI, so
+that is the spelling they will send — and a reflection-based parser matching `Enum->GetNameStringByIndex`
+refuses it.
+
+This bit twice over. `set_texture_settings` recommends `compressionSettings:UserInterface2D` for icon
+content **in four separate help strings**, and its own parser rejected that value — following the
+endpoint's advice produced an error. Meanwhile `write_thumbnail_texture` had already solved it for
+itself with a hand-written table carrying the alias, so two parsers for one concept disagreed, and the
+one giving the advice was the one that refused it.
+
+`MifImportParseEnum` now falls back to display names on a second pass, after the authored-name pass
+fails, so an authored name can never be shadowed and nothing that worked before changes. The
+comparison is normalised — spaces dropped, a trailing parenthetical cut — so `UserInterface2D`,
+`User Interface 2D` and `TC_EditorIcon` all land on the same value. That fixes it for **every** enum
+field this parser handles (`lodGroup`, `mipGenSettings`, `filter`), not just compression, because the
+mismatch is a property of the reflection system rather than of textures.
+
+The general rule: **when an endpoint takes an enum by name, accept the name the user can SEE.** Same
+family as the `UUserDefinedEnum` trap in §5c, where the authored entries are always `NewEnumeratorN`
+and the chosen name lives only in the display name.
+
 ### A node's stored member NAME goes stale after a rename — resolve it
 
 `FMemberReference` keeps the name it was created with *and* a GUID, and it repoints by **GUID**. So

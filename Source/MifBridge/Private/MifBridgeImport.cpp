@@ -242,8 +242,52 @@ namespace MifBridge
 				}
 			}
 
+			// SECOND PASS: DISPLAY names. The authored name is what the reflection system stores
+			// (TC_EditorIcon -> "EditorIcon"), but the DETAILS PANEL shows the display name
+			// ("UserInterface2D (RGBA)"), and that is what a person reading the editor UI will type.
+			// This endpoint's own help text recommends compressionSettings:UserInterface2D for icon
+			// content in four places, and the parser refused it - so following the endpoint's advice
+			// produced an error. write_thumbnail_texture had already solved this for itself with a
+			// hand-written table carrying the alias, which is exactly the kind of second
+			// implementation that drifts.
+			//
+			// Run only AFTER the authored-name pass, so an authored name can never be shadowed by
+			// some other entry's display name, and nothing that works today changes.
+			//
+			// Normalised because a display name is written for humans: spaces are dropped and a
+			// trailing parenthetical is cut, so "UserInterface2D (RGBA)" matches "UserInterface2D"
+			// and "User Interface 2D".
+			auto Normalise = [](const FString& Raw)
+			{
+				FString N = Raw;
+				int32 Paren = INDEX_NONE;
+				if (N.FindChar(TEXT('('), Paren)) { N.LeftInline(Paren); }
+				N.ReplaceInline(TEXT(" "), TEXT(""));
+				N.TrimStartAndEndInline();
+				return N;
+			};
+			const FString WantedNorm = Normalise(Text);
+			if (!WantedNorm.IsEmpty())
+			{
+				for (int32 i = 0; i < NumEnums; ++i)
+				{
+					const FString Full = Enum->GetNameStringByIndex(i);
+					if (Full.IsEmpty() || Full.EndsWith(TEXT("_MAX")) || Full.EndsWith(TEXT("MAX")))
+					{
+						continue;
+					}
+					const FString Display = Normalise(Enum->GetDisplayNameTextByIndex(i).ToString());
+					if (!Display.IsEmpty() && WantedNorm.Equals(Display, ESearchCase::IgnoreCase))
+					{
+						OutValue = Enum->GetValueByIndex(i);
+						return true;
+					}
+				}
+			}
+
 			const FString Near = NearMissSuggestion(Accepted, Text, 5);
-			OutError = FString::Printf(TEXT("unknown %s '%s'%s — accepted (the %s prefix is optional): %s"),
+			OutError = FString::Printf(TEXT("unknown %s '%s'%s — accepted (the %s prefix is optional, and the ")
+				TEXT("name shown in the Details panel is accepted too): %s"),
 				FieldName, *Text,
 				Near.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" (did you mean %s?)"), *Near),
 				Prefix, *FString::Join(Accepted, TEXT(", ")));
