@@ -444,7 +444,28 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       several steps went into establishing that seven rows predated the very exclusion written to
       suppress them. `record()` now stamps `ts` and `runId`.
 
-- [ ] **Silent-failure hunt across families not yet adversarially tested.** The most productive lens
+- [x] **Silent-failure hunt — three families down, three real bugs found.** Aimed by
+      `tools/coverage_gaps.py` (188 of 285 endpoints named in no suite) rather than by intuition.
+
+      * **DataTables** — `tools/test_datatables.py`, 23 checks. No bug, but `create_datatable` went
+        from UNVERIFIED to verified after five days, and `read_datatable` is now cross-checked against
+        `get_datatable_row` on a real 268-row table.
+      * **Inherited components** — `tools/test_inherited_components.py`, 37 checks. No new bug: PM-007
+        holds across all four failure shapes, including the partial ones. It had had no regression test
+        at all, and its symptom is invisible from the caller's side.
+      * **Enums** — `tools/test_enums.py`, 32 checks, and TWO real bugs. `add_enum_value` appended a
+        junk entry under the wrong name and reported success; `list_enum_values` discarded the only
+        meaningful name a user-defined enum has. Both fixed, both filed as §10.
+
+      35 suites now, all green, no editor deaths.
+
+- [ ] **Continue the hunt: interfaces, dispatchers, the rest of the component family.** Still named in
+      no suite: `add_interface` / `implement_interface_function` / `list_interfaces` /
+      `remove_interface`; `add_call_dispatcher` / `list_dispatchers` / `rename_event_dispatcher`;
+      `remove_component` / `set_component_transform` / `add_component_bound_event`. Same method — read
+      the handler, then attack it by capability and ask whether it reports success while doing
+      something else. Two of the three families hunted so far yielded a real bug, so the hit rate
+      justifies continuing. The most productive lens
       all session has been "does this report success while doing something else" - it found the
       transparent PNG, the stale viewport frame, the three-space Niagara offsets, the null-solver crash
       and the WidgetAnimation name leak. Pick families with no dedicated suite and test them that way
