@@ -193,13 +193,20 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       `UCollisionProfile` and reports what it resolved to, because "the profile is set" and "it now
       blocks the player" are different claims. 22 checks in tools/test_collision.py, one of which
       asserts set_property STILL accepts the bogus name — that contrast is why the endpoint exists.
-- [ ] **Audition a sound in the editor** (audit: HIGH). Play any `USoundBase` — cue, wave or
-      MetaSoundSource — through the editor preview audio device. With 3771 SoundWaves and no way to
-      hear one, picking audio for a mod is guesswork by filename. Small endpoint, high daily value.
-- [ ] **Nav mesh queries** (audit: HIGH). Project a point onto the nav mesh, find a path between two
-      points, report reachability — all WITHOUT running PIE. `build_navmesh` exists and reports tile
-      counts, but nothing can ask whether a spot a mod just placed something on is still walkable.
-      This is the natural companion to `trace` and `snap_actors_to_ground`.
+- [x] **Audition a sound in the editor** — `audition_sound` added. Plays any USoundBase (SoundWave,
+      SoundCue, MetaSoundSource) through the editor preview device, with `stop:true` to silence it.
+      Reports the resolved class and duration, and refuses a non-sound by naming what it actually is.
+      A null preview component is reported as "this session has no audio device" rather than as
+      success — a silent editor and a quiet asset look identical otherwise.
+- [x] **Nav mesh queries** — `nav_project_point` and `nav_find_path` added. Projection reports
+      `movedBy` (2cm off the mesh and 300cm off are different problems, and onNavMesh:true hides
+      that), and pathing reports `partial` SEPARATELY from `reachable` — a partial path stops at the
+      closest reachable point and still looks like a path, which is how "the NPC can get there"
+      becomes a lie. "No nav system in this world" is an error, not a "not walkable".
+      Tested limitation, stated rather than hidden: the scratch level has no navigable surface (a nav
+      volume over a spawned cube built 8 tiles that project to nothing), so the POSITIVE branches are
+      unexercised. Worth running against a real DDS2 level before trusting a positive answer — noted
+      in the test file's header too.
 - [ ] **Rename a widget inside the WidgetTree** (audit: HIGH). And carry the rename through every
       place that stores the old name — bindings, animation `AnimationBindings` entries, and any graph
       node referring to it. That last part is the whole difficulty and the whole value: a rename that

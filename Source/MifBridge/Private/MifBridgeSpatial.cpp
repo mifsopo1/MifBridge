@@ -28,6 +28,9 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
+#include "NavigationSystem.h"        // nav queries: project a point, find a path, raycast
+#include "NavigationPath.h"          // UNavigationPath returned by FindPathToLocationSynchronously
+#include "Sound/SoundBase.h"         // audition_sound
 #include "HAL/PlatformMemory.h"     // FPlatformMemory::GetStats - process memory
 #include "Misc/App.h"               // FApp::GetDeltaTime
 #include "RHIStats.h"               // GNumDrawCallsRHI / GNumPrimitivesDrawnRHI      // DrawDebugLine/Sphere/Box/Point/DirectionalArrow/String
@@ -322,6 +325,210 @@ namespace MifBridge
 			}
 			return EditorWorld();
 		}
+	}
+
+	// --- audition_sound ------------------------------------------------------
+	//   in:  { path }   out: { playing, sound, duration, class }
+	//
+	// 3771 SoundWaves and no way to hear one: picking audio for a mod was guesswork by filename.
+	// Same path the Content Browser's preview button uses.
+	void H_audition_sound(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("sound"), TEXT("assetPath"), TEXT("stop") },
+			TEXT("path (aliases: sound, assetPath) of any USoundBase - SoundWave, SoundCue or "
+				 "MetaSoundSource; or stop:true to silence the current preview"),
+			{ { TEXT("volume"), TEXT("the editor preview plays at the asset's own volume - set the asset's Volume property to change it") },
+			  { TEXT("location"), TEXT("this is a 2D editor PREVIEW, not a world sound; for a positioned sound use add_function_call with PlaySoundAtLocation") } }))
+		{
+			return;
+		}
+		if (!GEditor)
+		{
+			Fail(Out, TEXT("no editor"));
+			return;
+		}
+
+		if (JBool(In, TEXT("stop"), false))
+		{
+			GEditor->ResetPreviewAudioComponent();
+			Out->SetBoolField(TEXT("playing"), false);
+			Out->SetBoolField(TEXT("stopped"), true);
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("sound"), TEXT("assetPath") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required (any USoundBase), or pass stop:true"));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: %s"), *Path));
+			return;
+		}
+		USoundBase* Sound = Cast<USoundBase>(Asset);
+		if (!Sound)
+		{
+			// SoundWave, SoundCue and MetaSoundSource are all USoundBase; anything else is a mistake
+			// worth naming rather than silently doing nothing.
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, not a USoundBase - pass a SoundWave, SoundCue or MetaSoundSource."),
+				*Path, *Asset->GetClass()->GetName()));
+			return;
+		}
+
+		UAudioComponent* Comp = GEditor->PlayPreviewSound(Sound);
+		// PlayPreviewSound returns the component it used. A null here means the editor has no audio
+		// device (a -nosound session, or no device at all), which is silence that would otherwise be
+		// indistinguishable from a quiet asset.
+		if (!Comp)
+		{
+			Fail(Out, TEXT("the editor produced no preview audio component - this session probably has "
+						   "no audio device (-nosound). The asset is fine; nothing can be heard."));
+			return;
+		}
+
+		Out->SetBoolField(TEXT("playing"), true);
+		Out->SetStringField(TEXT("sound"), Sound->GetPathName());
+		Out->SetStringField(TEXT("class"), Sound->GetClass()->GetName());
+		Out->SetNumberField(TEXT("duration"), Sound->GetDuration());
+		Out->SetStringField(TEXT("note"),
+			TEXT("playing through the EDITOR's preview device - audible at the machine running the "
+				 "editor, and stopped with stop:true"));
+	}
+
+	// --- nav_project_point ---------------------------------------------------
+	//   in:  { point:{x,y,z}, extent? }   out: { onNavMesh, projected:{...}, movedBy }
+	void H_nav_project_point(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("point"), TEXT("extent") },
+			TEXT("point:{x,y,z}, extent:{x,y,z} (search box, default 100/100/200)"),
+			{ { TEXT("actor"), TEXT("pass a point - read an actor's location with get_level_actor first") } }))
+		{
+			return;
+		}
+		bool bPie = false;
+		UWorld* World = SpatialWorld(bPie);
+		if (!World) { Fail(Out, TEXT("no world")); return; }
+		UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+		if (!Nav)
+		{
+			// "No navmesh" and "off the mesh" are different answers and must not look alike.
+			Fail(Out, TEXT("this world has no navigation system - there is no nav mesh to project onto. "
+						   "Add a nav volume with add_nav_volume and build it with build_navmesh."));
+			return;
+		}
+
+		FString VErr;
+		FVector Point = FVector::ZeroVector;
+		const EJsonRead R = ReadVectorField(In, TEXT("point"), Point, VErr);
+		if (R == EJsonRead::Invalid) { Fail(Out, VErr); return; }
+		if (R == EJsonRead::Absent) { Fail(Out, TEXT("point:{x,y,z} is required")); return; }
+		FVector Extent(100.0, 100.0, 200.0);
+		if (ReadVectorField(In, TEXT("extent"), Extent, VErr) == EJsonRead::Invalid)
+		{
+			Fail(Out, VErr);
+			return;
+		}
+
+		FNavLocation Projected;
+		const bool bOn = Nav->ProjectPointToNavigation(Point, Projected, Extent);
+		Out->SetBoolField(TEXT("onNavMesh"), bOn);
+		Out->SetObjectField(TEXT("queried"), Vec3(Point));
+		if (bOn)
+		{
+			Out->SetObjectField(TEXT("projected"), Vec3(Projected.Location));
+			// How far it moved is the useful number: a placement 2cm off the mesh and one 300cm off
+			// are different problems, and "onNavMesh: true" hides that.
+			Out->SetNumberField(TEXT("movedBy"), FVector::Dist(Point, Projected.Location));
+		}
+		else
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("no navigable point within the search extent - either nothing walkable is near, "
+					 "or the nav mesh has not been built here (build_navmesh reports tile counts)"));
+		}
+		Out->SetBoolField(TEXT("pieRunning"), bPie);
+	}
+
+	// --- nav_find_path -------------------------------------------------------
+	//   in:  { start:{x,y,z}, end:{x,y,z} }
+	//   out: { reachable, partial, pathLength, pointCount, points:[...] }
+	void H_nav_find_path(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("start"), TEXT("end"), TEXT("draw"), TEXT("drawDuration") },
+			TEXT("start:{x,y,z}, end:{x,y,z}, draw (leave the path in the viewport), drawDuration"),
+			{ { TEXT("actor"), TEXT("pass coordinates - read an actor's location with get_level_actor") } }))
+		{
+			return;
+		}
+		bool bPie = false;
+		UWorld* World = SpatialWorld(bPie);
+		if (!World) { Fail(Out, TEXT("no world")); return; }
+		UNavigationSystemV1* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+		if (!Nav)
+		{
+			Fail(Out, TEXT("this world has no navigation system - there is nothing to path through. "
+						   "Add a nav volume with add_nav_volume and build it with build_navmesh."));
+			return;
+		}
+
+		FString VErr;
+		FVector Start = FVector::ZeroVector, End = FVector::ZeroVector;
+		if (ReadVectorField(In, TEXT("start"), Start, VErr) != EJsonRead::Read)
+		{
+			Fail(Out, VErr.IsEmpty() ? TEXT("start:{x,y,z} is required") : *VErr);
+			return;
+		}
+		if (ReadVectorField(In, TEXT("end"), End, VErr) != EJsonRead::Read)
+		{
+			Fail(Out, VErr.IsEmpty() ? TEXT("end:{x,y,z} is required") : *VErr);
+			return;
+		}
+
+		UNavigationPath* Path = UNavigationSystemV1::FindPathToLocationSynchronously(World, Start, End);
+		if (!Path)
+		{
+			Fail(Out, TEXT("the navigation system returned no path object at all - that is a query "
+						   "failure rather than an unreachable destination."));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Pts;
+		for (const FVector& P : Path->PathPoints)
+		{
+			Pts.Add(MakeShared<FJsonValueObject>(Vec3(P)));
+		}
+		// PARTIAL IS NOT REACHABLE. A partial path stops at the closest reachable point and still
+		// looks like a path - reporting it as success is how "the NPC can get there" becomes a lie.
+		const bool bPartial = Path->IsPartial();
+		Out->SetBoolField(TEXT("reachable"), Path->IsValid() && !bPartial);
+		Out->SetBoolField(TEXT("partial"), bPartial);
+		Out->SetBoolField(TEXT("valid"), Path->IsValid());
+		Out->SetNumberField(TEXT("pathLength"), Path->GetPathLength());
+		Out->SetNumberField(TEXT("pointCount"), Pts.Num());
+		Out->SetArrayField(TEXT("points"), Pts);
+		if (bPartial)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("PARTIAL path: it stops at the closest reachable point, so the destination is NOT "
+					 "reachable even though a path came back"));
+		}
+		if (JBool(In, TEXT("draw"), false))
+		{
+			const float Dur = (float)JNum(In, TEXT("drawDuration"), 8.0);
+			for (int32 i = 1; i < Path->PathPoints.Num(); ++i)
+			{
+				DrawDebugLine(World, Path->PathPoints[i - 1], Path->PathPoints[i],
+					bPartial ? FColor::Orange : FColor::Green, false, Dur, 0, 4.0f);
+			}
+		}
+		Out->SetBoolField(TEXT("pieRunning"), bPie);
 	}
 
 	// --- get_perf_stats ------------------------------------------------------

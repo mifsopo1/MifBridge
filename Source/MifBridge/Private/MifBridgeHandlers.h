@@ -1068,6 +1068,13 @@ namespace MifBridge
 	/** Scene cost census plus editor-side counters. The census is the reliable half; the timings are
 	 *  the EDITOR's and say so. */
 	MIF_DECL(get_perf_stats);
+	/** Hear a sound through the editor's preview device. 3771 SoundWaves and no way to audition one. */
+	MIF_DECL(audition_sound);
+	/** Is this point on the nav mesh, and how far off was it? */
+	MIF_DECL(nav_project_point);
+	/** Can an agent actually get from A to B? Reports PARTIAL separately - a partial path looks like
+	 *  a path and does not reach the destination. */
+	MIF_DECL(nav_find_path);
 	MIF_DECL(capture_camera);
 	MIF_DECL(scene_report);
 

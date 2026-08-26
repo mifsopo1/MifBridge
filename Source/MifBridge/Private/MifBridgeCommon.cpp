@@ -247,6 +247,9 @@ namespace MifBridge
 			MIF_BIND(trace);
 			MIF_BIND(draw_debug);
 			MIF_BIND(get_perf_stats);
+			MIF_BIND(audition_sound);
+			MIF_BIND(nav_project_point);
+			MIF_BIND(nav_find_path);
 			MIF_BIND(capture_camera);
 			MIF_BIND(scene_report);
 			// PIE control + runtime observation
@@ -481,6 +484,7 @@ namespace MifBridge
 			TEXT("list_sockets"), TEXT("describe_behavior_tree"), TEXT("list_blackboard_keys"),
 			TEXT("get_perf_stats"), TEXT("list_material_parameters"),
 			TEXT("list_collision_profiles"),
+			TEXT("nav_project_point"), TEXT("nav_find_path"),
 			TEXT("list_widget_animations"),
 			// PIE start/stop only QUEUE a request — they mutate no asset and must not open a
 			// transaction (an undo entry spanning a world teardown is meaningless).

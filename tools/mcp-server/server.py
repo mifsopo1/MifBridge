@@ -1784,6 +1784,46 @@ def trace(start: dict, end: dict = None, direction: dict = None, distance: float
 
 
 @mcp.tool()
+def audition_sound(path: str = "", stop: bool = False) -> dict:
+    """Play a sound through the editor's preview device, or stop the current preview.
+
+    Accepts any USoundBase - SoundWave, SoundCue or MetaSoundSource. With 3771 SoundWaves in the game
+    and no way to hear one, picking audio for a mod was guesswork by filename.
+
+    This is a 2D editor preview, audible at the machine running the editor. For a positioned world
+    sound use add_function_call with PlaySoundAtLocation instead.
+    """
+    return _post("audition_sound", path=path, stop=stop)
+
+
+@mcp.tool()
+def nav_project_point(point: dict, extent: dict = None) -> dict:
+    """Project a point onto the nav mesh: is this spot walkable, and how far off was it?
+
+    Reports movedBy - the distance from the point you asked about to the nearest navigable one.
+    A placement 2cm off the mesh and one 300cm off are different problems, and onNavMesh:true alone
+    hides that.
+
+    "No nav mesh in this world" is reported as an error rather than as "not walkable", because they
+    call for completely different fixes.
+    """
+    return _post("nav_project_point", point=point, extent=extent)
+
+
+@mcp.tool()
+def nav_find_path(start: dict, end: dict, draw: bool = False, draw_duration: float = 8.0) -> dict:
+    """Can an agent actually get from start to end? Answers without running PIE.
+
+    Reports reachable, partial, pathLength and the path points. PARTIAL IS NOT REACHABLE: a partial
+    path stops at the closest reachable point and still looks like a path, so reachable is false
+    whenever partial is true and the response says why.
+
+    draw=True leaves the path in the viewport - green if it reaches, orange if partial.
+    """
+    return _post("nav_find_path", start=start, end=end, draw=draw, drawDuration=draw_duration)
+
+
+@mcp.tool()
 def get_perf_stats() -> dict:
     """Answer "is this mod expensive?" with numbers.
 
