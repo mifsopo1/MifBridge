@@ -2029,6 +2029,41 @@ def list_animations(filter: str = "", skeleton: str = "", limit: int = 200) -> d
 
 
 @mcp.tool()
+def list_sockets(path: str) -> dict:
+    """List the sockets on a SkeletalMesh or StaticMesh asset.
+
+    This is what a mod attaches props to, and there was previously no way to see what exists. Pass the
+    MESH ASSET's path - sockets live on the mesh, not on a blueprint, so resolve the component's
+    StaticMesh/SkeletalMesh property first if that is where you are starting.
+
+    Note for skeletal meshes: a USkeleton carries its OWN socket list separately, and a socket defined
+    on the skeleton will not appear here. The response says so.
+    """
+    return _post("list_sockets", path=path)
+
+
+@mcp.tool()
+def describe_behavior_tree(path: str) -> dict:
+    """Read a BehaviorTree's structure: root, node tree, and which blackboard it uses.
+
+    Depth-first with depth, name, class, kind (composite/task/root) and decorator count per node. The
+    walk is bounded at 2000 nodes and says so if it truncates, rather than returning a partial tree as
+    if it were whole.
+    """
+    return _post("describe_behavior_tree", path=path)
+
+
+@mcp.tool()
+def list_blackboard_keys(path: str) -> dict:
+    """List a BlackboardData asset's keys, with type and whether each is inherited from a parent.
+
+    The inherited flag matters: an inherited key is usable but is not editable on this asset, and a
+    caller who cannot tell the two apart will try to change one and wonder why nothing happened.
+    """
+    return _post("list_blackboard_keys", path=path)
+
+
+@mcp.tool()
 def describe_animation(asset_path: str) -> dict:
     "Describe an animation asset: skeleton, playLength, notifies (with notify-state windows and branching points), curves. Plus per type - sequence: frameRate/numSampledKeys/additive/syncMarkers; montage: blend times, sections (with nextSection) and slot segments; blendSpace: axes and samples. For an animation BLUEPRINT use list_graphs/list_nodes instead - nested state machines and transition graphs are included."
     return _post("describe_animation", assetPath=asset_path)

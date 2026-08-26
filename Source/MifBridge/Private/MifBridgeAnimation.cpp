@@ -9,6 +9,19 @@
 // Everything here reads UAnimSequence/UAnimMontage/UBlendSpace, which live in the Engine module —
 // no extra build dependency. Read-only: registered in IsReadOnlyEndpoint, no transaction.
 #include "MifBridgeHandlers.h"
+
+// Sockets, behavior trees and blackboards - all READ-ONLY. See H_list_sockets below for why these
+// live here rather than in a new file: this is already the animation-and-skeleton module.
+#include "Engine/SkeletalMesh.h"
+#include "Engine/SkeletalMeshSocket.h"
+#include "Animation/Skeleton.h"        // USkeleton::Sockets - where DDS2 actually keeps them
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshSocket.h"
+#include "BehaviorTree/BehaviorTree.h"
+#include "BehaviorTree/BTCompositeNode.h"
+#include "BehaviorTree/BTTaskNode.h"
+#include "BehaviorTree/BlackboardData.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType.h"
 #include "Animation/AnimBlueprint.h"
 #include "AnimGraphNode_Base.h"
 #include "MifBridgeLog.h"
@@ -31,6 +44,265 @@
 
 namespace MifBridge
 {
+	namespace
+	{
+		TSharedRef<FJsonObject> SocketJson(const FName& Name, const FName& Bone,
+			const FVector& Loc, const FRotator& Rot, const FVector& Scale)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("name"), Name.ToString());
+			if (!Bone.IsNone()) { J->SetStringField(TEXT("bone"), Bone.ToString()); }
+			J->SetObjectField(TEXT("relativeLocation"), Vec3(Loc));
+			J->SetObjectField(TEXT("relativeRotation"), Vec3(FVector(Rot.Pitch, Rot.Yaw, Rot.Roll)));
+			J->SetObjectField(TEXT("relativeScale"), Vec3(Scale));
+			return J;
+		}
+
+		// Walk a behavior tree depth-first. Bounded: a corrupt asset with a cycle would otherwise
+		// hang the game thread, which on this bridge means the whole editor stops answering.
+		void WalkBT(UBTCompositeNode* Node, int32 Depth, int32& Budget,
+			TArray<TSharedPtr<FJsonValue>>& Out)
+		{
+			if (!Node || Budget <= 0) { return; }
+			--Budget;
+			for (const FBTCompositeChild& Child : Node->Children)
+			{
+				UBTNode* Actual = Child.ChildComposite
+					? static_cast<UBTNode*>(Child.ChildComposite)
+					: static_cast<UBTNode*>(Child.ChildTask);
+				if (!Actual) { continue; }
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetNumberField(TEXT("depth"), Depth);
+				J->SetStringField(TEXT("name"), Actual->GetNodeName());
+				J->SetStringField(TEXT("class"), Actual->GetClass()->GetName());
+				J->SetStringField(TEXT("kind"), Child.ChildComposite ? TEXT("composite") : TEXT("task"));
+				J->SetNumberField(TEXT("decorators"), Child.Decorators.Num());
+				Out.Add(MakeShared<FJsonValueObject>(J));
+				if (Child.ChildComposite)
+				{
+					WalkBT(Child.ChildComposite, Depth + 1, Budget, Out);
+				}
+			}
+		}
+	}
+
+	// --- list_sockets --------------------------------------------------------
+	//   in:  { path }  (a SkeletalMesh or StaticMesh asset)
+	//   out: { assetKind, count, sockets:[{name, bone, relativeLocation, ...}] }
+	//
+	// Attaching a mod's prop to a character socket is ordinary work and there was no way to even see
+	// what sockets exist. Lives in the animation module because that is where skeleton-adjacent
+	// reading already happens.
+	void H_list_sockets(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("mesh") },
+			TEXT("path (alias: assetPath, mesh) of a SkeletalMesh or StaticMesh asset"),
+			{ { TEXT("blueprintId"), TEXT("sockets live on the MESH ASSET, not on a blueprint - take the mesh path from the component's StaticMesh/SkeletalMesh property, or from find_assets") },
+			  { TEXT("componentName"), TEXT("same: resolve the component's mesh asset first, then pass that path here") } }))
+		{
+			return;
+		}
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("mesh") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required (a SkeletalMesh or StaticMesh asset)"));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: %s"), *Path));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		if (USkeletalMesh* SK = Cast<USkeletalMesh>(Asset))
+		{
+			// BOTH LISTS, OR THIS ENDPOINT IS USELESS HERE.
+			//
+			// Sockets live in two places: on the mesh, and on the USkeleton the mesh uses. The first
+			// version of this returned only the mesh's and carried a note explaining that the skeleton
+			// has its own. Then it was pointed at real content: all 12 sampled DDS2 skeletal meshes
+			// have ZERO mesh sockets, because the game keeps them on one shared
+			// DDS2_CharacterSkeleton - which is the normal pattern for a game with a common rig.
+			//
+			// So the honest version returned an empty array for every character in the game and
+			// explained why. Explaining an empty answer is not the same as giving the right one.
+			int32 MeshCount = 0;
+			for (USkeletalMeshSocket* S : SK->GetMeshOnlySocketList())
+			{
+				if (S)
+				{
+					TSharedRef<FJsonObject> J = SocketJson(S->SocketName, S->BoneName,
+						S->RelativeLocation, S->RelativeRotation, S->RelativeScale);
+					J->SetStringField(TEXT("source"), TEXT("mesh"));
+					Arr.Add(MakeShared<FJsonValueObject>(J));
+					++MeshCount;
+				}
+			}
+			int32 SkeletonCount = 0;
+			USkeleton* Skeleton = SK->GetSkeleton();
+			if (Skeleton)
+			{
+				for (USkeletalMeshSocket* S : Skeleton->Sockets)
+				{
+					if (S)
+					{
+						TSharedRef<FJsonObject> J = SocketJson(S->SocketName, S->BoneName,
+							S->RelativeLocation, S->RelativeRotation, S->RelativeScale);
+						// Which list a socket came from decides where you would EDIT it, so it is
+						// reported per socket rather than only in a summary.
+						J->SetStringField(TEXT("source"), TEXT("skeleton"));
+						Arr.Add(MakeShared<FJsonValueObject>(J));
+						++SkeletonCount;
+					}
+				}
+				Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+			}
+			Out->SetStringField(TEXT("assetKind"), TEXT("SkeletalMesh"));
+			Out->SetNumberField(TEXT("meshSocketCount"), MeshCount);
+			Out->SetNumberField(TEXT("skeletonSocketCount"), SkeletonCount);
+			if (!Skeleton)
+			{
+				Out->SetStringField(TEXT("note"),
+					TEXT("this mesh has no USkeleton, so only its own sockets could be listed"));
+			}
+		}
+		else if (UStaticMesh* SM = Cast<UStaticMesh>(Asset))
+		{
+			for (UStaticMeshSocket* S : SM->Sockets)
+			{
+				if (S)
+				{
+					Arr.Add(MakeShared<FJsonValueObject>(SocketJson(
+						S->SocketName, NAME_None, S->RelativeLocation, S->RelativeRotation,
+						S->RelativeScale)));
+				}
+			}
+			Out->SetStringField(TEXT("assetKind"), TEXT("StaticMesh"));
+		}
+		else
+		{
+			// "Not a mesh" and "a mesh with no sockets" both produce an empty array otherwise.
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, which has no sockets - pass a SkeletalMesh or StaticMesh."),
+				*Path, *Asset->GetClass()->GetName()));
+			return;
+		}
+
+		Out->SetStringField(TEXT("path"), Asset->GetPathName());
+		Out->SetNumberField(TEXT("count"), Arr.Num());
+		Out->SetArrayField(TEXT("sockets"), Arr);
+	}
+
+	// --- describe_behavior_tree ----------------------------------------------
+	//   in:  { path }
+	//   out: { root, blackboard, nodeCount, nodes:[{depth, name, class, kind, decorators}] }
+	void H_describe_behavior_tree(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath") },
+			TEXT("path (alias: assetPath) of a BehaviorTree asset"),
+			{ { TEXT("blueprintId"), TEXT("a BehaviorTree is its own asset, not a blueprint - find one with find_assets {class: BehaviorTree}") } }))
+		{
+			return;
+		}
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath") });
+		UObject* Asset = Path.IsEmpty() ? nullptr : LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("behavior tree not found: %s"), *Path));
+			return;
+		}
+		UBehaviorTree* BT = Cast<UBehaviorTree>(Asset);
+		if (!BT)
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' is a %s, not a BehaviorTree."),
+				*Path, *Asset->GetClass()->GetName()));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Nodes;
+		int32 Budget = 2000;          // bounded walk - see WalkBT
+		if (BT->RootNode)
+		{
+			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
+			R->SetNumberField(TEXT("depth"), 0);
+			R->SetStringField(TEXT("name"), BT->RootNode->GetNodeName());
+			R->SetStringField(TEXT("class"), BT->RootNode->GetClass()->GetName());
+			R->SetStringField(TEXT("kind"), TEXT("root"));
+			Nodes.Add(MakeShared<FJsonValueObject>(R));
+			WalkBT(BT->RootNode, 1, Budget, Nodes);
+		}
+		Out->SetStringField(TEXT("path"), BT->GetPathName());
+		Out->SetBoolField(TEXT("hasRoot"), BT->RootNode != nullptr);
+		if (UBlackboardData* BB = BT->GetBlackboardAsset())
+		{
+			Out->SetStringField(TEXT("blackboard"), BB->GetPathName());
+		}
+		Out->SetNumberField(TEXT("nodeCount"), Nodes.Num());
+		Out->SetArrayField(TEXT("nodes"), Nodes);
+		if (Budget <= 0)
+		{
+			Out->SetBoolField(TEXT("truncated"), true);
+			Out->SetStringField(TEXT("truncatedNote"),
+				TEXT("the walk hit its 2000-node budget and stopped. Reported rather than silently "
+					 "returning a partial tree as if it were the whole one."));
+		}
+	}
+
+	// --- list_blackboard_keys ------------------------------------------------
+	//   in:  { path }
+	//   out: { count, keys:[{name, type, instanceSynced}], inheritedFrom? }
+	void H_list_blackboard_keys(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath") },
+			TEXT("path (alias: assetPath) of a BlackboardData asset"),
+			{ { TEXT("behaviorTree"), TEXT("pass the BLACKBOARD's path; describe_behavior_tree reports which blackboard a tree uses") } }))
+		{
+			return;
+		}
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath") });
+		UObject* Asset = Path.IsEmpty() ? nullptr : LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("blackboard not found: %s"), *Path));
+			return;
+		}
+		UBlackboardData* BB = Cast<UBlackboardData>(Asset);
+		if (!BB)
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' is a %s, not a BlackboardData."),
+				*Path, *Asset->GetClass()->GetName()));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		auto AddKeys = [&Arr](const TArray<FBlackboardEntry>& Keys, bool bInherited)
+		{
+			for (const FBlackboardEntry& E : Keys)
+			{
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetStringField(TEXT("name"), E.EntryName.ToString());
+				J->SetStringField(TEXT("type"), E.KeyType ? E.KeyType->GetClass()->GetName() : TEXT("(none)"));
+				J->SetBoolField(TEXT("instanceSynced"), E.bInstanceSynced != 0);
+				// Inherited keys are usable but are NOT editable on this asset, and a caller who
+				// cannot tell the two apart will try to change one and wonder why nothing happened.
+				J->SetBoolField(TEXT("inherited"), bInherited);
+				Arr.Add(MakeShared<FJsonValueObject>(J));
+			}
+		};
+		AddKeys(BB->GetKeys(), false);
+		AddKeys(BB->ParentKeys, true);
+
+		Out->SetStringField(TEXT("path"), BB->GetPathName());
+		if (BB->Parent) { Out->SetStringField(TEXT("parent"), BB->Parent->GetPathName()); }
+		Out->SetNumberField(TEXT("count"), Arr.Num());
+		Out->SetArrayField(TEXT("keys"), Arr);
+	}
+
 	namespace
 	{
 		// Same path tolerance as ResolveBlueprint: accept /Game/A/Foo or /Game/A/Foo.Foo.

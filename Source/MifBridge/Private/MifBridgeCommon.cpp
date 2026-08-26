@@ -274,6 +274,9 @@ namespace MifBridge
 			MIF_BIND(remove_enum_value);
 			// Animation assets (read-only)
 			MIF_BIND(describe_animation);
+			MIF_BIND(list_sockets);
+			MIF_BIND(describe_behavior_tree);
+			MIF_BIND(list_blackboard_keys);
 			MIF_BIND(list_animations);
 			MIF_BIND(add_anim_node);
 			// Asset lifecycle
@@ -469,6 +472,7 @@ namespace MifBridge
 			TEXT("describe_animation"), TEXT("list_animations"),
 			TEXT("list_tree_widgets"),
 			TEXT("list_struct_members"), TEXT("list_level_actors"), TEXT("get_level_actor"),
+			TEXT("list_sockets"), TEXT("describe_behavior_tree"), TEXT("list_blackboard_keys"),
 			TEXT("list_widget_animations"),
 			// PIE start/stop only QUEUE a request — they mutate no asset and must not open a
 			// transaction (an undo entry spanning a world teardown is meaningless).

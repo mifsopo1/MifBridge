@@ -64,12 +64,19 @@ fail silently if this were done carelessly".
       either way. `persistent` is refused on purpose: nothing can clear a persistent shape.
 - [ ] **Insights & Profiling** — nothing beyond `diagnose_landscape_draws`. Basic frame/draw-call/
       memory stats would let an agent answer "is this mod expensive?" instead of guessing.
-- [ ] **Behavior Trees / Blackboard** — nothing, and confirmed real: **17** BehaviorTrees and **4**
-      BlackboardData assets. A modder changing NPC behaviour needs at least to READ them. Read-first
-      is the sensible scope; authoring BT nodes is a much larger job and can wait for a real need.
-- [ ] **Skeletal / Sockets** — nothing, against **188** SkeletalMeshes, **164** PhysicsAssets and
-      **44** AnimMontages. Attaching a mod's mesh to a character socket is ordinary work and there is
-      currently no way to even list the sockets available.
+- [x] **Behavior Trees / Blackboard** — `describe_behavior_tree` and `list_blackboard_keys` added,
+      read-only. The tree walks depth-first with depth/name/class/kind/decorator-count, resolves which
+      blackboard it uses, and is bounded at 2000 nodes so a corrupt asset cannot hang the game thread
+      (which on this bridge means the whole editor stops answering). Blackboard keys carry their type
+      and an `inherited` flag, because an inherited key is usable but not editable on that asset and a
+      caller who cannot tell will change one and wonder why nothing happened. Verified against
+      PetDogBT (14 nodes) and OponentBB (26 keys). Authoring BT nodes is deliberately not attempted.
+- [x] **Skeletal / Sockets** — `list_sockets` added, and the first version was useless: it read
+      only the MESH's socket list, and all 12 sampled DDS2 skeletal meshes have zero of those because
+      the game keeps sockets on one shared DDS2_CharacterSkeleton. It now reads BOTH lists and tags
+      each socket with its `source`, since that decides where you would edit it. Alisha returns 8 real
+      sockets - RightHandSocket, LeftHandSocket, FlashlightSocket, RifleSocket, MeleeWeaponSocket,
+      headSocket - which is exactly what a mod attaches to.
 
 ## Covered by COMPOSITION, not by dedicated endpoints
 

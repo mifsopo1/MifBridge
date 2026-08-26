@@ -1105,6 +1105,12 @@ namespace MifBridge
 	// Animation BLUEPRINTS go through the normal graph endpoints; GatherGraphs recurses into
 	// nested graphs, so state machines / states / transition rules are reachable there.
 	MIF_DECL(describe_animation);
+	/** Sockets on a SkeletalMesh or StaticMesh asset - there was no way to see what a mod could
+	 *  attach to. */
+	MIF_DECL(list_sockets);
+	/** Read a BehaviorTree's structure. DDS2 has 17 of them and no way to inspect one. */
+	MIF_DECL(describe_behavior_tree);
+	MIF_DECL(list_blackboard_keys);
 	MIF_DECL(list_animations);
 	// One endpoint for the whole UAnimGraphNode_* family: UAnimGraphNode_Base derives from UK2Node,
 	// so anim nodes place and wire exactly like K2 nodes.
