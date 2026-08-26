@@ -50,17 +50,23 @@ Never work from a typed list — one was fabricated once and a third of it was i
 
 - [x] **Every DEFERRED engine call escapes the modal backstop — a hole in the safety net itself.**
 
-- [ ] **add_timeline: a bug was FIXED with no test locking it in.** eea334a records that
+- [x] **add_timeline: a bug was FIXED with no test locking it in.** eea334a records that
   add_timeline never created a timeline. There is no suite for it, so nothing would catch the
   regression. QOLCrafting named it for crafting queues, progress animation and machine timing, so it
   is on a real consumer's stated path. A fix without a test is a fix with a shelf life.
-- [ ] **landscape_info: the same shape.** 73c4b8e fixed it reporting components:0 for a World
+- [x] **landscape_info: the same shape.** 73c4b8e fixed it reporting components:0 for a World
   Partition terrain; no suite covers it. Named as relevant to the exterior terrain around the
   planned hideout.
 - [ ] **spawn_many has no suite.** Two silent-failure fixes are sitting unbuilt in it right now (an
   unloadable mesh swallowed twice, and mesh/material silently ignored for non-StaticMeshActors).
   Being in no suite is exactly how the edit_container swap bug survived.
-- [ ] **get_perf_stats has no suite.** Lowest of the four - a read whose wrong answer misleads rather
+- [x] **get_perf_stats has no suite.** Lowest of the four - a read whose wrong answer misleads rather
+- [ ] **The World Partition branch of landscape_info is still unproven.** test_landscape_info covers
+  the parameter contract and the accounting identity on a landscape it creates, and cross-checks it
+  against both a reflection read and diagnose_landscape - but proxyCount>0, proxyComponents>0 and the
+  componentsNote that fires when components==0 are exactly what 73c4b8e fixed, and reaching them needs
+  a World Partition map with streaming proxies. The only ones here are real DDS2 maps. This is a good
+  first task for the downstream report loop once it is switched on.
 - [ ] **Audit the 31 remaining "NOTHING was created" claims.** Two foliage sites were corrected today
   for asserting it after real side effects; a DLL string grep proved the phrase survives at 31 other
   Fail() sites. Most are correct early refusals. For each, check whether anything before the Fail()

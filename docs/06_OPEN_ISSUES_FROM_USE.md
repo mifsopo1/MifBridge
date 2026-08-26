@@ -664,6 +664,26 @@ validates the AUTHORED name — but for a `UUserDefinedEnum` the authored names 
 its bool return is discarded. Same class as the `add_enum_value` bug fixed on 2026-08-25, which was
 closed by reading the applied display name back.
 
+**J. The harness structurally cannot clean up level actors it spawns.**
+delete_level_actor requires confirm=true, and scratch_confirm grants confirm only when every path in
+the payload lies under /Game/_Mif. A placed actor's path is
+/Temp/Untitled_1.Untitled_1:PersistentLevel.StaticMeshActor_UAID_..., which is not scratch by that
+rule, so the guard refuses. It is refusing CORRECTLY - it cannot tell an actor in a throwaway
+untitled level from one in a real map, and 'no evidence of danger' is not 'evidence of safety'.
+
+The consequence is that every suite touching the level leaks actors for the lifetime of the editor
+session. Harmless today because the harness runs in an untitled level that is never saved and is gone
+on restart, but it means scene counts drift upward across a long run, and any future assertion of the
+form 'the count returns to its baseline' cannot be written.
+
+Two candidate fixes, neither obviously right:
+  - teach scratch_confirm that /Temp/<Level> paths in an UNTITLED level are scratch. Narrow and
+    truthful, but it widens the one guard that has never yet been wrong.
+  - give the harness a sweep that removes actors whose label carries the suite prefix, running
+    outside the confirm guard by addressing them some other way. More code, no widening.
+Filed rather than chosen, because widening the confirm guard deserves a deliberate decision rather
+than being done in passing while fixing a test.
+
 **I. "NOTHING was created" is asserted at 31 more sites and has not been checked at any of them.**
 Two foliage sites were corrected today because they promised "NOTHING was created" AFTER real side
 effects had already happened - GetInstancedFoliageActorForCurrentLevel had been called with
