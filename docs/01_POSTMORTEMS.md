@@ -82,6 +82,78 @@ Newest first.
 
 ---
 
+## PM-010 — I mirrored the engine's CREATE path and not its DELETE path, and the gap was a hard crash
+
+**Symptom.** Reported from real use on 2026-08-25 (QOLCrafting_P / `WBP_QOL_DropZone`, crash GUID
+`UECC-Windows-2A82EB2E400C3FC119CD1E859837B612_0000`). `remove_widget_animation` on "ArrowLoop"
+returned `{"ok": true, "removed": "ArrowLoop", "remaining": 0}`. The very next
+`add_widget_animation` with the same name killed the editor:
+
+```
+Fatal error: Obj.cpp line 265
+Renaming an object  WidgetAnimation ...:WidgetAnimation_0
+on top of an existing object  WidgetAnimation ...:ArrowLoop
+is not allowed
+```
+
+The caller saw `ConnectionResetError 10054`, then `WinError 10061` — the process was gone. Nothing had
+been saved, so the removal existed only in memory.
+
+**Root cause.** One missing line. The remove handler did:
+
+```cpp
+WBP->Animations.Remove(Anim);
+```
+
+That detaches the animation from the array. The `UWidgetAnimation` **UObject stays alive** under the
+same outer, still owning the object name "ArrowLoop". `add_widget_animation` then does
+`Anim->Rename(*Name)` onto that outer, and CoreUObject refuses to rename over a live object with an
+assert — which in a handler is a dead editor, not an error response.
+
+Nothing in the bridge could see the debris either: `FindAnimation` searches only `WBP->Animations`, so
+the verification step in the remove handler ("re-find it to prove it is gone") passed with the object
+still there holding the name. **A read-back that queries a different structure than the one that will
+be written proves nothing.**
+
+**Why it got in.** `add_widget_animation` was written by mirroring the engine's own create path
+(`AnimationTabSummoner.cpp:589`) and the comment in that handler says so. The delete path is thirty
+lines further down the same file and does the thing that was missed, with the reason stated outright
+(`AnimationTabSummoner.cpp:823-829`):
+
+```cpp
+const FScopedTransaction Transaction(LOCTEXT("DeleteAnimationTransaction", "Delete Animation"));
+WidgetBlueprint->Modify();
+// Rename the animation and move it to the transient package to avoid collisions.
+SelectedAnimation->Animation->Rename( NULL, GetTransientPackage() );
+WidgetAnimations.Remove(SelectedAnimation->Animation);
+```
+
+A null name requests a fresh unique one; the transient package moves the object out of the widget's
+namespace. The `MovieScene` is outered to the animation, so it travels along and needs no separate
+handling.
+
+**Fix.** Three changes, because the reporter asked for three and each covers a different failure.
+
+1. `remove_widget_animation` now performs that rename before removing from the array, and reports
+   `removedFromAnimationsArray` and `objectNameReusable` separately — detaching and freeing the name
+   are different things, and only the second makes recreation safe.
+2. `add_widget_animation` checks `FindObject<UObject>(WBP, *Name)` and refuses before mutating
+   anything. Fixing (1) does not make this redundant: an animation hand-deleted in the UMG designer,
+   or removed by an older build, leaves the same debris.
+3. `set_widget_animation_range` was added, because the destructive sequence was only ever attempted to
+   change a playback range from 0.5s to 1.5s and nothing could edit one in place. The best fix for a
+   dangerous workflow is often to remove the reason anyone runs it.
+
+**Prevention.** Two rules, both general.
+
+- **If you mirror an engine path, mirror its INVERSE too.** Create and delete are written together in
+  the engine and make assumptions about each other. Reading only the half you need leaves the other
+  half's invariant unmaintained — here, "the name is free when the object is gone".
+- **Verify against the structure that the next operation will actually consult.** The remove handler
+  re-queried the `Animations` array, which is not what `Rename` collides against. The check to write
+  is the one that would have failed: is the NAME free?
+
+
 ## PM-009 — a public engine "add" function that allocates but does not initialise, and the crash two lines later
 
 **Symptom.** The first live call to the new `foliageType` mode of `add_foliage_instances` killed the

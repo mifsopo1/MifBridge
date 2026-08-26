@@ -917,6 +917,9 @@ namespace MifBridge
 	MIF_DECL(rename_tree_widget);
 	MIF_DECL(add_widget_animation_track);
 	MIF_DECL(set_widget_animation_keys);
+	/** Change an existing animation's playback range in place, so correcting a length does not
+	 *  need the remove-and-recreate sequence that crashed the editor on 2026-08-25. */
+	MIF_DECL(set_widget_animation_range);
 	MIF_DECL(remove_widget_animation);
 	MIF_DECL(remove_widget_animation_track);
 	MIF_DECL(add_class_cast);

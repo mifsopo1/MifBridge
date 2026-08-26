@@ -606,6 +606,36 @@ def set_widget_animation_keys(blueprint_id: str, animation_name: str, widget_nam
 
 
 @mcp.tool()
+def set_widget_animation_range(blueprint_id: str, animation_name: str,
+                               start_time: float = None, end_time: float = None,
+                               display_rate: float = None) -> dict:
+    """Change an existing UMG animation's playback range or frame rate IN PLACE.
+
+    Exists so that correcting an animation's length no longer needs remove-and-recreate. That
+    sequence used to be the only way, and it crashed the editor: removing an animation left the
+    UObject alive holding its name, so recreating it renamed on top of a live object. Both halves of
+    that are fixed too, but not needing the dance at all is better.
+
+    Times are in SECONDS; give either or both bounds. displayRate is the editor's frame grid.
+
+    NO KEY MOVES. Key times live in the MovieScene's tick resolution, which is independent of
+    displayRate, so a longer range does not stretch the motion and a different frame rate does not
+    shift a single key. The response says keysUnchanged for exactly this reason - re-key with
+    set_widget_animation_keys if you wanted the motion rescaled.
+
+    Reports previousStartTime/previousEndTime alongside the new values, and reads the range back off
+    the MovieScene rather than echoing what you asked for.
+    """
+    # Written out as explicit keywords rather than built into a dict and splatted. _post already
+    # drops None, and a **payload call is invisible to tools/param_reach.py, which scans these call
+    # sites statically to catch endpoint parameters no MCP tool can send - splatting reported all five
+    # of these as unreachable. Do not blind the checker to save four lines.
+    return _post("set_widget_animation_range",
+                 blueprintId=blueprint_id, animationName=animation_name,
+                 startTime=start_time, endTime=end_time, displayRate=display_rate)
+
+
+@mcp.tool()
 def remove_widget_animation(blueprint_id: str, animation_name: str) -> dict:
     """Remove a UMG animation from a Widget Blueprint.
 

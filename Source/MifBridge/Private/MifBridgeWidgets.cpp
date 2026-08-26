@@ -677,6 +677,119 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("keys"), Written);
 	}
 
+	// --- set_widget_animation_range ------------------------------------------
+	//   in:  { blueprintId | path, animationName, startTime?, endTime?, displayRate? }
+	//   out: { startTime, endTime, displayRate, keysUnchanged }
+	//
+	// Exists so that correcting an animation's length does not require removing and recreating it.
+	// That sequence was the only way to change a range, and it is what surfaced the
+	// remove-then-recreate crash on 2026-08-25 - the reporter wanted 0.5s to become 1.5s and nothing
+	// could do it in place.
+	void H_set_widget_animation_range(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("animationName"),
+			  TEXT("startTime"), TEXT("endTime"), TEXT("displayRate") },
+			TEXT("blueprintId (alias: path), animationName, startTime and/or endTime in SECONDS, "
+				 "displayRate in frames per second"),
+			{ { TEXT("length"), TEXT("give endTime; the range is absolute, not a duration") },
+			  { TEXT("keys"), TEXT("this changes the RANGE only - key times are untouched. Use set_widget_animation_keys to move keys") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+
+		const FString AnimName = JStr(In, TEXT("animationName"));
+		UWidgetAnimation* Anim = FindAnimation(WBP, AnimName);
+		if (!Anim || !Anim->GetMovieScene())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no animation named '%s' with a MovieScene on this widget. NOTHING was changed."),
+				*AnimName));
+			return;
+		}
+		UMovieScene* MS = Anim->GetMovieScene();
+
+		const bool bHasStart = In->HasField(TEXT("startTime"));
+		const bool bHasEnd = In->HasField(TEXT("endTime"));
+		const bool bHasRate = In->HasField(TEXT("displayRate"));
+		if (!bHasStart && !bHasEnd && !bHasRate)
+		{
+			Fail(Out, TEXT("nothing to change - give at least one of startTime, endTime or displayRate. "
+						   "NOTHING was changed."));
+			return;
+		}
+
+		// Everything is validated before anything is written, so a bad endTime cannot leave a
+		// half-applied range behind.
+		const FFrameRate OldRate = MS->GetDisplayRate();
+		double NewFps = OldRate.AsDecimal();
+		if (bHasRate)
+		{
+			NewFps = JNum(In, TEXT("displayRate"), NewFps);
+			if (NewFps <= 0.0)
+			{
+				Fail(Out, TEXT("displayRate must be a positive number of frames per second. "
+							   "NOTHING was changed."));
+				return;
+			}
+		}
+		const TRange<FFrameNumber> OldRange = MS->GetPlaybackRange();
+		const double OldStart = TicksToSeconds(MS, OldRange.GetLowerBoundValue());
+		const double OldEnd = TicksToSeconds(MS, OldRange.GetUpperBoundValue());
+		const double NewStart = bHasStart ? JNum(In, TEXT("startTime"), OldStart) : OldStart;
+		const double NewEnd = bHasEnd ? JNum(In, TEXT("endTime"), OldEnd) : OldEnd;
+		if (NewEnd <= NewStart)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("endTime (%.4f) must be greater than startTime (%.4f). NOTHING was changed."),
+				NewEnd, NewStart));
+			return;
+		}
+
+		MS->Modify();
+		if (bHasRate)
+		{
+			// Display rate is the frame grid the EDITOR shows. Key times live in the MovieScene's tick
+			// resolution and are not touched by this, which is why keysUnchanged is reported below.
+			MS->SetDisplayRate(FFrameRate(FMath::RoundToInt(NewFps), 1));
+		}
+		MS->SetPlaybackRange(TRange<FFrameNumber>(
+			SecondsToTicks(MS, NewStart),
+			SecondsToTicks(MS, NewEnd) + 1));    // +1 as the editor does - the end bound is exclusive
+		MS->GetEditorData().WorkStart = NewStart;
+		MS->GetEditorData().WorkEnd = NewEnd;
+
+		// Read back through the MovieScene rather than echoing the request.
+		const TRange<FFrameNumber> Now = MS->GetPlaybackRange();
+		const double GotStart = TicksToSeconds(MS, Now.GetLowerBoundValue());
+		const double GotEnd = TicksToSeconds(MS, Now.GetUpperBoundValue());
+		if (FMath::Abs(GotStart - NewStart) > 0.001)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("asked for a start of %.4fs and the animation reports %.4fs afterwards. Read it "
+					 "back with list_widget_animations before relying on it."), NewStart, GotStart));
+			return;
+		}
+
+		MarkStructural(WBP);
+		Out->SetStringField(TEXT("animation"), AnimName);
+		Out->SetNumberField(TEXT("startTime"), GotStart);
+		Out->SetNumberField(TEXT("endTime"), GotEnd);
+		Out->SetNumberField(TEXT("displayRate"), MS->GetDisplayRate().AsDecimal());
+		Out->SetNumberField(TEXT("previousStartTime"), OldStart);
+		Out->SetNumberField(TEXT("previousEndTime"), OldEnd);
+		// Said explicitly because it is the obvious wrong assumption: changing the range does not
+		// rescale the animation, and changing the display rate does not move a single key.
+		Out->SetBoolField(TEXT("keysUnchanged"), true);
+		Out->SetStringField(TEXT("note"),
+			TEXT("the RANGE changed; no key moved. Key times are stored in the MovieScene's tick "
+				 "resolution, which is independent of displayRate, so neither a longer range nor a "
+				 "different frame rate rescales existing keys - re-key with set_widget_animation_keys "
+				 "if you wanted the motion stretched to fit."));
+	}
+
 	// --- remove_widget_animation --------------------------------------------
 	//   in:  { blueprintId | path, animationName }
 	//   out: { removed, remaining }
@@ -706,6 +819,21 @@ namespace MifBridge
 		}
 
 		WBP->Modify();
+
+		// FREE THE NAME, not just the array slot. Removing from Animations leaves the UWidgetAnimation
+		// ALIVE under the widget blueprint, still owning its object name - so a later
+		// add_widget_animation with the same name renames onto a live object and CoreUObject asserts
+		// (Obj.cpp:265), which kills the editor. Reported from QOLCrafting_P on 2026-08-25.
+		//
+		// This is the line the engine's own delete path has and this handler did not
+		// (AnimationTabSummoner.cpp:823-829, comment: "Rename the animation and move it to the
+		// transient package to avoid collisions"). A null name requests a fresh unique one. The
+		// MovieScene is outered to the animation, so it moves with it and needs no separate handling.
+		//
+		// Before the removal, matching the engine's order: renaming an object still referenced by the
+		// array is fine, whereas the reverse leaves a window where the array is short and the name is
+		// still taken.
+		Anim->Rename(nullptr, GetTransientPackage());
 		WBP->Animations.Remove(Anim);
 
 		// Verify by re-finding, not by trusting Remove's return.
@@ -716,9 +844,24 @@ namespace MifBridge
 			return;
 		}
 
+		// The question a caller actually needs answered before recreating: is the NAME free? Detaching
+		// and freeing the name are different things, and only one of them makes recreation safe.
+		const bool bNameFree = FindObject<UObject>(WBP, *AnimName) == nullptr;
+
 		MarkStructural(WBP);
 		Out->SetStringField(TEXT("removed"), AnimName);
 		Out->SetNumberField(TEXT("remaining"), WBP->Animations.Num());
+		Out->SetBoolField(TEXT("removedFromAnimationsArray"), true);
+		Out->SetBoolField(TEXT("objectNameReusable"), bNameFree);
+		if (!bNameFree)
+		{
+			// Should not happen now, but a stale object of that name from some other route would make
+			// recreation crash, and silence here is what made the original bug fatal.
+			Out->SetStringField(TEXT("nameNote"), FString::Printf(
+				TEXT("the animation was removed, but an object named '%s' still exists under this "
+					 "widget, so add_widget_animation with that name would refuse. Something other than "
+					 "this endpoint is holding the name."), *AnimName));
+		}
 	}
 
 	// --- remove_widget_animation_track --------------------------------------
@@ -1017,6 +1160,24 @@ namespace MifBridge
 		if (Fps <= 0)
 		{
 			Fail(Out, TEXT("displayRate must be a positive number of frames per second. NOTHING was created."));
+			return;
+		}
+
+		// REFUSE BEFORE MUTATING. Anim->Rename(*Name) below renames onto this outer, and renaming on
+		// top of a live object is a CoreUObject assert (Obj.cpp:265) - a dead editor, not an error.
+		// FindAnimation only searches WBP->Animations, so it cannot see an animation that was detached
+		// from the array while its UObject stayed alive: exactly the debris an older
+		// remove_widget_animation left, and what a hand-delete in the UMG designer can leave too.
+		if (UObject* Occupant = FindObject<UObject>(WBP, *Name))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("an object named '%s' (a %s) already exists under this widget blueprint, so "
+					 "creating one would rename on top of it and CRASH the editor. NOTHING was created. "
+					 "If this is a live animation, remove it with remove_widget_animation first - that "
+					 "frees the name - or pick another name. If list_widget_animations does NOT show "
+					 "it, it is detached debris still holding the name; recreate under a different "
+					 "name, or reload the asset to clear it."),
+				*Name, *Occupant->GetClass()->GetName()));
 			return;
 		}
 

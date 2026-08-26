@@ -31,10 +31,15 @@
 
 #if MIF_WITH_IKRIG
 #include "Rig/IKRigDefinition.h"          // UIKRigDefinition, FBoneChain, FRetargetDefinition
+#include "Rig/Solvers/IKRigSolver.h"     // UIKRigSolver - null entries are a crash vector, see IKNullEntryReason
 #include "Rig/IKRigSkeleton.h"            // FIKRigSkeleton
 #include "RigEditor/IKRigController.h"    // UIKRigController - all IK Rig authoring
 #include "Retargeter/IKRetargeter.h"      // UIKRetargeter, URetargetChainSettings, ERetargetSourceOrTarget
 #include "RetargetEditor/IKRetargeterController.h"   // UIKRetargeterController
+#include "Rig/IKRigProcessor.h"          // the runtime IK Rig - the engine's own verdict on validity
+#include "Retargeter/IKRetargetProcessor.h"  // the runtime retargeter
+#include "IKRigLogger.h"                   // FIKRigLogger - why initialisation failed, in words
+#include "UObject/StrongObjectPtr.h"       // processors are held only by our local pointer
 #include "Engine/SkeletalMesh.h"
 #include "UObject/Package.h"                // MarkPackageDirty
 #endif
@@ -170,6 +175,45 @@ namespace MifBridge
 			for (const FBoneChain& Ch : Rig->GetRetargetChains()) { Out.Add(Ch.ChainName); }
 		}
 
+		/** Null entries in the rig's Solvers or Goals arrays, which the engine dereferences WITHOUT
+		 *  checking. UIKRigProcessor::IsIKRigCompatibleWithSkeleton does Solver->GetRootBone() at
+		 *  IKRigProcessor.cpp:193 and Goal->BoneName at :205 with no guard, and that function is the
+		 *  first thing SetSkeletalMesh calls (IKRigController.cpp:571, 597-601) as well as being on
+		 *  Initialize's path (:50). A null there is an access violation inside a handler, i.e. a dead
+		 *  editor rather than an ok:false.
+		 *
+		 *  A rig referencing a solver class from a plugin that is not enabled on THIS machine loads
+		 *  with exactly such a null, so this is a real state, not a contrived one. Returns an empty
+		 *  string when the rig is safe to hand to the engine. */
+		FString IKNullEntryReason(const UIKRigDefinition* Rig)
+		{
+			if (!Rig) { return TEXT("the rig is null"); }
+			int32 NullSolvers = 0, NullGoals = 0;
+			for (const UIKRigSolver* Solver : Rig->GetSolverArray()) { if (!Solver) { ++NullSolvers; } }
+			for (const UIKRigEffectorGoal* Goal : Rig->GetGoalArray()) { if (!Goal) { ++NullGoals; } }
+			if (NullSolvers == 0 && NullGoals == 0) { return FString(); }
+			return FString::Printf(
+				TEXT("this rig holds %d null solver(s) and %d null goal(s). The engine dereferences both "
+					 "arrays without checking (IKRigProcessor.cpp:193 and :205), so handing it to the "
+					 "engine would CRASH THE EDITOR rather than return an error. The usual cause is a "
+					 "solver class from a plugin that is not enabled in this project - check the output "
+					 "log for load warnings on this asset."),
+				NullSolvers, NullGoals);
+		}
+
+		/** Copies an FIKRigLogger's errors and warnings into the response. The engine reports WHY
+		 *  initialisation failed only through this; the return value is a bare bool. Engine precedent
+		 *  for reading it: AnimGraphNode_RetargetPoseFromMesh.cpp:95-112 republishes the same two
+		 *  arrays into the compiler results log. */
+		void IKCopyLog(const FIKRigLogger& Log, const TSharedRef<FJsonObject>& Out)
+		{
+			TArray<TSharedPtr<FJsonValue>> Errors, Warnings;
+			for (const FText& T : Log.GetErrors())   { Errors.Add(MakeShared<FJsonValueString>(T.ToString())); }
+			for (const FText& T : Log.GetWarnings()) { Warnings.Add(MakeShared<FJsonValueString>(T.ToString())); }
+			Out->SetArrayField(TEXT("runtimeErrors"), Errors);
+			Out->SetArrayField(TEXT("runtimeWarnings"), Warnings);
+		}
+
 		/** The live chain mapping, target-chain-keyed. ChainSettings, NOT the ChainMapping property -
 		 *  FRetargetChainMap has been deprecated since 5.1 (IKRetargeter.h:18) and a write to it is
 		 *  read by nothing. */
@@ -286,6 +330,13 @@ namespace MifBridge
 				Skel.RefPoseGlobal.Num(), Skel.BoneNames.Num()));
 		}
 
+		// Counted as a structural problem so it is BOTH reported and, because the engine probe below
+		// runs only when there are none, prevents that probe from crashing on the same dereference.
+		{
+			const FString NullReason = IKNullEntryReason(Rig);
+			if (!NullReason.IsEmpty()) { AddProblem(NullReason); }
+		}
+
 		// --- the retarget root ---------------------------------------------------------------
 		if (Root.IsNone())
 		{
@@ -386,6 +437,53 @@ namespace MifBridge
 		// asset in the file header perfectly healthy.
 		Out->SetBoolField(TEXT("valid"), Problems.Num() == 0);
 		Out->SetArrayField(TEXT("problems"), Problems);
+
+		// THE ENGINE'S OWN VERDICT, which is worth more than every check above put together:
+		// UIKRigProcessor::IsInitialized() is true only if the very last line of Initialize was
+		// reached, past every validation branch (IKRigProcessor.cpp:19-181).
+		//
+		// Gated on the structural checks passing, and that gate is not caution for its own sake:
+		// IsIKRigCompatibleWithSkeleton asserts check(InputBoneIndex != INDEX_NONE && AssetBoneIndex
+		// != INDEX_NONE) at IKRigProcessor.cpp:240, and AssetBoneIndex comes from the rig's own
+		// FIKRigSkeleton - which set_property will write inconsistently with the rig's goals. A
+		// check() in a handler terminates the editor. A rig already known to be broken teaches us
+		// nothing here and risks everything.
+		USkeletalMesh* PreviewMesh = Rig->PreviewSkeletalMesh.LoadSynchronous();
+		if (Problems.Num() > 0)
+		{
+			Out->SetStringField(TEXT("runtimeNote"),
+				TEXT("the engine's own initialisation check was NOT run, because the problems above mean "
+					 "this rig is already known to be invalid - and handing a structurally inconsistent "
+					 "rig to the engine can hit an assert that terminates the editor rather than "
+					 "returning an error. Fix the problems and read this again."));
+		}
+		else if (!PreviewMesh)
+		{
+			Out->SetStringField(TEXT("runtimeNote"),
+				TEXT("the engine's own initialisation check was NOT run: this rig has no preview mesh to "
+					 "initialise against. Assign one with set_ik_rig_mesh."));
+		}
+		else
+		{
+			// Held in a TStrongObjectPtr because the processor is a UObject referenced by nothing else.
+			TStrongObjectPtr<UIKRigProcessor> Proc(NewObject<UIKRigProcessor>(GetTransientPackage()));
+			Proc->Initialize(Rig, PreviewMesh);
+			const bool bInit = Proc->IsInitialized();
+			Out->SetBoolField(TEXT("runtimeInitialized"), bInit);
+			IKCopyLog(Proc->Log, Out);
+			Out->SetStringField(TEXT("runtimeNote"), bInit
+				? TEXT("the engine initialised this rig successfully against its preview mesh, so it "
+					   "would run. Any runtimeWarnings above are real but not fatal - note that a goal "
+					   "connected to NO solver is only a warning and still initialises.")
+				: TEXT("the engine REFUSED to initialise this rig against its preview mesh, so it would "
+					   "not run whatever the structural checks say. runtimeErrors above is the engine's "
+					   "own explanation."));
+			if (!bInit)
+			{
+				// The structural verdict must not disagree with the engine's.
+				Out->SetBoolField(TEXT("valid"), false);
+			}
+		}
 		if (Problems.Num() > 0)
 		{
 			Out->SetStringField(TEXT("validNote"),
@@ -435,6 +533,16 @@ namespace MifBridge
 					TEXT("%s is a %s, not a SkeletalMesh. An IK Rig is built from a MESH, not from a "
 						 "Skeleton asset. NOTHING was changed."), *MeshPath, *Any->GetClass()->GetName())
 				: FString::Printf(TEXT("no asset at %s. NOTHING was changed."), *MeshPath));
+			return;
+		}
+
+		// BEFORE the engine is touched. SetSkeletalMesh's very first act is a compatibility check that
+		// dereferences every solver and goal without a null check, so this cannot be done afterwards
+		// and cannot be reported as a failure - it would be a dead editor.
+		const FString NullReason = IKNullEntryReason(Rig);
+		if (!NullReason.IsEmpty())
+		{
+			Fail(Out, FString::Printf(TEXT("%s NOTHING was changed."), *NullReason));
 			return;
 		}
 
@@ -995,7 +1103,60 @@ namespace MifBridge
 		Out->SetStringField(TEXT("sourceRig"), IsValid(Src) ? Src->GetPathName() : FString());
 		Out->SetStringField(TEXT("targetRig"), IsValid(Tgt) ? Tgt->GetPathName() : FString());
 		IKWriteMapping(Asset, Out);
-		Out->SetBoolField(TEXT("valid"), Problems.Num() == 0);
+		// The engine's verdict - with the caveat that ON THIS SIDE the flag is not one.
+		// UIKRetargetProcessor::bIsInitialized is set UNCONDITIONALLY at
+		// IKRetargetProcessor.cpp:1566, after the root and chain initialisations have been allowed to
+		// fail with warnings only, so a retargeter with zero mapped chains and no root reports TRUE.
+		// The real answer needs all three: the flag, an empty error log, and the inner IK Rig
+		// processor. (The header at IKRetargetProcessor.h:476 says to check bIsLoadedAndValid; no such
+		// member exists - the comment is stale.)
+		USkeletalMesh* SrcMesh = IsValid(Src) ? Src->PreviewSkeletalMesh.LoadSynchronous() : nullptr;
+		USkeletalMesh* TgtMesh = IsValid(Tgt) ? Tgt->PreviewSkeletalMesh.LoadSynchronous() : nullptr;
+		if (Problems.Num() > 0 || !SrcMesh || !TgtMesh)
+		{
+			Out->SetStringField(TEXT("runtimeNote"),
+				Problems.Num() > 0
+					? TEXT("the engine's own initialisation check was NOT run, because the problems above "
+						   "already mean this retargeter cannot work - and initialising a structurally "
+						   "broken rig can hit an assert that terminates the editor. Fix them and read "
+						   "this again.")
+					: TEXT("the engine's own initialisation check was NOT run: one of the rigs has no "
+						   "preview mesh, and the retargeter runtime needs a source AND a target mesh. "
+						   "Assign them with set_ik_rig_mesh."));
+		}
+		else
+		{
+			TStrongObjectPtr<UIKRetargetProcessor> Proc(
+				NewObject<UIKRetargetProcessor>(GetTransientPackage()));
+			Proc->Initialize(SrcMesh, TgtMesh, Asset, /*bSuppressWarnings=*/false);
+			const bool bFlag = Proc->IsInitialized();
+			const bool bNoErrors = Proc->Log.GetErrors().Num() == 0;
+			const UIKRigProcessor* Inner = Proc->GetTargetIKRigProcessor();
+			const bool bInner = Inner && Inner->IsInitialized();
+			const bool bReallyOk = bFlag && bNoErrors && bInner;
+
+			IKCopyLog(Proc->Log, Out);
+			// All three reported separately, because the composite verdict is this endpoint's
+			// judgement and a caller is entitled to see what it was built from.
+			Out->SetBoolField(TEXT("runtimeInitialized"), bReallyOk);
+			Out->SetBoolField(TEXT("runtimeFlagSet"), bFlag);
+			Out->SetBoolField(TEXT("runtimeTargetRigInitialized"), bInner);
+			Out->SetStringField(TEXT("runtimeNote"), bReallyOk
+				? TEXT("the engine initialised this retargeter and reported no errors, so it would run.")
+				: TEXT("this retargeter would NOT work. Note that the engine's own IsInitialized() flag "
+					   "is set unconditionally and reports true even for a retargeter with no mapped "
+					   "chains and no root, so runtimeInitialized here is the flag AND an empty error "
+					   "log AND the target rig's own processor having initialised. runtimeErrors is the "
+					   "engine's explanation."));
+			if (!bReallyOk)
+			{
+				Out->SetBoolField(TEXT("valid"), false);
+			}
+		}
+		if (!Out->HasField(TEXT("valid")))
+		{
+			Out->SetBoolField(TEXT("valid"), Problems.Num() == 0);
+		}
 		Out->SetArrayField(TEXT("problems"), Problems);
 		Out->SetStringField(TEXT("sourceNote"),
 			TEXT("this reads ChainSettings, which is the live mapping. The asset also carries a "

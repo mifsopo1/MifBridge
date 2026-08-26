@@ -257,6 +257,7 @@
  "set_variable_type",
  "set_viewport_camera",
  "set_widget_animation_keys",
+ "set_widget_animation_range",
  "set_widget_is_variable",
  "shader_compile_status",
  "snap_actors_to_ground",
