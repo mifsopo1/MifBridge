@@ -968,9 +968,16 @@ namespace MifBridge
 			  TEXT("propertyPath"), TEXT("value"),
 			  TEXT("overrideFlag"), TEXT("editCondition"), TEXT("override"),
 			  TEXT("enforceClamps"), TEXT("clamp"), TEXT("respectClamps") },
-			TEXT("objectPath | (blueprintId or path) + widgetName, propertyPath, value, overrideFlag (set|refuse|ignore), enforceClamps"),
+			TEXT("objectPath | (blueprintId or path) + widgetName, propertyPath, value, overrideFlag (set|refuse|ignore), enforceClamps. "
+				 "objectPath also reaches a blueprint's COMPONENTS: take the component's templatePath "
+				 "from list_components (the ..._GEN_VARIABLE path) and pass it as objectPath. "
+				 "propertyPath may be NESTED - 'BodyInstance.bSimulatePhysics' works."),
 			{{ TEXT("actorPath"),
 			   TEXT("use objectPath - a placed actor's path IS an objectPath") },
+			 { TEXT("componentName"),
+			   TEXT("components ARE supported, just not by name here: call list_components, take the component's templatePath (the ..._GEN_VARIABLE one) and pass it as objectPath. That is how you set an AudioComponent's Sound, a CharacterMovement's MaxWalkSpeed, or BodyInstance.bSimulatePhysics on a mesh") },
+			 { TEXT("component"),
+			   TEXT("same as componentName - pass the component's templatePath from list_components as objectPath") },
 			 { TEXT("format"),
 			   TEXT("no output format switch here; the response always carries BOTH valueAfter (export text) and typed (typed JSON)") },
 			 { TEXT("verify"),

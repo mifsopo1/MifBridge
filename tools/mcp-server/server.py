@@ -1762,6 +1762,17 @@ def trace(start: dict, end: dict = None, direction: dict = None, distance: float
 
     draw=True leaves the ray in the viewport for draw_duration seconds. The response reports which
     world was traced and whether PIE is running.
+    
+
+    COMPONENTS are reachable through object_path, which is not obvious and is the single most
+    useful thing to know about this endpoint. Call list_components, take the component's
+    templatePath (the ..._GEN_VARIABLE path) and pass it as object_path. That is how you set an
+    AudioComponent's Sound, a CharacterMovement's MaxWalkSpeed or JumpZVelocity, a light's
+    Intensity, or a mesh's BodyInstance.bSimulatePhysics - there is no separate
+    set_component_property because there does not need to be.
+
+    property_path may be NESTED: "BodyInstance.MassScale" and "BodyInstance.bEnableGravity" both
+    work.
     """
     return _post("trace", start=start, end=end, direction=direction, distance=distance,
                  shape=shape, radius=radius, halfExtent=half_extent, halfHeight=half_height,

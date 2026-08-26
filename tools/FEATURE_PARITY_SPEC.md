@@ -98,10 +98,11 @@ and `set_property`'s own parameter help says "objectPath | (blueprintId or path)
 mentioning widgets and never components. An agent would reasonably conclude components are
 unsupported and go looking for a `set_component_property` that does not need to exist.
 
-- [ ] Fix that: `set_property`'s parameter help and its unknown-parameter hints should name the
-      component route explicitly, and the MCP docstring should show the `list_components` ->
-      `templatePath` -> `set_property` sequence. A capability nobody can find is not far from a
-      capability that is absent.
+- [x] Fixed. `set_property`'s parameter help now says objectPath reaches components via the
+      templatePath from `list_components`, and that propertyPath may be nested. Reaching for
+      `componentName` or `component` gets a hint naming the exact sequence and three concrete examples
+      (an AudioComponent's Sound, a CharacterMovement's MaxWalkSpeed, BodyInstance.bSimulatePhysics).
+      The MCP docstring documents the same route. No new endpoint - there does not need to be one.
 
 ## Deliberately not pursuing
 
