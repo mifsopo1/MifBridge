@@ -665,6 +665,23 @@ its bool return is discarded. Same class as the `add_enum_value` bug fixed on 20
 closed by reading the applied display name back.
 
 **N. A discarded-bool sweep: 299 candidates, and the scan cannot resolve overloads.**
+
+RESOLVED 2026-08-26. All 28 candidates surviving the conventional-discard filter were triaged with the
+overload actually selected read first, then every REAL verdict attacked by a second pass. The result:
+
+  11  NOT_BOOL  - the selected overload returns void. The name-based index matched a DIFFERENT overload.
+   6  HANDLED   - returns bool, but the code pre-checks the failing condition or reads the result back.
+  10  BENIGN    - a false return has no consequence worth reporting.
+   1  claimed REAL, and refuted on the adversarial pass.
+   0  survived.
+
+So FDataTableEditorUtils::RemoveRow (issue L, fixed) was the only genuine discarded bool in the
+codebase. This is a clean negative and worth recording as one: the next person to notice a bare
+engine call here does not need to re-run this.
+
+The headline number is the lesson. 11 of 28 - nearly half - were the scan failing to resolve overloads,
+exactly as the caveat above predicted. A name-based index over C++ is a candidate generator and nothing
+more.
 Indexing every bool-returning engine function from the 5.3 headers (7820 of them) and intersecting
 that with every call MifBridge makes as a BARE STATEMENT gives 299 candidate sites where an engine
 answer is thrown away. That is how issue L was found.
