@@ -742,7 +742,12 @@ Nothing was corrupted and nothing of Andre's was touched - the paths are /Game/_
 /Game/_MifThumb, which nothing else uses. The problem is that the guarantee was believed to be
 absolute and is not, and the belief is the dangerous part: it is why nobody was looking.
 
-Options, none taken yet because deleting from a project content tree is the owner's call:
+RESOLVED for the existing files, 2026-08-26. Andre authorised deletion and all 98 assets were removed
+THROUGH THE EDITOR via delete_asset rather than by deleting .uasset files off disk - the editor was
+running and holding references to them, and pulling files out from under it is how you get a confused
+editor and a half-populated Asset Registry. Both directories are gone and Content is clean.
+
+The HOLE ITSELF IS STILL OPEN - the next run of those two suites recreates the files. Options:
   - have the harness sweep /Game/_MifTex and /Game/_MifThumb at the end of a run;
   - point those two endpoints at a path outside Content for test purposes, if they accept one;
   - accept it and document it, so the next person reading 'nothing is saved' knows the exception.
