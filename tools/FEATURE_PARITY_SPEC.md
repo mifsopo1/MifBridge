@@ -48,6 +48,20 @@ Never work from a typed list — one was fabricated once and a third of it was i
 
 ## Gaps worth closing
 
+- [ ] **`test_transactions.py` wedged for 8+ minutes during a full two-pass run, and does not
+      reproduce standalone.** 2026-08-26. Pass 1 was green across all 53 suites; in pass 2 the suite
+      process sat with **0s CPU over a 4s sample, no TCP connections, no child processes** for 568
+      seconds while the editor stayed idle and answered other calls instantly. So the editor and the
+      bridge were both fine - this is the harness. Run standalone twice in the same editor session
+      immediately afterwards: 21/21 both times. It needs the accumulated state of a full run.
+      `run_all_suites` would have killed and reported it at its 900s timeout, so it is self-limiting
+      rather than dangerous, but a 15-minute silent stall wastes most of an overnight window.
+      One concrete hole found while chasing it, worth fixing regardless: `wait_for_bridge` prints its
+      "bound but not answering" warning ONLY on the timeout path. If `require_sdk_bridge()` keeps
+      returning false instead, the loop sleeps silently for the full 900s with no output at all -
+      which is indistinguishable from the hang above and would explain it. Make that path say
+      something.
+
 - [x] **`landscape_info` under-reports a World Partition landscape, and does not say so.** FIXED
       2026-08-26: it now counts the streaming proxies' components too, matched on `LandscapeGuid`, and
       reports `proxyCount` / `proxyComponents` / `totalComponents` plus a `componentScope` saying which
