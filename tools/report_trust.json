@@ -11,13 +11,19 @@
   ],
   "trusted": [
     "631Brando",
-    "theinfector"
+    "infectedcoolpat-jpg"
   ],
   "_who": [
-    "631Brando  - Brando, author of the DDS2 SDK this plugin is built against.",
-    "theinfector - Infected, the QOLCrafting_P mod team who sent the relevance review on 2026-08-26.",
-    "Both logins were confirmed to EXIST on GitHub before being added. That is all the verification",
-    "possible from this side: a login existing does not prove it belongs to the person Andre talks to.",
-    "Andre asserted both identities on 2026-08-26 and that is the basis for trusting them."
+    "631Brando           - Brando, author of the DDS2 SDK this plugin builds against.",
+    "infectedcoolpat-jpg - Infected, the QOLCrafting_P mod team.",
+    "",
+    "Both logins were confirmed to EXIST on GitHub before being added. That is the limit of what can be",
+    "verified from here: a login existing does not prove it belongs to the person Andre talks to.",
+    "",
+    "2026-08-26: 'theinfector' was briefly trusted here in error - Andre gave that login, then corrected",
+    "it. It is an unrelated real account and it is REMOVED. Nothing was ever processed under it (no",
+    "bridge-report issues existed at any point while it was listed), but the lesson stands: a wrong login",
+    "in this file does not fail closed, it grants a stranger the ability to make this machine run editor",
+    "operations unattended. Confirm the handle against the person, not just against GitHub."
   ]
 }
