@@ -56,11 +56,25 @@ Never work from a typed list — one was fabricated once and a third of it was i
       immediately afterwards: 21/21 both times. It needs the accumulated state of a full run.
       `run_all_suites` would have killed and reported it at its 900s timeout, so it is self-limiting
       rather than dangerous, but a 15-minute silent stall wastes most of an overnight window.
-      One concrete hole found while chasing it, worth fixing regardless: `wait_for_bridge` prints its
-      "bound but not answering" warning ONLY on the timeout path. If `require_sdk_bridge()` keeps
-      returning false instead, the loop sleeps silently for the full 900s with no output at all -
-      which is indistinguishable from the hang above and would explain it. Make that path say
-      something.
+      **LEADING EXPLANATION, 2026-08-26, and it fits every observation.** The suite's first act is
+      `wait_for_bridge(timeout=900)`. That loop calls `require_sdk_bridge()`, which calls
+      `bridge_pid()`, which shells out to PowerShell for `Get-NetTCPConnection`. `bridge_pid` caught
+      **any** exception and returned `None`, and `require_sdk_bridge` reported `None` as "nothing is
+      listening" - so a PowerShell spawn that failed or timed out under load was indistinguishable
+      from an absent editor. `wait_for_bridge` then slept 5s and looped, printing NOTHING, for up to
+      900s. The observed stall was 568s and still going.
+
+      Every symptom matches: alive, 0s CPU over a 4s sample (sleeping), **no TCP connections at all**
+      (it never reached the HTTP stage), no child process at the sampled instant (PowerShell spawned
+      and reaped between samples), no output. The no-sockets detail is the one that settles it - the
+      suite never attempted a request, so the editor was never involved, which is exactly what its
+      idleness and instant answers to other callers already said.
+
+      Both halves are now fixed rather than just the symptom: `bridge_pid` records WHY it returned
+      nothing, `require_sdk_bridge` says "could not probe ... this is NOT evidence the editor is
+      down", and `wait_for_bridge` prints that reason after a 60s grace. A recurrence will name itself.
+      Left open until a full run actually confirms it, because a hypothesis that fits is not a
+      reproduction.
 
 - [x] **`landscape_info` under-reports a World Partition landscape, and does not say so.** FIXED
       2026-08-26: it now counts the streaming proxies' components too, matched on `LandscapeGuid`, and

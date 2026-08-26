@@ -70,16 +70,31 @@ FORBIDDEN_KEYS = {"confirm", "force", "discardunsaved", "overwrite", "replaceexi
 # all shared one unrelated parent and the oldest was five days old. None of them came from here. The
 # stall remains unexplained; this closes a real hole next to it rather than pretending to be the cause.
 # --------------------------------------------------------------------------- editor identity
+# Set when the LAST bridge_pid() call failed to run its probe at all, as opposed to running it and
+# finding no listener. Those are opposite situations and this function used to return None for both:
+# "the editor is not there" versus "I could not look". Conflating them is how a suite could sit for
+# 568 seconds reporting nothing - wait_for_bridge saw False, believed the editor was absent, and
+# waited for an editor that had been answering the whole time.
+_probe_failed = [None]
+
+
 def bridge_pid():
-    """PID listening on the bridge port, or None."""
+    """PID listening on the bridge port, or None.
+
+    None means TWO different things and the caller usually needs to know which, so the reason is left
+    in _probe_failed: None when the probe ran and found nothing, or a string when the probe itself
+    could not run (PowerShell refused to spawn, timed out under load, and so on).
+    """
     try:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "(Get-NetTCPConnection -LocalPort %d -State Listen -ErrorAction SilentlyContinue"
              " | Select-Object -First 1).OwningProcess" % BRIDGE_PORT],
             capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30).stdout.strip()
+        _probe_failed[0] = None
         return int(out) if out.isdigit() else None
-    except Exception:
+    except Exception as exc:
+        _probe_failed[0] = "%s: %s" % (type(exc).__name__, exc)
         return None
 
 
@@ -109,6 +124,11 @@ def require_sdk_bridge(force=False):
     pid = bridge_pid()
     if pid is None:
         _verified_pid[0] = None
+        if _probe_failed[0]:
+            # Say which of the two it is. "I could not look" is not evidence the editor is gone, and
+            # treating it as such is what turns a transient PowerShell hiccup into a silent wait.
+            return False, ("could not probe port %d - the check itself failed (%s). This is NOT "
+                           "evidence the editor is down." % (BRIDGE_PORT, _probe_failed[0]))
         return False, "nothing is listening on port %d" % BRIDGE_PORT
     if not force and pid == _verified_pid[0]:
         return True, "pid %d (cached)" % pid
