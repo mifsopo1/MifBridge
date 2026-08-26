@@ -747,7 +747,17 @@ THROUGH THE EDITOR via delete_asset rather than by deleting .uasset files off di
 running and holding references to them, and pulling files out from under it is how you get a confused
 editor and a half-populated Asset Registry. Both directories are gone and Content is clean.
 
-The HOLE ITSELF IS STILL OPEN - the next run of those two suites recreates the files. Options:
+**OBSERVED 2026-08-26 (late), and it did NOT reproduce.** A full two-pass regression - 128 runs across
+64 suites, so both of those suites ran twice - wrote ZERO files anywhere under Content. Both
+/Game/_MifTex and /Game/_MifThumb exist as EMPTY directories and nothing was created in them.
+
+This is recorded as an observation, NOT as a fix, because the mechanism is not understood. Two full
+passes not reproducing it is evidence, but the original incident was also an overnight run and the
+difference between then and now has not been identified - it may be a path that only triggers under
+conditions this run did not hit. Do not close this item on the strength of one clean run; the useful
+next step is to find out WHY files appeared before, not to assume they no longer will.
+
+The hole as originally described - the next run recreates the files. Options:
   - have the harness sweep /Game/_MifTex and /Game/_MifThumb at the end of a run;
   - point those two endpoints at a path outside Content for test purposes, if they accept one;
   - accept it and document it, so the next person reading 'nothing is saved' knows the exception.

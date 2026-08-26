@@ -167,7 +167,18 @@ Never work from a typed list — one was fabricated once and a third of it was i
   CLOSED. The describe summary now states the default of 200, the 1-5000 clamp, and that matched and
   truncated are ALWAYS present - with the actual incident in it, because a warning that names a real
   consequence gets read and an abstract one does not. Verified live through describe_endpoint.
-- [ ] **No engine-version guards exist anywhere in the source.** No ENGINE_MINOR_VERSION, nothing. It
+- [x] **DONE 2026-08-26, commit 5b296ea. Engine-version guards now exist.**
+  `Source/MifBridge/Private/MifBridgeVersion.h` provides MIF_ENGINE_AT_LEAST(Major, Minor),
+  MIF_ENGINE_BEFORE and MIF_ENGINE_5_7_PLUS. self_audit additionally reports engineMajor/engineMinor/
+  enginePatch as NUMBERS beside the existing engineVersion string - verified live reading 5 / 3 / 2 -
+  so a caller comparing versions no longer has to parse a string.
+  The header deliberately argues AGAINST reaching for it where the common subset will do: a guarded
+  branch is compiled by only ONE build and is therefore unverified from the other, and a guard must
+  never make the two engines return differently-shaped output, or the bridge has exported its problem
+  to its consumers instead of solving it.
+  See docs/02_GOTCHAS.md section 14, written the same day, for BOTH directions of the trap and the
+  line numbers proving each symbol was checked in both trees.
+  ORIGINAL: No engine-version guards exist anywhere in the source. No ENGINE_MINOR_VERSION, nothing. It
   EVIDENCE GATHERED 2026-08-26 by comparing MifBridge's whole call surface against BOTH engine trees
   (5.3.2 at D:/UE532 and the 5.7 install Curfew uses). 1134 distinct method names called, 1096 present
   in both. After checking every candidate individually - three were false positives from grepping only
