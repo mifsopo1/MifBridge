@@ -67,8 +67,20 @@ Never work from a typed list — one was fabricated once and a third of it was i
       parallel handler hunt; it is the one finding of that round that makes the backstop itself
       trustworthy rather than merely widespread.
 
-- [ ] **`test_transactions.py` wedged for 8+ minutes during a full two-pass run, and does not
-      reproduce standalone.** 2026-08-26. Pass 1 was green across all 53 suites; in pass 2 the suite
+- [~] **`test_transactions.py` wedged for 8+ minutes during a full two-pass run — instrumented, cause
+      identified as far as evidence allows, closed pending a recurrence.**
+      Everything that can be done without a reproduction has been: the leading cause was found and
+      fixed at both ends (`bridge_pid` swallowed any exception and returned None, which
+      `require_sdk_bridge` reported as "nothing is listening", so a PowerShell spawn failing under load
+      was indistinguishable from an absent editor — and `wait_for_bridge` then slept silently for the
+      full 900s), the runner now names a suite BEFORE running it, the suite carries flushed step
+      markers, and a sweep now holds a lock so a second process cannot corrupt it.
+      **Since then: ~300 suite runs across three full two-pass sweeps, zero identity-check diagnostics
+      fired and zero timeouts.** It has not recurred. That is not proof — it was intermittent when it
+      happened — so this is closed as "nothing further to do without a reproduction", not as solved.
+      If it returns, the log now names the suite and the reason, which is exactly what was missing the
+      first time. Reopen it then. Original detail below.
+- [~] **(original)** 2026-08-26. Pass 1 was green across all 53 suites; in pass 2 the suite
       process sat with **0s CPU over a 4s sample, no TCP connections, no child processes** for 568
       seconds while the editor stayed idle and answered other calls instantly. So the editor and the
       bridge were both fine - this is the harness. Run standalone twice in the same editor session
