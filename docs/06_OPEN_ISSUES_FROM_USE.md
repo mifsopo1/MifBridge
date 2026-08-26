@@ -46,6 +46,7 @@ Author's own priority ranking, "by what actually costs me time now". Status as o
 
 | rank | issue | status |
 |---|---|---|
+| 11 | `landscape_info` vs `diagnose_landscape` disagree on component counts (World Partition proxies) | **OPEN** — filed 2026-08-26, see section 11; `landscape_info` counts only parent `ALandscape` actors, so a World Partition terrain reports `components: 0` |
 | 1 | Parameter drift (`path` dropped from `connect_pins` / `disconnect_pin`) | **FIXED + verified** — `path` accepted on `connect_pins`, `disconnect_pin`, `reconnect_pin`; `self_audit` now emits `surfaceSignature` / `paramSignature` |
 | 2 | `list_components` returns empty for a cooked parent | **FIXED + verified** — `BP_PlantPot` returns 12 components (was 0), `targetKind:"cookedClass"`, each with a reason and `route` |
 | 3 | `get_property` returns bools as strings | **FIXED + verified** — see the split below; `list_object_properties` now emits `typed` |
@@ -484,3 +485,56 @@ With `targetClass` that is now three calls:
 wired component → `self`, new class → `A`, current class → `B`, result → `Condition`. Built, compiles
 0/0, feature re-enabled. That is the shape of fix worth prioritising: one parameter that turns an
 impossible job into a routine one.
+
+---
+
+## 11. `landscape_info` and `diagnose_landscape` disagree about the same world, and neither says which question it answered
+
+**Found:** 2026-08-26, overnight hunt, against build `Aug 26 03:34` (286 endpoints). Not from reading
+the source — from calling both endpoints on the open world and noticing the numbers could not both be
+right.
+
+**What came back, verbatim (same world, seconds apart):**
+
+    landscape_info      -> count: 11 landscapes
+                           [0] label "Landscape"  verts 2017x2017  components: 0
+                                                  worldMin.z 100   worldMax.z 100
+                           [1..10] verts 505x505  components: 64 each        (~640 total)
+
+    diagnose_landscape  -> world "Untitled_1"  proxyCount: 75  componentCount: 896
+
+75 proxies against 11 landscapes, and 896 components against roughly 640. Both report `ok:true`.
+
+**Why.** They iterate different actor classes, and `ALandscape` derives from `ALandscapeProxy`:
+
+| endpoint | iterator | sees |
+|---|---|---|
+| `landscape_info` | `TActorIterator<ALandscape>` (`MifBridgeLandscape.cpp:820`) | only the PARENT landscape actors |
+| `diagnose_landscape` | `TActorIterator<ALandscapeProxy>` (`MifBridgeCooked.cpp:575`, `:941`) | parents **and** `ALandscapeStreamingProxy` |
+
+Under World Partition the terrain's components live on the streaming proxies, so a parent `ALandscape`
+genuinely owns **zero** of them. `components: 0` is therefore TRUE and reads as a broken landscape —
+and `componentsWithoutWeightmap: 0`, derived from it, carries no information at all in that state.
+
+This is the same shape as the five "current world" helpers that had silently split into two policies
+(`02_GOTCHAS.md`): two readers of one fact, each correct about a different question, with nothing in
+either response naming the question.
+
+**Not yet fixed** — found with under an hour left in the night shift, and a C++ change to a landscape
+read plus a full regression was not something to start at 07:00. Filed rather than rushed.
+
+**The fix worth making,** in order of value:
+
+1. `landscape_info` should count the STREAMING PROXIES' components too, or report them separately as
+   `streamingProxyCount` / `proxyComponents`. A caller asking "is this landscape healthy" must not be
+   told 0 for a 2017x2017 terrain.
+2. Whichever it does, it should SAY which it counted — one word (`"scope": "actorOnly"` versus
+   `"includingProxies"`) removes the whole ambiguity.
+3. Suppress or annotate `componentsWithoutWeightmap` when `components` is 0, since a ratio out of
+   nothing is not a diagnosis.
+
+**Also noticed while there, and NOT chased:** every landscape reports `worldMin.z == worldMax.z`
+(100/100 on the first, 0/0 on the others), i.e. a zero-height extent. That may be correct for a flat
+template landscape, and this world is `/Temp/Untitled_1` rather than a real DDS2 map — but it is worth
+one measurement against `DDS2_Landscape_IslaSombra` before trusting the Z bounds for anything.
+

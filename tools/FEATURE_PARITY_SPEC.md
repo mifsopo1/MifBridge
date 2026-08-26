@@ -48,6 +48,17 @@ Never work from a typed list — one was fabricated once and a third of it was i
 
 ## Gaps worth closing
 
+- [ ] **`landscape_info` under-reports a World Partition landscape, and does not say so.** It iterates
+      `TActorIterator<ALandscape>` (parent actors only) while `diagnose_landscape` iterates
+      `TActorIterator<ALandscapeProxy>` (parents plus `ALandscapeStreamingProxy`). On the open world
+      that is 11 landscapes / ~640 components against 75 proxies / 896 components, both `ok:true`. The
+      parent of a WP landscape genuinely owns zero components, so a 2017x2017 terrain reports
+      `components: 0` — true, and it reads as a broken landscape. Count the proxies' components too or
+      report them separately, and either way state which scope was counted. Filed with the verbatim
+      numbers as issue 11 in `docs/06_OPEN_ISSUES_FROM_USE.md`.
+      Also unmeasured: every landscape reports `worldMin.z == worldMax.z`, and that wants one check
+      against a real DDS2 map rather than `/Temp/Untitled_1` before the Z bounds are trusted.
+
 Ordered by value for DDS2 modding. Each needs: endpoints, engine APIs, and an answer to "what would
 fail silently if this were done carelessly".
 
