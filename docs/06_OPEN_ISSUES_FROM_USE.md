@@ -726,6 +726,31 @@ layers[], and the accept-list deliberately guards TOP-LEVEL keys only - or prose
 lookback, including a `targetClass` mentioned in a comment about a different endpoint entirely. A
 checked-in version would need to understand nesting before it earned its place.
 
+**Q. "Nothing is saved" has a hole: endpoints that write to disk as their PURPOSE.**
+
+The audit harness guarantees that a run saves nothing. It enforces that by DENY-listing save_blueprint,
+save_level, save_level_as, save_dirty_packages, save_all, save_asset and save_package, and by stripping
+`save` from every payload. That covers everything NAMED like a save.
+
+It does not cover endpoints whose function IS to write a file. import_texture and
+write_thumbnail_texture create .uasset files on disk by definition - there is no in-memory-only mode to
+ask for. So their suites left 94 real assets in the project content tree
+(Content/_MifTex, 47 files; Content/_MifThumb, 47 files) during the overnight run of 2026-08-26,
+between 03:58 and 04:30. Scratch names, scratch paths, but real files in a real content folder.
+
+Nothing was corrupted and nothing of Andre's was touched - the paths are /Game/_MifTex and
+/Game/_MifThumb, which nothing else uses. The problem is that the guarantee was believed to be
+absolute and is not, and the belief is the dangerous part: it is why nobody was looking.
+
+Options, none taken yet because deleting from a project content tree is the owner's call:
+  - have the harness sweep /Game/_MifTex and /Game/_MifThumb at the end of a run;
+  - point those two endpoints at a path outside Content for test purposes, if they accept one;
+  - accept it and document it, so the next person reading 'nothing is saved' knows the exception.
+
+The wider lesson is about how the DENY list is CONSTRUCTED. It is a list of names. Anything that has
+the effect without the name passes straight through - which is the same shape as every other defect
+found in this project: the check tests a proxy for the real question rather than the question.
+
 **N. A discarded-bool sweep: 299 candidates, and the scan cannot resolve overloads.**
 
 RESOLVED 2026-08-26. All 28 candidates surviving the conventional-discard filter were triaged with the

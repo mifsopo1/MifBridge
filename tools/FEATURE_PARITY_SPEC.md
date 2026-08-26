@@ -58,6 +58,11 @@ Never work from a typed list — one was fabricated once and a third of it was i
   duplicate branch therefore only fires on state produced outside this bridge - crash residue or hand
   editing. The reporting fix is committed and is the part that matters. Revisit if an add_node endpoint
   is ever added, which would open the sibling route.
+- [ ] **Close the "nothing is saved" hole (issue Q).** The DENY list blocks endpoints NAMED like a
+  save; import_texture and write_thumbnail_texture write .uasset files as their purpose and left 94
+  real assets in Content/_MifTex and Content/_MifThumb overnight. Needs either a harness sweep of those
+  two paths at end of run, or an out-of-Content target for the tests. Deleting the existing files is
+  Andre's call and has been raised with him.
 ## Gaps worth closing
 
 - [x] **Every DEFERRED engine call escapes the modal backstop — a hole in the safety net itself.**
