@@ -846,12 +846,45 @@ namespace MifBridge
 			return;
 		}
 
+		// THE STRING "None" IS NAME_None, AND THAT MUTATES THE RIG WHILE REPORTING IT DID NOT.
+		// The emptiness check above does not catch it: "None" is not an empty string, but FName("None")
+		// IS NAME_None (NameTypes.h - true for FName(), FName(NAME_None) and FName("None")), and the
+		// lookup is case-insensitive so "none" and "NONE" do it too.
+		//
+		// What happens then is worth spelling out, because the failure LOOKS clean. IKRigController.cpp
+		// :198-201 substitutes "DefaultChainName" for a None name - and :204 immediately overwrites that
+		// with GetUniqueRetargetChainName(BoneChain.ChainName), reading the ORIGINAL parameter rather
+		// than the substituted one, so the fallback is discarded and the name is still None. It then runs
+		// Asset->Modify() and Emplaces the chain (:207-209) before returning that None name. So the chain
+		// IS on the rig and the package IS dirty by the time AddRetargetChain answers, and the IsNone()
+		// branch below then told the caller "NOTHING was created".
+		//
+		// Nothing undoes it. AddRetargetChain closes its own FScopedTransaction normally, and PM-007
+		// records that RunEndpoint cancelling its transaction discards the entry WITHOUT applying it.
+		// So this is refused up front instead - the house rule is to make the bad path unreachable
+		// rather than to describe it accurately afterwards.
+		if (FName(*Name).IsNone())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' resolves to the reserved name None, which the engine would add to the rig and ")
+				TEXT("then report as a failure, leaving a chain named None behind. Pick another name. ")
+				TEXT("NOTHING was created."), *Name));
+			return;
+		}
+
 		const FName Goal(*JStrAny(In, { TEXT("goal"), TEXT("goalName") }));
 		const FName Actual = C->AddRetargetChain(FName(*Name), StartName, EndName, Goal);
 		if (Actual.IsNone())
 		{
-			Fail(Out, TEXT("the engine refused the chain and reported nothing beyond a log line. "
-						   "NOTHING was created."));
+			// NOT "nothing was created" any more. The only known route here is a None name, which is now
+			// refused above - but AddRetargetChain performs Asset->Modify() and Emplace BEFORE it can
+			// return a None name, so if some future engine change reaches this branch the chain is
+			// already on the rig. An error that promises more than it delivers is worse than one that
+			// admits the mess.
+			Fail(Out, TEXT("the engine returned no chain name. It performs Modify() and adds the chain to "
+						   "RetargetDefinition.BoneChains BEFORE it can answer, so a chain may now exist on "
+						   "this rig and the asset may be dirty. Read it back with list_ik_rig and remove any "
+						   "stray chain with remove_ik_retarget_chain."));
 			return;
 		}
 		IKMarkDirty(Rig);

@@ -639,7 +639,15 @@ namespace MifBridge
 				// Don't leave a half-written default row we just added.
 				if (bIsNew)
 				{
-					FDataTableEditorUtils::RemoveRow(Table, FName(*RowName));
+					// This cleanup exists so a failed conversion does not leave a half-written default row.
+					// RemoveRow returns bool and it was discarded, so a cleanup that FAILED left exactly the
+					// row this branch exists to remove, and the warning below mentioned only the conversion.
+					if (!FDataTableEditorUtils::RemoveRow(Table, FName(*RowName)))
+					{
+						Warnings.Add(MakeShared<FJsonValueString>(FString::Printf(
+							TEXT("row '%s': the row could not be populated AND could not be removed again, so a "
+								 "default-valued row of that name is still in the table."), *RowName)));
+					}
 				}
 				Warnings.Add(MakeShared<FJsonValueString>(FString::Printf(TEXT("row '%s': %s"), *RowName, *FailReason.ToString())));
 			}
@@ -708,6 +716,7 @@ namespace MifBridge
 		}
 
 		int32 Deleted = 0;
+		TArray<TSharedPtr<FJsonValue>> Refused;
 		TArray<TSharedPtr<FJsonValue>> Missing;
 		int32 NameOrdinal = INDEX_NONE;
 		for (const TSharedPtr<FJsonValue>& Value : *Names)
@@ -730,14 +739,32 @@ namespace MifBridge
 				Missing.Add(MakeShared<FJsonValueString>(RowName));
 				continue;
 			}
-			FDataTableEditorUtils::RemoveRow(Table, Key);
-			++Deleted;
+			// USE THE RETURN VALUE. RemoveRow answers bool and this used to increment Deleted regardless,
+			// so `deleted: N` was asserted rather than observed. The row is checked to exist just above,
+			// which makes a false return unlikely - but "unlikely" is how every silent-success defect in
+			// this project has looked right up until it was not.
+			if (FDataTableEditorUtils::RemoveRow(Table, Key))
+			{
+				++Deleted;
+			}
+			else
+			{
+				Refused.Add(MakeShared<FJsonValueString>(RowName));
+			}
 		}
 
 		FDataTableEditorUtils::BroadcastPostChange(Table, FDataTableEditorUtils::EDataTableChangeInfo::RowList);
 		Table->MarkPackageDirty();
 
 		Out->SetNumberField(TEXT("deleted"), Deleted);
+
+		if (Refused.Num() > 0)
+		{
+			Out->SetArrayField(TEXT("refused"), Refused);
+			Out->SetStringField(TEXT("refusedNote"),
+				TEXT("these rows existed but RemoveRow declined to remove them, so they are still in the "
+					 "table and are NOT counted in `deleted`. Read the table back before relying on it."));
+		}
 		Out->SetNumberField(TEXT("rowCount"), Table->GetRowNames().Num());
 		if (Missing.Num() > 0)
 		{

@@ -1067,7 +1067,8 @@ namespace MifBridge
 		}
 		FEnumEditorUtils::SetEnumeratorDisplayName(Enum, NewIndex, FText::FromString(DisplayName));
 
-		// READ IT BACK. SetEnumeratorDisplayName returns void and declines a name it does not like
+		// READ IT BACK. SetEnumeratorDisplayName returns a bool - this comment used to say void, which
+		// was simply wrong - and it declines a name it does not like
 		// without saying so, and IsProperNameForUserDefinedEnumerator above does NOT catch every case
 		// it declines - a duplicate display name passes that guard and is then silently refused here,
 		// leaving the auto-generated NewEnumeratorN in place. The result was ok:true, an appended

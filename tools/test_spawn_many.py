@@ -155,6 +155,33 @@ def main():
         check("T544 a bad item is refused with the index named",
               "items[1]" in (r.get("error") or ""), (r.get("error") or "")[:220])
 
+    # ------------------------------------------------------------------ T545 labelNotes accumulate
+    print("")
+    print("=== T545 [issue K]: a per-item note must not overwrite the previous one ===")
+    # FINDING A TRIGGER IS THE HARD PART, and it is worth writing down. SetActorLabelChecked emits a
+    # note only when the label the actor ENDS UP with differs from the trimmed request. UE permits
+    # duplicate actor labels, and it accepts newlines, tabs, control characters and 300-character
+    # names unchanged - all of those were tried and produced no note at all. A WHITESPACE-ONLY label
+    # is the case the editor actually refuses, leaving the actor called "StaticMeshActor".
+    r = M.call("spawn_many", {"items": [{"x": 0, "y": 300, "z": 1400, "label": "   "},
+                                        {"x": 200, "y": 300, "z": 1400, "label": "  "},
+                                        {"x": 400, "y": 300, "z": 1400, "label": "    "}],
+                              "mesh": "/Engine/BasicShapes/Cube.Cube"}, timeout=120)
+    check("T545 all three still spawn", r.get("ok") is True and r.get("spawned") == 3,
+          json.dumps(r)[:220])
+    notes = r.get("labelNotes") or []
+    # THE assertion. This was a single-valued top-level field written from inside the loop, so three
+    # refused labels reported one note - the last - and the caller read a single oddity where there
+    # was a pattern.
+    check("T545 one note per refused label, not just the last", len(notes) == 3,
+          "labelNotes has %d entries for 3 refused labels: %s" % (len(notes), json.dumps(notes)[:220]))
+    check("T545 and each note carries its item index",
+          all(("items[%d]" % i) in str(notes[i]) for i in range(min(3, len(notes)))),
+          json.dumps(notes)[:260])
+    # The old single-valued field must be gone, or callers keep reading the one that lied.
+    check("T545 the old single-valued labelNote field is gone", "labelNote" not in r,
+          json.dumps(list(r.keys()))[:200])
+
     print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

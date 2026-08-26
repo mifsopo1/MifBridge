@@ -265,6 +265,7 @@ namespace MifBridge
 
 		TArray<TSharedPtr<FJsonValue>> Made;
 		TArray<TSharedPtr<FJsonValue>> Errors;
+		TArray<TSharedPtr<FJsonValue>> LabelNotes;
 		int32 Failed = 0;
 
 		for (int32 Index = 0; Index < Items->Num(); ++Index)
@@ -301,9 +302,21 @@ namespace MifBridge
 			{
 				{
 					// void API, silent refusal - see SetActorLabelChecked.
+					//
+					// ACCUMULATE, DO NOT REPLACE. This used to be
+					//   Out->SetStringField(TEXT("labelNote"), LabelNote);
+					// written from inside this per-item loop, so SetStringField replaced the previous value
+					// and twenty actors with five refused labels reported exactly one - the last. The caller
+					// read a single oddity where there was a pattern. Worth more than the usual care because
+					// SetActorLabelChecked exists ONLY to surface labels the engine silently declines, so
+					// losing its notices was the same defect one layer up.
 					FString ActualLabel, LabelNote;
 					SetActorLabelChecked(Actor, Label, ActualLabel, LabelNote);
-					if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
+					if (!LabelNote.IsEmpty())
+					{
+						LabelNotes.Add(MakeShared<FJsonValueString>(FString::Printf(
+							TEXT("items[%d]: %s"), Index, *LabelNote)));
+					}
 				}
 			}
 			else if (!LabelPrefix.IsEmpty())
@@ -348,6 +361,7 @@ namespace MifBridge
 			Made.Add(MakeShared<FJsonValueObject>(J));
 		}
 
+		if (LabelNotes.Num() > 0) { Out->SetArrayField(TEXT("labelNotes"), LabelNotes); }
 		Out->SetNumberField(TEXT("spawned"), Made.Num());
 		Out->SetNumberField(TEXT("failed"), Failed);
 		Out->SetArrayField(TEXT("actors"), Made);
@@ -386,6 +400,7 @@ namespace MifBridge
 		// `duplicated` could be short of sourceCount x count with no reason anywhere in the response.
 		TArray<TSharedPtr<FJsonValue>> NotFound;
 		TArray<TSharedPtr<FJsonValue>> FailedSpawns;
+		TArray<TSharedPtr<FJsonValue>> LabelNotes;
 		const TArray<TSharedPtr<FJsonValue>>* Paths = nullptr;
 		if (JArray(In, TEXT("actorPaths"), Paths) && Paths)
 		{
@@ -450,9 +465,14 @@ namespace MifBridge
 					// find by the name they were given is worse than a copy with an odd name.
 					const FString Wanted = Src->GetActorLabel() + Suffix
 						+ (Count > 1 ? FString::FromInt(N) : FString());
+					// ACCUMULATE, DO NOT REPLACE - same reason as spawn_many above: this is a per-copy loop,
+					// and a single-valued field here reports only the last copy whose name was adjusted.
 					FString ActualLabel, LabelNote;
 					SetActorLabelChecked(Copy, Wanted, ActualLabel, LabelNote);
-					if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
+					if (!LabelNote.IsEmpty())
+					{
+						LabelNotes.Add(MakeShared<FJsonValueString>(LabelNote));
+					}
 				}
 				Copy->SetFolderPath(FName(*(Folder.IsEmpty() ? Src->GetFolderPath().ToString() : Folder)));
 
@@ -470,6 +490,7 @@ namespace MifBridge
 		// actorPaths[] entry that never became a source.
 		Out->SetArrayField(TEXT("notFound"), NotFound);
 		Out->SetArrayField(TEXT("failed"), FailedSpawns);
+		if (LabelNotes.Num() > 0) { Out->SetArrayField(TEXT("labelNotes"), LabelNotes); }
 		if (FailedSpawns.Num() > 0 || NotFound.Num() > 0)
 		{
 			Out->SetStringField(TEXT("note"), FString::Printf(

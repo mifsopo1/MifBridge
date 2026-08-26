@@ -68,7 +68,7 @@ Never work from a typed list — one was fabricated once and a third of it was i
   a World Partition map with streaming proxies. The only ones here are real DDS2 maps. This is a good
   first task for the downstream report loop once it is switched on.
 - [x] **Audit the 31 remaining "NOTHING was created" claims.** Two foliage sites were corrected today
-- [ ] **labelNote overwrites itself in two loops.** MifBridgeAuthoring.cpp:306 and :455 write it as a
+- [x] **labelNote overwrites itself in two loops.** MifBridgeAuthoring.cpp:306 and :455 write it as a
 - [ ] **Triage the discarded-bool sweep (issue N).** 299 bare-statement calls to bool-returning engine
   functions. Most are conventional discards; the scan is name-based and cannot resolve overloads, which
   produced at least one confirmed false positive already. Worth working the subset where a false return
