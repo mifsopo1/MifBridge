@@ -51,29 +51,51 @@ Never work from a typed list — one was fabricated once and a third of it was i
 Ordered by value for DDS2 modding. Each needs: endpoints, engine APIs, and an answer to "what would
 fail silently if this were done carelessly".
 
-- [ ] **Gameplay Tags** — no endpoints at all. DDS2 is a systems-heavy game and tags are how such
-      games gate behaviour; a modder adding an item or interaction will hit this. Needs tag listing,
-      tag-container get/set on assets and actors, and the tag-literal graph node.
-- [ ] **Sound** — no endpoints. Playing, finding and assigning SoundBase/SoundCue on actors and
-      components is ordinary mod work (a new item that makes a noise). Needs listing, assignment,
-      and the PlaySound2D/AtLocation nodes.
-- [ ] **Data Assets** — no endpoints. `UPrimaryDataAsset` subclasses are a normal way for a game like
-      DDS2 to carry item/recipe definitions, and a modder needs to read and create them.
-- [ ] **Physics** — only collision add/remove. Missing: simulate-physics toggles, mass/damping,
-      constraints, and the physics-body property surface on components.
+
 - [ ] **Traces** — only `trace_ground`. A general line/sphere/box trace with channel selection is
       broadly useful and cheap, and `trace_ground` already proves the pattern.
 - [ ] **Debug Draws** — nothing. Draw-debug-line/sphere/box/string in the editor world is how an
       agent SHOWS its work; it is also how a modder verifies placement without a screenshot.
 - [ ] **Insights & Profiling** — nothing beyond `diagnose_landscape_draws`. Basic frame/draw-call/
       memory stats would let an agent answer "is this mod expensive?" instead of guessing.
-- [ ] **Behavior Trees / Blackboard** — nothing. DDS2 has AI (dealers, police, NPCs) and a modder
-      changing NPC behaviour would need at least to READ existing trees and blackboards. Read-first
-      is the sensible scope; authoring BT nodes is a much larger job.
-- [ ] **Skeletal / Sockets** — nothing. Attaching a mod's mesh to a character socket is common, and
-      currently there is no way to even list sockets.
-- [ ] **Character Movement** — nothing. Speed, jump, crouch and gravity on a CharacterMovementComponent
-      are the most-modded numbers in this genre.
+- [ ] **Behavior Trees / Blackboard** — nothing, and confirmed real: **17** BehaviorTrees and **4**
+      BlackboardData assets. A modder changing NPC behaviour needs at least to READ them. Read-first
+      is the sensible scope; authoring BT nodes is a much larger job and can wait for a real need.
+- [ ] **Skeletal / Sockets** — nothing, against **188** SkeletalMeshes, **164** PhysicsAssets and
+      **44** AnimMontages. Attaching a mod's mesh to a character socket is ordinary work and there is
+      currently no way to even list the sockets available.
+
+## Covered by COMPOSITION, not by dedicated endpoints
+
+Four categories that looked like gaps are not. They were judged by category NAME; tested by
+capability, the generic endpoints already do the work. Verified against the live editor, not reasoned
+about. This is the whole reason the spec insists on reading handlers rather than counting names — and
+it is four categories I would otherwise have built redundant surface for.
+
+- [x] **Sound** — every part composes, despite 3771 SoundWaves making it look like the biggest gap:
+      discovery with `find_assets {class: SoundWave|SoundCue|MetaSoundSource}`; the graph nodes with
+      `add_function_call {function: PlaySound2D|PlaySoundAtLocation, class: GameplayStatics}`, which
+      produces a real `SoundBase` pin; assigning an asset to that pin with `set_pin_default`, which
+      sets `defaultObject`; and assigning one to an AudioComponent with `set_property`.
+- [x] **Character Movement** — `set_property` against the CharacterMovement component sets and reads
+      back MaxWalkSpeed, JumpZVelocity, GravityScale and MaxAcceleration. The four numbers this genre
+      mods most, all already reachable.
+- [x] **Physics** — NESTED property paths work: `BodyInstance.bSimulatePhysics`,
+      `BodyInstance.MassScale`, `BodyInstance.LinearDamping`, `BodyInstance.bEnableGravity` all set
+      successfully on a StaticMeshComponent.
+- [x] **Data Assets** — `find_assets {class: DataAsset}` finds them and `list_object_properties`
+      reads them by objectPath.
+
+**The one thing that IS missing here is discoverability, not capability.** Setting a component
+property requires the component's `templatePath` from `list_components` — the `_GEN_VARIABLE` path —
+and `set_property`'s own parameter help says "objectPath | (blueprintId or path) + widgetName",
+mentioning widgets and never components. An agent would reasonably conclude components are
+unsupported and go looking for a `set_component_property` that does not need to exist.
+
+- [ ] Fix that: `set_property`'s parameter help and its unknown-parameter hints should name the
+      component route explicitly, and the MCP docstring should show the `list_components` ->
+      `templatePath` -> `set_property` sequence. A capability nobody can find is not far from a
+      capability that is absent.
 
 ## Deliberately not pursuing
 
@@ -88,27 +110,44 @@ fail silently if this were done carelessly".
 - [~] **Control Rig / IK & Retarget / Vertex Animation** — animation *authoring* pipelines. A mod
       reuses the base game's rigs and animations; authoring new ones is a content-creation workflow
       done in the full editor, not through a bridge.
-- [~] **MetaSound** — MetaSound authoring is a graph editor of its own. Assigning existing sounds is
-      the modding need, and that is covered by the Sound gap above.
+- [~] **MetaSound authoring** — declined, but note the premise was nearly wrong: DDS2 contains **185**
+      MetaSoundSource assets, so this is live content, not an unused system. Authoring MetaSound
+      graphs is still a graph editor's job and out of scope. ASSIGNING and listing them is in scope
+      and is folded into the Sound item above, which must therefore handle MetaSoundSource and not
+      only SoundCue/SoundWave.
+- [~] **Gameplay Tags** — declined, and this one was my top priority until it was checked. DDS2 has
+      no DefaultGameplayTags.ini, no GameplayTags settings in DefaultEngine.ini or DefaultGame.ini,
+      the plugin is not enabled, and DDS2_GameMode has 0 GameplayTag-typed variables out of 50. What
+      it uses instead is FName - the class is full of `name` keys and `name -> X` maps. Building a tag
+      surface would have been a whole category nobody would touch. Reaching for FName-keyed lookups is
+      already covered by the existing variable and map endpoints.
 - [~] **PCG** — procedural world generation. A DDS2 mod does not regenerate the world.
 - [~] **Slate** — Slate is C++ UI. Mods use UMG, which is covered.
 - [~] **Async Tasks** — a Blueprint-graph concern already reachable through the normal node endpoints;
       there is no separate authoring surface to add.
 
-## Needs a decision before it can be scoped
+## Settled by evidence, 2026-08-25
 
-- [ ] **Niagara** — decide whether DDS2 mods realistically ship new VFX. If they do, READ endpoints
-      (list systems, describe emitters, set user parameters) are the useful half and authoring is not.
-      If they do not, move this to "not pursuing" with that reason. Do not build authoring on spec.
-- [ ] **Sequencer** — same shape. Level sequences matter if mods add cutscenes; if DDS2 mods do not,
-      decline it. The UMG WidgetAnimation work already covers the MovieScene plumbing that would be
-      reused, so the incremental cost is lower than it looks.
-- [ ] **GAS / Attribute Sets** — establish whether DDS2 uses the Gameplay Ability System at all.
-      Grep the cooked content for `UAbilitySystemComponent` / `UGameplayAbility` subclasses. If it
-      does not use GAS, this whole category is a non-feature and should be declined outright.
-- [ ] **Multiplayer / Replication** — DDS2 has co-op. Establish whether mod work touches replication
-      (replicated variables, RPCs, `Switch Has Authority`) beyond what the Blueprint endpoints already
-      do. `set_function_flags` already covers replicates/reliable, so this may already be covered.
+All four parked items are resolved by asking the asset registry what DDS2 actually contains, rather
+than assuming. Counts are from `find_assets` against the live editor; "class does not exist" means the
+engine has no such class registered in this build, which is as definitive as it gets.
+
+- [~] **GAS Abilities / Attribute Sets** — declined. `GameplayAbilities` is not enabled in
+      DrugDealerSimulator2.uproject, and `find_assets` cannot even resolve the `GameplayAbility` or
+      `AttributeSet` classes. DDS2 does not use GAS, so the entire category is a non-feature here.
+- [~] **PCG** — declined, now with evidence: `PCGGraph` does not resolve either. Confirms the earlier
+      reasoning rather than resting on it.
+- [~] **StateTree** — declined. Class does not resolve; DDS2 does not use it.
+- [~] **Sequencer** — declined for now. DDS2 contains exactly **4** LevelSequence assets against 3771
+      SoundWaves. Cutscene authoring is not what this game is made of, and a mod adding one is a rare
+      case. Revisit only if a mod actually needs it; the MovieScene plumbing from the UMG animation
+      work would make it cheap when that day comes.
+- [~] **Control Rig / IK & Retarget / Vertex Animation** — declined, and the count backs it: **2**
+      ControlRigBlueprints in the whole game. Nothing to mod.
+- [ ] **Niagara (read + parameters only)** — resolved the other way. DDS2 has **38** NiagaraSystems,
+      so VFX is real content a modder will touch. Worth: list systems, describe a system's emitters
+      and user parameters, and SET user parameters on a spawned component. NOT worth: authoring
+      emitters or modules from scratch, which is a graph editor's job.
 
 ## Method note
 
