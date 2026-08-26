@@ -334,7 +334,13 @@ namespace MifBridge
 	}
 
 	// --- capture_viewport ----------------------------------------------------
-	//   in:  { path?, viewport? }
+	//   in:  { path? (aliases: name, file) }
+	// This line previously advertised `viewport?`, which the handler REJECTS - a caller following the
+	// documentation got "unrecognised parameter 'viewport'" and no capture. There is no viewport
+	// selection here: it captures whichever viewport the editor is currently drawing, which is what
+	// `viewportType` in the out: block REPORTS rather than something you choose. Same resolution as the
+	// duplicate_actors `rotationOffset?` line - the doc is corrected, not the code, because a documented
+	// parameter that no code has ever read is a lie in the comment rather than a missing feature.
 	//   out: { file, width, height, bytes, realtime, allBlack?, viewportType }
 	//
 	// The pixels the editor is ACTUALLY drawing, as distinct from capture_camera's transient

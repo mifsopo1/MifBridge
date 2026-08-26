@@ -709,6 +709,23 @@ in the git history, four sites). Writing an untestable fix into that is how the 
 takes it will need to address pins by INDEX into the live Node->Pins array rather than by identity,
 re-validating after every BreakPinLinks, and will need a way to manufacture the duplicate first.
 
+**P. An `in:` comment advertised a parameter the handler rejects (capture_viewport).**
+The comment read `in: { path?, viewport? }`; the accept-list is `{path, name, file}`. A caller
+following the documentation got `unrecognised parameter 'viewport'` and no capture. There is no
+viewport selection in the handler - it captures whichever viewport the editor is drawing, which is
+what `viewportType` in the out: block reports rather than something you pick. FIXED by correcting the
+comment, the same way the duplicate_actors `rotationOffset?` line was.
+
+Found by comparing every `in:` block against its handler's RejectUnknownParams accept-list. That
+comparison is worth keeping in mind as a lens: the accept-list is the authoritative set of keys a
+handler admits, so anything the docs advertise outside it fails hard at runtime.
+
+THE SCAN IS NOT WORTH AUTOMATING AS-IS. It produced 8 candidates and only 1 was real. The rest were
+nested parameters - spawn_many's `label` and create_landscape's `weight` live inside items[] and
+layers[], and the accept-list deliberately guards TOP-LEVEL keys only - or prose caught by the
+lookback, including a `targetClass` mentioned in a comment about a different endpoint entirely. A
+checked-in version would need to understand nesting before it earned its place.
+
 **N. A discarded-bool sweep: 299 candidates, and the scan cannot resolve overloads.**
 
 RESOLVED 2026-08-26. All 28 candidates surviving the conventional-discard filter were triaged with the
