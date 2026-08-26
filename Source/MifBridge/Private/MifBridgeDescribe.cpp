@@ -1264,6 +1264,14 @@ namespace MifBridge
 			TEXT("from"), TEXT("the current name is oldName (aliases: name, dispatcher) - only the destination has a short spelling ('to' = newName)"),
 			TEXT("graphId"), TEXT("a dispatcher is a signature GRAPH plus a backing delegate VARIABLE - it is addressed by blueprintId + oldName so both halves can be renamed together"),
 			nullptr };
+		static const TCHAR* const GMifDescKeys_remove_event_dispatcher[] = {
+			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("confirm"), nullptr };
+		static const TCHAR* const GMifDescNotes_remove_event_dispatcher[] = {
+			TEXT("dispatcher"), TEXT("this endpoint's key is 'name'"),
+			TEXT("oldName"), TEXT("that is rename_event_dispatcher's key - removal takes a single 'name'"),
+			TEXT("force"), TEXT("the required acknowledgement is confirm:true"),
+			TEXT("graphId"), TEXT("a dispatcher is a signature GRAPH plus a backing delegate VARIABLE - it is addressed by blueprintId + name so both halves are removed together"),
+			nullptr };
 		static const TCHAR* const GMifDescKeys_rename_function[] = {
 			TEXT("graphId"), TEXT("blueprintId"), TEXT("path"), TEXT("oldName"), TEXT("function"),
 			TEXT("name"), TEXT("newName"), TEXT("to"), TEXT("confirm"), nullptr };
@@ -2104,6 +2112,9 @@ namespace MifBridge
 			{ TEXT("rename_event_dispatcher"), GMifDescKeys_rename_event_dispatcher, GMifDescNotes_rename_event_dispatcher,
 			  TEXT("blueprintId (alias: path), oldName (aliases: name, dispatcher), newName (alias: to), confirm (required, must be true)"),
 			  TEXT("MifBridgeNodes2.cpp"), 679, nullptr },
+			{ TEXT("remove_event_dispatcher"), GMifDescKeys_remove_event_dispatcher, GMifDescNotes_remove_event_dispatcher,
+			  TEXT("blueprintId (alias: path), name, confirm (required, must be true) - deletes BOTH halves (signature graph + delegate variable) and reports orphanedNodeCount: the call/bind nodes left behind, which will fail the next compile"),
+			  TEXT("MifBridgeNodes2.cpp"), 792, nullptr },
 			{ TEXT("rename_function"), GMifDescKeys_rename_function, GMifDescNotes_rename_function,
 			  TEXT("graphId, OR blueprintId (alias: path) + oldName (aliases: function, name); plus newName (alias: to), confirm (required, must be true)"),
 			  TEXT("MifBridgeNodes2.cpp"), 529, nullptr },
