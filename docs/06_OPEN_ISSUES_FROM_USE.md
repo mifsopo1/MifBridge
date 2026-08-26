@@ -1032,6 +1032,13 @@ Not a defect so much as a sharp edge; the fields to check are there. **Suggested
 
 ## 4. `get_property` cannot reach `UBodySetup::AggGeom`
 
+**RESOLVED 2026-08-26 - not a defect.** Checked live: `BodySetup.AggGeom` works and returns 1689
+characters with SphereElems, BoxElems, SphylElems and ConvexElems. The failing calls used `body_setup`,
+the snake_case Python spelling rather than the UPROPERTY name, and the bridge already answered:
+`property 'body_setup' not found on 'StaticMesh' (did you mean 'BodySetup'?) - list_object_properties
+dumps what exists`. It named the answer. Left here rather than deleted because carrying snake_case over
+from Python is an easy habit and this will be hit again.
+
     get_property {objectPath: "...Mesh_Props_Barrier_01", propertyPath: "body_setup"}   -> ok
     ... then AggGeom / aggregate_geom on the BodySetup                                   -> fails
 

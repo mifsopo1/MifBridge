@@ -122,8 +122,20 @@ Never work from a typed list — one was fabricated once and a third of it was i
   running at all, not which world the call used.
   Verified for the editor case live. The pie branch is one IsPlayInEditor() call and is NOT verified
   live - starting PIE is forbidden by the standing rules.
-- [ ] **get_property cannot reach UBodySetup::AggGeom**, so collision primitive shape is unreachable.
+- [~] **get_property cannot reach UBodySetup::AggGeom**, so collision primitive shape is unreachable.
   Neither AggGeom nor aggregate_geom resolves.
+  NOT A DEFECT - the report is wrong, checked against the live editor rather than assumed.
+  get_property {objectPath:<StaticMesh>, propertyPath:"BodySetup.AggGeom"} returns 1689 characters of
+  real geometry with SphereElems, BoxElems, SphylElems and ConvexElems all present. Collision
+  primitive shape is reachable and always was.
+  The report used body_setup, snake_case, which is the Python convention rather than the UPROPERTY
+  name. And the bridge already answered that correctly:
+      property 'body_setup' not found on 'StaticMesh' (did you mean 'BodySetup'?)
+        - list_object_properties dumps what exists
+  It names the exact answer and points at the endpoint that lists everything. Nothing to fix here; the
+  house style on error messages did its job and the suggestion was not followed.
+  Worth feeding back to the reporter rather than silently closing - snake_case property paths are an
+  easy habit to carry over from Python, and they will hit it again.
 - [ ] **list_level_actors truncation is honest in the response but invisible in describe_endpoint.** A
   cleanup routine reported clearing 200/200 while 43 actors remained. Mention truncated in the summary.
 - [ ] **No engine-version guards exist anywhere in the source.** No ENGINE_MINOR_VERSION, nothing. It
