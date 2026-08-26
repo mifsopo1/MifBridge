@@ -182,10 +182,27 @@ def launch_editor():
     except Exception:
         pass
 
-    subprocess.run(
-        ["powershell", "-NoProfile", "-Command",
-         "Start-Process -FilePath '%s' -ArgumentList '\"%s\"'" % (EDITOR_EXE, UPROJECT)],
-        capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
+    # LAUNCH DETACHED, WITH NO INHERITED STDIO. This used to be
+    #     subprocess.run(['powershell', '-NoProfile', '-Command', "Start-Process ..."],
+    #                    capture_output=True, ...)
+    # and that hung a whole regression on 2026-08-26. Start-Process with no redirection hands the
+    # editor PowerShell's inherited handles, and PowerShell's stdout is a PIPE created by that
+    # capture_output=True. The editor then holds a pipe open for its entire lifetime - hours - while
+    # subprocess.run in run_all_suites waits for the pipe to close rather than for the child to exit.
+    # The symptom is brutal to diagnose: test_ik_rig sat at 'running...' for 17 minutes against a 3.2
+    # second norm, its child process was already GONE, the editor was healthy and answering, and the
+    # runner's own 900s timeout never fired because it was blocked in the post-kill read.
+    #
+    # Launching the exe directly removes both the PowerShell layer and the inheritance. DEVNULL on all
+    # three streams means there is no pipe to hold; DETACHED_PROCESS plus CREATE_NEW_PROCESS_GROUP
+    # means the editor does not die with, or signal, whatever launched it.
+    flags = 0
+    if hasattr(subprocess, "DETACHED_PROCESS"):
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    subprocess.Popen(
+        [EDITOR_EXE, UPROJECT],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        creationflags=flags, close_fds=True)
 
 
 def editor_window_title(pid):
