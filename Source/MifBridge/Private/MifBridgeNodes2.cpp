@@ -1368,6 +1368,20 @@ namespace MifBridge
 		// compiler will treat as not replicated.
 		Out->SetObjectField(TEXT("flags"), SerializeFunctionFlags(EffectiveFlagsOf(Target)));
 		Out->SetArrayField(TEXT("warnings"), Warnings);
+
+		// THE FLAG IS AUTHORED HERE; IT REACHES THE GENERATED CLASS ON COMPILE. These flags live on the
+		// function's entry node, and `flags` above is read back from there - so it is true immediately.
+		// What executes, and what describe_class reflects, is the GENERATED class, and that does not
+		// change until the blueprint is compiled.
+		//
+		// Without saying so, the two disagree in a way that reads as a failed write: set pure:true,
+		// then ask describe_class, and it still answers isPure:false. Measured - false before the set,
+		// false after the set, true after a compile. A caller comparing the two would reasonably
+		// conclude the set did not take.
+		//
+		// Reported the same way the widget-tree endpoints report it, since it is the same situation:
+		// authored now, effective after a compile.
+		Out->SetBoolField(TEXT("needsCompileToApply"), true);
 		UE_LOG(LogMifBridge, Log, TEXT("set_function_flags: %s (%s)"), *TargetName, *Kind);
 	}
 
