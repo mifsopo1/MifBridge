@@ -244,6 +244,8 @@ namespace MifBridge
 			MIF_BIND(get_actor_bounds);
 			MIF_BIND(check_overlaps);
 			MIF_BIND(trace_ground);
+			MIF_BIND(trace);
+			MIF_BIND(draw_debug);
 			MIF_BIND(capture_camera);
 			MIF_BIND(scene_report);
 			// PIE control + runtime observation

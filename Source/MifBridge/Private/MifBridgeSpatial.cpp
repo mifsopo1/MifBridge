@@ -23,6 +23,7 @@
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
 
+#include "DrawDebugHelpers.h"      // DrawDebugLine/Sphere/Box/Point/DirectionalArrow/String
 #include "Editor.h"
 #include "EditorViewportClient.h"   // FEditorViewportClient - GetViewLocation/GetViewRotation/ViewFOV
 #include "Engine/Engine.h"
@@ -238,6 +239,418 @@ namespace MifBridge
 	// Editor-world collision is NOT guaranteed for imported meshes, so a miss is reported honestly
 	// rather than silently returning 0 — a caller that treats "no hit" as "ground at z=0" is exactly
 	// how things end up floating.
+	namespace
+	{
+		// Named channels, because ECollisionChannel is an enum a caller cannot guess and getting it
+		// wrong produces a confident miss rather than an error.
+		bool ResolveTraceChannel(const FString& Name, ECollisionChannel& Out)
+		{
+			const FString N = Name.ToLower();
+			if (N.IsEmpty() || N == TEXT("worldstatic"))  { Out = ECC_WorldStatic;  return true; }
+			if (N == TEXT("worlddynamic"))                { Out = ECC_WorldDynamic; return true; }
+			if (N == TEXT("visibility"))                  { Out = ECC_Visibility;   return true; }
+			if (N == TEXT("camera"))                      { Out = ECC_Camera;       return true; }
+			if (N == TEXT("pawn"))                        { Out = ECC_Pawn;         return true; }
+			if (N == TEXT("physicsbody"))                 { Out = ECC_PhysicsBody;  return true; }
+			return false;
+		}
+
+		const TCHAR* kChannelList =
+			TEXT("worldStatic, worldDynamic, visibility, camera, pawn, physicsBody");
+
+		FColor ResolveDebugColor(const FString& Name)
+		{
+			const FString N = Name.ToLower();
+			if (N == TEXT("red"))     { return FColor::Red; }
+			if (N == TEXT("green"))   { return FColor::Green; }
+			if (N == TEXT("blue"))    { return FColor::Blue; }
+			if (N == TEXT("yellow"))  { return FColor::Yellow; }
+			if (N == TEXT("cyan"))    { return FColor::Cyan; }
+			if (N == TEXT("magenta")) { return FColor::Magenta; }
+			if (N == TEXT("orange"))  { return FColor::Orange; }
+			if (N == TEXT("white"))   { return FColor::White; }
+			if (N == TEXT("black"))   { return FColor::Black; }
+			return FColor::Green;
+		}
+
+		// One hit, described the way a caller can act on: what was hit, where, and how far along.
+		TSharedRef<FJsonObject> SerializeHit(const FHitResult& Hit, const FVector& Start)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			if (AActor* A = Hit.GetActor())
+			{
+				J->SetStringField(TEXT("actorPath"), A->GetPathName());
+				J->SetStringField(TEXT("label"), A->GetActorLabel());
+				J->SetStringField(TEXT("class"), A->GetClass()->GetName());
+			}
+			if (Hit.GetComponent())
+			{
+				J->SetStringField(TEXT("component"), Hit.GetComponent()->GetName());
+			}
+			J->SetObjectField(TEXT("impactPoint"), Vec3(Hit.ImpactPoint));
+			J->SetObjectField(TEXT("normal"), Vec3(Hit.ImpactNormal));
+			J->SetNumberField(TEXT("distance"), FVector::Dist(Start, Hit.ImpactPoint));
+			if (Hit.BoneName != NAME_None)
+			{
+				J->SetStringField(TEXT("bone"), Hit.BoneName.ToString());
+			}
+			J->SetBoolField(TEXT("blockingHit"), Hit.bBlockingHit);
+			return J;
+		}
+
+		// The world debug shapes and traces actually go to, plus whether PIE is up. A shape drawn into
+		// the editor world is invisible during PIE and vice versa, and the call succeeds either way -
+		// so the answer has to say which world it used, or "ok:true and nothing visible" is
+		// undiagnosable.
+		UWorld* SpatialWorld(bool& bOutPie)
+		{
+			bOutPie = false;
+			if (GEditor)
+			{
+				if (UWorld* Pie = GEditor->PlayWorld)
+				{
+					bOutPie = true;
+					return Pie;
+				}
+			}
+			return EditorWorld();
+		}
+	}
+
+	// --- trace ---------------------------------------------------------------
+	//   in:  { start:{x,y,z}, end:{x,y,z} | direction:{x,y,z} + distance,
+	//          shape? (line|sphere|box|capsule), radius?, halfExtent?, halfHeight?,
+	//          channel?, traceComplex?, multi?, ignoreActors?:[...], draw?, drawDuration? }
+	//   out: { hit, hitCount, hits:[...], traced:{start,end}, channel, world, pieRunning }
+	//
+	// trace_ground fires straight down and takes the first GROUND hit, which answers exactly one
+	// question. This answers the rest: what is between these two points, on which channel, ignoring
+	// what, and optionally leaving the ray visible in the viewport.
+	void H_trace(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("start"), TEXT("end"), TEXT("direction"), TEXT("distance"), TEXT("shape"),
+			  TEXT("radius"), TEXT("halfExtent"), TEXT("halfHeight"), TEXT("channel"),
+			  TEXT("traceComplex"), TEXT("multi"), TEXT("ignoreActors"), TEXT("draw"),
+			  TEXT("drawDuration") },
+			TEXT("start:{x,y,z} plus either end:{x,y,z} or direction:{x,y,z} + distance; "
+				 "shape (line|sphere|box|capsule, default line), radius (sphere/capsule), "
+				 "halfExtent:{x,y,z} (box), halfHeight (capsule), channel (default worldStatic), "
+				 "traceComplex (default true), multi (default false), ignoreActors:[names or paths], "
+				 "draw (bool - leave the ray in the viewport), drawDuration (seconds, default 5)"),
+			{ { TEXT("from"), TEXT("the parameter is 'start' (trace_ground uses fromZ/toZ because it is Z-only; this one takes full vectors)") },
+			  { TEXT("to"), TEXT("the parameter is 'end'") },
+			  { TEXT("ignoreActor"), TEXT("this one takes ignoreActors:[...] - a list, since a general trace usually needs to exclude several") } }))
+		{
+			return;
+		}
+
+		bool bPie = false;
+		UWorld* World = SpatialWorld(bPie);
+		if (!World) { Fail(Out, TEXT("no world")); return; }
+
+		// EJsonRead, not a bool: Absent and Invalid are different answers. A supplied-but-malformed
+		// vector must be REPORTED, not defaulted - defaulting it would fire the ray from somewhere
+		// the caller never asked for and report a confident hit.
+		FString VErr;
+		FVector Start = FVector::ZeroVector;
+		const EJsonRead StartRead = ReadVectorField(In, TEXT("start"), Start, VErr);
+		if (StartRead == EJsonRead::Invalid) { Fail(Out, VErr); return; }
+		if (StartRead == EJsonRead::Absent)
+		{
+			Fail(Out, TEXT("start:{x,y,z} is required. NOTHING was traced."));
+			return;
+		}
+
+		FVector End = FVector::ZeroVector;
+		const EJsonRead EndRead = ReadVectorField(In, TEXT("end"), End, VErr);
+		if (EndRead == EJsonRead::Invalid) { Fail(Out, VErr); return; }
+		if (EndRead == EJsonRead::Absent)
+		{
+			FVector Dir = FVector::ZeroVector;
+			const EJsonRead DirRead = ReadVectorField(In, TEXT("direction"), Dir, VErr);
+			if (DirRead == EJsonRead::Invalid) { Fail(Out, VErr); return; }
+			if (DirRead == EJsonRead::Absent)
+			{
+				Fail(Out, TEXT("give either end:{x,y,z} or direction:{x,y,z} + distance. "
+							   "NOTHING was traced."));
+				return;
+			}
+			if (Dir.IsNearlyZero())
+			{
+				Fail(Out, TEXT("direction is zero-length, so there is no ray to fire. NOTHING was traced."));
+				return;
+			}
+			const double Distance = JNum(In, TEXT("distance"), 10000.0);
+			End = Start + Dir.GetSafeNormal() * Distance;
+		}
+
+		ECollisionChannel Channel = ECC_WorldStatic;
+		const FString ChannelName = JStr(In, TEXT("channel"));
+		if (!ResolveTraceChannel(ChannelName, Channel))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("unknown channel '%s' - use one of: %s. NOTHING was traced."),
+				*ChannelName, kChannelList));
+			return;
+		}
+
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(MifBridgeTrace),
+			JBool(In, TEXT("traceComplex"), true));
+
+		// An ignore that does not resolve is REFUSED, not skipped. trace_ground shipped with the
+		// skip-silently version and returned confident hits against the very actors a caller had
+		// excluded; there is no reason to repeat that here.
+		const TArray<TSharedPtr<FJsonValue>>* Ignores = nullptr;
+		if (JArray(In, TEXT("ignoreActors"), Ignores) && Ignores)
+		{
+			for (int32 i = 0; i < Ignores->Num(); ++i)
+			{
+				FString Name;
+				if (!(*Ignores)[i].IsValid() || !(*Ignores)[i]->TryGetString(Name) || Name.IsEmpty())
+				{
+					Fail(Out, FString::Printf(
+						TEXT("ignoreActors[%d] is not a non-empty string. NOTHING was traced."), i));
+					return;
+				}
+				AActor* A = FindActorInWorld(World, Name);
+				if (!A)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("ignoreActors[%d] '%s' does not resolve to an actor in this world, so the "
+							 "trace would have run WITHOUT ignoring it and could have hit the very "
+							 "thing you excluded. NOTHING was traced."), i, *Name));
+					return;
+				}
+				Params.AddIgnoredActor(A);
+			}
+		}
+
+		const FString Shape = JStr(In, TEXT("shape"), TEXT("line")).ToLower();
+		const bool bMulti = JBool(In, TEXT("multi"), false);
+		FCollisionShape Sweep;
+		bool bIsSweep = true;
+		if (Shape == TEXT("line"))
+		{
+			bIsSweep = false;
+		}
+		else if (Shape == TEXT("sphere"))
+		{
+			Sweep = FCollisionShape::MakeSphere((float)JNum(In, TEXT("radius"), 50.0));
+		}
+		else if (Shape == TEXT("capsule"))
+		{
+			Sweep = FCollisionShape::MakeCapsule((float)JNum(In, TEXT("radius"), 50.0),
+												 (float)JNum(In, TEXT("halfHeight"), 100.0));
+		}
+		else if (Shape == TEXT("box"))
+		{
+			FVector Half(50.0, 50.0, 50.0);
+			if (ReadVectorField(In, TEXT("halfExtent"), Half, VErr) == EJsonRead::Invalid)
+			{
+				Fail(Out, VErr);
+				return;
+			}
+			Sweep = FCollisionShape::MakeBox(FVector3f(Half));
+		}
+		else
+		{
+			Fail(Out, FString::Printf(
+				TEXT("unknown shape '%s' - use line, sphere, box or capsule. NOTHING was traced."),
+				*Shape));
+			return;
+		}
+
+		TArray<FHitResult> Hits;
+		bool bAnyHit = false;
+		if (!bIsSweep)
+		{
+			if (bMulti) { bAnyHit = World->LineTraceMultiByChannel(Hits, Start, End, Channel, Params); }
+			else
+			{
+				FHitResult One;
+				bAnyHit = World->LineTraceSingleByChannel(One, Start, End, Channel, Params);
+				if (bAnyHit) { Hits.Add(One); }
+			}
+		}
+		else
+		{
+			if (bMulti)
+			{
+				bAnyHit = World->SweepMultiByChannel(Hits, Start, End, FQuat::Identity, Channel, Sweep, Params);
+			}
+			else
+			{
+				FHitResult One;
+				bAnyHit = World->SweepSingleByChannel(One, Start, End, FQuat::Identity, Channel, Sweep, Params);
+				if (bAnyHit) { Hits.Add(One); }
+			}
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		for (const FHitResult& H : Hits)
+		{
+			Arr.Add(MakeShared<FJsonValueObject>(SerializeHit(H, Start)));
+		}
+
+		if (JBool(In, TEXT("draw"), false))
+		{
+			const float Dur = (float)JNum(In, TEXT("drawDuration"), 5.0);
+			DrawDebugLine(World, Start, End, bAnyHit ? FColor::Red : FColor::Green,
+						  /*bPersistent*/ false, Dur, 0, 2.0f);
+			for (const FHitResult& H : Hits)
+			{
+				DrawDebugPoint(World, H.ImpactPoint, 12.0f, FColor::Yellow, false, Dur);
+			}
+		}
+
+		Out->SetBoolField(TEXT("hit"), bAnyHit);
+		Out->SetNumberField(TEXT("hitCount"), Arr.Num());
+		Out->SetArrayField(TEXT("hits"), Arr);
+		TSharedRef<FJsonObject> Traced = MakeShared<FJsonObject>();
+		Traced->SetObjectField(TEXT("start"), Vec3(Start));
+		Traced->SetObjectField(TEXT("end"), Vec3(End));
+		Out->SetObjectField(TEXT("traced"), Traced);
+		Out->SetStringField(TEXT("shape"), Shape);
+		Out->SetStringField(TEXT("channel"), ChannelName.IsEmpty() ? TEXT("worldStatic") : *ChannelName);
+		// Which world answered. A trace against the editor world while PIE is running is a different
+		// question from the one the caller probably meant, and this is the only way to notice.
+		Out->SetStringField(TEXT("world"), World->GetName());
+		Out->SetBoolField(TEXT("pieRunning"), bPie);
+	}
+
+	// --- draw_debug ----------------------------------------------------------
+	//   in:  { shape (line|sphere|box|point|arrow|string), start|center, end?, radius?,
+	//          extent?, text?, color?, duration?, thickness? }
+	//   out: { drawn, shape, world, pieRunning, duration }
+	//
+	// capture_camera answers "does this look right" with pixels. This answers "here is what I
+	// measured" - the trace I fired, the bounds I compared, the point I chose - drawn where a human
+	// can see it next to the geometry it refers to.
+	void H_draw_debug(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("shape"), TEXT("start"), TEXT("end"), TEXT("center"), TEXT("radius"),
+			  TEXT("extent"), TEXT("text"), TEXT("color"), TEXT("duration"), TEXT("thickness") },
+			TEXT("shape (line|sphere|box|point|arrow|string), start:{x,y,z} and end:{x,y,z} for "
+				 "line/arrow, center:{x,y,z} for sphere/box/point/string, radius (sphere), "
+				 "extent:{x,y,z} (box), text (string), color (red|green|blue|yellow|cyan|magenta|"
+				 "orange|white|black, default green), duration (seconds, default 5), thickness"),
+			{ { TEXT("position"), TEXT("use 'center' for sphere/box/point/string, or 'start' + 'end' for line/arrow") },
+			  { TEXT("size"), TEXT("use 'radius' for a sphere or 'extent':{x,y,z} for a box") },
+			  { TEXT("persistent"), TEXT("not supported on purpose - a persistent debug shape survives until the level reloads and there is no endpoint to clear it. Use a long duration instead.") } }))
+		{
+			return;
+		}
+
+		bool bPie = false;
+		UWorld* World = SpatialWorld(bPie);
+		if (!World) { Fail(Out, TEXT("no world")); return; }
+
+		const FString Shape = JStr(In, TEXT("shape"), TEXT("point")).ToLower();
+		const FColor Color = ResolveDebugColor(JStr(In, TEXT("color")));
+		const float Duration = (float)JNum(In, TEXT("duration"), 5.0);
+		const float Thickness = (float)JNum(In, TEXT("thickness"), 2.0);
+
+		if (Duration <= 0.0f)
+		{
+			Fail(Out, TEXT("duration must be greater than zero - a shape drawn for zero seconds is "
+						   "invisible, which would look exactly like a bug. NOTHING was drawn."));
+			return;
+		}
+
+		FString VErr;
+		FVector Start = FVector::ZeroVector, End = FVector::ZeroVector, Center = FVector::ZeroVector;
+		const EJsonRead StartRead = ReadVectorField(In, TEXT("start"), Start, VErr);
+		if (StartRead == EJsonRead::Invalid) { Fail(Out, VErr); return; }
+		const EJsonRead EndRead = ReadVectorField(In, TEXT("end"), End, VErr);
+		if (EndRead == EJsonRead::Invalid) { Fail(Out, VErr); return; }
+		const EJsonRead CenterRead = ReadVectorField(In, TEXT("center"), Center, VErr);
+		if (CenterRead == EJsonRead::Invalid) { Fail(Out, VErr); return; }
+		const bool bHasStart = (StartRead == EJsonRead::Read);
+		const bool bHasEnd = (EndRead == EJsonRead::Read);
+		const bool bHasCenter = (CenterRead == EJsonRead::Read);
+
+		if (Shape == TEXT("line") || Shape == TEXT("arrow"))
+		{
+			if (!bHasStart || !bHasEnd)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("shape '%s' needs both start:{x,y,z} and end:{x,y,z}. NOTHING was drawn."),
+					*Shape));
+				return;
+			}
+			if (Shape == TEXT("line"))
+			{
+				DrawDebugLine(World, Start, End, Color, false, Duration, 0, Thickness);
+			}
+			else
+			{
+				DrawDebugDirectionalArrow(World, Start, End, 120.0f, Color, false, Duration, 0, Thickness);
+			}
+		}
+		else
+		{
+			if (!bHasCenter)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("shape '%s' needs center:{x,y,z}. NOTHING was drawn."), *Shape));
+				return;
+			}
+			if (Shape == TEXT("sphere"))
+			{
+				DrawDebugSphere(World, Center, (float)JNum(In, TEXT("radius"), 100.0), 16, Color,
+								false, Duration, 0, Thickness);
+			}
+			else if (Shape == TEXT("box"))
+			{
+				FVector Extent(100.0, 100.0, 100.0);
+				if (ReadVectorField(In, TEXT("extent"), Extent, VErr) == EJsonRead::Invalid)
+				{
+					Fail(Out, VErr);
+					return;
+				}
+				DrawDebugBox(World, Center, Extent, Color, false, Duration, 0, Thickness);
+			}
+			else if (Shape == TEXT("point"))
+			{
+				DrawDebugPoint(World, Center, FMath::Max(1.0f, Thickness * 6.0f), Color, false, Duration);
+			}
+			else if (Shape == TEXT("string"))
+			{
+				const FString Text = JStr(In, TEXT("text"));
+				if (Text.IsEmpty())
+				{
+					Fail(Out, TEXT("shape 'string' needs text. NOTHING was drawn."));
+					return;
+				}
+				DrawDebugString(World, Center, Text, nullptr, Color, Duration);
+			}
+			else
+			{
+				Fail(Out, FString::Printf(
+					TEXT("unknown shape '%s' - use line, sphere, box, point, arrow or string. "
+						 "NOTHING was drawn."), *Shape));
+				return;
+			}
+		}
+
+		Out->SetBoolField(TEXT("drawn"), true);
+		Out->SetStringField(TEXT("shape"), Shape);
+		Out->SetNumberField(TEXT("duration"), Duration);
+		// THE FIELD THAT MAKES AN INVISIBLE DRAW DIAGNOSABLE. Debug shapes drawn into the editor
+		// world do not appear during PIE and vice versa, and the call succeeds either way. Without
+		// this, "ok:true and nothing on screen" has no explanation.
+		Out->SetStringField(TEXT("world"), World->GetName());
+		Out->SetBoolField(TEXT("pieRunning"), bPie);
+		if (bPie)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("drawn into the PIE world because PIE is running - it will not be visible in the "
+					 "editor viewport, and it disappears when PIE stops"));
+		}
+	}
+
 	void H_trace_ground(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,

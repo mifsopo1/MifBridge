@@ -1741,6 +1741,55 @@ def check_overlaps(actor_path: str = "", name_contains: str = "", ignore_ground:
 
 
 @mcp.tool()
+def trace(start: dict, end: dict = None, direction: dict = None, distance: float = 10000.0,
+          shape: str = "line", radius: float = 50.0, half_extent: dict = None,
+          half_height: float = 100.0, channel: str = "worldStatic", trace_complex: bool = True,
+          multi: bool = False, ignore_actors: list = None, draw: bool = False,
+          draw_duration: float = 5.0) -> dict:
+    """Trace a ray or sweep a shape through the world.
+
+    trace_ground only fires straight down and takes the first GROUND hit. This answers everything
+    else: is there a wall between these two points, what is along this direction, does this doorway
+    fit a capsule of this size.
+
+    Give start plus either end, or direction + distance. shape may be line (default), sphere, box or
+    capsule - the non-line shapes SWEEP, which is how you ask whether something fits. channel is one
+    of worldStatic, worldDynamic, visibility, camera, pawn, physicsBody.
+
+    ignore_actors names actors to exclude. An entry that does not resolve is REFUSED rather than
+    skipped, because a trace that silently ignores nothing can return a confident hit against the
+    very actor you excluded.
+
+    draw=True leaves the ray in the viewport for draw_duration seconds. The response reports which
+    world was traced and whether PIE is running.
+    """
+    return _post("trace", start=start, end=end, direction=direction, distance=distance,
+                 shape=shape, radius=radius, halfExtent=half_extent, halfHeight=half_height,
+                 channel=channel, traceComplex=trace_complex, multi=multi,
+                 ignoreActors=ignore_actors or [], draw=draw, drawDuration=draw_duration)
+
+
+@mcp.tool()
+def draw_debug(shape: str = "point", start: dict = None, end: dict = None, center: dict = None,
+               radius: float = 100.0, extent: dict = None, text: str = "",
+               color: str = "green", duration: float = 5.0, thickness: float = 2.0) -> dict:
+    """Draw a debug shape in the viewport: line, sphere, box, point, arrow or string.
+
+    capture_camera answers "does this look right" with pixels. This answers "here is what I measured"
+    - the trace fired, the bounds compared, the point chosen - drawn next to the geometry it refers
+    to, where a human can see it.
+
+    line and arrow take start and end; sphere, box, point and string take center. Colours are named
+    (red, green, blue, yellow, cyan, magenta, orange, white, black).
+
+    The response reports which world was drawn into and whether PIE is running, because a shape drawn
+    into the editor world is invisible during PIE and vice versa - and the call succeeds either way.
+    """
+    return _post("draw_debug", shape=shape, start=start, end=end, center=center, radius=radius,
+                 extent=extent, text=text, color=color, duration=duration, thickness=thickness)
+
+
+@mcp.tool()
 def trace_ground(x: float = None, y: float = None, location: dict = None,
                  from_z: float = 100000.0, to_z: float = -100000.0,
                  ignore_actor: str = "") -> dict:

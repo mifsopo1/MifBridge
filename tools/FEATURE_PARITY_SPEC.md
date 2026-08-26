@@ -52,10 +52,16 @@ Ordered by value for DDS2 modding. Each needs: endpoints, engine APIs, and an an
 fail silently if this were done carelessly".
 
 
-- [ ] **Traces** — only `trace_ground`. A general line/sphere/box trace with channel selection is
-      broadly useful and cheap, and `trace_ground` already proves the pattern.
-- [ ] **Debug Draws** — nothing. Draw-debug-line/sphere/box/string in the editor world is how an
-      agent SHOWS its work; it is also how a modder verifies placement without a screenshot.
+- [x] **Traces** — `trace` added. Line, sphere, box and capsule sweeps in any direction, six named
+      channels, multi-hit, actionable hits (actor, label, class, component, impact point, normal,
+      distance, bone), an optional `draw` that leaves the ray in the viewport, and a `world` /
+      `pieRunning` echo. `ignoreActors` entries that do not resolve are REFUSED, because
+      trace_ground's skip-silently version returned confident hits against the very actors a caller
+      had excluded.
+- [x] **Debug Draws** — `draw_debug` added. Line, arrow, sphere, box, point and string, named
+      colours, duration and thickness. Reports which world it drew into and whether PIE is running,
+      because a shape drawn into the editor world is invisible during PIE and the call succeeds
+      either way. `persistent` is refused on purpose: nothing can clear a persistent shape.
 - [ ] **Insights & Profiling** — nothing beyond `diagnose_landscape_draws`. Basic frame/draw-call/
       memory stats would let an agent answer "is this mod expensive?" instead of guessing.
 - [ ] **Behavior Trees / Blackboard** — nothing, and confirmed real: **17** BehaviorTrees and **4**

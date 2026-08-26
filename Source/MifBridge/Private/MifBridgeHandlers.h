@@ -1060,6 +1060,11 @@ namespace MifBridge
 	MIF_DECL(get_actor_bounds);
 	MIF_DECL(check_overlaps);
 	MIF_DECL(trace_ground);
+	/** General trace - any direction, any channel, optional sphere/box/capsule sweep. trace_ground
+	 *  only ever fires straight down and takes the first GROUND hit. */
+	MIF_DECL(trace);
+	/** Debug shapes in the viewport: the visual half of "numbers for correctness, pixels for taste". */
+	MIF_DECL(draw_debug);
 	MIF_DECL(capture_camera);
 	MIF_DECL(scene_report);
 
