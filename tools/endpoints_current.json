@@ -198,6 +198,7 @@
  "remove_collision",
  "remove_component",
  "remove_enum_value",
+ "remove_event_dispatcher",
  "remove_function",
  "remove_ik_goal",
  "remove_ik_retarget_chain",

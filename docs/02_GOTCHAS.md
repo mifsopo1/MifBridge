@@ -1331,6 +1331,23 @@ three were found by reading the implementations; none is visible from the header
   before anything is created. An OMITTED name still means "engine, pick one" and still auto-numbers.
   Covered by `tools/test_idempotence.py`.
 
+### A node's stored member NAME goes stale after a rename — resolve it
+
+`FMemberReference` keeps the name it was created with *and* a GUID, and it repoints by **GUID**. So
+after a dispatcher (or variable) is renamed, a node that followed the rename perfectly well still
+answers the OLD name from `GetMemberName()` — which is what `UK2Node_BaseMCDelegate::GetPropertyName()`
+returns.
+
+This is not theoretical: `remove_event_dispatcher` counts the call/bind nodes it is about to orphan,
+and counting on `GetPropertyName()` reported **1 for a fresh dispatcher and 0 for a renamed one** whose
+node was wired correctly and compiled clean. The count looked plausible in isolation; only running both
+cases side by side showed it.
+
+Use `GetProperty()`, which calls `DelegateReference.ResolveMember<>(...)` and gives the name the
+property actually has now. Check **both** if the answer matters: the resolved property is null once the
+member is already gone, and the stored name is stale after a rename, so neither alone is safe in every
+order.
+
 **Two of these are the same engine idiom, in unrelated subsystems.** `GetUniqueRetargetChainName` and
 `GenerateNewComponentName` both take a desired name, return a *different* one on collision, and report
 success. Whenever an engine "add" takes a name and hands one back, assume they can differ and compare

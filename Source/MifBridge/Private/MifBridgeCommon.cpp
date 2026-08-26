@@ -126,6 +126,7 @@ namespace MifBridge
 			MIF_BIND(rename_function);
 			MIF_BIND(rename_event);
 			MIF_BIND(rename_event_dispatcher);
+			MIF_BIND(remove_event_dispatcher);
 			MIF_BIND(create_blueprint);
 			MIF_BIND(reparent_blueprint);
 			MIF_BIND(resolve_struct);

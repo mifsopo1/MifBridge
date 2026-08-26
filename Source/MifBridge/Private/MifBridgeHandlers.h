@@ -918,6 +918,7 @@ namespace MifBridge
 	MIF_DECL(rename_function);
 	MIF_DECL(rename_event);
 	MIF_DECL(rename_event_dispatcher);
+	MIF_DECL(remove_event_dispatcher);
 	MIF_DECL(create_blueprint);
 	MIF_DECL(reparent_blueprint);
 	MIF_DECL(resolve_struct);

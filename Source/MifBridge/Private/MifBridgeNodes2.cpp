@@ -12,6 +12,8 @@
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
+#include "UObject/UnrealType.h"      // FProperty::GetFName - the orphan count below
+#include "K2Node_BaseMCDelegate.h"   // GetPropertyName - the orphan count in remove_event_dispatcher
 #include "K2Node_BreakStruct.h"
 #include "K2Node_CustomEvent.h"
 #include "K2Node_EditablePinBase.h"   // shared base of FunctionEntry + CustomEvent (set_function_flags)
@@ -773,6 +775,137 @@ namespace MifBridge
 		Out->SetStringField(TEXT("name"), NewName);
 		Out->SetBoolField(TEXT("renamedSignatureGraph"), true);
 		Out->SetBoolField(TEXT("renamedDelegateVariable"), true);
+	}
+
+	// --- remove_event_dispatcher ------------------------------------------------
+	//   in:  { blueprintId|path, name, confirm }
+	//   out: { removed, removedSignatureGraph, removedDelegateVariable, orphanedNodeCount }
+	//
+	// The gap this fills: dispatchers could be added, renamed and listed, but never removed. Every
+	// other member of the family has a remover - remove_variable, remove_function, remove_component,
+	// remove_interface - so the only way to drop a dispatcher was to delete the blueprint and rebuild
+	// it. Found by asking what the SECOND identical call does across the add_* family, which is also
+	// what turned up the add_component naming bug.
+	//
+	// BOTH HALVES, for the same reason rename_event_dispatcher renames both: a dispatcher is a
+	// signature GRAPH (the parameter list) plus a member VARIABLE (what call/bind nodes reference).
+	// Removing one and leaving the other is worse than removing neither - the leftover half still
+	// resolves by name, so the blueprint looks like it still has a dispatcher that no longer works.
+	void H_remove_event_dispatcher(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("confirm") },
+			TEXT("blueprintId (alias: path), name - the dispatcher to delete, confirm - must be true"),
+			{ { TEXT("dispatcher"), TEXT("this endpoint's key is 'name'") },
+			  { TEXT("force"),      TEXT("the required acknowledgement is confirm:true") },
+			  { TEXT("graphId"),    TEXT("remove_event_dispatcher matches by NAME on the given blueprint - it does not take a graphId") } }))
+		{
+			return;
+		}
+
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("remove_event_dispatcher requires confirm=true"));
+			return;
+		}
+
+		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
+		if (!Blueprint)
+		{
+			return;
+		}
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required (the dispatcher to remove) - list_dispatchers shows what exists"));
+			return;
+		}
+
+		UEdGraph* SignatureGraph = FBlueprintEditorUtils::GetDelegateSignatureGraphByName(Blueprint, FName(*Name));
+		if (!SignatureGraph)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("event dispatcher '%s' not found in %s - list_dispatchers shows what exists"),
+				*Name, *Blueprint->GetName()));
+			return;
+		}
+
+		// Counted BEFORE the removal, because afterwards there is no variable to count against. These
+		// nodes survive the removal as orphans that fail on the next compile, and a caller who is
+		// told the number can go and fix them; one who is not will meet them as compile errors with
+		// no obvious cause.
+		// FBlueprintEditorUtils::GetNodesForVariable would be the obvious call and is PROTECTED, which
+		// the compiler catches rather than the linker. Every call/bind/unbind node for a dispatcher
+		// derives from UK2Node_BaseMCDelegate and answers GetPropertyName(), so walking the graphs is
+		// both public and more precise - it counts delegate nodes rather than any node that happens to
+		// mention the name.
+		int32 OrphanCount = 0;
+		{
+			TArray<UEdGraph*> AllGraphs;
+			Blueprint->GetAllGraphs(AllGraphs);
+			const FName DelegateName(*Name);
+			for (const UEdGraph* Gr : AllGraphs)
+			{
+				if (!Gr) { continue; }
+				for (const UEdGraphNode* Nd : Gr->Nodes)
+				{
+					const UK2Node_BaseMCDelegate* Del = Cast<UK2Node_BaseMCDelegate>(Nd);
+					if (!Del) { continue; }
+					// RESOLVE, do not read the stored name. FMemberReference::GetMemberName returns the
+					// name the reference was CREATED with, and a dispatcher rename repoints the node by
+					// GUID without rewriting that string - so a node that correctly follows a rename
+					// still answers with the old name. Counting on GetPropertyName alone reported 1
+					// orphan for a fresh dispatcher and 0 for a renamed one whose node had followed
+					// perfectly well. GetProperty() resolves through the GUID and gives the name the
+					// property actually has now.
+					//
+					// Both are checked because neither alone is safe: the resolved property is null once
+					// the delegate is already gone, and the stored name is stale after a rename. An
+					// over-count here is a caller looking at one node too many; an under-count is a
+					// caller told there is nothing to fix when there is.
+					const FProperty* Resolved = Del->GetProperty();
+					if ((Resolved && Resolved->GetFName() == DelegateName)
+						|| Del->GetPropertyName() == DelegateName)
+					{
+						++OrphanCount;
+					}
+				}
+			}
+		}
+
+		Blueprint->Modify();
+		FBlueprintEditorUtils::RemoveGraph(Blueprint, SignatureGraph, EGraphRemoveFlags::Default);
+		FBlueprintEditorUtils::RemoveMemberVariable(Blueprint, FName(*Name));
+
+		// READ BACK BOTH HALVES. RemoveMemberVariable is void and early-returns when the variable is
+		// absent (BlueprintEditorUtils.cpp:4609-4610) - the same trap remove_variable was fixed for -
+		// and RemoveGraph gives no answer either. Reporting a removal that did not happen is the one
+		// outcome a confirm-gated destructive endpoint must never produce, and a HALF removal is the
+		// specific risk here.
+		const bool bGraphGone = (FBlueprintEditorUtils::GetDelegateSignatureGraphByName(Blueprint, FName(*Name)) == nullptr);
+		const bool bVarGone   = (FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*Name)) == INDEX_NONE);
+		if (!bGraphGone || !bVarGone)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("removal of dispatcher '%s' did not complete (signature graph gone=%s, delegate variable gone=%s). ")
+				TEXT("The blueprint may now hold half a dispatcher; check list_dispatchers and list_variables ")
+				TEXT("before doing anything else."),
+				*Name, bGraphGone ? TEXT("yes") : TEXT("no"), bVarGone ? TEXT("yes") : TEXT("no")));
+			return;
+		}
+
+		MarkStructural(Blueprint);
+
+		Out->SetStringField(TEXT("removed"), Name);
+		Out->SetBoolField(TEXT("removedSignatureGraph"), true);
+		Out->SetBoolField(TEXT("removedDelegateVariable"), true);
+		Out->SetNumberField(TEXT("orphanedNodeCount"), OrphanCount);
+		if (OrphanCount > 0)
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("%d node(s) referenced this dispatcher and are now orphaned - they will fail the next compile. ")
+				TEXT("find_nodes locates them."), OrphanCount));
+		}
 	}
 
 	// --- set_function_flags -------------------------------------------------

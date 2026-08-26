@@ -256,7 +256,7 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 
 ---
 
-## Capabilities (285 HTTP endpoints: 273 built-in + 12 external)
+## Capabilities (286 HTTP endpoints: 274 built-in + 12 external)
 
 > The authoritative list is whatever `self_audit` reports from the running editor, never this
 > section. `tools/endpoints_current.json` is a snapshot of it, and `tools/parity_check.py`
@@ -269,7 +269,7 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 - **Variables** — add / rename / remove / set‑default (member or local; array & set containers; object/class/soft/interface/enum types). `set_variable_flags` covers the whole Details‑panel flag set on member variables — **Replicated / RepNotify (auto‑creating the `OnRep_` graph) / replication condition**, **SaveGame**, transient, config, instance‑editable, blueprint‑read‑only, expose‑on‑spawn, advanced‑display, interp, deprecated, category, tooltip — and the same keys work inline on `add_variable`. `list_variables` reports the current flags back. *Map containers aren't supported.*
 - **Nodes** — function calls, variable get/set, branch, macro instances (e.g. ForEachLoop), get‑array‑item, override events, parent calls, casts, custom events, make/break struct, self, literals, sequence, spawn actor, get subsystem, make array, make map, format text, get datatable row, comment, timeline, switch (enum/int/string), enum literal, create widget.
 - **Pins / wiring** — connect, disconnect, reconnect, set pin default, set pin type, splice into an exec chain, `remove_pin` (user‑defined parameter pins, and duplicate‑pin repair).
-- **Functions / events / interfaces / components / dispatchers / datatables** — create/implement/remove functions, add event dispatchers + call/bind, add/remove/list interfaces, add/list/remove SCS components + transforms, read datatables & write rows.
+- **Functions / events / interfaces / components / dispatchers / datatables** — create/implement/remove functions, add/rename/remove event dispatchers + call/bind, add/remove/list interfaces, add/list/remove SCS components + transforms, read datatables & write rows.
 - **Widget Blueprints** — toggle Is‑Variable, add/remove widget‑tree data bindings (`add_widget_binding`/`remove_widget_binding`), add/remove tree widgets (`add_tree_widget`/`remove_tree_widget`).
 - **Cooked‑BP reconstruction** — mint a persistent editable child/sibling of a cooked Blueprint (`create_editable_child`), optionally reconstructing its whole Blueprint‑parent chain into editable siblings too (`variant: "full"`) instead of leaving the parent layer as cooked stubs.
 - **Compile / diagnostics** — `compile` and `validate` return `{numErrors, numWarnings, messages:[{severity, text, nodeGuid, pinName}]}`.

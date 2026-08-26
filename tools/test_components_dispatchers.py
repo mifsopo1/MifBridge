@@ -20,6 +20,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -150,15 +151,51 @@ def main():
           any(x.get("name") == "OnPriceChanged" for x in (still.get("dispatchers") or [])),
           json.dumps(still)[:180])
 
+    # ------------------------------------------------------------------ T325 the success paths
+    print("")
+    print("=== T325: renaming and REMOVING a dispatcher, through the scratch-only confirm path ===")
+    # These were the documented coverage gap in this file: both need confirm=true, which mifaudit
+    # strips. scratch_confirm sends it only when every path in the payload is under /Game/_Mif, which
+    # this blueprint is - so the gap is closable now rather than permanent.
+    rn = SC.confirm_call("rename_event_dispatcher", {"blueprintId": bid, "oldName": "OnPriceChanged",
+                                                     "newName": "OnCostChanged"})
+    check("T325 the rename succeeds with confirm", rn.get("ok") is True, json.dumps(rn)[:180])
+    after = [x.get("name") for x in (M.call("list_dispatchers", {"blueprintId": bid}).get("dispatchers") or [])]
+    check("T325 and the dispatcher carries the new name", "OnCostChanged" in after, str(after))
+    check("T325 and not the old one", "OnPriceChanged" not in after, str(after))
+
+    # remove_event_dispatcher - the endpoint that did not exist until the add_*/remove_* families were
+    # compared. Everything else in the family had a remover; this one had add, rename and list only.
+    no = M.call("remove_event_dispatcher", {"blueprintId": bid, "name": "OnCostChanged"})
+    check("T325 removal refuses without confirm", no.get("ok") is False, json.dumps(no)[:150])
+    check("T325 and says confirm is what is missing", "confirm" in (no.get("error") or ""),
+          (no.get("error") or "")[:150])
+    bad = SC.confirm_call("remove_event_dispatcher", {"blueprintId": bid, "name": "NoSuch_zz"})
+    check("T325 an unknown dispatcher is refused", bad.get("ok") is False, json.dumps(bad)[:170])
+
+    rm = SC.confirm_call("remove_event_dispatcher", {"blueprintId": bid, "name": "OnCostChanged"})
+    check("T325 the removal succeeds", rm.get("ok") is True, json.dumps(rm)[:200])
+    # BOTH HALVES. A dispatcher is a signature graph plus a backing delegate variable, and leaving
+    # either behind is worse than leaving both: the survivor still resolves by name, so the blueprint
+    # looks like it has a dispatcher that no longer works.
+    gone_d = [x.get("name") for x in (M.call("list_dispatchers", {"blueprintId": bid}).get("dispatchers") or [])]
+    gone_v = [x.get("name") for x in (M.call("list_variables", {"blueprintId": bid}).get("variables") or [])]
+    check("T325 the dispatcher is gone", "OnCostChanged" not in gone_d, str(gone_d))
+    check("T325 and so is its backing delegate variable", "OnCostChanged" not in gone_v, str(gone_v))
+    # T323 left a call node behind, so the count has to be real rather than always zero.
+    check("T325 and the orphaned call node is reported", (rm.get("orphanedNodeCount") or 0) >= 1,
+          "orphanedNodeCount=%s - a caller who is not told goes looking for the compile error blind"
+          % rm.get("orphanedNodeCount"))
+
     M.call("delete_asset", {"path": bpath})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:
         print("  FAILED: %s\n          %s" % x)
     print("=" * 72)
-    print("COVERAGE GAP, deliberate: the SUCCESS paths of remove_component and")
-    print("rename_event_dispatcher are not exercised - both require confirm=true, which the")
-    print("audit harness strips.")
+    print("The confirm-gated SUCCESS paths are exercised in T325 via tools/scratch_confirm.py, which")
+    print("sends confirm only for a payload whose every path is under /Game/_Mif. The note that used")
+    print("to stand here called that gap permanent; it was only permanent until something safe existed.")
     return 1 if FAIL else 0
 
 

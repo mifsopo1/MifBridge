@@ -1365,6 +1365,12 @@ def rename_event_dispatcher(blueprint_id: str, old_name: str, new_name: str,
                  newName=new_name, confirm=confirm)
 
 
+@mcp.tool()
+def remove_event_dispatcher(blueprint_id: str, name: str, confirm: bool = False) -> dict:
+    "Delete an event dispatcher. A dispatcher is BOTH a signature graph and a backing delegate variable - this removes both, and refuses rather than leaving half of one behind. Reports orphanedNodeCount: call/bind nodes that referenced it survive and will fail the next compile. Requires confirm=True."
+    return _post("remove_event_dispatcher", blueprintId=blueprint_id, name=name, confirm=confirm)
+
+
 # --------------------------------------------------------------------------
 # Function / event flags (RPC replication, access, purity)
 # --------------------------------------------------------------------------
