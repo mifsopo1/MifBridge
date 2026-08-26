@@ -1134,6 +1134,37 @@ the cause is in the engine's API contract, so anything else that reads pixels wi
 The general form: an image endpoint that reports a path, a size and a byte count has verified none of
 those things describe a usable picture. If it matters, open the file and measure it.
 
+## 12. One offset list, three arrays — Niagara parameter stores
+
+`FNiagaraParameterStore` keeps three parallel arrays — `ParameterData` (bytes), `DataInterfaces` and
+`UObjects` (both object arrays) — behind a SINGLE `SortedParameterOffsets` listing every parameter
+across all three. A parameter's `Offset` is a **byte position** in the first case and an **array
+index** in the other two, and nothing in the entry distinguishes them. On
+`/Game/UDS_Mif/Particles/Rain.Rain` three different parameters all report `Offset=0`.
+
+So a width taken as "distance to the next sorted offset" is wrong the moment an asset has any data
+interface or object parameter: it gave a float a width of ONE BYTE, the gap to a `UObject` index. A
+system with both object arrays empty behaves perfectly, which is what makes this easy to ship broken.
+
+`list_niagara_user_parameters` separates them with a rule it can prove — one `typeIndex` is one type,
+so with `T = max(DataInterfaces.Num(), UObjects.Num())`, any parameter at `Offset >= T` proves its
+whole type is a value type — and then VERIFIES that the result tiles `ParameterData` exactly,
+reporting `parameterLayoutVerified` and withholding values when it does not.
+
+Two things generalise past Niagara:
+
+- **A struct that exports cleanly through reflection is not thereby understood.** Every field here read
+  back correctly; the meaning of `Offset` was the part reflection could not convey.
+- **Verify a derived quantity against an invariant the data must satisfy anyway.** The tiling check
+  cost four lines and is the only reason the three-space bug surfaced as a clear failure rather than as
+  plausible numbers.
+
+### The rule this all reduces to
+
+Read the error text. It is written to be read — several handlers name exactly what they left behind.
+An agent that branches on `ok` alone and never reads `error`, `outcome` or `nothingModified` will
+eventually corrupt something quietly, which is the failure mode this whole document exists to prevent.
+
 ## 13. Editor CONTROLLER calls that report success and do something else
 
 `UIKRigController` and `UIKRetargeterController` are the sanctioned way to author IK Rigs and
@@ -1182,34 +1213,3 @@ are already mapped". `force` is the conventional name for bypassing a destructiv
 the audit harness that tests this bridge strips it from every payload alongside `confirm`, `save` and
 `overwrite`. Every `force:true` arrived as `false`, the endpoint did half of what was asked, and it
 reported success. It is now `remapExisting`. Reserve `force` for things that genuinely need a guard.
-
-## 12. One offset list, three arrays — Niagara parameter stores
-
-`FNiagaraParameterStore` keeps three parallel arrays — `ParameterData` (bytes), `DataInterfaces` and
-`UObjects` (both object arrays) — behind a SINGLE `SortedParameterOffsets` listing every parameter
-across all three. A parameter's `Offset` is a **byte position** in the first case and an **array
-index** in the other two, and nothing in the entry distinguishes them. On
-`/Game/UDS_Mif/Particles/Rain.Rain` three different parameters all report `Offset=0`.
-
-So a width taken as "distance to the next sorted offset" is wrong the moment an asset has any data
-interface or object parameter: it gave a float a width of ONE BYTE, the gap to a `UObject` index. A
-system with both object arrays empty behaves perfectly, which is what makes this easy to ship broken.
-
-`list_niagara_user_parameters` separates them with a rule it can prove — one `typeIndex` is one type,
-so with `T = max(DataInterfaces.Num(), UObjects.Num())`, any parameter at `Offset >= T` proves its
-whole type is a value type — and then VERIFIES that the result tiles `ParameterData` exactly,
-reporting `parameterLayoutVerified` and withholding values when it does not.
-
-Two things generalise past Niagara:
-
-- **A struct that exports cleanly through reflection is not thereby understood.** Every field here read
-  back correctly; the meaning of `Offset` was the part reflection could not convey.
-- **Verify a derived quantity against an invariant the data must satisfy anyway.** The tiling check
-  cost four lines and is the only reason the three-space bug surfaced as a clear failure rather than as
-  plausible numbers.
-
-### The rule this all reduces to
-
-Read the error text. It is written to be read — several handlers name exactly what they left behind.
-An agent that branches on `ok` alone and never reads `error`, `outcome` or `nothingModified` will
-eventually corrupt something quietly, which is the failure mode this whole document exists to prevent.
