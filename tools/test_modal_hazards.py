@@ -213,6 +213,25 @@ def main():
     check("T365 and the guard is ON inside a running handler", sa.get("unattendedGuard") is True,
           "unattendedGuard=%s - the modal backstop is NOT in force" % sa.get("unattendedGuard"))
 
+    # ---------------------------------------------------------------- T366 batch inherits it
+    print("")
+    print("=== T366: batch ops are covered too, which is not obvious from the code ===")
+    # batch does NOT recurse through RunEndpoint - it dispatches each op straight out of Handlers()
+    # (MifBridgeNodes.cpp), so the natural worry is that ops run without the guard and a modal inside a
+    # batch could still hang the bridge. They do not: batch is ITSELF invoked through RunEndpoint, so
+    # the TGuardValue is on the stack for every op it dispatches.
+    #
+    # That is an argument, and this is the measurement. self_audit reports the flag as a handler
+    # actually sees it, so running it as a batch op answers the question directly.
+    b = M.call("batch", {"ops": [{"op": "self_audit"}]})
+    ops = b.get("ops") or b.get("results") or []
+    check("T366 a batch of one self_audit runs", bool(ops), json.dumps(b)[:200])
+    if ops:
+        inner = (ops[0] or {}).get("unattendedGuard")
+        check("T366 and the guard is ON inside a batch op", inner is True,
+              "unattendedGuard=%s inside batch - ops dispatched by batch would run unguarded, so a "
+              "modal in any of them hangs the bridge" % inner)
+
     M.call("delete_asset", {"path": "/Game/_MifModal/BP_%d" % st})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

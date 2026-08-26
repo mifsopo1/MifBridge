@@ -13,7 +13,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -22,7 +22,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 4.2,
+  "seconds": 4.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -58,7 +58,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -76,7 +76,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 7.9,
+  "seconds": 4.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -94,7 +94,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 3.4,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -112,7 +112,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 0.8,
+  "seconds": 0.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -139,7 +139,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 3.5,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -148,7 +148,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -157,7 +157,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -175,7 +175,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -184,7 +184,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 1.1,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -193,7 +193,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -202,7 +202,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -211,7 +211,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -237,7 +237,7 @@
   "suite": "test_modal_hazards.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 22   FAIL 0",
+  "summary": "PASS 24   FAIL 0",
   "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
@@ -247,7 +247,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 5.1,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -256,7 +256,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 42   FAIL 0",
-  "seconds": 4.1,
+  "seconds": 4.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -301,7 +301,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 0.5,
+  "seconds": 0.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -319,7 +319,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.5,
+  "seconds": 3.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -328,7 +328,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 3.6,
+  "seconds": 3.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -337,7 +337,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -364,7 +364,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -382,7 +382,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 0.4,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -391,7 +391,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -418,7 +418,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -427,7 +427,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -436,7 +436,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -454,7 +454,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 5.5,
+  "seconds": 5.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -463,7 +463,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -481,7 +481,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -490,7 +490,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -499,7 +499,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -517,7 +517,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -526,7 +526,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -535,7 +535,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 0.1,
+  "seconds": 0.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -544,7 +544,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 0.9,
+  "seconds": 0.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -553,7 +553,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -562,7 +562,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 3.4,
+  "seconds": 3.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -571,7 +571,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -580,7 +580,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -625,7 +625,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -669,8 +669,8 @@
   "suite": "test_modal_hazards.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 22   FAIL 0",
-  "seconds": 3.0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -679,7 +679,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 3.4,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -688,7 +688,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 42   FAIL 0",
-  "seconds": 4.2,
+  "seconds": 4.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -697,7 +697,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 0.5,
+  "seconds": 0.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -706,7 +706,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -724,7 +724,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -742,7 +742,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 1.4,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -751,7 +751,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.5,
+  "seconds": 3.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -769,7 +769,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -778,7 +778,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -787,7 +787,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 3.5,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -796,7 +796,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -814,7 +814,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 0.4,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -832,7 +832,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -850,7 +850,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -859,7 +859,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  }
