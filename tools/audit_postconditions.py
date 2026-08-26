@@ -19,6 +19,7 @@ genuinely returns a checked bool, looks the same from here. The output is a read
 how dangerous the silence would be, not a defect list.
 """
 import os
+import io
 import re
 import sys
 
@@ -100,6 +101,18 @@ def handler_bodies():
             yield fn, m.group(1), src[m.start():end]
 
 
+BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "audit_postconditions_baseline.txt")
+
+
+def load_baseline():
+    try:
+        return set(l.strip() for l in io.open(BASELINE, encoding="utf-8")
+                   if l.strip() and not l.startswith("#"))
+    except Exception:
+        return set()
+
+
 def main():
     readonly = read_only_endpoints()
     rows = []
@@ -149,7 +162,40 @@ def main():
     for sev in ("high", "medium", "low"):
         print("  %-8s %d" % (sev, sum(1 for r in rows if r[0] == sev)))
     print("  total    %d" % len(rows))
-    print("\nHeuristic. Over-reports handlers that verify via a helper or a checked bool return.")
+    print("")
+    print("Heuristic. Over-reports handlers that verify via a helper or a checked bool return.")
+
+    # RATCHET. Ninety-four findings on a self-described over-reporting heuristic is exactly the size
+    # where a genuinely NEW one is invisible - nobody re-reads ninety-four lines to spot the ninety-
+    # fifth. Keyed on severity:endpoint rather than a line number: audit_loop_writes was keyed by line
+    # and raised four false alarms the first time a comment was added above a site.
+    #
+    # Severity is part of the KEY, not metadata beside it, so a finding moving from medium to high
+    # shows up as new. That transition is a regression and is the whole point of watching.
+    base = load_baseline()
+    keys = set("%s:%s" % (r[0], r[2]) for r in rows)
+    if "--update-baseline" in sys.argv:
+        with io.open(BASELINE, "w", encoding="utf-8", newline=chr(13) + chr(10)) as f:
+            f.write("# Accepted postcondition findings. Regenerate deliberately with:" + chr(10))
+            f.write("#   python tools/audit_postconditions.py --update-baseline" + chr(10))
+            for k in sorted(keys):
+                f.write(k + chr(10))
+        print("baseline updated: %d entries" % len(keys))
+        return 0
+    fixed = sorted(base - keys)
+    fresh = sorted(keys - base)
+    print("")
+    for k in fixed:
+        print("  FIXED    %s  (drop it from the baseline)" % k)
+    if fresh:
+        print("")
+        print("NEW since the baseline - these are the ones worth reading:")
+        for k in fresh:
+            print("  %s" % k)
+        print("")
+        print("Accept with --update-baseline once judged, and say why in the commit.")
+        return 1
+    print("OK  no new postcondition findings (%d known)" % len(base))
     return 0
 
 
