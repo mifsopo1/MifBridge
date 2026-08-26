@@ -664,6 +664,20 @@ validates the AUTHORED name — but for a `UUserDefinedEnum` the authored names 
 its bool return is discarded. Same class as the `add_enum_value` bug fixed on 2026-08-25, which was
 closed by reading the applied display name back.
 
+**H. `add_anim_node` guards the BLUEPRINT where its comment promises to guard the GRAPH.** The comment
+reads "An anim node in a non-anim GRAPH compiles to nothing and is a confusing thing to debug, so
+refuse it here rather than let it sit in an EventGraph looking placed" — and the check underneath is
+`!Blueprint->IsA<UAnimBlueprint>()`, which is blueprint-level. An Animation Blueprint has BOTH an
+AnimGraph and an EventGraph, so `add_anim_node` targeting the EventGraph of a perfectly valid
+AnimBlueprint passes the guard and places a node into exactly the graph the comment names. It compiles
+to nothing and the response reports it placed.
+The fix is to test the GRAPH's schema (`UAnimationGraphSchema`) rather than the owning blueprint's
+class. NOT YET WRITTEN — filed rather than added, because seven fixes were already written and
+unbuilt at the time and piling on raises the chance of a build failure that blocks all of them.
+This is the "a comment asserting what the code does needs a test, not prose" failure recorded in the
+snap_actors_to_ground postmortem, arrived at from the other side: here the comment is right about the
+intent and the code is narrower than the comment.
+
 **F. `spawn_many` swallowed an unloadable mesh path twice.** The shared mesh is loaded with
 `LOAD_NoWarn | LOAD_Quiet`, which kills the engine's own log line, and the assignment in the loop is
 guarded by `if (Mesh && ...)`. So a misspelled path produced actors with NO mesh and a response
