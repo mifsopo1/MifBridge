@@ -1122,51 +1122,60 @@ first cleanup pass report 915 successful deletions while changing nothing at all
 
 ---
 
-## 14. `set_blendspace_samples` reported samples the engine had already deleted
+## 14. `set_blendspace_samples` reports invalid samples as added
 
-**FOUND AND FIXED 2026-08-26 (late), commit follows.** Found by the static postcondition audit, then
-confirmed by reading the engine rather than by a test - no user hit this one.
+**FILED WRONG, THEN CORRECTED, 2026-08-26.** The correction is the useful part, so it is kept rather
+than tidied away.
+
+### What I claimed first, and why it was wrong
 
 `audit_postconditions.py` flagged the endpoint as "mutates, but nothing in the body reads the result
-back". It was tempting to dismiss: the handler looked careful, it checks `AddSample`'s return for
-`INDEX_NONE`, collects a `rejected[]` list, calls `ValidateSampleData` and `ResampleData`, and fires
-`PostEditChangeProperty`. Everything a well-written mutating handler should do.
-
-The problem is ORDER. `ValidateSampleData()` is called AFTER the handler has already built the list it
-will report, and its body does this:
+back". Reading `ValidateSampleData` - which the handler calls right after adding - showed this:
 
 ```cpp
 if (IsSameSamplePoint(Sample.SampleValue, SampleData[ComparisonSampleIndex].SampleValue))
-{
-    SampleData.RemoveAt(ComparisonSampleIndex);   // Engine/Private/Animation/BlendSpace.cpp
-    --ComparisonSampleIndex;
-    bSampleDataChanged = true;
-}
+{ SampleData.RemoveAt(ComparisonSampleIndex); ... }
 ```
 
-So any sample sharing a point with another - whether both came from the same call, or one was already
-on the asset - is SILENTLY DELETED after the handler decided to report it as added. `AddSample`
-returning a valid index is not proof the sample is still there a few lines later.
+I concluded that samples added by this call were being silently deleted and still reported as added -
+filed it, fixed it, wrote a commit message asserting it, and pushed. **That cannot happen through this
+endpoint.** `AddSample` calls `ValidateSampleValue`, which calls `IsTooCloseToExistingSamplePoint`,
+which calls `IsSameSamplePoint` - the SAME predicate at the SAME threshold. A duplicate point is
+refused by `AddSample`, returns `INDEX_NONE`, and lands in `rejected[]`. It never reaches the dedup
+pass.
 
-**What made it worse than a simple overcount:** `sampleCount` was read back off the asset and was
-therefore CORRECT, while `samples[]` was the pre-validation list. One response could report
-`sampleCount: 3` alongside four entries in `samples[]` - two fields of the same response contradicting
-each other about the same call, and the wrong one being the detailed field a caller is most likely to
-read and trust.
+Verified live afterwards: two samples at one point give `rejected: 2, droppedByValidation: 0`.
 
-**Fixed** by reconciling against `GetBlendSamples()` after validation, matching on animation path AND
-position (the same clip may legitimately sit at several points, so the clip alone does not identify a
-sample). `samples[]` now lists only what is really on the asset, `addedCount` matches its length, and
-anything the engine removed is reported in `droppedByValidation` with a note saying why and what to do
-about it.
+The mistake was reading ONE function and reasoning forward from it instead of reading the call chain
+that leads into it. The engine already guarded the case I thought I had found.
 
-**The lesson, which is the same one as every other entry here:** the check tested a proxy for the real
-question. "Did AddSample succeed?" is not "is the sample on the asset?", and the gap between them was
-two engine calls the handler itself made. A postcondition is only a postcondition if nothing runs
-after it.
+### The real defect, which is next door to the wrong one
 
-Structural invariants are now asserted in `test_ported_anim.py` T574 - `addedCount` must equal the
-length of `samples[]`, and `sampleCount` can never be less than what `samples[]` claims. The
-`droppedByValidation` path itself is NOT exercised: reaching it needs two samples at one point, which
-means writing to a real BlendSpace, and that suite deliberately does not. A scratch BlendSpace would
-be needed to cover it properly.
+`ValidateSampleData` does not only remove. It also marks samples INVALID without removing them:
+
+```cpp
+Sample.bIsValid = bAnimationExists && bSampleInBounds && bSampleIsUnique;   // BlendSpace.cpp:36
+Sample.bIsValid = ValidateSampleValue(Sample.SampleValue, SampleIndex);    // BlendSpace.cpp:122
+```
+
+An invalid sample is **still in `SampleData`**. It counts toward `GetBlendSamples().Num()`, it survives
+any position-matching reconciliation, and it contributes NOTHING to the blend. The endpoint reported it
+as added with no indication - telling the caller the sample works when the asset says it does not.
+That is the same family as every other entry here, and it is what the audit was actually pointing at.
+
+**Fixed** by reporting `valid` on each sample and an `invalidCount` emitted ALWAYS, not only when
+nonzero, so a caller can assert on it rather than having to notice a field's absence. The note names
+the three causes (`bAnimationExists && bSampleInBounds && bSampleIsUnique`) so a false one is
+actionable. `bIsValid` verified in both trees: 5.3 BlendSpace.h:182, 5.7 :194.
+
+The reconciliation against `GetBlendSamples()` from the first attempt is KEPT as belt-and-braces - it
+costs nothing and covers samples that arrived by another route - but the code comment now states
+plainly that this endpoint cannot trip the deletion path, so nobody re-derives the wrong conclusion.
+
+### The lesson
+
+Two. The obvious one: read the call chain, not the leaf function - the caller may already guard what
+the callee handles. The sharper one: I filed, fixed, committed and pushed a finding before testing the
+claim against the live editor. One five-second call would have shown `rejected: 2, dropped: 0`.
+Evidence FOR a defect deserves the same standard as evidence against one, which is what PM-013 already
+says about dismissals.

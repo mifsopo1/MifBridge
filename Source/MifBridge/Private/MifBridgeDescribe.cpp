@@ -921,6 +921,7 @@ namespace MifBridge
 		static const TCHAR* const GMifDescNotes_landscape_info[] = {
 			TEXT("landscape"), TEXT("not supported - this endpoint always reports EVERY landscape in the editor world; filter the landscapes[] array by actorPath or label"),
 			TEXT("limit"), TEXT("not supported - every landscape is reported"),
+			TEXT("components"), TEXT("'components' is an OUTPUT field and counts only THIS actor's components - it is legitimately 0 for a World Partition landscape, whose components live on its streaming proxies; read 'totalComponents' and let 'componentScope' say which question was answered"),
 			nullptr };
 		static const TCHAR* const GMifDescKeys_layout_material_expressions[] = {
 			TEXT("path"), TEXT("material"), TEXT("materialPath"), nullptr };

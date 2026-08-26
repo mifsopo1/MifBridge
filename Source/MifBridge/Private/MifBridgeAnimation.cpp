@@ -863,22 +863,29 @@ namespace MifBridge
 
 		BS->MarkPackageDirty();
 
-		// RECONCILE WHAT WE CLAIM AGAINST WHAT ACTUALLY SURVIVED.
+		// RECONCILE WHAT WE CLAIM AGAINST WHAT THE ASSET ACTUALLY HOLDS.
 		//
-		// AddSample returning a valid index is NOT proof the sample is still there. ValidateSampleData,
-		// called above, does this:
-		//     if (IsSameSamplePoint(Sample.SampleValue, SampleData[Comparison].SampleValue))
-		//     { SampleData.RemoveAt(Comparison); ... }
-		// (Engine/Private/Animation/BlendSpace.cpp). Two samples at the same point - whether both came
-		// from this call or one was already on the asset - and the later one is SILENTLY DELETED after
-		// this handler already decided to report it as added.
+		// THE REAL HAZARD IS bIsValid, NOT DELETION. An earlier version of this comment claimed
+		// ValidateSampleData silently DELETES samples this call added, via
+		//     if (IsSameSamplePoint(...)) { SampleData.RemoveAt(Comparison); }
+		// That cannot happen through this endpoint, and the reason is worth writing down so nobody
+		// "fixes" it again: AddSample -> ValidateSampleValue already calls
+		// IsTooCloseToExistingSamplePoint, which calls IsSameSamplePoint - the SAME predicate at the
+		// SAME threshold. So a duplicate point is refused by AddSample and lands in rejected[]; it
+		// never reaches the dedup pass. The deletion path is kept below as belt-and-braces for samples
+		// that arrived some other way, not because this endpoint can trip it.
 		//
-		// The pre-fix behaviour was worse than a simple overcount: sampleCount is read back from the
-		// asset and was therefore correct, while samples[] was the pre-validation list. So the response
-		// could say sampleCount 3 and list 4 samples - two fields of one response contradicting each
-		// other, with the wrong one being the detailed one a caller is most likely to read.
+		// What ValidateSampleData ACTUALLY does to samples we added is mark them INVALID without
+		// removing them:
+		//     Sample.bIsValid = bAnimationExists && bSampleInBounds && bSampleIsUnique;   // :36
+		//     Sample.bIsValid = ValidateSampleValue(Sample.SampleValue, SampleIndex);     // :122
+		// An invalid sample is STILL IN SampleData - it counts toward GetBlendSamples().Num(), it
+		// survives any position-matching reconciliation - and contributes nothing to the blend. So
+		// reporting it as added, which is what this endpoint did, is telling the caller the sample
+		// works when the asset says it does not. bIsValid: 5.3 BlendSpace.h:182, 5.7 :194.
 		const TArray<FBlendSample>& Surviving = BS->GetBlendSamples();
 		TArray<TSharedPtr<FJsonValue>> Kept, Dropped;
+		int32 InvalidCount = 0;
 		for (const TSharedPtr<FJsonValue>& V : Added)
 		{
 			const TSharedPtr<FJsonObject>* Row = nullptr;
@@ -889,6 +896,7 @@ namespace MifBridge
 			(*Row)->TryGetNumberField(TEXT("y"), Y);
 
 			bool bStillThere = false;
+			bool bValid = false;
 			for (const FBlendSample& Sample : Surviving)
 			{
 				// Match on animation AND position: the same clip may legitimately appear at several
@@ -899,8 +907,16 @@ namespace MifBridge
 					&& FMath::IsNearlyEqual(Sample.SampleValue.Y, Y, KINDA_SMALL_NUMBER))
 				{
 					bStillThere = true;
+					// THE field that matters. A present-but-invalid sample is on the asset and does
+					// nothing, which is indistinguishable from a working one unless it is reported.
+					bValid = Sample.bIsValid != 0;
 					break;
 				}
+			}
+			if (bStillThere)
+			{
+				(*Row)->SetBoolField(TEXT("valid"), bValid);
+				if (!bValid) { ++InvalidCount; }
 			}
 			(bStillThere ? Kept : Dropped).Add(V);
 		}
@@ -911,6 +927,19 @@ namespace MifBridge
 		// sampleCount about the same call.
 		Out->SetArrayField(TEXT("samples"), Kept);
 		Out->SetNumberField(TEXT("addedCount"), Kept.Num());
+		// Reported ALWAYS, not only when nonzero, so a caller can assert on it rather than having to
+		// notice a field's absence.
+		Out->SetNumberField(TEXT("invalidCount"), InvalidCount);
+		if (InvalidCount > 0)
+		{
+			Out->SetStringField(TEXT("invalidNote"), FString::Printf(
+				TEXT("%d sample(s) are ON the asset but marked INVALID by ValidateSampleData, so they "
+					 "contribute nothing to the blend. bIsValid is set from "
+					 "bAnimationExists && bSampleInBounds && bSampleIsUnique - so the usual causes are a "
+					 "missing animation or a position outside the axis range. They are counted in "
+					 "sampleCount because the engine still stores them; check `valid` on each sample."),
+				InvalidCount));
+		}
 		if (Dropped.Num() > 0)
 		{
 			Out->SetArrayField(TEXT("droppedByValidation"), Dropped);

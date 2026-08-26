@@ -156,6 +156,15 @@ def main():
               "sampleCount=%s but samples[] lists %d - claiming more added than exist on the asset"
               % (r.get("sampleCount"), len(rows or [])))
         check("T574 nothing was added by a no-op", r.get("addedCount") == 0, json.dumps(r)[:200])
+        # invalidCount is emitted ALWAYS, not only when nonzero, so a caller can assert on it rather
+        # than having to notice a field is missing. A sample can be ON the asset and marked invalid by
+        # ValidateSampleData (bIsValid = bAnimationExists && bSampleInBounds && bSampleIsUnique), in
+        # which case it counts toward sampleCount and contributes nothing to the blend.
+        check("T574 invalidCount is always present, not only when nonzero",
+              isinstance(r.get("invalidCount"), (int, float)), json.dumps(r)[:220])
+        check("T574 invalidCount never exceeds sampleCount",
+              (r.get("invalidCount") or 0) <= (r.get("sampleCount") or 0),
+              "invalidCount=%s sampleCount=%s" % (r.get("invalidCount"), r.get("sampleCount")))
         dirty_after = len(M.call("list_dirty_packages", {}, timeout=90).get("packages") or [])
         # NOTE: the droppedByValidation path is NOT exercised here. Reaching it needs two samples at
         # the same point, which means writing to a real BlendSpace - this suite deliberately does not.
