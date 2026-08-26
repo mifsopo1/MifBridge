@@ -207,8 +207,18 @@ Never work from a typed list — one was fabricated once and a third of it was i
     side, so the drift is one-directional since the earlier merge brought its two back.
   * 11 whole source files are missing there, including the entire IK Rig, Landscape, Sequencer,
     Niagara and Game Features work.
-  * **The number that actually makes the case: of the 47 source files the two trees SHARE, 33 differ
-    and only 14 are identical.** That is not a copy running slightly behind, it is two divergent trees.
+  * Of the 47 source files the two trees SHARE, 33 differ textually and 14 are identical. **That number
+    is easy to misread and I misread it first**: a raw diff reports a line as "Curfew-only" whenever
+    the SDK moved or reworded the code around it, so MifBridgeCommon.cpp showed 3904 "Curfew-only"
+    lines. Comparing CONTENT rather than position, it has 17, and MifBridgeDetails.cpp has 0 of its
+    apparent 2312.
+  * **Every one of those genuinely-absent lines was checked, and NONE is stranded work.** They are all
+    places the SDK improved: reworded comments, and one real refactor - self_audit's transaction
+    buckets, where Curfew emits the full name arrays unconditionally and the SDK emits counts always
+    plus the arrays behind bIncludeDetails. The SDK is ahead there too.
+  * **So the conclusion is the useful one: the drift is purely one-directional. Nothing in the Curfew
+    copy needs merging back.** Syncing it is a straight overwrite, not a merge - which makes this a much
+    cheaper decision than the raw file-difference count suggests.
   * The vendored copy is committed INSIDE the Curfew git repo (its HEAD is a Curfew commit), so it is
     plain vendored source rather than a submodule - which is why nothing ever warned that it drifted.
 
