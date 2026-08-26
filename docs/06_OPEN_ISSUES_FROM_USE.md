@@ -664,6 +664,25 @@ validates the AUTHORED name — but for a `UUserDefinedEnum` the authored names 
 its bool return is discarded. Same class as the `add_enum_value` bug fixed on 2026-08-25, which was
 closed by reading the applied display name back.
 
+**K. labelNote is written top-level from inside a loop, so all but the last one is lost.**
+MifBridgeAuthoring.cpp:306 (spawn_many) and :455 (duplicate_actors) both do
+  if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
+inside the per-item loop. SetStringField REPLACES, so spawning twenty actors where five labels were
+refused or trimmed reports exactly one note - the last - and gives the caller no hint the other four
+happened. They read it as a single oddity rather than a pattern.
+
+What makes this worth fixing rather than shrugging at is why SetActorLabelChecked exists in the first
+place. Its own comment says "void API, silent refusal": the engine's SetActorLabel returns nothing and
+quietly declines names it does not like, and this helper was written to surface that. So the mechanism
+built to stop silent label loss loses label notices silently. Same defect class, one layer up.
+
+The fix is an array rather than a field - labelNotes[], or folding them into the errors[] array
+spawn_many already emits per item, which has the advantage of carrying the item index. duplicate_actors
+has no errors[] array, so it needs one or the array form.
+
+NOT YET WRITTEN. Filed rather than fixed because a C++ change needs the editor closed to build, and a
+full regression was in flight at the time.
+
 **J. The harness structurally cannot clean up level actors it spawns.**
 delete_level_actor requires confirm=true, and scratch_confirm grants confirm only when every path in
 the payload lies under /Game/_Mif. A placed actor's path is

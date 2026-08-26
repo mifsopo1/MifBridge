@@ -68,6 +68,11 @@ Never work from a typed list — one was fabricated once and a third of it was i
   a World Partition map with streaming proxies. The only ones here are real DDS2 maps. This is a good
   first task for the downstream report loop once it is switched on.
 - [ ] **Audit the 31 remaining "NOTHING was created" claims.** Two foliage sites were corrected today
+- [ ] **labelNote overwrites itself in two loops.** MifBridgeAuthoring.cpp:306 and :455 write it as a
+  top-level field from inside a per-item loop, so only the last note survives. The helper it comes
+  from exists precisely to stop silent label loss, which makes this the same defect one layer up.
+  Needs an array, or folding into spawn_many.errors[] which already carries the item index. See issue
+  K in docs/06_OPEN_ISSUES_FROM_USE.md.
   for asserting it after real side effects; a DLL string grep proved the phrase survives at 31 other
   Fail() sites. Most are correct early refusals. For each, check whether anything before the Fail()
   mutated state the failure does not undo. See issue I in docs/06_OPEN_ISSUES_FROM_USE.md.
