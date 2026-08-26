@@ -256,7 +256,11 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 
 ---
 
-## Capabilities (230 HTTP endpoints: 218 built-in + 12 external)
+## Capabilities (285 HTTP endpoints: 273 built-in + 12 external)
+
+> The authoritative list is whatever `self_audit` reports from the running editor, never this
+> section. `tools/endpoints_current.json` is a snapshot of it, and `tools/parity_check.py`
+> enforces that every endpoint has both a `MIF_BIND` and an `@mcp.tool`.
 
 - **Session / assets** — open, list, save, back up Blueprints; create new Blueprints (incl. function libraries, interfaces, macro libraries, widget blueprints); delete, rename, or duplicate any `/Game/` asset.
 - **Introspection** — list graphs/nodes/variables/functions, get a node's full pin detail, find nodes by class/title/function, resolve structs, describe a class's callable functions/properties/dispatchers, list enum values. Graph enumeration recurses into **nested** graphs — anim state machines, their states, transition rules, and collapsed/composite node bodies — which are addressed by a dotted `graphId` (`…::AnimGraph.Locomotion.Idle`).
@@ -271,6 +275,49 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 - **Compile / diagnostics** — `compile` and `validate` return `{numErrors, numWarnings, messages:[{severity, text, nodeGuid, pinName}]}`.
 - **Batch & recipes** — run many ops with one final compile; higher‑level recipes (debug‑print splice, reset‑and‑loop, override‑and‑call‑parent, argmax‑over‑components).
 - **Pipeline hooks** — tail the UE4SS mod‑loader log; a plan‑only cook helper.
+- **Material graphs** — create materials and material functions; add and wire expressions
+  (`add_material_expression`, `connect_material_expressions`, `connect_material_property`), lay them
+  out, recompile, and poll shader compilation. `list_material_parameters` works on a **cooked** game
+  because `FMaterialCachedParameters` survives cook — the expression graph does not, and the graph
+  endpoints refuse rather than crash on a cooked material.
+- **Landscape** — create, sculpt, paint layers, bind a runtime virtual texture, and two diagnostics
+  (`diagnose_landscape`, `diagnose_landscape_draws`) for when terrain renders wrongly.
+- **Level authoring** — spawn one actor or many (`spawn_many`), duplicate, transform, label, folder,
+  delete, select; `snap_actors_to_ground`; splines; `get_actor_bounds` and `check_overlaps` for
+  whole-scene audits. `add_foliage_instances` places either a standalone instanced-mesh actor or, with
+  `foliageType`, real foliage in the level's `InstancedFoliageActor` so it inherits that type's cull
+  distance and density.
+- **Viewport and capture** — drive the user's camera (`set_viewport_camera`, `focus_viewport`),
+  `capture_camera` for a shot from an arbitrary point, and `capture_viewport` for what the editor is
+  **actually** drawing. Those are different cameras and the responses say which.
+- **Navigation and AI** — nav bounds volumes, async navmesh build, `nav_project_point`,
+  `nav_find_path` (a partial path is never reported as reachable), patrol setup, and read-only
+  Behavior Tree / Blackboard introspection.
+- **Textures, thumbnails, import/export** — `import_texture` from a file or base64, `import_asset`,
+  `reimport_asset`, `set_texture_settings`; render and write asset thumbnails; `export_asset` for the
+  outbound half of the Blender round trip.
+- **UMG animation** — create animations, bind a widget and add a property track, key it in **seconds**
+  (converted to MovieScene tick space for you), rename a widget and carry the name through all five
+  places that store it, and change an existing animation's range in place with
+  `set_widget_animation_range`.
+- **IK Rig and retargeting** — build an IK Rig from a mesh, set the retarget root, author chains,
+  add goals and solvers, wire goals to solvers, and auto-map chains between a source and target rig by
+  exact or fuzzy name. `list_ik_rig` validates rather than echoes, and asks the engine's own processor
+  whether the rig would actually initialise. UE5-only, and compiled conditionally so the plugin still
+  loads without the IKRig plugin.
+- **Skeletons** — `list_bones` gives the hierarchy of a Skeleton or SkeletalMesh with parents and
+  depth, and says WHICH reference skeleton it read, because a mesh and its skeleton can differ.
+- **Niagara and audio** — `list_niagara_user_parameters` reads a system's User parameters with their
+  VALUES, which no composition of the generic reflection endpoints can reach; `audition_sound` previews
+  any `USoundBase`.
+- **Collision** — collision profiles, per-component collision, and simplified collision generation.
+- **Undo and dirty state** — inspect the transaction stack, undo/redo by count, list dirty packages.
+  Note that a cancelled transaction does NOT roll back (see PM-007) — this is introspection, not a
+  safety net.
+- **Sublevels and PIE** — sublevel composition, streaming and visibility, PIE control and runtime
+  observation.
+- **Struct and enum authoring** — create user-defined structs and enums, add and edit members, and the
+  make/break/switch nodes that consume them.
 
 ---
 
