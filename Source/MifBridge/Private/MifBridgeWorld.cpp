@@ -525,6 +525,7 @@ namespace MifBridge
 		TArray<TSharedPtr<FJsonValue>> Moved;
 		int32 SkippedGround = 0;
 		int32 MissedDeepStack = 0;
+		int32 MoveRefused = 0;   // SetActorLocation said no - almost always an actor with no root
 		int32 Pierced = 0;
 		const int32 MaxBlockersToPierce = 32;
 
@@ -621,6 +622,24 @@ namespace MifBridge
 			const FHitResult& Hit = Ground;
 
 			const double NewZ = Hit.ImpactPoint.Z + PivotToBottom + Offset;
+			A->Modify();
+			// SetActorLocation RETURNS whether it moved, and this discarded it while incrementing
+			// Snapped regardless. It comes back false without moving anything when the actor has no
+			// root component to move - so such an actor was counted among the snapped and the caller
+			// was told a number larger than the number of actors that actually moved.
+			//
+			// This endpoint's entire output is counts, and it already separates missed,
+			// skippedGround and missedUnderDeepStack rather than lumping them together. A move that
+			// did not happen deserves the same treatment - PM records that this endpoint once missed
+			// 112 of 303 actors while reporting cleanly, which is the same shape of wrong number.
+			if (!A->SetActorLocation(FVector(Loc.X, Loc.Y, NewZ)))
+			{
+				++MoveRefused;
+				continue;
+			}
+			// RECORDED AFTER THE MOVE, not before. This block used to run first, so an actor whose
+			// move was then refused still appeared in moved[] with a toZ it never reached - the list
+			// described what was intended rather than what happened.
 			if (!FMath::IsNearlyEqual(NewZ, Loc.Z, 0.01))
 			{
 				TSharedRef<FJsonObject> M = MakeShared<FJsonObject>();
@@ -629,9 +648,6 @@ namespace MifBridge
 				M->SetNumberField(TEXT("toZ"), NewZ);
 				Moved.Add(MakeShared<FJsonValueObject>(M));
 			}
-
-			A->Modify();
-			A->SetActorLocation(FVector(Loc.X, Loc.Y, NewZ));
 			if (bAlign)
 			{
 				// Keep yaw, take pitch/roll from the surface. Straight FromZ would spin the actor.
@@ -644,6 +660,9 @@ namespace MifBridge
 		}
 
 		Out->SetNumberField(TEXT("snapped"), Snapped);
+		// Reported separately rather than folded into missed: "there was no ground under it" and "the
+		// engine refused to move it" are different problems with different fixes.
+		Out->SetNumberField(TEXT("moveRefused"), MoveRefused);
 		Out->SetNumberField(TEXT("missed"), Missed);
 		Out->SetNumberField(TEXT("considered"), Targets.Num());
 		Out->SetNumberField(TEXT("skippedGround"), SkippedGround);

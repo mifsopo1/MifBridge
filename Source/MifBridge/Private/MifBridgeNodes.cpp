@@ -2437,7 +2437,24 @@ namespace MifBridge
 				}
 				else if (const FHandlerFn* Fn = Registry.Find(OpName))
 				{
+					// ATTRIBUTE THE OP'S GUARD TO THE OP, NOT TO batch. RejectUnknownParams files each
+					// accepted-key list it sees under GMifCurrentEndpoint, and the only writer of that
+					// global is RunEndpoint - which batch deliberately does not recurse through. So
+					// every op's key list was recorded against "batch", and TMap::Add REPLACES, so
+					// batch's own five-key entry was destroyed by whichever op ran last. self_audit
+					// then reported batch's observedParamCount as some other endpoint's count.
+					//
+					// The op lost out too: an endpoint only ever exercised through batch never got an
+					// entry of its own, so describe_endpoint kept answering params_not_declared for a
+					// guard that had demonstrably just run - which is precisely what the
+					// runtime-observed branch was written to fix.
+					//
+					// Restored to "batch" rather than cleared, so batch's OWN guard (which already ran
+					// before this loop) keeps its attribution and anything later in this dispatch is
+					// still charged to batch.
+					MifSetCurrentEndpoint(OpName);
 					(*Fn)(OpIn, OpOut); // runs inside the batch's single transaction
+					MifSetCurrentEndpoint(TEXT("batch"));
 				}
 				// Mirror RunEndpoint's resolution order: built-ins, THEN provider-registered endpoints.
 				// Without this second lookup every kr_* op answered "unknown op: 'kr_list_events'" for
@@ -2448,7 +2465,9 @@ namespace MifBridge
 				// out for free and no new policy is introduced here.
 				else if (const FHandlerFn* ExtFn = FindExternalHandler(OpName))
 				{
+					MifSetCurrentEndpoint(OpName);      // same reasoning as the built-in branch above
 					(*ExtFn)(OpIn, OpOut);
+					MifSetCurrentEndpoint(TEXT("batch"));
 				}
 				else
 				{

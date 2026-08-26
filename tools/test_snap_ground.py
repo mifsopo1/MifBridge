@@ -99,6 +99,15 @@ def main():
     # ---------------------------------------------------------------- T60 the regression
     print("\n=== T60: an actor standing over a prop still finds the ground under it ===")
     r = M.call("snap_actors_to_ground", {"actorPaths": [over, openair], "groundActor": L_FLOORA})
+    # `snapped` must mean MOVED. SetActorLocation returns whether it moved and the handler discarded
+    # that, incrementing snapped regardless - so an actor the engine refused to move (one with no root
+    # component) was counted among the snapped, and the caller got a number larger than the number of
+    # actors that actually moved. A refusal is now counted separately, because "there was no ground
+    # under it" and "the engine would not move it" are different problems with different fixes.
+    check("moveRefused is reported alongside snapped", "moveRefused" in r,
+          "without it, snapped can include actors that never moved: %s" % sorted(r.keys()))
+    check("and nothing was refused here", (r.get("moveRefused") or 0) == 0,
+          "moveRefused=%s on actors built specifically to be snappable" % r.get("moveRefused"))
     print("  ", json.dumps({k: v for k, v in r.items() if k != "moved"})[:400])
     check("T60 both actors snapped, neither missed",
           r.get("snapped") == 2 and r.get("missed") == 0,

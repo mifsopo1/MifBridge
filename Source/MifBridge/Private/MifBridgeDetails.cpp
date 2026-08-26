@@ -1982,6 +1982,30 @@ namespace MifBridge
 						Other, Before, Before == 1 ? TEXT("") : TEXT("s"), Before - 1));
 					return;
 				}
+				// SWAPPING AN ELEMENT WITH ITSELF IS A NO-OP, AND SAYING SO IS THE POINT. Both range
+				// checks above accept index == swapWith, SwapValues(3,3) does nothing, and `changed`
+				// below is hardcoded true for swap because a structural op cannot be verified by
+				// COUNTING - the count is identical either way. So this reported changed:true for a
+				// call that changed nothing, and dirtied the package doing it: Modify(),
+				// PreEditChange and a PostEditChange carrying ArrayMove all fire for the no-op.
+				//
+				// Reported rather than refused, matching set_variable_type, which answers a same-type
+				// request with changed:false and a note instead of failing. A caller that computed
+				// two indices which happened to coincide has not made an error worth stopping for -
+				// they just need to be told nothing moved.
+				if (Index == Other)
+				{
+					Out->SetNumberField(TEXT("swapWith"), Other);
+					Out->SetNumberField(TEXT("elementsAfter"), Before);
+					Out->SetNumberField(TEXT("index"), Index);
+					Out->SetBoolField(TEXT("rehashed"), false);
+					Out->SetBoolField(TEXT("changed"), false);
+					Out->SetStringField(TEXT("note"), FString::Printf(
+						TEXT("index and swapWith are both %d, so nothing moved. The array is untouched and the ")
+						TEXT("package was not dirtied."), Index));
+					return;
+				}
+
 				LeafOwner->Modify();
 				LeafOwner->PreEditChange(Leaf);
 				FScriptArrayHelper Helper(AP, LeafAddr);

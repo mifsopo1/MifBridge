@@ -942,6 +942,37 @@ namespace MifBridge
 		Out->SetStringField(TEXT("name"), Name);
 	}
 
+	// Resolve the `scope` parameter, or refuse it.
+	//
+	// Both add_variable and set_variable_type did `Scope.Equals("local")` and treated EVERYTHING else
+	// as member - so scope:"loca1", scope:"function", scope:"banana" all silently produced a MEMBER
+	// variable. add_variable then echoed the request back as `scope`, so a typo answered
+	// ok:true scope:"loca1" for a variable that is a member. The documented values are member|local;
+	// anything else is a caller mistake and saying so costs one comparison.
+	//
+	// This is the silent-ignore class the module already has a backstop for - a supplied parameter
+	// that is accepted and then quietly means something other than what was asked.
+	static bool MifResolveVariableScope(const FString& Raw, bool& bOutLocal, FString& OutError)
+	{
+		FString S = Raw;
+		S.TrimStartAndEndInline();
+		if (S.IsEmpty() || S.Equals(TEXT("member"), ESearchCase::IgnoreCase))
+		{
+			bOutLocal = false;
+			return true;
+		}
+		if (S.Equals(TEXT("local"), ESearchCase::IgnoreCase))
+		{
+			bOutLocal = true;
+			return true;
+		}
+		OutError = FString::Printf(
+			TEXT("scope '%s' is not recognised - the only values are 'member' (the default, a variable on ")
+			TEXT("the blueprint) and 'local' (a variable on one function graph, which also needs ")
+			TEXT("'function'). Nothing was changed."), *Raw);
+		return false;
+	}
+
 	void H_add_variable(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		// This guard is here because its ABSENCE cost a real user a working design. Wanting an object
@@ -989,12 +1020,21 @@ namespace MifBridge
 		}
 
 		const FString Scope = JStr(In, TEXT("scope"), TEXT("member"));
+		bool bScopeLocal = false;
+		{
+			FString ScopeError;
+			if (!MifResolveVariableScope(Scope, bScopeLocal, ScopeError))
+			{
+				Fail(Out, ScopeError);
+				return;
+			}
+		}
 		const FString Default = JStr(In, TEXT("default"));
 
 		Blueprint->Modify();
 
 		bool bAdded = false;
-		if (Scope.Equals(TEXT("local"), ESearchCase::IgnoreCase))
+		if (bScopeLocal)
 		{
 			const FString FunctionName = JStr(In, TEXT("function"));
 			UEdGraph* FunctionGraph = nullptr;
@@ -1057,7 +1097,9 @@ namespace MifBridge
 		}
 
 		Out->SetStringField(TEXT("name"), Name); // canonical (trimmed) name
-		Out->SetStringField(TEXT("scope"), Scope);
+		// The RESOLVED scope, not the string that was sent. Echoing the request meant a value the
+		// handler had reinterpreted was reported back as though it had been honoured.
+		Out->SetStringField(TEXT("scope"), bScopeLocal ? TEXT("local") : TEXT("member"));
 		Out->SetObjectField(TEXT("type"), SerializePinType(PinType));
 	}
 
@@ -1353,7 +1395,15 @@ namespace MifBridge
 		}
 
 		const FString Scope = JStr(In, TEXT("scope"), TEXT("member"));
-		const bool bLocal = Scope.Equals(TEXT("local"), ESearchCase::IgnoreCase);
+		bool bLocal = false;
+		{
+			FString ScopeError;
+			if (!MifResolveVariableScope(Scope, bLocal, ScopeError))
+			{
+				Fail(Out, ScopeError);
+				return;
+			}
+		}
 
 		FEdGraphPinType BeforeType;
 		UEdGraph* FunctionGraph = nullptr;

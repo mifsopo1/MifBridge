@@ -109,6 +109,33 @@ def main():
           "%s vs %s" % (a.get("component"), b.get("component")))
 
     print("")
+    print("=== T383: an unrecognised `scope` is refused, not silently reinterpreted ===")
+    # add_variable and set_variable_type both did Scope.Equals("local") and treated EVERYTHING else as
+    # member. So scope:"loca1" silently created a MEMBER variable - and add_variable then echoed the
+    # request straight back, answering scope:"loca1" for a variable that was nothing of the sort. The
+    # documented values are member|local; anything else is a caller mistake worth naming.
+    ok_member = M.call("add_variable", {"blueprintId": bid, "name": "ScopeOk_%d" % st,
+                                        "type": "float", "scope": "member"})
+    check("T383 scope:member still works", ok_member.get("ok") is True, json.dumps(ok_member)[:170])
+    # The response must report the RESOLVED scope, not the string it was handed.
+    check("T383 and reports the resolved scope", ok_member.get("scope") == "member",
+          "scope=%r" % ok_member.get("scope"))
+
+    for bad in ("loca1", "banana", "function"):
+        q = M.call("add_variable", {"blueprintId": bid, "name": "Bad_%s_%d" % (bad, st),
+                                    "type": "float", "scope": bad})
+        check("T383 add_variable refuses scope:%r" % bad, q.get("ok") is False,
+              "it was accepted and quietly became a member variable: %s" % json.dumps(q)[:150])
+        check("T383 and names the values that work", "member" in (q.get("error") or "")
+              and "local" in (q.get("error") or ""), (q.get("error") or "")[:170])
+
+    # set_variable_type shares the same parameter and had the same hole.
+    M.call("add_variable", {"blueprintId": bid, "name": "Retype_%d" % st, "type": "float"})
+    q = M.call("set_variable_type", {"blueprintId": bid, "name": "Retype_%d" % st,
+                                     "type": "int", "scope": "loca1"})
+    check("T383 set_variable_type refuses it too", q.get("ok") is False, json.dumps(q)[:170])
+
+    print("")
     print("=== T382: none of it broke the blueprint ===")
     c = M.call("compile", {"blueprintId": bid})
     check("T382 the blueprint compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,

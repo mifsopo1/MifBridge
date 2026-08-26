@@ -111,7 +111,6 @@ def main():
         ("sphere", {"center": {"x": 0, "y": 0, "z": 300}, "radius": 150}),
         ("box", {"center": {"x": 300, "y": 300, "z": 200}, "extent": {"x": 100, "y": 100, "z": 100}}),
         ("point", {"center": {"x": 0, "y": 0, "z": 400}}),
-        ("string", {"center": {"x": 0, "y": 0, "z": 600}, "text": "MifBridge"}),
     ]
     for shape, extra in shapes:
         d = M.call("draw_debug", dict({"shape": shape, "duration": 3}, **extra))
@@ -120,6 +119,28 @@ def main():
         check("T105 %s names its world" % shape,
               bool(d.get("world")) and d.get("pieRunning") is not None,
               json.dumps(d)[:160])
+
+    # 'string' USED TO BE IN THE LIST ABOVE, asserted to have drawn like the rest. It never did, and
+    # this test believed the endpoint because the endpoint said drawn:true - the test was encoding the
+    # bug rather than catching it.
+    #
+    # DrawDebugString walks GetPlayerControllerIterator and only draws where a controller has BOTH
+    # MyHUD and Player (DrawDebugHelpers.cpp:613-630). An editor world has no such controller, so the
+    # loop body never executes; the function is void, so nothing could report it. Every other shape
+    # goes through the world's line batcher and genuinely renders in the editor viewport, which is why
+    # this is the only one affected.
+    #
+    # During PIE the same call works, so the handler CHECKS for a HUD-bearing controller rather than
+    # refusing the shape outright - and this asserts the editor-world half, which is where the suite runs.
+    st = M.call("draw_debug", {"shape": "string", "duration": 3,
+                               "center": {"x": 0, "y": 0, "z": 600}, "text": "MifBridge"})
+    check("T105 string is refused in an editor world rather than claiming it drew",
+          st.get("ok") is False,
+          "ok=%s drawn=%s - there is no HUD to draw through here, so drawn:true would be a lie"
+          % (st.get("ok"), st.get("drawn")))
+    check("T105 and the refusal explains why and what to do instead",
+          "HUD" in (st.get("error") or "") and "PIE" in (st.get("error") or ""),
+          (st.get("error") or "")[:200])
 
     print("\n=== T106: draw_debug guards ===")
     for name, payload, expect in (

@@ -44,20 +44,31 @@ def main():
         return 1
     st = int(time.time() % 100000)
 
-    bid = M.call("create_blueprint", {"path": "/Game/_MifCont/BP_%d" % st,
-                                      "parentClass": "Actor"}).get("blueprintId")
+    bppath = "/Game/_MifCont/BP_%d" % st
+    bid = M.call("create_blueprint", {"path": bppath, "parentClass": "Actor"}).get("blueprintId")
     check("a scratch blueprint exists", bool(bid), "create_blueprint returned nothing")
     if not bid:
         return 1
 
-    # An array member variable is the subject. Its default value on the CDO is what edit_container edits.
-    av = M.call("add_variable", {"blueprintId": bid, "name": "Tags", "type": "string",
+    # NOT "Tags". AActor already declares TArray<FName> Tags, so add_variable correctly refuses it with
+    # "name already in use" - which reads like a bug on a blueprint that visibly has no variables, and
+    # cost a round of debugging here before the collision was obvious.
+    av = M.call("add_variable", {"blueprintId": bid, "name": "MifTags", "type": "string",
                                  "container": "array"})
     check("an array variable exists", av.get("ok") is True, json.dumps(av)[:200])
     M.call("compile", {"blueprintId": bid})
 
+    # edit_container addresses an OBJECT, not a blueprint asset: "objectPath (a placed actor's path IS
+    # an objectPath) or (blueprintId + widgetName)". A blueprint's variable DEFAULT lives on the class
+    # default object, and the path form that reaches it is <package>.Default__<Name>_C. Three other
+    # spellings were tried first and all failed - the blueprint path resolves to the UBlueprint asset
+    # (no such property), and <path>_C resolves to the generated CLASS rather than the default OBJECT.
+    # Written down because nothing else in the repo says it and it is not guessable.
+    short = bppath.split("/")[-1]
+    cdo = "%s.Default__%s_C" % (bppath, short)
+
     def edit(**kw):
-        p = {"objectPath": bid, "propertyPath": "Tags"}
+        p = {"objectPath": cdo, "propertyPath": "MifTags"}
         p.update(kw)
         return M.call("edit_container", p)
 

@@ -258,8 +258,29 @@ namespace MifBridge
 
 			Out->SetArrayField(TEXT("availableComponents"), Json);
 			Out->SetNumberField(TEXT("availableComponentCount"), Json.Num());
-			Out->SetStringField(TEXT("availableComponentsNote"),
-				TEXT("list_components on this blueprint returns the same set, plus the template path and the exact endpoint to call for each row"));
+
+			// THE CAP IS ORDER-BIASED, so saying "the same set" is false once it bites.
+			// EnumerateBlueprintComponents fills in three sections - own SCS, then the parent's SCS,
+			// then the native CDO - and its HasRoom() gate is checked in every one. Section 1 spends
+			// the whole budget first, so a blueprint with Cap-or-more of its OWN components yields a
+			// list that structurally CANNOT contain an inherited or native row. The list looked
+			// complete, said so, and was the very thing added to stop a caller guessing at what
+			// exists.
+			//
+			// list_components passes Cap 0 and really does return everything, which is what makes the
+			// old note wrong rather than merely incomplete.
+			//
+			// Truncation is inferred from having filled to the cap. That is a slight over-report - a
+			// blueprint with exactly Cap components and nothing inherited is flagged when nothing was
+			// lost - and that is the right direction: claiming completeness wrongly is the failure
+			// worth avoiding.
+			const bool bCapped = (Cap > 0 && Json.Num() >= Cap);
+			Out->SetBoolField(TEXT("availableComponentsTruncated"), bCapped);
+			Out->SetStringField(TEXT("availableComponentsNote"), bCapped
+				? FString::Printf(TEXT("this list is CAPPED at %d and is not the whole set - it is filled from this "
+					"blueprint's own components first, so inherited and native ones may be missing entirely. "
+					"Call list_components, which is uncapped, for the real set."), Cap)
+				: FString(TEXT("list_components on this blueprint returns the same set, plus the template path and the exact endpoint to call for each row")));
 		}
 
 		// --- property write plumbing -------------------------------------------------------

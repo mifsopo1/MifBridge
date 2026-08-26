@@ -48,6 +48,25 @@ Never work from a typed list — one was fabricated once and a third of it was i
 
 ## Gaps worth closing
 
+- [ ] **Every DEFERRED engine call escapes the modal backstop — a hole in the safety net itself.**
+      `RunEndpoint` runs each handler under `TGuardValue<bool>(GIsRunningUnattendedScript, true)`, and
+      a TGuardValue **restores on scope exit**. Six handlers schedule their real work with
+      `GEditor->GetTimerManager()->SetTimerForNextTick(...)` and answer immediately, so the deferred
+      lambda runs on a LATER tick, long after the guard has been destroyed — completely unguarded.
+      Sites: `MifBridgeWorld.cpp:141` (new_level), `:219` (load_level), and
+      `MifBridgeStreaming.cpp:655`, `:787`, `:1198`.
+      That is not theoretical for the streaming three: `02_GOTCHAS.md` §8 already records
+      `AddLevelToWorld`'s unconditional `FScopedSlowTask::MakeDialog` and its
+      `LevelAlreadyExistsInWorldWarning`. And `FEditorFileUtils::LoadMap` can raise save prompts.
+      A modal on the game thread stops the HTTP ticker, which is the single worst failure this server
+      has (PM-011).
+      Nothing caught it because `new_level`, `load_level` and the sublevel mutators are all on the
+      audit harness DENY list, so no suite has ever driven them.
+      Fix as ONE helper — `MifDeferToNextTick(TFunction<void()>)` that re-arms the guard inside the
+      lambda — rather than five copies, and route all six sites through it. Found 2026-08-26 by the
+      parallel handler hunt; it is the one finding of that round that makes the backstop itself
+      trustworthy rather than merely widespread.
+
 - [ ] **`test_transactions.py` wedged for 8+ minutes during a full two-pass run, and does not
       reproduce standalone.** 2026-08-26. Pass 1 was green across all 53 suites; in pass 2 the suite
       process sat with **0s CPU over a 4s sample, no TCP connections, no child processes** for 568

@@ -349,6 +349,13 @@ namespace MifBridge
 		// invented endpoint names, all 404, and concluded the bridge could not do overrides at all —
 		// while add_override_event, which does exactly this and even takes parentClass, was already
 		// registered. The KeyNotes route that guess to the right endpoint on the first call.
+		// The pin names the engine ACTUALLY used. Declared at function scope on purpose: they are
+		// filled inside the graph-building block below and read again when the response is written,
+		// which is two levels shallower.
+		TArray<TSharedPtr<FJsonValue>> ActualInputNames;
+		TArray<TSharedPtr<FJsonValue>> ActualOutputNames;
+		TArray<FString> RenamedPins;
+
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("blueprintId"), TEXT("path"),
 			  TEXT("name"), TEXT("inputs"), TEXT("outputs"), TEXT("pure") },
@@ -436,9 +443,18 @@ namespace MifBridge
 			if (Entry)
 			{
 				Entry->Modify();
+				// bUseUniqueName IS TRUE, so the engine RENAMES on collision and hands back the pin it
+				// actually made - and that return value was discarded. A caller asking for a parameter
+				// named "then" (the entry node's own exec pin) or naming two inputs the same got a
+				// differently-named pin and no way to learn it, then failed later trying to wire the
+				// name they asked for. Same shape as GenerateNewComponentName in add_component.
 				for (const TPair<FName, FEdGraphPinType>& Pin : Inputs)
 				{
-					Entry->CreateUserDefinedPin(Pin.Key, Pin.Value, EGPD_Output, /*bUseUniqueName*/ true);
+					if (UEdGraphPin* Made = Entry->CreateUserDefinedPin(Pin.Key, Pin.Value, EGPD_Output, /*bUseUniqueName*/ true))
+					{
+						ActualInputNames.Add(MakeShared<FJsonValueString>(Made->PinName.ToString()));
+						if (Made->PinName != Pin.Key) { RenamedPins.Add(FString::Printf(TEXT("%s -> %s"), *Pin.Key.ToString(), *Made->PinName.ToString())); }
+					}
 				}
 			}
 
@@ -470,7 +486,11 @@ namespace MifBridge
 				Result->Modify();
 				for (const TPair<FName, FEdGraphPinType>& Pin : Outputs)
 				{
-					Result->CreateUserDefinedPin(Pin.Key, Pin.Value, EGPD_Input, /*bUseUniqueName*/ true);
+					if (UEdGraphPin* Made = Result->CreateUserDefinedPin(Pin.Key, Pin.Value, EGPD_Input, /*bUseUniqueName*/ true))
+					{
+						ActualOutputNames.Add(MakeShared<FJsonValueString>(Made->PinName.ToString()));
+						if (Made->PinName != Pin.Key) { RenamedPins.Add(FString::Printf(TEXT("%s -> %s"), *Pin.Key.ToString(), *Made->PinName.ToString())); }
+					}
 				}
 
 				// Belt-and-braces: drop any duplicate same-name/same-direction pin, keeping a wired copy.
@@ -515,6 +535,18 @@ namespace MifBridge
 		Out->SetStringField(TEXT("name"), Name);
 		Out->SetNumberField(TEXT("inputs"), Inputs.Num());
 		Out->SetNumberField(TEXT("outputs"), Outputs.Num());
+		// COUNTS ALONE IMPLY THE NAMES WERE HONOURED. They are not always: see the bUseUniqueName note
+		// above. Reporting the real names lets a caller wire what actually exists.
+		Out->SetArrayField(TEXT("inputNames"), ActualInputNames);
+		Out->SetArrayField(TEXT("outputNames"), ActualOutputNames);
+		if (RenamedPins.Num() > 0)
+		{
+			Out->SetStringField(TEXT("pinsRenamed"), FString::Join(RenamedPins, TEXT(", ")));
+			Out->SetStringField(TEXT("pinsRenamedNote"),
+				TEXT("the engine renamed these parameters because the name was already taken on that node "
+					 "(the entry node owns 'then', the result node owns 'execute'). Wire the names in "
+					 "inputNames/outputNames, not the ones you asked for."));
+		}
 		if (Entry)
 		{
 			Out->SetStringField(TEXT("entryNodeGuid"), Entry->NodeGuid.ToString());
@@ -1715,6 +1747,35 @@ namespace MifBridge
 
 		FKismetEditorUtilities::CompileBlueprint(Blueprint);   // outside any transaction (self-managed)
 		Blueprint->GetOutermost()->MarkPackageDirty();
+
+		// READ THE COMPILE VERDICT. CompileBlueprint is void and this discarded it, so a reparent that
+		// BROKE the blueprint answered changed:true with nothing to suggest anything was wrong.
+		// Reparenting is the operation most likely to break one: the new parent may not declare a
+		// function an override implements, may clash with a variable name, or may drop a component the
+		// graphs reference. Blueprint->Status carries the answer and cost nothing to read.
+		//
+		// Reported, NOT failed: the reparent really did happen, so ok:false would be a lie in the
+		// other direction and would imply the blueprint was left alone. The caller needs to know both
+		// things - it changed, and it no longer compiles.
+		const EBlueprintStatus PostStatus = Blueprint->Status;
+		const TCHAR* StatusText =
+			PostStatus == BS_UpToDate             ? TEXT("upToDate")             :
+			PostStatus == BS_UpToDateWithWarnings ? TEXT("upToDateWithWarnings") :
+			PostStatus == BS_Error                ? TEXT("error")                :
+			PostStatus == BS_Dirty                ? TEXT("dirty")                :
+			PostStatus == BS_BeingCreated         ? TEXT("beingCreated")         : TEXT("unknown");
+		Out->SetStringField(TEXT("compileStatus"), StatusText);
+		Out->SetBoolField(TEXT("compiled"), PostStatus != BS_Error);
+		if (PostStatus == BS_Error)
+		{
+			Out->SetStringField(TEXT("compileNote"), FString::Printf(
+				TEXT("the reparent to '%s' WAS applied, and the blueprint no longer compiles. That is "
+					 "usually an override whose function the new parent does not declare, or a variable "
+					 "or component name that now clashes. Call compile for the per-node errors, or "
+					 "reparent back to '%s' to undo it."),
+				*NewParentClass->GetName(),
+				OldParentClass ? *OldParentClass->GetName() : TEXT("the previous parent")));
+		}
 
 		Out->SetStringField(TEXT("blueprintId"), Blueprint->GetPathName());
 		Out->SetStringField(TEXT("oldParentClass"), OldParentClass ? OldParentClass->GetPathName() : TEXT("None"));

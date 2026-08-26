@@ -46,7 +46,7 @@ Author's own priority ranking, "by what actually costs me time now". Status as o
 
 | rank | issue | status |
 |---|---|---|
-| 12 | Five endpoints reported success while doing something else (source hunt) | **FIXED, PENDING BUILD** 2026-08-26 — see section 12; `edit_container` swap no-op, `add_variable`/`set_variable_type` unvalidated `scope`, `draw_debug shape:"string"`, `snap_actors_to_ground` discarded move result, `reparent_blueprint` discarded compile verdict |
+| 12 | Eight endpoints reported success while doing something else (source hunt) | **FIXED + verified** 2026-08-26, 108 runs / 54 suites / 0 failed — see section 12; `edit_container` swap no-op, `add_variable`/`set_variable_type` unvalidated `scope`, `draw_debug shape:"string"`, `snap_actors_to_ground` discarded move result, `reparent_blueprint` discarded compile verdict |
 | 11 | `landscape_info` vs `diagnose_landscape` disagree on component counts (World Partition proxies) | **FIXED + verified** 2026-08-26 — `landscape_info` now counts streaming proxies matched on `LandscapeGuid` and reports `proxyCount` / `proxyComponents` / `totalComponents` / `componentScope`; both endpoints now agree on 256 for the same world |
 | 1 | Parameter drift (`path` dropped from `connect_pins` / `disconnect_pin`) | **FIXED + verified** — `path` accepted on `connect_pins`, `disconnect_pin`, `reconnect_pin`; `self_audit` now emits `surfaceSignature` / `paramSignature` |
 | 2 | `list_components` returns empty for a cooked parent | **FIXED + verified** — `BP_PlantPot` returns 12 components (was 0), `targetKind:"cookedClass"`, each with a reason and `route` |
@@ -589,9 +589,96 @@ most likely to break one: an override whose function the new parent no longer de
 component name that now clashes. `Blueprint->Status` had the answer all along. Now reports
 `compileStatus` / `compiled`, and on error explains the likely cause and how to reverse it.
 
-**Status: all five written, NOT yet built** — a full regression sweep owned the editor while they were
-written, and building means killing it. They are built, tested and committed before this section is
-marked verified.
+**Status: all eight BUILT, verified live, and each covered by a test.** 108 runs across 54 suites,
+0 failed, 0 took the editor down. Two of the verifications proved the bug was reachable rather than
+theoretical: asking `create_function` for an input named `then` really did come back as `then1`, and
+`batch` really did report another endpoint's parameter count as its own.
 
 `tools/test_edit_container.py` is new: that endpoint had no suite at all, which is how (1) survived.
+
+**Three more from the same hunt, verified the same way:**
+
+**6. `get_inherited_component`'s available-components list is capped at 80 and ORDER-BIASED.**
+`EnumerateBlueprintComponents` fills in three sections — own SCS, then the parent's SCS, then the
+native CDO — and checks its `HasRoom()` gate in every one. Section 1 spends the whole budget first, so
+a blueprint with 80 or more of its OWN components produces a list that **structurally cannot contain
+an inherited or native row** — while the note asserted "list_components on this blueprint returns the
+same set". It does not: `list_components` passes Cap 0 and really is uncapped. That note appears on the
+error path whose entire purpose is to stop a caller guessing what exists. Now reports
+`availableComponentsTruncated`, and when capped says so and points at `list_components`.
+
+**7. Batch ops' parameter guards were filed under the name `"batch"`.** `RejectUnknownParams` attributes
+each accepted-key list to `GMifCurrentEndpoint`, and the only writer of that global is `RunEndpoint` —
+which `batch` deliberately does not recurse through. So every op's key list was recorded against
+`"batch"`, and `TMap::Add` REPLACES, so batch's own five-key entry was destroyed by whichever op ran
+last; `self_audit` then reported batch's `observedParamCount` as some other endpoint's count. The op
+lost out too: anything only ever exercised through batch never got an entry of its own, so
+`describe_endpoint` kept answering `params_not_declared` for a guard that had demonstrably just run —
+which is exactly what the runtime-observed branch exists to prevent. `batch` now sets the current
+endpoint around each op and restores it afterwards.
+
+**8. `create_function` discarded the pins it actually created.** It calls
+`CreateUserDefinedPin(..., bUseUniqueName=true)`, which RENAMES on collision and returns the pin it
+made — and the return value was thrown away. Ask for a parameter named `then` (the entry node's own
+exec pin) or name two inputs the same, and you get a differently-named pin with no way to learn it,
+then fail later trying to wire the name you asked for. The response reported `inputs: N` / `outputs: N`
+— counts, which imply the names were honoured. Now reports `inputNames` / `outputNames` as actually
+created, plus `pinsRenamed` when they differ. Same shape as `GenerateNewComponentName` in
+`add_component`; that makes three instances of "an engine add takes a name and hands back a different
+one" in unrelated subsystems, which is worth treating as a standing suspicion rather than three
+coincidences.
+
+---
+
+## 13. Four more from the same hunt — VERIFIED, NOT YET FIXED
+
+Each of these I confirmed against the source myself; they are queued behind the eight in section 12
+rather than written, because writing unbuilt code into a file that already holds tested code is how a
+commit stops meaning what it says.
+
+**A. Every DEFERRED engine call escapes the modal backstop.** The most important one, because it is a
+hole in the safety net rather than in one endpoint. `RunEndpoint` runs each handler under
+`TGuardValue<bool>(GIsRunningUnattendedScript, true)` — and a TGuardValue **restores on scope exit**.
+Six handlers schedule their real work with `SetTimerForNextTick` and answer immediately, so the
+engine call runs on a LATER tick with the guard already destroyed: `MifBridgeWorld.cpp:141`
+(new_level), `:219` (load_level), and `MifBridgeStreaming.cpp:655`, `:787`, `:1198`. §8 of
+`02_GOTCHAS.md` already records that `AddLevelToWorld` opens `FScopedSlowTask::MakeDialog` and
+`LevelAlreadyExistsInWorldWarning`, and `FEditorFileUtils::LoadMap` can raise save prompts. A modal on
+the game thread stops the HTTP ticker — PM-011, the worst failure this server has. Nothing caught it
+because all six endpoints are on the audit harness DENY list and no suite has ever driven them. Fix as
+ONE helper that re-arms the guard inside the lambda, not five copies.
+
+**B. `rename_event_dispatcher` asserts a rename it never checks.** It writes
+`renamedSignatureGraph: true` and `renamedDelegateVariable: true` as literals.
+`FBlueprintEditorUtils::RenameMemberVariable` is void and early-returns silently when the variable is
+absent or the names match — which `rename_variable`'s own comment states, and which is why THAT
+endpoint reads back. `RenameGraph` gives no answer either. So a half-rename is reportable as a full
+one, and the comment directly above the call says "BOTH halves, or the dispatcher breaks". The
+remover I added last night verifies both halves; the renamer does not.
+
+**C. `create_enum` guards on the wrong predicate, so display names can silently keep
+`NewEnumeratorN`.** It pre-checks with `FEnumEditorUtils::IsProperNameForUserDefinedEnumerator`, which
+validates the AUTHORED name — but for a `UUserDefinedEnum` the authored names are always
+`NewEnumeratorN`, so that check effectively always passes. The real gate inside
+`SetEnumeratorDisplayName` is `IsEnumeratorDisplayNameValid`, which rejects a duplicate DISPLAY name;
+its bool return is discarded. Same class as the `add_enum_value` bug fixed on 2026-08-25, which was
+closed by reading the applied display name back.
+
+**E. `batch` does not compile a blueprint an op touched only by `nodeGuid`.** `Touched` is filled from
+`graphId` or `blueprintId`/`path` and nothing else (`MifBridgeNodes.cpp:2489-2510`), but several ops
+address a blueprint purely by node — `rename_event` and `set_function_flags` both take `nodeGuid`
+alone. Such an op mutates the blueprint, never lands in `Touched`, and `compileAtEnd` skips it: the
+blueprint is left structurally modified and uncompiled while the response reports ok with
+`compiles: []`. It is masked whenever the caller passes a top-level `blueprintId` to batch, which is
+added to `Touched` at compile time, so it only bites a batch that relies on per-op addressing.
+This is the SAME bug that was already fixed once for `path` — the comment right above the tracking
+block records that history in its own words. A third addressing form was added later and the tracking
+was not revisited.
+
+**D. `add_foliage_instances` says "NOTHING was created" after creating something.**
+`GetInstancedFoliageActorForCurrentLevel(World, bCreateIfNone=true)` SPAWNS an
+`AInstancedFoliageActor` into the level, and `AddFoliageType` may register a type on it — then the
+later failures announce that nothing was created. The FIRST such message (the IFA itself came back
+null) is accurate; the ones after it are not. PM-007 means there is no rollback to make them true, so
+the message has to change rather than the behaviour.
 

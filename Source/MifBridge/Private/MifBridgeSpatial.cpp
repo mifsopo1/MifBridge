@@ -21,6 +21,8 @@
 // an OPT-IN useViewportCamera:true, and cameraSource is echoed on EVERY capture so the split is visible
 // in the JSON instead of only in the picture.
 #include "MifBridgeHandlers.h"
+#include "GameFramework/PlayerController.h"   // PC->MyHUD / PC->Player - the draw_debug
+#include "GameFramework/HUD.h"                // 'string' shape can only draw through a HUD
 #include "MifBridgeLog.h"
 
 #include "Components/LightComponent.h"
@@ -1107,6 +1109,32 @@ namespace MifBridge
 				if (Text.IsEmpty())
 				{
 					Fail(Out, TEXT("shape 'string' needs text. NOTHING was drawn."));
+					return;
+				}
+				// 'string' IS THE ONE SHAPE THAT CANNOT DRAW IN AN EDITOR WORLD. Every other shape here
+				// goes through the world's line batcher and renders in the editor viewport. DrawDebugString
+				// does not: it walks GetPlayerControllerIterator and only draws where a controller has
+				// BOTH MyHUD and Player (DrawDebugHelpers.cpp:613-630). An editor world has no such
+				// controller, so the loop body never runs, the void function reports nothing, and this
+				// handler used to answer drawn:true having drawn absolutely nothing.
+				//
+				// Checked rather than assumed, because during PIE the same call works perfectly well.
+				bool bHasHudTarget = false;
+				for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+				{
+					APlayerController* PC = It->Get();
+					if (PC && PC->MyHUD && PC->Player)
+					{
+						bHasHudTarget = true;
+						break;
+					}
+				}
+				if (!bHasHudTarget)
+				{
+					Fail(Out, TEXT("shape 'string' draws through a player controller's HUD, and this world has "
+						"no controller with one - which is the normal state of an EDITOR world, so the text "
+						"would not appear anywhere. Nothing was drawn. Start PIE if you want on-screen text, "
+						"or use line/sphere/box/point/arrow, which render in the editor viewport."));
 					return;
 				}
 				DrawDebugString(World, Center, Text, nullptr, Color, Duration);
