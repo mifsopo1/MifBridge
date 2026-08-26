@@ -58,6 +58,17 @@ DENY = {
 FORBIDDEN_KEYS = {"confirm", "force", "discardunsaved", "overwrite", "replaceexisting", "save"}
 
 
+
+# Every PowerShell spawn below passes stdin=subprocess.DEVNULL. This is HARDENING, not a fix for
+# anything proven: a child that inherits our stdin and reads it blocks forever, and combined with
+# capture_output's pipes that is the documented shape of a subprocess hang on Windows - the direct
+# child can be killed on timeout while a grandchild still holds the pipe handles, so the read never
+# reaches EOF.
+#
+# Written down because the obvious suspicion was checked and was WRONG: when test_transactions wedged
+# for 568s there were ten PowerShell processes alive, which looked like a leak from these calls. They
+# all shared one unrelated parent and the oldest was five days old. None of them came from here. The
+# stall remains unexplained; this closes a real hole next to it rather than pretending to be the cause.
 # --------------------------------------------------------------------------- editor identity
 def bridge_pid():
     """PID listening on the bridge port, or None."""
@@ -66,7 +77,7 @@ def bridge_pid():
             ["powershell", "-NoProfile", "-Command",
              "(Get-NetTCPConnection -LocalPort %d -State Listen -ErrorAction SilentlyContinue"
              " | Select-Object -First 1).OwningProcess" % BRIDGE_PORT],
-            capture_output=True, text=True, timeout=30).stdout.strip()
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30).stdout.strip()
         return int(out) if out.isdigit() else None
     except Exception:
         return None
@@ -77,7 +88,7 @@ def process_cmdline(pid):
         return subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "(Get-CimInstance Win32_Process -Filter 'ProcessId = %d').CommandLine" % pid],
-            capture_output=True, text=True, timeout=30).stdout.strip()
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30).stdout.strip()
     except Exception:
         return ""
 
@@ -129,7 +140,7 @@ def sdk_editor_pid():
              "(Get-CimInstance Win32_Process -Filter \"Name = 'UnrealEditor.exe'\""
              " | Where-Object { $_.CommandLine -like '*%s*' }"
              " | Select-Object -First 1).ProcessId" % PROJECT_MARKER],
-            capture_output=True, text=True, timeout=30).stdout.strip()
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30).stdout.strip()
         return int(out) if out.isdigit() else None
     except Exception:
         return None
@@ -154,7 +165,7 @@ def launch_editor():
     subprocess.run(
         ["powershell", "-NoProfile", "-Command",
          "Start-Process -FilePath '%s' -ArgumentList '\"%s\"'" % (EDITOR_EXE, UPROJECT)],
-        capture_output=True, text=True, timeout=60)
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
 
 
 def editor_window_title(pid):
@@ -163,7 +174,7 @@ def editor_window_title(pid):
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "(Get-Process -Id %d -ErrorAction SilentlyContinue).MainWindowTitle" % pid],
-            capture_output=True, text=True, timeout=20).stdout.strip()
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=20).stdout.strip()
         return out or None
     except Exception:
         return None
@@ -197,7 +208,7 @@ def sweep_owner():
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "(Get-Process -Id %d -ErrorAction SilentlyContinue) -ne $null" % pid],
-            capture_output=True, text=True, timeout=20).stdout.strip()
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=20).stdout.strip()
         return pid if out.lower().startswith("true") else None
     except Exception:
         return None                      # cannot tell - do not cry wolf
