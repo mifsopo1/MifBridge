@@ -59,6 +59,13 @@ def scan():
         text = io.open(path, encoding="utf-8", errors="replace").read()
         lines = text.replace(chr(13) + NL, NL).split(NL)
         for i, ln in enumerate(lines, 1):
+            # SKIP COMMENTS. This file's comments quote the code they replaced - the labelNote fix
+            # left a line reading `//   Out->SetStringField(TEXT("labelNote"), LabelNote);` directly
+            # above its replacement, and the scan reported it as a live site. audit_modals already
+            # carries this guard; not carrying it here meant the tool's first real run reported a
+            # defect that had just been fixed, in the very comment explaining the fix.
+            if ln.lstrip().startswith("//") or ln.lstrip().startswith("*"):
+                continue
             m = WRITE.search(ln)
             if not m:
                 continue
@@ -72,7 +79,11 @@ def scan():
                 continue
             ctx = lines[max(0, i - 41):i - 1]
             if any(re.match(r"^\t{2,%d}(for|while)\s*\(" % (tabs - 1), c) for c in ctx):
-                found.append("%s:%d:%s" % (name, i, m.group(2)))
+                # KEYED ON file:field, NOT ON THE LINE NUMBER. A ratcheted baseline keyed by line
+                # raises a false alarm every time anything above a site is edited: adding a six-line
+                # comment moved four entries and the tool reported them as newly discovered. The line
+                # is still shown, for finding the thing - it just is not what identity means here.
+                found.append(("%s:%s" % (name, m.group(2)), i))
     return sorted(found)
 
 
@@ -80,11 +91,8 @@ def self_check(found):
     """Refuse to report a clean scan from a scanner that cannot find what it was built to find."""
     missing = []
     for name, line, field in KNOWN:
-        if not any(e.startswith("%s:%d:%s" % (name, line, field)) for e in found):
-            # The line may legitimately have MOVED as the file changed; a field/file match is enough
-            # to show the scan still works.
-            if not any(e.startswith(name) and e.endswith(":" + field) for e in found):
-                missing.append("%s %s (was line %d)" % (name, field, line))
+        if not any(k == "%s:%s" % (name, field) for k, _ in found):
+            missing.append("%s %s (was line %d)" % (name, field, line))
     return missing
 
 
@@ -114,14 +122,14 @@ def main():
         with io.open(BASELINE, "w", encoding="utf-8", newline=chr(13) + NL) as f:
             f.write("# Per-item writes to a single-valued response field, accepted deliberately." + NL)
             f.write("# Regenerate with: python tools/audit_loop_writes.py --update-baseline" + NL)
-            for e in found:
-                f.write(e + NL)
+            for k, line in found:
+                f.write(k + NL)
         print("baseline updated: %d entries" % len(found))
         return 0
 
     base = load_baseline()
-    new = [e for e in found if e not in base]
-    gone = [e for e in base if e not in found]
+    new = [(k, l) for k, l in found if k not in base]
+    gone = [k for k in base if k not in set(x for x, _ in found)]
 
     print("loop-write scan: %d site(s) (baseline %d)" % (len(found), len(base)))
     for g in gone:
@@ -129,8 +137,8 @@ def main():
     if new:
         print("")
         print("NEW per-item writes to a single-valued field - each of these reports only the LAST item:")
-        for e in new:
-            print("  %s" % e)
+        for k, l in new:
+            print("  %s   (line %d)" % (k, l))
         print("")
         print("If it is genuinely last-wins, or the loop runs at most once, accept it with")
         print("  python tools/audit_loop_writes.py --update-baseline")
