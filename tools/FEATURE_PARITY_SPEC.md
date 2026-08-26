@@ -67,8 +67,13 @@ Never work from a typed list — one was fabricated once and a third of it was i
   componentsNote that fires when components==0 are exactly what 73c4b8e fixed, and reaching them needs
   a World Partition map with streaming proxies. The only ones here are real DDS2 maps. This is a good
   first task for the downstream report loop once it is switched on.
-- [ ] **Audit the 31 remaining "NOTHING was created" claims.** Two foliage sites were corrected today
+- [x] **Audit the 31 remaining "NOTHING was created" claims.** Two foliage sites were corrected today
 - [ ] **labelNote overwrites itself in two loops.** MifBridgeAuthoring.cpp:306 and :455 write it as a
+- [ ] **Triage the discarded-bool sweep (issue N).** 299 bare-statement calls to bool-returning engine
+  functions. Most are conventional discards; the scan is name-based and cannot resolve overloads, which
+  produced at least one confirmed false positive already. Worth working the subset where a false return
+  means a mutation silently did not happen - RemoveTrack, RemovePossessable, RemoveVariable,
+  ChangeVariableDefaultValue, SetPropertyValue, SetDisplayLabel, SetActorRotation, SetRootComponent.
   top-level field from inside a per-item loop, so only the last note survives. The helper it comes
   from exists precisely to stop silent label loss, which makes this the same defect one layer up.
   Needs an array, or folding into spawn_many.errors[] which already carries the item index. See issue

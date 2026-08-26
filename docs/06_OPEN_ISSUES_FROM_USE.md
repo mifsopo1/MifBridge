@@ -664,6 +664,32 @@ validates the AUTHORED name — but for a `UUserDefinedEnum` the authored names 
 its bool return is discarded. Same class as the `add_enum_value` bug fixed on 2026-08-25, which was
 closed by reading the applied display name back.
 
+**N. A discarded-bool sweep: 299 candidates, and the scan cannot resolve overloads.**
+Indexing every bool-returning engine function from the 5.3 headers (7820 of them) and intersecting
+that with every call MifBridge makes as a BARE STATEMENT gives 299 candidate sites where an engine
+answer is thrown away. That is how issue L was found.
+
+THE SCAN IS NAME-BASED AND THEREFORE CANNOT TELL OVERLOADS APART, which inflates the number badly.
+Worked example, checked before it was believed: SetScalarParameterValueEditorOnly appears in the
+index because the FName overload returns bool - but create_material_instance and set_material_parameter
+call the const FMaterialParameterInfo& overload, which returns VOID. No bool is discarded there. Both
+sites also pre-check with GetScalarParameterValue and record unknown names, so they were never the
+bug they looked like. Do not treat a hit as a defect without reading the overload actually selected.
+
+Most of the rest are conventional discards nobody checks: Modify(), MarkPackageDirty(), Destroy().
+The subset worth triaging is the one where a false return means a mutation did not happen while the
+endpoint reports it did - candidates seen so far include RemoveTrack and RemovePossessable
+(MifBridgeWidgets.cpp:923/931), RemoveVariable (MifBridgeUserTypes.cpp:294), ChangeVariableDefaultValue
+(:187), SetPropertyValue (MifBridgeDataTables.cpp:244), SetDisplayLabel (MifBridgeWidgets.cpp:1189),
+SetActorRotation (MifBridgeWorld.cpp:657 - note SetActorLocation's discarded bool was already fixed in
+snap_actors_to_ground, so this is the same shape) and SetRootComponent (MifBridgeAuthoring.cpp:1239).
+
+A note on how this nearly went wrong. The first version of the sweep ran one grep of the whole engine
+tree per call, and most greps hit the timeout - which an `except Exception` turned into 'no match'. It
+printed a confident 'total: 0'. That is the same defect this project keeps hunting, written into the
+tool doing the hunting. The working version indexes once and intersects, and asserts a known-positive
+site is present before any result is believed.
+
 **L. FDataTableEditorUtils::RemoveRow returns a bool that is discarded at both call sites.**
 Found by scanning for engine calls used as bare statements and then checking their return types in the
 engine headers - the same shape as the SetEnumeratorDisplayName bug fixed this morning.
