@@ -201,6 +201,18 @@ def main():
               json.dumps(r)[:200])
         check("T364 and says so plainly", len(r.get("note") or "") > 10, r.get("note"))
 
+    # ---------------------------------------------------------------- T365 the backstop is live
+    print("")
+    print("=== T365: the global backstop is actually in force, not just in the source ===")
+    sa = M.call("self_audit", {})
+    # self_audit runs through RunEndpoint like every other handler, so the flag it reports is the one a
+    # handler actually sees - observed from inside, not asserted from reading the code. If this is ever
+    # false, any engine call that opens a dialog can hang the whole bridge again (PM-011).
+    check("T365 self_audit reports the unattended guard", "unattendedGuard" in sa,
+          "field missing - either the DLL predates the backstop or it was removed")
+    check("T365 and the guard is ON inside a running handler", sa.get("unattendedGuard") is True,
+          "unattendedGuard=%s - the modal backstop is NOT in force" % sa.get("unattendedGuard"))
+
     M.call("delete_asset", {"path": "/Game/_MifModal/BP_%d" % st})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

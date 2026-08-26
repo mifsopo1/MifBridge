@@ -604,6 +604,36 @@ and blocks until it has run, because `FHttpResultCallback` is valid only for the
 handler call. Capturing it and invoking it a frame later was tried and turned a crash-on-compile into
 a crash-on-every-request.
 
+### Latency is one tick, and an unfocused editor ticks far slower
+
+A consequence of the same threading model, and worth knowing before anyone benchmarks anything.
+Because a handler runs inline in the ticker, **per-call latency is essentially one tick period** — the
+work in the handler is usually the smaller half.
+
+UE throttles Slate's tick rate when the editor is **not the foreground window**
+(`EditorPerformanceSettings::bThrottleCPUWhenNotForeground`, on by default). So the same build, on the
+same machine, answers several times slower sitting behind a terminal than it does with focus. Measured
+on 2026-08-26, same three suites, same build:
+
+| | editor focused | editor in the background |
+|---|---|---|
+| `test_widget_animation` | 2.4s | 6.3s |
+| `test_widget_animation_props` | 2.6s | 11.0s |
+| `test_widget_animation_track` | 2.5s | 6.7s |
+
+This nearly caused a good change to be reverted. A commit landed, the whole suite set came out roughly
+three times slower, and the obvious reading was that the commit did it — the numbers were real and the
+change was the only difference anyone had made. It was the throttle: the earlier run happened to be
+against a freshly launched editor, which had focus. With focus restored the "slow" build was *faster*
+than the baseline it was being blamed against.
+
+**So never compare timings across two editor sessions without checking focus state.**
+`tools/bench_bridge_latency.py` reports the median latency and whether the editor had focus, together,
+for exactly this reason. Autosave is the other distortion: once a session has accumulated dirty scratch
+packages the editor writes them out on a timer, and whichever call is in flight wears the stall — which
+shows up as isolated outliers (one suite at 60s among neighbours at 7s), so read the median, not the
+mean.
+
 ### Why the modal/blocking hazard is WORSE than an async model, not better
 
 Any modal window — ours, the engine's, or a third-party plugin's — spins its own loop, the tick
@@ -621,6 +651,21 @@ The symptom is indistinguishable from "the bridge crashed", so check the process
 ```bash
 powershell -NoProfile -Command "Get-Process UnrealEditor | Select-Object Id,MainWindowTitle"
 ```
+
+`MainWindowTitle` is not enough on its own, though: a modal is a *separate* window, and the process
+keeps reporting its main window while the modal sits in front of it. Enumerate the process's visible
+windows instead — that is what named "Change Variable Type" in PM-011. And sample CPU twice a few
+seconds apart before theorising: a delta near zero means **blocked**, which rules out an infinite
+loop straight away.
+
+**The one that blocks a relaunch before the bridge even starts.** After the editor is killed with
+unsaved scratch packages — which is every crash an unattended sweep is hunting for — the next launch
+opens a **Restore Packages** modal. It goes up *before* the bridge serves, so an automated relaunch
+waits out its entire timeout against an editor that is never going to answer, exactly when a run is
+trying to recover. `tools/clear_scratch_restore.py` empties that list, and `mifaudit.launch_editor`
+calls it first. It **refuses** unless every entry is a scratch path, because the alternative is
+throwing away a recovery offer for real work: on this machine that tree holds Andre's DDS2Casino
+quest blueprints.
 
 A `MainWindowTitle` that is not the normal editor title is the answer. Real instance (2026-07-27):
 BlueprintAssist's launch popup (`MainWindowTitle: "BA Welcome Screen"`) blocked a whole automated
@@ -713,6 +758,53 @@ Two consequences worth keeping straight:
 Use `FMifScopedDialogSuppression` (`MifBridgeHandlers.h`) for the suppressible class. It restores the
 caller's own setting afterwards, because this editor is also driven by a human whose warning
 preferences are not ours to change.
+
+### The backstop: `RunEndpoint` runs every handler unattended
+
+Guarding known prompting APIs one call site at a time cannot close this class, because the danger is
+the calls **nobody has classified yet** — 285 endpoints reaching hundreds of engine functions, and
+`audit_modals.py` knows about eight of them. PM-011 was one of the unclassified ones.
+
+So `RunEndpoint` opens every handler with:
+
+```cpp
+TGuardValue<bool> UnattendedGuard(GIsRunningUnattendedScript, true);
+```
+
+That is not an invention — it is what the engine does for exactly this shape of API.
+`UEditorAssetSubsystem` and `UEditorActorSubsystem`, Epic's editor-scripting surface, begin **every
+public function** with the same line (`EditorAssetSubsystem.cpp:366`, and about forty more). Doing it
+once at dispatch rather than 285 times is the only difference.
+
+**Be clear about what it buys: a degradation, not a fix.** A cancelled dialog is answered *no*, so
+the operation is **refused** rather than performed — and refused after some work may already have
+happened, which is why endpoints still check predictable conditions themselves and fail with a real
+reason. What it removes is the outcome where the bridge simply stops existing. Every read of this
+flag in the engine is UI suppression (message dialogs, modal windows, import option dialogs, save and
+PIE prompts); none of them change what an operation *means*.
+
+**It does not cover slow-task windows, and that is explicit in the engine, not an oversight.** The
+cancel is guarded by `GIsRunningUnattendedScript && !bSlowTaskWindow` — a progress dialog raised by
+`FScopedSlowTask::MakeDialog()` is deliberately still shown. Those are a *different* hazard and are
+still only DECLARED, not closed: they stall the bridge for as long as the task runs (Slate ticks;
+`FTSTicker` does not) rather than forever, which is why `add_sublevel` and `save_dirty_packages`
+remain in the table above.
+
+Where an operation should actually **proceed**, this is the wrong tool — reach for
+`FMifScopedDialogSuppression`, which is consulted earlier and counts as consent.
+
+**What it changes for the endpoints no suite exercises.** `save_*`, `start_pie` and `load_level` are
+deny-listed in the audit harness, so a green regression says nothing about them — and saving is how
+real work persists, so these were read directly rather than assumed:
+
+| Site | Without the guard | With it |
+|---|---|---|
+| `FileHelpers.cpp:3888` | a level with no filename opens a **SaveAs dialog** | returns `false` — not saved, and the handler can say so |
+| `FileHelpers.cpp:4302` | `PromptForCheckoutAndSave` shows the checkout prompt | calls `SavePackages` directly and returns success/failure — **the save still happens**, it just stops asking |
+| `PlayLevel.cpp:1446` | "these Blueprints have errors, play anyway?" | returns true and proceeds |
+
+All three are what a caller with no screen would want, and the first two are strictly better than the
+previous behaviour, which was to hang the bridge on a dialog nobody could reach.
 
 ## 9. Numbers are strict, and a write is checked before it happens
 

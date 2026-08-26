@@ -10,6 +10,7 @@
                                             // guaranteed by the shared PCH; a unity-build
                                             // blob move is what breaks that assumption.
 #include "CoreGlobals.h"                    // GEditorPerProjectIni (same reason)
+#include "Templates/UnrealTemplate.h"        // TGuardValue - the modal backstop in RunEndpoint
 #include "Dom/JsonValue.h"                  // EJson + the concrete FJsonValue types the strict
                                             // numeric readers below have to inspect BY TYPE, because
                                             // TryGetNumber's own coercions are what hid defect 1
@@ -959,12 +960,26 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("policyContradictions"), Contradictions);
 		Out->SetBoolField(TEXT("healthy"), Contradictions.Num() == 0);
 
-		// Build identity, so a stale DLL is detectable rather than mystifying. These move on EVERY
-		// rebuild, including a comment-only one — use the two signatures below to detect a CONTRACT
-		// change, not these.
+		// Build identity, so a stale DLL is detectable rather than mystifying. Use the two signatures
+		// below to detect a CONTRACT change, not these.
+		//
+		// CORRECTED 2026-08-26: this used to claim they move on EVERY rebuild, including a comment-only
+		// one. They do not. __DATE__/__TIME__ are expanded per TRANSLATION UNIT, and a unity build only
+		// recompiles the blobs that actually changed - so a rebuild that touches a file in another blob
+		// leaves these reporting the PREVIOUS build. Observed directly: a build moved the DLL's mtime
+		// and buildTime still read 02:24 from the build before it. Treat a CHANGED value as proof the
+		// DLL is new; treat an unchanged one as no evidence either way. To answer "is my change live?",
+		// check the DLL's mtime and grep the DLL for a string from the change (UTF-16LE - UE string
+		// literals are wide, so an ASCII search finds nothing).
 		Out->SetStringField(TEXT("buildDate"), ANSI_TO_TCHAR(__DATE__));
 		Out->SetStringField(TEXT("buildTime"), ANSI_TO_TCHAR(__TIME__));
 		Out->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
+
+		// The modal backstop, observed rather than asserted. This handler runs through RunEndpoint like
+		// every other, so reading the flag HERE reports what a handler actually sees. False means the
+		// guard is not in force and any engine call that opens a dialog can hang the bridge - which is
+		// PM-011, and is the single worst failure this server has.
+		Out->SetBoolField(TEXT("unattendedGuard"), GIsRunningUnattendedScript);
 
 		// WHICH PROJECT IS THIS? A client knows the port it dialled and nothing else. The bridge binds
 		// a fixed port, only one editor can hold it, and MifBridge is not loaded in every project - so
@@ -1186,6 +1201,31 @@ namespace MifBridge
 
 		// Editor-only script paths are allowed inside this scope.
 		FEditorScriptExecutionGuard ScriptGuard;
+
+		// NO MODAL MAY EVER REACH A CALLER THAT CANNOT CLICK IT. Handlers run inline on the game
+		// thread inside the HTTP ticker, so a modal is not a prompt - it stops the ticker, and the
+		// bridge answers nothing again until a human intervenes. In an unattended run that is
+		// permanent. PM-011 is one instance: an engine call three layers down opened a warning dialog
+		// and took the editor with it.
+		//
+		// Guarding known prompting APIs one call site at a time cannot close that, because the risk is
+		// the calls nobody has classified yet - 285 endpoints reaching hundreds of engine functions.
+		// This is the backstop for all of them: FMessageDialog::Open returns its DEFAULT instead of
+		// showing (MessageDialog.cpp:172), and FSlateApplication::AddModalWindow cancels the window
+		// outright with a log line naming it (SlateApplication.cpp:1990), which also covers the
+		// FSuppressableWarningDialog class that does not go through FMessageDialog at all.
+		//
+		// This is the engine's own answer for exactly this shape of API, not an invention:
+		// UEditorAssetSubsystem and UEditorActorSubsystem - Epic's editor-scripting surface - open
+		// EVERY public function with this same TGuardValue (EditorAssetSubsystem.cpp:366 and ~40
+		// more). Doing it once here rather than 285 times is the only difference.
+		//
+		// What it buys is a DEGRADATION, not a fix: a cancelled dialog is answered "no", so the
+		// operation is refused rather than performed. A refusal that reports itself is an enormously
+		// better failure than a bridge that stops existing - but where an operation SHOULD proceed,
+		// this is not the tool. Use FMifScopedDialogSuppression, which is checked earlier and makes
+		// the engine treat the dialog as consented to (see set_variable_type).
+		TGuardValue<bool> UnattendedGuard(GIsRunningUnattendedScript, true);
 
 		// Batch L, defect 1: one reset per request, so "a supplied parameter was ignored because its
 		// JSON type was wrong" is a property of THIS call and not of a previous one. batch dispatches

@@ -25,3 +25,8 @@ tools/fuzz_run*.log
 # scratch dumps produced while auditing the MIF_BIND registry
 Source/MifBridge/Private/bound_tmp.txt
 tools/audit_findings.pre-night-sweep.jsonl
+
+# run_all_suites.py writes a fresh log per invocation. suite_results.json IS tracked - it is the
+# structured result the next run compares against - but the raw console logs are regenerated every
+# time and only ever differ by timing noise.
+tools/suite_run_*.log
