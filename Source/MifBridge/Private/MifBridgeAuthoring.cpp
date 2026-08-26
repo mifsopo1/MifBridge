@@ -633,13 +633,17 @@ namespace MifBridge
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("material"), TEXT("materialPath"), TEXT("path"),
-			  TEXT("scalars"), TEXT("vectors"),
-			  TEXT("parameter"), TEXT("parameterName"), TEXT("name"), TEXT("value") },
+			  TEXT("scalars"), TEXT("vectors"), TEXT("textures"), TEXT("switches"),
+			  TEXT("parameter"), TEXT("parameterName"), TEXT("name"), TEXT("value"),
+			  TEXT("association"), TEXT("index") },
 			TEXT("material (aliases: materialPath, path), scalars {name:number}, vectors {name:{r,g,b,a}}, ")
-			TEXT("and/or the singular pair parameter (aliases: parameterName, name) + value"),
-			{ { TEXT("textures"), TEXT("texture parameters are NOT implemented on this endpoint — it applies scalars and vectors only") },
-			  { TEXT("texture"),  TEXT("texture parameters are NOT implemented on this endpoint — it applies scalars and vectors only") },
-			  { TEXT("switches"), TEXT("static switch parameters are NOT implemented on this endpoint — they need a static-permutation update") } }))
+			TEXT("textures {name:\"/Game/...\"}, switches {name:true|false}, ")
+			TEXT("and/or the singular pair parameter (aliases: parameterName, name) + value. ")
+			TEXT("association (global|layer|blend) + index address a LAYER parameter — list_material_parameters ")
+			TEXT("reports both, and a layer parameter addressed as a global is simply not found"),
+			{ { TEXT("texture"),  TEXT("the plural key is 'textures': {\"ParamName\": \"/Game/path/T_Foo.T_Foo\"}") },
+			  { TEXT("switch"),   TEXT("the plural key is 'switches': {\"ParamName\": true}") },
+			  { TEXT("staticSwitches"), TEXT("the key is 'switches'") } }))
 		{
 			return;
 		}
@@ -664,6 +668,10 @@ namespace MifBridge
 		const TSharedPtr<FJsonObject>* Src = nullptr;
 		if (In->TryGetObjectField(TEXT("scalars"), Src) && Src) { ScalarSet->Values = (*Src)->Values; }
 		if (In->TryGetObjectField(TEXT("vectors"), Src) && Src) { VectorSet->Values = (*Src)->Values; }
+		TSharedRef<FJsonObject> TextureSet = MakeShared<FJsonObject>();
+		TSharedRef<FJsonObject> SwitchSet = MakeShared<FJsonObject>();
+		if (In->TryGetObjectField(TEXT("textures"), Src) && Src) { TextureSet->Values = (*Src)->Values; }
+		if (In->TryGetObjectField(TEXT("switches"), Src) && Src) { SwitchSet->Values = (*Src)->Values; }
 
 		const FString Single = JStrAny(In, { TEXT("parameter"), TEXT("parameterName"), TEXT("name") });
 		// FJsonObject::HasField is true for an explicit JSON null (JsonObject.h:69-78 only checks
@@ -696,19 +704,42 @@ namespace MifBridge
 			{
 				VectorSet->SetField(Single, Value);
 			}
+			else if (Value->Type == EJson::Boolean)
+			{
+				SwitchSet->SetField(Single, Value);
+			}
+			else if (Value->Type == EJson::String)
+			{
+				// The only remaining family is a texture, whose value is an asset path. Requiring a
+				// leading slash stops a typo being handed to LoadObject as though it were a path.
+				FString AsPath;
+				Value->TryGetString(AsPath);
+				if (!AsPath.StartsWith(TEXT("/")))
+				{
+					Fail(Out, FString::Printf(
+						TEXT("parameter '%s' was given the string \"%s\", which is neither a number nor an ")
+						TEXT("asset path. A texture value must be a /Game/... object path."), *Single, *AsPath));
+					return;
+				}
+				TextureSet->SetField(Single, Value);
+			}
 			else
 			{
 				Fail(Out, FString::Printf(
-					TEXT("cannot tell whether parameter '%s' is a scalar or a vector from a %s value — pass a number (scalar) ")
-					TEXT("or {r,g,b,a} / [r,g,b,a] (vector). Booleans (static switches) and asset paths (textures) are not supported here."),
+					TEXT("cannot tell what family parameter '%s' belongs to from a %s value — pass a number ")
+					TEXT("(scalar), {r,g,b,a} / [r,g,b,a] (vector), true|false (static switch) or a ")
+					TEXT("\"/Game/...\" path (texture)."),
 					*Single, JsonTypeName(Value->Type)));
 				return;
 			}
 		}
 
-		if (ScalarSet->Values.Num() == 0 && VectorSet->Values.Num() == 0)
+		if (ScalarSet->Values.Num() == 0 && VectorSet->Values.Num() == 0
+			&& TextureSet->Values.Num() == 0 && SwitchSet->Values.Num() == 0)
 		{
-			Fail(Out, TEXT("nothing to apply — pass scalars:{\"<Name>\":number} and/or vectors:{\"<Name>\":{r,g,b,a}}, or the singular parameter:\"<Name>\" + value:<number|{r,g,b,a}>"));
+			Fail(Out, TEXT("nothing to apply — pass scalars:{\"<Name>\":number}, vectors:{\"<Name>\":{r,g,b,a}}, ")
+				TEXT("textures:{\"<Name>\":\"/Game/...\"} and/or switches:{\"<Name>\":true}, or the ")
+				TEXT("singular parameter:\"<Name>\" + value"));
 			return;
 		}
 
@@ -747,12 +778,34 @@ namespace MifBridge
 		// whatever the user did BEFORE it. undo_transactions then reported success over an edit it
 		// had not reverted. One line; the handler is already inside the transaction.
 		MIC->Modify();
+		// Address LAYER and BLEND parameters, not only globals. list_material_parameters reports the
+		// association and index of every parameter, and a layer parameter addressed as a global is
+		// simply not found - which reads as "no such parameter" for one that plainly exists.
+		const FString AssocStr = JStr(In, TEXT("association"), TEXT("global")).ToLower();
+		EMaterialParameterAssociation Assoc = GlobalParameter;
+		if (AssocStr == TEXT("layer"))      { Assoc = LayerParameter; }
+		else if (AssocStr == TEXT("blend")) { Assoc = BlendParameter; }
+		else if (AssocStr != TEXT("global"))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("association '%s' is not one of global, layer or blend. NOTHING was applied."),
+				*AssocStr));
+			return;
+		}
+		const int32 AssocIndex = JInt(In, TEXT("index"), INDEX_NONE);
+		auto MakeInfo = [Assoc, AssocIndex](const FName& N)
+		{
+			return FMaterialParameterInfo(N, Assoc, AssocIndex);
+		};
+
 		int32 ScalarsApplied = 0;
 		int32 VectorsApplied = 0;
+		int32 TexturesApplied = 0;
+		int32 SwitchesApplied = 0;
 		TArray<TSharedPtr<FJsonValue>> Unknown;
 		for (const TPair<FName, float>& Write : ScalarWrites)
 		{
-			const FMaterialParameterInfo Info(Write.Key);
+			const FMaterialParameterInfo Info = MakeInfo(Write.Key);
 			float Existing = 0.f;
 			if (!MIC->GetScalarParameterValue(Info, Existing))
 			{
@@ -764,7 +817,7 @@ namespace MifBridge
 		}
 		for (const TPair<FName, FLinearColor>& Write : VectorWrites)
 		{
-			const FMaterialParameterInfo Info(Write.Key);
+			const FMaterialParameterInfo Info = MakeInfo(Write.Key);
 			FLinearColor Existing;
 			if (!MIC->GetVectorParameterValue(Info, Existing))
 			{
@@ -775,9 +828,74 @@ namespace MifBridge
 			++VectorsApplied;
 		}
 
+		// --- textures ----------------------------------------------------------
+		TArray<FString> BadTextures;
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Write : TextureSet->Values)
+		{
+			const FMaterialParameterInfo Info = MakeInfo(FName(*Write.Key));
+			UTexture* Existing = nullptr;
+			if (!MIC->GetTextureParameterValue(Info, Existing))
+			{
+				Unknown.Add(MakeShared<FJsonValueString>(Write.Key));
+				continue;
+			}
+			FString TexPath;
+			if (!Write.Value.IsValid() || !Write.Value->TryGetString(TexPath) || TexPath.IsEmpty())
+			{
+				Fail(Out, FString::Printf(
+					TEXT("textures['%s'] must be a /Game/... object path string. NOTHING was applied."),
+					*Write.Key));
+				return;
+			}
+			UObject* Obj = LoadAssetLenient(TexPath);
+			UTexture* Tex = Cast<UTexture>(Obj);
+			if (!Tex)
+			{
+				// A missed path and a wrong-typed asset are different mistakes with the same shape,
+				// and either would end as a NULL assignment reported as success - a material that
+				// renders black under ok:true.
+				BadTextures.Add(Obj
+					? FString::Printf(TEXT("%s -> '%s' is a %s, not a UTexture"), *Write.Key, *TexPath, *Obj->GetClass()->GetName())
+					: FString::Printf(TEXT("%s -> no asset at '%s'"), *Write.Key, *TexPath));
+				continue;
+			}
+			MIC->SetTextureParameterValueEditorOnly(Info, Tex);
+			++TexturesApplied;
+		}
+		if (BadTextures.Num() > 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("texture value(s) could not be resolved: %s. Assigning a null texture would have ")
+				TEXT("reported success and rendered black, so nothing was applied for those."),
+				*FString::Join(BadTextures, TEXT("; "))));
+			return;
+		}
+
+		// --- static switches ---------------------------------------------------
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Write : SwitchSet->Values)
+		{
+			const FMaterialParameterInfo Info = MakeInfo(FName(*Write.Key));
+			bool Existing = false;
+			FGuid Guid;
+			if (!MIC->GetStaticSwitchParameterValue(Info, Existing, Guid))
+			{
+				Unknown.Add(MakeShared<FJsonValueString>(Write.Key));
+				continue;
+			}
+			bool NewValue = false;
+			if (!Write.Value.IsValid() || !Write.Value->TryGetBool(NewValue))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("switches['%s'] must be true or false. NOTHING was applied."), *Write.Key));
+				return;
+			}
+			MIC->SetStaticSwitchParameterValueEditorOnly(Info, NewValue);
+			++SwitchesApplied;
+		}
+
 		// Applying NOTHING while every name was rejected is a failed call, not a quiet success —
 		// the exact ok:true/applied:0 shape finding D-2 caught.
-		if (ScalarsApplied == 0 && VectorsApplied == 0)
+		if (ScalarsApplied == 0 && VectorsApplied == 0 && TexturesApplied == 0 && SwitchesApplied == 0)
 		{
 			TArray<FString> Names;
 			for (const TSharedPtr<FJsonValue>& V : Unknown) { Names.Add(V->AsString()); }
@@ -788,12 +906,31 @@ namespace MifBridge
 			return;
 		}
 
+		// WITHOUT THIS A STATIC SWITCH IS A LIE. The setter records the value and nothing else, so
+		// the instance reports the new value through every read path while the shader permutation -
+		// and therefore what you actually see - is unchanged.
+		if (SwitchesApplied > 0)
+		{
+			MIC->UpdateStaticPermutation();
+		}
+
 		MIC->PostEditChange();
 		MIC->MarkPackageDirty();
 		Out->SetStringField(TEXT("material"), MIC->GetPathName());
-		Out->SetNumberField(TEXT("applied"), ScalarsApplied + VectorsApplied);
+		Out->SetNumberField(TEXT("applied"),
+			ScalarsApplied + VectorsApplied + TexturesApplied + SwitchesApplied);
 		Out->SetNumberField(TEXT("scalarsApplied"), ScalarsApplied);
 		Out->SetNumberField(TEXT("vectorsApplied"), VectorsApplied);
+		Out->SetNumberField(TEXT("texturesApplied"), TexturesApplied);
+		Out->SetNumberField(TEXT("switchesApplied"), SwitchesApplied);
+		Out->SetStringField(TEXT("association"), *AssocStr);
+		if (SwitchesApplied > 0)
+		{
+			Out->SetBoolField(TEXT("staticPermutationUpdated"), true);
+			Out->SetStringField(TEXT("permutationNote"),
+				TEXT("a static switch changes the shader permutation, so UpdateStaticPermutation ran — "
+					 "without it the value reads back correctly and the material renders unchanged"));
+		}
 		Out->SetArrayField(TEXT("unknownParameters"), Unknown);
 		if (Unknown.Num() > 0)
 		{

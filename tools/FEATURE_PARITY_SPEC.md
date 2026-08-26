@@ -132,10 +132,22 @@ where they disagree this section wins.
       inherited, which is what decides whether resetting one does anything. Every value read switches
       on the parameter's Type: `FMaterialParameterValue::AsScalar()` is `check()`ed and would
       TERMINATE the editor if asked of a texture. 23 checks in tools/test_material_params.py.
-- [ ] **Texture and static-switch support in `set_material_parameter` / `create_material_instance`** —
-      one work item with the above, not a separate row. Enumeration will surface parameter types the
-      write side explicitly rejects, and a list where a third of the entries are read-only is worse
-      than no list.
+- [x] **Texture and static-switch support in `set_material_parameter`** — done. `textures`
+      {name:"/Game/..."} and `switches` {name:true|false} maps, plus singular inference (a bool is a
+      switch, a "/Game/..." string is a texture), plus `association`/`index` so LAYER parameters are
+      addressable now that list_material_parameters reports both.
+      The trap handled: a static switch changes the shader PERMUTATION, not just a stored value.
+      Without the `UpdateStaticPermutation` that now follows, the instance reports the new value
+      through every read path while rendering exactly as before — ok:true, a correct read-back, and no
+      visual change. The response reports `staticPermutationUpdated` and says why it matters, and the
+      test asserts THAT rather than the value, because the value reading back correctly is exactly
+      what the broken version would also do.
+      An unresolvable texture is refused rather than assigned as null, naming whether the path missed
+      or hit a non-texture — a null assignment would report success and render black. 22 checks in
+      tools/test_material_write.py.
+      Note `create_material_instance` still takes scalars/vectors only. Left as-is deliberately: it
+      creates and seeds, and the full parameter surface is one `set_material_parameter` call away on
+      the instance it just made.
 - [ ] **`create_asset`** — nothing can instantiate a `UDataAsset` / `UPrimaryDataAsset` subclass at a
       /Game path, so `create_blueprint` can author a DataAsset class that can then never be
       instantiated. Medium, not high: `duplicate_asset` + `set_property` already mints one for any
