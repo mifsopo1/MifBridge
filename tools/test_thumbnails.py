@@ -98,9 +98,15 @@ def main():
     # THE assertion. capture_viewport returned a byte-identical image after the camera moved, and
     # reported the new camera position in the JSON while doing it. Hashing the files is the only thing
     # that would have caught it, so it is what is done here.
+    # orbitZoom is 1000, not 2. USceneThumbnailInfo::OrbitZoom is an absolute DISTANCE OFFSET in world
+    # units added to the computed camera distance - not a zoom factor - so on a mesh framed from
+    # hundreds of units away a value of 2 moves the camera by a fraction of a pixel and the PNG comes
+    # back byte-identical. This test used 2.0 and passed on a COLD editor for an unrelated reason
+    # (first-render warm-up), then failed on the second pass in the same session. It was the test that
+    # was wrong; the parameter works, at a magnitude that matches its units.
     for label, kw in (("orbitYaw", {"orbitYaw": 90}),
                       ("orbitPitch", {"orbitPitch": 60}),
-                      ("orbitZoom", {"orbitZoom": 2.0})):
+                      ("orbitZoom", {"orbitZoom": 1000.0})):
         r, sha = render(label, **kw)
         check("T401 %s changes the rendered bytes" % label,
               bool(sha) and sha != sha_base,

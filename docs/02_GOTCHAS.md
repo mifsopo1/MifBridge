@@ -1331,6 +1331,24 @@ three were found by reading the implementations; none is visible from the header
   before anything is created. An OMITTED name still means "engine, pick one" and still auto-numbers.
   Covered by `tools/test_idempotence.py`.
 
+### `orbitZoom` is a DISTANCE OFFSET in world units, not a zoom factor
+
+`USceneThumbnailInfo::OrbitZoom` is added to the camera distance the thumbnail scene computes from the
+asset's bounds (`OutOrbitZoom = TargetDistance + OrbitZoom`). It is not a multiplier. So on a mesh
+framed from hundreds of units away, `orbitZoom: 2` moves the camera by a fraction of a pixel and the
+PNG comes back **byte-identical** — while `orbitPitch: 60` visibly changes the image, because pitch and
+yaw ARE angles and 60 is a lot of degrees.
+
+The endpoint reports `orbit: {zoom: 2}` faithfully, because it really did write 2. Both halves are
+correct and the combination reads as a broken parameter.
+
+Measured on a StaticMesh: 0.25, 8.0 and −3.0 all produce the identical baseline image; ±1000 and
+±100000 each change it. If a zoom appears to do nothing, **raise the magnitude by three orders** before
+concluding anything — that mistake cost twenty minutes here, including a confident intermediate
+conclusion that the parameter was ignored entirely.
+
+`tools/test_thumbnails.py` T401 uses 1000 for this reason, and says so.
+
 ### An enum's AUTHORED name and its DETAILS-PANEL name are different strings
 
 `TC_EditorIcon` is what the reflection system stores. **"UserInterface2D (RGBA)"** is what the Details
