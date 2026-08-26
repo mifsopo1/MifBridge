@@ -572,6 +572,27 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
 
       Current state: **78 runs across 39 suites, 0 failed, 0 editor deaths.**
 
+- [x] **Material GRAPH authoring, including the cooked-asset hazard the sweep could not reach.**
+      `tools/test_material_graph.py`, 30 checks. `test_material_write` covered instances and
+      parameters; the graph half — eight endpoints — was named in no suite, and it is the half with a
+      documented way to kill the editor.
+
+      `UMaterialExpression` is `UCLASS(Optional)`, so a cooked package has NO expression graph, and
+      `UMaterial::GetExpressions()` dereferences `GetEditorOnlyData()` with no null check. On a cooked
+      material that is a crash, not an empty list. **The adversarial sweep could not test this**: it
+      hands every endpoint a GHOST path, so it never asked what happens against a real COOKED asset —
+      which is the actual hazard, since DDS2 is a cooked game and nearly every material a modder
+      touches is cooked.
+
+      Tested against a real one. The read degrades honestly (`ok:true`, `cooked:true`) rather than
+      refusing, because "this material has no graph" and "no such material" are different answers a
+      modder needs to tell apart; both writes refuse and name the reason; the editor survives all
+      three. The guards hold.
+
+      The authoring loop is then asserted end to end by READING the graph back rather than trusting
+      the calls — an expression that reports an index but never appears, or a connection that reports
+      success while `connectionCount` stays zero, is the failure worth catching.
+
 ## Deliberately not pursuing
 
 - [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add
