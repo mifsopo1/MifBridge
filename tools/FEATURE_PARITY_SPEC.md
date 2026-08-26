@@ -111,9 +111,17 @@ Never work from a typed list — one was fabricated once and a third of it was i
   error naming self_audit, plus ranked did-you-mean suggestions. delete_actor now returns
   delete_level_actor at rank 1 - the exact guess that cost three round trips. That helps EVERY wrong
   guess rather than the one endpoint name that was asked for.
-- [ ] **trace_ground and list_level_actors read DIFFERENT worlds during PIE** and neither says which.
+- [x] **trace_ground and list_level_actors read DIFFERENT worlds during PIE** and neither says which.
   Together they read as catastrophic when nothing is wrong. Echo the world operated on, the way
   capture_camera echoes cameraSource.
+  CLOSED. Both now echo worldType (editor|pie). The mechanism is exactly as reported: trace_ground
+  uses ActiveWorld(), which prefers PIE while it runs, and list_level_actors uses EditorWorld() and
+  never does. The NAME could not have distinguished them - a PIE world is a duplicate carrying the
+  same name - which is why echoing world alone, as the Spatial handlers already did, was not enough.
+  Note the Spatial handlers' existing pieRunning flag answers a DIFFERENT question: whether PIE is
+  running at all, not which world the call used.
+  Verified for the editor case live. The pie branch is one IsPlayInEditor() call and is NOT verified
+  live - starting PIE is forbidden by the standing rules.
 - [ ] **get_property cannot reach UBodySetup::AggGeom**, so collision primitive shape is unreachable.
   Neither AggGeom nor aggregate_geom resolves.
 - [ ] **list_level_actors truncation is honest in the response but invisible in describe_endpoint.** A

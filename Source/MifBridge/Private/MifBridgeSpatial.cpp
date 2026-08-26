@@ -1243,6 +1243,16 @@ namespace MifBridge
 		const bool bHit = World->LineTraceSingleByChannel(
 			Hit, FVector(X, Y, FromZ), FVector(X, Y, ToZ), ECC_WorldStatic, Params);
 
+		// WHICH WORLD THIS ANSWER CAME FROM. trace_ground uses ActiveWorld(), which prefers the PIE world
+		// while PIE runs; list_level_actors uses EditorWorld() and always reports the editor one. During
+		// PIE on a World Partition map with no cells resident, that pair reads as catastrophic - ground
+		// exists, zero actors, spawns return null - when nothing is wrong at all. It cost a real session
+		// the time to work that out, so both endpoints now say which world they used.
+		//
+		// The NAME alone does not settle it: a PIE world is a duplicate and carries the same name as the
+		// editor world it came from. worldType is the field that actually distinguishes them.
+		Out->SetStringField(TEXT("world"), World->GetName());
+		Out->SetStringField(TEXT("worldType"), World->IsPlayInEditor() ? TEXT("pie") : TEXT("editor"));
 		Out->SetBoolField(TEXT("hit"), bHit);
 		if (bHit)
 		{

@@ -225,6 +225,11 @@ namespace MifBridge
 		}
 
 		Out->SetStringField(TEXT("world"), World->GetName());
+		// ALWAYS the editor world - this uses EditorWorld(), never the PIE one. Said explicitly because
+		// trace_ground next door uses ActiveWorld() and answers about PIE while this answers about the
+		// editor, and the two together read as a catastrophe when they simply describe different worlds.
+		// The name cannot distinguish them: a PIE world is a duplicate and keeps the same name.
+		Out->SetStringField(TEXT("worldType"), World->IsPlayInEditor() ? TEXT("pie") : TEXT("editor"));
 		Out->SetNumberField(TEXT("count"), Arr.Num());
 		Out->SetNumberField(TEXT("matched"), Matched);   // never let a cap look like completeness
 		Out->SetBoolField(TEXT("truncated"), bTruncated);
