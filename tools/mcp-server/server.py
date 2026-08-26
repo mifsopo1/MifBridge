@@ -2918,6 +2918,18 @@ def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: i
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def list_level_sequences(filter: str = None, limit: int = 0) -> dict:
+    "List the project's LevelSequence assets - cutscenes. Pure Asset Registry, so it LOADS NOTHING and cannot trip the cooked-asset hazards that loading an editor asset can. filter is a substring matched against the full object path. Always check registryStillScanning: at editor startup the registry is still discovering assets, so a low or zero count can mean 'not finished looking' rather than 'none exist'. matched is the true total even when limit truncates the list."
+    return _post("list_level_sequences", filter=filter, limit=limit)
+
+
+@mcp.tool()
+def describe_level_sequence(path: str) -> dict:
+    "Describe one LevelSequence: duration, frame rates, how many things it possesses or spawns, and whether it drives a camera. Sequencer has TWO rates and conflating them is the classic mistake - tickResolution is the internal integer frame space (24000/1 by default) and displayRate is what the UI shows (30/1), so a frame number is meaningless without saying which. Every tick value is also given in seconds. possessables reference actors that must already exist in the level; spawnables carry their own template and are created by the sequence."
+    return _post("describe_level_sequence", path=path)
+
+
+@mcp.tool()
 def list_data_layers() -> dict:
     "List the Data Layers of the World Partition map currently open. Data Layers are how a partitioned world is organised, and list_sublevels cannot see them - that answers about streaming levels, a different mechanism which is empty on a partitioned map. Each entry reports name, shortName, fullName, whether it is a RUNTIME layer (only those can be streamed at all), its initial runtime state and its debug colour. On a non-partitioned map it returns count 0 with a note pointing at list_sublevels rather than an error."
     return _post("list_data_layers")

@@ -360,6 +360,8 @@ namespace MifBridge
 			// Level streaming control (Batch I) — editor sublevels + PIE level instances
 			MIF_BIND(list_sublevels);
 			MIF_BIND(list_data_layers);
+			MIF_BIND(list_level_sequences);
+			MIF_BIND(describe_level_sequence);
 			MIF_BIND(add_sublevel);
 			MIF_BIND(remove_sublevel);
 			MIF_BIND(set_sublevel_visibility);

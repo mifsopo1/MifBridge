@@ -1352,6 +1352,11 @@ namespace MifBridge
 	// so list_sublevels is also the poll endpoint — for the editor world AND the PIE world.
 	MIF_DECL(list_sublevels);
 	MIF_DECL(list_data_layers);
+
+	// SEQUENCER (MifBridgeSequencer.cpp). LevelSequence is an ENGINE module, so unlike IK Rig or
+	// Niagara these need no MIF_WITH_* guard - it ships with every build and cannot be disabled.
+	MIF_DECL(list_level_sequences);
+	MIF_DECL(describe_level_sequence);
 	MIF_DECL(add_sublevel);
 	MIF_DECL(remove_sublevel);
 	MIF_DECL(set_sublevel_visibility);
