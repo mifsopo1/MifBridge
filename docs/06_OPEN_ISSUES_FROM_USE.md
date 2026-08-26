@@ -46,6 +46,7 @@ Author's own priority ranking, "by what actually costs me time now". Status as o
 
 | rank | issue | status |
 |---|---|---|
+| 12 | Five endpoints reported success while doing something else (source hunt) | **FIXED, PENDING BUILD** 2026-08-26 — see section 12; `edit_container` swap no-op, `add_variable`/`set_variable_type` unvalidated `scope`, `draw_debug shape:"string"`, `snap_actors_to_ground` discarded move result, `reparent_blueprint` discarded compile verdict |
 | 11 | `landscape_info` vs `diagnose_landscape` disagree on component counts (World Partition proxies) | **FIXED + verified** 2026-08-26 — `landscape_info` now counts streaming proxies matched on `LandscapeGuid` and reports `proxyCount` / `proxyComponents` / `totalComponents` / `componentScope`; both endpoints now agree on 256 for the same world |
 | 1 | Parameter drift (`path` dropped from `connect_pins` / `disconnect_pin`) | **FIXED + verified** — `path` accepted on `connect_pins`, `disconnect_pin`, `reconnect_pin`; `self_audit` now emits `surfaceSignature` / `paramSignature` |
 | 2 | `list_components` returns empty for a cooked parent | **FIXED + verified** — `BP_PlantPot` returns 12 components (was 0), `targetKind:"cookedClass"`, each with a reason and `route` |
@@ -538,4 +539,59 @@ components for the same world.
 (100/100 on the first, 0/0 on the others), i.e. a zero-height extent. That may be correct for a flat
 template landscape, and this world is `/Temp/Untitled_1` rather than a real DDS2 map — but it is worth
 one measurement against `DDS2_Landscape_IslaSombra` before trusting the Z bounds for anything.
+
+---
+
+## 12. Five endpoints that reported success while doing something else
+
+**Found:** 2026-08-26 by a ten-agent parallel read of all 49 handler files (~51k lines) against the
+eight patterns that had already produced real bugs here, with every candidate handed to a separate
+agent whose job was to refute it. **73 candidates, 26 refuted, 28 survived — and of the survivors I
+checked by hand, 5 were real and 2 were false positives.** The refutation pass helps; it does not
+replace reading the source. Both false positives were the same mistake: not reading the whole
+response block before declaring a value hidden.
+
+Not found in use, so strictly this is a source audit rather than a use report — filed here anyway
+because they are defects a user would eventually hit, and this is where someone looks to ask what is
+broken.
+
+**1. `edit_container` — swapping an element with itself.** Both range checks accept
+`index == swapWith`, `FScriptArrayHelper::SwapValues(3,3)` does nothing, and `changed` was hardcoded
+true for `swap` because a structural op cannot be verified by counting. So the call reported
+`changed: true` **and dirtied the package** (`Modify` + `PreEditChange` + `PostEditChange(ArrayMove)`)
+having moved nothing. Now reports `changed: false` with a note and mutates nothing — matching
+`set_variable_type`, which already answers a same-type request that way.
+
+**2. `add_variable` and `set_variable_type` never validated `scope`.** Both did
+`Scope.Equals("local")` and treated **everything else** as member, so `scope:"loca1"` silently created
+a MEMBER variable — and `add_variable` then echoed the request back as `scope: "loca1"`. The
+documented values are `member|local`. Both now validate, and the response reports the RESOLVED scope
+rather than what was asked for.
+
+**3. `draw_debug` with `shape:"string"` drew nothing and said `drawn: true`.** `DrawDebugString`
+walks `GetPlayerControllerIterator` and only draws where a controller has BOTH `MyHUD` and `Player`
+(`DrawDebugHelpers.cpp:613-630`). An editor world has no such controller, so the loop body never
+runs; the function is void, so nothing could tell. Every **other** shape goes through the world's line
+batcher and renders in the editor viewport, which is why only this one was wrong. Now refused with an
+explanation that PIE is where it would work.
+
+**4. `snap_actors_to_ground` counted actors it had not moved.** `SetActorLocation` returns whether it
+moved and the result was discarded while `++Snapped` ran regardless; it returns false without moving
+when the actor has no root component. Worse, the `moved[]` entry was built **before** the move, so a
+refused move was listed with a `toZ` it never reached. Counts are this endpoint's entire product, and
+it already separates `missed`, `skippedGround` and `missedUnderDeepStack`. Now `moveRefused` is
+counted separately and `moved[]` records what happened rather than what was intended.
+
+**5. `reparent_blueprint` discarded the compile verdict.** It runs a full
+`FKismetEditorUtilities::CompileBlueprint` (void) and reported `changed: true` regardless — so a
+reparent that BROKE the blueprint looked identical to one that worked. Reparenting is the operation
+most likely to break one: an override whose function the new parent no longer declares, a variable or
+component name that now clashes. `Blueprint->Status` had the answer all along. Now reports
+`compileStatus` / `compiled`, and on error explains the likely cause and how to reverse it.
+
+**Status: all five written, NOT yet built** — a full regression sweep owned the editor while they were
+written, and building means killing it. They are built, tested and committed before this section is
+marked verified.
+
+`tools/test_edit_container.py` is new: that endpoint had no suite at all, which is how (1) survived.
 
