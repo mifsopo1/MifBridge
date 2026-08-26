@@ -78,7 +78,12 @@ def default_of(g, name):
 
 
 wait()
-BP = "/Game/_MifRollbackReal/BP_RollbackReal"
+# Per-RUN unique, like the other 34 suites. A fixed scratch path passes the first time and
+# fails every time after, because the asset is still in memory until the editor restarts -
+# so this suite was green all night and then failed the moment the full run happened twice
+# in one editor session. A test whose result depends on how recently the editor started is
+# not a test.
+BP = "/Game/_MifRollbackReal/BP_RollbackReal_%d" % int(time.time() % 100000)
 post("delete_asset", path=BP, confirm=True)
 bp = post("create_blueprint", path=BP, parentClass="Actor")
 BPID, GRAPH = bp.get("blueprintId"), bp.get("eventGraphId")

@@ -19,7 +19,7 @@
   "suite": "test_audit_fixes.py",
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 4.2,
+  "seconds": 4.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -40,6 +40,14 @@
   "tail": ""
  },
  {
+  "suite": "test_components_dispatchers.py",
+  "rc": 0,
+  "summary": "PASS 29   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_create_asset.py",
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
@@ -51,7 +59,7 @@
   "suite": "test_datatables.py",
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 8.1,
+  "seconds": 4.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -65,11 +73,11 @@
  },
  {
   "suite": "test_foliage_modes.py",
-  "rc": 0,
-  "summary": "PASS 30   FAIL 0",
-  "seconds": 3.8,
+  "rc": 1,
+  "summary": "PASS 29   FAIL 1",
+  "seconds": 2.6,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "  PASS  T202 all eight instances were accepted\n  PASS  T202 it echoes the foliage type it used\n  FAIL  T202 the first call created the FoliageInfo   False\n  PASS  T202 an InstancedFoliageActor now exists in the world\n  PASS  T202 and it is the one the response named\n  PASS  T202 a second call reuses the SAME FoliageInfo\n  PASS  T202 and totalForType accumulates rather than restarting\n  PASS  T202 the same IFA was reused, not a second one\n  PASS  T202 and the world still holds exactly one IFA\n\n=== T203: nothing half-applies (PM-007, re-tested on the new branch) ===\n  PASS  T203 a bad transform fails the whole call\n  PASS  T203 and names the offending entry\n  PASS  T203 no instances from the failed call survived\n\n=== T204: parameters that do not apply are reported, not swallowed ===\n  PASS  T204 label and folder are accepted but reported as ignored\n  PASS  T204 and the instances still went in\n\n========================================================================\nPASS 29   FAIL 1\n  FAILED: T202 the first call created the FoliageInfo\n          False\n========================================================================\nNOTE: this left foliage and a holder actor in the scratch level. Nothing was saved."
  },
  {
   "suite": "test_fuzz_detector.py",
@@ -81,17 +89,17 @@
  },
  {
   "suite": "test_graph_patch.py",
-  "rc": 0,
-  "summary": "PASS 26   FAIL 0",
-  "seconds": 0.8,
+  "rc": 3,
+  "summary": "",
+  "seconds": 0.2,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "waiting for bridge...\nbridge up: 285 endpoints, built Aug 26 2026 00:01:06\napply_graph_patch present: True\n\n=== setup: create test blueprint ===\ncould not create blueprint: {'ok': False, 'error': \"a Blueprint already exists at '/Game/_MifPatchTest/BP_PatchTest.BP_PatchTest' \u2014 pick a new path or delete it first\"}"
  },
  {
   "suite": "test_ik_authoring.py",
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -107,7 +115,7 @@
   "suite": "test_ik_rig.py",
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -120,10 +128,18 @@
   "tail": ""
  },
  {
+  "suite": "test_interfaces.py",
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_list_bones.py",
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -131,7 +147,7 @@
   "suite": "test_macro_dispatch.py",
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 1.1,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -147,7 +163,7 @@
   "suite": "test_material_write.py",
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -155,7 +171,7 @@
   "suite": "test_modal_guard.py",
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -163,7 +179,7 @@
   "suite": "test_niagara_params.py",
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 5.1,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -171,7 +187,7 @@
   "suite": "test_pinlifetime.py",
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 0.6,
+  "seconds": 0.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -179,7 +195,7 @@
   "suite": "test_rename_widget.py",
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -193,17 +209,17 @@
  },
  {
   "suite": "test_rollback_real.py",
-  "rc": 0,
-  "summary": "PASS 10   FAIL 0",
-  "seconds": 0.5,
+  "rc": 3,
+  "summary": "",
+  "seconds": 0.2,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "setup failed: {'ok': False, 'error': \"a Blueprint already exists at '/Game/_MifRollbackReal/BP_RollbackReal.BP_RollbackReal' \u2014 pick a new path or delete it first\"}"
  },
  {
   "suite": "test_selfpin.py",
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 1.4,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -219,7 +235,7 @@
   "suite": "test_snap_ground.py",
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 3.7,
+  "seconds": 3.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -235,23 +251,23 @@
   "suite": "test_trace_debug.py",
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_v3_apply.py",
-  "rc": 0,
-  "summary": "PASS 9   FAIL 0",
-  "seconds": 0.4,
+  "rc": 3,
+  "summary": "",
+  "seconds": 0.2,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up: 285 endpoints\nsetup failed: {'ok': False, 'error': \"a Blueprint already exists at '/Game/_MifPatchApply/BP_ApplyTest.BP_ApplyTest' \u2014 pick a new path or delete it first\"}"
  },
  {
   "suite": "test_widget_anim_recreate.py",
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -267,7 +283,7 @@
   "suite": "test_widget_animation_props.py",
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -275,7 +291,7 @@
   "suite": "test_widget_animation_track.py",
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  }
