@@ -253,9 +253,39 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       `list_sockets` reports things that attach TO bones without enumerating them. No new module
       dependency. Reports the hierarchy, and says WHICH reference skeleton it read, because a mesh and
       its skeleton can hold different bones. 36 checks.
-- [~] **IK Rig / IK Retargeter authoring** — not pursued. Andre raised this one, so it is a judgement
-      he should overrule if he wants it: the mechanism is entirely available, but the DDS2 need it was
-      meant to serve turned out not to exist.
+- [x] **IK Rig / IK Retargeter authoring** — 8 endpoints, 67 checks. **Andre overruled the earlier
+      decline and was right to.** That decline judged the value from DDS2's skeletons alone; MifBridge
+      also runs against his other Unreal projects, which the reasoning never accounted for. The
+      superseded analysis is kept below because its measurements were sound even though its conclusion
+      was too narrow.
+
+      `set_ik_rig_mesh`, `set_ik_rig_retarget_root`, `add_ik_retarget_chain`,
+      `remove_ik_retarget_chain`, `list_ik_rig`, `set_retarget_rigs`, `auto_map_retarget_chains`,
+      `set_retarget_chain_mapping`, `list_retarget_chain_mapping`. Proven end to end on a genuinely
+      cross-species pair — a 161-bone UE5 Mannequin retargeted onto a 53-bone Akita — built,
+      auto-mapped and hand-corrected entirely through the bridge.
+
+      **UE4 SAFE.** IK Rig is a UE5 plugin. Build.cs detects it and defines `MIF_WITH_IKRIG`; the
+      `.uplugin` reference is `"Optional": true` so a missing plugin is a logged skip rather than a
+      refusal to load MifBridge at all (`PluginManager.cpp:2164`). The endpoints stay REGISTERED
+      everywhere and refuse with that reason, so "this engine has no IK Rig" is distinguishable from
+      "no such endpoint", and the three-way parity holds on every engine.
+
+      The endpoints are not about reach — `set_property` can write every field they touch. They are
+      about correctness: it will happily write a skeleton with an empty reference pose, chains naming
+      absent bones, and a mapping to the DEPRECATED `ChainMapping` property that nothing reads, all
+      returning ok:true. Three controller calls also lie outright (silent clear, silent rename, and
+      `SetIKRig` auto-mapping as a side effect); those are now documented in 02_GOTCHAS §13 and
+      guarded here.
+
+      Two findings worth keeping. The Akita's `Spine_01` is a SIBLING branch off `Spine_base`, so an
+      obvious-looking `Spine_01 -> Spine_05` chain spans nothing — caught by the descendant check,
+      which the engine does not perform. And a parameter originally called `force` was silently
+      stripped by this project's own audit harness, which treats `force` as a destructive-operation
+      flag alongside `confirm` and `save`; it is now `remapExisting`.
+
+      **Superseded reasoning, kept because the measurements stand:** the mechanism was already known
+      available, and the decline rested on DDS2's own skeletons being the same rig.
 
       **The mechanism is available, and that was worth establishing.** `UIKRigController` and
       `UIKRetargeterController` are both class-level `IKRIGEDITOR_API`, so unlike the Foliage case

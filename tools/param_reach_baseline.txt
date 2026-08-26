@@ -11,6 +11,7 @@ add_enum_value.displayname
 add_enum_value.name
 add_function_call.cls
 add_function_call.method
+add_ik_retarget_chain.rig
 add_interface.class
 add_macro_instance.name
 add_material_expression.material
@@ -36,6 +37,8 @@ add_sublevel.level
 apply_graph_patch.ops
 audit_unused.ignorereferencers
 audition_sound.sound
+auto_map_retarget_chains.force
+auto_map_retarget_chains.retargeter
 bind_landscape_rvt.actorpath
 capture_camera.fromviewport
 capture_camera.x
@@ -95,6 +98,7 @@ list_niagara_user_parameters.system
 list_object_properties.actorpath
 list_object_properties.filter
 list_object_properties.namefilter
+list_retarget_chain_mapping.retargeter
 list_sockets.mesh
 list_transactions.count
 list_transactions.include_objects
@@ -119,6 +123,7 @@ redo_transactions.to_index
 refresh_node.graphid
 remove_enum_value.displayname
 remove_enum_value.name
+remove_ik_retarget_chain.rig
 remove_interface.class
 remove_node.graphid
 remove_pin.name
@@ -145,6 +150,9 @@ self_audit.includeendpoints
 set_collision.component
 set_current_sublevel.level
 set_function_flags.name
+set_ik_rig_mesh.rig
+set_ik_rig_retarget_root.rig
+set_ik_rig_retarget_root.root
 set_material_parameter.name
 set_material_parameter.parameter
 set_material_parameter.parametername
@@ -157,6 +165,7 @@ set_pin_type.guid
 set_pin_type.name
 set_property.editcondition
 set_property.respectclamps
+set_retarget_chain_mapping.retargeter
 set_spline_points.skipposteditchange
 set_sublevel_streaming.level
 set_sublevel_visibility.level

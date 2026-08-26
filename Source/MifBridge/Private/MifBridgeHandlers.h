@@ -1137,6 +1137,14 @@ namespace MifBridge
 	/** IK Rig / IK Retargeter authoring. Registered on EVERY engine; on one without the IKRig
 	 *  plugin (UE4) they refuse with that reason rather than not existing. */
 	MIF_DECL(list_ik_rig);
+	MIF_DECL(set_ik_rig_mesh);
+	MIF_DECL(set_ik_rig_retarget_root);
+	MIF_DECL(add_ik_retarget_chain);
+	MIF_DECL(remove_ik_retarget_chain);
+	MIF_DECL(set_retarget_rigs);
+	MIF_DECL(auto_map_retarget_chains);
+	MIF_DECL(set_retarget_chain_mapping);
+	MIF_DECL(list_retarget_chain_mapping);
 	/** Read a BehaviorTree's structure. DDS2 has 17 of them and no way to inspect one. */
 	MIF_DECL(describe_behavior_tree);
 	MIF_DECL(list_blackboard_keys);

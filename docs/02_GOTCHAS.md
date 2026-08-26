@@ -1134,6 +1134,55 @@ the cause is in the engine's API contract, so anything else that reads pixels wi
 The general form: an image endpoint that reports a path, a size and a byte count has verified none of
 those things describe a usable picture. If it matters, open the file and measure it.
 
+## 13. Editor CONTROLLER calls that report success and do something else
+
+`UIKRigController` and `UIKRetargeterController` are the sanctioned way to author IK Rigs and
+Retargeters, and three of their calls succeed while doing something other than what was asked. All
+three were found by reading the implementations; none is visible from the headers.
+
+- **`SetRetargetRoot` silently CLEARS.** Given a bone name that is not in the rig's skeleton it sets
+  the root to `NAME_None` and returns **true** (`IKRigController.cpp:391-403`). Ask for a retarget
+  root before assigning a mesh — when every bone name is absent, because there is no skeleton — and
+  you get success and no root. Check the bone yourself first, then read the value back.
+
+- **`AddRetargetChain` silently RENAMES.** The requested name goes through
+  `GetUniqueRetargetChainName`, which appends an incrementing number on collision
+  (`IKRigController.cpp:204, 428-451`), and the function RETURNS the name it actually used. Add
+  "Spine" twice and the second is "Spine_1". A chain mapping written against the name you asked for
+  then refers to the first chain, or to nothing. Always use the returned name.
+
+- **`AddRetargetChain` does not check the hierarchy.** It verifies both bones EXIST and stops
+  (`IKRigController.cpp:183-193`). A chain whose end bone is not a DESCENDANT of its start bone is
+  stored happily and spans nothing. Real example: the Akita mesh in this project has `Spine_base ->
+  Spine_02 -> ... -> Spine_05`, and `Spine_01` is a SIBLING branch off `Spine_base`. A
+  `Spine_01 -> Spine_05` chain looks obviously right and is empty.
+
+- **`SetIKRig` is not an assignment.** It also copies the preview mesh off the rig, rebuilds the chain
+  mapping against the target rig's chains, and runs `AutoMapChains(Fuzzy)`
+  (`IKRetargeterController.cpp:52-82`). Writing `SourceIKRigAsset` with `set_property` does none of
+  it and leaves an unmapped retargeter that reads back as fully configured.
+
+- **`AutoMapChains` with `bForceRemap=false` skips every chain that already has a source**
+  (`IKRetargeterController.cpp:336-340`). For `Clear` that makes the call a guaranteed no-op, because
+  the chains you want cleared are exactly the ones it skips.
+
+- **`UIKRetargeter::ChainMapping` is DEPRECATED** (`FRetargetChainMap`, since 5.1,
+  `IKRetargeter.h:18`). The live mapping is `ChainSettings`. A `set_property` write to `ChainMapping`
+  succeeds and is read by nothing.
+
+The general form, and it is the same lesson as §11 and PM-009: **a controller is not a setter.** The
+engine's editor calls these in a particular order and does work between them. Before driving one from
+a handler, read its implementation and its in-engine callers — the header will not tell you that a
+function clears on bad input, renames on collision, or auto-maps as a side effect.
+
+### And do not name a benign parameter `force`
+
+`auto_map_retarget_chains` originally took `force` — a harmless flag meaning "reconsider chains that
+are already mapped". `force` is the conventional name for bypassing a destructive-operation guard, so
+the audit harness that tests this bridge strips it from every payload alongside `confirm`, `save` and
+`overwrite`. Every `force:true` arrived as `false`, the endpoint did half of what was asked, and it
+reported success. It is now `remapExisting`. Reserve `force` for things that genuinely need a guard.
+
 ## 12. One offset list, three arrays — Niagara parameter stores
 
 `FNiagaraParameterStore` keeps three parallel arrays — `ParameterData` (bytes), `DataInterfaces` and

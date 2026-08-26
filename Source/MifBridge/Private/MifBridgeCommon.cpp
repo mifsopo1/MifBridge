@@ -285,6 +285,14 @@ namespace MifBridge
 			MIF_BIND(list_sockets);
 			MIF_BIND(list_bones);
 			MIF_BIND(list_ik_rig);
+			MIF_BIND(set_ik_rig_mesh);
+			MIF_BIND(set_ik_rig_retarget_root);
+			MIF_BIND(add_ik_retarget_chain);
+			MIF_BIND(remove_ik_retarget_chain);
+			MIF_BIND(set_retarget_rigs);
+			MIF_BIND(auto_map_retarget_chains);
+			MIF_BIND(set_retarget_chain_mapping);
+			MIF_BIND(list_retarget_chain_mapping);
 			MIF_BIND(describe_behavior_tree);
 			MIF_BIND(list_blackboard_keys);
 			MIF_BIND(list_animations);

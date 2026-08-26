@@ -2207,6 +2207,126 @@ def list_animations(filter: str = "", skeleton: str = "", limit: int = 200) -> d
 
 
 @mcp.tool()
+def set_ik_rig_mesh(path: str, mesh: str) -> dict:
+    """Assign a SkeletalMesh to an IK Rig - which BUILDS the rig, not just labels it.
+
+    SetSkeletalMesh copies the bone hierarchy, parent indices and reference pose out of the mesh into
+    the rig. Assigning PreviewSkeletalMesh directly with set_property stores a pointer and leaves the
+    rig skeleton EMPTY, so every later call has no bones to check against. Do this first.
+
+    Refuses if the mesh is missing bones this rig already requires. The engine writes which bones to
+    the output log rather than returning them, so the refusal says where to look.
+    """
+    return _post("set_ik_rig_mesh", path=path, mesh=mesh)
+
+
+@mcp.tool()
+def set_ik_rig_retarget_root(path: str, bone: str) -> dict:
+    """Set an IK Rig\'s retarget root - the bone the whole body pose is anchored to, usually pelvis.
+
+    Guarded, because the raw engine call has a silent failure: given a bone that is not in the
+    skeleton, SetRetargetRoot sets the root to None and returns TRUE. So asking for a root before a
+    mesh is assigned would report success and leave no root. This checks the bone exists first, and
+    reads the value back afterwards.
+    """
+    return _post("set_ik_rig_retarget_root", path=path, bone=bone)
+
+
+@mcp.tool()
+def add_ik_retarget_chain(path: str, name: str, start_bone: str, end_bone: str,
+                          goal: str = "") -> dict:
+    """Add a retarget chain to an IK Rig: a named span from start_bone down to end_bone.
+
+    Two engine behaviours are surfaced rather than inherited.
+
+    It SILENTLY RENAMES on a name collision - the requested name is run through a uniquifier that
+    appends a number - so the response reports `name` (what you got) alongside `requestedName` and a
+    `renamed` flag. A mapping written against the name you asked for would otherwise target the wrong
+    chain, or nothing.
+
+    It does NOT check the hierarchy: the engine verifies both bones exist and stops there, so a chain
+    whose end bone is not a DESCENDANT of its start bone is stored happily and spans nothing. This
+    refuses that, which is stricter than the editor and deliberate - there is no correct use for one,
+    and it never announces itself afterwards.
+    """
+    return _post("add_ik_retarget_chain", path=path, name=name, startBone=start_bone,
+                 endBone=end_bone, goal=goal or None)
+
+
+@mcp.tool()
+def remove_ik_retarget_chain(path: str, name: str) -> dict:
+    """Remove a retarget chain from an IK Rig. Lists the chains it does have if the name is unknown."""
+    return _post("remove_ik_retarget_chain", path=path, name=name)
+
+
+@mcp.tool()
+def set_retarget_rigs(path: str, source: str = "", target: str = "") -> dict:
+    """Point an IK Retargeter at its source and target IK Rigs.
+
+    SetIKRig is NOT an assignment. It also copies the preview mesh off each rig, rebuilds the chain
+    mapping against the TARGET rig\'s chains, and auto-maps chains by fuzzy name match. Writing
+    SourceIKRigAsset with set_property does none of that and leaves an unmapped retargeter that reads
+    back as fully configured. The response reports the resulting mapping so you can see what happened.
+
+    Both rigs are resolved before either is applied, so a typo in one does not leave the retargeter
+    half-wired by the other.
+    """
+    return _post("set_retarget_rigs", path=path, source=source or None, target=target or None)
+
+
+@mcp.tool()
+def auto_map_retarget_chains(path: str, mode: str = "fuzzy", remap_existing: bool = False) -> dict:
+    """Map the source rig\'s chains onto the target rig\'s chains by name.
+
+    mode: "fuzzy" picks the closest name by edit distance, "exact" maps only identical names and sets
+    the rest to none, "clear" unmaps everything. remap_existing=False leaves already-mapped chains
+    alone, because the engine treats an existing mapping as a deliberate choice - which is why
+    re-running it can appear to do nothing. mode="clear" implies it, since clearing only the chains
+    that are NOT mapped would be a guaranteed no-op.
+
+    The parameter is deliberately not called "force": that is the conventional name for bypassing a
+    destructive-operation guard, and tooling strips it on sight - which silently turned every
+    force=True here into False until it was caught. "force" is still accepted if it reaches the
+    endpoint.
+
+    Refuses when either rig is unset. The engine\'s implementation sits entirely inside a check for a
+    valid target rig, so without one it does nothing at all and reports success.
+
+    Reports the full mapping and, separately, the target chains left UNMAPPED - those parts of the
+    body are simply not retargeted at runtime, which nothing else tells you.
+    """
+    return _post("auto_map_retarget_chains", path=path, mode=mode, remapExisting=remap_existing)
+
+
+@mcp.tool()
+def set_retarget_chain_mapping(path: str, target_chain: str, source_chain: str = "") -> dict:
+    """Map one source chain onto one target chain by hand, for what auto-mapping got wrong.
+
+    Pass an empty source_chain to unmap. Both names are checked against their respective rigs BEFORE
+    anything is written and the error lists the available chains, because the underlying call returns
+    only a bool and you could not otherwise tell which end was wrong.
+    """
+    return _post("set_retarget_chain_mapping", path=path, targetChain=target_chain,
+                 sourceChain=source_chain or None)
+
+
+@mcp.tool()
+def list_retarget_chain_mapping(path: str) -> dict:
+    """Read an IK Retargeter\'s chain mapping, and check whether it would actually work.
+
+    Reports each target chain with the source chain driving it, which are unmapped, and a `problems`
+    list covering the things that make a retargeter silently do nothing: a missing source or target
+    rig, a rig with no skeleton, a rig with no chains, a rig with no retarget root, or source and
+    target being the same asset.
+
+    Reads ChainSettings, which is the live mapping. The asset also carries a ChainMapping property -
+    that is FRetargetChainMap, deprecated since 5.1 - and a set_property write to it succeeds while
+    being read by nothing.
+    """
+    return _post("list_retarget_chain_mapping", path=path)
+
+
+@mcp.tool()
 def list_ik_rig(path: str) -> dict:
     """Read an IKRigDefinition AND check whether it would actually work.
 
