@@ -21,3 +21,6 @@ tools/blender-addon/dist/
 *.blend2
 tools/audit_findings.jsonl
 tools/fuzz_run*.log
+
+# scratch dumps produced while auditing the MIF_BIND registry
+Source/MifBridge/Private/bound_tmp.txt
