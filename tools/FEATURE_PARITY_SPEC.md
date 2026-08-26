@@ -389,6 +389,25 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       cooked-game mod you do not edit the asset, you call `SetNiagaraVariableFloat`/`Vec3`/`Bool` on the
       spawned component from Blueprint — and the exact name string this returns is what those take.
 
+- [ ] **IK Rig GOALS and SOLVERS authoring** — not built, and the API reconnaissance turned up three
+      editor-killing asserts on that path which are recorded here so nobody walks into them. Nothing
+      currently shipped touches goals or solvers, so none of these is live today.
+
+      * `UIKRigController::SetGoalCurrentTransform` does `check(Goal)`
+        (`IKRigController.cpp:1243-1244`). Passing an unknown goal name TERMINATES the editor. Any
+        "set goal transform" endpoint must resolve the goal itself first and refuse.
+      * `UIKRigSolver::GetNiceName()`'s base implementation is `checkNoEntry()`
+        (`IKRigSolver.h:63`). A "list solver types" endpoint that calls it on a solver class which
+        does not override it terminates the editor.
+      * `UIKRigController::AddNewGoal` neither sanitises nor uniquifies, contrary to how
+        `AddRetargetChain` behaves. It returns `NAME_None` for BOTH "name already exists"
+        (`IKRigController.cpp:900-903`) and "unknown bone" (`:906-912`), so the two must be told apart
+        by the caller. Sanitise first with the exported static
+        `UIKRigController::SanitizeGoalName(FString&)` (`IKRigController.h:215`).
+
+      Build this only if goals or solvers are actually wanted — pure retargeting, which is what the
+      shipped endpoints do, needs neither.
+
 ## Deliberately not pursuing
 
 - [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add
