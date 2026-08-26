@@ -174,6 +174,55 @@ where they disagree this section wins.
       22 checks in tools/test_set_struct_member.py. This closes docs/audit/work/H_data.md:572, specced
       and CONFIRMED long ago and never built.
 
+## Round two — the confirmed gaps not yet built
+
+The 13-agent audit confirmed 18 gaps. Three are built (`set_struct_member`, `create_asset`,
+`list_material_parameters` + the write side). These are the rest that are worth doing, ordered by
+value for cooked-game modding. Each still needs its APIs verified against 5.3 before building — the
+audit named them, but the audit has been wrong about "cheap" once already (Niagara).
+
+- [x] **Collision profile and channel setup** — and testing first narrowed it sharply. `set_property`
+      ALREADY sets `BodyInstance.CollisionProfileName` and `CollisionEnabled`, so "cannot configure
+      collision" was wrong. What was missing is VALIDATION and DISCOVERY, and the missing validation
+      was the real defect: `set_property` accepts `NoSuchProfile_zz` and reads it straight back,
+      leaving the component on its previous collision, configured-looking in every read path, and
+      colliding with the wrong things.
+      `list_collision_profiles` reports the 19 profiles this project defines with the responses each
+      resolves to — and flags a NoCollision profile's responses as MOOT, since that table otherwise
+      reads as though NoCollision blocks WorldStatic. `set_collision` checks the name against
+      `UCollisionProfile` and reports what it resolved to, because "the profile is set" and "it now
+      blocks the player" are different claims. 22 checks in tools/test_collision.py, one of which
+      asserts set_property STILL accepts the bogus name — that contrast is why the endpoint exists.
+- [ ] **Audition a sound in the editor** (audit: HIGH). Play any `USoundBase` — cue, wave or
+      MetaSoundSource — through the editor preview audio device. With 3771 SoundWaves and no way to
+      hear one, picking audio for a mod is guesswork by filename. Small endpoint, high daily value.
+- [ ] **Nav mesh queries** (audit: HIGH). Project a point onto the nav mesh, find a path between two
+      points, report reachability — all WITHOUT running PIE. `build_navmesh` exists and reports tile
+      counts, but nothing can ask whether a spot a mod just placed something on is still walkable.
+      This is the natural companion to `trace` and `snap_actors_to_ground`.
+- [ ] **Rename a widget inside the WidgetTree** (audit: HIGH). And carry the rename through every
+      place that stores the old name — bindings, animation `AnimationBindings` entries, and any graph
+      node referring to it. That last part is the whole difficulty and the whole value: a rename that
+      updates the tree and not the animation bindings leaves an animation that compiles, plays, and
+      animates nothing (the same split `add_widget_animation_track` had to handle).
+- [ ] **Screenshot of what is ACTUALLY rendered** (audit: HIGH). `capture_camera` spawns its own
+      `ASceneCapture2D`, which is a different camera from the editor viewport with different show
+      flags and view mode — the file header already documents that split and it has burned someone
+      before. An endpoint that captures the real viewport (and the PIE viewport) answers "what does
+      this look like right now" rather than "what does a fresh capture actor see".
+- [ ] **Foliage — and settle the disagreement first.** The bucket agent rated `AInstancedFoliageActor`
+      + `UFoliageType` HIGH; the synthesiser's closing line says "Skip Foliage". Do not build either
+      way until that is resolved: check whether DDS2's foliage is actually painted through the Foliage
+      system or is static-mesh instances placed some other way. `add_foliage_instances` already
+      exists, so the question is what it does NOT cover. If the answer is "nothing a modder needs",
+      decline it with that finding rather than building on a HIGH rating nobody has tested.
+- [ ] **Typed read of Niagara User parameters** (audit: HIGH, and I declined the write side).
+      Reading works through `get_property` but the shape is a redirect map keyed by
+      `(Name="Color",TypeDefHandle=(...))`, which is hostile. A read-only `list_niagara_user_parameters`
+      returning `{name, type, value}` is cheap, needs no module dependency if it reshapes what
+      reflection already returns, and is genuinely useful. The WRITE side stays declined until someone
+      has a real reason — that territory has already crashed the editor once.
+
 ## Deliberately not pursuing
 
 - [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add

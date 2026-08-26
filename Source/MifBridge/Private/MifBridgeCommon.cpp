@@ -291,6 +291,8 @@ namespace MifBridge
 			// toolbar equivalent, reachable without opening that editor.
 			MIF_BIND(remove_collision);
 			MIF_BIND(add_simplified_collision);
+			MIF_BIND(list_collision_profiles);
+			MIF_BIND(set_collision);
 			MIF_BIND(get_referencers);
 			MIF_BIND(get_dependencies);
 			MIF_BIND(audit_unused);
@@ -478,6 +480,7 @@ namespace MifBridge
 			TEXT("list_struct_members"), TEXT("list_level_actors"), TEXT("get_level_actor"),
 			TEXT("list_sockets"), TEXT("describe_behavior_tree"), TEXT("list_blackboard_keys"),
 			TEXT("get_perf_stats"), TEXT("list_material_parameters"),
+			TEXT("list_collision_profiles"),
 			TEXT("list_widget_animations"),
 			// PIE start/stop only QUEUE a request — they mutate no asset and must not open a
 			// transaction (an undo entry spanning a world teardown is meaningless).

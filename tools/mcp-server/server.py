@@ -2169,6 +2169,40 @@ def remove_collision(path: str, confirm: bool = False) -> dict:
 
 
 @mcp.tool()
+def list_collision_profiles() -> dict:
+    """List the collision profiles THIS project defines, with what each resolves to.
+
+    Each entry reports the profile's collisionEnabled mode, its object type, and its per-channel
+    responses (Block / Overlap / Ignore) - which is what actually decides whether a mod's prop stops
+    the player.
+
+    Worth knowing: set_property will accept ANY string as BodyInstance.CollisionProfileName and read
+    it straight back, leaving the component on its previous collision. This is the authority on which
+    names mean something, and set_collision validates against it.
+    """
+    return _post("list_collision_profiles")
+
+
+@mcp.tool()
+def set_collision(object_path: str, profile: str = "", collision_enabled: str = "") -> dict:
+    """Set a primitive component's collision profile, with the profile name CHECKED.
+
+    object_path is a component's templatePath from list_components, or a placed actor's component
+    path. Pass profile and/or collision_enabled (NoCollision | QueryOnly | PhysicsOnly |
+    QueryAndPhysics).
+
+    An unknown profile name is REFUSED with the list of real ones. set_property accepts it silently,
+    which leaves the component on its previous collision while reading back as though it changed - a
+    prop that looks configured and does not block the player.
+
+    The response reports the channel responses the profile RESOLVED to, because "the profile is set"
+    and "it now blocks what I meant" are different claims.
+    """
+    return _post("set_collision", objectPath=object_path, profile=profile,
+                 collisionEnabled=collision_enabled)
+
+
+@mcp.tool()
 def add_simplified_collision(path: str, shape: str) -> dict:
     "Generate one simple collision primitive on a StaticMesh - the StaticMeshEditor's collision toolbar (Add Box/Sphere/Capsule/K-DOP Simplified Collision), reachable without opening that editor. shape: box | sphere | capsule | 10dop-x | 10dop-y | 10dop-z | 18dop | 26dop. Calls the engine's own generators with its own K-DOP direction tables, so the result is identical to the toolbar button. ADDITIVE - it does NOT replace existing collision: the engine's replace-or-cancel prompt is commented out in GeomFitUtils.cpp, so generating over a mesh that already has collision silently leaves you with TWO primitives. Call remove_collision first to replace. Returns primitivesBefore/primitivesAfter/added so you can verify which happened."
     return _post("add_simplified_collision", path=path, shape=shape)

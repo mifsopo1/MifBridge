@@ -31,6 +31,12 @@
 // the editor: Remove Collision, then Add Box Simplified Collision.
 
 #include "MifBridgeHandlers.h"
+
+// list_collision_profiles / set_collision. UCollisionProfile is the ONLY authority on what a profile
+// name means in this project - DDS2 defines its own in DefaultEngine.ini, and a name that is not in
+// there is accepted by every generic setter and silently means nothing.
+#include "Engine/CollisionProfile.h"
+#include "Components/PrimitiveComponent.h"
 #include "MifBridgeLog.h"
 
 #include "Editor.h"                        // GEditor - Begin/EndTransaction
@@ -46,6 +52,204 @@
 
 namespace MifBridge
 {
+	namespace
+	{
+		const TCHAR* CollisionEnabledName(ECollisionEnabled::Type E)
+		{
+			switch (E)
+			{
+			case ECollisionEnabled::NoCollision:          return TEXT("NoCollision");
+			case ECollisionEnabled::QueryOnly:            return TEXT("QueryOnly");
+			case ECollisionEnabled::PhysicsOnly:          return TEXT("PhysicsOnly");
+			case ECollisionEnabled::QueryAndPhysics:      return TEXT("QueryAndPhysics");
+			case ECollisionEnabled::ProbeOnly:            return TEXT("ProbeOnly");
+			case ECollisionEnabled::QueryAndProbe:        return TEXT("QueryAndProbe");
+			default:                                      return TEXT("(unknown)");
+			}
+		}
+
+		const TCHAR* CollisionResponseName(ECollisionResponse R)
+		{
+			switch (R)
+			{
+			case ECR_Ignore:  return TEXT("Ignore");
+			case ECR_Overlap: return TEXT("Overlap");
+			case ECR_Block:   return TEXT("Block");
+			default:          return TEXT("(unknown)");
+			}
+		}
+
+		// The responses a profile RESOLVES to, which is the thing a caller actually cares about and
+		// cannot see from the profile name alone.
+		TSharedRef<FJsonObject> ResponsesJson(const FCollisionResponseContainer& C)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			const UEnum* ChannelEnum = StaticEnum<ECollisionChannel>();
+			for (int32 i = 0; i < ECC_MAX; ++i)
+			{
+				const ECollisionChannel Ch = static_cast<ECollisionChannel>(i);
+				const FName DisplayName = UCollisionProfile::Get()->ReturnChannelNameFromContainerIndex(i);
+				if (DisplayName.IsNone()) { continue; }
+				J->SetStringField(DisplayName.ToString(),
+					CollisionResponseName(static_cast<ECollisionResponse>(C.EnumArray[i])));
+			}
+			return J;
+		}
+	}
+
+	// --- list_collision_profiles ---------------------------------------------
+	//   in:  { }
+	//   out: { count, profiles:[{name, collisionEnabled, objectType, responses:{...}}] }
+	//
+	// A caller guessing "BlockAll" when the project defines its own profiles has no way to find out
+	// otherwise, and set_property accepts any string. This is the authority.
+	void H_list_collision_profiles(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out, { },
+			TEXT("(no parameters)"),
+			{ { TEXT("actorPath"), TEXT("this lists the PROJECT's profiles, not one object's - read an object's current profile with get_property on BodyInstance.CollisionProfileName") } }))
+		{
+			return;
+		}
+
+		TArray<TSharedPtr<FName>> Names;
+		UCollisionProfile::GetProfileNames(Names);
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		for (const TSharedPtr<FName>& N : Names)
+		{
+			if (!N.IsValid()) { continue; }
+			FCollisionResponseTemplate T;
+			if (!UCollisionProfile::Get()->GetProfileTemplate(*N, T)) { continue; }
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("name"), T.Name.ToString());
+			J->SetStringField(TEXT("collisionEnabled"), CollisionEnabledName(T.CollisionEnabled));
+			J->SetStringField(TEXT("objectType"), T.ObjectTypeName.ToString());
+			J->SetObjectField(TEXT("responses"), ResponsesJson(T.ResponseToChannels));
+			// A NoCollision profile still carries a full response container, so its "responses" read
+			// as though it blocks things. It does not - collisionEnabled decides that, and the
+			// responses only apply once collision is on. Say so rather than let the table mislead.
+			if (T.CollisionEnabled == ECollisionEnabled::NoCollision)
+			{
+				J->SetBoolField(TEXT("responsesAreMoot"), true);
+				J->SetStringField(TEXT("note"),
+					TEXT("collisionEnabled is NoCollision, so the responses below never apply - they "
+						 "are what this profile WOULD do if collision were enabled"));
+			}
+			Arr.Add(MakeShared<FJsonValueObject>(J));
+		}
+		Out->SetNumberField(TEXT("count"), Arr.Num());
+		Out->SetArrayField(TEXT("profiles"), Arr);
+		Out->SetStringField(TEXT("note"),
+			TEXT("these are the profiles THIS project defines (DefaultEngine.ini). set_collision "
+				 "validates against exactly this list; set_property does not, and will accept a name "
+				 "that means nothing."));
+	}
+
+	// --- set_collision -------------------------------------------------------
+	//   in:  { objectPath, profile? , collisionEnabled? }
+	//   out: { objectPath, profile, collisionEnabled, responses:{...} }
+	//
+	// The same write set_property can do, with the profile name CHECKED - and the resolved channel
+	// responses reported back, because "the profile is set" and "it now blocks what I meant" are
+	// different claims.
+	void H_set_collision(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("objectPath"), TEXT("component"), TEXT("profile"), TEXT("collisionEnabled") },
+			TEXT("objectPath (a component's templatePath from list_components, or a placed actor's "
+				 "component path), profile (validated against list_collision_profiles), "
+				 "collisionEnabled (NoCollision|QueryOnly|PhysicsOnly|QueryAndPhysics)"),
+			{ { TEXT("channel"), TEXT("per-channel responses come from the PROFILE - pick a profile that has the responses you want, and list_collision_profiles shows what each resolves to") },
+			  { TEXT("blueprintId"), TEXT("collision lives on a COMPONENT: call list_components, take its templatePath, and pass that as objectPath") } }))
+		{
+			return;
+		}
+
+		const FString ObjPath = JStrAny(In, { TEXT("objectPath"), TEXT("component") });
+		if (ObjPath.IsEmpty())
+		{
+			Fail(Out, TEXT("objectPath is required - a component's templatePath from list_components. "
+						   "NOTHING was changed."));
+			return;
+		}
+		UObject* Obj = FindObject<UObject>(nullptr, *ObjPath);
+		if (!Obj)
+		{
+			Obj = LoadAssetLenient(ObjPath);
+		}
+		UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(Obj);
+		if (!Prim)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is %s, not a PrimitiveComponent - only primitives have collision. "
+					 "NOTHING was changed."),
+				*ObjPath, Obj ? *FString::Printf(TEXT("a %s"), *Obj->GetClass()->GetName()) : TEXT("not found")));
+			return;
+		}
+
+		const bool bWantProfile = In->HasField(TEXT("profile"));
+		const bool bWantEnabled = In->HasField(TEXT("collisionEnabled"));
+		if (!bWantProfile && !bWantEnabled)
+		{
+			Fail(Out, TEXT("pass profile and/or collisionEnabled. NOTHING was changed."));
+			return;
+		}
+
+		Prim->Modify();
+
+		if (bWantProfile)
+		{
+			const FString Profile = JStr(In, TEXT("profile"));
+			// THE CHECK THAT SET_PROPERTY DOES NOT DO. An unknown name is accepted by the raw setter
+			// and reads straight back, leaving the component on whatever it had before - configured
+			// in every read path and colliding with the wrong things.
+			FCollisionResponseTemplate T;
+			if (!UCollisionProfile::Get()->GetProfileTemplate(FName(*Profile), T))
+			{
+				TArray<TSharedPtr<FName>> Names;
+				UCollisionProfile::GetProfileNames(Names);
+				TArray<FString> Have;
+				for (const TSharedPtr<FName>& N : Names) { if (N.IsValid()) { Have.Add(N->ToString()); } }
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is not a collision profile in THIS project, and setting it would have "
+						 "left the component on its previous collision while reading back as though it "
+						 "had changed. Known profiles: %s. NOTHING was changed."),
+					*Profile, *FString::Join(Have, TEXT(", "))));
+				return;
+			}
+			Prim->SetCollisionProfileName(FName(*Profile));
+		}
+
+		if (bWantEnabled)
+		{
+			const FString E = JStr(In, TEXT("collisionEnabled"));
+			ECollisionEnabled::Type Mode = ECollisionEnabled::QueryAndPhysics;
+			if (E == TEXT("NoCollision"))          { Mode = ECollisionEnabled::NoCollision; }
+			else if (E == TEXT("QueryOnly"))       { Mode = ECollisionEnabled::QueryOnly; }
+			else if (E == TEXT("PhysicsOnly"))     { Mode = ECollisionEnabled::PhysicsOnly; }
+			else if (E == TEXT("QueryAndPhysics")) { Mode = ECollisionEnabled::QueryAndPhysics; }
+			else
+			{
+				Fail(Out, FString::Printf(
+					TEXT("collisionEnabled '%s' is not one of NoCollision, QueryOnly, PhysicsOnly, "
+						 "QueryAndPhysics. NOTHING was changed."), *E));
+				return;
+			}
+			Prim->SetCollisionEnabled(Mode);
+		}
+
+		Prim->MarkPackageDirty();
+
+		// Report what it RESOLVED to, not what was asked for. The profile name alone does not tell a
+		// caller whether the thing now blocks the player.
+		Out->SetStringField(TEXT("objectPath"), Prim->GetPathName());
+		Out->SetStringField(TEXT("profile"), Prim->GetCollisionProfileName().ToString());
+		Out->SetStringField(TEXT("collisionEnabled"), CollisionEnabledName(Prim->GetCollisionEnabled()));
+		Out->SetStringField(TEXT("objectType"),
+			UCollisionProfile::Get()->ReturnChannelNameFromContainerIndex(Prim->GetCollisionObjectType()).ToString());
+		Out->SetObjectField(TEXT("responses"), ResponsesJson(Prim->GetCollisionResponseToChannels()));
+	}
+
 	/** Shared resolve: /Game/-only, must be a UStaticMesh, must have (or get) a BodySetup. */
 	static UStaticMesh* ResolveStaticMeshForCollision(const TSharedRef<FJsonObject>& In,
 		const TSharedRef<FJsonObject>& Out, const TCHAR* Endpoint)

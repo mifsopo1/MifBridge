@@ -1138,6 +1138,12 @@ namespace MifBridge
 	// step, so these call the engine's own generators directly. See MifBridgeCollision.cpp.
 	MIF_DECL(remove_collision);
 	MIF_DECL(add_simplified_collision);
+	/** What collision profiles THIS project defines. set_property accepts any string as a profile
+	 *  name and silently means nothing by an unknown one; this is the authority. */
+	MIF_DECL(list_collision_profiles);
+	/** Set a primitive's collision profile with the name CHECKED, reporting the responses it
+	 *  resolved to. */
+	MIF_DECL(set_collision);
 	// reference queries — the asset registry's dependency graph, exposed
 	MIF_DECL(get_referencers);
 	MIF_DECL(get_dependencies);
