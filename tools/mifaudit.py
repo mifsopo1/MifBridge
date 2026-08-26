@@ -136,6 +136,21 @@ def sdk_editor_pid():
 
 
 def launch_editor():
+    # Clear the "Restore Packages" prompt FIRST, when it is safe to. An unattended run leaves unsaved
+    # scratch packages behind, and after a kill the next launch opens a modal offering to restore them
+    # - which goes up BEFORE the bridge starts serving, so the relaunch this function exists to perform
+    # would wait out its whole timeout against an editor that is never going to answer. Recovering from
+    # a crash is exactly when that must not happen.
+    #
+    # clear_scratch_restore refuses unless every entry is a scratch path, so a genuine recovery offer
+    # for real work is left alone. Failure to clear is never fatal here: the launch still proceeds and
+    # wait_for_bridge reports the blocked window by name.
+    try:
+        import clear_scratch_restore
+        clear_scratch_restore.clear(quiet=True)
+    except Exception:
+        pass
+
     subprocess.run(
         ["powershell", "-NoProfile", "-Command",
          "Start-Process -FilePath '%s' -ArgumentList '\"%s\"'" % (EDITOR_EXE, UPROJECT)],

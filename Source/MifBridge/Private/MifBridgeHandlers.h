@@ -241,6 +241,46 @@ namespace MifBridge
 	 *  level streaming selects worlds the same way list_pie_actors does. */
 	void CollectPIEWorlds(TArray<UWorld*>& OutWorlds);
 
+	// --- Modal dialog suppression (the bridge's worst hang) -------------------
+	// Every handler runs INLINE on the game thread inside the HTTP ticker (MifBridgeServer.cpp), so an
+	// engine call that opens a modal does not merely "show a dialog" - it STOPS THE TICKER. The socket
+	// is never read again and the whole bridge is dead until a human clicks the box. That is
+	// docs/02_GOTCHAS.md section 8, and it has taken the editor down live more than once.
+	//
+	// The house rule is to make the modal path UNREACHABLE: rename_variable refuses when the variable
+	// has a RepNotify function, add_sublevel pre-checks both AddLevelToWorld guards. That rule does not
+	// fit every case. set_variable_type's modal fires whenever the variable has ANY referencing node
+	// (BlueprintEditorUtils.cpp:5035), and refusing THAT would refuse the endpoint's entire purpose,
+	// which is to retype in place while KEEPING the nodes.
+	//
+	// FSuppressableWarningDialog offers the other way out. ShowModal() reads
+	// [SuppressableDialogs]<Key> from GEditorPerProjectIni FIRST and, when it is set, returns
+	// Suppressed WITHOUT showing anything (Dialogs.cpp). Both engine verify-functions treat Suppressed
+	// as consent, so the operation proceeds - which is the answer an HTTP caller already gave by
+	// calling the endpoint at all. There is no in-memory override; the config flag is the only lever
+	// the engine exposes.
+	//
+	// The setting is RESTORED afterwards, and removed entirely when the caller had no setting of their
+	// own. Andre drives this same editor by hand, and leaving his "warn me before I retype a variable"
+	// preference flipped off would be a side effect he never asked for. If the editor dies inside the
+	// scope the flag survives on disk - the window is one engine call wide, and the cost is one
+	// suppressed warning, which is the mildest failure available here.
+	struct FMifScopedDialogSuppression
+	{
+		explicit FMifScopedDialogSuppression(const TCHAR* InKey);
+		~FMifScopedDialogSuppression();
+
+		// Non-copyable: two live copies would each restore, and the second restore would write back a
+		// value the first had already put back.
+		FMifScopedDialogSuppression(const FMifScopedDialogSuppression&) = delete;
+		FMifScopedDialogSuppression& operator=(const FMifScopedDialogSuppression&) = delete;
+
+	private:
+		FString Key;
+		bool bHadValue = false;   // did the caller have a setting of their own?
+		bool bPrevious = false;   // ...and what was it
+	};
+
 	// --- Shared helpers that used to exist as per-file copies ----------------
 	// A unity build merges every unnamed namespace in a translation unit into ONE namespace
 	// ([namespace.unnamed]/1), and `static` at namespace scope collapses the same way, so two files

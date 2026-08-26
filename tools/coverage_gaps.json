@@ -1,7 +1,6 @@
 {
  "uncovered": [
   "add_anim_node",
-  "add_branch",
   "add_class_cast",
   "add_comment",
   "add_component_bound_event",
@@ -14,7 +13,6 @@
   "add_literal",
   "add_make_array",
   "add_make_map",
-  "add_material_expression",
   "add_nav_volume",
   "add_node_pin",
   "add_parent_call",
@@ -33,14 +31,10 @@
   "bind_landscape_rvt",
   "build_navmesh",
   "close_asset_editors",
-  "connect_material_expressions",
-  "connect_material_property",
   "create_editable_child",
   "create_landscape",
-  "create_material",
   "create_material_function",
   "delete_level_actor",
-  "delete_material_expression",
   "describe_animation",
   "describe_class",
   "describe_property",
@@ -76,7 +70,6 @@
   "kr_reconstruct_status",
   "kr_verify_fidelity",
   "landscape_info",
-  "layout_material_expressions",
   "list_animations",
   "list_blueprints",
   "list_editor_commands",
@@ -86,7 +79,6 @@
   "list_pie_actors",
   "list_sublevels",
   "list_transactions",
-  "list_variables",
   "load_level",
   "move_actor_to",
   "move_node",
@@ -105,7 +97,6 @@
   "recipe_override_and_call_parent",
   "recipe_reset_and_loop",
   "recipe_splice_before_parent",
-  "recompile_material",
   "reconnect_pin",
   "redo_transactions",
   "reimport_asset",
@@ -117,8 +108,6 @@
   "remove_variable",
   "remove_widget_binding",
   "rename_event",
-  "rename_function",
-  "rename_variable",
   "render_thumbnail",
   "reparent_blueprint",
   "reset_property_to_default",
@@ -148,7 +137,6 @@
   "set_variable_flags",
   "set_variable_type",
   "set_widget_is_variable",
-  "shader_compile_status",
   "spawn_actor_in_pie",
   "spawn_many",
   "start_pie",
@@ -164,6 +152,9 @@
   "add_bind_dispatcher": [
    "test_macro_dispatch.py"
   ],
+  "add_branch": [
+   "test_confirm_gated.py"
+  ],
   "add_break_struct": [
    "test_node_spawns.py"
   ],
@@ -176,6 +167,7 @@
   "add_component": [
    "test_collision.py",
    "test_components_dispatchers.py",
+   "test_confirm_gated.py",
    "test_inherited_components.py"
   ],
   "add_custom_event": [
@@ -186,6 +178,7 @@
    "test_audit_fixes.py"
   ],
   "add_enum_value": [
+   "test_confirm_gated.py",
    "test_enums.py"
   ],
   "add_event_dispatcher": [
@@ -225,6 +218,9 @@
   "add_make_struct": [
    "test_node_spawns.py"
   ],
+  "add_material_expression": [
+   "test_material_graph.py"
+  ],
   "add_override_event": [
    "test_graph_patch.py"
   ],
@@ -245,6 +241,7 @@
   ],
   "add_variable": [
    "test_array_wildcard_durability.py",
+   "test_confirm_gated.py",
    "test_graph_patch.py",
    "test_node_spawns.py",
    "test_rollback_real.py",
@@ -253,6 +250,7 @@
   ],
   "add_variable_get": [
    "test_array_wildcard_durability.py",
+   "test_confirm_gated.py",
    "test_graph_patch.py",
    "test_node_spawns.py",
    "test_rollback_real.py",
@@ -260,6 +258,7 @@
    "test_v3_apply.py"
   ],
   "add_variable_set": [
+   "test_confirm_gated.py",
    "test_node_spawns.py"
   ],
   "add_widget_animation": [
@@ -304,6 +303,7 @@
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_components_dispatchers.py",
+   "test_confirm_gated.py",
    "test_graph_patch.py",
    "test_inherited_components.py",
    "test_interfaces.py",
@@ -319,6 +319,12 @@
    "test_widget_animation.py",
    "test_widget_animation_props.py",
    "test_widget_animation_track.py"
+  ],
+  "connect_material_expressions": [
+   "test_material_graph.py"
+  ],
+  "connect_material_property": [
+   "test_material_graph.py"
   ],
   "connect_pins": [
    "test_array_wildcard_durability.py",
@@ -341,6 +347,7 @@
    "test_audit_fixes.py",
    "test_collision.py",
    "test_components_dispatchers.py",
+   "test_confirm_gated.py",
    "test_fuzz_detector.py",
    "test_graph_patch.py",
    "test_inherited_components.py",
@@ -360,14 +367,20 @@
    "test_widget_animation_track.py"
   ],
   "create_datatable": [
+   "test_confirm_gated.py",
    "test_datatables.py"
   ],
   "create_enum": [
+   "test_confirm_gated.py",
    "test_enums.py"
   ],
   "create_function": [
+   "test_confirm_gated.py",
    "test_interfaces.py",
    "test_pinlifetime.py"
+  ],
+  "create_material": [
+   "test_material_graph.py"
   ],
   "create_material_instance": [
    "test_material_write.py"
@@ -380,6 +393,7 @@
    "test_array_wildcard_durability.py",
    "test_collision.py",
    "test_components_dispatchers.py",
+   "test_confirm_gated.py",
    "test_graph_patch.py",
    "test_inherited_components.py",
    "test_interfaces.py",
@@ -400,7 +414,11 @@
    "test_widget_animation_track.py"
   ],
   "delete_datatable_rows": [
+   "test_confirm_gated.py",
    "test_datatables.py"
+  ],
+  "delete_material_expression": [
+   "test_material_graph.py"
   ],
   "describe_behavior_tree": [
    "test_sockets_ai.py"
@@ -428,6 +446,7 @@
    "test_foliage_modes.py",
    "test_ik_rig.py",
    "test_list_bones.py",
+   "test_material_graph.py",
    "test_material_params.py",
    "test_material_write.py",
    "test_niagara_params.py",
@@ -445,6 +464,7 @@
   ],
   "get_node": [
    "test_array_wildcard_durability.py",
+   "test_confirm_gated.py",
    "test_graph_patch.py",
    "test_macro_dispatch.py",
    "test_node_spawns.py",
@@ -471,6 +491,9 @@
   "invoke_editor_tab": [
    "test_audit_fixes.py"
   ],
+  "layout_material_expressions": [
+   "test_material_graph.py"
+  ],
   "list_blackboard_keys": [
    "test_create_asset.py",
    "test_sockets_ai.py"
@@ -485,7 +508,8 @@
   ],
   "list_components": [
    "test_collision.py",
-   "test_components_dispatchers.py"
+   "test_components_dispatchers.py",
+   "test_confirm_gated.py"
   ],
   "list_datatables": [
    "test_datatables.py"
@@ -497,12 +521,14 @@
    "test_components_dispatchers.py"
   ],
   "list_enum_values": [
+   "test_confirm_gated.py",
    "test_enums.py"
   ],
   "list_graphs": [
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_components_dispatchers.py",
+   "test_confirm_gated.py",
    "test_interfaces.py",
    "test_node_spawns.py"
   ],
@@ -522,6 +548,7 @@
    "test_snap_ground.py"
   ],
   "list_material_expressions": [
+   "test_material_graph.py",
    "test_material_params.py"
   ],
   "list_material_parameters": [
@@ -532,6 +559,7 @@
    "test_niagara_params.py"
   ],
   "list_nodes": [
+   "test_confirm_gated.py",
    "test_graph_patch.py",
    "test_node_spawns.py",
    "test_pinlifetime.py",
@@ -552,6 +580,9 @@
   "list_tree_widgets": [
    "test_rename_widget.py"
   ],
+  "list_variables": [
+   "test_confirm_gated.py"
+  ],
   "list_widget_animations": [
    "test_rename_widget.py",
    "test_widget_anim_recreate.py",
@@ -568,15 +599,21 @@
    "test_inherited_components.py"
   ],
   "read_datatable": [
+   "test_confirm_gated.py",
    "test_datatables.py"
+  ],
+  "recompile_material": [
+   "test_material_graph.py"
   ],
   "refresh_node": [
    "test_array_wildcard_durability.py"
   ],
   "remove_component": [
-   "test_components_dispatchers.py"
+   "test_components_dispatchers.py",
+   "test_confirm_gated.py"
   ],
   "remove_enum_value": [
+   "test_confirm_gated.py",
    "test_enums.py"
   ],
   "remove_ik_goal": [
@@ -592,6 +629,7 @@
    "test_interfaces.py"
   ],
   "remove_node": [
+   "test_confirm_gated.py",
    "test_node_spawns.py"
   ],
   "remove_pin": [
@@ -610,8 +648,14 @@
   "rename_event_dispatcher": [
    "test_components_dispatchers.py"
   ],
+  "rename_function": [
+   "test_confirm_gated.py"
+  ],
   "rename_tree_widget": [
    "test_rename_widget.py"
+  ],
+  "rename_variable": [
+   "test_confirm_gated.py"
   ],
   "revert_inherited_component": [
    "test_inherited_components.py"
@@ -690,6 +734,9 @@
   "set_widget_animation_range": [
    "test_widget_anim_recreate.py"
   ],
+  "shader_compile_status": [
+   "test_material_graph.py"
+  ],
   "snap_actors_to_ground": [
    "test_snap_ground.py"
   ],
@@ -707,6 +754,7 @@
    "test_audit_fixes.py"
   ],
   "write_datatable_rows": [
+   "test_confirm_gated.py",
    "test_datatables.py"
   ]
  }

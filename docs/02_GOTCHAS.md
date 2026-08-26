@@ -641,6 +641,7 @@ Batch K:
 | endpoint | what stops the ticker | disposition |
 |---|---|---|
 | `rename_variable` | `FSuppressableWarningDialog` when the variable has a RepNotify function (`BlueprintEditorUtils.cpp:4837`) | **CLOSED** — refused, pointing at `set_variable_flags {repNotify:false}`; the engine's modal path is now unreachable from HTTP |
+| `set_variable_type` | `FSuppressableWarningDialog` whenever the variable has **any** referencing node, here or in a loaded child Blueprint (`BlueprintEditorUtils.cpp:5035`, locals at `:5605`) | **CLOSED** — `FMifScopedDialogSuppression` sets the engine's own suppression flag for the duration of the call, so `ShowModal` returns `Suppressed` (= consent) without showing. Refusing was not an option: retyping a variable that has nodes is the endpoint's whole purpose. PM-011 |
 | `audit_unused` | `ScanPathsSynchronous` on a mount root; an unconditional `WaitForCompletion()`; `GetReferencers` per asset regardless of `limit` | **CLOSED** — three hard refusals (≥2 path segments for `rescan`, "registry still scanning" instead of waiting, 20000-asset cap) |
 | `set_sublevel_visibility`, `set_current_sublevel` | `SetLevelVisibility` → `FlushLevelStreaming()` → `FlushAsyncLoading()` (`World.cpp:4533`) | **DECLARED** — bounded in an editor world; moved to the self-managed bucket so the cascade is no longer captured by the blanket transaction |
 | `add_sublevel`, `set_sublevel_streaming` | `AddLevelToWorld`'s unconditional `FScopedSlowTask::MakeDialog()` (`EditorLevelUtils.cpp:387`) — Slate ticks, `FTSTicker` does not | **DECLARED** — both call sites defer, so no response is left pending, but concurrent requests stall |
@@ -686,6 +687,32 @@ yourself *first* so the caller gets a real reason instead of a generic failure.
 prompting API as guarded or not, **and** re-verifies that the engine lines cited above still contain
 what they are quoted as saying — so this table cannot rot silently against a future engine. Run it
 alongside `parity_check.py`.
+
+### There are TWO dialog classes, and they do not share a guard
+
+Everything above concerns `FMessageDialog::Open`. **`FSuppressableWarningDialog` is a separate class
+with a separate path**, and assuming one guard covered both is what cost the editor in PM-011.
+
+| | `FMessageDialog::Open` | `FSuppressableWarningDialog` |
+|---|---|---|
+| how it shows | checks `!FApp::IsUnattended() && !GIsRunningUnattendedScript`, then shows | reads `[SuppressableDialogs]<Key>` from `GEditorPerProjectIni`; if set, returns `Suppressed` **without showing** |
+| `GIsRunningUnattendedScript` | honoured directly (`MessageDialog.cpp:172`) | honoured only further down, in `FSlateApplication::AddModalWindow`, which logs *"A modal window tried to take control while running in unattended script mode"* and cancels |
+| what the guard gets you | the **default** answer (`No` for a YesNo) | `Cancel` — so the operation is **refused**, safely but unhelpfully |
+| how to make it *proceed* | nothing — you get the default | set the suppression flag: `Suppressed` counts as **consent** |
+
+Two consequences worth keeping straight:
+
+* `GIsRunningUnattendedScript` **does** prevent a `FSuppressableWarningDialog` from hanging the
+  bridge — but only by cancelling it, which turns the hang into a silent refusal. When the operation
+  should actually happen, the suppression flag is the only lever that does it.
+* That guard is applied **per call site**, not globally. It is wrapped around individual calls in
+  `MifBridgeAssetOps.cpp`, `MifBridgeImport.cpp`, `MifBridgeExport.cpp` and `MifBridgeThumbnail.cpp`
+  only. Every other handler runs with it **off**, so any unguarded engine call that opens a modal
+  hangs the bridge. That is the standing shape of this risk, not a closed one.
+
+Use `FMifScopedDialogSuppression` (`MifBridgeHandlers.h`) for the suppressible class. It restores the
+caller's own setting afterwards, because this editor is also driven by a human whose warning
+preferences are not ours to change.
 
 ## 9. Numbers are strict, and a write is checked before it happens
 

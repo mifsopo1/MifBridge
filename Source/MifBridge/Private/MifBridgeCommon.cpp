@@ -6,6 +6,10 @@
 #include "MifBridgeEndpointRegistry.h"      // Public/ — the provider registration interface
 #include "Dom/JsonObject.h"                 // FJsonObject is only FORWARD-DECLARED in the registry
                                             // header (Json is a PRIVATE dep, MifBridge.Build.cs:39)
+#include "Misc/ConfigCacheIni.h"           // GConfig - FMifScopedDialogSuppression. Not
+                                            // guaranteed by the shared PCH; a unity-build
+                                            // blob move is what breaks that assumption.
+#include "CoreGlobals.h"                    // GEditorPerProjectIni (same reason)
 #include "Dom/JsonValue.h"                  // EJson + the concrete FJsonValue types the strict
                                             // numeric readers below have to inspect BY TYPE, because
                                             // TryGetNumber's own coercions are what hid defect 1
@@ -1240,6 +1244,34 @@ namespace MifBridge
 		if (!IsOk(Out))
 		{
 			Transaction.Cancel();
+		}
+	}
+
+	// --- Modal dialog suppression -------------------------------------------
+	// Contract and reasoning live on the declaration in MifBridgeHandlers.h. In short: a modal opened
+	// on the game thread hangs the entire bridge, and for set_variable_type the engine's own
+	// suppression flag is the only exit that does not also refuse the endpoint's purpose.
+
+	FMifScopedDialogSuppression::FMifScopedDialogSuppression(const TCHAR* InKey)
+		: Key(InKey)
+	{
+		if (!GConfig) { return; }
+		// GetBool RETURNS whether the key was present, which is the thing the destructor needs: a caller
+		// who never set this preference must end with no key at all, not with an explicit False.
+		bHadValue = GConfig->GetBool(TEXT("SuppressableDialogs"), *Key, bPrevious, GEditorPerProjectIni);
+		GConfig->SetBool(TEXT("SuppressableDialogs"), *Key, true, GEditorPerProjectIni);
+	}
+
+	FMifScopedDialogSuppression::~FMifScopedDialogSuppression()
+	{
+		if (!GConfig) { return; }
+		if (bHadValue)
+		{
+			GConfig->SetBool(TEXT("SuppressableDialogs"), *Key, bPrevious, GEditorPerProjectIni);
+		}
+		else
+		{
+			GConfig->RemoveKey(TEXT("SuppressableDialogs"), *Key, GEditorPerProjectIni);
 		}
 	}
 

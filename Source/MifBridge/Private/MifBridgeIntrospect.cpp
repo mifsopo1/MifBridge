@@ -1413,6 +1413,20 @@ namespace MifBridge
 			return;
 		}
 
+		// MODAL HAZARD - this is the bug the suppression guard exists for, and it was a live hang.
+		// Both engine calls below check whether the variable has ANY referencing node - in this
+		// blueprint or in a loaded CHILD blueprint - and if so open an FSuppressableWarningDialog
+		// titled "Change Variable Type" (BlueprintEditorUtils.cpp:5035 and :5605). A modal on the
+		// game thread stops the HTTP ticker outright: the bridge stops answering, and only a human
+		// clicking the box brings it back. Retyping a variable that HAS nodes is the normal case,
+		// so this was reachable from an ordinary call - add_variable, add a Get node, retype.
+		//
+		// The refusal used by rename_variable is not available here: refusing every variable that
+		// has nodes would refuse the whole point of the endpoint. Suppressing the dialog instead
+		// makes the engine take its Suppressed branch, which BOTH verify-functions treat as
+		// consent - the same answer the caller gave by calling this endpoint. The read-back below
+		// is unchanged and still decides what is reported, so a suppressed dialog cannot turn a
+		// refusal into a false ok.
 		Blueprint->Modify();
 		if (bLocal)
 		{
@@ -1435,10 +1449,14 @@ namespace MifBridge
 					TEXT("ChangeLocalVariableType needs the generated function to exist."), *FunctionGraph->GetName()));
 				return;
 			}
-			FBlueprintEditorUtils::ChangeLocalVariableType(Blueprint, LocalScope, FName(*Name), NewType);
+			{
+				FMifScopedDialogSuppression NoModal(TEXT("ChangeVariableType_Warning"));
+				FBlueprintEditorUtils::ChangeLocalVariableType(Blueprint, LocalScope, FName(*Name), NewType);
+			}
 		}
 		else
 		{
+			FMifScopedDialogSuppression NoModal(TEXT("ChangeVariableType_Warning"));
 			FBlueprintEditorUtils::ChangeMemberVariableType(Blueprint, FName(*Name), NewType);
 		}
 

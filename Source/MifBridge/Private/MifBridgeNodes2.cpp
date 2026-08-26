@@ -737,6 +737,30 @@ namespace MifBridge
 			return;
 		}
 
+		// MODAL HAZARD, same family as PM-011. RenameMemberVariable opens an FSuppressableWarningDialog
+		// when the variable carries a RepNotify function (BlueprintEditorUtils.cpp:4837), and a modal on
+		// the game thread does not ask a question - it stops the HTTP ticker and the bridge is gone until
+		// someone clicks it. A dispatcher's backing delegate should never have a RepNotify: the Details
+		// panel does not offer one for a multicast delegate. But "should never" is an argument, not a
+		// check, and the cost of the argument being wrong is the whole bridge.
+		//
+		// Refused rather than suppressed, for the same reason rename_variable refuses: declining that
+		// particular dialog makes the engine REVERT the name (:4841), so a suppressed-and-declined run
+		// would report a rename that silently did not happen. Checked BEFORE the two renames below,
+		// because refusing between them would leave the dispatcher half-renamed.
+		const int32 DelegateVarIdx = FBlueprintEditorUtils::FindNewVariableIndex(Blueprint, FName(*OldName));
+		if (DelegateVarIdx != INDEX_NONE
+			&& Blueprint->NewVariables[DelegateVarIdx].RepNotifyFunc != NAME_None)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the delegate variable behind dispatcher '%s' has a RepNotify function ('%s'), and the ")
+				TEXT("engine's rename path opens a MODAL dialog for that case - it would hang the bridge until ")
+				TEXT("a human clicked it. Clear it first with set_variable_flags {name:'%s', repNotify:false}, ")
+				TEXT("rename, then set it again. Nothing was changed."),
+				*OldName, *Blueprint->NewVariables[DelegateVarIdx].RepNotifyFunc.ToString(), *OldName));
+			return;
+		}
+
 		Blueprint->Modify();
 		// BOTH halves, or the dispatcher breaks: the signature graph carries the parameter list, the
 		// member variable is what call/bind nodes actually reference. RenameGraph does not touch the

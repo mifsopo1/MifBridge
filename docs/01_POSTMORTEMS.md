@@ -5,6 +5,83 @@ Newest first.
 
 ---
 
+## PM-011 — `set_variable_type` hung the whole bridge on an ordinary three-call sequence (2026-08-26)
+
+**Symptom.** `set_variable_type` never returned. Not an error, not a crash — no response at all, and
+every subsequent request timed out too. The editor process was still alive and Windows reported
+`Responding: True`.
+
+The sequence that did it was not exotic: `add_variable` a float, `add_variable_get` a node for it,
+`set_variable_type` to int. Three calls, all ordinary.
+
+**Root cause.** `FBlueprintEditorUtils::ChangeMemberVariableType` counts the nodes that reference the
+variable, and if there are **any** — in this Blueprint or in any loaded *child* Blueprint — it opens
+an `FSuppressableWarningDialog` first (`BlueprintEditorUtils.cpp:5035`; the local-variable sibling
+does the same at `:5605`):
+
+```cpp
+if (AllVariableNodes.Num())
+{
+    if (!VerifyUserWantsVariableTypeChanged(VariableName))  // -> ShowModal()
+    {
+        return;
+    }
+```
+
+Handlers run inline on the game thread inside the HTTP ticker, so the modal did not "ask a question"
+— it stopped the ticker. The socket was never read again.
+
+Note which case is the guarded one. Retyping a variable that has **no** nodes is the case nobody
+needs; retyping one that **has** nodes is the entire purpose of the endpoint. The modal was on the
+main path, not on an edge.
+
+**Why the existing defences did not catch it.**
+
+1. `tools/audit_modals.py` models the guard as `TGuardValue<bool>(GIsRunningUnattendedScript, true)`,
+   which is what neutralises `FMessageDialog::Open`. `FSuppressableWarningDialog` never goes through
+   `FMessageDialog` — it calls `GEditor->EditorAddModalWindow` directly. Two dialog classes; only one
+   was modelled, and the inventory listed no `FSuppressableWarningDialog` sites except the one in
+   `rename_variable` that had already been closed by hand.
+2. The first probe of this endpoint passed. It retyped a variable that had no nodes yet, so it never
+   armed the dialog. A test that does not create the precondition passes against the broken build.
+
+**Fix.** `FMifScopedDialogSuppression` (declared in `MifBridgeHandlers.h`, defined in
+`MifBridgeCommon.cpp`). `FSuppressableWarningDialog::ShowModal()` reads
+`[SuppressableDialogs]<Key>` from `GEditorPerProjectIni` **before** it shows anything and returns
+`Suppressed` when the flag is set (`Dialogs.cpp`); both engine verify-functions treat `Suppressed` as
+consent, so the operation proceeds. That is the right answer for a bridge: the caller already gave
+their consent by calling the endpoint.
+
+The guard sets the flag for the duration of one engine call and **restores** the caller's own
+setting, removing the key entirely when they had none. Andre drives this same editor by hand, and
+leaving his "warn me before I retype a variable" preference switched off would be a side effect
+nobody asked for.
+
+Refusing — the tactic `rename_variable` uses for its RepNotify modal — was not available here.
+Refusing every variable that has referencing nodes would refuse the endpoint's whole reason to exist.
+
+**Prevention:**
+
+1. `tools/test_modal_hazards.py` (T360–T364). Every assertion is ultimately *did the call come back*,
+   because a hang leaves no response to inspect. T360 asserts the **precondition** explicitly — that
+   the variable really has a referencing node — so the suite cannot quietly stop testing the hazard
+   the way the original probe did.
+2. **The two dialog classes need two different guards, and the difference is now written down** in
+   `02_GOTCHAS.md` §8.
+3. **Diagnosing this class, in the order that actually settles it.** A hung bridge and a crashed
+   bridge look identical from the client:
+
+   ```bash
+   powershell -NoProfile -Command "(Get-Process -Id <pid>).CPU"   # sample twice, ~5s apart
+   ```
+
+   A CPU delta near zero means *blocked*, not spinning — which rules out an infinite loop before any
+   guessing starts. Then enumerate the process's visible windows rather than trusting
+   `MainWindowTitle`, which keeps reporting the main window while a modal sits in front of it. The
+   window titled "Change Variable Type" named the bug outright.
+
+---
+
 ## PM-008 — the build loop: an aborted build costs more than the build, and "is it live?" never needed one
 
 **Symptom.** Three separate costs in one session, all in the build loop rather than in any code.
@@ -796,6 +873,21 @@ live call against a DLL that did not contain it, and the resulting "unknown endp
 debugged as a binding problem rather than a build that never ran.
 
 **Prevention:**
+
+0. **The `built <date>` string the bridge reports is not evidence either** (added 2026-08-26). It is
+   baked in at compile time by whichever translation unit holds it, and a unity build only recompiles
+   the blobs that changed. After a second build touching one file, the DLL mtime had moved and the
+   bridge still reported the *previous* build's timestamp — because the blob holding the version
+   string had not been recompiled. Using it to answer "is my change live?" gives a confident wrong
+   answer. What actually settles it, in increasing order of certainty: the DLL's mtime moved, and the
+   DLL literally contains a string from the change:
+
+   ```bash
+   python -c "raw=open('Binaries/Win64/UnrealEditor-MifBridge.dll','rb').read(); print('the text from your change'.encode('utf-16-le') in raw)"
+   ```
+
+   UE string literals are UTF-16 in the binary, so search for the wide encoding — an ASCII search
+   returns "missing" for a string that is definitely there.
 
 1. **Never trust `Build.bat`'s exit code. Verify the DLL's mtime moved.** This is already the rule in
    memory `dds2-reconstructor-build-engine` ("verify DLL mtime moved") — it was written for a
