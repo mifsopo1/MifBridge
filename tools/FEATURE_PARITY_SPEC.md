@@ -58,11 +58,16 @@ Never work from a typed list — one was fabricated once and a third of it was i
   duplicate branch therefore only fires on state produced outside this bridge - crash residue or hand
   editing. The reporting fix is committed and is the part that matters. Revisit if an add_node endpoint
   is ever added, which would open the sibling route.
-- [ ] **Close the "nothing is saved" hole (issue Q).** The DENY list blocks endpoints NAMED like a
+- [x] **Close the "nothing is saved" hole (issue Q).** The DENY list blocks endpoints NAMED like a
   save; import_texture and write_thumbnail_texture write .uasset files as their purpose and left 94
   real assets in Content/_MifTex and Content/_MifThumb overnight. Needs either a harness sweep of those
   two paths at end of run, or an out-of-Content target for the tests. Deleting the existing files is
   Andre's call and has been raised with him.
+  CLOSED by making the two suites delete what they create, at the end, through delete_asset - which
+  lets the running editor release its references instead of having files pulled out from under it. The
+  false claims in both suite docstrings ('lives in memory only', 'vanishes when the editor restarts')
+  are corrected too, because that belief is what stopped anyone looking. Verified: run both suites and
+  Content has zero files afterwards. Empty directories remain and are harmless.
 ## Gaps worth closing
 
 - [x] **Every DEFERRED engine call escapes the modal backstop — a hole in the safety net itself.**

@@ -19,8 +19,15 @@ What each test asks:
   T412  the stub refusal itself, which is the guard the other two lean on.
   T413  guards - a missing file, an unreadable payload, a path that is not a texture.
 
-SAFETY. `save` and `overwrite` are never sent (mifaudit strips both), so every texture here lives in
-memory only under /Game/_MifTex and vanishes when the editor restarts. That does leave the
+SAFETY - AND A CORRECTION. This block used to claim every texture here 'lives in memory only under
+/Game/_MifTex and vanishes when the editor restarts'. THAT WAS FALSE, and believing it is why nobody
+looked: import_texture WRITES A .uasset TO DISK, because that is what importing a texture IS. There is
+no in-memory mode to ask for. Stripping `save` stops nothing here - the DENY list blocks endpoints
+NAMED like a save, and this one has the effect without the name. An overnight run left 98 real assets
+in the project's Content tree before anyone noticed (issue Q).
+
+So the suite now DELETES WHAT IT CREATES, at the end, through delete_asset - which lets the running
+editor release its references rather than having files pulled out from under it. That does leave the
 overwrite/refill path - the one that refills an EXISTING texture object so references survive -
 untested, and it is named at the end rather than left as a silent gap.
 """
@@ -44,6 +51,29 @@ def is_stub(texture_path):
     r = M.call("set_texture_settings", {"path": texture_path, "srgb": True})
     return "no texture source data" in (r.get("error") or ""), r
 
+
+
+def cleanup_scratch(prefix):
+    """Delete every asset this suite wrote under `prefix`, through the editor.
+
+    delete_asset rather than removing .uasset files from disk: the editor is running and holds
+    references to them, and pulling files out from under it leaves a confused editor and a
+    half-populated Asset Registry. Refuses to touch anything that is not a scratch path - the guard
+    matters more than the tidiness.
+    """
+    import scratch_confirm as SC
+    removed = 0
+    for a in (M.call("find_assets", {"pathPrefix": prefix, "limit": 500}, timeout=120).get("assets") or []):
+        path = a.get("path") or ""
+        if not path.startswith("/Game/_Mif"):
+            print("  cleanup REFUSED a non-scratch path: %s" % path)
+            continue
+        try:
+            if SC.confirm_call("delete_asset", {"path": path}).get("ok"):
+                removed += 1
+        except Exception:
+            pass
+    print("  cleanup: removed %d asset(s) from %s" % (removed, prefix))
 
 def main():
     if not M.wait_for_bridge(timeout=900):
@@ -174,6 +204,10 @@ def main():
     q = M.call("set_texture_settings", {"path": "/Game/_MifTex/NoSuchTexture_zz", "srgb": True})
     check("T413 settings on a missing texture are refused", q.get("ok") is False, json.dumps(q)[:170])
     check("T413 the editor survived all of it", M.bridge_responsive() is True, "bridge stopped answering")
+
+    # CLEAN UP WHAT THIS SUITE PUT ON DISK. See the SAFETY note at the top: these are real .uasset
+    # files, not in-memory objects, and leaving them accumulates real assets in the project.
+    cleanup_scratch("/Game/_MifTex/")
 
     print("")
     print("=" * 72)

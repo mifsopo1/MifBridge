@@ -28,8 +28,11 @@ and the one specific to writing a texture:
     source-less texture with an explicit message, so it doubles as the probe - if it refuses, the
     write produced a shell.
 
-SAFETY. `save` is never sent (mifaudit strips it), so the texture lives in memory only, and it is
-written under /Game/_MifThumb.
+SAFETY - AND A CORRECTION. This used to say the texture 'lives in memory only'. It does not:
+write_thumbnail_texture writes a real .uasset under /Game/_MifThumb, because writing a texture is what
+it does. Stripping `save` does not help - the DENY list blocks endpoints NAMED like a save, and this
+one has the effect without the name (issue Q). The suite now deletes what it creates, through
+delete_asset so the running editor releases its references properly.
 """
 import hashlib
 import json
@@ -52,6 +55,29 @@ def sha_of(path):
         return None
     return hashlib.sha256(open(path, "rb").read()).hexdigest()[:16]
 
+
+
+def cleanup_scratch(prefix):
+    """Delete every asset this suite wrote under `prefix`, through the editor.
+
+    delete_asset rather than removing .uasset files from disk: the editor is running and holds
+    references to them, and pulling files out from under it leaves a confused editor and a
+    half-populated Asset Registry. Refuses to touch anything that is not a scratch path - the guard
+    matters more than the tidiness.
+    """
+    import scratch_confirm as SC
+    removed = 0
+    for a in (M.call("find_assets", {"pathPrefix": prefix, "limit": 500}, timeout=120).get("assets") or []):
+        path = a.get("path") or ""
+        if not path.startswith("/Game/_Mif"):
+            print("  cleanup REFUSED a non-scratch path: %s" % path)
+            continue
+        try:
+            if SC.confirm_call("delete_asset", {"path": path}).get("ok"):
+                removed += 1
+        except Exception:
+            pass
+    print("  cleanup: removed %d asset(s) from %s" % (removed, prefix))
 
 def main():
     if not M.wait_for_bridge(timeout=900):
@@ -186,6 +212,8 @@ def main():
           "sizeNote=%r" % (q.get("sizeNote") or ""))
     check("T403 the editor survived all of it", M.bridge_responsive() is True,
           "the bridge stopped answering")
+
+    cleanup_scratch("/Game/_MifThumb/")
 
     print("")
     print("=" * 72)
