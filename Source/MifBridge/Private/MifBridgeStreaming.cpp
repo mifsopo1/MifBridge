@@ -113,6 +113,8 @@
 #include "Engine/LevelStreamingAlwaysLoaded.h"
 #include "Engine/LevelStreamingDynamic.h"
 #include "Engine/World.h"
+#include "WorldPartition/DataLayer/DataLayerInstance.h"
+#include "WorldPartition/DataLayer/DataLayerManager.h"
 #include "GameFramework/Actor.h"                     // AActor must be COMPLETE for IsValid()'s UObject* conversion
 #include "LevelUtils.h"                              // FLevelUtils::FindStreamingLevel / IsLevelLocked
 #include "Misc/PackageName.h"
@@ -458,6 +460,20 @@ namespace MifBridge
 	// The read half every mutation in this file verifies against, AND the poll endpoint for all of
 	// them — streaming state changes land across frames, so nothing here blocks and `pending`/
 	// `ready` are how a caller learns the transition finished.
+
+	// EDataLayerRuntimeState has no engine-provided string form that is stable across versions, so it is
+	// spelled out here rather than reflected - a UEnum lookup would report the C++ identifier and change
+	// shape if the enum ever moves.
+	static const TCHAR* MifDataLayerStateName(EDataLayerRuntimeState State)
+	{
+		switch (State)
+		{
+		case EDataLayerRuntimeState::Unloaded:  return TEXT("unloaded");
+		case EDataLayerRuntimeState::Loaded:    return TEXT("loaded");
+		case EDataLayerRuntimeState::Activated: return TEXT("activated");
+		default:                                return TEXT("unknown");
+		}
+	}
 	void H_list_sublevels(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out, { TEXT("world"), TEXT("netMode") },
@@ -1498,5 +1514,75 @@ namespace MifBridge
 			TEXT("unloading is ASYNCHRONOUS — this call does NOT block. Poll list_sublevels {world:\"pie\"} until no "
 				 "entry has packageName equal to instanceName (the streaming level is removed from the world once the "
 				 "teardown completes)."));
+	}
+	// --- list_data_layers ----------------------------------------------------
+	//   in:  { }
+	//   out: { partitioned, count, dataLayers:[{ name, shortName, fullName, runtime, initialState,
+	//          effectiveState?, debugColor }], note? }
+	// Data Layers are how a World Partition map is organised, and nothing in this bridge could see them:
+	// list_sublevels answers about streaming levels, which is a different mechanism entirely and is empty
+	// on a partitioned map. A caller asking "what is in this world" had no way to find out.
+	//
+	// Read through UDataLayerManager, NOT UDataLayerSubsystem. The subsystem's GetDataLayerInstances is
+	// UE_DEPRECATED(5.3) pointing at exactly this class, and MifBridge has to build on 5.7 as well as
+	// 5.3 - a deprecated-in-5.3 call is a 5.7 build break waiting to happen, which is not hypothetical:
+	// IsPendingKillOrUnreachable was removed by 5.7 and broke exactly that way. UDataLayerManager and
+	// every accessor used here exist unchanged in both.
+	void H_list_data_layers(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out, { },
+			TEXT("(none - this endpoint takes no parameters; it reports the Data Layers of the world the "
+				 "editor currently has open)"),
+			{ { TEXT("world"), TEXT("this always reads the EDITOR world - stop_pie if you want its state to settle") },
+			  { TEXT("level"), TEXT("Data Layers belong to the World Partition map, not to a sublevel - use list_sublevels for those") } }))
+		{
+			return;
+		}
+
+		UWorld* World = EditorWorld();
+		if (!World) { Fail(Out, TEXT("no editor world")); return; }
+
+		const bool bPartitioned = World->IsPartitionedWorld();
+		Out->SetStringField(TEXT("world"), World->GetName());
+		Out->SetBoolField(TEXT("partitioned"), bPartitioned);
+
+		UDataLayerManager* Manager = UDataLayerManager::GetDataLayerManager(World);
+		if (!Manager)
+		{
+			// Not a failure. A non-partitioned map has no Data Layers by construction, and saying so is
+			// more useful than an error a caller has to interpret.
+			Out->SetNumberField(TEXT("count"), 0);
+			Out->SetArrayField(TEXT("dataLayers"), TArray<TSharedPtr<FJsonValue>>());
+			Out->SetStringField(TEXT("note"), bPartitioned
+				? TEXT("this world is partitioned but has no DataLayerManager yet - nothing has created a Data Layer in it")
+				: TEXT("this is not a World Partition map, so it has no Data Layers. Sublevels are the equivalent here - use list_sublevels."));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		Manager->ForEachDataLayerInstance([&Rows](UDataLayerInstance* Instance)
+			{
+				if (!Instance) { return true; }
+				TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+				Row->SetStringField(TEXT("name"), Instance->GetDataLayerFName().ToString());
+				Row->SetStringField(TEXT("shortName"), Instance->GetDataLayerShortName());
+				Row->SetStringField(TEXT("fullName"), Instance->GetDataLayerFullName());
+				// runtime vs editor-only decides whether the layer can be streamed at all, which is the
+				// first thing anyone asks about a Data Layer.
+				Row->SetBoolField(TEXT("runtime"), Instance->IsRuntime());
+				Row->SetStringField(TEXT("initialState"), MifDataLayerStateName(Instance->GetInitialRuntimeState()));
+				const FColor C = Instance->GetDebugColor();
+				Row->SetStringField(TEXT("debugColor"), FString::Printf(TEXT("#%02X%02X%02X"), C.R, C.G, C.B));
+				Rows.Add(MakeShared<FJsonValueObject>(Row));
+				return true;
+			});
+
+		Out->SetNumberField(TEXT("count"), Rows.Num());
+		Out->SetArrayField(TEXT("dataLayers"), Rows);
+		if (Rows.Num() == 0)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("the world has a DataLayerManager but no Data Layer instances - none have been created yet."));
+		}
 	}
 }

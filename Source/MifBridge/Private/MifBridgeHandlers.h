@@ -1350,6 +1350,7 @@ namespace MifBridge
 	// opId; list_sublevels reports the outcome in ops[]. Streaming state itself lands across frames,
 	// so list_sublevels is also the poll endpoint — for the editor world AND the PIE world.
 	MIF_DECL(list_sublevels);
+	MIF_DECL(list_data_layers);
 	MIF_DECL(add_sublevel);
 	MIF_DECL(remove_sublevel);
 	MIF_DECL(set_sublevel_visibility);

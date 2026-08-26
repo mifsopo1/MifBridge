@@ -2912,6 +2912,12 @@ def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: i
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def list_data_layers() -> dict:
+    "List the Data Layers of the World Partition map currently open. Data Layers are how a partitioned world is organised, and list_sublevels cannot see them - that answers about streaming levels, a different mechanism which is empty on a partitioned map. Each entry reports name, shortName, fullName, whether it is a RUNTIME layer (only those can be streamed at all), its initial runtime state and its debug colour. On a non-partitioned map it returns count 0 with a note pointing at list_sublevels rather than an error."
+    return _post("list_data_layers")
+
+
+@mcp.tool()
 def list_sublevels(world: str = "editor", net_mode: str = "server") -> dict:
     "List the sublevels of a world: persistent{}, sublevels[{packagePath, objectPath, streamingClass, loaded, visible, editorVisible, pending, ...}], count/loadedCount/visibleCount/pendingCount, currentLevel, isPartitioned, ready, and ops[] (the deferred add/remove/streaming jobs and their state). world = editor|pie - during PIE there are TWO worlds and the editor verbs see the editor one; net_mode picks which PIE world when running multi-client and is only meaningful with world='pie'. THIS IS THE POLL ENDPOINT for add_sublevel / remove_sublevel / set_sublevel_streaming / set_sublevel_visibility / pie_load_level_instance / pie_unload_level_instance."
     return _post("list_sublevels", world=world, netMode=net_mode)

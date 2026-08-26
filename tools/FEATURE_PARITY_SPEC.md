@@ -79,6 +79,23 @@ Never work from a typed list — one was fabricated once and a third of it was i
   are corrected too, because that belief is what stopped anyone looking. Verified: run both suites and
   Content has zero files afterwards. Empty directories remain and are harmless.
 
+
+## Breadth toward parity - started 2026-08-26
+
+- [x] **list_data_layers.** Data Layers had ZERO coverage, which is a real hole: Curfew is a World
+  Partition project and every field report merged today was about WP. list_sublevels cannot see them -
+  that answers about streaming levels, a different mechanism that is empty on a partitioned map.
+  Built on UDataLayerManager, NOT UDataLayerSubsystem: the subsystem's GetDataLayerInstances is
+  UE_DEPRECATED(5.3) pointing at exactly that class, and a deprecated-in-5.3 call is a 5.7 build break
+  waiting to happen - which is not hypothetical, since IsPendingKillOrUnreachable broke exactly that way
+  earlier today. Verified live on both a non-partitioned and a partitioned world.
+- [ ] **The WRITE half of Data Layers needs a Build.cs dependency I must not add.**
+  create/rename/delete a Data Layer, and add/remove actors from one, all live on
+  UDataLayerEditorSubsystem in the DataLayerEditor module, which MifBridge does not depend on.
+  MifBridge.Build.cs is not this agent's file, so the need is REPORTED: adding "DataLayerEditor" to
+  PrivateDependencyModuleNames would unlock roughly four more endpoints. It also means the populated
+  path of list_data_layers cannot be verified from here - a fresh partitioned world has no layers and
+  nothing available can create one.
 ## Field reports merged from the Curfew (UE 5.7) deployment, 2026-08-26
 
 - [x] **save_package on a World Partition map saves the map and NONE of its actors, silently.** The
