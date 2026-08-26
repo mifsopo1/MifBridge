@@ -664,6 +664,18 @@ validates the AUTHORED name — but for a `UUserDefinedEnum` the authored names 
 its bool return is discarded. Same class as the `add_enum_value` bug fixed on 2026-08-25, which was
 closed by reading the applied display name back.
 
+**F. `spawn_many` swallowed an unloadable mesh path twice.** The shared mesh is loaded with
+`LOAD_NoWarn | LOAD_Quiet`, which kills the engine's own log line, and the assignment in the loop is
+guarded by `if (Mesh && ...)`. So a misspelled path produced actors with NO mesh and a response
+reporting `spawned: N`. For a modder placing props that is the entire job silently not done. Now
+refused up front, naming the object-path format the loader wants.
+
+**G. `spawn_many` accepts `mesh`/`material` for actor classes that cannot use them.** Both are applied
+only inside `Cast<AStaticMeshActor>(Actor)`, so specifying a mesh while spawning any other class was
+accepted and dropped without a word — the mode-dependent silent-ignore that `tools/audit_mode_params.py`
+exists to find. Reported per item rather than failing the call, since the actor itself spawned
+correctly and a shared default may simply not apply to that row.
+
 **E. `batch` does not compile a blueprint an op touched only by `nodeGuid`.** `Touched` is filled from
 `graphId` or `blueprintId`/`path` and nothing else (`MifBridgeNodes.cpp:2489-2510`), but several ops
 address a blueprint purely by node — `rename_event` and `set_function_flags` both take `nodeGuid`
