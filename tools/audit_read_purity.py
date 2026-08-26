@@ -98,9 +98,98 @@ def build_context():
     return ctx
 
 
+def scratch_fixtures():
+    """Create the few scratch assets that let two-argument reads actually be exercised.
+
+    WHY THIS EXISTS. The generic guesser sends ONE parameter at a time - {param: someAsset} - so an
+    endpoint needing two required arguments can never succeed, and fifteen reads were reported as
+    "attempted only" on every run. That is not a purity result, it is an untested gap, and the summary
+    said so; it just never got closed.
+
+    Scratch assets rather than shipped ones, deliberately. The only UserDefinedStructs under /Game/ are
+    COOKED, and list_struct_members correctly refuses those ("its editor-only data was stripped"), so a
+    fixture drawn from game content can never exercise it. Creating one is the only way to reach the
+    branch. Everything made here is under /Game/_MifPure and is never saved.
+    """
+    import time
+    st = int(time.time() % 100000)
+    fx = {}
+    bp = "/Game/_MifPure/BP_%d" % st
+    bid = M.call("create_blueprint", {"path": bp, "parentClass": "Actor"}, timeout=90).get("blueprintId")
+    if bid:
+        M.call("add_variable", {"blueprintId": bid, "name": "PureVar", "type": "float"}, timeout=60)
+        M.call("compile", {"blueprintId": bid}, timeout=90)
+        short = bp.split("/")[-1]
+        fx["cdo"] = "%s.Default__%s_C" % (bp, short)
+        fx["blueprintId"] = bid
+    sp = "/Game/_MifPure/S_%d" % st
+    c = M.call("create_struct", {"path": sp}, timeout=90)
+    if c.get("ok"):
+        M.call("add_struct_member", {"struct": c.get("structPath") or sp, "name": "PureMember",
+                                     "type": "float"}, timeout=60)
+        fx["struct"] = c.get("structPath") or sp
+    # A DataTable with a real row. rows is an ARRAY of objects each carrying a Name - a dict keyed by
+    # row name is refused. The write needs confirm, which scratch_confirm grants because every path in
+    # the payload is under /Game/_Mif.
+    import scratch_confirm as SC
+    dtp = "/Game/_MifPure/DT_%d" % st
+    if M.call("create_datatable", {"path": dtp, "rowStruct": "RichTextStyleRow"}, timeout=90).get("ok"):
+        full = "%s.DT_%d" % (dtp, st)
+        if SC.confirm_call("write_datatable_rows", {"path": full, "rows": [{"Name": "PureRow"}]}).get("ok"):
+            fx["dataTable"] = full
+    # An actor carrying a USplineComponent. spawn_actor_in_level needs the GENERATED CLASS path
+    # (<path>.<Name>_C); the blueprint asset path alone is refused with "class not found".
+    sbp = "/Game/_MifPure/BPSpline_%d" % st
+    sbid = M.call("create_blueprint", {"path": sbp, "parentClass": "Actor"}, timeout=90).get("blueprintId")
+    if sbid:
+        M.call("add_component", {"blueprintId": sbid, "componentClass": "SplineComponent",
+                                 "name": "PureSpline"}, timeout=90)
+        M.call("compile", {"blueprintId": sbid}, timeout=90)
+        sp = M.call("spawn_actor_in_level", {"actorClass": "%s.BPSpline_%d_C" % (sbp, st),
+                                             "location": {"x": 0, "y": 0, "z": 1800},
+                                             "label": "PureSpline_%d" % st}, timeout=90)
+        ap = (sp.get("actor") or {}).get("actorPath")
+        if ap:
+            fx["splineActor"] = ap
+    acts = M.call("list_level_actors", {"limit": 3}, timeout=60).get("actors") or []
+    if acts:
+        fx["actorPath"] = acts[0].get("path") or acts[0].get("actorPath")
+    return fx
+
+
 def special_payloads(ep, acc, ctx, assets):
     """Payloads for endpoints the generic by-class guesser cannot satisfy."""
     out = []
+    # VERIFIED fixtures - each of these was confirmed to return ok against the live editor before
+    # being written down, rather than guessed from the parameter name. The previous attempt used
+    # {"property": "PurityProbe"}, which is not a property of anything, so get_property stayed
+    # unexercised while looking like it had been covered.
+    fx = ctx.get("_fixtures") or {}
+    if fx.get("cdo") and ep in ("get_property", "describe_property"):
+        out.append({"objectPath": fx["cdo"], "propertyPath": "PureVar"})
+    if fx.get("struct") and ep == "list_struct_members":
+        out.append({"struct": fx["struct"]})
+    if fx.get("actorPath") and ep in ("get_actor_bounds", "get_level_actor"):
+        out.append({"actorPath": fx["actorPath"]})
+    if fx.get("blueprintId") and ep == "get_inherited_component":
+        out.append({"blueprintId": fx["blueprintId"], "name": "DefaultSceneRoot"})
+    # These three take `path`, NOT a name matching their subject - tree/blackboard/rig were all tried
+    # first and all refused.
+    for cls, name in (("BehaviorTree", "describe_behavior_tree"),
+                      ("BlackboardData", "list_blackboard_keys")):
+        if ep == name and assets.get(cls):
+            out.append({"path": assets[cls][0]})
+    for cls, name, key in (("IKRigDefinition", "list_ik_rig", "rig"),
+                           ("IKRetargeter", "list_retarget_chain_mapping", "retargeter"),
+                           ("NiagaraSystem", "list_niagara_user_parameters", "system")):
+        if ep == name and assets.get(cls):
+            out.append({key: assets[cls][0]})
+    if fx.get("dataTable") and ep == "get_datatable_row":
+        out.append({"path": fx["dataTable"], "rowName": "PureRow"})
+    if fx.get("splineActor") and ep == "get_spline_points":
+        out.append({"actorPath": fx["splineActor"]})
+    if ep == "get_cvar":
+        out.append({"name": "r.ScreenPercentage"})
     g, bid = ctx.get("graphId"), ctx.get("blueprintId")
     node = ctx.get("nodeGuid")
     if "graphId" in acc and g:
@@ -146,8 +235,20 @@ def dirty_set():
     return {p.get("name") for p in (r.get("packages") or []) if p.get("name")}
 
 
+# Classes the by-class table does not cover but that specific reads need. Without these,
+# describe_behavior_tree, list_blackboard_keys, list_ik_rig, list_retarget_chain_mapping and
+# list_niagara_user_parameters can never be exercised and are reported as "attempted only" forever.
+EXTRA_CLASSES = ("BehaviorTree", "BlackboardData", "IKRigDefinition", "IKRetargeter",
+                 "NiagaraSystem")
+
+
 def sample_assets():
     out = {}
+    for cls in EXTRA_CLASSES:
+        r = M.call("find_assets", {"class": cls, "pathPrefix": "/Game/", "limit": 2})
+        for a in (r.get("assets") or []):
+            if a.get("path"):
+                out.setdefault(cls, []).append(a["path"])
     for cls, _ in BY_CLASS:
         r = M.call("find_assets", {"class": cls, "pathPrefix": "/Game/", "limit": 2})
         for a in (r.get("assets") or []):
@@ -167,6 +268,7 @@ def main():
     print("samples: %s" % ", ".join("%s=%d" % (k, len(v)) for k, v in sorted(assets.items())))
 
     ctx = build_context()
+    ctx["_fixtures"] = scratch_fixtures()
     print("context: %s" % ", ".join(sorted(k for k in ctx if ctx.get(k))))
 
     names = [n for n in sorted(M.endpoint_names())
