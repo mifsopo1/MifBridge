@@ -659,7 +659,11 @@ namespace MifBridge
 			int32 LiveObjects = 0;
 			ForEachObjectWithPackage(Package, [&LiveObjects](UObject* Obj)
 				{
-					if (Obj && !Obj->IsPendingKillOrUnreachable())
+					// IsValid(), not IsPendingKillOrUnreachable(). The latter is UE_DEPRECATED(5.0) and is GONE
+					// from 5.7 entirely - I wrote it here this morning and it would have broken the 5.7 build
+					// that Curfew depends on. The engine's own deprecation text names IsValid(Object) as the
+					// replacement, and IsValid already covers the null check, so the guard gets simpler too.
+					if (IsValid(Obj))
 					{
 						++LiveObjects;
 					}

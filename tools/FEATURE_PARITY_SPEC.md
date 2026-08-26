@@ -142,6 +142,30 @@ Never work from a typed list — one was fabricated once and a third of it was i
   truncated are ALWAYS present - with the actual incident in it, because a warning that names a real
   consequence gets read and an abstract one does not. Verified live through describe_endpoint.
 - [ ] **No engine-version guards exist anywhere in the source.** No ENGINE_MINOR_VERSION, nothing. It
+  EVIDENCE GATHERED 2026-08-26 by comparing MifBridge's whole call surface against BOTH engine trees
+  (5.3.2 at D:/UE532 and the 5.7 install Curfew uses). 1134 distinct method names called, 1096 present
+  in both. After checking every candidate individually - three were false positives from grepping only
+  .h files, one matched a COMMENT - exactly TWO real 5.7 blockers remain:
+
+    IsPendingKillOrUnreachable  MifBridgeUndo.cpp  - FIXED. UE_DEPRECATED(5.0) and gone from 5.7. I
+      introduced it this morning; it would have broken the 5.7 build Curfew depends on. Replaced with
+      IsValid(), which the engine's own deprecation text names and which also covers the null check.
+
+    GetTargetIKRigProcessor     MifBridgeIKRig.cpp - NOT FIXED, and it is the worked example this item
+      needs. It is not a rename:
+          5.3:  UIKRigProcessor* GetTargetIKRigProcessor() const
+          5.7:  FIKRigProcessor* GetIKRigProcessor()
+      U -> F. It stopped being a UObject. No amount of careful API choice avoids that, which is
+      precisely why a guard is needed rather than a tidier call:
+          #if ENGINE_MINOR_VERSION >= 7
+              FIKRigProcessor* Inner = Proc->GetIKRigProcessor();
+          #else
+              const UIKRigProcessor* Inner = Proc->GetTargetIKRigProcessor();
+          #endif
+
+  The method is repeatable and cheap - index both trees' header symbols once, intersect with the call
+  surface, then verify each hit by hand. Verifying by hand is not optional: the first pass reported 34
+  IK Rig APIs missing and every one was an artefact of CRLF line endings in a temp file.
   builds for 5.3.2 and 5.7 only because every API it touches happens to exist in both. This is the
   first thing that breaks as breadth grows toward parity, and it needs a policy before it does.
 - [ ] **The Curfew copy is vendored, not linked.** Two divergent lines of development, 230 endpoints
