@@ -86,6 +86,8 @@ import_texture.filename
 import_texture.replaceexisting
 import_texture.texturegroup
 layout_material_expressions.material
+list_bones.mesh
+list_bones.skeleton
 list_material_expressions.material
 list_material_parameters.material
 list_niagara_user_parameters.system

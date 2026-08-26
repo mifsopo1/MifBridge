@@ -1131,6 +1131,9 @@ namespace MifBridge
 	/** Sockets on a SkeletalMesh or StaticMesh asset - there was no way to see what a mod could
 	 *  attach to. */
 	MIF_DECL(list_sockets);
+	/** The bone hierarchy of a Skeleton or SkeletalMesh. Nothing else could name a bone:
+	 *  ReferenceSkeleton is not a UPROPERTY, so reflection cannot reach it. */
+	MIF_DECL(list_bones);
 	/** Read a BehaviorTree's structure. DDS2 has 17 of them and no way to inspect one. */
 	MIF_DECL(describe_behavior_tree);
 	MIF_DECL(list_blackboard_keys);

@@ -135,6 +135,7 @@
  "list_animations",
  "list_blackboard_keys",
  "list_blueprints",
+ "list_bones",
  "list_collision_profiles",
  "list_components",
  "list_datatables",

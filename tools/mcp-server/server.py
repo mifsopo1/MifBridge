@@ -2207,6 +2207,29 @@ def list_animations(filter: str = "", skeleton: str = "", limit: int = 200) -> d
 
 
 @mcp.tool()
+def list_bones(path: str, name_contains: str = "", root: str = "",
+               include_transforms: bool = False) -> dict:
+    """List the bones of a Skeleton or SkeletalMesh, with the hierarchy.
+
+    Nothing else in the bridge could name a bone. describe_animation reports curves and notifies but
+    no tracks, list_sockets reports sockets (which attach TO bones without enumerating them), and
+    reflection cannot help because USkeleton::ReferenceSkeleton is a plain C++ member rather than a
+    UPROPERTY - get_property on a Skeleton reaches BoneTree, which holds retargeting modes and no
+    names.
+
+    Each bone reports name, index, parent (name AND index), and depth. root limits the listing to one
+    bone and its descendants; name_contains filters; include_transforms adds the reference pose, which
+    is PARENT-RELATIVE, not world space.
+
+    A mesh and its skeleton can hold DIFFERENT bones - a mesh imported against a skeleton may carry
+    fewer - so the response says which one it read in `source`, and when they disagree it reports both
+    counts and says so. Which one you read decides whether a bone name will resolve at runtime.
+    """
+    return _post("list_bones", path=path, nameContains=name_contains or None,
+                 root=root or None, includeTransforms=include_transforms)
+
+
+@mcp.tool()
 def list_sockets(path: str) -> dict:
     """List the sockets on a SkeletalMesh or StaticMesh asset.
 
