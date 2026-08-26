@@ -98,6 +98,7 @@ namespace MifBridge
 		Registry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, /*bSearchSubClasses*/ true);
 
 		TArray<TSharedPtr<FJsonValue>> Arr;
+		bool bTruncated = false;
 		for (const FAssetData& Asset : Assets)
 		{
 			const FString ObjectPath = Asset.GetObjectPathString();
@@ -112,11 +113,24 @@ namespace MifBridge
 			Arr.Add(MakeShared<FJsonValueObject>(Json));
 			if (Arr.Num() >= 5000)
 			{
+				// SAY SO. Stopping here silently is a truncation the caller cannot see: there is no limit
+				// parameter to blame, so the answer looks complete. Someone searching for a blueprint that
+				// sorts after the 5000th would be told it does not exist. Not reachable on this project
+				// today (1744 blueprints), which is exactly why it is worth flagging now rather than on the
+				// day it starts lying.
+				bTruncated = true;
 				break; // safety cap
 			}
 		}
 		Out->SetNumberField(TEXT("count"), Arr.Num());
 		Out->SetArrayField(TEXT("blueprints"), Arr);
+		if (bTruncated)
+		{
+			Out->SetBoolField(TEXT("truncated"), true);
+			Out->SetStringField(TEXT("truncatedNote"),
+				TEXT("stopped at the 5000-entry safety cap, so this list is INCOMPLETE and a blueprint you "
+					 "cannot find here may still exist. Narrow it with filter."));
+		}
 	}
 
 	void H_save_blueprint(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

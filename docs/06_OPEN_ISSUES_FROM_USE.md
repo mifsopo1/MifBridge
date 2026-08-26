@@ -756,6 +756,27 @@ The wider lesson is about how the DENY list is CONSTRUCTED. It is a list of name
 the effect without the name passes straight through - which is the same shape as every other defect
 found in this project: the check tests a proxy for the real question rather than the question.
 
+**R. list_blueprints truncated at 5000 without saying so.** FIXED.
+The handler ends its loop with `if (Arr.Num() >= 5000) break; // safety cap` and then reported count
+and the array with no indication it had stopped early. There is no limit PARAMETER to blame - the
+refusal for one even says so - which makes the answer look complete. Someone searching for a blueprint
+that sorts after the 5000th would be told it does not exist.
+
+Not reachable on this project today: 1744 blueprints. Fixed anyway, because a latent silent truncation
+starts lying on a day nobody is watching for it. `truncated` and a note are emitted only when the cap
+is actually hit, matching the convention elsewhere of omitting a field rather than sending false.
+
+VERIFIED ONE-SIDED, and worth saying: the negative case is confirmed live (under the cap, the key is
+absent) and the code path is confirmed by its string in the DLL - but the POSITIVE branch cannot be
+exercised without 5000 blueprints, so it is verified by reading, not by running.
+
+The sweep that found it produced almost nothing else, which is the useful part of the report. Of 13
+endpoints accepting a cap, three appeared to truncate silently and all three were false positives -
+list_transactions carries queueLength (824 next to a returned 1), diagnose_landscape carries proxyCount
+(67 next to 1), and diagnose_landscape_draws caps a sub-list that was empty. Each reports its true
+total under a field name the scan was not looking for. A second hard-coded cap in add_macro_instance
+turned out to be a line number my regex mistook for a bound.
+
 **N. A discarded-bool sweep: 299 candidates, and the scan cannot resolve overloads.**
 
 RESOLVED 2026-08-26. All 28 candidates surviving the conventional-discard filter were triaged with the
