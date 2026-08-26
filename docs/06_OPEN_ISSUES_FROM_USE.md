@@ -1119,3 +1119,54 @@ message.
 **Sharp edge worth documenting either way:** `does_asset_exist` answers a question about the asset
 registry, not about a file on disk. Treating "not in the registry" as "already deleted" made my
 first cleanup pass report 915 successful deletions while changing nothing at all.
+
+---
+
+## 14. `set_blendspace_samples` reported samples the engine had already deleted
+
+**FOUND AND FIXED 2026-08-26 (late), commit follows.** Found by the static postcondition audit, then
+confirmed by reading the engine rather than by a test - no user hit this one.
+
+`audit_postconditions.py` flagged the endpoint as "mutates, but nothing in the body reads the result
+back". It was tempting to dismiss: the handler looked careful, it checks `AddSample`'s return for
+`INDEX_NONE`, collects a `rejected[]` list, calls `ValidateSampleData` and `ResampleData`, and fires
+`PostEditChangeProperty`. Everything a well-written mutating handler should do.
+
+The problem is ORDER. `ValidateSampleData()` is called AFTER the handler has already built the list it
+will report, and its body does this:
+
+```cpp
+if (IsSameSamplePoint(Sample.SampleValue, SampleData[ComparisonSampleIndex].SampleValue))
+{
+    SampleData.RemoveAt(ComparisonSampleIndex);   // Engine/Private/Animation/BlendSpace.cpp
+    --ComparisonSampleIndex;
+    bSampleDataChanged = true;
+}
+```
+
+So any sample sharing a point with another - whether both came from the same call, or one was already
+on the asset - is SILENTLY DELETED after the handler decided to report it as added. `AddSample`
+returning a valid index is not proof the sample is still there a few lines later.
+
+**What made it worse than a simple overcount:** `sampleCount` was read back off the asset and was
+therefore CORRECT, while `samples[]` was the pre-validation list. One response could report
+`sampleCount: 3` alongside four entries in `samples[]` - two fields of the same response contradicting
+each other about the same call, and the wrong one being the detailed field a caller is most likely to
+read and trust.
+
+**Fixed** by reconciling against `GetBlendSamples()` after validation, matching on animation path AND
+position (the same clip may legitimately sit at several points, so the clip alone does not identify a
+sample). `samples[]` now lists only what is really on the asset, `addedCount` matches its length, and
+anything the engine removed is reported in `droppedByValidation` with a note saying why and what to do
+about it.
+
+**The lesson, which is the same one as every other entry here:** the check tested a proxy for the real
+question. "Did AddSample succeed?" is not "is the sample on the asset?", and the gap between them was
+two engine calls the handler itself made. A postcondition is only a postcondition if nothing runs
+after it.
+
+Structural invariants are now asserted in `test_ported_anim.py` T574 - `addedCount` must equal the
+length of `samples[]`, and `sampleCount` can never be less than what `samples[]` claims. The
+`droppedByValidation` path itself is NOT exercised: reaching it needs two samples at one point, which
+means writing to a real BlendSpace, and that suite deliberately does not. A scratch BlendSpace would
+be needed to cover it properly.

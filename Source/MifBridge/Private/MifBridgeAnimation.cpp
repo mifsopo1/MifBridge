@@ -863,9 +863,63 @@ namespace MifBridge
 
 		BS->MarkPackageDirty();
 
+		// RECONCILE WHAT WE CLAIM AGAINST WHAT ACTUALLY SURVIVED.
+		//
+		// AddSample returning a valid index is NOT proof the sample is still there. ValidateSampleData,
+		// called above, does this:
+		//     if (IsSameSamplePoint(Sample.SampleValue, SampleData[Comparison].SampleValue))
+		//     { SampleData.RemoveAt(Comparison); ... }
+		// (Engine/Private/Animation/BlendSpace.cpp). Two samples at the same point - whether both came
+		// from this call or one was already on the asset - and the later one is SILENTLY DELETED after
+		// this handler already decided to report it as added.
+		//
+		// The pre-fix behaviour was worse than a simple overcount: sampleCount is read back from the
+		// asset and was therefore correct, while samples[] was the pre-validation list. So the response
+		// could say sampleCount 3 and list 4 samples - two fields of one response contradicting each
+		// other, with the wrong one being the detailed one a caller is most likely to read.
+		const TArray<FBlendSample>& Surviving = BS->GetBlendSamples();
+		TArray<TSharedPtr<FJsonValue>> Kept, Dropped;
+		for (const TSharedPtr<FJsonValue>& V : Added)
+		{
+			const TSharedPtr<FJsonObject>* Row = nullptr;
+			if (!V.IsValid() || !V->TryGetObject(Row) || !Row) { continue; }
+			FString AnimPath; double X = 0.0, Y = 0.0;
+			(*Row)->TryGetStringField(TEXT("animation"), AnimPath);
+			(*Row)->TryGetNumberField(TEXT("x"), X);
+			(*Row)->TryGetNumberField(TEXT("y"), Y);
+
+			bool bStillThere = false;
+			for (const FBlendSample& Sample : Surviving)
+			{
+				// Match on animation AND position: the same clip may legitimately appear at several
+				// points, so the clip alone does not identify a sample. KINDA_SMALL_NUMBER rather than
+				// exact equality because the value made a round trip through double.
+				if (Sample.Animation && Sample.Animation->GetPathName() == AnimPath
+					&& FMath::IsNearlyEqual(Sample.SampleValue.X, X, KINDA_SMALL_NUMBER)
+					&& FMath::IsNearlyEqual(Sample.SampleValue.Y, Y, KINDA_SMALL_NUMBER))
+				{
+					bStillThere = true;
+					break;
+				}
+			}
+			(bStillThere ? Kept : Dropped).Add(V);
+		}
+
 		Out->SetStringField(TEXT("path"), BS->GetPathName());
-		Out->SetNumberField(TEXT("sampleCount"), BS->GetBlendSamples().Num());
-		Out->SetArrayField(TEXT("samples"), Added);
+		Out->SetNumberField(TEXT("sampleCount"), Surviving.Num());
+		// samples[] now lists only what is REALLY on the asset, so it can no longer disagree with
+		// sampleCount about the same call.
+		Out->SetArrayField(TEXT("samples"), Kept);
+		Out->SetNumberField(TEXT("addedCount"), Kept.Num());
+		if (Dropped.Num() > 0)
+		{
+			Out->SetArrayField(TEXT("droppedByValidation"), Dropped);
+			Out->SetStringField(TEXT("droppedNote"), FString::Printf(
+				TEXT("%d sample(s) were accepted by AddSample and then REMOVED by ValidateSampleData, "
+					 "which deletes any sample sharing a point with another. Move them to distinct "
+					 "(x, y) positions. They are not on the asset and were not counted in samples[]."),
+				Dropped.Num()));
+		}
 		if (Rejected.Num() > 0)
 		{
 			// ok:true with rejected entries would read as success. Report them loudly.

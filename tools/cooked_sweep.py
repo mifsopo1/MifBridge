@@ -78,6 +78,7 @@ def main():
     names = sorted(M.endpoint_names())
     deny = set(M.DENY)
     checked = crashes = 0
+    last_reported = 0
     findings = []
 
     for ep in names:
@@ -126,8 +127,16 @@ def main():
         # in the middle there would have been nothing to say WHERE. That is the failure PM-012 is
         # about - the harness knew and did not say - and the same fix run_all_suites already carries.
         # The endpoint name matters as much as the count: the last line printed is the call that hung.
-        if checked and checked % 25 == 0:
+        # DELTA, not modulo. This was `checked % 25 == 0` and it silently skipped most of its own
+        # reports: `checked` increments once per CALL (inside the trials loop) while this test only
+        # runs once per ENDPOINT, so any multiple of 25 crossed mid-endpoint is stepped straight over.
+        # Observed 2026-08-26: the run printed 75, 150, 250 and then 750 - a 500-call gap with five
+        # minutes of silence, which is indistinguishable from a hang and sent one investigation down
+        # a blind alley. That is precisely the failure the comment above says this exists to prevent:
+        # with a gap that size, "the last line printed is the call that hung" is not true.
+        if checked - last_reported >= 25:
             print("  ... %d calls, %d crash(es), at %s" % (checked, crashes, ep), flush=True)
+            last_reported = checked
 
     print("")
     print("=" * 72)

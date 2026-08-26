@@ -1124,3 +1124,13 @@ contradicts this file, the analysis wins — it read the code and this file matc
   to keep. Do not start this while UE items remain open, and when it does start, read the addon and the
   _blender call sites before writing anything new - the same read-before-write rule that applies to the
   UE handlers.
+
+- [ ] **Cover the `droppedByValidation` path in set_blendspace_samples with a scratch BlendSpace.**
+  Issue 14 in docs/06 was fixed on 2026-08-26 - samples the engine deleted are no longer reported as
+  added - but only the STRUCTURAL invariants are tested (test_ported_anim.py T574: addedCount equals
+  len(samples[]), sampleCount never less than what samples[] claims). The actual drop path needs two
+  samples at the SAME point, which means writing to a real BlendSpace, and that suite deliberately
+  refuses to touch real game content. Needs a scratch BlendSpace under /Game/_Mif* - which in turn
+  needs a Skeleton, since a BlendSpace cannot exist without one, and it is not yet established that
+  create_asset can set it. Establish that first; the endpoint is fixed either way, this is about
+  proving it stays fixed.

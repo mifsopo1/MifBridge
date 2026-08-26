@@ -123,6 +123,46 @@ def main():
     q = M.call("set_blendspace_samples", {"assetPath": "/Game/NoSuchBlendSpace_zz.NoSuchBlendSpace_zz",
                                           "samples": []}, timeout=60)
     check("T573 a blendspace that does not exist is refused", q.get("ok") is False, json.dumps(q)[:180])
+
+    # ------------------------------------------------------------------ T574 the reconciliation
+    print("")
+    print("=== T574: samples[] must not contradict sampleCount ===")
+    # WHY THIS EXISTS. AddSample returning a valid index is not proof the sample survived:
+    # ValidateSampleData - which the handler calls immediately afterwards - deletes any sample sharing
+    # a point with another (SampleData.RemoveAt in Engine/Private/Animation/BlendSpace.cpp). Before
+    # 2026-08-26 the handler read sampleCount back off the asset (correct) while reporting samples[]
+    # from its pre-validation list, so one response could say sampleCount 3 and list 4 samples. The
+    # detailed field a caller is most likely to read was the wrong one.
+    bs = M.call("find_assets", {"class": "BlendSpace", "pathPrefix": "/Game/", "limit": 1},
+                timeout=90).get("assets") or []
+    if not bs:
+        check("T574 (not exercised: this project ships no BlendSpace)", True)
+    else:
+        # An EMPTY samples list is a no-op write: it exercises the reconcile path and the reporting
+        # without adding anything to real game content, which this suite must not do.
+        dirty_before = len(M.call("list_dirty_packages", {}, timeout=90).get("packages") or [])
+        r = M.call("set_blendspace_samples", {"assetPath": bs[0].get("path"), "samples": []},
+                   timeout=120)
+        check("T574 a no-op call succeeds", r.get("ok") is True, json.dumps(r)[:200])
+        rows = r.get("samples")
+        check("T574 samples[] is an array", isinstance(rows, list), json.dumps(r)[:200])
+        # THE invariant. These two fields describe the same call and cannot disagree.
+        check("T574 addedCount equals the length of samples[]",
+              r.get("addedCount") == len(rows or []),
+              "addedCount=%s but samples[] has %d entries - the two fields disagree about one call"
+              % (r.get("addedCount"), len(rows or [])))
+        check("T574 sampleCount is never less than what samples[] claims",
+              (r.get("sampleCount") or 0) >= len(rows or []),
+              "sampleCount=%s but samples[] lists %d - claiming more added than exist on the asset"
+              % (r.get("sampleCount"), len(rows or [])))
+        check("T574 nothing was added by a no-op", r.get("addedCount") == 0, json.dumps(r)[:200])
+        dirty_after = len(M.call("list_dirty_packages", {}, timeout=90).get("packages") or [])
+        # NOTE: the droppedByValidation path is NOT exercised here. Reaching it needs two samples at
+        # the same point, which means writing to a real BlendSpace - this suite deliberately does not.
+        # It is asserted structurally above instead; a scratch BlendSpace would be needed to hit it.
+        check("T574 and the no-op dirtied nothing beyond what was already dirty",
+              dirty_after <= dirty_before + 1,
+              "dirty packages %d -> %d" % (dirty_before, dirty_after))
     check("T573 the bridge is still answering", M.bridge_responsive() is True, "bridge died")
 
     print("")
