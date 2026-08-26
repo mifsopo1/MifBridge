@@ -218,7 +218,7 @@ namespace MifBridge
 			nullptr };
 		static const TCHAR* const GMifDescKeys_add_cast[] = {
 			TEXT("graphId"), TEXT("targetClass"), TEXT("class"), TEXT("cls"), TEXT("className"),
-			TEXT("castTo"), TEXT("to"), TEXT("targetType"), TEXT("x"), TEXT("y"), nullptr };
+			TEXT("castTo"), TEXT("to"), TEXT("targetType"), TEXT("x"), TEXT("y"), TEXT("pure"), nullptr };
 		static const TCHAR* const GMifDescNotes_add_cast[] = {
 			TEXT("graph"), TEXT("spell it graphId"),
 			TEXT("pure"), TEXT("add_cast always creates an IMPURE cast so the Cast Failed exec pin exists; there is no pure option here"),
@@ -301,7 +301,8 @@ namespace MifBridge
 			TEXT("graphId"), TEXT("a dispatcher belongs to the blueprint, not to one graph — pass blueprintId"),
 			nullptr };
 		static const TCHAR* const GMifDescKeys_add_foliage_instances[] = {
-			TEXT("mesh"), TEXT("staticMesh"), TEXT("instances"), TEXT("label"), TEXT("folder"), nullptr };
+			TEXT("mesh"), TEXT("staticMesh"), TEXT("instances"), TEXT("label"), TEXT("folder"),
+			TEXT("foliageType"), TEXT("type"), nullptr };
 		static const TCHAR* const GMifDescNotes_add_foliage_instances[] = {
 			TEXT("material"), TEXT("not implemented — the HISM uses the mesh's own materials; override them with set_property on the component afterwards"),
 			TEXT("transforms"), TEXT("the array parameter is called instances[]"),
@@ -643,7 +644,7 @@ namespace MifBridge
 			TEXT("parent"), TEXT("the base class parameter is called parentClass"),
 			nullptr };
 		static const TCHAR* const GMifDescKeys_reparent_blueprint[] = {
-			TEXT("blueprintId"), TEXT("newParentClass"), nullptr };
+			TEXT("blueprintId"), TEXT("newParentClass"), TEXT("parentClass"), TEXT("path"), nullptr };
 		static const TCHAR* const GMifDescNotes_reparent_blueprint[] = {
 			TEXT("newParent"), TEXT("spell it newParentClass (alias parentClass)"),
 			TEXT("class"), TEXT("the new parent class parameter is called newParentClass"),
@@ -1414,7 +1415,8 @@ namespace MifBridge
 			nullptr };
 		static const TCHAR* const GMifDescKeys_set_material_parameter[] = {
 			TEXT("material"), TEXT("materialPath"), TEXT("path"), TEXT("scalars"), TEXT("vectors"),
-			TEXT("parameter"), TEXT("parameterName"), TEXT("name"), TEXT("value"), nullptr };
+			TEXT("parameter"), TEXT("parameterName"), TEXT("name"), TEXT("value"),
+			TEXT("textures"), TEXT("switches"), TEXT("association"), TEXT("index"), nullptr };
 		static const TCHAR* const GMifDescNotes_set_material_parameter[] = {
 			TEXT("textures"), TEXT("texture parameters are NOT implemented on this endpoint — it applies scalars and vectors only"),
 			TEXT("texture"), TEXT("texture parameters are NOT implemented on this endpoint — it applies scalars and vectors only"),
@@ -1439,7 +1441,7 @@ namespace MifBridge
 		static const TCHAR* const GMifDescKeys_set_spline_points[] = {
 			TEXT("actorPath"), TEXT("actor"), TEXT("component"), TEXT("componentName"), TEXT("points"),
 			TEXT("space"), TEXT("pointType"), TEXT("closedLoop"), TEXT("closed"), TEXT("loop"),
-			TEXT("snapToGround"), TEXT("groundOffset"), nullptr };
+			TEXT("snapToGround"), TEXT("groundOffset"), TEXT("skipPostEditChange"), nullptr };
 		static const TCHAR* const GMifDescNotes_set_spline_points[] = {
 			TEXT("offset"), TEXT("use groundOffset - 'offset' is snap_actors_to_ground's name for the same idea"),
 			TEXT("type"), TEXT("use pointType - it sets the interpolation type of every point written by this call"),
@@ -2194,7 +2196,7 @@ namespace MifBridge
 			  TEXT("objectPath | (blueprintId or path) + widgetName, propertyPath, value, overrideFlag (set|refuse|ignore), enforceClamps"),
 			  TEXT("MifBridgeNodes5.cpp"), 966, nullptr },
 			{ TEXT("set_spline_points"), GMifDescKeys_set_spline_points, GMifDescNotes_set_spline_points,
-			  TEXT("actorPath (alias: actor), component (alias: componentName), points:[{x,y,z},...] (at least 2), space (\"world\"|\"local\"), pointType (\"curve\"|\"linear\"|\"constant\"|\"curveClamped\"|\"curveCustomTangent\"), closedLoop (aliases: closed, loop), snapToGround (bool, needs space:\"world\"), groundOffset (number)"),
+			  TEXT("actorPath (alias: actor), component (alias: componentName), points:[{x,y,z},...] (at least 2), space (\"world\"|\"local\"), pointType (\"curve\"|\"linear\"|\"constant\"|\"curveClamped\"|\"curveCustomTangent\"), closedLoop (aliases: closed, loop), snapToGround (bool, needs space:\"world\"), groundOffset (number), skipPostEditChange (bool - do NOT re-run the owning actor construction script; REQUIRED on blueprints that rebuild their own spline)"),
 			  TEXT("MifBridgeWorld.cpp"), 240, nullptr },
 			{ TEXT("set_sublevel_streaming"), GMifDescKeys_set_sublevel_streaming, nullptr,
 			  TEXT("path (packagePath, level), streamingClass (class: \"alwaysloaded\"|\"dynamic\")"),

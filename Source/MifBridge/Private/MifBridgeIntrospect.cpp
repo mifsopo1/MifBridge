@@ -1,5 +1,7 @@
 // MifBridge — session/assets, introspection, variables, and compile read-back endpoints.
 #include "MifBridgeHandlers.h"
+#include "Engine/Level.h"   // ULevel::GetExternalActorsPath
+#include "FileHelpers.h"   // FEditorFileUtils::GetDirtyContentPackages - save_package warns about unsaved external actors
 #include "MifBridgeLog.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -205,8 +207,51 @@ namespace MifBridge
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 		SaveArgs.SaveFlags = SAVE_NoError;
 		const bool bSaved = UPackage::SavePackage(Package, nullptr, *FileName, SaveArgs);
-		if (bSaved) Out->SetStringField(TEXT("savedTo"), FileName);
-		else Fail(Out, FString::Printf(TEXT("save failed for %s"), *Package->GetName()));
+		if (!bSaved)
+		{
+			Fail(Out, FString::Printf(TEXT("save failed for %s"), *Package->GetName()));
+			return;
+		}
+		Out->SetStringField(TEXT("savedTo"), FileName);
+
+		// A TRUE ok THAT LOSES A SESSION'S WORK. On a World Partition map with One-File-Per-Actor, every
+		// actor lives in its OWN package under __ExternalActors__. Saving the map package writes the map
+		// and nothing else, so ok:true is perfectly accurate and 409 placed actors stay dirty in memory,
+		// one level reload away from being gone. That happened for real while building L_City_P in Curfew
+		// and is the most expensive item in the field reports merged on 2026-08-26.
+		//
+		// The accuracy is exactly what makes it dangerous: nothing in the response was wrong, it simply
+		// answered a narrower question than the caller asked. So say what is left.
+		if (Package->ContainsMap())
+		{
+			if (const UWorld* World = UWorld::FindWorldInPackage(Package))
+			{
+				if (World->IsPartitionedWorld())
+				{
+					const FString ExternalRoot = ULevel::GetExternalActorsPath(Package);
+					TArray<UPackage*> DirtyContent;
+					FEditorFileUtils::GetDirtyContentPackages(DirtyContent);
+					int32 DirtyExternal = 0;
+					for (const UPackage* P : DirtyContent)
+					{
+						if (P && !ExternalRoot.IsEmpty() && P->GetName().StartsWith(ExternalRoot))
+						{
+							++DirtyExternal;
+						}
+					}
+					Out->SetBoolField(TEXT("partitionedWorld"), true);
+					Out->SetNumberField(TEXT("dirtyExternalActorPackages"), DirtyExternal);
+					if (DirtyExternal > 0)
+					{
+						Out->SetStringField(TEXT("note"), FString::Printf(
+							TEXT("the MAP package was written, but this is a World Partition map and %d external ")
+							TEXT("actor package(s) are STILL DIRTY - their actors live in their own packages and ")
+							TEXT("are NOT saved by this call. They will be lost on the next level reload. Use ")
+							TEXT("save_dirty_packages {maps:true, content:true}."), DirtyExternal));
+					}
+				}
+			}
+		}
 	}
 
 	void H_backup_blueprint(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

@@ -91,9 +91,15 @@ Never work from a typed list — one was fabricated once and a third of it was i
   speculative in-flight reason that was simply wrong. World Partition reloads them as ghost actors.
   Route through UEditorLoadingAndSavingUtils::SaveDirtyPackages, which handles deletions in the same
   pass, or at minimum detect a package whose outer object is gone and say that instead of guessing.
-- [ ] **There is no list_endpoints.** describe_endpoint needs a name you already have, so discovery
+- [x] **There is no list_endpoints.** describe_endpoint needs a name you already have, so discovery
   means grepping plugin source - that is how delete_level_actor was found, after three wrong guesses.
   Add list_endpoints {filter?} returning names plus the one-line summary describe_endpoint already has.
+  CLOSED, but not by adding list_endpoints. self_audit ALREADY enumerates all 286 - the reporter simply
+  could not discover that, because an unknown path returned UE's own empty 404 and MifBridge never saw
+  the request. Fixed at the root with a request preprocessor: an unknown /api/ name now returns a real
+  error naming self_audit, plus ranked did-you-mean suggestions. delete_actor now returns
+  delete_level_actor at rank 1 - the exact guess that cost three round trips. That helps EVERY wrong
+  guess rather than the one endpoint name that was asked for.
 - [ ] **trace_ground and list_level_actors read DIFFERENT worlds during PIE** and neither says which.
   Together they read as catastrophic when nothing is wrong. Echo the world operated on, the way
   capture_camera echoes cameraSource.

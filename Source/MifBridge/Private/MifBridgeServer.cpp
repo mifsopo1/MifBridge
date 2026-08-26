@@ -136,6 +136,89 @@ bool FMifBridgeServer::Start()
 		}
 	}
 
+	// A 404 THAT TEACHES NOTHING COSTS ROUND TRIPS. UE's router answers an unbound path with
+	//   {"errorCode":"...route_handler_not_found","errorMessage":""}
+	// - an EMPTY message - and the handler never runs, so MifBridge cannot say anything. A real session
+	// building a city burned three calls guessing delete_actor, destroy_actor and remove_actor before
+	// finding delete_level_actor, and separately guessed list_endpoints without learning that self_audit
+	// already enumerates everything.
+	//
+	// A preprocessor runs BEFORE routing, so an unknown /api/ path can be answered properly. It returns
+	// false for everything it does not handle, which leaves normal routing untouched.
+	Router->RegisterRequestPreprocessor(
+		[](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete) -> bool
+		{
+			const FString Path = Request.RelativePath.GetPath();
+			if (!Path.StartsWith(TEXT("/api/")))
+			{
+				return false;                       // not ours - let the router deal with it
+			}
+			const FString Wanted = Path.RightChop(5);
+			const TArray<FString> Known = MifBridge::GetEndpointNames();
+			if (Wanted.IsEmpty() || Known.Contains(Wanted))
+			{
+				return false;                       // a real endpoint - its own route handles it
+			}
+
+			// RANKED, NOT FIRST-EIGHT. The first version took the first eight names containing any shared
+			// word, which put delete_datatable_rows and add_spawn_actor ahead of delete_level_actor - and
+			// delete_level_actor IS the answer that guess was looking for. A did-you-mean that omits the
+			// right answer is barely better than none, so score by how much of the guess a name actually
+			// shares and take the BEST eight.
+			TArray<FString> Parts;
+			Wanted.ParseIntoArray(Parts, TEXT("_"), true);
+			TArray<TPair<int32, FString>> Scored;
+			for (const FString& Name : Known)
+			{
+				int32 Score = 0;
+				for (const FString& Part : Parts)
+				{
+					// FOUR, not three. A three-letter fragment is noise: 'all' from a nonsense guess matches
+					// 'call', so zzzz_not_a_thing_at_all suggested every call-related endpoint. Four costs
+					// nothing on the real cases - get_spline is carried by 'spline', not by 'get'.
+					if (Part.Len() >= 4 && Name.Contains(Part))
+					{
+						// A whole word is worth more than an incidental substring: 'actor' in
+						// 'delete_level_actor' beats 'actor' inside 'actorClass'.
+						Score += (Name.EndsWith(Part) || Name.StartsWith(Part) || Name.Contains(Part + TEXT("_"))) ? 3 : 1;
+					}
+				}
+				if (Name.Contains(Wanted) || Wanted.Contains(Name))
+				{
+					Score += 5;                     // a containment match is the strongest signal there is
+				}
+				if (Score > 0)
+				{
+					Scored.Add(TPair<int32, FString>(Score, Name));
+				}
+			}
+			Scored.Sort([](const TPair<int32, FString>& A, const TPair<int32, FString>& B)
+				{ return A.Key != B.Key ? A.Key > B.Key : A.Value < B.Value; });
+			TArray<FString> Suggestions;
+			for (const TPair<int32, FString>& Pair : Scored)
+			{
+				Suggestions.Add(Pair.Value);
+				if (Suggestions.Num() >= 8) { break; }
+			}
+			TSharedRef<FJsonObject> Err = MakeShared<FJsonObject>();
+			Err->SetBoolField(TEXT("ok"), false);
+			Err->SetStringField(TEXT("error"), FString::Printf(
+				TEXT("'%s' is not an endpoint on this build (%d are registered). Call self_audit to list ")
+				TEXT("every endpoint, or describe_endpoint {name} for one of them."),
+				*Wanted, Known.Num()));
+			if (Suggestions.Num() > 0)
+			{
+				TArray<TSharedPtr<FJsonValue>> Arr;
+				for (const FString& Sug : Suggestions)
+				{
+					Arr.Add(MakeShared<FJsonValueString>(Sug));
+				}
+				Err->SetArrayField(TEXT("didYouMean"), Arr);
+			}
+			OnComplete(MakeJsonResponse(Err, EHttpServerResponseCodes::NotFound));
+			return true;
+		});
+
 	Http.StartAllListeners();
 	// Routes are now bound, once per name. Any later RegisterExternalEndpoint call would produce a
 	// dispatchable-but-unrouted endpoint, so the registry refuses from here on.
