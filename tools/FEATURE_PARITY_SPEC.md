@@ -136,8 +136,11 @@ Never work from a typed list — one was fabricated once and a third of it was i
   house style on error messages did its job and the suggestion was not followed.
   Worth feeding back to the reporter rather than silently closing - snake_case property paths are an
   easy habit to carry over from Python, and they will hit it again.
-- [ ] **list_level_actors truncation is honest in the response but invisible in describe_endpoint.** A
+- [x] **list_level_actors truncation is honest in the response but invisible in describe_endpoint.** A
   cleanup routine reported clearing 200/200 while 43 actors remained. Mention truncated in the summary.
+  CLOSED. The describe summary now states the default of 200, the 1-5000 clamp, and that matched and
+  truncated are ALWAYS present - with the actual incident in it, because a warning that names a real
+  consequence gets read and an abstract one does not. Verified live through describe_endpoint.
 - [ ] **No engine-version guards exist anywhere in the source.** No ENGINE_MINOR_VERSION, nothing. It
   builds for 5.3.2 and 5.7 only because every API it touches happens to exist in both. This is the
   first thing that breaks as breadth grows toward parity, and it needs a policy before it does.

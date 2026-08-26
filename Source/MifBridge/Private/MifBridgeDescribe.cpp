@@ -1971,7 +1971,10 @@ namespace MifBridge
 			  TEXT("blueprintId (alias: path), includeInherited (default false)"),
 			  TEXT("MifBridgeInterfaces.cpp"), 116, nullptr },
 			{ TEXT("list_level_actors"), GMifDescKeys_list_level_actors, GMifDescNotes_list_level_actors,
-			  TEXT("classFilter, nameContains, folder, selectedOnly, limit"),
+			  TEXT("classFilter, nameContains, folder, selectedOnly, limit (DEFAULT 200, clamped 1-5000) - "
+				   "the response ALWAYS carries matched (the true total) and truncated, so check those rather "
+				   "than assuming actors[] is everything. A cleanup routine once reported clearing 200 of 200 "
+				   "while 43 actors remained."),
 			  TEXT("MifBridgeLevel.cpp"), 126, nullptr },
 			{ TEXT("list_material_expressions"), GMifDescKeys_list_material_expressions, nullptr,
 			  TEXT("path (aliases: material, materialPath), includeConnections, includeProperties"),
