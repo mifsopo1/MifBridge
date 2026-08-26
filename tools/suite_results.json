@@ -1,14 +1,16 @@
 [
  {
   "suite": "test_array_wildcard_durability.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_audio_nav.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
   "seconds": 2.7,
@@ -17,30 +19,34 @@
  },
  {
   "suite": "test_audit_fixes.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 4.8,
+  "seconds": 4.9,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_capture_viewport.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_collision.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_components_dispatchers.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
   "seconds": 2.8,
@@ -49,46 +55,52 @@
  },
  {
   "suite": "test_confirm_gated.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_create_asset.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_datatables.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 4.5,
+  "seconds": 4.7,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_enums.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_foliage_modes.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_fuzz_detector.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
   "seconds": 0.2,
@@ -97,6 +109,7 @@
  },
  {
   "suite": "test_graph_patch.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
   "seconds": 0.9,
@@ -105,86 +118,97 @@
  },
  {
   "suite": "test_ik_authoring.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_ik_goals_solvers.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_ik_rig.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_inherited_components.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_interfaces.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_list_bones.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_macro_dispatch.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 0.6,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_material_params.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_material_write.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_modal_guard.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_niagara_params.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
   "seconds": 3.2,
@@ -193,14 +217,16 @@
  },
  {
   "suite": "test_node_spawns.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 42   FAIL 0",
-  "seconds": 4.2,
+  "seconds": 4.0,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_pinlifetime.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
   "seconds": 0.7,
@@ -209,6 +235,7 @@
  },
  {
   "suite": "test_rename_widget.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
   "seconds": 3.0,
@@ -217,6 +244,7 @@
  },
  {
   "suite": "test_reroute.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
   "seconds": 3.0,
@@ -225,6 +253,7 @@
  },
  {
   "suite": "test_rollback_real.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
   "seconds": 0.6,
@@ -233,6 +262,7 @@
  },
  {
   "suite": "test_selfpin.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
   "seconds": 1.7,
@@ -241,14 +271,16 @@
  },
  {
   "suite": "test_set_struct_member.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.7,
+  "seconds": 3.8,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_snap_ground.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
   "seconds": 4.0,
@@ -257,22 +289,25 @@
  },
  {
   "suite": "test_sockets_ai.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_trace_debug.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_v3_apply.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
   "seconds": 0.5,
@@ -281,14 +316,16 @@
  },
  {
   "suite": "test_widget_anim_recreate.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_widget_animation.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
   "seconds": 2.9,
@@ -297,6 +334,7 @@
  },
  {
   "suite": "test_widget_animation_props.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
   "seconds": 3.1,
@@ -305,9 +343,361 @@
  },
  {
   "suite": "test_widget_animation_track.py",
+  "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
+  "seconds": 2.9,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_array_wildcard_durability.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 11   FAIL 0",
+  "seconds": 2.9,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_audio_nav.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
   "seconds": 3.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_audit_fixes.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 5.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_capture_viewport.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 33   FAIL 0",
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_collision.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 2.8,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_components_dispatchers.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 29   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_confirm_gated.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 33   FAIL 0",
+  "seconds": 3.5,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_create_asset.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 2.8,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_datatables.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 4.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_enums.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 32   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_foliage_modes.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 30   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_fuzz_detector.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 0.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_graph_patch.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 1.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_ik_authoring.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 67   FAIL 0",
+  "seconds": 3.5,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_ik_goals_solvers.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 53   FAIL 0",
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_ik_rig.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 31   FAIL 0",
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_inherited_components.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 37   FAIL 0",
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_interfaces.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_list_bones.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 36   FAIL 0",
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_macro_dispatch.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 0.6,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_material_params.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_material_write.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 3.4,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_modal_guard.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 13   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_niagara_params.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 36   FAIL 0",
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_node_spawns.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 42   FAIL 0",
+  "seconds": 4.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_pinlifetime.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 13   FAIL 0",
+  "seconds": 0.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_rename_widget.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_reroute.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_rollback_real.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 10   FAIL 0",
+  "seconds": 0.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_selfpin.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 18   FAIL 0",
+  "seconds": 1.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_set_struct_member.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 3.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_snap_ground.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 11   FAIL 0",
+  "seconds": 3.8,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_sockets_ai.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 28   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_trace_debug.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 44   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_v3_apply.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 9   FAIL 0",
+  "seconds": 0.5,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_anim_recreate.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 43   FAIL 0",
+  "seconds": 3.4,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_animation.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_animation_props.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 35   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_animation_track.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  }

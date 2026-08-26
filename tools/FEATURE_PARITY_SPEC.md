@@ -556,6 +556,22 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       rather than taking it along; removing the middle enum entry leaves the survivors' own names
       intact rather than shifting them; a written DataTable row reads back. All clean.
 
+- [x] **The regression runner now checks REPEATABILITY, not just correctness.** Five suites were
+      broken in one night by a single underlying thing: state surviving between runs inside one editor
+      session. Unsaved scratch assets live until the process ends, so a suite that hardcodes a scratch
+      path creates it on run one and dies in setup on run two, and one that pages its own results falls
+      off the end once enough have piled up. Every one had been green for weeks — the set had simply
+      never been run twice without a restart in between, which is exactly what an unattended overnight
+      run does.
+
+      Fixing the five instances would have left the class open. `run_all_suites.py` now runs every
+      suite TWICE by default and names any suite that passed the first time and failed the second,
+      because that is the specific signature and it should not have to be spotted in a list. The two
+      passes INTERLEAVE — every suite once, then every suite again — since it is often another suite's
+      leftovers that break a suite rather than its own, and back-to-back runs would miss that.
+
+      Current state: **78 runs across 39 suites, 0 failed, 0 editor deaths.**
+
 ## Deliberately not pursuing
 
 - [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add
