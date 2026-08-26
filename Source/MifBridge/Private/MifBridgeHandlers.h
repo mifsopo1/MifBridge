@@ -1204,6 +1204,9 @@ namespace MifBridge
 	MIF_DECL(connect_material_property);
 	MIF_DECL(delete_material_expression);
 	MIF_DECL(list_material_expressions);
+	/** What a material EXPOSES, as opposed to how it is built. The cached parameter table survives
+	 *  cook, so unlike list_material_expressions this works on shipped content. */
+	MIF_DECL(list_material_parameters);
 	MIF_DECL(layout_material_expressions);
 	MIF_DECL(recompile_material);
 	MIF_DECL(shader_compile_status);

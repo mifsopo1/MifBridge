@@ -122,20 +122,16 @@ candidate gaps died under adversarial verification, each one an implementation t
 duplicated something already there. The audit read handlers; the seeding above matched substrings, so
 where they disagree this section wins.
 
-- [ ] **`list_material_parameters` — the single confirmed HIGH, build it first.** There is no way to
-      ask a material or material instance what parameters it exposes. `list_material_expressions`
-      correctly returns `cooked:true, numExpressions:0` on every shipped DDS2 master material, because
-      cooking strips the expression graph. `list_object_properties` on a MIC returns only what someone
-      already overrode — useless for finding a knob you have not touched.
-      The point that makes this specifically valuable HERE: `FMaterialCachedParameters` **survives
-      cook**, so this is one of the few introspection paths that still works on shipped content. Over
-      `UMaterialInterface::GetAllParametersOfType` / `GetAllScalarParameterInfo` /
-      `GetAllVectorParameterInfo` / `GetAllTextureParameterInfo` / `GetAllStaticSwitchParameterInfo`,
-      all ENGINE_API, no new module deps.
-      Silent failure to defend against: reporting a name WITHOUT its `EMaterialParameterAssociation`
-      and index. A LayerParameter echoed as Global makes every later `set_material_parameter` build
-      the wrong `FMaterialParameterInfo`, get `false` back, and the modder concludes the parameter
-      does not exist.
+- [x] **`list_material_parameters`** — built. The contrast on real shipped content is the whole
+      story: `PoleCableMat` reports `numExpressions:0, cooked:true` from the expression listing and
+      **7 parameters** from this one; `M_Oceanology_InstBTR` reports **145**, `M_Water_InstBTR` **148**.
+      Reports name, type, group, description, sort priority, value, and always ASSOCIATION and INDEX
+      (a layer parameter treated as global would make set_material_parameter build the wrong
+      FMaterialParameterInfo and silently fail). On an instance each entry carries
+      `overriddenOnThisInstance` — 19 of 112 scalars on M_Oceanology_InstBTR are its own rather than
+      inherited, which is what decides whether resetting one does anything. Every value read switches
+      on the parameter's Type: `FMaterialParameterValue::AsScalar()` is `check()`ed and would
+      TERMINATE the editor if asked of a texture. 23 checks in tools/test_material_params.py.
 - [ ] **Texture and static-switch support in `set_material_parameter` / `create_material_instance`** —
       one work item with the above, not a separate row. Enumeration will surface parameter types the
       write side explicitly rejects, and a list where a third of the entries are read-only is worse

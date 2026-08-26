@@ -2280,6 +2280,26 @@ def delete_material_expression(path: str, expression: str = "", delete_all: bool
 
 
 @mcp.tool()
+def list_material_parameters(path: str, types: list = None, group: str = "") -> dict:
+    """List the parameters a Material or MaterialInstance EXPOSES.
+
+    This is the endpoint to use on SHIPPED content. Cooking strips a material's expression graph, so
+    list_material_expressions correctly reports numExpressions:0 on every cooked master material -
+    but the cached parameter table survives cook, so this still works.
+
+    Each parameter reports name, type, group, description, sort priority, current/default value, and
+    critically its ASSOCIATION (global | layer | blend) and INDEX. Those two are not decoration: a
+    layer parameter treated as a global makes set_material_parameter build the wrong
+    FMaterialParameterInfo, silently fail, and look as though the parameter does not exist.
+
+    On a MaterialInstance each entry also reports overriddenOnThisInstance, which tells you whether
+    the value is this instance's own or inherited from its parent - i.e. whether resetting it would
+    do anything.
+    """
+    return _post("list_material_parameters", path=path, types=types or [], group=group)
+
+
+@mcp.tool()
 def list_material_expressions(path: str, include_connections: bool = True,
                               include_properties: bool = True) -> dict:
     "Read back a material/function graph: expressions[{name, class, index, x, y, properties{}, inputs[{input, from, fromOutput}]}], connectionCount, and (materials) propertyBindings[{property, from, fromOutput}] - the verification read for every graph mutation. On cooked materials returns numExpressions:0 with cooked:true (the graph is STRIPPED at cook, not empty - do not confuse the two)."

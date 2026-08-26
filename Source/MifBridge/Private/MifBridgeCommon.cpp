@@ -314,6 +314,7 @@ namespace MifBridge
 			MIF_BIND(connect_material_property);
 			MIF_BIND(delete_material_expression);
 			MIF_BIND(list_material_expressions);
+			MIF_BIND(list_material_parameters);
 			MIF_BIND(layout_material_expressions);
 			MIF_BIND(recompile_material);
 			MIF_BIND(shader_compile_status);
@@ -474,7 +475,7 @@ namespace MifBridge
 			TEXT("list_tree_widgets"),
 			TEXT("list_struct_members"), TEXT("list_level_actors"), TEXT("get_level_actor"),
 			TEXT("list_sockets"), TEXT("describe_behavior_tree"), TEXT("list_blackboard_keys"),
-			TEXT("get_perf_stats"),
+			TEXT("get_perf_stats"), TEXT("list_material_parameters"),
 			TEXT("list_widget_animations"),
 			// PIE start/stop only QUEUE a request — they mutate no asset and must not open a
 			// transaction (an undo entry spanning a world teardown is meaningless).

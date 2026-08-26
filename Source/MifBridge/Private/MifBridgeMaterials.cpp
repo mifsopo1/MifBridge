@@ -34,6 +34,12 @@
 // editor-only module (never a runtime dependency of a cooked mod — Build.cs header), which is
 // why the WITH_EDITORONLY_DATA members used below need no preprocessor guards.
 #include "MifBridgeHandlers.h"
+
+// list_material_parameters: FMaterialCachedParameters survives cook, which is the whole reason this
+// endpoint is worth having on a shipped game.
+#include "MaterialTypes.h"                      // FMaterialParameterInfo / Metadata / Value
+#include "Materials/MaterialInstance.h"         // UMaterialInstance - current vs default values
+#include "Materials/MaterialInterface.h"        // GetAllParametersOfType
 #include "MifBridgeLog.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -64,6 +70,232 @@
 
 namespace MifBridge
 {
+	namespace
+	{
+		const TCHAR* MaterialParamTypeName(EMaterialParameterType T)
+		{
+			switch (T)
+			{
+			case EMaterialParameterType::Scalar:               return TEXT("scalar");
+			case EMaterialParameterType::Vector:               return TEXT("vector");
+			case EMaterialParameterType::DoubleVector:         return TEXT("doubleVector");
+			case EMaterialParameterType::Texture:              return TEXT("texture");
+			case EMaterialParameterType::Font:                 return TEXT("font");
+			case EMaterialParameterType::RuntimeVirtualTexture:return TEXT("runtimeVirtualTexture");
+			case EMaterialParameterType::SparseVolumeTexture:  return TEXT("sparseVolumeTexture");
+			case EMaterialParameterType::StaticSwitch:         return TEXT("staticSwitch");
+			case EMaterialParameterType::StaticComponentMask:  return TEXT("staticComponentMask");
+			default:                                           return TEXT("unknown");
+			}
+		}
+
+		const TCHAR* MaterialAssociationName(EMaterialParameterAssociation A)
+		{
+			switch (A)
+			{
+			case LayerParameter: return TEXT("layer");
+			case BlendParameter: return TEXT("blend");
+			default:             return TEXT("global");
+			}
+		}
+
+		// SWITCH ON Type, NEVER GUESS. FMaterialParameterValue::AsScalar() and its siblings are
+		// check()ed on Type - asking a texture parameter for its scalar TERMINATES the editor rather
+		// than returning an error. Every branch below reads only the union member its type owns.
+		void WriteParamValue(const TSharedRef<FJsonObject>& J, const TCHAR* Field,
+			const FMaterialParameterValue& V)
+		{
+			switch (V.Type)
+			{
+			case EMaterialParameterType::Scalar:
+				J->SetNumberField(Field, V.AsScalar());
+				break;
+			case EMaterialParameterType::Vector:
+			{
+				const FLinearColor C = V.AsLinearColor();
+				TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+				O->SetNumberField(TEXT("r"), C.R); O->SetNumberField(TEXT("g"), C.G);
+				O->SetNumberField(TEXT("b"), C.B); O->SetNumberField(TEXT("a"), C.A);
+				J->SetObjectField(Field, O);
+				break;
+			}
+			case EMaterialParameterType::DoubleVector:
+			{
+				const FVector4d D = V.AsVector4d();
+				TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+				O->SetNumberField(TEXT("x"), D.X); O->SetNumberField(TEXT("y"), D.Y);
+				O->SetNumberField(TEXT("z"), D.Z); O->SetNumberField(TEXT("w"), D.W);
+				J->SetObjectField(Field, O);
+				break;
+			}
+			case EMaterialParameterType::StaticSwitch:
+				J->SetBoolField(Field, V.AsStaticSwitch());
+				break;
+			case EMaterialParameterType::StaticComponentMask:
+			{
+				const FStaticComponentMaskValue M = V.AsStaticComponentMask();
+				TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+				O->SetBoolField(TEXT("r"), M.R); O->SetBoolField(TEXT("g"), M.G);
+				O->SetBoolField(TEXT("b"), M.B); O->SetBoolField(TEXT("a"), M.A);
+				J->SetObjectField(Field, O);
+				break;
+			}
+			case EMaterialParameterType::Texture:
+			case EMaterialParameterType::RuntimeVirtualTexture:
+			case EMaterialParameterType::SparseVolumeTexture:
+			case EMaterialParameterType::Font:
+			{
+				// AsTextureObject covers the object-valued types and returns null rather than
+				// asserting, so it is safe for all four.
+				UObject* Obj = V.AsTextureObject();
+				J->SetStringField(Field, Obj ? *Obj->GetPathName() : TEXT(""));
+				break;
+			}
+			default:
+				J->SetStringField(Field, TEXT("(unreadable type)"));
+				break;
+			}
+		}
+	}
+
+	// --- list_material_parameters --------------------------------------------
+	//   in:  { path, types?:[...], group? }
+	//   out: { path, kind, isCooked, count, byType:{...}, parameters:[...] }
+	//
+	// The only way to ask a COOKED material what it exposes. list_material_expressions is correct to
+	// report numExpressions:0 on shipped content - cooking strips the expression graph - and
+	// list_object_properties on an instance only ever returns what someone already overrode. The
+	// cached parameter table survives cook, so this works where those cannot.
+	void H_list_material_parameters(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("material"), TEXT("assetPath"), TEXT("types"), TEXT("group") },
+			TEXT("path (aliases: material, assetPath) of a Material or MaterialInstance; "
+				 "types:[scalar|vector|texture|staticSwitch|doubleVector|font|runtimeVirtualTexture|"
+				 "sparseVolumeTexture|staticComponentMask] to filter; group to filter by parameter group"),
+			{ { TEXT("parameterName"), TEXT("this LISTS parameters - to read one value use get_property on a material instance, and to write one use set_material_parameter") },
+			  { TEXT("includeExpressions"), TEXT("that is list_material_expressions, which returns nothing on a COOKED material - this endpoint exists precisely because the cached parameter table survives cook and the expression graph does not") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("material"), TEXT("assetPath") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required (a Material or MaterialInstance)"));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: %s"), *Path));
+			return;
+		}
+		UMaterialInterface* Mat = Cast<UMaterialInterface>(Asset);
+		if (!Mat)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, not a Material or MaterialInstance."),
+				*Path, *Asset->GetClass()->GetName()));
+			return;
+		}
+
+		// Optional type filter.
+		TSet<FString> WantTypes;
+		const TArray<TSharedPtr<FJsonValue>>* TypeArr = nullptr;
+		if (JArray(In, TEXT("types"), TypeArr) && TypeArr)
+		{
+			for (int32 i = 0; i < TypeArr->Num(); ++i)
+			{
+				FString T;
+				if (!(*TypeArr)[i].IsValid() || !(*TypeArr)[i]->TryGetString(T) || T.IsEmpty())
+				{
+					Fail(Out, FString::Printf(TEXT("types[%d] is not a non-empty string."), i));
+					return;
+				}
+				WantTypes.Add(T.ToLower());
+			}
+		}
+		const FString WantGroup = JStr(In, TEXT("group"));
+
+		static const EMaterialParameterType kTypes[] = {
+			EMaterialParameterType::Scalar, EMaterialParameterType::Vector,
+			EMaterialParameterType::DoubleVector, EMaterialParameterType::Texture,
+			EMaterialParameterType::Font, EMaterialParameterType::RuntimeVirtualTexture,
+			EMaterialParameterType::SparseVolumeTexture, EMaterialParameterType::StaticSwitch,
+			EMaterialParameterType::StaticComponentMask,
+		};
+
+		UMaterialInstance* AsInstance = Cast<UMaterialInstance>(Mat);
+		TArray<TSharedPtr<FJsonValue>> All;
+		TSharedRef<FJsonObject> ByType = MakeShared<FJsonObject>();
+
+		for (EMaterialParameterType T : kTypes)
+		{
+			const FString TypeName = MaterialParamTypeName(T);
+			if (WantTypes.Num() > 0 && !WantTypes.Contains(TypeName.ToLower())) { continue; }
+
+			TMap<FMaterialParameterInfo, FMaterialParameterMetadata> Params;
+			Mat->GetAllParametersOfType(T, Params);
+			int32 Count = 0;
+			for (const TPair<FMaterialParameterInfo, FMaterialParameterMetadata>& P : Params)
+			{
+				if (!WantGroup.IsEmpty() && P.Value.Group.ToString() != WantGroup) { continue; }
+
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetStringField(TEXT("name"), P.Key.Name.ToString());
+				J->SetStringField(TEXT("type"), TypeName);
+				// ASSOCIATION AND INDEX ARE NOT DECORATION. A LayerParameter reported as a Global
+				// makes every later set_material_parameter build the wrong FMaterialParameterInfo,
+				// get false back, and lead the caller to conclude the parameter does not exist.
+				J->SetStringField(TEXT("association"), MaterialAssociationName(P.Key.Association));
+				J->SetNumberField(TEXT("index"), P.Key.Index);
+				if (!P.Value.Group.IsNone())
+				{
+					J->SetStringField(TEXT("group"), P.Value.Group.ToString());
+				}
+				if (!P.Value.Description.IsEmpty())
+				{
+					J->SetStringField(TEXT("description"), P.Value.Description);
+				}
+				J->SetNumberField(TEXT("sortPriority"), P.Value.SortPriority);
+				WriteParamValue(J, TEXT("value"), P.Value.Value);
+
+				// On an INSTANCE, GetAllParametersOfType reports the effective value. Whether that
+				// value is this instance's own override or inherited from the parent decides whether
+				// resetting it does anything, so it is reported rather than left to be guessed.
+				if (AsInstance)
+				{
+					J->SetBoolField(TEXT("overriddenOnThisInstance"), P.Value.bOverride);
+				}
+				All.Add(MakeShared<FJsonValueObject>(J));
+				++Count;
+			}
+			if (Count > 0) { ByType->SetNumberField(TypeName, Count); }
+		}
+
+		Out->SetStringField(TEXT("path"), Mat->GetPathName());
+		Out->SetStringField(TEXT("kind"), AsInstance ? TEXT("MaterialInstance") : TEXT("Material"));
+		if (AsInstance && AsInstance->Parent)
+		{
+			Out->SetStringField(TEXT("parent"), AsInstance->Parent->GetPathName());
+		}
+		// Stated because it is the whole point: this works on cooked content, where
+		// list_material_expressions correctly reports nothing.
+		Out->SetBoolField(TEXT("survivesCook"), true);
+		Out->SetNumberField(TEXT("count"), All.Num());
+		Out->SetObjectField(TEXT("byType"), ByType);
+		Out->SetArrayField(TEXT("parameters"), All);
+		if (All.Num() == 0)
+		{
+			// "No parameters" and "filtered everything out" look identical otherwise.
+			Out->SetStringField(TEXT("note"),
+				WantTypes.Num() > 0 || !WantGroup.IsEmpty()
+					? TEXT("nothing matched the types/group filter - call again without it to see everything")
+					: TEXT("this material genuinely exposes no parameters (it is not a filter artefact)"));
+		}
+	}
+
 	namespace
 	{
 		// --- Cooked / container-origin detection --------------------------------
