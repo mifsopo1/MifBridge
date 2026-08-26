@@ -514,6 +514,26 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       thing a mod is actually made of. Finish condition: a suite exists, `create_datatable` is either
       verified or filed as broken, and the open-issues entry stops saying UNVERIFIED.
 
+- [x] **Node-creation endpoints — the largest uncovered block, now driven from the live registry.**
+      `tools/test_node_spawns.py`, 42 checks. `add_*` was 33 endpoints named in no suite, and node
+      creation is most of what this bridge is for. The failure worth hunting there is not a crash but
+      an endpoint answering ok:true with a node guid while the graph gains nothing usable — invisible
+      until a compile much later blames something else.
+
+      The suite asks `describe_endpoint` for each `add_*` endpoint's accepted parameters and drives
+      every one that needs nothing beyond a graph and coordinates. So a node endpoint added next month
+      is covered the day it lands. That matters specifically here: the 33 got uncovered by being added
+      one at a time, and a hand-written list would repeat exactly that.
+
+      Every node is checked three ways, because `ok:true` is the thing under suspicion — a guid comes
+      back, `get_node` can still resolve that guid in the graph, and the blueprint compiles with all of
+      them present. It also asserts the two reads AGREE: a node can resolve individually and be absent
+      from `list_nodes`, and disagreement between them is worth catching.
+
+      Clean. One engine behaviour worth not mistaking for a bug: `add_break_struct` works on `FVector`
+      and `add_make_struct` refuses it, because breaking needs only read access while making needs
+      every member writable from Blueprint.
+
 ## Deliberately not pursuing
 
 - [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add
