@@ -55,6 +55,8 @@ Author's own priority ranking, "by what actually costs me time now". Status as o
 | — | `set_viewport_camera` does not reach `capture_camera` (§7) | **FIXED + verified** — `useViewportCamera` opt-in; `cameraSource` echoes `default`/`explicit`/`viewport` |
 | — | **No way to CREATE a DataTable asset (§8)** | **VERIFIED 2026-08-26** — `create_datatable {path, rowStruct}` exercised against a running editor: creates the asset, reports `dataTablePath` / `rowStruct` / `rowCount`, and the result is visible to `list_datatables` and readable by `read_datatable`. Regression: `tools/test_datatables.py`, 23 checks |
 | — | `CallArrayFunction` wildcards (§5) | **RECONSTRUCT HALF VERIFIED FIXED 2026-08-26** — a wildcard `TargetArray` resolves on connect and SURVIVES `refresh_node`, which §4c of the gotchas nominates as the durability proxy. Reproduction: `tools/test_array_wildcard_durability.py`, 11 checks. The COOK half is still unverified — a cook cannot be run from the bridge. See §5 |
+| — | **`add_enum_value` added a junk entry under the wrong name and said ok (§10)** | **FIXED + verified 2026-08-26** — a duplicate display name passed the engine's own guard, the entry was appended, `SetEnumeratorDisplayName` silently declined it, and the response reported `NewEnumeratorN`. Now reads the applied name back and REMOVES the appended entry if it does not match. 32 checks |
+| — | `list_enum_values` threw away the only meaningful name a user enum has (§10) | **FIXED + verified 2026-08-26** — it emitted only authored names, which on a user-defined enum are always `NewEnumeratorN`. Now also returns `entries[]` pairing each with its display name; `values[]` is unchanged for existing callers |
 | — | **remove then recreate a WidgetAnimation of the same name CRASHED the editor (§9)** | **FIXED + verified 2026-08-26** — the removed UObject stayed alive holding its name; `remove_widget_animation` now frees it and reports `objectNameReusable`, `add_widget_animation` refuses a held name instead of asserting, and `set_widget_animation_range` removes the need for the destructive sequence. PM-010, 43 checks |
 | — | UMG WidgetAnimation authoring was unavailable | **FIXED + verified 2026-08-25** — `add_widget_animation`, `add_widget_animation_track`, `set_widget_animation_keys`, `remove_widget_animation*`, `rename_tree_widget`. All three animatable properties reachable |
 | — | `set_widget_animation_keys` could only ever animate translation | **FIXED + verified 2026-08-25** — the C++ supported RenderOpacity and ColorAndOpacity all along; the MCP tool never exposed `property` and the sibling docstring said they did not exist |
@@ -416,6 +418,45 @@ name-holding leak usually survives one round.
 **The report was excellent and made the fix cheap.** It gave the exact sequence, the assertion text,
 the stack, the source-level cause, the data-durability position, and three suggested fixes — all three
 of which were implemented. That is the standard to file at.
+
+## 10. User-defined enums: a write that lied and a read that lost the answer
+
+Both found on 2026-08-26 by hunting the enum family, which `tools/coverage_gaps.py` had flagged as
+covered by no suite. Both are fixed, and `tools/test_enums.py` (32 checks) is the regression.
+
+**`add_enum_value` appended a junk entry and reported success.** Adding a value whose display name is
+already taken:
+
+```
+add_enum_value {"enum": E, "value": "Common"}      ("Common" already exists)
+-> {"ok": true, "index": 3, "displayName": "NewEnumerator3", "name": "NewEnumerator3"}
+```
+
+An entry WAS added, the requested name was NOT applied, and the call said it worked. The handler does
+guard duplicates with `FEnumEditorUtils::IsProperNameForUserDefinedEnumerator`, and that guard let
+"Common" through; `SetEnumeratorDisplayName` then declined the name and returned void, so nothing
+noticed.
+
+Fixed by reading the applied name back and, if it differs from the request, REMOVING the entry that
+was just appended before failing. The rollback matters as much as the failure: without it a refused
+name still leaves a nameless `NewEnumeratorN` behind, and an enum quietly growing junk entries costs
+nothing today and corrupts meaning later. Reading the result back is also correct whatever the
+engine's guard does next, which a guard-only fix would not have been.
+
+**`list_enum_values` discarded the display names.** It emitted `GetNameStringByIndex()` only. On a
+`UserDefinedEnum` the authored names are ALWAYS `NewEnumerator0`, `NewEnumerator1`, ... and the name a
+person chose lives in the display name — so the endpoint returned a list of meaningless strings and
+gave a caller no way to map a value back to what they named it. `add_enum_value` had always answered
+with both, so the write set information the read threw away.
+
+Fixed additively: `values[]` keeps its exact previous contents because callers read it, and the detail
+arrives as a new `entries[]` of `{index, name, displayName, value}`.
+
+A note on the fix's own first attempt, because it was wrong in an instructive way. It warned whenever
+a display name differed from an authored one — which fires on almost every NATIVE enum too, since UE
+prettifies `HitTestInvisible` into "Hit Test Invisible". A warning that fires on `ESlateVisibility` is
+noise, and noise is how a real warning gets ignored. The condition is now the enum's CLASS
+(`UUserDefinedEnum`), which is the thing that actually makes the authored name meaningless.
 
 ## Not MifBridge, but adjacent
 

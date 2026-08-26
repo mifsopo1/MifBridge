@@ -1050,10 +1050,38 @@ namespace MifBridge
 		}
 		FEnumEditorUtils::SetEnumeratorDisplayName(Enum, NewIndex, FText::FromString(DisplayName));
 
+		// READ IT BACK. SetEnumeratorDisplayName returns void and declines a name it does not like
+		// without saying so, and IsProperNameForUserDefinedEnumerator above does NOT catch every case
+		// it declines - a duplicate display name passes that guard and is then silently refused here,
+		// leaving the auto-generated NewEnumeratorN in place. The result was ok:true, an appended
+		// entry, and the requested name nowhere.
+		const FString Applied = Enum->GetDisplayNameTextByIndex(NewIndex).ToString();
+		if (!Applied.Equals(DisplayName))
+		{
+			// ROLL BACK the entry that was just appended. Failing without this still leaves a junk
+			// NewEnumeratorN in the enum, and an enum quietly growing nameless entries is worse than a
+			// refused call: it costs nothing today and corrupts meaning later.
+			FEnumEditorUtils::RemoveEnumeratorFromUserDefinedEnum(Enum, NewIndex);
+			Fail(Out, FString::Printf(
+				TEXT("the entry was appended but its display name came back as '%s' instead of '%s', so "
+					 "the engine refused the name - most often because another entry already uses it. "
+					 "The appended entry has been REMOVED again, so this enum is exactly as it was "
+					 "before the call. Pick a different name, or list_enum_values to see what is "
+					 "taken."), *Applied, *DisplayName));
+			return;
+		}
+
 		Out->SetStringField(TEXT("enumPath"), Enum->GetPathName());
 		Out->SetNumberField(TEXT("index"), NewIndex);
-		Out->SetStringField(TEXT("displayName"), Enum->GetDisplayNameTextByIndex(NewIndex).ToString());
+		Out->SetStringField(TEXT("displayName"), Applied);
 		Out->SetStringField(TEXT("name"), Enum->GetNameStringByIndex(NewIndex));
+		// Said once, because a caller who assumes these are the same writes the display name into a
+		// pin and gets a silent mismatch. add_enum_value has always returned both; list_enum_values
+		// only started to on 2026-08-26.
+		Out->SetStringField(TEXT("nameNote"),
+			TEXT("displayName is the name you chose; name is what the engine stores and what "
+				 "set_pin_default and add_enum_literal expect. On a user-defined enum they never "
+				 "match."));
 	}
 
 	void H_remove_enum_value(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

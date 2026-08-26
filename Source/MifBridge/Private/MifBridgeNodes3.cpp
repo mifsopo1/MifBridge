@@ -1,5 +1,6 @@
 // MifBridge — Phase 3 breadth graph nodes: timeline, class-cast, switches, enum literal, set_pin_type.
 #include "MifBridgeHandlers.h"
+#include "Engine/UserDefinedEnum.h"   // UUserDefinedEnum - only there is the authored name meaningless
 #include "EdGraph/EdGraphSchema.h"
 #include "K2Node_Knot.h"
 #include "MifBridgeLog.h"
@@ -458,7 +459,8 @@ namespace MifBridge
 		Out->SetStringField(TEXT("enum"), Enum->GetName());
 		Out->SetStringField(TEXT("path"), Enum->GetPathName());
 
-		TArray<TSharedPtr<FJsonValue>> Values;
+		TArray<TSharedPtr<FJsonValue>> Values, Entries;
+		bool bAnyDisplayDiffers = false;
 		const int32 Num = Enum->NumEnums();
 		for (int32 Index = 0; Index < Num; ++Index)
 		{
@@ -467,9 +469,44 @@ namespace MifBridge
 			{
 				continue; // auto-generated sentinel, not a real value
 			}
+			// `values` keeps exactly what it always held - callers read it, and reshaping a field that
+			// works trades one silent breakage for another.
 			Values.Add(MakeShared<FJsonValueString>(ValueName));
+
+			// THE PART THAT WAS MISSING. A UserDefinedEnum - which is what create_enum makes - names
+			// every entry NewEnumeratorN internally and keeps the author's chosen name as the DISPLAY
+			// name. Reporting only the former hands back a list of meaningless strings and loses the
+			// one piece of identity the author supplied. add_enum_value has always answered with both.
+			const FString Display = Enum->GetDisplayNameTextByIndex(Index).ToString();
+			TSharedRef<FJsonObject> E = MakeShared<FJsonObject>();
+			E->SetNumberField(TEXT("index"), Index);
+			E->SetStringField(TEXT("name"), ValueName);
+			E->SetStringField(TEXT("displayName"), Display);
+			E->SetNumberField(TEXT("value"), Enum->GetValueByIndex(Index));
+			Entries.Add(MakeShared<FJsonValueObject>(E));
+			if (!Display.Equals(ValueName)) { bAnyDisplayDiffers = true; }
 		}
 		Out->SetArrayField(TEXT("values"), Values);
+		Out->SetArrayField(TEXT("entries"), Entries);
+		Out->SetNumberField(TEXT("count"), Entries.Num());
+		Out->SetBoolField(TEXT("displayNamesDiffer"), bAnyDisplayDiffers);
+		// GATED ON THE CLASS, not on the strings. The first version warned whenever a display name
+		// differed from an authored one, which fires on almost every NATIVE enum too - UE prettifies
+		// "HitTestInvisible" into "Hit Test Invisible" - and a warning that fires on ESlateVisibility
+		// is noise that trains a caller to ignore it. The condition that actually matters is whether
+		// this is a UUserDefinedEnum, because only there is the authored name meaningless.
+		const bool bUserDefined = Enum->IsA<UUserDefinedEnum>();
+		Out->SetBoolField(TEXT("userDefined"), bUserDefined);
+		if (bUserDefined && bAnyDisplayDiffers)
+		{
+			Out->SetStringField(TEXT("nameNote"),
+				TEXT("this enum's entries have DISPLAY names that differ from their authored names - it "
+					 "is a user-defined enum, so the authored names are NewEnumerator0, NewEnumerator1 "
+					 "and so on, and the name you chose is the displayName. 'values' holds the authored "
+					 "names, which is what set_pin_default and add_enum_literal expect; 'entries' pairs "
+					 "them with the display names a human recognises. Do not show 'values' to a person "
+					 "and do not feed 'displayName' to a pin."));
+		}
 	}
 
 	void H_add_switch_enum(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
