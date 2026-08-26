@@ -664,6 +664,26 @@ validates the AUTHORED name — but for a `UUserDefinedEnum` the authored names 
 its bool return is discarded. Same class as the `add_enum_value` bug fixed on 2026-08-25, which was
 closed by reading the applied display name back.
 
+**I. "NOTHING was created" is asserted at 31 more sites and has not been checked at any of them.**
+Two foliage sites were corrected today because they promised "NOTHING was created" AFTER real side
+effects had already happened - GetInstancedFoliageActorForCurrentLevel had been called with
+bCreateIfNone=true (so an actor may have been spawned into the level) and AddFoliageType had already
+registered a type on it. PM-007 means there is no rollback that would make the old wording true.
+
+A grep of the built DLL for the old UTF-16 string is what surfaced this: the phrase survives the fix,
+because 31 other Fail() sites use it across MifBridgeIKRig, MifBridgeWidgets, MifBridgeUserTypes,
+MifBridgeAuthoring, MifBridgeAssetOps and MifBridgeNodes3.
+
+MOST OF THEM ARE PROBABLY FINE. The wording is correct for an early parameter refusal - "name,
+startBone and endBone are all required. NOTHING was created." creates nothing and says so. The
+question is only which sites sit AFTER a mutation, the way the two foliage ones did. That is a
+per-site yes/no with a clear finish condition: for each, does anything before the Fail() call
+Modify(), spawn, register or otherwise touch state that the failure does not undo?
+
+Worth doing because the failure mode is the exact one this project keeps hunting: a response that
+tells the caller something reassuring that is not true. An error promising more than it delivers is
+worse than one that admits the mess.
+
 **H. `add_anim_node` guards the BLUEPRINT where its comment promises to guard the GRAPH.** The comment
 reads "An anim node in a non-anim GRAPH compiles to nothing and is a confusing thing to debug, so
 refuse it here rather than let it sit in an EventGraph looking placed" — and the check underneath is

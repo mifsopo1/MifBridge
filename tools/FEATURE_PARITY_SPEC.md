@@ -49,6 +49,24 @@ Never work from a typed list — one was fabricated once and a third of it was i
 ## Gaps worth closing
 
 - [x] **Every DEFERRED engine call escapes the modal backstop — a hole in the safety net itself.**
+
+- [ ] **add_timeline: a bug was FIXED with no test locking it in.** eea334a records that
+  add_timeline never created a timeline. There is no suite for it, so nothing would catch the
+  regression. QOLCrafting named it for crafting queues, progress animation and machine timing, so it
+  is on a real consumer's stated path. A fix without a test is a fix with a shelf life.
+- [ ] **landscape_info: the same shape.** 73c4b8e fixed it reporting components:0 for a World
+  Partition terrain; no suite covers it. Named as relevant to the exterior terrain around the
+  planned hideout.
+- [ ] **spawn_many has no suite.** Two silent-failure fixes are sitting unbuilt in it right now (an
+  unloadable mesh swallowed twice, and mesh/material silently ignored for non-StaticMeshActors).
+  Being in no suite is exactly how the edit_container swap bug survived.
+- [ ] **get_perf_stats has no suite.** Lowest of the four - a read whose wrong answer misleads rather
+- [ ] **Audit the 31 remaining "NOTHING was created" claims.** Two foliage sites were corrected today
+  for asserting it after real side effects; a DLL string grep proved the phrase survives at 31 other
+  Fail() sites. Most are correct early refusals. For each, check whether anything before the Fail()
+  mutated state the failure does not undo. See issue I in docs/06_OPEN_ISSUES_FROM_USE.md.
+  than corrupts - but named for the hideout once it holds many actors and widgets.
+
       `RunEndpoint` runs each handler under `TGuardValue<bool>(GIsRunningUnattendedScript, true)`, and
       a TGuardValue **restores on scope exit**. Six handlers schedule their real work with
       `GEditor->GetTimerManager()->SetTimerForNextTick(...)` and answer immediately, so the deferred
