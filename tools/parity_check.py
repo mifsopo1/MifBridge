@@ -491,6 +491,23 @@ def main() -> int:
     except Exception as exc:                                  # never let this break the real checks
         print("\n(param reach check unavailable: %s)" % exc)
 
+    # CHECK 5: the OTHER direction - does any MCP tool SEND a parameter the endpoint would REJECT?
+    # Check 4 finds capability that cannot be reached, which is a loss. This finds a call that cannot
+    # SUCCEED: RejectUnknownParams refuses an unrecognised key outright, so a tool sending one fails
+    # 100% of the time with an error naming a key the caller never typed. Nothing else catches it -
+    # check 4 is blind to it by construction, and the python suites call the bridge directly with
+    # their own payloads rather than through server.py, so no test exercises the tool signatures.
+    # NOT ratcheted, unlike check 4: there is no legitimate backlog here. Every hit is either a live
+    # bug or a parser limitation, and the parser reports "unknown" rather than "empty" when it cannot
+    # read a macro-built accept-list, so it does not manufacture the second kind.
+    try:
+        import mcp_sends_unknown
+        print()
+        if mcp_sends_unknown.main() != 0:
+            return 1
+    except Exception as exc:
+        print("\n(mcp-sends-unknown check unavailable: %s)" % exc)
+
     return 0
 
 
