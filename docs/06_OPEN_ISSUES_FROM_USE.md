@@ -664,6 +664,32 @@ validates the AUTHORED name — but for a `UUserDefinedEnum` the authored names 
 its bool return is discarded. Same class as the `add_enum_value` bug fixed on 2026-08-25, which was
 closed by reading the applied display name back.
 
+**L. FDataTableEditorUtils::RemoveRow returns a bool that is discarded at both call sites.**
+Found by scanning for engine calls used as bare statements and then checking their return types in the
+engine headers - the same shape as the SetEnumeratorDisplayName bug fixed this morning.
+
+MifBridgeDataTables.cpp:733 (delete_datatable_rows):
+    FDataTableEditorUtils::RemoveRow(Table, Key);
+    ++Deleted;
+Deleted is incremented unconditionally and reported as `deleted: N`. A removal that returns false
+still counts. The row is checked to EXIST first (FindRowUnchecked), so this is not easy to hit, but
+the count is asserted rather than observed, which is the defect class this project keeps finding. The
+response does also carry rowCount read back from the table, so a caller CAN cross-check - `deleted` is
+simply the number that would be wrong.
+
+MifBridgeDataTables.cpp:642 (write_datatable_rows) is the more interesting one. It is a cleanup path:
+a row was added, populating it failed, and RemoveRow is called to avoid leaving a half-written default
+row behind - the comment says exactly that. If the cleanup fails, the half-written row survives and
+the warning the caller receives mentions only the conversion failure, never the row left in the table.
+
+**M. A comment states an engine function returns void when it returns bool.**
+MifBridgeUserTypes.cpp, just below :1068: "SetEnumeratorDisplayName returns void and declines a name it
+does not like without saying so". The header says
+  static UNREALED_API bool SetEnumeratorDisplayName(UUserDefinedEnum*, int32, FText);
+The code around it is CORRECT - it reads the applied name back, which is stronger than checking the
+bool - so this is a documentation defect rather than a behaviour one. It matters because these
+comments are the documentation, and this one tells the next reader there is no return value to check.
+
 **K. labelNote is written top-level from inside a loop, so all but the last one is lost.**
 MifBridgeAuthoring.cpp:306 (spawn_many) and :455 (duplicate_actors) both do
   if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
