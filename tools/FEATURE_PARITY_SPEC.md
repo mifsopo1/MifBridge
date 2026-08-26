@@ -616,6 +616,16 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
 
 ## Deliberately not pursuing
 
+- [~] **`remove_tree_widget` has no confirm gate — left for Andre to decide, not declined on merit.**
+      Every other remover requires `confirm:true` (`remove_component`, `remove_variable`,
+      `remove_function`, `remove_event_dispatcher`), and this one deletes a widget's whole SUBTREE in a
+      single call — four widgets went in one call while testing. Adding the gate would make the family
+      consistent and would BREAK any existing caller, which is a judgement about your scripts rather
+      than about the code, so it is not something to change unattended at 5am. Marked `[~]` so the stop
+      hook does not block on it; `tools/test_widget_tree.py` prints it on every run so it cannot get
+      quietly lost. The endpoint now at least reports `removedCount` and `removedWidgets`, so the
+      subtree is disclosed either way.
+
 - [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add
       C++ modules, so "read and write .cpp/.h and modify the codebase" has no target here. This is a
       real competitor advantage for general UE development and a non-feature for this use case.
