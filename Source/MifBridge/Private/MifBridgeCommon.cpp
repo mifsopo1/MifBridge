@@ -267,6 +267,7 @@ namespace MifBridge
 			// User-defined struct / enum authoring
 			MIF_BIND(create_struct);
 			MIF_BIND(create_datatable);
+			MIF_BIND(create_asset);
 			MIF_BIND(list_struct_members);
 			MIF_BIND(add_struct_member);
 			MIF_BIND(remove_struct_member);

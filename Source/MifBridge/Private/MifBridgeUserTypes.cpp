@@ -17,6 +17,9 @@
 //     Ready" is likewise two calls: AddNewEnumeratorForUserDefinedEnum then SetEnumeratorDisplayName.
 // These endpoints hide that two-step so a caller says what it wants once.
 #include "MifBridgeHandlers.h"
+#include "GameFramework/Actor.h"          // create_asset refuses Actor classes
+#include "Components/ActorComponent.h"    // ... and component classes
+#include "Engine/Blueprint.h"             // ... and points Blueprint classes at create_blueprint
 #include "MifBridgeLog.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -416,6 +419,141 @@ namespace MifBridge
 			*Table->GetPathName(), *RowStruct->GetName());
 	}
 
+
+	// --- create_asset --------------------------------------------------------
+	//   in:  { path, class }
+	//   out: { assetPath, name, class, note }
+	//
+	// create_blueprint can author a DataAsset CLASS that nothing could then instantiate. This closes
+	// that asymmetry. Bare NewObject rather than IAssetTools::CreateAsset ON PURPOSE: CanCreateAsset
+	// raises FMessageDialog on an invalid name, a map-name collision, or "replace existing object?",
+	// and a modal on the game thread takes this whole bridge down - which is exactly what happened to
+	// duplicate_asset earlier today (01_POSTMORTEMS.md).
+	void H_create_asset(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("class"), TEXT("assetClass"), TEXT("className") },
+			TEXT("path (/Game/...), class (alias: assetClass, className) - a concrete UObject class, "
+				 "typically a UDataAsset or UPrimaryDataAsset subclass"),
+			{ { TEXT("parentClass"), TEXT("that is create_blueprint's key - this endpoint instantiates an existing class rather than authoring a new one") },
+			  { TEXT("blueprintType"), TEXT("create_asset makes a DATA asset, not a blueprint - use create_blueprint for those") },
+			  { TEXT("rowStruct"), TEXT("that is create_datatable's key") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStr(In, TEXT("path"));
+		FString AssetName, PathError;
+		if (!ValidateNewUserTypePath(Path, AssetName, PathError))
+		{
+			Fail(Out, PathError);
+			return;
+		}
+
+		// ResolveClassStrictField, not ResolveClass: an empty/"self" name resolves to the CONTEXT
+		// blueprint's own class, and with no context here that would be a silent nonsense creation.
+		// Strict makes the empty case an error and writes the failure itself.
+		UClass* Class = ResolveClassStrictField(
+			In, { TEXT("class"), TEXT("assetClass"), TEXT("className") }, nullptr, Out);
+		if (!Class)
+		{
+			return;   // ResolveClassStrictField has already said what it could not resolve
+		}
+
+		// AN ABSTRACT CLASS PRODUCES AN ASSET THE COOKED GAME CAN NEVER LOAD, and the editor says
+		// nothing about it until runtime. Refuse here, where the caller can still act on it.
+		if (Class->HasAnyClassFlags(CLASS_Abstract))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is ABSTRACT and cannot be instantiated - an asset of it would load in the "
+					 "editor and fail in the cooked game. Pass a concrete subclass. NOTHING was created."),
+				*Class->GetPathName()));
+			return;
+		}
+		// Actors and ActorComponents are not assets; they belong in a level or on a blueprint.
+		if (Class->IsChildOf(AActor::StaticClass()) || Class->IsChildOf(UActorComponent::StaticClass()))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is an Actor/Component class, which is placed rather than saved as an asset. "
+					 "Use spawn_actor_in_level or add_component. NOTHING was created."),
+				*Class->GetPathName()));
+			return;
+		}
+		if (Class->IsChildOf(UBlueprint::StaticClass()))
+		{
+			Fail(Out, TEXT("use create_blueprint to author a Blueprint - this endpoint instantiates an "
+						   "existing class as a data asset. NOTHING was created."));
+			return;
+		}
+
+		// DESTINATION CHECK, AND THE FILTER IS LOAD-BEARING IN A COOKED MOD KIT.
+		//
+		// Plain FPackageName::DoesPackageExist consults the IoDispatcher as well as the filesystem,
+		// and in this CookedEditorModKit setup /Game resolves through a pak container - so it answers
+		// TRUE for essentially any well-formed /Game path, including ones nothing has ever written.
+		// The first version of this guard used it and refused every single creation with "already
+		// taken", for paths describe_package simultaneously reported as existsOnDisk:false,
+		// inRegistry:false, loaded:false.
+		//
+		// What "would I overwrite something?" actually means here is: is there a real file on disk,
+		// or is an object already loaded at that path.
+		const bool bOnDisk = FPackageName::DoesPackageExistEx(
+			FPackagePath::FromPackageNameChecked(Path),
+			FPackageName::EPackageLocationFilter::FileSystem) != FPackageName::EPackageLocationFilter::None;
+		// FindObject with a null Outer and a PACKAGE path resolves the UPackage itself, which exists
+		// in memory the moment anything has touched that path - including a previous failed attempt in
+		// the same session. The question is whether an ASSET is there, so look for the object inside
+		// the package rather than the package around it.
+		const FString ObjectPath = Path + TEXT(".") + AssetName;
+		UObject* Existing = FindObject<UObject>(nullptr, *ObjectPath);
+		if (bOnDisk || Existing)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is already taken (%s) - create_asset never overwrites. delete_asset the "
+					 "existing one first or pick another path. NOTHING was created."),
+				*Path, bOnDisk ? TEXT("a package file exists on disk")
+							   : TEXT("an object is already loaded there")));
+			return;
+		}
+
+		UPackage* Package = CreatePackage(*Path);
+		if (!Package)
+		{
+			Fail(Out, FString::Printf(TEXT("failed to create package '%s'"), *Path));
+			return;
+		}
+		UObject* Asset = NewObject<UObject>(
+			Package, Class, FName(*AssetName), RF_Public | RF_Standalone | RF_Transactional);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("NewObject<%s> returned null"), *Class->GetName()));
+			return;
+		}
+
+		// WITHOUT THESE TWO LINES THE ASSET IS A GHOST. It answers get_property and set_property
+		// perfectly, never appears in find_assets or save_dirty_packages, and evaporates on restart -
+		// a whole session reporting ok:true and losing everything it did.
+		FAssetRegistryModule::AssetCreated(Asset);
+		Package->MarkPackageDirty();
+
+		// Verify through the registry rather than trusting the pointer we already hold: "created" and
+		// "registered" are the two different things this endpoint exists to keep together.
+		if (!FindObject<UObject>(nullptr, *Asset->GetPathName()))
+		{
+			Fail(Out, TEXT("the asset was created but cannot be found by path afterwards - it would not "
+						   "survive a restart. Read it back with find_assets before relying on it."));
+			return;
+		}
+
+		Out->SetStringField(TEXT("assetPath"), Asset->GetPathName());
+		Out->SetStringField(TEXT("name"), Asset->GetName());
+		Out->SetStringField(TEXT("class"), Class->GetPathName());
+		Out->SetBoolField(TEXT("registered"), true);
+		Out->SetStringField(TEXT("note"),
+			TEXT("created and registered but NOT saved - set its properties with set_property, then "
+				 "save_dirty_packages or it is lost on restart"));
+		UE_LOG(LogMifBridge, Log, TEXT("create_asset: %s (%s)"), *Asset->GetPathName(), *Class->GetName());
+	}
 
 	// --- list_struct_members ------------------------------------------------
 	//   in:  { struct: "/Game/Types/S_Foo" }   out: { structPath, members[] }

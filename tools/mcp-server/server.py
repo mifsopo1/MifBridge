@@ -1981,6 +1981,26 @@ def select_level_actors(actor_paths: list = None, clear: bool = False) -> dict:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def create_asset(path: str, asset_class: str) -> dict:
+    """Instantiate a data-asset class at a /Game path.
+
+    Closes an asymmetry: create_blueprint can author a UDataAsset subclass that nothing was then able
+    to instantiate. Pass a concrete class - a native name like "PrimaryDataAsset", or the /Game/...
+    path of a Blueprint-authored DataAsset class.
+
+    Refuses abstract classes (an asset of one loads in the editor and fails in the cooked game),
+    Actor/Component classes (those are placed, not saved as assets), Blueprint classes (use
+    create_blueprint), and a destination that is already taken.
+
+    The asset is created AND registered, then verified by path. Registration is the part that matters:
+    an unregistered object answers get_property and set_property perfectly, never appears in
+    find_assets, and evaporates on restart. It is still not SAVED - set its properties, then call
+    save_dirty_packages.
+    """
+    return _post("create_asset", path=path, **{"class": asset_class})
+
+
+@mcp.tool()
 def create_datatable(path: str, row_struct: str) -> dict:
     "Create an EMPTY DataTable asset at a /Game/ path with the given row struct, then fill it with write_datatable_rows. row_struct takes a native struct name (RichTextStyleRow, RichImageRow), an F-prefixed name, or a user struct's asset path (/Game/Types/S_MyRow); it must derive from FTableRowBase. This exists because duplicate_asset refuses non-/Game/ sources and import_asset cannot set a CSV import's row struct, so there was previously no way to make a DataTable at all."
     return _post("create_datatable", path=path, rowStruct=row_struct)

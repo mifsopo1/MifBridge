@@ -148,14 +148,19 @@ where they disagree this section wins.
       Note `create_material_instance` still takes scalars/vectors only. Left as-is deliberately: it
       creates and seeds, and the full parameter surface is one `set_material_parameter` call away on
       the instance it just made.
-- [ ] **`create_asset`** — nothing can instantiate a `UDataAsset` / `UPrimaryDataAsset` subclass at a
-      /Game path, so `create_blueprint` can author a DataAsset class that can then never be
-      instantiated. Medium, not high: `duplicate_asset` + `set_property` already mints one for any
-      class with an existing instance to seed from. Use bare `NewObject` + `FAssetRegistryModule::
-      AssetCreated` + `MarkPackageDirty`, mirroring `create_datatable` — and note the real modal
-      hazard is `CanCreateAsset`'s FMessageDialog, which is exactly what froze `duplicate_asset`.
-      Silent failure: skipping AssetCreated/MarkPackageDirty yields an in-memory object that answers
-      get/set_property perfectly, never appears in `find_assets`, and evaporates on restart.
+- [x] **`create_asset`** — built. Instantiates a concrete data-asset class at a /Game path, closing
+      the asymmetry where create_blueprint could author a UDataAsset subclass nothing could then make
+      one of. Bare NewObject rather than IAssetTools::CreateAsset, deliberately: CanCreateAsset raises
+      the same FMessageDialog that froze duplicate_asset. Refuses abstract classes (an asset of one
+      loads in the editor and fails in the cooked game), Actor/Component classes, and Blueprint
+      classes. Registers with AssetCreated + MarkPackageDirty and verifies by path — an unregistered
+      object answers every read and evaporates on restart.
+      TWO REAL BUGS found by testing rather than reasoning, both cooked-environment specific:
+      plain `FPackageName::DoesPackageExist` consults the IoDispatcher, and since /Game resolves
+      through a pak container here it answered TRUE for every well-formed path and refused every
+      creation — fixed with the FileSystem filter; and `FindObject(nullptr, <package path>)` resolves
+      the UPACKAGE, which exists in memory the moment anything touches that path including a previous
+      failed attempt, so it now looks for the ASSET inside. 20 checks in tools/test_create_asset.py.
 - [ ] **`set_struct_member`** — rename / retype / re-default, GUID-addressed. Today a member's name and
       type are a one-way door: the only escape is remove + re-add, which mints a new GUID, APPENDS to
       the end, reorders the struct, breaks every Make/Break Struct pin, and drops that column from

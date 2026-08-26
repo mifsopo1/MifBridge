@@ -1097,6 +1097,9 @@ namespace MifBridge
 	// Blueprint-only types; native C++ structs/enums cannot be edited.
 	MIF_DECL(create_struct);
 	MIF_DECL(create_datatable);
+	/** Instantiate a UDataAsset-style class at a /Game path. create_blueprint could author a DataAsset
+	 *  CLASS that nothing was able to instantiate; this closes that asymmetry. */
+	MIF_DECL(create_asset);
 	MIF_DECL(list_struct_members);
 	MIF_DECL(add_struct_member);
 	MIF_DECL(remove_struct_member);
