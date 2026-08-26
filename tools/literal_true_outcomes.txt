@@ -1,0 +1,29 @@
+# Response fields claiming a MUTATION happened, written as a literal true.
+# A literal true is fine when the branch proves the fact; it is a defect when it asserts the outcome
+# of work that was never read back. This is the edit_container `changed: true` shape.
+
+MifBridgeAssetOps.cpp:377:renamed
+MifBridgeDescribe.cpp:2583:registered
+MifBridgeDetails.cpp:1535:reconstructed
+MifBridgeIKRig.cpp:948:removed
+MifBridgeIKRig.cpp:1472:removed
+MifBridgeIKRig.cpp:1707:removed
+MifBridgeInherited.cpp:1229:reverted
+MifBridgeIntrospect.cpp:1263:renamed
+MifBridgeIntrospect.cpp:1544:changed
+MifBridgeIntrospect.cpp:1645:changed
+MifBridgeIntrospect.cpp:1935:compiled
+MifBridgeMaterials.cpp:1357:connected
+MifBridgeMaterials.cpp:1444:connected
+MifBridgeNodes.cpp:2091:removed
+MifBridgeNodes2.cpp:1814:changed
+MifBridgeNodes3.cpp:871:reverted
+MifBridgeNodes5.cpp:1369:applied
+MifBridgeNodes5.cpp:1371:reconstructed
+MifBridgeNodes5.cpp:1546:applied
+MifBridgeStreaming.cpp:1125:changed
+MifBridgeStreaming.cpp:1490:changed
+MifBridgeThumbnail.cpp:1242:saved
+MifBridgeUI.cpp:812:registered
+MifBridgeUserTypes.cpp:745:registered
+MifBridgeWidgets.cpp:1075:renamed
