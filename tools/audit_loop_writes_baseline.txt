@@ -1,0 +1,35 @@
+# Per-item writes to a single-valued response field, accepted deliberately.
+# Regenerate with: python tools/audit_loop_writes.py --update-baseline
+MifBridgeAnimation.cpp:161:skeleton
+MifBridgeAnimation.cpp:168:note
+MifBridgeAuthoring.cpp:1174:requestedFoliageType
+MifBridgeAuthoring.cpp:1175:typeNote
+MifBridgeAuthoring.cpp:1187:countNote
+MifBridgeAuthoring.cpp:1193:labelNote
+MifBridgeAuthoring.cpp:306:labelNote
+MifBridgeAuthoring.cpp:455:labelNote
+MifBridgeDataTables.cpp:487:textNote
+MifBridgeDataTables.cpp:489:row
+MifBridgeDetails.cpp:1916:nothingModified
+MifBridgeDetails.cpp:788:note
+MifBridgeGraphPatch.cpp:675:note
+MifBridgeIKRig.cpp:327:unmappedNote
+MifBridgeIKRig.cpp:565:goalNote
+MifBridgeIntrospect.cpp:309:knotNote
+MifBridgeMaterials.cpp:1451:property
+MifBridgeMaterials.cpp:911:compiling
+MifBridgeMaterials.cpp:912:numRemainingJobs
+MifBridgeNodes.cpp:1902:defaultError
+MifBridgeNodes.cpp:2559:ok
+MifBridgeNodes2.cpp:522:duplicatePinsRemoved
+MifBridgePIE.cpp:121:pieWorld
+MifBridgePIE.cpp:122:timeSeconds
+MifBridgePIE.cpp:187:droppedLines
+MifBridgeThumbnail.cpp:559:requestedWidth
+MifBridgeThumbnail.cpp:560:requestedHeight
+MifBridgeThumbnail.cpp:561:sizeNote
+MifBridgeUI.cpp:1045:note
+MifBridgeUI.cpp:1047:resolvedVia
+MifBridgeUI.cpp:1057:resolvedVia
+MifBridgeUI.cpp:1058:invoked
+MifBridgeWidgets.cpp:1594:note
