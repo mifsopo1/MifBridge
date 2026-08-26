@@ -1,0 +1,615 @@
+{
+ "uncovered": [
+  "add_anim_node",
+  "add_branch",
+  "add_break_struct",
+  "add_call_dispatcher",
+  "add_cast",
+  "add_class_cast",
+  "add_comment",
+  "add_component_bound_event",
+  "add_create_widget",
+  "add_enhanced_input_action",
+  "add_enum_value",
+  "add_format_text",
+  "add_get_array_item",
+  "add_get_data_table_row",
+  "add_get_subsystem",
+  "add_interface",
+  "add_literal",
+  "add_make_array",
+  "add_make_map",
+  "add_make_struct",
+  "add_material_expression",
+  "add_nav_volume",
+  "add_node_pin",
+  "add_parent_call",
+  "add_self",
+  "add_sequence",
+  "add_simplified_collision",
+  "add_spawn_actor",
+  "add_struct_member",
+  "add_sublevel",
+  "add_switch_enum",
+  "add_switch_int",
+  "add_switch_string",
+  "add_timeline",
+  "add_variable_set",
+  "add_widget_binding",
+  "backup_blueprint",
+  "batch",
+  "bind_landscape_rvt",
+  "build_navmesh",
+  "close_asset_editors",
+  "connect_material_expressions",
+  "connect_material_property",
+  "create_datatable",
+  "create_editable_child",
+  "create_enum",
+  "create_landscape",
+  "create_material",
+  "create_material_function",
+  "delete_datatable_rows",
+  "delete_level_actor",
+  "delete_material_expression",
+  "describe_animation",
+  "describe_class",
+  "describe_property",
+  "diagnose_landscape",
+  "diagnose_landscape_draws",
+  "diff_properties_vs_default",
+  "disconnect_pin",
+  "duplicate_actors",
+  "duplicate_tree_widget",
+  "edit_container",
+  "exec_console",
+  "export_asset",
+  "find_nodes",
+  "focus_viewport",
+  "get_actor_bounds",
+  "get_cvar",
+  "get_datatable_row",
+  "get_dependencies",
+  "get_inherited_component",
+  "get_perf_stats",
+  "get_spline_points",
+  "implement_interface_function",
+  "import_asset",
+  "import_texture",
+  "invoke_editor_command",
+  "kr_analyze_ubergraph",
+  "kr_batch_reconstruct",
+  "kr_classify_drift",
+  "kr_disassemble_function",
+  "kr_drift_census",
+  "kr_dump_blueprint",
+  "kr_list_cooked_blueprints",
+  "kr_list_events",
+  "kr_pin_type_from_property",
+  "kr_reconstruct_request",
+  "kr_reconstruct_status",
+  "kr_verify_fidelity",
+  "landscape_info",
+  "layout_material_expressions",
+  "list_animations",
+  "list_blueprints",
+  "list_datatables",
+  "list_dispatchers",
+  "list_editor_commands",
+  "list_enum_values",
+  "list_functions",
+  "list_interfaces",
+  "list_mounted_containers",
+  "list_object_properties",
+  "list_pie_actors",
+  "list_sublevels",
+  "list_transactions",
+  "list_variables",
+  "load_level",
+  "move_actor_to",
+  "move_node",
+  "move_tree_widget",
+  "nav_status",
+  "new_level",
+  "open_asset_editor",
+  "open_blueprint",
+  "override_inherited_component",
+  "paint_landscape",
+  "pie_load_level_instance",
+  "pie_status",
+  "pie_unload_level_instance",
+  "read_datatable",
+  "read_modloader_log",
+  "recipe_add_debug_print",
+  "recipe_argmax_over_components",
+  "recipe_override_and_call_parent",
+  "recipe_reset_and_loop",
+  "recipe_splice_before_parent",
+  "recompile_material",
+  "reconnect_pin",
+  "redo_transactions",
+  "refresh_node",
+  "reimport_asset",
+  "remove_collision",
+  "remove_component",
+  "remove_enum_value",
+  "remove_function",
+  "remove_interface",
+  "remove_node",
+  "remove_struct_member",
+  "remove_sublevel",
+  "remove_tree_widget",
+  "remove_variable",
+  "remove_widget_binding",
+  "rename_event",
+  "rename_event_dispatcher",
+  "rename_function",
+  "rename_variable",
+  "render_thumbnail",
+  "reparent_blueprint",
+  "reset_property_to_default",
+  "resolve_struct",
+  "retarget_variable_node",
+  "revert_inherited_component",
+  "run_console",
+  "run_console_captured",
+  "save_blueprint",
+  "save_dirty_packages",
+  "save_level_as",
+  "save_package",
+  "scene_report",
+  "sculpt_landscape",
+  "select_level_actors",
+  "send_editor_key",
+  "set_asset_thumbnail",
+  "set_cast_purity",
+  "set_component_transform",
+  "set_current_sublevel",
+  "set_cvar",
+  "set_function_flags",
+  "set_pin_type",
+  "set_spline_points",
+  "set_sublevel_streaming",
+  "set_sublevel_visibility",
+  "set_texture_settings",
+  "set_variable_default",
+  "set_variable_flags",
+  "set_variable_type",
+  "set_widget_is_variable",
+  "shader_compile_status",
+  "spawn_actor_in_pie",
+  "spawn_many",
+  "start_pie",
+  "stop_pie",
+  "thumbnail_capabilities",
+  "trigger_cook",
+  "undo_transactions",
+  "validate",
+  "wrap_tree_widget",
+  "write_datatable_rows",
+  "write_thumbnail_texture"
+ ],
+ "covered": {
+  "add_bind_dispatcher": [
+   "test_macro_dispatch.py"
+  ],
+  "add_component": [
+   "test_collision.py"
+  ],
+  "add_custom_event": [
+   "test_pinlifetime.py"
+  ],
+  "add_enum_literal": [
+   "test_audit_fixes.py"
+  ],
+  "add_event_dispatcher": [
+   "test_macro_dispatch.py"
+  ],
+  "add_foliage_instances": [
+   "test_foliage_modes.py"
+  ],
+  "add_function_call": [
+   "test_graph_patch.py",
+   "test_pinlifetime.py",
+   "test_reroute.py",
+   "test_rollback_real.py",
+   "test_selfpin.py",
+   "test_v3_apply.py"
+  ],
+  "add_ik_goal": [
+   "test_ik_goals_solvers.py"
+  ],
+  "add_ik_retarget_chain": [
+   "test_ik_authoring.py",
+   "test_ik_goals_solvers.py",
+   "test_ik_rig.py"
+  ],
+  "add_ik_solver": [
+   "test_ik_goals_solvers.py",
+   "test_ik_rig.py"
+  ],
+  "add_macro_instance": [
+   "test_macro_dispatch.py"
+  ],
+  "add_override_event": [
+   "test_graph_patch.py"
+  ],
+  "add_pin": [
+   "test_pinlifetime.py"
+  ],
+  "add_reroute": [
+   "test_reroute.py"
+  ],
+  "add_tree_widget": [
+   "test_rename_widget.py",
+   "test_widget_anim_recreate.py",
+   "test_widget_animation_props.py",
+   "test_widget_animation_track.py"
+  ],
+  "add_variable": [
+   "test_graph_patch.py",
+   "test_rollback_real.py",
+   "test_selfpin.py",
+   "test_v3_apply.py"
+  ],
+  "add_variable_get": [
+   "test_graph_patch.py",
+   "test_rollback_real.py",
+   "test_selfpin.py",
+   "test_v3_apply.py"
+  ],
+  "add_widget_animation": [
+   "test_rename_widget.py",
+   "test_widget_anim_recreate.py",
+   "test_widget_animation.py",
+   "test_widget_animation_props.py",
+   "test_widget_animation_track.py"
+  ],
+  "add_widget_animation_track": [
+   "test_rename_widget.py",
+   "test_widget_anim_recreate.py",
+   "test_widget_animation_props.py",
+   "test_widget_animation_track.py"
+  ],
+  "apply_graph_patch": [
+   "test_audit_fixes.py",
+   "test_graph_patch.py",
+   "test_rollback_real.py",
+   "test_selfpin.py",
+   "test_v3_apply.py"
+  ],
+  "audit_unused": [
+   "test_audit_fixes.py"
+  ],
+  "audition_sound": [
+   "test_audio_nav.py"
+  ],
+  "auto_map_retarget_chains": [
+   "test_ik_authoring.py"
+  ],
+  "capture_camera": [
+   "test_capture_viewport.py"
+  ],
+  "capture_viewport": [
+   "test_capture_viewport.py"
+  ],
+  "check_overlaps": [
+   "test_audit_fixes.py"
+  ],
+  "compile": [
+   "test_audit_fixes.py",
+   "test_graph_patch.py",
+   "test_macro_dispatch.py",
+   "test_pinlifetime.py",
+   "test_rename_widget.py",
+   "test_reroute.py",
+   "test_rollback_real.py",
+   "test_selfpin.py",
+   "test_v3_apply.py",
+   "test_widget_anim_recreate.py",
+   "test_widget_animation.py",
+   "test_widget_animation_props.py",
+   "test_widget_animation_track.py"
+  ],
+  "connect_pins": [
+   "test_audit_fixes.py",
+   "test_graph_patch.py",
+   "test_pinlifetime.py",
+   "test_reroute.py",
+   "test_rollback_real.py",
+   "test_selfpin.py",
+   "test_v3_apply.py"
+  ],
+  "create_asset": [
+   "test_create_asset.py",
+   "test_ik_authoring.py",
+   "test_ik_goals_solvers.py",
+   "test_ik_rig.py"
+  ],
+  "create_blueprint": [
+   "test_audit_fixes.py",
+   "test_collision.py",
+   "test_fuzz_detector.py",
+   "test_graph_patch.py",
+   "test_macro_dispatch.py",
+   "test_modal_guard.py",
+   "test_pinlifetime.py",
+   "test_rename_widget.py",
+   "test_reroute.py",
+   "test_rollback_real.py",
+   "test_selfpin.py",
+   "test_v3_apply.py",
+   "test_widget_anim_recreate.py",
+   "test_widget_animation.py",
+   "test_widget_animation_props.py",
+   "test_widget_animation_track.py"
+  ],
+  "create_function": [
+   "test_pinlifetime.py"
+  ],
+  "create_material_instance": [
+   "test_material_write.py"
+  ],
+  "create_struct": [
+   "test_set_struct_member.py"
+  ],
+  "delete_asset": [
+   "test_collision.py",
+   "test_graph_patch.py",
+   "test_macro_dispatch.py",
+   "test_material_write.py",
+   "test_modal_guard.py",
+   "test_pinlifetime.py",
+   "test_rename_widget.py",
+   "test_reroute.py",
+   "test_rollback_real.py",
+   "test_selfpin.py",
+   "test_set_struct_member.py",
+   "test_v3_apply.py",
+   "test_widget_anim_recreate.py",
+   "test_widget_animation.py",
+   "test_widget_animation_props.py",
+   "test_widget_animation_track.py"
+  ],
+  "describe_behavior_tree": [
+   "test_sockets_ai.py"
+  ],
+  "describe_endpoint": [
+   "test_graph_patch.py"
+  ],
+  "describe_package": [
+   "test_fuzz_detector.py",
+   "test_modal_guard.py"
+  ],
+  "draw_debug": [
+   "test_trace_debug.py"
+  ],
+  "duplicate_asset": [
+   "test_fuzz_detector.py",
+   "test_material_write.py",
+   "test_modal_guard.py"
+  ],
+  "find_assets": [
+   "test_audio_nav.py",
+   "test_create_asset.py",
+   "test_foliage_modes.py",
+   "test_ik_rig.py",
+   "test_list_bones.py",
+   "test_material_params.py",
+   "test_material_write.py",
+   "test_niagara_params.py",
+   "test_set_struct_member.py",
+   "test_sockets_ai.py"
+  ],
+  "get_level_actor": [
+   "test_snap_ground.py"
+  ],
+  "get_node": [
+   "test_graph_patch.py",
+   "test_macro_dispatch.py",
+   "test_pinlifetime.py",
+   "test_reroute.py",
+   "test_rollback_real.py",
+   "test_selfpin.py",
+   "test_v3_apply.py"
+  ],
+  "get_property": [
+   "test_collision.py",
+   "test_niagara_params.py"
+  ],
+  "get_referencers": [
+   "test_fuzz_detector.py"
+  ],
+  "get_viewport_camera": [
+   "test_capture_viewport.py"
+  ],
+  "invoke_editor_tab": [
+   "test_audit_fixes.py"
+  ],
+  "list_blackboard_keys": [
+   "test_create_asset.py",
+   "test_sockets_ai.py"
+  ],
+  "list_bones": [
+   "test_ik_authoring.py",
+   "test_ik_goals_solvers.py",
+   "test_list_bones.py"
+  ],
+  "list_collision_profiles": [
+   "test_collision.py"
+  ],
+  "list_components": [
+   "test_collision.py"
+  ],
+  "list_dirty_packages": [
+   "test_create_asset.py"
+  ],
+  "list_graphs": [
+   "test_audit_fixes.py"
+  ],
+  "list_ik_rig": [
+   "test_ik_authoring.py",
+   "test_ik_goals_solvers.py",
+   "test_ik_rig.py"
+  ],
+  "list_ik_solver_types": [
+   "test_ik_goals_solvers.py"
+  ],
+  "list_level_actors": [
+   "test_foliage_modes.py",
+   "test_snap_ground.py"
+  ],
+  "list_material_expressions": [
+   "test_material_params.py"
+  ],
+  "list_material_parameters": [
+   "test_material_params.py",
+   "test_material_write.py"
+  ],
+  "list_niagara_user_parameters": [
+   "test_niagara_params.py"
+  ],
+  "list_nodes": [
+   "test_graph_patch.py",
+   "test_pinlifetime.py",
+   "test_reroute.py",
+   "test_rollback_real.py",
+   "test_selfpin.py"
+  ],
+  "list_retarget_chain_mapping": [
+   "test_ik_authoring.py"
+  ],
+  "list_sockets": [
+   "test_list_bones.py",
+   "test_sockets_ai.py"
+  ],
+  "list_struct_members": [
+   "test_set_struct_member.py"
+  ],
+  "list_tree_widgets": [
+   "test_rename_widget.py"
+  ],
+  "list_widget_animations": [
+   "test_rename_widget.py",
+   "test_widget_anim_recreate.py",
+   "test_widget_animation.py",
+   "test_widget_animation_props.py"
+  ],
+  "nav_find_path": [
+   "test_audio_nav.py"
+  ],
+  "nav_project_point": [
+   "test_audio_nav.py"
+  ],
+  "remove_ik_goal": [
+   "test_ik_goals_solvers.py"
+  ],
+  "remove_ik_retarget_chain": [
+   "test_ik_authoring.py"
+  ],
+  "remove_ik_solver": [
+   "test_ik_goals_solvers.py"
+  ],
+  "remove_pin": [
+   "test_pinlifetime.py"
+  ],
+  "remove_widget_animation": [
+   "test_widget_anim_recreate.py",
+   "test_widget_animation_props.py"
+  ],
+  "remove_widget_animation_track": [
+   "test_widget_animation_props.py"
+  ],
+  "rename_asset": [
+   "test_modal_guard.py"
+  ],
+  "rename_tree_widget": [
+   "test_rename_widget.py"
+  ],
+  "self_audit": [
+   "test_graph_patch.py",
+   "test_macro_dispatch.py",
+   "test_pinlifetime.py",
+   "test_rollback_real.py",
+   "test_selfpin.py",
+   "test_set_struct_member.py",
+   "test_v3_apply.py"
+  ],
+  "set_actor_label": [
+   "test_audit_fixes.py"
+  ],
+  "set_actor_transform": [
+   "test_snap_ground.py"
+  ],
+  "set_collision": [
+   "test_collision.py"
+  ],
+  "set_ik_goal_bone": [
+   "test_ik_goals_solvers.py"
+  ],
+  "set_ik_goal_solver_connection": [
+   "test_ik_goals_solvers.py"
+  ],
+  "set_ik_rig_mesh": [
+   "test_ik_authoring.py",
+   "test_ik_goals_solvers.py",
+   "test_ik_rig.py"
+  ],
+  "set_ik_rig_retarget_root": [
+   "test_ik_authoring.py",
+   "test_ik_goals_solvers.py"
+  ],
+  "set_ik_solver": [
+   "test_ik_goals_solvers.py"
+  ],
+  "set_material_parameter": [
+   "test_material_write.py"
+  ],
+  "set_pin_default": [
+   "test_graph_patch.py",
+   "test_rollback_real.py",
+   "test_v3_apply.py"
+  ],
+  "set_property": [
+   "test_collision.py",
+   "test_ik_rig.py"
+  ],
+  "set_retarget_chain_mapping": [
+   "test_ik_authoring.py"
+  ],
+  "set_retarget_rigs": [
+   "test_ik_authoring.py"
+  ],
+  "set_struct_member": [
+   "test_set_struct_member.py"
+  ],
+  "set_viewport_camera": [
+   "test_capture_viewport.py"
+  ],
+  "set_widget_animation_keys": [
+   "test_rename_widget.py",
+   "test_widget_anim_recreate.py",
+   "test_widget_animation_props.py",
+   "test_widget_animation_track.py"
+  ],
+  "set_widget_animation_range": [
+   "test_widget_anim_recreate.py"
+  ],
+  "snap_actors_to_ground": [
+   "test_snap_ground.py"
+  ],
+  "spawn_actor_in_level": [
+   "test_audit_fixes.py",
+   "test_snap_ground.py"
+  ],
+  "splice_into_exec": [
+   "test_pinlifetime.py"
+  ],
+  "trace": [
+   "test_trace_debug.py"
+  ],
+  "trace_ground": [
+   "test_audit_fixes.py"
+  ]
+ }
+}

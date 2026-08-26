@@ -442,6 +442,21 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       rather than by reading. Finish condition: each family either gets a finding filed or is recorded
       as checked, so the morning knows what was covered.
 
+- [ ] **DataTable family: no suite covers any of it, and one endpoint is flagged UNVERIFIED.**
+      Measured, not guessed: `tools/coverage_gaps.py` shows 188 of 285 endpoints are never named in a
+      test suite, and all six DataTable endpoints are among them - `create_datatable`, `read_datatable`,
+      `write_datatable_rows`, `delete_datatable_rows`, `get_datatable_row`, `list_datatables`. This is
+      the highest-value block in that list because DataTables are the core of DDS2 modding: items,
+      recipes and prices all live in them. `docs/06_OPEN_ISSUES_FROM_USE.md` also records
+      `create_datatable` as "IMPLEMENTED 2026-08-21, UNVERIFIED - built but not yet exercised against
+      a running editor", which has been true for five days.
+
+      Hunt it the way that has worked all session: by capability, adversarially, asking whether each
+      one reports success while doing something else. A row write that reports ok and changes nothing,
+      or changes the wrong row, is the failure that matters here - it is silent, and it corrupts the
+      thing a mod is actually made of. Finish condition: a suite exists, `create_datatable` is either
+      verified or filed as broken, and the open-issues entry stops saying UNVERIFIED.
+
 ## Deliberately not pursuing
 
 - [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add
