@@ -114,12 +114,17 @@ def is_dev_only(abs_path):
 # Stated as a claim about what has actually been built, not a guess about what might work.
 ENGINE_MATRIX = [
     {"engine": "5.3.2", "status": "built and tested", "notes": "cooked editor (DDS2 SDK) - the primary target"},
-    {"engine": "5.7", "status": "built",
-     "notes": "COMPILED against stock 5.7.4 via tools/make_engine_probe.py on 2026-08-26, and run in "
-              "Curfew at 291 endpoints. create_editable_child refuses - it needs a DDS2 engine-FORK "
-              "header no stock Unreal has. See docs/02_GOTCHAS.md section 14 for the six API splits, "
-              "and docs/06 issue 17 for a plugin-enablement defect that affects consumers who do not "
-              "enable the ten optional plugins."},
+    {"engine": "5.7", "status": "built, not deployed",
+     "notes": "COMPILED against stock 5.7.4 via tools/make_engine_probe.py, most recently 2026-08-27 "
+              "at 330 endpoints. NOT currently running in any project: the Curfew deployment that "
+              "reached 291 endpoints was reverted to its 2026-08-24 DLL and stood down, so 'built' "
+              "here means a compiler agreed, NOT that anyone has used it. That distinction is the "
+              "whole reason this row exists - it said 'built' for weeks on the strength of reading "
+              "headers, and when someone finally compiled it six real defects fell out in an hour. "
+              "create_editable_child refuses on any stock engine: it needs a DDS2 engine-FORK header. "
+              "IK Rig is ported to the 5.6+ UStruct solver model. See docs/02_GOTCHAS.md section 14 "
+              "for the six API splits, and docs/06 issues 17 and 22 for the plugin-enablement defect "
+              "that affects consumers who do not enable the optional plugins."},
 ]
 
 
