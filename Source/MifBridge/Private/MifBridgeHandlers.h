@@ -134,6 +134,9 @@ namespace MifBridge
 	TSharedRef<SWidget> MakeBrainmapWidget();
 	/** The INHERITANCE tab. Registry tags only - loads nothing. */
 	TSharedRef<SWidget> MakeInheritWidget();
+	/** The BEHAVIOR tab. Calls H_describe_behavior_tree, so the view and the endpoint
+	 *  cannot disagree about a project's AI. */
+	TSharedRef<SWidget> MakeBehaviorWidget();
 	/** The complexity heatmap: every package under a prefix, sorted by connection count and
 	 *  coloured by RANK rather than absolute value - see the file header for why. */
 	TSharedRef<SWidget> MakeHeatmapWidget();

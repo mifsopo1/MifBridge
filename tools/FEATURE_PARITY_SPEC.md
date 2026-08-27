@@ -1532,7 +1532,7 @@ what an untracked item does. Tracked now.
       whole tree can be built without loading a single blueprint (Blueprint.cpp:988). The competitor's
       Project Dashboard screenshot is exactly this, grouped by parent.
 
-- [ ] **Behavior tree diagram viewer.**
+- [x] **Behavior tree diagram viewer.** DONE 2026-08-27 - BEHAVIOR tab, both engines.
       The DATA already exists - describe_behavior_tree and list_blackboard_keys. What is missing is a
       renderer, and the brainmap's custom-painted SLeafWidget already does zoom, pan and hit-testing,
       so this is a second consumer of an existing widget rather than new machinery.

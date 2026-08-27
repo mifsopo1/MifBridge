@@ -412,6 +412,12 @@ public:
 							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
 							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 4))
 					]
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						MifTabButton(LOCTEXT("TabBehavior", "BEHAVIOR"), 5,
+							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
+							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 5))
+					]
 					+ SHorizontalBox::Slot().FillWidth(1.f)
 					[
 						SNew(SSpacer)
@@ -469,6 +475,15 @@ public:
 								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
 						]
 					]
+					+ SWidgetSwitcher::Slot()
+					[
+						SAssignNew(BehaviorHost, SBox)
+						[
+							SNew(STextBlock)
+								.Text(LOCTEXT("BehaviorLazy", "finding behavior trees..."))
+								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
+						]
+					]
 				]
 			]
 		];
@@ -481,10 +496,12 @@ private:
 	TSharedPtr<SBox> HeatHost;
 	TSharedPtr<SBox> PerfHost;
 	TSharedPtr<SBox> InheritHost;
+	TSharedPtr<SBox> BehaviorHost;
 	int32 ActiveTab = 0;
 	bool  bBrainBuilt = false;
 	bool  bHeatBuilt = false;
 	bool  bInheritBuilt = false;
+	bool  bBehaviorBuilt = false;
 
 	int32 GetActiveTab() const { return ActiveTab; }
 
@@ -511,6 +528,13 @@ private:
 			// refresh button, so a stale tree is one click from current rather than stuck.
 			bInheritBuilt = true;
 			InheritHost->SetContent(MifBridge::MakeInheritWidget());
+		}
+		if (Index == 5 && !bBehaviorBuilt && BehaviorHost.IsValid())
+		{
+			// Once: the ASSET LIST comes from the registry and does not change while the editor idles.
+			// Each tree is described on click, so what you are looking at is always read fresh.
+			bBehaviorBuilt = true;
+			BehaviorHost->SetContent(MifBridge::MakeBehaviorWidget());
 		}
 		// REBUILT EVERY TIME, not once. The first version cached these on first switch, and Andre
 		// opened IslaSombra to find the panel still describing Untitled_1 - a census of a level that
