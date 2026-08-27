@@ -299,6 +299,8 @@ namespace MifBridge
 			MIF_BIND(set_bone_translation_retargeting);
 			MIF_BIND(list_water_bodies);
 			MIF_BIND(describe_water_body);
+			MIF_BIND(create_water_body);
+			MIF_BIND(set_water_body_spline);
 			MIF_BIND(list_ik_rig);
 			MIF_BIND(list_ik_solver_types);
 			MIF_BIND(add_ik_solver);

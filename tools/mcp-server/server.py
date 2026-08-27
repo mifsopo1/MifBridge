@@ -2501,6 +2501,19 @@ def describe_water_body(path: str, include_spline_points: bool = True) -> dict:
 
 
 @mcp.tool()
+def create_water_body(type: str, label: str = None, x: float = 0.0, y: float = 0.0,
+                      z: float = 0.0, points: list = None) -> dict:
+    "Create a water body in the OPEN level - River, Lake, Ocean or Custom. THE TYPE IS THE CLASS, not a settable property: the four water body types are four different actor classes with four different components, so you pick one here and cannot change it afterwards with set_property. Custom is the editor's name for the C++ 'Transition' and both are accepted. Optionally pass points (an array of {x,y,z} in WORLD space) to set the spline in the same call - a river with no spline is not a river. A spline needs at least 2 points; one point is a degenerate spline that the engine accepts and renders as nothing, so it is refused. Nothing is saved: the actor exists in the open level only. Two things a new body still needs before it renders anything - an AWaterZone covering it, and a water material on its component; the response reports whether it found a zone."
+    return _post("create_water_body", type=type, label=label, x=x, y=y, z=z, points=points)
+
+
+@mcp.tool()
+def set_water_body_spline(path: str, points: list) -> dict:
+    "Replace a water body's spline - the spline IS the shape of a river or lake. points is an array of {x,y,z} in WORLD space and REPLACES the existing spline entirely; there is no append and no single-point setter, because ResetSpline is the only engine entry point that rebuilds the body's derived data and poking the spline component directly leaves those caches stale (a river the wrong shape, with no error anywhere). Resolves by actor PATH, not label. Needs at least 2 points. The response reads the spline back rather than echoing the request, and reports splineNote if the engine collapsed coincident points so the count differs from what you sent."
+    return _post("set_water_body_spline", path=path, points=points)
+
+
+@mcp.tool()
 def list_ik_rig(path: str) -> dict:
     """Read an IKRigDefinition AND check whether it would actually work.
 
