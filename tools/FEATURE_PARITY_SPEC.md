@@ -1744,3 +1744,21 @@ what an untracked item does. Tracked now.
       capture_camera, render_thumbnail and backup_blueprint all write to disk and all accept an
       explicit path. The shared guard exists and export_asset uses it; the others were left for a
       separate change rather than bundled in unverified.
+
+## Regression, 2026-08-27 (after 22 endpoints landed in one session)
+
+Two-pass `run_all_suites`: **140 runs across 70 suites, 3 failed, 2 skipped, 0 editor deaths.**
+All three failures were mine; all three are fixed and re-verified live.
+
+| failure | found by | cause |
+|---|---|---|
+| `test_crash_journal` (both passes) | the sweep | `mifwatch` keyed a dict by a TUPLE, making every session unserialisable |
+| `T637` | **a test written hours earlier the same night** | the export guard checked the RAW path, not the resolved one |
+
+`T637` failing is the best result in the run. It proved the guard was broken **in the shipped
+binary** - reporting the editor's own binaries directory as the resolved path - which is exactly the
+failure mode predicted in the comment above it. A test that fails on the real thing is worth more
+than one that passes on the intended thing.
+
+The 5.7 probe then caught two more that 5.3 **structurally could not see**, both missing includes.
+That is four separate occasions the probe has caught something reading could not.
