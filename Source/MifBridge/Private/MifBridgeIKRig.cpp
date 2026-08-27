@@ -1854,7 +1854,19 @@ namespace MifBridge
 		}
 		if (bHasEnabled)
 		{
-			C->SetSolverEnabled(Index, JBool(In, TEXT("enabled"), true));
+			// THE RETURN IS CHECKED, like its two siblings above. It was the one setter here whose
+			// bool was discarded, which made the response inconsistent in a way a caller would feel:
+			// a rejected rootBone or endBone is named in refusedNote, and a rejected `enabled` was
+			// simply absent from it.
+			//
+			// The read-back below already stopped this being an outright lie - `enabled` reports what
+			// the solver actually holds, not what was asked for. But a value that silently differs
+			// from the request, while the other two fields explain themselves, is the kind of
+			// asymmetry that gets read as a bug in the caller's own code.
+			if (!C->SetSolverEnabled(Index, JBool(In, TEXT("enabled"), true)))
+			{
+				Refused.Add(FString::Printf(TEXT("enabled (this solver type may not be toggled)")));
+			}
 		}
 
 		IKMarkDirty(Rig);
