@@ -105,6 +105,12 @@ namespace MifBridge
 	/** The complexity heatmap: every package under a prefix, sorted by connection count and
 	 *  coloured by RANK rather than absolute value - see the file header for why. */
 	TSharedRef<SWidget> MakeHeatmapWidget();
+	/** The performance view. Read MifBridgePerfView.cpp's header first: this is a CENSUS of
+	 *  static content cost, NOT frame time and NOT a profiler. */
+	TSharedRef<SWidget> MakePerfWidget();
+	/** ONE definition of what a component's triangle count means, shared by the endpoint and the
+	 *  panel - two counters that disagree would be worse than one that is imperfect. */
+	int32 PerfTrianglesFor(class UPrimitiveComponent* Comp);
 
 	void RegisterPanel();
 	void UnregisterPanel();
@@ -1442,6 +1448,10 @@ namespace MifBridge
 	// is a stopped game thread rather than a slow answer.
 	MIF_DECL(project_dependency_graph);
 	MIF_DECL(project_asset_distribution);
+
+	// PERFORMANCE (MifBridgePerfView.cpp). A CENSUS of static content cost, not a profile - read
+	// the file header before trusting any number out of it as frame time.
+	MIF_DECL(perf_heavy_actors);
 	MIF_DECL(add_sublevel);
 	MIF_DECL(remove_sublevel);
 	MIF_DECL(set_sublevel_visibility);

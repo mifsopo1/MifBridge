@@ -373,6 +373,12 @@ public:
 							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
 							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 2))
 					]
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						MifTabButton(LOCTEXT("TabPerf", "PERFORMANCE"), 3,
+							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
+							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 3))
+					]
 					+ SHorizontalBox::Slot().FillWidth(1.f)
 					[
 						SNew(SSpacer)
@@ -409,6 +415,15 @@ public:
 								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
 						]
 					]
+					+ SWidgetSwitcher::Slot()
+					[
+						SAssignNew(PerfHost, SBox)
+						[
+							SNew(STextBlock)
+								.Text(LOCTEXT("PerfLazy", "counting geometry..."))
+								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
+						]
+					]
 				]
 			]
 		];
@@ -419,9 +434,11 @@ private:
 	TSharedPtr<SWidgetSwitcher> Views;
 	TSharedPtr<SBox> BrainHost;
 	TSharedPtr<SBox> HeatHost;
+	TSharedPtr<SBox> PerfHost;
 	int32 ActiveTab = 0;
 	bool  bBrainBuilt = false;
 	bool  bHeatBuilt = false;
+	bool  bPerfBuilt = false;
 
 	int32 GetActiveTab() const { return ActiveTab; }
 
@@ -438,6 +455,11 @@ private:
 		{
 			bHeatBuilt = true;
 			HeatHost->SetContent(MifBridge::MakeHeatmapWidget());
+		}
+		if (Index == 3 && !bPerfBuilt && PerfHost.IsValid())
+		{
+			bPerfBuilt = true;
+			PerfHost->SetContent(MifBridge::MakePerfWidget());
 		}
 	}
 	int64 LastCount = -1;

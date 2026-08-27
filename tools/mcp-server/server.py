@@ -2918,6 +2918,12 @@ def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: i
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def perf_heavy_actors(limit: int = 40, sort_by: str = None) -> dict:
+    "Rank the level's actors by STATIC content cost: LOD0 triangles, primitive components, material slots, and a rough draw estimate (components x material slots). Each row also reports trianglePercent, because a rank is only actionable next to a proportion. sort_by is one of triangles|components|materials|drawEst. IMPORTANT: this is a CENSUS, not a profiler - it cannot see a Blueprint burning milliseconds in Tick, and it is not frame time. get_perf_stats reports editor timing and its own caveat explains why that is the editor drawing its viewport rather than the game's fps. For real frame attribution use Unreal Insights; nothing here replaces it."
+    return _post("perf_heavy_actors", limit=limit, sortBy=sort_by)
+
+
+@mcp.tool()
 def project_dependency_graph(path_prefix: str, max_nodes: int = 300,
                              include_external: bool = False) -> dict:
     "The dependency graph under a path prefix: nodes (packages) and edges (A depends on B). Each node reports dependsOn AND referencedBy, because they answer different questions - 'what does this need' versus 'what breaks if I delete it'. path_prefix needs at least two segments (e.g. /Game/Blueprints): GetReferencers runs PER ASSET, so a mount root is a stopped game thread, not a slow call. Capped at max_nodes and reports `truncated` plus `matched` - a truncated graph is a PREFIX of the real one, not a sample, so narrow the prefix rather than raising the cap."
