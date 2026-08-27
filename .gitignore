@@ -17,6 +17,8 @@
 # time and only ever differ by timing noise.
 # tracked (cooked_sweep_final, fuzz_final, fuzz_verify) stay tracked; git ignores this for files it
 # tracked — only the packaged artifact and .blend backups are not.
+*.bak
+*.bak-*
 *.blend1
 *.blend2
 *.pyc
