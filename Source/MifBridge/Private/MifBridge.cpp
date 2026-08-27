@@ -132,6 +132,11 @@ void FMifBridgeModule::StartupModule()
 
 void FMifBridgeModule::ShutdownModule()
 {
+	// A CLEAN shutdown says so. Its ABSENCE at the next launch is what separates "the editor was
+	// closed" from "the editor died" - a timestamp alone cannot tell you which. Written first,
+	// before anything else can fail during teardown.
+	MifBridge::JournalClose(TEXT("module-shutdown"));
+
 	UToolMenus::UnRegisterStartupCallback(this);
 	UToolMenus::UnregisterOwner(this);
 
@@ -158,6 +163,9 @@ void FMifBridgeModule::StartServer()
 	if (Server->Start())
 	{
 		UE_LOG(LogMifBridge, Log, TEXT("MifBridge listening on http://127.0.0.1:%d/api"), Server->GetPort());
+		// Opened here rather than in StartupModule so the journal records the port it is actually
+		// serving on, and so a build that never starts a server never creates one.
+		MifBridge::JournalOpen(Server->GetPort());
 	}
 	else
 	{

@@ -52,6 +52,26 @@ namespace MifBridge
 	 *   - RejectUnknownParams tolerates batch's routing key 'op' only where it can actually occur, so
 	 *     a stray "op" on a direct HTTP call is a named error again rather than a silent no-op. */
 	bool IsBatchTransactionOpen();
+
+	// THE CRASH JOURNAL (MifBridgeJournal.cpp). JournalCallStart writes and FLUSHES before the
+	// handler is entered, so a hard kill still leaves the endpoint name on disk. A `start` with no
+	// matching `end` at the next launch names the call that died - the absence IS the finding.
+	// PM-013 is why: add_anim_node killed this editor and left no record of which call did it.
+	// THE SAFETY GATE (MifBridgeSafety.cpp). Read the header comment there before touching this:
+	// the obvious implementation - gating on IsReadOnlyEndpoint - is BACKWARDS, because that set
+	// contains save_package, start_pie and run_console. It is a transaction bucket, not a
+	// mutation bucket. This is a third, independent classification sharing no data with it.
+	enum class EMifWriteMode : uint8 { Read, Scratch, Full };
+	EMifWriteMode GetWriteMode();
+	const TCHAR* WriteModeName(EMifWriteMode Mode);
+	bool IsUnsafeEndpoint(const FString& Endpoint);
+	/** True when the endpoint must not run; fills Out with a refusal saying why and how to unlock. */
+	bool RefuseIfGated(const FString& Endpoint, const TSharedRef<FJsonObject>& Out);
+
+	void JournalOpen(int32 Port);
+	void JournalCallStart(const FString& Endpoint, int32 BodyBytes);
+	void JournalCallEnd(const FString& Endpoint, bool bOk);
+	void JournalClose(const TCHAR* Reason);
 	/** RAII marker for the above. batch declares one beside its FScopedTransaction. Not reentrant by
 	 *  design — a nested batch is refused before this is ever constructed twice. */
 	struct FBatchTransactionScope

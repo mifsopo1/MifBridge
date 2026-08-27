@@ -1194,13 +1194,34 @@ here because something already went wrong without it, not because the competitor
   load-bearing. It must not break commandlet or headless operation. This is observability, NOT control;
   we are not migrating toward the competitor's in-editor model.
 
-- [ ] **Watchdog and crash journal.**
+- [ ] **Watchdog and crash journal - WRITTEN 2026-08-26, not yet built or tested.**
+  Deliberately NOT marked [x]: the rule here is built, tested and committed, and this is only written.
+  C++: Source/MifBridge/Private/MifBridgeJournal.cpp writes Saved/MifBridge/journal.jsonl, holding one
+  FArchive open and calling Flush() per record so the bytes leave user space BEFORE the handler runs.
+  That ordering is the entire point - a journal written after a call describes every call except the
+  one that killed the process. UE_LOG cannot do it: FOutputDeviceFile buffers through a background
+  ring and loses exactly the tail you need. Hooks at MifBridgeServer.cpp:314 (start) and :342 (end),
+  MifBridge.cpp:168 (session header) and :138 (clean-shutdown marker, whose ABSENCE identifies a hard
+  death). APIs verified in both trees: CreateFileWriter 5.3:97/5.7:96, FArchive::Flush 5.3:1725/5.7:1842.
+  Python: tools/mifwatch.py reads the journal and reports any start without an end, and any session
+  without a shutdown. --watch relaunches on death, reusing mifaudit's ensure_editor/launch_editor and
+  respecting SWEEP_LOCK rather than re-deriving the launcher - every part of that was learned from a
+  failure, including the pipe leak that hung a regression for 17 minutes.
+  Suite written: tools/test_crash_journal.py.
+  STILL TO DO: build, run the suite, and verify the HARD-KILL case by hand once - kill the editor
+  mid-call and confirm the journal names it. The suite deliberately does not do that, because a suite
+  that takes the editor down is indistinguishable from one that crashed it.
+  NOT YET WIRED: the batch inner-op sites (MifBridgeNodes.cpp:2479 and :2492). batch does not recurse
+  through RunEndpoint, so a crash inside a batch currently journals only the word "batch".
   When add_anim_node crash-killed the editor there was no in-editor signal and no record of which call
   did it - it had to be reconstructed (PM-013). Record the endpoint BEFORE the handler runs, flushed to
   disk so it survives a hard kill, and auto-relaunch on death. run_all_suites already does a version of
   the relaunch; it just is not available outside the harness, so reuse rather than reimplement.
 
-- [ ] **Versioned release path, to replace vendoring.**
+- [x] **DONE 2026-08-26, commits 93e23ba / dd4e580 / c5f7bfe. (Duplicate of the Curfew item above.)**
+  tools/make_release.py + docs/14_RELEASE_AND_SYNC.md. Switching Curfew off vendoring remains Andre's
+  call; the tooling to make drift VISIBLE is done and proven.
+  ORIGINAL:
   Measured cost of not having it: the Curfew copy drifted 62 endpoints behind (284 vs 222) with 11
   source files missing, unnoticed for weeks. A tagged release plus an update script and an engine
   compatibility matrix would have prevented all of it. Becomes necessary rather than nice the moment

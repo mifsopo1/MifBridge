@@ -997,6 +997,10 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("engineMajor"), ENGINE_MAJOR_VERSION);
 		Out->SetNumberField(TEXT("engineMinor"), ENGINE_MINOR_VERSION);
 		Out->SetNumberField(TEXT("enginePatch"), ENGINE_PATCH_VERSION);
+		// The safety gate's state. A caller that gets refused needs to know WHY without parsing prose,
+		// and a caller planning a write needs to know BEFORE it tries.
+		Out->SetStringField(TEXT("writeMode"), WriteModeName(GetWriteMode()));
+		Out->SetBoolField(TEXT("safetyGateActive"), GetWriteMode() != EMifWriteMode::Full);
 
 		// The modal backstop, observed rather than asserted. This handler runs through RunEndpoint like
 		// every other, so reading the flag HERE reports what a handler actually sees. False means the
@@ -1204,6 +1208,24 @@ namespace MifBridge
 		if (!Fn && !Ext)
 		{
 			Fail(Out, FString::Printf(TEXT("unknown endpoint: %s"), *Endpoint));
+			return;
+		}
+
+		// THE SAFETY GATE. One `if`, at the only dispatcher, before anything has run.
+		//
+		// Placed HERE and not earlier: the endpoint name is already resolved, so the unknown-endpoint
+		// and didYouMean answers above still take precedence - being refused by the gate for an
+		// endpoint that does not exist would be a confusing lie. Placed here and not later: nothing
+		// below has happened yet - no handler, no FEditorScriptExecutionGuard (:1224), no
+		// GIsRunningUnattendedScript flip (:1249), no FScopedTransaction (:1274). A refusal at this
+		// line is total and costs one comparison.
+		//
+		// KNOWN GAP, written down rather than left implicit: `batch` dispatches its inner ops straight
+		// out of Handlers()/FindExternalHandler (MifBridgeNodes.cpp:2462, :2490) and does NOT recurse
+		// through RunEndpoint, so those ops do not pass this line. `batch` itself does. Closing that
+		// properly is filed follow-up work.
+		if (RefuseIfGated(Endpoint, Out))
+		{
 			return;
 		}
 

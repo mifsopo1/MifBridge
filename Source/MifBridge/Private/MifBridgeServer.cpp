@@ -308,6 +308,10 @@ bool FMifBridgeServer::HandleHttp(const FString& Endpoint, const FHttpServerRequ
 	const TSharedRef<FJsonObject> InRef = InObj.ToSharedRef();
 
 	MIF_DBG("-> %s %s", *Endpoint, *BodyStr);
+	// BEFORE dispatch, and flushed. MIF_DBG above is gated behind a CVar that defaults to false
+	// and goes to UE_LOG, which buffers - so on a normal run neither of those survives a hard
+	// kill. This does. See MifBridgeJournal.cpp for why the ordering is the whole point.
+	MifBridge::JournalCallStart(Endpoint, BodyStr.Len());
 
 	// --- Run the endpoint on the game thread, at a tick-safe point ----------
 	//
@@ -333,6 +337,9 @@ bool FMifBridgeServer::HandleHttp(const FString& Endpoint, const FHttpServerRequ
 	{
 		const FString OutStr = JsonToString(Out);
 		MIF_DBG("<- %s %s", *Endpoint, *OutStr);
+		// The matching close. Reached only if the handler returned at all - which is exactly what
+		// makes its absence meaningful.
+		MifBridge::JournalCallEnd(Endpoint, MifBridge::IsOk(Out));
 
 		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(OutStr, TEXT("application/json"));
 		Response->Code = EHttpServerResponseCodes::Ok;
