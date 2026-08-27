@@ -54,6 +54,9 @@
 
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
+#include "UObject/UObjectGlobals.h"
+#include "UObject/Package.h"
+                                     // FCoreUObjectDelegates::OnObjectModified
 #include <atomic>   // the mode is now runtime-mutable; see GetWriteMode
 
 #include "HAL/PlatformMisc.h"
@@ -278,6 +281,111 @@ namespace MifBridge
 
 	// Returns true when the endpoint must NOT run, and fills Out with a refusal that says why and how
 	// to proceed. A refusal a caller cannot act on is only half an answer.
+	// =============================================================================================
+	// THE SCRATCH-PATH WATCH: which REAL assets a call dirtied, reported in that call's own response.
+	//
+	// The gate's second half, and it is DETECTION rather than prevention. That is a deliberate,
+	// stated limitation rather than a shortcut, so here is the honest version.
+	//
+	// PREVENTION would need a per-endpoint Read/Write classification - roughly 300 mechanical edits
+	// widening MIF_BIND, which also breaks parity_check.py and make_release.py because both match
+	// MIF_BIND\(([a-z_0-9]+)\) and would silently report ZERO endpoints. It is filed, it is real work,
+	// and it is not what this is.
+	//
+	// WHAT THIS CATCHES INSTEAD, and why it is worth having on its own: in scratch mode an agent
+	// cannot SAVE, so a modified real asset is not permanent - until a human presses Ctrl+S in the
+	// editor, at which point it silently is. Between those two moments nothing anywhere said the asset
+	// had been touched. Now the response that touched it says so, by name, immediately.
+	//
+	// TWO LIMITATIONS, both from the engine rather than from this code:
+	//
+	//  1. OnObjectModified fires ONCE PER OBJECT PER FRAME - UObjectGlobals keeps a per-frame set
+	//     "to prevent multiple triggerings". An object already modified earlier in the same frame is
+	//     therefore invisible here. Handlers run inline on the game thread, usually one per tick, so
+	//     this is rare rather than never.
+	//  2. It fires on Modify(), which is the transaction hook. An endpoint that mutates WITHOUT
+	//     calling Modify() - which is a bug in that endpoint, since it also breaks undo - would not
+	//     be seen.
+	//  3. CREATION IS INVISIBLE. Verified live rather than assumed: create_asset at a non-scratch
+	//     /Game path reported scratchClean, because NewObject does not call Modify() - there is no
+	//     prior state to record. set_property on that same asset reported it immediately.
+	//
+	//     That is arguably the RIGHT scope rather than a hole. This exists to answer "did the agent
+	//     touch one of YOUR assets", and an asset the agent just created is not yet one of yours.
+	//     Creating unsaved clutter is a mess; modifying an existing asset that a human then saves is
+	//     a loss. Only the second is what this watches for. Worth knowing all the same, because
+	//     "scratchClean on a call that clearly wrote something" otherwise looks broken.
+	//
+	// So a clean report is good evidence and not a proof. Said in the field name: scratchClean, not
+	// scratchSafe.
+	namespace
+	{
+		TArray<FString>* GDirtiedReal = nullptr;
+
+		/** Scratch means /Game/_Mif*. Transient and engine-internal packages are not "real assets" -
+		 *  a transient working object is exactly what a well-behaved endpoint should be using. */
+		bool MifIsScratchPackage(const FString& PackageName)
+		{
+			return PackageName.StartsWith(TEXT("/Game/_Mif"))
+				|| PackageName.StartsWith(TEXT("/Temp/"))
+				|| PackageName == TEXT("/Engine/Transient")
+				|| PackageName.StartsWith(TEXT("/Script/"));
+		}
+	}
+
+	FMifScratchWatch::FMifScratchWatch()
+	{
+		// Only in a gated mode. In full mode the caller has said they intend to write real assets, and
+		// reporting every one would be noise rather than a warning.
+		if (GetWriteMode() == EMifWriteMode::Full) { return; }
+
+		Dirtied.Reset();
+		// NESTED CALLS: batch dispatches inner ops through RunEndpoint, so a watch can already be
+		// active. The outer one owns the report; an inner watch that stole the pointer would hand its
+		// findings to the wrong response and lose the rest.
+		if (GDirtiedReal != nullptr) { return; }
+		GDirtiedReal = &Dirtied;
+		bOwner = true;
+
+		Handle = FCoreUObjectDelegates::OnObjectModified.AddLambda([](UObject* Obj)
+		{
+			if (!GDirtiedReal || !Obj) { return; }
+			const UPackage* Pkg = Obj->GetPackage();
+			if (!Pkg) { return; }
+			const FString Name = Pkg->GetName();
+			if (MifIsScratchPackage(Name)) { return; }
+			GDirtiedReal->AddUnique(Name);
+		});
+	}
+
+	FMifScratchWatch::~FMifScratchWatch()
+	{
+		if (!bOwner) { return; }
+		FCoreUObjectDelegates::OnObjectModified.Remove(Handle);
+		GDirtiedReal = nullptr;
+	}
+
+	void FMifScratchWatch::Report(const TSharedRef<FJsonObject>& Out) const
+	{
+		if (!bOwner) { return; }
+		if (Dirtied.Num() == 0)
+		{
+			// Reported even when clean, so its ABSENCE is never mistaken for the watch not running.
+			Out->SetBoolField(TEXT("scratchClean"), true);
+			return;
+		}
+		TArray<TSharedPtr<FJsonValue>> Names;
+		for (const FString& N : Dirtied) { Names.Add(MakeShared<FJsonValueString>(N)); }
+		Out->SetBoolField(TEXT("scratchClean"), false);
+		Out->SetArrayField(TEXT("dirtiedRealPackages"), Names);
+		Out->SetStringField(TEXT("scratchWarning"), FString::Printf(
+			TEXT("this call modified %d package(s) OUTSIDE /Game/_Mif. Nothing was saved - the gate "
+				 "still blocks that - but the changes are live in the editor and a human pressing "
+				 "Ctrl+S would make them permanent without knowing this happened. Undo them, or "
+				 "restart the editor to discard."), Dirtied.Num()));
+	}
+
+
 	bool RefuseIfGated(const FString& Endpoint, const TSharedRef<FJsonObject>& Out)
 	{
 		const EMifWriteMode Mode = GetWriteMode();

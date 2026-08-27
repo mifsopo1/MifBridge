@@ -1266,6 +1266,15 @@ namespace MifBridge
 			return;
 		}
 
+		// WHICH REAL ASSETS DID THIS CALL TOUCH? Armed only in a gated mode, and reported into this
+		// call's own response. The gate blocks SAVING; it never noticed a real asset being modified in
+		// memory, which becomes permanent the moment a human presses Ctrl+S.
+		//
+		// Declared here so it outlives the handler and is reported after it - including on the failure
+		// paths below, since an endpoint that fails HALFWAY is exactly the one worth knowing about.
+		FMifScratchWatch ScratchWatch;
+		ON_SCOPE_EXIT { ScratchWatch.Report(Out); };
+
 		// BEFORE ANY HANDLER RUNS. This has to precede dispatch: once a handler reaches
 		// FName(*Str) the process is already gone, so there is no later point at which this could be
 		// reported. Found by the endpoint fuzzer, which killed the editor on its first target.

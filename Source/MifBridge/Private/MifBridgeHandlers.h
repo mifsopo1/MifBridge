@@ -81,6 +81,21 @@ namespace MifBridge
 	AActor* ResolveActor(UEditorActorSubsystem* Subsystem, const TSharedRef<FJsonObject>& In,
 		const TSharedRef<FJsonObject>& Out);
 
+	/** Watches which packages OUTSIDE /Game/_Mif a call dirties, and reports them in that call's own
+	 *  response. DETECTION, not prevention - see the long note in MifBridgeSafety.cpp for why, and
+	 *  for the two engine limitations that make a clean report good evidence rather than a proof. */
+	class FMifScratchWatch
+	{
+	public:
+		FMifScratchWatch();
+		~FMifScratchWatch();
+		void Report(const TSharedRef<FJsonObject>& Out) const;
+	private:
+		TArray<FString> Dirtied;
+		FDelegateHandle Handle;
+		bool bOwner = false;
+	};
+
 	bool SetWriteModeFromPanel(EMifWriteMode Wanted, FString& OutRefusal);
 
 	/** RAII marker for "a bridge call is on the stack". Constructed by both dispatchers.

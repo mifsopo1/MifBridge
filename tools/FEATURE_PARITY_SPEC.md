@@ -1417,7 +1417,20 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
   is being kept deliberately as a reference. git rm --cached (or plain deletion, since git holds the
   history anyway) is the fix if Andre agrees they are cruft.
 
-- [ ] **The safety gate's second half: the scratch-PATH rule, and batch.**
+- [x] **The safety gate's second half** - DONE 2026-08-27, as DETECTION.
+      batch was fixed earlier and verified. The scratch-PATH half now ships as a WATCH rather than
+      a block, and the difference is stated in the response field name: scratchClean, not
+      scratchSafe.
+      Every gated call reports whether it dirtied any package outside /Game/_Mif, and names
+      them. The gate blocks SAVING; it never noticed a real asset being modified in memory,
+      which becomes permanent the moment a human presses Ctrl+S.
+      PREVENTION still needs the per-endpoint Read/Write classification (~300 MIF_BIND edits,
+      which also break parity_check.py and make_release.py). Still filed, still real.
+      THREE LIMITATIONS, all verified live rather than assumed: OnObjectModified fires once
+      per object per FRAME; it only fires on Modify(); and CREATION IS INVISIBLE because
+      NewObject has no prior state to record. The third is arguably correct scope - an asset
+      the agent just created is not yet one of yours - but it makes a create call report
+      scratchClean, which looks broken if you do not know why.
       ADDS A THIRD PART, found 2026-08-26 by the Curfew session and worth stating in their words:
       the gate does not distinguish READING the world from WRITING it. It is a NAME LIST, and
       exec_console is on it wholesale because a console command can do anything. So their preflight
