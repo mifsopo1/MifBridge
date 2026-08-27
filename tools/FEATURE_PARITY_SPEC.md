@@ -1581,7 +1581,8 @@ Use self_audit for the count; it asks the running DLL.
       writes. Note the hazard already on file: duplicating a cooked UNiagaraSystem crashes the editor
       (docs/02 section 6c), so DDS2 authoring is constrained. Curfew is uncooked and is not.
 
-- [ ] **Sequencer authoring - 2 reads, 0 writes.**
+- [x] **Sequencer authoring** - DONE 2026-08-27 (see the entry above).
+      list_sequence_bindings, add_sequence_possessable, add_sequence_track. THIRD duplicate spec entry closed after the fact today - PCG had two, this had two. Worth noting the pattern: a decline written twice gets reopened twice and then only ticked once.
       list_level_sequences and describe_level_sequence. Creating tracks and keys would make cutscene
       work possible at all. Check UMovieScene::GetBindings' non-const deprecation on 5.7 first - it
       is already a warning in our build.
@@ -1668,7 +1669,7 @@ what an untracked item does. Tracked now.
       Built on BOTH engines. Reads BodySetup directly rather than adding a StaticMeshEditor module
       dependency - the subsystem's getters ARE those expressions.
 
-- [ ] **Sequencer: the WRITE half.** list_level_sequences and describe_level_sequence exist and
+- [x] **Sequencer authoring** - DONE 2026-08-27 (see the entry above).
       nothing authors. Next in the audit's ranking.
 
 - [ ] **Niagara: the WRITE half.** Three reads, no writes. The audit flags cooked-asset hazards here
@@ -1682,7 +1683,16 @@ what an untracked item does. Tracked now.
       Re-judge against uncooked 5.7 rather than against cooked modding.
 - [ ] **Vertex animation.** Same - split out, not built, needs judging on the new measuring stick.
 
-- [ ] **Apply RefuseFileOutsideProject to the other file-writing endpoints.** capture_viewport,
+- [~] **Apply RefuseFileOutsideProject to the other file-writing endpoints** - NOT NEEDED.
+      Checked before writing any code, and the premise of my own filed item was wrong: none of
+      the four accepts a free-form destination.
+        capture_viewport   ProjectSavedDir()/MifBridge - takes a base FILENAME, not a path
+        capture_camera     ProjectSavedDir()/MifBridge
+        render_thumbnail   ProjectSavedDir()/MifBridge/Thumbnails, via MakeValidFileName
+        backup_blueprint   <package>.bak, beside the original inside Content
+      export_asset was the only one taking an arbitrary path, and it is guarded. Adding the
+      call to the other four would be a no-op that LOOKS like coverage - worse than nothing,
+      because the next reader would believe a check was doing work.
       capture_camera, render_thumbnail and backup_blueprint all write to disk and all accept an
       explicit path. The shared guard exists and export_asset uses it; the others were left for a
       separate change rather than bundled in unverified.
