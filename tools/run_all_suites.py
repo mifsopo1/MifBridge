@@ -112,12 +112,23 @@ def main():
     with open(os.path.join(here, "suite_results.json"), "w") as f:
         json.dump(results, f, indent=1)
 
-    bad = [r for r in results if r["rc"] != 0]
+    # EXIT CODE 2 MEANS SKIPPED, NOT FAILED, and the distinction is the whole reason a suite bothers to
+    # return it. test_blender_ops cannot run without Blender listening, which it usually is not. A
+    # suite that quietly returns 0 when it verified nothing is the worst option - it manufactures
+    # confidence - and one that returns 1 is noise that trains everyone to ignore a red line.
+    #
+    # So skipped is counted and REPORTED separately. "62 passed, 1 skipped" is an honest sweep;
+    # "63 passed" and "1 failed" are both lies in different directions.
+    skipped = [r for r in results if r["rc"] == 2]
+    bad = [r for r in results if r["rc"] not in (0, 2)]
     died = [r for r in results if not r["editorSurvived"]]
     print("")
     print("=" * 72)
-    print("%d run(s) across %d suites, %d failed, %d took the editor down"
-          % (len(results), len(suites), len(bad), len(died)))
+    print("%d run(s) across %d suites, %d failed, %d skipped, %d took the editor down"
+          % (len(results), len(suites), len(bad), len(skipped), len(died)))
+    for r in skipped:
+        # Named, not just counted. A skip nobody reads is indistinguishable from a pass.
+        print("  SKIPPED (verified nothing): %s" % r["suite"])
 
     # A suite that passes once and fails the second time is the specific failure this runner exists to
     # catch, so it is named rather than left to be spotted in the list above.
