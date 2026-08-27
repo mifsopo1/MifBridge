@@ -1371,3 +1371,27 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
       it misses transitive enablement. Shipping it would turn eight endpoint families into silent
       refusals on the primary target. A real fix needs UBT's resolved plugin set for the target, or
       a check on the MODULES rather than the plugins.
+
+- [~] **A check that each MCP wrapper's `_post("...")` target matches its own function name.**
+      DECLINED 2026-08-26 - the gap does not exist, and this is recorded so nobody re-investigates.
+      The worry was a wrapper calling a DIFFERENT endpoint than its name implies, which would be a
+      silent-success bug at the wrapper layer. Measured: 331 _post/_blender call sites, 6 name
+      mismatches, and all six are deliberate. compile_blueprint -> _post('compile') and
+      validate_blueprint -> _post('validate') are friendlier tool names over real MIF_BIND endpoints
+      (MifBridgeCommon.cpp:336 and :338); mif_mesh_roundtrip is a composite that legitimately calls
+      four endpoints.
+      More to the point, a TYPO is already caught from the other direction: parity_check CHECK 3
+      compares MIF_BIND names against _post literals BOTH ways, so _post("move_tree_widgets") would
+      be a literal matching no bind. Building this would add a check with a real false-positive rate
+      that catches nothing check 3 misses.
+
+- [x] **Can each MCP wrapper be CALLED AT ALL? (parity_check CHECK 6)**
+      Done 2026-08-26 after move_tree_widget was reported from outside as GitHub issue #1: it raised
+      NameError on every call it ever received, because it passed replaceRoot=replace_root with no
+      such parameter. It passed check 1 (name in all three registries) and check 4 (it NAMES
+      replaceRoot, which is why it read as correct), and no suite touched it because the suites
+      drive endpoints over HTTP rather than calling the wrappers.
+      tools/mcp_static_check.py resolves every name each wrapper reads against parameters, locals,
+      enclosing scopes, module globals and builtins. Scope handling is the whole difficulty - a naive
+      pass reported 35 findings of which 34 were false. Committed version: 0 across 339 functions,
+      and catches the real bug when reintroduced. Verified in BOTH directions.

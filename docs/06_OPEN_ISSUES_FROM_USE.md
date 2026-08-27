@@ -1308,7 +1308,7 @@ count would overcount badly.
 What it does answer reliably is the question it was built for: **which call was in flight when the
 process stopped.** That stays sound, because it is an absence, not a count.
 
-## 17. `Build.cs` links plugin modules that the target has not ENABLED — clean build, load failure
+## 17. `Build.cs` links plugin modules that the target has not ENABLED — FIXED
 
 Found 2026-08-26 by the session running MifBridge in Curfew (UE 5.7). **Real, reproduced, and NOT
 fixed** — the obvious fix is provably wrong, which is most of what makes this worth writing down.
@@ -1395,6 +1395,26 @@ forces every consumer to enable ten plugins to use a bridge whose endpoints they
 which is backwards: the guards exist precisely so that absent capability degrades to a named refusal
 rather than a requirement.
 
+### The fix, which was neither of the things either of us proposed
+
+Not a descriptor read, and not UBT's resolved plugin set either. `MifBridge.uplugin` declared **one**
+of the twelve plugins whose modules `Build.cs` links - IKRig, as `Enabled: true, Optional: true`.
+Declaring the other eleven the same way makes UBT enable them **transitively** when MifBridge is
+enabled, so the imports resolve at load. `Optional: true` keeps a plugin genuinely absent from an
+engine a logged skip rather than a refusal to load MifBridge at all (`PluginManager.cpp:2164`).
+
+**IKRig was both the model and the tell**: it is the one plugin that did *not* appear in the reported
+failure list, because it was the one declared properly. That evidence was in the first report and
+neither of us read it that way.
+
+This asks UBT the question instead of trying to answer it from JSON - which is exactly why the first
+attempt failed. "Enabled" is something UBT **resolves**, not a property of a file.
+
+Verified both ways: on 5.3 the rebuild ran 56 actions and linked `ModelViewViewModelEditor.dll` among
+others. On stock 5.7, the Curfew session reverted all ten plugins it had added to `Curfew.uproject`,
+rebuilt, and the editor launched with **no** `GetLastError=126` and all ten mounted transitively -
+`Bound 291 routes`. The workaround is no longer needed by anyone.
+
 ### Credit
 
 Diagnosed from the load failure by the Curfew session, including the `GetLastError=126` reading that
@@ -1451,7 +1471,8 @@ returned.
 
 ### Status
 
-Fixed and **built** on 5.3 (DLL 3,950,592 at 23:06). **Not yet run against a live editor** - the SDK
-editor was closed at the time and the 5.7 engine was holding a Live Coding lock from another
-session. T356 runs it on the next regression pass. The third instance this session of *a clear that
+Fixed and built on 5.3 (DLL 3,950,592 at 23:06), and **verified live on stock UE 5.7** by the Curfew
+session the same night - four expressions seeded, `all=True`, zero remaining, `ok:true`. That is the
+half this machine could not do: the SDK editor was closed and the 5.7 engine was holding a Live
+Coding lock. T356 still runs it on the next regression pass here. The third instance this session of *a clear that
 cannot prove it cleared*, after the World Partition save and `Build.bat`'s exit code.
