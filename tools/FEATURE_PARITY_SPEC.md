@@ -1352,7 +1352,16 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
       choke point. `batch` itself does. Extend the existing per-op else-if at :2458 rather than adding
       a branch.
 
-- [ ] **Build.cs links plugin modules the target has not ENABLED - builds clean, fails at load.**
+- [x] **Build.cs links plugin modules the target has not ENABLED - builds clean, fails at load.**
+      FIXED 2026-08-26 by the engine's own mechanism, not by the JSON-reading fix below.
+      MifBridge.uplugin declared ONE of the twelve plugins Build.cs links modules from (IKRig,
+      Optional+Enabled). Declaring the other eleven the same way makes UBT enable them transitively
+      when MifBridge is enabled, so the modules exist at load. Optional:true keeps a plugin missing
+      from THIS engine a logged skip rather than a refusal to load MifBridge (PluginManager.cpp:2164).
+      IKRig was the model and the tell - it was the one plugin NOT in the reported failure.
+      Verified on 5.3: the build ran 56 actions and linked ModelViewViewModelEditor.dll among others,
+      which is the transitive enablement doing its job. 5.7 could not be rebuilt at the time - another
+      session's editor held the Live Coding lock - so that half is unverified here.
       Found 2026-08-26 by the Curfew session: GetLastError=126 on editor start, because
       AddPluginModules gates on the plugin SHIPPING WITH THE ENGINE rather than being ENABLED for
       the target. Ten modules get linked; a project that enables none of them cannot resolve the
