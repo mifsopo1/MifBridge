@@ -1415,7 +1415,20 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
       pass reported 35 findings of which 34 were false. Committed version: 0 across 339 functions,
       and catches the real bug when reintroduced. Verified in BOTH directions.
 
-- [ ] **Six more handlers that report an outcome count and never branch on it.**
+- [x] **Six more handlers that report an outcome count and never branch on it.**
+      Resolved 2026-08-26: TWO were real, THREE were already sound, and the scan could not tell them
+      apart - which is what a reading list is for.
+        FIXED  add_simplified_collision - added = After-Before, ok:true when it added nothing. The
+               engine's generator does not report failure, it just produces no geometry, so the
+               count was the only signal there was.
+        FIXED  remove_widget_binding - removed:0 meant the widget/property names matched no binding
+               (operator== ignores FunctionName/Kind/SourcePath), i.e. a typo or a renamed widget.
+               Now a failure, matching every other remover in this project.
+        SOUND  write_datatable_rows  - already fails per row with a problems[] array.
+        SOUND  delete_datatable_rows - already fails on a missing row and already uses RemoveRow's
+               return value (a discarded-bool fixed earlier, comment still in place).
+        SOUND  apply_graph_patch     - has real rollback.
+      Built on 5.3, 0 errors, DLL 3,970,048 at 23:42. Not run live - SDK editor closed.
       Found 2026-08-26 by scanning for issue 18's shape. spawn_many was fixed (issue 19); these six
       are a READING LIST, not a defect list - the scan cannot tell a count that is ignored from one
       that is genuinely informational:

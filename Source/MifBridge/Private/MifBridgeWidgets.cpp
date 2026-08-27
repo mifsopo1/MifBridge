@@ -1363,6 +1363,25 @@ namespace MifBridge
 		const int32 Removed = WBP->Bindings.Remove(Key);   // == ignores FunctionName/Kind/SourcePath
 		MarkStructural(WBP);
 
+		// REMOVING NOTHING MEANS THE CALLER NAMED SOMETHING THAT IS NOT THERE, and they should hear
+		// about it. Not treated as harmless idempotence: FDelegateRuntimeBinding's operator== matches
+		// on ObjectName and PropertyName only (it ignores FunctionName, Kind and SourcePath), so a
+		// zero here is a widgetName or propertyName that matched no binding - a typo, or a widget that
+		// was renamed - rather than a binding that was already gone.
+		//
+		// This project's other removers report a miss as a failure, and consistency matters more than
+		// the abstract argument for idempotence: a caller who cannot tell "removed it" from "there was
+		// nothing to remove" will assume the first.
+		if (Removed == 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no binding on widget '%s' for property '%s' - nothing was removed. Bindings are "
+					 "matched on widget name and property name only, so check both spellings; "
+					 "list_widget_bindings reports what this blueprint actually has. %d binding(s) "
+					 "remain, unchanged."),
+				*WidgetName, *PropertyName, WBP->Bindings.Num()));
+			return;
+		}
 		Out->SetNumberField(TEXT("removed"), Removed);
 		Out->SetNumberField(TEXT("bindingCount"), WBP->Bindings.Num());
 		Out->SetBoolField(TEXT("needsCompileToApply"), true);

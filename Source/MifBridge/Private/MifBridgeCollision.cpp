@@ -429,6 +429,23 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("primitivesBefore"), Before);
 		Out->SetNumberField(TEXT("primitivesAfter"), After);
 		Out->SetNumberField(TEXT("added"), After - Before);
+
+		// ADDING NOTHING IS NOT ADDING. Same shape as docs/06 issue 18 and 19: the count was correct
+		// and ok stayed true beside it, so a caller checking the status rather than the arithmetic saw
+		// a collision primitive that does not exist.
+		//
+		// UStaticMesh's generation calls do not report failure - they either produce geometry or
+		// quietly produce none (a degenerate mesh, a shape the generator cannot fit). The count IS the
+		// only signal there is, which makes ignoring it worse rather than more forgivable.
+		if (After <= Before)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("add_simplified_collision added NOTHING: the mesh had %d collision primitive(s) "
+					 "before and %d after. The engine's generator does not report failure - it either "
+					 "produces geometry or quietly produces none, usually for a degenerate mesh or a "
+					 "shape it cannot fit. Nothing was changed."), Before, After));
+			return;
+		}
 		UE_LOG(LogMifBridge, Log, TEXT("add_simplified_collision: %s shape=%s (%d -> %d primitive(s))"),
 			*Mesh->GetPathName(), *Shape, Before, After);
 	}
