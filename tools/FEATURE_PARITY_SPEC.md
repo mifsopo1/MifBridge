@@ -1177,7 +1177,17 @@ These are NOT endpoints and do not move the parity count. Andre approved all fou
 was worth having beyond endpoints, given the competitor ships an in-editor application. Each one is
 here because something already went wrong without it, not because the competitor has it.
 
-- [ ] **Plugin-side safety gate - the real gap.**
+- [x] **DONE 2026-08-26, commit 19efa9c. Built, tested (31/31), committed.**
+  MifBridgeSafety.cpp, one `if` at the single dispatcher (MifBridgeCommon.cpp:1223). Default mode
+  `scratch`: reads and writes run, unsafe operations refused. The mode is an ENVIRONMENT VARIABLE,
+  never a CVar or an endpoint, because set_cvar is registered and a gate the gated agent can switch
+  off is decorative. self_audit reports writeMode and safetyGateActive; the panel shows it too.
+  The design workflow earned its cost here: gating on IsReadOnlyEndpoint - the obvious choice -
+  would have PERMITTED every save and every PIE start, because that is a transaction bucket and
+  contains save_package, start_pie and run_console.
+  STILL OPEN, filed below: the scratch-PATH rule is not enforced (needs the per-endpoint Read/Write
+  split across 285 binds), and `batch` bypasses the choke point for its inner ops.
+  ORIGINAL:
   Today "no saving assets, no PIE, scratch under /Game/_Mif* only" is enforced by the AGENT's
   discipline plus tools/scratch_confirm.py. NOTHING in the C++ would refuse a save_package call. If a
   future session, or Infected running the bridge, ignores the convention, there is no guard. Make it
@@ -1186,7 +1196,17 @@ here because something already went wrong without it, not because the competitor
   enforcing it. CONSTRAINT: the 64 existing suites DO write and DO create scratch assets - the default
   mode must not break them, and how they keep working has to be part of the design, not an afterthought.
 
-- [ ] **Branded in-editor panel - purple and grey, live view.**
+- [x] **DONE 2026-08-26, commit 84d4ff0. Built, live, screenshotted, committed.**
+  MifBridgePanel.cpp. Chat-log transcript: rounded cards, accent bars, status pills colour-coded
+  READ/WRITE/BLOCKED/FAILED, a live working banner, per-call timings with slow calls highlighted,
+  and a SUBJECT line lifted from the payload - clickable when it is an asset path, syncing the
+  Content Browser via FAssetData so the asset is never LOADED just to be revealed.
+  Plus the flag button: one click files a report into Saved/MifBridge/reports/ for the autonomous
+  loop. Strictly not load-bearing - the panel reads the bridge and writes nothing back.
+  Andre caught two real bugs in it: the age timer froze (baked string instead of a bound lambda)
+  and every colour rendered twice as bright (sRGB values written into FLinearColor).
+  REMAINING POLISH, not blocking: card padding could be more generous, header could use a gradient.
+  ORIGINAL:
   Andre's words: "a purple and grey mifbridge branded ineditor panel that shows whats happening in live
   time". Bridge up/down, port, last N calls with timings, what is currently dirty, and a pause toggle.
   HARD CONSTRAINT: headless is an ADVANTAGE of this design, not a limitation - the bridge opens and
@@ -1194,7 +1214,16 @@ here because something already went wrong without it, not because the competitor
   load-bearing. It must not break commandlet or headless operation. This is observability, NOT control;
   we are not migrating toward the competitor's in-editor model.
 
-- [ ] **Watchdog and crash journal - WRITTEN 2026-08-26, not yet built or tested.**
+- [x] **DONE 2026-08-26, commit 19efa9c. Built, tested (21/21), hard-kill verified by hand.**
+  MifBridgeJournal.cpp writes Saved/MifBridge/journal.jsonl, flushing each record BEFORE dispatch.
+  Proved by doing it: hard-killed the editor with TerminateProcess so ShutdownModule could not run,
+  and mifwatch reported the session as DIED with shutdown NONE, 71 calls, slowest list_blueprints.
+  tools/mifwatch.py reads it and can relaunch on death, reusing mifaudit's launcher.
+  A bug found in mifwatch while verifying: it printed "every session shut down cleanly" directly
+  beneath a session marked DIED, because it counted unfinished CALLS and that editor died BETWEEN
+  calls. Sessions without a shutdown are now counted separately.
+  STILL NOT WIRED: the batch inner-op sites (MifBridgeNodes.cpp:2479, :2492).
+  ORIGINAL:
   Deliberately NOT marked [x]: the rule here is built, tested and committed, and this is only written.
   C++: Source/MifBridge/Private/MifBridgeJournal.cpp writes Saved/MifBridge/journal.jsonl, holding one
   FArchive open and calling Flush() per record so the bytes leave user space BEFORE the handler runs.
@@ -1280,3 +1309,17 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
   NOT deleted unilaterally: they are tracked, so someone chose to commit them, and it is possible one
   is being kept deliberately as a reference. git rm --cached (or plain deletion, since git holds the
   history anyway) is the fix if Andre agrees they are cruft.
+
+- [ ] **The safety gate's second half: the scratch-PATH rule, and batch.**
+  The gate shipped as the UNSAFE-OPERATION half only (commit 19efa9c). Two gaps remain, both written
+  into docs/15 rather than left implicit:
+  (a) A write to a NON-SCRATCH path still succeeds. Enforcing "writes must target /Game/_Mif*" needs a
+      per-endpoint Read/Write classification, which the design says should be a two-arg MIF_BIND so the
+      compiler makes it total - 285 mechanical edits, bootstrapped to `Write` first because a read
+      misclassified as a write costs a refusal while the reverse is the dangerous direction.
+      CAUTION: widening MIF_BIND breaks both parity_check.py and make_release.py, which match
+      MIF_BIND\(([a-z_0-9]+)\) and would silently report ZERO endpoints. Update them in the same change.
+  (b) `batch` dispatches its inner ops straight out of Handlers()/FindExternalHandler
+      (MifBridgeNodes.cpp:2462, :2490) and never recurses through RunEndpoint, so they do not cross the
+      choke point. `batch` itself does. Extend the existing per-op else-if at :2458 rather than adding
+      a branch.

@@ -369,6 +369,8 @@ namespace MifBridge
 			MIF_BIND(describe_game_feature_plugin);
 			MIF_BIND(set_data_layer_visibility);
 			MIF_BIND(set_data_layer_loaded_in_editor);
+			MIF_BIND(project_dependency_graph);
+			MIF_BIND(project_asset_distribution);
 			MIF_BIND(add_sublevel);
 			MIF_BIND(remove_sublevel);
 			MIF_BIND(set_sublevel_visibility);

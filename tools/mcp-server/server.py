@@ -2918,6 +2918,22 @@ def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: i
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def project_dependency_graph(path_prefix: str, max_nodes: int = 300,
+                             include_external: bool = False) -> dict:
+    "The dependency graph under a path prefix: nodes (packages) and edges (A depends on B). Each node reports dependsOn AND referencedBy, because they answer different questions - 'what does this need' versus 'what breaks if I delete it'. path_prefix needs at least two segments (e.g. /Game/Blueprints): GetReferencers runs PER ASSET, so a mount root is a stopped game thread, not a slow call. Capped at max_nodes and reports `truncated` plus `matched` - a truncated graph is a PREFIX of the real one, not a sample, so narrow the prefix rather than raising the cap."
+    return _post("project_dependency_graph", pathPrefix=path_prefix, maxNodes=max_nodes,
+                 includeExternal=include_external)
+
+
+@mcp.tool()
+def project_asset_distribution(path_prefix: str = None, top_folders: int = 25,
+                               top_classes: int = 25) -> dict:
+    "Counts of assets by class and by folder under a path prefix (default /Game). Cheap by construction - pure Asset Registry, loads nothing, never touches referencers - which is why this one accepts a bare /Game where project_dependency_graph does not. Reports distinctClasses/distinctFolders alongside the top-N lists so a truncated view is visibly truncated, and registryStillScanning because a low count during a scan is indistinguishable from a low count."
+    return _post("project_asset_distribution", pathPrefix=path_prefix,
+                 topFolders=top_folders, topClasses=top_classes)
+
+
+@mcp.tool()
 def set_data_layer_visibility(name: str, visible: bool) -> dict:
     "Show or hide a World Partition Data Layer in the editor. Reports before/after/changed plus a separate `verified` flag, because the underlying SetDataLayerVisibility returns VOID and cannot fail loudly - verified:false means the write did not take. Also reports effectiveVisible: a layer can be visible in its own right and still render nothing because a parent layer is hidden. Editor state only; nothing is saved."
     return _post("set_data_layer_visibility", name=name, visible=visible)

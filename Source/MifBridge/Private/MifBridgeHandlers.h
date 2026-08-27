@@ -1428,6 +1428,12 @@ namespace MifBridge
 	// these read the state back and report verified separately from changed.
 	MIF_DECL(set_data_layer_visibility);
 	MIF_DECL(set_data_layer_loaded_in_editor);
+
+	// PROJECT STRUCTURE - the brainmap data (MifBridgeProject.cpp). Every one of these is BOUNDED
+	// and reports when it bounded something: GetReferencers runs per asset, so an unbounded graph
+	// is a stopped game thread rather than a slow answer.
+	MIF_DECL(project_dependency_graph);
+	MIF_DECL(project_asset_distribution);
 	MIF_DECL(add_sublevel);
 	MIF_DECL(remove_sublevel);
 	MIF_DECL(set_sublevel_visibility);
