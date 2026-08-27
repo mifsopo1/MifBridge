@@ -2614,6 +2614,18 @@ def list_sockets(path: str) -> dict:
 
 
 @mcp.tool()
+def list_state_trees(path_prefix: str = "/Game/") -> dict:
+    "List the project's StateTree assets - the modern UE5 alternative to Behavior Trees. Asset Registry only, LOADS NOTHING. Check registryStillScanning."
+    return _post("list_state_trees", pathPrefix=path_prefix)
+
+
+@mcp.tool()
+def describe_state_tree(path: str) -> dict:
+    "Describe a StateTree: its states with name, type, parent index and expanded child indices, plus the SCHEMA, which decides what the tree can be run against (an actor, a component, a mass entity) - a tree attached to the wrong thing is useless. parent is -1 for a root state rather than omitted, so you can tell 'root' from 'field missing'. IMPORTANT: this reads COMPILED data, so a tree whose graph was edited and never recompiled reads as zero states even though the editor shows them; the response says so when it happens."
+    return _post("describe_state_tree", path=path)
+
+
+@mcp.tool()
 def list_gameplay_tags(filter: str = None, only_explicit: bool = True, limit: int = 0) -> dict:
     "Every gameplay tag REGISTERED IN THE RUNNING EDITOR. This is not the same as reading DefaultGameplayTags.ini: the tag table is assembled at runtime from ini files, other config, and native UE_DEFINE_GAMEPLAY_TAG registration in C++ and plugins - so the ini is one input, not the answer. DDS2 has no tag ini at all and still registers 7 tags, all from EnhancedInput. only_explicit excludes tags that exist only as implied parents (asking for Ability.Melee.Heavy implies Ability and Ability.Melee); including them roughly doubles the list with entries nobody declared. matched is the true total even when limit truncates. An empty result is a normal state - the project simply does not use tags - and says so."
     return _post("list_gameplay_tags", filter=filter, onlyExplicit=only_explicit, limit=limit)

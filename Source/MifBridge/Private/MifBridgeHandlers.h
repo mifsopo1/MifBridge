@@ -1347,6 +1347,10 @@ namespace MifBridge
 	 *  is something holding the editor's DLLs, so an external build will silently do nothing? */
 	/** Gameplay tags. Bridge-only work: the tag table is ASSEMBLED AT RUNTIME from ini files and
 	 *  native registration, so reading DefaultGameplayTags.ini tells you one input, not the answer. */
+	/** StateTree - the modern UE5 answer to Behavior Trees. Declined once as 'DDS2 does not use
+	 *  it', which says nothing about any other project. */
+	MIF_DECL(list_state_trees);
+	MIF_DECL(describe_state_tree);
 	MIF_DECL(list_gameplay_tags);
 	MIF_DECL(describe_gameplay_tag);
 	MIF_DECL(live_coding_status);

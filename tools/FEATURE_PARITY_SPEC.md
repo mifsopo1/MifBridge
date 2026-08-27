@@ -1074,7 +1074,8 @@ engine has no such class registered in this build, which is as definitive as it 
 - [ ] **PCG** — declined, now with evidence: `PCGGraph` does not resolve either. Confirms the earlier
       REOPENED, and this is the one the old rule cost most. Declined as 'a DDS2 mod does not regenerate the world'. Curfew is a CITY BUILDER on 5.7 - procedural generation is close to its whole point.
       reasoning rather than resting on it.
-- [ ] **StateTree** — declined. Class does not resolve; DDS2 does not use it.
+- [x] **StateTree** - DONE 2026-08-27. list_state_trees, describe_state_tree.
+      DDS2 has 0 StateTree assets, which is exactly what the original decline said and exactly why it was not a reason. MifBridge already read Behavior Trees; a project on StateTree instead would have found the AI half of this bridge simply blank.
       REOPENED - declined as 'DDS2 does not use it'. That is a fact about one test project. StateTree is the modern UE5 answer to Behavior Trees and a 5.7 project may well be on it.
 - [ ] **Sequencer** — declined for now. DDS2 contains exactly **4** LevelSequence assets against 3771
       REOPENED for the WRITE half - list_level_sequences and describe_level_sequence already exist. Declined on DDS2 having 4 LevelSequence assets, which is evidence about DDS2 only.

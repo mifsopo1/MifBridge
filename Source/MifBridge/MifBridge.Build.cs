@@ -171,6 +171,9 @@ public class MifBridge : ModuleRules
 			PrivateIncludePathModuleNames.Add("LiveCoding");
 		}
 
+		AddPluginModules("MIF_WITH_STATETREE", "StateTree",
+			new string[] { "StateTreeModule" });
+
 		AddPluginModules("MIF_WITH_PCG", "PCG",
 			new string[] { "PCG" });
 		AddPluginModules("MIF_WITH_GAS", "GameplayAbilities",

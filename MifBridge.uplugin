@@ -97,6 +97,11 @@
             "Name": "PCG",
             "Enabled": true,
             "Optional": true
+        },
+        {
+            "Name": "StateTree",
+            "Enabled": true,
+            "Optional": true
         }
     ]
 }
