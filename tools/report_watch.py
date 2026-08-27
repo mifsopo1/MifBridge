@@ -124,7 +124,7 @@ def poll():
     cmd = ["gh", "issue", "list", "--label", LABEL, "--state", "open",
            "--json", "number,title,author,createdAt", "--limit", "20"]
     try:
-        out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True,
+        out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace",
                              stdin=subprocess.DEVNULL, timeout=120)
     except Exception as exc:
         log("  gh failed to run: %s" % exc)
@@ -143,7 +143,7 @@ def run(script, *args):
     """Run one of the pipeline scripts. Returns (ok, tail-of-output)."""
     cmd = [sys.executable, "-u", os.path.join(HERE, script)] + list(args)
     try:
-        out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True,
+        out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace",
                              stdin=subprocess.DEVNULL, timeout=1800)
     except Exception as exc:
         return False, str(exc)
@@ -209,7 +209,7 @@ def escalate(issue, push, dry_run):
     log("  spawning agent for %s (budget $%s, push=%s)" % (head, BUDGET_USD, push))
     try:
         out = subprocess.run(cmd, cwd=os.path.dirname(HERE), capture_output=True,
-                             text=True, stdin=subprocess.DEVNULL, timeout=5400)
+                             text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=5400)
         tail = ((out.stdout or "") + (out.stderr or "")).strip()[-2000:]
         log("  agent exited %d" % out.returncode)
         for l in tail.splitlines()[-25:]:

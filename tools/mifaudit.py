@@ -98,7 +98,7 @@ def bridge_pid():
             ["powershell", "-NoProfile", "-Command",
              "(Get-NetTCPConnection -LocalPort %d -State Listen -ErrorAction SilentlyContinue"
              " | Select-Object -First 1).OwningProcess" % BRIDGE_PORT],
-            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30).stdout.strip()
+            capture_output=True, text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=30).stdout.strip()
         _probe_failed[0] = None
         return int(out) if out.isdigit() else None
     except Exception as exc:
@@ -111,7 +111,7 @@ def process_cmdline(pid):
         return subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "(Get-CimInstance Win32_Process -Filter 'ProcessId = %d').CommandLine" % pid],
-            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30).stdout.strip()
+            capture_output=True, text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=30).stdout.strip()
     except Exception:
         return ""
 
@@ -168,7 +168,7 @@ def sdk_editor_pid():
              "(Get-CimInstance Win32_Process -Filter \"Name = 'UnrealEditor.exe'\""
              " | Where-Object { $_.CommandLine -like '*%s*' }"
              " | Select-Object -First 1).ProcessId" % PROJECT_MARKER],
-            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=30).stdout.strip()
+            capture_output=True, text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=30).stdout.strip()
         return int(out) if out.isdigit() else None
     except Exception:
         return None
@@ -219,7 +219,7 @@ def editor_window_title(pid):
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "(Get-Process -Id %d -ErrorAction SilentlyContinue).MainWindowTitle" % pid],
-            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=20).stdout.strip()
+            capture_output=True, text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=20).stdout.strip()
         return out or None
     except Exception:
         return None
@@ -253,7 +253,7 @@ def sweep_owner():
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "(Get-Process -Id %d -ErrorAction SilentlyContinue) -ne $null" % pid],
-            capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=20).stdout.strip()
+            capture_output=True, text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=20).stdout.strip()
         return pid if out.lower().startswith("true") else None
     except Exception:
         return None                      # cannot tell - do not cry wolf

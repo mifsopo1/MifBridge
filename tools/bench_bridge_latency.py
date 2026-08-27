@@ -38,7 +38,7 @@ except Exception:
 def foreground_pid():
     try:
         out = subprocess.run(["powershell", "-NoProfile", "-Command", FOREGROUND_PS],
-                             capture_output=True, text=True, timeout=30).stdout.strip()
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30).stdout.strip()
         return int(out) if out.isdigit() else None
     except Exception:
         return None

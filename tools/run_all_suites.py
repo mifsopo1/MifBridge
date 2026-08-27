@@ -83,7 +83,7 @@ def main():
         print("  [%d] %-32s running..." % (which, name), flush=True)
         t0 = time.time()
         try:
-            r = subprocess.run([sys.executable, name], capture_output=True, text=True,
+            r = subprocess.run([sys.executable, name], capture_output=True, text=True, encoding="utf-8", errors="replace",
                                timeout=TIMEOUT, cwd=here)
             out = (r.stdout or "") + (r.stderr or "")
             rc = r.returncode

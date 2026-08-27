@@ -174,7 +174,7 @@ def vet_endpoint(name, registered):
 def fetch_issues():
     cmd = ["gh", "issue", "list", "--label", LABEL, "--state", "open",
            "--json", "number,title,body,author,createdAt", "--limit", str(MAX_REPORTS)]
-    out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True,
+    out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace",
                          stdin=subprocess.DEVNULL, timeout=120)
     if out.returncode != 0:
         print("  gh issue list failed: %s" % (out.stderr or "").strip()[:300])

@@ -107,7 +107,7 @@ def main():
         return 0
 
     out = subprocess.run(["gh", "issue", "comment", str(number), "--body", body],
-                         cwd=HERE, capture_output=True, text=True,
+                         cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace",
                          stdin=subprocess.DEVNULL, timeout=120)
     if out.returncode != 0:
         print("gh issue comment failed: %s" % (out.stderr or "").strip()[:300])

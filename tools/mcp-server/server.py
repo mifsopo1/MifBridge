@@ -1537,7 +1537,8 @@ def wrap_tree_widget(blueprint_id: str, widget_name: str, wrapper_class: str,
 
 @mcp.tool()
 def move_tree_widget(blueprint_id: str, widget_name: str, parent_name: str = None,
-                     as_root: bool = False, index: int = None) -> dict:
+                     as_root: bool = False, index: int = None,
+                     replace_root: bool = False) -> dict:
     "Reparent an EXISTING widget. add_tree_widget creates and remove_tree_widget deletes; without this, rearranging meant delete + recreate, losing every property already set on the widget. Pass parent_name or as_root. Refuses to move a panel into itself or its own descendant (that builds a cycle and the next tree walk never returns). Changes parentage ONLY - set slot layout afterwards with set_property on the widget's Slot. as_root DISPLACES any existing root: the old root and its whole subtree drop out of the hierarchy and stop rendering, so it requires replace_root=True and reports displaced_subtree_size. Compile to apply."
     return _post("move_tree_widget", blueprintId=blueprint_id, widgetName=widget_name,
                  parentName=parent_name, asRoot=as_root, index=index, replaceRoot=replace_root)

@@ -160,7 +160,7 @@ def link_plugin(root):
         return "Source already linked"
     r = subprocess.run(["cmd", "/c", "mklink", "/J", src_link,
                         os.path.join(CANONICAL, "Source")],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         raise SystemExit("mklink failed: " + (r.stderr or r.stdout))
     return "Source junction -> " + os.path.join(CANONICAL, "Source") + "  (Binaries/Intermediate stay local)"
