@@ -1195,6 +1195,64 @@ engine has no such class registered in this build, which is as definitive as it 
       take back the build cost, or keep them for CURFEW and build the endpoints there, where a 5.7
       uncooked project can actually exercise them. Building them here would mean shipping eight
       untested surfaces on a compile alone, which is the thing this spec has declined to do all along.
+      RESOLVED 2026-08-27. Checked Curfew's OWN Build.cs and docs/01-design-decisions.md before
+      asking Andre to pick a side of the fork, and it wasn't a clean pick: three of the eight
+      (GameplayAbilities, ModelViewViewModel, ChaosVehiclesPlugin) are genuinely COMMITTED there
+      (DEC-063/064/065) with an inline rationale on each Build.cs line, not just linked speculatively -
+      but nothing is built yet for any of them either (zero UGameplayAbility/UGameplayEffect/
+      viewmodel/vehicle-pawn subclasses in Curfew's C++). Andre's actual decision, once that was on
+      the table: build GAS + MVVM authoring now anyway (see below - same bet as MetaHuman), minimal
+      ChaosVehicles tooling to support the A/B test DEC-063 itself describes as not yet run, and for
+      the remaining five (GeometryScripting, LevelSnapshots, LiveLink, MassEntity, ModularGameplay -
+      zero plan or presence in EITHER project) leave the dependencies linked and decline this item
+      for them specifically, tracked in the standalone decline entry below.
+- [x] **GameplayEffect modifier authoring.** DONE 2026-08-27. `add_gameplay_effect_modifier`
+      (MifBridgeGAS.cpp, MIF_WITH_GAS - already linked, now actually used).
+      THE GAP set_property CANNOT COVER: FGameplayModifierInfo::Attribute is an FGameplayAttribute,
+      whose real field is a PRIVATE `TFieldPath<FProperty>` (AttributeSet.h), friend-gated to the
+      details-panel customization and settable only via SetUProperty(FProperty*) after resolving a
+      real property off an AttributeSet class. No plain string a caller hands set_property reliably
+      produces a working reference here - the IK Rig file's exact warning (syntactically valid,
+      semantically broken, ok:true) - so this endpoint resolves attributeSetClass+attributeName to a
+      real FProperty and lets the ENGINE build the reference, then appends to Modifiers[].
+      SCOPE, deliberately narrow: Modifiers/Executions only - the one part of the pre-5.3 direct-field
+      GameplayEffect model that is NOT UE_DEPRECATED in 5.7 (checked every field around it). Tags,
+      immunity and conditional effects moved onto UGameplayEffectComponent subclasses (GEComponents,
+      protected) in modern GAS and are a separate, more involved authoring problem if ever needed.
+      A REAL 5.3/5.7 DIVERGENCE CAUGHT BY THE PROBE, not assumed from one tree: 5.7 renamed
+      EGameplayModOp::Multiplicitive/Division to MultiplyAdditive/DivideAdditive (kept as
+      UMETA(Hidden) backwards-compat aliases, same values); 5.3 has ONLY the old names - the newer
+      spellings do not exist there at all (C2039/C2065 on the first 5.3 probe build). Likewise
+      FGameplayAttribute::IsSupportedProperty is a 5.6+ addition; IsGameplayAttributeDataProperty is
+      the portable static check present in both trees, and the stricter/more-correct one for a new
+      attribute regardless. Fixed and reverified on both engines before this line was written.
+      VERIFIED LIVE, not just compiled: throwaway probe editor, a real UAttributeSet with one
+      FGameplayAttributeData property added to the probe project's own Source for the purpose, a real
+      GameplayEffect Blueprint via the existing create_blueprint, then add_gameplay_effect_modifier
+      against it. Independently confirmed via get_property on the SAME CDO (a separate read path, not
+      the write's own response): `Attribute=/Script/MifProbe.MifProbeAttributeSet:Health`, magnitude
+      round-tripped exactly, tested with both Add and Divide operations.
+      UNPROVEN, HONESTLY: nothing here has run against a hand-authored AttributeSet on either real
+      project, because neither has one yet. Same honesty status as MetaHuman - real code, run for
+      real, against a fixture rather than game content.
+- [ ] **MVVM viewmodel authoring** - not yet started. Committed for Curfew (DEC-065, "MVVM
+      viewmodels over PlayerState/GameState/managers" for the phone/HUD stack), nothing built yet.
+      The likely gap, unconfirmed until actually checked: UMVVMViewModelBase properties use
+      FieldNotify metadata for the binding system to see them, and whether add_variable already
+      reaches that metadata generically or needs its own endpoint is the first thing to establish -
+      do not assume the gap without checking, the way GeometryScripting's asset-count test turned out
+      backwards above.
+- [ ] **ChaosVehicles minimal tooling** - not yet started. DEC-063 is explicit that the custom
+      raycast pawn is the working assumption and Chaos is only the week-2 A/B comparison, not yet
+      run. Andre's call: build just enough to support running that comparison (spawning/configuring a
+      Chaos vehicle pawn), not a full vehicle-authoring surface for a system that may not be chosen.
+- [~] **GeometryScripting, LevelSnapshots, LiveLink, MassEntity, ModularGameplay** - declined
+      2026-08-27. Zero plan or presence in either project: not in Curfew's own `.uproject` enabled-
+      plugins list, not mentioned in its design docs, and DDS2 has zero assets for any of them
+      (GeometryScripting additionally structurally blocked on DDS2 specifically - see the measured
+      bAllowCPUAccess finding above). Andre's call: leave the dependencies linked rather than drop
+      them (a future project may want one), but stop this spec item surfacing them as open work.
+      Revisit individually if either project ever actually adopts one.
 - [x] **Metasound - the audio read half.** DONE 2026-08-27. `describe_metasound`, both engines.
       VERIFIED AGAINST REAL CONTENT, which is why it was chosen: MS_OneArmedBandit reports 10 inputs
       (PullLever/Trigger, RollersRemaining/Int32, Reward/Float ...), 2 outputs, 97 nodes, 111 edges,

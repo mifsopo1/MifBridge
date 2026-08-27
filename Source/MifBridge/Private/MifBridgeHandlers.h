@@ -1701,6 +1701,8 @@ namespace MifBridge
 	// MetaHuman Character asset creation + preview spawn (MifBridgeMetaHuman.cpp) — MIF_WITH_METAHUMAN.
 	MIF_DECL(create_metahuman_character);
 	MIF_DECL(spawn_metahuman_actor);
+	// GameplayEffect modifier authoring (MifBridgeGAS.cpp) — MIF_WITH_GAS.
+	MIF_DECL(add_gameplay_effect_modifier);
 
 #undef MIF_DECL
 }

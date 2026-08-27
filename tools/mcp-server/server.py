@@ -3651,6 +3651,15 @@ def spawn_metahuman_actor(character_path: str) -> dict:
     return _post("spawn_metahuman_actor", characterPath=character_path)
 
 
+@mcp.tool()
+def add_gameplay_effect_modifier(object_path: str, attribute_set_class: str, attribute_name: str,
+                                 operation: str, magnitude: float = 0.0) -> dict:
+    "Add a modifier (attribute + operation + flat magnitude) to a GameplayEffect Blueprint's Modifiers array. object_path is the GameplayEffect's CDO (.../GE_Foo.Default__GE_Foo_C, same convention as any Blueprint default read/write in this bridge). attribute_set_class + attribute_name resolve to a real FProperty on the AttributeSet, which the engine then builds the FGameplayAttribute reference from - a plain set_property call cannot do this correctly because FGameplayAttribute's real field is a private engine-managed FieldPath, not a string a caller can hand-author. operation is Add | Multiply | Divide | Override (GAS's own MultiplyAdditive/DivideAdditive spellings are also accepted). magnitude is a flat ScalableFloat; curve-table magnitudes aren't covered here. Not saved: save_blueprint/save_package to persist."
+    return _post("add_gameplay_effect_modifier", objectPath=object_path,
+                 attributeSetClass=attribute_set_class, attributeName=attribute_name,
+                 operation=operation, magnitude=magnitude)
+
+
 # --------------------------------------------------------------------------
 # BLENDER backend - bl_* tools. These do NOT reach Unreal: they go over the
 # loopback socket to the MifBlender addon (tools/blender-addon/), so they are

@@ -441,6 +441,8 @@ namespace MifBridge
 			// MetaHuman Character
 			MIF_BIND(create_metahuman_character);
 			MIF_BIND(spawn_metahuman_actor);
+			// GameplayAbilities (GAS)
+			MIF_BIND(add_gameplay_effect_modifier);
 #undef MIF_BIND
 		}
 		return Map;
