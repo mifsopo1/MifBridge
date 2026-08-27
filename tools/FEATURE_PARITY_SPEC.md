@@ -1329,6 +1329,16 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
   history anyway) is the fix if Andre agrees they are cruft.
 
 - [ ] **The safety gate's second half: the scratch-PATH rule, and batch.**
+      ADDS A THIRD PART, found 2026-08-26 by the Curfew session and worth stating in their words:
+      the gate does not distinguish READING the world from WRITING it. It is a NAME LIST, and
+      exec_console is on it wholesale because a console command can do anything. So their preflight
+      check - a snippet that only enumerates actors and reports the open map, no writes - is refused
+      for what it MIGHT have done. Their summary: 'the safety check that protects the city can't run
+      at all in scratch mode, which is a slightly unfortunate inversion'. That is exactly right.
+      Do NOT fix it by pattern-matching console strings for safe commands. That is a denylist on a
+      scripting language, which is the guard shape that always loses. Either the console endpoints
+      stay all-or-nothing, or there is a separate READ-ONLY console endpoint whose implementation
+      cannot write - the distinction has to be structural, not textual.
   The gate shipped as the UNSAFE-OPERATION half only (commit 19efa9c). Two gaps remain, both written
   into docs/15 rather than left implicit:
   (a) A write to a NON-SCRATCH path still succeeds. Enforcing "writes must target /Game/_Mif*" needs a
