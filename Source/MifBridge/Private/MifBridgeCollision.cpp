@@ -251,13 +251,35 @@ namespace MifBridge
 	}
 
 	/** Shared resolve: /Game/-only, must be a UStaticMesh, must have (or get) a BodySetup. */
+	// bAllowAnyMount: /Game/ ONLY for writes, any mount point for reads.
+	//
+	// The /Game/ restriction is right for the three mutating endpoints this resolver was written for -
+	// nothing here should be modifying /Engine/ or a plugin's content, and refusing outright is a
+	// better guard than hoping nobody passes one.
+	//
+	// It is wrong for a READ. get_collision on /Engine/EngineMeshes/Sphere is harmless and is exactly
+	// the kind of thing someone does to see what correct collision looks like. Worse, inheriting the
+	// guard made the read untestable: the scratch world has no /Game/ StaticMesh at all, so every
+	// available mesh was refused and the endpoint could not be exercised against anything.
+	//
+	// A guard copied from a mutation into a read is a guard that has stopped protecting anything and
+	// started costing something.
 	static UStaticMesh* ResolveStaticMeshForCollision(const TSharedRef<FJsonObject>& In,
-		const TSharedRef<FJsonObject>& Out, const TCHAR* Endpoint)
+		const TSharedRef<FJsonObject>& Out, const TCHAR* Endpoint, bool bAllowAnyMount = false)
 	{
-		const FString RawPath = JStr(In, TEXT("path"));
-		if (RawPath.IsEmpty() || !RawPath.StartsWith(TEXT("/Game/")))
+		const FString RawPath = JStrAny(In, { TEXT("path"), TEXT("assetPath"),
+											  TEXT("mesh"), TEXT("staticMesh") });
+		if (RawPath.IsEmpty())
 		{
-			Fail(Out, FString::Printf(TEXT("%s: path required, must start with /Game/"), Endpoint));
+			Fail(Out, FString::Printf(TEXT("%s: path required"), Endpoint));
+			return nullptr;
+		}
+		if (!bAllowAnyMount && !RawPath.StartsWith(TEXT("/Game/")))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("%s: path must start with /Game/ - this endpoint MODIFIES the mesh, and engine or "
+					 "plugin content is not ours to change. get_collision READS any mount point."),
+				Endpoint));
 			return nullptr;
 		}
 		UObject* Asset = LoadAssetLenient(RawPath);
@@ -488,7 +510,9 @@ namespace MifBridge
 			return;
 		}
 
-		UStaticMesh* Mesh = ResolveStaticMeshForCollision(In, Out, TEXT("get_collision"));
+		// Any mount point: this is a read. See the note on the resolver.
+		UStaticMesh* Mesh = ResolveStaticMeshForCollision(In, Out, TEXT("get_collision"),
+			/*bAllowAnyMount=*/true);
 		if (!Mesh) { return; }
 
 		// STRAIGHT OFF THE BodySetup, not through UStaticMeshEditorSubsystem.
