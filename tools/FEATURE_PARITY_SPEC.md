@@ -1242,3 +1242,20 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
   Fix is to move CURFEW (one env var, MIF_BRIDGE_PORT) rather than MifBlender (documented in three
   files, addon has no bind-address option). Suggest 8801 for a second editor, leaving 879x alone.
   Needs Andre - it changes how his other project launches.
+
+- [ ] **Seven .bak-* files are TRACKED IN GIT and should probably not be.**
+  Found 2026-08-26 by listing the release zip rather than trusting its file count:
+    Source/MifBridge/Private/MifBridgeAssetOps.cpp.bak-predt
+    Source/MifBridge/Private/MifBridgeDescribe.cpp.bak-predt
+    Source/MifBridge/Private/MifBridgeUserTypes.cpp.bak-predt
+    Source/MifBridge/Private/MifBridgeWorld.cpp.bak-splinefix
+    docs/06_OPEN_ISSUES_FROM_USE.md.bak-predt
+    tools/mcp-server/server.py.bak-console
+    tools/mcp-server/server.py.bak-predt
+  These are snapshots taken before some past edit. They are excluded from release zips now, so they do
+  no harm to a consumer, but four of them sit in Source/ next to the real files and are an easy thing
+  to open by mistake when searching - a .bak of MifBridgeDescribe.cpp will match a grep for a handler
+  name and show stale code.
+  NOT deleted unilaterally: they are tracked, so someone chose to commit them, and it is possible one
+  is being kept deliberately as a reference. git rm --cached (or plain deletion, since git holds the
+  history anyway) is the fix if Andre agrees they are cruft.

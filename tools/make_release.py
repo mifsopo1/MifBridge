@@ -20,9 +20,12 @@ second source of truth that drifts from the first one, which is the exact failur
 about. .gitignore already excludes Binaries/, Intermediate/, Saved/ and DerivedDataCache/, so anything
 git tracks is by definition source rather than build output.
 
-Two things are then removed on top of that, because they are tracked but are not part of a deployable
-plugin: the test-run logs under tools/ (suite_run_all*.log and friends, which are evidence of a
-particular night's run) and .github/, which is this repo's CI rather than the consumer's.
+Two categories are then removed on top of that, because they are tracked but are not part of a
+deployable plugin: `.github/`, which is this repo's CI rather than the consumer's, and run artifacts -
+any `.log`, any `.bak*` backup, and the per-run results JSON. Those are matched by KIND, not by name.
+Naming them individually was the first version of this and it leaked: listing the zip afterwards found
+cooked_sweep_final.log, fuzz_final.log, fuzz_verify.log and docs/06_OPEN_ISSUES_FROM_USE.md.bak-predt
+all being shipped.
 
 THE MANIFEST is the point of the exercise. It records, for each release:
   * the plugin version from the .uplugin - ONE source of truth, read, never retyped;
@@ -53,11 +56,17 @@ BIND_FILE = os.path.join(ROOT, "Source", "MifBridge", "Private", "MifBridgeCommo
 
 # Tracked by git, but NOT part of a deployable plugin. Evidence of a test run and this repo's own CI.
 EXCLUDE_PREFIXES = (".github/",)
+# Patterns rather than a list of the files that happened to exist when this was written. The first
+# version of this named suite_run*.log and *_night.log specifically, and listing the zip afterwards
+# showed cooked_sweep_final.log, fuzz_final.log, fuzz_verify.log and a .bak-predt backup all shipping.
+# Enumerating known offenders is the same brittle shape as a hand-maintained file list - the thing the
+# `git ls-files` decision above exists to avoid - so these match by KIND instead.
 EXCLUDE_PATTERNS = (
-    re.compile(r"^tools/suite_run.*\.log$"),
-    re.compile(r"^tools/.*_night\.log$"),
-    re.compile(r"^tools/suite_results\.json$"),
-    re.compile(r"^tools/endpoints_current\.json$"),
+    re.compile(r"\.log$"),                       # any run log, wherever it lives
+    re.compile(r"\.bak(-|\.|$)"),                 # editor/backup droppings, e.g. .bak-predt
+    re.compile(r"(^|/)~\$"),                     # Office lock files
+    re.compile(r"^tools/suite_results\.json$"),   # results of one particular run
+    re.compile(r"^tools/endpoints_current\.(json|txt)$"),
 )
 
 # Engine versions this plugin is known to build against. 5.3.2 is the cooked DDS2 SDK; 5.7 is Curfew.
@@ -101,7 +110,11 @@ def tracked_files():
             continue
         if rel.startswith(EXCLUDE_PREFIXES):
             continue
-        if any(p.match(rel) for p in EXCLUDE_PATTERNS):
+        # search(), NOT match(). re.match anchors at the START of the string, so a pattern like
+        # r"\.log$" matched only a path literally beginning with ".log" - i.e. nothing. The first
+        # patterns here happened to work because they began with ^tools/, which hid the mistake until
+        # the zip was listed and ten artifacts were found still shipping.
+        if any(p.search(rel) for p in EXCLUDE_PATTERNS):
             continue
         if not os.path.isfile(os.path.join(ROOT, rel)):
             continue      # tracked but deleted in the working tree
