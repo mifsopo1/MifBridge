@@ -1131,7 +1131,7 @@ engine has no such class registered in this build, which is as definitive as it 
       the reason to make a zone is never the zone. Spawned through UWaterZoneActorFactory for the same
       reason create_water_body is - a raw spawn gets no far-distance material and the wrong render
       target resolution. Covered by tools/test_water_zone.py, 21 checks, both engines.
-- [ ] **Nine plugin dependencies are linked and nothing uses them.** Found 2026-08-27.
+- [x] **Nine plugin dependencies are linked and nothing uses them.** Found 2026-08-27.
       ChaosVehiclesPlugin, GameplayAbilities, GeometryScripting, LevelSnapshots, LiveLink,
       MassEntity, Metasound, ModelViewViewModel, ModularGameplay.
       This is EXACTLY the state MifBridgeWater.cpp describes at the top of itself - "the dependency
