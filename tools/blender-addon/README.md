@@ -37,12 +37,12 @@ so both can run at once.)
 
 `bl_info` declares a floor of **4.4**. That floor is now *conservative* rather than unverified:
 
-| version | imports | registers | 18 ops | FBX kwargs | mesh suite | ops suite |
+| version | imports | registers | 20 ops | FBX kwargs | mesh suite | ops suite |
 |---|---|---|---|---|---|---|
-| 3.6.23 | ✅ | ✅ | ✅ | all present | **41/41** | **12/12** |
-| 4.2.17 LTS | ✅ | ✅ | ✅ | all present | **41/41** | **12/12** |
-| 4.4.0 | ✅ | ✅ | ✅ | all present | **41/41** | **12/12** |
-| **5.0.1** | ✅ | ✅ | ✅ | all present | **41/41** | **12/12** |
+| 3.6.23 | ✅ | ✅ | ✅ | all present | **77/77** | **12/12** |
+| 4.2.17 LTS | ✅ | ✅ | ✅ | all present | **77/77** | **12/12** |
+| 4.4.0 | ✅ | ✅ | ✅ | all present | **77/77** | **12/12** |
+| **5.0.1** | ✅ | ✅ | ✅ | all present | **77/77** | **12/12** |
 
 Reproduce the whole thing in one command each:
 
