@@ -43,3 +43,6 @@ tools/.sweep-lock
 # SUBMITTED BY REPORTERS, and this is a public repository - it must not be committed by accident.
 tools/report_queue.json
 tools/report_results.json
+
+# Release artifacts from tools/make_release.py - build output, never tracked.
+tools/dist/

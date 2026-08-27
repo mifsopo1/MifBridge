@@ -45,6 +45,43 @@ void FMifBridgeModule::StartupModule()
 		{
 			Port = Parsed;
 		}
+		else
+		{
+			// Silently keeping 8791 after being ASKED for something else is how two editors end up on
+			// one port. Say so.
+			UE_LOG(LogMifBridge, Warning,
+				TEXT("MIF_BRIDGE_PORT='%s' is not a usable port number - staying on %d."),
+				*PortStr, Port);
+		}
+	}
+
+	// PORT ALLOCATION CHECK. This exists because of docs/06_OPEN_ISSUES_FROM_USE.md issue 15: a second
+	// editor was pointed at 8792 to dodge the first one already holding 8791, and 8792 is MifBlender's
+	// reserved port. Nothing warned, because nothing knew the allocation existed - so Blender was pushed
+	// onto another port and the Blender integration would have failed in a genuinely confusing way. The
+	// MCP server's _blender() dials 8792 and speaks a length-prefixed binary protocol; pointed at an
+	// HTTP listener, the port IS open and something DOES answer, so the two checks anyone would run both
+	// pass while nothing works.
+	//
+	// This only warns. Refusing to start would be worse: a deliberate override is legitimate (MifBlender
+	// itself honours MIF_BLENDER_PORT), and a bridge that will not boot is a bigger problem than one on
+	// an awkward port. The point is that the collision is no longer SILENT.
+	if (Port == 8792)
+	{
+		UE_LOG(LogMifBridge, Warning,
+			TEXT("MifBridge is configured for port 8792, which is RESERVED for the MifBlender addon ")
+			TEXT("(tools/blender-addon/MifBlender/server.py:66, README.md:178). If Blender is or will be ")
+			TEXT("running on this machine, its addon cannot bind and the Blender tools will reach THIS ")
+			TEXT("editor instead - which answers, so it looks connected. Prefer moving THIS editor: the ")
+			TEXT("addon port lives in two places that must agree (its preference and MIF_BLENDER_PORT), ")
+			TEXT("while this one is a single variable. Use 8801+ for a second editor ")
+			TEXT("and leave 879x alone. See docs/06_OPEN_ISSUES_FROM_USE.md issue 15."));
+	}
+	else if (Port == 9876)
+	{
+		UE_LOG(LogMifBridge, Warning,
+			TEXT("MifBridge is configured for port 9876, which belongs to the third-party 'blender-mcp' ")
+			TEXT("addon, not to us. Use 8801+ instead."));
 	}
 
 	Server = MakeShared<FMifBridgeServer>(Port, Token);

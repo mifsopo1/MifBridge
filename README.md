@@ -175,6 +175,29 @@ that the backend is unreachable. Full detail in [`tools/blender-addon/README.md`
    `%APPDATA%/Blender Foundation/Blender/4.4/scripts/addons/` if you want to edit it in place.)
    **Blender 4.4** — it is pinned, because the FBX and `bmesh` defaults it depends on move between
    versions.
+
+### Port allocation — read this before pointing anything at a new port
+
+| Port | Owner | Notes |
+|---|---|---|
+| `8791` | **MifBridge (UE)** — first editor | The default. `MIF_BRIDGE_PORT` overrides it. |
+| `8792` | **MifBlender addon** — reserved | Do **not** reuse. Changing it means keeping the addon preference *and* `MIF_BLENDER_PORT` in sync — two moving parts. |
+| `8793`–`8799` | leave clear | Headroom for the pair above. |
+| `8801`+ | **additional UE editors** | Use these when running a second project's editor. |
+| `9876` | third-party `blender-mcp` | Not ours. Avoid so it can stay installed alongside. |
+
+**Why this table exists.** On 2026-08-26 a second editor was pointed at `8792` to dodge the first
+one already holding `8791`. `8792` is MifBlender's. Blender was pushed onto `8793`, and the Blender
+tools would have dialled `8792`, reached a UE HTTP bridge, and spoken a length-prefixed binary
+protocol at it. The port is open and something answers, so the two checks anyone would run both
+pass while nothing works. Nothing warned, because the allocation existed only as three scattered
+defaults rather than as a map. Full write-up: `docs/06_OPEN_ISSUES_FROM_USE.md` issue 15.
+
+MifBridge now logs a warning at startup if it is configured for `8792` or `9876`. It only warns —
+a deliberate override is legitimate, and a bridge that refuses to boot is a worse problem than one
+on an awkward port. The point is that the collision is no longer silent.
+
+**Running two editors at once?** Give the second one `MIF_BRIDGE_PORT=8801`, not `8792`.
 3. The addon binds **`127.0.0.1:8792`** — loopback only, no `0.0.0.0` option. Port 8792 is chosen to
    sit next to the UE bridge on 8791 and to *avoid* 9876, so the third-party `blender-mcp` addon can
    stay installed alongside it without a bind clash.

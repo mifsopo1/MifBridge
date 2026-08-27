@@ -1224,9 +1224,20 @@ IS open and something IS listening - the two checks anyone would run both pass.
 
 ### The fix, which is Andre's call
 
-Move CURFEW, not MifBlender. MifBlender's port is documented in three files and its addon has no
-bind-address option, whereas Curfew's is a single environment variable. Set `MIF_BRIDGE_PORT` for the
-Curfew editor to something outside the reserved range - 8801 is clear - and the collision is gone.
+Move CURFEW, not MifBlender - but for a more precise reason than I first wrote here.
+
+**Correction to my own first draft of this item.** I claimed MifBlender's port was hard to change
+because "the addon has no bind-address option". That conflates two things. The bind ADDRESS is
+hardcoded (`server.py:64`, `HOST = "127.0.0.1"`, with a deliberate comment: a `0.0.0.0` checkbox is
+a foot-gun on a socket that can run arbitrary Python). The PORT is a normal user preference -
+`__init__.py:65-69` declares an `IntProperty` and `:112` shows it in the addon preferences UI.
+
+The recommendation is unchanged, on better grounds: MifBlender's port lives in **two places that
+must agree** - the addon preference and `MIF_BLENDER_PORT` read by the MCP server
+(`tools/mcp-server/server.py:77-84`) - and a mismatch between them fails the same silent way this
+whole item is about. Curfew's port is **one** environment variable. Change the thing with one
+moving part, not the thing with two. Set `MIF_BRIDGE_PORT=8801` for the Curfew editor and the
+collision is gone.
 
 What this really argues for is writing the allocation down as a MAP rather than as three scattered
 defaults, so the next "just move it up one" does not land on something else:
