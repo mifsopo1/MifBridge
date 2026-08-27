@@ -1653,3 +1653,68 @@ Two more differences that look alarming and are NOT problems, recorded so nobody
 See also `MIF_WITH_*` in `MifBridge.Build.cs`: where a whole PLUGIN may be absent, the endpoint stays
 registered and compiles a named refusal rather than vanishing. A missing endpoint tells a caller
 nothing; a refusal that names the plugin tells them everything.
+
+## 15. On a cooked project, a blueprint is not a `Blueprint`
+
+`find_assets {class:"Blueprint"}` does not fail on cooked content. It returns a **small number**, with
+`ok:true`, and nothing to suggest the answer was anywhere else.
+
+Cooking registers a blueprint under its **generated class** — `BlueprintGeneratedClass`,
+`WidgetBlueprintGeneratedClass`, `AnimBlueprintGeneratedClass`. Measured on DDS2:
+
+| `/Game/Blueprints` | count |
+|---|---|
+| `class:"Blueprint"` | **26** |
+| `class:"BlueprintGeneratedClass"` | **915** |
+
+Under 3%, delivered confidently.
+
+**`bRecursiveClasses` does not rescue this**, and it looks like it should. `UBlueprint` and
+`UBlueprintGeneratedClass` are different hierarchies, not parent and child, so recursion never crosses
+from one to the other.
+
+### The part that makes it genuinely dangerous
+
+The few that *do* come back are mostly assets **the bridge created itself** in the session, because
+anything newly authored is uncooked. So the caller receives a confident answer composed almost
+entirely of their own scratch — which looks exactly like a real, small result set.
+
+### How it was found, and what it had already cost
+
+Trying to settle whether DDS2 has any Chaos vehicles:
+
+```
+find_assets {class:"Blueprint",                nameContains:"VehicleBoat"}  ->  0
+find_assets {class:"BlueprintGeneratedClass",  nameContains:"VehicleBoat"}  -> 15
+```
+
+That `0` had already been written into the feature spec as evidence that a plugin dependency had
+nothing to operate on. It was wrong, and nothing about the response said so.
+
+### What was done about it
+
+`find_assets` now re-runs the count against the generated-class spelling and reports
+`generatedClassCount` plus `cookedClassNote` — but **only when the other spelling is genuinely
+bigger**, so an uncooked project pays one extra registry query and hears nothing. A note on a correct
+query is noise, and noise is how a warning stops being read.
+
+The re-count applies the caller's own `nameContains`, `pathPrefix` and `origin` filters. Reporting a
+project-wide number against a narrow query would read as nonsense and be ignored.
+
+**The alt class is resolved BY NAME, never built as `/Script/Engine.<X>GeneratedClass`.** That
+spelling was written first and is wrong for the widget family: `WidgetBlueprintGeneratedClass` lives
+in `/Script/UMG`. The note fired for `Blueprint` and `AnimBlueprint` and stayed silent for the family
+with the widest gap — 78 against 279. `tools/test_cooked_class_trap.py` caught it, which is the only
+reason it is not still wrong.
+
+### The related conclusion this produced
+
+DDS2's "vehicles" are not Chaos vehicles. Walking the chain from a boat:
+
+```
+BP_VehicleBoat_Jetski_C -> OwnedVehicle_Boat_C -> QuickTravelOwnedVehicle_C -> Engine.Character
+```
+
+`ACharacter` subclasses, all the way down. So `ChaosVehiclesPlugin` really does have nothing here to
+operate on — but that is now known from an inheritance chain rather than from a headcount that the
+gotcha above would have corrupted anyway.

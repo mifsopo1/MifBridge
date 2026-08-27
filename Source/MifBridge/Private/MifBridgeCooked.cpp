@@ -334,6 +334,66 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("returned"), Arr.Num());
 		Out->SetBoolField(TEXT("truncated"), bTruncated);
 		Out->SetArrayField(TEXT("assets"), Arr);
+
+		// THE COOKED-BLUEPRINT TRAP, and the reason this block exists rather than a docs note.
+		//
+		// On a COOKED project a Blueprint asset is registered as its GENERATED CLASS -
+		// BlueprintGeneratedClass, WidgetBlueprintGeneratedClass, AnimBlueprintGeneratedClass - and not
+		// as Blueprint at all. Asking for the obvious class name therefore returns a SMALL NUMBER
+		// rather than an error, which is the worst possible shape: measured on DDS2, /Game/Blueprints
+		// holds 26 assets of class Blueprint and 915 of class BlueprintGeneratedClass. Under 3%, with
+		// ok:true and nothing to suggest the answer was anywhere else.
+		//
+		// Worse still, the few that DO come back are mostly assets this bridge created itself in the
+		// session, because anything newly authored is uncooked. So the caller gets a confident answer
+		// composed almost entirely of their own scratch.
+		//
+		// Found while trying to establish whether DDS2 has any Chaos vehicles: find_assets for
+		// class:"Blueprint" nameContains:"VehicleBoat" returned 0, and the same query against
+		// BlueprintGeneratedClass returned 15.
+		//
+		// So the count is re-run against the generated-class spelling and the difference reported. Only
+		// when it is genuinely bigger - a project that is not cooked pays one extra registry query and
+		// hears nothing.
+		{
+			static const TCHAR* Editor[] = { TEXT("Blueprint"), TEXT("WidgetBlueprint"), TEXT("AnimBlueprint") };
+			for (const TCHAR* Name : Editor)
+			{
+				if (!ClassName.Equals(Name, ESearchCase::IgnoreCase)) { continue; }
+				// RESOLVED BY NAME, not built as "/Script/Engine.<X>GeneratedClass". That spelling was
+				// written first and was wrong for the widget family: WidgetBlueprintGeneratedClass
+				// lives in /Script/UMG, so the note fired for Blueprint and AnimBlueprint and stayed
+				// silent for the one family with the widest gap (78 against 279). Caught by the test,
+				// which is the only reason it is not still wrong.
+				UClass* AltClass = ResolveClass(FString(Name) + TEXT("GeneratedClass"), nullptr);
+				if (!AltClass) { break; }
+				FARFilter Alt = Filter;
+				Alt.ClassPaths.Empty();
+				Alt.ClassPaths.Add(AltClass->GetClassPathName());
+				TArray<FAssetData> AltAssets;
+				Registry.GetAssets(Alt, AltAssets);
+				int32 AltMatched = 0;
+				for (const FAssetData& A : AltAssets)
+				{
+					if (!NameContains.IsEmpty() && !A.AssetName.ToString().Contains(NameContains)) { continue; }
+					const bool bAltContainer = IsContainerOnlyPackage(A.PackageName);
+					if (Origin == TEXT("container") && !bAltContainer) { continue; }
+					if (Origin == TEXT("loose") && bAltContainer) { continue; }
+					++AltMatched;
+				}
+				if (AltMatched > Matched)
+				{
+					Out->SetNumberField(TEXT("generatedClassCount"), AltMatched);
+					Out->SetStringField(TEXT("cookedClassNote"), FString::Printf(
+						TEXT("this filter matched %d asset(s) of class %s, but %d of class %sGeneratedClass. "
+							 "On a COOKED project a blueprint is registered as its generated class, so the "
+							 "%d here are the uncooked ones - typically only what has been authored in this "
+							 "session. Re-run with class:\"%sGeneratedClass\" for the real answer."),
+						Matched, Name, AltMatched, Name, Matched, Name));
+				}
+				break;
+			}
+		}
 	}
 
 	//   in:  { package: "/Game/Blueprints/Pawns/BP_BaseNPC" }  (an object path also works)  (alias: path)

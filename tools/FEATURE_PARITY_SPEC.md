@@ -1155,10 +1155,17 @@ engine has no such class registered in this build, which is as definitive as it 
       asset-count test has now been PROVEN wrong once, on the one entry that was re-examined properly.
       Only GeometryScripting has a real answer; ChaosVehiclesPlugin, GameplayAbilities, LevelSnapshots,
       LiveLink, MassEntity, ModelViewViewModel and ModularGameplay still rest on that weak test.
-      A first look at vehicles was already enough to make the point: 29 vehicle-named blueprint
-      classes appear in the inheritance tree while `find_assets {class:"ChaosVehicleWheel"}` says 0.
-      Whether any of them is actually a CHAOS vehicle is unresolved - the names may come from a
-      mounted content plugin - and it is exactly the sort of thing the headcount would miss.
+      VEHICLES ARE NOW SETTLED, and settling them found something worse than the answer. DDS2's
+      vehicles are NOT Chaos vehicles - the chain runs
+        BP_VehicleBoat_Jetski_C -> OwnedVehicle_Boat_C -> QuickTravelOwnedVehicle_C -> Engine.Character
+      ACharacter subclasses all the way down, so ChaosVehiclesPlugin genuinely has nothing here. That
+      is one of the eight answered properly, from an inheritance chain rather than a headcount.
+      THE HEADCOUNT WOULD HAVE BEEN CORRUPTED ANYWAY. Chasing this turned up docs/02 section 15: on a
+      COOKED project a blueprint is registered as its GENERATED class, so
+      `find_assets {class:"Blueprint", nameContains:"VehicleBoat"}` returns 0 while the same query
+      against BlueprintGeneratedClass returns 15. /Game/Blueprints is 26 against 915 - under 3%,
+      with ok:true. find_assets now reports generatedClassCount and cookedClassNote when the other
+      spelling is bigger.
       THE RIGHT TEST, for whoever picks this up: not "how many assets of the plugin's signature class
       exist" but "is there anything here this plugin could OPERATE ON". Those differ whenever the
       plugin acts on a runtime container (GeometryScripting), on a level rather than an asset
