@@ -41,14 +41,32 @@ def find_row_struct():
     Chosen from the live registry rather than hardcoded: a name that exists on one engine build and
     not another turns a real failure into a fixture problem, which is the kind of flake that gets a
     suite ignored.
+
+    ASK AN EXISTING DATATABLE FIRST. The original version yielded up to 200 UserDefinedStructs and let
+    the caller try create_datatable with each until one stuck - correct, because the endpoint is the
+    authority on what derives from FTableRowBase, but expensive: most of this project's structs are not
+    row structs, so it burned 288 refusals to find 4 successes across one regression. Andre saw the
+    result as a wall of red FAILED cards in the panel and reasonably asked whether something was broken.
+
+    An existing DataTable's row struct is a valid row struct BY CONSTRUCTION, and read_datatable
+    reports it (MifBridgeDataTables.cpp:397). One call replaces the brute force. The old search is kept
+    below as a fallback, because a project with no DataTables at all is a legitimate state and this
+    suite should still run there.
     """
-    for cls in ("UserDefinedStruct",):
-        r = M.call("find_assets", {"class": cls, "limit": 200})
-        for a in (r.get("assets") or []):
-            p = a.get("path")
-            # A struct is only usable as a row struct if it derives from FTableRowBase; the endpoint
-            # itself is the authority on that, so the caller below treats a refusal as "try the next".
-            yield p
+    tables = (M.call("find_assets", {"class": "DataTable", "limit": 5}).get("assets") or [])
+    for t in tables:
+        r = M.call("read_datatable", {"path": t.get("path"), "limit": 1})
+        rs = r.get("rowStruct")
+        if rs:
+            yield rs
+            break      # one confirmed-good answer is enough; the rest is fallback
+
+    # FALLBACK, unchanged in spirit: the endpoint is the authority, so a refusal means "try the next".
+    # Capped far lower than 200 now - if the DataTable route failed, twenty guesses will not save it,
+    # and 200 refusals in the transcript actively hides real failures.
+    r = M.call("find_assets", {"class": "UserDefinedStruct", "limit": 20})
+    for a in (r.get("assets") or []):
+        yield a.get("path")
     for engine in ("RichTextStyleRow", "RichImageRow"):
         yield engine
 

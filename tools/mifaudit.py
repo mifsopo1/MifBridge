@@ -42,6 +42,14 @@ FINDINGS = os.path.join(HERE, "audit_findings.jsonl")
 DENY = {
     # would end or restart the session the harness is driving
     "quit_editor", "restart_editor", "shutdown",
+    # STARTS A PROFILER and leaves it running. Every sweep here (fuzz_endpoints, cooked_sweep,
+    # audit_read_purity) enumerates endpoint_names() and filters on this set, so without the entry a
+    # sweep would call trace_start, begin writing a .utrace, and never call trace_stop - degrading
+    # performance for the remainder of the run and every run after it in the same session. Tracing is
+    # a deliberate act with a matching stop, not something to fire blindly at 300 endpoints.
+    # trace_stop is deliberately NOT denied: it is harmless, and leaving it callable means a stray
+    # trace can be stopped.
+    "trace_start",
     # writes to disk - the standing rule for this project is that audits save nothing
     "save_blueprint", "save_level", "save_level_as", "save_dirty_packages", "save_all",
     "save_asset", "save_package",
