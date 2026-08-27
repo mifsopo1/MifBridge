@@ -1566,17 +1566,51 @@ namespace MifBridge
 			return;
 		}
 		const FString Guid = Node->NodeGuid.ToString();
+		// Captured BEFORE the removal, and by Cast rather than UEdGraphNode::GetGraph(), which fires
+		// ensureMsgf(false) when the outer is not a graph (5.3 EdGraphNode.cpp:490, 5.7 :548) - which is
+		// precisely the case the final branch below exists to REPORT rather than assert on.
+		UEdGraph* OwningGraph = Cast<UEdGraph>(Node->GetOuter());
 		UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForNode(Node);
 		if (Blueprint)
 		{
 			Blueprint->Modify();
+			// Returns VOID on both engines (BlueprintEditorUtils.h 5.3:474, 5.7:473), so there is nothing
+			// to test here and the read-back below is the ONLY evidence the node actually went.
 			FBlueprintEditorUtils::RemoveNode(Blueprint, Node, /*bDontRecompile*/ true);
 			MarkStructural(Blueprint);
 		}
-		else if (UEdGraph* Graph = Cast<UEdGraph>(Node->GetOuter()))
+		else if (OwningGraph)
 		{
-			Graph->Modify();
-			Graph->RemoveNode(Node);
+			OwningGraph->Modify();
+			// This one DOES return whether it removed anything (EdGraph.h 5.3:166, 5.7:167 - 5.7 adds a
+			// defaulted third argument, source-compatible). Not tested directly because the read-back
+			// below is strictly stronger; left as a bare call deliberately, not by oversight.
+			OwningGraph->RemoveNode(Node);
+		}
+		else
+		{
+			// NEITHER branch used to run here, and control fell straight through to reporting `removed`.
+			// A node with no owning blueprint whose outer is not a graph had NOTHING done to it, and the
+			// caller was told the guid it asked about was gone.
+			Fail(Out, FString::Printf(
+				TEXT("node %s has no owning blueprint and its outer is a %s rather than a UEdGraph, so there "
+					 "is no way to remove it. NOTHING was removed."),
+				*Guid, Node->GetOuter() ? *Node->GetOuter()->GetClass()->GetName() : TEXT("null")));
+			return;
+		}
+
+		// VERIFY. One removal call is void and the other's bool is not consulted, so the only honest
+		// evidence is the graph no longer listing the node. Compared by POINTER and never dereferenced:
+		// the node is pending destruction by now, and a guid scan would be wrong anyway - a reused guid
+		// (which this endpoint's own graphId parameter exists to disambiguate) could match a DIFFERENT
+		// node and report a failure that did not happen.
+		if (OwningGraph && OwningGraph->Nodes.Contains(Node))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("node %s is STILL in graph '%s' after the removal call, so nothing was removed. Read "
+					 "the graph back with list_nodes before doing anything else."),
+				*Guid, *OwningGraph->GetName()));
+			return;
 		}
 		Out->SetStringField(TEXT("removed"), Guid);
 	}
@@ -1844,7 +1878,7 @@ namespace MifBridge
 			{
 				// Batch M, option (c): a cancelled transaction discards the undo entry rather than
 				// rolling a node creation back (PM-007), so say what may be sitting in the graph.
-				Fail(Out, TEXT("could not create a function Result node for the new output. WHAT MAY BE LEFT BEHIND: a bare UK2Node_FunctionResult may already have been placed in this graph and is NOT removed by this failure - check with list_nodes and remove it with delete_node."));
+				Fail(Out, TEXT("could not create a function Result node for the new output. WHAT MAY BE LEFT BEHIND: a bare UK2Node_FunctionResult may already have been placed in this graph and is NOT removed by this failure - check with list_nodes and remove it with remove_node (which needs confirm:true)."));
 				return;
 			}
 

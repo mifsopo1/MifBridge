@@ -596,7 +596,7 @@ namespace MifBridge
 			TEXT("useViewportCamera"), TEXT("useViewport"), TEXT("fromViewport"), TEXT("fov"),
 			TEXT("width"), TEXT("height"), TEXT("name"), nullptr };
 		static const TCHAR* const GMifDescNotes_capture_camera[] = {
-			TEXT("showFlags"), TEXT("not implemented — capture_camera always renders lit/tonemapped with Atmosphere+Fog on and does NOT read the level viewport's show flags; set_view_mode does not reach this image"),
+			TEXT("showFlags"), TEXT("not implemented — capture_camera always renders lit/tonemapped with Atmosphere+Fog on and does NOT read the level viewport's show flags, and no endpoint in this build sets a view mode"),
 			TEXT("viewMode"), TEXT("not implemented — same gap as showFlags: the viewport's view mode is not consumed here"),
 			TEXT("actorPath"), TEXT("not a parameter of this endpoint — to frame an actor, read get_actor_bounds and pass its origin as lookAt, or focus_viewport the actor and then capture with useViewportCamera:true"),
 			nullptr };
@@ -697,7 +697,7 @@ namespace MifBridge
 		static const TCHAR* const GMifDescKeys_create_material_function[] = {
 			TEXT("path"), TEXT("assetPath"), TEXT("description"), TEXT("exposeToLibrary"), nullptr };
 		static const TCHAR* const GMifDescNotes_create_material_function[] = {
-			TEXT("kind"), TEXT("not implemented — layer/layerBlend function kinds ship with set_material_instance_layers, a later batch"),
+			TEXT("kind"), TEXT("not implemented — nothing in this build authors material layers; layer/layerBlend function kinds are read-only here"),
 			nullptr };
 		static const TCHAR* const GMifDescKeys_create_material_instance[] = {
 			TEXT("parent"), TEXT("parentMaterial"), TEXT("path"), TEXT("scalars"), TEXT("vectors"),

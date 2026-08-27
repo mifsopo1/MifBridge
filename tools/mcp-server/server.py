@@ -2508,6 +2508,15 @@ def create_water_body(type: str, label: str = None, x: float = 0.0, y: float = 0
 
 
 @mcp.tool()
+def create_water_zone(x: float = 0.0, y: float = 0.0, z: float = 0.0,
+                      extent_x: float = None, extent_y: float = None,
+                      label: str = None) -> dict:
+    "Create an AWaterZone in the OPEN level - the thing that makes water bodies RENDER. Since UE 5.1 a water body outside every zone is authored but completely invisible, so this is usually the second half of create_water_body rather than a separate task. A zone is NOT given a list of bodies: each AWaterBody finds its zone by OVERLAP, so you place the zone over them and the response reports what it picked up - bodiesNowCovered, plus stillWithoutZone naming every body that is STILL invisible so you can widen or move the zone. Pass extent_x and extent_y together or not at all (one axis from you and one from a default is a shape nobody asked for); omitting both keeps the engine default. The extent is read back off the actor rather than echoed. Spawned through the engine's own actor factory, so the far-distance material and render target resolution match what the placement menu would give you. Nothing is saved - the zone exists in the open level only."
+    return _post("create_water_zone", x=x, y=y, z=z,
+                 extentX=extent_x, extentY=extent_y, label=label)
+
+
+@mcp.tool()
 def set_water_body_spline(path: str, points: list) -> dict:
     "Replace a water body's spline - the spline IS the shape of a river or lake. points is an array of {x,y,z} in WORLD space and REPLACES the existing spline entirely; there is no append and no single-point setter, because ResetSpline is the only engine entry point that rebuilds the body's derived data and poking the spline component directly leaves those caches stale (a river the wrong shape, with no error anywhere). Resolves by actor PATH, not label. Needs at least 2 points. The response reads the spline back rather than echoing the request, and reports splineNote if the engine collapsed coincident points so the count differs from what you sent."
     return _post("set_water_body_spline", path=path, points=points)

@@ -4,7 +4,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 5.0,
+  "seconds": 5.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -22,7 +22,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 5.3,
+  "seconds": 5.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -31,7 +31,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.4,
+  "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -49,7 +49,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 6.2,
+  "seconds": 6.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -58,7 +58,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 6.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -83,11 +83,11 @@
  {
   "suite": "test_crash_journal.py",
   "pass": 1,
-  "rc": 1,
-  "summary": "",
-  "seconds": 1.7,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.0,
   "editorSurvived": true,
-  "tail": "  PASS  T622 and the start names the endpoint we called\n  PASS  T622 the end record carries elapsed ms\n  PASS  T622 and an ok flag\n  PASS  T622 the elapsed time is plausible\n\n=== T623: mifwatch reads it and reports the current session as live ===\n  PASS  T623 mifwatch parses the journal\n  PASS  T623 the newest session has no shutdown yet - the editor is still running\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_crash_journal.py\", line 159, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_crash_journal.py\", line 137, in main\n    check(\"T623 and it counted the calls\", (cur.get(\"calls\") or 0) > 0, json.dumps(cur)[:180])\n                                                                        ^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\__init__.py\", line 231, in dumps\n    return _default_encoder.encode(obj)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\encoder.py\", line 200, in encode\n    chunks = self.iterencode(o, _one_shot=True)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\encoder.py\", line 258, in iterencode\n    return _iterencode(o, 0)\n           ^^^^^^^^^^^^^^^^^\nTypeError: keys must be str, int, float, bool or None, not tuple"
+  "tail": ""
  },
  {
   "suite": "test_create_asset.py",
@@ -112,7 +112,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 20.0,
+  "seconds": 21.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -121,7 +121,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -130,7 +130,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 6.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -139,7 +139,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 10.7,
+  "seconds": 11.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -148,7 +148,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 8.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -157,7 +157,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 8.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -175,7 +175,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 6.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -211,7 +211,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 18.3,
+  "seconds": 18.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -238,7 +238,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 8.7,
+  "seconds": 9.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -265,7 +265,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 6.3,
+  "seconds": 6.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -283,7 +283,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 11.8,
+  "seconds": 11.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -310,7 +310,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 4.7,
+  "seconds": 4.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -319,7 +319,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 10.0,
+  "seconds": 10.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -327,7 +327,7 @@
   "suite": "test_niagara.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 53   FAIL 0",
+  "summary": "PASS 61   FAIL 0",
   "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
@@ -337,7 +337,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 17.1,
+  "seconds": 17.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -391,7 +391,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 46   FAIL 0",
-  "seconds": 3.7,
+  "seconds": 4.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -400,7 +400,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 7.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -427,7 +427,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -444,8 +444,8 @@
   "suite": "test_safety_gate.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 47   FAIL 0",
-  "seconds": 14.3,
+  "summary": "PASS 51   FAIL 0",
+  "seconds": 15.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -480,8 +480,8 @@
   "suite": "test_snap_ground.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 13   FAIL 0",
-  "seconds": 23.4,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 24.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -544,7 +544,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 9.3,
+  "seconds": 9.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -554,6 +554,15 @@
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
   "seconds": 7.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_unchecked_returns.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -661,7 +670,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.4,
+  "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -713,11 +722,11 @@
  {
   "suite": "test_crash_journal.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "",
-  "seconds": 1.7,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.0,
   "editorSurvived": true,
-  "tail": "  PASS  T622 and the start names the endpoint we called\n  PASS  T622 the end record carries elapsed ms\n  PASS  T622 and an ok flag\n  PASS  T622 the elapsed time is plausible\n\n=== T623: mifwatch reads it and reports the current session as live ===\n  PASS  T623 mifwatch parses the journal\n  PASS  T623 the newest session has no shutdown yet - the editor is still running\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_crash_journal.py\", line 159, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_crash_journal.py\", line 137, in main\n    check(\"T623 and it counted the calls\", (cur.get(\"calls\") or 0) > 0, json.dumps(cur)[:180])\n                                                                        ^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\__init__.py\", line 231, in dumps\n    return _default_encoder.encode(obj)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\encoder.py\", line 200, in encode\n    chunks = self.iterencode(o, _one_shot=True)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\encoder.py\", line 258, in iterencode\n    return _iterencode(o, 0)\n           ^^^^^^^^^^^^^^^^^\nTypeError: keys must be str, int, float, bool or None, not tuple"
+  "tail": ""
  },
  {
   "suite": "test_create_asset.py",
@@ -769,7 +778,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 11.4,
+  "seconds": 10.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -814,7 +823,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 16.7,
+  "seconds": 15.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -841,7 +850,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 18.4,
+  "seconds": 18.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -877,7 +886,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 5.5,
+  "seconds": 5.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -922,7 +931,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 8.4,
+  "seconds": 8.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -957,7 +966,7 @@
   "suite": "test_niagara.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 53   FAIL 0",
+  "summary": "PASS 61   FAIL 0",
   "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
@@ -1073,11 +1082,11 @@
  {
   "suite": "test_safety_gate.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "PASS 49   FAIL 2",
+  "rc": 0,
+  "summary": "PASS 51   FAIL 0",
   "seconds": 15.7,
   "editorSurvived": true,
-  "tail": "=== T635: the gate covers the endpoints that can REACH a save ===\n  PASS  T635 send_editor_key is refused in scratch mode\n  PASS  T635 send_editor_key is refused BY THE GATE\n  PASS  T635 invoke_editor_command is refused in scratch mode\n  PASS  T635 invoke_editor_command is refused BY THE GATE\n  PASS  T635 and the side door stays shut through batch too\n  PASS  T635 invoke_editor_tab still works (it opens UI, it cannot execute)\n\n=== T634: the gate holds through batch, not just through RunEndpoint ===\n  PASS  T634 save_package is refused directly\n  PASS  T634 the same call wrapped in batch is ALSO refused\n  PASS  T634 and the refusal comes from the safety gate, not from something else\n  PASS  T634 the batch as a whole reports failure\n  PASS  T634 a refused op does not drop the ops around it\n  PASS  T634 the permitted ops still ran\n  PASS  T634 and only the gated one was refused\n  PASS  T633 the bridge is still answering\n\n========================================================================\nPASS 49   FAIL 2\n  FAILED: T637 a RELATIVE path is ALLOWED - it resolves inside the export root\n          {\"ok\": false, \"error\": \"export_asset: the safety gate is in 'scratch' mode, which confines file output to the project directory (D:/DDS2SDK/Game/). 'D:/UE532/Engine/Binaries/Win64/mif_relative_probe.fbx' is outside it. O\n  FAILED: T637 and it landed under the project, not the process CWD\n          file=\n========================================================================"
+  "tail": ""
  },
  {
   "suite": "test_selfpin.py",
@@ -1110,8 +1119,8 @@
   "suite": "test_snap_ground.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 13   FAIL 0",
-  "seconds": 23.3,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 24.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1188,11 +1197,20 @@
   "tail": ""
  },
  {
+  "suite": "test_unchecked_returns.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_undo_integrity.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 89.4,
+  "seconds": 89.9,
   "editorSurvived": true,
   "tail": ""
  },

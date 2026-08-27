@@ -309,7 +309,7 @@ namespace MifBridge
 				 "default RenderTransform.Translation)"),
 			{ { TEXT("propertyPath"), TEXT("the parameter is 'property'") },
 			  { TEXT("channel"), TEXT("a track carries BOTH translation channels; pick X or Y when you key it, in set_widget_animation_keys") },
-			  { TEXT("widgetGuid"), TEXT("widgets are addressed by name here — list_widgets shows them") } }))
+			  { TEXT("widgetGuid"), TEXT("widgets are addressed by name here — list_tree_widgets shows them") } }))
 		{
 			return;
 		}
@@ -929,11 +929,29 @@ namespace MifBridge
 			// the widget-name mapping lives in UWidgetAnimation::AnimationBindings. Removing one and
 			// not the other is the same split that makes a half-created binding animate nothing.
 			MS->RemovePossessable(Guid);
-			Anim->AnimationBindings.RemoveAll([&Guid](const FWidgetAnimationBinding& B)
+			const int32 BindingsDropped = Anim->AnimationBindings.RemoveAll(
+				[&Guid](const FWidgetAnimationBinding& B) { return B.AnimationGuid == Guid; });
+
+			// bRemovedBinding was set to true from the fact that the CALLER ASKED, not from anything that
+			// happened - so a binding that was not there, or a possessable the MovieScene declined to
+			// drop, still came back as removedBinding:true. RemovePossessable returns a bool (MovieScene.h
+			// 5.3:447, 5.7:463) and RemoveAll returns a count; both were discarded.
+			//
+			// Re-queried rather than read off those returns, because the re-query is the BOTH HALVES check
+			// the comment above promises: RemovePossessable returning false cannot distinguish "declined"
+			// from "was never there", and the widget-name half is not in the MovieScene at all.
+			const bool bPossessableGone = (MS->FindPossessable(Guid) == nullptr);
+			bRemovedBinding = bPossessableGone && BindingsDropped > 0;
+			if (!bRemovedBinding)
 			{
-				return B.AnimationGuid == Guid;
-			});
-			bRemovedBinding = true;
+				// Not a Fail: the TRACK removal above succeeded and was verified, and that is this
+				// endpoint's primary product. Reported as a shortfall so it cannot pass for a clean removal.
+				Out->SetStringField(TEXT("bindingWarning"), FString::Printf(
+					TEXT("the track was removed, but the BINDING was not fully cleared: the possessable is %s "
+						 "and %d widget binding(s) were dropped. A half-removed binding animates nothing and "
+						 "looks fine in the designer - read it back with list_widget_animations."),
+					bPossessableGone ? TEXT("gone") : TEXT("STILL PRESENT"), BindingsDropped));
+			}
 		}
 
 		if (FindPropertyTrack(Anim, Guid, TrackClassFor(*PropDef)))

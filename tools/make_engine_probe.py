@@ -35,6 +35,28 @@ TWO TRAPS ON THIS MACHINE, both learned the expensive way:
 
 2. THE EXIT CODE LIES. Same rule as every other build in this repo: check that the binary's mtime
    actually moved. A "success" that took under a second did nothing.
+
+3. NEVER PROBE A SOURCE ENGINE. This is the expensive one, and it is guarded below.
+
+   A SOURCE engine compiles its own modules into intermediates SHARED by every target built
+   against it. This probe deliberately asks for the strictest settings the engine offers
+   (BuildSettingsVersion.Latest / IncludeOrderVersion.Latest, see generate()), and the real DDS2
+   project asks for V2 - which on 5.3 means Cpp17 and EngineIncludeOrderVersion.Unreal5_0. Those
+   two produce DIFFERENT shared PCHs, so probing D:/UE532 rewrote a file the real project depends
+   on, and UBT said so in as many words on the next real build:
+
+       Invalidating makefile for DrugDealerSimulator2Editor (SharedPCH.Core.Cpp20.cpp modified)
+       ------ Building 2849 action(s) started ------
+
+   A full engine rebuild, for a probe that had not even reached the link step. And it thrashes
+   BOTH ways: the next probe would invalidate it right back.
+
+   An INSTALLED engine cannot be hurt this way - its engine modules ship prebuilt and are never
+   recompiled - which is why probing 5.7 costs nothing and probing 5.3 costs an hour.
+
+   There is also no reason to probe a source engine: it is source BECAUSE a real project builds
+   against it, and that build is the better compile check anyway - same compiler, same settings,
+   and it produces the binary the editor actually loads.
 """
 import argparse
 import io
@@ -166,6 +188,37 @@ def link_plugin(root):
     return "Source junction -> " + os.path.join(CANONICAL, "Source") + "  (Binaries/Intermediate stay local)"
 
 
+def refuse_source_engine(engine, force):
+    """Stop before a probe against a SOURCE engine thrashes its shared intermediates.
+
+    Trap 3 in this module's docstring, with UBT's own words for what it costs. The test is
+    installed-vs-source rather than a hardcoded path, because this plugin is built against engines
+    on machines this script has never seen: an installed engine drops Engine/Build/InstalledBuild.txt
+    and never recompiles its own modules, so it is safe; a source engine has no such file and shares
+    everything.
+    """
+    if os.path.isfile(os.path.join(engine, "Engine", "Build", "InstalledBuild.txt")):
+        return
+    if force:
+        print("WARNING: %r looks like a SOURCE engine and --force was passed. Expect the next real"
+              % engine)
+        print("         build against it to rebuild the engine. See trap 3 in this script.")
+        return
+    raise SystemExit(NL.join([
+        "REFUSED: %r has no Engine/Build/InstalledBuild.txt, so it is a SOURCE engine." % engine,
+        "",
+        "A probe asks for stricter build settings than a real project usually does, which rewrites",
+        "a SHARED engine PCH and forces a full engine rebuild on the next real build - measured",
+        "once at 2849 actions, for a probe that never even reached linking.",
+        "",
+        "You almost certainly do not need this. An engine is a source build BECAUSE a real project",
+        "builds against it, and that build is the better compile check - same compiler, same",
+        "settings, and it produces the binary the editor loads.",
+        "",
+        "Pass --force only if you have read trap 3 and want the rebuild anyway.",
+    ]))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", required=True,
@@ -174,7 +227,12 @@ def main():
     ap.add_argument("--module", default="MifProbe")
     ap.add_argument("--assoc", default="5.7")
     ap.add_argument("--build", action="store_true", help="run the build after generating")
+    ap.add_argument("--force", action="store_true",
+                    help="probe a SOURCE engine anyway - read trap 3 first, it costs an engine rebuild")
     a = ap.parse_args()
+
+    # BEFORE generating anything: a refusal that has already written files is not a refusal.
+    refuse_source_engine(a.engine, a.force)
 
     root = os.path.abspath(a.out)
     generate(root, a.module, a.assoc)

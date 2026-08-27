@@ -17,6 +17,13 @@ looks done" is a judgement and a tool that ticks items on a name match would qui
      a vague item is not flagged on a coincidence.
   2. TWO ITEMS WITH THE SAME BOLD TITLE. `- [ ] **PCG**` twice is the exact failure above. Reported
      whatever their checkbox state, since a `- [x]` and a `- [ ]` for one title is precisely the mess.
+  3. A TICKED ITEM WHOSE OWN BODY SAYS IT IS NOT DONE. Rules 1 and 2 only ever look at the checkbox,
+     and an item can contradict itself underneath one. Found on 2026-08-27: the write-mode dropdown
+     read `- [x] ... DONE 2026-08-27` and then, four lines down, `Designed, NOT built. ... Next up.`
+     Both halves had been true, at different times, and nothing said which was current - so one entry
+     was simultaneously evidence that the work was finished and that it was the next thing to do.
+     Advisory like the others, and deliberately loose: an item legitimately saying 'NOT built on 5.3'
+     is flagged too. A false flag costs a glance; a self-contradicting tracker costs a rebuild.
 
 Usage:
     python tools/spec_check.py            # report
@@ -53,6 +60,43 @@ def items(text):
         body = m.group(2)
         title = re.match(r"\*\*(.+?)\*\*", body)
         out.append((i + 1, m.group(1), title.group(1) if title else body[:60], body))
+    return out
+
+
+# Phrases that mean 'this is not finished'. Matched case-insensitively against the CONTINUATION
+# lines of a ticked item, never its first line - a DONE line often says what it replaced.
+STALE = (
+    "not built",
+    "not started",
+    "next up",
+    "not yet built",
+    "not implemented",
+)
+
+
+def bodies(text):
+    """(line number, checkbox, title, continuation text) for every item.
+
+    An item's body is every following line indented past the bullet and not itself a bullet. Kept
+    separate from items() rather than folded into it, because rules 1 and 2 want the FIRST line only
+    and would start matching on quoted history if they saw the whole entry.
+    """
+    lines = text.splitlines()
+    out = []
+    for i, line in enumerate(lines):
+        m = re.match(r"^\s*-\s*\[([ x~])\]\s*(.*)$", line)
+        if not m:
+            continue
+        title = re.match(r"\*\*(.+?)\*\*", m.group(2))
+        body = []
+        for nxt in lines[i + 1:]:
+            if not nxt.strip():
+                break
+            if re.match(r"^\s*-\s*\[[ x~]\]", nxt) or not nxt.startswith(" "):
+                break
+            body.append(nxt)
+        out.append((i + 1, m.group(1), title.group(1) if title else m.group(2)[:60],
+                    chr(10).join(body)))
     return out
 
 
@@ -94,6 +138,25 @@ def main():
                 "       DUPLICATE with mixed state: '%s' at %s\n"
                 "           one copy was ticked and another was not - the untouched one keeps "
                 "surfacing as 'next'" % (key[:52], ", ".join("L%d[%s]" % w for w in where)))
+
+    # 3. ticked, but its own body says otherwise
+    for lineno, box, title, body in bodies(text):
+        if box != "x" or not body:
+            continue
+        # Per LINE, not per body, so a nearby marker can speak for the phrase beside it - and so an
+        # entry can say 'NOT BUILT, deliberately' or record its own history without being flagged
+        # forever. An escape hatch a reader can SEE beats a rule too timid to fire.
+        hits = []
+        for bl in body.splitlines():
+            low = bl.lower()
+            if "deliberately" in low or "history" in low or "previously read" in low:
+                continue
+            hits += [w for w in STALE if w in low and w not in hits]
+        if hits:
+            problems.append(
+                "L%-5d TICKED but its body says otherwise: %s\n"
+                "           contains %s - if that is history, say so on the line itself"
+                % (lineno, title[:58], ", ".join("'%s'" % h for h in hits)))
 
     if not problems:
         if not quiet:

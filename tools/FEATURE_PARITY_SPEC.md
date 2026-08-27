@@ -1017,7 +1017,13 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       NOT BUILT, deliberately: endpoints that read and write .cpp/.h. An agent already has
       file tools and does that better without an HTTP round trip. Adding them would be
       tool-count parity rather than capability - the exact thing this spec says not to chase.
-      REOPENED - declined because a cooked mod cannot add C++ modules. Curfew is UNCOOKED 5.7 and can. The decline text even said 'this is a real competitor advantage for general UE development'.
+      HOW IT GOT HERE, deliberately recorded, since the tick above and this paragraph used to
+      contradict one another. The FIRST decline was on cooked-modding grounds - 'a cooked mod
+      cannot add C++ modules' - and the scope audit reopened it correctly: Curfew is uncooked 5.7
+      and can, and that is never a valid reason to decline anything in this plugin.
+      IT WAS THEN RE-DECLINED ON BETTER GROUNDS, which is the standing position: an agent already
+      has file tools and edits .cpp/.h better without an HTTP round trip. That reasoning has
+      nothing to do with cooking and survives the scope correction intact.
       C++ modules, so "read and write .cpp/.h and modify the codebase" has no target here. This is a
       real competitor advantage for general UE development and a non-feature for this use case.
 - [~] **Build Config** - declined again 2026-08-27, on NEW reasoning.
@@ -1089,6 +1095,21 @@ engine has no such class registered in this build, which is as definitive as it 
 - [x] **PCG** - BUILT 2026-08-27. list_pcg_graphs, describe_pcg_graph, list_pcg_components, pcg_generate, pcg_cleanup.
       REOPENED, and this is the one the old rule cost most. Declined as 'a DDS2 mod does not regenerate the world'. Curfew is a CITY BUILDER on 5.7 - procedural generation is close to its whole point.
       reasoning rather than resting on it.
+- [x] **Water** - READ and WRITE both DONE 2026-08-27, and the write half was incomplete until the
+      zone landed. list_water_bodies, describe_water_body, create_water_body, set_water_body_spline,
+      create_water_zone.
+      Built for CURFEW, not for DDS2 - Andre: "my curfew project needs the new 5.7 water endpoints".
+      This was the first item judged for a project other than the cooked one.
+      THE GAP THAT WAS LEFT, and how it was found. create_water_body's own parameter help said "create
+      the zone separately with create_water_zone" and no such endpoint existed. Since UE 5.1 a water
+      body overlapping NO AWaterZone does not render at all, so the write half could author water that
+      could never be seen - and the response note said exactly that while offering nothing that could
+      fix it. Found by tools/audit_message_endpoints.py, written for the purpose: every endpoint named
+      in a user-facing message must exist.
+      create_water_zone reports bodiesNowCovered and NAMES the bodies still outside every zone, because
+      the reason to make a zone is never the zone. Spawned through UWaterZoneActorFactory for the same
+      reason create_water_body is - a raw spawn gets no far-distance material and the wrong render
+      target resolution. Covered by tools/test_water_zone.py, 21 checks, both engines.
 - [x] **StateTree** - DONE 2026-08-27. list_state_trees, describe_state_tree.
       DDS2 has 0 StateTree assets, which is exactly what the original decline said and exactly why it was not a reason. MifBridge already read Behavior Trees; a project on StateTree instead would have found the AI half of this bridge simply blank.
       REOPENED - declined as 'DDS2 does not use it'. That is a fact about one test project. StateTree is the modern UE5 answer to Behavior Trees and a 5.7 project may well be on it.
@@ -1628,7 +1649,10 @@ Use self_audit for the count; it asks the running DLL.
       report types with zero instances while visibly full of foliage - the response says that
       outright, because a bare zero there is the same silent-success shape the endpoint exists to
       close.
-      SOURCE ONLY - not built; the editor is mid-sweep.
+      BUILT AND SERVING - verified 2026-08-27 by calling it on the live editor, which answered
+      ok:true with typeCount / instanceCount / editorDataAvailable.
+      This line previously read 'SOURCE ONLY - not built; the editor is mid-sweep' - true the night
+      it was written and stale within hours. Found by spec_check rule 3, which is why it exists.
       add_foliage_instances can place instances and nothing can enumerate them. A write with no
       read-back is the exact shape this project keeps filing bugs about, and here it is structural:
       there is no endpoint that could verify a foliage placement even in principle.
@@ -1644,13 +1668,13 @@ what an untracked item does. Tracked now.
 
 - [x] **Write-mode dropdown in the panel.**
       DONE 2026-08-27 - built, and the gate verified live afterwards (test_safety_gate 47/47).
-      Designed (workflow wf_3c814b5e-5a8), NOT built. The design is sound and the blocker that made
-      it pointless is now gone: run_console_captured was reaching UEngine::Exec ungated, so an agent
-      in scratch could already do everything full permits and a lock on the toggle was decorative.
-      Constraints the design settled: the toggle must be a PLAIN SLATE WIDGET with a direct lambda -
-      never an FUICommandInfo and never a ToolMenu entry, because invoke_editor_command executes
-      exactly those. With send_editor_key now gated an agent also cannot drive a focused combo box.
-      Next up.
+      An LLM launching the editor sets it through MIF_BRIDGE_WRITE_MODE; the dropdown makes it
+      runtime-mutable from the panel.
+      WHY IT IS SHAPED THE WAY IT IS, since the constraints are not obvious from the code: the
+      toggle is a PLAIN SLATE WIDGET with a direct lambda - never an FUICommandInfo and never a
+      ToolMenu entry, because invoke_editor_command executes exactly those and an agent could
+      otherwise widen its own permissions. send_editor_key is gated for the same reason, so an agent
+      cannot drive a focused combo box either.
 
 - [x] **Inheritance tree tab.** DONE 2026-08-27 - endpoint + panel tab, both engines.
       Confirmed feasible and cheap: FBlueprintTags::ParentClassPath is an ASSET REGISTRY TAG, so the
@@ -1677,14 +1701,17 @@ what an untracked item does. Tracked now.
       absolute.
       Andre's call if he wants it for Curfew - the analysis half already tells you whether any
       given mesh can be split before you try.
-      THE ONE I DROPPED. From the competitor's 'BUILT-IN TECH ART TOOLS' screenshot: pick a skeletal
-      mesh, tick bone zones (Head, Torso, Arm L, ...), get one mesh asset per partition.
+      WHAT WAS ORIGINALLY ASKED FOR (history, not status - the finding above is the status). From
+      the competitor's 'BUILT-IN TECH ART TOOLS' screenshot: pick a skeletal mesh, tick bone zones
+      (Head, Torso, Arm L, ...), get one mesh asset per partition. This is the ask I dropped from a
+      status summary, which is why this section exists.
       Much the largest of the four. It is real geometry work - splitting skinned vertex data at bone
       boundaries and rebuilding skin weights - and it CREATES ASSETS, so it needs the cooked-asset
       guards and a save path this bridge deliberately does not have. We currently have list_bones and
       nothing else on the skeletal side.
-      Not started, and it is a project rather than an evening. Worth confirming with Andre that it is
-      wanted before spending that, since it is the one ask that is not mostly-plumbing.
+      Sized then as a project rather than an evening. That sizing is now superseded: on DDS2 it is
+      not a matter of effort at all, and on an uncooked project it is the geometry work described
+      above. Andre's call whether he wants it for Curfew.
 
 
 - [x] **Collision: the READ half.** DONE 2026-08-27. `get_collision` reports simple/convex counts,

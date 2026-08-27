@@ -164,6 +164,30 @@ def main():
           "missedUnderDeepStack=%r" % (r.get("missedUnderDeepStack"),))
     check("T65 left the buried actor alone", abs((actor_z(L_BURIED) or 0) - 2000.0) < 1.0, actor_z(L_BURIED))
 
+    # ---------------------------------------------------------------- T66 the alignment sibling
+    print("")
+    print("=== T66: alignRefused, the sibling moveRefused already had ===")
+    # SetActorRotation returns whether it rotated, exactly as SetActorLocation does - and the align
+    # branch discarded it while SetActorLocation's was checked twenty lines earlier in the SAME loop.
+    # It rotates with SWEEP ON, so tilting an actor into the slope it has just landed on can be
+    # refused by collision, and that actor was still counted among `snapped` with nothing anywhere
+    # saying its rotation never changed.
+    r = M.call("snap_actors_to_ground", {"actorPaths": [openair], "groundActor": L_FLOORA,
+                                         "alignToNormal": True})
+    check("T66 alignRefused is reported when alignment was asked for", "alignRefused" in r,
+          "keys=%s - absent means the old binary is loaded" % sorted(r.keys()))
+    check("T66 and nothing was refused aligning to a FLAT floor", (r.get("alignRefused") or 0) == 0,
+          "alignRefused=%s alignWarning=%s" % (r.get("alignRefused"), r.get("alignWarning")))
+    check("T66 so no alignWarning on a clean run", "alignWarning" not in r, r.get("alignWarning"))
+
+    print("")
+    print("=== T67: the field is ABSENT when alignment was never asked for ===")
+    # A count of refusals for something never attempted means nothing, and a zero would read as
+    # "alignment was tried and it worked".
+    r = M.call("snap_actors_to_ground", {"actorPaths": [openair], "groundActor": L_FLOORA})
+    check("T67 alignRefused absent without alignToNormal", "alignRefused" not in r,
+          "alignRefused=%r reported by a call that never aligned anything" % (r.get("alignRefused"),))
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f in FAIL:

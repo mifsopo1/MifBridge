@@ -1109,7 +1109,7 @@ namespace MifBridge
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("path"), TEXT("assetPath"), TEXT("description"), TEXT("exposeToLibrary") },
 			TEXT("path (alias: assetPath), description, exposeToLibrary"),
-			{ { TEXT("kind"), TEXT("not implemented — layer/layerBlend function kinds ship with set_material_instance_layers, a later batch") } }))
+			{ { TEXT("kind"), TEXT("not implemented — nothing in this build authors material layers; layer/layerBlend function kinds are read-only here") } }))
 		{
 			return;
 		}

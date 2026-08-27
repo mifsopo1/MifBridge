@@ -1769,3 +1769,124 @@ deleting a subtree and reporting one line.
 
 The likely real-world hit for `remove_component` is an **inherited** component: declared on a parent
 class, not removable here, only overridable. The refusal now says that.
+
+## 25. Five bool returns the engine gave us and we threw away — FIXED
+
+Found 2026-08-27 by turning issue 24's lens into a sweep instead of a hunch. Issue 24 was two
+handlers spotted by reading. This asks the question mechanically, of the whole plugin.
+
+**The method**, because it is reusable and the numbers are the point:
+
+| | |
+|---|---|
+| bare-statement calls in the plugin | 513 distinct names |
+| not defined in our own sources | 385 |
+| declared `bool <Name>(` in the engine headers | 92 |
+| after excluding names where discarding is universal (container mutators, JSON setters, `Modify`, `MarkPackageDirty`) | **56** |
+| read by hand | 56 |
+| **real** | **5** |
+
+The other 51 split two ways, and both are worth naming. Some were **false matches on a same-named
+overload that returns void** — `FMaterialUpdateContext::AddMaterial`, `UPanelWidget::AddChild`
+(returns a `UPanelSlot*`), `USceneComponent::UpdateBounds`, `FEditorViewportClient::SetViewRotation`.
+The rest were **already covered by a read-back**, which is the stronger check: `rename_widget` ignores
+`Rename`'s bool and re-finds the widget through the tree instead; `add_reroute` ignores
+`TryCreateConnection`'s and checks `LinkedTo` instead. Those bare calls are correct and now say so in
+a comment, so the next sweep does not "fix" them.
+
+### The five
+
+| endpoint | call | what it meant |
+|---|---|---|
+| `snap_actors_to_ground` | `SetActorRotation` | rotates with **sweep on**, so tilting an actor into the slope it just landed on can be refused. Counted as `snapped` with nothing saying its rotation never changed. Now `alignRefused`. |
+| `add_struct_member`, `create_struct` | `ChangeVariableDefaultValue` | refuses a default that does not parse for the member type. `default:"abc"` on an int left the member with **no** default while the response reported the one asked for. |
+| `spawn_actor` (Level) | `SetStaticMesh` | the identical block in `MifBridgePIE.cpp` already read the mesh back; this copy did not. |
+| `remove_node` | `RemoveNode` ×2 | see below — the worst of the five. |
+| `remove_widget_animation_track` | `RemovePossessable` | `removedBinding` was reported from the **request flag**, not from anything observed. |
+
+### `remove_node` had three problems, and the third is the one that matters
+
+`FBlueprintEditorUtils::RemoveNode` is **void on both engines**; `UEdGraph::RemoveNode` returns a bool
+that was discarded. Those are issue 24 again. But the endpoint also had a **fall-through**: a node with
+no owning blueprint whose outer is not a `UEdGraph` matched neither branch, so nothing was attempted
+at all — and control ran straight on to `Out->SetStringField(TEXT("removed"), Guid)`.
+
+Not "did the removal work" but "was a removal even tried". Verification is now by pointer against the
+graph's node list, captured before the call: a guid scan would be wrong, because a reused guid — which
+this endpoint's own `graphId` parameter exists to disambiguate — could match a **different** node and
+report a failure that never happened.
+
+### Two adjacent-call asymmetries, which is what makes this lens keep paying
+
+Three of the five sit **next to a sibling that already checks**. `snap_actors_to_ground` tests
+`SetActorLocation`'s return twenty lines above the `SetActorRotation` that ignores its own, with a
+comment explaining why discarding it was wrong. `AddStructMemberNamed` checks `RenameVariable` on the
+line before the `ChangeVariableDefaultValue` it ignores. `spawn_actor` exists in two near-identical
+copies and only one reads the mesh back.
+
+So the highest-yield place to look is not a list of dangerous functions. It is **beside a check that
+already exists** — someone learned the lesson there and applied it to one line.
+
+### Coverage, including what is NOT covered
+
+`tools/test_unchecked_returns.py` (T720–T723) covers the struct defaults; `test_snap_ground.py`
+T66/T67 covers `alignRefused`. `remove_node` and `remove_widget_animation_track` are **not covered on
+the success path**: `remove_node` needs `confirm:true`, and `tools/scratch_confirm.py` cannot unblock
+it because the endpoint is addressed purely by guid and no payload can prove it scratch-only.
+
+That last point corrected a claim in `scratch_confirm.py` itself, which listed eleven endpoints it
+restored coverage for. It restores nine. `remove_node` and `rename_event` carry no path parameter and
+never could — now stated in its docstring, in its refusal message, and pinned by its self-test.
+
+## 26. Five messages told callers to run endpoints that do not exist — FIXED
+
+Found 2026-08-27, immediately after issue 25, by asking the same kind of question mechanically.
+
+MifBridge's error messages are unusually helpful: most name the endpoint you should have called
+instead. That is the point of them — and it means a **wrong name is worse than no advice**, because
+the caller follows the instruction and gets `not an endpoint on this build`, having been sent there by
+the bridge itself.
+
+| named in a message | reality |
+|---|---|
+| `delete_node` ×4 | the endpoint is `remove_node` — and it needs `confirm:true`, so the messages now say that too |
+| `list_widgets` | the endpoint is `list_tree_widgets`, and this one sat in a `RejectUnknownParams` hint — exactly where somebody looks after already getting the call wrong once |
+| `set_view_mode` ×2 | has never existed under any name; used to explain a limitation |
+| `set_material_instance_layers` ×2 | "ships with … a later batch" — a promise shaped like a fact |
+| `create_water_zone` | see below; not a typo at all |
+
+### The one that was not a naming mistake
+
+`create_water_body`'s parameter help said *"a body finds its own AWaterZone by overlap; create the
+zone separately with `create_water_zone`"*. Since UE 5.1 a water body overlapping **no** `AWaterZone`
+does not render at all, so the write half of the water family could author water that **could never be
+seen** — and its own response note said so, while offering nothing that could fix it.
+
+The advice had nowhere to send anyone because the capability was missing. So `create_water_zone` was
+built rather than the sentence deleted. It reports `bodiesNowCovered` and **names** the bodies still
+outside every zone, because nobody creates a zone for its own sake. Spawned through
+`UWaterZoneActorFactory` for the same reason `create_water_body` is: a raw `SpawnActor` gets no
+far-distance material and the wrong render target resolution — the same hole that endpoint had already
+dug once and documented.
+
+This also answers Andre's standing question about the 5.7 audit — *"we added water view endpoints i
+think but maybe not the water build"*. Read and write both existed; what was missing was the piece
+that makes the writes visible.
+
+### A test was holding the wrong name in place
+
+`test_recipes.py` asserted `"delete_node" in err`. It had pinned the mistake for as long as the
+message carried it — a test can only protect the behaviour it was told to expect, and it was told the
+wrong thing. Now asserts `remove_node`, with a note saying why.
+
+### The check, and the rule that makes it usable
+
+`tools/audit_message_endpoints.py`, wired into the same habit as `parity_check` and `spec_check`. Naively
+it reports eight things and five are noise, which is how a check gets ignored. Two rules fix that:
+
+* **the token IS the whole literal** → it is an identifier, not advice. `TEXT("save_maps")` is a
+  parameter alias; `TEXT("save_all")` is an entry in the forbidden-editor-command list.
+* **the token sits in an `aliases: …` span** → it names a parameter. `"maps (aliases: saveMaps,
+  save_maps)"` is documentation, not a suggestion.
+
+With those, five hits and five were real.

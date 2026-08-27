@@ -4,11 +4,22 @@ WHY THIS EXISTS. mifaudit strips `confirm` from every payload, alongside `save`,
 `discardUnsaved` and `replaceExisting`. That guard is correct and has earned its place: it is why an
 unattended overnight run cannot destroy a real asset.
 
-The cost has become visible though. Roughly eleven mutating endpoints have NO success-path coverage
-because of it - write_datatable_rows, delete_datatable_rows, remove_enum_value, remove_interface,
-remove_component, remove_node, revert_inherited_component, rename_variable, rename_function,
-rename_event, rename_event_dispatcher. Those are exactly the endpoints where a silent failure costs
-most, and every suite written tonight had to record the same gap.
+The cost has become visible though. Eleven mutating endpoints had NO success-path coverage because of
+it, and those are exactly the endpoints where a silent failure costs most.
+
+NINE of them this module genuinely unblocks, because each names its target by an asset path:
+write_datatable_rows, delete_datatable_rows, remove_enum_value, remove_interface, remove_component,
+revert_inherited_component, rename_variable, rename_function, rename_event_dispatcher.
+
+TWO IT CANNOT, and this list used to claim all eleven. remove_node and rename_event are addressed
+PURELY BY GUID - nodeGuid plus an optional graphId, with no path parameter to pass even if you
+wanted to - so check() refuses them every time and always will. They remain uncovered on the
+success path. That is a real gap, recorded here rather than papered over: the alternative is a
+reader believing these two are tested when nothing has ever exercised them.
+
+Widening the guard for them would mean trusting a guid, which is precisely the thing a guid cannot
+prove. Closing it properly means giving those two endpoints an optional blueprintId, which is an
+engine-side change and a parity update, not a change to this file.
 
 THE POINT OF THE GUARD IS NOT "never send confirm". It is "never destroy something that matters". A
 payload whose every path lies under /Game/_Mif cannot destroy something that matters: those assets are
@@ -82,7 +93,9 @@ def check(payload):
         # pointing at anything.
         raise NotScratch(
             "no asset path in this payload, so it cannot be shown to be scratch-only. Address the "
-            "target by a /Game/_Mif... path, or do not use confirm here.")
+            "target by a /Game/_Mif... path, or do not use confirm here. NOTE: remove_node and "
+            "rename_event are addressed only by guid and have no path parameter at all, so they "
+            "can never satisfy this and are knowingly uncovered - see the module docstring.")
     bad = [p for p in found if not is_scratch(p)]
     if bad:
         raise NotScratch(
@@ -120,6 +133,8 @@ if __name__ == "__main__":
         ({"path": "/Game/_MifDT/T", "save": True}, "save has no exemption"),
         ({"nested": {"deep": ["/Game/Real/Thing"]}}, "a real path buried in a nested structure"),
         ({"path": "/DDS2Casino/Asset/Thing"}, "another mount point entirely"),
+        ({"nodeGuid": "6A1F-DEAD", "graphId": "9C2E-BEEF"},
+         "remove_node/rename_event shape - guid-only, so it can NEVER be unblocked"),
     ]
     bad_count = 0
     for p in OK:

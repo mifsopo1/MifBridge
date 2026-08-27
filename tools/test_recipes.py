@@ -11,7 +11,7 @@ WHAT THIS SUITE ASSERTS, and it is deliberately not "nothing is left behind".
 recipe_add_debug_print, given an afterNode that does not exist, DOES leave the created Print node in
 the graph - and says so, in the error, in as many words: "WHAT IS LEFT BEHIND: the Print String node
 HAS been created in the graph, unwired, and is not removed by this failure ... Remove it with
-delete_node." That is a deliberate choice (the handler calls it Batch M option (c)) and it is the
+remove_node." That is a deliberate choice (the handler calls it Batch M option (c)) and it is the
 honest one: the alternative shape - report ok:true with a warning and a floating node - is the silent
 failure, because the node exists so a later list_nodes check passes while the print never runs.
 
@@ -92,8 +92,12 @@ def main():
           "a node was created (%d -> %d) and the error does not say so - that turns a declared "
           "consequence into a silent one" % (before, after))
     if left:
-        check("T421 and tells the caller how to clean it up",
-              "delete_node" in err, err[:220])
+        # remove_node, not delete_node. This assertion pinned the WRONG name for as long as the
+        # message carried it: delete_node has never been an endpoint, so the advice sent the caller
+        # to "not an endpoint on this build" and this test held that in place. Found by
+        # tools/audit_message_endpoints.py, which checks every endpoint named in user-facing text.
+        check("T421 and tells the caller how to clean it up, by a name that EXISTS",
+              "remove_node" in err, err[:220])
         check("T421 and explains why it is not rolled back",
               "PM-007" in err or "transaction" in err.lower(), err[:220])
 

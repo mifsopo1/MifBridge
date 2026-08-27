@@ -168,7 +168,7 @@ namespace MifBridge
 						// FScopedTransaction, which COMMITS when this returns — and even a cancel would
 						// only discard the undo entry, not remove the node (PM-007). Say so.
 						Fail(Out, FString::Printf(
-							TEXT("afterNode was given but the splice failed: %s WHAT IS LEFT BEHIND: the Print String node HAS been created in the graph, unwired, and is not removed by this failure. Remove it with delete_node, or wire it yourself with connect_pins."),
+							TEXT("afterNode was given but the splice failed: %s WHAT IS LEFT BEHIND: the Print String node HAS been created in the graph, unwired, and is not removed by this failure. Remove it with remove_node (confirm:true), or wire it yourself with connect_pins."),
 							*SpliceError));
 						return;
 					}
@@ -182,7 +182,7 @@ namespace MifBridge
 						TEXT("unwired node deliberately. WHAT IS LEFT BEHIND: the Print String node HAS been created ")
 						TEXT("in the graph, unwired, and is not removed by this failure (a self-managed transaction ")
 						TEXT("commits, and a cancel would only discard the undo entry - PM-007). Remove it with ")
-						TEXT("delete_node."), *AfterGuid));
+						TEXT("remove_node (confirm:true)."), *AfterGuid));
 					return;
 				}
 			}

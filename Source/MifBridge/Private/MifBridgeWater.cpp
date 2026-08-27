@@ -471,6 +471,150 @@ namespace MifBridge
 #endif
 	}
 
+	// --- create_water_zone ----------------------------------------------------------------------
+	//   in:  { x?, y?, z?, extentX?, extentY?, label? }
+	//   out: { actorPath, label, zoneExtent:{x,y}, bodiesNowCovered, bodiesStillWithoutZone, ... }
+	// Bucket: MUTATES the open level, same contract as create_water_body - nothing is saved.
+	//
+	// WHY THIS EXISTS. create_water_body's own advice named this endpoint - "create the zone
+	// separately with create_water_zone" - and it did not exist. That was not a typo but the visible
+	// end of a real gap: since UE 5.1 a water body OUTSIDE any AWaterZone does not render at all, so
+	// the write half of this family could author water that could never be seen, said so in a note,
+	// and offered no way to fix it. Found by tools/audit_message_endpoints.py.
+	void H_create_water_zone(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("x"), TEXT("y"), TEXT("z"), TEXT("extentX"), TEXT("extentY"), TEXT("label") },
+			TEXT("x, y, z (the zone's location); extentX, extentY (its size in world units - both or neither); label"),
+			{ { TEXT("extent"), TEXT("pass extentX and extentY - a zone's extent is a 2D size, and one number would have to guess whether you meant a square or a diameter") },
+			  { TEXT("bodies"), TEXT("a zone does not take a body list - each AWaterBody finds its zone by OVERLAP, so place the zone over them and the response reports which ones it picked up") },
+			  { TEXT("resolution"), TEXT("render target resolution comes from the engine's Water editor settings through the actor factory; there is no override here") } }))
+		{
+			return;
+		}
+#if !MIF_WITH_WATER
+		WaterUnavailable(Out, TEXT("create_water_zone"));
+#else
+		UWorld* World = EditorWorld();
+		if (!World) { Fail(Out, TEXT("no editor world is open")); return; }
+
+		// BOTH OR NEITHER. A zone with one axis from the request and the other from a default is a
+		// shape nobody asked for, and it would look deliberate.
+		const bool bHasX = In->HasField(TEXT("extentX"));
+		const bool bHasY = In->HasField(TEXT("extentY"));
+		if (bHasX != bHasY)
+		{
+			Fail(Out, TEXT("pass BOTH extentX and extentY, or neither. Setting one axis and leaving "
+						   "the other at the engine default produces a zone shape nobody asked for. "
+						   "NOTHING was created."));
+			return;
+		}
+		const double ExtentX = JNum(In, TEXT("extentX"), 0.0);
+		const double ExtentY = JNum(In, TEXT("extentY"), 0.0);
+		if (bHasX && (ExtentX <= 0.0 || ExtentY <= 0.0))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("extentX and extentY must both be positive; got %.2f x %.2f. A zero or negative "
+					 "extent covers nothing, so every body would still be invisible. NOTHING was created."),
+				ExtentX, ExtentY));
+			return;
+		}
+
+		// THROUGH THE ACTOR FACTORY, for the same reason create_water_body is - and it is the same
+		// mistake waiting to be made twice. UWaterZoneActorFactory::PostSpawnActor sets the
+		// far-distance material, the far-distance mesh extent and the render target resolution from
+		// UWaterEditorSettings, identically in 5.3 and 5.7. AWaterZone's constructor sets none of
+		// them, so a raw World->SpawnActor gives a zone that exists, reports fine, and renders wrong.
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		UActorFactory* Factory = GEditor ? GEditor->FindActorFactoryForActorClass(AWaterZone::StaticClass()) : nullptr;
+		if (!Factory)
+		{
+			Fail(Out, TEXT("no actor factory is registered for AWaterZone, so a zone cannot be created "
+						   "with the engine's own defaults - it would have no far-distance material and "
+						   "the wrong render target resolution. NOTHING was created."));
+			return;
+		}
+
+		const FVector Loc(JNum(In, TEXT("x"), 0.0), JNum(In, TEXT("y"), 0.0), JNum(In, TEXT("z"), 0.0));
+		AWaterZone* Zone = Cast<AWaterZone>(
+			Factory->CreateActor(nullptr, World->GetCurrentLevel(), FTransform(Loc), Params));
+		if (!Zone)
+		{
+			Fail(Out, TEXT("the AWaterZone actor factory returned nothing and reported no reason. "
+						   "NOTHING was created."));
+			return;
+		}
+
+		const FString Label = JStr(In, TEXT("label"));
+		if (!Label.IsEmpty()) { Zone->SetActorLabel(Label); }
+		if (bHasX) { Zone->SetZoneExtent(FVector2D(ExtentX, ExtentY)); }
+
+		// Rebuild by FLAG NAME, never by value. EWaterZoneRebuildFlags::All is (~0) in both engines,
+		// but the individual bits MOVED - UpdateWaterInfoTexture is (1 << 1) on 5.3 and (1 << 0) on
+		// 5.7 - so anything that hardcodes a number here breaks silently on one of them.
+		// One argument compiles on both: 5.3 takes only the flags, and 5.7's second parameter is a
+		// defaulted debug object (5.7 WaterZoneActor.h:18).
+		Zone->MarkForRebuild(EWaterZoneRebuildFlags::All);
+
+		// READ BACK the extent rather than echoing what was asked for. SetZoneExtent is not a plain
+		// field write, and this endpoint's whole purpose is coverage - reporting a requested size that
+		// did not take would defeat the point of the call.
+		const FVector2D Applied = Zone->GetZoneExtent();
+		TSharedRef<FJsonObject> ExtentJson = MakeShared<FJsonObject>();
+		ExtentJson->SetNumberField(TEXT("x"), Applied.X);
+		ExtentJson->SetNumberField(TEXT("y"), Applied.Y);
+		Out->SetObjectField(TEXT("zoneExtent"), ExtentJson);
+		if (bHasX && (!FMath::IsNearlyEqual(Applied.X, ExtentX, 0.01)
+					  || !FMath::IsNearlyEqual(Applied.Y, ExtentY, 0.01)))
+		{
+			Out->SetStringField(TEXT("extentWarning"), FString::Printf(
+				TEXT("%.2f x %.2f was requested and the zone reports %.2f x %.2f. The zone EXISTS - "
+					 "this is a size mismatch, not a failure to create."),
+				ExtentX, ExtentY, Applied.X, Applied.Y));
+		}
+
+		// THE NUMBER THAT ANSWERS THE ACTUAL QUESTION. Nobody creates a zone for its own sake - they
+		// create one so that bodies render. A body finds its zone by OVERLAP, so the only way to know
+		// whether this zone did any good is to ask every body afterwards.
+		int32 Covered = 0, Orphaned = 0;
+		TArray<TSharedPtr<FJsonValue>> StillOrphaned;
+		for (TActorIterator<AWaterBody> It(World); It; ++It)
+		{
+			AWaterBody* Body = *It;
+			if (!Body) { continue; }
+			UWaterBodyComponent* Comp = Body->GetWaterBodyComponent();
+			AWaterZone* Found = Comp ? Comp->GetWaterZone() : nullptr;
+			if (Found == Zone) { ++Covered; }
+			else if (Found == nullptr)
+			{
+				++Orphaned;
+				StillOrphaned.Add(MakeShared<FJsonValueString>(Body->GetActorLabel()));
+			}
+		}
+		Out->SetStringField(TEXT("actorPath"), Zone->GetPathName());
+		Out->SetStringField(TEXT("label"), Zone->GetActorLabel());
+		Out->SetNumberField(TEXT("bodiesNowCovered"), Covered);
+		Out->SetNumberField(TEXT("bodiesStillWithoutZone"), Orphaned);
+		Out->SetArrayField(TEXT("stillWithoutZone"), StillOrphaned);
+		if (Orphaned > 0)
+		{
+			// NAMED, not counted. "three bodies are still invisible" without saying which leaves the
+			// caller to go and find them, which is the read this endpoint could just have done.
+			Out->SetStringField(TEXT("coverageWarning"), FString::Printf(
+				TEXT("%d water body(ies) are still outside every zone and will not render - see "
+					 "stillWithoutZone. Move this zone, or give it a larger extentX/extentY."),
+				Orphaned));
+		}
+		Out->SetStringField(TEXT("note"),
+			TEXT("nothing was saved - this zone exists in the open level only. Its far-distance "
+				 "material and render target resolution come from the engine's Water editor settings "
+				 "through the actor factory, so they are what the placement menu would give you."));
+		UE_LOG(LogMifBridge, Log, TEXT("create_water_zone: %s extent %.0f x %.0f, %d body(ies) covered"),
+			*Zone->GetActorLabel(), Applied.X, Applied.Y, Covered);
+#endif
+	}
+
 	// --- set_water_body_spline ------------------------------------------------------------------
 	//   in:  { path (alias: actorPath), points[ {x,y,z} ] }
 	//   out: { actorPath, splinePoints, splinePointsWorld[] }

@@ -332,7 +332,7 @@ namespace MifBridge
 				TEXT("so length/autoPlay/loop/floatTracks could not be applied. This usually means the name collides with ")
 				TEXT("an existing timeline or variable — try a different name. WHAT IS LEFT BEHIND: the timeline node '%s' ")
 				TEXT("IS in the event graph and this call does not remove it (a cancelled transaction discards the undo ")
-				TEXT("entry, it does not roll a creation back). Find it with list_nodes and remove it with delete_node ")
+				TEXT("entry, it does not roll a creation back). Find it with list_nodes and remove it with remove_node (confirm:true) ")
 				TEXT("before retrying, or the colliding name will still be taken."),
 				*Node->TimelineName.ToString(), *Node->TimelineName.ToString()));
 			return;

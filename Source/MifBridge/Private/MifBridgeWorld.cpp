@@ -526,6 +526,7 @@ namespace MifBridge
 		int32 SkippedGround = 0;
 		int32 MissedDeepStack = 0;
 		int32 MoveRefused = 0;   // SetActorLocation said no - almost always an actor with no root
+		int32 AlignRefused = 0;  // SetActorRotation said no - the actor moved, the alignment did not
 		int32 Pierced = 0;
 		const int32 MaxBlockersToPierce = 32;
 
@@ -654,7 +655,19 @@ namespace MifBridge
 				const FRotator Cur = A->GetActorRotation();
 				FRotator Aligned = FRotationMatrix::MakeFromZX(Hit.ImpactNormal, A->GetActorForwardVector()).Rotator();
 				Aligned.Yaw = Cur.Yaw;
-				A->SetActorRotation(Aligned);
+				// SetActorRotation RETURNS whether it rotated, and this discarded it - the same mistake
+				// the SetActorLocation call above already carries a comment about. It rotates with SWEEP
+				// ON (MoveComponent with bSweep=true, identical in 5.3 and 5.7), so tilting an actor into
+				// the slope it is now sitting against can be refused by collision. The no-root case cannot
+				// reach here - such an actor already failed the location move and continued.
+				//
+				// Counted APART from Snapped rather than deducted from it: the actor did reach the ground,
+				// only the alignment failed. Calling it unsnapped would be a second wrong number in the
+				// other direction.
+				if (!A->SetActorRotation(Aligned))
+				{
+					++AlignRefused;
+				}
 			}
 			++Snapped;
 		}
@@ -663,6 +676,24 @@ namespace MifBridge
 		// Reported separately rather than folded into missed: "there was no ground under it" and "the
 		// engine refused to move it" are different problems with different fixes.
 		Out->SetNumberField(TEXT("moveRefused"), MoveRefused);
+		if (bAlign)
+		{
+			// Present whenever alignment was ASKED for, so a zero is a statement rather than a field
+			// that happens to be missing. Absent entirely when alignToNormal was false, because a
+			// count of refusals for something never attempted means nothing.
+			Out->SetNumberField(TEXT("alignRefused"), AlignRefused);
+			if (AlignRefused > 0)
+			{
+				// Its own key rather than appended to `warning`, which is written only when Missed > 0
+				// and would clobber or be clobbered. Same convention as deepStackNote below.
+				Out->SetStringField(TEXT("alignWarning"), FString::Printf(
+					TEXT("%d actor(s) reached the ground but the engine REFUSED to tilt them to the surface ")
+					TEXT("normal - the rotation sweeps, so an actor already resting against the slope can be ")
+					TEXT("blocked by it. They are counted in snapped because they did move; their rotation is ")
+					TEXT("unchanged. Raise them slightly and snap again, or align them without collision."),
+					AlignRefused));
+			}
+		}
 		Out->SetNumberField(TEXT("missed"), Missed);
 		Out->SetNumberField(TEXT("considered"), Targets.Num());
 		Out->SetNumberField(TEXT("skippedGround"), SkippedGround);

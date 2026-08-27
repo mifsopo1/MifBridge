@@ -3,6 +3,8 @@
 # Regenerate deliberately with: python tools/param_reach.py --update-baseline
 add_actor_to_data_layer.datalayer
 add_actor_to_data_layer.layer
+add_blackboard_key.blackboard
+add_blackboard_key.key
 add_cast.castto
 add_cast.cls
 add_cast.to
@@ -37,6 +39,9 @@ add_parent_call.name
 add_parent_call.ownerclass
 add_parent_call.targetclass
 add_pin.pin
+add_sequence_possessable.sequence
+add_sequence_track.binding
+add_sequence_track.sequence
 add_sublevel.level
 analyze_skeletal_split.mesh
 analyze_skeletal_split.skeletalmesh
@@ -64,6 +69,7 @@ describe_pcg_graph.graph
 describe_property.actorpath
 describe_property.filter
 describe_property.namefilter
+describe_state_tree.tree
 diff_properties_vs_default.actorpath
 diff_properties_vs_default.filter
 diff_properties_vs_default.includechildren
@@ -116,6 +122,7 @@ list_object_properties.actorpath
 list_object_properties.filter
 list_object_properties.namefilter
 list_retarget_chain_mapping.retargeter
+list_sequence_bindings.sequence
 list_sockets.mesh
 list_transactions.count
 list_transactions.include_objects
@@ -186,6 +193,7 @@ set_material_parameter.name
 set_material_parameter.parameter
 set_material_parameter.parametername
 set_material_parameter.value
+set_niagara_component_parameter.parameter
 set_pin_default.default
 set_pin_default.graphid
 set_pin_default.guid

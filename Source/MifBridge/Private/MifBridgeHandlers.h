@@ -1342,6 +1342,7 @@ namespace MifBridge
 	MIF_DECL(list_water_bodies);
 	MIF_DECL(describe_water_body);
 	MIF_DECL(create_water_body);
+	MIF_DECL(create_water_zone);
 	MIF_DECL(set_water_body_spline);
 	MIF_DECL(list_ik_rig);
 	/** The IK half of an IK Rig: goals and solvers. Retargeting needs neither. */

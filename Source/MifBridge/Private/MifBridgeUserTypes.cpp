@@ -185,7 +185,33 @@ namespace MifBridge
 			}
 			if (!Default.IsEmpty())
 			{
+				// ChangeVariableDefaultValue RETURNS whether the value took, and this discarded it -
+				// while the RenameVariable call directly above already checks its own. It validates the
+				// string against the member's pin type (K2Schema->DefaultValueSimpleValidation, same in
+				// 5.3 and 5.7) and refuses one that does not parse, so default:"abc" on an int member
+				// left the member with NO default while the response reported the one that was asked for.
+				//
+				// READ BACK rather than test the bool: it also returns false when the stored value is
+				// ALREADY the requested one, which is not a failure. Comparing what is stored answers the
+				// question the caller actually has - is the default what I asked for - and treats those
+				// two cases correctly without having to tell them apart.
 				FStructureEditorUtils::ChangeVariableDefaultValue(Struct, NewGuid, Default);
+				const FStructVariableDescription* Now = FStructureEditorUtils::GetVarDescByGuid(Struct, NewGuid);
+				if (!Now || Now->DefaultValue != Default)
+				{
+					// The member STAYS, matching the rename case above: a member with the wrong default is
+					// visible in list_struct_members and fixable in place, and dropping it here would also
+					// mint a new GUID on the retry - which reorders the struct and breaks every Make/Break
+					// Struct pin. Reported through OutError, which both callers already surface as a
+					// warning when the GUID came back valid.
+					OutError = FString::Printf(
+						TEXT("member '%s' was added, but the default '%s' was REFUSED as not valid for this type. ")
+						TEXT("Its default is now '%s'. The member itself is fine - correct the value with ")
+						TEXT("set_struct_member, which re-defaults in place without renumbering the struct."),
+						*Name, *Default,
+						Now ? (Now->DefaultValue.IsEmpty() ? TEXT("(empty)") : *Now->DefaultValue)
+						     : TEXT("(the member could not be read back at all)"));
+				}
 			}
 			return NewGuid;
 		}

@@ -1316,7 +1316,7 @@ namespace MifBridge
 			  TEXT("useViewportCamera"), TEXT("useViewport"), TEXT("fromViewport"),
 			  TEXT("fov"), TEXT("width"), TEXT("height"), TEXT("name") },
 			TEXT("x, y, z (or location:{x,y,z}), rotation:{x,y,z} = pitch/yaw/roll, lookAt:{x,y,z}, useViewportCamera (aliases: useViewport, fromViewport), fov, width, height, name"),
-			{ { TEXT("showFlags"), TEXT("not implemented — capture_camera always renders lit/tonemapped with Atmosphere+Fog on and does NOT read the level viewport's show flags; set_view_mode does not reach this image") },
+			{ { TEXT("showFlags"), TEXT("not implemented — capture_camera always renders lit/tonemapped with Atmosphere+Fog on and does NOT read the level viewport's show flags, and no endpoint in this build sets a view mode") },
 			  { TEXT("viewMode"),  TEXT("not implemented — same gap as showFlags: the viewport's view mode is not consumed here") },
 			  { TEXT("actorPath"), TEXT("not a parameter of this endpoint — to frame an actor, read get_actor_bounds and pass its origin as lookAt, or focus_viewport the actor and then capture with useViewportCamera:true") } }))
 		{

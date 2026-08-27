@@ -1291,3 +1291,64 @@ protection is knowing which observations are safe to make.
 and **none** has an imported model. A mesh splitter cannot build new mesh assets from DDS2 content at
 all - there is nothing to build from. That is a real answer to a real question, and worth the
 restart.
+
+## The compile probe cost a full engine rebuild, on the engine it was safest to skip (2026-08-27)
+
+**Symptom.** A three-file plugin change built against 5.7 in 4.7 seconds. The same change against
+5.3 started rebuilding the whole editor:
+
+```
+------ Building 2849 action(s) started ------
+[423/2849] Compile [x64] Module.Renderer.26.cpp
+```
+
+Renderer, Sequencer, AnimGraph - engine modules that no MifBridge change can possibly affect.
+
+**Root cause, stated by UBT itself** four lines above the action count, which is why this was found
+in one command rather than by guessing:
+
+```
+Invalidating makefile for DrugDealerSimulator2Editor (SharedPCH.Core.Cpp20.cpp modified)
+```
+
+Minutes earlier I had generated a compile probe against `D:/UE532` and tried to build it. The probe
+deliberately asks for the strictest settings the engine offers:
+
+| | build settings | include order | C++ |
+|---|---|---|---|
+| probe (`make_engine_probe.py`) | `BuildSettingsVersion.Latest` | `Latest` | C++20 |
+| real project (`DrugDealerSimulator2Editor.Target.cs`) | `V2` | `Unreal5_0` | C++17 |
+
+`D:/UE532` is a **source** engine, so its engine modules compile into intermediates SHARED by every
+target built against it. Two different settings sets cannot share one PCH, so asking for C++20 wrote
+`SharedPCH.Core.Cpp20.cpp` over the C++17 one the real project was using, and the next real build had
+to redo the engine. It thrashes both ways: the next probe would invalidate it straight back.
+
+The probe never even reached the link step - it was refused by Live Coding - and still cost the full
+rebuild. **Generating and starting the probe was enough.**
+
+**The 5.7 probe is genuinely free**, which is what made this easy to miss. An INSTALLED engine ships
+its modules prebuilt and never recompiles them, so no shared intermediate exists to thrash. The same
+command is free on one engine and expensive on the other, and nothing about the command says so.
+
+**Fix.** `refuse_source_engine()` in `tools/make_engine_probe.py`, called BEFORE anything is
+generated - a refusal that has already written files is not a refusal. It exits 1 with the reason and
+the measured cost. `--force` warns and continues, for whoever genuinely wants it.
+
+The test is `Engine/Build/InstalledBuild.txt` rather than a hardcoded `D:/UE532`, because this plugin
+is built against engines on machines this repo has never seen. Installed engines drop that file;
+source engines do not.
+
+**Prevention, and the part worth keeping.** There was never a reason to probe 5.3 at all. An engine
+is a source build BECAUSE a real project builds against it - and that build is the *better* compile
+check: same compiler, same settings, and it produces the binary the editor actually loads. The probe
+exists for an engine with no project to build, which on this machine means 5.7 and only 5.7.
+
+So the rule is not "be careful with the probe". It is:
+
+> **Probe an engine you have no project for. Build the project for the engine you have one for.**
+
+PM-014 was the same script writing 5.7 binaries over the 5.3 DLL, fixed by junctioning `Source/`
+alone. That fix was correct and is still in place - this is a second, independent way the same tool
+reaches across engines, through the shared intermediates rather than through the output directory.
+Narrowing what a tool LINKS did not narrow what it INVALIDATES.

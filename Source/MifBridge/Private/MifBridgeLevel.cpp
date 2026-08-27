@@ -346,6 +346,26 @@ namespace MifBridge
 			MeshComp->SetMobility(EComponentMobility::Movable);
 			MeshComp->SetStaticMesh(Mesh);
 			MeshComp->SetMobility(OldMobility);
+			if (MeshComp->GetStaticMesh() != Mesh)
+			{
+				// READ BACK rather than assume. SetStaticMesh returns a bool and refuses when dynamic
+				// data changes are not allowed for the component's mobility; the mobility dance above
+				// is what makes that usually work, not a guarantee that it did. Reading the mesh back
+				// is stronger than testing the bool anyway - that also returns false when the mesh was
+				// ALREADY the requested one, which is not a failure.
+				//
+				// This is the same check spawn_actor_at in MifBridgePIE.cpp already makes on a block
+				// that is otherwise identical to this one - and the comment above records that a
+				// silently dropped mesh here once produced an empty StaticMeshActor reported as ok.
+				// That failure was closed for the ignored-parameter path and left open for the
+				// refused-setter path, which lands the caller in exactly the same place.
+				Actor->Destroy();
+				Fail(Out, FString::Printf(
+					TEXT("mesh '%s' did not take on '%s' (the component still holds a different mesh); the ")
+					TEXT("actor was destroyed rather than left in the level as an empty one"),
+					*MeshPath, *ActorClass->GetName()));
+				return;
+			}
 		}
 
 		const FString Label = JStr(In, TEXT("label"));
