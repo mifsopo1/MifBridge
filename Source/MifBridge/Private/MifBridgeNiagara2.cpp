@@ -24,6 +24,7 @@
 //    InputCore and ImageWrapper notes in MifBridge.Build.cs describe.
 
 #include "MifBridgeHandlers.h"
+#include "MifBridgeLog.h"   // LogMifBridge - reached transitively on 5.3, not on 5.7
 
 #if MIF_WITH_NIAGARA
 #include "NiagaraSystem.h"

@@ -30,6 +30,14 @@
 // and can be renamed, a settings class is what the node actually IS.
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
+// MIF_ENGINE_AT_LEAST, used below for GetNodeTitle. WITHOUT THIS INCLUDE the macro is undefined, and
+// UE compiles C4668 (undefined macro in #if) as an ERROR - which is the trap this project documented
+// in docs/02 section 14 hours before I walked into it.
+//
+// It was INVISIBLE ON 5.3 for a reason worth understanding: an undefined macro evaluates to 0, so the
+// #if took the ELSE branch, and the else branch is the 5.3 spelling - GetNodeTitle() with no
+// arguments. The wrong reason produced the right code on one engine and a hard error on the other.
+#include "MifBridgeVersion.h"
 
 #if MIF_WITH_PCG
 #include "PCGGraph.h"
