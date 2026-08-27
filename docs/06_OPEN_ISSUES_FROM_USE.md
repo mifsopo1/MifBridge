@@ -1476,3 +1476,47 @@ session the same night - four expressions seeded, `all=True`, zero remaining, `o
 half this machine could not do: the SDK editor was closed and the 5.7 engine was holding a Live
 Coding lock. T356 still runs it on the next regression pass here. The third instance this session of *a clear that
 cannot prove it cleared*, after the World Partition save and `Build.bat`'s exit code.
+
+
+## 19. `spawn_many` spawned nothing and reported success — FIXED
+
+Found 2026-08-26 by scanning for the shape issue 18 turned out to be, rather than by a report.
+
+`spawn_many` set `spawned`, `failed` and `errors[]` correctly and returned `ok: true` regardless. So
+a request for fifty actors where all fifty failed answered:
+
+```json
+{ "ok": true, "spawned": 0, "failed": 50, "errors": [ ... ] }
+```
+
+Everything checking the status rather than reading the arithmetic saw a clean spawn.
+
+### The lens that found it, which is worth more than the fix
+
+`audit_postconditions.py` looks for handlers that mutate and never read the result back. It would
+never have flagged this one, because `spawn_many` **does** read back - it counts precisely what
+happened and reports it. The defect is one layer up: **the handler computed the truth and then did
+not act on its own answer.**
+
+That is the same defect as issue 18, where `delete_material_expression` returned correct `deleted`
+and `remaining` counts alongside `ok: true`. Stated as a rule: *an endpoint that computes an outcome
+count must decide what that count MEANS, rather than reporting it and leaving the caller to notice.*
+
+A scan for the shape - handlers that write an outcome count into the response and never branch on it
+- returned 7 candidates across 303 endpoints. Of those, this was the clearest defect;
+`apply_graph_patch` already has real rollback, and the DataTable pair report per-row detail. The
+others are on the reading list rather than presumed broken.
+
+### The fix draws the line at ZERO, deliberately
+
+Total failure now fails. A **partial** spawn stays `ok: true` with the counts and a `partialNote`,
+which matches `batch`: the spawned actors really are in the level, they are not rolled back, and
+failing the whole call would imply an undo that did not happen. The note says explicitly to
+re-request only the failures, because re-running the whole list would duplicate the ones that worked.
+
+Refusing to guess where "mostly worked" ends is why the threshold is zero rather than a ratio.
+
+### Status
+
+Fixed and built on 5.3 (DLL 3,950,592 at 23:25). Not yet run live - the SDK editor is closed.
+`test_spawn_many.py` covers the endpoint and should gain a total-failure case.

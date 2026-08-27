@@ -367,6 +367,38 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("actors"), Made);
 		if (Errors.Num() > 0) { Out->SetArrayField(TEXT("errors"), Errors); }
 		UE_LOG(LogMifBridge, Log, TEXT("spawn_many: %d spawned, %d failed"), Made.Num(), Failed);
+
+		// TRUTH IN THE FIELDS, AND IT USED TO LIE IN THE STATUS.
+		//
+		// spawned, failed and errors[] were all correct and ok stayed true regardless - so asking for
+		// fifty actors and getting none returned success with spawned:0. Anything checking the status
+		// rather than reading the arithmetic saw a clean spawn.
+		//
+		// Same shape as delete_material_expression(all=true) the same night (docs/06 issue 18), and
+		// the same fix: the endpoint decides what its own numbers mean instead of leaving that to the
+		// caller.
+		//
+		// TOTAL failure only. A partial spawn stays ok:true with the counts and errors[] beside it,
+		// which is deliberate and matches batch: some actors really are in the level, the caller has
+		// per-item detail, and failing the whole call would imply a rollback that did not happen.
+		// Refusing to guess where the line is between "mostly worked" and "mostly did not" is why the
+		// threshold is zero rather than a ratio.
+		if (Made.Num() == 0 && Failed > 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("spawn_many spawned NOTHING: all %d requested actor(s) failed. The per-item "
+					 "reasons are in errors[]. Nothing was added to the level, so there is nothing to "
+					 "undo - fix the causes and call again."), Failed));
+			return;
+		}
+		if (Failed > 0)
+		{
+			Out->SetStringField(TEXT("partialNote"), FString::Printf(
+				TEXT("%d of %d actor(s) failed and %d were spawned. This is reported ok because the "
+					 "spawned actors ARE in the level - they are not rolled back. Read errors[] and "
+					 "re-request only the failures; re-running the whole list would duplicate the "
+					 "ones that worked."), Failed, Failed + Made.Num(), Made.Num()));
+		}
 	}
 
 	// --- duplicate_actors ---------------------------------------------------

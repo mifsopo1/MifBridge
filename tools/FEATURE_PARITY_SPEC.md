@@ -1395,3 +1395,15 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
       enclosing scopes, module globals and builtins. Scope handling is the whole difficulty - a naive
       pass reported 35 findings of which 34 were false. Committed version: 0 across 339 functions,
       and catches the real bug when reintroduced. Verified in BOTH directions.
+
+- [ ] **Six more handlers that report an outcome count and never branch on it.**
+      Found 2026-08-26 by scanning for issue 18's shape. spawn_many was fixed (issue 19); these six
+      are a READING LIST, not a defect list - the scan cannot tell a count that is ignored from one
+      that is genuinely informational:
+        add_simplified_collision   added = After - Before
+        write_datatable_rows       added / updated
+        delete_datatable_rows      deleted
+        apply_graph_patch          applied      (has real rollback - likely fine)
+        remove_widget_binding      removed
+      The question for each is the issue 18 question: if this count comes back ZERO, did the caller
+      get what they asked for? Where the answer is no, the endpoint must say so itself.
