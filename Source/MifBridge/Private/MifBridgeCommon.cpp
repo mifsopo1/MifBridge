@@ -374,6 +374,8 @@ namespace MifBridge
 			MIF_BIND(describe_game_feature_plugin);
 			MIF_BIND(set_data_layer_visibility);
 			MIF_BIND(set_data_layer_loaded_in_editor);
+			MIF_BIND(add_actor_to_data_layer);
+			MIF_BIND(remove_actor_from_data_layer);
 			MIF_BIND(project_dependency_graph);
 			MIF_BIND(project_asset_distribution);
 			MIF_BIND(perf_heavy_actors);

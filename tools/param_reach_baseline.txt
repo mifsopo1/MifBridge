@@ -1,6 +1,8 @@
 # Endpoint parameters no MCP tool currently sends - see param_reach.py.
 # Accepted backlog. Only ADDITIONS to this list fail the check.
 # Regenerate deliberately with: python tools/param_reach.py --update-baseline
+add_actor_to_data_layer.datalayer
+add_actor_to_data_layer.layer
 add_cast.castto
 add_cast.cls
 add_cast.to
@@ -129,6 +131,8 @@ recompile_material.material
 redo_transactions.steps
 redo_transactions.to_index
 refresh_node.graphid
+remove_actor_from_data_layer.datalayer
+remove_actor_from_data_layer.layer
 remove_enum_value.displayname
 remove_enum_value.name
 remove_ik_goal.rig

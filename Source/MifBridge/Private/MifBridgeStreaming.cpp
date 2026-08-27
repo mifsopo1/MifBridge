@@ -123,6 +123,8 @@
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"                  // IsValid
 #include "DataLayer/DataLayerEditorSubsystem.h"       // the WRITE half - see the block at the end
+#include "Subsystems/EditorActorSubsystem.h"   // GetActorReference - membership takes an actor
+#include "Editor.h"                             // GEditor
 
 namespace MifBridge
 {
@@ -1793,4 +1795,205 @@ namespace MifBridge
 					 "state, not a content change, and nothing was saved."));
 		}
 	}
+
+	// --- data layer MEMBERSHIP -------------------------------------------------------------------
+	//
+	// The half that was missing. list_data_layers reads them, set_data_layer_visibility and
+	// set_data_layer_loaded_in_editor change how they DISPLAY - and nothing could put an actor IN one,
+	// which is the operation Data Layers exist for. A layer nothing belongs to does nothing.
+	//
+	// Verified in BOTH trees before writing, per docs/02_GOTCHAS.md section 14:
+	//   UDataLayerEditorSubsystem::AddActorToDataLayer        5.3 :162   5.7 :201
+	//   UDataLayerEditorSubsystem::RemoveActorFromDataLayer   5.3 :182   5.7 :221
+	//   AActor::GetDataLayerInstances()                       5.3 :1360  5.7 :1517
+	//
+	// The read-back deliberately uses GetDataLayerInstances() and NOT GetActorDataLayers(). The latter
+	// returns FActorDataLayer and sits directly under a UE_DEPRECATED(5.1) telling you to stop using
+	// that whole representation - it is the pre-asset Data Layer model. Reading through it would work
+	// today on both engines and rot on the next one.
+	namespace
+	{
+		/** The actor for a membership call. Resolved by PATH through the same subsystem the rest of
+		 *  the bridge uses, so a caller can take actorPath straight from list_level_actors.
+		 *
+		 *  Prefixed and file-local: this module builds as a unity blob, and a second helper called
+		 *  ResolveActor would be the C2084 that PM-005 records. */
+		AActor* MifDataLayerActor(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+		{
+			const FString Path = JStrAny(In, { TEXT("actorPath"), TEXT("actor") });
+			if (Path.IsEmpty())
+			{
+				Fail(Out, TEXT("actorPath is required - list_level_actors reports one for every actor. "
+							   "NOTHING was changed."));
+				return nullptr;
+			}
+			UEditorActorSubsystem* Sub = GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+			if (!Sub)
+			{
+				Fail(Out, TEXT("no UEditorActorSubsystem - this is not a running editor."));
+				return nullptr;
+			}
+			AActor* Actor = Sub->GetActorReference(Path);
+			if (!Actor)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("no actor at '%s'. This resolves by PATH, not by label - list_level_actors "
+						 "reports actorPath. NOTHING was changed."), *Path));
+				return nullptr;
+			}
+			return Actor;
+		}
+
+		/** Every Data Layer this actor is currently in, by short name. The read-back for both writes
+		 *  below, and the answer a caller actually wants after either. */
+		TArray<TSharedPtr<FJsonValue>> MifActorLayerNames(AActor* Actor, bool& bOutContains,
+														  const UDataLayerInstance* Looking)
+		{
+			bOutContains = false;
+			TArray<TSharedPtr<FJsonValue>> Names;
+			if (!Actor) { return Names; }
+			for (const UDataLayerInstance* Inst : Actor->GetDataLayerInstances())
+			{
+				if (!Inst) { continue; }
+				Names.Add(MakeShared<FJsonValueString>(Inst->GetDataLayerShortName()));
+				if (Inst == Looking) { bOutContains = true; }
+			}
+			return Names;
+		}
+	}
+
+	// --- add_actor_to_data_layer ----------------------------------------------------------------
+	//   in:  { actorPath, name (alias: dataLayer, layer) }
+	//   out: { actorPath, dataLayer, added, wasAlreadyIn, actorDataLayers[] }
+	// Bucket: MUTATES the open level. Nothing is saved.
+	void H_add_actor_to_data_layer(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("name"), TEXT("dataLayer"), TEXT("layer") },
+			TEXT("actorPath (alias: actor); name (aliases: dataLayer, layer) - a Data Layer short name"),
+			{ { TEXT("actors"), TEXT("one actor per call - there is no plural form, so a partial failure across a list cannot be reported as success") },
+			  { TEXT("visible"), TEXT("membership and visibility are different questions - set_data_layer_visibility is the other one") } }))
+		{
+			return;
+		}
+
+		UWorld* World = EditorWorld();
+		if (!World) { Fail(Out, TEXT("no editor world")); return; }
+
+		AActor* Actor = MifDataLayerActor(In, Out);
+		if (!Actor) { return; }
+		UDataLayerInstance* Layer = MifResolveDataLayer(
+			World, JStrAny(In, { TEXT("name"), TEXT("dataLayer"), TEXT("layer") }), Out);
+		if (!Layer) { return; }
+		UDataLayerEditorSubsystem* Sub = MifDataLayerEditor(Out);
+		if (!Sub) { return; }
+
+		// Asked BEFORE the write, so "already in it" is distinguishable from "the write failed". Both
+		// leave the actor in the layer and both would look identical from the read-back alone.
+		bool bBefore = false;
+		MifActorLayerNames(Actor, bBefore, Layer);
+
+		Actor->Modify();
+		const bool bReported = Sub->AddActorToDataLayer(Actor, Layer);
+
+		bool bAfter = false;
+		TArray<TSharedPtr<FJsonValue>> Now = MifActorLayerNames(Actor, bAfter, Layer);
+
+		Out->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		Out->SetStringField(TEXT("actorLabel"), Actor->GetActorLabel());
+		Out->SetStringField(TEXT("dataLayer"), Layer->GetDataLayerShortName());
+		Out->SetBoolField(TEXT("wasAlreadyIn"), bBefore);
+		Out->SetBoolField(TEXT("engineReported"), bReported);
+		Out->SetArrayField(TEXT("actorDataLayers"), Now);
+
+		// THE READ-BACK DECIDES, not the return value. AddActorToDataLayer returns false both when it
+		// genuinely failed and, on some paths, when the actor was already a member - so trusting the
+		// bool alone would report a no-op as a failure and a real failure as indistinguishable from it.
+		if (!bAfter)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is NOT in Data Layer '%s' after the call (the engine returned %s). Some "
+					 "actor types cannot be assigned to a Data Layer at all - notably those not in a "
+					 "World Partition level, and actors owned by another actor."),
+				*Actor->GetActorLabel(), *Layer->GetDataLayerShortName(),
+				bReported ? TEXT("true") : TEXT("false")));
+			return;
+		}
+		Out->SetBoolField(TEXT("added"), !bBefore);
+		if (bBefore)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("the actor was ALREADY in this Data Layer - nothing changed. Reported ok because "
+					 "the requested end state holds."));
+		}
+		UE_LOG(LogMifBridge, Log, TEXT("add_actor_to_data_layer: %s -> %s (already=%d)"),
+			*Actor->GetActorLabel(), *Layer->GetDataLayerShortName(), bBefore ? 1 : 0);
+	}
+
+	// --- remove_actor_from_data_layer -----------------------------------------------------------
+	//   in:  { actorPath, name (alias: dataLayer, layer) }
+	//   out: { actorPath, dataLayer, removed, wasInLayer, actorDataLayers[] }
+	// Bucket: MUTATES the open level. Nothing is saved.
+	void H_remove_actor_from_data_layer(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("name"), TEXT("dataLayer"), TEXT("layer") },
+			TEXT("actorPath (alias: actor); name (aliases: dataLayer, layer) - a Data Layer short name"),
+			{ { TEXT("all"), TEXT("there is no remove-from-every-layer form - name the layer, because removing an actor from layers you did not know it was in is not an operation anyone means to perform") } }))
+		{
+			return;
+		}
+
+		UWorld* World = EditorWorld();
+		if (!World) { Fail(Out, TEXT("no editor world")); return; }
+
+		AActor* Actor = MifDataLayerActor(In, Out);
+		if (!Actor) { return; }
+		UDataLayerInstance* Layer = MifResolveDataLayer(
+			World, JStrAny(In, { TEXT("name"), TEXT("dataLayer"), TEXT("layer") }), Out);
+		if (!Layer) { return; }
+		UDataLayerEditorSubsystem* Sub = MifDataLayerEditor(Out);
+		if (!Sub) { return; }
+
+		bool bBefore = false;
+		MifActorLayerNames(Actor, bBefore, Layer);
+		if (!bBefore)
+		{
+			// Refused rather than reported as a harmless no-op. Naming a layer the actor is not in is a
+			// typo or a stale assumption, and every other remover in this project says so.
+			bool bIgnored = false;
+			Out->SetArrayField(TEXT("actorDataLayers"), MifActorLayerNames(Actor, bIgnored, nullptr));
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is not in Data Layer '%s', so there was nothing to remove. Its current "
+					 "layers are in actorDataLayers. NOTHING was changed."),
+				*Actor->GetActorLabel(), *Layer->GetDataLayerShortName()));
+			return;
+		}
+
+		Actor->Modify();
+		const bool bReported = Sub->RemoveActorFromDataLayer(Actor, Layer);
+
+		bool bAfter = false;
+		TArray<TSharedPtr<FJsonValue>> Now = MifActorLayerNames(Actor, bAfter, Layer);
+
+		Out->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		Out->SetStringField(TEXT("actorLabel"), Actor->GetActorLabel());
+		Out->SetStringField(TEXT("dataLayer"), Layer->GetDataLayerShortName());
+		Out->SetBoolField(TEXT("engineReported"), bReported);
+		Out->SetArrayField(TEXT("actorDataLayers"), Now);
+
+		if (bAfter)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is STILL in Data Layer '%s' after the removal (the engine returned %s). "
+					 "Nothing was changed that this call can see."),
+				*Actor->GetActorLabel(), *Layer->GetDataLayerShortName(),
+				bReported ? TEXT("true") : TEXT("false")));
+			return;
+		}
+		Out->SetBoolField(TEXT("removed"), true);
+		UE_LOG(LogMifBridge, Log, TEXT("remove_actor_from_data_layer: %s from %s"),
+			*Actor->GetActorLabel(), *Layer->GetDataLayerShortName());
+	}
+
 }

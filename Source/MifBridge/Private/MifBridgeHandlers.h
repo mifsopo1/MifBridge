@@ -1453,6 +1453,9 @@ namespace MifBridge
 	// these read the state back and report verified separately from changed.
 	MIF_DECL(set_data_layer_visibility);
 	MIF_DECL(set_data_layer_loaded_in_editor);
+	/** MEMBERSHIP - the half Data Layers exist for. A layer nothing belongs to does nothing. */
+	MIF_DECL(add_actor_to_data_layer);
+	MIF_DECL(remove_actor_from_data_layer);
 
 	// PROJECT STRUCTURE - the brainmap data (MifBridgeProject.cpp). Every one of these is BOUNDED
 	// and reports when it bounded something: GetReferencers runs per asset, so an unbounded graph

@@ -2514,6 +2514,18 @@ def set_water_body_spline(path: str, points: list) -> dict:
 
 
 @mcp.tool()
+def add_actor_to_data_layer(actor_path: str, name: str) -> dict:
+    "Put an actor INTO a World Partition Data Layer - the operation Data Layers exist for, and the half this bridge was missing (it could read layers and change how they display, but not what belongs to them). Resolves the actor by PATH, not label. Reports wasAlreadyIn separately from added, because 'already a member' and 'the write failed' both leave the actor in the layer and are otherwise indistinguishable. The verdict comes from a READ-BACK of the actor's layers, not from the engine's return value: AddActorToDataLayer returns false both for a genuine failure and, on some paths, for an actor that was already a member. actorDataLayers lists every layer the actor is in afterwards. Nothing is saved."
+    return _post("add_actor_to_data_layer", actorPath=actor_path, name=name)
+
+
+@mcp.tool()
+def remove_actor_from_data_layer(actor_path: str, name: str) -> dict:
+    "Remove an actor from a World Partition Data Layer. Resolves by actor PATH, not label. REFUSES if the actor is not in that layer rather than reporting a harmless no-op - naming a layer the actor is not in is a typo or a stale assumption, and the refusal lists the layers it IS in so you can see which. There is deliberately no remove-from-all form. The verdict is a read-back of the actor's layers afterwards, not the engine's return value. Nothing is saved."
+    return _post("remove_actor_from_data_layer", actorPath=actor_path, name=name)
+
+
+@mcp.tool()
 def list_ik_rig(path: str) -> dict:
     """Read an IKRigDefinition AND check whether it would actually work.
 
