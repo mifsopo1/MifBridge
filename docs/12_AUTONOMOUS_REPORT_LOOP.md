@@ -1,3 +1,7 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     How the maintainers' own autonomous loop is wired, including its trust boundary. Operational detail, not user documentation.
+     Still version-controlled: kept in git, kept out of the zip. -->
+
 # The autonomous report loop
 
 A downstream consumer files a structured bug report as a GitHub issue. While Andre is away, a routine

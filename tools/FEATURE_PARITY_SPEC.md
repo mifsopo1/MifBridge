@@ -1,3 +1,7 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     The internal roadmap, including what we decided NOT to build and why, and competitor comparisons.
+     Still version-controlled: kept in git, kept out of the zip. -->
+
 # THE JUDGING RULE CHANGED - 2026-08-26
 
 Andre, after being told parity in the declined categories was not worth chasing: **"yes chase the

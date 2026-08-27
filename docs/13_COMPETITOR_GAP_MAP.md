@@ -1,3 +1,7 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     Competitive analysis of another vendor's product. Shipping this to customers would be a poor look at best.
+     Still version-controlled: kept in git, kept out of the zip. -->
+
 # Capability gap map — Ultimate Engine CoPilot v1.7.3
 
 **Compiled 2026-08-26 from the trial archive's FILE LISTING only.** No installation, no extraction, no

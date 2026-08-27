@@ -1,3 +1,7 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     How to pick this work up cold. Internal - a user installing the bridge is not taking over its development.
+     Still version-controlled: kept in git, kept out of the zip. -->
+
 # Start here — picking this up cold
 
 You are an agent (or a person) taking over MifBridge with no memory of how it got here. This file

@@ -69,6 +69,34 @@ EXCLUDE_PATTERNS = (
     re.compile(r"^tools/endpoints_current\.(json|txt)$"),
 )
 
+# DEV-ONLY DOCS, excluded by a MARKER IN THE FILE rather than by name.
+#
+# Andre: "git ignore the start here as i dev the bridge while other users install or jus tmake sure we
+# dont add it to the releases".
+#
+# Not gitignored, deliberately. docs/18_START_HERE.md exists so a session with no memory of this work
+# can pick it up cold - a file whose whole purpose is surviving a lost machine is the last thing to
+# leave version control. It belongs in git and out of the zip, which are different questions.
+#
+# Marker rather than a filename, for the same reason the patterns above match by kind: a hand-kept
+# list of internal files is one forgotten entry away from shipping a roadmap to a customer. Any file
+# can now opt itself out, and the next one does not need this list touched.
+DEV_ONLY_MARKER = "MIFBRIDGE-DEV-ONLY"
+
+
+def is_dev_only(abs_path):
+    """True if the file's first 4KB carries the marker.
+
+    First 4KB only: this runs over every tracked file, and reading a whole repo to find a comment at
+    the top of five of them is waste. Anything that fails to read is NOT dev-only - a binary that
+    cannot be decoded is a shipping file, and failing the other way would silently drop assets from a
+    release."""
+    try:
+        with io.open(abs_path, "r", encoding="utf-8", errors="ignore") as f:
+            return DEV_ONLY_MARKER in f.read(4096)
+    except Exception:
+        return False
+
 # Engine versions this plugin is known to build against. 5.3.2 is the cooked DDS2 SDK; 5.7 is Curfew.
 #
 # "built" MEANS A COMPILER SAID SO. Until 2026-08-26 the 5.7 row said "built" on the strength of
@@ -133,6 +161,8 @@ def tracked_files():
         # patterns here happened to work because they began with ^tools/, which hid the mistake until
         # the zip was listed and ten artifacts were found still shipping.
         if any(p.search(rel) for p in EXCLUDE_PATTERNS):
+            continue
+        if is_dev_only(os.path.join(ROOT, rel)):
             continue
         if not os.path.isfile(os.path.join(ROOT, rel)):
             continue      # tracked but deleted in the working tree
