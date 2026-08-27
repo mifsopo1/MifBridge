@@ -1290,7 +1290,15 @@ Noted while checking: MifBlender's default port is 8792 (server.py:77-84), and B
 is listening on 8793. Either the addon is configured differently or 8793 is a different addon - the
 docstring warns 9876 is the third-party blender-mcp. Worth confirming when the Blender phase starts.
 
-- [ ] **Data Layer actor MEMBERSHIP writes, and a way to test the layer writes at all.**
+- [x] **Data Layer actor MEMBERSHIP writes, and a way to test the layer writes at all.**
+      DONE 2026-08-27, both halves, verified live: test_data_layer_writes 36/36.
+      add_actor_to_data_layer, remove_actor_from_data_layer and create_data_layer - the last one is
+      what unblocked the testing, since a suite can now build the world it needs instead of skipping.
+      AND THE BLOCKER I HAD BEEN DOCUMENTING FOR HOURS DID NOT EXIST. I had it recorded that testing
+      needed a World Partition level and new_level was gated. The scratch world Untitled_1 IS World
+      Partition - that is UE5's default for a new level - so create_data_layer worked on the world
+      that was already open. I never checked; I inherited the claim from the suite's own header and
+      repeated it.
   AddActorsToDataLayer (5.3:223, 5.7:262) and RemoveActorsFromDataLayer (5.3:243, 5.7:282) are verified
   present in both trees, so this is not blocked on the engine. It is blocked on having somewhere safe
   to run it: membership is CONTENT, not editor state, and the only World Partition maps here are

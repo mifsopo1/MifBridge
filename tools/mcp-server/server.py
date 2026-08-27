@@ -2514,6 +2514,14 @@ def set_water_body_spline(path: str, points: list) -> dict:
 
 
 @mcp.tool()
+def create_data_layer(name: str, asset_path: str = None, type: str = "runtime",
+                      is_private: bool = False) -> dict:
+    "Create a World Partition Data Layer. Without this the family could only operate on layers somebody else authored - list them, change visibility, move actors in and out - which is half a subsystem. Requires a World Partition map and says so by name if the open map is not one (sublevels are the non-partitioned equivalent; see list_sublevels). type is 'runtime' (default) or 'editor'. The DataLayerAsset is created IN MEMORY at /Game/_MifDataLayers/<name> unless you name a path, and NOTHING IS SAVED - the asset and the instance last for the session and an editor restart loses both, which is what makes this usable for tests. The response reads back through the DataLayerManager rather than trusting the returned pointer, so if list_data_layers would not see the layer this call tells you rather than reporting success."
+    return _post("create_data_layer", name=name, assetPath=asset_path, type=type,
+                 isPrivate=is_private)
+
+
+@mcp.tool()
 def add_actor_to_data_layer(actor_path: str, name: str) -> dict:
     "Put an actor INTO a World Partition Data Layer - the operation Data Layers exist for, and the half this bridge was missing (it could read layers and change how they display, but not what belongs to them). Resolves the actor by PATH, not label. Reports wasAlreadyIn separately from added, because 'already a member' and 'the write failed' both leave the actor in the layer and are otherwise indistinguishable. The verdict comes from a READ-BACK of the actor's layers, not from the engine's return value: AddActorToDataLayer returns false both for a genuine failure and, on some paths, for an actor that was already a member. actorDataLayers lists every layer the actor is in afterwards. Nothing is saved."
     return _post("add_actor_to_data_layer", actorPath=actor_path, name=name)

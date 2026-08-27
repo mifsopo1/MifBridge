@@ -146,22 +146,39 @@ def main():
     print("")
     print("=== T615: actor membership ===")
     layers = (M.call("list_data_layers", {}) or {}).get("dataLayers") or []
-    actors = (M.call("list_level_actors", {"limit": 5}) or {}).get("actors") or []
-    actor_path = actors[0].get("actorPath") if actors else None
+    actors = (M.call("list_level_actors", {"limit": 30}) or {}).get("actors") or []
+    # NOT actors[0]. The first actor in a World Partition level is WorldDataLayers, which is the
+    # engine's own bookkeeping actor and genuinely CANNOT be assigned to a Data Layer - so the
+    # endpoint refuses it, correctly, and the test blamed the endpoint for its own bad pick.
+    # WorldPartitionMiniMap is the same kind of thing.
+    SKIP = ("WorldDataLayers", "WorldPartitionMiniMap", "LevelInstance")
+    usable = [x for x in actors
+              if not any((x.get("label") or "").startswith(p) for p in SKIP)]
+    actor_path = usable[0].get("actorPath") if usable else None
+    if actors and not usable:
+        print("  NOTE  every actor in this level is engine bookkeeping - no assignable actor to test with.")
 
     # The refusals are the reachable half and they are worth pinning regardless.
     r = M.call("add_actor_to_data_layer", {"name": "NoSuchLayer_zz"})
     check("T615 add without actorPath is refused", r.get("ok") is False, json.dumps(r)[:150])
-    check("T615 and it says NOTHING was changed", "NOTHING" in (r.get("error") or ""),
-          (r.get("error") or "")[:150])
+    # Relaxed deliberately. This used to assert "NOTHING was changed", which the membership handlers
+    # DO say in their own refusals - but the missing-actorPath case is now answered by the SHARED
+    # ResolveActor, and that one is used by reads too, where "nothing was changed" would be an odd
+    # thing to tell someone who only asked a question.
+    #
+    # That is the honest price of having one resolver instead of two, and it is worth paying: the
+    # second resolver I wrote silently failed on every World Partition actor path list_level_actors
+    # reports, because it lacked a fallback the original had a comment about.
+    check("T615 and the refusal says where to get an actorPath",
+          "list_level_actors" in (r.get("error") or ""), (r.get("error") or "")[:150])
 
     if actor_path:
         r = M.call("add_actor_to_data_layer", {"actorPath": actor_path, "name": "NoSuchLayer_zz"})
         check("T615 an unknown layer is refused", r.get("ok") is False, json.dumps(r)[:150])
         r = M.call("add_actor_to_data_layer", {"actorPath": "/Game/NoSuch.NoSuch_zz", "name": "x"})
         check("T615 an unknown actor is refused", r.get("ok") is False, json.dumps(r)[:150])
-        check("T615 and the refusal says it resolves by PATH",
-              "PATH" in (r.get("error") or ""), (r.get("error") or "")[:150])
+        check("T615 and the refusal names actorPath as what it wants",
+              "actorPath" in (r.get("error") or ""), (r.get("error") or "")[:150])
 
     if not layers:
         print("  SKIP  this world has no Data Layers, so the SUCCESS path is untested.")
@@ -169,7 +186,12 @@ def main():
         print("        gated and Andre has not opted into un-gating it. The refusals above are")
         print("        what is reachable here - the write path is NOT covered by this run.")
     elif actor_path:
-        name = layers[0].get("name")
+        # shortName, NOT name. list_data_layers reports both: `name` is the internal
+        # DataLayer_<guid> and `shortName` is the friendly one. The membership endpoints ACCEPT
+        # either (MifResolveDataLayer matches both) but REPORT short names, so a round trip keyed on
+        # `name` adds correctly and then fails its own read-back. Worth knowing before writing a
+        # caller that pipes one into the other.
+        name = layers[0].get("shortName") or layers[0].get("name")
         a = M.call("add_actor_to_data_layer", {"actorPath": actor_path, "name": name})
         check("T615 an actor joins a real layer", a.get("ok") is True, json.dumps(a)[:200])
         check("T615 and the read-back lists it",

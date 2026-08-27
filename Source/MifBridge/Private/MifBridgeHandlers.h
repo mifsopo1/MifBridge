@@ -33,6 +33,12 @@ class FUICommandList;         // MifBridgeUI.cpp's command-list cache hands thes
 struct FEdGraphPinType;
 enum EEdGraphPinDirection : int;
 
+// GLOBAL scope, deliberately. Declared inside namespace MifBridge it becomes
+// MifBridge::UEditorActorSubsystem, which SHADOWS the engine type and produced 17 errors from this
+// one line - including one inside EditorEngine.h, which is exactly the cascade the porting notes warn
+// about: deduplicate by CAUSE before believing a count.
+class UEditorActorSubsystem;
+
 namespace MifBridge
 {
 	using FHandlerFn = TFunction<void(const TSharedRef<FJsonObject>& /*In*/, const TSharedRef<FJsonObject>& /*Out*/)>;
@@ -68,6 +74,13 @@ namespace MifBridge
 	 *  are reached by NAME through the registry and this is not registered, so there is nothing to
 	 *  address. Returns false with a reason if a bridge call is mid-flight and the mode is being
 	 *  RAISED - see the comment on the definition. */
+	/** THE actor resolver. Accepts the full actorPath list_level_actors reports, and falls back to
+	 *  a label/name scan. Shared rather than duplicated: GetActorReference alone does NOT resolve
+	 *  those paths for World Partition actors, and a second resolver written without that knowledge
+	 *  silently fails exactly the way the first one used to. */
+	AActor* ResolveActor(UEditorActorSubsystem* Subsystem, const TSharedRef<FJsonObject>& In,
+		const TSharedRef<FJsonObject>& Out);
+
 	bool SetWriteModeFromPanel(EMifWriteMode Wanted, FString& OutRefusal);
 
 	/** RAII marker for "a bridge call is on the stack". Constructed by both dispatchers.
@@ -1470,6 +1483,9 @@ namespace MifBridge
 	MIF_DECL(set_data_layer_visibility);
 	MIF_DECL(set_data_layer_loaded_in_editor);
 	/** MEMBERSHIP - the half Data Layers exist for. A layer nothing belongs to does nothing. */
+	/** Create one. Without this the family could only operate on layers somebody else
+	 *  authored, and the write tests could not build the world they need. */
+	MIF_DECL(create_data_layer);
 	MIF_DECL(add_actor_to_data_layer);
 	MIF_DECL(remove_actor_from_data_layer);
 

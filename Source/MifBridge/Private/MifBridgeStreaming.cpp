@@ -125,6 +125,9 @@
 #include "DataLayer/DataLayerEditorSubsystem.h"       // the WRITE half - see the block at the end
 #include "Subsystems/EditorActorSubsystem.h"   // GetActorReference - membership takes an actor
 #include "Editor.h"                             // GEditor
+#include "WorldPartition/DataLayer/DataLayerAsset.h"   // UDataLayerAsset - UObject on 5.3, UDataAsset on 5.7
+#include "WorldPartition/DataLayer/DataLayerType.h"    // EDataLayerType
+#include "UObject/Package.h"                           // CreatePackage
 
 namespace MifBridge
 {
@@ -1813,35 +1816,29 @@ namespace MifBridge
 	// today on both engines and rot on the next one.
 	namespace
 	{
-		/** The actor for a membership call. Resolved by PATH through the same subsystem the rest of
-		 *  the bridge uses, so a caller can take actorPath straight from list_level_actors.
+		/** The actor for a membership call.
 		 *
-		 *  Prefixed and file-local: this module builds as a unity blob, and a second helper called
-		 *  ResolveActor would be the C2084 that PM-005 records. */
+		 *  DELEGATES to MifBridge::ResolveActor rather than resolving here. I wrote a parallel
+		 *  resolver first - to dodge the unity-build name collision PM-005 records - and reintroduced
+		 *  a bug the original already had a comment about:
+		 *
+		 *      "GetPathName() MUST be here: list_level_actors emits full paths, and without this the
+		 *       very paths it hands you could not be resolved back - delete/transform by path
+		 *       silently failed while the same call by label worked."
+		 *
+		 *  UEditorActorSubsystem::GetActorReference does NOT resolve the paths list_level_actors
+		 *  reports, at least for World Partition actors in external packages. The existing resolver
+		 *  falls back to a scan over GetPathName/label/name and that fallback is the whole point of
+		 *  it. Writing a second resolver lost that knowledge; there is now one. */
 		AActor* MifDataLayerActor(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 		{
-			const FString Path = JStrAny(In, { TEXT("actorPath"), TEXT("actor") });
-			if (Path.IsEmpty())
-			{
-				Fail(Out, TEXT("actorPath is required - list_level_actors reports one for every actor. "
-							   "NOTHING was changed."));
-				return nullptr;
-			}
 			UEditorActorSubsystem* Sub = GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
 			if (!Sub)
 			{
 				Fail(Out, TEXT("no UEditorActorSubsystem - this is not a running editor."));
 				return nullptr;
 			}
-			AActor* Actor = Sub->GetActorReference(Path);
-			if (!Actor)
-			{
-				Fail(Out, FString::Printf(
-					TEXT("no actor at '%s'. This resolves by PATH, not by label - list_level_actors "
-						 "reports actorPath. NOTHING was changed."), *Path));
-				return nullptr;
-			}
-			return Actor;
+			return ResolveActor(Sub, In, Out);
 		}
 
 		/** Every Data Layer this actor is currently in, by short name. The read-back for both writes
@@ -1994,6 +1991,150 @@ namespace MifBridge
 		Out->SetBoolField(TEXT("removed"), true);
 		UE_LOG(LogMifBridge, Log, TEXT("remove_actor_from_data_layer: %s from %s"),
 			*Actor->GetActorLabel(), *Layer->GetDataLayerShortName());
+	}
+
+
+	// --- create_data_layer ----------------------------------------------------------------------
+	//   in:  { name, assetPath? = /Game/_MifDataLayers/<name>, type? = "runtime"|"editor",
+	//          isPrivate? = false }
+	//   out: { name, dataLayerAsset, dataLayerType, isPrivate, layerCount }
+	// Bucket: MUTATES the open level and creates an asset IN MEMORY. Nothing is saved.
+	//
+	// WHY THIS EXISTS, and it is two reasons rather than one.
+	//
+	// Parity: the family could list layers, change their visibility and editor-loading, and (since
+	// tonight) move actors in and out of them - and could not MAKE one. A subsystem you can only
+	// operate on layers somebody else authored is half a subsystem.
+	//
+	// And testing: test_data_layer_writes has been skipping its write assertions since it was written,
+	// because Data Layers exist only in World Partition maps, the scratch world has none, and the
+	// standing rule is not to open Andre's real maps. With this, a test can build the world it needs.
+	//
+	// Verified in BOTH trees before writing:
+	//   UDataLayerEditorSubsystem::CreateDataLayerInstance   5.3 :571   5.7 :619
+	//   FDataLayerCreationParameters                         5.3 :48    5.7 :56    same three fields
+	//   UDataLayerAsset::SetType(EDataLayerType)             5.3 :30    5.7 :43
+	//
+	// TWO DIFFERENCES that are declaration-side only and change nothing for callers, recorded so the
+	// next reader does not re-check: UDataLayerAsset derives from UObject on 5.3 and UDataAsset on
+	// 5.7, and SetType is an inline on 5.3 versus an ENGINE_API out-of-line on 5.7.
+	//
+	// The 5.3 inline carries `check(Type == EDataLayerType::Editor || !IsPrivate())`, which is a hard
+	// assert rather than a refusal. A freshly constructed asset is not private, so both types are safe
+	// here - but the ORDER matters: type is set BEFORE privacy, never after, because doing it the
+	// other way round is one line from terminating the editor.
+	void H_create_data_layer(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("assetPath"), TEXT("type"), TEXT("dataLayerType"), TEXT("isPrivate") },
+			TEXT("name (the layer's short name); assetPath (defaults to /Game/_MifDataLayers/<name>); "
+				 "type (alias: dataLayerType) - runtime (default) or editor; isPrivate (default false)"),
+			{ { TEXT("visible"), TEXT("a new layer is visible by default; set_data_layer_visibility changes it afterwards") },
+			  { TEXT("parent"), TEXT("nesting is not supported here - create the layer, then use the editor's Data Layers panel to reparent it") } }))
+		{
+			return;
+		}
+
+		UWorld* World = EditorWorld();
+		if (!World) { Fail(Out, TEXT("no editor world")); return; }
+		if (!World->IsPartitionedWorld())
+		{
+			// Named precisely rather than "failed". Data Layers are a World Partition feature and this
+			// is the single most likely reason for a caller to be here by mistake.
+			Fail(Out, TEXT("this is not a World Partition map, so it cannot have Data Layers at all. "
+						   "Sublevels are the equivalent on a non-partitioned map - see list_sublevels. "
+						   "NOTHING was created."));
+			return;
+		}
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required - the Data Layer's short name. NOTHING was created."));
+			return;
+		}
+
+		UDataLayerEditorSubsystem* Sub = MifDataLayerEditor(Out);
+		if (!Sub) { return; }
+
+		// The asset lives in memory at a scratch path. Nothing is saved, so this package exists only
+		// for the session - which is exactly what the tests need and exactly what the standing rule
+		// permits.
+		FString AssetPath = JStr(In, TEXT("assetPath"));
+		if (AssetPath.IsEmpty())
+		{
+			AssetPath = FString::Printf(TEXT("/Game/_MifDataLayers/%s"), *Name);
+		}
+		UPackage* Pkg = CreatePackage(*AssetPath);
+		if (!Pkg)
+		{
+			Fail(Out, FString::Printf(TEXT("could not create a package at '%s'. NOTHING was created."),
+				*AssetPath));
+			return;
+		}
+
+		UDataLayerAsset* Asset = NewObject<UDataLayerAsset>(
+			Pkg, UDataLayerAsset::StaticClass(), FName(*Name), RF_Public | RF_Standalone | RF_Transactional);
+		if (!Asset)
+		{
+			Fail(Out, TEXT("NewObject<UDataLayerAsset> returned null and the engine reported no "
+						   "reason. NOTHING was created."));
+			return;
+		}
+
+		// TYPE BEFORE PRIVACY - see the note above. The 5.3 setter asserts on a private runtime layer.
+		const FString TypeStr = JStrAny(In, { TEXT("type"), TEXT("dataLayerType") }, TEXT("runtime"));
+		const bool bEditorType = TypeStr.Equals(TEXT("editor"), ESearchCase::IgnoreCase);
+		Asset->SetType(bEditorType ? EDataLayerType::Editor : EDataLayerType::Runtime);
+
+		FDataLayerCreationParameters Params;
+		Params.DataLayerAsset = Asset;
+		Params.bIsPrivate = JBool(In, TEXT("isPrivate"), false);
+
+		UDataLayerInstance* Instance = Sub->CreateDataLayerInstance(Params);
+		if (!Instance)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("CreateDataLayerInstance returned nothing for '%s'. The asset was constructed but "
+					 "no instance exists in this world, so the layer is NOT usable. The most common "
+					 "cause is a world with no AWorldDataLayers yet."), *Name));
+			return;
+		}
+
+		// READ BACK through the manager rather than trusting the pointer - the house rule, and here it
+		// also proves the instance is reachable by the same route list_data_layers uses, which is what
+		// a caller will do next.
+		bool bFound = false;
+		int32 Count = 0;
+		if (UDataLayerManager* Manager = UDataLayerManager::GetDataLayerManager(World))
+		{
+			Manager->ForEachDataLayerInstance([&](UDataLayerInstance* I)
+			{
+				if (!I) { return true; }
+				++Count;
+				if (I == Instance) { bFound = true; }
+				return true;
+			});
+		}
+
+		Out->SetStringField(TEXT("name"), Instance->GetDataLayerShortName());
+		Out->SetStringField(TEXT("dataLayerAsset"), Asset->GetPathName());
+		Out->SetStringField(TEXT("dataLayerType"), bEditorType ? TEXT("editor") : TEXT("runtime"));
+		Out->SetBoolField(TEXT("isPrivate"), Params.bIsPrivate);
+		Out->SetNumberField(TEXT("layerCount"), Count);
+		Out->SetStringField(TEXT("note"),
+			TEXT("nothing was saved - the asset and the instance exist in memory for this session "
+				 "only. An editor restart loses both."));
+
+		if (!bFound)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' was created but the DataLayerManager does not list it, so list_data_layers "
+					 "will not see it either. Treat the layer as unusable."), *Name));
+			return;
+		}
+		UE_LOG(LogMifBridge, Log, TEXT("create_data_layer: %s (%s), %d layer(s) in world"),
+			*Name, bEditorType ? TEXT("editor") : TEXT("runtime"), Count);
 	}
 
 }

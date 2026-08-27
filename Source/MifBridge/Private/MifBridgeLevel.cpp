@@ -44,9 +44,14 @@ namespace MifBridge
 
 		// Actors are addressed by their full object path. GetActorReference resolves one; it is the
 		// counterpart to the actorPath every endpoint here returns.
-		AActor* ResolveActor(UEditorActorSubsystem* Subsystem, const TSharedRef<FJsonObject>& In,
-			const TSharedRef<FJsonObject>& Out)
-		{
+	}   // end anonymous namespace - ResolveActor is SHARED (declared in MifBridgeHandlers.h) so that
+		// there is exactly one actor resolver. MifBridgeStreaming's Data Layer membership needs it,
+		// and a second copy written without this function's hard-won fallback silently fails on every
+		// World Partition actor path list_level_actors reports.
+
+	AActor* ResolveActor(UEditorActorSubsystem* Subsystem, const TSharedRef<FJsonObject>& In,
+		const TSharedRef<FJsonObject>& Out)
+	{
 			const FString Path = JStrAny(In, { TEXT("actorPath"), TEXT("actor"), TEXT("path") });
 			if (Path.IsEmpty())
 			{
@@ -69,11 +74,14 @@ namespace MifBridge
 						return Candidate;
 					}
 				}
-				Fail(Out, FString::Printf(
-					TEXT("actor not found: '%s' (expects the full actorPath; label/name also accepted if unique)"), *Path));
-			}
-			return Actor;
+			Fail(Out, FString::Printf(
+				TEXT("actor not found: '%s' (expects the full actorPath; label/name also accepted if unique)"), *Path));
 		}
+		return Actor;
+	}
+
+	namespace
+	{
 
 		void SerializeTransformInto(const TSharedRef<FJsonObject>& J, const AActor* Actor)
 		{
