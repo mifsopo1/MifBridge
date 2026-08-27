@@ -175,6 +175,104 @@ precisely the problem with `MIF_DBG`.
 
 ---
 
+## 3. The scratch-path watch — which REAL assets a call dirtied
+
+Added 2026-08-27. **Detection, not prevention**, and the response field is called `scratchClean`
+rather than `scratchSafe` because that difference is real.
+
+### What it closes
+
+In a gated mode an agent cannot **save**, so a modified real asset is not permanent — until a human
+presses Ctrl+S in the editor, at which point it silently is. Between those two moments nothing
+anywhere said the asset had been touched. Now the response that touched it names it, in the same
+call:
+
+```json
+{
+  "scratchClean": false,
+  "dirtiedRealPackages": ["/Game/Maps/IslaSombra"],
+  "scratchWarning": "this call modified 1 package(s) OUTSIDE /Game/_Mif. Nothing was saved ..."
+}
+```
+
+`scratchClean: true` is reported on a clean call too, so its **absence** is never mistaken for the
+watch not running.
+
+### Why it is not prevention
+
+Blocking would need a per-endpoint Read/Write classification — roughly 300 mechanical `MIF_BIND`
+edits, which also break `parity_check.py` and `make_release.py` since both match
+`MIF_BIND\(([a-z_0-9]+)\)` and would silently report ZERO endpoints. That remains filed and remains
+real work. This is not it and does not pretend to be.
+
+### Three limitations, all from the engine
+
+1. **`OnObjectModified` fires once per object per FRAME.** `UObjectGlobals` keeps a per-frame set "to
+   prevent multiple triggerings". An object already modified earlier in the same frame is invisible.
+   Handlers run inline on the game thread, usually one per tick, so this is rare rather than never.
+2. **It fires on `Modify()`**, the transaction hook. An endpoint that mutates without calling it —
+   a bug in that endpoint, since it also breaks undo — is not seen.
+3. **Creation is invisible.** Found by testing, not by reading: `create_asset` at a non-scratch
+   `/Game` path reports `scratchClean`, because `NewObject` has no prior state to record.
+   `set_property` on that same asset reports it immediately.
+
+   That third one is arguably the RIGHT scope. This answers *"did the agent touch one of YOUR
+   assets"*, and an asset the agent just created is not yet one of yours. Creating unsaved clutter is
+   a mess; modifying an existing asset that a human then saves is a loss. Only the second is watched
+   for. Worth knowing anyway, because `scratchClean` on a call that clearly wrote something otherwise
+   looks broken.
+
+**So a clean report is good evidence and not a proof**, and the field name says so.
+
+`batch` dispatches inner ops through `RunEndpoint`, so a watch can already be active — the OUTER one
+owns the report. An inner watch stealing the pointer would hand its findings to the wrong response
+and lose the rest. Reported on failure paths too, since an endpoint that fails HALFWAY is exactly the
+one worth knowing about.
+
+## 4. Where file OUTPUT may land
+
+Andre's question was *"does the safety gate cover EXPORT?"* — filed because `export_asset` writes
+files and is not on the unsafe list, while the gate's documented premise is that nothing reaches disk.
+
+Two options were written down: gate export entirely (which kills the Blender mesh round trip, the
+whole point of that pipeline) or reword the contract to admit an exported FBX is not a package.
+
+**A third option existed**, visible only after checking one fact: `export_asset` already defaults to
+`<ProjectSaved>/MifBridge/Export`, and the MCP wrapper sends no explicit `file` — so the Blender
+pipeline uses that default.
+
+> In a gated mode, an **explicitly named path outside the project directory** is refused. The default
+> is inside it. The pipeline costs nothing and the contract becomes literal again.
+
+```
+file: "C:/Temp/evil.fbx"  ->  refused, refusedRule "file-outside-project"
+file: "tile.fbx"          ->  allowed, resolves under the export root
+no file parameter         ->  D:/DDS2SDK/Game/Saved/MifBridge/Export/<Name>.fbx
+```
+
+**This is a smaller claim than "the gate covers export."** It covers WHERE output may land, not
+whether an export may happen — an FBX in the project's own `Saved` folder destroys nothing.
+
+### The bug this shipped with, for one night
+
+The guard was first checked on the **raw request**. A relative file is resolved against
+`MifExportRootDir()` (inside the project) a few lines later, but the early check called
+`ConvertRelativePathToFull` on the raw string — which resolves against the **process CWD**, and the
+editor's CWD is its own binaries directory, outside the project.
+
+So `"tile.fbx"` would have been refused for being outside the project it was about to be written
+into. The test passed the whole time: it exercised an absolute path and the no-file default — two of
+three branches, and not the broken one. **A guard verified on the cases that work is not verified.**
+
+Now checked on the resolved path. `T637` covers all three shapes.
+
+### Not applied to the other file writers, and that is deliberate
+
+`capture_viewport`, `capture_camera`, `render_thumbnail` and `backup_blueprint` all write files, and
+none of them accepts a free-form destination — they resolve into `ProjectSavedDir()/MifBridge` or
+beside the original package. Adding the guard call would be a **no-op that looks like coverage**,
+which is worse than leaving them alone: the next reader sees a guard and believes it is doing work.
+
 ## Related
 
 - `01_POSTMORTEMS.md` PM-011 (modal deadlock), PM-013 (`add_anim_node`)
