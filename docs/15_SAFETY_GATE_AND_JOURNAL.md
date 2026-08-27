@@ -197,3 +197,29 @@ would be a second surprise on top of the first.
 The gate was correct. The claim was wrong, and it was wrong in a file that says so about itself,
 twice, for an unrelated reason. When adding a check to a dispatcher, grep for the other dispatchers
 first - here, `Handlers()` had exactly two callers and only one of them was guarded.
+
+### The audit, so this is a checked fact and not a claim
+
+A handler is invoked at exactly **four** sites, in **two** functions. Both functions gate before
+every site they own:
+
+| invoked at | in | gated at |
+|---|---|---|
+| `MifBridgeCommon.cpp:1293` (built-in) | `RunEndpoint` (declared :1202) | `:1233` |
+| `MifBridgeCommon.cpp:1305` (external) | `RunEndpoint` (declared :1202) | `:1233` |
+| `MifBridgeNodes.cpp:2521` (built-in) | `H_batch` | `:2492` |
+| `MifBridgeNodes.cpp:2534` (external) | `H_batch` | `:2492` |
+
+Both dispatchers resolve built-ins first and then provider-registered (`kr_*`) endpoints, so each
+needs its gate to cover *both* lookups - a check placed between them would leave external endpoints
+open. Both gates sit above both lookups.
+
+**Re-run this audit whenever a dispatcher is added.** It is two greps:
+
+```
+grep -nE '\(\*(Fn|ExtFn)\)\(|->Handler\(In, Out\)' Source/MifBridge/Private/*.cpp
+grep -n 'RefuseIfGated' Source/MifBridge/Private/*.cpp
+```
+
+Every line the first produces must be downstream of a line the second produces, in the same
+function.
