@@ -34,7 +34,26 @@ Every bridge call as a card, newest first, colour-coded by work type:
 | `READ` (blue) | a read |
 | `WRITE` (purple) | a mutation |
 | `BLOCKED` (amber) | refused by the safety gate |
-| `FAILED` (red) | the handler said no |
+| `REFUSED` (grey) | the caller asked for something invalid — a contract refusal, **not a defect** |
+| `FAILED` (red) | the handler tried and could not |
+
+### Why REFUSED exists, separately from FAILED
+
+Andre watched a regression through this panel, saw a wall of red `FAILED` cards, and reasonably asked
+whether something was broken. **The panel could not tell him** — and that ambiguity was the real
+defect, not the failures.
+
+Test suites deliberately call endpoints with bad input to prove they refuse properly.
+`test_widget_tree.py:158` is literally titled *"bad arguments are refused"* and calls four endpoints
+with `widgetName: "NoSuch_zz"`. Those are the system working. Rendering them identically to a broken
+endpoint makes the whole transcript untrustworthy.
+
+So a failure whose reason begins `unrecognised parameter`, contains `is required`, or begins `no ` —
+the shapes `RejectUnknownParams` and the not-found paths produce — is a **contract refusal** and gets
+the quiet grey pill. Anything else keeps the loud red one, so a genuine breakage still stands out.
+
+Failed cards also show the **reason** on their second line, where a successful call shows its subject.
+On a failure the reason is what you want; on a success there is no reason and the subject is.
 
 Each card carries the endpoint, its duration (slow calls colour themselves), a live age, and the
 **subject** — what the call was *about*, lifted from the payload. `find_assets` alone says nothing;
