@@ -78,7 +78,24 @@ namespace MifBridge
 				// same hazard with a longer fuse.
 				TEXT("start_pie"), TEXT("stop_pie"),
 				// Escape the process entirely - arbitrary command execution and a full cook.
-				TEXT("run_console"), TEXT("exec_console"), TEXT("trigger_cook"),
+				//
+				// ALL THREE Exec endpoints, and they move as a SET. MifBridge::RunEngineExec
+				// (MifBridgeCommon.cpp:2110) is the single choke point onto UEngine::Exec, and it has
+				// exactly three callers: run_console (MifBridgeIntrospect.cpp:2108), exec_console, and
+				// run_console_captured (MifBridgePIE.cpp:534).
+				//
+				// The third was NOT here. So in scratch mode run_console was refused and
+				// run_console_captured executed anything you liked - OBJ SAVEPACKAGE, MAP LOAD, EXIT.
+				// The name list was maintained by hand and the family grew a member.
+				//
+				// This is the THIRD time tonight the same failure has appeared: a control enforced at
+				// one choke point, with another road to the same place. First batch bypassing the gate
+				// entirely, then send_editor_key and invoke_editor_command reaching Save without
+				// writing anything, now a third Exec endpoint. test_safety_gate T636 now derives the
+				// caller list from the SOURCE rather than trusting this comment, because a comment
+				// saying "all three" is exactly what was true before someone added a fourth.
+				TEXT("run_console"), TEXT("exec_console"), TEXT("run_console_captured"),
+				TEXT("trigger_cook"),
 				// Destroy or replace the working set.
 				TEXT("new_level"), TEXT("load_level"), TEXT("quit_editor"), TEXT("restart_editor"),
 				// Long, unsupervised, and writes into the project.

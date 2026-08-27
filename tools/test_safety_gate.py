@@ -166,6 +166,46 @@ def main():
         check("T633 set_cvar cannot change the write mode", before == after,
               "mode moved %r -> %r via set_cvar - the gate is self-unlockable" % (before, after))
 
+    # ------------------------------------------------------------------ T636 derive, do not trust
+    # Three endpoints reach UEngine::Exec through MifBridge::RunEngineExec, and for a while only two
+    # were gated: run_console_captured executed anything while run_console was refused.
+    #
+    # The list was maintained BY HAND and the family grew a member. So this test does not hardcode
+    # the three names - it reads the SOURCE, finds every handler that calls RunEngineExec, and
+    # asserts each one is refused. A fourth Exec endpoint added next year fails this test the day it
+    # is written, without anyone remembering to update a list.
+    print("")
+    print("=== T636: EVERY endpoint that reaches UEngine::Exec is gated ===")
+    import os, re
+    PRIV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "Source", "MifBridge", "Private")
+    exec_eps = set()
+    for fn in os.listdir(PRIV):
+        if not fn.endswith(".cpp"):
+            continue
+        raw = io.open(os.path.join(PRIV, fn), encoding="utf-8", errors="replace").read()
+        lines = raw.replace(chr(13) + chr(10), chr(10)).split(chr(10))
+        cur = None
+        for line in lines:
+            m = re.match(r"\s*void (H_[a-z_0-9]+)\(", line)
+            if m:
+                cur = m.group(1)
+            stripped = line.strip()
+            if ("RunEngineExec(" in line and cur and not stripped.startswith("//")
+                    and "bool RunEngineExec" not in line):
+                exec_eps.add(cur[2:])          # strip the H_ prefix
+    check("T636 the source scan found the Exec endpoints", len(exec_eps) >= 2, sorted(exec_eps))
+    print("    endpoints reaching UEngine::Exec: %s" % sorted(exec_eps))
+
+    mode = (M.call("self_audit", {}, timeout=180) or {}).get("writeMode")
+    if mode == "full":
+        print("  SKIP  gate is in 'full' mode - nothing to enforce")
+    else:
+        for ep in sorted(exec_eps):
+            r = M.call(ep, {"command": "stat none"})
+            check("T636 %s is gated" % ep, r.get("refusedBy") == "safety-gate",
+                  "ok=%s refusedBy=%r - it reaches UEngine::Exec and the gate did not stop it"
+                  % (r.get("ok"), r.get("refusedBy")))
     # ------------------------------------------------------------------ T635 the UI side doors
     # The gate refuses save_package. Until 2026-08-26 it permitted send_editor_key, which delivers a
     # real key event to whatever has focus - and Ctrl+S in a level editor is Save. It also permitted
