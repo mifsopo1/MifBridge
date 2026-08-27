@@ -1179,3 +1179,69 @@ the callee handles. The sharper one: I filed, fixed, committed and pushed a find
 claim against the live editor. One five-second call would have shown `rejected: 2, dropped: 0`.
 Evidence FOR a defect deserves the same standard as evidence against one, which is what PM-013 already
 says about dismissals.
+
+---
+
+## 15. Curfew's bridge is sitting on MifBlender's reserved port
+
+**FOUND 2026-08-26 while answering a question about something else.** Andre mentioned he had Blender
+open and wondered whether it was causing a port problem. It was not causing the problem I was
+chasing - but checking it turned up a real collision that would have broken the Blender phase before
+it started.
+
+### What is actually bound right now
+
+| Process | Port | Should be |
+|---|---|---|
+| SDK editor, UE 5.3.2 (`DrugDealerSimulator2.uproject`) | 8791 | correct |
+| **Curfew, UE 5.7 (`Curfew.uproject`)** | **8792** | **wrong - this is MifBlender's** |
+| Blender | 8793 | it was pushed off 8792 |
+
+8792 is not an arbitrary choice for MifBlender. It is reserved and documented in three places:
+`README.md:178` ("the addon binds 127.0.0.1:8792 - loopback only, there is deliberately no
+bind-address setting"), `README.md:187` (the `MIF_BLENDER_PORT` default, with a note that 9876 is the
+third-party `blender-mcp` addon), and `tools/blender-addon/MifBlender/server.py:66`
+("DEFAULT_PORT = 8792  # UE plugin is 8791; third-party blender-mcp is 9876. No clash.").
+
+### How it happened
+
+MifBridge does NOT auto-increment its port. `Source/MifBridge/Private/MifBridge.cpp:40-46` reads
+`MIF_BRIDGE_PORT` and otherwise uses 8791 (`MifBridge.h:29`); a bind failure only logs a warning
+(`MifBridge.cpp:127`). So Curfew did not drift onto 8792 - it was deliberately pointed there, almost
+certainly to dodge the SDK editor already holding 8791. That solved a two-way collision by creating a
+different one, because the port it moved to was already spoken for.
+
+### Why it matters, and why it would have been confusing
+
+When the Blender phase starts, `_blender()` in `tools/mcp-server/server.py:77-84` dials
+127.0.0.1:8792 and speaks the MifBlender protocol - a 4-byte big-endian length prefix followed by
+UTF-8 JSON. On this machine that reaches **Curfew's UE HTTP bridge**, which speaks HTTP.
+
+The failure would not have been a clean "connection refused". It would have been a length-prefixed
+binary frame arriving at an HTTP listener, and whatever came back would not be MifBlender's
+`{ok:true,...}`. That is a genuinely hard thing to diagnose from the Blender side, because the port
+IS open and something IS listening - the two checks anyone would run both pass.
+
+### The fix, which is Andre's call
+
+Move CURFEW, not MifBlender. MifBlender's port is documented in three files and its addon has no
+bind-address option, whereas Curfew's is a single environment variable. Set `MIF_BRIDGE_PORT` for the
+Curfew editor to something outside the reserved range - 8801 is clear - and the collision is gone.
+
+What this really argues for is writing the allocation down as a MAP rather than as three scattered
+defaults, so the next "just move it up one" does not land on something else:
+
+| Port | Owner |
+|---|---|
+| 8791 | MifBridge, UE - first editor |
+| 8792 | **MifBlender addon - reserved, do not reuse** |
+| 8793+ | free |
+| 9876 | third-party `blender-mcp` - not ours |
+
+Recommended: MifBridge on additional editors should use 8801, 8802, ... leaving 879x alone entirely.
+
+### The lesson
+
+The same one as most entries here: a check that tests a proxy rather than the real question. "Is the
+port free?" was answered by trying to bind it, which is not the same as "is this port mine to take?"
+Nothing warned, because nothing knew the allocation existed.

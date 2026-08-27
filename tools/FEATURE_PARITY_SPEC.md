@@ -1220,3 +1220,13 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
   Layers. Creating one needs new_level, which is on the audit DENY list, so this needs Andre to either
   make such a level once by hand or say the DENY list may be relaxed for it. Do not relax that list
   unilaterally.
+
+- [ ] **Write the port allocation down as a map, and move Curfew off 8792.**
+  Found 2026-08-26, filed as docs/06 issue 15. Curfew's editor is bound to 8792, which is
+  MifBlender's reserved port (README.md:178/187, blender-addon/MifBlender/server.py:66). Blender was
+  pushed onto 8793 as a result. This will break the Blender phase in a confusing way, because
+  _blender() would dial 8792, reach Curfew's HTTP bridge, and speak a length-prefixed binary protocol
+  at it - the port is open and something answers, so the two obvious checks both pass.
+  Fix is to move CURFEW (one env var, MIF_BRIDGE_PORT) rather than MifBlender (documented in three
+  files, addon has no bind-address option). Suggest 8801 for a second editor, leaving 879x alone.
+  Needs Andre - it changes how his other project launches.
