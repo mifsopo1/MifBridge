@@ -986,6 +986,12 @@ the message has to change rather than the behaviour.
 
 ---
 
+> **Numbering note.** This file has TWO sequences. Everything above is the main one, which reaches
+> 23. Everything below restarts at 1 because it was merged in from a separate deployment. So "issue
+> 1" is ambiguous and "issue 17" is not - when citing a low number from below, say "Curfew issue N".
+> Left as two sequences rather than renumbered: the low numbers are cited from commit messages that
+> cannot be edited, and silently moving them would break the trail those messages are for.
+
 # MERGED FROM THE CURFEW DEPLOYMENT (UE 5.7), 2026-08-26
 
 MifBridge is vendored into D:/RoguelikeDealerGame rather than cloned from this repo, so a second line
@@ -1658,7 +1664,13 @@ Only the illusory containment — the comment now says what the code does, and t
 resolved path so a caller can see where the file actually went. The gate question is filed for Andre.
 
 
-## 21. My build verification counted `: error ` and missed `: fatal error ` — FIXED
+## 23. My build verification counted `: error ` and missed `: fatal error ` — FIXED
+
+> **Renumbered from 21 on 2026-08-27.** It was filed as 21 while issue 21 already existed - I picked
+> the next number without checking, which is the same class of mistake as the duplicate spec entries
+> found the same night. The commit that introduced this says "filed as docs/06 issues 21 and 22";
+> this is the 21 it meant. Issue 22 kept its number because `make_release.py` and
+> `parity_check.py` both cite it.
 
 Found 2026-08-27, by a build that reported **0 errors** and produced a DLL missing five endpoints.
 

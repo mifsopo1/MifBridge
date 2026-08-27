@@ -238,6 +238,39 @@ def main():
                 check("T636 %s is gated" % ep, r.get("refusedBy") == "safety-gate",
                       "ok=%s refusedBy=%r - it reaches UEngine::Exec and the gate did not stop it"
                       % (r.get("ok"), r.get("refusedBy")))
+    # ------------------------------------------------------------------ T637 export path confinement
+    # The gate confines file OUTPUT to the project directory in a gated mode. Three branches, and the
+    # first version of this guard only ever exercised two of them.
+    #
+    # THE RELATIVE ONE IS THE POINT. export_asset resolves a relative file against its own export
+    # root (inside the project), but the guard originally ran on the RAW request and resolved it
+    # against the process CWD - the editor's binaries directory, outside the project. So "tile.fbx"
+    # was refused for being outside the project it was about to be written into. The absolute-path
+    # test passed the whole time.
+    print("")
+    print("=== T637: export output is confined to the project, on ALL three path shapes ===")
+    mode = (M.call("self_audit", {}, timeout=180) or {}).get("writeMode")
+    if mode == "full":
+        print("  SKIP  gate is in 'full' mode - output is deliberately unconfined")
+    else:
+        SPHERE = "/Engine/EngineMeshes/Sphere.Sphere"
+        r = M.call("export_asset", {"asset": SPHERE, "file": "C:/Temp/mif_should_refuse.fbx"},
+                   timeout=300)
+        check("T637 an ABSOLUTE path outside the project is refused",
+              r.get("ok") is False and r.get("refusedRule") == "file-outside-project",
+              json.dumps(r)[:190])
+
+        r = M.call("export_asset", {"asset": SPHERE, "file": "mif_relative_probe.fbx"}, timeout=300)
+        check("T637 a RELATIVE path is ALLOWED - it resolves inside the export root",
+              r.get("ok") is True, json.dumps(r)[:220])
+        f = str(r.get("file") or "")
+        check("T637 and it landed under the project, not the process CWD",
+              "MifBridge" in f and "Saved" in f, "file=%s" % f)
+
+        r = M.call("export_asset", {"asset": SPHERE}, timeout=300)
+        check("T637 the DEFAULT path still works (the Blender round trip uses it)",
+              r.get("ok") is True, json.dumps(r)[:190])
+
     # ------------------------------------------------------------------ T635 the UI side doors
     # The gate refuses save_package. Until 2026-08-26 it permitted send_editor_key, which delivers a
     # real key event to whatever has focus - and Ctrl+S in a level editor is Save. It also permitted

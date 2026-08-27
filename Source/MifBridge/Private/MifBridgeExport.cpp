@@ -518,17 +518,6 @@ namespace MifBridge
 		FString RequestedFile = JStrAny(In, { TEXT("file"), TEXT("filename"), TEXT("outPath") });
 		RequestedFile.TrimStartAndEndInline();
 
-		// AN EXPLICIT PATH OUTSIDE THE PROJECT IS REFUSED IN A GATED MODE.
-		//
-		// Checked HERE, before any of the format resolution below, so nothing is computed or created
-		// on a path that will not be written. The DEFAULT path is unaffected - it lands under
-		// <ProjectSaved>/MifBridge/Export - which is why this costs the Blender round trip nothing:
-		// that pipeline sends no file parameter at all.
-		if (!RequestedFile.IsEmpty()
-			&& RefuseFileOutsideProject(RequestedFile, Out, TEXT("export_asset")))
-		{
-			return;
-		}
 
 		FString Format = JStrAny(In, { TEXT("format"), TEXT("type"), TEXT("extension") });
 		Format.TrimStartAndEndInline();
@@ -587,6 +576,25 @@ namespace MifBridge
 		}
 		FPaths::NormalizeFilename(FullOutPath);
 		FullOutPath = FPaths::ConvertRelativePathToFull(FullOutPath);
+
+		// AN EXPLICIT PATH OUTSIDE THE PROJECT IS REFUSED IN A GATED MODE.
+		//
+		// CHECKED ON THE RESOLVED PATH, and the first version of this was checked on the RAW request
+		// instead - which was wrong in a way its own test could not see.
+		//
+		// A RELATIVE file is resolved against MifExportRootDir() a few lines above, which is inside the
+		// project. The early check ran before that and called ConvertRelativePathToFull on the raw
+		// string, which resolves against the PROCESS CWD - and the editor's CWD is its own binaries
+		// directory, outside the project. So a perfectly legitimate relative path like "tile.fbx"
+		// would have been refused for being outside the project it was about to be written into.
+		//
+		// The test that verified the guard passed an ABSOLUTE path (C:/Temp/evil.fbx) and a request
+		// with no file at all. Neither exercises the relative branch. Found by reading docs/06 issue
+		// 21, which had already documented that relative paths take a different route.
+		if (RefuseFileOutsideProject(FullOutPath, Out, TEXT("export_asset")))
+		{
+			return;
+		}
 
 		// Reported BEFORE anything is written, and reported even on the failure paths below, because
 		// "where did that file go" is the question a caller has when an export surprises them.
