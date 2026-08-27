@@ -1,24 +1,41 @@
-# MifBridge
+<div align="center">
 
-**Let an AI edit your Unreal Blueprints — and read the compiler errors back.**
+# 🌉 MifBridge
 
-MifBridge is a small in‑editor Unreal Engine plugin plus a Model Context Protocol (MCP) server that lets an AI assistant (Claude Code) **build, wire, and compile Blueprint graphs programmatically, then read the actual compiler output**. It replaces the blind "AI writes T3D → you paste → you screenshot the errors → AI guesses → repeat" loop with a direct, closed feedback loop.
+### **Let an AI edit your Unreal Blueprints — and read the compiler errors back.**
 
-Because every change goes through Unreal's own graph API (`Schema->TryCreateConnection`, `ReconstructNode`, `FKismetEditorUtilities::CompileBlueprint`), it fires the pin/notification callbacks that clipboard paste skips — the callbacks that resolve wildcard pins, relink variables, and expand macros. Every edit is wrapped in a transaction, so **Ctrl‑Z in the editor undoes anything the AI did.**
+<!-- MIFBRIDGE-VERSION-LINE -->
+`v0.5.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🔌 **332 endpoints** &nbsp;·&nbsp; 🧰 **351 MCP tools** &nbsp;·&nbsp; 🧪 **74 test suites**
 
-**New in 0.3.0 — a second backend.** The MCP server is no longer a wrapper around one program. It
-is the one place an agent talks to, and it fronts *two* DCC tools: the Unreal editor over HTTP, and
-Blender over a local socket. The driving case is the thing neither tool can do alone — export a mesh
-out of Unreal, edit its geometry in Blender, reimport it, and repoint the assets that referenced it,
-without a human moving files between two apps.
-
-> **The Blender half is new and not yet verified end to end.** No mesh has been round-tripped
-> through it. The UE plugin + MCP server pairing is the mature, proven part and is unaffected: a
-> 0.3.0 install with Blender never started behaves exactly like 0.2.0 did.
+</div>
 
 ---
 
-## How it works
+MifBridge is an in‑editor Unreal Engine plugin plus a Model Context Protocol (MCP) server that lets an AI assistant **build, wire, and compile Blueprint graphs programmatically, then read the actual compiler output**. It replaces the blind "AI writes T3D → you paste → you screenshot the errors → AI guesses → repeat" loop with a direct, closed feedback loop.
+
+Every change goes through Unreal's own graph API (`Schema->TryCreateConnection`, `ReconstructNode`, `FKismetEditorUtilities::CompileBlueprint`), so it fires the pin/notification callbacks that clipboard paste skips — the ones that resolve wildcard pins, relink variables, and expand macros. Every edit is wrapped in a transaction, so **Ctrl‑Z in the editor undoes anything the AI did.**
+
+### ✨ Why this one is different
+
+| | |
+|---|---|
+| 🔁 **It closes the loop** | The compiler's own message list comes back mapped to node GUID + pin name. The AI reads the exact error, not a screenshot. |
+| 🧵 **Real engine callbacks** | Wildcard pins resolve, macros expand, variables relink — because it drives `UnrealEd`, not a clipboard. |
+| ↩️ **Undo‑safe by construction** | One transaction per mutation. Ctrl‑Z is the escape hatch, always. |
+| 🧊 **Cooked projects are first‑class** | Cooked Blueprints have no graphs; MifBridge *says so* and names the route out instead of returning an empty answer. |
+| 🎚️ **A safety gate you can see** | `read` / `scratch` / `full` write modes, switchable from the in‑editor panel. |
+| 🧱 **Two DCCs, one agent** | Unreal over HTTP **and** Blender over a local socket — the mesh round trip neither tool can do alone. |
+
+### 🧭 Honest status
+
+| Half | State |
+|---|---|
+| 🎮 **UE plugin + MCP server** | **Mature.** 332 endpoints, 74 suites, 148 runs green, 0 editor deaths on the last full pass. |
+| 🎨 **Blender addon** | **Working, narrowly tested.** 18 ops and a real mesh round trip; the op‑level suite skips loudly when Blender is not running rather than passing on nothing. |
+
+---
+
+## ⚙️ How it works
 
 ```
                      Claude Code (MCP client)
@@ -31,7 +48,7 @@ without a human moving files between two apps.
                       │                       │
    HTTP POST          │                       │   framed JSON over TCP
    127.0.0.1:8791/api │                       │   127.0.0.1:8792
-   header X-Mif-Token │                       │   (planned — not in 0.3.0)
+   header X-Mif-Token │                       │   header token, framed JSON
                       ▼                       ▼
         ┌──────────────────────────┐   ┌──────────────────────┐
         │ MifBridge                │   │ MifBlender           │
@@ -47,28 +64,29 @@ without a human moving files between two apps.
 
 Two transports, two choke-point functions in `server.py`, **no shared dispatch** — a change to one
 backend cannot break the other. Unprefixed tools go to Unreal (it is the default backend and
-renaming 224 of them would break every existing workflow); `bl_*` tools go to Blender; `mif_*` tools
+renaming 320 of them would break every existing workflow); `bl_*` tools go to Blender; `mif_*` tools
 are the only ones allowed to contain logic, because they orchestrate both.
 
 The UE plugin answers each request on the game thread, applies it through the real editor API, compiles, and returns the **structured compiler message list mapped to node GUID + pin name** — so the AI reads the exact error instead of a screenshot.
 
 ---
 
-## Requirements
+## 📦 Requirements
 
 | For | You need |
 |---|---|
-| **UE plugin** | **Unreal Engine 5.3**, built from source (editor target). MifBridge is an **editor‑only** C++ plugin; it must be compiled against the same engine you run. It is not a launcher/marketplace‑engine drop‑in (marketplace prebuilts won't ABI‑match a source build). Win64 only. |
-| **MCP server** | **Python 3.10+**, with `mcp>=1.2.0` and `requests>=2.31.0`. Any OS — it only speaks loopback. |
-| **Blender addon** | **Blender 4.4** (pinned; the FBX and `bmesh` defaults it relies on move between versions). *Not shipped in 0.3.0.* |
-| **Client** | Claude Code, or anything that speaks MCP over stdio. |
+| 🎮 **UE plugin** | **Unreal Engine 5.3 or 5.7** — every change is compiled against *both*. Editor‑only C++, so it must be built against the engine you actually run; a marketplace prebuilt will not ABI‑match a source build. Win64. |
+| 🐍 **MCP server** | **Python 3.10+**, with `mcp>=1.2.0` and `requests>=2.31.0`. Any OS — it only speaks loopback. |
+| 🎨 **Blender addon** | **Blender 4.4** (the declared floor in `bl_info`). Shipped as a zip; optional. |
+| 🤖 **Client** | Claude Code, or anything that speaks MCP over stdio. |
 
-You do not need all three. The MCP server + UE plugin is a complete, useful install on its own —
-that is what every release before 0.3.0 was.
+> 💡 **You do not need all three.** The MCP server + UE plugin is a complete, useful install on its
+> own — that is what every release before 0.3.0 was, and an install with Blender never started
+> behaves exactly that way.
 
 ---
 
-## What's in the box
+## 🧰 What's in the box
 
 | Part | What it is | Where it lives in this repo | Where it gets installed |
 |---|---|---|---|
@@ -76,7 +94,7 @@ that is what every release before 0.3.0 was.
 | **server.py** (MCP server) | FastMCP wrapper, 1 tool per operation, 2 backends | `tools/mcp-server/` | stays where it is; referenced by path from `.mcp.json` |
 | **MifBlender** (Blender addon) | Loopback socket server inside Blender | `tools/blender-addon/` | Blender's addons dir (as a `.zip`) |
 
-### Why the repo root is the Unreal plugin, and not a tidy three-way split
+### 🗂️ Why the repo root is the Unreal plugin, and not a tidy three-way split
 
 Unreal finds a plugin by locating a `.uplugin` at the **root of the plugin folder**. Moving the
 plugin into `unreal-plugin/` to sit symmetrically beside `blender-addon/` would mean nobody can
@@ -93,7 +111,7 @@ every UE endpoint needs a `MIF_DECL` + `MIF_BIND` in the C++ **and** a matching 
 `server.py`, and when those lived in separate repos they drifted silently. One repo, one commit, no
 drift.
 
-### Endpoint ↔ tool parity, with a second backend in the picture
+### 🔗 Endpoint ↔ tool parity, with a second backend in the picture
 
 The 1:1 rule needs a scope clause, or the `bl_*` tools read as a pile of violations.
 **Restated:** the set of UE endpoints and the set of endpoint strings passed to `_post()` must be
@@ -123,27 +141,35 @@ comm -23 /tmp/plugin.txt /tmp/mcp.txt   # endpoints with no tool
 comm -13 /tmp/plugin.txt /tmp/mcp.txt   # tools with no endpoint -> the 12 kr_* externals
 ```
 
-Measured on the 0.3.0 tree: **218 built-in endpoints + 12 external = 230**, against **237 tools**
-(225 that reach Unreal, 11 `bl_*`, 1 `mif_*`). Neither column of the diff is empty, and both
-non-empties are accounted for:
+Measured on the current tree: **320 built-in endpoints + 12 external = 332**, against **351 tools**
+(320 that reach Unreal, 12 `kr_*`, 18 `bl_*`, 1 `mif_*`). Both columns of the diff are now EMPTY —
+`parity_check` reports no drift and no exempted gaps:
 
-- **5 endpoints with no tool** — `set_variable_type`, `retarget_variable_node`,
-  `add_component_bound_event`, `set_cast_purity`, `reparent_blueprint`. Reachable over HTTP, invisible
-  to an MCP client. These pre-date 0.3.0; they are listed so the next audit reads a known delta
-  instead of blaming whatever landed last.
-- **12 tools with no `MIF_BIND`** — the `kr_*` set, registered at runtime by the separate
-  `MifKismetReconstructor` plugin. By design.
+- ✅ **0 endpoints with no tool.** There used to be five — `set_variable_type`,
+  `retarget_variable_node`, `add_component_bound_event`, `set_cast_purity`, `reparent_blueprint` —
+  reachable over HTTP and invisible to an MCP client. All five now have tools.
+- ✅ **12 tools with no `MIF_BIND`** — the `kr_*` set, registered at runtime by the separate
+  `MifKismetReconstructor` plugin. By design, and the only exemption.
 
 Anything else in either column is real drift. `self_audit` reports the live count from the running
 DLL and is the authority over any number written here.
 
+**Four more audits run beside it**, each of which found real defects the day it was written:
+
+| Command | Catches |
+|---|---|
+| `python tools/spec_check.py` | a spec item ticked while its own body still says "not built" |
+| `python tools/audit_message_endpoints.py` | an error message telling you to call an endpoint that does not exist |
+| `python tools/audit_dead_params.py` | a parameter the endpoint *accepts* and nothing ever reads |
+| `python tools/audit_vacuous_checks.py` | a test assertion that passes no matter what the code does |
+
 ---
 
-## Install
+## 🚀 Install
 
 Three installables, three sections. Do them in this order; each one is useful without the next.
 
-### 1. The Unreal plugin → `<YourProject>/Plugins/`
+### 1️⃣ The Unreal plugin → `<YourProject>/Plugins/`
 
 1. Put this repo at `<YourProject>/Plugins/MifBridge/` — clone it there, or copy the folder in. You
    need **`Source/`** and the **`.uplugin`**; do **not** copy a prebuilt `Binaries/`/`Intermediate/`
@@ -164,7 +190,7 @@ Three installables, three sections. Do them in this order; each one is useful wi
      -H "X-Mif-Token: dev" -H "Content-Type: application/json" -d '{"filter":"BP_"}'
    ```
 
-### 2. The Blender addon → Blender's add-ons directory
+### 2️⃣ The Blender addon → Blender's add-ons directory
 
 **Optional.** Skip it and everything else still works; the `bl_*` and `mif_*` tools simply report
 that the backend is unreachable. Full detail in [`tools/blender-addon/README.md`](tools/blender-addon/README.md).
@@ -176,7 +202,7 @@ that the backend is unreachable. Full detail in [`tools/blender-addon/README.md`
    **Blender 4.4** — it is pinned, because the FBX and `bmesh` defaults it depends on move between
    versions.
 
-### Port allocation — read this before pointing anything at a new port
+### 🔌 Port allocation — read this before pointing anything at a new port
 
 | Port | Owner | Notes |
 |---|---|---|
@@ -216,7 +242,7 @@ on an awkward port. The point is that the collision is no longer silent.
    **Blender being closed is never an error you have to debug.** The server connects lazily on the
    first `bl_*` call, never at startup, and returns `{"ok": false, "error": …}` naming the fix.
 
-### 3. The MCP server → deps + `mcp.json`
+### 3️⃣ The MCP server → deps + `mcp.json`
 
 ```bash
 cd tools/mcp-server
@@ -266,7 +292,7 @@ Blender's are in §2 above.
 
 ---
 
-## Security
+## 🔒 Security
 
 MifBridge lets a local process **modify your project**, so it is locked down to a single dev machine:
 
@@ -279,7 +305,7 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 
 ---
 
-## Capabilities (286 HTTP endpoints: 274 built-in + 12 external)
+## 🧠 Capabilities — 332 HTTP endpoints (320 built‑in + 12 external)
 
 > The authoritative list is whatever `self_audit` reports from the running editor, never this
 > section. `tools/endpoints_current.json` is a snapshot of it, and `tools/parity_check.py`
@@ -341,10 +367,26 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
   observation.
 - **Struct and enum authoring** — create user-defined structs and enums, add and edit members, and the
   make/break/switch nodes that consume them.
+- **Water** — `list_water_bodies`, `describe_water_body`, `create_water_body`, `set_water_body_spline`,
+  and `create_water_zone`. The zone matters more than it sounds: since UE 5.1 a body overlapping **no**
+  `AWaterZone` does not render at all, so the write half could author water nobody could see until the
+  zone endpoint existed. It reports `bodiesNowCovered` and **names** the bodies still invisible.
+- **MetaSounds** — `describe_metasound` reports a MetaSound's *interface* (the inputs you set to drive
+  it) plus node/edge counts. Read **reflectively**, so it includes no Metasound header, works on an
+  engine without the plugin, and never touches the engine's `*Checked` document accessors — those
+  hard‑assert rather than returning null.
+- **PCG** — list and describe graphs, list components, generate and clean up.
+- **StateTree, Gameplay Tags, Game Features, Live Coding** — read surfaces for each, plus
+  `live_coding_status`, which answers the question that has cost this project real time: *is something
+  holding the editor's DLLs so an external build will silently do nothing?*
+- **Sequencer** — `list_level_sequences` / `describe_level_sequence` to read, and the write half:
+  `list_sequence_bindings`, `add_sequence_possessable`, `add_sequence_track`.
+- **World Partition data layers** — create, list, describe, add/remove actors, and toggle
+  loaded/visible in the editor.
 
 ---
 
-## License
+## 📄 License
 
 **MIT** — see [`LICENSE`](LICENSE). MifBridge is entirely original code and does
 not include or link any GPL-licensed source, so you're free to use, modify, and
@@ -357,7 +399,7 @@ the fork to build. At runtime only, it cooperates with the separate
 **MifKismetReconstructor** plugin (GPL-3.0) through an engine-provided delegate;
 that plugin is distributed separately and is not part of this MIT work.
 
-### Third-party credits
+### 🙏 Third-party credits
 
 The Blender backend's socket framing (4‑byte big‑endian length prefix + UTF‑8 JSON) and its
 main‑thread job‑marshalling pattern are **adapted from
@@ -373,7 +415,7 @@ Full third-party notices, including the Unreal Engine EULA boundary and the GPL-
 
 ---
 
-## Docs
+## 📚 Docs
 
 - [`docs/02_GOTCHAS.md`](docs/02_GOTCHAS.md) — **parameter grammar and traps.** Accepted spellings
   for node/class/pin parameters, the type grammar (including the `object:`/`class:`/`enum:` prefixes),
@@ -387,7 +429,7 @@ Full third-party notices, including the Unreal Engine EULA boundary and the GPL-
 > written, and is deliberately left unedited — so it still says `tools/ue5-mcp-bridge/` and quotes
 > endpoint counts from 79 up to 211. Treat those paths and numbers as history, not instructions.
 
-### The short version
+### ⚡ The short version
 
 - **`float` is a true 32‑bit float.** It used to be an alias for `double`; if you have graphs that
   passed `"float"` expecting 64‑bit, change them to `"double"`. This is what unblocks UMG

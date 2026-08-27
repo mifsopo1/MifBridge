@@ -129,6 +129,12 @@ check("T21 rows report replacedExisting", all(x.get("replacedExisting") is True 
       json.dumps(rows)[:400])
 check("T21 rows carry sourcesBefore/After",
       all("sourcesBefore" in x and "sourcesAfter" in x for x in rows), json.dumps(rows)[:300])
+# AND THAT sourcesAfter SAYS SOMETHING. The rows above are all replacedExisting:true, so every one
+# of them rewired a pin - a row reporting an empty sourcesAfter would contradict that and still
+# satisfy the presence check.
+check("T21 and sourcesAfter is populated on a row that replaced something",
+      all(len(x.get("sourcesAfter") or []) > 0 for x in rows if x.get("replacedExisting")),
+      json.dumps([x.get("sourcesAfter") for x in rows])[:260])
 
 # ---------------------------------------------------------------- T22 preserve
 print("\n=== T22: preserve keeps the incumbent AND says so ===")

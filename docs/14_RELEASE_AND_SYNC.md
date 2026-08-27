@@ -70,8 +70,11 @@ of that because they are tracked but are not part of a deployable plugin:
 
 | Engine | Status | Notes |
 |---|---|---|
-| 5.3.2 | built and tested | the cooked DDS2 SDK — the primary target |
-| 5.7 | built | Curfew — see `02_GOTCHAS.md` §14 for the API splits that differ |
+| 5.3.2 | **built and tested** | the cooked DDS2 SDK — the primary target. 148 runs across 74 suites green, 0 editor deaths. |
+| 5.7 | **built** | Curfew — compiled on every change via `make_engine_probe.py`. See `02_GOTCHAS.md` §14 for the API splits that differ. |
+
+"Built" means a compiler agreed, not that anyone has used it. 5.7 has no live test run behind it,
+and that distinction is the whole reason this table has two words in it rather than one.
 
 This is a claim about what has actually been compiled, not a guess. §14 matters here: the two engines
 differ in **both** directions — 5.3 has symbols 5.7 deleted, and 5.7 has symbols 5.3 never had — so

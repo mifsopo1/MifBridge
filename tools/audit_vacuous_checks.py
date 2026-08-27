@@ -27,6 +27,19 @@ Several legitimate shapes look identical to the bug and are NOT it:
   * a guard that lives AFTER the assertion, or on a different expression (`f.get("count") > 0`)
   * an equality on the same collection above it, which fails when the collection is empty
 
+RULE 2 - PRESENCE STANDING IN FOR VALUE. `all("field" in row for row in rows)` asserts that a key
+EXISTS on every row and never what it holds. That is exactly how 301 mislabelled rows passed a green
+check: the field was present on all of them and wrong on a fifth of them.
+
+This shape is narrow on purpose. The broad version - any condition that is only a membership test -
+matches 202 of 1795 checks here, and nearly all of them are substring assertions on ERROR TEXT
+(`"BlockAll" in error`), which ARE value assertions and exactly right. Asking only about presence
+across a COLLECTION cuts that to 8, of which 3 were worth strengthening. Narrow beats thorough when
+the alternative is two hundred lines nobody reads.
+
+Presence is sometimes genuinely the contract - "the response carries a warning field" is a real thing
+to test. Those live in the baseline.
+
 BASELINE. Findings are compared against audit_vacuous_baseline.txt so only NEW ones surface. Accept
 the current set with --update-baseline once you have read them.
 
@@ -46,6 +59,8 @@ BASELINE = os.path.join(HERE, "audit_vacuous_baseline.txt")
 ALL_ITER = re.compile(r"\ball\s*\(.*?\bfor\s+\w+\s+in\s+(.+?)(?:\)\s*,|\)\s*$|\bif\b)", re.S)
 LITERAL_TUPLE = re.compile(r'^\(\s*(?:"[^"]*"|\'[^\']*\')\s*(?:,\s*(?:"[^"]*"|\'[^\']*\')\s*)*,?\s*\)?$')
 NAME = re.compile(r'check\(\s*"([^"]*)"')
+# Rule 2: presence asserted across a COLLECTION - all("field" in row for row in rows).
+PRESENCE = re.compile(r'\ball\s*\(\s*(?:all\s*\(\s*)?"([^"]+)"\s+in\s+\w+', re.S)
 
 
 def suites():
@@ -53,9 +68,17 @@ def suites():
 
 
 def call_span(lines, start, limit=8):
-    """The whole check(...) call beginning at `start`, gathered by paren depth."""
+    """The whole check(...) call beginning at `start`, gathered by paren depth.
+
+    STOPS AT THE NEXT check(, which it did not at first. Paren depth alone runs on past the end of a
+    one-line call and swallows the following one, so a single injected assertion was reported FOUR
+    times - twice for its own line and twice for the line above, once per rule. Four findings for one
+    problem is the noise that gets a tool ignored, which is the thing this tool cannot afford.
+    """
     depth, j, buf = 0, start, []
     while j < len(lines) and j < start + limit:
+        if j > start and re.match(r"\s*check\(", lines[j]):
+            break
         buf.append(lines[j])
         depth += lines[j].count("(") - lines[j].count(")")
         if j > start and depth <= 0:
@@ -104,6 +127,32 @@ def findings():
     return out
 
 
+def presence_findings():
+    """Rule 2: a key asserted PRESENT on every row, and never checked for what it holds.
+
+    Narrow ON PURPOSE. The broad version - any condition that is only a membership test - matches 202
+    of 1795 checks in this repo, and nearly all of them are substring assertions on ERROR TEXT
+    (`"BlockAll" in error`), which ARE value assertions and exactly right. Asking only about presence
+    across a COLLECTION cuts it to 8, of which 3 were worth strengthening.
+
+    Narrow beats thorough when the alternative is two hundred lines nobody reads.
+    """
+    out = []
+    for fn in suites():
+        lines = io.open(os.path.join(HERE, fn), encoding="utf-8", errors="replace").read().split("\n")
+        for i, line in enumerate(lines):
+            if "check(" not in line:
+                continue
+            call, _end = call_span(lines, i)
+            m = PRESENCE.search(call)
+            if not m:
+                continue
+            label = NAME.search(call)
+            out.append("%s:%d\tPRESENCE of '%s' - %s"
+                       % (fn, i + 1, m.group(1), label.group(1)[:48] if label else ""))
+    return out
+
+
 def load_baseline():
     if not os.path.isfile(BASELINE):
         return set()
@@ -112,7 +161,7 @@ def load_baseline():
 
 
 def main():
-    found = findings()
+    found = findings() + presence_findings()
     if "--update-baseline" in sys.argv:
         body = ["# Accepted vacuous-check candidates. Each was READ and judged acceptable - usually a",
                 "# filtered subset that may legitimately be empty. Regenerate with --update-baseline",
@@ -125,16 +174,19 @@ def main():
     base = set() if show_all else load_baseline()
     new = [f for f in found if f not in base]
     if not new:
-        print("checks OK - %d all(...) candidate(s), none new against the baseline" % len(found))
+        print("checks OK - %d candidate(s) across both rules, none new against the baseline"
+              % len(found))
         return 0
-    print("%d assertion(s) that pass on an EMPTY collection and are not in the baseline:" % len(new))
+    print("%d assertion(s) not in the baseline that may prove nothing:" % len(new))
     for f in sorted(new):
         where, label = f.split("\t", 1)
         print("  %-40s %s" % (where, label))
     print("")
-    print("all([]) is True, so each of these passes when the call returned nothing at all - which is")
-    print("usually the failure the assertion was written to catch. Guard the collection first, or")
-    print("accept it with --update-baseline if it is a subset that may legitimately be empty.")
+    print("RULE 1 - all([]) is True, so the assertion passes when the call returned nothing at all,")
+    print("which is usually the failure it was written to catch. Guard the collection first.")
+    print("RULE 2 - PRESENCE asserts a key exists and never what it holds. That is how 301 mislabelled")
+    print("rows passed a green check. Assert the VALUE, or add a companion check that does.")
+    print("Either is fine to accept with --update-baseline once you have read it and it is right.")
     return 1
 
 

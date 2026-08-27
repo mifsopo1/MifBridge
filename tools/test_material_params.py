@@ -55,6 +55,11 @@ def main():
     check("T121 each has a name and a type",
           all(p.get("name") and p.get("type") for p in params), json.dumps(params[:1])[:200])
     check("T121 each carries a value", all("value" in p for p in params), json.dumps(params[:1])[:200])
+    # AND THAT THE KEY IS FILLED. Emitting "value": null on every parameter satisfies the check
+    # above while reporting nothing at all - presence standing in for value.
+    check("T121 and the values are populated, not a key emitted empty",
+          any(p.get("value") is not None for p in params),
+          "every one of %d parameters reports value:null" % len(params))
     check("T121 byType agrees with the parameter list",
           sum((pr.get("byType") or {}).values()) == len(params),
           "%s vs %s" % (pr.get("byType"), len(params)))

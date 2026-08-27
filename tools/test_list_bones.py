@@ -77,6 +77,22 @@ def main():
     check("T221 the includeTransforms call returned bones to check", len(tb) > 0,
           "bones=%d - every refPose assertion below would pass vacuously" % len(tb))
     check("T221 and present when asked for", all("refPose" in b for b in tb), "refPose missing")
+    # PRESENCE IS NOT THE CONTRACT. A bone carrying refPose:{} or refPose:null satisfies the check
+    # above and is useless - the same presence-vs-value mistake that let 301 mislabelled rows through
+    # a green check in test_cooked_class_trap. Assert the shape that makes it usable.
+    def _posed(b):
+        rp = b.get("refPose") or {}
+        return all(isinstance(rp.get(k), dict) and set("xyz") <= set(rp.get(k) or {})
+                   for k in ("location", "rotation", "scale"))
+    check("T221 and each pose carries location, rotation and scale as x/y/z",
+          all(_posed(b) for b in tb),
+          json.dumps([b.get("refPose") for b in tb[:2]])[:220])
+    # A skeleton whose every bone sits at the origin with identity scale would satisfy the shape
+    # check and mean the values were never read off the asset.
+    check("T221 and the poses are not all identity, which would mean nothing was read",
+          any((b.get("refPose") or {}).get("location", {}).get("z") not in (0, None)
+              or (b.get("refPose") or {}).get("scale", {}).get("x") not in (1, None) for b in tb),
+          "every bone reports an identity transform")
     # Parent-relative, and it has to SAY so - treating these as world space stacks everything on the root.
     check("T221 it warns the pose is parent-relative",
           "PARENT-RELATIVE" in (t.get("transformNote") or ""), (t.get("transformNote") or "")[:140])

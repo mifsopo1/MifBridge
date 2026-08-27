@@ -1401,3 +1401,25 @@ enforce:
 
 Proved it fires before trusting it: a synthetic unguarded `all()` was injected, reported, and
 reverted. A check that cannot fail is not a check — including this one.
+
+### The limit lasted about an hour
+
+The presence-vs-value half turned out to be detectable after all, in one narrow shape:
+`all("field" in row for row in rows)` — a key asserted present on *every* row and never checked for
+what it holds. That is precisely how the 301 mislabelled rows passed.
+
+Narrow is the whole trick. The broad reading — any condition that is only a membership test — matches
+**202 of 1795** checks here, and nearly all of them are substring assertions on error text
+(`"BlockAll" in error`), which *are* value assertions and exactly right. Restricting it to presence
+across a **collection** cuts 202 to **8**, of which **3** were worth strengthening:
+
+| | was | now also asserts |
+|---|---|---|
+| `list_bones` T221 | `refPose` is present | it carries location/rotation/scale as x/y/z, and they are not all identity |
+| `list_material_parameters` T121 | `value` key exists | at least one is non-null — a key emitted empty on every row satisfied the old one |
+| `selfpin` T21 | `sourcesAfter` present | it is non-empty on rows that reported `replacedExisting` |
+
+**And the tool was noisy before it was useful.** One injected assertion reported *four* times: the
+span gatherer ran on paren depth alone, so it swallowed the following `check(` and matched it twice
+per rule. Four findings for one problem is exactly the noise that gets a tool ignored. It now stops
+at the next `check(`, and one bad assertion reports once per rule it actually breaks.
