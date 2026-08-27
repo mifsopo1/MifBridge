@@ -49,11 +49,21 @@ False, which makes the importer read FrontAxis/UpAxis/CoordAxis out of the file
 and reverse-map them (io_scene_fbx/import_fbx.py:3136-3145). Passing axis args
 would only be able to make it wrong.
 
-  NOT VERIFIED: the full Unreal -> Blender -> Unreal loop has never been run,
-  because MifBridge had no export endpoint when this was written. What is
-  verified is each half in isolation plus the byte-level axis header. Run a
-  NO-OP round trip (export, reimport with no edits, diff bounds / vert count /
-  material slot order) before trusting it with real geometry.
+  VERIFIED 2026-08-27, three of the four legs, on Blender 4.4.0 AND 5.0.1:
+
+      UE export_asset  ->  PH_HumanGizmoSitLowPoly.fbx, 164,880 bytes
+      import_mesh      ->  802 vertices
+      extrude_skirt    ->  995 vertices  (boundaryOnly, depth 2.0)
+      export_mesh      ->  91,420 bytes on 4.4 / 91,484 on 5.0
+
+  Both engines produce the SAME vertex counts, so the geometry path is not
+  version-sensitive between 4.4 and 5.0.
+
+  STILL NOT VERIFIED: the last leg, FBX back INTO Unreal. import_asset persists
+  to disk, so the safety gate refuses it in scratch mode - correctly, and it is
+  not something to work around. Until someone runs that leg in full mode, the
+  axis/scale claims above rest on the byte-level header read plus three of four
+  legs, not on a mesh having made the whole loop and come back the right way up.
 
   NOT VERIFIED: mesh_smooth_type. 'FACE' writes smoothing groups AND normals,
   which is strictly more information than the 'OFF' default -- but which of the
@@ -299,7 +309,7 @@ _BEVEL_KEYS = {
 }
 
 
-def _select_edges(bm, obj, params):
+def _select_edges(bm, obj, params, op_name="this op"):
     """Build the edge set. Every supplied criterion is ANDed.
 
     Two selectors matter for real work:
@@ -331,11 +341,17 @@ def _select_edges(bm, obj, params):
 
     if not any((min_angle is not None, max_angle is not None, axis_name,
                 boundary_only, all_edges)):
+        # NAMES THE OP THE CALLER ACTUALLY INVOKED. This helper is shared by THREE ops -
+        # select_edges, bevel_edges and extrude_skirt - and the message hardcoded "bevel_edges"
+        # for all of them. Calling extrude_skirt without a selector sent you to investigate an
+        # op you had never called, which is a wrong answer wearing the clothes of a helpful one.
+        # Found by driving a real UE-exported FBX through the round trip on 4.4 and 5.0.
         raise MifOpError(
-            "bevel_edges needs a selector, and refuses to guess. Use minAngleDeg / "
+            "%s needs a selector, and refuses to guess. Use minAngleDeg / "
             "maxAngleDeg (angle between the two faces an edge joins), or axis + side "
             "(e.g. axis:'Z', side:'max' for the top edges), or boundaryOnly:true, or "
-            "edgeIndices:[...], or allEdges:true to really mean every edge.")
+            "edgeIndices:[...], or allEdges:true to really mean every edge."
+            % op_name)
 
     criteria = {}
     candidates = list(bm.edges)
@@ -624,7 +640,7 @@ def op_select_edges(params):
     bm = bmesh.new()
     try:
         bm.from_mesh(obj.data)
-        edges, criteria = _select_edges(bm, obj, params)
+        edges, criteria = _select_edges(bm, obj, params, "select_edges")
         lo0, hi0, size0 = _axis_sizes(bm)
 
         boundary = sum(1 for e in edges if len(e.link_faces) == 1)
@@ -730,7 +746,7 @@ def op_bevel_edges(params):
     bm = bmesh.new()
     try:
         bm.from_mesh(mesh)
-        edges, criteria = _select_edges(bm, obj, params)
+        edges, criteria = _select_edges(bm, obj, params, "bevel_edges")
         lo0, hi0, size0 = _axis_sizes(bm)
         verts0, faces0 = len(bm.verts), len(bm.faces)
 
@@ -977,7 +993,7 @@ def op_extrude_skirt(params):
     bm = bmesh.new()
     try:
         bm.from_mesh(mesh)
-        edges, criteria = _select_edges(bm, obj, params)
+        edges, criteria = _select_edges(bm, obj, params, "extrude_skirt")
         lo0, hi0, size0 = _axis_sizes(bm)
         verts0, faces0 = len(bm.verts), len(bm.faces)
 
