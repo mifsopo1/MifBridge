@@ -864,7 +864,39 @@ namespace MifBridge
 		UBlueprint* MacroLibrary = Cast<UBlueprint>(MacroObject);
 		if (!MacroLibrary)
 		{
-			Fail(Out, FString::Printf(TEXT("macro library not found: %s"), *MacroPath));
+			// "macro library not found" was the SAME SENTENCE for two entirely different situations:
+			// a path with nothing at it, and a COOKED macro library that exists and cannot be used.
+			// Verified on DDS2 - a real cooked blueprint path and /Game/Nope/DoesNotExist produced
+			// byte-identical errors, so the caller went hunting for a typo that was not there.
+			//
+			// DescribeMissingBlueprint already grades those apart: it probes both generated-class
+			// spellings and, when it finds one, says cooked and names the way through. Reused rather
+			// than re-worded here, so there is one explanation of what a cooked blueprint is.
+			//
+			// The refusal itself is CORRECT either way - cooking strips MacroGraphs, so a cooked
+			// library has no macros to instance. Only its reason was wrong.
+			// Asked of the PACKAGE, not the object. StaticLoadObject was written here first and
+			// returns null for a bare package path like /Game/A/BP_Foo - which is exactly the form
+			// list_blueprints reports - so the clause below was skipped for assets that plainly do
+			// exist. DoesPackageExist answers the question actually being asked, and loads nothing.
+			FString MacroPackage = MacroPath;
+			int32 Dot = INDEX_NONE;
+			if (MacroPackage.FindChar(TEXT('.'), Dot)) { MacroPackage.LeftInline(Dot); }
+			const bool bSomethingIsThere = FPackageName::IsValidLongPackageName(MacroPackage)
+				&& FPackageName::DoesPackageExist(MacroPackage);
+			FString Why = DescribeMissingBlueprint(MacroPath);
+			if (bSomethingIsThere)
+			{
+				// Said only when something really is at that path, because it is nonsense advice for
+				// a typo - and the generic message's create_editable_child suggestion is misleading
+				// for a macro library, which would be copied with no macros in it.
+				Why += TEXT(" FOR A MACRO LIBRARY specifically: cooking strips MacroGraphs, so a cooked "
+							"one has no macros to instance at all - there is nothing for the "
+							"reconstructor to recover into a graph you could call, and an editable copy "
+							"would come out empty. Use an uncooked macro library, or build the logic "
+							"inline with the node endpoints.");
+			}
+			Fail(Out, FString::Printf(TEXT("macro library unusable. %s"), *Why));
 			return;
 		}
 

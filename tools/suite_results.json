@@ -49,7 +49,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 6.2,
+  "seconds": 6.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -58,7 +58,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 6.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -67,7 +67,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 12.4,
+  "seconds": 12.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -84,8 +84,8 @@
   "suite": "test_cooked_class_trap.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 16   FAIL 0",
-  "seconds": 6.7,
+  "summary": "PASS 31   FAIL 0",
+  "seconds": 8.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -121,7 +121,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 19.8,
+  "seconds": 17.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -175,7 +175,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 0.4,
+  "seconds": 0.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -184,7 +184,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 5.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -274,7 +274,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 6.2,
+  "seconds": 5.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -301,7 +301,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 8.3,
+  "seconds": 8.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -355,7 +355,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 17.6,
+  "seconds": 17.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -400,7 +400,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 8.0,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -463,7 +463,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 51   FAIL 0",
-  "seconds": 16.0,
+  "seconds": 15.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -499,7 +499,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 24.0,
+  "seconds": 24.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -616,7 +616,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 5.5,
+  "seconds": 5.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -697,7 +697,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 7.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -715,7 +715,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 6.6,
+  "seconds": 6.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -724,7 +724,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.4,
+  "seconds": 6.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -750,8 +750,8 @@
   "suite": "test_cooked_class_trap.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 16   FAIL 0",
-  "seconds": 7.0,
+  "summary": "PASS 31   FAIL 0",
+  "seconds": 9.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -787,7 +787,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 18.0,
+  "seconds": 17.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -886,7 +886,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 18.7,
+  "seconds": 18.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -967,7 +967,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 8.3,
+  "seconds": 8.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -985,7 +985,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 10.3,
+  "seconds": 10.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1210,7 +1210,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.2,
+  "seconds": 6.5,
   "editorSurvived": true,
   "tail": ""
  },
