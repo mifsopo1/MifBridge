@@ -1180,3 +1180,55 @@ This keeps the property that made a junction right in the first place - live sou
 `Result: Failed (OtherCompilationError)`. The 2026-08-15 entry in this log covers exit code 0 on a
 build that did nothing; this is worse, because the build ran, failed, said so in its own output, and
 still exited 0. Grep the log for `Result: Failed` and for `error`. Never branch on `$?`.
+
+
+## The autopilot hook spent ~500 tokens a turn restating rules nobody needed twice (2026-08-27)
+
+Not a crash - a cost, and one that compounds silently, which is why it survived 85 turns.
+
+Andre: *"whatever can reduce token usage in our work please do so"*. Looking for the biggest lever,
+it was not the thing that looked expensive.
+
+### What I expected to find, and what was actually there
+
+The obvious suspects were the workflows - two of them spent 1.2M and 1.7M subagent tokens. Large, but
+**bounded and deliberate**: they ran once each and produced findings worth having.
+
+The real cost was `~/.claude/hooks/autopilot-continue.js`. Its Stop-hook `reason` block ran to about
+1,900 characters and was emitted **on every single turn**. Roughly 500 tokens, times every turn of an
+indefinite autonomous run.
+
+And the majority of it never changed. The counts moved; the rules block was byte-identical every
+time - the same six bullets about `- [x]` versus `- [~]`, the same judging rule, the same reminder
+about `self_audit`. Rules that are also in the spec file the hook names in its own text.
+
+### The fix
+
+Emit the standing rules **rarely** (every 20th continue) and the changing part **always**.
+
+```
+before: 1,900 chars  (~500 tokens)  every turn
+after:    241 chars  (~60 tokens)   every turn, plus the full rules once per 20
+```
+
+### The general shape, which is what makes it worth a postmortem
+
+**A per-turn cost is invisible in any single turn.** Nothing about turn 40 looks wasteful; the waste
+is that turn 40 said the same thing as turns 1 through 39. Cost that recurs needs to be measured
+across the run, not inspected at a point - and the instinct to look at the biggest *single* consumer
+finds the wrong thing.
+
+Same reasoning as the report watcher earlier the same night: polling is cheap per check and ruinous
+per day, so the polling was moved off the model entirely. Both are the same question - *what am I
+paying repeatedly for an answer I already have?*
+
+### The other levers, in the order they are worth taking
+
+1. **Do not poll for something that notifies you.** Background tasks report completion. Repeatedly
+   grepping a log to watch progress is a tool call and a result for information that is about to
+   arrive for free.
+2. **Batch tool calls.** Independent commands in one call cost one round trip instead of five.
+3. **Stack builds.** Andre raised the cap to 20 unbuilt changes. Building six at once costs one
+   build; the constraint on stacking is *risk*, not tokens, and Live Coding already forces it.
+4. **Spend workflow agents on questions worth 1M tokens.** They are the largest single line item and
+   they earned it twice tonight - but a question answerable by one grep should get one grep.
