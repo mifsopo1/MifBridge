@@ -1,3 +1,22 @@
+# THE JUDGING RULE CHANGED - 2026-08-26
+
+Andre, after being told parity in the declined categories was not worth chasing: **"yes chase the
+rest, for instance my curfew project needs the new 5.7 water endpoints... we need all parity we can
+find and fix all issues that arrise"**.
+
+So the old rule - *judge value for DDS2 cooked-game modding* - is SUPERSEDED. It was scoping to one
+of the two projects this plugin serves, and it is what declined whole categories that Curfew (UE 5.7,
+a live development project rather than a cooked game) genuinely needs.
+
+**The new rule: chase parity across BOTH projects.** A category is only declined when it is
+impossible or meaningless in both, not when it is merely irrelevant to DDS2.
+
+Several existing `- [~]` declines were made under the old rule and should be RE-OPENED on that basis
+rather than left standing - Chaos Vehicles, PCG, StateTree, GAS, MetaSound authoring, Gameplay Tags,
+Control Rig, Slate and Sequencer were all declined as "irrelevant to modding a cooked game", which is
+no longer the question being asked. They are not re-opened wholesale here because each needs a real
+look at what Curfew actually uses; that triage is the next piece of work.
+
 # MifBridge feature parity spec
 
 > **GOAL, set by Andre on 2026-08-26.** MifBridge is a GENERAL UE5 tool that happens to be built on a

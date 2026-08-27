@@ -2489,6 +2489,18 @@ def set_ik_goal_solver_connection(path: str, name: str, solver_index: int,
 
 
 @mcp.tool()
+def list_water_bodies(type: str = None, name_contains: str = None) -> dict:
+    "List the water bodies in the OPEN level - rivers, lakes, oceans and custom bodies. Reports each body's type, spline point count, world location and which AWaterZone it belongs to. TWO things worth knowing before reading the output. The editor's \"Custom\" body type is spelled Transition in C++, and both spellings are accepted for the type filter and reported side by side as waterBodyType and waterBodyTypeDisplayName. And a body belonging to NO water zone does not render at all since UE 5.1 - it is authored but invisible - so each body reports waterZone and says so explicitly when it is empty. count is what matched the filter and totalInLevel is what exists, reported separately so a filter matching nothing is distinguishable from a level with no water."
+    return _post("list_water_bodies", type=type, nameContains=name_contains)
+
+
+@mcp.tool()
+def describe_water_body(path: str, include_spline_points: bool = True) -> dict:
+    "Describe ONE water body: everything list_water_bodies reports, plus its water material and every spline point in WORLD space. Resolves by actor PATH, not by label - two bodies can share a label, and list_water_bodies reports actorPath for each. The spline IS the shape of a river or lake, so a body with 0 or 1 spline points is authored-but-empty and renders nothing; likewise a body with no water material assigned renders nothing regardless of its spline, and that case is called out rather than left as an empty string. Spline points are world-space deliberately, so they can be compared against landscape and placed actors without a frame conversion."
+    return _post("describe_water_body", path=path, includeSplinePoints=include_spline_points)
+
+
+@mcp.tool()
 def list_ik_rig(path: str) -> dict:
     """Read an IKRigDefinition AND check whether it would actually work.
 
