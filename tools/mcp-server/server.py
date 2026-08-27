@@ -3060,7 +3060,7 @@ def recompile_material(path: str) -> dict:
 
 @mcp.tool()
 def shader_compile_status() -> dict:
-    "Poll the editor-wide shader compiler (GShaderCompilingManager): {compiling, numRemainingJobs, numOutstandingJobs, numPendingJobs}. THE poll half for recompile_material / create_material (and level-load shader churn). Numbers decrease toward zero; compiling=false with numRemainingJobs=0 means quiescent - safe to read get_material_stats-style numbers or capture pixels."
+    "Poll the editor-wide shader compiler (GShaderCompilingManager): {compiling, numRemainingJobs, numOutstandingJobs, numPendingJobs}. THE poll half for recompile_material / create_material (and level-load shader churn). Numbers decrease toward zero; compiling=false with numRemainingJobs=0 means quiescent - safe to read material statistics or capture pixels."
     return _post("shader_compile_status")
 
 
