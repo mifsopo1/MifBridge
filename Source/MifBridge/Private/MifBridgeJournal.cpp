@@ -213,7 +213,7 @@ namespace MifBridge
 
 	// The matching close. A `start` with no `end` is the whole diagnostic: it means the process never
 	// got back here.
-	void JournalCallEnd(const FString& Endpoint, bool bOk)
+	void JournalCallEnd(const FString& Endpoint, bool bOk, const FString& Error)
 	{
 		const double Ms = (FPlatformTime::Seconds() - GCallStartSeconds) * 1000.0;
 		GInFlightEndpoint.Reset();
@@ -227,6 +227,9 @@ namespace MifBridge
 			Slot.bSubjectIsAsset = GPendingIsAsset;
 			Slot.Milliseconds = Ms;
 			Slot.bOk = bOk;
+			// Truncated: the ring is a display buffer, and a 900-character parameter-contract refusal
+			// would push everything else off a card. The full text is in the response the caller got.
+			Slot.Error = Error.Left(160);
 			Slot.WhenSeconds = FPlatformTime::Seconds();
 			GRingNext = (GRingNext + 1) % GRingCapacity;
 			GRingCount = FMath::Min(GRingCount + 1, GRingCapacity);

@@ -159,6 +159,20 @@ namespace MifPanel
 			{
 				return { Blocked, LOCTEXT("KindBlocked", "BLOCKED") };
 			}
+			// A CONTRACT refusal is not a defect. Andre saw a wall of red FAILED cards during a
+			// regression and reasonably asked whether something was wrong - and the panel could not
+			// tell him, because a suite deliberately probing "does this refuse a bad argument" looked
+			// exactly like a broken endpoint.
+			//
+			// These two prefixes are what RejectUnknownParams and the not-found paths produce, which
+			// together are the overwhelming majority of intentional refusals. Anything else keeps the
+			// louder FAILED colour, so a real breakage still stands out.
+			if (R.Error.StartsWith(TEXT("unrecognised parameter"))
+				|| R.Error.Contains(TEXT("is required"))
+				|| R.Error.StartsWith(TEXT("no ")))
+			{
+				return { Steel, LOCTEXT("KindRefused", "REFUSED") };
+			}
 			return { Failed, LOCTEXT("KindFailed", "FAILED") };
 		}
 		return LooksLikeRead(R.Endpoint)
@@ -689,8 +703,8 @@ private:
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 3, 0, 0)
 						[
 							SNew(SHorizontalBox)
-								.Visibility(R.Subject.IsEmpty() ? EVisibility::Collapsed
-																: EVisibility::Visible)
+								.Visibility((R.Subject.IsEmpty() && R.Error.IsEmpty())
+									? EVisibility::Collapsed : EVisibility::Visible)
 							+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 							[
 								SNew(SButton)
@@ -698,16 +712,22 @@ private:
 									.ContentPadding(FMargin(0))
 									// Only assets are clickable. A class name or an actor label has
 									// nowhere to go, and a link that does nothing is worse than text.
-									.IsEnabled(R.bSubjectIsAsset)
+									.IsEnabled(R.bSubjectIsAsset && R.Error.IsEmpty())
 									.ToolTipText(R.bSubjectIsAsset
 										? LOCTEXT("OpenTip", "Show this asset in the Content Browser")
 										: FText::GetEmpty())
 									.OnClicked(this, &SMifBridgePanel::OnOpenSubject, R.Subject)
 									[
 										SNew(STextBlock)
-											.Text(FText::FromString(R.Subject))
-											.ColorAndOpacity(FSlateColor(R.bSubjectIsAsset
-												? MifPanel::Read : MifPanel::TextDim))
+											// The REASON when there is one, the subject otherwise. On a
+											// failed call the reason is what you want; on a successful
+											// one there is no reason and the subject is.
+											.Text(FText::FromString(
+												R.Error.IsEmpty() ? R.Subject : R.Error))
+											.ColorAndOpacity(FSlateColor(
+												!R.Error.IsEmpty() ? MifPanel::TextDim
+												: (R.bSubjectIsAsset ? MifPanel::Read
+																	 : MifPanel::TextDim)))
 											.Font(FCoreStyle::GetDefaultFontStyle(
 												R.bSubjectIsAsset ? "Bold" : "Regular", 8))
 									]

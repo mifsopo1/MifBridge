@@ -339,7 +339,9 @@ bool FMifBridgeServer::HandleHttp(const FString& Endpoint, const FHttpServerRequ
 		MIF_DBG("<- %s %s", *Endpoint, *OutStr);
 		// The matching close. Reached only if the handler returned at all - which is exactly what
 		// makes its absence meaningful.
-		MifBridge::JournalCallEnd(Endpoint, MifBridge::IsOk(Out));
+		FString JournalError;
+		Out->TryGetStringField(TEXT("error"), JournalError);
+		MifBridge::JournalCallEnd(Endpoint, MifBridge::IsOk(Out), JournalError);
 
 		TUniquePtr<FHttpServerResponse> Response = FHttpServerResponse::Create(OutStr, TEXT("application/json"));
 		Response->Code = EHttpServerResponseCodes::Ok;

@@ -1294,6 +1294,14 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
   Needs Andre - it changes how his other project launches.
 
 - [ ] **Seven .bak-* files are TRACKED IN GIT and should probably not be.**
+  MEASURED 2026-08-26 so this is a decision with numbers rather than a hunch. A search for
+  RejectUnknownParams returns 4 stale .bak hits beside 56 real files - about 7% noise - and the .bak
+  copies are THREE DAYS behind the files they shadow (2026-08-23 against 2026-08-26). So the harm is
+  real but modest: a grep for a handler name can land you in stale code that looks current.
+  They no longer ship in releases (make_release excludes them by kind), so no consumer sees them.
+  Still not deleted unilaterally - they are TRACKED, meaning someone chose to commit them, and git
+  holds the history either way so nothing is lost by removing them. One line when Andre says so:
+      git rm Source/MifBridge/Private/*.bak-* docs/*.bak-* tools/mcp-server/*.bak-*
   Found 2026-08-26 by listing the release zip rather than trusting its file count:
     Source/MifBridge/Private/MifBridgeAssetOps.cpp.bak-predt
     Source/MifBridge/Private/MifBridgeDescribe.cpp.bak-predt

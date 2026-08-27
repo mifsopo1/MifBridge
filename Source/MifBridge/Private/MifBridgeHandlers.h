@@ -81,6 +81,10 @@ namespace MifBridge
 		double  Milliseconds = 0.0;
 		double  WhenSeconds = 0.0;   // FPlatformTime::Seconds at completion
 		bool    bOk = false;
+		/** Short reason when bOk is false. Andre asked whether the FAILED cards were normal, and the
+		 *  honest answer was that the panel COULD NOT TELL him - a suite probing a refusal and a broken
+		 *  endpoint rendered identically. The reason is what separates them. */
+		FString Error;
 	};
 
 	/** Newest first. Fed by the journal hooks, kept in memory, independent of the on-disk file. */
@@ -120,7 +124,7 @@ namespace MifBridge
 
 	void JournalOpen(int32 Port);
 	void JournalCallStart(const FString& Endpoint, const FString& Body);
-	void JournalCallEnd(const FString& Endpoint, bool bOk);
+	void JournalCallEnd(const FString& Endpoint, bool bOk, const FString& Error);
 	void JournalClose(const TCHAR* Reason);
 	/** RAII marker for the above. batch declares one beside its FScopedTransaction. Not reentrant by
 	 *  design — a nested batch is refused before this is ever constructed twice. */
