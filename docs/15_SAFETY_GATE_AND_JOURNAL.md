@@ -154,3 +154,46 @@ precisely the problem with `MIF_DBG`.
 - `02_GOTCHAS.md` §14 — engine-version differences; both subsystems verify their APIs in both trees
 - `14_RELEASE_AND_SYNC.md`
 - `tools/test_safety_gate.py`, `tools/test_crash_journal.py`
+
+
+## The gate is enforced in TWO dispatchers, because there are two
+
+`RefuseIfGated` is called from `RunEndpoint` (`MifBridgeCommon.cpp:1233`) **and** from inside `batch`
+(`MifBridgeNodes.cpp`). The second one is not belt-and-braces - it closes a hole.
+
+`batch` deliberately does not recurse through `RunEndpoint`; it dispatches straight out of
+`Handlers()`. That is documented in several places in this codebase as an *attribution* problem (each
+op's parameter guard was being filed under `batch`). It was also a complete **bypass of the safety
+gate**:
+
+```
+save_package                          ->  refused, safety-gate, scratch mode
+batch {"ops":[{"op":"save_package"}]} ->  ran
+```
+
+Every endpoint on the unsafe list was one JSON object away - `save_all`, `run_console`, `start_pie`,
+`load_level`, `quit_editor`. And this was not an obscure bypass: **`batch` takes an endpoint name as
+data**, so reaching it required no cleverness at all.
+
+Found by reading the dispatcher while closing out the gate's second half, not by an incident.
+
+### Three decisions in the fix worth keeping
+
+**Checked before the compile-heavy ban**, so an endpoint that is both gated and compile-heavy reports
+the reason that actually matters.
+
+**Checked per op, not once for the batch.** Ops are independent; refusing `ops[3]` must not silently
+drop `ops[4]`. `T634` asserts exactly that - a batch of three with a gated op in the middle must
+return three results, with the outer two having run.
+
+**The transaction still commits and the remaining ops still run.** That is the existing `batch`
+contract - each op reports its own outcome, `bAllOk` goes false - and it is right here too. A refusal
+is a decision, not a crash, and rolling back work that *was* permitted because a later op was not
+would be a second surprise on top of the first.
+
+### The general lesson
+
+**A control enforced at one choke point is only as good as the claim that there is one choke point.**
+The gate was correct. The claim was wrong, and it was wrong in a file that says so about itself,
+twice, for an unrelated reason. When adding a check to a dispatcher, grep for the other dispatchers
+first - here, `Handlers()` had exactly two callers and only one of them was guarded.

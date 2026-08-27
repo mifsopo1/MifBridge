@@ -2467,6 +2467,35 @@ namespace MifBridge
 				{
 					Fail(OpOut, FString::Printf(TEXT("ops[%d] has no 'op' — name the endpoint to call"), OpIndex));
 				}
+				// THE SAFETY GATE, ENFORCED HERE TOO, BECAUSE BATCH IS A SECOND DISPATCHER.
+				//
+				// RefuseIfGated is called from RunEndpoint (MifBridgeCommon.cpp:1233), and batch
+				// deliberately does NOT recurse through RunEndpoint - it dispatches straight out of
+				// Handlers(). That is documented several times in this file as an attribution problem
+				// and it was also a hole in the gate: in scratch mode, save_package refused, and
+				// {"op":"save_package"} inside a batch ran.
+				//
+				// Which makes every endpoint on the unsafe list reachable by wrapping it: save_all,
+				// run_console, start_pie, load_level, quit_editor. A control with a documented bypass
+				// is not a control, and the bypass here was not even obscure - batch takes an endpoint
+				// NAME as data.
+				//
+				// Checked BEFORE the compile-heavy ban rather than after, so a gated endpoint that is
+				// also compile-heavy reports the reason that actually matters. Checked per-op rather
+				// than once for the whole batch, because ops are independent and refusing op[3] must
+				// not silently drop op[4].
+				//
+				// The remaining ops still run and the transaction still commits. That is the existing
+				// batch contract - each op reports its own outcome and bAllOk goes false - and it is
+				// the right one here: a refusal is a decision, not a crash, and rolling back work that
+				// was permitted because a later op was not would be a second surprise.
+				else if (!OpName.IsEmpty() && RefuseIfGated(OpName, OpOut))
+				{
+					// RefuseIfGated has already filled OpOut with the reason, the writeMode and how to
+					// unlock, so there is nothing to add. bAllOk is NOT set here: this branch falls
+					// through to the shared `if (!IsOk(OpOut))` below, unlike the non-object branch
+					// above which has to set it because it continues past that check.
+				}
 				else if (OpName == TEXT("batch") || IsCompileHeavyEndpoint(OpName))
 				{
 					Fail(OpOut, FString::Printf(TEXT("op '%s' is not allowed inside batch (it runs a full compile, which must not happen inside batch's open transaction); call it standalone — batch already compiles once at the end via compileAtEnd"), *OpName));

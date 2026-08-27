@@ -166,6 +166,56 @@ def main():
         check("T633 set_cvar cannot change the write mode", before == after,
               "mode moved %r -> %r via set_cvar - the gate is self-unlockable" % (before, after))
 
+    # ------------------------------------------------------------------ T634 batch is a SECOND door
+    # The gate is enforced in RunEndpoint. batch does NOT recurse through RunEndpoint - it dispatches
+    # straight out of Handlers() - so until 2026-08-26 an unsafe endpoint was reachable simply by
+    # wrapping it: save_package refused, {"op": "save_package"} inside a batch ran.
+    #
+    # batch takes an endpoint NAME as data, so this was not an obscure bypass. Any endpoint on the
+    # unsafe list was one JSON object away: save_all, run_console, start_pie, load_level, quit_editor.
+    #
+    # DELIBERATELY uses save_package as the probe rather than something that ends the session. If this
+    # test ever regresses, it must fail by SAVING something in scratch - which is bad and recoverable -
+    # rather than by quitting the editor mid-suite.
+    print("")
+    print("=== T634: the gate holds through batch, not just through RunEndpoint ===")
+    mode = (M.call("self_audit", {}, timeout=180) or {}).get("writeMode")
+    if mode == "full":
+        print("  SKIP  gate is in 'full' mode - nothing to enforce")
+    else:
+        direct = M.call("save_package", {"path": "/Game/_MifGate/NoSuchAsset_zz"})
+        check("T634 save_package is refused directly", direct.get("ok") is False,
+              json.dumps(direct)[:170])
+
+        wrapped = M.call("batch", {"ops": [{"op": "save_package",
+                                           "path": "/Game/_MifGate/NoSuchAsset_zz"}]})
+        results = wrapped.get("results") or []
+        inner = results[0] if results else {}
+        # The OP must be refused. Whether the batch as a whole reports ok:false matters less than
+        # that the op did not run, so assert the op and then the aggregate separately.
+        check("T634 the same call wrapped in batch is ALSO refused",
+              inner.get("ok") is False,
+              "IT RAN INSIDE BATCH. %s" % json.dumps(wrapped)[:220])
+        check("T634 and the refusal comes from the safety gate, not from something else",
+              inner.get("refusedBy") == "safety-gate",
+              "refusedBy=%r - refused, but not by the gate" % inner.get("refusedBy"))
+        check("T634 the batch as a whole reports failure", wrapped.get("ok") is False,
+              json.dumps(wrapped)[:170])
+
+        # A refused op must not silently swallow the ops around it. This is the regression that
+        # would turn a security fix into a correctness bug.
+        mixed = M.call("batch", {"ops": [{"op": "self_audit"},
+                                         {"op": "save_package", "path": "/Game/_MifGate/NoSuchAsset_zz"},
+                                         {"op": "self_audit"}]})
+        mres = mixed.get("results") or []
+        check("T634 a refused op does not drop the ops around it", len(mres) == 3,
+              "expected 3 results, got %d: %s" % (len(mres), json.dumps(mixed)[:200]))
+        if len(mres) == 3:
+            check("T634 the permitted ops still ran",
+                  mres[0].get("ok") is True and mres[2].get("ok") is True,
+                  json.dumps([mres[0].get("ok"), mres[2].get("ok")]))
+            check("T634 and only the gated one was refused", mres[1].get("ok") is False,
+                  json.dumps(mres[1])[:170])
     check("T633 the bridge is still answering", M.bridge_responsive() is True, "bridge died")
 
     print("")
