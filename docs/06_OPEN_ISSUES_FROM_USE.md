@@ -1578,3 +1578,81 @@ property a gate should have.
 Fixed, built on 5.3 (DLL 3,969,024 at 23:38), and VERIFIED LIVE: test_safety_gate.py passes 44/44 against a running editor, T635 included. `test_safety_gate.py` T635 asserts both are refused,
 refused *by the gate* specifically, that the refusal holds through `batch` as well, and that
 `invoke_editor_tab` still works. Not run live - the SDK editor is closed.
+
+## 21. Three filesystem reaches the safety gate does not cover — one defect, two design questions
+
+Surfaced 2026-08-27 by a design workflow, then **verified by reading the handlers** rather than taken
+on the agent's word. All three claims are true. What they *mean* differs a lot, and separating that is
+most of the value here.
+
+### The one that is a defect: `export_asset`'s relative path is not confined
+
+```cpp
+else if (FPaths::IsRelative(RequestedFile))
+{
+    // A relative path is resolved against the bridge's own export root rather than the
+    // process CWD, which in the editor is not where anyone thinks it is.
+    FullOutPath = MifExportRootDir() / RequestedFile;      // MifBridgeExport.cpp:560
+}
+...
+FPaths::NormalizeFilename(FullOutPath);
+FullOutPath = FPaths::ConvertRelativePathToFull(FullOutPath);   // :566-567 — collapses ..
+```
+
+The comment describes containment: *"resolved against the bridge's own export root"*. It is not
+containment. `ConvertRelativePathToFull` collapses `..`, so
+`../../../../Users/andre/Documents/something` resolves straight out of the export root and the file
+is written there.
+
+**A comment that misstates what the code does is the specific thing this project keeps finding**, and
+it is worse than no comment: it stops the next reader checking.
+
+Absolute paths are used verbatim (`:562`), which is at least honest about itself.
+
+### The one that is a real inconsistency with the gate's own contract
+
+`export_asset` **writes files to disk** and is **not on the unsafe list**, so it writes in `scratch`
+mode. `overwrite` defaults to **true** (`:568`) and `CreateDirectoryTree` will make whatever
+directories are needed (`:581`).
+
+The gate's stated premise is that nothing reaches disk. That is *not quite* what it means in practice
+— it means no **package** is saved, and an exported FBX is not a package — but the distinction is
+nowhere in the documentation, and "nothing is saved" is what the docs actually say.
+
+So either the docs are imprecise or the gate is incomplete. **This one needs Andre**, because it is a
+question about what the gate is *for*, not a bug:
+
+- Gating `export_asset` in scratch makes the contract literal and costs the mesh round-trip workflow,
+  which is the whole point of the Blender pipeline.
+- Leaving it means "nothing is saved" needs rewording to "no package is saved, and exports go to
+  `Saved/MifBridge/Export` unless you say otherwise".
+
+The second is probably right, and it is not mine to decide.
+
+### The two that are working as designed
+
+**`read_modloader_log` reads any caller-named path** (`MifBridgePipeline.cpp:45-70`). Defaults to
+UE4SS's log; any other path is read if it exists. It is a log reader and reading a named log is its
+job. Worth knowing it is an arbitrary file *read* with no confinement, but reads are permitted in
+scratch by design and this discloses to a caller who already drives the editor.
+
+**`set_cvar` accepts any registered console variable** with no allowlist
+(`MifBridgeConsole.cpp:165-176`). Also its job. Gating it wholesale would break a great deal for a
+threat it does not carry — and the specific attack worth worrying about is already covered:
+`test_safety_gate.py` T633 asserts `set_cvar` cannot change the write mode, because the mode is
+deliberately not a cvar.
+
+### Why the separation is the point
+
+The three gate bypasses fixed earlier tonight were unambiguous: **the gate refused X and permitted a
+road to X.** A contradiction, no judgement needed.
+
+These are not that. Two are endpoints doing exactly what they exist to do, and reporting them as
+"security findings" alongside the real ones would devalue the real ones. The reviewing agent listed
+all three at similar weight; the difference only appears when you ask *what is the contradiction*, and
+for two of them there is not one.
+
+### Fixed here
+
+Only the illusory containment — the comment now says what the code does, and the response reports the
+resolved path so a caller can see where the file actually went. The gate question is filed for Andre.

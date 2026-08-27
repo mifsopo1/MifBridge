@@ -557,6 +557,16 @@ namespace MifBridge
 		{
 			// A relative path is resolved against the bridge's own export root rather than the
 			// process CWD, which in the editor is not where anyone thinks it is.
+			//
+			// THIS IS A DEFAULT, NOT A CONFINEMENT, and the previous wording implied otherwise. The
+			// ConvertRelativePathToFull below collapses "..", so "../../elsewhere/x.fbx" resolves
+			// straight out of this directory and writes there. Anyone reading the old comment would
+			// have concluded the export root was a boundary; it is a starting point.
+			//
+			// Left permissive deliberately - exporting where the caller asks is what this endpoint is
+			// for, and the mesh round trip through Blender depends on it. What is fixed is the
+			// CLAIM: the response now reports the resolved absolute path, so a caller can see where
+			// the file actually went rather than assuming it landed under the export root.
 			FullOutPath = MifExportRootDir() / RequestedFile;
 		}
 		else
@@ -565,6 +575,11 @@ namespace MifBridge
 		}
 		FPaths::NormalizeFilename(FullOutPath);
 		FullOutPath = FPaths::ConvertRelativePathToFull(FullOutPath);
+
+		// Reported BEFORE anything is written, and reported even on the failure paths below, because
+		// "where did that file go" is the question a caller has when an export surprises them.
+		Out->SetStringField(TEXT("resolvedPath"), FullOutPath);
+		Out->SetBoolField(TEXT("insideExportRoot"), FullOutPath.StartsWith(MifExportRootDir()));
 
 		const bool bOverwrite = JBoolAny(In, { TEXT("overwrite"), TEXT("replaceExisting") }, true);
 		if (!bOverwrite && IFileManager::Get().FileExists(*FullOutPath))

@@ -1439,3 +1439,18 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
         remove_widget_binding      removed
       The question for each is the issue 18 question: if this count comes back ZERO, did the caller
       get what they asked for? Where the answer is no, the endpoint must say so itself.
+
+- [ ] **Does the safety gate cover EXPORT? Andre's call, not mine.**
+      Found 2026-08-27, filed as docs/06 issue 21. export_asset WRITES FILES TO DISK and is not on
+      the unsafe list, so it writes in scratch mode - overwrite defaults true and it will create the
+      directory tree. The gate's stated premise is that nothing reaches disk.
+      In practice the gate means no PACKAGE is saved, and an exported FBX is not a package. That
+      distinction is nowhere in the docs, which just say 'nothing is saved'. So either:
+        (a) gate export_asset in scratch - makes the contract literal, costs the Blender mesh round
+            trip, which is the entire point of that pipeline; or
+        (b) reword the contract to 'no package is saved, and exports go to Saved/MifBridge/Export
+            unless you name somewhere else'.
+      (b) is probably right and it is a decision about what the gate is FOR, so it waits for Andre.
+      Already fixed without waiting: the relative-path comment claimed containment that
+      ConvertRelativePathToFull defeats, and the response now reports resolvedPath and
+      insideExportRoot so a caller can see where the file actually went.
