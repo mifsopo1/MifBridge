@@ -515,6 +515,61 @@ def check_plugin_declaration_drift():
             for name in missing]
 
 
+def check_linked_but_unused_plugins():
+    """A plugin dependency that no source file uses: build cost, load risk, zero capability.
+
+    THE OPPOSITE DIRECTION FROM THE CHECK ABOVE. That one catches a plugin linked in Build.cs and
+    missing from the .uplugin, which stops the editor loading. This one catches a plugin that is
+    correctly declared, correctly linked, and then never referenced by a single endpoint.
+
+    That is not hypothetical. MifBridgeWater.cpp opens by saying so about itself:
+
+        "The Water plugin has been LINKED since the breadth pass (MIF_WITH_WATER in Build.cs) and
+         nothing has ever used it - the dependency was added and the endpoints were never written,
+         which is the worst of both: build cost, no capability."
+
+    Water is built now. NINE more were in exactly that state when this check was written, and there
+    was nothing anywhere that would have said so.
+
+    Every one is a real cost: a module to compile and link, a plugin the host project must have
+    enabled, and one more way for Build.cs and the .uplugin to drift apart later (issues 17 and 22,
+    both of which took the editor down).
+
+    ADVISORY, and it does not fail the run. Deleting a dependency and building its endpoints are both
+    real decisions, and neither is a checker's to make - the point is that the choice should be
+    deliberate rather than forgotten.
+    """
+    import io as _io
+    import os
+    import re as _re
+
+    build_cs = os.path.join(HERE, "..", "Source", "MifBridge", "MifBridge.Build.cs")
+    private = os.path.join(HERE, "..", "Source", "MifBridge", "Private")
+    if not (os.path.isfile(build_cs) and os.path.isdir(private)):
+        return []
+    try:
+        cs = _io.open(build_cs, encoding="utf-8", errors="replace").read()
+    except Exception as exc:
+        return ["could not read Build.cs: %s" % exc]
+
+    guards = _re.findall(r'AddPluginModules\(\s*"([A-Z_0-9]+)"\s*,\s*"([A-Za-z0-9_]+)"', cs)
+    used = set()
+    for fn in os.listdir(private):
+        if not fn.endswith((".cpp", ".h")):
+            continue
+        text = _io.open(os.path.join(private, fn), encoding="utf-8", errors="replace").read()
+        for macro, _plugin in guards:
+            if macro in text:
+                used.add(macro)
+    idle = sorted(plugin for macro, plugin in guards if macro not in used)
+    if not idle:
+        return []
+    return ["%d plugin dependency(ies) are linked and NO source file uses their MIF_WITH_ guard: %s. "
+            "Build cost and load risk with no capability - the state MifBridgeWater.cpp describes at "
+            "the top of itself. Build endpoints for them or drop the dependency; either is fine, "
+            "forgetting is not." % (len(idle), ", ".join(idle))]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--verbose", action="store_true",
@@ -560,6 +615,8 @@ def main() -> int:
 
     for _p in check_plugin_declaration_drift():
         print("PLUGIN DRIFT: " + _p)
+    for _p in check_linked_but_unused_plugins():
+        print("PLUGIN IDLE: " + _p)
     for _p in check_hook_drift():
         print("HOOK DRIFT: " + _p)
 

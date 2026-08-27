@@ -1272,6 +1272,7 @@ namespace MifBridge
 	 *  question. */
 	MIF_DECL(capture_viewport);
 	MIF_DECL(audition_sound);
+	MIF_DECL(describe_metasound);
 	/** Is this point on the nav mesh, and how far off was it? */
 	MIF_DECL(nav_project_point);
 	/** Can an agent actually get from A to B? Reports PARTIAL separately - a partial path looks like

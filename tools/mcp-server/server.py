@@ -2508,6 +2508,12 @@ def create_water_body(type: str, label: str = None, x: float = 0.0, y: float = 0
 
 
 @mcp.tool()
+def describe_metasound(path: str) -> dict:
+    "Describe ONE MetaSound's INTERFACE - the inputs and outputs you set to drive it - plus counts for its node graph. This is the read half of the audio family: before it, the only audio endpoint was audition_sound, which PLAYS a sound and tells you nothing about it. inputs[] and outputs[] carry each vertex whole (name, type name, defaults, metadata) rather than a hand-picked pair of fields. The node graph is deliberately reported as nodeCount/edgeCount only: dumping nodes, edges, literals and GUIDs would be a large answer to a question nobody asked, and the interface is what you need to actually use the thing. There is no list_metasounds because find_assets {class: \"MetaSoundSource\"} already lists them. Reads reflectively and includes no Metasound header, so it answers on an engine where the plugin is absent, and it never calls the engine's *Checked document accessors - those hard-assert and would take the editor down rather than return null. Reports `cooked`, and works on cooked assets: the document is a plain UPROPERTY, not editor-only data."
+    return _post("describe_metasound", path=path)
+
+
+@mcp.tool()
 def create_water_zone(x: float = 0.0, y: float = 0.0, z: float = 0.0,
                       extent_x: float = None, extent_y: float = None,
                       label: str = None) -> dict:

@@ -1110,6 +1110,50 @@ engine has no such class registered in this build, which is as definitive as it 
       the reason to make a zone is never the zone. Spawned through UWaterZoneActorFactory for the same
       reason create_water_body is - a raw spawn gets no far-distance material and the wrong render
       target resolution. Covered by tools/test_water_zone.py, 21 checks, both engines.
+- [ ] **Nine plugin dependencies are linked and nothing uses them.** Found 2026-08-27.
+      ChaosVehiclesPlugin, GameplayAbilities, GeometryScripting, LevelSnapshots, LiveLink,
+      MassEntity, Metasound, ModelViewViewModel, ModularGameplay.
+      This is EXACTLY the state MifBridgeWater.cpp describes at the top of itself - "the dependency
+      was added and the endpoints were never written, which is the worst of both: build cost, no
+      capability" - and Water was one of them until today. Nine more were in it, and nothing anywhere
+      said so.
+      Each costs a module to compile and link, a plugin the host project must have enabled, and one
+      more way for Build.cs and the .uplugin to drift apart later (issues 17 and 22, both of which
+      took the editor down). No drift today - checked.
+      Now reported by parity_check as PLUGIN IDLE, advisory. Building endpoints and dropping the
+      dependency are both fine; forgetting is not, which is the only thing the check prevents.
+- [x] **Metasound - the audio read half.** DONE 2026-08-27. `describe_metasound`, both engines.
+      VERIFIED AGAINST REAL CONTENT, which is why it was chosen: MS_OneArmedBandit reports 10 inputs
+      (PullLever/Trigger, RollersRemaining/Int32, Reward/Float ...), 2 outputs, 97 nodes, 111 edges,
+      34 dependencies - a slot machine's actual control surface, off a COOKED asset. 22 checks in
+      tools/test_metasound.py.
+      NO list_metasounds, deliberately: `find_assets {class:"MetaSoundSource"}` already lists them and
+      a second endpoint doing the same would be the tool-count parity this spec says not to chase.
+      THE DEPENDENCY IS STILL IDLE, and that is the honest outcome rather than an oversight. The
+      endpoint includes no Metasound header and needs no Metasound module, so it answers on an engine
+      where the plugin is absent - and it is therefore NOT a reason to keep MIF_WITH_METASOUND linked.
+      parity_check still reports it under PLUGIN IDLE, correctly. Dropping that dependency is now a
+      free decision rather than a blocked one.
+      DDS2 has **185 MetaSoundSource** assets and 1 MetaSoundPatch, alongside 3771 SoundWaves and 354
+      SoundCues. MifBridge has exactly ONE audio endpoint - `audition_sound`, which PLAYS one - and
+      nothing that describes any of it. That is the same inverse gap the Foliage entry names: a write
+      with no read.
+      Chosen over the other eight idle plugins for one reason: 185 real assets means it can be
+      VERIFIED live rather than shipped on a compile alone, which is precisely why MetaHuman is still
+      deferred.
+      PORTABILITY, checked before writing a line, and it is the worst drift found so far. The const
+      document accessors were RENAMED wholesale between the engines:
+        5.3  const FMetasoundFrontendDocument& GetDocumentChecked() const
+        5.7  const FMetasoundFrontendDocument& GetConstDocumentChecked() const
+        5.3  virtual const FMetasoundFrontendDocument& GetDocument() const
+        5.7  virtual const FMetasoundFrontendDocument& GetConstDocument() const
+      The NON-const `GetDocumentChecked()` exists in both, so that is the portable spelling and the
+      branch can be avoided entirely. 5.7 also moves from a class-level METASOUNDENGINE_API to
+      per-member UE_API, which changes nothing for callers.
+      THE HAZARD TO RESPECT: DDS2's MetaSounds are COOKED, and an accessor named *Checked is exactly
+      the shape that does not survive being asked (docs/06 issue 16, and PM: analyze_skeletal_split
+      killed the editor on GetImportedModel). Ask PKG_Cooked FIRST, then decide - do not ask the
+      accessor whether it has an answer.
 - [x] **StateTree** - DONE 2026-08-27. list_state_trees, describe_state_tree.
       DDS2 has 0 StateTree assets, which is exactly what the original decline said and exactly why it was not a reason. MifBridge already read Behavior Trees; a project on StateTree instead would have found the AI half of this bridge simply blank.
       REOPENED - declined as 'DDS2 does not use it'. That is a fact about one test project. StateTree is the modern UE5 answer to Behavior Trees and a 5.7 project may well be on it.

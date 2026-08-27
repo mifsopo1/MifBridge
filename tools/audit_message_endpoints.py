@@ -96,7 +96,11 @@ def scan(names):
 # A docstring may name a tool in order to say it does NOT exist, and several deliberately do -
 # "there is deliberately no separate run_editor_exec: it would have been a third copy of the same
 # UEngine::Exec call". That is the opposite of a dead end and must not be flagged.
-DENIAL = re.compile(r"(?:no separate|deliberately no|there is no|not a tool|does not exist)")
+# IGNORECASE, because the denial is usually the START of a sentence - "There is no separate X".
+# Without it this matched nothing that began a sentence, which is most denials, and the first
+# real one it met slipped straight through.
+DENIAL = re.compile(r"(?:no separate|deliberately no|there is no|not a tool|does not exist)",
+                    re.IGNORECASE)
 
 
 def mcp_docstrings():
