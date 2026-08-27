@@ -70,10 +70,28 @@ EXCLUDE_PATTERNS = (
 )
 
 # Engine versions this plugin is known to build against. 5.3.2 is the cooked DDS2 SDK; 5.7 is Curfew.
+#
+# "built" MEANS A COMPILER SAID SO. Until 2026-08-26 the 5.7 row said "built" on the strength of
+# reading both engines' headers and reasoning about what would compile. It had never been compiled.
+# When someone finally did, six real defects fell out in an hour - including FHttpRequestHandler
+# changing from a typedef'd TFunction to a TDelegate, which no amount of reading had caught because
+# the two declarations look interchangeable until a compiler disagrees.
+#
+# So before changing a row to "built", run the probe:
+#
+#     python tools/make_engine_probe.py --engine <engine root> --out <scratch> --build
+#
+# and check the log for "Result: Failed" - Build.bat has been observed exiting 0 on a failed build.
+# A row here is a claim someone will rely on. Reading the headers is not evidence for it.
 # Stated as a claim about what has actually been built, not a guess about what might work.
 ENGINE_MATRIX = [
     {"engine": "5.3.2", "status": "built and tested", "notes": "cooked editor (DDS2 SDK) - the primary target"},
-    {"engine": "5.7", "status": "built", "notes": "Curfew; see docs/02_GOTCHAS.md section 14 for the API splits"},
+    {"engine": "5.7", "status": "built",
+     "notes": "COMPILED against stock 5.7.4 via tools/make_engine_probe.py on 2026-08-26, and run in "
+              "Curfew at 291 endpoints. create_editable_child refuses - it needs a DDS2 engine-FORK "
+              "header no stock Unreal has. See docs/02_GOTCHAS.md section 14 for the six API splits, "
+              "and docs/06 issue 17 for a plugin-enablement defect that affects consumers who do not "
+              "enable the ten optional plugins."},
 ]
 
 
