@@ -1708,6 +1708,8 @@ namespace MifBridge
 	MIF_DECL(describe_live_widget);
 	// Isolated offscreen widget preview (MifBridgeWidgetPreview.cpp) — no MIF_WITH_* gate.
 	MIF_DECL(preview_widget);
+	// Declarative composite widget preview (MifBridgeCompositePreview.cpp) — no MIF_WITH_* gate.
+	MIF_DECL(preview_composite_widget);
 
 #undef MIF_DECL
 }

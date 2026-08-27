@@ -3681,6 +3681,16 @@ def preview_widget(widget_class: str, width: int = 512, height: int = 512, dpi_s
                  dpiScale=dpi_scale, background=background, name=name or None)
 
 
+@mcp.tool()
+def preview_composite_widget(root_class: str, children: list = None, width: int = 512,
+                             height: int = 512, dpi_scale: float = 1.0,
+                             background: str = "transparent", name: str = "") -> dict:
+    "Assemble a root Widget Blueprint plus N children into named containers, transiently, and render the RESULT - reproducing a runtime-composed screen (a vanilla parent with a child injected into a named panel, e.g. QOLCrafting_P's WBP_RecyclerStorage into containerHolder) without touching any source asset. children is a list of {class, insertInto, name?} - insertInto names a panel/named-slot VARIABLE on the root (bIsVariable in its design-time tree), not an arbitrary path, and only addresses the root directly (not a child of an already-inserted child) in this version. The response's `inserted` array reports per-child ok/error so one bad container name doesn't silently drop that child from the picture, and `tree` gives the full post-composition geometry, not just pixels. Still not proof the game's own interaction code would assemble it this way - that's list_live_widgets/describe_live_widget against real PIE. dpi_scale/background/dirtyPackagesDelta behave exactly like preview_widget."
+    return _post("preview_composite_widget", rootClass=root_class, children=children or [],
+                 width=width, height=height, dpiScale=dpi_scale, background=background,
+                 name=name or None)
+
+
 # --------------------------------------------------------------------------
 # BLENDER backend - bl_* tools. These do NOT reach Unreal: they go over the
 # loopback socket to the MifBlender addon (tools/blender-addon/), so they are

@@ -2082,10 +2082,32 @@ cannot become one giant blocking item:
       NOT COVERED: composition (Phase B), and the note field on every response says so - "Runtime-
       created children, dynamic bindings driven by BeginPlay, and anything another widget injects
       into this one at runtime will NOT appear here."
-- [ ] **UMG declarative composite preview (Phase B).** Recipe-driven transient composition - root
-      widget + N children inserted into named panels/slots, without touching source assets. Useful for
-      QOLCrafting_P's actual architecture (WBP_RecyclerStorage injected into vanilla containerHolder)
-      but still not proof the real interaction path produced it.
+- [x] **UMG declarative composite preview (Phase B).** DONE 2026-08-27. `preview_composite_widget` -
+      root widget + N children inserted into named panels/slots, transiently, then rendered. This is
+      QOLCrafting_P's actual architecture reproduced directly: a vanilla-shaped parent with a child
+      injected into a named container (`containerHolder` in the real report; `ContainerHolder`
+      NamedSlot in the test fixture that verified this).
+      MECHANISM: `UUserWidget::GetWidgetFromName` resolves the container by variable name on the
+      ROOT (v1 boundary, stated in the response's own `note` - not a nested child-of-a-child target),
+      `Cast<UPanelWidget>` + `AddChild` inserts - works uniformly across CanvasPanel, VerticalBox and
+      NamedSlot because `UNamedSlot : UContentWidget : UPanelWidget`, checked before assuming it.
+      Reuses preview_widget's proven RTF_RGBA8 render pipeline and describe_live_widget's geometry-
+      tree shape, each re-implemented locally per this codebase's small-helpers-stay-file-local
+      convention rather than promoted to a shared header.
+      PER-CHILD RESULTS, not one pass/fail for the whole call: `inserted[]` reports ok/error per
+      child, so one bad container name doesn't silently drop that child from an otherwise-useful
+      render - verified live with both a working NamedSlot insertion (three levels deep: root's
+      WidgetTree -> NamedSlot -> injected child -> the child's OWN WidgetTree, all correctly
+      descended) and a deliberately-wrong container name (clean ok:false with a specific reason,
+      dirtyPackagesDelta still 0).
+      TWO REAL BUGS CAUGHT WHILE WRITING THIS, before it ever reached a build: (1) a leftover draft
+      line called `ResolveClassStrict(..., *new FString())` - a genuine heap leak, immediately
+      superseded by the corrected call but never deleted; caught rereading the file before compiling,
+      not by the compiler, since `*new FString()` type-checks fine. (2) forgot to
+      `#include "Blueprint/WidgetTree.h"` despite using `UWidgetTree::RootWidget` - THIS one the
+      compiler did catch (C2027 undefined type), on the very first probe build.
+      NOT PROOF the real interaction path produces this composition - Phase C is what would prove
+      that, and remains the one item left.
 - [ ] **UMG interaction-faithful PIE scenario runner (Phase C) - LARGE, own subsystem, not an
       endpoint.** Position an actor, wait on the focus system, deliver the real input (F) to the game
       viewport rather than an editor widget, poll for widget-tree stability with timeouts, capture the

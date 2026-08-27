@@ -448,6 +448,8 @@ namespace MifBridge
 			MIF_BIND(describe_live_widget);
 			// Isolated offscreen widget preview
 			MIF_BIND(preview_widget);
+			// Declarative composite widget preview
+			MIF_BIND(preview_composite_widget);
 #undef MIF_BIND
 		}
 		return Map;
