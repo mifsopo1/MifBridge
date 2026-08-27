@@ -1260,10 +1260,28 @@ engine has no such class registered in this build, which is as definitive as it 
       property reads from which viewmodel property) - UMVVMBlueprintView / MVVMBlueprintViewBinding,
       unexplored. FieldNotify is what makes a viewmodel bindable at all; actually binding one to a
       widget is a separate, unstarted item if Curfew's UI work needs it before this spec revisits it.
-- [ ] **ChaosVehicles minimal tooling** - not yet started. DEC-063 is explicit that the custom
-      raycast pawn is the working assumption and Chaos is only the week-2 A/B comparison, not yet
-      run. Andre's call: build just enough to support running that comparison (spawning/configuring a
-      Chaos vehicle pawn), not a full vehicle-authoring surface for a system that may not be chosen.
+- [x] **ChaosVehicles minimal tooling.** DONE 2026-08-27 - and the finding is that DONE meant
+      VERIFYING, not building: nothing new was needed at all.
+      CHECKED FIRST, same discipline as MVVM. Read FChaosWheelSetup (ChaosWheeledVehicleMovement-
+      Component.h): `TSubclassOf<UChaosVehicleWheel> WheelClass`, `FName BoneName`,
+      `FVector AdditionalOffset` - three plain public fields, none of GAS's FGameplayAttribute-style
+      private-FieldPath problem. That predicted existing generic tools would already reach it, and a
+      live probe test confirmed it end to end with ZERO new endpoints:
+        create_blueprint {parentClass: ChaosVehicles.ChaosVehicleWheel}   -> a wheel Blueprint
+        create_blueprint {parentClass: Engine.Pawn}                      -> the vehicle pawn
+        add_component {componentClass: ChaosWheeledVehicleMovementComponent} -> attached, ok:true
+        set_property {propertyPath: "WheelSetups", value: [...]}         -> ok:true, verified:true,
+          elementsAfter:2, WheelClass correctly resolved to the wheel Blueprint's generated class
+        spawn_actor_in_level + list_level_actors                         -> independently confirmed
+          present in the level, not just trusted from spawn's own response
+      That is the whole "spawn/configure a Chaos vehicle pawn" ask DEC-063's week-2 A/B test would
+      need, already reachable today. No MIF_WITH_VEHICLES-gated file was written - there was nothing
+      for one to do. parity_check still lists ChaosVehiclesPlugin under PLUGIN IDLE, correctly and
+      for the same structural reason as MVVM/Metasound: the capability needed no module dependency,
+      so the dependency being idle is not evidence of a gap.
+      NOT covered, if the A/B test needs it later: reading LIVE physics telemetry (actual top speed,
+      handling under load) rather than just the authored config - that would need PIE + runtime
+      component introspection, unexplored and not asked for here.
 - [~] **GeometryScripting, LevelSnapshots, LiveLink, MassEntity, ModularGameplay** - declined
       2026-08-27. Zero plan or presence in either project: not in Curfew's own `.uproject` enabled-
       plugins list, not mentioned in its design docs, and DDS2 has zero assets for any of them
