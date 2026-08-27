@@ -1307,3 +1307,96 @@ count would overcount badly.
 
 What it does answer reliably is the question it was built for: **which call was in flight when the
 process stopped.** That stays sound, because it is an absence, not a count.
+
+## 17. `Build.cs` links plugin modules that the target has not ENABLED — clean build, load failure
+
+Found 2026-08-26 by the session running MifBridge in Curfew (UE 5.7). **Real, reproduced, and NOT
+fixed** — the obvious fix is provably wrong, which is most of what makes this worth writing down.
+
+### The symptom
+
+After vendoring MifBridge into a project that enables a different set of plugins, the editor refuses
+to start:
+
+```
+Plugin 'MifBridge' failed to load because module 'MifBridge' could not be loaded.
+LogWindows: Failed to load '...UnrealEditor-MifBridge.dll' (GetLastError=126)
+```
+
+`126` is `ERROR_MOD_NOT_FOUND` — a missing **dependency** of the DLL, not the DLL itself. The build
+reports success. Nothing warns. It is the same failure family as the exit-code-0 build: every check
+short of actually launching passes.
+
+### The cause
+
+`MifBridge.Build.cs`, `AddPluginModules`, gates on whether the plugin's descriptor exists **under
+`Engine/Plugins`** — that is, whether it SHIPS WITH THE ENGINE — not on whether it is **enabled for
+the target**:
+
+```cs
+string Found = FindPluginDescriptor(PluginName);   // does Engine/Plugins/**/<Name>.uplugin exist?
+bool bHas = !string.IsNullOrEmpty(Found);
+if (bHas) { PrivateDependencyModuleNames.AddRange(Modules); }
+```
+
+Niagara, Water, MassEntity, LiveLink, LevelSnapshots, Metasound, GeometryScripting, GameFeatures,
+ModularGameplay and IKRig all ship with UE 5.7, so all ten get linked. Curfew enabled fourteen
+plugins, none of them these, so at load the imports had nothing to resolve against.
+
+DDS2 does not see it. Any third project vendoring this hits it on first launch.
+
+### Why the obvious fix is WRONG, which is the part worth keeping
+
+The natural repair is "also check whether the plugin is enabled": read the `.uproject`'s `Plugins`
+array, fall back to the descriptor's own `EnabledByDefault`. That is a twenty-line change and it
+looks unarguable.
+
+Computed against DDS2 before writing any of it:
+
+| Plugin | in .uproject | `EnabledByDefault` | that rule says |
+|---|---|---|---|
+| Niagara | – | true | enabled |
+| Metasound | – | true | enabled |
+| IKRig | – | true | enabled |
+| GameFeatures | true | false | enabled |
+| Water | true | false | enabled |
+| GameplayAbilities | – | false | **disabled** |
+| GeometryScripting | – | *(key absent)* | **disabled** |
+| ModularGameplay | – | false | **disabled** |
+| ModelViewViewModel | – | false | **disabled** |
+| ChaosVehiclesPlugin | – | false | **disabled** |
+| MassEntity | – | false | **disabled** |
+| LiveLink | – | false | **disabled** |
+| LevelSnapshots | – | false | **disabled** |
+
+**Eight of thirteen come out "disabled" on the editor where all thirteen demonstrably work right
+now.** So the rule is not merely imperfect, it is wrong, and shipping it would have turned eight
+whole endpoint families into refusals on the primary target — silently, since a refusal is a
+well-formed answer.
+
+What it misses is **transitive enablement**: a plugin listed in the `.uproject` pulls in its own
+dependencies, those pull in theirs, and the engine force-enables some regardless. Resolving that
+properly is what UnrealBuildTool already does internally, and reading two JSON files does not
+approximate it.
+
+### What a real fix needs
+
+Not a descriptor read. Either UBT's own resolved plugin set for the target, or a build-time check
+that the specific MODULES are actually going to exist — the module list is what the linker cares
+about, and it is one level below the plugin question that keeps being asked instead.
+
+Until then the `MIF_WITH_*` guards work correctly for their designed case — a plugin **absent from
+the engine** — and do not cover the case of a plugin **present but not enabled**.
+
+### Workaround, and why it is only that
+
+Enable the ten plugins in the consuming project. Curfew did, and reports it as no hardship. But it
+forces every consumer to enable ten plugins to use a bridge whose endpoints they may never call,
+which is backwards: the guards exist precisely so that absent capability degrades to a named refusal
+rather than a requirement.
+
+### Credit
+
+Diagnosed from the load failure by the Curfew session, including the `GetLastError=126` reading that
+points at a dependency rather than the DLL. They flagged it rather than patching the vendored copy,
+which is why the evidence above could be gathered against DDS2 before anything was changed.
