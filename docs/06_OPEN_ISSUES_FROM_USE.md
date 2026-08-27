@@ -1471,7 +1471,7 @@ returned.
 
 ### Status
 
-Fixed and built on 5.3 (DLL 3,950,592 at 23:06), and **verified live on stock UE 5.7** by the Curfew
+Fixed, and now verified live on BOTH engines - T356 passes on 5.3 here, and the Curfew session ran the same shape on stock UE 5.7. Originally built on 5.3 (DLL 3,950,592 at 23:06), and **verified live on stock UE 5.7** by the Curfew
 session the same night - four expressions seeded, `all=True`, zero remaining, `ok:true`. That is the
 half this machine could not do: the SDK editor was closed and the 5.7 engine was holding a Live
 Coding lock. T356 still runs it on the next regression pass here. The third instance this session of *a clear that
@@ -1518,7 +1518,7 @@ Refusing to guess where "mostly worked" ends is why the threshold is zero rather
 
 ### Status
 
-Fixed and built on 5.3 (DLL 3,950,592 at 23:25). Not yet run live - the SDK editor is closed.
+Fixed, built on 5.3 (DLL 3,950,592 at 23:25), and VERIFIED LIVE: test_spawn_many.py passes 27/27 against a running editor.
 `test_spawn_many.py` covers the endpoint and should gain a total-failure case.
 
 
@@ -1575,6 +1575,6 @@ property a gate should have.
 
 ### Status
 
-Fixed and built on 5.3 (DLL 3,969,024 at 23:38). `test_safety_gate.py` T635 asserts both are refused,
+Fixed, built on 5.3 (DLL 3,969,024 at 23:38), and VERIFIED LIVE: test_safety_gate.py passes 44/44 against a running editor, T635 included. `test_safety_gate.py` T635 asserts both are refused,
 refused *by the gate* specifically, that the refusal holds through `batch` as well, and that
 `invoke_editor_tab` still works. Not run live - the SDK editor is closed.

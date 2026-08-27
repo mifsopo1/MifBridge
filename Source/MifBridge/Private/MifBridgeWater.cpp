@@ -107,8 +107,9 @@ namespace MifBridge
 			if (In.Num() < 2)
 			{
 				OutError = FString::Printf(
-					TEXT("a water body spline needs at least 2 points and %d were given. One point is a "
-						 "degenerate spline: the engine accepts it and renders nothing."), In.Num());
+					TEXT("a water body spline needs at least 2 points and %d %s given. One point is a "
+						 "degenerate spline: the engine accepts it and renders nothing."),
+					In.Num(), In.Num() == 1 ? TEXT("was") : TEXT("were"));
 				return false;
 			}
 
