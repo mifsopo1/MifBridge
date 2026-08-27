@@ -13,7 +13,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 5.3,
+  "seconds": 5.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -31,7 +31,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 6.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -49,7 +49,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 6.5,
+  "seconds": 6.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -67,7 +67,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 12.7,
+  "seconds": 12.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -77,6 +77,15 @@
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
   "seconds": 14.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_cooked_class_trap.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 6.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -94,7 +103,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 4.7,
+  "seconds": 5.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -112,7 +121,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 20.3,
+  "seconds": 19.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -166,7 +175,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 0.1,
+  "seconds": 0.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -175,7 +184,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 6.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -211,7 +220,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 18.3,
+  "seconds": 18.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -336,7 +345,7 @@
   "suite": "test_niagara.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 61   FAIL 0",
+  "summary": "PASS 53   FAIL 0",
   "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
@@ -346,7 +355,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 17.7,
+  "seconds": 17.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -382,7 +391,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 12.4,
+  "seconds": 12.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -391,7 +400,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 8.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -436,7 +445,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 9.7,
+  "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -445,7 +454,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 8.4,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -454,7 +463,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 51   FAIL 0",
-  "seconds": 15.7,
+  "seconds": 16.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -553,7 +562,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 9.4,
+  "seconds": 9.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -607,7 +616,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 5.2,
+  "seconds": 5.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -706,7 +715,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 6.5,
+  "seconds": 6.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -715,7 +724,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.3,
+  "seconds": 6.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -734,6 +743,15 @@
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
   "seconds": 14.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_cooked_class_trap.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -868,7 +886,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 18.6,
+  "seconds": 18.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -993,7 +1011,7 @@
   "suite": "test_niagara.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 61   FAIL 0",
+  "summary": "PASS 53   FAIL 0",
   "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
@@ -1156,7 +1174,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 4.4,
+  "seconds": 4.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1309,7 +1327,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 10.7,
+  "seconds": 10.4,
   "editorSurvived": true,
   "tail": ""
  }

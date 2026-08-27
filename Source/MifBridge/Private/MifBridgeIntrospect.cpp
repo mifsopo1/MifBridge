@@ -24,6 +24,7 @@
 #include "EdGraphSchema_K2.h"
 #include "EdGraphToken.h"
 #include "Engine/Blueprint.h"
+#include "Engine/BlueprintGeneratedClass.h"   // UBlueprintGeneratedClass - how a COOKED blueprint is registered
 #include "HAL/FileManager.h"
 #include "K2Node.h"
 #include "K2Node_CallFunction.h"
@@ -108,10 +109,29 @@ namespace MifBridge
 		FAssetRegistryModule& Module = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
 		IAssetRegistry& Registry = Module.Get();
 
+		// BOTH SPELLINGS, and this used to be one. On a COOKED project a blueprint is registered as
+		// its GENERATED CLASS - BlueprintGeneratedClass - and not as UBlueprint at all, so querying
+		// UBlueprint alone listed only the uncooked ones. bSearchSubClasses does not help and looks
+		// like it should: UBlueprint and UBlueprintGeneratedClass are different hierarchies.
+		//
+		// The failure had the worst possible shape. On DDS2 it returned 1818 entries - a large,
+		// entirely plausible number - while filter:"VehicleBoat" returned 0 against 15 that exist.
+		// An agent asking this endpoint what a cooked project contains was told a confident fraction,
+		// and the 1818 gave it no reason to doubt the answer. See docs/02 section 15.
+		//
+		// The rest of the bridge already handles cooked blueprints properly: list_components reads
+		// them, and list_graphs refuses with a real explanation that points at the KismetReconstructor
+		// and create_editable_child. Only DISCOVERY was blind, so nothing ever led a caller there.
 		TArray<FAssetData> Assets;
 		Registry.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), Assets, /*bSearchSubClasses*/ true);
+		const int32 NumUncooked = Assets.Num();
+		Registry.GetAssetsByClass(UBlueprintGeneratedClass::StaticClass()->GetClassPathName(), Assets, /*bSearchSubClasses*/ true);
 
+		// An UNCOOKED blueprint can be registered under both spellings, and listing it twice would
+		// make the count wrong in the other direction. Keyed on PACKAGE, which both rows share.
+		TSet<FName> SeenPackages;
 		TArray<TSharedPtr<FJsonValue>> Arr;
+		int32 CookedListed = 0;
 		bool bTruncated = false;
 		for (const FAssetData& Asset : Assets)
 		{
@@ -120,10 +140,21 @@ namespace MifBridge
 			{
 				continue;
 			}
+			bool bAlreadySeen = false;
+			SeenPackages.Add(Asset.PackageName, &bAlreadySeen);
+			if (bAlreadySeen)
+			{
+				continue;
+			}
+			// Reported per row rather than inferred from the id's _C suffix, because the caller should
+			// not have to parse a path to learn that the graphs are unreadable.
+			const bool bCooked = Asset.AssetClassPath == UBlueprintGeneratedClass::StaticClass()->GetClassPathName();
+			if (bCooked) { ++CookedListed; }
 			TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 			Json->SetStringField(TEXT("blueprintId"), ObjectPath);
 			Json->SetStringField(TEXT("name"), Asset.AssetName.ToString());
 			Json->SetStringField(TEXT("package"), Asset.PackageName.ToString());
+			Json->SetBoolField(TEXT("cooked"), bCooked);
 			Arr.Add(MakeShared<FJsonValueObject>(Json));
 			if (Arr.Num() >= 5000)
 			{
@@ -137,7 +168,21 @@ namespace MifBridge
 			}
 		}
 		Out->SetNumberField(TEXT("count"), Arr.Num());
+		Out->SetNumberField(TEXT("cookedCount"), CookedListed);
+		Out->SetNumberField(TEXT("uncookedRegistered"), NumUncooked);
 		Out->SetArrayField(TEXT("blueprints"), Arr);
+		if (CookedListed > 0)
+		{
+			// Said once at the top level rather than repeated on every row. A caller who sees
+			// cooked:true and does not know what it implies would otherwise go straight to list_graphs
+			// and get a refusal - which is a good refusal, but a wasted round trip.
+			Out->SetStringField(TEXT("cookedNote"), FString::Printf(
+				TEXT("%d of these are COOKED (cooked:true). Cooked packages strip Blueprint graphs, so "
+					 "list_graphs / list_nodes / find_nodes cannot read them - their components and "
+					 "properties still read normally. To read the logic, decompile with "
+					 "run_console {\"command\":\"mif.kr.Reconstruct <Name>\"}; to edit it, mint an "
+					 "editable copy with create_editable_child."), CookedListed));
+		}
 		if (bTruncated)
 		{
 			Out->SetBoolField(TEXT("truncated"), true);

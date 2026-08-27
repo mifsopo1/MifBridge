@@ -1718,3 +1718,29 @@ BP_VehicleBoat_Jetski_C -> OwnedVehicle_Boat_C -> QuickTravelOwnedVehicle_C -> E
 `ACharacter` subclasses, all the way down. So `ChaosVehiclesPlugin` really does have nothing here to
 operate on — but that is now known from an inheritance chain rather than from a headcount that the
 gotcha above would have corrupted anyway.
+
+### It was not only `find_assets` — `list_blueprints` had it worse
+
+Checked immediately after, because the same assumption tends to live in more than one place.
+`list_blueprints` queried `UBlueprint` alone:
+
+| on DDS2 | before | after |
+|---|---|---|
+| `list_blueprints {}` | 1818 | **3227** (1174 cooked) |
+| `list_blueprints {filter:"VehicleBoat"}` | **0** | **15** |
+
+**1409 blueprints were invisible to any agent that started there** — and 1818 is a large enough
+number to look like a complete answer. `find_assets` is a general query somebody reaches for
+deliberately; `list_blueprints` is the *discovery* endpoint, the one you call to find out what a
+project even contains.
+
+The rest of the bridge already handled cooked blueprints properly the whole time: `list_components`
+reads them, and `list_graphs` refuses with a real explanation pointing at `mif.kr.Reconstruct` and
+`create_editable_child`. Only discovery was blind, so nothing ever led a caller to any of it.
+
+Now every row carries `cooked: true|false`, `cookedCount` totals them, and a single top-level note
+says what cooked costs you and what to do instead. Deduplicated by **package**, because an uncooked
+blueprint is registered under *both* spellings and merging without a key would have been wrong in the
+other direction — harder to spot than the original bug.
+
+`tools/test_cooked_class_trap.py` covers both endpoints, 25 checks.

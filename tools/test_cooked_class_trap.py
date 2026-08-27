@@ -153,6 +153,49 @@ def main():
                   % (fam, r.get("count"), g.get("count")))
 
     print("")
+    print("=== T755: list_blueprints had the SAME bug, and it mattered more ===")
+    # find_assets is a general query; list_blueprints is THE discovery endpoint. It queried
+    # UBlueprint alone and returned 1818 on DDS2 - a large, entirely plausible number - while
+    # filter:"VehicleBoat" returned 0 against 15 that exist. 1409 blueprints were invisible to any
+    # agent that started here, and nothing in the answer suggested it.
+    r = M.call("list_blueprints", {})
+    check("T755 it reports how many are cooked", isinstance(r.get("cookedCount"), (int, float)),
+          "no cookedCount - the old binary is loaded")
+    check("T755 and cooked ones are actually listed", (r.get("cookedCount") or 0) > 0,
+          "cookedCount=%r on a project with cooked blueprints" % (r.get("cookedCount"),))
+    check("T755 the total exceeds the uncooked-only count it used to return",
+          (r.get("count") or 0) > (r.get("uncookedRegistered") or 0),
+          "count=%r uncookedRegistered=%r" % (r.get("count"), r.get("uncookedRegistered")))
+    note = str(r.get("cookedNote") or "")
+    check("T755 a note says what cooked COSTS you", "strip Blueprint graphs" in note, note[:200])
+    check("T755 and points at the way to read them anyway",
+          "mif.kr.Reconstruct" in note and "create_editable_child" in note, note[:240])
+
+    rows = r.get("blueprints") or []
+    check("T755 every row carries a cooked flag",
+          all("cooked" in b for b in rows[:200]) if rows else False,
+          "some rows have no cooked field")
+
+    print("")
+    print("=== T756: no blueprint is listed twice ===")
+    # An UNCOOKED blueprint is registered under BOTH spellings, so merging the two queries without
+    # a key would double-count it - wrong in the other direction, and harder to notice.
+    ids = [b.get("package") for b in rows]
+    check("T756 packages are unique across the merged list", len(ids) == len(set(ids)),
+          "%d rows, %d distinct packages" % (len(ids), len(set(ids))))
+
+    print("")
+    print("=== T757: the filter reaches cooked blueprints ===")
+    r = M.call("list_blueprints", {"filter": "VehicleBoat"})
+    if (r.get("count") or 0) > 0:
+        check("T757 a cooked-only name is findable", (r.get("count") or 0) > 0, r.get("count"))
+        check("T757 and comes back marked cooked",
+              any(b.get("cooked") for b in (r.get("blueprints") or [])),
+              json.dumps(r.get("blueprints"))[:200])
+    else:
+        print("  (no VehicleBoat here - not DDS2, not exercised)")
+
+    print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f in FAIL:

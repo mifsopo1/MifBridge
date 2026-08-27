@@ -394,7 +394,7 @@ def open_blueprint(path: str) -> dict:
 
 @mcp.tool()
 def list_blueprints(filter: str = "") -> dict:
-    "List Blueprint assets in the project. Optional substring filter on the object path."
+    "List Blueprint assets in the project. Optional substring filter on the object path. Lists COOKED blueprints too, which is worth knowing because it did not always: on a cooked project a blueprint is registered as its generated class rather than as Blueprint, and querying only the latter returned a large, entirely plausible, and badly incomplete number - 1818 of 3227 on DDS2, with a name search for cooked-only content returning 0 against 15 that existed. Every row carries cooked:true/false, and cookedCount says how many. A cooked blueprint's graphs are stripped by cooking, so list_graphs / list_nodes / find_nodes cannot read it - components and properties still read normally, mif.kr.Reconstruct decompiles the logic, and create_editable_child mints an editable copy. Capped at 5000 with truncated:true when it bites."
     return _post("list_blueprints", filter=filter or None)
 
 
