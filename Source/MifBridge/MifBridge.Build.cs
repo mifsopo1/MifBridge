@@ -152,6 +152,11 @@ public class MifBridge : ModuleRules
 
 		AddPluginModules("MIF_WITH_NIAGARA", "Niagara",
 			new string[] { "Niagara", "NiagaraEditor" });
+		// PCG MOVED between the two engines: Plugins/Experimental/PCG on 5.3, Plugins/PCG on 5.7 after
+		// being promoted out of experimental. AddPluginModules searches AllDirectories, so neither path
+		// is hardcoded - the same reason GameFeatures survived the identical move.
+		AddPluginModules("MIF_WITH_PCG", "PCG",
+			new string[] { "PCG" });
 		AddPluginModules("MIF_WITH_GAS", "GameplayAbilities",
 			new string[] { "GameplayAbilities" });
 		AddPluginModules("MIF_WITH_GEOMETRYSCRIPT", "GeometryScripting",

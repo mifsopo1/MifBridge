@@ -1656,3 +1656,62 @@ for two of them there is not one.
 
 Only the illusory containment — the comment now says what the code does, and the response reports the
 resolved path so a caller can see where the file actually went. The gate question is filed for Andre.
+
+
+## 21. My build verification counted `: error ` and missed `: fatal error ` — FIXED
+
+Found 2026-08-27, by a build that reported **0 errors** and produced a DLL missing five endpoints.
+
+Every build all night was verified with `grep -c ": error "`. The log said:
+
+```
+MifBridgePCG.cpp(42): fatal error C1083: Cannot open include file: 'EditorActorSubsystem.h'
+```
+
+`: fatal error ` does not contain `: error `. The check said clean. I then spent three rounds hunting
+for why `UnrealEditor-MifBridge.dll` had never linked — **the log had already told me, and my filter
+had thrown the message away.**
+
+This is the same family as the entries above about `Build.bat` exiting 0 on a failed build, and it is
+worse in one way: those are the tool lying, this was my own check lying, and it had been lying all
+night on every build that happened to succeed anyway.
+
+### Fixed by `tools/buildcheck.py`
+
+Three independent signals, because each alone has been wrong here before:
+
+1. `error <code>` **or** `fatal error` **or** `LNK<n>` — fatal and link errors are the two shapes a
+   naive error grep misses, and both have cost time on this project.
+2. `Result: Failed` anywhere in the log. The process exit code is **not consulted at all**.
+3. The expected binary's mtime moved — and its absence is named separately, since a failed LINK
+   *deletes* the DLL.
+
+```bash
+python tools/buildcheck.py <log> --dll <path> --since <epoch>
+```
+
+Its ignore list is deliberately short (`warning`, `[Upgrade]`, `error C4996`). A generous one would
+recreate the original bug somewhere new.
+
+
+## 22. I re-broke issue 17 the same night I documented it
+
+Adding PCG to `MifBridge.Build.cs` without adding it to `MifBridge.uplugin` stopped the editor
+loading at all:
+
+```
+Plugin 'MifKismetReconstructor' failed to load because module 'MifKismetReconstructor'
+could not be loaded.
+```
+
+The named module is **not** the problem — it is downstream of the real one. MifBridge linked against
+a plugin the project had never enabled, so the module chain failed and the error surfaced on whatever
+was next in it.
+
+That is exactly **issue 17**, whose recorded fix is to declare the plugin in the `.uplugin` as
+`Optional: true, Enabled: true` so UBT enables it transitively. Thirteen plugins were already declared
+that way. I added the fourteenth to `Build.cs` only.
+
+**The lesson is not "remember the uplugin".** It is that `Build.cs` and `MifBridge.uplugin` are two
+files that must agree and nothing checks that they do — the same shape as the hook drift found earlier
+today. Worth a `parity_check.py` rule.

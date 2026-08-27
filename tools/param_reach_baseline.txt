@@ -59,6 +59,7 @@ describe_animation.animation
 describe_class.filter
 describe_game_feature_plugin.plugin
 describe_niagara_system.system
+describe_pcg_graph.graph
 describe_property.actorpath
 describe_property.filter
 describe_property.namefilter

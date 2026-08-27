@@ -1341,6 +1341,13 @@ namespace MifBridge
 	MIF_DECL(set_retarget_chain_mapping);
 	MIF_DECL(list_retarget_chain_mapping);
 	/** Read a BehaviorTree's structure. DDS2 has 17 of them and no way to inspect one. */
+	/** PCG. Declined once under the old cooked-only rule ('a DDS2 mod does not regenerate the
+	 *  world'), reopened 2026-08-27 - Curfew is a city builder on 5.7. */
+	MIF_DECL(list_pcg_graphs);
+	MIF_DECL(describe_pcg_graph);
+	MIF_DECL(list_pcg_components);
+	MIF_DECL(pcg_generate);
+	MIF_DECL(pcg_cleanup);
 	MIF_DECL(describe_behavior_tree);
 	MIF_DECL(list_blackboard_keys);
 	MIF_DECL(list_animations);

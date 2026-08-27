@@ -2614,6 +2614,36 @@ def list_sockets(path: str) -> dict:
 
 
 @mcp.tool()
+def list_pcg_graphs(path_prefix: str = "/Game/") -> dict:
+    "List the project's PCGGraph assets. Asset Registry only - LOADS NOTHING. Check registryStillScanning: at startup a low count can mean 'not finished looking'."
+    return _post("list_pcg_graphs", pathPrefix=path_prefix)
+
+
+@mcp.tool()
+def describe_pcg_graph(path: str) -> dict:
+    "Describe a PCGGraph: its nodes, each with the SETTINGS CLASS that identifies what the node actually is, plus input/output pin counts. Node identity comes from the settings class rather than the display title because GetNodeTitle's signature differs across engine versions and a title can be renamed anyway. hasInputNode is reported separately: a graph with no input node has nothing to operate on and generates nothing whatever else it contains."
+    return _post("describe_pcg_graph", path=path)
+
+
+@mcp.tool()
+def list_pcg_components() -> dict:
+    "Every PCG component in the OPEN level, with its owning actor, its graph, and whether it is generated and activated. Reports every component on an actor rather than the first, since one actor can carry several. hasGraph is separate because a component with no graph is inert."
+    return _post("list_pcg_components")
+
+
+@mcp.tool()
+def pcg_generate(actor_path: str, confirm: bool = False) -> dict:
+    "Run a PCG component's graph, spawning its output into the OPEN level. Requires confirm=True: this can spawn THOUSANDS of actors - that is what it is for - and there is no single undo. Generation is ASYNCHRONOUS, so an immediate list_level_actors may not show the result yet, and wasGenerated in the response is the state BEFORE the call. A component with no graph is REFUSED rather than run, because generating it would do nothing and report success. Nothing is saved; use pcg_cleanup to remove what it made."
+    return _post("pcg_generate", actorPath=actor_path, confirm=confirm)
+
+
+@mcp.tool()
+def pcg_cleanup(actor_path: str, confirm: bool = False) -> dict:
+    "Remove the actors a PCG component generated. Requires confirm=True - it destroys generated content. Asynchronous like generation. Nothing is saved."
+    return _post("pcg_cleanup", actorPath=actor_path, confirm=confirm)
+
+
+@mcp.tool()
 def describe_behavior_tree(path: str) -> dict:
     """Read a BehaviorTree's structure: root, node tree, and which blackboard it uses.
 

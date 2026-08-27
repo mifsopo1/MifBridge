@@ -320,6 +320,11 @@ namespace MifBridge
 			MIF_BIND(auto_map_retarget_chains);
 			MIF_BIND(set_retarget_chain_mapping);
 			MIF_BIND(list_retarget_chain_mapping);
+			MIF_BIND(list_pcg_graphs);
+			MIF_BIND(describe_pcg_graph);
+			MIF_BIND(list_pcg_components);
+			MIF_BIND(pcg_generate);
+			MIF_BIND(pcg_cleanup);
 			MIF_BIND(describe_behavior_tree);
 			MIF_BIND(list_blackboard_keys);
 			MIF_BIND(list_animations);
