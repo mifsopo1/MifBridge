@@ -129,21 +129,18 @@ namespace MifBridge
 		}
 
 		const TSharedPtr<FJsonObject>* LookObj = nullptr;
+		const TSharedPtr<FJsonObject>* RotObj = nullptr;
 		if (In->TryGetObjectField(TEXT("lookAt"), LookObj) && LookObj)
 		{
 			const TSharedRef<FJsonObject> O = LookObj->ToSharedRef();
 			const FVector Target(JNum(O, TEXT("x")), JNum(O, TEXT("y")), JNum(O, TEXT("z")));
 			Client->SetViewRotation((Target - Loc).Rotation());
 		}
-		else
+		else if (In->TryGetObjectField(TEXT("rotation"), RotObj) && RotObj)
 		{
-			const TSharedPtr<FJsonObject>* RotObj = nullptr;
-			if (In->TryGetObjectField(TEXT("rotation"), RotObj) && RotObj)
-			{
-				const TSharedRef<FJsonObject> O = RotObj->ToSharedRef();
-				// x/y/z = pitch/yaw/roll, matching every other MifBridge transform.
-				Client->SetViewRotation(FRotator(JNum(O, TEXT("x")), JNum(O, TEXT("y")), JNum(O, TEXT("z"))));
-			}
+			const TSharedRef<FJsonObject> O = RotObj->ToSharedRef();
+			// x/y/z = pitch/yaw/roll, matching every other MifBridge transform.
+			Client->SetViewRotation(FRotator(JNum(O, TEXT("x")), JNum(O, TEXT("y")), JNum(O, TEXT("z"))));
 		}
 
 		if (JHasAny(In, { TEXT("fov") }))       { Client->ViewFOV = (float)JNum(In, TEXT("fov"), 90.0); }
