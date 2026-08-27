@@ -223,3 +223,48 @@ grep -n 'RefuseIfGated' Source/MifBridge/Private/*.cpp
 
 Every line the first produces must be downstream of a line the second produces, in the same
 function.
+
+
+## Making a mode STICK across launches
+
+Infected, on Discord, after the gate shipped: *"Why dont it remain full every time i launch?"*
+
+A fair question with a boring answer, and the fact that it had to be asked is a documentation
+failure rather than a design one.
+
+`MIF_BRIDGE_WRITE_MODE` is read from the **process environment, once, at startup**. Set it in a
+shell and it dies with that shell. Set it in a launcher script and it applies to editors that script
+starts and to nothing else. Every other launch falls back to the default, which is `scratch`.
+
+To make it persist, set it at **User scope**, once:
+
+```
+setx MIF_BRIDGE_WRITE_MODE full
+```
+
+Every editor launched *after* that starts in `full`. `setx` writes the registry rather than the
+current shell, so the shell you typed it in still will not see it - open a new one, or just launch
+the editor normally.
+
+To go back:
+
+```
+setx MIF_BRIDGE_WRITE_MODE scratch
+```
+
+### Why this is not a hole in the gate
+
+The gate is deliberately not settable over the bridge, because an agent that can unlock its own gate
+is not a gate. That is about the BRIDGE, not about the human at the keyboard - the whole point of
+putting it in the environment is that setting it is something a person does outside the process an
+agent is driving.
+
+"Deliberately not settable over the bridge" was never meant to imply "retype it every launch", and
+the refusal message says *"Restart the editor with MIF_BRIDGE_WRITE_MODE=full"* without ever saying
+how to make that stick. Anyone reading only the refusal would reasonably conclude it is per-session.
+
+### Check what mode you are actually in
+
+`self_audit` reports `writeMode` and `safetyGateActive`, and the in-editor panel shows the mode in
+its header. Worth checking after a `setx`, because a `setx` in one shell and an editor already
+running in another is exactly the case where the two disagree.

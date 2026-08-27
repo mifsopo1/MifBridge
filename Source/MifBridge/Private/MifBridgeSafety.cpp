@@ -159,13 +159,20 @@ namespace MifBridge
 			TEXT("'%s' is refused: the MifBridge safety gate is in '%s' mode. This endpoint either "
 				 "persists to disk, takes the editor loop, or executes outside the process, so no path "
 				 "check can make it safe. Restart the editor with MIF_BRIDGE_WRITE_MODE=full to permit "
-				 "it. It is deliberately NOT settable over the bridge - an agent that could unlock its "
-				 "own gate is not gated."),
-			*Endpoint, WriteModeName(Mode)));
+				 "it, and use `setx MIF_BRIDGE_WRITE_MODE full` to make that stick across launches - "
+				 "the variable is read from the environment ONCE at startup, so a value set only in a "
+				 "shell dies with that shell and the next launch is back to '%s'. It is deliberately "
+				 "NOT settable over the bridge - an agent that could unlock its own gate is not "
+				 "gated - but that is about the BRIDGE, not about you."),
+			*Endpoint, WriteModeName(Mode), WriteModeName(Mode)));
 		// Reported as structured fields too, so a caller can branch without parsing prose.
 		Out->SetStringField(TEXT("refusedBy"), TEXT("safety-gate"));
 		Out->SetStringField(TEXT("writeMode"), WriteModeName(Mode));
-		Out->SetStringField(TEXT("unlock"), TEXT("MIF_BRIDGE_WRITE_MODE=full (environment, at startup)"));
+		Out->SetStringField(TEXT("unlock"), TEXT("MIF_BRIDGE_WRITE_MODE=full (environment, read once at startup)"));
+		// The PERSISTENT form, as its own field. Infected asked "Why dont it remain full every time i
+		// launch?" - the refusal said how to unlock and never how to make it stick, so anyone reading
+		// only the refusal would reasonably conclude it was per-session.
+		Out->SetStringField(TEXT("unlockPersistent"), TEXT("setx MIF_BRIDGE_WRITE_MODE full"));
 		return true;
 	}
 }
