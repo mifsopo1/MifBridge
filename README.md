@@ -5,7 +5,7 @@
 ### **Let an AI edit your Unreal Blueprints — and read the compiler errors back.**
 
 <!-- MIFBRIDGE-VERSION-LINE -->
-`v0.6.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **332 endpoints** &nbsp;·&nbsp; 🧰 **353 MCP tools** &nbsp;·&nbsp; 🧪 **76 test suites**
+`v0.6.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **320 endpoints** &nbsp;·&nbsp; 🧰 **353 MCP tools** &nbsp;·&nbsp; 🧪 **75 test suites**
 
 </div>
 
@@ -30,8 +30,8 @@ Every change goes through Unreal's own graph API (`Schema->TryCreateConnection`,
 
 | Half | State |
 |---|---|
-| 🎮 **UE plugin + MCP server** | **Mature.** 332 endpoints, 74 suites, 148 runs green, 0 editor deaths on the last full pass. |
-| 🎨 **Blender addon** | **Working, narrowly tested.** 18 ops and a real mesh round trip; the op‑level suite skips loudly when Blender is not running rather than passing on nothing. |
+| 🎮 **UE plugin + MCP server** | **Mature.** 320 endpoints, 75 suites. Last full pass: 148 runs across 74 suites green, 0 editor deaths. |
+| 🎨 **Blender addon** | **Working, version‑tested.** 20 ops and a real mesh round trip, green on Blender 3.6.23, 4.2.17 LTS, 4.4.0 and 5.0.1 — 89 assertions per version. The five `gen_*` ops that need an external service are declared in the suite output rather than skipped silently. |
 
 ---
 
@@ -141,8 +141,8 @@ comm -23 /tmp/plugin.txt /tmp/mcp.txt   # endpoints with no tool
 comm -13 /tmp/plugin.txt /tmp/mcp.txt   # tools with no endpoint -> the 12 kr_* externals
 ```
 
-Measured on the current tree: **320 built-in endpoints + 12 external = 332**, against **351 tools**
-(320 that reach Unreal, 12 `kr_*`, 18 `bl_*`, 1 `mif_*`). Both columns of the diff are now EMPTY —
+Measured on the current tree: **320 built-in endpoints + 12 external = 332**, against **353 tools**
+(320 that reach Unreal, 12 `kr_*`, 20 `bl_*`, 1 `mif_*`). Both columns of the diff are now EMPTY —
 `parity_check` reports no drift and no exempted gaps:
 
 - ✅ **0 endpoints with no tool.** There used to be five — `set_variable_type`,
