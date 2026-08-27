@@ -38,6 +38,8 @@ add_parent_call.ownerclass
 add_parent_call.targetclass
 add_pin.pin
 add_sublevel.level
+analyze_skeletal_split.mesh
+analyze_skeletal_split.skeletalmesh
 apply_graph_patch.ops
 audit_unused.ignorereferencers
 audition_sound.sound

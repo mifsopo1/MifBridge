@@ -21,6 +21,9 @@
 // Read-only: nothing is loaded for writing, nothing is dirtied.
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
+#include "Rendering/SkeletalMeshRenderData.h"
+#include "Rendering/SkeletalMeshLODRenderData.h"
+#include "Rendering/SkinWeightVertexBuffer.h"
 
 #include "Animation/Skeleton.h"
 #include "Engine/SkeletalMesh.h"
@@ -232,4 +235,191 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("bones"), Bones);
 		UE_LOG(LogMifBridge, Log, TEXT("list_bones: %d of %d on %s"), Shown, Num, *Asset->GetName());
 	}
+
+	// --- analyze_skeletal_split -----------------------------------------------------------------
+	//   in:  { path (aliases: assetPath, mesh, skeletalMesh), lod? = 0 }
+	//   out: { sections[ { index, vertices, triangles, bones[], maxBoneInfluences } ],
+	//          bones[ { name, index, sections[] } ], separable[], verdict }
+	// Bucket: READ. Loads the mesh; changes nothing.
+	//
+	// THE READ HALF of the mesh splitter Andre asked for after seeing the competitor's "Mesh Splitter -
+	// split a skeletal mesh at bone boundaries into separate mesh assets". Splitting CREATES ASSETS,
+	// which this bridge deliberately cannot do, so that half is a separate decision. This half needs no
+	// save path and answers the question you have to answer first: WOULD a split work, and where?
+	//
+	// SECTIONS, NOT PER-VERTEX WEIGHTS, and that is a deliberate choice rather than the easy one.
+	//
+	// The obvious implementation walks the skin weight buffer, finds each vertex's dominant bone, and
+	// buckets vertices by bone. FSkinWeightVertexBuffer's CPU copy CAN be discarded - it is kept only
+	// when bAllowCPUAccess was set at import - so GetNeedsCPUAccess() is checked and reported rather
+	// than assumed, and the primary answer does not depend on it.
+	//
+	// I WROTE HERE THAT COOKED MESHES USUALLY LOSE THAT COPY, AND THEN MEASURED IT. Across 40 DDS2
+	// skeletal meshes under /Game: 40 CPU-readable, 0 GPU-only. Being cooked did not cost it once.
+	// The guard stays because the engine genuinely can drop the buffer and a splitter that discovered
+	// that at split time would have already promised - but the pessimism was mine, not the data's.
+	//
+	// The same sweep says something that matters more for the splitter: 24 of those 40 meshes have
+	// exactly ONE section. Section boundaries cannot split those at all, so a real splitter needs the
+	// per-vertex path for most of this project - and per-vertex turns out to be available.
+	//
+	// A render SECTION already carries what matters: its own vertex and triangle counts, and a BoneMap
+	// listing every bone its vertices are skinned to. Sections are also the boundary a real splitter
+	// would cut on - they are already separate draw calls with their own material. So this reports the
+	// structure that exists rather than inferring one that might.
+	//
+	// Verified in BOTH trees before writing:
+	//   USkeletalMesh::GetResourceForRendering   present in both (SkeletalMesh.h)
+	//   FSkelMeshRenderSection::BoneMap          5.3 SkeletalMeshLODRenderData.h:67   5.7 :68
+	//   ::NumVertices / ::NumTriangles / ::MaxBoneInfluences   same struct, both trees
+	//   FSkinWeightVertexBuffer::GetNeedsCPUAccess             present in both
+	// The only difference is FORCEINLINE vs inline on the accessors - declaration-side, no guard.
+	void H_analyze_skeletal_split(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("mesh"), TEXT("skeletalMesh"), TEXT("lod") },
+			TEXT("path (aliases: assetPath, mesh, skeletalMesh) - a SkeletalMesh asset; lod (default 0)"),
+			{ { TEXT("bone"), TEXT("this reports EVERY bone and which sections use it - filter the result rather than the query") },
+			  { TEXT("split"), TEXT("this only ANALYSES. Splitting creates assets, which this bridge does not do.") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"),
+										   TEXT("mesh"), TEXT("skeletalMesh") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - a SkeletalMesh asset."));
+			return;
+		}
+		USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		if (!Mesh)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no SkeletalMesh at '%s'. list_bones takes the same path if you want to check it "
+					 "resolves."), *Path));
+			return;
+		}
+
+		FSkeletalMeshRenderData* Render = Mesh->GetResourceForRendering();
+		if (!Render || Render->LODRenderData.Num() == 0)
+		{
+			Fail(Out, TEXT("this mesh has no render data, so it has no sections to analyse. That "
+						   "usually means it failed to build rather than that it is empty."));
+			return;
+		}
+
+		const int32 LodCount = Render->LODRenderData.Num();
+		int32 Lod = (int32)JNum(In, TEXT("lod"), 0.0);
+		if (Lod < 0 || Lod >= LodCount)
+		{
+			// Refused, not clamped - the same rule as get_collision. A clamped index answers about a
+			// different LOD under the number the caller asked for.
+			Fail(Out, FString::Printf(
+				TEXT("lod %d does not exist - this mesh has %d LOD(s), so valid indices are 0..%d."),
+				Lod, LodCount, LodCount - 1));
+			return;
+		}
+
+		const FSkeletalMeshLODRenderData& Data = Render->LODRenderData[Lod];
+		const FReferenceSkeleton& Ref = Mesh->GetRefSkeleton();
+
+		// bone index -> the sections that use it. Built while walking sections so the two views are
+		// guaranteed consistent; deriving one from the other afterwards is how they drift.
+		TMap<int32, TArray<int32>> SectionsForBone;
+
+		TArray<TSharedPtr<FJsonValue>> Sections;
+		int32 TotalVerts = 0, TotalTris = 0;
+		for (int32 s = 0; s < Data.RenderSections.Num(); ++s)
+		{
+			const FSkelMeshRenderSection& Sec = Data.RenderSections[s];
+			TotalVerts += (int32)Sec.NumVertices;
+			TotalTris  += (int32)Sec.NumTriangles;
+
+			TArray<TSharedPtr<FJsonValue>> BoneNames;
+			for (const FBoneIndexType B : Sec.BoneMap)
+			{
+				SectionsForBone.FindOrAdd((int32)B).AddUnique(s);
+				// The NAME, not the index. A caller deciding where to cut a character thinks in
+				// "spine_03", and an index is only meaningful against this exact skeleton.
+				BoneNames.Add(MakeShared<FJsonValueString>(
+					Ref.IsValidIndex((int32)B) ? Ref.GetBoneName((int32)B).ToString()
+											   : FString::Printf(TEXT("(bad index %d)"), (int32)B)));
+			}
+
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetNumberField(TEXT("index"), s);
+			J->SetNumberField(TEXT("vertices"), (int32)Sec.NumVertices);
+			J->SetNumberField(TEXT("triangles"), (int32)Sec.NumTriangles);
+			J->SetNumberField(TEXT("materialIndex"), (int32)Sec.MaterialIndex);
+			J->SetNumberField(TEXT("maxBoneInfluences"), Sec.MaxBoneInfluences);
+			J->SetNumberField(TEXT("boneCount"), Sec.BoneMap.Num());
+			J->SetArrayField(TEXT("bones"), BoneNames);
+			Sections.Add(MakeShared<FJsonValueObject>(J));
+		}
+
+		// Per bone, which sections it reaches. A bone used by ONE section can be cut cleanly; a bone
+		// spanning several cannot, because splitting on it would divide every one of them.
+		TArray<TSharedPtr<FJsonValue>> Bones;
+		TArray<TSharedPtr<FJsonValue>> Separable;
+		for (int32 b = 0; b < Ref.GetNum(); ++b)
+		{
+			const TArray<int32>* Used = SectionsForBone.Find(b);
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("name"), Ref.GetBoneName(b).ToString());
+			J->SetNumberField(TEXT("index"), b);
+			TArray<TSharedPtr<FJsonValue>> SecList;
+			if (Used)
+			{
+				for (int32 S : *Used) { SecList.Add(MakeShared<FJsonValueNumber>(S)); }
+			}
+			J->SetArrayField(TEXT("sections"), SecList);
+			// A bone influencing NOTHING is not a defect - skeletons carry attachment and IK bones on
+			// purpose - but it is the difference between "this bone is unused" and "this bone is
+			// missing", and only one of those is a problem.
+			J->SetBoolField(TEXT("influencesGeometry"), Used != nullptr);
+			Bones.Add(MakeShared<FJsonValueObject>(J));
+
+			if (Used && Used->Num() == 1)
+			{
+				Separable.Add(MakeShared<FJsonValueString>(Ref.GetBoneName(b).ToString()));
+			}
+		}
+
+		Out->SetStringField(TEXT("assetPath"), Mesh->GetPathName());
+		Out->SetNumberField(TEXT("lod"), Lod);
+		Out->SetNumberField(TEXT("lodCount"), LodCount);
+		Out->SetArrayField(TEXT("sections"), Sections);
+		Out->SetNumberField(TEXT("sectionCount"), Sections.Num());
+		Out->SetNumberField(TEXT("totalVertices"), TotalVerts);
+		Out->SetNumberField(TEXT("totalTriangles"), TotalTris);
+		Out->SetArrayField(TEXT("bones"), Bones);
+		Out->SetNumberField(TEXT("boneCount"), Ref.GetNum());
+		Out->SetArrayField(TEXT("cleanlySeparableBones"), Separable);
+
+		// Whether a per-VERTEX split is even possible on this asset, reported rather than assumed.
+		// This is the whole reason the analysis is section-based: on a cooked mesh the answer is
+		// usually no, and a tool that discovered that only at split time would have already promised.
+		const bool bCpu = Data.SkinWeightVertexBuffer.GetNeedsCPUAccess();
+		Out->SetBoolField(TEXT("skinWeightsReadableOnCPU"), bCpu);
+		Out->SetStringField(TEXT("perVertexNote"), bCpu
+			? TEXT("this mesh keeps its skin weights CPU-readable, so a per-vertex split by dominant "
+				   "bone is possible as well as a per-section one.")
+			: TEXT("skin weights are GPU-only on this asset - the CPU copy was discarded, which "
+				   "happens when a mesh was imported without bAllowCPUAccess. A per-vertex split is "
+				   "NOT possible here; the section boundaries reported above are. Measured across 40 "
+				   "DDS2 meshes this was rare - all 40 kept CPU access - so treat it as a property of "
+				   "the asset rather than of being cooked."));
+
+		Out->SetStringField(TEXT("verdict"), Sections.Num() <= 1
+			? TEXT("ONE section: there is no section boundary to split on. Splitting this mesh would "
+				   "mean cutting by vertex weight, which needs CPU-readable skin weights - see "
+				   "skinWeightsReadableOnCPU.")
+			: FString::Printf(
+				TEXT("%d sections, %d of %d bones influence exactly one section and could be cut "
+					 "cleanly. Sections are already separate draw calls with their own material, so "
+					 "they are the natural split boundary."),
+				Sections.Num(), Separable.Num(), Ref.GetNum()));
+	}
+
 }

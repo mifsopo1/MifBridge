@@ -296,6 +296,7 @@ namespace MifBridge
 			MIF_BIND(describe_animation);
 			MIF_BIND(list_sockets);
 			MIF_BIND(list_bones);
+			MIF_BIND(analyze_skeletal_split);
 			MIF_BIND(set_blendspace_samples);
 			MIF_BIND(set_bone_translation_retargeting);
 			MIF_BIND(list_water_bodies);

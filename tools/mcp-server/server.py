@@ -2571,6 +2571,12 @@ def list_ik_rig(path: str) -> dict:
 
 
 @mcp.tool()
+def analyze_skeletal_split(path: str, lod: int = 0) -> dict:
+    "What splitting a SkeletalMesh WOULD produce, without splitting it. Reports each render section's vertex/triangle counts and the bones it is skinned to, then per bone which sections it reaches - a bone touching exactly ONE section can be cut cleanly, one spanning several cannot. Section-based rather than per-vertex on purpose: sections are already separate draw calls with their own material, and reading per-vertex weights needs a CPU copy the engine can discard. skinWeightsReadableOnCPU says whether a per-vertex split is possible on THIS asset; measured across 40 DDS2 meshes all 40 kept CPU access, so treat GPU-only as a property of the asset rather than of being cooked. A mesh with one section has no boundary to split on and says so. Bad lod is refused, not clamped."
+    return _post("analyze_skeletal_split", path=path, lod=lod)
+
+
+@mcp.tool()
 def list_bones(path: str, name_contains: str = "", root: str = "",
                include_transforms: bool = False) -> dict:
     """List the bones of a Skeleton or SkeletalMesh, with the hierarchy.

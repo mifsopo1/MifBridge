@@ -1308,6 +1308,9 @@ namespace MifBridge
 	/** The bone hierarchy of a Skeleton or SkeletalMesh. Nothing else could name a bone:
 	 *  ReferenceSkeleton is not a UPROPERTY, so reflection cannot reach it. */
 	MIF_DECL(list_bones);
+	/** What a mesh split WOULD produce, per section and per bone. The read half of the mesh
+	 *  splitter - splitting creates assets, which this bridge does not do. */
+	MIF_DECL(analyze_skeletal_split);
 	// Ported from the Curfew (UE 5.7) deployment on 2026-08-26 - written there, never reached this repo.
 	MIF_DECL(set_blendspace_samples);
 	MIF_DECL(set_bone_translation_retargeting);
