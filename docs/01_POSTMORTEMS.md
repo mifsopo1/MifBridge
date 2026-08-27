@@ -1232,3 +1232,62 @@ paying repeatedly for an answer I already have?*
    build; the constraint on stacking is *risk*, not tokens, and Live Coding already forces it.
 4. **Spend workflow agents on questions worth 1M tokens.** They are the largest single line item and
    they earned it twice tonight - but a question answerable by one grep should get one grep.
+
+
+## A READ endpoint killed the editor, because an editor-only getter is not a getter (2026-08-27)
+
+**Symptom.** `analyze_skeletal_split` - a pure read, no writes, no transaction - took the editor down
+on the first cooked mesh it touched. The HTTP call came back
+`ConnectionResetError: [WinError 10054]`, which is what a dead process looks like from the client.
+
+**Diagnosed in one command**, which is the part worth noting:
+
+```
+python tools/mifwatch.py
+  >>> LAST CALL, NEVER RETURNED: analyze_skeletal_split
+```
+
+The crash journal named the endpoint that was in flight. PM-013 had to reconstruct the same kind of
+answer by hand from log timestamps.
+
+**Root cause.** The offending line looked completely safe:
+
+```cpp
+const FSkeletalMeshModel* Imported = Mesh->GetImportedModel();   // returns null when absent, surely
+```
+
+It is not a plain accessor. `USkeletalMesh::GetImportedModel()` calls
+`WaitUntilAsyncPropertyReleased(ESkeletalMeshAsyncProperties::ImportedModel)` before returning. On a
+**cooked** asset that property was stripped at cook time, so the engine is asked to wait for
+something that will never arrive - and takes the process with it rather than returning null.
+
+I had already read the declaration and seen the `WaitUntilAsyncPropertyReleased` call in it. I read it
+as a threading detail rather than as the thing that would kill the editor.
+
+**Fix.** Test the package flag **before** touching the accessor:
+
+```cpp
+const bool bCooked = Pkg && Pkg->HasAnyPackageFlags(PKG_Cooked);
+if (bCooked) { /* answer from the flag - GetImportedModel is never called */ }
+```
+
+A cooked mesh gets the same answer, arrived at without the call that crashes.
+
+### The general rule, and it is broader than this function
+
+On a cooked asset, **"does this editor-only accessor return null?" is the wrong question**, because
+the accessor may not survive being asked. The right question is **"is this cooked?"**, asked first.
+
+`docs/02_GOTCHAS.md` section 6c says cooked assets keep runtime data and lose editor data. This adds
+the sharp edge: some of the getters for that lost data **assert or hang rather than returning null**.
+Null-checking the result assumes you get a result.
+
+**And it was a READ.** Every safety habit on this project is built around mutations - transactions,
+confirm gates, the write-mode gate, scratch paths. None of them apply to a read, and none of them
+would have helped. A read that only ever observes can still terminate the process, and the only
+protection is knowing which observations are safe to make.
+
+**What it bought.** The measurement the crash was for: all 30 DDS2 skeletal meshes sampled are cooked
+and **none** has an imported model. A mesh splitter cannot build new mesh assets from DDS2 content at
+all - there is nothing to build from. That is a real answer to a real question, and worth the
+restart.

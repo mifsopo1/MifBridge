@@ -21,6 +21,10 @@
 // Read-only: nothing is loaded for writing, nothing is dirtied.
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
+#include "UObject/Package.h"   // PKG_Cooked - tested BEFORE any editor-only accessor
+#if WITH_EDITORONLY_DATA
+#include "Rendering/SkeletalMeshModel.h"   // FSkeletalMeshModel - editor-only source data
+#endif
 #include "Rendering/SkeletalMeshRenderData.h"
 #include "Rendering/SkeletalMeshLODRenderData.h"
 #include "Rendering/SkinWeightVertexBuffer.h"
@@ -396,6 +400,66 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("bones"), Bones);
 		Out->SetNumberField(TEXT("boneCount"), Ref.GetNum());
 		Out->SetArrayField(TEXT("cleanlySeparableBones"), Separable);
+
+		// CAN A NEW MESH BE BUILT FROM THIS ONE AT ALL? The question the splitter actually turns on,
+		// and it is not the same as whether the skin weights are readable.
+		//
+		// Splitting means CREATING a skeletal mesh, and the engine builds one from a
+		// FSkeletalMeshModel / FMeshDescription - editor-only data, reached through GetImportedModel()
+		// and GetMeshDescription(), both inside #if WITH_EDITORONLY_DATA. An editor BUILD has that API.
+		// A COOKED ASSET loaded into that editor does not necessarily carry the DATA: cooking strips
+		// it, which is the whole subject of docs/02 section 6c.
+		//
+		// So this is reported per mesh rather than assumed either way. Without an imported model a
+		// splitter can read what a split would look like - the section and bone analysis above - and
+		// cannot produce the result.
+		// THE COOKED CHECK COMES FIRST, AND IT IS NOT AN OPTIMISATION - IT IS THE FIX.
+		//
+		// The first version of this called GetImportedModel() unconditionally and KILLED THE EDITOR on
+		// the first cooked mesh it touched. The crash journal named the endpoint (analyze_skeletal_split
+		// started, never finished), which is exactly what it exists for.
+		//
+		// GetImportedModel() is not a plain getter: it calls
+		// WaitUntilAsyncPropertyReleased(ESkeletalMeshAsyncProperties::ImportedModel) first. On a
+		// COOKED asset that property was stripped at cook time, and asking the engine to wait for
+		// something that will never exist takes the process down rather than returning null.
+		//
+		// So the package flag is tested BEFORE the API is touched. A cooked mesh gets its answer from
+		// the flag alone - which is the same answer, arrived at without the call that crashes.
+		//
+		// The general lesson, and docs/02 section 6c says it about other systems: on a cooked asset,
+		// "does this editor-only accessor return null?" is the wrong question. The right one is "is
+		// this cooked?", asked first, because the accessor may not survive being asked.
+		const UPackage* Pkg = Mesh->GetPackage();
+		const bool bCooked = Pkg && Pkg->HasAnyPackageFlags(PKG_Cooked);
+		Out->SetBoolField(TEXT("cooked"), bCooked);
+
+		if (bCooked)
+		{
+			Out->SetBoolField(TEXT("hasImportedModel"), false);
+			Out->SetStringField(TEXT("buildNote"),
+				TEXT("this mesh is COOKED, so its editor-only source data was stripped and a splitter "
+					 "could not build a new mesh from it - there is nothing to build FROM. The section "
+					 "and bone analysis above is still accurate. Note this is decided from the package "
+					 "flag WITHOUT calling GetImportedModel(), which does not survive being called on a "
+					 "cooked asset."));
+		}
+		else
+		{
+#if WITH_EDITORONLY_DATA
+			const FSkeletalMeshModel* Imported = Mesh->GetImportedModel();
+			const bool bHasImported = Imported != nullptr && Imported->LODModels.Num() > 0;
+			Out->SetBoolField(TEXT("hasImportedModel"), bHasImported);
+			Out->SetStringField(TEXT("buildNote"), bHasImported
+				? TEXT("uncooked and keeps its imported model, so a splitter could BUILD new mesh "
+					   "assets from this one.")
+				: TEXT("uncooked, but no imported model is present - unusual, and worth reporting."));
+#else
+			Out->SetBoolField(TEXT("hasImportedModel"), false);
+			Out->SetStringField(TEXT("buildNote"),
+				TEXT("this MifBridge was built without editor-only data."));
+#endif
+		}
 
 		// Whether a per-VERTEX split is even possible on this asset, reported rather than assumed.
 		// This is the whole reason the analysis is section-based: on a cooked mesh the answer is

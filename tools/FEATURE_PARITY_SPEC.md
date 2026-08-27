@@ -1599,7 +1599,19 @@ what an untracked item does. Tracked now.
       DDS2 has 17 behavior trees. See also the separate item on behavior tree AUTHORING - the viewer
       is the read side and does not need it.
 
-- [ ] **Mesh splitter - split a skeletal mesh at bone boundaries into separate mesh assets.**
+- [~] **Mesh splitter** - the ANALYSIS is built; the SPLIT is impossible on DDS2. 2026-08-27.
+      MEASURED, not guessed. analyze_skeletal_split now reports `cooked` and `hasImportedModel`.
+      Across 30 DDS2 skeletal meshes: 30 cooked, 0 with an imported model.
+      Splitting means CREATING a skeletal mesh, and the engine builds one from editor-only
+      source data (FSkeletalMeshModel / FMeshDescription). Cooking strips it. There is
+      nothing to build FROM, so the splitter cannot work on DDS2 content at any effort.
+      It REMAINS POSSIBLE on an uncooked project such as Curfew, where meshes keep that data.
+      Two earlier claims of mine were wrong and are corrected in the record: I said cooked
+      meshes usually lose CPU-readable skin weights (40 of 40 keep them), and I sized this as
+      'a project, not an evening' partly for that reason. The real blocker is different and
+      absolute.
+      Andre's call if he wants it for Curfew - the analysis half already tells you whether any
+      given mesh can be split before you try.
       THE ONE I DROPPED. From the competitor's 'BUILT-IN TECH ART TOOLS' screenshot: pick a skeletal
       mesh, tick bone zones (Head, Torso, Arm L, ...), get one mesh asset per partition.
       Much the largest of the four. It is real geometry work - splitting skinned vertex data at bone
