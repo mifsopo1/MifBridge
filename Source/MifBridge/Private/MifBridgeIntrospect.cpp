@@ -133,8 +133,9 @@ namespace MifBridge
 		TArray<TSharedPtr<FJsonValue>> Arr;
 		int32 CookedListed = 0;
 		bool bTruncated = false;
-		for (const FAssetData& Asset : Assets)
+		for (int32 Index = 0; Index < Assets.Num(); ++Index)
 		{
+			const FAssetData& Asset = Assets[Index];
 			const FString ObjectPath = Asset.GetObjectPathString();
 			if (!Filter.IsEmpty() && !ObjectPath.Contains(Filter))
 			{
@@ -146,9 +147,16 @@ namespace MifBridge
 			{
 				continue;
 			}
-			// Reported per row rather than inferred from the id's _C suffix, because the caller should
-			// not have to parse a path to learn that the graphs are unreadable.
-			const bool bCooked = Asset.AssetClassPath == UBlueprintGeneratedClass::StaticClass()->GetClassPathName();
+			// FROM WHICH QUERY, not from the class path. This compared AssetClassPath against
+			// UBlueprintGeneratedClass exactly, and a WidgetBlueprintGeneratedClass is a SUBCLASS
+			// living in /Script/UMG - so every cooked widget and anim blueprint was listed correctly
+			// and then labelled cooked:false. The rows were right and the flag was wrong, which is
+			// the same shape of defect this endpoint was just fixed for.
+			//
+			// The append order is the exact answer: everything below NumUncooked came from the
+			// UBlueprint query. Dedup keeps the FIRST hit, so a blueprint registered under both
+			// spellings is correctly reported as uncooked.
+			const bool bCooked = Index >= NumUncooked;
 			if (bCooked) { ++CookedListed; }
 			TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
 			Json->SetStringField(TEXT("blueprintId"), ObjectPath);

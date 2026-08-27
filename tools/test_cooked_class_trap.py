@@ -176,6 +176,36 @@ def main():
           all("cooked" in b for b in rows[:200]) if rows else False,
           "some rows have no cooked field")
 
+    # THE FLAG MUST BE RIGHT, not merely present. The check above passed while every cooked WIDGET
+    # and ANIM blueprint was labelled cooked:false - the rows were all there and the label was wrong,
+    # because the first implementation compared AssetClassPath against UBlueprintGeneratedClass
+    # exactly and WidgetBlueprintGeneratedClass is a subclass living in /Script/UMG.
+    by_pkg = {b.get("package"): b for b in rows}
+    for gen_cls in ("WidgetBlueprintGeneratedClass", "AnimBlueprintGeneratedClass",
+                    "BlueprintGeneratedClass"):
+        f = M.call("find_assets", {"class": gen_cls, "limit": 8})
+        sample = [a for a in (f.get("assets") or [])][:5]
+        if not sample:
+            continue
+        listed = [a for a in sample if a.get("packageName") in by_pkg]
+        check("T755 %s assets are listed at all" % gen_cls, len(listed) == len(sample),
+              "%d of %d missing from list_blueprints" % (len(sample) - len(listed), len(sample)))
+        # A package registered under BOTH spellings is legitimately uncooked, so only assert the
+        # flag on those the registry knows ONLY as a generated class.
+        plain = gen_cls.replace("GeneratedClass", "")
+        gen_only = []
+        for a in listed:
+            p = M.call("find_assets", {"class": plain, "nameContains": a.get("name", "")[:-2],
+                                       "limit": 3})
+            if (p.get("count") or 0) == 0:
+                gen_only.append(a)
+        if gen_only:
+            wrong = [a.get("name") for a in gen_only if not by_pkg[a["packageName"]].get("cooked")]
+            check("T755 %s ones are flagged cooked:true" % gen_cls, not wrong,
+                  "listed but labelled uncooked: %s" % wrong[:3])
+        else:
+            print("  (%s: every sample also exists uncooked - flag not asserted)" % gen_cls)
+
     print("")
     print("=== T756: no blueprint is listed twice ===")
     # An UNCOOKED blueprint is registered under BOTH spellings, so merging the two queries without

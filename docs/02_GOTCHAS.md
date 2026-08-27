@@ -1743,4 +1743,20 @@ says what cooked costs you and what to do instead. Deduplicated by **package**, 
 blueprint is registered under *both* spellings and merging without a key would have been wrong in the
 other direction — harder to spot than the original bug.
 
-`tools/test_cooked_class_trap.py` covers both endpoints, 25 checks.
+### And the fix mislabelled two of the three families
+
+The first version flagged each row by comparing `AssetClassPath` against `UBlueprintGeneratedClass`
+**exactly**. A `WidgetBlueprintGeneratedClass` is a *subclass*, and it lives in `/Script/UMG` — so
+every cooked widget and anim blueprint was listed correctly and then labelled `cooked:false`. 301 of
+1475 rows carried the wrong flag.
+
+The rows were right and the label was wrong, which is the same shape of defect the endpoint had just
+been fixed for. The test passed too, because it asserted the field was PRESENT rather than correct —
+a check that could not fail.
+
+Now taken from **which query the row came from**: everything below `NumUncooked` came from the
+`UBlueprint` pass. Exact, cheap, and it needs no class resolution. Dedup keeps the first hit, so a
+blueprint registered under both spellings is still correctly reported as uncooked.
+
+`tools/test_cooked_class_trap.py` covers all three endpoints, 37 checks — including one that asserts
+the flag's VALUE per family, not just its presence.
