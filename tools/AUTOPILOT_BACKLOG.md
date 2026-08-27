@@ -390,9 +390,17 @@ consumer of it.
 
 - [ ] Inheritance tree view - the one dashboard tab still missing.
       The competitor's is collapsible groups (UserWidget 156 blueprints, ActorComponent 36, ...) with
-      a coloured pill per class. Cheap IF the parent class can be read from an Asset Registry TAG
-      rather than by loading each Blueprint - check that first, because loading every Blueprint on
-      cooked content is the gotchas 6c hazard. STreeView is the widget.
+      a coloured pill per class. STreeView is the widget.
+      FEASIBLE WITHOUT LOADING ANYTHING - that was the open question and it is now answered.
+      Blueprint.cpp:988-989 registers both parent-class tags on every Blueprint:
+          OutTags.Add(FAssetRegistryTag(FBlueprintTags::ParentClassPath, ...));
+          OutTags.Add(FAssetRegistryTag(FBlueprintTags::NativeParentClassPath, ...));
+      so FAssetData::GetTagValue reads the parent straight off the registry and no Blueprint is
+      opened, which is what makes it safe on cooked content (gotchas 6c).
+      STILL TO CONFIRM: the exact symbol path for FBlueprintTags. Header greps for its declaration
+      came back inconsistent and the editor was busy at the time, so this was not settled. Check it
+      against a real asset before writing the handler rather than trusting a header search - and if
+      the symbol is awkward to reach, the tag KEY string works just as well through GetTagValue.
 
 - [ ] Mermaid export from the graph endpoints.
       Still worth doing BEFORE any more Slate graph work: it delivers most of the same understanding
