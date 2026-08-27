@@ -11,11 +11,20 @@
  *
  *   1. THE SPEC IS MET.       Blocks only while SPEC contains unchecked "- [ ]" items.
  *   2. DELIBERATE DECLINE.    "- [~]" means decided-against, with the reason on the following line.
- *                             The hook ignores those. This is the important one: several competitor
- *                             categories are structurally irrelevant to modding a COOKED game (you
- *                             cannot add C++ modules to a pak mod), so without a way to say "no, and
- *                             here is why", those items could never be ticked and the loop would
- *                             never end. Declining something with a reason is a finished decision.
+ *                             The hook ignores those, so an item that will never be built cannot
+ *                             keep the loop alive forever. Declining with a reason is finished.
+ *
+ *                             THE REASON MUST NOT BE "irrelevant to cooked modding". This file
+ *                             used to give exactly that as its example, and it was wrong in a way
+ *                             that quietly shrinks the product: MifBridge is a GENERAL UE5 TOOL
+ *                             that happens to be BUILT on a cooked editor. Something useless for
+ *                             pak-mod work can be essential for ordinary 5.7 development, and an
+ *                             example inviting that justification teaches every future session to
+ *                             decline it.
+ *
+ *                             A valid decline says the thing is impossible, already covered, or
+ *                             worthless to EVERY UE5 user - not that one test project has no use
+ *                             for it.
  *   3. THE KILL SWITCH.       Create OFF_SWITCH and it stops immediately, whatever the spec says.
  *   4. THE ITERATION CAP.     After MAX_CONTINUES it gives up, so an item that can never be finished
  *                             cannot loop forever. Resets when the spec is met or the run stops.
@@ -173,8 +182,10 @@ const next = open.slice(0, shown)
 const RULES =
   "\n\nSpec: " + SPEC + "\n" +
   "  * '- [x]' only when BUILT, TESTED and COMMITTED. '- [~]' to decline, reason on the next line.\n" +
-  "  * Judge value for BOTH projects - DDS2 cooked-game modding AND Curfew (UE 5.7). The old\n" +
-  "    DDS2-only rule was superseded on 2026-08-26.\n" +
+  "  * MifBridge is a GENERAL UE5 TOOL. Judge value for ALL of UE5 - 5.3 through 5.7,\n" +
+  "    COOKED AND UNCOOKED. DDS2 (cooked 5.3.2) and Curfew (uncooked 5.7) are the two it\n" +
+  "    is TESTED on, not the limit of who it is for.\n" +
+  "  * 'irrelevant to cooked modding' is NOT a valid reason to decline an item.\n" +
   "  * Verify coverage by READING handlers, never by endpoint name. self_audit is the live list.\n" +
   "  * Add new work as '- [ ]' lines so nothing is lost.\n" +
   "  * Do NOT save assets, start PIE, or touch anything outside the SDK editor.\n" +

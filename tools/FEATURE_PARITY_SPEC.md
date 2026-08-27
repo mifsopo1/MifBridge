@@ -48,9 +48,17 @@ Without `- [~]` this spec would be an infinite loop, because several of the comp
 are structurally irrelevant to modding a cooked game and no amount of work would ever tick them off.
 Declining something explicitly, with a reason, is a finished decision — not an unfinished task.
 
-**The measuring stick.** Value is judged for *DDS2 cooked-game modding on CookedEditorModKit*, not for
-general Unreal development and not for how impressive a feature list looks. A category the competitor
-wins on that a DDS2 modder would never reach for is not a gap worth money or time.
+**The measuring stick.** MifBridge is a **general UE5 tool that happens to be BUILT on a cooked
+editor**. Value is judged for **all of UE5 - 5.3 through 5.7, cooked AND uncooked** - not for how
+impressive a feature list looks.
+
+DDS2 (cooked 5.3.2) and Curfew (uncooked 5.7) are the two projects it is *tested* on. They are not the
+limit of who it is for, and **"a DDS2 modder would never reach for it" is NOT a reason to decline
+anything.** That was the old rule, it was superseded on 2026-08-26 (see the top of this file), and it
+survived down here for a day afterwards as a live-looking instruction contradicting the one above -
+which is exactly how a superseded rule keeps being applied.
+
+A real decline says the thing is impossible, already covered, or worthless to *every* UE5 user.
 
 **Coverage is judged by reading handlers, not by endpoint names.** Names mislead. The authoritative
 endpoint list is `tools/endpoints_current.json`, regenerated from the live editor's `self_audit`.
@@ -321,7 +329,9 @@ Never work from a typed list — one was fabricated once and a third of it was i
   Partition a landscape only splits into ALandscapeStreamingProxy actors when its GRID SIZE is
   changed, and that is not automatic on creation.
   The engine exposes ULandscapeSubsystem::ChangeGridSize, so an endpoint would be cheap - but judged
-  against DDS2 cooked-game modding it is not worth one. A modder works with terrain the game already
+  against DDS2 cooked-game modding it is not worth one - though note the measuring stick CHANGED on
+  2026-08-26 and this judgement predates it; an uncooked 5.7 project may well want terrain authoring.
+  A cooked-game modder works with terrain the game already
   ships, and new terrain from create_landscape is fine unproxied. Adding an endpoint whose only
   purpose is to make a test reachable is breadth for testing's sake.
   The only proxied terrain on this machine is inside Andre's real DDS2 maps, which must not be opened.
@@ -998,15 +1008,20 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       quietly lost. The endpoint now at least reports `removedCount` and `removedWidgets`, so the
       subtree is disclosed either way.
 
-- [~] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add
+- [ ] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add
+      REOPENED - declined because a cooked mod cannot add C++ modules. Curfew is UNCOOKED 5.7 and can. The decline text even said 'this is a real competitor advantage for general UE development'.
       C++ modules, so "read and write .cpp/.h and modify the codebase" has no target here. This is a
       real competitor advantage for general UE development and a non-feature for this use case.
-- [~] **Build Config** — same reason. The mod build is `trigger_cook` plus pak, which is already
+- [ ] **Build Config** — same reason. The mod build is `trigger_cook` plus pak, which is already
+      REOPENED - declined as 'the mod build is trigger_cook plus pak'. An uncooked 5.7 project has real build configuration.
       covered; there is no per-mod build configuration to edit.
-- [~] **MetaHuman** — requires MetaHuman assets and the plugin pipeline; not present in DDS2 and not
+- [ ] **MetaHuman** — requires MetaHuman assets and the plugin pipeline; not present in DDS2 and not
+      REOPENED - declined as 'not present in DDS2'. Gate it on the plugin being present, the way MIF_WITH_* already gates Niagara and IKRig, rather than on one project not using it.
       something a mod ships.
-- [~] **Chaos Vehicles** — DDS2 has no Chaos vehicle setup to mod.
-- [~] **Control Rig / IK & Retarget / Vertex Animation** — animation *authoring* pipelines. A mod
+- [ ] **Chaos Vehicles** — DDS2 has no Chaos vehicle setup to mod.
+      REOPENED - declined as 'DDS2 has no Chaos vehicle setup to mod'. Says nothing about 5.7.
+- [x] **Control Rig / IK & Retarget / Vertex Animation** — animation *authoring* pipelines. A mod
+      CORRECTED 2026-08-27: this says declined and the IK RIG HALF WAS BUILT ANYWAY - 18 endpoints, MifBridgeIKRig.cpp, ported to 5.6+ solver structs on 2026-08-27. A decline that the work then contradicted, left standing for days. Control Rig and Vertex Animation remain unbuilt and are tracked separately below.
       reuses the base game's rigs and animations; authoring new ones is a content-creation workflow
       done in the full editor, not through a bridge.
 - [~] **MetaSound authoring** — declined, but note the premise was nearly wrong: DDS2 contains **185**
@@ -1014,13 +1029,15 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       graphs is still a graph editor's job and out of scope. ASSIGNING and listing them is in scope
       and is folded into the Sound item above, which must therefore handle MetaSoundSource and not
       only SoundCue/SoundWave.
-- [~] **Gameplay Tags** — declined, and this one was my top priority until it was checked. DDS2 has
+- [ ] **Gameplay Tags** — declined, and this one was my top priority until it was checked. DDS2 has
+      REOPENED - declined on DDS2 having no DefaultGameplayTags.ini and the plugin disabled. That is a fact about DDS2, not about UE5; GameplayTags are standard in modern 5.7 projects. Check Curfew.
       no DefaultGameplayTags.ini, no GameplayTags settings in DefaultEngine.ini or DefaultGame.ini,
       the plugin is not enabled, and DDS2_GameMode has 0 GameplayTag-typed variables out of 50. What
       it uses instead is FName - the class is full of `name` keys and `name -> X` maps. Building a tag
       surface would have been a whole category nobody would touch. Reaching for FName-keyed lookups is
       already covered by the existing variable and map endpoints.
-- [~] **PCG** — procedural world generation. A DDS2 mod does not regenerate the world.
+- [ ] **PCG** — procedural world generation. A DDS2 mod does not regenerate the world.
+      REOPENED, and this is the one the old rule cost most. Declined as 'a DDS2 mod does not regenerate the world'. Curfew is a CITY BUILDER on 5.7 - procedural generation is close to its whole point.
 - [~] **Slate** — Slate is C++ UI. Mods use UMG, which is covered.
 - [~] **Async Tasks** — a Blueprint-graph concern already reachable through the normal node endpoints;
       there is no separate authoring surface to add.
@@ -1034,14 +1051,18 @@ engine has no such class registered in this build, which is as definitive as it 
 - [~] **GAS Abilities / Attribute Sets** — declined. `GameplayAbilities` is not enabled in
       DrugDealerSimulator2.uproject, and `find_assets` cannot even resolve the `GameplayAbility` or
       `AttributeSet` classes. DDS2 does not use GAS, so the entire category is a non-feature here.
-- [~] **PCG** — declined, now with evidence: `PCGGraph` does not resolve either. Confirms the earlier
+- [ ] **PCG** — declined, now with evidence: `PCGGraph` does not resolve either. Confirms the earlier
+      REOPENED, and this is the one the old rule cost most. Declined as 'a DDS2 mod does not regenerate the world'. Curfew is a CITY BUILDER on 5.7 - procedural generation is close to its whole point.
       reasoning rather than resting on it.
-- [~] **StateTree** — declined. Class does not resolve; DDS2 does not use it.
-- [~] **Sequencer** — declined for now. DDS2 contains exactly **4** LevelSequence assets against 3771
+- [ ] **StateTree** — declined. Class does not resolve; DDS2 does not use it.
+      REOPENED - declined as 'DDS2 does not use it'. That is a fact about one test project. StateTree is the modern UE5 answer to Behavior Trees and a 5.7 project may well be on it.
+- [ ] **Sequencer** — declined for now. DDS2 contains exactly **4** LevelSequence assets against 3771
+      REOPENED for the WRITE half - list_level_sequences and describe_level_sequence already exist. Declined on DDS2 having 4 LevelSequence assets, which is evidence about DDS2 only.
       SoundWaves. Cutscene authoring is not what this game is made of, and a mod adding one is a rare
       case. Revisit only if a mod actually needs it; the MovieScene plumbing from the UMG animation
       work would make it cheap when that day comes.
-- [~] **Control Rig / IK & Retarget / Vertex Animation** — declined, and the count backs it: **2**
+- [x] **Control Rig / IK & Retarget / Vertex Animation** — declined, and the count backs it: **2**
+      CORRECTED 2026-08-27: this says declined and the IK RIG HALF WAS BUILT ANYWAY - 18 endpoints, MifBridgeIKRig.cpp, ported to 5.6+ solver structs on 2026-08-27. A decline that the work then contradicted, left standing for days. Control Rig and Vertex Animation remain unbuilt and are tracked separately below.
       ControlRigBlueprints in the whole game. Nothing to mod.
 - [x] **Niagara — mostly already covered, and a category count would have scored it zero.** The
       13-agent audit found the reflection dot-path walker descends
@@ -1572,3 +1593,7 @@ what an untracked item does. Tracked now.
 
 - [ ] **Behavior tree: the WRITE half.** describe_behavior_tree and list_blackboard_keys read; DDS2
       has 17 behavior trees and no way to author one.
+
+- [ ] **Control Rig authoring.** Split out of the stale combined decline above. Genuinely not built.
+      Re-judge against uncooked 5.7 rather than against cooked modding.
+- [ ] **Vertex animation.** Same - split out, not built, needs judging on the new measuring stick.
