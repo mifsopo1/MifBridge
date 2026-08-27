@@ -1151,6 +1151,18 @@ engine has no such class registered in this build, which is as definitive as it 
       because Build.cs references it by module name.
       Same conclusion as the splitter: real on an UNCOOKED project such as Curfew, structurally
       impossible on DDS2.
+      WHICH MEANS THE OTHER SEVEN ARE NOT SETTLED, and saying so is the point of this paragraph. The
+      asset-count test has now been PROVEN wrong once, on the one entry that was re-examined properly.
+      Only GeometryScripting has a real answer; ChaosVehiclesPlugin, GameplayAbilities, LevelSnapshots,
+      LiveLink, MassEntity, ModelViewViewModel and ModularGameplay still rest on that weak test.
+      A first look at vehicles was already enough to make the point: 29 vehicle-named blueprint
+      classes appear in the inheritance tree while `find_assets {class:"ChaosVehicleWheel"}` says 0.
+      Whether any of them is actually a CHAOS vehicle is unresolved - the names may come from a
+      mounted content plugin - and it is exactly the sort of thing the headcount would miss.
+      THE RIGHT TEST, for whoever picks this up: not "how many assets of the plugin's signature class
+      exist" but "is there anything here this plugin could OPERATE ON". Those differ whenever the
+      plugin acts on a runtime container (GeometryScripting), on a level rather than an asset
+      (LevelSnapshots), or through a component on somebody else's actor (ModularGameplay, MVVM).
       ANDRE'S CALL, and it is a genuine fork rather than a backlog: drop the eight dependencies and
       take back the build cost, or keep them for CURFEW and build the endpoints there, where a 5.7
       uncooked project can actually exercise them. Building them here would mean shipping eight
