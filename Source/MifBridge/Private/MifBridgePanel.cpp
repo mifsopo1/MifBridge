@@ -406,6 +406,12 @@ public:
 							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
 							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 3))
 					]
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						MifTabButton(LOCTEXT("TabInherit", "INHERITANCE"), 4,
+							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
+							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 4))
+					]
 					+ SHorizontalBox::Slot().FillWidth(1.f)
 					[
 						SNew(SSpacer)
@@ -451,6 +457,18 @@ public:
 								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
 						]
 					]
+					+ SWidgetSwitcher::Slot()
+					[
+						// Lazy like the others. It walks every asset under /Game reading two registry
+						// tags - no loading, but 32000 assets is still work nobody asked for while
+						// they are reading the transcript.
+						SAssignNew(InheritHost, SBox)
+						[
+							SNew(STextBlock)
+								.Text(LOCTEXT("InheritLazy", "reading registry tags..."))
+								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
+						]
+					]
 				]
 			]
 		];
@@ -462,9 +480,11 @@ private:
 	TSharedPtr<SBox> BrainHost;
 	TSharedPtr<SBox> HeatHost;
 	TSharedPtr<SBox> PerfHost;
+	TSharedPtr<SBox> InheritHost;
 	int32 ActiveTab = 0;
 	bool  bBrainBuilt = false;
 	bool  bHeatBuilt = false;
+	bool  bInheritBuilt = false;
 
 	int32 GetActiveTab() const { return ActiveTab; }
 
@@ -481,6 +501,16 @@ private:
 		{
 			bHeatBuilt = true;
 			HeatHost->SetContent(MifBridge::MakeHeatmapWidget());
+		}
+		if (Index == 4 && !bInheritBuilt && InheritHost.IsValid())
+		{
+			// BUILT ONCE, unlike the performance tab below - and the difference is what the view is
+			// OF. Performance describes the OPEN LEVEL, which changes when Andre opens another map, so
+			// caching it showed a census of a level no longer loaded. Inheritance describes the
+			// PROJECT's assets, which do not change while the editor sits there. It also has its own
+			// refresh button, so a stale tree is one click from current rather than stuck.
+			bInheritBuilt = true;
+			InheritHost->SetContent(MifBridge::MakeInheritWidget());
 		}
 		// REBUILT EVERY TIME, not once. The first version cached these on first switch, and Andre
 		// opened IslaSombra to find the panel still describing Untitled_1 - a census of a level that

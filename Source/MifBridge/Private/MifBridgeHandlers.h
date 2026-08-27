@@ -132,6 +132,8 @@ namespace MifBridge
 	/** The brainmap canvas (MifBridgeBrainmap.cpp): a zoomable, pannable dependency graph, coloured
 	 *  by asset type and sized by referencer count. Same rule as the panel - reads, never writes. */
 	TSharedRef<SWidget> MakeBrainmapWidget();
+	/** The INHERITANCE tab. Registry tags only - loads nothing. */
+	TSharedRef<SWidget> MakeInheritWidget();
 	/** The complexity heatmap: every package under a prefix, sorted by connection count and
 	 *  coloured by RANK rather than absolute value - see the file header for why. */
 	TSharedRef<SWidget> MakeHeatmapWidget();

@@ -1527,7 +1527,7 @@ what an untracked item does. Tracked now.
       exactly those. With send_editor_key now gated an agent also cannot drive a focused combo box.
       Next up.
 
-- [ ] **Inheritance tree tab.**
+- [x] **Inheritance tree tab.** DONE 2026-08-27 - endpoint + panel tab, both engines.
       Confirmed feasible and cheap: FBlueprintTags::ParentClassPath is an ASSET REGISTRY TAG, so the
       whole tree can be built without loading a single blueprint (Blueprint.cpp:988). The competitor's
       Project Dashboard screenshot is exactly this, grouped by parent.
