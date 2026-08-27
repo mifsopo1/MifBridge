@@ -1131,6 +1131,26 @@ engine has no such class registered in this build, which is as definitive as it 
       So each of the eight sits exactly where MetaHuman sits: buildable by reading the headers,
       unverifiable against any content on this machine. Metasound was chosen out of the nine PRECISELY
       because it was the one that escaped that, with 185 real assets to test against.
+      GEOMETRYSCRIPTING - THE ASSET COUNT WAS THE WRONG TEST, and the right answer is worse. Counting
+      `DynamicMesh` assets said 0, but a DynamicMesh is a RUNTIME container that nobody saves, so that
+      number meant nothing. GeometryScript operates on StaticMeshes, and DDS2 has **5114** of them -
+      by the asset-count criterion it should have been the most verifiable item on the list.
+      It is blocked anyway, for the same structural reason the mesh splitter is, and this time it is
+      MEASURED: `CopyMeshFromStaticMesh` reads either SourceModel (stripped by cooking) or RenderData,
+      and 5.7's own enum documentation says "RenderData LODs in a StaticMesh Asset are only available
+      at Runtime if the bAllowCPUAccess flag was enabled on the Asset at Cook time"
+      (GeometryScriptTypes.h, EGeometryScriptLODType::RenderData).
+      **111 of 111 sampled /Game/ StaticMeshes have bAllowCPUAccess = false.** Not most - all.
+      HONEST LIMIT ON THAT CLAIM: the flag governs RUNTIME availability, and the SDK editor is an
+      editor build loading cooked content, which is a hybrid the documentation does not describe.
+      Proving it either way means calling into GeometryScript and finding out, and if the CPU buffers
+      are gone that is an editor crash rather than an error return - the PM-013 shape. The flag says
+      no on every mesh checked, which is enough to stop, and not enough to call it certain.
+      Both engines DO have EGeometryScriptLODType::RenderData, so this is not version drift. The
+      plugin also MOVED - Plugins/Experimental on 5.3, Plugins/Runtime on 5.7 - which changes nothing
+      because Build.cs references it by module name.
+      Same conclusion as the splitter: real on an UNCOOKED project such as Curfew, structurally
+      impossible on DDS2.
       ANDRE'S CALL, and it is a genuine fork rather than a backlog: drop the eight dependencies and
       take back the build cost, or keep them for CURFEW and build the endpoints there, where a 5.7
       uncooked project can actually exercise them. Building them here would mean shipping eight
