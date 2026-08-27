@@ -58,9 +58,36 @@ not exist would be a confusing lie), and before everything else — no handler, 
 | `full` | everything, i.e. the pre-2026-08-26 behaviour. |
 
 Refused operations are those no path check can make safe — they persist to disk, take the editor loop,
-or execute outside the process: `save_package`, `save_blueprint`, `save_dirty_packages`, `save_level_as`,
-`save_all`, `start_pie`, `stop_pie`, `run_console`, `exec_console`, `trigger_cook`, `new_level`,
-`load_level`, `quit_editor`, `restart_editor`, `build_navmesh`, `import_asset`.
+execute outside the process, **or can reach one of those without doing it themselves**:
+
+| Group | Endpoints |
+|---|---|
+| Persist to disk | `save_package`, `save_blueprint`, `save_dirty_packages`, `save_level_as`, `save_all` |
+| Take the editor loop | `start_pie`, `stop_pie` |
+| Execute outside the process | `run_console`, `exec_console`, `run_console_captured`, `trigger_cook` |
+| Destroy or replace the working set | `new_level`, `load_level`, `quit_editor`, `restart_editor` |
+| Long, unsupervised, writes into the project | `build_navmesh`, `import_asset` |
+| **Reach a save without being one** | `send_editor_key`, `invoke_editor_command` |
+
+**This list had drifted, and the last two groups are why it should not be read as authoritative.**
+
+The originally documented sixteen were chosen by asking *"does this endpoint mutate?"*.
+`send_editor_key` and `invoke_editor_command` both honestly answer **no** — one delivers a key event,
+the other runs a registered UI command — and both reach Save. The question that matters is **"can this
+reach something that does?"**
+
+`run_console_captured` is a different failure again, and the more instructive one: it was **not** an
+oversight in judgement. `MifBridge::RunEngineExec` is the single choke point onto `UEngine::Exec` and
+the list named two of its three callers. The claim was true when it was written; the family grew a
+member and the hand-maintained list did not.
+
+So the authority moved out of this table and into the tests. **`test_safety_gate.py` T636 derives the
+Exec-reaching endpoints from the source** — it finds every handler that calls `RunEngineExec` and
+asserts each is refused. A fourth one fails the test the day it is written, with nobody needing to
+remember this document exists.
+
+Treat the table above as orientation. `MifBridgeSafety.cpp` is the source of truth, and `self_audit`
+reports the live mode.
 
 ### Why it is an environment variable
 
