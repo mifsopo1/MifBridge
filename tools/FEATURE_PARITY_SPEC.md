@@ -1454,3 +1454,43 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
       Already fixed without waiting: the relative-path comment claimed containment that
       ConvertRelativePathToFull defeats, and the response now reports resolvedPath and
       insideExportRoot so a caller can see where the file actually went.
+
+## Read/write coverage audit, 2026-08-27 — three real read-only halves
+
+A workflow inventoried every endpoint by subsystem and by read-vs-write, classifying from HANDLER
+BODIES rather than names (it scanned for Modify(), MarkPackageDirty, FScopedTransaction, SpawnActor,
+controller calls, then hand-read everything that looked like a read - which caught the four-line
+forwarders and the IK Rig family, whose mutations go through a non-const controller and trip no
+generic marker).
+
+**Its headline number is wrong and the reason is worth keeping.** It reported 293 endpoints and said
+"ExternalRegistry() exists but nothing registers into it, so there is no runtime-added surface".
+MifKismetReconstructor is a SEPARATE PLUGIN that registers 12 kr_* endpoints at runtime. The agent
+scanned MifBridge's own source thoroughly and concluded about the whole system - a claim true within
+its scope and false outside it, which is the same shape as every other defect found this session.
+Use self_audit for the count; it asks the running DLL.
+
+**The inventory itself is sound, and these are the genuine read-only halves:**
+
+- [ ] **Niagara authoring - 3 reads, 0 writes.**
+      describe_niagara_system, list_niagara_emitters, list_niagara_user_parameters and nothing that
+      writes. Note the hazard already on file: duplicating a cooked UNiagaraSystem crashes the editor
+      (docs/02 section 6c), so DDS2 authoring is constrained. Curfew is uncooked and is not.
+
+- [ ] **Sequencer authoring - 2 reads, 0 writes.**
+      list_level_sequences and describe_level_sequence. Creating tracks and keys would make cutscene
+      work possible at all. Check UMovieScene::GetBindings' non-const deprecation on 5.7 first - it
+      is already a warning in our build.
+
+- [ ] **Behavior tree authoring - 2 reads, 0 writes.**
+      describe_behavior_tree and list_blackboard_keys. DDS2 has 17 behavior trees and nothing can
+      edit one. This is also what the competitor's diagram viewer renders, so the read side already
+      feeds a panel tab if we want one.
+
+- [ ] **Foliage is the INVERSE gap - 1 write, 0 reads.**
+      add_foliage_instances can place instances and nothing can enumerate them. A write with no
+      read-back is the exact shape this project keeps filing bugs about, and here it is structural:
+      there is no endpoint that could verify a foliage placement even in principle.
+
+Correctly read-only, NOT gaps: reflection (describe_class, resolve_struct, list_enum_values),
+blueprint graph introspection, and the property readers. Nothing to author there.
