@@ -126,6 +126,11 @@ void FMifBridgeModule::StartupModule()
 	UToolMenus::RegisterStartupCallback(
 		FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FMifBridgeModule::RegisterMenus));
 
+	// Scheduled HERE as well as from RegisterMenus. RegisterMenus runs from a ToolMenus startup
+	// callback whose timing is not ours to rely on, and ScheduleAutoOpen is idempotent - it guards
+	// itself with a static and will not schedule twice.
+	MifBridge::ScheduleAutoOpen();
+
 	UE_LOG(LogMifBridge, Log, TEXT("MifBridge module loaded (port %d, auto-start %s)."),
 		Port, CVarMifBridgeAutoStart.GetValueOnGameThread() ? TEXT("on") : TEXT("off"));
 }
@@ -205,6 +210,7 @@ void FMifBridgeModule::RegisterMenus()
 	// all in a process without one. RegisterPanel checks FSlateApplication::IsInitialized() as well,
 	// because EHostType::Editor DOES load in commandlets.
 	MifBridge::RegisterPanel();
+	MifBridge::ScheduleAutoOpen();
 
 	UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Tools");
 	if (!Menu)

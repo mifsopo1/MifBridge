@@ -115,6 +115,7 @@ namespace MifBridge
 	void RegisterPanel();
 	void UnregisterPanel();
 	void OpenPanel();
+	void ScheduleAutoOpen();
 	void OpenBrainmap();
 
 	void JournalOpen(int32 Port);
@@ -1452,6 +1453,11 @@ namespace MifBridge
 	// PERFORMANCE (MifBridgePerfView.cpp). A CENSUS of static content cost, not a profile - read
 	// the file header before trusting any number out of it as frame time.
 	MIF_DECL(perf_heavy_actors);
+
+	// UNREAL INSIGHTS (MifBridgeTrace.cpp). The census next door cannot tell you a Blueprint's
+	// Tick costs 4ms; nothing short of a profiler can, so this drives the real one.
+	MIF_DECL(trace_start);
+	MIF_DECL(trace_stop);
 	MIF_DECL(add_sublevel);
 	MIF_DECL(remove_sublevel);
 	MIF_DECL(set_sublevel_visibility);

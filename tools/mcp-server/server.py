@@ -2918,6 +2918,18 @@ def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: i
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def trace_start(channels: str = None) -> dict:
+    "Start an Unreal Insights trace, writing a .utrace under Saved/MifBridge/Traces. This is the answer to 'which Blueprint is burning frame time' that perf_heavy_actors cannot give: that one reports a static CENSUS (triangles, components, which actors tick), while a trace shows each Tick by name with its real cost. Default channels cpu,frame,bookmark,stats. Tracing costs performance while it runs - do the thing you want to measure, then call trace_stop."
+    return _post("trace_start", channels=channels)
+
+
+@mcp.tool()
+def trace_stop() -> dict:
+    "Stop the trace started by trace_start and report where the file went and how big it is. The size is the evidence it captured anything - a zero-byte trace means the channels produced no data, which otherwise looks identical to success. Stopping when nothing was started is not an error; it answers stopped:false so the call stays idempotent."
+    return _post("trace_stop")
+
+
+@mcp.tool()
 def perf_heavy_actors(limit: int = 40, sort_by: str = None) -> dict:
     "Rank the level's actors by STATIC content cost: LOD0 triangles, primitive components, material slots, and a rough draw estimate (components x material slots). Each row also reports trianglePercent, because a rank is only actionable next to a proportion. sort_by is one of triangles|components|materials|drawEst. IMPORTANT: this is a CENSUS, not a profiler - it cannot see a Blueprint burning milliseconds in Tick, and it is not frame time. get_perf_stats reports editor timing and its own caveat explains why that is the editor drawing its viewport rather than the game's fps. For real frame attribution use Unreal Insights; nothing here replaces it."
     return _post("perf_heavy_actors", limit=limit, sortBy=sort_by)

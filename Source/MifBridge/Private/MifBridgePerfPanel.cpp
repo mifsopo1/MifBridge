@@ -37,6 +37,10 @@ namespace MifPerfUI
 	{
 		FString Name, Class, Path;
 		int32 Tris = 0, Comps = 0, Mats = 0;
+		/** This actor ticks every frame. */
+		bool  bTicks = false;
+		/** Its tick comes from a BLUEPRINT, which is the expensive kind. */
+		bool  bBlueprintTick = false;
 	};
 }
 
@@ -79,9 +83,10 @@ public:
 				[
 					SNew(STextBlock)
 						.Text(LOCTEXT("Caveat",
-							"Static content cost - triangles, components, material slots. NOT frame "
-							"time, and it cannot see a Blueprint burning time in Tick. Use Unreal "
-							"Insights for real frame attribution."))
+							"Static content cost plus a TICK CENSUS. [BP TICK] means the actor runs Blueprint "
+							"code every frame - the usual cause of Blueprint burn - but this is not a "
+							"measurement: a cheap tick and an expensive one look identical here. For real "
+							"frame attribution, start a trace and open it in Unreal Insights."))
 						.AutoWrapText(true)
 						.ColorAndOpacity(FSlateColor(MifPerfUI::Hex(TEXT("FBA53E"))))
 						.Font(FCoreStyle::GetDefaultFontStyle("Regular", 7))
@@ -118,6 +123,17 @@ public:
 			R.Class = Actor->GetClass()->GetName();
 			R.Path = Actor->GetPathName();
 
+			// TICKING is the closest honest answer to "what is burning Blueprint time" that can be had
+			// without a profiler attached. It is a STATIC property - does this actor run code every
+			// frame - not a measurement of how long that code takes. An actor that ticks cheaply and one
+			// that ticks expensively look identical here, and the panel says so.
+			//
+			// The Blueprint distinction matters because a native tick is usually engine code doing
+			// something necessary, while a Blueprint tick is authored per-frame work and is the usual
+			// culprit. Detected by asking whether the class is Blueprint-generated, which needs no load.
+			R.bTicks = Actor->PrimaryActorTick.bCanEverTick && Actor->PrimaryActorTick.bStartWithTickEnabled;
+			R.bBlueprintTick = R.bTicks && Actor->GetClass()->ClassGeneratedBy != nullptr;
+
 			TArray<UPrimitiveComponent*> Prims;
 			Actor->GetComponents<UPrimitiveComponent>(Prims);
 			for (UPrimitiveComponent* P : Prims)
@@ -135,9 +151,15 @@ public:
 		Examined = Rows.Num();
 		Rows.Sort([](const MifPerfUI::FRow& A, const MifPerfUI::FRow& B) { return A.Tris > B.Tris; });
 
+		int32 Ticking = 0, BpTicking = 0;
+		for (const MifPerfUI::FRow& R : Rows)
+		{
+			if (R.bTicks) { ++Ticking; }
+			if (R.bBlueprintTick) { ++BpTicking; }
+		}
 		Summary = FText::FromString(FString::Printf(
-			TEXT("%s   -   %d actors with geometry, %lld triangles"),
-			*World->GetName(), Rows.Num(), (long long)TotalTris));
+			TEXT("%s   -   %d with geometry, %lld tris,  %d ticking (%d blueprint)"),
+			*World->GetName(), Rows.Num(), (long long)TotalTris, Ticking, BpTicking));
 		Refresh();
 	}
 
@@ -196,7 +218,11 @@ private:
 								[
 									SNew(STextBlock)
 										.Text(FText::FromString(FString::Printf(
-											TEXT("%d tris  -  %d comp  -  %d mat  -  %.1f%%"),
+											TEXT("%s%d tris  -  %d comp  -  %d mat  -  %.1f%%"),
+											// The badge earns its place: a ticking Blueprint is the
+											// thing you would actually go and look at.
+											R.bBlueprintTick ? TEXT("[BP TICK]  ")
+															 : (R.bTicks ? TEXT("[tick]  ") : TEXT("")),
 											R.Tris, R.Comps, R.Mats, Pct)))
 										.ColorAndOpacity(FSlateColor(MifPerfUI::Hex(TEXT("7B8296"))))
 										.Font(FCoreStyle::GetDefaultFontStyle("Regular", 7))

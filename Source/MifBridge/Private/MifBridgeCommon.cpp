@@ -372,6 +372,8 @@ namespace MifBridge
 			MIF_BIND(project_dependency_graph);
 			MIF_BIND(project_asset_distribution);
 			MIF_BIND(perf_heavy_actors);
+			MIF_BIND(trace_start);
+			MIF_BIND(trace_stop);
 			MIF_BIND(add_sublevel);
 			MIF_BIND(remove_sublevel);
 			MIF_BIND(set_sublevel_visibility);

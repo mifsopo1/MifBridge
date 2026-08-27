@@ -44,11 +44,14 @@
 
 #include "MifBridgeHandlers.h"
 #include "MifBridge.h"
+#include "MifBridgeLog.h"
 
 #include "Editor.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 
 #include "Brushes/SlateRoundedBoxBrush.h"
+#include "Containers/Ticker.h"
+#include "HAL/IConsoleManager.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
 #include "Styling/AppStyle.h"
@@ -62,6 +65,14 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
+
+static TAutoConsoleVariable<bool> CVarMifBridgeAutoOpen(
+	TEXT("mif.BridgeAutoOpen"),
+	true,
+	TEXT("Open the MifBridge panel automatically a couple of seconds after the editor starts. ")
+	TEXT("On by default - the panel used to be reachable only from a Tools menu entry that was easy ")
+	TEXT("to miss."),
+	ECVF_Default);
 
 #define LOCTEXT_NAMESPACE "MifBridgePanel"
 
@@ -438,7 +449,6 @@ private:
 	int32 ActiveTab = 0;
 	bool  bBrainBuilt = false;
 	bool  bHeatBuilt = false;
-	bool  bPerfBuilt = false;
 
 	int32 GetActiveTab() const { return ActiveTab; }
 
@@ -456,9 +466,16 @@ private:
 			bHeatBuilt = true;
 			HeatHost->SetContent(MifBridge::MakeHeatmapWidget());
 		}
-		if (Index == 3 && !bPerfBuilt && PerfHost.IsValid())
+		// REBUILT EVERY TIME, not once. The first version cached these on first switch, and Andre
+		// opened IslaSombra to find the panel still describing Untitled_1 - a census of a level that
+		// was no longer loaded, presented as current. A stale performance number is worse than none,
+		// because it gets acted on.
+		//
+		// The brainmap and heatmap stay lazy-but-cached: they describe ASSETS under a path prefix,
+		// which do not change when the world does. The perf view describes the LOADED LEVEL, which is
+		// exactly what changed.
+		if (Index == 3 && PerfHost.IsValid())
 		{
-			bPerfBuilt = true;
 			PerfHost->SetContent(MifBridge::MakePerfWidget());
 		}
 	}
@@ -794,7 +811,10 @@ namespace MifBridge
 				"Live transcript of the MifBridge HTTP bridge: port, safety-gate mode, and recent "
 				"calls colour-coded by work type. Read-only - the bridge does not depend on this "
 				"panel and runs headless without it."))
-			.SetMenuType(ETabSpawnerMenuType::Hidden);
+			// VISIBLE, not Hidden. It WAS Hidden, and Andre could not find it in his other editor - which
+			// is exactly what Hidden means: no Window-menu entry, so the only way in was a Tools menu item
+			// he did not know about. A tool nobody can find is a tool that does not exist.
+			.SetMenuType(ETabSpawnerMenuType::Enabled);
 
 
 		// The brainmap is a SECOND tab rather than a page inside the first. They answer different
@@ -814,7 +834,10 @@ namespace MifBridge
 				"The project dependency graph: zoom with the wheel, drag with right or middle mouse, "
 				"click a node to reveal it in the Content Browser. Colour is asset type, size is how "
 				"many things reference it."))
-			.SetMenuType(ETabSpawnerMenuType::Hidden);
+			// VISIBLE, not Hidden. It WAS Hidden, and Andre could not find it in his other editor - which
+			// is exactly what Hidden means: no Window-menu entry, so the only way in was a Tools menu item
+			// he did not know about. A tool nobody can find is a tool that does not exist.
+			.SetMenuType(ETabSpawnerMenuType::Enabled);
 	}
 
 	void UnregisterPanel()
@@ -824,6 +847,63 @@ namespace MifBridge
 			FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(BridgePanelTabName);
 			FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(BrainmapTabName);
 		}
+	}
+
+	// AUTO-OPEN, once, shortly after startup.
+	//
+	// Andre: "can you also make it auto open the window for mifbridge, i dont know how to open it in
+	// my other editor". A one-shot ticker rather than opening straight from RegisterMenus: the editor
+	// restores its saved layout AFTER module startup, and a tab invoked before that can be closed again
+	// by the restore. Two seconds clears it without being a visible delay.
+	//
+	// TryInvokeTab focuses the tab if the restored layout already contains it, so this is not a fight
+	// with the user's layout - it is a floor. mif.BridgeAutoOpen turns it off.
+	void ScheduleAutoOpen()
+	{
+		static bool bScheduled = false;
+		if (bScheduled || !FSlateApplication::IsInitialized() || IsRunningCommandlet()) { return; }
+		bScheduled = true;
+
+		// LOGGED, and it RETRIES. The first version fired once at 2s and left no trace, so when it did
+		// not appear there was no way to tell whether the timer never ran, ran too early, or ran and
+		// was undone by the layout restore. Now it says what it did, and it keeps trying for a few
+		// seconds because the moment the tab manager is ready is not something to guess at.
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([](float) -> bool
+		{
+			static int32 Attempts = 0;
+			++Attempts;
+
+			if (!CVarMifBridgeAutoOpen.GetValueOnAnyThread())
+			{
+				UE_LOG(LogMifBridge, Log, TEXT("auto-open disabled by mif.BridgeAutoOpen"));
+				return false;
+			}
+			if (!FSlateApplication::IsInitialized())
+			{
+				return Attempts < 12;
+			}
+
+			const TSharedPtr<SDockTab> Tab =
+				FGlobalTabmanager::Get()->TryInvokeTab(BridgePanelTabName);
+			if (Tab.IsValid())
+			{
+				UE_LOG(LogMifBridge, Log,
+					TEXT("auto-opened the MifBridge panel (attempt %d). Turn this off with "
+						 "mif.BridgeAutoOpen 0; the tab also lives under Window and under "
+						 "Tools > Mif Bridge: Live Panel."), Attempts);
+				return false;
+			}
+			// Not ready yet. Twelve attempts at 1s is twelve seconds, which is longer than any editor
+			// start observed here and still bounded - a ticker that never returns false is a leak.
+			if (Attempts >= 12)
+			{
+				UE_LOG(LogMifBridge, Warning,
+					TEXT("could not auto-open the MifBridge panel after %d attempts. Open it from "
+						 "Window, or Tools > Mif Bridge: Live Panel."), Attempts);
+				return false;
+			}
+			return true;
+		}), 1.0f);
 	}
 
 	void OpenPanel()
