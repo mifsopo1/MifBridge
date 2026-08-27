@@ -1158,10 +1158,129 @@ def op_extrude_skirt(params):
     }
 
 
+
+_MATERIAL_SLOT_KEYS = {"object", "slots", "allowResize"}
+
+
+def op_set_material_slots(params):
+    """Set an object's material slot names, in ORDER.
+
+    THE GAP THIS CLOSES WAS ALREADY DETECTED AND UNFIXABLE. mif_mesh_roundtrip
+    compares the material-slot SEQUENCE before and after a Blender edit and warns
+    when it differs, with the note "the mesh is valid, the assignment may not be -
+    a human decides". It warns because there was nothing it could call. Slot
+    ORDER is what decides which Unreal material lands on which face, so a
+    reordered slot list renders the wrong material on a mesh that is otherwise
+    perfect - and the round trip could see that and not act on it.
+
+    WHY NAMES AND NOT MATERIALS. A slot holds a bpy.types.Material. The round trip
+    cares about the SEQUENCE OF NAMES, because that is what lines up against
+    Unreal's FStaticMaterial array on reimport. So this takes names, reuses an
+    existing material of that name if one is in the file, and creates an empty one
+    only when it must - the material's CONTENT is irrelevant here and inventing a
+    shader would be inventing data.
+
+    THE COUNT IS NOT CHANGED BY DEFAULT. Adding or removing a slot silently
+    re-indexes every polygon's material_index and can leave faces pointing past the
+    end of the list. So a list whose length differs from the current slot count is
+    REFUSED unless allowResize is passed, and the refusal says what the counts are.
+
+    params:
+      object       (str, required)  the mesh object
+      slots        (list[str|null], required)  the slot names, in order
+      allowResize  (bool, default False)  permit changing the slot COUNT
+    """
+    reject_unknown(params, _MATERIAL_SLOT_KEYS, "set_material_slots")
+    obj = get_object(take(params, "object"), want_mesh=True)
+    slots = params.get("slots")
+    if not isinstance(slots, list) or not slots:
+        raise MifOpError("'slots' is required: a list of material names in ORDER, "
+                         "e.g. [\"M_Road\", \"M_Kerb\"]. null means an empty slot. "
+                         "Read the current order from object_info.materialSlots.")
+    for s in slots:
+        if s is not None and not isinstance(s, str):
+            raise MifOpError("every entry in 'slots' must be a string or null; got %r" % (s,))
+
+    before = [(s.material.name if s.material else None) for s in obj.material_slots]
+    allow_resize = take_bool(params, "allowResize", False)
+
+    if len(slots) != len(before) and not allow_resize:
+        # REFUSED rather than resized. Changing the count re-indexes polygons, and a
+        # face whose material_index now points past the end renders as the LAST slot
+        # with no error anywhere - exactly the silent-wrong-result this project keeps
+        # finding. Pass allowResize when that is genuinely what you want.
+        raise MifOpError(
+            "'%s' has %d material slot(s) and %d were given. Changing the COUNT "
+            "re-indexes every polygon's material_index, and a face left pointing past "
+            "the end renders as the last slot with no error. Pass allowResize:true if "
+            "that is intended. Current order: %s. NOTHING was changed."
+            % (obj.name, len(before), len(slots), before))
+
+    # Resize first, so the assignment loop below always has a slot to write into.
+    if allow_resize:
+        while len(obj.material_slots) < len(slots):
+            obj.data.materials.append(None)
+        while len(obj.material_slots) > len(slots):
+            obj.data.materials.pop()
+
+    created = []
+    for i, name in enumerate(slots):
+        if name is None:
+            obj.material_slots[i].material = None
+            continue
+        mat = bpy.data.materials.get(name)
+        if mat is None:
+            # Created EMPTY and reported. The name is what the round trip lines up
+            # against Unreal's slot array; the shader is Unreal's business, and
+            # inventing one here would be inventing data nobody asked for.
+            mat = bpy.data.materials.new(name=name)
+            created.append(mat.name)
+            if mat.name != name:
+                # Blender uniquifies a clashing name silently (M_Road -> M_Road.001).
+                # A slot named M_Road.001 will not line up with Unreal's M_Road, so
+                # this is reported rather than left to be discovered at reimport.
+                raise MifOpError(
+                    "asked for material '%s' but Blender created '%s' - a name clash "
+                    "was silently uniquified, and that name will NOT line up against "
+                    "Unreal's slot array on reimport. NOTHING further was changed."
+                    % (name, mat.name))
+        obj.material_slots[i].material = mat
+
+    after = [(s.material.name if s.material else None) for s in obj.material_slots]
+
+    # Every polygon's material_index must still be in range. Checked rather than
+    # assumed, because an out-of-range index is exactly the failure allowResize
+    # invites and it is invisible until something renders.
+    out_of_range = 0
+    if obj.type == "MESH" and len(after) > 0:
+        for poly in obj.data.polygons:
+            if poly.material_index >= len(after):
+                out_of_range += 1
+    elif len(after) == 0:
+        out_of_range = len(obj.data.polygons)
+
+    result = {
+        "object": obj.name,
+        "before": before,
+        "materialSlots": after,
+        "slotCount": len(after),
+        "createdMaterials": created,
+        "polygonsOutOfRange": out_of_range,
+    }
+    if out_of_range:
+        result["warning"] = (
+            "%d polygon(s) have a material_index past the end of the slot list. They "
+            "will render as the last slot. This is a consequence of resizing; fix it "
+            "by restoring the slot count or reassigning those faces."
+            % out_of_range)
+    return result
+
+
 OPS = {
     "import_mesh": op_import_mesh,
     "export_mesh": op_export_mesh,
     "select_edges": op_select_edges,
     "bevel_edges": op_bevel_edges,
     "extrude_skirt": op_extrude_skirt,
+    "set_material_slots": op_set_material_slots,
 }

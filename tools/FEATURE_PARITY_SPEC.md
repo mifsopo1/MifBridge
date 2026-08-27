@@ -1219,7 +1219,24 @@ Every gap above was seeded from a mechanical map of the competitor's categories 
 handlers, with each claimed gap adversarially verified before it counts. Where that analysis
 contradicts this file, the analysis wins — it read the code and this file matched substrings.
 
-- [ ] **MifBlender - the Blender side, AFTER the UE position is comfortable.**
+- [ ] **MifBlender - the Blender side.** STARTED 2026-08-27; gate satisfied.
+      The UE side now has read AND write halves across blueprints, materials, UMG, datatables,
+      landscape, foliage, water, PCG, Niagara, sequencer, IK rig, gameplay tags, state trees,
+      collision and blackboards. 330 endpoints, both engines building.
+      READ FIRST, as this item instructed. The audit is the useful part:
+        the addon is 5 READ ops and 12 WRITE - the INVERSE of the UE-side skew I spent today
+        correcting. Blender can do plenty and report very little about it.
+      FIRST GAP CLOSED: set_material_slots. Chosen because the pipeline ALREADY DETECTED it
+      and could not act - mif_mesh_roundtrip compares the material-slot sequence across an
+      edit and warns on a mismatch with 'a human decides', because there was nothing to call.
+      REMAINING GAPS, audited and not yet judged:
+        decimate/LOD    the edit a game pipeline wants most; analyze_skeletal_split's triangle
+                        counts currently have nowhere to go
+        uv operations   bl_object_info REPORTS uvLayers; nothing can create or repair one
+        transform ops   the roundtrip asserts isIdentityTransform stays TRUE, so there is no
+                        way to deliberately move anything
+        modifier stack  bevel and skirt are hardcoded; a modifier stack is the general form
+        boolean/join    the obvious next mesh edit after bevel and extrude
   Andre's direction, 2026-08-26: "one improvement we will also do for mifbridge is the mifblender,
   after we get comfortable with our position move to blender mifbridge side". Sequencing is explicit -
   UE parity first, Blender second. This is NOT greenfield: parity_check.py already tracks 17 addon ops

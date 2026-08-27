@@ -3943,6 +3943,12 @@ def bl_extrude_skirt(object_name: str, selector: dict = None, depth_uu: float = 
 
 
 @mcp.tool()
+def bl_set_material_slots(object: str, slots: list, allow_resize: bool = False) -> dict:
+    "Set a Blender object's material slot NAMES, in ORDER. Slot order is what decides which Unreal material lands on which face, so a reordered list renders the wrong material on an otherwise perfect mesh. This closes a gap the pipeline already DETECTED: mif_mesh_roundtrip compares the slot sequence before and after an edit and warns on a mismatch, and until now there was nothing it could call to fix one. Takes NAMES, not materials - the name is what lines up against Unreal's FStaticMaterial array on reimport, and a material's content is Unreal's business. A name with no existing material creates an EMPTY one and reports it in createdMaterials. A list whose length differs from the current slot count is REFUSED unless allow_resize=True, because changing the count re-indexes every polygon and a face left pointing past the end renders as the last slot with no error; when you do resize, polygonsOutOfRange reports exactly that. null means an empty slot."
+    return _blender("set_material_slots", object=object, slots=slots, allowResize=allow_resize)
+
+
+@mcp.tool()
 def bl_export_mesh(object_name: str, file: str) -> dict:
     "Export one Blender object to FBX for reimport into Unreal. The two axis arguments are the whole ballgame and are set for you: axis_up='Z', axis_forward='Y', which are NOT the operator defaults ('Y' / '-Z', the Maya convention) - the defaults produce a mesh that arrives in Unreal rotated. Unit scale is baked (apply_unit_scale with FBX_SCALE_NONE) so the file carries centimetre-magnitude numbers in a cm-declared scene, which is what Unreal reads back whether or not it converts units; bake_space_transform stays OFF (experimental). Only the named object is exported, MESH types only. The response re-stats the path and reports fileExists and fileSizeBytes, so a silent zero-byte write is a failure rather than an ok. NEVER call transform_apply anywhere in this pipeline: one 'Apply All Transforms' bakes the round trip into the mesh and every spline instance shears."
     return _blender("export_mesh", object=object_name, file=file)
