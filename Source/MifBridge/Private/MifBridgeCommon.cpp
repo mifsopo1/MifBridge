@@ -337,6 +337,7 @@ namespace MifBridge
 			MIF_BIND(pcg_cleanup);
 			MIF_BIND(describe_behavior_tree);
 			MIF_BIND(list_blackboard_keys);
+			MIF_BIND(add_blackboard_key);
 			MIF_BIND(list_animations);
 			MIF_BIND(add_anim_node);
 			// Asset lifecycle

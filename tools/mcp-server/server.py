@@ -2707,6 +2707,14 @@ def pcg_cleanup(actor_path: str, confirm: bool = False) -> dict:
 
 
 @mcp.tool()
+def add_blackboard_key(path: str, name: str, type: str, instance_synced: bool = False,
+                       category: str = None, confirm: bool = False) -> dict:
+    "Add a key to a BlackboardData asset. type is one of Bool, Int, Float, String, Name, Vector, Rotator, Object, Class, Enum - an unknown type is REFUSED rather than creating a key with a null KeyType, which the asset accepts and nothing can then read or write. Requires confirm=True: every behavior tree using this blackboard sees the new key. A name that already exists ON THIS BLACKBOARD OR ONE IT INHERITS FROM is refused, because a shadowing key of a different type resolves unpredictably depending on which the decorator looked up. The response reports resolves:true only after GetKeyID finds it - appending to Keys without UpdateKeyIDs leaves a key the editor shows and no decorator can find. Nothing is saved. NOTE: authoring the behavior TREE itself is not offered - wiring UBTNode objects by hand is a graph editor's job - but nothing can reference a key that does not exist, so this is the first step of authoring anything."
+    return _post("add_blackboard_key", path=path, name=name, type=type,
+                 instanceSynced=instance_synced, category=category, confirm=confirm)
+
+
+@mcp.tool()
 def describe_behavior_tree(path: str) -> dict:
     """Read a BehaviorTree's structure: root, node tree, and which blackboard it uses.
 

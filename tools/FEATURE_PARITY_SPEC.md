@@ -1587,7 +1587,17 @@ Use self_audit for the count; it asks the running DLL.
       work possible at all. Check UMovieScene::GetBindings' non-const deprecation on 5.7 first - it
       is already a warning in our build.
 
-- [ ] **Behavior tree authoring - 2 reads, 0 writes.**
+- [x] **Behavior tree authoring** - the BOUNDED piece, 2026-08-27: add_blackboard_key.
+      Authoring the TREE is not offered and that is deliberate, on reasoning that is not
+      cooked-only: it means constructing UBTComposite/Decorator/Service/Task objects and wiring
+      parent links by hand - a graph editor's job, same argument as the MetaSound decline. Half
+      of it would produce trees that look right in the editor and assert at runtime.
+      A blackboard KEY is the opposite: a flat array entry, and the thing nothing can proceed
+      without - every condition decorator tests a key, and a tree cannot reference one that
+      does not exist.
+      Verified live against a SCRATCH blackboard (/Game/_MifBB/ProbeBB) rather than a real one:
+      unknown type refused with the options listed, valid add resolves:true, duplicate refused
+      with the shadowing explanation.
       describe_behavior_tree and list_blackboard_keys. DDS2 has 17 behavior trees and nothing can
       edit one. This is also what the competitor's diagram viewer renders, so the read side already
       feeds a panel tab if we want one.

@@ -21,6 +21,18 @@
 #include "BehaviorTree/BTCompositeNode.h"
 #include "BehaviorTree/BTTaskNode.h"
 #include "BehaviorTree/BlackboardData.h"
+// The ten concrete key types. KeyType is an instanced UObject, not an enum, so each one is a class.
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Bool.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Int.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Float.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_String.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Name.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Rotator.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Class.h"
+#include "BehaviorTree/Blackboard/BlackboardKeyType_Enum.h"
+#include "UObject/Package.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType.h"
 #include "Animation/AnimBlueprint.h"
 #include "AnimGraphNode_Base.h"
@@ -1063,6 +1075,149 @@ namespace MifBridge
 		Out->SetStringField(TEXT("after"), After);
 		Out->SetBoolField(TEXT("changed"), Before != After);
 		Out->SetStringField(TEXT("note"), TEXT("save_package to persist."));
+	}
+
+
+	// --- add_blackboard_key ---------------------------------------------------------------------
+	//   in:  { path, name, type, instanceSynced?, category?, confirm }
+	//   out: { blackboard, name, type, keyCount }
+	// Bucket: MUTATES the blackboard asset in memory. Nothing is saved.
+	//
+	// THE BOUNDED PIECE OF "BEHAVIOR TREE AUTHORING", chosen rather than stumbled into.
+	//
+	// The spec item was "behavior tree authoring - 2 reads, 0 writes". Authoring the TREE itself means
+	// constructing UBTComposite / UBTDecorator / UBTService / UBTTask objects and wiring their parent
+	// links by hand - a graph editor's job, and the same argument that declined MetaSound graph
+	// authoring. Building half of it would produce trees that look right in the editor and assert at
+	// runtime, which is worse than not having it.
+	//
+	// A BLACKBOARD KEY is the opposite: a flat entry in an array, with a name and a key-type object,
+	// and it is the thing you actually cannot proceed without. Every decorator that tests a condition
+	// tests a blackboard key; a tree cannot reference a key that does not exist, so adding one is the
+	// FIRST step of authoring anything and the one most worth automating.
+	//
+	// Verified in BOTH trees: FBlackboardEntry is byte-identical (EntryName, EntryCategory, KeyType,
+	// bInstanceSynced), UBlackboardData::Keys is a plain TArray of it, and GetKeyID is AIMODULE_API
+	// in both.
+	//
+	// THE KEY TYPE IS AN OBJECT, NOT AN ENUM, which is the part that catches people. KeyType is a
+	// UBlackboardKeyType* - an instanced UObject owned by the blackboard - so adding a key means
+	// CONSTRUCTING one, not assigning an enum value. A null KeyType is accepted by the array and makes
+	// the key useless: the editor shows it, and nothing can read or write it.
+	void H_add_blackboard_key(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("blackboard"), TEXT("name"), TEXT("key"),
+			  TEXT("type"), TEXT("keyType"), TEXT("instanceSynced"), TEXT("category"),
+			  TEXT("confirm") },
+			TEXT("path (a BlackboardData asset); name (alias: key); type (alias: keyType) - Bool, Int, "
+				 "Float, String, Name, Vector, Rotator, Object, Class, Enum; instanceSynced (default "
+				 "false); category; confirm:true"),
+			{ { TEXT("behaviorTree"), TEXT("keys live on the BLACKBOARD asset, not on the tree - describe_behavior_tree reports which blackboard a tree uses") },
+			  { TEXT("value"), TEXT("a blackboard key has no value at author time - values exist per running instance") } }))
+		{
+			return;
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("add_blackboard_key needs confirm:true - it modifies a shared blackboard "
+						   "asset that every tree using it will see. NOTHING was changed."));
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("blackboard") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - a BlackboardData asset. describe_behavior_tree reports "
+						   "the blackboard a tree uses. NOTHING was changed."));
+			return;
+		}
+		UBlackboardData* BB = LoadObject<UBlackboardData>(nullptr, *Path, nullptr,
+														  LOAD_NoWarn | LOAD_Quiet);
+		if (!BB)
+		{
+			Fail(Out, FString::Printf(TEXT("no BlackboardData at '%s'. NOTHING was changed."), *Path));
+			return;
+		}
+
+		const FString KeyName = JStrAny(In, { TEXT("name"), TEXT("key") });
+		if (KeyName.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required. NOTHING was changed."));
+			return;
+		}
+
+		// ALREADY PRESENT? Checked against the PARENT CHAIN too, not just this asset's own array.
+		// Blackboards inherit, and a key that shadows an inherited one of a different type is accepted
+		// by the array and then resolves unpredictably depending on which the decorator looked up.
+		if (BB->GetKeyID(FName(*KeyName)) != FBlackboard::InvalidKey)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' already exists on this blackboard or one it inherits from. Adding it again "
+					 "would SHADOW the inherited key, and a decorator resolving the name could get "
+					 "either. NOTHING was changed."), *KeyName));
+			return;
+		}
+
+		// The type NAME maps to a UBlackboardKeyType SUBCLASS. Spelled out rather than resolved from a
+		// string, so a typo is a refusal listing the real options instead of a null KeyType that the
+		// editor happily shows and nothing can use.
+		const FString TypeStr = JStrAny(In, { TEXT("type"), TEXT("keyType") });
+		UClass* TypeClass = nullptr;
+		if (TypeStr.Equals(TEXT("Bool"), ESearchCase::IgnoreCase))          { TypeClass = UBlackboardKeyType_Bool::StaticClass(); }
+		else if (TypeStr.Equals(TEXT("Int"), ESearchCase::IgnoreCase))      { TypeClass = UBlackboardKeyType_Int::StaticClass(); }
+		else if (TypeStr.Equals(TEXT("Float"), ESearchCase::IgnoreCase))    { TypeClass = UBlackboardKeyType_Float::StaticClass(); }
+		else if (TypeStr.Equals(TEXT("String"), ESearchCase::IgnoreCase))   { TypeClass = UBlackboardKeyType_String::StaticClass(); }
+		else if (TypeStr.Equals(TEXT("Name"), ESearchCase::IgnoreCase))     { TypeClass = UBlackboardKeyType_Name::StaticClass(); }
+		else if (TypeStr.Equals(TEXT("Vector"), ESearchCase::IgnoreCase))   { TypeClass = UBlackboardKeyType_Vector::StaticClass(); }
+		else if (TypeStr.Equals(TEXT("Rotator"), ESearchCase::IgnoreCase))  { TypeClass = UBlackboardKeyType_Rotator::StaticClass(); }
+		else if (TypeStr.Equals(TEXT("Object"), ESearchCase::IgnoreCase))   { TypeClass = UBlackboardKeyType_Object::StaticClass(); }
+		else if (TypeStr.Equals(TEXT("Class"), ESearchCase::IgnoreCase))    { TypeClass = UBlackboardKeyType_Class::StaticClass(); }
+		else if (TypeStr.Equals(TEXT("Enum"), ESearchCase::IgnoreCase))     { TypeClass = UBlackboardKeyType_Enum::StaticClass(); }
+		if (!TypeClass)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("unknown key type '%s'. Use one of: Bool, Int, Float, String, Name, Vector, "
+					 "Rotator, Object, Class, Enum. A key with no type is accepted by the asset and "
+					 "then cannot be read or written by anything, so this refuses rather than "
+					 "creating one. NOTHING was changed."), *TypeStr));
+			return;
+		}
+
+		BB->Modify();
+		FBlackboardEntry Entry;
+		Entry.EntryName = FName(*KeyName);
+		Entry.EntryCategory = FName(*JStr(In, TEXT("category")));
+		Entry.bInstanceSynced = JBool(In, TEXT("instanceSynced"), false) ? 1 : 0;
+		// OUTERED TO THE BLACKBOARD. A key type outered anywhere else is not saved with the asset and
+		// comes back null on the next load - a key that works until the editor restarts.
+		Entry.KeyType = NewObject<UBlackboardKeyType>(BB, TypeClass);
+		BB->Keys.Add(Entry);
+
+		// The engine caches key IDs across the parent chain; without this the new key is in the array
+		// and GetKeyID still cannot find it, which reads as the add having silently failed.
+		BB->UpdateKeyIDs();
+		if (UPackage* Pkg = BB->GetOutermost()) { Pkg->MarkPackageDirty(); }
+
+		// READ BACK through GetKeyID rather than trusting the Add - the house rule, and here it also
+		// proves UpdateKeyIDs did its job.
+		const bool bResolves = BB->GetKeyID(FName(*KeyName)) != FBlackboard::InvalidKey;
+		Out->SetStringField(TEXT("blackboard"), BB->GetPathName());
+		Out->SetStringField(TEXT("name"), KeyName);
+		Out->SetStringField(TEXT("type"), TypeClass->GetName());
+		Out->SetNumberField(TEXT("keyCount"), BB->Keys.Num());
+		Out->SetBoolField(TEXT("resolves"), bResolves);
+		if (!bResolves)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' was appended to Keys but GetKeyID still cannot resolve it, so no decorator "
+					 "would find it. Treat the key as unusable."), *KeyName));
+			return;
+		}
+		Out->SetStringField(TEXT("note"),
+			TEXT("nothing was saved. Every behavior tree using this blackboard now sees the key."));
+		UE_LOG(LogMifBridge, Log, TEXT("add_blackboard_key: %s.%s (%s)"),
+			*BB->GetName(), *KeyName, *TypeClass->GetName());
 	}
 
 }

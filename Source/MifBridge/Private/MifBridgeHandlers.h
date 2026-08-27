@@ -1391,6 +1391,10 @@ namespace MifBridge
 	MIF_DECL(pcg_cleanup);
 	MIF_DECL(describe_behavior_tree);
 	MIF_DECL(list_blackboard_keys);
+	/** The bounded piece of BT authoring: a blackboard KEY. Authoring the tree itself means wiring
+	 *  UBTNode objects by hand - a graph editor's job - but nothing can reference a key that does
+	 *  not exist, so this is the first step of authoring anything. */
+	MIF_DECL(add_blackboard_key);
 	MIF_DECL(list_animations);
 	// One endpoint for the whole UAnimGraphNode_* family: UAnimGraphNode_Base derives from UK2Node,
 	// so anim nodes place and wire exactly like K2 nodes.
