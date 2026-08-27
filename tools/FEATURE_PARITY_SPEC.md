@@ -1374,10 +1374,9 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
       misclassified as a write costs a refusal while the reverse is the dangerous direction.
       CAUTION: widening MIF_BIND breaks both parity_check.py and make_release.py, which match
       MIF_BIND\(([a-z_0-9]+)\) and would silently report ZERO endpoints. Update them in the same change.
-  (b) `batch` dispatches its inner ops straight out of Handlers()/FindExternalHandler
-      (MifBridgeNodes.cpp:2462, :2490) and never recurses through RunEndpoint, so they do not cross the
-      choke point. `batch` itself does. Extend the existing per-op else-if at :2458 rather than adding
-      a branch.
+  (b) DONE 2026-08-26. `batch` dispatched its inner ops straight out of Handlers() and never crossed
+      the choke point. Verified live in scratch mode: batch->save_package and batch->send_editor_key
+      are both refusedBy "safety-gate". test_safety_gate T635 holds it.
 
 - [x] **Build.cs links plugin modules the target has not ENABLED - builds clean, fails at load.**
       FIXED 2026-08-26 by the engine's own mechanism, not by the JSON-reading fix below.

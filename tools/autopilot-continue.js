@@ -100,9 +100,41 @@ try {
 const lines = text.split(/\r?\n/);
 
 // Only "- [ ]" is open work. "- [x]" is met and "- [~]" is a recorded decision not to pursue.
-const open = lines
+const openRaw = lines
   .filter((l) => /^\s*-\s*\[ \]\s*\S/.test(l))
   .map((l) => l.replace(/^\s*-\s*\[ \]\s*/, "").replace(/\*\*/g, "").trim());
+
+// PRIORITY, because document order is not the same as what Andre wants next.
+//
+// The spec is roughly chronological, so MifBlender sat at the top of every "next up" list purely by
+// being written down early - and it is explicitly the LAST thing, gated on the UE side being
+// comfortable. Meanwhile the four in-editor features he asked for kept being reported below it.
+//
+// Andre, 2026-08-27: "do NOT forget about our UI additions befor emoving to blender, add that to the
+// stophook, the ui additions". So the ordering lives HERE rather than in my head or in the order the
+// file happens to be in - a preference that only exists in a conversation is one that expires with
+// the session.
+//
+// Earlier pattern wins. Anything unmatched keeps its document order after the matched ones.
+const PRIORITY = [
+  /inheritance tree/i,
+  /behavior tree.*(view|diagram)|diagram.*behavior tree/i,
+  /mesh splitter|skeletal.*split/i,
+  /dropdown|write-mode/i,
+  /panel|in-editor|brainmap|heatmap/i,
+];
+const rank = (item) => {
+  for (let i = 0; i < PRIORITY.length; i++) {
+    if (PRIORITY[i].test(item)) return i;
+  }
+  // MifBlender is deliberately LAST: it is gated on the UE side being comfortable, by its own text.
+  if (/mifblender|blender/i.test(item)) return PRIORITY.length + 1;
+  return PRIORITY.length;
+};
+const open = openRaw
+  .map((item, i) => ({ item, i, r: rank(item) }))
+  .sort((a, b) => (a.r - b.r) || (a.i - b.i))
+  .map((x) => x.item);
 
 const met = lines.filter((l) => /^\s*-\s*\[x\]\s*\S/i.test(l)).length;
 const declined = lines.filter((l) => /^\s*-\s*\[~\]\s*\S/.test(l)).length;
