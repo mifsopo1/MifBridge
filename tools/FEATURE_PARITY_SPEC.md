@@ -1122,6 +1122,19 @@ engine has no such class registered in this build, which is as definitive as it 
       took the editor down). No drift today - checked.
       Now reported by parity_check as PLUGIN IDLE, advisory. Building endpoints and dropping the
       dependency are both fine; forgetting is not, which is the only thing the check prevents.
+      METASOUND IS DONE (see below), leaving EIGHT. And the eight cannot be closed on this project:
+      DDS2 has **zero assets** for every one of them - checked, not assumed:
+        ChaosVehiclesPlugin 0   GameplayAbilities 0   GeometryScripting 0   LevelSnapshots 0
+        LiveLink 0              MassEntity 0          ModelViewViewModel 0  ModularGameplay 0
+      (The 2 GameFeatureData assets in DDS2 - ChristmasDlc and DDS2Casino - belong to
+      MIF_WITH_GAMEFEATURES, a DIFFERENT macro which IS used, by list_game_feature_plugins.)
+      So each of the eight sits exactly where MetaHuman sits: buildable by reading the headers,
+      unverifiable against any content on this machine. Metasound was chosen out of the nine PRECISELY
+      because it was the one that escaped that, with 185 real assets to test against.
+      ANDRE'S CALL, and it is a genuine fork rather than a backlog: drop the eight dependencies and
+      take back the build cost, or keep them for CURFEW and build the endpoints there, where a 5.7
+      uncooked project can actually exercise them. Building them here would mean shipping eight
+      untested surfaces on a compile alone, which is the thing this spec has declined to do all along.
 - [x] **Metasound - the audio read half.** DONE 2026-08-27. `describe_metasound`, both engines.
       VERIFIED AGAINST REAL CONTENT, which is why it was chosen: MS_OneArmedBandit reports 10 inputs
       (PullLever/Trigger, RollersRemaining/Int32, Reward/Float ...), 2 outputs, 97 nodes, 111 edges,
