@@ -446,6 +446,8 @@ namespace MifBridge
 			// Live widget instances
 			MIF_BIND(list_live_widgets);
 			MIF_BIND(describe_live_widget);
+			// Isolated offscreen widget preview
+			MIF_BIND(preview_widget);
 #undef MIF_BIND
 		}
 		return Map;

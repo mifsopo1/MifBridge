@@ -1706,6 +1706,8 @@ namespace MifBridge
 	// Live widget instances (MifBridgeLiveWidgets.cpp) — no MIF_WITH_* gate, core UMG only.
 	MIF_DECL(list_live_widgets);
 	MIF_DECL(describe_live_widget);
+	// Isolated offscreen widget preview (MifBridgeWidgetPreview.cpp) — no MIF_WITH_* gate.
+	MIF_DECL(preview_widget);
 
 #undef MIF_DECL
 }

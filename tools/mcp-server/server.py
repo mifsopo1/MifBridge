@@ -3673,6 +3673,14 @@ def describe_live_widget(path: str, max_depth: int = 12) -> dict:
     return _post("describe_live_widget", path=path, maxDepth=max_depth)
 
 
+@mcp.tool()
+def preview_widget(widget_class: str, width: int = 512, height: int = 512, dpi_scale: float = 1.0,
+                   background: str = "transparent", name: str = "") -> dict:
+    "Render ONE Widget Blueprint class to a PNG, isolated - no PIE, no game world, no parent composition. Good for checking one widget's own layout (brushes, fonts, colors, local hierarchy) fast, without packaging or opening the game. NOT proof of what a runtime-composed screen looks like - a widget assembled from several sources at runtime (a vanilla parent plus dynamically-injected children) needs list_live_widgets/describe_live_widget against a real PIE session instead; this endpoint's response says so under `note`. dpi_scale is applied AS GIVEN (default 1.0, not auto-computed) - the response's dpiScaleAtThisSize reports what the project's own DPI curve would use at this size, as a fact to pass back next time, not something applied for you. background is transparent|black|white. Writes no asset, dirties no package (dirtyPackagesDelta in the response should always be 0)."
+    return _post("preview_widget", widgetClass=widget_class, width=width, height=height,
+                 dpiScale=dpi_scale, background=background, name=name or None)
+
+
 # --------------------------------------------------------------------------
 # BLENDER backend - bl_* tools. These do NOT reach Unreal: they go over the
 # loopback socket to the MifBlender addon (tools/blender-addon/), so they are

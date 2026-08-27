@@ -2058,11 +2058,30 @@ cannot become one giant blocking item:
       NOT DONE: Phases A/B/C below (isolated rendering, declarative composition, the interaction
       scenario runner) remain unstarted - this closes only the proposal's own recommended starting
       phase.
-- [ ] **UMG isolated offscreen widget preview (Phase A).** Render one Widget Blueprint class
-      transiently via `FWidgetRenderer` (already a linked module) and return pixels + real DPI/size
-      facts (`UUserInterfaceSettings::GetDPIScaleBasedOnSize`). Precedent: UMGEditor's own
-      `SWidgetPreview.cpp` does the same for the Designer. Must not save/dirty any package - snapshot
-      dirty-package list before/after, same pattern `list_dirty_packages` already gives.
+- [x] **UMG isolated offscreen widget preview (Phase A).** DONE 2026-08-27. `preview_widget` -
+      render one Widget Blueprint class transiently via `FWidgetRenderer`, no PIE, no parent
+      composition, one synchronous call in and one PNG out (same shape as `capture_camera`/
+      `capture_viewport`, not the proposal's own illustrative start/status/capture/stop family - a
+      widget render is as fast as a scene capture, so it does not need a session).
+      A REAL BUG THE LIVE TEST CAUGHT, that a code read alone would have missed: `FWidgetRenderer::
+      CreateTargetFor` (the obvious, simplest way to get a render target for this) sizes it using
+      `FSlateApplication::GetRenderer()->GetSlateRecommendedColorFormat()`, which on this machine is
+      an HDR/float format. `ExportRenderTarget` then happily wrote actual OpenEXR data to a file
+      named `.png` - `exists:true`, `wroteFile:true`, everything in the response looked correct, and
+      `file` on the actual output said "OpenEXR image data, version 2". Fixed by building the render
+      target explicitly with `RTF_RGBA8`, the same construction `capture_camera` already uses and is
+      proven to export real PNGs with. Re-verified after the fix with PIL, independently of this
+      bridge: "PNG image data, 400 x 300, 8-bit/color RGBA" for the black-background case, and a
+      correct `(0,0,0,0)` corner pixel for the transparent case. `dirtyPackagesDelta` confirmed 0 on
+      every call - no asset touched.
+      EXPLICIT DPI ONLY, not the proposal's dpiMode:project - `dpiScaleAtThisSize` reports what the
+      project's own DPI curve computes for the requested size (a real value, e.g. 0.444 at 400x300 on
+      this project) as a FACT for the caller to act on, but nothing is applied automatically: two
+      callers asking for the same width/height getting different-looking renders because of a project
+      setting neither one typed is worse than making them pass dpiScale explicitly.
+      NOT COVERED: composition (Phase B), and the note field on every response says so - "Runtime-
+      created children, dynamic bindings driven by BeginPlay, and anything another widget injects
+      into this one at runtime will NOT appear here."
 - [ ] **UMG declarative composite preview (Phase B).** Recipe-driven transient composition - root
       widget + N children inserted into named panels/slots, without touching source assets. Useful for
       QOLCrafting_P's actual architecture (WBP_RecyclerStorage injected into vanilla containerHolder)
