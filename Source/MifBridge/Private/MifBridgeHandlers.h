@@ -1372,6 +1372,9 @@ namespace MifBridge
 	 *  it', which says nothing about any other project. */
 	/** Sequencer authoring. describe_level_sequence reported COUNTS and not what was bound, so
 	 *  the read comes with the write - you cannot add a track to a binding you cannot name. */
+	/** Niagara's write half. Targets a PLACED COMPONENT, never the system asset - editing a cooked
+	 *  UNiagaraSystem is a known fatal crash (docs/02 section 6c). */
+	MIF_DECL(set_niagara_component_parameter);
 	MIF_DECL(list_sequence_bindings);
 	MIF_DECL(add_sequence_possessable);
 	MIF_DECL(add_sequence_track);

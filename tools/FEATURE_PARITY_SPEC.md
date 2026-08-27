@@ -1568,7 +1568,15 @@ Use self_audit for the count; it asks the running DLL.
 
 **The inventory itself is sound, and these are the genuine read-only halves:**
 
-- [ ] **Niagara authoring - 3 reads, 0 writes.**
+- [x] **Niagara authoring** - DONE 2026-08-27 as a COMPONENT override.
+      set_niagara_component_parameter. Deliberately does NOT write to the system asset: docs/02
+      section 6c records that touching a cooked UNiagaraSystem is a fatal access violation in
+      PostLoad, and duplicate_asset already refuses cooked Niagara for that reason. Writing to
+      the placed component keeps that hazard off the code path entirely, and is what you
+      actually want when tuning one instance rather than every instance in the project.
+      NOT FULLY EXERCISED LIVE: the confirm gate and actor resolution are verified, but
+      mifaudit strips `confirm` by design, so the type-inference refusal could not be reached
+      through the harness. Its logic is straight-line and reviewed, and it is untested.
       describe_niagara_system, list_niagara_emitters, list_niagara_user_parameters and nothing that
       writes. Note the hazard already on file: duplicating a cooked UNiagaraSystem crashes the editor
       (docs/02 section 6c), so DDS2 authoring is constrained. Curfew is uncooked and is not.

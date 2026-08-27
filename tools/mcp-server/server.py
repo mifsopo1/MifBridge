@@ -2614,6 +2614,14 @@ def list_sockets(path: str) -> dict:
 
 
 @mcp.tool()
+def set_niagara_component_parameter(actor_path: str, name: str, value, type: str = None,
+                                    component: str = None, confirm: bool = False) -> dict:
+    "Override a Niagara user parameter on a PLACED COMPONENT in the open level. Deliberately not on the system asset: editing the asset changes every instance, and modifying a COOKED UNiagaraSystem is a known fatal editor crash, so this never touches it. Requires confirm=True. TYPE MUST BE EXPLICIT FOR NUMBERS - Niagara treats Float and Int as different variables, so writing the wrong one succeeds and the effect ignores it; a bare number without type is REFUSED rather than guessed. bool and object values are inferred. vector takes {x,y,z}, color takes {r,g,b,a}. An actor with more than one NiagaraComponent requires `component` rather than picking one. IMPORTANT: Niagara offers no read-back for a component override, so a successful call means the call was MADE, not that the effect uses it - a name matching no user parameter is accepted silently. Check names against list_niagara_user_parameters. Nothing is saved."
+    return _post("set_niagara_component_parameter", actorPath=actor_path, name=name, value=value,
+                 type=type, component=component, confirm=confirm)
+
+
+@mcp.tool()
 def list_sequence_bindings(path: str) -> dict:
     "What a LevelSequence actually binds - guid, name, kind (possessable/spawnable), class, and the tracks on each. describe_level_sequence reports only COUNTS, so this is what you need before authoring: you cannot add a track to a binding you cannot name. classRecorded:false means the binding does not STORE a class - normal for one authored by dragging an actor into the sequencer - not that the class could not be read. Names come from the possessable, since the binding's own name field is deprecated in UE 5.7."
     return _post("list_sequence_bindings", path=path)

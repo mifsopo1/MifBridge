@@ -29,6 +29,10 @@
 #include "NiagaraSystem.h"
 #include "NiagaraEmitter.h"
 #include "NiagaraEmitterHandle.h"
+#include "NiagaraComponent.h"                      // SetVariableFloat/Int/Bool/Vec3/LinearColor
+#include "Subsystems/EditorActorSubsystem.h"
+#include "Editor.h"
+#include "GameFramework/Actor.h"
 #endif
 
 namespace MifBridge
@@ -188,4 +192,213 @@ namespace MifBridge
 		}
 	}
 #endif   // MIF_WITH_NIAGARA
+
+	// --- set_niagara_component_parameter --------------------------------------------------------
+	//   in:  { actorPath, name, type?, value, confirm }
+	//   out: { actor, component, parameter, type, system }
+	// Bucket: MUTATES a placed component in the open level. Nothing is saved.
+	//
+	// THE WRITE HALF, AND IT DELIBERATELY DOES NOT TOUCH THE ASSET.
+	//
+	// Niagara had three reads and no writes. The obvious write is "set a user parameter on the system"
+	// - and on this project that is a loaded gun: docs/02 section 6c records that duplicating a COOKED
+	// UNiagaraSystem is an EXCEPTION_ACCESS_VIOLATION inside FVersionedNiagaraEmitterData::PostLoad,
+	// fatal, with no MifBridge frame in the stack. duplicate_asset already refuses cooked Niagara for
+	// that reason.
+	//
+	// So this writes to a PLACED COMPONENT instead, which is both safer and more useful:
+	//
+	//   * It never touches the cooked asset, so the PostLoad hazard is not merely guarded against -
+	//     it is not on the code path at all.
+	//   * A component override is what you actually want when tuning an effect. Editing the system
+	//     changes every instance in the project; editing the component changes the one you are
+	//     looking at.
+	//   * It works identically on cooked and uncooked projects, which is the point of this bridge now.
+	//
+	// Verified in BOTH trees: UNiagaraComponent::SetVariableFloat / Int / Bool / Vec3 /
+	// LinearColor are all NIAGARA_API with identical signatures.
+	//
+	// TYPE IS EXPLICIT, not inferred from the JSON. A JSON number could be a float or an int, and
+	// Niagara treats those as different variables - setting the wrong one succeeds silently and the
+	// effect ignores it, because the parameter it wrote does not exist under that type. Inferring here
+	// would produce exactly the silent-success shape this project keeps finding. The type is inferred
+	// ONLY when it is unambiguous, and the response always says which was used.
+	void H_set_niagara_component_parameter(const TSharedRef<FJsonObject>& In,
+										   const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("component"), TEXT("name"), TEXT("parameter"),
+			  TEXT("type"), TEXT("value"), TEXT("confirm") },
+			TEXT("actorPath (an actor with a NiagaraComponent); name (alias: parameter) - the user "
+				 "parameter; type - float|int|bool|vector|color (inferred when unambiguous); value; "
+				 "confirm:true"),
+			{ { TEXT("system"), TEXT("this sets an override on a PLACED COMPONENT, not on the system asset - editing the asset would change every instance, and on a COOKED system it is a known editor crash (docs/02 section 6c)") },
+			  { TEXT("path"), TEXT("spell it actorPath - this addresses a placed actor, not an asset") } }))
+		{
+			return;
+		}
+#if !MIF_WITH_NIAGARA
+		MifNoNiagara(Out);
+#else
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("set_niagara_component_parameter needs confirm:true - it changes a live "
+						   "component in the open level. NOTHING was changed."));
+			return;
+		}
+
+		UEditorActorSubsystem* Sub = GEditor
+			? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+		if (!Sub) { Fail(Out, TEXT("no UEditorActorSubsystem.")); return; }
+		AActor* Actor = ResolveActor(Sub, In, Out);
+		if (!Actor) { return; }
+
+		TArray<UNiagaraComponent*> Comps;
+		Actor->GetComponents<UNiagaraComponent>(Comps);
+		if (Comps.Num() == 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no NiagaraComponent. NOTHING was changed."), *Actor->GetActorLabel()));
+			return;
+		}
+		// NAMED when there is more than one, rather than silently taking the first. An actor with two
+		// effects is exactly the case where guessing writes to the wrong one and reports success.
+		const FString WantComp = JStr(In, TEXT("component"));
+		UNiagaraComponent* Comp = nullptr;
+		if (WantComp.IsEmpty())
+		{
+			if (Comps.Num() > 1)
+			{
+				TArray<FString> Names;
+				for (const UNiagaraComponent* C : Comps) { Names.Add(C->GetName()); }
+				Fail(Out, FString::Printf(
+					TEXT("'%s' has %d NiagaraComponents (%s) - name one with `component`, because "
+						 "picking for you would write to the wrong effect and report success. NOTHING "
+						 "was changed."),
+					*Actor->GetActorLabel(), Comps.Num(), *FString::Join(Names, TEXT(", "))));
+				return;
+			}
+			Comp = Comps[0];
+		}
+		else
+		{
+			for (UNiagaraComponent* C : Comps)
+			{
+				if (C && C->GetName() == WantComp) { Comp = C; break; }
+			}
+			if (!Comp)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("no NiagaraComponent called '%s' on '%s'. NOTHING was changed."),
+					*WantComp, *Actor->GetActorLabel()));
+				return;
+			}
+		}
+
+		const FString ParamName = JStrAny(In, { TEXT("name"), TEXT("parameter") });
+		if (ParamName.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required - a user parameter. list_niagara_user_parameters reports "
+						   "them for the component's system. NOTHING was changed."));
+			return;
+		}
+
+		// TYPE, explicit or unambiguously inferred - never guessed between float and int.
+		FString Type = JStr(In, TEXT("type")).ToLower();
+		const TSharedPtr<FJsonValue> Value = In->TryGetField(TEXT("value"));
+		if (!Value.IsValid())
+		{
+			Fail(Out, TEXT("value is required. NOTHING was changed."));
+			return;
+		}
+		if (Type.IsEmpty())
+		{
+			if (Value->Type == EJson::Boolean) { Type = TEXT("bool"); }
+			else if (Value->Type == EJson::Object) { Type = TEXT("vector"); }
+			else if (Value->Type == EJson::Number)
+			{
+				// REFUSED rather than guessed. Niagara treats Float and Int as different variables, so
+				// writing the wrong one succeeds and the effect ignores it - silent success, which is
+				// worse than a refusal a caller can act on in one edit.
+				Fail(Out, TEXT("value is a number and `type` was not given, so this could be a float "
+							   "or an int - and Niagara treats those as DIFFERENT variables. Writing "
+							   "the wrong one succeeds and the effect ignores it. Pass type:\"float\" "
+							   "or type:\"int\". NOTHING was changed."));
+				return;
+			}
+			else
+			{
+				Fail(Out, TEXT("could not infer a type from this value. Pass type: float|int|bool|"
+							   "vector|color. NOTHING was changed."));
+				return;
+			}
+		}
+
+		Comp->Modify();
+		const FName Var(*ParamName);
+		if (Type == TEXT("float"))
+		{
+			Comp->SetVariableFloat(Var, (float)Value->AsNumber());
+		}
+		else if (Type == TEXT("int"))
+		{
+			Comp->SetVariableInt(Var, (int32)Value->AsNumber());
+		}
+		else if (Type == TEXT("bool"))
+		{
+			Comp->SetVariableBool(Var, Value->AsBool());
+		}
+		else if (Type == TEXT("vector") || Type == TEXT("color"))
+		{
+			const TSharedPtr<FJsonObject>* Obj = nullptr;
+			if (!Value->TryGetObject(Obj) || !Obj)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("type '%s' needs an object value such as {\"x\":1,\"y\":2,\"z\":3} (or "
+						 "{\"r\":..,\"g\":..,\"b\":..,\"a\":..} for color). NOTHING was changed."),
+					*Type));
+				return;
+			}
+			const TSharedRef<FJsonObject> V = Obj->ToSharedRef();
+			if (Type == TEXT("vector"))
+			{
+				Comp->SetVariableVec3(Var, FVector(
+					JNum(V, TEXT("x"), 0.0), JNum(V, TEXT("y"), 0.0), JNum(V, TEXT("z"), 0.0)));
+			}
+			else
+			{
+				Comp->SetVariableLinearColor(Var, FLinearColor(
+					(float)JNum(V, TEXT("r"), 0.0), (float)JNum(V, TEXT("g"), 0.0),
+					(float)JNum(V, TEXT("b"), 0.0), (float)JNum(V, TEXT("a"), 1.0)));
+			}
+		}
+		else
+		{
+			Fail(Out, FString::Printf(
+				TEXT("unknown type '%s' - use float, int, bool, vector or color. NOTHING was "
+					 "changed."), *Type));
+			return;
+		}
+
+		Out->SetStringField(TEXT("actor"), Actor->GetActorLabel());
+		Out->SetStringField(TEXT("component"), Comp->GetName());
+		Out->SetStringField(TEXT("parameter"), ParamName);
+		Out->SetStringField(TEXT("type"), Type);
+		Out->SetStringField(TEXT("system"),
+			Comp->GetAsset() ? Comp->GetAsset()->GetPathName() : FString());
+		// SAID PLAINLY, because Niagara has no read-back for an override and this endpoint therefore
+		// cannot verify its own write the way the rest of this bridge does. Claiming success without
+		// saying that would be claiming more than was checked.
+		Out->SetStringField(TEXT("note"),
+			TEXT("the override was applied to this COMPONENT, not to the system asset - other "
+				 "instances are unaffected, and a cooked system was never touched. There is no engine "
+				 "read-back for a component override, so this reports that the call was made, NOT "
+				 "that the effect uses it: a name that matches no user parameter is accepted silently "
+				 "by Niagara. Check the name against list_niagara_user_parameters. Nothing was "
+				 "saved."));
+		UE_LOG(LogMifBridge, Log, TEXT("set_niagara_component_parameter: %s.%s = (%s)"),
+			*Actor->GetActorLabel(), *ParamName, *Type);
+#endif
+	}
+
 }
