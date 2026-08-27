@@ -372,7 +372,14 @@ namespace MifBridge
 		 *  is identical (id + label strings), which is the rule in docs/02_GOTCHAS.md section 14; the
 		 *  values are engine-local, so list_ik_solver_types says which model it answered for rather
 		 *  than letting a caller find out by carrying an id between engines and getting a refusal. */
-		void IKCollectSolverTypes(TArray<TPair<FString, FString>>& Out)
+		struct FMifSolverType
+		{
+			FString Id;      // what add_ik_solver accepts back on THIS engine
+			FString Name;    // the short, human-readable type name
+			FString Path;    // the /Script/ path - ALWAYS a real path, on both engines
+		};
+
+		void IKCollectSolverTypes(TArray<FMifSolverType>& Out)
 		{
 #if MIF_ENGINE_AT_LEAST(5, 6)
 			// UScriptStruct has no CLASS_Abstract equivalent to filter on, and FIKRigSolverBase itself
@@ -385,7 +392,8 @@ namespace MifBridge
 				if (S == Base || !S->IsChildOf(Base)) { continue; }
 				// The PATH is the id: AddSolver(FString) resolves a path, and a bare name looks
 				// perfectly reasonable in a response and then fails to resolve.
-				Out.Emplace(S->GetPathName(), S->GetName());
+				// On 5.6+ the id IS the path, because AddSolver(FString) resolves a path.
+				Out.Add({ S->GetPathName(), S->GetName(), S->GetPathName() });
 			}
 #else
 			for (TObjectIterator<UClass> It; It; ++It)
@@ -393,7 +401,11 @@ namespace MifBridge
 				UClass* C = *It;
 				if (!C->IsChildOf(UIKRigSolver::StaticClass()) || C == UIKRigSolver::StaticClass()) { continue; }
 				if (C->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists)) { continue; }
-				Out.Emplace(C->GetName(), C->GetName());
+				// Before 5.6 the id is the CLASS NAME, and the path is a separate thing. Reporting
+				// the name in both fields is what broke test_ik_goals_solvers T260, which checks that
+				// every entry carries a resolvable /Script/ path - a fair check, because a caller
+				// cannot construct that path from the name.
+				Out.Add({ C->GetName(), C->GetName(), C->GetPathName() });
 			}
 #endif
 		}
@@ -423,17 +435,20 @@ namespace MifBridge
 		{
 			if (!C) { OutError = TEXT("no controller."); return INDEX_NONE; }
 
-			TArray<TPair<FString, FString>> Types;
+			TArray<FMifSolverType> Types;
 			IKCollectSolverTypes(Types);
-			const TPair<FString, FString>* Match = Types.FindByPredicate(
-				[&Id](const TPair<FString, FString>& P)
+			// Id, short name OR path all resolve. The old IKResolveSolverClass accepted a path and the
+			// replacement briefly did not, which is a capability regression nobody would have noticed
+			// until a caller round-tripped the `path` field this endpoint reports.
+			const FMifSolverType* Match = Types.FindByPredicate(
+				[&Id](const FMifSolverType& T)
 				{
-					return P.Key == Id || P.Value == Id;
+					return T.Id == Id || T.Name == Id || T.Path == Id;
 				});
 			if (!Match)
 			{
 				TArray<FString> Names;
-				for (const TPair<FString, FString>& P : Types) { Names.Add(P.Key); }
+				for (const FMifSolverType& T : Types) { Names.Add(T.Id); }
 				OutError = FString::Printf(
 					TEXT("no IK Rig solver type called '%s' on this engine. %s Available: %s."),
 					*Id, IKSolverModelNote(), *FString::Join(Names, TEXT(", ")));
@@ -441,10 +456,10 @@ namespace MifBridge
 			}
 
 #if MIF_ENGINE_AT_LEAST(5, 6)
-			return C->AddSolver(Match->Key);   // AddSolver(const FString) - the struct path
+			return C->AddSolver(Match->Id);   // AddSolver(const FString) - the struct path
 #else
 			FString Ignored;
-			UClass* Cls = IKResolveSolverClass(Match->Key, Ignored);
+			UClass* Cls = IKResolveSolverClass(Match->Name, Ignored);
 			return Cls ? C->AddSolver(Cls) : INDEX_NONE;
 #endif
 		}
@@ -1623,15 +1638,15 @@ namespace MifBridge
 #if !MIF_WITH_IKRIG
 		IKRigUnavailable(Out, TEXT("list_ik_solver_types"));
 #else
-		TArray<TPair<FString, FString>> Found;
+		TArray<FMifSolverType> Found;
 		IKCollectSolverTypes(Found);
 		TArray<TSharedPtr<FJsonValue>> Types;
-		for (const TPair<FString, FString>& P : Found)
+		for (const FMifSolverType& T : Found)
 		{
 			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
-			J->SetStringField(TEXT("solverClass"), P.Key);
-			J->SetStringField(TEXT("path"), P.Key);
-			J->SetStringField(TEXT("name"), P.Value);
+			J->SetStringField(TEXT("solverClass"), T.Id);
+			J->SetStringField(TEXT("path"), T.Path);   // a REAL path on both engines
+			J->SetStringField(TEXT("name"), T.Name);
 			Types.Add(MakeShared<FJsonValueObject>(J));
 		}
 		Out->SetArrayField(TEXT("types"), Types);
