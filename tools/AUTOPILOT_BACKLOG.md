@@ -27,7 +27,10 @@ force-directed graph is a large Slate build and is the only part that genuinely 
 own. Do the data first: it is independently useful over MCP even with no widget, and every visual is a
 consumer of it.
 
-- [ ] `project_dependency_graph` — nodes and edges for the asset dependency graph. Build on the
+- [x] DONE (c01b966). `project_dependency_graph` returns nodes and edges under a prefix, each node
+      carrying dependsOn AND referencedBy. Guards copied from H_audit_unused: refuses while the
+      registry scans, refuses a prefix under two segments, caps and REPORTS the cap. 46 assertions
+      in test_project_graph.py. ORIGINAL: `project_dependency_graph` — nodes and edges for the asset dependency graph. Build on the
       existing referencer machinery rather than a second traversal (grep get_referencers /
       get_dependencies first — one of them already walks this). Needs: a root filter or path prefix so
       it does not return the whole project by default, a depth cap, and a `truncated` flag. The DDS2
@@ -39,22 +42,38 @@ consumer of it.
       Blueprint's generated class is present but its editor-only data may not be, and gotchas 6c
       covers what that costs.
 
-- [ ] `project_asset_distribution` — counts by class, by folder, by size. Pure Asset Registry, so it
+- [x] DONE (c01b966). Counts by class and folder, pure Asset Registry so it loads nothing - which is
+      why it accepts a bare /Game where the graph endpoint refuses one. Live: 32,265 assets, 196
+      classes, 49 folders. ORIGINAL: `project_asset_distribution` — counts by class, by folder, by size. Pure Asset Registry, so it
       can be a read that loads nothing (the list_level_sequences pattern). Report
       `registryStillScanning` for the same reason that one does: a low count during a scan is
       indistinguishable from a low count.
 
-- [ ] `project_complexity_metrics` — per-Blueprint node count, graph count, function count, variable
+- [x] PARTLY DONE (4443bce), and the rest is deliberately not built. The HEATMAP view answers the
+      question this item existed for - what is most connected, therefore most expensive to change -
+      using referencers + dependencies, which needs no asset loading. Per-Blueprint NODE counts do
+      need loading every Blueprint, and on cooked content that is the gotchas 6c hazard for a
+      number nobody asked for. Reopen only if node-level complexity is actually wanted.
+      ORIGINAL: `project_complexity_metrics` — per-Blueprint node count, graph count, function count, variable
       count, and reference count, so a "heatmap" has something real to colour. Everything needed is
       already reachable through the existing blueprint reads; this is aggregation, not new engine
       surface.
 
-- [ ] Performance tab equivalent. The competitor reads Unreal Insights traces. Decide FIRST whether
+- [x] DONE (739f695, 5e7bc74), and it declined the part worth declining. perf_heavy_actors reports a
+      static CENSUS - triangles, components, material slots, and which actors run a Blueprint tick.
+      It does NOT claim frame time: get_perf_stats' own caveat explains why editor timing is the
+      editor drawing its viewport. For real attribution, trace_start/trace_stop drive Unreal
+      Insights and write a .utrace (verified: 17.5MB in four seconds). Inventing an fps number
+      would have been the easy, wrong answer. ORIGINAL: Performance tab equivalent. The competitor reads Unreal Insights traces. Decide FIRST whether
       that is worth it here or whether the existing perf endpoints (there is already a
       test_perf_stats.py) cover enough. This is the item most likely to be worth declining — judge it
       on value for DDS2 modding, not on matching a feature list.
 
-- [ ] The in-editor dashboard itself: extend MifBridgePanel.cpp with tabs over the endpoints above.
+- [x] DONE (84d4ff0, 4443bce, 739f695). Four internal tabs over a WidgetSwitcher - ACTIVITY,
+      BRAINMAP, HEATMAP, PERFORMANCE - rather than four nomad tabs, which would scatter the tool
+      across the editor's docking layout. The graph IS built: custom-painted, zoom and pan,
+      coloured by asset type, sized by referencer count, engine type icons when zoomed in, click to
+      reveal in the Content Browser. ORIGINAL: The in-editor dashboard itself: extend MifBridgePanel.cpp with tabs over the endpoints above.
       Asset distribution renders as bars and the inheritance tree as an STreeView — both are ordinary
       Slate and worth doing early. The DEPENDENCY GRAPH is the hard one: an interactive
       force-directed node graph needs SNodePanel/SGraphPanel or a custom OnPaint, and is a session of
@@ -368,3 +387,20 @@ consumer of it.
       TryGetArrayField fail, the whole block was skipped, and it answered ok:true/selected:0 having
       done nothing. Arrays turned out to be a hole in the module's documented silent-ignore backstop,
       so the fix is a checked JArray reader across all 19 request-array reads, not a message change.
+
+- [ ] Inheritance tree view - the one dashboard tab still missing.
+      The competitor's is collapsible groups (UserWidget 156 blueprints, ActorComponent 36, ...) with
+      a coloured pill per class. Cheap IF the parent class can be read from an Asset Registry TAG
+      rather than by loading each Blueprint - check that first, because loading every Blueprint on
+      cooked content is the gotchas 6c hazard. STreeView is the widget.
+
+- [ ] Mermaid export from the graph endpoints.
+      Still worth doing BEFORE any more Slate graph work: it delivers most of the same understanding
+      for a fraction of the effort, renders anywhere, and needs no widget. The competitor offers
+      "Open in Window" and "Export PNG" on theirs.
+
+- [ ] Real asset THUMBNAILS in the brainmap, instead of class icons.
+      Andre asked for "viewport icons of each item or cached images". Class icons shipped because
+      FSlateIconFinder::FindIcon works by NAME inside a paint path and loads nothing. Real thumbnails
+      need FAssetThumbnail, which produces an SWidget - so the brainmap has to become a panel with a
+      child per node rather than a custom-painted leaf. That is a real refactor, not a tweak.
