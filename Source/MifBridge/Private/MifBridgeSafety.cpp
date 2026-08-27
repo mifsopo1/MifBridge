@@ -83,6 +83,34 @@ namespace MifBridge
 				TEXT("new_level"), TEXT("load_level"), TEXT("quit_editor"), TEXT("restart_editor"),
 				// Long, unsupervised, and writes into the project.
 				TEXT("build_navmesh"), TEXT("import_asset"),
+				// THE SIDE DOORS. These do not write anything themselves, which is exactly why they
+				// were missed - the list was built by asking "does this endpoint mutate?" when the
+				// question is "can this endpoint REACH something that mutates?".
+				//
+				// send_editor_key sends real key events into whatever currently has focus
+				// (FSlateApplication::ProcessKeyDownEvent). In a level editor, Ctrl+S is Save. So with
+				// save_package refused, this was permitted:
+				//
+				//     send_editor_key { "key": "S", "modifiers": { "ctrl": true } }
+				//
+				// invoke_editor_command executes any registered FUICommandInfo or ToolMenu entry,
+				// which includes the editor's own Save, and its deny-list guards against MODAL HANGS
+				// rather than against privilege - a different question that happens to look similar.
+				//
+				// Same shape as the batch bypass fixed earlier tonight: a control enforced at one
+				// choke point, with another road around it. Neither is a defect in these endpoints;
+				// both are perfectly reasonable tools. They just cannot be reachable while the thing
+				// they can reach is refused, or the refusal is theatre.
+				//
+				// Gated wholesale rather than filtered, for the same reason as exec_console: they take
+				// an arbitrary key or command NAME, so there is no subset that is knowably safe, and a
+				// denylist over a namespace someone else populates is the guard shape that always
+				// loses.
+				//
+				// invoke_editor_tab and open_asset_editor are deliberately NOT here. They open UI and
+				// cannot execute anything, so they stay available - diagnosis in scratch mode is the
+				// point of scratch mode.
+				TEXT("send_editor_key"), TEXT("invoke_editor_command"),
 			};
 			return Unsafe;
 		}

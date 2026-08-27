@@ -1520,3 +1520,61 @@ Refusing to guess where "mostly worked" ends is why the threshold is zero rather
 
 Fixed and built on 5.3 (DLL 3,950,592 at 23:25). Not yet run live - the SDK editor is closed.
 `test_spawn_many.py` covers the endpoint and should gain a total-failure case.
+
+
+## 20. The safety gate refused `save_package` and permitted two roads to Save — FIXED
+
+Found 2026-08-26 while designing an in-panel write-mode dropdown, by asking whether an agent could
+reach the dropdown widget. It could not - but the question exposed something worse that had nothing
+to do with the dropdown.
+
+In `scratch` mode:
+
+| call | result |
+|---|---|
+| `save_package` | refused by the gate |
+| `send_editor_key {key:"S", modifiers:{ctrl:true}}` | **permitted** — and Ctrl+S is Save |
+| `invoke_editor_command {context:"LevelEditor", command:"Save"}` | **permitted** |
+
+### Why they were missed
+
+The unsafe list was built by asking **"does this endpoint mutate?"**. Neither of these writes
+anything - `send_editor_key` delivers a key event, `invoke_editor_command` executes a registered
+`FUICommandInfo`. Both answer "no" to that question and both are perfectly reasonable tools.
+
+The question that matters is **"can this endpoint REACH something that mutates?"**, and against that
+one they answer yes immediately.
+
+`invoke_editor_command` already HAS a deny-list, which is part of why it looked covered. That list
+guards against **modal hangs** - commands that open a dialog and freeze the bridge (PM-011). Guarding
+against a hang and guarding against a privilege are different questions that produce similar-looking
+code, and the presence of one made it easy to assume the other.
+
+### The same shape as the batch bypass, hours apart
+
+Issue in `docs/15`: `batch` dispatched straight out of `Handlers()` without passing the gate. This is
+that lesson at a different layer - **a control enforced at one choke point is only as good as the
+claim that there is one choke point.** There, the second road was another dispatcher. Here, it is an
+endpoint that drives the editor's own UI.
+
+### The fix
+
+Both are now on the unsafe list, gated wholesale rather than filtered - for the same reason as
+`exec_console`: they take an arbitrary key or command NAME, so no subset is knowably safe, and a
+denylist over a namespace someone else populates is the guard shape that always loses.
+
+`invoke_editor_tab` and `open_asset_editor` are deliberately **not** gated. They open UI and cannot
+execute anything, and diagnosis is the entire point of scratch mode.
+
+### The property this buys, which matters for the dropdown
+
+With `send_editor_key` gated, an agent in scratch mode cannot deliver keystrokes at all - so it
+cannot drive a focused combo box, and **an in-panel dropdown becomes safe by construction rather than
+by hoping nobody thinks of it.** The gate ends up protecting its own control surface, which is the
+property a gate should have.
+
+### Status
+
+Fixed and built on 5.3 (DLL 3,969,024 at 23:38). `test_safety_gate.py` T635 asserts both are refused,
+refused *by the gate* specifically, that the refusal holds through `batch` as well, and that
+`invoke_editor_tab` still works. Not run live - the SDK editor is closed.

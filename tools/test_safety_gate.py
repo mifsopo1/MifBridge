@@ -166,6 +166,45 @@ def main():
         check("T633 set_cvar cannot change the write mode", before == after,
               "mode moved %r -> %r via set_cvar - the gate is self-unlockable" % (before, after))
 
+    # ------------------------------------------------------------------ T635 the UI side doors
+    # The gate refuses save_package. Until 2026-08-26 it permitted send_editor_key, which delivers a
+    # real key event to whatever has focus - and Ctrl+S in a level editor is Save. It also permitted
+    # invoke_editor_command, which executes any registered FUICommandInfo including the Save command.
+    #
+    # Neither endpoint writes anything itself. That is exactly why they were missed: the unsafe list
+    # was built by asking "does this mutate?" when the question is "can this REACH something that
+    # mutates?".
+    #
+    # This test sends the harmless key deliberately. If it ever regresses it must fail by being
+    # ALLOWED to send a key, not by actually saving something.
+    print("")
+    print("=== T635: the gate covers the endpoints that can REACH a save ===")
+    mode = (M.call("self_audit", {}, timeout=180) or {}).get("writeMode")
+    if mode == "full":
+        print("  SKIP  gate is in 'full' mode - nothing to enforce")
+    else:
+        for ep, payload in (
+                ("send_editor_key", {"key": "F13"}),
+                ("invoke_editor_command", {"context": "LevelEditor", "command": "Save"}),
+        ):
+            r = M.call(ep, payload)
+            check("T635 %s is refused in scratch mode" % ep, r.get("ok") is False,
+                  "IT RAN. %s" % json.dumps(r)[:170])
+            check("T635 %s is refused BY THE GATE" % ep,
+                  r.get("refusedBy") == "safety-gate",
+                  "refusedBy=%r - refused, but not by the gate" % r.get("refusedBy"))
+
+        # And the same call wrapped in batch, since batch is the other dispatcher.
+        w = M.call("batch", {"ops": [{"op": "send_editor_key", "key": "F13"}]})
+        inner = (w.get("results") or [{}])[0]
+        check("T635 and the side door stays shut through batch too",
+              inner.get("ok") is False, json.dumps(w)[:200])
+
+        # The OPEN-only UI endpoints must still work - diagnosis is the point of scratch mode.
+        t = M.call("invoke_editor_tab", {"tabId": "ContentBrowserTab1"})
+        check("T635 invoke_editor_tab still works (it opens UI, it cannot execute)",
+              t.get("refusedBy") != "safety-gate",
+              "the gate blocked a harmless tab open: %s" % json.dumps(t)[:150])
     # ------------------------------------------------------------------ T634 batch is a SECOND door
     # The gate is enforced in RunEndpoint. batch does NOT recurse through RunEndpoint - it dispatches
     # straight out of Handlers() - so until 2026-08-26 an unsafe endpoint was reachable simply by
