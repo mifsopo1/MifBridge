@@ -28,10 +28,24 @@
 // AInstancedFoliageActor there is no per-member export trap here — checked before writing this.
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
+#include "MifBridgeVersion.h"   // MIF_ENGINE_AT_LEAST - the IK Rig API moved in 5.6
 
 #if MIF_WITH_IKRIG
 #include "Rig/IKRigDefinition.h"          // UIKRigDefinition, FBoneChain, FRetargetDefinition
-#include "Rig/Solvers/IKRigSolver.h"     // UIKRigSolver - null entries are a crash vector, see IKNullEntryReason
+// The solver header was RENAMED in UE 5.6, and not merely renamed: the whole IK Rig solver system
+// moved from UObject to UStruct. The legacy UIKRigSolver class survives in IKRigSolverBase.h purely
+// to load old assets and convert them (ConvertToInstancedStruct); every solver that ships with the
+// plugin was ported to FIKRigSolverBase, so on 5.6+ enumerating UIKRigSolver subclasses finds the
+// legacy shims rather than the solvers anyone would want to add. See H_list_ik_solver_types.
+#if MIF_ENGINE_AT_LEAST(5, 6)
+#include "Rig/Solvers/IKRigSolverBase.h"   // UIKRigSolver (legacy shim) + FIKRigSolverBase
+#include "StructUtils/InstancedStruct.h"   // FInstancedStruct - a solver IS one on 5.6+.
+                                           // 5.3 has this only as an EXPERIMENTAL PLUGIN
+                                           // (Plugins/Experimental/StructUtils), which is
+                                           // why the include is inside this branch.
+#else
+#include "Rig/Solvers/IKRigSolver.h"   // UIKRigSolver - null entries are a crash vector, see IKNullEntryReason
+#endif
 #include "UObject/UObjectIterator.h"    // enumerating UIKRigSolver subclasses for list_ik_solver_types
 #include "Rig/IKRigSkeleton.h"            // FIKRigSkeleton
 #include "RigEditor/IKRigController.h"    // UIKRigController - all IK Rig authoring
@@ -66,6 +80,120 @@ namespace MifBridge
 #if MIF_WITH_IKRIG
 	namespace
 	{
+		// ---------------------------------------------------------------------------------------
+		// THE 5.6 SOLVER MODEL CHANGE LIVES HERE, AND NOWHERE ELSE IN THIS FILE.
+		//
+		// In UE 5.6 the IK Rig solver system moved from UObject to UStruct. UIKRigSolver still exists
+		// (IKRigSolverBase.h) but only as a legacy shim for loading old assets; every solver that ships
+		// with the plugin was ported to FIKRigSolverBase, and UIKRigDefinition::GetSolverArray() was
+		// removed from the asset entirely.
+		//
+		// Two things made that survivable rather than a rewrite:
+		//
+		//   1. The INDEX-BASED controller API is almost identical in both engines. GetNumSolvers,
+		//      GetSolverEnabled, GetEndBone, GetSolverUniqueName, ConnectGoalToSolver,
+		//      IsGoalConnectedToSolver, RemoveSolver, MoveSolverInStack - same names, same signatures,
+		//      5.3 and 5.7 alike. Only GetRootBone(i) was renamed to GetStartBone(i).
+		//   2. The engine always intended the controller to be the door. This file's own header note
+		//      says so: FRetargetDefinition's members are private with `friend class UIKRigController`.
+		//      The old code reached past it to the asset, which worked on 5.3 and is what broke.
+		//
+		// So the port is mostly "stop talking to the asset", which is a correctness improvement on BOTH
+		// engines, and the genuinely divergent parts are the four functions below.
+		//
+		// Verified in both trees before writing, per the rule in docs/02_GOTCHAS.md section 14:
+		//   GetController(const UIKRigDefinition*)   5.3 IKRigController.h:47   5.7 :51
+		//   GetNumSolvers()                          5.3 :98                    5.7 :107
+		//   GetSolverEnabled(int32)                  5.3 :110                   5.7 :119
+		//   GetEndBone(int32)                        5.3 :126                   5.7 :135
+		//   GetRootBone(int32) / GetStartBone(int32) 5.3 :118                   5.7 :127 (RENAMED)
+		//   GetRetargetRoot()                        5.3 :212                   5.7 :246
+		//   GetIKRig(ERetargetSourceOrTarget)        5.3 IKRetargeterController.h  5.7 :68
+		// ---------------------------------------------------------------------------------------
+
+		/** The controller for a rig. Const-correct in both engines - GetController takes a const rig
+		 *  and hands back a mutable controller, which is the engine's own signature, not a cast. */
+		UIKRigController* IKControllerFor(const UIKRigDefinition* Rig)
+		{
+			return Rig ? UIKRigController::GetController(Rig) : nullptr;
+		}
+
+		/** Solver count. The asset lost GetSolverArray() in 5.6; the controller kept GetNumSolvers()
+		 *  unchanged, so this is one spelling for both engines rather than a guarded pair. */
+		int32 IKNumSolvers(const UIKRigDefinition* Rig)
+		{
+			const UIKRigController* C = IKControllerFor(Rig);
+			return C ? C->GetNumSolvers() : 0;
+		}
+
+		/** Is the solver at this index a null entry? Null solvers are a real crash vector - see
+		 *  IKNullEntryReason - and survive in assets saved by older editors.
+		 *
+		 *  `auto` is doing load-bearing work: GetSolverAtIndex returns UIKRigSolver* on 5.3 and
+		 *  FIKRigSolverBase* on 5.7. The null test is identical; only the pointee type differs, and
+		 *  naming it would force a guard for no benefit. */
+		bool IKSolverIsNull(const UIKRigController* C, int32 Index)
+		{
+			if (!C) { return false; }
+			const auto* Solver = C->GetSolverAtIndex(Index);
+			return Solver == nullptr;
+		}
+
+		/** The root/start bone of a solver. THE one member that was renamed rather than moved. */
+		FName IKSolverRootBone(const UIKRigController* C, int32 Index)
+		{
+			if (!C) { return NAME_None; }
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			return C->GetStartBone(Index);
+#else
+			return C->GetRootBone(Index);
+#endif
+		}
+
+		/** A solver's TYPE IDENTITY, as a string that add_ik_solver on THIS engine will accept back.
+		 *
+		 *  This is the one place where the two engines cannot produce the same VALUE, because the
+		 *  engines genuinely disagree about what a solver type is:
+		 *
+		 *      5.3: a UClass       -> "IKRig_FBIKSolver"
+		 *      5.7: a UScriptStruct -> "/Script/IKRig.FullBodyIKSolver"
+		 *
+		 *  The rule in docs/02_GOTCHAS.md section 14 is that guarded branches must not produce
+		 *  differently-SHAPED output, and they do not: `solverClass` is a string on both, and on both
+		 *  it is exactly what add_ik_solver wants. What a caller must not do is carry a solverClass
+		 *  from a 5.3 rig to a 5.7 one and expect it to resolve - so list_ik_solver_types reports which
+		 *  model it is answering for, rather than leaving that to be discovered by failure. */
+		FString IKSolverTypeId(const UIKRigController* C, int32 Index)
+		{
+			if (!C) { return FString(); }
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			// The struct PATH, not the name: AddSolver(FString) resolves a path, and a bare name
+			// would fail to resolve while looking perfectly reasonable in a response.
+			if (const FInstancedStruct* S = C->GetSolverStructAtIndex(Index))
+			{
+				if (const UScriptStruct* SS = S->GetScriptStruct())
+				{
+					return SS->GetPathName();
+				}
+			}
+			return FString();
+#else
+			if (const UIKRigSolver* S = C->GetSolverAtIndex(Index))
+			{
+				return S->GetClass()->GetName();
+			}
+			return FString();
+#endif
+		}
+
+		/** The retarget root. Present on the ASSET in 5.3 and removed from it in 5.7; present on the
+		 *  CONTROLLER in both, with the same signature. */
+		FName IKRetargetRoot(const UIKRigDefinition* Rig)
+		{
+			const UIKRigController* C = IKControllerFor(Rig);
+			return C ? C->GetRetargetRoot() : NAME_None;
+		}
+
 		/** The convention in this codebase is Package->MarkPackageDirty() at the call site (see
 		 *  MifBridgeUserTypes.cpp:299). Wrapped here only because eight handlers need it and a null
 		 *  package would otherwise be eight null checks. */
@@ -190,7 +318,11 @@ namespace MifBridge
 		{
 			if (!Rig) { return TEXT("the rig is null"); }
 			int32 NullSolvers = 0, NullGoals = 0;
-			for (const UIKRigSolver* Solver : Rig->GetSolverArray()) { if (!Solver) { ++NullSolvers; } }
+			// By INDEX through the controller: the asset lost GetSolverArray() in 5.6, and the
+			// element type differs between engines even where the array survives.
+			const UIKRigController* NullScanC = IKControllerFor(Rig);
+			const int32 NullScanCount = NullScanC ? NullScanC->GetNumSolvers() : 0;
+			for (int32 i = 0; i < NullScanCount; ++i) { if (IKSolverIsNull(NullScanC, i)) { ++NullSolvers; } }
 			for (const UIKRigEffectorGoal* Goal : Rig->GetGoalArray()) { if (!Goal) { ++NullGoals; } }
 			if (NullSolvers == 0 && NullGoals == 0) { return FString(); }
 			return FString::Printf(
@@ -204,6 +336,9 @@ namespace MifBridge
 
 		/** Resolves a solver class from a name, accepting either the bare class name or a full
 		 *  /Script/ path. Returns null and fills OutError otherwise. */
+#if MIF_ENGINE_BEFORE(5, 6)
+		/** 5.3 only. On 5.6+ solvers are UStructs and this would iterate the legacy shims, finding
+		 *  nothing anyone can add - see IKCollectSolverTypes. */
 		UClass* IKResolveSolverClass(const FString& Name, FString& OutError)
 		{
 			UClass* Found = nullptr;
@@ -227,6 +362,92 @@ namespace MifBridge
 			}
 			return Found;
 		}
+#endif
+
+		/** Every solver type this engine offers, as (id, label) pairs where `id` is what add_ik_solver
+		 *  accepts back.
+		 *
+		 *  This is the one endpoint where the two engines cannot report the same VALUES, because they
+		 *  disagree about what a solver type IS - a UClass on 5.3, a UScriptStruct on 5.6+. The SHAPE
+		 *  is identical (id + label strings), which is the rule in docs/02_GOTCHAS.md section 14; the
+		 *  values are engine-local, so list_ik_solver_types says which model it answered for rather
+		 *  than letting a caller find out by carrying an id between engines and getting a refusal. */
+		void IKCollectSolverTypes(TArray<TPair<FString, FString>>& Out)
+		{
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			// UScriptStruct has no CLASS_Abstract equivalent to filter on, and FIKRigSolverBase itself
+			// is the only base to exclude. STRUCT_NoExport would skip the base's own reflection entry
+			// on some engines, so it is excluded by identity instead - one comparison, no guessing.
+			const UScriptStruct* Base = FIKRigSolverBase::StaticStruct();
+			for (TObjectIterator<UScriptStruct> It; It; ++It)
+			{
+				UScriptStruct* S = *It;
+				if (S == Base || !S->IsChildOf(Base)) { continue; }
+				// The PATH is the id: AddSolver(FString) resolves a path, and a bare name looks
+				// perfectly reasonable in a response and then fails to resolve.
+				Out.Emplace(S->GetPathName(), S->GetName());
+			}
+#else
+			for (TObjectIterator<UClass> It; It; ++It)
+			{
+				UClass* C = *It;
+				if (!C->IsChildOf(UIKRigSolver::StaticClass()) || C == UIKRigSolver::StaticClass()) { continue; }
+				if (C->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists)) { continue; }
+				Out.Emplace(C->GetName(), C->GetName());
+			}
+#endif
+		}
+
+		/** Which solver model this engine uses, for the response to say plainly. */
+		const TCHAR* IKSolverModelNote()
+		{
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			return TEXT("This engine is UE 5.6 or newer, where IK Rig solvers are UStructs. solverClass "
+						"is a struct PATH such as '/Script/IKRig.FullBodyIKSolver'. Ids from a 5.3 "
+						"editor are UClass names and will NOT resolve here.");
+#else
+			return TEXT("This engine is older than UE 5.6, where IK Rig solvers are UObjects. "
+						"solverClass is a class NAME such as 'IKRigFBIKSolver' - note these are not "
+						"guessable (the full-body solver is 'IKRigFBIKSolver', not 'IKRig_FBIKSolver'). "
+						"Ids from a 5.6+ editor are struct paths and will NOT resolve here.");
+#endif
+		}
+
+		/** Add a solver by the id this engine's list_ik_solver_types reports. Returns the new index, or
+		 *  INDEX_NONE with OutError populated.
+		 *
+		 *  The resolution is done HERE rather than by handing a resolved type back to the caller,
+		 *  because the resolved thing is a UClass* on one engine and a UScriptStruct* on the other -
+		 *  there is no type the handler could hold that works on both. */
+		int32 IKAddSolverById(UIKRigController* C, const FString& Id, FString& OutError)
+		{
+			if (!C) { OutError = TEXT("no controller."); return INDEX_NONE; }
+
+			TArray<TPair<FString, FString>> Types;
+			IKCollectSolverTypes(Types);
+			const TPair<FString, FString>* Match = Types.FindByPredicate(
+				[&Id](const TPair<FString, FString>& P)
+				{
+					return P.Key == Id || P.Value == Id;
+				});
+			if (!Match)
+			{
+				TArray<FString> Names;
+				for (const TPair<FString, FString>& P : Types) { Names.Add(P.Key); }
+				OutError = FString::Printf(
+					TEXT("no IK Rig solver type called '%s' on this engine. %s Available: %s."),
+					*Id, IKSolverModelNote(), *FString::Join(Names, TEXT(", ")));
+				return INDEX_NONE;
+			}
+
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			return C->AddSolver(Match->Key);   // AddSolver(const FString) - the struct path
+#else
+			FString Ignored;
+			UClass* Cls = IKResolveSolverClass(Match->Key, Ignored);
+			return Cls ? C->AddSolver(Cls) : INDEX_NONE;
+#endif
+		}
 
 		/** Goals and solvers of a rig, for the read endpoints.
 		 *
@@ -238,17 +459,19 @@ namespace MifBridge
 			const TSharedRef<FJsonObject>& Out)
 		{
 			TArray<TSharedPtr<FJsonValue>> Solvers, Goals;
-			const TArray<UIKRigSolver*>& SolverArray = Rig->GetSolverArray();
-			for (int32 i = 0; i < SolverArray.Num(); ++i)
+			// Every read below goes through the CONTROLLER by index. That is the engine's intended
+			// door on both versions, and on 5.6+ it is the only one - the solver objects the old code
+			// dereferenced are UStructs now.
+			const int32 SolverCount = C ? C->GetNumSolvers() : 0;
+			for (int32 i = 0; i < SolverCount; ++i)
 			{
-				const UIKRigSolver* Solver = SolverArray[i];
-				if (!Solver) { continue; }   // null entries are reported as a problem elsewhere
+				if (IKSolverIsNull(C, i)) { continue; }   // null entries are reported as a problem elsewhere
 				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
 				J->SetNumberField(TEXT("index"), i);
-				J->SetStringField(TEXT("solverClass"), Solver->GetClass()->GetName());
-				J->SetBoolField(TEXT("enabled"), Solver->IsEnabled());
-				J->SetStringField(TEXT("rootBone"), Solver->GetRootBone().ToString());
-				J->SetStringField(TEXT("endBone"), Solver->GetEndBone().ToString());
+				J->SetStringField(TEXT("solverClass"), IKSolverTypeId(C, i));
+				J->SetBoolField(TEXT("enabled"), C->GetSolverEnabled(i));
+				J->SetStringField(TEXT("rootBone"), IKSolverRootBone(C, i).ToString());
+				J->SetStringField(TEXT("endBone"), C->GetEndBone(i).ToString());
 				Solvers.Add(MakeShared<FJsonValueObject>(J));
 			}
 			for (const UIKRigEffectorGoal* Goal : Rig->GetGoalArray())
@@ -265,7 +488,7 @@ namespace MifBridge
 				TArray<TSharedPtr<FJsonValue>> Connected;
 				if (C)
 				{
-					for (int32 i = 0; i < SolverArray.Num(); ++i)
+					for (int32 i = 0; i < SolverCount; ++i)
 					{
 						if (C->IsGoalConnectedToSolver(Goal->GoalName, i))
 						{
@@ -372,7 +595,7 @@ namespace MifBridge
 
 		const FIKRigSkeleton& Skel = Rig->GetSkeleton();
 		const TArray<FBoneChain>& Chains = Rig->GetRetargetChains();
-		const FName Root = Rig->GetRetargetRoot();
+		const FName Root = IKRetargetRoot(Rig);
 
 		// Bone lookup once, so every check below is a set membership rather than a scan per chain.
 		TSet<FName> Bones(Skel.BoneNames);
@@ -424,9 +647,9 @@ namespace MifBridge
 		// root and chains; IK solving wants solvers and goals. Demanding both called a perfectly good
 		// IK-only rig invalid - and, worse, that verdict gated the engine probe below, so the one
 		// answer that would have settled it never ran.
-		const int32 NumSolvers = Rig->GetSolverArray().Num();
+		const int32 NumSolvers = IKNumSolvers(Rig);
 		const bool bRetargeting = Chains.Num() > 0 || !Root.IsNone();
-		const bool bSolving = NumSolvers > 0 || Rig->GetGoalArray().Num() > 0;
+		const bool bSolving = NumSolvers > 0 || Rig->GetGoalArray().Num() > 0;   // GetGoalArray survived 5.6; GetSolverArray did not
 		Out->SetStringField(TEXT("purpose"),
 			bRetargeting && bSolving ? TEXT("retargeting and IK")
 			: bRetargeting           ? TEXT("retargeting")
@@ -682,7 +905,14 @@ namespace MifBridge
 			return;
 		}
 
+#if MIF_ENGINE_AT_LEAST(5, 7)
+		// 5.7 dropped the parameter; the call transacts according to the engine's own policy now.
+		if (!C->SetSkeletalMesh(Mesh))
+#else
+		// Deliberately true: without it the mesh swap is not undoable, and a caller who set the wrong
+		// mesh on a rig with goals has no way back.
 		if (!C->SetSkeletalMesh(Mesh, /*bTransact=*/true))
+#endif
 		{
 			// The engine rejects a mesh missing bones the rig's existing goals or solvers need, and
 			// writes the detail to the log rather than returning it - so say where to look.
@@ -766,7 +996,7 @@ namespace MifBridge
 
 		C->SetRetargetRoot(BoneName);
 		// Read back rather than trust: this is the call whose failure mode is a silent clear.
-		const FName Now = Rig->GetRetargetRoot();
+		const FName Now = IKRetargetRoot(Rig);
 		if (Now != BoneName)
 		{
 			Fail(Out, FString::Printf(
@@ -1014,8 +1244,11 @@ namespace MifBridge
 
 		IKMarkDirty(Asset);
 		Out->SetStringField(TEXT("retargeter"), Asset->GetPathName());
-		Out->SetStringField(TEXT("sourceRig"), Asset->GetSourceIKRig() ? Asset->GetSourceIKRig()->GetPathName() : FString());
-		Out->SetStringField(TEXT("targetRig"), Asset->GetTargetIKRig() ? Asset->GetTargetIKRig()->GetPathName() : FString());
+		// Through the controller, which is the only door on 5.7 and an equally valid one on 5.3.
+		const UIKRigDefinition* SrcRig = C->GetIKRig(ERetargetSourceOrTarget::Source);
+		const UIKRigDefinition* TgtRig = C->GetIKRig(ERetargetSourceOrTarget::Target);
+		Out->SetStringField(TEXT("sourceRig"), SrcRig ? SrcRig->GetPathName() : FString());
+		Out->SetStringField(TEXT("targetRig"), TgtRig ? TgtRig->GetPathName() : FString());
 
 		IKWriteMapping(Asset, Out);
 		// Stated because it is surprising: setting a rig here already auto-mapped the chains.
@@ -1052,7 +1285,7 @@ namespace MifBridge
 		// The engine's whole AutoMapChains body sits inside `if (IsValid(GetTargetIKRig()))`
 		// (IKRetargeterController.cpp:230), so without a target rig it does nothing AT ALL and says
 		// nothing. Refuse instead.
-		if (!IsValid(Asset->GetTargetIKRig()))
+		if (!IsValid(C->GetIKRig(ERetargetSourceOrTarget::Target)))
 		{
 			Fail(Out, TEXT("this retargeter has no TARGET rig, and the mapping is built from the target "
 						   "rig's chains - so there is nothing to map. Set it with set_retarget_rigs "
@@ -1060,7 +1293,7 @@ namespace MifBridge
 						   "reported success.)"));
 			return;
 		}
-		if (!IsValid(Asset->GetSourceIKRig()))
+		if (!IsValid(C->GetIKRig(ERetargetSourceOrTarget::Source)))
 		{
 			Fail(Out, TEXT("this retargeter has no SOURCE rig, so every chain would map to nothing. Set "
 						   "it with set_retarget_rigs first. NOTHING was changed."));
@@ -1156,8 +1389,8 @@ namespace MifBridge
 		// Both ends are checked against the rigs BEFORE writing, because SetSourceChain reports a bool
 		// and a caller cannot tell "no such target chain" from "no such source chain" from it.
 		TArray<FName> TargetNames, SourceNames;
-		IKChainNames(Asset->GetTargetIKRig(), TargetNames);
-		IKChainNames(Asset->GetSourceIKRig(), SourceNames);
+		IKChainNames(C->GetIKRig(ERetargetSourceOrTarget::Target), TargetNames);
+		IKChainNames(C->GetIKRig(ERetargetSourceOrTarget::Source), SourceNames);
 		const auto Join = [](const TArray<FName>& N)
 		{
 			TArray<FString> S;
@@ -1219,8 +1452,8 @@ namespace MifBridge
 		// The Writeable variants: GetSourceIKRig/GetTargetIKRig return const pointers
 		// (IKRetargeter.h:213-215) and everything below only reads, but keeping one type avoids a
 		// const_cast further down.
-		const UIKRigDefinition* Src = Asset->GetSourceIKRig();
-		const UIKRigDefinition* Tgt = Asset->GetTargetIKRig();
+		const UIKRigDefinition* Src = C->GetIKRig(ERetargetSourceOrTarget::Source);
+		const UIKRigDefinition* Tgt = C->GetIKRig(ERetargetSourceOrTarget::Target);
 		TArray<TSharedPtr<FJsonValue>> Problems;
 		if (!IsValid(Src))
 		{
@@ -1260,7 +1493,7 @@ namespace MifBridge
 					i == 0 ? TEXT("source") : TEXT("target"), *R->GetName(),
 					i == 0 ? TEXT("from") : TEXT("onto"))));
 			}
-			if (R->GetRetargetRoot().IsNone())
+			if (IKRetargetRoot(R).IsNone())
 			{
 				Problems.Add(MakeShared<FJsonValueString>(FString::Printf(
 					TEXT("the %s rig '%s' has no retarget root, so the overall body position will not "
@@ -1295,6 +1528,33 @@ namespace MifBridge
 		}
 		else
 		{
+			// THE RETARGET PROCESSOR CHANGED KIND IN 5.6, and the replacement is missing one thing.
+			//
+			// 5.3: UIKRetargetProcessor, a UObject. Has GetTargetIKRigProcessor(), which is what makes
+			//      the verdict below trustworthy - see the note about IsInitialized() being set
+			//      unconditionally.
+			// 5.7: FIKRetargetProcessor, a plain struct. UIKRetargetProcessor still exists but is
+			//      UE_DEPRECATED(5.6) and documented for removal, so using it would compile today and
+			//      break on the next engine - precisely the Direction A trap in docs section 14.
+			//
+			// The struct exposes Initialize, IsInitialized and a public Log, so two of the three checks
+			// port cleanly. It exposes NO accessor for the target rig's inner processor, so the third
+			// cannot be done at all on 5.6+.
+			//
+			// Rather than quietly drop a check and leave the verdict looking equally strong, both
+			// engines report runtimeProbeModel saying which checks actually ran. A caller comparing two
+			// engines can see the difference instead of inferring it from a field that vanished.
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			FIKRetargetProcessor Processor;
+			const FRetargetProfile EmptyProfile;
+			Processor.Initialize(SrcMesh, TgtMesh, Asset, EmptyProfile, /*bSuppressWarnings=*/false);
+			const bool bFlag = Processor.IsInitialized();
+			const bool bNoErrors = Processor.Log.GetErrors().Num() == 0;
+			const bool bInner = bFlag;              // not independently knowable on this engine
+			const bool bHaveInnerCheck = false;
+			const bool bReallyOk = bFlag && bNoErrors;
+			IKCopyLog(Processor.Log, Out);
+#else
 			TStrongObjectPtr<UIKRetargetProcessor> Proc(
 				NewObject<UIKRetargetProcessor>(GetTransientPackage()));
 			Proc->Initialize(SrcMesh, TgtMesh, Asset, /*bSuppressWarnings=*/false);
@@ -1302,9 +1562,17 @@ namespace MifBridge
 			const bool bNoErrors = Proc->Log.GetErrors().Num() == 0;
 			const UIKRigProcessor* Inner = Proc->GetTargetIKRigProcessor();
 			const bool bInner = Inner && Inner->IsInitialized();
+			const bool bHaveInnerCheck = true;
 			const bool bReallyOk = bFlag && bNoErrors && bInner;
 
 			IKCopyLog(Proc->Log, Out);
+#endif
+			Out->SetStringField(TEXT("runtimeProbeModel"), bHaveInnerCheck
+				? TEXT("flag + empty error log + the target rig's own processor initialised (3 checks)")
+				: TEXT("flag + empty error log (2 checks). This engine is 5.6 or newer, where the "
+					   "retarget processor is a struct with no accessor for the target rig's inner "
+					   "processor, so that third check cannot be made. runtimeTargetRigInitialized "
+					   "below mirrors the flag and is NOT an independent confirmation."));
 			// All three reported separately, because the composite verdict is this endpoint's
 			// judgement and a caller is entitled to see what it was built from.
 			Out->SetBoolField(TEXT("runtimeInitialized"), bReallyOk);
@@ -1355,23 +1623,25 @@ namespace MifBridge
 #if !MIF_WITH_IKRIG
 		IKRigUnavailable(Out, TEXT("list_ik_solver_types"));
 #else
+		TArray<TPair<FString, FString>> Found;
+		IKCollectSolverTypes(Found);
 		TArray<TSharedPtr<FJsonValue>> Types;
-		for (TObjectIterator<UClass> It; It; ++It)
+		for (const TPair<FString, FString>& P : Found)
 		{
-			UClass* C = *It;
-			if (!C->IsChildOf(UIKRigSolver::StaticClass()) || C == UIKRigSolver::StaticClass()) { continue; }
-			if (C->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists)) { continue; }
 			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
-			J->SetStringField(TEXT("solverClass"), C->GetName());
-			J->SetStringField(TEXT("path"), C->GetPathName());
+			J->SetStringField(TEXT("solverClass"), P.Key);
+			J->SetStringField(TEXT("path"), P.Key);
+			J->SetStringField(TEXT("name"), P.Value);
 			Types.Add(MakeShared<FJsonValueObject>(J));
 		}
 		Out->SetArrayField(TEXT("types"), Types);
 		Out->SetNumberField(TEXT("count"), Types.Num());
+		Out->SetStringField(TEXT("solverModel"), IKSolverModelNote());
 		Out->SetStringField(TEXT("note"),
-			TEXT("pass solverClass to add_ik_solver. These are class names rather than the friendly "
-				 "labels the IK Rig editor shows: that label comes from GetNiceName(), whose base "
-				 "implementation asserts, so it is deliberately not called here."));
+			TEXT("pass solverClass to add_ik_solver. These are type identifiers rather than the "
+				 "friendly labels the IK Rig editor shows: that label comes from GetNiceName(), whose "
+				 "base implementation asserts, so it is deliberately not called here. solverModel says "
+				 "which identifier form THIS engine uses - they differ across 5.6."));
 #endif
 	}
 
@@ -1403,14 +1673,12 @@ namespace MifBridge
 			return;
 		}
 		FString Why;
-		UClass* SolverClass = IKResolveSolverClass(ClassName, Why);
-		if (!SolverClass)
+		const int32 Index = IKAddSolverById(C, ClassName, Why);
+		if (Index == INDEX_NONE && !Why.IsEmpty())
 		{
 			Fail(Out, FString::Printf(TEXT("%s NOTHING was created."), *Why));
 			return;
 		}
-
-		const int32 Index = C->AddSolver(SolverClass);
 		if (Index == INDEX_NONE)
 		{
 			Fail(Out, FString::Printf(
@@ -1421,8 +1689,11 @@ namespace MifBridge
 		IKMarkDirty(Rig);
 		Out->SetStringField(TEXT("rig"), Rig->GetPathName());
 		Out->SetNumberField(TEXT("index"), Index);
-		Out->SetStringField(TEXT("solverClass"), SolverClass->GetName());
-		Out->SetNumberField(TEXT("solverCount"), Rig->GetSolverArray().Num());
+		// Read the id back off the rig rather than echoing the request: on 5.6+ a caller may pass a
+		// bare struct name while the canonical id is the path, and the response should carry the form
+		// that will resolve again.
+		Out->SetStringField(TEXT("solverClass"), IKSolverTypeId(C, Index));
+		Out->SetNumberField(TEXT("solverCount"), IKNumSolvers(Rig));
 		// The index is the handle for everything else, and it SHIFTS when an earlier solver is
 		// removed - worth saying once rather than being discovered.
 		Out->SetStringField(TEXT("note"),
@@ -1451,7 +1722,7 @@ namespace MifBridge
 		UIKRigController* C = IKResolveRig(In, Out, Rig);
 		if (!C) { return; }
 
-		const int32 Count = Rig->GetSolverArray().Num();
+		const int32 Count = IKNumSolvers(Rig);
 		const int32 Index = int32(JNum(In, TEXT("index"), JNum(In, TEXT("solverIndex"), -1.0)));
 		if (Index < 0 || Index >= Count)
 		{
@@ -1471,7 +1742,7 @@ namespace MifBridge
 		Out->SetStringField(TEXT("rig"), Rig->GetPathName());
 		Out->SetBoolField(TEXT("removed"), true);
 		Out->SetNumberField(TEXT("index"), Index);
-		Out->SetNumberField(TEXT("solverCount"), Rig->GetSolverArray().Num());
+		Out->SetNumberField(TEXT("solverCount"), IKNumSolvers(Rig));
 		Out->SetStringField(TEXT("note"),
 			TEXT("every solver after this one has shifted DOWN by one index, and any goal connected "
 				 "only to this solver is now inert. Re-read with list_ik_rig before using an index or "
@@ -1504,7 +1775,7 @@ namespace MifBridge
 		UIKRigController* C = IKResolveRig(In, Out, Rig);
 		if (!C) { return; }
 
-		const int32 Count = Rig->GetSolverArray().Num();
+		const int32 Count = IKNumSolvers(Rig);
 		const int32 Index = int32(JNum(In, TEXT("index"), JNum(In, TEXT("solverIndex"), -1.0)));
 		if (Index < 0 || Index >= Count)
 		{
@@ -1544,7 +1815,12 @@ namespace MifBridge
 		}
 
 		TArray<FString> Refused;
+		// Renamed in 5.6 alongside its getter (CanSetRootBone -> CanSetStartBone). Same semantics.
+#if MIF_ENGINE_AT_LEAST(5, 6)
+		if (bHasRoot && !C->SetStartBone(FName(*RootName), Index))
+#else
 		if (bHasRoot && !C->SetRootBone(FName(*RootName), Index))
+#endif
 		{
 			// Reached only when the solver type does not accept a root bone at all - the bone itself
 			// was already proven to exist.
@@ -1561,15 +1837,14 @@ namespace MifBridge
 		}
 
 		IKMarkDirty(Rig);
-		const UIKRigSolver* Solver = Rig->GetSolverArray()[Index];
 		Out->SetStringField(TEXT("rig"), Rig->GetPathName());
 		Out->SetNumberField(TEXT("index"), Index);
-		Out->SetStringField(TEXT("solverClass"), Solver ? Solver->GetClass()->GetName() : FString());
-		// Read back off the solver rather than echoing the request: not every solver type honours
-		// every field, and silence about that is how a rig ends up not doing what it was told.
-		Out->SetStringField(TEXT("rootBone"), Solver ? Solver->GetRootBone().ToString() : FString());
-		Out->SetStringField(TEXT("endBone"), Solver ? Solver->GetEndBone().ToString() : FString());
-		Out->SetBoolField(TEXT("enabled"), Solver ? Solver->IsEnabled() : false);
+		Out->SetStringField(TEXT("solverClass"), IKSolverTypeId(C, Index));
+		// Read back through the controller rather than echoing the request: not every solver type
+		// honours every field, and silence about that is how a rig ends up not doing what it was told.
+		Out->SetStringField(TEXT("rootBone"), IKSolverRootBone(C, Index).ToString());
+		Out->SetStringField(TEXT("endBone"), C->GetEndBone(Index).ToString());
+		Out->SetBoolField(TEXT("enabled"), C->GetSolverEnabled(Index));
 		if (Refused.Num() > 0)
 		{
 			Out->SetStringField(TEXT("refusedNote"), FString::Printf(
@@ -1805,7 +2080,7 @@ namespace MifBridge
 				*Name));
 			return;
 		}
-		const int32 Count = Rig->GetSolverArray().Num();
+		const int32 Count = IKNumSolvers(Rig);
 		const int32 Index = int32(JNum(In, TEXT("solverIndex"), JNum(In, TEXT("index"), -1.0)));
 		if (Index < 0 || Index >= Count)
 		{

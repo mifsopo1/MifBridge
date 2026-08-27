@@ -175,6 +175,33 @@ public class MifBridge : ModuleRules
 		AddPluginModules("MIF_WITH_METASOUND", "Metasound",
 			new string[] { "MetasoundEngine" });
 
+		// ---- Blueprint reconstructor: present ONLY in the DDS2 ENGINE FORK ------------------
+		// CompiledBlueprintReconstructor.h lives in Engine/Source/Editor/Kismet/Public and does NOT
+		// ship with any stock Unreal, of any version. It is a fork-local addition to D:/UE532, which
+		// is why create_editable_child can headlessly mint an editable copy of a COOKED blueprint -
+		// something stock UE has no API for at all.
+		//
+		// This is a DIFFERENT KIND of absence from the ones around it, and the distinction matters
+		// when reading the refusal. Every other MIF_WITH_* here guards an optional PLUGIN: enable it,
+		// or use an engine that ships it, and the endpoint comes back. This one cannot be enabled on
+		// a stock engine at any version - there is no plugin to install and no newer release that
+		// adds it. The refusal says so, rather than implying an upgrade would help.
+		//
+		// Found by a second session compiling the synced plugin against stock UE 5.7 in Curfew. From
+		// a 5.3 machine this file looked like ordinary editor code, because on THIS engine the header
+		// is exactly where an engine header should be. Nothing about the include hints that it is not
+		// stock; only building somewhere else reveals it.
+		string ReconstructorHeader = System.IO.Path.Combine(
+			EngineDirectory, "Source", "Editor", "Kismet", "Public", "CompiledBlueprintReconstructor.h");
+		bool bHasReconstructor = System.IO.File.Exists(ReconstructorHeader);
+		PublicDefinitions.Add("MIF_WITH_RECONSTRUCTOR=" + (bHasReconstructor ? "1" : "0"));
+		if (!bHasReconstructor)
+		{
+			System.Console.WriteLine(
+				"MifBridge: no CompiledBlueprintReconstructor.h at " + ReconstructorHeader +
+				" - this is a stock engine, so create_editable_child will compile as a refusal " +
+				"naming the fork requirement.");
+		}
 		// ---- IK Rig: present in UE5, ABSENT IN UE4 ------------------------------------------
 		// This plugin is also run against UE4, where the IKRig plugin does not exist. An
 		// unconditional dependency would stop the WHOLE of MifBridge loading there, which is a far

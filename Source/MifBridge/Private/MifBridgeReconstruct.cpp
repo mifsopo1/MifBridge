@@ -6,13 +6,36 @@
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
 
-#include "CompiledBlueprintReconstructor.h"     // CreateEditableBlueprintCopy (KISMET_API, engine fork)
+#if MIF_WITH_RECONSTRUCTOR
+#include "CompiledBlueprintReconstructor.h"   // CreateEditableBlueprintCopy - ENGINE FORK ONLY, see below
+#endif
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "UObject/UObjectGlobals.h"
 
 namespace MifBridge
 {
+#if !MIF_WITH_RECONSTRUCTOR
+	// Stock engine. The endpoint stays REGISTERED and refuses with the reason, for the same argument
+	// as every other guard in this plugin: a caller who gets 'unknown endpoint' learns nothing and has
+	// no way to find out, while a caller who gets this message knows exactly where they stand.
+	//
+	// The wording matters here. Every other guarded endpoint can be brought back by enabling a plugin
+	// or moving to an engine that ships it. This one cannot. CreateEditableBlueprintCopy is a DDS2 fork
+	// addition to the engine's own Kismet module, and no stock Unreal at any version has an equivalent -
+	// the editable-copy path simply is not exposed outside the editor UI. Saying 'rebuild against a newer
+	// engine' would be actively misleading, so it says what is actually true instead.
+	void H_create_editable_child(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		Fail(Out, TEXT(
+			"create_editable_child is unavailable: it needs CreateEditableBlueprintCopy from "
+			"Engine/Source/Editor/Kismet, which exists only in the DDS2 engine FORK and in no "
+			"stock Unreal of any version. This is not a plugin you can enable and not something "
+			"a newer engine adds - stock UE does not expose the editable-copy path outside the "
+			"editor's own right-click menu. On a stock engine, duplicate an UNCOOKED blueprint "
+			"with duplicate_asset instead; a cooked one cannot be made editable at all."));
+	}
+#else
 	// { sourceAsset, childPath?, variant?: "child" | "sibling" | "uncooked" | "sibling_full" | "full" }
 	// sourceAsset: the cooked BP — pass its generated-class path (…/BP_Foo.BP_Foo_C) or the plain asset path.
 	// variant "child" = IS-A source (inherits CDO); "sibling"/"uncooked" = parent-class copy (CDO stamped);
@@ -89,4 +112,6 @@ namespace MifBridge
 		UE_LOG(LogMifBridge, Log, TEXT("create_editable_child: %s -> %s (child=%d fullParent=%d)"),
 			*SourceBPGC->GetName(), *TargetPath, bAsChild ? 1 : 0, bFullParent ? 1 : 0);
 	}
+
+#endif   // MIF_WITH_RECONSTRUCTOR
 }

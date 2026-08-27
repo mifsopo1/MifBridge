@@ -1117,3 +1117,66 @@ a guard was present, without asking what the guard actually checked.
 4. **When a filed issue is dismissed as a false positive, the dismissal deserves the same standard of
    evidence as the finding.** Reading that a guard exists is not the same as establishing it guards
    the thing the comment names.
+
+## A compile probe for one engine overwrote the other engine's shipping DLL (2026-08-26)
+
+**Symptom.** After building the plugin against UE 5.7 in a throwaway probe project, the SDK's own
+`Binaries/Win64/UnrealEditor-MifBridge.dll` had changed: 3,938,304 bytes at 22:18 (the 5.3 build)
+became 3,745,792 bytes at 22:41 (the 5.7 build). A 5.7-compiled editor module cannot load in UE 5.3,
+so the next start of the SDK editor would have failed to load MifBridge entirely. 62 object files in
+the canonical `Intermediate/` were 5.7 output as well.
+
+Caught by inspection, not by a failure - the SDK editor was closed at the time. Had it been open, the
+DLL would have been locked, the probe build would have failed on a file-write error, and the cause
+would have been obvious. Being closed is what let it happen silently.
+
+**Root cause.** The probe generator junctioned the **plugin root** into the probe project:
+
+```
+probe57/Plugins/MifBridge  ->  D:/DDS2SDK/Game/Plugins/MifBridge
+```
+
+The junction was deliberate and the reasoning behind it was sound: a *copy* drifts the moment a fix
+lands, so the probe would stop measuring the source of truth. What that reasoning missed is that the
+plugin folder is not only an input. UnrealBuildTool writes a plugin's compiled output to
+`<Project>/Plugins/<Name>/Binaries` and its object files to `.../Intermediate`. Through a root
+junction, both of those resolve back into the canonical folder. The probe was reading canonical
+source, which was intended, and writing canonical binaries, which was not.
+
+**Nothing warned, and nothing could have.** The build printed `Result: Succeeded` because from its
+own point of view it had succeeded - it was asked to build a plugin and it built one. There is no
+layer that knows a directory is shared with a different engine's install.
+
+**Fix.** Junction `Source/` only, and let the probe own its own `Binaries/` and `Intermediate/`:
+
+```
+probe57/Plugins/MifBridge/Source  ->  D:/DDS2SDK/Game/Plugins/MifBridge/Source
+probe57/Plugins/MifBridge/MifBridge.uplugin   (copied - one small file, never written during a build)
+```
+
+This keeps the property that made a junction right in the first place - live source, no copy to drift
+- while output lands in the disposable directory where it belongs.
+
+**Prevention, and the general rule.**
+
+1. **A junction is bidirectional. Link the narrowest thing that satisfies the requirement.** The
+   requirement was "compile the real source", which needed `Source/`. Linking the parent granted
+   write access to everything beside it. This is the same instinct as not granting a process more
+   filesystem than it needs, and it is worth applying to every `mklink /J` in this repo.
+2. **Ask what a build WRITES, not only what it reads.** The whole design conversation was about input
+   fidelity - copy versus link, drift versus freshness. Output paths never came up, and output was
+   the half that did damage.
+3. **When two engines share a machine, treat every shared path as a hazard.** `docs/02_GOTCHAS.md`
+   section 14 already covers sharing SOURCE between engines at length. This is the same problem one
+   layer down, in build artifacts, and it is less visible because the paths are generated rather than
+   written by hand.
+4. **A build reporting success is not evidence that it built the right thing in the right place.**
+   The existing rule in this log - never trust `Build.bat`'s exit code, check the DLL's mtime moved -
+   would have caught this immediately if it had been applied to the DLL that was NOT supposed to
+   move. Checking that the expected binary changed is half the check; the other half is that nothing
+   else did.
+
+**Related, found in the same session:** `Build.bat` returned **exit code 0** on a build that printed
+`Result: Failed (OtherCompilationError)`. The 2026-08-15 entry in this log covers exit code 0 on a
+build that did nothing; this is worse, because the build ran, failed, said so in its own output, and
+still exited 0. Grep the log for `Result: Failed` and for `error`. Never branch on `$?`.

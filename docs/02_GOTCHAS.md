@@ -1411,11 +1411,11 @@ reported success. It is now `remapExisting`. Reserve `force` for things that gen
 
 ---
 
-## 14. The engine-version trap cuts BOTH ways
+## 14. The engine-version trap runs in SIX directions, and only two are findable by reading
 
 MifBridge is built on a cooked UE 5.3.2 editor and is ALSO run daily on UE 5.7 (Curfew). Every handler
 has to compile on both. The failure is always the same shape - a symbol that exists in one tree and not
-the other - but it arrives from two opposite directions, and only one of them is intuitive.
+the other - but it arrives from six directions, and only the first two are intuitive.
 
 ### Direction A: 5.3 has it, 5.7 DELETED it
 
@@ -1451,6 +1451,162 @@ what the endpoint wants to report. Using it would have been the obvious, clean i
 would not build on 5.3. The endpoint instead DERIVES state from the four predicates that exist in both
 (`IsGameFeaturePlugin{Installed,Registered,Loaded,Active}`) and says so in its own response, so no
 caller mistakes a derived answer for the engine's own.
+
+### Direction C: BOTH have it, and 5.7 refuses to compile it anyway
+
+Identical, legal, unchanged code. Nothing was added, deleted or renamed - the newer compiler is
+simply stricter, and the older one was accepting something it should not have.
+
+```cpp
+// C2445 on 5.7, fine on 5.3
+UClass* C = Blueprint->ParentClass ? Blueprint->ParentClass : UObject::StaticClass();
+```
+
+`ParentClass` is a `TSubclassOf<UObject>`; the other branch is a raw `UClass*`. 5.7 will not pick a
+common type for the ternary. `.Get()` on the first branch fixes it and is a no-op on 5.3. The same
+shape hit `ToRawPtr(ByteP->Enum)`.
+
+There is nothing to grep for here. The symbol is present in both trees with the same signature, and
+the only signal is a compiler that has not run.
+
+### Direction D: same name, same tree, DIFFERENT KIND of thing
+
+```cpp
+// HttpRequestHandler.h:19
+5.3: typedef TFunction<bool(const FHttpServerRequest&, const FHttpResultCallback&)> FHttpRequestHandler;
+5.7: using FHttpRequestHandler = TDelegate<bool(const FHttpServerRequest&, const FHttpResultCallback&)>;
+```
+
+`TFunction` converts from a bare lambda. `TDelegate` does not - it needs `CreateLambda`. So a lambda
+passed straight to `RegisterRoute` compiles on one engine and is a C2440 on the other.
+
+What makes this one nasty is where it does *not* appear. `IHttpRouter.h` is byte-identical between
+the trees, so inspecting the router - the thing the error points at - shows nothing wrong. The change
+is one line in a header nobody thinks to open, with no missing symbol and no deprecation warning.
+Handled with `MIF_HTTP_HANDLER` in `MifBridgeServer.cpp`.
+
+**That macro must be variadic**, and the reason generalises: a lambda's parameter list contains
+commas, so a single-parameter macro sees two arguments, reports "too many arguments", and then
+expands to garbage that corrupts everything after it. The first attempt produced seven errors from
+this one cause, including an "illegal else without matching if" ninety lines above anything that had
+changed.
+
+### Direction E: same type, same name, DIFFERENT HEADER
+
+```cpp
+FStringOutputDevice   // 5.3: Containers/UnrealString.h, reached free via CoreMinimal
+                      // 5.7: promoted to Misc/StringOutputDevice.h, no longer pulled in transitively
+```
+
+So `#include "Misc/StringOutputDevice.h"` is REQUIRED on 5.7 and a fatal C1083 on 5.3, where that
+path does not exist. Nothing was deprecated and nothing was deleted; a type moved house. Both
+spellings have to be guarded, in both directions.
+
+The same thing happened to `FInstancedStruct`: an **experimental plugin** in 5.3
+(`Plugins/Experimental/StructUtils`), core in 5.7 (`CoreUObject/Public/StructUtils/`). Reaching for
+it on 5.3 means depending on an experimental plugin; on 5.7 it is free.
+
+Reported as a 5.7 fix by a session with no 5.3 to test against, and applied unguarded it would have
+broken the 5.3 build in five files at once. This is the argument for fixes landing in canonical,
+where both engines can be checked, rather than in a vendored copy.
+
+### Direction F: same name, same arity, same return type, DIFFERENT PARAMETER TYPE
+
+The sharpest one, because every check short of a compiler passes it.
+
+```cpp
+// IKRigController.h
+5.3: int32 AddSolver(TSubclassOf<UIKRigSolver> InSolverClass) const;
+5.7: int32 AddSolver(const FString InIKRigSolverType) const;   // "/Script/IKRig.FullBodyIKSolver"
+```
+
+Grep finds it in both trees. A presence check passes. A "does this symbol still exist" audit - which
+is what reading two header trees really amounts to - says yes. It cannot compile.
+
+Underneath it is not a signature change at all but an architecture change: **in UE 5.6 the IK Rig
+solver system moved from `UObject` to `UStruct`.** `UIKRigSolver` still exists in
+`IKRigSolverBase.h`, but only as a legacy shim for loading old assets and converting them via
+`ConvertToInstancedStruct`. Every solver that ships with the plugin was ported to
+`FIKRigSolverBase`, and `UIKRigDefinition::GetSolverArray()` was removed from the asset outright.
+
+The header rename that exposes it (`Rig/Solvers/IKRigSolver.h` -> `IKRigSolverBase.h`) is the small
+visible part of a large invisible one. **Treat a renamed header in a newer engine as a question -
+what moved, and why did it need a new name - rather than a mechanical substitution.**
+
+What made it survivable rather than a rewrite is worth recording, because it is the pattern to look
+for next time. The *index-based controller* API is nearly identical across both engines
+(`GetNumSolvers`, `GetSolverEnabled`, `GetEndBone`, `GetSolverUniqueName`, `ConnectGoalToSolver`,
+`RemoveSolver` - same names, same signatures); only `GetRootBone(i)` became `GetStartBone(i)`. The
+old code had been reaching past the controller to the asset, which worked on 5.3 and is precisely
+what broke. So most of the port was **"stop talking to the asset"** - a correctness improvement on
+both engines, since the engine's own design says these go through the controller
+(`FRetargetDefinition`'s members are private with `friend class UIKRigController`). All of it is
+centralised in one shim block at the top of `MifBridgeIKRig.cpp` rather than scattered as `#if`
+through 1800 lines.
+
+Two irreducible differences remain, and both are reported rather than hidden:
+
+* **What a solver type IS**: a `UClass` on 5.3, a `UScriptStruct` on 5.6+. `solverClass` stays a
+  string on both and stays valid input to `add_ik_solver` on the same engine, but the values are not
+  portable between engines - so `list_ik_solver_types` returns a `solverModel` field saying which
+  form this engine uses, instead of letting a caller discover it by getting a refusal.
+* **The retarget processor**: `UIKRetargetProcessor` (UObject) on 5.3, `FIKRetargetProcessor`
+  (struct) on 5.6+. The UObject still exists on 5.7 but is `UE_DEPRECATED(5.6)` and documented for
+  removal - using it would compile today and break on the next engine, which is Direction A waiting
+  to happen. The struct has no accessor for the target rig's inner processor, so one of the three
+  validity checks cannot be made there at all. `describe_ik_retargeter` therefore reports a
+  `runtimeProbeModel` field naming which checks actually ran, on both engines, rather than quietly
+  dropping a check and leaving the verdict looking equally strong.
+
+### Reading the headers is NOT sufficient, and here is the proof
+
+Directions A and B are findable by reading. C, D, E and F are not, in ascending order of how
+thoroughly they defeat it. **Reading finds symbols that were deleted; it reliably misses symbols
+that changed shape.**
+
+This was not a theoretical worry. Every fix in directions C, D and E arrived from a second session
+that did the one thing this repo had never done - compiled the plugin against 5.7 - and found six
+real defects in an hour, against a plugin whose release manifest already claimed 5.7 support on the
+strength of careful reading.
+
+So there is now a compiler in the loop:
+
+```
+python tools/make_engine_probe.py --engine "C:/Program Files/Epic Games/UE_5.7" --out <scratch>/probe57 --build
+```
+
+It generates a throwaway one-module UE project, junctions the plugin into it (junction, not copy - a
+copy drifts the moment a fix lands) and builds the editor target. Nothing to open, no content,
+delete it freely. **Run it before claiming an engine in `RELEASE_MANIFEST.json`.**
+
+**Two traps in the probe itself, both load-bearing:**
+
+* **`Build.bat` returned exit code 0 on a build that printed `Result: Failed (OtherCompilationError)`.**
+  Not a slow build, not a partial one - a genuine compile failure, reported as success by the process
+  exit code. This repo already had a rule against trusting build exit codes, on the grounds that Live
+  Coding silently blocks builds while the editor is open. That rule turns out to be understated.
+  **Grep the log for `Result: Failed` and for `error`, and check the binary's mtime. Never branch on
+  the exit code.**
+* **Toolchain.** The DDS2 5.3.2 fork needs MSVC 14.36.32532 exactly (`C:/BT176`) and UE 5.7 cannot
+  build with it. If a global UBT pin in
+  `%APPDATA%/Unreal Engine/UnrealBuildTool/BuildConfiguration.xml` ever forces that toolchain, a 5.7
+  build fails in a way that reads as a source problem. The generated target sets
+  `WindowsPlatform.CompilerVersion = "Latest"` so that file never needs editing - editing it would
+  break the DDS2 builds.
+
+A third trap, which cost one confusing build: **UE compiles `C4668` (undefined macro used in `#if`)
+as an ERROR.** So a `MIF_WITH_*` guard is only safe because `MifBridge.Build.cs` defines the macro on
+*both* branches - `PublicDefinitions.Add("MIF_WITH_X=" + (bFound ? "1" : "0"))`, never an `if` around
+the `Add`. Adding a guard to a `.cpp` without adding the definition to `Build.cs` does not silently
+take the false branch; it fails the build.
+
+One more thing the probe settled, which reading had gotten wrong: of the two "blockers" reported
+from the 5.7 build, **one was not a version problem at all.** `MifBridgeReconstruct.cpp` includes
+`CompiledBlueprintReconstructor.h`, which lives in `Engine/Source/Editor/Kismet/Public` **only in the
+DDS2 engine fork**. No stock Unreal of any version has it. From a 5.3 machine it looks like ordinary
+editor code, because on this engine the header sits exactly where an engine header belongs. It is now
+behind `MIF_WITH_RECONSTRUCTOR`, and its refusal says plainly that no newer engine will help -
+unlike every other `MIF_WITH_*`, this one cannot be enabled.
 
 ### The facility for when the subset is not enough
 

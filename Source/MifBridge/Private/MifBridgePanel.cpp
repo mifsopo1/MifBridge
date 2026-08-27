@@ -860,6 +860,27 @@ namespace MifBridge
 			.SetMenuType(ETabSpawnerMenuType::Enabled);
 	}
 
+	// CONSOLE COMMANDS: the path that does not depend on finding a menu.
+	//
+	// Andre, on his second editor: "whats the command or how to open the mifbridge gui incase it"
+	// "doesnt auto open ? i still never saw it". Both existing routes had already failed him -
+	// the tab spawner was registered Hidden at first (no Window-menu entry at all), and when auto-open
+	// was added it did not fire on that editor either. Two routes, both invisible, and no way to ask.
+	//
+	// A console command is the right floor because it needs no discovery: it is typeable, it appears in
+	// the console's autocomplete under "Mif.", and it works identically on every engine and every
+	// project regardless of what the Window menu looks like or whether a saved layout swallowed the tab.
+	// Registered here rather than as a bridge endpoint on purpose - when the panel is what you cannot
+	// find, the bridge may well be the thing you are trying to check on.
+	static FAutoConsoleCommand GMifOpenPanelCmd(
+		TEXT("Mif.Panel"),
+		TEXT("Open the MifBridge panel (live call transcript, brainmap, heatmap, performance)."),
+		FConsoleCommandDelegate::CreateStatic(&MifBridge::OpenPanel));
+
+	static FAutoConsoleCommand GMifOpenBrainmapCmd(
+		TEXT("Mif.Brainmap"),
+		TEXT("Open the MifBridge project dependency graph in its own tab."),
+		FConsoleCommandDelegate::CreateStatic(&MifBridge::OpenBrainmap));
 	void UnregisterPanel()
 	{
 		if (FSlateApplication::IsInitialized())
