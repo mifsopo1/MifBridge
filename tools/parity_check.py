@@ -544,6 +544,20 @@ def main() -> int:
 
     # Printed on EVERY run, pass or fail. An exemption nobody sees is a silent
     # allowlist, which is the thing this script exists to replace.
+    # The spec is a contract too: an item that is done but still reads as open keeps being offered
+    # as the next thing to do. Four of those on 2026-08-27 alone.
+    try:
+        import subprocess as _sp
+        import sys as _sys
+        _r = _sp.run([_sys.executable, os.path.join(HERE, "spec_check.py")],
+                     capture_output=True, text=True, encoding="utf-8", errors="replace",
+                     stdin=_sp.DEVNULL, timeout=60)
+        for _l in (_r.stdout or "").splitlines():
+            if _l.strip() and not _l.startswith("spec OK"):
+                print("SPEC: " + _l)
+    except Exception as _e:
+        print("SPEC: could not run spec_check.py (%s)" % _e)
+
     for _p in check_plugin_declaration_drift():
         print("PLUGIN DRIFT: " + _p)
     for _p in check_hook_drift():

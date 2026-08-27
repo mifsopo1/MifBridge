@@ -1682,11 +1682,13 @@ what an untracked item does. Tracked now.
 - [x] **Sequencer authoring** - DONE 2026-08-27 (see the entry above).
       nothing authors. Next in the audit's ranking.
 
-- [ ] **Niagara: the WRITE half.** Three reads, no writes. The audit flags cooked-asset hazards here
+- [x] **Niagara: the WRITE half** - DONE (see set_niagara_component_parameter above).
+      Built as a COMPONENT override rather than an asset edit, precisely because of the cooked-asset hazard this item flagged.
       (docs/02 section 6c: duplicating a cooked UNiagaraSystem), so check what is possible on a
       COOKED system before promising anything.
 
-- [ ] **Behavior tree: the WRITE half.** describe_behavior_tree and list_blackboard_keys read; DDS2
+- [x] **Behavior tree: the WRITE half** - DONE as the bounded piece (add_blackboard_key).
+      Tree authoring itself declined on reasoning that is not cooked-only - see the entry above.
       has 17 behavior trees and no way to author one.
 
 - [ ] **Control Rig authoring.** Split out of the stale combined decline above. Genuinely not built.
