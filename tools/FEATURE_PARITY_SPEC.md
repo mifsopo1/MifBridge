@@ -1691,9 +1691,28 @@ what an untracked item does. Tracked now.
       Tree authoring itself declined on reasoning that is not cooked-only - see the entry above.
       has 17 behavior trees and no way to author one.
 
-- [ ] **Control Rig authoring.** Split out of the stale combined decline above. Genuinely not built.
+- [~] **Control Rig authoring** - declined 2026-08-27, on the system rather than the project.
+      Two reasons, neither of them 'DDS2 does not use it':
+      1. AUTHORING IS A GRAPH EDITOR'S JOB. A Control Rig is a RigVM graph; building one means
+         wiring RigVM nodes by hand. Same argument that declined MetaSound graph authoring and
+         behavior TREE authoring, and it is about the system, not about who uses it.
+      2. THE CLASS WAS LEGACY'D IN 5.7. ControlRigBlueprint.h exists in 5.3 and in 5.7 the
+         header is ControlRigBlueprintLegacy.h - an architecture change of the same kind as the
+         5.6 IK Rig solver move. Building against it now means building against the half that
+         is on its way out, on one engine, for a subsystem whose authoring is out of scope
+         anyway.
+      A READ - list a rig's hierarchy elements - would be small and is not ruled out. Nobody has
+      asked for it, and the animation side already has 18 IK Rig endpoints covering the
+      retarget/IK half. Reopen it when something actually needs it.
       Re-judge against uncooked 5.7 rather than against cooked modding.
-- [ ] **Vertex animation.** Same - split out, not built, needs judging on the new measuring stick.
+- [~] **Vertex animation** - declined 2026-08-27, as a pipeline rather than an editor API.
+      Vertex animation in UE means vertex animation TEXTURES - geometry baked into a texture in a
+      DCC tool (Houdini, Blender) and read by a material at runtime. The authoring happens
+      OUTSIDE the editor entirely; what arrives in Unreal is a texture and a material, both of
+      which this bridge already reads and writes.
+      So there is no editor-only capability to add - the same test that declined .cpp reading
+      and Chaos Vehicles. If a VAT workflow is ever wanted end to end, the interesting half is
+      the Blender side, which is MifBlender's problem and already on the list.
 
 - [~] **Apply RefuseFileOutsideProject to the other file-writing endpoints** - NOT NEEDED.
       Checked before writing any code, and the premise of my own filed item was wrong: none of
