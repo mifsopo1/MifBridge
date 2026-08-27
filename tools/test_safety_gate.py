@@ -76,10 +76,26 @@ def main():
     print("=== T631: the default is a GATED mode, not 'full' ===")
     # A gate that has to be switched on before it matters is off when it matters - the same weakness
     # that made MIF_DBG useless for the crash it was meant to catch.
-    check("T631 the default mode is not 'full'", mode == "scratch" or mode == "read",
-          "writeMode is %r. Either MIF_BRIDGE_WRITE_MODE is set in this environment, the default is "
-          "wrong, or this is an OLD BUILD with no gate at all. NOT attempting the destructive calls "
-          "below in any of those cases." % mode)
+    # THREE STATES, and until 2026-08-27 this collapsed them into one failure:
+    #
+    #   gated ('scratch'/'read')  - the default, and what the probes below need
+    #   'full'                    - the gate EXISTS and is deliberately off. Since launch_editor can
+    #                               now choose the mode, this is a legitimate, intended state and
+    #                               reporting it as a failure is crying wolf.
+    #   writeMode ABSENT          - an old DLL with no gate at all. Still a genuine failure, and the
+    #                               dangerous one, because the probes below would run FOR REAL.
+    #
+    # The distinction is checkable: a build with a gate reports writeMode whatever the mode is. Only
+    # a build without one omits the field.
+    if mode == "full":
+        print("  SKIP  the gate is present and deliberately OFF (writeMode 'full').")
+        print("        Nothing to enforce, and the destructive probes below are NOT attempted.")
+        print("        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.")
+    else:
+        check("T631 the default mode is a GATED one", mode == "scratch" or mode == "read",
+              "writeMode is %r. A build WITH a gate reports this field whatever the mode is, so an "
+              "absent value means an OLD BUILD with no gate at all. NOT attempting the destructive "
+              "calls below." % mode)
     # FAIL-SAFE, and it is the important line in this file. The probes below deliberately call
     # save_package and start_pie, which is safe ONLY because the gate refuses them. Against an older
     # DLL with no gate, writeMode is absent and `mode` is None - and a naive `mode != "full"` test

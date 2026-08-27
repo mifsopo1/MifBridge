@@ -174,7 +174,7 @@ def sdk_editor_pid():
         return None
 
 
-def launch_editor():
+def launch_editor(write_mode=None):
     # Clear the "Restore Packages" prompt FIRST, when it is safe to. An unattended run leaves unsaved
     # scratch packages behind, and after a kill the next launch opens a modal offering to restore them
     # - which goes up BEFORE the bridge starts serving, so the relaunch this function exists to perform
@@ -207,10 +207,33 @@ def launch_editor():
     flags = 0
     if hasattr(subprocess, "DETACHED_PROCESS"):
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+
+    # THE WRITE MODE IS CHOSEN AT LAUNCH, and that is not a hole in the gate.
+    #
+    # Andre: "if llm launches the editor it can adjust the flag". The gate's rule is that it is not
+    # settable OVER THE BRIDGE - an agent must not be able to unlock the session it is already inside.
+    # Choosing the mode when you START the process is a different act, and it is exactly what a human
+    # does with setx. Whoever launches a process decides its environment; that has always been true and
+    # the gate never claimed otherwise.
+    #
+    # Worth being blunt about the consequence rather than letting it read as airtight: an agent that
+    # can launch editors can therefore choose 'full'. So the gate protects a RUNNING session from
+    # itself - a bridge call cannot loosen the rules it is being judged by, and nor can anything that
+    # reaches Slate from inside a handler. It does not protect against whoever starts the editor,
+    # because that party was never inside the gate.
+    #
+    # Default None = inherit, which on a machine with MIF_BRIDGE_WRITE_MODE set at User scope means
+    # the value Andre chose, and otherwise means 'scratch'. Passing a value is deliberate and logged.
+    env = None
+    if write_mode:
+        env = dict(os.environ)
+        env["MIF_BRIDGE_WRITE_MODE"] = str(write_mode)
+        print("  launching with MIF_BRIDGE_WRITE_MODE=%s" % write_mode, flush=True)
+
     subprocess.Popen(
         [EDITOR_EXE, UPROJECT],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        creationflags=flags, close_fds=True)
+        creationflags=flags, close_fds=True, env=env)
 
 
 def editor_window_title(pid):
