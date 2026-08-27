@@ -3921,6 +3921,16 @@ def bl_select_edges(object_name: str, selector: dict = None, max_reported: int =
 
 
 @mcp.tool()
+def bl_uv_unwrap(object_name: str, method: str = "SMART", uv_layer: str = None,
+                 angle_limit_deg: float = None, island_margin: float = 0.02,
+                 replace: bool = False, dry_run: bool = False) -> dict:
+    "Generate a UV layer on a Blender mesh. Closes a gap the addon could already SEE: object_info and gen_status both report uvLayers, and the quality check says outright 'no UVs - texturing and lightmaps will both fail until it is unwrapped', with nothing able to unwrap. THREE METHODS for different jobs: SMART (default, bpy.ops.uv.smart_project) cuts its own seams by angle and is the one for imported geometry that has none; LIGHTMAP (lightmap_pack) makes non-overlapping islands inside 0-1, which is what Unreal wants from a LIGHTMAP channel specifically; ANGLE (unwrap, angle-based) respects seams you have already marked and WARNS if the mesh has none, because without them it flattens as one unusable island. uv_layer NAMES THE TARGET CHANNEL and matters more than it looks: Unreal reads lightmaps from a SECOND UV channel, so a LIGHTMAP pass usually wants uv_layer='Lightmap' rather than overwriting the base UVs - and the layer is made active BEFORE the unwrap, or the operator writes into whichever channel happened to be active, which is how a lightmap lands on top of the base UVs and nobody notices until the bake. An existing layer name is REFUSED unless replace=true. The response reports uvLayersBefore and uvLayersAfter BY NAME plus activeLayer and createdLayer, so 'did it land on the channel I meant' needs no second call. dry_run reports and modifies nothing. Verified headless on Blender 4.4.0 and 5.0.1 - unlike bpy.ops.mesh.bevel, the UV operators do run under blender -b."
+    return _blender("uv_unwrap", object=object_name, method=method, uvLayer=uv_layer,
+                    angleLimitDeg=angle_limit_deg, islandMargin=island_margin,
+                    replace=replace, dryRun=dry_run)
+
+
+@mcp.tool()
 def bl_decimate_mesh(object_name: str, ratio: float = None, target_tris: int = None,
                      mode: str = "COLLAPSE", angle_limit: float = None,
                      iterations: int = None, dry_run: bool = False) -> dict:

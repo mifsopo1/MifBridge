@@ -1292,6 +1292,182 @@ def op_set_material_slots(params):
     return result
 
 
+_UV_KEYS = {
+    "object", "name",
+    "method", "angleLimitDeg", "islandMargin", "uvLayer", "replace",
+    "correctAspect", "dryRun",
+}
+
+
+def op_uv_unwrap(params):
+    """Generate a UV layer. The addon has REPORTED uvLayers in three places from the
+    beginning -- object_info, gen_status, and a quality warning that says in as many
+    words "no UVs - texturing and lightmaps will both fail until it is unwrapped" --
+    and had nothing that could unwrap. Detects the problem, cannot act on it: the same
+    inverse gap set_material_slots and create_water_zone were built to close.
+
+    THREE METHODS, and they are for different jobs:
+
+      SMART      (default) bpy.ops.uv.smart_project. Cuts its own seams by angle. The
+                 one to use on a prop that has none, which is most imported geometry.
+      LIGHTMAP   bpy.ops.uv.lightmap_pack. Non-overlapping islands in 0-1, which is
+                 what Unreal wants from a LIGHTMAP channel specifically. Usually
+                 belongs on a SECOND layer - see uvLayer below.
+      ANGLE      bpy.ops.uv.unwrap, angle-based. Respects SEAMS you have already
+                 marked; with no seams on the mesh it flattens the whole thing as one
+                 island and the result is unusable. Warned about rather than refused,
+                 because a mesh WITH seams is exactly when you want this.
+
+    THESE OPERATORS NEED EDIT MODE, and that is worth recording because the sibling
+    case goes the other way: bpy.ops.mesh.bevel cannot run under `blender -b` at all -
+    it needs a real VIEW_3D area - which is why bevel_edges goes through bmesh.ops
+    instead. The UV operators only need mode_set plus a selection, both of which work
+    headless. VERIFIED on 4.4.0 and 5.0.1 before this was written, not assumed from the
+    bevel case.
+
+    uvLayer NAMES THE TARGET. Unreal reads lightmaps from a second UV channel, so
+    generating one usually means adding a layer rather than overwriting the first.
+    Passing a name that already exists is refused unless replace:true, because
+    silently overwriting an artist's UVs is not a thing to do by default.
+
+    The response reports uvLayersBefore and uvLayersAfter by NAME, so "did it land on
+    the channel I meant" is answerable without a second call.
+    """
+    reject_unknown(params, _UV_KEYS, "uv_unwrap")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+
+    method = (take(params, "method") or "SMART").upper()
+    if method not in ("SMART", "LIGHTMAP", "ANGLE"):
+        raise MifOpError(
+            "unknown method %r. Use SMART (cuts its own seams by angle - the one for a prop "
+            "with none), LIGHTMAP (non-overlapping islands in 0-1, what Unreal wants from a "
+            "lightmap channel), or ANGLE (respects seams you have already marked)." % method)
+
+    angle_deg = take_float(params, "angleLimitDeg")
+    margin = take_float(params, "islandMargin")
+    layer_name = take(params, "uvLayer")
+    replace = take_bool(params, "replace", default=False)
+    correct_aspect = take_bool(params, "correctAspect", default=True)
+    dry_run = take_bool(params, "dryRun", default=False)
+
+    if angle_deg is not None and method != "SMART":
+        raise MifOpError("'angleLimitDeg' applies to SMART only; %s does not take one." % method)
+    if angle_deg is None:
+        angle_deg = 66.0
+    if not (0.0 < angle_deg < 90.0):
+        raise MifOpError("'angleLimitDeg' must be between 0 and 90; got %r. 66 is Blender's own "
+                         "default and a sane starting point." % angle_deg)
+    if margin is None:
+        margin = 0.02
+    if not (0.0 <= margin < 1.0):
+        raise MifOpError("'islandMargin' must be in [0, 1); got %r" % margin)
+
+    mesh = obj.data
+    before = [uv.name for uv in mesh.uv_layers]
+
+    if layer_name and layer_name in before and not replace:
+        raise MifOpError(
+            "'%s' already has a UV layer named %r. Pass replace:true to overwrite it, or a "
+            "different uvLayer name to add a channel beside it. Overwriting somebody's UVs is "
+            "not something to do by default. Existing layers: %s"
+            % (obj.name, layer_name, before))
+    if len(before) >= 8 and (not layer_name or layer_name not in before):
+        raise MifOpError(
+            "'%s' already has %d UV layers and Blender's limit is 8, so there is no room for "
+            "another. Pass uvLayer with one of the existing names plus replace:true. Layers: %s"
+            % (obj.name, len(before), before))
+
+    warnings = []
+    if method == "ANGLE" and not any(e.use_seam for e in mesh.edges):
+        warnings.append(
+            "ANGLE unwrap on '%s', which has NO seams marked. Without seams the whole mesh "
+            "flattens as a single island and the result is unusable for texturing. Mark seams "
+            "first, or use SMART, which cuts its own." % obj.name)
+    if not mesh.polygons:
+        raise MifOpError("'%s' has no faces, so there is nothing to unwrap." % obj.name)
+
+    if dry_run:
+        return {
+            "dryRun": True,
+            "object": obj.name,
+            "method": method,
+            "uvLayersBefore": before,
+            "targetLayer": layer_name,
+            "angleLimitDeg": angle_deg,
+            "islandMargin": margin,
+            "warnings": warnings,
+            "note": "nothing was modified. Drop dryRun to apply.",
+        }
+
+    # The layer has to exist BEFORE the unwrap, and be the ACTIVE one, or the operator writes
+    # into whichever channel happened to be active - which is how a lightmap lands on top of
+    # the base UVs and nobody notices until the bake.
+    created = None
+    if layer_name:
+        if layer_name in before:
+            target = mesh.uv_layers[layer_name]
+        else:
+            target = mesh.uv_layers.new(name=layer_name)
+            created = target.name
+    elif not before:
+        target = mesh.uv_layers.new(name="UVMap")
+        created = target.name
+    else:
+        target = mesh.uv_layers.active or mesh.uv_layers[0]
+    mesh.uv_layers.active = target
+    active_name = target.name
+
+    prev_active = bpy.context.view_layer.objects.active
+    prev_mode = obj.mode
+    try:
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        if method == "SMART":
+            bpy.ops.uv.smart_project(angle_limit=math.radians(angle_deg),
+                                     island_margin=margin,
+                                     correct_aspect=correct_aspect)
+        elif method == "LIGHTMAP":
+            bpy.ops.uv.lightmap_pack(PREF_MARGIN_DIV=max(0.001, margin * 100.0))
+        else:
+            bpy.ops.uv.unwrap(method="ANGLE_BASED", margin=margin,
+                              correct_aspect=correct_aspect)
+    except Exception as exc:
+        # A layer created for an unwrap that then threw is debris that would change the next
+        # export without appearing in any response.
+        if created and created in [uv.name for uv in mesh.uv_layers]:
+            mesh.uv_layers.remove(mesh.uv_layers[created])
+        raise MifOpError("uv_unwrap failed on '%s' (%s): %s: %s"
+                         % (obj.name, method, type(exc).__name__, exc))
+    finally:
+        try:
+            if obj.mode != "OBJECT":
+                bpy.ops.object.mode_set(mode="OBJECT")
+            if prev_mode and prev_mode != "OBJECT":
+                pass    # deliberately left in OBJECT: headless has no mode to return to
+            bpy.context.view_layer.objects.active = prev_active
+        except Exception:
+            pass
+
+    after = [uv.name for uv in mesh.uv_layers]
+    return {
+        "object": obj.name,
+        "method": method,
+        "uvLayersBefore": before,
+        "uvLayersAfter": after,
+        "activeLayer": active_name,
+        "createdLayer": created,
+        "angleLimitDeg": angle_deg if method == "SMART" else None,
+        "islandMargin": margin,
+        "faces": len(mesh.polygons),
+        "warnings": warnings,
+        "note": ("the unwrap wrote into %r. Unreal reads lightmaps from a SECOND UV channel, so "
+                 "pass uvLayer to put a LIGHTMAP pass somewhere other than the base UVs."
+                 % active_name),
+    }
+
+
 _DECIMATE_KEYS = {
     "object", "name",
     "ratio", "targetTris", "targetTriangles",
@@ -1480,6 +1656,7 @@ def op_decimate_mesh(params):
 OPS = {
     "import_mesh": op_import_mesh,
     "decimate_mesh": op_decimate_mesh,
+    "uv_unwrap": op_uv_unwrap,
     "export_mesh": op_export_mesh,
     "select_edges": op_select_edges,
     "bevel_edges": op_bevel_edges,

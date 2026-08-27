@@ -328,6 +328,69 @@ def main():
               "%s -> %s" % (r.get("trisBefore"), r.get("trisAfter")))
 
     print("")
+    print("=== T774: uv_unwrap refuses what has no single meaning ===")
+    name = first_mesh()
+    for label, kw in (
+            ("an unknown method", {"method": "MAGIC"}),
+            ("angleLimitDeg on a method without one", {"method": "LIGHTMAP", "angleLimitDeg": 45}),
+            ("an angle outside 0-90", {"angleLimitDeg": 120}),
+            ("a margin outside 0-1", {"islandMargin": 2.0}),
+    ):
+        r = call("uv_unwrap", object=name, **kw)
+        check("T774 %s is refused" % label, r.get("ok") is False, json.dumps(r)[:170])
+    r = call("uv_unwrap", object=name, nonsense=True)
+    check("T774 an unknown parameter is refused, not ignored", r.get("ok") is False,
+          json.dumps(r)[:170])
+
+    print("")
+    print("=== T775: it will not overwrite somebody's UVs by default ===")
+    info = call("object_info", object=name) or {}
+    existing = ((info.get("object") or info).get("uvLayers") or [])
+    if existing:
+        r = call("uv_unwrap", object=name, uvLayer=existing[0])
+        check("T775 an existing layer name is refused", r.get("ok") is False, json.dumps(r)[:170])
+        check("T775 and the refusal names replace:true as the way to mean it",
+              "replace" in str(r.get("error", "")), str(r.get("error"))[:190])
+        r = call("uv_unwrap", object=name, uvLayer=existing[0], replace=True)
+        check("T775 replace:true is accepted", r.get("ok") is not False, r.get("error"))
+    else:
+        print("       (mesh has no UV layers - overwrite guard not exercised)")
+
+    print("")
+    print("=== T776: dryRun reports and changes nothing ===")
+    r = call("uv_unwrap", object=name, dryRun=True)
+    check("T776 dryRun succeeds", r.get("ok") is not False, r.get("error"))
+    check("T776 it says it is a dry run", r.get("dryRun") is True, json.dumps(r)[:170])
+    check("T776 and no uvLayersAfter, because nothing happened",
+          r.get("uvLayersAfter") is None, r.get("uvLayersAfter"))
+
+    print("")
+    print("=== T777: LIGHTMAP lands on the channel it was told to ===")
+    # The one that matters for Unreal. A lightmap belongs on a SECOND UV channel, and the layer
+    # has to be made active BEFORE the unwrap or the operator writes into whichever was active -
+    # which is how a lightmap lands on top of the base UVs and nobody notices until the bake.
+    r = call("uv_unwrap", object=name, method="LIGHTMAP", uvLayer="MifLightmap")
+    check("T777 lightmap unwrap succeeded", r.get("ok") is not False, r.get("error"))
+    check("T777 it created the named layer", r.get("createdLayer") == "MifLightmap",
+          json.dumps(r)[:200])
+    check("T777 and made it the active one", r.get("activeLayer") == "MifLightmap",
+          r.get("activeLayer"))
+    check("T777 the layer list GREW rather than being overwritten",
+          len(r.get("uvLayersAfter") or []) > len(r.get("uvLayersBefore") or []),
+          "%s -> %s" % (r.get("uvLayersBefore"), r.get("uvLayersAfter")))
+    print("       %s -> %s" % (json.dumps(r.get("uvLayersBefore")),
+                               json.dumps(r.get("uvLayersAfter"))))
+
+    print("")
+    print("=== T778: ANGLE without seams is warned about, not silently wrong ===")
+    r = call("uv_unwrap", object=name, method="ANGLE", uvLayer="MifAngle")
+    check("T778 it still runs", r.get("ok") is not False, r.get("error"))
+    check("T778 and warns that there are no seams",
+          any("seam" in str(w).lower() for w in (r.get("warnings") or [])),
+          "no seam warning: %s - without seams the mesh flattens as one unusable island"
+          % json.dumps(r.get("warnings")))
+
+    print("")
     print("=== T769: clear_scene empties it ===")
     r = call("clear_scene")
     check("T769 clear_scene succeeded", r.get("ok") is not False, r.get("error"))
