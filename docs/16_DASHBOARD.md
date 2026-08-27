@@ -169,6 +169,70 @@ than failing, so the call stays idempotent.
 
 ---
 
+## INHERITANCE — the class hierarchy, without loading anything
+
+The fifth tab. On DDS2 it groups **2855 blueprints** under the native classes they derive from —
+`Actor`, `ActorComponent`, `AnimInstance`, `BaseNPC` — with each blueprint tree hanging off its root.
+
+**It loads nothing, and that is the design rather than an optimisation.** A blueprint publishes its
+parent as an asset registry TAG (`FBlueprintTags::ParentClassPath`, 5.3 `BlueprintSupport.h:38` / 5.7
+`:32`), so the whole hierarchy is metadata the registry already holds. Building it by loading every
+Blueprint and asking `GeneratedClass->GetSuperClass()` would be correct, far slower, and on a COOKED
+project actively dangerous — `docs/06` issue 16 is an editor that died doing exactly that, and DDS2 is
+cooked.
+
+Native roots are **synthesised**. A C++ class is not an asset and has no registry entry, so without
+them the view is thousands of disconnected blueprints rather than a hierarchy.
+
+| | |
+|---|---|
+| **descendant counts** on each row | "this class has 200 things under it" is the most useful number in a tree and is invisible until you expand everything |
+| **roots sorted by descendant count** | it opens on what matters, not on whatever sorted first alphabetically |
+| **the filter keeps a node if IT or any DESCENDANT matches**, then expands what survived | matching on self alone hides the ancestors of every hit, and results float free of the structure that made them meaningful |
+| `registryStillScanning` in the summary | at startup a partial tree is indistinguishable from a small project |
+
+Double-click opens the asset. That is the **one** place this view loads anything, and only because
+someone asked for it.
+
+Built **once** on first switch, unlike PERFORMANCE which rebuilds every time — and the difference is
+what each view is OF. Performance describes the OPEN LEVEL, which is why caching it once showed a
+census of IslaSombra while Untitled_1 was loaded. Inheritance describes the PROJECT's assets, which do
+not change while the editor idles, and it has its own refresh button.
+
+`STreeView`, not a hand-painted widget: the brainmap needed force layout because a dependency graph is
+a mesh with no root, and inheritance is a literal tree that Slate already has a virtualised,
+keyboard-navigable widget for.
+
+## BEHAVIOR — behavior trees and their blackboards
+
+The sixth tab. DDS2 ships **17** behavior trees and the editor's own BT graph was the only way to look
+at one, an asset at a time.
+
+**It calls the endpoint's handler**, not a copy of its logic. The view builds a request object, calls
+`H_describe_behavior_tree`, and reads the response — the same bytes an agent over HTTP gets. One
+implementation, so the panel and the endpoint cannot disagree about a project's AI while both looking
+authoritative, and the view doubles as a live test of the endpoint.
+
+Colour is by **KIND**, not by class, because kind is what tells you how a node behaves: a composite
+routes, a task acts, a decorator gates, a service ticks.
+
+Decorators and services are **counts on the row**, not child rows. They attach to a node and gate or
+tick it; drawing them as children would show a tree the AI does not have.
+
+A tree with no blackboard says outright that every blackboard decorator in it is inert, rather than
+just showing nothing.
+
+### The trap this tab found, which anything reusing a handler will hit
+
+`ok:true` **is set by the dispatcher, not the handler.** `Fail()` sets `ok:false` and `error`;
+`ok:true` is set by `RunEndpoint` at `MifBridgeCommon.cpp:1214`, AFTER the handler returns.
+
+So a handler called **directly** succeeds by leaving `ok` unset entirely. The first version of this
+tab tested for `ok` and reported *"could not describe this behavior tree"* for all 17 trees while the
+identical call over HTTP returned a full answer.
+
+**Failure is the presence of `error`, never the absence of `ok`.**
+
 ## The endpoints, usable without any widget
 
 | Endpoint | Answers |
