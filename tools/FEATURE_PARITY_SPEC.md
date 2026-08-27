@@ -1028,10 +1028,24 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       Reconsider if a case appears that genuinely needs the EDITOR's view of build state.
       REOPENED - declined as 'the mod build is trigger_cook plus pak'. An uncooked 5.7 project has real build configuration.
       covered; there is no per-mod build configuration to edit.
-- [ ] **MetaHuman** — requires MetaHuman assets and the plugin pipeline; not present in DDS2 and not
+- [ ] **MetaHuman** - BUILDABLE on 5.7, deferred rather than declined.
+      Checked rather than assumed, and my instinct to decline was wrong: 5.7 ships
+      UMetaHumanCharacterEditorSubsystem with BlueprintCallable UFUNCTIONs for initialization
+      and pipeline assembly. That IS a real editor-only API worth bridging.
+      Two reasons it is not next: the plugin is ABSENT FROM 5.3 entirely, so it needs a
+      MIF_WITH_METAHUMAN guard and can only ever be tested on one engine here; and it is
+      useless without MetaHuman content, which neither test project has.
+      Build it when a project actually uses MetaHumans - the API is there and the shape is
+      the same as the other MIF_WITH_* families.
       REOPENED - declined as 'not present in DDS2'. Gate it on the plugin being present, the way MIF_WITH_* already gates Niagara and IKRig, rather than on one project not using it.
       something a mod ships.
-- [ ] **Chaos Vehicles** — DDS2 has no Chaos vehicle setup to mod.
+- [~] **Chaos Vehicles** - declined again 2026-08-27, on EVIDENCE this time.
+      The old decline was 'DDS2 has no Chaos vehicle setup', which says nothing about UE5. So I
+      checked what there is to bridge, and the answer is nothing: ChaosVehiclesEditor has NO
+      PUBLIC HEADERS in either tree - it is an editor UI module with no exposed API.
+      A vehicle setup is a Blueprint carrying UChaosWheeledVehicleMovementComponent and wheel
+      classes, and reading or writing those is get_property / set_property / add_component,
+      which already work. There is no editor-only capability here to add.
       REOPENED - declined as 'DDS2 has no Chaos vehicle setup to mod'. Says nothing about 5.7.
 - [x] **Control Rig / IK & Retarget / Vertex Animation** — animation *authoring* pipelines. A mod
       CORRECTED 2026-08-27: this says declined and the IK RIG HALF WAS BUILT ANYWAY - 18 endpoints, MifBridgeIKRig.cpp, ported to 5.6+ solver structs on 2026-08-27. A decline that the work then contradicted, left standing for days. Control Rig and Vertex Animation remain unbuilt and are tracked separately below.
