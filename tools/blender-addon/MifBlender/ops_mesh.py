@@ -82,7 +82,7 @@ import bmesh
 import bpy
 
 from .ops_common import (
-    MifOpError, axis_index, get_object, object_info, reject_unknown, rnd,
+    MifOpError, axis_index, get_object, mesh_counts, object_info, reject_unknown, rnd,
     select_only, selection_restore, selection_snapshot, take, take_bool,
     take_float, take_int, UU_PER_BU,
 )
@@ -1292,8 +1292,194 @@ def op_set_material_slots(params):
     return result
 
 
+_DECIMATE_KEYS = {
+    "object", "name",
+    "ratio", "targetTris", "targetTriangles",
+    "mode", "angleLimit", "iterations",
+    "dryRun",
+}
+
+
+def op_decimate_mesh(params):
+    """Reduce triangle count. The edit a game pipeline wants most, and the one
+    analyze_skeletal_split's triangle counts had nowhere to send their answer.
+
+    THREE MODES, because Blender's decimate modifier is three different algorithms
+    wearing one name, and they fail in different ways:
+
+      COLLAPSE   (default) ratio-driven edge collapse. The general-purpose one.
+                 Give it `ratio` (0-1) or `targetTris` and it solves for the ratio.
+      UNSUBDIV   reverses subdivision. Only sensible on quad grids that WERE
+                 subdivided; on arbitrary geometry it mangles.
+      DISSOLVE   planar merge by `angleLimit`. Removes only geometry that was flat
+                 anyway, so it is the lossless-looking one -- and it may remove
+                 NOTHING on an already-tight mesh, which is not a failure.
+
+    WHAT IT REPORTS IS WHAT HAPPENED, NOT WHAT WAS ASKED. A collapse decimate
+    almost never lands exactly on the requested ratio -- it solves for a face
+    budget and cannot split a triangle to hit a target -- so the response carries
+    trisBefore, trisAfter and the ratioAchieved that actually resulted, beside the
+    ratioRequested. Echoing the request back would be the silent-wrong-number this
+    project keeps finding.
+
+    IT REFUSES TO PRETEND. If the modifier removed nothing at all, that is said in
+    words rather than returned as a cheerful ok with two identical counts.
+
+    UVs AND CUSTOM NORMALS. Decimation rewrites topology, so a UV layer is
+    stretched across the survivors and custom split normals do not survive a
+    collapse. Both are WARNED about when present rather than silently damaged --
+    the caller may not know the mesh had them.
+    """
+    reject_unknown(params, _DECIMATE_KEYS, "decimate_mesh")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+
+    mode = (take(params, "mode") or "COLLAPSE").upper()
+    if mode not in ("COLLAPSE", "UNSUBDIV", "DISSOLVE"):
+        raise MifOpError(
+            "unknown mode %r. Use COLLAPSE (ratio-driven, the general one), UNSUBDIV "
+            "(reverses subdivision; only sensible on quad grids that WERE subdivided), "
+            "or DISSOLVE (planar merge by angleLimit, removes only what was already "
+            "flat)." % mode)
+
+    ratio = take_float(params, "ratio")
+    target = take_int(params, "targetTris", "targetTriangles")
+    angle_limit = take_float(params, "angleLimit")
+    iterations = take_int(params, "iterations")
+    dry_run = take_bool(params, "dryRun", default=False)
+
+    before = mesh_counts(obj)
+    tris0 = before.get("tris", -1)
+
+    if mode == "COLLAPSE":
+        if (ratio is None) == (target is None):
+            raise MifOpError(
+                "COLLAPSE needs exactly one of 'ratio' (0-1, the fraction of faces to KEEP) "
+                "or 'targetTris' (an absolute triangle count to aim for). Passing both is "
+                "ambiguous and passing neither has no meaning. This mesh has %d triangles "
+                "now." % tris0)
+        if target is not None:
+            if target < 1:
+                raise MifOpError("'targetTris' must be >= 1; got %d" % target)
+            if tris0 <= 0:
+                raise MifOpError(
+                    "cannot solve a ratio for targetTris: this mesh reports %d triangles, so "
+                    "there is nothing to divide by. Pass 'ratio' directly." % tris0)
+            if target >= tris0:
+                raise MifOpError(
+                    "targetTris %d is not BELOW the current %d, so there is nothing to "
+                    "decimate. Decimation only removes; it cannot add detail."
+                    % (target, tris0))
+            ratio = float(target) / float(tris0)
+        if not (0.0 < ratio <= 1.0):
+            raise MifOpError(
+                "'ratio' must be in (0, 1]; got %r. It is the fraction of faces to KEEP, so "
+                "0.25 means a quarter of them." % ratio)
+    else:
+        if ratio is not None or target is not None:
+            raise MifOpError(
+                "'ratio' and 'targetTris' apply to COLLAPSE only. %s is driven by %s."
+                % (mode, "angleLimit" if mode == "DISSOLVE" else "iterations"))
+        if mode == "DISSOLVE" and angle_limit is None:
+            angle_limit = 5.0
+        if mode == "UNSUBDIV" and iterations is None:
+            iterations = 1
+
+    warnings = []
+    mesh = obj.data
+    if mode == "COLLAPSE" and mesh.has_custom_normals:
+        warnings.append(
+            "'%s' carries custom split normals. A collapse decimate rewrites topology and they "
+            "will NOT survive it -- re-author normals afterwards, or use DISSOLVE, which only "
+            "removes geometry that was already planar." % obj.name)
+    if getattr(mesh, "uv_layers", None) and len(mesh.uv_layers) > 0:
+        warnings.append(
+            "'%s' has %d UV layer(s). Decimation stretches UVs across the surviving vertices; it "
+            "does not re-unwrap. Check the result before baking anything against it."
+            % (obj.name, len(mesh.uv_layers)))
+
+    if dry_run:
+        return {
+            "dryRun": True,
+            "object": obj.name,
+            "mode": mode,
+            "trisBefore": tris0,
+            "countsBefore": before,
+            "ratioRequested": round(ratio, 6) if ratio is not None else None,
+            "targetTris": target,
+            "angleLimit": angle_limit,
+            "iterations": iterations,
+            "warnings": warnings,
+            "note": "nothing was modified. Drop dryRun to apply.",
+        }
+
+    # THROUGH THE MODIFIER, not a hand-rolled bmesh collapse. Blender's decimate is a
+    # quadric-error solver and anything written here would be a worse one wearing the same name.
+    mod = obj.modifiers.new(name="MifDecimate", type="DECIMATE")
+    try:
+        mod.decimate_type = mode
+        if mode == "COLLAPSE":
+            mod.ratio = ratio
+        elif mode == "UNSUBDIV":
+            mod.iterations = iterations
+        else:
+            mod.angle_limit = math.radians(angle_limit)
+
+        prev = bpy.context.view_layer.objects.active
+        bpy.context.view_layer.objects.active = obj
+        try:
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+        finally:
+            bpy.context.view_layer.objects.active = prev
+    except Exception as exc:
+        # Leave nothing behind on the failure path. A stranded modifier would change the next
+        # export without appearing in any response -- an invisible edit is the worst kind.
+        if mod.name in [m.name for m in obj.modifiers]:
+            obj.modifiers.remove(mod)
+        raise MifOpError("decimate failed on '%s': %s: %s" % (obj.name, type(exc).__name__, exc))
+
+    after = mesh_counts(obj)
+    tris1 = after.get("tris", -1)
+    achieved = (float(tris1) / float(tris0)) if tris0 > 0 and tris1 >= 0 else None
+
+    result = {
+        "object": obj.name,
+        "mode": mode,
+        "trisBefore": tris0,
+        "trisAfter": tris1,
+        "trisRemoved": (tris0 - tris1) if (tris0 >= 0 and tris1 >= 0) else None,
+        # round(), not rnd(). rnd maps over a SEQUENCE - it exists for vectors - and passing it a
+        # scalar raised "float object is not iterable" on every successful path while every
+        # REFUSAL path returned cleanly, so the guards all looked right and the op never ran.
+        "ratioRequested": round(ratio, 6) if ratio is not None else None,
+        "ratioAchieved": round(achieved, 6) if achieved is not None else None,
+        "targetTris": target,
+        "angleLimit": angle_limit,
+        "iterations": iterations,
+        "countsBefore": before,
+        "countsAfter": after,
+        "warnings": warnings,
+    }
+
+    # SAID IN WORDS, not left to be spotted in two identical numbers. An op reporting ok while
+    # changing nothing is the exact failure shape this codebase keeps finding.
+    if tris0 >= 0 and tris1 == tris0:
+        result["nothingRemoved"] = True
+        result["note"] = (
+            "the mesh has the SAME %d triangles it started with -- nothing was removed. For "
+            "DISSOLVE that usually means no faces were coplanar within angleLimit=%s; for "
+            "COLLAPSE it can mean the ratio was too close to 1 to drop a single face."
+            % (tris0, angle_limit))
+    elif ratio is not None and achieved is not None and abs(achieved - ratio) > 0.05:
+        result["note"] = (
+            "landed at ratio %.3f against the %.3f requested. A collapse decimate solves for a "
+            "face budget and cannot split a triangle to hit a target exactly; this is the real "
+            "figure, not a rounding of the request." % (achieved, ratio))
+    return result
+
+
 OPS = {
     "import_mesh": op_import_mesh,
+    "decimate_mesh": op_decimate_mesh,
     "export_mesh": op_export_mesh,
     "select_edges": op_select_edges,
     "bevel_edges": op_bevel_edges,

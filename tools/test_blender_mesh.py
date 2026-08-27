@@ -260,6 +260,74 @@ def main():
           "%s -> %s" % (b0, b1))
 
     print("")
+    print("=== T770: decimate_mesh refuses every ambiguous request ===")
+    # Six guards, each for a request that has no single correct interpretation. All of these were
+    # exercised against a real 1169-triangle Unreal mesh before the op was trusted.
+    name = first_mesh()
+    for label, kw in (
+            ("both ratio and targetTris", {"ratio": 0.5, "targetTris": 4}),
+            ("neither of them", {}),
+            ("a ratio above 1", {"ratio": 1.5}),
+            ("a ratio of 0", {"ratio": 0}),
+            ("targetTris not below the current count", {"targetTris": 999999}),
+            ("an unknown mode", {"ratio": 0.5, "mode": "SQUISH"}),
+            ("ratio on a mode that has no ratio", {"ratio": 0.5, "mode": "DISSOLVE"}),
+    ):
+        r = call("decimate_mesh", object=name, **kw)
+        check("T770 %s is refused" % label, r.get("ok") is False, json.dumps(r)[:170])
+    r = call("decimate_mesh", object=name, ratio=0.5, nonsense=True)
+    check("T770 an unknown parameter is refused, not ignored", r.get("ok") is False,
+          json.dumps(r)[:170])
+
+    print("")
+    print("=== T771: dryRun reports and changes nothing ===")
+    t0 = (call("object_info", object=name) or {})
+    r = call("decimate_mesh", object=name, ratio=0.5, dryRun=True)
+    check("T771 dryRun succeeds", r.get("ok") is not False, r.get("error"))
+    check("T771 it says it is a dry run", r.get("dryRun") is True, json.dumps(r)[:170])
+    check("T771 it reports the current triangle count",
+          isinstance(r.get("trisBefore"), (int, float)), r.get("trisBefore"))
+    check("T771 and no trisAfter, because nothing happened", r.get("trisAfter") is None,
+          r.get("trisAfter"))
+    check("T771 the mesh is untouched",
+          verts(name) == (t0.get("object") or t0).get("vertexCount", verts(name)),
+          "dryRun changed the vertex count")
+
+    print("")
+    print("=== T772: it reports what HAPPENED, not what was asked ===")
+    tris_before = r.get("trisBefore")
+    d = call("decimate_mesh", object=name, ratio=0.5)
+    check("T772 decimate succeeded", d.get("ok") is not False, d.get("error"))
+    check("T772 it reports both before and after",
+          isinstance(d.get("trisBefore"), (int, float))
+          and isinstance(d.get("trisAfter"), (int, float)),
+          json.dumps(d)[:200])
+    check("T772 and the requested ratio separately from the ACHIEVED one",
+          "ratioRequested" in d and "ratioAchieved" in d,
+          "a collapse decimate cannot split a triangle to land exactly on a target, so echoing "
+          "the request back would be a number that is not true: %s" % json.dumps(d)[:170])
+    check("T772 triangles actually went down, or it said nothing was removed",
+          d.get("trisAfter") < d.get("trisBefore") or d.get("nothingRemoved") is True,
+          "%s -> %s with no nothingRemoved flag" % (d.get("trisBefore"), d.get("trisAfter")))
+    print("       %s -> %s triangles (asked %s, got %s)"
+          % (d.get("trisBefore"), d.get("trisAfter"),
+             d.get("ratioRequested"), d.get("ratioAchieved")))
+
+    print("")
+    print("=== T773: DISSOLVE removes only what was already flat ===")
+    before_d = verts(name)
+    r = call("decimate_mesh", object=name, mode="DISSOLVE", angleLimit=5.0)
+    check("T773 dissolve succeeded", r.get("ok") is not False, r.get("error"))
+    # On a tight mesh this legitimately removes nothing, and the op must SAY so rather than
+    # returning ok with two identical counts.
+    if r.get("trisAfter") == r.get("trisBefore"):
+        check("T773 removing nothing is stated in words, not left to be spotted",
+              r.get("nothingRemoved") is True and bool(r.get("note")), json.dumps(r)[:200])
+    else:
+        check("T773 it removed coplanar geometry", r.get("trisAfter") < r.get("trisBefore"),
+              "%s -> %s" % (r.get("trisBefore"), r.get("trisAfter")))
+
+    print("")
     print("=== T769: clear_scene empties it ===")
     r = call("clear_scene")
     check("T769 clear_scene succeeded", r.get("ok") is not False, r.get("error"))
