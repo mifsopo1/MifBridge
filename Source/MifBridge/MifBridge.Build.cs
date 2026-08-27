@@ -72,7 +72,7 @@ public class MifBridge : ModuleRules
 			                     // the HEADERS resolved and only the LINK failed (LNK2019 on
 			                     // FKey::IsValid/IsModifierKey/ToString and EKeys::GetAllKeys) — a
 			                     // reminder that a compiling include is not a linked module.
-			"ImageWrapper"       // IImageWrapperModule / IImageWrapper — import_texture decodes
+			"ImageWrapper",      // IImageWrapperModule / IImageWrapper — import_texture decodes
 			                     // PNG/JPEG/BMP/TGA into FTextureSource for BOTH its file-path and its
 			                     // base64 ingest modes. NOT reachable transitively: Engine lists
 			                     // ImageWrapper under PrivateIncludePathModuleNames, which puts the
@@ -88,6 +88,11 @@ public class MifBridge : ModuleRules
 			                     // The avoidance is real — MifBridgeThumbnail.cpp uses
 			                     // PNGCompressImageArray + FFileHelper::SaveArrayToFile instead — but the
 			                     // stated reason was wrong, because ImageCore arrives regardless.)
+			"ApplicationCore"    // IPlatformInputDeviceMapper::Get().GetDefaultInputDevice() for
+			                     // ui_scenario_activate's UGameViewportClient::InputKey call. Headers
+			                     // resolved without this (transitively via Slate/Engine's own include
+			                     // paths) and only LINK failed - the same InputCore trap above, one more
+			                     // time: LNK2019 on IPlatformInputDeviceMapper::Get.
 		});
 
 		// ---- BREADTH BATCH, 2026-08-26: ENGINE modules -----------------------------------

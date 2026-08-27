@@ -1710,6 +1710,12 @@ namespace MifBridge
 	MIF_DECL(preview_widget);
 	// Declarative composite widget preview (MifBridgeCompositePreview.cpp) — no MIF_WITH_* gate.
 	MIF_DECL(preview_composite_widget);
+	// UI scenario runner, Phase C (MifBridgeUIScenario.cpp) — no MIF_WITH_* gate.
+	MIF_DECL(ui_scenario_start);
+	MIF_DECL(ui_scenario_activate);
+	MIF_DECL(ui_scenario_status);
+	MIF_DECL(ui_scenario_capture);
+	MIF_DECL(ui_scenario_stop);
 
 #undef MIF_DECL
 }

@@ -3691,6 +3691,42 @@ def preview_composite_widget(root_class: str, children: list = None, width: int 
                  name=name or None)
 
 
+@mcp.tool()
+def ui_scenario_start(target_actor_path: str, player_location: dict, player_rotation: dict = None,
+                      net_mode: str = "server", player_index: int = 0, confirm: bool = False) -> dict:
+    "Start an interaction-faithful UI scenario: positions the LOCAL PLAYER PAWN at player_location/player_rotation (explicit - no automatic interaction-radius calculation, since that's game-specific logic this bridge can't know generically) in a running PIE world (net_mode: server|client|any). Requires confirm=True - it's a real gameplay-state mutation. Only ONE scenario runs at a time; call ui_scenario_stop before starting another. This does NOT manage PIE lifecycle - start_pie/pie_status first. Follow with ui_scenario_activate to actually press the key."
+    return _post("ui_scenario_start", targetActorPath=target_actor_path, playerLocation=player_location,
+                 playerRotation=player_rotation, netMode=net_mode, playerIndex=player_index, confirm=confirm)
+
+
+@mcp.tool()
+def ui_scenario_activate(activation_key: str = "F", expected_widget_classes: list = None,
+                         timeout_seconds: float = 10.0, stable_frames: int = 3,
+                         confirm: bool = False) -> dict:
+    "THE hazardous step of the scenario runner: delivers activation_key through UGameViewportClient::InputKey - the actual entry point real input takes into the game's own PlayerController/input stack, not a generic focused-widget guess. This runs mod gameplay code (OnClicked, Construct, Tick, whatever responds) SYNCHRONOUSLY on the handler thread; requires confirm=True. After this call, poll ui_scenario_status until state is READY, TIMED_OUT, or FAILED - READY means expected_widget_classes (if given) are all present and the live widget count has held steady for stable_frames consecutive ticks. The timeout_seconds deadline is real but can only catch 'the condition never became true' - if the game thread itself hangs (an infinite loop in mod code), no timeout on that same thread can interrupt it; that's the existing modal-hang situation, not something new here. Call ui_scenario_start first."
+    return _post("ui_scenario_activate", activationKey=activation_key,
+                 expectedWidgetClasses=expected_widget_classes or [], timeoutSeconds=timeout_seconds,
+                 stableFrames=stable_frames, confirm=confirm)
+
+
+@mcp.tool()
+def ui_scenario_status() -> dict:
+    "Poll the active UI scenario's state: IDLE (none active) | POSITIONED (after ui_scenario_start) | WAITING_FOR_STABLE_UI (after ui_scenario_activate, still ticking) | READY (capture-able) | TIMED_OUT | FAILED | STOPPED. Also reports elapsedSeconds, lastWidgetCount, stableFramesObserved/Required, and whether the world/pawn/target are still valid."
+    return _post("ui_scenario_status")
+
+
+@mcp.tool()
+def ui_scenario_capture(name: str = "") -> dict:
+    "Capture the scenario's result: the GAME viewport (not the editor's own active viewport - a different capture entirely from capture_viewport) as a PNG, plus every top-level live widget's path/class/geometry. Only valid once ui_scenario_status reports state READY. Pass any reported path to describe_live_widget for its full nested tree. fidelity in the response is 'pieActualInput' - PIE evidence, not packaged-runtime evidence (MifBridge is Editor-only)."
+    return _post("ui_scenario_capture", name=name or None)
+
+
+@mcp.tool()
+def ui_scenario_stop() -> dict:
+    "Stop the active UI scenario (if any) and return this bridge to idle - unregisters the internal ticker and clears state. Safe to call even if nothing is active (wasActive:false). Does not restore the player pawn's original position or undo anything the activation's gameplay code did; call this when done with a scenario regardless of how it ended."
+    return _post("ui_scenario_stop")
+
+
 # --------------------------------------------------------------------------
 # BLENDER backend - bl_* tools. These do NOT reach Unreal: they go over the
 # loopback socket to the MifBlender addon (tools/blender-addon/), so they are

@@ -450,6 +450,12 @@ namespace MifBridge
 			MIF_BIND(preview_widget);
 			// Declarative composite widget preview
 			MIF_BIND(preview_composite_widget);
+			// UI scenario runner, Phase C
+			MIF_BIND(ui_scenario_start);
+			MIF_BIND(ui_scenario_activate);
+			MIF_BIND(ui_scenario_status);
+			MIF_BIND(ui_scenario_capture);
+			MIF_BIND(ui_scenario_stop);
 #undef MIF_BIND
 		}
 		return Map;

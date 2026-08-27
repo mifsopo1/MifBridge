@@ -2108,19 +2108,64 @@ cannot become one giant blocking item:
       compiler did catch (C2027 undefined type), on the very first probe build.
       NOT PROOF the real interaction path produces this composition - Phase C is what would prove
       that, and remains the one item left.
-- [ ] **UMG interaction-faithful PIE scenario runner (Phase C) - LARGE, own subsystem, not an
-      endpoint.** Position an actor, wait on the focus system, deliver the real input (F) to the game
-      viewport rather than an editor widget, poll for widget-tree stability with timeouts, capture the
-      full game viewport + geometry. Comparable in size to the water-zone or graph-patch work. NEW
-      hazard class: this drives gameplay Blueprint code (Construct/Tick/bindings) synchronously on the
-      handler thread - an uncaught exception or infinite loop there is the same "modal spins its own
-      loop, bridge stops reading the socket" trap §0 of the bridge manual already warns about, except
-      the offending code is mod-authored, not ours, and `pcall` does not catch native crashes either.
-      Needs a proven timeout-and-report-last-known-state path before running unattended. State machine
-      and failure taxonomy are already well specified in the proposal - reuse them rather than
-      redesigning.
-      NOT ruled out, NOT started. Order: do the first two items first: they deliver value standing
-      alone and de-risk the geometry-reading half before adding actor/input automation on top.
+- [x] **UMG interaction-faithful PIE scenario runner (Phase C).** DONE 2026-08-27. Andre's call on a
+      genuinely new hazard class, confirmed explicitly before starting: "start now, full scope."
+      `ui_scenario_start` / `ui_scenario_activate` / `ui_scenario_status` / `ui_scenario_capture` /
+      `ui_scenario_stop` (MifBridgeUIScenario.cpp). No MIF_WITH_* gate - core Engine/UMG/ApplicationCore.
+      A NEW ARCHITECTURAL PATTERN, not just a new endpoint: every other endpoint in this bridge (its
+      own siblings preview_widget/preview_composite_widget included) is one synchronous call.
+      "Position a pawn, wait for the game's own UI to react and settle" spans MULTIPLE FRAMES, which a
+      blocking handler cannot do without freezing the very ticks the wait depends on - the modal-hang
+      trap, self-inflicted. Solved with an FTSTicker-driven state machine (IDLE -> POSITIONED ->
+      WAITING_FOR_STABLE_UI -> READY/TIMED_OUT/FAILED -> STOPPED), advanced a frame at a time, polled
+      across MULTIPLE HTTP calls the same way start_pie/pie_status already established for PIE's own
+      deferred startup - a SMALLER state machine than the proposal's own 12-state illustration, same
+      safety properties (explicit steps, pollable status, hard deadline).
+      THE REAL MECHANISM, checked before designing anything: `UGameViewportClient::InputKey` (via
+      `FInputKeyEventArgs`) is the actual entry point real input takes into a game's own
+      PlayerController/input stack - a genuinely different, more faithful path than send_editor_key's
+      `FSlateApplication::ProcessKeyDownEvent`, which routes to whatever Slate's global focus happens
+      to be and can land on an editor widget instead of the game. `World->GetGameViewport()` resolves
+      the CORRECT PIE world's viewport in a multi-client session (same netMode resolution list_pie_actors
+      established); capture reuses capture_viewport's force-redraw-before-ReadPixels discipline against
+      that viewport instead of the editor's own.
+      SCOPE CUT, stated honestly rather than silently: playerLocation is EXPLICIT, no automatic
+      interaction-radius calculation (that is game-specific logic no generic bridge can know) - no
+      "wait on the focus system" as its own verifiable state, since a game's focus/interaction
+      detection is entirely custom Blueprint logic with no generic engine API to observe; PIE lifecycle
+      is NOT managed here (start_pie/pie_status already do that, reused rather than duplicated).
+      THE HONEST LIMIT OF THE TIMEOUT, stated in the code and in every TIMED_OUT response, not
+      oversold: the deadline can only catch "the condition never became true" - it CANNOT catch a
+      genuine infinite loop in mod gameplay code, because the timeout check and the hung code share the
+      same game thread. That case is the pre-existing modal-hang trap with a mod-authored cause instead
+      of an engine one; nothing about this endpoint's timeout can protect against it, and the response
+      says so explicitly rather than implying a safety net that is not there.
+      A REAL 5.3/5.7 DIVERGENCE CAUGHT BY THE PROBE: 5.7 added a 7th (timestamp) parameter to
+      FInputKeyEventArgs, keeping the 6-arg form only as UE_DEPRECATED(5.6); 5.3 has ONLY the 6-arg
+      form - the timestamp overload does not exist there (C2440, "no constructor could take the source
+      type"). Fixed to the portable 6-arg spelling, same lesson as GAS's EGameplayModOp names. Also
+      needed a new Build.cs dependency (ApplicationCore, for IPlatformInputDeviceMapper) that compiled
+      fine without and only failed at LINK - the same "a compiling include is not a linked module" trap
+      this Build.cs already documents for InputCore and ImageWrapper.
+      A REAL BUG THE LIVE TEST CAUGHT IN THE STATUS ENDPOINT ITSELF: the first version of
+      ui_scenario_status returned bare `{"ok":true}` with none of its own state fields - a range-for
+      copying `StatusJson()->Values` into the response silently did nothing (the working code elsewhere
+      nests the whole status object under a key instead, which is what proved StatusJson() itself was
+      fine). Rewritten to a named local + explicit TPair iteration; re-verified live.
+      VERIFIED LIVE, the full state machine, not just the read half: built an actual gameplay path for
+      the purpose (a target actor, a GameMode wiring Event BeginPlay -> Create Widget -> Add to
+      Viewport, matching the fixture pattern list_live_widgets already established) rather than testing
+      against nothing. Confirmed: positioning landed the pawn at the exact requested location;
+      ui_scenario_start refused a second concurrent call while one was active; activation delivered F
+      through the real InputKey path with NO hang and NO crash; the ticker correctly detected the
+      widget, held stable for 3 frames, and transitioned to READY entirely on its own; capture wrote a
+      real PNG independently confirmed via `file` (1280x722, matching viewport size) with correct
+      top-level widget geometry; and - the safety-critical case - a scenario given a widget class that
+      would never appear correctly TIMED_OUT at exactly its configured deadline with the editor fully
+      responsive throughout, never once appearing to hang.
+      Packaged-game evidence remains the final authority, as it does everywhere in this proposal - this
+      is PIE evidence (`fidelity: pieActualInput` in every capture response), not proof a packaged
+      DDS2/Curfew build assembles the same screen.
 - [~] **Packaged-runtime capture companion (Phase D)** - declined as proposed, correctly scoped out
       by the reporter too. MifBridge is Editor-only (Type=Editor in the .uplugin); a packaged-runtime
       capture path would need a separate opt-in component (UE4SS-side helper, external harness) and is
