@@ -1493,6 +1493,56 @@ contradicts this file, the analysis wins — it read the code and this file matc
   _blender call sites before writing anything new - the same read-before-write rule that applies to the
   UE handlers.
 
+- [x] **`mif_mesh_roundtrip` fidelity gate was structurally broken - the fourth leg had NEVER passed.**
+  FOUND AND FIXED 2026-08-27. The item above ("THE ROUND TRIP is proven three legs of four") took the
+  safety gate's scratch-mode refusal of `import_asset` as the reason leg 4 was untested and left it
+  there. It was not the reason. Running the actual fidelity gate against a real, non-trivial asset
+  (SM_Barrel_Oil, 56x56x1 uu) showed it aborting with "the FBX axis or unit assumption is WRONG" on
+  EVERY attempt, drift ~5551 uu on a mesh that had not moved at all.
+
+  ROOT CAUSE, two independent bugs compounding: `import_mesh` deliberately leaves the imported Blender
+  object at a uniform non-1 scale (VERIFIED: Blender's FBX importer represents the cm-file/BU unit
+  conversion as an *object scale* [0.01,0.01,0.01 here], not a mesh rescale - `op_import_mesh` in
+  ops_mesh.py already knew this and warns callers not to bake it away with transform_apply).
+  `ops_common.object_info()`'s `boundsLocalSizeUU`/`boundsLocalMin/MaxBU` are, by DESIGN, LOCAL space -
+  scale deliberately excluded, so a cached bound_box can never mask a real edit (see local_bounds()'s
+  own docstring). `mif_mesh_roundtrip`'s fidelity gate (server.py) read those LOCAL fields and compared
+  them directly against Unreal's WORLD-space export - wrong by exactly the scale factor, always. SECOND,
+  independent bug: the gate additionally required `isIdentityTransform` (scale == 1 on every axis),
+  which no freshly-imported mesh can ever satisfy - so even correcting the first bug would still have
+  hard-failed on the second. Both were introduced together and neither had ever been exercised against
+  a mesh with real (non-unit, non-trivial) dimensions, which is why nothing caught it until now.
+
+  FIX: `server.py` gained `_bl_scale()` (reads the object's own scale, fail-closed) and `_bl_shape_ok()`
+  (location/rotation must be identity; scale must be UNIFORM and positive - NOT literally 1). The size
+  check and `_bl_bounds_uu()`'s pivot conversion now multiply local Blender-unit values by that scale
+  before converting to uu, at both call sites (pre-edit fidelity gate and post-edit bounds_assert). The
+  tool's own docstring was updated to describe the corrected behavior; the old wording ("isIdentityTransform
+  must be true") is what the second bug looked like from the outside.
+
+  VERIFIED, not just compiled - this is Python, so the fix was run for real: `dry_run:true` on
+  SM_Barrel_Oil now completes `fidelity_gate` with drift ~1e-7 uu (float noise) instead of aborting.
+  A FULL, NON-dry-run pass (`edit:"none"`, the documented way to prove losslessness) completed ALL TEN
+  steps for the first time ever, including `import_asset` - the leg that had never been reached.
+  Independently re-verified outside the tool's own self-report: re-exported the resulting new asset
+  from Unreal and compared `boundsSizeUU` against the original by hand - bit-for-bit identical
+  (`{56.079463958740234, 55.716182708740234, 1.08136663940968}` both times). Vertex count went 408 -> 409
+  (a smoothing-group split artifact from `mesh_smooth_type:'FACE'`, not a fidelity-gate concern). The
+  material-slot check correctly WARNED (not aborted) that Blender's FBX export renames slots after their
+  material - `'Oil'` became `'MI_Oil_02_003'` - a real, separate, already-known limitation, working as
+  designed. Test asset created at `/Game/_MifBridgeTest/RoundTrip/` and deleted afterward via
+  `delete_asset`.
+
+  SIDE FINDING while getting this running: `tools/mcp-server/requirements.txt` pinned `mcp>=1.2.0` with
+  no upper bound, but the code uses the v1 `FastMCP` API (`from mcp.server.fastmcp import FastMCP`),
+  which `mcp` 2.x renamed to `MCPServer` with a different import path. A fresh `pip install -r
+  requirements.txt` today installs 2.x and the server fails at import with a migration-guide error.
+  Pinned to `mcp>=1.2.0,<2`.
+
+  This resolves the "THE ONE THING STILL UNPROVEN" note carried in memory since it was first flagged -
+  it was not merely unproven, it was broken, and would have stayed broken indefinitely because the
+  stated blocker (scratch-mode `import_asset` refusal) was real but not the actual cause.
+
 - [~] **DECLINED 2026-08-26: the `droppedByValidation` path is UNREACHABLE through this endpoint.**
   This item was filed hours before the finding behind it was corrected, and the corrected finding
   removes the item. AddSample -> ValidateSampleValue -> IsTooCloseToExistingSamplePoint calls the SAME

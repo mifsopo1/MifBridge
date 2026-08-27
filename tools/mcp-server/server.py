@@ -3904,14 +3904,68 @@ def _vec3(value, what: str) -> list:
         raise _MifToolError(f"{what} has a non-numeric component ({exc}): {value!r:.200}")
 
 
-def _bl_bounds_uu(obj_info: dict, what: str) -> tuple:
-    """(min, max, size) in UNREAL units out of an addon object_info block.
+def _bl_scale(obj_info: dict, what: str) -> list:
+    """The object's own scale, required and fail-closed like everything else here.
 
-    object_info reports the local bbox in BLENDER units as boundsLocalMinBU /
+    object_info's boundsLocal*BU/UU fields are deliberately LOCAL space -
+    ops_common.local_bounds() reads raw vertex coordinates so a cached,
+    stale bound_box can never mask a real edit. That is correct for its own
+    purpose but means those fields do NOT fold in object scale, and
+    import_mesh deliberately leaves the imported object at a uniform
+    non-1 scale (MifBlender/ops_mesh.py: Blender's FBX importer represents the
+    cm-file/BU unit conversion as an object-scale, not a mesh rescale -
+    VERIFIED empirically 2026-08-27: a barrel exported from UE at
+    boundsSizeUU (56.08, 55.72, 1.08) reads back from Blender with
+    boundsLocalSizeBU == THE SAME NUMBERS and object scale [0.01, 0.01, 0.01]).
+    Every comparison against Unreal's world-space bounds below must multiply
+    by this scale first, or it is comparing local Blender numbers to world
+    Unreal ones and is wrong by exactly the scale factor, always.
+    """
+    if not isinstance(obj_info, dict) or "scale" not in obj_info:
+        raise _MifToolError(
+            f"{what} has no .scale, so local-space bounds cannot be converted to world space "
+            f"and nothing below can be trusted. Keys present: "
+            f"{sorted(obj_info) if isinstance(obj_info, dict) else type(obj_info).__name__}")
+    return _vec3(obj_info["scale"], f"{what}.scale")
+
+
+def _bl_shape_ok(obj_info: dict, scale: list, what: str):
+    """Is this object's transform safe to fold into a world-space comparison?
+
+    NOT the same question as object_info's own isIdentityTransform, which
+    additionally demands scale == 1 on every axis - a freshly imported mesh
+    NEVER satisfies that (see _bl_scale above), so that field would fail every
+    real round trip even after the size/pivot math is corrected for scale.
+    What this pipeline actually needs is narrower: no offset, no rotation, and
+    a scale that is the SAME on every axis and not mirrored. A uniform non-1
+    scale is expected and is exactly what the multiplication by `scale`
+    already corrects for; a skewed or negative scale is the real danger (it
+    would distort geometry on export) and is what this still catches.
+
+    Returns None on success, or a reason string identifying what is wrong.
+    """
+    loc = _vec3(obj_info.get("locationBU", [0.0, 0.0, 0.0]), f"{what}.locationBU")
+    rot = _vec3(obj_info.get("rotationEulerRad", [0.0, 0.0, 0.0]), f"{what}.rotationEulerRad")
+    if any(abs(v) > 1e-4 for v in loc):
+        return f"non-zero location {loc} BU"
+    if any(abs(v) > 1e-4 for v in rot):
+        return f"non-zero rotation {rot} rad"
+    if any(s <= 0 for s in scale):
+        return f"non-positive scale {scale}"
+    if max(scale) - min(scale) > 1e-4 * max(scale):
+        return f"non-uniform scale {scale} (would skew geometry, not just resize it)"
+    return None
+
+
+def _bl_bounds_uu(obj_info: dict, what: str, scale: list) -> tuple:
+    """(min, max, size) in UNREAL WORLD units out of an addon object_info block.
+
+    object_info reports the LOCAL bbox in BLENDER units as boundsLocalMinBU /
     boundsLocalMaxBU (3-lists, ops_common.object_info) and only the SIZE in uu.
     The min and max are what a pivot comparison needs - the size alone cannot see
     a mesh that kept its dimensions and moved - so they are converted here
-    against the same UU_PER_BU=100 the addon uses.
+    against the same UU_PER_BU=100 the addon uses, AFTER folding in the
+    object's own scale (see _bl_scale) to get world space, not local space.
 
     RAISES if either is absent. A pivot check that could not read the pivot has
     not passed.
@@ -3924,8 +3978,10 @@ def _bl_bounds_uu(obj_info: dict, what: str) -> tuple:
             f"{what} is missing {', '.join(missing)}, so the PIVOT cannot be checked - and "
             "'the pivot must not move' is half the tiling constraint, not a nicety. Keys "
             f"present: {sorted(obj_info)}")
-    lo = [v * 100.0 for v in _vec3(obj_info["boundsLocalMinBU"], f"{what}.boundsLocalMinBU")]
-    hi = [v * 100.0 for v in _vec3(obj_info["boundsLocalMaxBU"], f"{what}.boundsLocalMaxBU")]
+    raw_lo = _vec3(obj_info["boundsLocalMinBU"], f"{what}.boundsLocalMinBU")
+    raw_hi = _vec3(obj_info["boundsLocalMaxBU"], f"{what}.boundsLocalMaxBU")
+    lo = [raw_lo[i] * scale[i] * 100.0 for i in range(3)]
+    hi = [raw_hi[i] * scale[i] * 100.0 for i in range(3)]
     return lo, hi, [hi[i] - lo[i] for i in range(3)]
 
 
@@ -4212,7 +4268,7 @@ def mif_mesh_roundtrip(asset: str, edit: str = "extrude_skirt", destination: str
                        dry_run: bool = False, repoint: list = None,
                        repoint_property: str = "SidewalkMesh",
                        keep_intermediates: bool = True) -> dict:
-    "Unreal -> Blender -> Unreal in one call: export a mesh, edit it, reimport it as a NEW asset, and optionally repoint the properties that referenced the original. edit = extrude_skirt | bevel_edges | none ('none' is the no-op round trip, which is how you PROVE the FBX axis/scale trip is lossless before trusting any geometry change to it). RUN dry_run:true FIRST - it exports, imports into Blender, measures, and stops, writing nothing and reimporting nothing. Steps, each gated: (0) bl_status, so a shut Blender fails in seconds BEFORE Unreal writes a file; (1) export_asset, keeping its mesh block as the pre-image; (2) the pre-image SHAPE check - export_asset's mesh.boundsSizeUU arrives as an {x,y,z} object and is normalised here, and a missing or mis-shaped one ABORTS rather than being skipped, because every later assert measures against it; (3) bl_import_mesh, which must yield exactly one object; (4) the FIDELITY GATE - the Blender object's boundsLocalSizeUU must match the exported boundsSizeUU, its boundsLocalMin/MaxBU must match the exported boundsMin/MaxUU (that is the PIVOT check: size alone cannot see a mesh that was silently re-centred, because min and max are measured from the origin), and isIdentityTransform must be true. Any mismatch ABORTS - it means the axis, unit or pivot assumption is wrong and everything downstream would be built on it. FAIL-CLOSED: if a measurement is absent it aborts too, and it never appends itself to completed[] without having actually compared numbers; (5) the edit; (7) the tiling assert against the pre-image - X min AND X max, so a tile that kept its length and slid along X fails here where a length-only check passes, plus isIdentityTransform again. This is what stops a sheared spline tile from ever reaching the editor, and it likewise aborts if it cannot measure (pass assert_bounds:false to opt out explicitly - that is recorded as a warning and the step is NOT reported as completed). Y and Z bbox movement is reported and warned on, never asserted: Z growing IS the skirt; (8) import_asset into destination; (9) a material-slot ORDER check comparing the two slotName SEQUENCES, which WARNS rather than aborts (the mesh is valid, the assignment may not be - a human decides) and says plainly when it could not read one of the shapes instead of quietly comparing lengths; (10) set_property per repoint target. Any abort returns ok:false with the step name, what completed, and the artifacts, and it does NOT roll Blender back: the broken object is left in the scene and both FBX files on disk on purpose, as the debugging evidence. depth_uu/offset_uu/tolerance_uu are UNREAL units throughout and are sent as UNREAL units - the addon owns the one conversion. selector takes the flat keys documented on bl_select_edges. repoint takes object paths (e.g. the four BP_SplineSidewalk instances) and writes repoint_property on each; a partial failure there still reports the successful ones, because the asset really was imported."
+    "Unreal -> Blender -> Unreal in one call: export a mesh, edit it, reimport it as a NEW asset, and optionally repoint the properties that referenced the original. edit = extrude_skirt | bevel_edges | none ('none' is the no-op round trip, which is how you PROVE the FBX axis/scale trip is lossless before trusting any geometry change to it). RUN dry_run:true FIRST - it exports, imports into Blender, measures, and stops, writing nothing and reimporting nothing. Steps, each gated: (0) bl_status, so a shut Blender fails in seconds BEFORE Unreal writes a file; (1) export_asset, keeping its mesh block as the pre-image; (2) the pre-image SHAPE check - export_asset's mesh.boundsSizeUU arrives as an {x,y,z} object and is normalised here, and a missing or mis-shaped one ABORTS rather than being skipped, because every later assert measures against it; (3) bl_import_mesh, which must yield exactly one object; (4) the FIDELITY GATE - import_mesh deliberately leaves the Blender object at a uniform non-1 scale (Blender's FBX importer represents the cm-file/BU unit conversion as an object scale, not a mesh rescale - VERIFIED 2026-08-27), so the Blender object's LOCAL boundsLocalSizeUU/boundsLocalMin/MaxBU are converted to WORLD space by multiplying through that scale before comparing against the exported boundsSizeUU/boundsMin/MaxUU (that is the PIVOT check: size alone cannot see a mesh that was silently re-centred, because min and max are measured from the origin), and location/rotation must be identity with scale UNIFORM across all three axes (NOT literally 1 - a uniform import scale is expected and already corrected for; a skewed or mirrored scale is what this still catches). Any mismatch ABORTS - it means the axis, unit or pivot assumption is wrong and everything downstream would be built on it. FAIL-CLOSED: if a measurement is absent it aborts too, and it never appends itself to completed[] without having actually compared numbers; (5) the edit; (7) the tiling assert against the pre-image - X min AND X max, so a tile that kept its length and slid along X fails here where a length-only check passes, plus the same location/rotation/uniform-scale check again. This is what stops a sheared spline tile from ever reaching the editor, and it likewise aborts if it cannot measure (pass assert_bounds:false to opt out explicitly - that is recorded as a warning and the step is NOT reported as completed). Y and Z bbox movement is reported and warned on, never asserted: Z growing IS the skirt; (8) import_asset into destination; (9) a material-slot ORDER check comparing the two slotName SEQUENCES, which WARNS rather than aborts (the mesh is valid, the assignment may not be - a human decides) and says plainly when it could not read one of the shapes instead of quietly comparing lengths; (10) set_property per repoint target. Any abort returns ok:false with the step name, what completed, and the artifacts, and it does NOT roll Blender back: the broken object is left in the scene and both FBX files on disk on purpose, as the debugging evidence. depth_uu/offset_uu/tolerance_uu are UNREAL units throughout and are sent as UNREAL units - the addon owns the one conversion. selector takes the flat keys documented on bl_select_edges. repoint takes object paths (e.g. the four BP_SplineSidewalk instances) and writes repoint_property on each; a partial failure there still reports the successful ones, because the asset really was imported. VERIFIED END-TO-END 2026-08-27 on a 408-vert / 722-tri static mesh (edit:none, real destination, real import_asset): boundsSizeUU on the resulting asset matched the source bit-for-bit. Before that date this tool had NEVER completed step 8 for any mesh - the fidelity gate aborted every real attempt (see the FIDELITY GATE note above) - so treat any memory or doc predating this as describing the broken version."
 
     steps: list = []
     artifacts: dict = {}
@@ -4368,8 +4424,10 @@ def mif_mesh_roundtrip(asset: str, edit: str = "extrude_skirt", destination: str
                       f"Keys present: {sorted(before_obj) if isinstance(before_obj, dict) else type(before_obj).__name__}",
                       response=before)
     try:
-        got_uu = _vec3(before_obj["boundsLocalSizeUU"], "object_info object.boundsLocalSizeUU")
-        got_min, got_max, _ = _bl_bounds_uu(before_obj, "object_info object")
+        before_scale = _bl_scale(before_obj, "object_info object")
+        local_uu = _vec3(before_obj["boundsLocalSizeUU"], "object_info object.boundsLocalSizeUU")
+        got_uu = [local_uu[i] * abs(before_scale[i]) for i in range(3)]
+        got_min, got_max, _ = _bl_bounds_uu(before_obj, "object_info object", before_scale)
     except _MifToolError as exc:
         return _abort("fidelity_gate", str(exc), response=before)
 
@@ -4409,19 +4467,22 @@ def mif_mesh_roundtrip(asset: str, edit: str = "extrude_skirt", destination: str
                       exportedMinUU=pre_min, exportedMaxUU=pre_max,
                       blenderMinUU=got_min, blenderMaxUU=got_max)
 
-    # The object TRANSFORM must be identity too: a bbox is local-space, so a
-    # rotated or offset object has a perfect local box and a wrong world pivot.
-    # object_info has always computed this and nothing has ever read it.
-    if before_obj.get("isIdentityTransform") is not True:
+    # The object TRANSFORM must be safe to fold into a world-space comparison
+    # too: a bbox is local-space, so a rotated or offset object has a perfect
+    # local box and a wrong world pivot. NOT the same test as
+    # isIdentityTransform (scale == 1 on every axis) - import_mesh always
+    # leaves a uniform non-1 scale, by design, and that is already corrected
+    # for above via before_scale. What must actually be identity is location
+    # and rotation; what must actually be UNIFORM (not 1) is scale.
+    bad_shape = _bl_shape_ok(before_obj, before_scale, "object_info object")
+    if bad_shape:
         return _abort("fidelity_gate",
-                      f"Blender object '{obj_name}' does NOT have an identity transform "
-                      f"(location {before_obj.get('locationBU')} BU, rotation "
-                      f"{before_obj.get('rotationEulerRad')} rad, scale {before_obj.get('scale')}). "
-                      "The local bounding box is measured in the object's own space, so it looks "
-                      "correct while the world pivot is not - and the export writes the object "
-                      "transform into the FBX. Do NOT fix this with transform_apply: that bakes "
-                      "the round trip into the mesh and shears every spline instance. Fix the "
-                      "import.", objectInfo=before_obj)
+                      f"Blender object '{obj_name}' has a transform that cannot be trusted: "
+                      f"{bad_shape}. The local bounding box is measured in the object's own "
+                      "space, so it can look correct while the world pivot is not - and the "
+                      "export writes the object transform into the FBX. Do NOT fix this with "
+                      "transform_apply: that bakes the round trip into the mesh and shears every "
+                      "spline instance. Fix the import.", objectInfo=before_obj)
 
     artifacts["fidelityDriftUU"] = drift
     artifacts["pivotDriftUU"] = [[a, l, round(d, 6)] for a, l, _p, _g, d in pivot]
@@ -4505,8 +4566,11 @@ def mif_mesh_roundtrip(asset: str, edit: str = "extrude_skirt", destination: str
                           f"Keys present: {sorted(after_obj) if isinstance(after_obj, dict) else type(after_obj).__name__}",
                           response=after)
         try:
-            post_uu = _vec3(after_obj["boundsLocalSizeUU"], "object_info object.boundsLocalSizeUU")
-            post_min, post_max, _ = _bl_bounds_uu(after_obj, "object_info object (after the edit)")
+            after_scale = _bl_scale(after_obj, "object_info object (after the edit)")
+            post_local_uu = _vec3(after_obj["boundsLocalSizeUU"], "object_info object.boundsLocalSizeUU")
+            post_uu = [post_local_uu[i] * abs(after_scale[i]) for i in range(3)]
+            post_min, post_max, _ = _bl_bounds_uu(after_obj, "object_info object (after the edit)",
+                                                  after_scale)
         except _MifToolError as exc:
             return _abort("bounds_assert", str(exc), response=after)
 
@@ -4523,15 +4587,15 @@ def mif_mesh_roundtrip(asset: str, edit: str = "extrude_skirt", destination: str
                           "is still in Blender for inspection.",
                           exportedMinUU=pre_min, exportedMaxUU=pre_max,
                           blenderMinUU=post_min, blenderMaxUU=post_max)
-        if after_obj.get("isIdentityTransform") is not True:
+        bad_shape = _bl_shape_ok(after_obj, after_scale, "object_info object (after the edit)")
+        if bad_shape:
             return _abort("bounds_assert",
-                          f"the edit left Blender object '{obj_name}' with a NON-identity transform "
-                          f"(location {after_obj.get('locationBU')} BU, rotation "
-                          f"{after_obj.get('rotationEulerRad')} rad, scale {after_obj.get('scale')}). "
-                          "The local bounding box above is measured in the object's own space, so "
-                          "it passed while the pivot did not. The mesh was NOT imported. No op in "
-                          "this addon touches the object transform, so something else in the scene "
-                          "did.", objectInfo=after_obj)
+                          f"the edit left Blender object '{obj_name}' with a transform that cannot "
+                          f"be trusted: {bad_shape}. The local bounding box above is measured in "
+                          "the object's own space, so it can pass while the pivot did not. The mesh "
+                          "was NOT imported. No edit op in this addon touches location or rotation, "
+                          "and scale should only ever be the uniform value import_mesh set - if it "
+                          "moved or skewed, something else in the scene did.", objectInfo=after_obj)
 
         yz_off = [row for row in _pivot_drift(pre_min, pre_max, post_min, post_max, (1, 2))
                   if abs(row[4]) > tol]
