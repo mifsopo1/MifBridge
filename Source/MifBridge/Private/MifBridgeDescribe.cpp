@@ -526,7 +526,14 @@ namespace MifBridge
 			nullptr };
 		static const TCHAR* const GMifDescKeys_add_variable[] = {
 			TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("type"), TEXT("container"),
-			TEXT("valueType"), TEXT("scope"), TEXT("function"), TEXT("default"), nullptr };
+			TEXT("valueType"), TEXT("scope"), TEXT("function"), TEXT("default"),
+			// The set_variable_flags keys, settable at creation time too (fix 060cdf6) - listed here
+			// too or a caller asking describe_endpoint would never learn they exist. Caught by
+			// audit_describe_drift.py the same night the flags were added.
+			TEXT("replicated"), TEXT("repNotify"), TEXT("repNotifyFunction"), TEXT("replicationCondition"),
+			TEXT("saveGame"), TEXT("transient"), TEXT("config"), TEXT("instanceEditable"),
+			TEXT("blueprintReadOnly"), TEXT("exposeOnSpawn"), TEXT("advancedDisplay"), TEXT("interp"),
+			TEXT("deprecated"), TEXT("category"), TEXT("tooltip"), TEXT("fieldNotify"), nullptr };
 		static const TCHAR* const GMifDescNotes_add_variable[] = {
 			TEXT("class"), TEXT("the class belongs IN the type string, not in its own key: type:\"object:SceneComponent\". Prefixes: object:X, class:X, subclassof:X, softobject:X, softclass:X"),
 			TEXT("className"), TEXT("use type:\"object:X\" (or class:X / subclassof:X / softobject:X / softclass:X)"),
@@ -1497,7 +1504,7 @@ namespace MifBridge
 			TEXT("replicated"), TEXT("repNotify"), TEXT("repNotifyFunction"), TEXT("replicationCondition"),
 			TEXT("saveGame"), TEXT("transient"), TEXT("config"), TEXT("instanceEditable"),
 			TEXT("blueprintReadOnly"), TEXT("exposeOnSpawn"), TEXT("advancedDisplay"), TEXT("interp"),
-			TEXT("deprecated"), TEXT("category"), TEXT("tooltip"), nullptr };
+			TEXT("deprecated"), TEXT("category"), TEXT("tooltip"), TEXT("fieldNotify"), nullptr };
 		static const TCHAR* const GMifDescNotes_set_variable_flags[] = {
 			TEXT("variableName"), TEXT("spell it name (aliases: var, variable)"),
 			TEXT("replicate"), TEXT("spell it replicated - and repNotify:true already implies it"),
