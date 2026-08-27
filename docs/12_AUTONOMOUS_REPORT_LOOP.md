@@ -205,3 +205,41 @@ schtasks /create /tn "MifBridge report watch" /sc onlogon /rl limited ^
 Deliberately left as a command to run rather than something set up automatically: it is persistent
 configuration on Andre's machine and a standing grant of unattended editor operation to whoever is on
 the trust list. That should be a decision, not a side effect.
+
+
+## The loop now closes its own issues
+
+Andre, 2026-08-27: *"if you fix the issue, mark it as fixed yourself on git"*.
+
+This reverses a policy `report_reply.py` had argued for in its own docstring - that closing asserts
+the reporter's problem is solved, and that is their call. The first real report settled it. Issue #1
+(`move_tree_widget` raising NameError before dispatch, from infectedcoolpat-jpg) was fixed
+autonomously in `306c162`, and then sat open until Andre closed it by hand and told the reporter
+himself. **The loop was making a human do its paperwork.**
+
+The old argument survives as a narrower rule rather than being discarded:
+
+| status | closes? | why |
+|---|---|---|
+| `fixed` | **yes** | the defect was reproduced and repaired |
+| `fixed --shape-only` | **no** | the SHAPE is fixed; the reporter's actual instance is untested |
+| `not-reproduced` | no | asserts nothing is solved |
+| `needs-you` | no | asserts nothing is solved |
+
+Two details that are load-bearing rather than decorative:
+
+* **Comment first, close second.** An issue that shuts with no explanation is worse for the reporter
+  than one left open. If the close fails, the explanation still stands on its own and the script
+  reports success - the comment is the part the reporter needs; the close is bookkeeping.
+* **The wording is chosen from the same flag as the action**, before the body is built. A comment
+  reading "leaving this open for you to close" on an issue the same script then closes reads as a
+  tool that does not know what it did. The first version of this change did exactly that.
+
+### And a bug worth recording, because of what it was
+
+The first draft of the closing logic read `shape_only` before defining it - a `NameError` before
+dispatch. That is **bit-for-bit the defect issue #1 reported**: `move_tree_widget`'s wrapper passing
+`replaceRoot=replace_root` from a parameter that was never declared.
+
+Written an hour after fixing it, in the code that replies to it. Caught by reading the output back
+rather than by the change looking wrong.

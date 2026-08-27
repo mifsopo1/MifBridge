@@ -10,10 +10,26 @@ AND nothing is auto-replied to. One file, one decision, both directions - there 
 loop is fixing reports silently but not telling anyone, and none where it is posting about reports it
 never worked.
 
-WHAT IT WILL NOT DO. It does not close issues. Closing asserts the reporter's problem is solved, and
-that is their call to make after they have retested on their own project - especially since a
-shape-only repro can fix the shape of a bug and miss the instance they actually hit. The comment says
-what was done and invites them to close it.
+CLOSING. This used to refuse to close issues, on the argument that closing asserts the reporter's
+problem is solved and that is their call - especially since a shape-only repro can fix the SHAPE of a
+bug and miss the instance they actually hit.
+
+Andre overruled that on 2026-08-27: "if you fix the issue, mark it as fixed yourself on git". His
+repository, his call, and the first real report bore him out - issue #1 was fixed autonomously, and
+then sat open until he closed it by hand and told the reporter himself. The loop was making a human do
+its paperwork.
+
+So --status fixed now closes, and the argument above survives as a NARROWER rule rather than being
+thrown away:
+
+  * status `fixed` closes as completed, and ONLY that status closes.
+  * a SHAPE-ONLY repro never closes, whatever the status. That is precisely the case the old caution
+    was about: the shape is fixed and the reporter's actual instance is untested. It comments and
+    leaves the issue open.
+  * `not-reproduced` and `needs-you` never close. Neither asserts the problem is solved.
+
+Every close still posts the comment FIRST, so a reader sees what happened rather than an issue that
+shut with no explanation.
 
 Usage:
     python tools/report_reply.py --number 7 --status fixed --commit abc1234
@@ -36,8 +52,7 @@ BODY = {
         "The fix was built, the DLL was verified to contain the change, and the full suite regression "
         "ran clean before it was committed.\n\n"
         "{shape}\n\n"
-        "Leaving this open for you to close - a fix verified here is verified against a scratch "
-        "reproduction, and you are the one who can confirm it against the asset you actually hit it on."
+        "{closing}"
     ),
     "not-reproduced": (
         "Worked automatically; **could not reproduce**.\n\n"
@@ -53,6 +68,19 @@ BODY = {
         "{shape}"
     ),
 }
+
+# The two endings for a `fixed` comment. A PAIR, because the comment must match the action: text
+# saying "leaving this open for you" on an issue the same script then closes reads as a tool that
+# does not know what it did.
+CLOSING_CLOSED = (
+    "Closing this as fixed. If it still happens on your project, reopen it - a fix verified here is "
+    "verified against a scratch reproduction, and yours is the copy that matters."
+)
+CLOSING_LEFT_OPEN = (
+    "Leaving this OPEN deliberately. The reproduction here was shape-only, so the defect is fixed in "
+    "the abstract and your actual asset is untested - you are the one who can confirm it. Close it "
+    "when you have."
+)
 
 SHAPE_NOTE = (
     "_Note: your asset paths were rewritten into scratch space before anything ran, so this tested "
@@ -91,19 +119,34 @@ def main():
         print("posted. That is the same switch that gates intake - one file, both directions.")
         return 0
 
+    shape_only = "--shape-only" in sys.argv
+    # Decided BEFORE the body is built, so the wording and the action cannot disagree.
+    should_close = (status == "fixed") and not shape_only
+
     body = BODY[status].format(
         commit=arg("--commit", "(no commit)"),
         detail=arg("--detail", ""),
-        shape=SHAPE_NOTE if "--shape-only" in sys.argv else "",
+        shape=SHAPE_NOTE if shape_only else "",
+        closing=CLOSING_CLOSED if should_close else CLOSING_LEFT_OPEN,
     )
     # Collapse the blank runs left by empty optional sections.
     while "\n\n\n" in body:
         body = body.replace("\n\n\n", "\n\n")
     body = body.strip()
 
+    # Close only on a real, non-shape-only fix. See the module docstring for why those two
+    # conditions and not just the first.
+    #
+    # shape_only is READ FROM argv here rather than assumed. The first version of this line referenced
+    # a `shape_only` that did not exist - a NameError before dispatch, which is bit-for-bit the defect
+    # infectedcoolpat-jpg reported as issue #1 (move_tree_widget's wrapper passing replaceRoot from an
+    # undeclared replace_root). Caught by reading it back; worth recording that I wrote the same bug
+    # an hour after fixing it.
+
     if "--dry-run" in sys.argv:
         print("--- would post to issue #%s ---" % number)
         print(body)
+        print("--- would %s ---" % ("CLOSE it as completed" if should_close else "leave it OPEN"))
         return 0
 
     out = subprocess.run(["gh", "issue", "comment", str(number), "--body", body],
@@ -113,6 +156,28 @@ def main():
         print("gh issue comment failed: %s" % (out.stderr or "").strip()[:300])
         return 1
     print("commented on #%s" % number)
+
+    if not should_close:
+        # Said out loud, because "it commented and did not close" should never look like a failure to
+        # close. not-reproduced and needs-you assert nothing is solved; a shape-only fix leaves the
+        # reporter's own instance untested.
+        print("  left OPEN deliberately: %s" % (
+            "the repro was shape-only, so their actual instance is untested"
+            if shape_only else "status %r does not assert the problem is solved" % status))
+        return 0
+
+    # COMMENT FIRST, CLOSE SECOND - the order is deliberate. An issue that shuts with no explanation
+    # is worse for the reporter than one left open, and if the close fails the explanation still
+    # stands on its own.
+    out = subprocess.run(["gh", "issue", "close", str(number), "--reason", "completed"],
+                         cwd=HERE, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                         stdin=subprocess.DEVNULL, timeout=120)
+    if out.returncode != 0:
+        # NOT a failure of this script's main job. The comment landed, which is the part the reporter
+        # needs; the close is bookkeeping a human can finish.
+        print("  commented, but the close failed: %s" % (out.stderr or "").strip()[:200])
+        return 0
+    print("  closed #%s as completed" % number)
     return 0
 
 

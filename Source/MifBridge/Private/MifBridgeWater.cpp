@@ -41,6 +41,9 @@
 #include "WaterBodyLakeActor.h"
 #include "WaterBodyOceanActor.h"
 #include "WaterBodyCustomActor.h"
+
+#include "Editor.h"                                    // GEditor->FindActorFactoryForActorClass
+#include "ActorFactories/ActorFactory.h"               // UActorFactory::CreateActor
 #include "Components/SplineComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"               // TActorIterator
@@ -386,13 +389,50 @@ namespace MifBridge
 		}
 
 		const FVector Loc(JNum(In, TEXT("x"), 0.0), JNum(In, TEXT("y"), 0.0), JNum(In, TEXT("z"), 0.0));
+		// THROUGH THE ACTOR FACTORY, never World->SpawnActor.
+		//
+		// The first version of this raw-spawned, and shipped a water body with NO MATERIALS. Its own
+		// response note admitted the symptom - "a water body needs a water material assigned to its
+		// component" - without my realising the engine assigns them for free through the factory.
+		// I documented the hole instead of not digging it.
+		//
+		// UWaterBodyActorFactory::PostSpawnActor is where the defaults come from
+		// (Water/Source/Editor/Private/WaterBodyActorFactory.cpp - 5.3 :43-46, 5.7 :44-47):
+		// WaterMaterial, WaterStaticMeshMaterial, HLODMaterial, UnderwaterPostProcessMaterial, plus
+		// the river-to-lake and river-to-ocean transition materials (5.3 :99-100, 5.7 :102-103) and a
+		// sensible starting spline (5.3 :103, 5.7 :106). UWaterBodyComponent's constructor sets none
+		// of them.
+		//
+		// WORSE ON 5.7: SetWaterInfoMaterial is called from the factory (:49) with NO 5.3 counterpart
+		// and no constructor fallback, so a raw spawn there leaves it null outright.
+		//
+		// The overload matters. 5.3 declares TWO CreateActor overloads - ActorFactory.h:62 takes
+		// EObjectFlags, :63 takes FActorSpawnParameters - and 5.7 kept only the FActorSpawnParameters
+		// form at :65. Using the FActorSpawnParameters one is the only spelling that compiles on both.
 		FActorSpawnParameters Params;
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		AWaterBody* Body = Cast<AWaterBody>(World->SpawnActor(SpawnClass, &Loc, nullptr, Params));
+
+		UActorFactory* Factory = GEditor ? GEditor->FindActorFactoryForActorClass(SpawnClass) : nullptr;
+		if (!Factory)
+		{
+			// REFUSE rather than falling back to a raw spawn. A fallback would silently reproduce
+			// exactly the bug this comment is about, and the caller would get ok:true and an invisible
+			// river. The factory is registered by FWaterEditorModule::StartupModule, so its absence
+			// means the Water editor module did not load - which is worth knowing, not papering over.
+			Fail(Out, FString::Printf(
+				TEXT("no actor factory is registered for %s, which means the Water EDITOR module is "
+					 "not loaded. Spawning one directly would produce a body with no water material, "
+					 "no HLOD material and no underwater post-process - it would exist and render "
+					 "nothing. NOTHING was created."), *SpawnClass->GetName()));
+			return;
+		}
+
+		AWaterBody* Body = Cast<AWaterBody>(
+			Factory->CreateActor(nullptr, World->GetCurrentLevel(), FTransform(Loc), Params));
 		if (!Body)
 		{
 			Fail(Out, FString::Printf(
-				TEXT("spawning %s returned nothing and the engine reported no reason. NOTHING was "
+				TEXT("the actor factory for %s returned nothing and reported no reason. NOTHING was "
 					 "created."), *SpawnClass->GetName()));
 			return;
 		}
@@ -423,9 +463,9 @@ namespace MifBridge
 		WaterBodySummary(Body, Out);
 		Out->SetNumberField(TEXT("splinePointsSet"), PointsSet);
 		Out->SetStringField(TEXT("note"),
-			TEXT("nothing was saved - this body exists in the open level only. A body needs an "
-				 "AWaterZone covering it to render at all (see waterZone above), and a water material "
-				 "assigned to its component."));
+			TEXT("nothing was saved - this body exists in the open level only. Materials come from the "
+				 "engine's own water actor factory, so this body has them. It still needs an AWaterZone "
+				 "covering it to render at all - see waterZone above."));
 		UE_LOG(LogMifBridge, Log, TEXT("create_water_body: %s '%s' with %d spline point(s)"),
 			*TypeStr, *Body->GetActorLabel(), PointsSet);
 #endif
