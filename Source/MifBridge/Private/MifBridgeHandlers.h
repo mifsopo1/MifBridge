@@ -1351,6 +1351,9 @@ namespace MifBridge
 	// through invoke_editor_command (its FUICommandList is only broadcast when that editor is
 	// actually opened), and writing BodySetup.AggGeom via set_property skips the propagation
 	// step, so these call the engine's own generators directly. See MifBridgeCollision.cpp.
+	/** The READ half. The family could add, remove and configure collision and could not see it;
+	 *  list_collision_profiles sounds like this and is not - it lists project-wide PROFILE names. */
+	MIF_DECL(get_collision);
 	MIF_DECL(remove_collision);
 	MIF_DECL(add_simplified_collision);
 	/** What collision profiles THIS project defines. set_property accepts any string as a profile

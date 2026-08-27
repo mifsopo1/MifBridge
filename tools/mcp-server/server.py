@@ -2677,6 +2677,12 @@ def duplicate_asset(path: str, new_path: str) -> dict:
 
 
 @mcp.tool()
+def get_collision(path: str, lod: int = 0) -> dict:
+    "Read a StaticMesh's OWN collision - simple primitive count, convex hull count, the collisionComplexity flag by NAME, whether it has a BodySetup at all, and per-section collisionEnabled for the given LOD. This is the read half the collision family was missing: add_simplified_collision and set_collision could change collision and nothing could see it. NOT to be confused with list_collision_profiles, which lists the project's collision PROFILE names and says nothing about any particular mesh. hasBodySetup is reported separately from a zero count because 'no collision' and 'no collision container at all' are different problems. A bad lod index is REFUSED rather than clamped - a clamped index reports another LOD's sections under the number you asked for. verdict states the answer in one line, including the case where complex-as-simple makes a zero primitive count correct rather than alarming."
+    return _post("get_collision", path=path, lod=lod)
+
+
+@mcp.tool()
 def remove_collision(path: str, confirm: bool = False) -> dict:
     "Clear ALL simple collision from a StaticMesh - the StaticMeshEditor's 'Remove Collision' button, reachable without opening that editor. Requires confirm=True because it destroys hand-authored convex hulls with no undo across HTTP. Returns removedPrimitives and hadCollision; a mesh that already had none is a success with removedPrimitives=0, not an error. Use this BEFORE add_simplified_collision when you mean to REPLACE collision rather than stack a second primitive on top. Do NOT try to do this with set_property on BodySetup.AggGeom: the property reads back changed but the engine's own path also runs FlushRenderingCommands and RefreshCollisionChange, and without the latter no StaticMeshComponent instanced from the mesh ever picks the change up."
     return _post("remove_collision", path=path, confirm=confirm)

@@ -79,6 +79,8 @@ export_asset.replaceexisting
 export_asset.type
 find_assets.type
 focus_viewport.all
+get_collision.mesh
+get_collision.staticmesh
 get_datatable_row.op
 get_datatable_row.simpletext
 get_datatable_row.textmode

@@ -330,6 +330,7 @@ namespace MifBridge
 			MIF_BIND(duplicate_asset);
 			// Static-mesh simple collision (MifBridgeCollision.cpp) — the StaticMeshEditor
 			// toolbar equivalent, reachable without opening that editor.
+			MIF_BIND(get_collision);
 			MIF_BIND(remove_collision);
 			MIF_BIND(add_simplified_collision);
 			MIF_BIND(list_collision_profiles);

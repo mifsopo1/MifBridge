@@ -1549,3 +1549,23 @@ what an untracked item does. Tracked now.
       nothing else on the skeletal side.
       Not started, and it is a project rather than an evening. Worth confirming with Andre that it is
       wanted before spending that, since it is the one ask that is not mostly-plumbing.
+
+
+- [x] **Collision: the READ half.** DONE 2026-08-27. `get_collision` reports simple/convex counts,
+      the complexity flag by name, hasBodySetup, and per-section collisionEnabled.
+      The family had add_simplified_collision, remove_collision and set_collision and NO way to see
+      what any of them did - add_simplified_collision was already counting primitives before and
+      after internally, against a read no caller could make. list_collision_profiles sounds like the
+      read half and is not: it lists project-wide PROFILE names.
+      Built on BOTH engines. Reads BodySetup directly rather than adding a StaticMeshEditor module
+      dependency - the subsystem's getters ARE those expressions.
+
+- [ ] **Sequencer: the WRITE half.** list_level_sequences and describe_level_sequence exist and
+      nothing authors. Next in the audit's ranking.
+
+- [ ] **Niagara: the WRITE half.** Three reads, no writes. The audit flags cooked-asset hazards here
+      (docs/02 section 6c: duplicating a cooked UNiagaraSystem), so check what is possible on a
+      COOKED system before promising anything.
+
+- [ ] **Behavior tree: the WRITE half.** describe_behavior_tree and list_blackboard_keys read; DDS2
+      has 17 behavior trees and no way to author one.

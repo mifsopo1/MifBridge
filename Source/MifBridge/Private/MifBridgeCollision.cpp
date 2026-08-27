@@ -449,4 +449,156 @@ namespace MifBridge
 		UE_LOG(LogMifBridge, Log, TEXT("add_simplified_collision: %s shape=%s (%d -> %d primitive(s))"),
 			*Mesh->GetPathName(), *Shape, Before, After);
 	}
+
+	// --- get_collision --------------------------------------------------------------------------
+	//   in:  { path (aliases: assetPath, mesh, staticMesh), lod? = 0 }
+	//   out: { simpleCollisionCount, convexCollisionCount, collisionComplexity, hasBodySetup,
+	//          sections[ { index, collisionEnabled } ], ... }
+	// Bucket: READ. Loads the mesh; changes nothing.
+	//
+	// WHY THIS WAS MISSING AND WHY THAT MATTERED. The collision family could add, remove and configure
+	// - add_simplified_collision, remove_collision, set_collision - and could not SEE. list_collision_
+	// profiles sounds like the read half and is not: it lists the project's collision PROFILE names,
+	// which is a different question entirely and has nothing to do with any particular mesh.
+	//
+	// add_simplified_collision already had to count primitives before and after to tell whether the
+	// engine's generator did anything, because that generator reports no failure - it either produces
+	// geometry or quietly produces none. It was doing that against an internal read no caller could
+	// make. So a caller could ask for collision, be told it worked, and have no way to check what they
+	// got. That is the exact shape this project keeps finding, one step removed.
+	//
+	// Verified in BOTH trees before writing:
+	//   GetSimpleCollisionCount     5.3 StaticMeshEditorSubsystem.h:226   5.7 :259
+	//   GetCollisionComplexity      5.3 :234                              5.7 :267
+	//   GetConvexCollisionCount     5.3 :243                              5.7 :276
+	//   IsSectionCollisionEnabled   5.3 :328                              5.7 :387
+	//
+	// The only difference is declaration-side and needs no guard: 5.7 marks the parameter `const` and
+	// carries per-member STATICMESHEDITOR_API (the class went UCLASS() -> UCLASS(MinimalAPI)). A
+	// non-const UStaticMesh* converts implicitly, so one spelling compiles on both.
+	void H_get_collision(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("mesh"), TEXT("staticMesh"), TEXT("lod") },
+			TEXT("path (aliases: assetPath, mesh, staticMesh) - a StaticMesh asset; lod (default 0) - "
+				 "which LOD's sections to report"),
+			{ { TEXT("profile"), TEXT("collision PROFILES are a project-wide list - list_collision_profiles reports those. This reads one mesh's own collision.") },
+			  { TEXT("actorPath"), TEXT("this reads the MESH ASSET, not a placed actor. A component's collision overrides are a different question - get_property on the component reads those.") } }))
+		{
+			return;
+		}
+
+		UStaticMesh* Mesh = ResolveStaticMeshForCollision(In, Out, TEXT("get_collision"));
+		if (!Mesh) { return; }
+
+		// STRAIGHT OFF THE BodySetup, not through UStaticMeshEditorSubsystem.
+		//
+		// The subsystem has GetSimpleCollisionCount / GetConvexCollisionCount / GetCollisionComplexity
+		// (5.3 :226/:243/:234, 5.7 :259/:276/:267, differing only by a `const` on the parameter), and
+		// using them would mean adding a StaticMeshEditor module dependency this plugin does not
+		// currently carry - a new engine-version surface, and a new way for the 5.7 build to break -
+		// to reach numbers that are one dereference away.
+		//
+		// Those subsystem functions ARE these expressions. add_simplified_collision in this same file
+		// already counts AggGeom.GetElementCount() before and after for exactly this reason, so the
+		// approach is proven here rather than assumed.
+		const UBodySetup* BS = Mesh->GetBodySetup();
+		const int32 Simple = BS ? BS->AggGeom.GetElementCount() : 0;
+		const int32 Convex = BS ? BS->AggGeom.ConvexElems.Num() : 0;
+		const TEnumAsByte<ECollisionTraceFlag> Complexity =
+			BS ? BS->CollisionTraceFlag : TEnumAsByte<ECollisionTraceFlag>(CTF_UseDefault);
+
+		Out->SetStringField(TEXT("assetPath"), Mesh->GetPathName());
+		Out->SetNumberField(TEXT("simpleCollisionCount"), Simple);
+		Out->SetNumberField(TEXT("convexCollisionCount"), Convex);
+
+		// The ENUM NAME, not its integer. A caller comparing against set_collision's input needs the
+		// name, and an integer here would make them look up a mapping this bridge never published.
+		// SPELLED OUT rather than via StaticEnum<ECollisionTraceFlag>(). That template COMPILES here
+		// and fails at LINK - unresolved external, because the enum's reflection symbol is not
+		// exported to this module. It is the same class of trap docs/02 section 14 records for
+		// UCLASS(MinimalAPI) members: nothing is visibly wrong until the linker runs, and the error
+		// names a symbol rather than a mistake.
+		//
+		// Four values, stable since UE4, and a switch cannot fail to link. If the engine ever adds
+		// one, the default arm reports the raw number rather than an empty string, so a new value
+		// shows up as unrecognised instead of as absent.
+		const TCHAR* ComplexityName = TEXT("");
+		switch (Complexity.GetValue())
+		{
+		case CTF_UseDefault:          ComplexityName = TEXT("CTF_UseDefault");          break;
+		case CTF_UseSimpleAndComplex: ComplexityName = TEXT("CTF_UseSimpleAndComplex"); break;
+		case CTF_UseSimpleAsComplex:  ComplexityName = TEXT("CTF_UseSimpleAsComplex");  break;
+		case CTF_UseComplexAsSimple:  ComplexityName = TEXT("CTF_UseComplexAsSimple");  break;
+		default:                      ComplexityName = TEXT("");                        break;
+		}
+		Out->SetStringField(TEXT("collisionComplexity"),
+			FString(ComplexityName).IsEmpty()
+				? FString::Printf(TEXT("(unrecognised: %d)"), (int32)Complexity.GetValue())
+				: FString(ComplexityName));
+
+		// BodySetup is where simple collision actually lives. Reporting its absence separately from a
+		// zero count distinguishes "this mesh has no collision" from "this mesh has no collision
+		// container at all", which are different problems with different fixes.
+		const bool bHasBodySetup = BS != nullptr;
+		Out->SetBoolField(TEXT("hasBodySetup"), bHasBodySetup);
+
+		const int32 NumLods = Mesh->GetNumLODs();
+		int32 Lod = (int32)JNum(In, TEXT("lod"), 0.0);
+		Out->SetNumberField(TEXT("lodCount"), NumLods);
+		if (Lod < 0 || Lod >= NumLods)
+		{
+			// Said rather than clamped. A silently clamped LOD index reports another LOD's sections
+			// under the number the caller asked for, which is a wrong answer wearing a right one's
+			// clothes.
+			Fail(Out, FString::Printf(
+				TEXT("lod %d does not exist - this mesh has %d LOD(s), so valid indices are 0..%d. "
+					 "The collision counts above are whole-mesh and are correct regardless."),
+				Lod, NumLods, NumLods - 1));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Sections;
+		int32 EnabledCount = 0;
+		const int32 NumSections = Mesh->GetNumSections(Lod);
+		for (int32 i = 0; i < NumSections; ++i)
+		{
+			// FMeshSectionInfoMap is what IsSectionCollisionEnabled reads (5.3 :328, 5.7 :387) -
+			// same answer, no extra module.
+			const bool bEnabled = Mesh->GetSectionInfoMap().Get(Lod, i).bEnableCollision;
+			if (bEnabled) { ++EnabledCount; }
+			TSharedRef<FJsonObject> S = MakeShared<FJsonObject>();
+			S->SetNumberField(TEXT("index"), i);
+			S->SetBoolField(TEXT("collisionEnabled"), bEnabled);
+			Sections.Add(MakeShared<FJsonValueObject>(S));
+		}
+		Out->SetNumberField(TEXT("lod"), Lod);
+		Out->SetArrayField(TEXT("sections"), Sections);
+		Out->SetNumberField(TEXT("sectionsWithCollision"), EnabledCount);
+
+		// The verdict a caller is really asking for, stated once rather than left to be assembled from
+		// four fields. Complex-as-simple means the render mesh IS the collision, so a zero primitive
+		// count is correct there and alarming anywhere else.
+		const bool bUsesComplex = Complexity == ECollisionTraceFlag::CTF_UseComplexAsSimple;
+		if (bUsesComplex)
+		{
+			Out->SetStringField(TEXT("verdict"),
+				TEXT("complex-as-simple: the render geometry IS the collision, so simple primitives "
+					 "are unused and a count of 0 is expected. This does NOT work for a moving or "
+					 "simulating body - those need simple collision."));
+		}
+		else if (Simple + Convex == 0)
+		{
+			Out->SetStringField(TEXT("verdict"),
+				TEXT("NO COLLISION: no simple primitives, no convex hulls, and the complexity flag is "
+					 "not complex-as-simple. Traces and overlaps against this mesh will find nothing. "
+					 "add_simplified_collision generates primitives."));
+		}
+		else
+		{
+			Out->SetStringField(TEXT("verdict"), FString::Printf(
+				TEXT("%d simple primitive(s) and %d convex hull(s)."), Simple, Convex));
+		}
+	}
+
 }
