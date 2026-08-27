@@ -1336,16 +1336,32 @@ Every gap above was seeded from a mechanical map of the competitor's categories 
 handlers, with each claimed gap adversarially verified before it counts. Where that analysis
 contradicts this file, the analysis wins — it read the code and this file matched substrings.
 
-- [ ] **MifBlender - the Blender side.** STARTED 2026-08-27; gate satisfied.
-      The UE side now has read AND write halves across blueprints, materials, UMG, datatables,
-      landscape, foliage, water, PCG, Niagara, sequencer, IK rig, gameplay tags, state trees,
-      collision and blackboards. 330 endpoints, both engines building.
+- [~] **MifBlender - the Blender side.** TESTED AND VERSION-VERIFIED 2026-08-27; feature gaps remain.
+      Andre, mid-session: "for our blender side, i currently use 4.4 but im thinking of upgrading,
+      jus tmake sure our blender is full supported and tested just like UE".
+      IT NOW IS, on the testing axis. Four installed Blenders, all green:
+        3.6.23 / 4.2.17 LTS / 4.4.0 / 5.0.1  ->  mesh suite 41/41, ops suite 12/12 on each
+      Two commands reproduce it: `python tools/blender_probe.py` (the counterpart of
+      make_engine_probe.py - imports, registers, FBX kwargs, bmesh ops, legacy addon format) and
+      `python tools/run_blender_suites.py` (every suite against every installed version).
+      SO YES, HE CAN UPGRADE TO 5.0. That is an observation now, not an opinion.
+      OP COVERAGE went 5 of 18 to 13 of 18. The five left are gen_status / gen_image / gen_mesh /
+      gen_texture / gen_asset, which call an external generation service over the network - declared
+      in the suite's own output rather than left to be discovered.
+      THE ROUND TRIP is proven three legs of four on 4.4 AND 5.0: UE export_asset (164,880 bytes) ->
+      import_mesh (802 verts) -> extrude_skirt (995 verts) -> export_mesh (~91KB), identical vertex
+      counts on both. The FOURTH leg, FBX back into Unreal, needs import_asset, which persists to
+      disk and the safety gate correctly refuses in scratch mode. Not forced.
       READ FIRST, as this item instructed. The audit is the useful part:
         the addon is 5 READ ops and 12 WRITE - the INVERSE of the UE-side skew I spent today
         correcting. Blender can do plenty and report very little about it.
       FIRST GAP CLOSED: set_material_slots. Chosen because the pipeline ALREADY DETECTED it
       and could not act - mif_mesh_roundtrip compares the material-slot sequence across an
       edit and warns on a mismatch with 'a human decides', because there was nothing to call.
+      ONE REAL BUG FOUND BY TESTING IT: _select_edges is shared by select_edges, bevel_edges and
+      extrude_skirt, and its refusal hardcoded "bevel_edges" for all three - so calling extrude_skirt
+      wrong sent you to read the wrong op's docs. Fixed, and audit_message_endpoints now checks that
+      shape as a third surface beside UE endpoint text and MCP docstrings.
       REMAINING GAPS, audited and not yet judged:
         decimate/LOD    the edit a game pipeline wants most; analyze_skeletal_split's triangle
                         counts currently have nowhere to go

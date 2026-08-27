@@ -77,7 +77,7 @@ The UE plugin answers each request on the game thread, applies it through the re
 |---|---|
 | 🎮 **UE plugin** | **Unreal Engine 5.3 or 5.7** — every change is compiled against *both*. Editor‑only C++, so it must be built against the engine you actually run; a marketplace prebuilt will not ABI‑match a source build. Win64. |
 | 🐍 **MCP server** | **Python 3.10+**, with `mcp>=1.2.0` and `requests>=2.31.0`. Any OS — it only speaks loopback. |
-| 🎨 **Blender addon** | **Blender 4.4** (the declared floor in `bl_info`). Shipped as a zip; optional. |
+| 🎨 **Blender addon** | **Blender 4.4+** — the `bl_info` floor. Verified green on **3.6, 4.2, 4.4 and 5.0**; see `tools/blender-addon/README.md` for the matrix. Shipped as a zip; optional. |
 | 🤖 **Client** | Claude Code, or anything that speaks MCP over stdio. |
 
 > 💡 **You do not need all three.** The MCP server + UE plugin is a complete, useful install on its
@@ -199,8 +199,9 @@ that the backend is unreachable. Full detail in [`tools/blender-addon/README.md`
 2. In Blender: **Edit ▸ Preferences ▸ Add-ons ▸ Install…**, pick the zip, then tick **MifBlender** to
    enable it. (Or symlink `tools/blender-addon/MifBlender/` into
    `%APPDATA%/Blender Foundation/Blender/4.4/scripts/addons/` if you want to edit it in place.)
-   **Blender 4.4** — it is pinned, because the FBX and `bmesh` defaults it depends on move between
-   versions.
+   **Blender 4.4 is the declared floor**, and it is conservative rather than untested: the addon is
+   verified green on 3.6.23, 4.2.17 LTS, 4.4.0 and 5.0.1 — 41/41 mesh and 12/12 op assertions on
+   each. Reproduce with `python tools/run_blender_suites.py`. **Upgrading to 5.0 is safe.**
 
 ### 🔌 Port allocation — read this before pointing anything at a new port
 

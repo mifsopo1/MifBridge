@@ -33,9 +33,37 @@ so both can run at once.)
 > console banner, and in `ping`/`bl_status`. If those numbers disagree, this Blender is not
 > the one your edits are landing in.
 
-**Blender 4.4.** Pinned in `bl_info`. Every `io_scene_fbx` and `bmesh.ops` default this
-addon depends on was read from a live 4.4.0. 3.6 / 4.2 / 5.0 are untested and the FBX
-exporter's properties do change between releases (`use_ascii` is gone in 4.4, for one).
+## 🧪 Blender version support — measured, not assumed
+
+`bl_info` declares a floor of **4.4**. That floor is now *conservative* rather than unverified:
+
+| version | imports | registers | 18 ops | FBX kwargs | mesh suite | ops suite |
+|---|---|---|---|---|---|---|
+| 3.6.23 | ✅ | ✅ | ✅ | all present | **41/41** | **12/12** |
+| 4.2.17 LTS | ✅ | ✅ | ✅ | all present | **41/41** | **12/12** |
+| 4.4.0 | ✅ | ✅ | ✅ | all present | **41/41** | **12/12** |
+| **5.0.1** | ✅ | ✅ | ✅ | all present | **41/41** | **12/12** |
+
+Reproduce the whole thing in one command each:
+
+```bash
+python ../blender_probe.py          # imports, registers, FBX kwargs, bmesh ops, legacy format
+python ../run_blender_suites.py     # every suite against every installed Blender
+```
+
+**The worry this section used to carry was real and did not bite.** The FBX exporter's properties
+genuinely do move between releases — `use_ascii` vanished in 4.4 — but that is one this addon never
+passes. All 17 kwargs in `FBX_EXPORT_ARGS`, all 3 in `FBX_IMPORT_ARGS`, the four enum values
+(`FBX_SCALE_NONE` / `FACE` / `SRGB` / `AUTO`) and all six `bmesh.ops` are still real on 5.0.1.
+
+**Legacy add-ons are still fine on 5.0.** Blender 5.0.1 ships 25 `bl_info` add-ons of its own and
+still has `addon_utils.enable`, so no `blender_manifest.toml` is required. Determined by running it,
+not by reading release notes.
+
+**Why the floor stays at 4.4 anyway** — a decision, not an oversight. The suites cover the op surface
+and a Blender-side export→import round trip; they do **not** cover the full Unreal → Blender → Unreal
+loop, whose last leg needs an Unreal write. The kwargs are proven present on 3.6; the round trip
+*through* them is not proven there. Lower it when something exercises it.
 
 ---
 
