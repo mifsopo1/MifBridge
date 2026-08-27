@@ -1727,3 +1727,45 @@ that way. I added the fourteenth to `Build.cs` only.
 **The lesson is not "remember the uplugin".** It is that `Build.cs` and `MifBridge.uplugin` are two
 files that must agree and nothing checks that they do — the same shape as the hook drift found earlier
 today. Worth a `parity_check.py` rule.
+
+
+## 24. Two removals reported success without checking anything was removed — FIXED
+
+Found 2026-08-27 by auditing offline for the lens the night work calls most productive: handlers that
+report success while doing something else.
+
+```cpp
+SCS->RemoveNodeAndPromoteChildren(Node);          // void
+Out->SetStringField(TEXT("removed"), Name);        // reported regardless
+
+FBlueprintEditorUtils::RemoveGraph(Blueprint, Graph, Default);   // void
+Out->SetStringField(TEXT("removed"), Name);                      // reported regardless
+```
+
+Both engine calls are **`void` in 5.3 and 5.7** — verified in both trees. Neither can refuse out
+loud, so `remove_component` and `remove_function` reported `removed` whether or not anything was.
+
+### This is PM-007 again, and one sibling had already learned it
+
+`remove_variable` carries this comment:
+
+> `FBlueprintEditorUtils::RemoveMemberVariable` is VOID and early-returns when the variable is …
+
+and re-queries with `FindNewVariableIndex` afterwards, failing if it is still there. The lesson was
+learned in one of the three removals and never carried to the other two.
+
+**The audit that found it was wrong first**, which is worth recording. Its first version looked for a
+read-back feeding the RESPONSE and flagged 51 of 51 mutating handlers — including `remove_variable`,
+whose verification feeds a `Fail()` guard instead. A verification that REFUSES is stronger than one
+that reports, and the check penalised it. Corrected to count any re-query: 19 of 133, and only the
+two removals mattered.
+
+### Fixed
+
+Both re-query and fail by name. `remove_component` also now reports **`childrenPromoted`** and lists
+them: `RemoveNodeAndPromoteChildren` reparents children rather than deleting them, and a caller who
+got back only `removed: true` had no idea its children moved — the same shape as `remove_tree_widget`
+deleting a subtree and reporting one line.
+
+The likely real-world hit for `remove_component` is an **inherited** component: declared on a parent
+class, not removable here, only overridable. The refusal now says that.

@@ -126,6 +126,27 @@ namespace MifBridge
 
 		Blueprint->Modify();
 		FBlueprintEditorUtils::RemoveGraph(Blueprint, Graph, EGraphRemoveFlags::Default);
+
+		// RE-QUERY. RemoveGraph is VOID in both engines and cannot report a refusal, so without this
+		// the endpoint reports "removed" whether or not anything was. Same defect and same fix as
+		// remove_variable, which learned it from PM-007 - RemoveMemberVariable is likewise void and
+		// likewise early-returns when it declines.
+		bool bStillPresent = false;
+		for (const UEdGraph* G : Blueprint->FunctionGraphs)
+		{
+			if (G && G->GetName() == Name) { bStillPresent = true; break; }
+		}
+		if (bStillPresent)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is STILL a function graph after RemoveGraph - nothing was removed. The call "
+					 "is void and cannot refuse out loud, so a re-query is the only way to tell. A "
+					 "graph the blueprint does not own, or one the engine treats as not removable, "
+					 "both land here."), *Name));
+			return;
+		}
+
 		Out->SetStringField(TEXT("removed"), Name);
+		Out->SetNumberField(TEXT("functionGraphsRemaining"), Blueprint->FunctionGraphs.Num());
 	}
 }

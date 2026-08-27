@@ -1048,11 +1048,47 @@ namespace MifBridge
 			return;
 		}
 
+		// The CHILDREN, counted before the removal, because the call PROMOTES them and afterwards
+		// they are no longer this node's. A caller who removed a parent component and got back only
+		// "removed": true has no idea its children were reparented onto the root - which is the same
+		// shape as remove_tree_widget deleting a whole subtree and reporting one line (docs/06).
+		TArray<FString> Promoted;
+		for (const USCS_Node* Child : Node->GetChildNodes())
+		{
+			if (Child) { Promoted.Add(Child->GetVariableName().ToString()); }
+		}
+
 		Blueprint->Modify();
 		SCS->Modify();
 		SCS->RemoveNodeAndPromoteChildren(Node);
 		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+
+		// RE-QUERY, because RemoveNodeAndPromoteChildren is VOID in both engines and cannot report a
+		// refusal. This is PM-007 exactly: RemoveMemberVariable is also void and also early-returns
+		// when it declines, and remove_variable learned to check afterwards. These two removals never
+		// did, so they reported "removed" whether or not anything was.
+		if (SCS->FindSCSNode(FName(*Name)) != nullptr)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is STILL a component after RemoveNodeAndPromoteChildren - nothing was "
+					 "removed. The call is void and cannot refuse out loud, so this is the only way to "
+					 "tell. An INHERITED component is the usual reason: it is declared on a parent "
+					 "class and cannot be removed here, only overridden."), *Name));
+			return;
+		}
+
 		Out->SetStringField(TEXT("removed"), Name);
+		Out->SetNumberField(TEXT("childrenPromoted"), Promoted.Num());
+		if (Promoted.Num() > 0)
+		{
+			TArray<TSharedPtr<FJsonValue>> Kids;
+			for (const FString& K : Promoted) { Kids.Add(MakeShared<FJsonValueString>(K)); }
+			Out->SetArrayField(TEXT("promotedChildren"), Kids);
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("%d child component(s) were PROMOTED rather than deleted - they are still in the "
+					 "blueprint, reparented onto what held '%s'. Their world transforms may have "
+					 "changed as a result."), Promoted.Num(), *Name));
+		}
 	}
 
 	// --- set_component_transform --------------------------------------------
