@@ -150,6 +150,97 @@ def scan_mcp(tools):
     return found
 
 
+ADDON = os.path.join(HERE, "blender-addon", "MifBlender")
+DEF_RE = re.compile(r"^def (\w+)\(")
+OP_DEF = re.compile(r"^def op_(\w+)", re.M)
+
+
+def blender_helper_findings():
+    """A shared Blender helper whose error message blames ONE of the ops that call it.
+
+    THE BUG THIS IS FOR, found by pushing a real Unreal-exported FBX through the round trip:
+    _select_edges is called by select_edges, bevel_edges AND extrude_skirt, and its refusal said
+
+        "bevel_edges needs a selector, and refuses to guess..."
+
+    for whichever of the three you actually called. The refusal was correct; the name on it was not,
+    and it sent you to read the wrong op's documentation.
+
+    NARROW, because the broad version is useless here. "any op name in any message" matches five
+    things in this addon and ALL FIVE are legitimate: a bmesh operation named for debugging
+    (extrude_edge_only), a parameter (import_result), third-party payload keys (remove_floaters),
+    an FBX kwarg (object_types). What has signal is the conjunction:
+
+        a PRIVATE helper  +  called by two or more ops  +  naming one of its OWN callers
+
+    An op name that is not a caller is advice - "run gen_texture to paint it" - and is left alone.
+    """
+    if not os.path.isdir(ADDON):
+        return []
+    sources = {}
+    for fn in sorted(os.listdir(ADDON)):
+        if fn.endswith(".py"):
+            sources[fn] = io.open(os.path.join(ADDON, fn), encoding="utf-8",
+                                  errors="replace").read()
+    ops = set()
+    for src in sources.values():
+        ops |= set(OP_DEF.findall(src))
+
+    # Which ops call which private helper. Attribution is by the enclosing def, so a helper called
+    # from another helper does not count as a caller - only an op does.
+    callers = {}
+    for src in sources.values():
+        current = None
+        for line in src.split("\n"):
+            m = DEF_RE.match(line)
+            if m:
+                current = m.group(1)
+                continue
+            if not current or not current.startswith("op_"):
+                continue
+            for helper in re.findall(r"\b(_\w+)\s*\(", line):
+                callers.setdefault(helper, set()).add(current[len("op_"):])
+
+    found = []
+    for fn, src in sources.items():
+        current = None
+        for i, line in enumerate(src.split("\n")):
+            m = DEF_RE.match(line)
+            if m:
+                current = m.group(1)
+                continue
+            # BACK TO MODULE LEVEL ends the function. Without this the tracker stayed on the last
+            # def it saw, so the OPS = { "gen_mesh": op_gen_mesh, ... } table at the bottom of
+            # ops_gen.py looked like it lived inside _first_path() and reported two hits that were
+            # a dispatch table doing its job.
+            if line and not line[0].isspace() and not line.startswith(")"):
+                current = None
+                continue
+            if not current or not current.startswith("_"):
+                continue
+            # A COMMENT is not a message. The fix for this very bug carries a comment quoting
+            # "bevel_edges" while explaining it, and flagged itself on the first run.
+            if line.lstrip().startswith("#"):
+                continue
+            mine = callers.get(current, set())
+            if len(mine) < 2:
+                continue                      # not shared: naming itself is fine
+            # EVERY string literal, not just long ones. A 12-character minimum was the first cut
+            # and it had a hole: the name reaches the message as a short format ARGUMENT just as
+            # easily as it sits inside the sentence, and `% "bevel_edges"` is eleven characters.
+            # Found by re-introducing the bug two ways and watching only one of them get caught.
+            #
+            # Short strings are safe to scan here because the scope is already narrow: we are inside
+            # a PRIVATE helper that two or more ops call. The op table's own "bevel_edges": op_...
+            # entries live at module level and never reach this branch.
+            for text in re.findall(r'"([^"]*)"', line):
+                for op in mine:
+                    if re.search(r"\b%s\b" % re.escape(op), text):
+                        found.append("%s:%d\t%s() is shared by %d ops and its message names '%s'"
+                                     % (fn, i + 1, current, len(mine), op))
+    return found
+
+
 def main():
     quiet = "--quiet" in sys.argv
     names = registry()
@@ -159,10 +250,11 @@ def main():
     found = scan(names)
     tools = mcp_docstrings()
     found_mcp = scan_mcp(tools)
-    if not found and not found_mcp:
+    found_bl = blender_helper_findings()
+    if not found and not found_mcp and not found_bl:
         if not quiet:
-            print("messages OK - %d endpoints and %d MCP tools, and every name either of them "
-                  "advises exists" % (len(names), len(tools)))
+            print("messages OK - %d endpoints, %d MCP tools and the Blender addon, and every name "
+                  "any of them advises exists and belongs to the right op" % (len(names), len(tools)))
         return 0
     if not quiet:
         if found:
@@ -173,9 +265,15 @@ def main():
             print("%d name(s) cited in MCP DOCSTRINGS that are NOT tools:" % len(found_mcp))
             for tok, where in sorted(found_mcp.items()):
                 print("  %-32s cited by %s" % (tok, ", ".join(sorted(set(where))[:4])))
+        if found_bl:
+            print("%d shared Blender helper(s) blaming ONE of their callers:" % len(found_bl))
+            for f in sorted(found_bl):
+                where, what = f.split("\t", 1)
+                print("  %-26s %s" % (where, what))
         print("")
-        print("Each one sends a caller somewhere that answers 'not an endpoint on this build'.")
-        print("Either the name is wrong, or the endpoint is missing and the advice is a promise.")
+        print("A name that does not resolve sends the caller to 'not an endpoint on this build'.")
+        print("A shared helper naming one caller sends everyone else to the wrong op's docs - the")
+        print("refusal is right and the name on it is not, which is harder to notice.")
     return 1
 
 
