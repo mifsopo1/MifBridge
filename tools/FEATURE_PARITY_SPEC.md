@@ -1503,3 +1503,40 @@ Use self_audit for the count; it asks the running DLL.
 
 Correctly read-only, NOT gaps: reflection (describe_class, resolve_struct, list_enum_values),
 blueprint graph introspection, and the property readers. Nothing to author there.
+
+## Andre's four in-editor asks, 2026-08-26/27 - tracked here so they stop falling off
+
+He asked about four things after showing competitor screenshots. I answered all four in chat, put
+none of them in the spec, and then omitted one from a status summary a day later - which is exactly
+what an untracked item does. Tracked now.
+
+- [ ] **Write-mode dropdown in the panel.**
+      Designed (workflow wf_3c814b5e-5a8), NOT built. The design is sound and the blocker that made
+      it pointless is now gone: run_console_captured was reaching UEngine::Exec ungated, so an agent
+      in scratch could already do everything full permits and a lock on the toggle was decorative.
+      Constraints the design settled: the toggle must be a PLAIN SLATE WIDGET with a direct lambda -
+      never an FUICommandInfo and never a ToolMenu entry, because invoke_editor_command executes
+      exactly those. With send_editor_key now gated an agent also cannot drive a focused combo box.
+      Next up.
+
+- [ ] **Inheritance tree tab.**
+      Confirmed feasible and cheap: FBlueprintTags::ParentClassPath is an ASSET REGISTRY TAG, so the
+      whole tree can be built without loading a single blueprint (Blueprint.cpp:988). The competitor's
+      Project Dashboard screenshot is exactly this, grouped by parent.
+
+- [ ] **Behavior tree diagram viewer.**
+      The DATA already exists - describe_behavior_tree and list_blackboard_keys. What is missing is a
+      renderer, and the brainmap's custom-painted SLeafWidget already does zoom, pan and hit-testing,
+      so this is a second consumer of an existing widget rather than new machinery.
+      DDS2 has 17 behavior trees. See also the separate item on behavior tree AUTHORING - the viewer
+      is the read side and does not need it.
+
+- [ ] **Mesh splitter - split a skeletal mesh at bone boundaries into separate mesh assets.**
+      THE ONE I DROPPED. From the competitor's 'BUILT-IN TECH ART TOOLS' screenshot: pick a skeletal
+      mesh, tick bone zones (Head, Torso, Arm L, ...), get one mesh asset per partition.
+      Much the largest of the four. It is real geometry work - splitting skinned vertex data at bone
+      boundaries and rebuilding skin weights - and it CREATES ASSETS, so it needs the cooked-asset
+      guards and a save path this bridge deliberately does not have. We currently have list_bones and
+      nothing else on the skeletal side.
+      Not started, and it is a project rather than an evening. Worth confirming with Andre that it is
+      wanted before spending that, since it is the one ask that is not mostly-plumbing.

@@ -449,8 +449,14 @@ namespace MifBridge
 			{
 				TArray<FString> Names;
 				for (const FMifSolverType& T : Types) { Names.Add(T.Id); }
+				// NAME THE DISCOVERY ENDPOINT, not just the answers. The rewrite dropped
+				// "list_ik_solver_types" from this message in favour of dumping the list inline, and
+				// test_ik_goals_solvers T261 caught it - correctly. Inlining the list is fine when
+				// there are six; naming the endpoint keeps working when there are sixty, and it tells
+				// a caller how to ask again rather than only what the answer is today.
 				OutError = FString::Printf(
-					TEXT("no IK Rig solver type called '%s' on this engine. %s Available: %s."),
+					TEXT("no IK Rig solver type called '%s' on this engine. list_ik_solver_types "
+						 "enumerates them. %s Available now: %s."),
 					*Id, IKSolverModelNote(), *FString::Join(Names, TEXT(", ")));
 				return INDEX_NONE;
 			}

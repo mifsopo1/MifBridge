@@ -4,7 +4,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 6.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -13,7 +13,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 5.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -22,7 +22,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 6.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -31,7 +31,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 4.3,
+  "seconds": 8.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -39,8 +39,8 @@
   "suite": "test_capture_viewport.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 33   FAIL 0",
-  "seconds": 2.6,
+  "summary": "PASS 34   FAIL 0",
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -49,7 +49,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -58,7 +58,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 14.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -67,25 +67,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 15.7,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_crash_journal.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 21   FAIL 0",
-  "seconds": 2.3,
+  "rc": 1,
+  "summary": "",
+  "seconds": 3.1,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "  PASS  T622 and the start names the endpoint we called\n  PASS  T622 the end record carries elapsed ms\n  PASS  T622 and an ok flag\n  PASS  T622 the elapsed time is plausible\n\n=== T623: mifwatch reads it and reports the current session as live ===\n  PASS  T623 mifwatch parses the journal\n  PASS  T623 the newest session has no shutdown yet - the editor is still running\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_crash_journal.py\", line 159, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_crash_journal.py\", line 137, in main\n    check(\"T623 and it counted the calls\", (cur.get(\"calls\") or 0) > 0, json.dumps(cur)[:180])\n                                                                        ^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\__init__.py\", line 231, in dumps\n    return _default_encoder.encode(obj)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\encoder.py\", line 200, in encode\n    chunks = self.iterencode(o, _one_shot=True)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\encoder.py\", line 258, in iterencode\n    return _iterencode(o, 0)\n           ^^^^^^^^^^^^^^^^^\nTypeError: keys must be str, int, float, bool or None, not tuple"
  },
  {
   "suite": "test_create_asset.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 6.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -94,7 +94,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 14   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 5.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -103,7 +103,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 7.8,
+  "seconds": 22.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -112,7 +112,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 8.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -121,7 +121,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -130,7 +130,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 11.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -139,7 +139,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 3.5,
+  "seconds": 9.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -148,7 +148,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 8.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -157,7 +157,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 0.2,
+  "seconds": 0.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -166,7 +166,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 6.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -175,7 +175,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 0.8,
+  "seconds": 15.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -184,7 +184,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 11.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -193,25 +193,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 23.0,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_ik_goals_solvers.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 53   FAIL 0",
-  "seconds": 3.2,
+  "rc": 1,
+  "summary": "PASS 51   FAIL 2",
+  "seconds": 19.3,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "  PASS  T264 it connects\n  PASS  T264 and reports reaching a solver at all\n  PASS  T264 the rig agrees\n  PASS  T264 and the inert-goal note is gone\n  PASS  T264 it disconnects again\n  PASS  T264 unknown goal refused\n  PASS  T264 unknown goal explains\n  PASS  T264 bad solver index refused\n  PASS  T264 bad solver index explains\n  PASS  T264 a goal transform is refused with the reason it is absent\n\n=== T265: removing a solver shifts every later index ===\n  PASS  T265 three solvers were added\n  PASS  T265 the first is removed\n  PASS  T265 and the remaining ones shifted down\n  PASS  T265 the response warns about the shift\n\n========================================================================\nPASS 51   FAIL 2\n  FAILED: T260 every entry carries a resolvable path\n          [{\"solverClass\": \"IKRig_BodyMover\", \"path\": \"IKRig_BodyMover\", \"name\": \"IKRig_BodyMover\"}, {\"solverClass\": \"IKRig_LimbSolver\", \"path\": \"IKRig_LimbSolver\", \"name\": \"IKRig_\n  FAILED: T261 an unknown solver class is refused with guidance\n          no IK Rig solver type called 'IKRig_NotASolver' on this engine. This engine is older than UE 5.6, where IK Rig solvers are UObjects. solverClass is a class NAME such as 'IKRigFBIKS\n========================================================================\nNOTE: scratch rigs left under /Game/_MifIK/. Nothing was saved."
  },
  {
   "suite": "test_ik_rig.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 3.4,
+  "seconds": 15.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -220,7 +220,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 11.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -229,7 +229,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 9.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -238,7 +238,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 5.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -247,7 +247,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 13.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -256,7 +256,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 1.1,
+  "seconds": 6.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -264,8 +264,8 @@
   "suite": "test_material_graph.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 30   FAIL 0",
-  "seconds": 3.1,
+  "summary": "PASS 33   FAIL 0",
+  "seconds": 12.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -274,7 +274,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 12.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -283,7 +283,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 9.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -301,7 +301,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 6.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -310,7 +310,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 10.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -318,8 +318,8 @@
   "suite": "test_niagara.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 53   FAIL 0",
-  "seconds": 2.9,
+  "summary": "PASS 61   FAIL 0",
+  "seconds": 8.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -328,7 +328,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 5.1,
+  "seconds": 20.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -337,7 +337,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 42   FAIL 0",
-  "seconds": 4.1,
+  "seconds": 33.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -346,7 +346,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 9.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -355,7 +355,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 0.6,
+  "seconds": 10.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -364,7 +364,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 13.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -373,7 +373,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 9.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -382,7 +382,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 46   FAIL 0",
-  "seconds": 4.1,
+  "seconds": 5.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -391,7 +391,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 8.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -400,7 +400,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 8.4,
+  "seconds": 8.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -409,7 +409,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 0.1,
+  "seconds": 0.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -418,7 +418,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 4.0,
+  "seconds": 8.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -427,7 +427,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -435,8 +435,8 @@
   "suite": "test_safety_gate.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 31   FAIL 0",
-  "seconds": 3.0,
+  "summary": "PASS 44   FAIL 0",
+  "seconds": 14.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -445,7 +445,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 1.6,
+  "seconds": 25.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -454,7 +454,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 4.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -463,7 +463,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 4.0,
+  "seconds": 8.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -472,7 +472,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 20.8,
+  "seconds": 24.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -490,7 +490,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 9.4,
+  "seconds": 10.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -499,7 +499,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 10.7,
+  "seconds": 11.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -508,7 +508,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 11.0,
+  "seconds": 9.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -517,7 +517,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.8,
+  "seconds": 7.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -526,7 +526,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 7.4,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -535,7 +535,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 10.0,
+  "seconds": 10.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -544,7 +544,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 5.4,
+  "seconds": 8.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -553,7 +553,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 90.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -562,7 +562,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 5.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -571,7 +571,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 0.4,
+  "seconds": 5.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -580,7 +580,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 15.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -589,7 +589,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 6.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -598,7 +598,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 8.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -607,7 +607,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -616,7 +616,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -625,7 +625,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -634,7 +634,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 6.1,
+  "seconds": 6.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -643,7 +643,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 6.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -652,7 +652,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 5.1,
+  "seconds": 9.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -660,8 +660,8 @@
   "suite": "test_capture_viewport.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 33   FAIL 0",
-  "seconds": 2.9,
+  "summary": "PASS 34   FAIL 0",
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -670,7 +670,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 7.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -679,7 +679,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 14.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -688,25 +688,25 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 15.8,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_crash_journal.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 21   FAIL 0",
-  "seconds": 2.1,
+  "rc": 1,
+  "summary": "",
+  "seconds": 2.7,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "  PASS  T622 and the start names the endpoint we called\n  PASS  T622 the end record carries elapsed ms\n  PASS  T622 and an ok flag\n  PASS  T622 the elapsed time is plausible\n\n=== T623: mifwatch reads it and reports the current session as live ===\n  PASS  T623 mifwatch parses the journal\n  PASS  T623 the newest session has no shutdown yet - the editor is still running\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_crash_journal.py\", line 159, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_crash_journal.py\", line 137, in main\n    check(\"T623 and it counted the calls\", (cur.get(\"calls\") or 0) > 0, json.dumps(cur)[:180])\n                                                                        ^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\__init__.py\", line 231, in dumps\n    return _default_encoder.encode(obj)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\encoder.py\", line 200, in encode\n    chunks = self.iterencode(o, _one_shot=True)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\andre\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\json\\encoder.py\", line 258, in iterencode\n    return _iterencode(o, 0)\n           ^^^^^^^^^^^^^^^^^\nTypeError: keys must be str, int, float, bool or None, not tuple"
  },
  {
   "suite": "test_create_asset.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 6.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -715,7 +715,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 14   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 5.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -724,7 +724,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 3.8,
+  "seconds": 19.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -733,7 +733,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -742,7 +742,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 5.1,
+  "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -751,7 +751,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 11.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -760,7 +760,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -769,7 +769,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 9.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -778,7 +778,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 0.1,
+  "seconds": 0.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -787,7 +787,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 6.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -796,7 +796,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 5.8,
+  "seconds": 15.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -814,25 +814,25 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 10.2,
+  "seconds": 23.0,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_ik_goals_solvers.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 53   FAIL 0",
-  "seconds": 2.7,
+  "rc": 1,
+  "summary": "PASS 51   FAIL 2",
+  "seconds": 19.4,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "  PASS  T264 it connects\n  PASS  T264 and reports reaching a solver at all\n  PASS  T264 the rig agrees\n  PASS  T264 and the inert-goal note is gone\n  PASS  T264 it disconnects again\n  PASS  T264 unknown goal refused\n  PASS  T264 unknown goal explains\n  PASS  T264 bad solver index refused\n  PASS  T264 bad solver index explains\n  PASS  T264 a goal transform is refused with the reason it is absent\n\n=== T265: removing a solver shifts every later index ===\n  PASS  T265 three solvers were added\n  PASS  T265 the first is removed\n  PASS  T265 and the remaining ones shifted down\n  PASS  T265 the response warns about the shift\n\n========================================================================\nPASS 51   FAIL 2\n  FAILED: T260 every entry carries a resolvable path\n          [{\"solverClass\": \"IKRig_BodyMover\", \"path\": \"IKRig_BodyMover\", \"name\": \"IKRig_BodyMover\"}, {\"solverClass\": \"IKRig_LimbSolver\", \"path\": \"IKRig_LimbSolver\", \"name\": \"IKRig_\n  FAILED: T261 an unknown solver class is refused with guidance\n          no IK Rig solver type called 'IKRig_NotASolver' on this engine. This engine is older than UE 5.6, where IK Rig solvers are UObjects. solverClass is a class NAME such as 'IKRigFBIKS\n========================================================================\nNOTE: scratch rigs left under /Game/_MifIK/. Nothing was saved."
  },
  {
   "suite": "test_ik_rig.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 17.0,
+  "seconds": 15.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -841,7 +841,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 11.8,
+  "seconds": 11.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -850,7 +850,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 9.3,
+  "seconds": 10.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -858,8 +858,8 @@
   "suite": "test_landscape_info.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 8   FAIL 0",
-  "seconds": 4.3,
+  "summary": "PASS 18   FAIL 0",
+  "seconds": 6.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -868,7 +868,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 13.3,
+  "seconds": 14.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -877,7 +877,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 3.6,
+  "seconds": 5.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -885,8 +885,8 @@
   "suite": "test_material_graph.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 30   FAIL 0",
-  "seconds": 4.8,
+  "summary": "PASS 33   FAIL 0",
+  "seconds": 12.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -895,7 +895,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 12.3,
+  "seconds": 12.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -904,7 +904,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 9.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -922,7 +922,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 5.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -931,7 +931,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 11.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -939,8 +939,8 @@
   "suite": "test_niagara.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 53   FAIL 0",
-  "seconds": 4.5,
+  "summary": "PASS 61   FAIL 0",
+  "seconds": 8.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -949,7 +949,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 17.3,
+  "seconds": 18.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -958,7 +958,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 42   FAIL 0",
-  "seconds": 33.0,
+  "seconds": 34.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -966,8 +966,8 @@
   "suite": "test_perf_stats.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 24   FAIL 0",
-  "seconds": 6.3,
+  "summary": "PASS 25   FAIL 0",
+  "seconds": 8.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -985,7 +985,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 12.3,
+  "seconds": 13.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -994,7 +994,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 8.0,
+  "seconds": 8.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1003,7 +1003,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 46   FAIL 0",
-  "seconds": 4.0,
+  "seconds": 4.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1012,7 +1012,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 7.3,
+  "seconds": 8.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1021,7 +1021,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 7.3,
+  "seconds": 8.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1030,7 +1030,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 0.1,
+  "seconds": 0.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1039,7 +1039,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 7.3,
+  "seconds": 8.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1048,25 +1048,25 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 7.8,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_safety_gate.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 31   FAIL 0",
-  "seconds": 11.0,
+  "rc": 1,
+  "summary": "",
+  "seconds": 11.4,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "  PASS  T632 save_package is refused by something\n  PASS  T632 save_blueprint is refused by something\n  PASS  T632 start_pie is refused by something\n  PASS  T632 stop_pie is refused by something\n  PASS  T632 run_console is refused by something\n\n  --- and ordinary work must still run (this is the half that catches an inverted gate) ---\n  PASS  T632 list_blueprints still runs\n  PASS  T632 self_audit still runs\n  PASS  T632 list_level_actors still runs\n  PASS  T632 describe_endpoint still runs\n\n=== T633 [the point of the design]: the gate cannot unlock itself ===\n  PASS  T633 there is no set_write_mode endpoint\n  PASS  T633 set_cvar cannot change the write mode\n\n=== T636: EVERY endpoint that reaches UEngine::Exec is gated ===\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_safety_gate.py\", line 310, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_safety_gate.py\", line 186, in main\n    raw = io.open(os.path.join(PRIV, fn), encoding=\"utf-8\", errors=\"replace\").read()\n          ^^\nNameError: name 'io' is not defined. Did you mean: 'id'? Or did you forget to import 'io'?"
  },
  {
   "suite": "test_selfpin.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 25.8,
+  "seconds": 25.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1075,7 +1075,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 4.0,
+  "seconds": 4.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1084,7 +1084,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 8.3,
+  "seconds": 9.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1093,7 +1093,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 24.0,
+  "seconds": 24.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1102,7 +1102,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 5.3,
+  "seconds": 5.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1110,8 +1110,8 @@
   "suite": "test_spawn_many.py",
   "pass": 2,
   "rc": 0,
-  "summary": "",
-  "seconds": 2.7,
+  "summary": "PASS 27   FAIL 0",
+  "seconds": 9.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1120,7 +1120,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 10.3,
+  "seconds": 10.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1129,7 +1129,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 9.1,
+  "seconds": 9.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1138,7 +1138,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.9,
+  "seconds": 7.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1147,7 +1147,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 7.4,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1156,7 +1156,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 10.0,
+  "seconds": 10.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1174,7 +1174,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 33.5,
+  "seconds": 84.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1183,7 +1183,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1192,7 +1192,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 0.7,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1201,7 +1201,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1210,7 +1210,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 5.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1219,7 +1219,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 10.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1228,7 +1228,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 6.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1237,7 +1237,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 11.0,
   "editorSurvived": true,
   "tail": ""
  }

@@ -35,6 +35,7 @@
 #include "InstancedFoliageActor.h"     // AInstancedFoliageActor - what Foliage edit mode paints into
 #include "InstancedFoliage.h"          // FFoliageInfo / FFoliageInstance
 #include "FoliageType.h"               // UFoliageType - the settings painted foliage inherits
+#include "FoliageType_InstancedStaticMesh.h"   // GetStaticMesh lives HERE, not on UFoliageType
 #include "Materials/MaterialInstanceConstant.h"
 #include "Materials/MaterialInterface.h"
 #include "Factories/MaterialInstanceConstantFactoryNew.h"
@@ -1360,9 +1361,28 @@ namespace MifBridge
 
 			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
 			J->SetStringField(TEXT("foliageType"), TypePath);
-			if (UStaticMesh* Mesh = FoliageType->GetStaticMesh())
+			// GetStaticMesh() is on UFoliageType_InstancedStaticMesh (:31 in BOTH trees), NOT on the
+			// UFoliageType base - I assumed the base had it and the compiler said otherwise, which is
+			// the third time tonight that grepping a plugin's headers found a member and told me
+			// nothing about which class owns it.
+			//
+			// The base DOES offer a generic UObject* GetSource(), deliberately not used here: it is
+			// PURE_VIRTUAL (:110 in both), so a foliage type that does not override it ASSERTS rather
+			// than returning null. Same hazard class as UIKRigSolver::GetNiceName, which this codebase
+			// already refuses to call for exactly that reason.
+			if (const UFoliageType_InstancedStaticMesh* ISM = Cast<UFoliageType_InstancedStaticMesh>(FoliageType))
 			{
-				J->SetStringField(TEXT("mesh"), Mesh->GetPathName());
+				if (UStaticMesh* Mesh = ISM->GetStaticMesh())
+				{
+					J->SetStringField(TEXT("mesh"), Mesh->GetPathName());
+				}
+			}
+			else
+			{
+				// Actor foliage or another non-mesh type. Named rather than left as a missing field.
+				J->SetStringField(TEXT("meshNote"), FString::Printf(
+					TEXT("this is a %s, not an instanced-static-mesh foliage type, so it has no mesh."),
+					*FoliageType->GetClass()->GetName()));
 			}
 
 #if WITH_EDITORONLY_DATA
