@@ -120,6 +120,11 @@ check("T21 pure/has-return self has ONE source", len(a_loc or []) == 1, str(a_lo
 check("T21 both point at NewRef", a_hid == [(NEW, "NewRef")] and a_loc == [(NEW, "NewRef")],
       "hid=%s loc=%s" % (a_hid, a_loc))
 rows = r.get("results", [])
+# GUARDED FIRST. Both assertions below are all(...) over rows, and all([]) is True - so a
+# response with no results at all would sail straight through the two checks written to
+# inspect them.
+check("T21 the patch returned rows to inspect", len(rows) > 0,
+      "results=%d - the two assertions below would pass vacuously" % len(rows))
 check("T21 rows report replacedExisting", all(x.get("replacedExisting") is True for x in rows),
       json.dumps(rows)[:400])
 check("T21 rows carry sourcesBefore/After",

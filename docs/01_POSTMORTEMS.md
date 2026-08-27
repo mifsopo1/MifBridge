@@ -1352,3 +1352,52 @@ PM-014 was the same script writing 5.7 binaries over the 5.3 DLL, fixed by junct
 alone. That fix was correct and is still in place - this is a second, independent way the same tool
 reaches across engines, through the shared intermediates rather than through the output directory.
 Narrowing what a tool LINKS did not narrow what it INVALIDATES.
+
+## Three assertions that could not fail, and the tool that now finds them (2026-08-27)
+
+**Symptom.** Three times in one day a test was written, run, reported `PASS`, and proved nothing.
+
+| | what it asserted | what was actually true |
+|---|---|---|
+| `test_unchecked_returns` T722 | struct members keyed on `name` | the field is the mangled `name_index_guid`, so the lookup found nothing, compared `None` against `""`, and passed |
+| `test_cooked_class_trap` T755 | `all("cooked" in b for b in rows)` | the field was PRESENT on every row and WRONG on 301 of 1475 |
+| `mifwatch` regression | called `analyse()` and printed the length | the bug only appeared on **serialisation** |
+
+Two were caught only because an assertion *beside* them failed loudly. The third was caught by
+running the tool a second way.
+
+**Root cause, and the mechanically detectable half.** `all([])` is `True`. An assertion of the shape
+`all(<predicate> for x in <collection>)` passes when the collection is empty — which is very often
+the exact failure the assertion was written to catch. A call that returns *nothing* sails through
+every check written to inspect its results.
+
+The other two shapes are the same disease: a lookup that silently misses, and a presence test
+standing in for a correctness test.
+
+**Fix.** Guards on the three genuinely unguarded sites, and `tools/audit_vacuous_checks.py` to stop
+it recurring.
+
+**The numbers matter, because a noisy audit gets ignored.**
+
+```
+60  raw all(...) assertions across the suites
+43  had a non-empty guard right beside them
+11  candidates after excluding literal tuples, which can never be empty
+ 3  genuinely unguarded
+```
+
+Roughly one real finding in four candidates. So the tool **reports and never edits**, and carries a
+baseline — `audit_vacuous_baseline.txt` — so only a NEW one surfaces. The seven accepted entries were
+each read first; most are filtered subsets that may legitimately be empty ("every 16-byte parameter
+reports 4 floats" is fine on an asset with no 16-byte parameters).
+
+**Prevention, and the honest limit.** This finds one shape of the problem. It cannot find a lookup
+keyed on the wrong field, or a presence test that should have been a value test — T755 passed this
+audit while being wrong, because `all("cooked" in b ...)` *is* guarded. The rule the tool cannot
+enforce:
+
+> Assert the VALUE, not the presence. `"x" in row` is satisfied by a row that carries `x` and lies
+> about it.
+
+Proved it fires before trusting it: a synthetic unguarded `all()` was injected, reported, and
+reverted. A check that cannot fail is not a check — including this one.

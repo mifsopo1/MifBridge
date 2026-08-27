@@ -72,6 +72,10 @@ def main():
           not any("refPose" in b for b in bones), "refPose appeared without includeTransforms")
     t = M.call("list_bones", {"path": biggest, "includeTransforms": True})
     tb = t.get("bones") or []
+    # GUARDED FIRST. all([]) is True, so without this the assertion below passes when the call
+    # returned no bones at all - which is the one outcome it is supposed to catch.
+    check("T221 the includeTransforms call returned bones to check", len(tb) > 0,
+          "bones=%d - every refPose assertion below would pass vacuously" % len(tb))
     check("T221 and present when asked for", all("refPose" in b for b in tb), "refPose missing")
     # Parent-relative, and it has to SAY so - treating these as world space stacks everything on the root.
     check("T221 it warns the pose is parent-relative",

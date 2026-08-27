@@ -1,0 +1,12 @@
+# Accepted vacuous-check candidates. Each was READ and judged acceptable - usually a
+# filtered subset that may legitimately be empty. Regenerate with --update-baseline
+# only after reading the new entries; the point of the baseline is that a NEW one is
+# a thing somebody has to look at.
+
+test_enums.py:65	T300 and the DIFFERENT authored name the engine assigned
+test_list_bones.py:125	T223 at least one very small skeleton is read correctly
+test_list_bones.py:126	T223 no skeleton reports zero bones
+test_niagara_params.py:108	T210 typeIndex is reported rather than a type name
+test_niagara_params.py:183	T213 vector values report the right number of floats
+test_niagara_params.py:221	T216 and every object offset is a valid index into one of them
+test_spawn_many.py:178	T545 and each note carries its item index
