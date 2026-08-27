@@ -136,6 +136,57 @@ def main():
 
     check("T612 the bridge is still answering", M.bridge_responsive() is True, "bridge died")
 
+    # ------------------------------------------------------------------ T615 MEMBERSHIP
+    # add_actor_to_data_layer / remove_actor_from_data_layer - the half Data Layers exist for.
+    #
+    # Same honest limitation as the rest of this suite: membership needs a World Partition level with
+    # at least one Data Layer, and the scratch world has neither. So this asserts the REFUSALS, which
+    # are reachable on any world, and skips the success path with a printed reason rather than
+    # silently passing an untested endpoint.
+    print("")
+    print("=== T615: actor membership ===")
+    layers = (M.call("list_data_layers", {}) or {}).get("dataLayers") or []
+    actors = (M.call("list_level_actors", {"limit": 5}) or {}).get("actors") or []
+    actor_path = actors[0].get("actorPath") if actors else None
+
+    # The refusals are the reachable half and they are worth pinning regardless.
+    r = M.call("add_actor_to_data_layer", {"name": "NoSuchLayer_zz"})
+    check("T615 add without actorPath is refused", r.get("ok") is False, json.dumps(r)[:150])
+    check("T615 and it says NOTHING was changed", "NOTHING" in (r.get("error") or ""),
+          (r.get("error") or "")[:150])
+
+    if actor_path:
+        r = M.call("add_actor_to_data_layer", {"actorPath": actor_path, "name": "NoSuchLayer_zz"})
+        check("T615 an unknown layer is refused", r.get("ok") is False, json.dumps(r)[:150])
+        r = M.call("add_actor_to_data_layer", {"actorPath": "/Game/NoSuch.NoSuch_zz", "name": "x"})
+        check("T615 an unknown actor is refused", r.get("ok") is False, json.dumps(r)[:150])
+        check("T615 and the refusal says it resolves by PATH",
+              "PATH" in (r.get("error") or ""), (r.get("error") or "")[:150])
+
+    if not layers:
+        print("  SKIP  this world has no Data Layers, so the SUCCESS path is untested.")
+        print("        Membership needs a World Partition level with a layer in it; new_level is")
+        print("        gated and Andre has not opted into un-gating it. The refusals above are")
+        print("        what is reachable here - the write path is NOT covered by this run.")
+    elif actor_path:
+        name = layers[0].get("name")
+        a = M.call("add_actor_to_data_layer", {"actorPath": actor_path, "name": name})
+        check("T615 an actor joins a real layer", a.get("ok") is True, json.dumps(a)[:200])
+        check("T615 and the read-back lists it",
+              name in (a.get("actorDataLayers") or []), json.dumps(a.get("actorDataLayers"))[:150])
+        # Idempotence is reported, not hidden: asking again must say wasAlreadyIn.
+        again = M.call("add_actor_to_data_layer", {"actorPath": actor_path, "name": name})
+        check("T615 adding twice reports wasAlreadyIn rather than pretending it acted",
+              again.get("wasAlreadyIn") is True, json.dumps(again)[:180])
+        d = M.call("remove_actor_from_data_layer", {"actorPath": actor_path, "name": name})
+        check("T615 and it can be removed", d.get("ok") is True, json.dumps(d)[:180])
+        check("T615 the read-back no longer lists it",
+              name not in (d.get("actorDataLayers") or []),
+              json.dumps(d.get("actorDataLayers"))[:150])
+        # Removing what is not there is a REFUSAL here, not a no-op success.
+        again = M.call("remove_actor_from_data_layer", {"actorPath": actor_path, "name": name})
+        check("T615 removing a non-member is refused, not reported as a no-op",
+              again.get("ok") is False, json.dumps(again)[:180])
     print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
