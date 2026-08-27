@@ -1137,12 +1137,25 @@ namespace MifBridge
 		// connect to a SceneComponent pin. They concluded the bridge could not type object variables
 		// and redesigned around it. It can: the class goes INSIDE the type string.
 		// The KeyNotes below turn that dead end into one round-trip.
+		// The flag keys (replicated..tooltip, fieldNotify) are NOT read in this body - ApplyVariableFlags
+		// below reads every one of them, the same shared path set_variable_flags uses. They MUST all be
+		// listed here or a working add_variable{..., replicated:true} call becomes a hard "unrecognised
+		// parameter" failure - which is exactly what was happening: this list omitted every one of them
+		// even though the FlagKeys[] block further down was already written to apply them. Found and
+		// fixed 2026-08-28, filed as task_1920c65f the night it was found.
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("blueprintId"), TEXT("path"),
 			  TEXT("name"), TEXT("type"), TEXT("container"), TEXT("valueType"),
-			  TEXT("scope"), TEXT("function"), TEXT("default") },
+			  TEXT("scope"), TEXT("function"), TEXT("default"),
+			  TEXT("replicated"), TEXT("repNotify"), TEXT("repNotifyFunction"), TEXT("replicationCondition"),
+			  TEXT("saveGame"), TEXT("transient"), TEXT("config"), TEXT("instanceEditable"),
+			  TEXT("blueprintReadOnly"), TEXT("exposeOnSpawn"), TEXT("advancedDisplay"), TEXT("interp"),
+			  TEXT("deprecated"), TEXT("category"), TEXT("tooltip"), TEXT("fieldNotify") },
 			TEXT("blueprintId (alias: path), name, type, container?, valueType?, scope? (member|local), ")
-			TEXT("function? (required when scope=local), default?"),
+			TEXT("function? (required when scope=local), default?, and optionally any set_variable_flags ")
+			TEXT("flag (replicated, repNotify, repNotifyFunction, replicationCondition, saveGame, transient, ")
+			TEXT("config, instanceEditable, blueprintReadOnly, exposeOnSpawn, advancedDisplay, interp, ")
+			TEXT("deprecated, category, tooltip, fieldNotify) to set at creation time - member scope only"),
 			{ { TEXT("class"),       TEXT("the class belongs IN the type string, not in its own key: type:\"object:SceneComponent\". Prefixes: object:X, class:X, subclassof:X, softobject:X, softclass:X") },
 			  { TEXT("className"),   TEXT("use type:\"object:X\" (or class:X / subclassof:X / softobject:X / softclass:X)") },
 			  { TEXT("parentClass"), TEXT("add_variable does not take a parent class. For a typed object variable use type:\"object:X\"; to override a parent's event use add_override_event") },

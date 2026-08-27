@@ -470,11 +470,23 @@ def find_nodes(graph_id: str, by_class: str = "", by_title: str = "", by_functio
 
 @mcp.tool()
 def add_variable(blueprint_id: str, name: str, type: str, container: str = "", value_type: str = "",
-                 scope: str = "member", function: str = "", default: str = "") -> dict:
-    "Add a variable. name is trimmed+validated and the canonical name is returned. type e.g. int/float/bool/string/Vector/Guid/<Struct>/<Class>. container = array|set|map. For a map, type is the KEY type and value_type is the VALUE type (e.g. type='name', container='map', value_type='int'). scope = member|local (local needs function). REFERENCE TYPES: the class goes INSIDE the type string via a prefix, NOT in a separate parameter - type='object:SceneComponent' gives a variable typed to that class, which will connect to a SceneComponent pin; a bare type='object' gives a plain UObject, which will NOT. The prefixes are object:X (an instance reference), class:X and subclassof:X (a class reference / TSubclassOf), softobject:X and softclass:X (soft pointers). There is no class= / className= / parentClass= / objectClass= parameter and passing one is now a hard error naming this syntax, because it used to be accepted and silently dropped: the call returned ok:true and produced a plain UObject that could not be connected, which read as 'the bridge cannot type object variables'."
+                 scope: str = "member", function: str = "", default: str = "",
+                 replicated: bool = None, rep_notify: bool = None, rep_notify_function: str = "",
+                 replication_condition: str = "", save_game: bool = None, transient: bool = None,
+                 config: bool = None, instance_editable: bool = None, blueprint_read_only: bool = None,
+                 expose_on_spawn: bool = None, advanced_display: bool = None, interp: bool = None,
+                 deprecated: bool = None, category: str = "", tooltip: str = "",
+                 field_notify: bool = None) -> dict:
+    "Add a variable. name is trimmed+validated and the canonical name is returned. type e.g. int/float/bool/string/Vector/Guid/<Struct>/<Class>. container = array|set|map. For a map, type is the KEY type and value_type is the VALUE type (e.g. type='name', container='map', value_type='int'). scope = member|local (local needs function). REFERENCE TYPES: the class goes INSIDE the type string via a prefix, NOT in a separate parameter - type='object:SceneComponent' gives a variable typed to that class, which will connect to a SceneComponent pin; a bare type='object' gives a plain UObject, which will NOT. The prefixes are object:X (an instance reference), class:X and subclassof:X (a class reference / TSubclassOf), softobject:X and softclass:X (soft pointers). There is no class= / className= / parentClass= / objectClass= parameter and passing one is now a hard error naming this syntax, because it used to be accepted and silently dropped: the call returned ok:true and produced a plain UObject that could not be connected, which read as 'the bridge cannot type object variables'. Optionally set any set_variable_flags flag (replicated, rep_notify, save_game, instance_editable, category, field_notify, ...) at creation time in the same call - member scope only, same semantics as calling set_variable_flags right after."
     return _post("add_variable", blueprintId=blueprint_id, name=name, type=type,
                  container=container or None, valueType=value_type or None, scope=scope, function=function or None,
-                 default=default or None)
+                 default=default or None,
+                 replicated=replicated, repNotify=rep_notify, repNotifyFunction=rep_notify_function or None,
+                 replicationCondition=replication_condition or None, saveGame=save_game, transient=transient,
+                 config=config, instanceEditable=instance_editable, blueprintReadOnly=blueprint_read_only,
+                 exposeOnSpawn=expose_on_spawn, advancedDisplay=advanced_display, interp=interp,
+                 deprecated=deprecated, category=category or None, tooltip=tooltip or None,
+                 fieldNotify=field_notify)
 
 
 @mcp.tool()
