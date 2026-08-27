@@ -19,6 +19,18 @@ Engine/Plugins/Experimental/Water and is off by default.
 
 Everything is built far from the origin in /Temp/Untitled_1, which is never saved.
 
+WHY IT PLACES ITS LAKES BY PROBING RATHER THAN AT FIXED COORDINATES. The first version used fixed
+positions, passed 21/21 standalone, and FAILED on the second run inside run_all_suites - which is
+precisely what that runner's second pass is for. This suite cannot delete what it creates (deleting
+an actor needs confirm:true), so zones accumulate in the level, and a later run's lake landed inside
+an earlier run's zone. It therefore already had a zone, and the zone the test then created reported
+bodiesNowCovered:0 - because a body belonging to some OTHER zone is neither covered-by-this-one nor
+orphaned.
+
+Both failures described the LEVEL, not the endpoint. place_unzoned_lake below moves until it finds a
+position no existing zone reaches, and says so plainly if it cannot. A suite that only passes on a
+clean level is a suite that passes once.
+
 Usage:
     python tools/test_water_zone.py
 
@@ -40,6 +52,33 @@ STAMP = int(time.time() % 100000)
 def check(name, cond, detail=""):
     (PASS if cond else FAIL).append(name if cond else (name, detail))
     print(("  PASS  " if cond else "  FAIL  ") + name + ("" if cond else "   " + str(detail)[:240]))
+
+
+def place_unzoned_lake(label, x0, y0, tries=6, step=400000.0):
+    """Create a lake that belongs to NO water zone, and say where it ended up.
+
+    WHY THIS IS NOT JUST create_water_body AT A FIXED SPOT. The level accumulates zones - this suite
+    cannot delete them, because deleting an actor needs confirm:true - so a fixed position eventually
+    lands inside a zone an EARLIER RUN created. When that happened the body already had a zone, and
+    the zone this test then creates reported bodiesNowCovered:0, because the body belongs to the
+    older zone and is therefore neither covered-by-this-one nor orphaned.
+
+    Both failures were about the LEVEL rather than the endpoint, they only appeared on the second
+    run, and the two-pass suite runner is exactly what surfaced them. The first standalone run passed
+    21/21 and proved nothing about this.
+
+    Returns (response, (x, y)) or (None, None) when every candidate was already inside a zone.
+    """
+    last = {}
+    for i in range(tries):
+        x = x0 + i * step
+        last = M.call("create_water_body", {"type": "Lake", "x": x, "y": y0, "z": 0.0,
+                                            "label": "%s_%d" % (label, i)})
+        if last.get("ok") is not True:
+            return None, None
+        if not last.get("waterZone"):
+            return last, (x, y0)
+    return None, None
 
 
 def main():
@@ -106,45 +145,52 @@ def main():
     print("=== T735: a body created BEFORE a zone is invisible, and the zone SEES it ===")
     # The order is the point. A body finds its zone by OVERLAP, so a body authored first belongs to
     # no zone and renders nothing - which is the failure this endpoint exists to end.
-    bx, by = 620000.0 + STAMP, 620000.0
-    b = M.call("create_water_body", {"type": "Lake", "x": bx, "y": by, "z": 0.0,
-                                     "label": "MifLake_%d" % STAMP})
-    check("T735 the lake was created", b.get("ok") is True, json.dumps(b)[:240])
-    check("T735 and it belongs to NO zone, so it renders nothing",
-          not b.get("waterZone"),
-          "waterZone=%r - expected empty; this test needs a body with no zone" % (b.get("waterZone"),))
+    b, where = place_unzoned_lake("MifLake_%d" % STAMP, 620000.0 + STAMP, 620000.0)
+    check("T735 a lake was placed somewhere no existing zone reaches", b is not None,
+          "every candidate position was already inside a zone from an earlier run - the level is "
+          "saturated. Restart the editor to clear /Temp/Untitled_1.")
+    if b is not None:
+        bx, by = where
+        check("T735 and it belongs to NO zone, so it renders nothing",
+              not b.get("waterZone"),
+              "waterZone=%r - the helper is supposed to guarantee this" % (b.get("waterZone"),))
 
-    r = M.call("create_water_zone", {"x": bx, "y": by, "z": 0.0,
-                                     "extentX": 60000, "extentY": 60000,
-                                     "label": "MifZoneOver_%d" % STAMP})
-    check("T735 the covering zone was created", r.get("ok") is True, json.dumps(r)[:240])
-    check("T735 and it reports the body it picked up",
-          (r.get("bodiesNowCovered") or 0) >= 1,
-          "bodiesNowCovered=%r - the number is observed by asking every body, so 0 here means the "
-          "zone did not actually cover it" % (r.get("bodiesNowCovered"),))
-    check("T735 no coverageWarning when nothing is left uncovered",
-          "coverageWarning" not in r or (r.get("bodiesStillWithoutZone") or 0) > 0,
-          r.get("coverageWarning"))
+        r = M.call("create_water_zone", {"x": bx, "y": by, "z": 0.0,
+                                         "extentX": 60000, "extentY": 60000,
+                                         "label": "MifZoneOver_%d" % STAMP})
+        check("T735 the covering zone was created", r.get("ok") is True, json.dumps(r)[:240])
+        check("T735 and it reports the body it picked up",
+              (r.get("bodiesNowCovered") or 0) >= 1,
+              "bodiesNowCovered=%r - the number is observed by asking every body, so 0 here means "
+              "the zone did not actually cover it" % (r.get("bodiesNowCovered"),))
+        check("T735 no coverageWarning when nothing is left uncovered",
+              "coverageWarning" not in r or (r.get("bodiesStillWithoutZone") or 0) > 0,
+              r.get("coverageWarning"))
 
     print("")
     print("=== T736: a body OUTSIDE the new zone is named, not just counted ===")
-    ox, oy = 900000.0 + STAMP, 900000.0
-    orphan = "MifOrphan_%d" % STAMP
-    b2 = M.call("create_water_body", {"type": "Lake", "x": ox, "y": oy, "z": 0.0, "label": orphan})
-    check("T736 the far-away lake was created", b2.get("ok") is True, json.dumps(b2)[:200])
-
-    # A zone somewhere else entirely. The orphan must still be reported as invisible.
-    r = M.call("create_water_zone", {"x": ox - 400000.0, "y": oy, "z": 0.0,
-                                     "extentX": 20000, "extentY": 20000,
-                                     "label": "MifZoneElsewhere_%d" % STAMP})
-    check("T736 that zone was created", r.get("ok") is True, json.dumps(r)[:220])
-    check("T736 the uncovered body is COUNTED", (r.get("bodiesStillWithoutZone") or 0) >= 1,
-          "bodiesStillWithoutZone=%r" % (r.get("bodiesStillWithoutZone"),))
-    check("T736 and NAMED, so nobody has to go hunting for it",
-          orphan in [str(x) for x in (r.get("stillWithoutZone") or [])],
-          "stillWithoutZone=%s" % json.dumps(r.get("stillWithoutZone"))[:200])
-    check("T736 and a coverageWarning says they will not render",
-          "render" in str(r.get("coverageWarning", "")), r.get("coverageWarning"))
+    # Same helper, same reason: an orphan that an earlier run's zone already covers is not an orphan,
+    # and the assertions below would fail for a fact about the level rather than about the endpoint.
+    b2, where2 = place_unzoned_lake("MifOrphan_%d" % STAMP, 2400000.0 + STAMP, 2400000.0)
+    check("T736 an uncovered lake was placed", b2 is not None,
+          "no candidate position was outside every existing zone")
+    if b2 is not None:
+        ox, oy = where2
+        orphan = b2.get("label") or ""
+        # A zone somewhere else entirely. The orphan must still be reported as invisible. Placed far
+        # enough away that its 20000 extent cannot reach the lake.
+        r = M.call("create_water_zone", {"x": ox - 900000.0, "y": oy, "z": 0.0,
+                                         "extentX": 20000, "extentY": 20000,
+                                         "label": "MifZoneElsewhere_%d" % STAMP})
+        check("T736 that zone was created", r.get("ok") is True, json.dumps(r)[:220])
+        check("T736 the uncovered body is COUNTED", (r.get("bodiesStillWithoutZone") or 0) >= 1,
+              "bodiesStillWithoutZone=%r" % (r.get("bodiesStillWithoutZone"),))
+        check("T736 and NAMED, so nobody has to go hunting for it",
+              orphan in [str(x) for x in (r.get("stillWithoutZone") or [])],
+              "looking for %r in stillWithoutZone=%s"
+              % (orphan, json.dumps(r.get("stillWithoutZone"))[:180]))
+        check("T736 and a coverageWarning says they will not render",
+              "render" in str(r.get("coverageWarning", "")), r.get("coverageWarning"))
 
     print("")
     print("=" * 72)

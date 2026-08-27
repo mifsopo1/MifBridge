@@ -4,7 +4,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 5.3,
+  "seconds": 5.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -22,7 +22,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 5.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -31,7 +31,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 6.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -49,7 +49,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 5.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -112,7 +112,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 21.1,
+  "seconds": 20.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -121,7 +121,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 6.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -130,7 +130,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 6.3,
+  "seconds": 6.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -139,7 +139,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 11.0,
+  "seconds": 10.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -148,7 +148,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 8.1,
+  "seconds": 7.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -157,7 +157,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 8.0,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -175,7 +175,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 5.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -238,7 +238,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 9.0,
+  "seconds": 8.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -265,7 +265,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 6.4,
+  "seconds": 5.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -310,7 +310,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 4.6,
+  "seconds": 4.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -319,7 +319,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 10.5,
+  "seconds": 10.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -337,7 +337,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 17.8,
+  "seconds": 17.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -391,7 +391,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 46   FAIL 0",
-  "seconds": 4.0,
+  "seconds": 3.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -400,7 +400,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 7.3,
+  "seconds": 7.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -526,7 +526,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.2,
+  "seconds": 6.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -594,6 +594,15 @@
   "tail": ""
  },
  {
+  "suite": "test_water_zone.py",
+  "pass": 1,
+  "rc": 1,
+  "summary": "PASS 19   FAIL 2",
+  "seconds": 4.7,
+  "editorSurvived": true,
+  "tail": "  PASS  T733 the label was applied\n\n=== T735: a body created BEFORE a zone is invisible, and the zone SEES it ===\n  PASS  T735 the lake was created\n  FAIL  T735 and it belongs to NO zone, so it renders nothing   waterZone='/Temp/Untitled_1.Untitled_1:PersistentLevel.WaterZone_UAID_E8C8292EF2A6DDFB02_2024659452' - expected empty; this test needs a body with no zone\n  PASS  T735 the covering zone was created\n  FAIL  T735 and it reports the body it picked up   bodiesNowCovered=0 - the number is observed by asking every body, so 0 here means the zone did not actually cover it\n  PASS  T735 no coverageWarning when nothing is left uncovered\n\n=== T736: a body OUTSIDE the new zone is named, not just counted ===\n  PASS  T736 the far-away lake was created\n  PASS  T736 that zone was created\n  PASS  T736 the uncovered body is COUNTED\n  PASS  T736 and NAMED, so nobody has to go hunting for it\n  PASS  T736 and a coverageWarning says they will not render\n\n========================================================================\nPASS 19   FAIL 2\n  FAILED: T735 and it belongs to NO zone, so it renders nothing\n          waterZone='/Temp/Untitled_1.Untitled_1:PersistentLevel.WaterZone_UAID_E8C8292EF2A6DDFB02_2024659452' - expected empty; this test needs a body with no zone\n  FAILED: T735 and it reports the body it picked up\n          bodiesNowCovered=0 - the number is observed by asking every body, so 0 here means the zone did not actually cover it\nzones and lakes left in /Temp/Untitled_1 on purpose - it is never saved, and deleting an\nactor would mean sending confirm:true, which the audit rules do not do.\n========================================================================"
+ },
+ {
   "suite": "test_widget_anim_recreate.py",
   "pass": 1,
   "rc": 0,
@@ -652,7 +661,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 5.3,
+  "seconds": 5.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -670,7 +679,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 7.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -778,7 +787,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 10.9,
+  "seconds": 10.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -841,7 +850,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 22.0,
+  "seconds": 22.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -850,7 +859,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 18.3,
+  "seconds": 18.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -931,7 +940,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 8.3,
+  "seconds": 8.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1084,7 +1093,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 51   FAIL 0",
-  "seconds": 15.7,
+  "seconds": 16.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1111,7 +1120,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.4,
+  "seconds": 7.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1165,7 +1174,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.2,
+  "seconds": 6.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1231,6 +1240,15 @@
   "seconds": 5.4,
   "editorSurvived": true,
   "tail": ""
+ },
+ {
+  "suite": "test_water_zone.py",
+  "pass": 2,
+  "rc": 1,
+  "summary": "PASS 19   FAIL 2",
+  "seconds": 4.7,
+  "editorSurvived": true,
+  "tail": "  PASS  T733 the label was applied\n\n=== T735: a body created BEFORE a zone is invisible, and the zone SEES it ===\n  PASS  T735 the lake was created\n  FAIL  T735 and it belongs to NO zone, so it renders nothing   waterZone='/Temp/Untitled_1.Untitled_1:PersistentLevel.WaterZone_UAID_E8C8292EF2A6DDFB02_2024659452' - expected empty; this test needs a body with no zone\n  PASS  T735 the covering zone was created\n  FAIL  T735 and it reports the body it picked up   bodiesNowCovered=0 - the number is observed by asking every body, so 0 here means the zone did not actually cover it\n  PASS  T735 no coverageWarning when nothing is left uncovered\n\n=== T736: a body OUTSIDE the new zone is named, not just counted ===\n  PASS  T736 the far-away lake was created\n  PASS  T736 that zone was created\n  PASS  T736 the uncovered body is COUNTED\n  PASS  T736 and NAMED, so nobody has to go hunting for it\n  PASS  T736 and a coverageWarning says they will not render\n\n========================================================================\nPASS 19   FAIL 2\n  FAILED: T735 and it belongs to NO zone, so it renders nothing\n          waterZone='/Temp/Untitled_1.Untitled_1:PersistentLevel.WaterZone_UAID_E8C8292EF2A6DDFB02_2024659452' - expected empty; this test needs a body with no zone\n  FAILED: T735 and it reports the body it picked up\n          bodiesNowCovered=0 - the number is observed by asking every body, so 0 here means the zone did not actually cover it\nzones and lakes left in /Temp/Untitled_1 on purpose - it is never saved, and deleting an\nactor would mean sending confirm:true, which the audit rules do not do.\n========================================================================"
  },
  {
   "suite": "test_widget_anim_recreate.py",
