@@ -754,14 +754,19 @@ namespace MifBridge
 		J->SetStringField(TEXT("category"), Var.Category.ToString());
 		// The tooltip is writable through set_variable_flags but was not reported anywhere, so it
 		// could be set and never read back to confirm it landed - found by the round-trip audit.
+		bool bFieldNotify = false;
 		for (const FBPVariableMetaDataEntry& Meta : Var.MetaDataArray)
 		{
 			if (Meta.DataKey == FBlueprintMetadata::MD_Tooltip && !Meta.DataValue.IsEmpty())
 			{
 				J->SetStringField(TEXT("tooltip"), Meta.DataValue);
-				break;
+			}
+			else if (Meta.DataKey == FBlueprintMetadata::MD_FieldNotify)
+			{
+				bFieldNotify = true;
 			}
 		}
+		J->SetBoolField(TEXT("fieldNotify"), bFieldNotify);
 		return J;
 	}
 
@@ -933,6 +938,30 @@ namespace MifBridge
 			FBlueprintEditorUtils::SetBlueprintVariableMetaData(Blueprint, VarName, nullptr, TEXT("ToolTip"), JStr(In, TEXT("tooltip")));
 			bTouched = true;
 		}
+		// FIELD NOTIFY - the MVVM binding system's "this property broadcasts when it changes" flag,
+		// the same checkbox FieldNotifyToggle.cpp puts in the Blueprint Variables panel. Only
+		// meaningful on a class implementing INotifyFieldValueChanged (UMVVMViewModelBase and its
+		// Blueprint children) - checked nowhere here on purpose, same as every other flag in this
+		// function: the engine call itself is the source of truth, not a guess about which classes
+		// happen to support a flag today.
+		if (In->HasField(TEXT("fieldNotify")))
+		{
+			if (JBool(In, TEXT("fieldNotify")))
+			{
+				FBlueprintEditorUtils::SetBlueprintVariableMetaData(
+					Blueprint, VarName, nullptr, FBlueprintMetadata::MD_FieldNotify, FString());
+			}
+			else
+			{
+				// Two calls, matching FieldNotifyToggle.cpp's OFF branch exactly: the plain metadata
+				// remove alone leaves compiled delegate bindings referencing a field that no longer
+				// broadcasts - RemoveFieldNotifyFromAllMetadata is the one that also cleans those up.
+				FBlueprintEditorUtils::RemoveFieldNotifyFromAllMetadata(Blueprint, VarName);
+				FBlueprintEditorUtils::RemoveBlueprintVariableMetaData(
+					Blueprint, VarName, nullptr, FBlueprintMetadata::MD_FieldNotify);
+			}
+			bTouched = true;
+		}
 
 		// --- Flags with no engine setter: poke the description directly --------------
 		{
@@ -1029,10 +1058,12 @@ namespace MifBridge
 			  TEXT("saveGame"), TEXT("transient"), TEXT("config"),
 			  TEXT("instanceEditable"), TEXT("blueprintReadOnly"), TEXT("exposeOnSpawn"),
 			  TEXT("advancedDisplay"), TEXT("interp"), TEXT("deprecated"),
-			  TEXT("category"), TEXT("tooltip") },
+			  TEXT("category"), TEXT("tooltip"), TEXT("fieldNotify") },
 			TEXT("blueprintId (alias: path), name (aliases: var, variable), then any of replicated, repNotify, ")
 			TEXT("repNotifyFunction, replicationCondition, saveGame, transient, config, instanceEditable, ")
-			TEXT("blueprintReadOnly, exposeOnSpawn, advancedDisplay, interp, deprecated, category, tooltip ")
+			TEXT("blueprintReadOnly, exposeOnSpawn, advancedDisplay, interp, deprecated, category, tooltip, ")
+			TEXT("fieldNotify (the MVVM \"broadcasts on change\" flag, meaningful only on a class ")
+			TEXT("implementing INotifyFieldValueChanged such as an MVVM ViewModel Blueprint) ")
 			TEXT("- PARTIAL UPDATE: only the keys actually present are applied, the rest are left alone"),
 			{ { TEXT("variableName"), TEXT("spell it name (aliases: var, variable)") },
 			  { TEXT("replicate"),    TEXT("spell it replicated - and repNotify:true already implies it") },
@@ -1196,7 +1227,7 @@ namespace MifBridge
 			TEXT("replicated"), TEXT("repNotify"), TEXT("repNotifyFunction"), TEXT("replicationCondition"),
 			TEXT("saveGame"), TEXT("transient"), TEXT("config"), TEXT("instanceEditable"),
 			TEXT("blueprintReadOnly"), TEXT("exposeOnSpawn"), TEXT("advancedDisplay"), TEXT("interp"),
-			TEXT("deprecated"), TEXT("category"), TEXT("tooltip")
+			TEXT("deprecated"), TEXT("category"), TEXT("tooltip"), TEXT("fieldNotify")
 		};
 		bool bAnyFlagRequested = false;
 		for (const TCHAR* Key : FlagKeys)

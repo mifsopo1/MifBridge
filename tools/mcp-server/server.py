@@ -1358,8 +1358,8 @@ def set_variable_flags(blueprint_id: str, name: str,
                        instance_editable: bool = None, blueprint_read_only: bool = None,
                        expose_on_spawn: bool = None, advanced_display: bool = None,
                        interp: bool = None, deprecated: bool = None,
-                       category: str = "", tooltip: str = "") -> dict:
-    "Set Details-panel flags on a MEMBER variable (locals are rejected - they are never replicated or saved). PARTIAL UPDATE: omitted flags are left alone. rep_notify creates the OnRep_<Name> function graph if missing and implies replicated. replication_condition takes an ELifetimeCondition (COND_None, COND_OwnerOnly, ...; the COND_ prefix is optional). Returns the resulting flags, plus replicationWarning if the owning Actor has bReplicates=false."
+                       category: str = "", tooltip: str = "", field_notify: bool = None) -> dict:
+    "Set Details-panel flags on a MEMBER variable (locals are rejected - they are never replicated or saved). PARTIAL UPDATE: omitted flags are left alone. rep_notify creates the OnRep_<Name> function graph if missing and implies replicated. replication_condition takes an ELifetimeCondition (COND_None, COND_OwnerOnly, ...; the COND_ prefix is optional). field_notify is the MVVM binding system's 'broadcasts on change' flag (the same checkbox the Blueprint Variables panel shows) - only meaningful on a class implementing INotifyFieldValueChanged, such as an MVVM ViewModel Blueprint (parent UMVVMViewModelBase). Returns the resulting flags, plus replicationWarning if the owning Actor has bReplicates=false."
     return _post("set_variable_flags", blueprintId=blueprint_id, name=name,
                  replicated=replicated, repNotify=rep_notify,
                  repNotifyFunction=rep_notify_function or None,
@@ -1368,7 +1368,7 @@ def set_variable_flags(blueprint_id: str, name: str,
                  instanceEditable=instance_editable, blueprintReadOnly=blueprint_read_only,
                  exposeOnSpawn=expose_on_spawn, advancedDisplay=advanced_display,
                  interp=interp, deprecated=deprecated,
-                 category=category or None, tooltip=tooltip or None)
+                 category=category or None, tooltip=tooltip or None, fieldNotify=field_notify)
 
 
 # --------------------------------------------------------------------------

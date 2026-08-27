@@ -1235,13 +1235,31 @@ engine has no such class registered in this build, which is as definitive as it 
       UNPROVEN, HONESTLY: nothing here has run against a hand-authored AttributeSet on either real
       project, because neither has one yet. Same honesty status as MetaHuman - real code, run for
       real, against a fixture rather than game content.
-- [ ] **MVVM viewmodel authoring** - not yet started. Committed for Curfew (DEC-065, "MVVM
-      viewmodels over PlayerState/GameState/managers" for the phone/HUD stack), nothing built yet.
-      The likely gap, unconfirmed until actually checked: UMVVMViewModelBase properties use
-      FieldNotify metadata for the binding system to see them, and whether add_variable already
-      reaches that metadata generically or needs its own endpoint is the first thing to establish -
-      do not assume the gap without checking, the way GeometryScripting's asset-count test turned out
-      backwards above.
+- [x] **MVVM viewmodel authoring - the FieldNotify gap.** DONE 2026-08-27. `set_variable_flags`
+      (and `add_variable` at creation time) gained a `fieldNotify` flag - the same "broadcasts on
+      change" checkbox FieldNotifyToggle.cpp puts in the Blueprint Variables panel, and the actual
+      thing standing between "a Blueprint variable" and "an MVVM-bindable one".
+      CHECKED FIRST, not assumed: `create_blueprint {parentClass: MVVMViewModelBase}` and
+      `add_variable` already work today with ZERO new code - UMVVMViewModelBase is Blueprintable and
+      a plain float/etc. variable is exactly what add_variable already makes. The gap really was just
+      FieldNotify, confirmed by reading FieldNotifyToggle.cpp (Kismet editor source): it is plain
+      Blueprint variable METADATA (`FBlueprintMetadata::MD_FieldNotify`), set via the same
+      `FBlueprintEditorUtils::SetBlueprintVariableMetaData` / `RemoveBlueprintVariableMetaData` /
+      `RemoveFieldNotifyFromAllMetadata` calls the toggle widget itself makes - no MVVM header, no
+      MVVM module. Extended the EXISTING set_variable_flags/ApplyVariableFlags path (shared with
+      add_variable "so the two can never drift", per that function's own comment) rather than a new
+      endpoint, the same discipline as every other flag it already has (saveGame, transient, ...).
+      parity_check still reports ModelViewViewModel PLUGIN IDLE, correctly and for the same reason
+      Metasound's entry does: this capability needs no module dependency at all, so the dependency
+      staying idle is not a gap - it is Andre's call whether to drop it.
+      VERIFIED LIVE on the probe: create_blueprint against MVVMViewModelBase, add_variable a float,
+      set_variable_flags fieldNotify:true, then a SEPARATE set_variable_flags call with no flags
+      (pure read) independently confirmed fieldNotify:true persisted; fieldNotify:false confirmed
+      clean on the same round trip. Both engines rebuilt clean via buildcheck.py.
+      NOT YET DONE: the OTHER half of MVVM, wiring a Widget Blueprint's View Bindings (which widget
+      property reads from which viewmodel property) - UMVVMBlueprintView / MVVMBlueprintViewBinding,
+      unexplored. FieldNotify is what makes a viewmodel bindable at all; actually binding one to a
+      widget is a separate, unstarted item if Curfew's UI work needs it before this spec revisits it.
 - [ ] **ChaosVehicles minimal tooling** - not yet started. DEC-063 is explicit that the custom
       raycast pawn is the working assumption and Chaos is only the week-2 A/B comparison, not yet
       run. Andre's call: build just enough to support running that comparison (spawning/configuring a
