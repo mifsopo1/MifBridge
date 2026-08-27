@@ -468,6 +468,53 @@ def check_hook_drift():
     return problems
 
 
+def check_plugin_declaration_drift():
+    """Every plugin Build.cs links modules from must ALSO be declared in MifBridge.uplugin.
+
+    These are two files that must agree, and until 2026-08-27 nothing checked that they did. Adding
+    PCG to Build.cs alone stopped the editor loading entirely:
+
+        Plugin 'MifKismetReconstructor' failed to load because module 'MifKismetReconstructor'
+        could not be loaded.
+
+    The named module is NOT the problem - it is downstream. MifBridge linked against a plugin the
+    project had never enabled, the module chain failed, and the error surfaced on whatever came next
+    in it. That is docs/06 issue 17, which I had written up myself and then walked into.
+
+    The fix issue 17 records is to declare the plugin Optional+Enabled in the .uplugin so UBT enables
+    it transitively. Thirteen were. The fourteenth was not, and the only thing standing between that
+    and a dead editor was memory.
+
+    Reported, not auto-fixed. Adding a plugin reference is a real decision about what MifBridge
+    depends on, and a checker that edits a .uplugin on its own is one bad match away from declaring a
+    dependency nobody wanted."""
+    import io as _io
+    import json as _json
+    import os
+    import re as _re
+
+    build_cs = os.path.join(HERE, "..", "Source", "MifBridge", "MifBridge.Build.cs")
+    uplugin = os.path.join(HERE, "..", "MifBridge.uplugin")
+    if not (os.path.isfile(build_cs) and os.path.isfile(uplugin)):
+        return []
+
+    try:
+        cs = _io.open(build_cs, encoding="utf-8", errors="replace").read()
+        up = _json.loads(_io.open(uplugin, encoding="utf-8-sig").read())
+    except Exception as exc:
+        return ["could not read Build.cs or MifBridge.uplugin: %s" % exc]
+
+    # AddPluginModules("MIF_WITH_X", "PluginName", ...) - the second argument is the descriptor name.
+    linked = set(_re.findall(r'AddPluginModules\(\s*"[A-Z_0-9]+"\s*,\s*"([A-Za-z0-9_]+)"', cs))
+    declared = set(p.get("Name") for p in (up.get("Plugins") or []))
+
+    missing = sorted(linked - declared)
+    return ["plugin %r has modules linked in Build.cs but is NOT declared in MifBridge.uplugin - "
+            "the module will link and fail AT LOAD, and the error will name a different plugin "
+            "(docs/06 issue 17 and 22). Add it as Optional:true, Enabled:true." % name
+            for name in missing]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--verbose", action="store_true",
@@ -497,6 +544,8 @@ def main() -> int:
 
     # Printed on EVERY run, pass or fail. An exemption nobody sees is a silent
     # allowlist, which is the thing this script exists to replace.
+    for _p in check_plugin_declaration_drift():
+        print("PLUGIN DRIFT: " + _p)
     for _p in check_hook_drift():
         print("HOOK DRIFT: " + _p)
 
