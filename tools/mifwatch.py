@@ -79,7 +79,7 @@ def analyse(records):
                 sessions.append(cur)
             cur = {"pid": r.get("pid"), "port": r.get("port"), "engine": r.get("engine"),
                    "started": r.get("t"), "ended": None, "unfinished": [], "calls": 0,
-                   "slowest": ("", 0.0)}
+                   "slowest": ("", 0.0), "failures": {}}
             open_call = None
         elif ev == "start":
             if cur is None:
@@ -93,6 +93,12 @@ def analyse(records):
         elif ev == "end":
             if cur is None:
                 continue
+            if r.get("ok") is False:
+                # Grouped by REASON, not merely counted. Auditing failures by endpoint name alone means
+                # reading test source to tell a deliberate refusal from a defect; the reason separates
+                # them at a glance, which is what that audit lacked.
+                key = (r.get("ep") or "?", (r.get("err") or "(no reason recorded)")[:70])
+                cur["failures"][key] = cur["failures"].get(key, 0) + 1
             ms = float(r.get("ms") or 0.0)
             if ms > cur["slowest"][1]:
                 cur["slowest"] = (r.get("ep") or "?", ms)
@@ -149,6 +155,11 @@ def report(records):
         print("        shutdown %s" % (s["ended"] or "NONE - the process did not shut down cleanly"))
         if s["slowest"][1] > 0:
             print("        slowest  %s (%.0f ms)" % s["slowest"])
+        fails = s.get("failures") or {}
+        if fails:
+            print("        %d failed call(s), most common:" % sum(fails.values()))
+            for (fep, why), n in sorted(fails.items(), key=lambda kv: -kv[1])[:5]:
+                print("          %3dx %-24s %s" % (n, fep[:24], why))
         for ep in s["unfinished"]:
             bad += 1
             # THE payoff. This line is the whole reason the journal flushes before dispatch.

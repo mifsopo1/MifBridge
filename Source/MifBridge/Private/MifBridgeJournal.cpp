@@ -237,9 +237,29 @@ namespace MifBridge
 		}
 
 		if (!GJournal) { return; }
-		WriteRaw(FString::Printf(
-			TEXT("{\"t\":\"%s\",\"ev\":\"end\",\"ep\":\"%s\",\"ok\":%s,\"ms\":%.1f}\n"),
-			*FDateTime::UtcNow().ToIso8601(), *Esc(Endpoint), bOk ? TEXT("true") : TEXT("false"), Ms));
+		// The REASON goes on disk too, not only into the in-memory ring the panel reads.
+		//
+		// Auditing every failed call earlier tonight meant grouping 782 failures by endpoint and then
+		// reading test SOURCE to work out which were deliberate refusals and which might be defects.
+		// The reason was available at the time and was thrown away. Recorded, that audit becomes a
+		// query rather than an investigation.
+		//
+		// Truncated at 160 characters for the same reason the ring is: a parameter-contract refusal
+		// runs to several hundred characters of accepted-key list, and the journal is a trail rather
+		// than a transcript of every response.
+		if (bOk || Error.IsEmpty())
+		{
+			WriteRaw(FString::Printf(
+				TEXT("{\"t\":\"%s\",\"ev\":\"end\",\"ep\":\"%s\",\"ok\":%s,\"ms\":%.1f}\n"),
+				*FDateTime::UtcNow().ToIso8601(), *Esc(Endpoint), bOk ? TEXT("true") : TEXT("false"), Ms));
+		}
+		else
+		{
+			WriteRaw(FString::Printf(
+				TEXT("{\"t\":\"%s\",\"ev\":\"end\",\"ep\":\"%s\",\"ok\":false,\"ms\":%.1f,")
+				TEXT("\"err\":\"%s\"}\n"),
+				*FDateTime::UtcNow().ToIso8601(), *Esc(Endpoint), Ms, *Esc(Error.Left(160))));
+		}
 	}
 
 	// A clean shutdown says so. Its ABSENCE at the next launch is what distinguishes "the editor was

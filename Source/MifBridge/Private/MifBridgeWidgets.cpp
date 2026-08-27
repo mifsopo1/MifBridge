@@ -1440,7 +1440,22 @@ namespace MifBridge
 		}
 		else
 		{
-			UWidget* ParentWidget = ParentName.IsEmpty() ? Tree->RootWidget : Tree->FindWidget(FName(*ParentName));
+			// THE CAST IS LOAD-BEARING, and it is a UE 5.7 build break without it.
+			//
+			// RootWidget is TObjectPtr<UWidget> in BOTH trees (WidgetTree.h:125 in 5.3, :142 in 5.7)
+			// while FindWidget returns a raw UWidget*. 5.3's compiler settings accept the mixed
+			// ternary; 5.7 rejects it outright:
+			//     error C2445: result type of conditional expression is ambiguous:
+			//     types 'TObjectPtr<UWidget>' and 'UWidget *' can be converted to multiple common types
+			// Casting the first branch forces both to UWidget* and compiles on either.
+			//
+			// This is a THIRD direction for the trap in docs/02_GOTCHAS.md section 14. That section
+			// covers symbols 5.7 deleted and symbols 5.7 added; this is neither - the code is identical
+			// and legal in both, and 5.7 is simply STRICTER about it. Nothing warns on 5.3, so it can
+			// only be found by building on 5.7, which is how Andre found it.
+			UWidget* ParentWidget = ParentName.IsEmpty()
+				? static_cast<UWidget*>(Tree->RootWidget)
+				: Tree->FindWidget(FName(*ParentName));
 			if (!ParentWidget)
 			{
 				Fail(Out, FString::Printf(TEXT("parent widget not found: '%s'"), *ParentName));
