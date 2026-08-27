@@ -426,6 +426,48 @@ def check_ue_parity(binds, post_endpoints: set, problems: list):
             "it from the list." % (name, name)))
 
 
+def check_hook_drift():
+    """The deployed Stop hooks vs the copies in this repo.
+
+    Andre's standing rule is "don't edit a mirror/copy file - edit the source, then sync". These hooks
+    break it structurally: the version that RUNS lives in ~/.claude/hooks and the version under review
+    lives here, and nothing tied them together.
+
+    That cost something real on 2026-08-27. Andre asked for the backlog ordering to put his UI work
+    ahead of MifBlender; I edited the repo copy, reported it done, and the very next hook message still
+    listed MifBlender first - because the live file had never changed. Worse, the live file had a
+    token-budget rework the repo copy did not, so a careless copy in either direction would have
+    silently destroyed work.
+
+    Reported, never auto-synced. Which copy is right depends on who edited what, and a check that
+    guesses is a check that eventually overwrites the wrong one."""
+    # Imported locally: this file does not use either at module scope, and adding a top-level import
+    # for one function is how an unrelated diff shows up in a review.
+    import io as _io
+    import os
+    live_dir = os.path.join(os.path.expanduser("~"), ".claude", "hooks")
+    if not os.path.isdir(live_dir):
+        return []
+    problems = []
+    for name in sorted(os.listdir(live_dir)):
+        if not name.endswith(".js"):
+            continue
+        live = os.path.join(live_dir, name)
+        repo = os.path.join(HERE, name)
+        if not os.path.isfile(repo):
+            problems.append("hook %s is DEPLOYED but has no copy in tools/ - it exists only on this "
+                            "machine and is not version-controlled" % name)
+            continue
+        a = _io.open(live, "rb").read()
+        b = _io.open(repo, "rb").read()
+        if a != b:
+            problems.append(
+                "hook %s DIFFERS between ~/.claude/hooks (%d bytes, the one that RUNS) and tools/ "
+                "(%d bytes, the one under review). Editing the repo copy changes nothing at runtime."
+                % (name, len(a), len(b)))
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--verbose", action="store_true",
@@ -455,6 +497,9 @@ def main() -> int:
 
     # Printed on EVERY run, pass or fail. An exemption nobody sees is a silent
     # allowlist, which is the thing this script exists to replace.
+    for _p in check_hook_drift():
+        print("HOOK DRIFT: " + _p)
+
     print("exemptions in force:")
     for op, reason in sorted(BLENDER_TOOLLESS_EXEMPTIONS.items()):
         print("  blender op %-14s %s" % (op, reason))

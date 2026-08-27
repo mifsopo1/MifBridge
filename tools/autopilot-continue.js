@@ -104,18 +104,18 @@ const openRaw = lines
   .filter((l) => /^\s*-\s*\[ \]\s*\S/.test(l))
   .map((l) => l.replace(/^\s*-\s*\[ \]\s*/, "").replace(/\*\*/g, "").trim());
 
-// PRIORITY, because document order is not the same as what Andre wants next.
+// PRIORITY, because document order is not what Andre wants next.
 //
 // The spec is roughly chronological, so MifBlender sat at the top of every "next up" list purely by
-// being written down early - and it is explicitly the LAST thing, gated on the UE side being
-// comfortable. Meanwhile the four in-editor features he asked for kept being reported below it.
+// having been written down early - while its own text says it comes AFTER the UE side is comfortable.
+// The four in-editor features he actually asked for kept being reported below it, and one of them
+// (the mesh splitter) fell out of a status summary entirely.
 //
 // Andre, 2026-08-27: "do NOT forget about our UI additions befor emoving to blender, add that to the
-// stophook, the ui additions". So the ordering lives HERE rather than in my head or in the order the
-// file happens to be in - a preference that only exists in a conversation is one that expires with
-// the session.
+// stophook, the ui additions". A preference that lives only in a conversation expires with the
+// session; this is why it lives here.
 //
-// Earlier pattern wins. Anything unmatched keeps its document order after the matched ones.
+// Earlier pattern wins. Unmatched items keep document order between the matched ones and MifBlender.
 const PRIORITY = [
   /inheritance tree/i,
   /behavior tree.*(view|diagram)|diagram.*behavior tree/i,
@@ -127,7 +127,7 @@ const rank = (item) => {
   for (let i = 0; i < PRIORITY.length; i++) {
     if (PRIORITY[i].test(item)) return i;
   }
-  // MifBlender is deliberately LAST: it is gated on the UE side being comfortable, by its own text.
+  // MifBlender LAST by an explicit rule rather than by accident.
   if (/mifblender|blender/i.test(item)) return PRIORITY.length + 1;
   return PRIORITY.length;
 };
@@ -157,41 +157,34 @@ if (count > cap) {
 }
 try { fs.writeFileSync(COUNTER, String(count)); } catch (_) {}
 
-const next = open.slice(0, 5).map((s, i) => "  " + (i + 1) + ". " + s.slice(0, 150)).join("\n");
-const hoursLeft = (nightMsLeft / 3600000).toFixed(1);
-const nightBanner = nightMsLeft > 0
-  ? ("NIGHT SHIFT: " + hoursLeft + "h left before the deadline. Andre is asleep and asked for a full "
-     + "night of autonomous work, so do NOT stop even if the spec empties.\n"
-     + "  * Prefer work with a clear finish condition over open-ended searching: run a suite, fix "
-     + "what it finds, commit, move on.\n"
-     + "  * If the spec empties, the standing night work is regression and hunting, not new breadth:\n"
-     + "      run every tools/test_*.py against the live editor and fix what broke;\n"
-     + "      sweep all endpoints for crashes and hangs (the last full sweep covered 238 of them);\n"
-     + "      hunt for endpoints that report success while doing something else, which has been the\n"
-     + "      most productive lens all session.\n"
-     + "  * File anything found in docs/06_OPEN_ISSUES_FROM_USE.md, and add real work back to the\n"
-     + "    spec as new '- [ ]' lines so the morning has a record.\n"
-     + "  * Commit and push as you go. A night of work in one unpushed lump is a night at risk.\n"
-     + "  * Do NOT save assets, start PIE, or touch anything outside the SDK editor.\n\n")
-  : "";
+// TOKEN BUDGET. This reason block is re-sent on EVERY turn, and the rules half of it was
+// byte-identical each time - roughly 500 tokens per turn, tens of thousands over a long run, buying
+// nothing after the first read. Andre: "whatever can reduce token usage in our work please do so".
+//
+// So the standing rules are emitted RARELY and the changing part always. The rules live in the spec
+// file and in project memory; restating them every turn is the definition of waste.
+const FULL_EVERY = 20;
+const wantFull = (count % FULL_EVERY) === 1;
+const shown = wantFull ? 5 : 2;
+
+const next = open.slice(0, shown)
+  .map((s, i) => "  " + (i + 1) + ". " + s.slice(0, wantFull ? 150 : 90)).join("\n");
+
+const RULES =
+  "\n\nSpec: " + SPEC + "\n" +
+  "  * '- [x]' only when BUILT, TESTED and COMMITTED. '- [~]' to decline, reason on the next line.\n" +
+  "  * Judge value for BOTH projects - DDS2 cooked-game modding AND Curfew (UE 5.7). The old\n" +
+  "    DDS2-only rule was superseded on 2026-08-26.\n" +
+  "  * Verify coverage by READING handlers, never by endpoint name. self_audit is the live list.\n" +
+  "  * Add new work as '- [ ]' lines so nothing is lost.\n" +
+  "  * Do NOT save assets, start PIE, or touch anything outside the SDK editor.\n" +
+  "  * Commit and push as you go. Touch tools/night_heartbeat.py every 10-15 min while working.";
+
 const reason =
-  nightBanner +
-  "Feature-parity autopilot is on. The spec has " + open.length + " open item(s) (" + met +
-  " covered, " + declined + " declined) - continue " + count + "/" + cap +
-  (open.length ? ". Do NOT stop - pick up the next one:\n" : ".\n") +
-  next +
-  (open.length > 5 ? "\n  ... and " + (open.length - 5) + " more" : "") +
-  "\n\nThe spec is " + SPEC + ". Rules:\n" +
-  "  * Mark '- [x]' only when endpoints exist, are BUILT, TESTED and COMMITTED - not when written.\n" +
-  "  * Mark '- [~]' when you decide NOT to pursue something, and put the reason on the next line.\n" +
-  "    That is a finished decision, not a dodge - several competitor categories are irrelevant to\n" +
-  "    modding a cooked game and should be declined explicitly rather than left to spin.\n" +
-  "  * Judge value for DDS2 COOKED-GAME MODDING, not for general UE development and not for how the\n" +
-  "    feature list reads. Breadth for its own sake is not the goal; the competitor has a funded team\n" +
-  "    and will win a tool-count race.\n" +
-  "  * Verify coverage by READING handlers, never by endpoint name. The authoritative endpoint list\n" +
-  "    is tools/endpoints_current.json, regenerated from the live editor's self_audit.\n" +
-  "  * Add newly discovered work as new '- [ ]' lines so nothing is lost.";
+  "Autopilot: " + open.length + " open (" + met + " covered, " + declined + " declined), " +
+  count + "/" + cap + ". Continue - next:\n" + next +
+  (open.length > shown ? "\n  ... +" + (open.length - shown) + " more" : "") +
+  (wantFull ? RULES : "");
 
 process.stdout.write(JSON.stringify({ decision: "block", reason }));
 process.exit(0);
