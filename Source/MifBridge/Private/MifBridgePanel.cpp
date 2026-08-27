@@ -685,6 +685,20 @@ private:
 																		: MifPanel::TextBody))
 									.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
 							]
+							// Self-reported caller (X-Mif-Agent: claude/gpt/gemini/...), rendered as
+							// "-name" right after the endpoint - Andre asked for this after watching a
+							// modder run Claude and ChatGPT against the same bridge with no way to tell
+							// which one made which call. Absent entirely when no header was sent, rather
+							// than a fabricated "-unknown" cluttering every test-suite call.
+							+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+								.Padding(0, 0, 7, 0)
+							[
+								SNew(STextBlock)
+									.Visibility(R.Agent.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+									.Text(FText::FromString(TEXT("-") + R.Agent))
+									.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
+									.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+							]
 							+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 							[
 								SNew(STextBlock)

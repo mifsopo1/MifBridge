@@ -61,6 +61,10 @@ from mcp.server.fastmcp import FastMCP
 
 BASE = os.environ.get("MIF_BRIDGE_URL", "http://127.0.0.1:8791/api").rstrip("/")
 TOKEN = os.environ.get("MIF_BRIDGE_TOKEN", "dev")
+# Self-reported caller tag for the Activity panel (X-Mif-Agent header) - set MIF_AGENT before
+# launching this server so the panel can tell "claude", "gpt", "gemini", etc. apart when several
+# agents share one editor. Unset by default: an absent tag beats a guessed one.
+AGENT = os.environ.get("MIF_AGENT", "")
 try:
     TIMEOUT = float(os.environ.get("MIF_BRIDGE_TIMEOUT", "30"))
 except ValueError:
@@ -127,10 +131,13 @@ def _post(endpoint: str, **payload) -> dict:
     url = f"{BASE}/{endpoint}"
     _log("->", endpoint, body)
     try:
+        headers = {"X-Mif-Token": TOKEN, "Content-Type": "application/json"}
+        if AGENT:
+            headers["X-Mif-Agent"] = AGENT
         response = requests.post(
             url,
             json=body,
-            headers={"X-Mif-Token": TOKEN, "Content-Type": "application/json"},
+            headers=headers,
             timeout=TIMEOUT,
         )
     except requests.exceptions.ConnectTimeout:

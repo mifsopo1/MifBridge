@@ -128,6 +128,11 @@ namespace MifBridge
 		double  Milliseconds = 0.0;
 		double  WhenSeconds = 0.0;   // FPlatformTime::Seconds at completion
 		bool    bOk = false;
+		/** Self-reported by the caller via the X-Mif-Agent header (e.g. "claude", "gpt", "gemini").
+		 *  Empty when the caller sent no header - unlabeled, not "unknown": this is bookkeeping for
+		 *  cooperating agents sharing one editor, not an authentication claim, so an absent tag is
+		 *  simply an absent tag rather than something to assert about. */
+		FString Agent;
 		/** Short reason when bOk is false. Andre asked whether the FAILED cards were normal, and the
 		 *  honest answer was that the panel COULD NOT TELL him - a suite probing a refusal and a broken
 		 *  endpoint rendered identically. The reason is what separates them. */
@@ -175,7 +180,7 @@ namespace MifBridge
 	void OpenBrainmap();
 
 	void JournalOpen(int32 Port);
-	void JournalCallStart(const FString& Endpoint, const FString& Body);
+	void JournalCallStart(const FString& Endpoint, const FString& Body, const FString& Agent = FString());
 	void JournalCallEnd(const FString& Endpoint, bool bOk, const FString& Error);
 	void JournalClose(const TCHAR* Reason);
 	/** RAII marker for the above. batch declares one beside its FScopedTransaction. Not reentrant by

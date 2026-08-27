@@ -341,7 +341,14 @@ bool FMifBridgeServer::HandleHttp(const FString& Endpoint, const FHttpServerRequ
 	// BEFORE dispatch, and flushed. MIF_DBG above is gated behind a CVar that defaults to false
 	// and goes to UE_LOG, which buffers - so on a normal run neither of those survives a hard
 	// kill. This does. See MifBridgeJournal.cpp for why the ordering is the whole point.
-	MifBridge::JournalCallStart(Endpoint, BodyStr);
+	//
+	// X-Mif-Agent is SELF-REPORTED, same trust level as everything else on this loopback-only,
+	// shared-secret-gated bridge - it answers "which cooperating agent made this call" for a human
+	// watching several of them share one editor (infectedcoolpat's Claude+ChatGPT hybrid setup was
+	// the case that prompted it), not an identity claim anything security-relevant leans on. Absent
+	// header -> empty string, rendered as no tag rather than a fabricated "unknown".
+	const FString Agent = HeaderValue(Request, TEXT("X-Mif-Agent")).Left(32);
+	MifBridge::JournalCallStart(Endpoint, BodyStr, Agent);
 
 	// --- Run the endpoint on the game thread, at a tick-safe point ----------
 	//

@@ -87,6 +87,7 @@ namespace MifBridge
 		FString GPendingSubject;      // subject of the call currently in flight
 		bool    GPendingIsAsset = false;
 		double  GInFlightSince = 0.0;
+		FString GPendingAgent;        // X-Mif-Agent of the call currently in flight, "" if unsent
 
 		FString JournalPath()
 		{
@@ -199,16 +200,20 @@ namespace MifBridge
 
 	// Written BEFORE the handler is entered, and flushed. Everything about the ordering here is the
 	// point of the file.
-	void JournalCallStart(const FString& Endpoint, const FString& Body)
+	void JournalCallStart(const FString& Endpoint, const FString& Body, const FString& Agent)
 	{
+		// GPendingAgent is set even when the on-disk journal is off (mirrors GPendingSubject below,
+		// and matches the reason the ring is filled unconditionally in JournalCallEnd): the panel's
+		// live view must not depend on the disk-journal CVar.
+		GPendingAgent = Agent;
 		if (!GJournal) { return; }
 		GCallStartSeconds = FPlatformTime::Seconds();
 		GInFlightEndpoint = Endpoint;
 		GInFlightSince = GCallStartSeconds;
 		ExtractSubject(Body, GPendingSubject, GPendingIsAsset);
 		WriteRaw(FString::Printf(
-			TEXT("{\"t\":\"%s\",\"ev\":\"start\",\"ep\":\"%s\",\"bytes\":%d}\n"),
-			*FDateTime::UtcNow().ToIso8601(), *Esc(Endpoint), Body.Len()));
+			TEXT("{\"t\":\"%s\",\"ev\":\"start\",\"ep\":\"%s\",\"bytes\":%d,\"agent\":\"%s\"}\n"),
+			*FDateTime::UtcNow().ToIso8601(), *Esc(Endpoint), Body.Len(), *Esc(Agent)));
 	}
 
 	// The matching close. A `start` with no `end` is the whole diagnostic: it means the process never
@@ -225,6 +230,7 @@ namespace MifBridge
 			Slot.Endpoint = Endpoint;
 			Slot.Subject = GPendingSubject;
 			Slot.bSubjectIsAsset = GPendingIsAsset;
+			Slot.Agent = GPendingAgent;
 			Slot.Milliseconds = Ms;
 			Slot.bOk = bOk;
 			// Truncated: the ring is a display buffer, and a 900-character parameter-contract refusal
