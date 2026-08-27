@@ -53,6 +53,8 @@ delete_material_expression.material
 delete_material_expression.name
 describe_animation.animation
 describe_class.filter
+describe_game_feature_plugin.plugin
+describe_niagara_system.system
 describe_property.actorpath
 describe_property.filter
 describe_property.namefilter
@@ -95,8 +97,11 @@ list_bones.mesh
 list_bones.skeleton
 list_ik_rig.rig
 list_input_mappings.context
+list_level_sequences.name
+list_level_sequences.search
 list_material_expressions.material
 list_material_parameters.material
+list_niagara_emitters.system
 list_niagara_user_parameters.system
 list_object_properties.actorpath
 list_object_properties.filter
@@ -155,6 +160,10 @@ self_audit.includeendpoints
 set_blendspace_samples.blendspace
 set_collision.component
 set_current_sublevel.level
+set_data_layer_loaded_in_editor.datalayer
+set_data_layer_loaded_in_editor.layer
+set_data_layer_visibility.datalayer
+set_data_layer_visibility.layer
 set_function_flags.name
 set_ik_goal_bone.rig
 set_ik_goal_solver_connection.rig
