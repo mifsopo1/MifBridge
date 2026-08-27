@@ -508,6 +508,31 @@ def main() -> int:
     except Exception as exc:
         print("\n(mcp-sends-unknown check unavailable: %s)" % exc)
 
+    # CHECK 6: can each MCP tool be CALLED AT ALL?
+    # Checks 1-5 all compare a tool against an endpoint - names, parameters accepted, parameters
+    # sent. Every one of them passes a wrapper that raises NameError before it reaches the network.
+    #
+    # move_tree_widget did exactly that, in shipped code, for every call it ever received:
+    #
+    #     return _post(..., replaceRoot=replace_root)   # replace_root was never a parameter
+    #
+    # It passed check 1 (the name is in all three registries), passed check 4 (it NAMES replaceRoot,
+    # which is why it read as correct), and no suite touched it because the suites drive endpoints
+    # over HTTP rather than calling the Python wrappers. A user found it and filed issue #1.
+    #
+    # NOT ratcheted. There is no legitimate backlog of functions that cannot run.
+    try:
+        import mcp_static_check
+        print()
+        if mcp_static_check.main() != 0:
+            return 1
+    except SystemExit as exc:                             # main() calls sys.exit via argparse
+        if exc.code:
+            return 1
+    except Exception as exc:
+        print("")
+        print("(mcp static check unavailable: %s)" % exc)
+
     return 0
 
 

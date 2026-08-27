@@ -148,7 +148,12 @@ def run(script, *args):
     except Exception as exc:
         return False, str(exc)
     text = ((out.stdout or "") + (out.stderr or "")).strip()
-    return out.returncode == 0, text[-1500:]
+    # EXIT CODE 0 IS NOT PROOF IT WORKED, and this is not a general principle here - it is what
+    # actually happened. report_intake's gh call died with a UnicodeDecodeError inside subprocess's
+    # READER THREAD, so intake's own process exited 0, saw empty output, and reported "0 open
+    # issues". A thread dying does not fail the process that spawned it.
+    ok = out.returncode == 0 and "Traceback (most recent call last)" not in text
+    return ok, text[-1500:]
 
 
 AGENT_PROMPT = """A MifBridge bug report has arrived as a GitHub issue and has ALREADY been fetched,
@@ -233,14 +238,40 @@ def handle(issue, push, dry_run):
     for l in tail.splitlines()[-6:]:
         log("    | " + l)
     if not ok:
-        return
+        # intake itself broke. The report is very likely fine; do not burn it.
+        log("  intake did not complete cleanly - treating as infrastructure, will retry")
+        return "retry"
+
 
     try:
         queued = json.load(io.open(QUEUE_FILE, encoding="utf-8"))
     except Exception:
         queued = []
     if not queued:
-        log("  nothing queued after intake - the report did not carry a usable json block")
+        # DISTINGUISH "the report was unusable" FROM "the pipeline did not see it".
+        #
+        # These look identical from here and they are opposites. The first is the reporter's problem
+        # and the report should stay marked seen. The second is OUR problem, the report is fine, and
+        # marking it seen loses it permanently.
+        #
+        # Issue #1 hit the second and was reported as the first: intake's gh output failed to decode,
+        # so it announced "open 'bridge-report' issues: 0" while this function was holding issue #1 in
+        # its hand. That contradiction is the tell, and it is checkable - so check it, rather than
+        # printing the more likely-sounding of two explanations.
+        # Checked HERE as well as in run(). run() is where the traceback normally turns into
+        # ok=False, but this is an alarm about losing a user's bug report, and an alarm that only
+        # works when one specific layer behaves is not much of an alarm.
+        if "Traceback (most recent call last)" in tail:
+            log("  ALARM: intake produced a traceback. Infrastructure fault, not a bad report.")
+            return "retry"
+        blind = "issues: 0" in tail
+        if blind:
+            log("  ALARM: intake reports ZERO open issues while handling #%s." % issue["number"])
+            log("         That is impossible - the report exists. The pipeline is not seeing GitHub,")
+            log("         which is an infrastructure fault, NOT a malformed report.")
+            log("         Un-marking it so the next poll retries rather than losing it.")
+            return "retry"
+        log("  nothing queued after intake - the report carried no usable json block")
         return
 
     # Repro needs a live editor. Not having one is a normal state at 3am, not a failure.
@@ -271,14 +302,25 @@ def main():
             fresh = [i for i in issues if i["number"] not in seen]
             if fresh:
                 for issue in fresh:
-                    # Marked seen BEFORE handling. A report that crashes the handler must not be
-                    # retried forever on every poll - it stays in the log for a human instead.
+                    # Marked seen BEFORE handling, so a report that crashes the handler is not retried
+                    # forever on every poll - it stays in the log for a human instead.
+                    #
+                    # But an INFRASTRUCTURE fault is the opposite case and must not consume the
+                    # report. Issue #1 was marked seen and then lost, because intake could not decode
+                    # GitHub's output and that was misread as a malformed report. It would never have
+                    # been retried; Andre asked about it by hand. So handle() can ask for the mark to
+                    # be taken back, and the two cases are now distinguishable rather than guessed.
                     seen.add(issue["number"])
                     save_state({"seen": sorted(seen)})
                     try:
-                        handle(issue, a.push, a.dry_run)
+                        verdict = handle(issue, a.push, a.dry_run)
                     except Exception as exc:
                         log("  handler raised: %s" % exc)
+                        verdict = "retry"     # our fault, not the reporter's
+                    if verdict == "retry":
+                        seen.discard(issue["number"])
+                        save_state({"seen": sorted(seen)})
+                        log("  #%s left UNSEEN - the next poll will try it again" % issue["number"])
         if a.once:
             return 0
         time.sleep(a.interval)
