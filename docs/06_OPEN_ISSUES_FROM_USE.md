@@ -1256,3 +1256,54 @@ Recommended: MifBridge on additional editors should use 8801, 8802, ... leaving 
 The same one as most entries here: a check that tests a proxy rather than the real question. "Is the
 port free?" was answered by trying to bind it, which is not the same as "is this port mine to take?"
 Nothing warned, because nothing knew the allocation existed.
+
+---
+
+## 16. Force Reload on a cooked Blueprint kills the editor
+
+**FOUND 2026-08-26 by Andre, diagnosed from the crash log the same night. NOT a MifBridge defect** -
+recorded here because it is a hazard anyone driving this editor will meet, and because ruling the
+bridge out was the first question asked.
+
+### What happened
+
+Andre right-clicked an asset and chose Force Reload. The editor died. The crash log's tail is a
+wall of:
+
+```
+LogUObjectGlobals: Warning: ReloadPackage failed to find a replacement object for
+    'Default__BP_ConsoleCommandsComponent_C' in the new package
+LogUObjectGlobals: Warning: ReloadPackage failed to find a replacement object for
+    'Default__BP_InventoryComponent_C' in the new package
+LogUObjectGlobals: Warning: ReloadPackage failed to find a replacement object for
+    'Default__BP_QuestManager_C' in the new package
+LogUObjectGlobals: Warning: ReloadPackage failed to find a replacement object for
+    'Default__BP_CartelManagerComponent_C' in the new package
+```
+
+### Why
+
+Same family as section 6c of `02_GOTCHAS.md`. A COOKED package has had its editor-only data
+stripped. `ReloadPackage` tears down the existing objects and expects to find replacements in the
+freshly-loaded package - and for a cooked Blueprint the class default objects it is looking for are
+not there. It warns, keeps going, and dies.
+
+The rule this generalises to, which is the useful part: **an editor operation that assumes it can
+rebuild editor state from a package is unsafe on cooked content.** Duplicate, Reload and Reimport
+all share that assumption. Two of the three have now taken this editor down.
+
+### What ruled MifBridge out
+
+The crash journal (added the same day, `15_SAFETY_GATE_AND_JOURNAL.md`) showed the bridge's last
+call 37 seconds before the crash - `invoke_editor_tab` - and no session with a call that started
+and never finished. Nothing died inside a handler.
+
+**A limitation of the journal that this exposed, and which is worth knowing before trusting it:**
+it reported six sessions as DIED, and most of those were the agent hard-killing the editor with
+`Stop-Process` to get past Live Coding during builds. An external kill and a crash are identical
+from inside the process - both are a session with no shutdown record. The journal distinguishes
+*died* from *closed cleanly*; it does NOT distinguish *crashed* from *killed*. Reading it as a crash
+count would overcount badly.
+
+What it does answer reliably is the question it was built for: **which call was in flight when the
+process stopped.** That stays sound, because it is an absence, not a count.

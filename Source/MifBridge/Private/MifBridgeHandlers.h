@@ -99,9 +99,14 @@ namespace MifBridge
 	bool WriteLocalReport(const FString& Endpoint, const FString& PayloadJson,
 						  const FString& Actual, const FString& Notes, FString& OutPath);
 
+	/** The brainmap canvas (MifBridgeBrainmap.cpp): a zoomable, pannable dependency graph, coloured
+	 *  by asset type and sized by referencer count. Same rule as the panel - reads, never writes. */
+	TSharedRef<SWidget> MakeBrainmapWidget();
+
 	void RegisterPanel();
 	void UnregisterPanel();
 	void OpenPanel();
+	void OpenBrainmap();
 
 	void JournalOpen(int32 Port);
 	void JournalCallStart(const FString& Endpoint, const FString& Body);

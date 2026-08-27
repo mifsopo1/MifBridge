@@ -57,6 +57,8 @@
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
+#include "Widgets/Layout/SSpacer.h"
+#include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
@@ -187,6 +189,49 @@ static TSharedRef<SWidget> MifStat(const FText& Label, TAttribute<FText> Value,
 		];
 }
 
+// One tab in the panel's own tab strip.
+//
+// Andre: "our main mifbridgfe widget should have tabs to open all of our other widgets". These are
+// INTERNAL tabs over a WidgetSwitcher rather than more nomad tabs: a nomad tab per view scatters the
+// tool across the editor's docking layout and makes it somebody's job to arrange them, where a strip
+// keeps one MifBridge window that owns its own navigation.
+static TSharedRef<SWidget> MifTabButton(const FText& Label, int32 Index,
+										TAttribute<int32> Active, FSimpleDelegate OnPick)
+{
+	return SNew(SButton)
+		.ButtonStyle(FAppStyle::Get(), "NoBorder")
+		.ContentPadding(FMargin(14, 7))
+		.OnClicked_Lambda([OnPick]() { OnPick.ExecuteIfBound(); return FReply::Handled(); })
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(STextBlock).Text(Label)
+					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 8))
+					.ColorAndOpacity_Lambda([Active, Index]()
+					{
+						return FSlateColor(Active.Get() == Index ? MifPanel::PurpleSoft : MifPanel::TextDim);
+					})
+			]
+			// The underline IS the selection indicator - a coloured label alone is too weak to find at a
+			// glance, and a full button background fights the cards below it.
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 5, 0, 0)
+			[
+				SNew(SBox).HeightOverride(2.f)
+				[
+					SNew(SBorder)
+						.BorderImage(MifPanel::Flat())
+						.BorderBackgroundColor_Lambda([Active, Index]()
+						{
+							return FSlateColor(Active.Get() == Index ? MifPanel::Purple
+																	 : FLinearColor::Transparent);
+						})
+						[ SNew(SSpacer) ]
+				]
+			]
+		];
+}
+
 /**
  * The panel. Reads; never writes.
  *
@@ -306,17 +351,48 @@ public:
 					]
 				]
 
-				// ------------------------------------------------------ transcript
-				+ SVerticalBox::Slot().AutoHeight().Padding(2, 0, 0, 6)
+				// ------------------------------------------------------ tab strip
+				+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 6)
 				[
-					SNew(STextBlock)
-						.Text(LOCTEXT("Log", "ACTIVITY"))
-						.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
-						.Font(FCoreStyle::GetDefaultFontStyle("Bold", 7))
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						MifTabButton(LOCTEXT("TabActivity", "ACTIVITY"), 0,
+							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
+							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 0))
+					]
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						MifTabButton(LOCTEXT("TabBrain", "BRAINMAP"), 1,
+							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
+							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 1))
+					]
+					+ SHorizontalBox::Slot().FillWidth(1.f)
+					[
+						SNew(SSpacer)
+					]
 				]
+
+				// ------------------------------------------------------ the views
 				+ SVerticalBox::Slot().FillHeight(1.f)
 				[
-					SAssignNew(Log, SScrollBox)
+					SAssignNew(Views, SWidgetSwitcher)
+					+ SWidgetSwitcher::Slot()
+					[
+						SAssignNew(Log, SScrollBox)
+					]
+					+ SWidgetSwitcher::Slot()
+					[
+						// The brainmap is built LAZILY, on first switch. It solves a force layout over
+						// every package under its prefix, and paying that on panel open - when most
+						// people want the transcript - would make the whole tool feel slow.
+						SAssignNew(BrainHost, SBox)
+						[
+							SNew(STextBlock)
+								.Text(LOCTEXT("BrainLazy", "loading graph..."))
+								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
+						]
+					]
 				]
 			]
 		];
@@ -324,6 +400,23 @@ public:
 
 private:
 	TSharedPtr<SScrollBox> Log;
+	TSharedPtr<SWidgetSwitcher> Views;
+	TSharedPtr<SBox> BrainHost;
+	int32 ActiveTab = 0;
+	bool  bBrainBuilt = false;
+
+	int32 GetActiveTab() const { return ActiveTab; }
+
+	void SetTab(int32 Index)
+	{
+		ActiveTab = Index;
+		if (Views.IsValid()) { Views->SetActiveWidgetIndex(Index); }
+		if (Index == 1 && !bBrainBuilt && BrainHost.IsValid())
+		{
+			bBrainBuilt = true;
+			BrainHost->SetContent(MifBridge::MakeBrainmapWidget());
+		}
+	}
 	int64 LastCount = -1;
 	int32 SpinnerFrame = 0;
 	// Which endpoints have been flagged since this panel opened, so the icon can show it took. Not
@@ -632,6 +725,7 @@ private:
 namespace MifBridge
 {
 	const FName BridgePanelTabName("MifBridgePanel");
+	const FName BrainmapTabName("MifBridgeBrainmap");
 
 	void RegisterPanel()
 	{
@@ -656,6 +750,26 @@ namespace MifBridge
 				"calls colour-coded by work type. Read-only - the bridge does not depend on this "
 				"panel and runs headless without it."))
 			.SetMenuType(ETabSpawnerMenuType::Hidden);
+
+
+		// The brainmap is a SECOND tab rather than a page inside the first. They answer different
+		// questions - one is 'what is the bridge doing right now', the other is 'how is this project
+		// wired' - and a docked tab each means both can be open at once, which a tabbed pane would
+		// prevent.
+		FGlobalTabmanager::Get()->RegisterNomadTabSpawner(BrainmapTabName,
+			FOnSpawnTab::CreateLambda([](const FSpawnTabArgs&) -> TSharedRef<SDockTab>
+			{
+				return SNew(SDockTab).TabRole(ETabRole::NomadTab)
+					[
+						MifBridge::MakeBrainmapWidget()
+					];
+			}))
+			.SetDisplayName(LOCTEXT("BrainTitle", "Mif Brainmap"))
+			.SetTooltipText(LOCTEXT("BrainTip",
+				"The project dependency graph: zoom with the wheel, drag with right or middle mouse, "
+				"click a node to reveal it in the Content Browser. Colour is asset type, size is how "
+				"many things reference it."))
+			.SetMenuType(ETabSpawnerMenuType::Hidden);
 	}
 
 	void UnregisterPanel()
@@ -663,6 +777,7 @@ namespace MifBridge
 		if (FSlateApplication::IsInitialized())
 		{
 			FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(BridgePanelTabName);
+			FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(BrainmapTabName);
 		}
 	}
 
@@ -671,6 +786,14 @@ namespace MifBridge
 		if (FSlateApplication::IsInitialized())
 		{
 			FGlobalTabmanager::Get()->TryInvokeTab(BridgePanelTabName);
+		}
+	}
+
+	void OpenBrainmap()
+	{
+		if (FSlateApplication::IsInitialized())
+		{
+			FGlobalTabmanager::Get()->TryInvokeTab(BrainmapTabName);
 		}
 	}
 }

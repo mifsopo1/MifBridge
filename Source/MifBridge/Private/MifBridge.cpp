@@ -224,6 +224,15 @@ void FMifBridgeModule::RegisterMenus()
 		FUIAction(FExecuteAction::CreateLambda([]() { MifBridge::OpenPanel(); })));
 
 	Section.AddMenuEntry(
+		"MifBridgeBrainmap",
+		LOCTEXT("MifBrain", "Mif Bridge: Brainmap"),
+		LOCTEXT("MifBrainTip",
+			"Open the dependency brainmap - zoomable, pannable, coloured by asset type and sized by "
+			"referencer count."),
+		FSlateIcon(),
+		FUIAction(FExecuteAction::CreateLambda([]() { MifBridge::OpenBrainmap(); })));
+
+	Section.AddMenuEntry(
 		"MifBridgeToggle",
 		TAttribute<FText>::CreateLambda([this]()
 		{
