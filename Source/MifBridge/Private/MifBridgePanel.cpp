@@ -367,6 +367,12 @@ public:
 							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
 							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 1))
 					]
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						MifTabButton(LOCTEXT("TabHeat", "HEATMAP"), 2,
+							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
+							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 2))
+					]
 					+ SHorizontalBox::Slot().FillWidth(1.f)
 					[
 						SNew(SSpacer)
@@ -393,6 +399,16 @@ public:
 								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
 						]
 					]
+					+ SWidgetSwitcher::Slot()
+					[
+						// Lazy for the same reason as the brainmap: two registry queries PER ASSET.
+						SAssignNew(HeatHost, SBox)
+						[
+							SNew(STextBlock)
+								.Text(LOCTEXT("HeatLazy", "measuring..."))
+								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
+						]
+					]
 				]
 			]
 		];
@@ -402,8 +418,10 @@ private:
 	TSharedPtr<SScrollBox> Log;
 	TSharedPtr<SWidgetSwitcher> Views;
 	TSharedPtr<SBox> BrainHost;
+	TSharedPtr<SBox> HeatHost;
 	int32 ActiveTab = 0;
 	bool  bBrainBuilt = false;
+	bool  bHeatBuilt = false;
 
 	int32 GetActiveTab() const { return ActiveTab; }
 
@@ -415,6 +433,11 @@ private:
 		{
 			bBrainBuilt = true;
 			BrainHost->SetContent(MifBridge::MakeBrainmapWidget());
+		}
+		if (Index == 2 && !bHeatBuilt && HeatHost.IsValid())
+		{
+			bHeatBuilt = true;
+			HeatHost->SetContent(MifBridge::MakeHeatmapWidget());
 		}
 	}
 	int64 LastCount = -1;

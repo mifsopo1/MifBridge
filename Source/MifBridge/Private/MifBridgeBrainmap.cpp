@@ -234,7 +234,10 @@ private:
 		if (N == 0) { return; }
 		// Area SCALES with node count. A fixed 900 was fine for 40 nodes and far too cramped for 250 -
 		// the layout was solving correctly and simply had nowhere to put anything.
-		const float Area = FMath::Clamp(180.f * FMath::Sqrt((float)N), 400.f, 4000.f);
+		// Denser than the first attempt. 180*sqrt(N) spread 250 nodes over ~2800 units, and fitting THAT
+		// to a panel zoomed so far out that every node collapsed to a dot - a correct fit of a layout
+		// that was too sparse to read. The graph has to be legible at the zoom that shows all of it.
+		const float Area = FMath::Clamp(95.f * FMath::Sqrt((float)N), 320.f, 2200.f);
 		const float K = Area / FMath::Sqrt((float)N);
 
 		for (int32 i = 0; i < N; ++i)
@@ -308,8 +311,10 @@ public:
 		if (bNeedsFit && Nodes.Num() > 0 && Geo.GetLocalSize().X > 8.f)
 		{
 			const FVector2D Span = Bounds.GetSize() + FVector2D(80.f, 80.f);
+			// Floor the fit too: below about a third scale the graph stops being readable at all,
+			// and showing an unreadable whole is worse than showing a readable part.
 			Zoom = FMath::Clamp(FMath::Min(Geo.GetLocalSize().X / FMath::Max(Span.X, 1.f),
-											Geo.GetLocalSize().Y / FMath::Max(Span.Y, 1.f)), 0.05f, 2.f);
+											Geo.GetLocalSize().Y / FMath::Max(Span.Y, 1.f)), 0.32f, 2.f);
 			Pan = -Bounds.GetCenter() * Zoom;
 			bNeedsFit = false;
 		}
@@ -339,7 +344,7 @@ public:
 			FSlateDrawElement::MakeLines(Out, Layer + 1, Geo.ToPaintGeometry(), Pts,
 				ESlateDrawEffect::None,
 				// A hovered node lights up ITS edges, which is how you trace what something touches.
-				bHot ? MifBrain::Hex(TEXT("8B5CF6")) : FLinearColor(1, 1, 1, 0.07f),
+				bHot ? MifBrain::Hex(TEXT("8B5CF6")) : FLinearColor(1, 1, 1, 0.045f),
 				true, bHot ? 1.6f : 1.0f);
 		}
 
@@ -348,7 +353,9 @@ public:
 		{
 			const MifBrain::FNode& N = Nodes[i];
 			const FVector2D C = GraphToScreen(N.Pos, Geo);
-			const float R = FMath::Max(N.Radius * Zoom, 2.f);
+			// A FLOOR on screen size. Zoomed out, a node scaled to 2px is indistinguishable from an edge
+			// crossing - which is exactly what the fitted view looked like. 4px keeps a node a node.
+			const float R = FMath::Max(N.Radius * Zoom, 4.f);
 			if (C.X < -R || C.Y < -R || C.X > Geo.GetLocalSize().X + R ||
 				C.Y > Geo.GetLocalSize().Y + R)
 			{
