@@ -58,6 +58,7 @@ delete_material_expression.name
 describe_animation.animation
 describe_class.filter
 describe_game_feature_plugin.plugin
+describe_gameplay_tag.name
 describe_niagara_system.system
 describe_pcg_graph.graph
 describe_property.actorpath
@@ -102,6 +103,7 @@ import_texture.texturegroup
 layout_material_expressions.material
 list_bones.mesh
 list_bones.skeleton
+list_gameplay_tags.search
 list_ik_rig.rig
 list_input_mappings.context
 list_level_sequences.name

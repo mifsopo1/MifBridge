@@ -1042,7 +1042,14 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       graphs is still a graph editor's job and out of scope. ASSIGNING and listing them is in scope
       and is folded into the Sound item above, which must therefore handle MetaSoundSource and not
       only SoundCue/SoundWave.
-- [ ] **Gameplay Tags** — declined, and this one was my top priority until it was checked. DDS2 has
+- [x] **Gameplay Tags** - DONE 2026-08-27. list_gameplay_tags, describe_gameplay_tag.
+      The original decline was evidence-based and still wrong, in an instructive way: it checked
+      for DefaultGameplayTags.ini, found none, found the plugin disabled, found 0 tags on
+      DDS2_GameMode, and concluded there was nothing to build against.
+      DDS2 HAS 7 REGISTERED TAGS. They come from EnhancedInput's native
+      UE_DEFINE_GAMEPLAY_TAG registration, not from any ini. The tag table is assembled at
+      RUNTIME from several sources and only the running editor knows the result - which is
+      exactly why this is bridge work and not file reading.
       REOPENED - declined on DDS2 having no DefaultGameplayTags.ini and the plugin disabled. That is a fact about DDS2, not about UE5; GameplayTags are standard in modern 5.7 projects. Check Curfew.
       no DefaultGameplayTags.ini, no GameplayTags settings in DefaultEngine.ini or DefaultGame.ini,
       the plugin is not enabled, and DDS2_GameMode has 0 GameplayTag-typed variables out of 50. What

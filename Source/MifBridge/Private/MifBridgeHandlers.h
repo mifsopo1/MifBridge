@@ -1345,6 +1345,10 @@ namespace MifBridge
 	 *  world'), reopened 2026-08-27 - Curfew is a city builder on 5.7. */
 	/** Live Coding. live_coding_status answers the question that cost this project real time:
 	 *  is something holding the editor's DLLs, so an external build will silently do nothing? */
+	/** Gameplay tags. Bridge-only work: the tag table is ASSEMBLED AT RUNTIME from ini files and
+	 *  native registration, so reading DefaultGameplayTags.ini tells you one input, not the answer. */
+	MIF_DECL(list_gameplay_tags);
+	MIF_DECL(describe_gameplay_tag);
 	MIF_DECL(live_coding_status);
 	MIF_DECL(live_coding_compile);
 	MIF_DECL(list_pcg_graphs);

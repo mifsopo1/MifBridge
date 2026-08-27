@@ -2614,6 +2614,18 @@ def list_sockets(path: str) -> dict:
 
 
 @mcp.tool()
+def list_gameplay_tags(filter: str = None, only_explicit: bool = True, limit: int = 0) -> dict:
+    "Every gameplay tag REGISTERED IN THE RUNNING EDITOR. This is not the same as reading DefaultGameplayTags.ini: the tag table is assembled at runtime from ini files, other config, and native UE_DEFINE_GAMEPLAY_TAG registration in C++ and plugins - so the ini is one input, not the answer. DDS2 has no tag ini at all and still registers 7 tags, all from EnhancedInput. only_explicit excludes tags that exist only as implied parents (asking for Ability.Melee.Heavy implies Ability and Ability.Melee); including them roughly doubles the list with entries nobody declared. matched is the true total even when limit truncates. An empty result is a normal state - the project simply does not use tags - and says so."
+    return _post("list_gameplay_tags", filter=filter, onlyExplicit=only_explicit, limit=limit)
+
+
+@mcp.tool()
+def describe_gameplay_tag(tag: str) -> dict:
+    "One gameplay tag: whether it exists, its parent chain, its direct children. A tag that does NOT exist returns ok:true with exists:false rather than an error - 'does this tag exist' answered with 'no' is a successful call, and it does not log an editor error either. Note a tag present in source can still be absent here if its ini or module did not load."
+    return _post("describe_gameplay_tag", tag=tag)
+
+
+@mcp.tool()
 def live_coding_status() -> dict:
     "Whether Live Coding is running in this editor, and CRUCIALLY whether it is holding the editor's DLLs. Check blocksBuilds BEFORE running an external build: when Live Coding has started it holds the binaries, and Build.bat has been observed REPORTING SUCCESS while changing nothing - a sub-second 'success' is the tell. Also reports started, enabledForSession, canEnableForSession and compiling. available:false means the module was never loaded this session, which is normal and means nothing is holding the DLLs."
     return _post("live_coding_status")
