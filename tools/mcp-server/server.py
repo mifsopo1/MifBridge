@@ -2526,6 +2526,14 @@ def remove_actor_from_data_layer(actor_path: str, name: str) -> dict:
 
 
 @mcp.tool()
+def list_foliage_instances(foliage_type: str = None, include_instances: bool = False,
+                           limit: int = 200) -> dict:
+    "Enumerate the foliage in the open level, by TYPE. This is the read half of add_foliage_instances, which could place foliage while nothing could enumerate it - so a placement could not be verified even in principle. Foliage is not one actor per instance: it lives in the level's AInstancedFoliageActor keyed by foliage type, so filter on foliageType, not on a mesh or an actor path. include_instances adds per-instance transforms (off by default because a painted level has tens of thousands); instanceCount is the TRUE total even when the listing is truncated. THE COOKED CAVEAT MATTERS HERE: placed-instance data is editor-only, so a COOKED level carries its foliage as baked component data and can report types with zero instances while visibly full of foliage - the response says so explicitly rather than leaving a zero to be misread. A level that never had foliage reports no InstancedFoliageActor at all, which is a different state again, and this read will not create one to find out."
+    return _post("list_foliage_instances", foliageType=foliage_type,
+                 includeInstances=include_instances, limit=limit)
+
+
+@mcp.tool()
 def list_ik_rig(path: str) -> dict:
     """Read an IKRigDefinition AND check whether it would actually work.
 

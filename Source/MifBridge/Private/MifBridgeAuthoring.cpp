@@ -1294,4 +1294,147 @@ namespace MifBridge
 				 "place into the level's real foliage."));
 		UE_LOG(LogMifBridge, Log, TEXT("add_foliage_instances: %d instances of %s"), Added, *Mesh->GetName());
 	}
+
+	// --- list_foliage_instances -----------------------------------------------------------------
+	//   in:  { foliageType? = "" (path filter), includeInstances? = false, limit? = 200 }
+	//   out: { types[{ foliageType, mesh, instanceCount, instances?[{x,y,z,pitch,yaw,roll,scale}] }],
+	//          typeCount, instanceCount, editorDataAvailable }
+	// Bucket: read-only.
+	//
+	// WHY THIS EXISTS. add_foliage_instances could place foliage and NOTHING could enumerate it, so a
+	// placement could not be verified even in principle. This project's central rule is that a
+	// mutation without a read-back is not done - and here the missing read-back was structural rather
+	// than one handler forgetting. A whole subsystem was write-only.
+	//
+	// Verified in BOTH trees, and this family is unusually stable - the declarations are at the SAME
+	// LINE NUMBERS in each:
+	//   AInstancedFoliageActor::ForEachFoliageInfo   5.3 :46   5.7 :46
+	//   AInstancedFoliageActor::GetFoliageInfos      5.3 :47   5.7 :47
+	//   FFoliageInfo::Instances                      5.3 :283  5.7 :283
+	void H_list_foliage_instances(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("foliageType"), TEXT("type"), TEXT("includeInstances"), TEXT("limit") },
+			TEXT("foliageType (alias: type) - substring matched against the foliage type path; "
+				 "includeInstances (default false - counts only); limit (default 200, per type)"),
+			{ { TEXT("actorPath"), TEXT("foliage is not an actor per instance - it lives in the level's AInstancedFoliageActor, keyed by foliage TYPE") },
+			  { TEXT("mesh"), TEXT("filter on foliageType; the mesh is reported for each type but is not the key") } }))
+		{
+			return;
+		}
+
+		UWorld* World = EditorWorld();
+		if (!World) { Fail(Out, TEXT("no editor world is open")); return; }
+
+		const FString WantType = JStrAny(In, { TEXT("foliageType"), TEXT("type") });
+		const bool bIncludeInstances = JBool(In, TEXT("includeInstances"), false);
+		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 200), 1, 20000);
+
+		// bCreateIfNone FALSE, unlike the write path. A read must not bring an actor into existence -
+		// asking "is there any foliage" would otherwise create the actor that answers "no", dirtying
+		// the level as a side effect of a question.
+		AInstancedFoliageActor* IFA =
+			AInstancedFoliageActor::GetInstancedFoliageActorForCurrentLevel(World, /*bCreateIfNone=*/false);
+		if (!IFA)
+		{
+			Out->SetArrayField(TEXT("types"), TArray<TSharedPtr<FJsonValue>>());
+			Out->SetNumberField(TEXT("typeCount"), 0);
+			Out->SetNumberField(TEXT("instanceCount"), 0);
+			Out->SetStringField(TEXT("note"),
+				TEXT("this level has no InstancedFoliageActor at all, so it has never had foliage "
+					 "painted or placed. That is a different state from 'an actor exists with zero "
+					 "instances', and this read deliberately does not create one to find out."));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Types;
+		int32 TotalInstances = 0;
+		int32 Considered = 0;
+
+		IFA->ForEachFoliageInfo([&](UFoliageType* FoliageType, FFoliageInfo& Info) -> bool
+		{
+			if (!FoliageType) { return true; }
+			++Considered;
+			const FString TypePath = FoliageType->GetPathName();
+			if (!WantType.IsEmpty() && !TypePath.Contains(WantType)) { return true; }
+
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("foliageType"), TypePath);
+			if (UStaticMesh* Mesh = FoliageType->GetStaticMesh())
+			{
+				J->SetStringField(TEXT("mesh"), Mesh->GetPathName());
+			}
+
+#if WITH_EDITORONLY_DATA
+			const int32 Count = Info.Instances.Num();
+			J->SetNumberField(TEXT("instanceCount"), Count);
+			TotalInstances += Count;
+
+			if (bIncludeInstances)
+			{
+				TArray<TSharedPtr<FJsonValue>> Arr;
+				const int32 Take = FMath::Min(Count, Limit);
+				for (int32 i = 0; i < Take; ++i)
+				{
+					const FFoliageInstance& Inst = Info.Instances[i];
+					TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+					P->SetNumberField(TEXT("x"), Inst.Location.X);
+					P->SetNumberField(TEXT("y"), Inst.Location.Y);
+					P->SetNumberField(TEXT("z"), Inst.Location.Z);
+					P->SetNumberField(TEXT("pitch"), Inst.Rotation.Pitch);
+					P->SetNumberField(TEXT("yaw"), Inst.Rotation.Yaw);
+					P->SetNumberField(TEXT("roll"), Inst.Rotation.Roll);
+					// DrawScale3D is FVector3f - float, not double. Widened here rather than losing
+					// the distinction silently in JSON.
+					P->SetNumberField(TEXT("scaleX"), (double)Inst.DrawScale3D.X);
+					P->SetNumberField(TEXT("scaleY"), (double)Inst.DrawScale3D.Y);
+					P->SetNumberField(TEXT("scaleZ"), (double)Inst.DrawScale3D.Z);
+					P->SetNumberField(TEXT("zOffset"), Inst.ZOffset);
+					Arr.Add(MakeShared<FJsonValueObject>(P));
+				}
+				J->SetArrayField(TEXT("instances"), Arr);
+				if (Take < Count)
+				{
+					J->SetBoolField(TEXT("instancesTruncated"), true);
+					J->SetStringField(TEXT("instancesNote"), FString::Printf(
+						TEXT("%d of %d instances listed - raise limit to see more. instanceCount is "
+							 "the TRUE total either way."), Take, Count));
+				}
+			}
+#else
+			// The editor-only array is where PLACED instances live. Without it there is no honest
+			// count to give, and reporting 0 would be a lie shaped exactly like an empty level.
+			J->SetStringField(TEXT("instanceCountNote"),
+				TEXT("this build has no WITH_EDITORONLY_DATA, so FFoliageInfo::Instances does not "
+					 "exist and instances cannot be counted."));
+#endif
+			Types.Add(MakeShared<FJsonValueObject>(J));
+			return true;
+		});
+
+		Out->SetArrayField(TEXT("types"), Types);
+		Out->SetNumberField(TEXT("typeCount"), Types.Num());
+		Out->SetNumberField(TEXT("totalTypesInLevel"), Considered);
+		Out->SetNumberField(TEXT("instanceCount"), TotalInstances);
+#if WITH_EDITORONLY_DATA
+		Out->SetBoolField(TEXT("editorDataAvailable"), true);
+#else
+		Out->SetBoolField(TEXT("editorDataAvailable"), false);
+#endif
+		// COOKED LEVELS ARE THE CAVEAT WORTH STATING. Placed-instance data is editor-only; a cooked
+		// level keeps its foliage as baked component data and the editor array can be empty while the
+		// world visibly has foliage in it. Reporting 0 without saying this would be the same
+		// silent-success shape this endpoint exists to close.
+		if (TotalInstances == 0 && Considered > 0)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("foliage TYPES are present and zero instances were counted. On a COOKED level "
+					 "that is expected rather than wrong: placed-instance data is editor-only and a "
+					 "cooked level carries its foliage as baked component data instead. Visible "
+					 "foliage with a zero count here means exactly that."));
+		}
+		UE_LOG(LogMifBridge, Log, TEXT("list_foliage_instances: %d type(s), %d instance(s)"),
+			Types.Num(), TotalInstances);
+	}
+
 }

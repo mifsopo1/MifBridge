@@ -1487,7 +1487,16 @@ Use self_audit for the count; it asks the running DLL.
       edit one. This is also what the competitor's diagram viewer renders, so the read side already
       feeds a panel tab if we want one.
 
-- [ ] **Foliage is the INVERSE gap - 1 write, 0 reads.**
+- [x] **Foliage is the INVERSE gap - 1 write, 0 reads.**
+      Done 2026-08-27: list_foliage_instances. Enumerates by TYPE through ForEachFoliageInfo, which
+      is at the SAME LINE in both trees (:46) - an unusually stable corner of the engine.
+      Two decisions worth keeping. bCreateIfNone is FALSE, unlike the write path: asking whether a
+      level has foliage must not CREATE the actor that answers no, dirtying the level as a side
+      effect of a question. And placed-instance data is WITH_EDITORONLY_DATA, so a cooked level can
+      report types with zero instances while visibly full of foliage - the response says that
+      outright, because a bare zero there is the same silent-success shape the endpoint exists to
+      close.
+      SOURCE ONLY - not built; the editor is mid-sweep.
       add_foliage_instances can place instances and nothing can enumerate them. A write with no
       read-back is the exact shape this project keeps filing bugs about, and here it is structural:
       there is no endpoint that could verify a foliage placement even in principle.

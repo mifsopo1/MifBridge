@@ -1168,6 +1168,9 @@ namespace MifBridge
 	MIF_DECL(create_material_instance);
 	MIF_DECL(set_material_parameter);
 	MIF_DECL(add_foliage_instances);
+	/** The READ half. add_foliage_instances could place foliage and nothing could enumerate it, so a
+	 *  placement could not be verified even in principle - a whole write-only subsystem. */
+	MIF_DECL(list_foliage_instances);
 
 	// LANDSCAPE authoring (MifBridgeLandscape.cpp) — real terrain, not a stretched plane.
 	// Every argument is in WORLD units; the vertex-space conversion lives inside the handlers.

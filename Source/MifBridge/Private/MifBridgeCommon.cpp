@@ -235,6 +235,7 @@ namespace MifBridge
 			MIF_BIND(create_material_instance);
 			MIF_BIND(set_material_parameter);
 			MIF_BIND(add_foliage_instances);
+			MIF_BIND(list_foliage_instances);
 			// Landscape authoring
 			MIF_BIND(create_landscape);
 			MIF_BIND(sculpt_landscape);
