@@ -43,6 +43,8 @@
 // EWidgetUpdateFlags::NeedsTick and does not keep Slate awake; an active timer does.
 
 #include "MifBridgeHandlers.h"
+#include "Styling/CoreStyle.h"
+#include "Widgets/Input/SComboBox.h"
 #include "MifBridge.h"
 #include "MifBridgeLog.h"
 
@@ -325,11 +327,11 @@ public:
 							]
 							+ SHorizontalBox::Slot().FillWidth(1.f)
 							[
-								// The safety gate, on screen. Andre's rule is that the bridge does not
-								// save; this is where you can SEE that it cannot.
-								MifStat(LOCTEXT("SMode", "WRITE MODE"),
-									TAttribute<FText>(this, &SMifBridgePanel::GetWriteMode),
-									TAttribute<FSlateColor>(this, &SMifBridgePanel::GetWriteModeColour))
+								// The safety gate, on screen AND changeable. It used to be a read-only
+								// pill; Andre asked for a dropdown so the mode is not an environment
+								// variable plus a restart. See BuildWriteModeControl for why exposing
+								// it does not hand an agent the key to its own gate.
+								BuildWriteModeControl()
 							]
 							+ SHorizontalBox::Slot().FillWidth(1.f)
 							[
@@ -767,6 +769,110 @@ private:
 		const FMifBridgeModule* M = Mod();
 		return FSlateColor((M && M->IsRunning()) ? MifPanel::Live : MifPanel::Failed);
 	}
+
+	// --- the write-mode control -----------------------------------------------------------------
+	//
+	// Andre: "make it a drop down toggleable". Before this the mode was MIF_BRIDGE_WRITE_MODE plus a
+	// restart, and that cost two people an evening each - the variable is read ONCE at startup, so a
+	// value set in a shell dies with the shell, setx does not touch a running editor, and the mode is
+	// cached for the process lifetime. Three traps stacked, and all three look identical from here:
+	// "it still says scratch".
+	//
+	// WHY THIS IS SAFE TO EXPOSE, which is not obvious and was worth designing rather than assuming.
+	//
+	// The rule the gate rests on is that an agent must not be able to unlock it. That rule is about
+	// the BRIDGE, not about the human at the keyboard - and this control is only reachable by a human
+	// at the keyboard, for three independent reasons:
+	//
+	//   1. It is a PLAIN SLATE WIDGET with a direct lambda. It is deliberately NOT an FUICommandInfo
+	//      and NOT a UToolMenus entry, because invoke_editor_command executes exactly those. Anything
+	//      registered in a command namespace is addressable by name over the bridge; this is not.
+	//   2. send_editor_key is now on the unsafe list, so an agent in scratch mode cannot deliver
+	//      keystrokes at all and therefore cannot drive a focused combo box with arrow keys.
+	//   3. SetWriteModeFromPanel refuses to RAISE the mode while any bridge call is on the stack. That
+	//      closes the case nobody enumerates: an endpoint that pumps Slate - a slow-task dialog, say -
+	//      dispatching a click into this control while its own call is still running.
+	//
+	// The third is the one that does not depend on anyone having listed the routes correctly, which
+	// matters because that enumeration has been wrong three times in one night.
+	//
+	// LOWERING is always permitted, including mid-call. Making the gate stricter is never the
+	// dangerous direction, and someone reaching for 'scratch' during an operation is trying to stop
+	// something.
+	TSharedRef<SWidget> BuildWriteModeControl()
+	{
+		ModeOptions.Empty();
+		ModeOptions.Add(MakeShared<FString>(TEXT("read")));
+		ModeOptions.Add(MakeShared<FString>(TEXT("scratch")));
+		ModeOptions.Add(MakeShared<FString>(TEXT("full")));
+
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(STextBlock)
+					.Text(LOCTEXT("SModeLbl", "WRITE MODE"))
+					.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
+					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 7))
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f, 0.f, 0.f)
+			[
+				SAssignNew(ModeCombo, SComboBox<TSharedPtr<FString>>)
+					.OptionsSource(&ModeOptions)
+					.OnGenerateWidget_Lambda([](TSharedPtr<FString> In)
+					{
+						return SNew(STextBlock).Text(FText::FromString(In.IsValid() ? *In : FString()));
+					})
+					.OnSelectionChanged(this, &SMifBridgePanel::OnWriteModePicked)
+					.ToolTipText(LOCTEXT("SModeTip",
+						"Change the safety gate without restarting.\n\n"
+						"scratch (default) - assets and graphs can be edited in memory, but saving, "
+						"PIE, console execution and level loading are refused.\n"
+						"full - nothing is refused.\n"
+						"read - as scratch today; the per-endpoint read/write split is unfinished.\n\n"
+						"This control is in the EDITOR and is not reachable over the bridge - an agent "
+						"cannot unlock its own gate. Raising the mode is refused while a bridge call is "
+						"mid-flight; lowering it is always allowed."))
+					[
+						SNew(STextBlock)
+							.Text(this, &SMifBridgePanel::GetWriteMode)
+							.ColorAndOpacity(this, &SMifBridgePanel::GetWriteModeColour)
+							.Font(FCoreStyle::GetDefaultFontStyle("Bold", 9))
+					]
+			];
+	}
+
+	void OnWriteModePicked(TSharedPtr<FString> Picked, ESelectInfo::Type Info)
+	{
+		// Direct means "a human clicked or used the keyboard in this widget". A programmatic
+		// SetSelectedItem arrives as ESelectInfo::Direct too, which is why the depth guard below is
+		// the real control rather than this check - but ignoring OnMouseClick-less notifications
+		// still avoids acting on a rebuild setting the initial selection.
+		if (!Picked.IsValid() || Info == ESelectInfo::Direct)
+		{
+			return;
+		}
+		MifBridge::EMifWriteMode Wanted = MifBridge::EMifWriteMode::Scratch;
+		if (*Picked == TEXT("full")) { Wanted = MifBridge::EMifWriteMode::Full; }
+		else if (*Picked == TEXT("read")) { Wanted = MifBridge::EMifWriteMode::Read; }
+
+		FString Refusal;
+		if (!MifBridge::SetWriteModeFromPanel(Wanted, Refusal))
+		{
+			ModeRefusal = Refusal;
+			return;
+		}
+		ModeRefusal.Reset();
+	}
+
+	FText GetModeRefusal() const { return FText::FromString(ModeRefusal); }
+	EVisibility GetModeRefusalVisibility() const
+	{
+		return ModeRefusal.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible;
+	}
+
+	TArray<TSharedPtr<FString>> ModeOptions;
+	TSharedPtr<SComboBox<TSharedPtr<FString>>> ModeCombo;
+	FString ModeRefusal;
 
 	FText GetWriteMode() const
 	{

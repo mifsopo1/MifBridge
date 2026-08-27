@@ -1510,7 +1510,8 @@ He asked about four things after showing competitor screenshots. I answered all 
 none of them in the spec, and then omitted one from a status summary a day later - which is exactly
 what an untracked item does. Tracked now.
 
-- [ ] **Write-mode dropdown in the panel.**
+- [x] **Write-mode dropdown in the panel.**
+      DONE 2026-08-27 - built, and the gate verified live afterwards (test_safety_gate 47/47).
       Designed (workflow wf_3c814b5e-5a8), NOT built. The design is sound and the blocker that made
       it pointless is now gone: run_console_captured was reaching UEngine::Exec ungated, so an agent
       in scratch could already do everything full permits and a lock on the toggle was decorative.

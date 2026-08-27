@@ -54,6 +54,7 @@
 
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
+#include <atomic>   // the mode is now runtime-mutable; see GetWriteMode
 
 #include "HAL/PlatformMisc.h"
 
@@ -162,10 +163,102 @@ namespace MifBridge
 
 	// Read once. Immutable for the process lifetime, on purpose: see the header comment on why this
 	// cannot be a CVar or a settable endpoint.
+	// THE MODE IS RUNTIME-MUTABLE NOW, AND IT STILL HAS NO NAME.
+	//
+	// Andre asked for a dropdown in the panel so the mode is not an environment variable plus a
+	// restart. That means it can no longer be a read-once static - but making it settable is exactly
+	// where a gate stops being a gate, so the property that has to survive is this one:
+	//
+	//   EVERY write primitive this bridge exposes addresses its target BY NAME - a property path, a
+	//   cvar name, a console command, an endpoint name. The write mode has no name. It is a file-local
+	//   atomic in an anonymous namespace with no FProperty, no UObject outer, no IConsoleVariable and
+	//   no FAutoConsoleCommand. There is nothing to address.
+	//
+	// That is a stronger claim than "no endpoint sets it", because it does not require anyone to have
+	// enumerated the endpoints correctly - which is precisely the enumeration that was wrong three
+	// times tonight.
+	namespace
+	{
+		// -1 means "not read from the environment yet". Read once, then owned by the panel.
+		std::atomic<int8> GModeCache{ -1 };
+
+		// How many bridge calls are on the stack. See SetWriteModeFromPanel.
+		std::atomic<int32> GBridgeCallDepth{ 0 };
+	}
+
 	EMifWriteMode GetWriteMode()
 	{
-		static const EMifWriteMode Mode = ReadModeFromEnvironment();
-		return Mode;
+		const int8 Cached = GModeCache.load(std::memory_order_relaxed);
+		if (Cached >= 0)
+		{
+			return static_cast<EMifWriteMode>(Cached);
+		}
+		const EMifWriteMode FromEnv = ReadModeFromEnvironment();
+		// Benign race: two threads may both read the environment and store the same answer.
+		GModeCache.store(static_cast<int8>(FromEnv), std::memory_order_relaxed);
+		return FromEnv;
+	}
+
+	FMifBridgeCallScope::FMifBridgeCallScope()
+	{
+		GBridgeCallDepth.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	FMifBridgeCallScope::~FMifBridgeCallScope()
+	{
+		GBridgeCallDepth.fetch_sub(1, std::memory_order_relaxed);
+	}
+
+	/** Raise or lower the write mode from the in-editor panel. NOT reachable over the bridge - it is
+	 *  not an endpoint, not a cvar and not a UI command, so nothing that takes a NAME can reach it.
+	 *
+	 *  The depth check is the guard that does not depend on anyone having enumerated the routes. A
+	 *  handler can pump Slate without meaning to: several endpoints open a slow-task dialog with
+	 *  MakeDialog(true), and a pumped message loop can dispatch a click into this very widget while a
+	 *  bridge call is still on the stack. So while ANY call is executing, the mode cannot be RAISED.
+	 *
+	 *  Lowering is always allowed. Making the gate stricter is never the dangerous direction, and a
+	 *  human reaching for 'scratch' mid-operation is someone trying to stop something. */
+	bool SetWriteModeFromPanel(EMifWriteMode Wanted, FString& OutRefusal)
+	{
+		const EMifWriteMode Current = GetWriteMode();
+		if (Wanted == Current)
+		{
+			return true;
+		}
+		const bool bRaising = static_cast<uint8>(Wanted) > static_cast<uint8>(Current);
+		if (bRaising && GBridgeCallDepth.load(std::memory_order_relaxed) > 0)
+		{
+			OutRefusal = TEXT("a bridge call is currently executing, so the write mode cannot be "
+							  "raised right now. This is deliberate: an endpoint that pumps Slate - a "
+							  "slow-task dialog, for instance - could otherwise dispatch a click into "
+							  "this control while its own call is still on the stack. Try again once "
+							  "the bridge is idle.");
+			UE_LOG(LogMifBridge, Warning,
+				TEXT("MifBridge: refused a panel write-mode RAISE to '%s' - %d bridge call(s) on the stack."),
+				WriteModeName(Wanted), GBridgeCallDepth.load(std::memory_order_relaxed));
+			return false;
+		}
+
+		GModeCache.store(static_cast<int8>(Wanted), std::memory_order_relaxed);
+		// Loudly, and at Warning for a raise. Whoever reads this log afterwards wondering how a save
+		// happened deserves to find the moment the gate opened.
+		// Two calls rather than a ternary: UE_LOG's verbosity must be a compile-time constant, so
+		// `bRaising ? Warning : Log` is a C2131 rather than the concise thing it looks like.
+		if (bRaising)
+		{
+			UE_LOG(LogMifBridge, Warning,
+				TEXT("MifBridge: write mode RAISED from '%s' to '%s' FROM THE EDITOR PANEL. The safety "
+					 "gate is now looser than it was."),
+				WriteModeName(Current), WriteModeName(Wanted));
+		}
+		else
+		{
+			UE_LOG(LogMifBridge, Log,
+				TEXT("MifBridge: write mode lowered from '%s' to '%s' from the editor panel."),
+				WriteModeName(Current), WriteModeName(Wanted));
+		}
+		return true;
 	}
 
 	const TCHAR* WriteModeName(EMifWriteMode Mode)

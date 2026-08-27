@@ -176,7 +176,7 @@ def main():
     # is written, without anyone remembering to update a list.
     print("")
     print("=== T636: EVERY endpoint that reaches UEngine::Exec is gated ===")
-    import os, re
+    import io, os, re
     PRIV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "Source", "MifBridge", "Private")
     exec_eps = set()
@@ -203,9 +203,25 @@ def main():
     else:
         for ep in sorted(exec_eps):
             r = M.call(ep, {"command": "stat none"})
-            check("T636 %s is gated" % ep, r.get("refusedBy") == "safety-gate",
-                  "ok=%s refusedBy=%r - it reaches UEngine::Exec and the gate did not stop it"
-                  % (r.get("ok"), r.get("refusedBy")))
+            # mifaudit has its OWN deny list and it shadows the gate: run_console never reaches the
+            # bridge from this harness, so the response says "denied by harness" and refusedBy is
+            # absent. That is the test harness protecting the editor, not the gate failing - but it
+            # means the gate is UNOBSERVABLE for those endpoints by a direct call.
+            #
+            # So ask through batch instead. batch is not on the harness deny list, it reaches the
+            # bridge, and it hits the same RefuseIfGated - which is exactly the second dispatcher T634
+            # exists to cover. Asking the question a second way is what makes the answer worth having.
+            if "denied by harness" in (r.get("error") or ""):
+                w = M.call("batch", {"ops": [{"op": ep, "command": "stat none"}]})
+                inner = (w.get("results") or [{}])[0]
+                check("T636 %s is gated (observed through batch)" % ep,
+                      inner.get("refusedBy") == "safety-gate",
+                      "the harness blocks it directly; through batch it gave refusedBy=%r - %s"
+                      % (inner.get("refusedBy"), json.dumps(inner)[:120]))
+            else:
+                check("T636 %s is gated" % ep, r.get("refusedBy") == "safety-gate",
+                      "ok=%s refusedBy=%r - it reaches UEngine::Exec and the gate did not stop it"
+                      % (r.get("ok"), r.get("refusedBy")))
     # ------------------------------------------------------------------ T635 the UI side doors
     # The gate refuses save_package. Until 2026-08-26 it permitted send_editor_key, which delivers a
     # real key event to whatever has focus - and Ctrl+S in a level editor is Save. It also permitted

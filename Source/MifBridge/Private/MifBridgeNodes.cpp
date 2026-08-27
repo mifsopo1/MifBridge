@@ -2417,6 +2417,10 @@ namespace MifBridge
 		TSet<UBlueprint*> Touched;
 		bool bAllOk = true;
 
+		// batch is the SECOND dispatcher, so it marks the call stack too. Every guard this project has
+		// added at one dispatcher and not the other has turned out to be a hole - three times tonight.
+		FMifBridgeCallScope MifCallScope;
+
 		const TMap<FString, FHandlerFn>& Registry = Handlers();
 
 		// All op mutations are captured in ONE transaction (one Ctrl-Z). It closes BEFORE

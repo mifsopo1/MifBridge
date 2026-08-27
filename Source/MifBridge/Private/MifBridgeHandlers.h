@@ -64,6 +64,19 @@ namespace MifBridge
 	enum class EMifWriteMode : uint8 { Read, Scratch, Full };
 	EMifWriteMode GetWriteMode();
 	const TCHAR* WriteModeName(EMifWriteMode Mode);
+	/** Set the mode from the in-editor PANEL. Declaring it here does not make it reachable: endpoints
+	 *  are reached by NAME through the registry and this is not registered, so there is nothing to
+	 *  address. Returns false with a reason if a bridge call is mid-flight and the mode is being
+	 *  RAISED - see the comment on the definition. */
+	bool SetWriteModeFromPanel(EMifWriteMode Wanted, FString& OutRefusal);
+
+	/** RAII marker for "a bridge call is on the stack". Constructed by both dispatchers.
+	 *  SetWriteModeFromPanel refuses to loosen the gate while any of these is alive. */
+	struct FMifBridgeCallScope
+	{
+		FMifBridgeCallScope();
+		~FMifBridgeCallScope();
+	};
 	bool IsUnsafeEndpoint(const FString& Endpoint);
 	/** True when the endpoint must not run; fills Out with a refusal saying why and how to unlock. */
 	bool RefuseIfGated(const FString& Endpoint, const TSharedRef<FJsonObject>& Out);

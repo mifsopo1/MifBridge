@@ -1237,6 +1237,12 @@ namespace MifBridge
 		// out of Handlers()/FindExternalHandler (MifBridgeNodes.cpp:2462, :2490) and does NOT recurse
 		// through RunEndpoint, so those ops do not pass this line. `batch` itself does. Closing that
 		// properly is filed follow-up work.
+		// Marks "a bridge call is on the stack" for the whole handler, INCLUDING anything it pumps.
+		// The panel's write-mode control refuses to RAISE the gate while this is alive, so an endpoint
+		// that opens a slow-task dialog cannot have its pumped message loop dispatch a click into that
+		// control mid-call. Costs an atomic increment.
+		FMifBridgeCallScope MifCallScope;
+
 		if (RefuseIfGated(Endpoint, Out))
 		{
 			return;
