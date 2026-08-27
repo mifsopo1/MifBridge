@@ -2614,6 +2614,18 @@ def list_sockets(path: str) -> dict:
 
 
 @mcp.tool()
+def live_coding_status() -> dict:
+    "Whether Live Coding is running in this editor, and CRUCIALLY whether it is holding the editor's DLLs. Check blocksBuilds BEFORE running an external build: when Live Coding has started it holds the binaries, and Build.bat has been observed REPORTING SUCCESS while changing nothing - a sub-second 'success' is the tell. Also reports started, enabledForSession, canEnableForSession and compiling. available:false means the module was never loaded this session, which is normal and means nothing is holding the DLLs."
+    return _post("live_coding_status")
+
+
+@mcp.tool()
+def live_coding_compile(confirm: bool = False) -> dict:
+    "Start a Live Coding compile - it patches newly compiled C++ into the RUNNING editor. Requires confirm=True, because a bad patch can destabilise the process holding unsaved work. This NEVER waits: blocking would take the whole bridge off the air for the length of a compile, and would block the very tick you would need to ask whether it finished. result 'InProgress' means it started - poll live_coding_status until compiling is false, then read the editor's Live Coding console for compiler output. Refuses if Live Coding has not been started (that is a decision for a person at the keyboard) or if a compile is already running."
+    return _post("live_coding_compile", confirm=confirm)
+
+
+@mcp.tool()
 def list_pcg_graphs(path_prefix: str = "/Game/") -> dict:
     "List the project's PCGGraph assets. Asset Registry only - LOADS NOTHING. Check registryStillScanning: at startup a low count can mean 'not finished looking'."
     return _post("list_pcg_graphs", pathPrefix=path_prefix)

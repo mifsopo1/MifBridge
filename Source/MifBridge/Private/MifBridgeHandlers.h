@@ -1343,6 +1343,10 @@ namespace MifBridge
 	/** Read a BehaviorTree's structure. DDS2 has 17 of them and no way to inspect one. */
 	/** PCG. Declined once under the old cooked-only rule ('a DDS2 mod does not regenerate the
 	 *  world'), reopened 2026-08-27 - Curfew is a city builder on 5.7. */
+	/** Live Coding. live_coding_status answers the question that cost this project real time:
+	 *  is something holding the editor's DLLs, so an external build will silently do nothing? */
+	MIF_DECL(live_coding_status);
+	MIF_DECL(live_coding_compile);
 	MIF_DECL(list_pcg_graphs);
 	MIF_DECL(describe_pcg_graph);
 	MIF_DECL(list_pcg_components);

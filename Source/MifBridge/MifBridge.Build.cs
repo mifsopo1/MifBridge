@@ -155,6 +155,22 @@ public class MifBridge : ModuleRules
 		// PCG MOVED between the two engines: Plugins/Experimental/PCG on 5.3, Plugins/PCG on 5.7 after
 		// being promoted out of experimental. AddPluginModules searches AllDirectories, so neither path
 		// is hardcoded - the same reason GameFeatures survived the identical move.
+		// LIVE CODING is an ENGINE module, not a plugin, so AddPluginModules does not apply - it lives
+		// at Source/Developer/Windows/LiveCoding and there is no .uplugin to find. That also means it is
+		// WINDOWS ONLY.
+		//
+		// PrivateIncludePathModuleNames, NOT a link dependency: the code only ever reaches it through
+		// FModuleManager::GetModulePtr, so it needs the header path and no symbols. A platform without
+		// the module then gives a null pointer and a named refusal instead of a link error.
+		bool bHasLiveCoding = System.IO.File.Exists(System.IO.Path.Combine(
+			EngineDirectory, "Source", "Developer", "Windows", "LiveCoding", "Public",
+			"ILiveCodingModule.h"));
+		PublicDefinitions.Add("MIF_WITH_LIVECODING=" + (bHasLiveCoding ? "1" : "0"));
+		if (bHasLiveCoding)
+		{
+			PrivateIncludePathModuleNames.Add("LiveCoding");
+		}
+
 		AddPluginModules("MIF_WITH_PCG", "PCG",
 			new string[] { "PCG" });
 		AddPluginModules("MIF_WITH_GAS", "GameplayAbilities",
