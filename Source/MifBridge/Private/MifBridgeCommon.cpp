@@ -320,6 +320,9 @@ namespace MifBridge
 			MIF_BIND(auto_map_retarget_chains);
 			MIF_BIND(set_retarget_chain_mapping);
 			MIF_BIND(list_retarget_chain_mapping);
+			MIF_BIND(list_sequence_bindings);
+			MIF_BIND(add_sequence_possessable);
+			MIF_BIND(add_sequence_track);
 			MIF_BIND(list_state_trees);
 			MIF_BIND(describe_state_tree);
 			MIF_BIND(list_gameplay_tags);

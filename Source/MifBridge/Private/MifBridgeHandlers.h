@@ -1349,6 +1349,11 @@ namespace MifBridge
 	 *  native registration, so reading DefaultGameplayTags.ini tells you one input, not the answer. */
 	/** StateTree - the modern UE5 answer to Behavior Trees. Declined once as 'DDS2 does not use
 	 *  it', which says nothing about any other project. */
+	/** Sequencer authoring. describe_level_sequence reported COUNTS and not what was bound, so
+	 *  the read comes with the write - you cannot add a track to a binding you cannot name. */
+	MIF_DECL(list_sequence_bindings);
+	MIF_DECL(add_sequence_possessable);
+	MIF_DECL(add_sequence_track);
 	MIF_DECL(list_state_trees);
 	MIF_DECL(describe_state_tree);
 	MIF_DECL(list_gameplay_tags);

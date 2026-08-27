@@ -2614,6 +2614,25 @@ def list_sockets(path: str) -> dict:
 
 
 @mcp.tool()
+def list_sequence_bindings(path: str) -> dict:
+    "What a LevelSequence actually binds - guid, name, kind (possessable/spawnable), class, and the tracks on each. describe_level_sequence reports only COUNTS, so this is what you need before authoring: you cannot add a track to a binding you cannot name. classRecorded:false means the binding does not STORE a class - normal for one authored by dragging an actor into the sequencer - not that the class could not be read. Names come from the possessable, since the binding's own name field is deprecated in UE 5.7."
+    return _post("list_sequence_bindings", path=path)
+
+
+@mcp.tool()
+def add_sequence_possessable(path: str, actor_path: str, confirm: bool = False) -> dict:
+    "Bind an actor from the OPEN level into a LevelSequence. Requires confirm=True - it modifies a shared asset. Does TWO things that must both happen: AddPossessable creates the binding slot, and BindPossessableObject attaches the actual actor to it; a sequence with only the first has a binding that resolves to nothing and silently animates nobody. REFUSES if the actor already has a binding, because a duplicate drives the same actor twice and is invisible in a count. Nothing is saved."
+    return _post("add_sequence_possessable", path=path, actorPath=actor_path, confirm=confirm)
+
+
+@mcp.tool()
+def add_sequence_track(path: str, guid: str, track_class: str, confirm: bool = False) -> dict:
+    "Add a track to a binding. guid comes from list_sequence_bindings; track_class is a UMovieSceneTrack class PATH such as /Script/MovieSceneTracks.MovieScene3DTransformTrack. Requires confirm=True. The guid is checked against real bindings first: AddTrack does not validate it, so a stray guid would leave a track in the asset attached to nothing. The new track is EMPTY - it has no sections and animates nothing yet. Nothing is saved."
+    return _post("add_sequence_track", path=path, guid=guid, trackClass=track_class,
+                 confirm=confirm)
+
+
+@mcp.tool()
 def list_state_trees(path_prefix: str = "/Game/") -> dict:
     "List the project's StateTree assets - the modern UE5 alternative to Behavior Trees. Asset Registry only, LOADS NOTHING. Check registryStillScanning."
     return _post("list_state_trees", pathPrefix=path_prefix)

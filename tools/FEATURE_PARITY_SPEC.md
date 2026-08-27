@@ -1070,7 +1070,8 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       it uses instead is FName - the class is full of `name` keys and `name -> X` maps. Building a tag
       surface would have been a whole category nobody would touch. Reaching for FName-keyed lookups is
       already covered by the existing variable and map endpoints.
-- [ ] **PCG** — procedural world generation. A DDS2 mod does not regenerate the world.
+- [x] **PCG** - BUILT 2026-08-27. list_pcg_graphs, describe_pcg_graph, list_pcg_components, pcg_generate, pcg_cleanup.
+      Two separate decline entries existed for PCG, both reopened and both left showing as open work after it was built - which is its own small lesson about editing a spec by pattern rather than reading it. The endpoints are live and verified on 5.3 and 5.7.
       REOPENED, and this is the one the old rule cost most. Declined as 'a DDS2 mod does not regenerate the world'. Curfew is a CITY BUILDER on 5.7 - procedural generation is close to its whole point.
 - [~] **Slate** — Slate is C++ UI. Mods use UMG, which is covered.
 - [~] **Async Tasks** — a Blueprint-graph concern already reachable through the normal node endpoints;
@@ -1085,13 +1086,14 @@ engine has no such class registered in this build, which is as definitive as it 
 - [~] **GAS Abilities / Attribute Sets** — declined. `GameplayAbilities` is not enabled in
       DrugDealerSimulator2.uproject, and `find_assets` cannot even resolve the `GameplayAbility` or
       `AttributeSet` classes. DDS2 does not use GAS, so the entire category is a non-feature here.
-- [ ] **PCG** — declined, now with evidence: `PCGGraph` does not resolve either. Confirms the earlier
+- [x] **PCG** - BUILT 2026-08-27. list_pcg_graphs, describe_pcg_graph, list_pcg_components, pcg_generate, pcg_cleanup.
       REOPENED, and this is the one the old rule cost most. Declined as 'a DDS2 mod does not regenerate the world'. Curfew is a CITY BUILDER on 5.7 - procedural generation is close to its whole point.
       reasoning rather than resting on it.
 - [x] **StateTree** - DONE 2026-08-27. list_state_trees, describe_state_tree.
       DDS2 has 0 StateTree assets, which is exactly what the original decline said and exactly why it was not a reason. MifBridge already read Behavior Trees; a project on StateTree instead would have found the AI half of this bridge simply blank.
       REOPENED - declined as 'DDS2 does not use it'. That is a fact about one test project. StateTree is the modern UE5 answer to Behavior Trees and a 5.7 project may well be on it.
-- [ ] **Sequencer** — declined for now. DDS2 contains exactly **4** LevelSequence assets against 3771
+- [x] **Sequencer** - write half DONE 2026-08-27.
+      list_sequence_bindings, add_sequence_possessable, add_sequence_track. The READ shipped with the write because describe_level_sequence reported only counts - you cannot add a track to a binding you cannot name. Verified against LobbyLevelSequence: 2 possessables, one transform track each.
       REOPENED for the WRITE half - list_level_sequences and describe_level_sequence already exist. Declined on DDS2 having 4 LevelSequence assets, which is evidence about DDS2 only.
       SoundWaves. Cutscene authoring is not what this game is made of, and a mod adding one is a rare
       case. Revisit only if a mod actually needs it; the MovieScene plumbing from the UMG animation
