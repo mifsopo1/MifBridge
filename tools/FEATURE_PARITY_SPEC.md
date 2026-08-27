@@ -2033,13 +2033,31 @@ real result, which is exactly the class of bug the "mutation without a read-back
 Reporter's own phasing is good and is kept as the ordering, split into separate spec lines so this
 cannot become one giant blocking item:
 
-- [ ] **UMG live widget enumeration + geometry inspection (Phase 1-2 of the proposal).** List live
-      UUserWidget instances in a running PIE world/local player, and read back arranged geometry
-      (position, size, clipping, visibility, slot/anchor data) for a selected instance's hierarchy.
-      READ-ONLY. This is the right entry point, not Phase A's isolated renderer - it needs no new
-      rendering path, works with a human driving PIE manually, and answers "why is there a 20px gap"
-      without solving actor-focus/input automation at all. Reuses `start_pie`/`pie_status` for
-      lifecycle; nothing else in the surface today walks a live Slate tree.
+- [x] **UMG live widget enumeration + geometry inspection (Phase 1-2 of the proposal).** DONE
+      2026-08-27. `list_live_widgets` (lightweight enumeration, `GetAllWidgetsOfClass`) +
+      `describe_live_widget` (full geometry tree, `GetCachedGeometry` + recursive descent).
+      READ-ONLY, no MIF_WITH_* gate - `Blueprint/WidgetBlueprintLibrary.h` and `Components/Widget.h`
+      are core UMG, present unconditionally on both engines. Split into two calls rather than one
+      combined endpoint deliberately: enumeration is cheap and answers "what's actually on screen",
+      the tree is the heavier per-widget read a caller opts into for ONE instance at a time.
+      THE TWO-LEVEL DESCENT is the one non-obvious design choice: UMG renders a UUserWidget's own
+      geometry AND its internal `WidgetTree->RootWidget` panel hierarchy as one continuous visual
+      tree, so a nested UUserWidget (exactly QOLCrafting_P's WBP_RecyclerStorage-injected-into-
+      containerHolder shape that motivated this whole proposal) needed BOTH `UPanelWidget` child
+      walking AND descent into any UUserWidget node's own internal content, or the tree would stop
+      at the injection point.
+      VERIFIED LIVE against a real gameplay path, not a synthetic call - this needed an actual PIE
+      session with a widget really on screen, which took building a full throwaway test scenario
+      (GameMode Blueprint, Event BeginPlay -> Create Widget -> Add to Viewport, wired node-by-node
+      through add_create_widget/add_function_call/connect_pins, set as the level's DefaultGameMode
+      via the WorldSettings actor - found at the always-present `...:PersistentLevel.WorldSettings`
+      path when list_level_actors didn't surface it). Confirmed: list_live_widgets found the widget
+      with real screen coordinates (absoluteSize 1280x722, matching actual viewport size) and
+      neverPainted:false; describe_live_widget's tree correctly descended UUserWidget -> its internal
+      CanvasPanel -> the child Border added via add_tree_widget, with correct zOrder/slotClass.
+      NOT DONE: Phases A/B/C below (isolated rendering, declarative composition, the interaction
+      scenario runner) remain unstarted - this closes only the proposal's own recommended starting
+      phase.
 - [ ] **UMG isolated offscreen widget preview (Phase A).** Render one Widget Blueprint class
       transiently via `FWidgetRenderer` (already a linked module) and return pixels + real DPI/size
       facts (`UUserInterfaceSettings::GetDPIScaleBasedOnSize`). Precedent: UMGEditor's own

@@ -3660,6 +3660,19 @@ def add_gameplay_effect_modifier(object_path: str, attribute_set_class: str, att
                  operation=operation, magnitude=magnitude)
 
 
+@mcp.tool()
+def list_live_widgets(net_mode: str = "server", top_level_only: bool = True, class_filter: str = "") -> dict:
+    "List LIVE UUserWidget instances actually on screen right now - not a Widget Blueprint asset's design-time tree (use list_tree_widgets for that). Answers what a runtime CreateWidget() + AddToViewport, or a child injected into a named container at runtime, actually produced. Works against a running PIE world (net_mode: server|client|any, only matters with more than one PIE world) or falls back to the editor world if nothing is playing. top_level_only=True (default) reports widgets added directly to a viewport/player screen; False also reports nested UUserWidget instances. Each entry's geometry is LAST-PAINTED (GetCachedGeometry) - neverPainted:true flags a widget added this same frame that hasn't ticked yet. Pass a result's `path` to describe_live_widget for its full geometry tree."
+    return _post("list_live_widgets", netMode=net_mode, topLevelOnly=top_level_only,
+                 classFilter=class_filter or None)
+
+
+@mcp.tool()
+def describe_live_widget(path: str, max_depth: int = 12) -> dict:
+    "Read the full LIVE geometry tree for one widget instance (path from list_live_widgets) - position, size, visibility and slot info for it and every descendant, recursing through UMG panel children AND through any nested UUserWidget's own internal content (the two levels UMG renders as one continuous hierarchy). This is how to answer 'why is there a 20px gap between these two panels' or 'did the runtime overlay actually get created' without guessing from a screenshot. max_depth (default 12) caps recursion on a pathologically deep UI. path must be a LIVE instance path, not an asset path - it changes across PIE sessions, so re-run list_live_widgets each time."
+    return _post("describe_live_widget", path=path, maxDepth=max_depth)
+
+
 # --------------------------------------------------------------------------
 # BLENDER backend - bl_* tools. These do NOT reach Unreal: they go over the
 # loopback socket to the MifBlender addon (tools/blender-addon/), so they are

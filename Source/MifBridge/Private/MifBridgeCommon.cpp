@@ -443,6 +443,9 @@ namespace MifBridge
 			MIF_BIND(spawn_metahuman_actor);
 			// GameplayAbilities (GAS)
 			MIF_BIND(add_gameplay_effect_modifier);
+			// Live widget instances
+			MIF_BIND(list_live_widgets);
+			MIF_BIND(describe_live_widget);
 #undef MIF_BIND
 		}
 		return Map;
