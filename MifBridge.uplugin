@@ -94,6 +94,11 @@
             "Optional": true
         },
         {
+            "Name": "MetaHumanCharacter",
+            "Enabled": true,
+            "Optional": true
+        },
+        {
             "Name": "PCG",
             "Enabled": true,
             "Optional": true

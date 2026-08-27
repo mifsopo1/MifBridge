@@ -1693,6 +1693,9 @@ namespace MifBridge
 	MIF_DECL(set_cvar);
 	// Variable pin lists (MifBridgeNodePins.cpp) — Sequence / Make Array / Switch / Select.
 	MIF_DECL(add_node_pin);
+	// MetaHuman Character asset creation + preview spawn (MifBridgeMetaHuman.cpp) — MIF_WITH_METAHUMAN.
+	MIF_DECL(create_metahuman_character);
+	MIF_DECL(spawn_metahuman_actor);
 
 #undef MIF_DECL
 }

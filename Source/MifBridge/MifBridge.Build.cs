@@ -198,6 +198,16 @@ public class MifBridge : ModuleRules
 			new string[] { "LevelSnapshots" });
 		AddPluginModules("MIF_WITH_METASOUND", "Metasound",
 			new string[] { "MetasoundEngine" });
+		// ABSENT FROM 5.3.2 ENTIRELY - MetaHuman Creator's plugin is UE 5.6+ only, so on the DDS2
+		// fork this is always 0 and the endpoints compile as refusals. Present on stock 5.7.4.
+		// "EnabledByDefault": false in MetaHumanCharacter.uplugin - that governs whether the PLUGIN
+		// MANAGER auto-loads it for a project that never references it, not whether a build-time
+		// module dependency links and loads it. MifBridge takes a hard PrivateDependencyModuleNames
+		// dependency on MetaHumanCharacterEditor, which makes the OS loader pull in its DLL as an
+		// import of MifBridge.dll regardless of the host .uproject's enabled-plugins list - the same
+		// mechanism every other AddPluginModules entry above already relies on.
+		AddPluginModules("MIF_WITH_METAHUMAN", "MetaHumanCharacter",
+			new string[] { "MetaHumanCharacterEditor", "MetaHumanCharacter" });
 
 		// ---- Blueprint reconstructor: present ONLY in the DDS2 ENGINE FORK ------------------
 		// CompiledBlueprintReconstructor.h lives in Engine/Source/Editor/Kismet/Public and does NOT

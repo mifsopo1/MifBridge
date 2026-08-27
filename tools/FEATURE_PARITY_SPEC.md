@@ -1034,17 +1034,38 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       Reconsider if a case appears that genuinely needs the EDITOR's view of build state.
       REOPENED - declined as 'the mod build is trigger_cook plus pak'. An uncooked 5.7 project has real build configuration.
       covered; there is no per-mod build configuration to edit.
-- [ ] **MetaHuman** - BUILDABLE on 5.7, deferred rather than declined.
-      Checked rather than assumed, and my instinct to decline was wrong: 5.7 ships
-      UMetaHumanCharacterEditorSubsystem with BlueprintCallable UFUNCTIONs for initialization
-      and pipeline assembly. That IS a real editor-only API worth bridging.
-      Two reasons it is not next: the plugin is ABSENT FROM 5.3 entirely, so it needs a
-      MIF_WITH_METAHUMAN guard and can only ever be tested on one engine here; and it is
-      useless without MetaHuman content, which neither test project has.
-      Build it when a project actually uses MetaHumans - the API is there and the shape is
-      the same as the other MIF_WITH_* families.
-      REOPENED - declined as 'not present in DDS2'. Gate it on the plugin being present, the way MIF_WITH_* already gates Niagara and IKRig, rather than on one project not using it.
-      something a mod ships.
+- [x] **MetaHuman** - BUILT 2026-08-27, on Andre's explicit call to build now rather than wait for a
+      project with real content ("build it now anyway").
+      `create_metahuman_character` (mints a UMetaHumanCharacter asset, mirroring Epic's own "New
+      MetaHuman Character" factory - NewObject then the editor subsystem's InitializeMetaHumanCharacter,
+      with IsCharacterValid() read back and FAILED rather than asserted) and `spawn_metahuman_actor`
+      (TryAddObjectToEdit + SpawnMetaHumanActor, the same two calls the MetaHuman Character editor
+      makes on open). MIF_WITH_METAHUMAN guards both, same contract as every other MIF_WITH_* family.
+      NOT compiled-and-never-run: both endpoints were called LIVE against a throwaway UE 5.7 probe
+      editor (stock 5.7.4, MIF_WITH_METAHUMAN=1) - create_metahuman_character returned valid:true for
+      a freshly minted /Game/_MifTest/MH_ProbeTest, and spawn_metahuman_actor produced a real
+      MetaHumanDefaultEditorPipelineActor, independently confirmed present via list_level_actors (not
+      just trusting the write endpoint's own response). Probe project and its DLL deleted after -
+      throwaway, never committed.
+      5.7 build verified through buildcheck.py (three independent signals, not exit code or eyeball) -
+      BUILD OK, UnrealEditor-MifBridge.dll linked. 5.3 (DDS2) build NOT independently re-verified with
+      a real Build.bat run - the live DDS2 editor has Live Coding active, which both blocks an external
+      Build.bat AND has been observed reporting success while changing nothing (live_coding_status's
+      own buildNote), so forcing either risked the running editor's 410 dirty scratch packages for a
+      verification that mostly duplicates what the 5.7 build already proved: MIF_WITH_METAHUMAN
+      correctly resolves to 0 on 5.3 (confirmed by Build.cs's own console line during the blocked
+      attempt: "plugin 'MetaHumanCharacter' not found... its endpoints will compile as
+      unavailable-on-this-engine refusals"), so 5.3 only ever compiles the trivial refusal branch, and
+      the shared MIF_DECL/MIF_BIND registration lines are IDENTICAL to the ones the 5.7 build already
+      compiled clean. Re-run buildcheck.py against a real Build.bat on 5.3 next time the DDS2 editor
+      restarts for an unrelated reason, to close this out properly rather than leave it inferred.
+      A real drift bug was caught and fixed along the way: parity_check.py flagged the new plugin
+      module as linked in Build.cs but undeclared in MifBridge.uplugin - exactly the docs/06 issue
+      17/22 failure mode (module links, fails AT LOAD, error names a different plugin). Added as
+      Optional:true, Enabled:true, matching every other MIF_WITH_* plugin's declaration.
+      Useless in either PROJECT today - neither DDS2 nor Curfew has any MetaHuman content or the
+      plugin enabled - so nothing here has been exercised against a hand-authored character, only
+      against test fixtures this file mints for itself. That is a real, known limit, not a hidden one.
 - [~] **Chaos Vehicles** - declined again 2026-08-27, on EVIDENCE this time.
       The old decline was 'DDS2 has no Chaos vehicle setup', which says nothing about UE5. So I
       checked what there is to bridge, and the answer is nothing: ChaosVehiclesEditor has NO
@@ -1901,3 +1922,54 @@ than one that passes on the intended thing.
 
 The 5.7 probe then caught two more that 5.3 **structurally could not see**, both missing includes.
 That is four separate occasions the probe has caught something reading could not.
+
+## Enhancement proposal received 2026-08-27 (infectedcoolpat-jpg / QOLCrafting_P), split into phases
+
+Sent directly by Andre, not through the bridge-report GitHub queue. Full doc is
+`MifBridge_Proposal_Interaction_Faithful_Composite_UMG_Preview_2026-08-27.txt` (not committed here -
+paste is in the session transcript if it needs re-reading). The real gap it names: nothing today
+enumerates LIVE UUserWidget instances or reads their calculated runtime geometry -
+`list_tree_widgets`/etc. walk the design-time WBP asset tree, not what a runtime `CreateWidget` +
+dynamic-injection composition actually produced. `capture_viewport` is 3D-backbuffer-only.
+`send_editor_key` proves a key was handled, not which gameplay action ran or that it reached the
+intended actor. QOLCrafting_P's Metal Recycler screen is assembled at runtime from a vanilla parent,
+two mod WBPs, and dynamic injection into a named container - no single WBP Designer preview shows the
+real result, which is exactly the class of bug the "mutation without a read-back" rule already covers.
+
+Reporter's own phasing is good and is kept as the ordering, split into separate spec lines so this
+cannot become one giant blocking item:
+
+- [ ] **UMG live widget enumeration + geometry inspection (Phase 1-2 of the proposal).** List live
+      UUserWidget instances in a running PIE world/local player, and read back arranged geometry
+      (position, size, clipping, visibility, slot/anchor data) for a selected instance's hierarchy.
+      READ-ONLY. This is the right entry point, not Phase A's isolated renderer - it needs no new
+      rendering path, works with a human driving PIE manually, and answers "why is there a 20px gap"
+      without solving actor-focus/input automation at all. Reuses `start_pie`/`pie_status` for
+      lifecycle; nothing else in the surface today walks a live Slate tree.
+- [ ] **UMG isolated offscreen widget preview (Phase A).** Render one Widget Blueprint class
+      transiently via `FWidgetRenderer` (already a linked module) and return pixels + real DPI/size
+      facts (`UUserInterfaceSettings::GetDPIScaleBasedOnSize`). Precedent: UMGEditor's own
+      `SWidgetPreview.cpp` does the same for the Designer. Must not save/dirty any package - snapshot
+      dirty-package list before/after, same pattern `list_dirty_packages` already gives.
+- [ ] **UMG declarative composite preview (Phase B).** Recipe-driven transient composition - root
+      widget + N children inserted into named panels/slots, without touching source assets. Useful for
+      QOLCrafting_P's actual architecture (WBP_RecyclerStorage injected into vanilla containerHolder)
+      but still not proof the real interaction path produced it.
+- [ ] **UMG interaction-faithful PIE scenario runner (Phase C) - LARGE, own subsystem, not an
+      endpoint.** Position an actor, wait on the focus system, deliver the real input (F) to the game
+      viewport rather than an editor widget, poll for widget-tree stability with timeouts, capture the
+      full game viewport + geometry. Comparable in size to the water-zone or graph-patch work. NEW
+      hazard class: this drives gameplay Blueprint code (Construct/Tick/bindings) synchronously on the
+      handler thread - an uncaught exception or infinite loop there is the same "modal spins its own
+      loop, bridge stops reading the socket" trap §0 of the bridge manual already warns about, except
+      the offending code is mod-authored, not ours, and `pcall` does not catch native crashes either.
+      Needs a proven timeout-and-report-last-known-state path before running unattended. State machine
+      and failure taxonomy are already well specified in the proposal - reuse them rather than
+      redesigning.
+      NOT ruled out, NOT started. Order: do the first two items first: they deliver value standing
+      alone and de-risk the geometry-reading half before adding actor/input automation on top.
+- [~] **Packaged-runtime capture companion (Phase D)** - declined as proposed, correctly scoped out
+      by the reporter too. MifBridge is Editor-only (Type=Editor in the .uplugin); a packaged-runtime
+      capture path would need a separate opt-in component (UE4SS-side helper, external harness) and is
+      not required for any of the three items above. Revisit only if packaged-runtime automation
+      becomes a broader goal on its own merits, not as a rider on this proposal.

@@ -438,6 +438,9 @@ namespace MifBridge
 			MIF_BIND(set_cvar);
 			// Variable pin lists
 			MIF_BIND(add_node_pin);
+			// MetaHuman Character
+			MIF_BIND(create_metahuman_character);
+			MIF_BIND(spawn_metahuman_actor);
 #undef MIF_BIND
 		}
 		return Map;

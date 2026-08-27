@@ -3632,6 +3632,18 @@ def add_node_pin(graph_id: str, node: str, count: int = 1) -> dict:
     return _post("add_node_pin", graphId=graph_id, node=node, count=count)
 
 
+@mcp.tool()
+def create_metahuman_character(path: str) -> dict:
+    "Create a new UMetaHumanCharacter asset at `path` (/Game/... - must not already exist), with default/archetype identity. Mirrors Epic's own 'New MetaHuman Character' content-browser action: NewObject followed by the editor subsystem's InitializeMetaHumanCharacter, with IsCharacterValid() read back and reported as a failure rather than asserted. UE 5.6+ only - unavailable on engines without the MetaHuman Character plugin (named, not silent). Not saved: follow with save_package or save_dirty_packages. spawn_metahuman_actor spawns a preview actor bound to the result."
+    return _post("create_metahuman_character", path=path)
+
+
+@mcp.tool()
+def spawn_metahuman_actor(character_path: str) -> dict:
+    "Spawn a live preview actor in the open level bound to the UMetaHumanCharacter asset at `character_path`. Calls TryAddObjectToEdit then SpawnMetaHumanActor - the same two calls the MetaHuman Character editor makes on open - and leaves the character registered for editing afterward (editingSessionOpen:true in the response) so the actor keeps reflecting changes; there is no remove-from-edit endpoint yet. UE 5.6+ only. Not saved: the actor is a normal placed actor in the open level."
+    return _post("spawn_metahuman_actor", characterPath=character_path)
+
+
 # --------------------------------------------------------------------------
 # BLENDER backend - bl_* tools. These do NOT reach Unreal: they go over the
 # loopback socket to the MifBlender addon (tools/blender-addon/), so they are
