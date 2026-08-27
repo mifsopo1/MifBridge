@@ -1522,7 +1522,21 @@ docstring warns 9876 is the third-party blender-mcp. Worth confirming when the B
       The question for each is the issue 18 question: if this count comes back ZERO, did the caller
       get what they asked for? Where the answer is no, the endpoint must say so itself.
 
-- [ ] **Does the safety gate cover EXPORT? Andre's call, not mine.**
+- [x] **Does the safety gate cover EXPORT?** - ANSWERED 2026-08-27, with a third option.
+      Neither (a) gate export nor (b) reword the contract. A third option existed and only became
+      visible after checking one fact: export_asset ALREADY defaults to
+      <ProjectSaved>/MifBridge/Export, and the MCP wrapper sends no explicit file - so the
+      Blender round trip uses that default.
+      (c) In a gated mode, an EXPLICITLY NAMED path outside the project directory is refused.
+      The default is inside it, so the pipeline costs nothing and the contract becomes
+      literal again.
+      Verified live: file 'C:/Temp/evil.fbx' refused with refusedRule 'file-outside-project';
+      the default export wrote D:/DDS2SDK/Game/Saved/MifBridge/Export/Sphere.fbx.
+      This is a SMALLER claim than 'the gate covers export' - it covers WHERE output may
+      land, not whether an export may happen, and an FBX in the project's own Saved folder
+      destroys nothing. Andre can still overrule it either way.
+      Not yet applied to capture_viewport, capture_camera, render_thumbnail or
+      backup_blueprint - they write files too and use the same shared guard, filed below.
       Found 2026-08-27, filed as docs/06 issue 21. export_asset WRITES FILES TO DISK and is not on
       the unsafe list, so it writes in scratch mode - overwrite defaults true and it will create the
       directory tree. The gate's stated premise is that nothing reaches disk.
@@ -1659,3 +1673,8 @@ what an untracked item does. Tracked now.
 - [ ] **Control Rig authoring.** Split out of the stale combined decline above. Genuinely not built.
       Re-judge against uncooked 5.7 rather than against cooked modding.
 - [ ] **Vertex animation.** Same - split out, not built, needs judging on the new measuring stick.
+
+- [ ] **Apply RefuseFileOutsideProject to the other file-writing endpoints.** capture_viewport,
+      capture_camera, render_thumbnail and backup_blueprint all write to disk and all accept an
+      explicit path. The shared guard exists and export_asset uses it; the others were left for a
+      separate change rather than bundled in unverified.

@@ -54,6 +54,7 @@
 
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
+#include "Misc/Paths.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/Package.h"
                                      // FCoreUObjectDelegates::OnObjectModified
@@ -281,6 +282,52 @@ namespace MifBridge
 
 	// Returns true when the endpoint must NOT run, and fills Out with a refusal that says why and how
 	// to proceed. A refusal a caller cannot act on is only half an answer.
+	// A DISK PATH a gated session is allowed to write to.
+	//
+	// Andre's open question was "does the safety gate cover EXPORT?", filed because export_asset
+	// WRITES FILES and is not on the unsafe list, while the gate's documented premise is that nothing
+	// reaches disk. Two options were written down: gate export entirely (which kills the Blender mesh
+	// round trip, the whole point of that pipeline) or reword the contract to admit that exports are
+	// not packages.
+	//
+	// A third option turned out to be available, and only because of a fact neither option had:
+	// export_asset ALREADY defaults to <ProjectSaved>/MifBridge/Export, and the MCP wrapper passes no
+	// explicit file, so the Blender pipeline uses that default. Confining a gated session to the
+	// project directory therefore costs the pipeline NOTHING while making the contract literal again.
+	//
+	// So: in a gated mode, an EXPLICITLY NAMED path outside the project is refused. The default path
+	// is inside it and is unaffected. Full mode writes anywhere, which is what full mode means.
+	//
+	// This is a smaller claim than "the gate covers export". It covers WHERE an export may land, not
+	// whether one may happen - and that is the honest line, because an FBX in the project's own Saved
+	// folder destroys nothing.
+	bool RefuseFileOutsideProject(const FString& AbsolutePath, const TSharedRef<FJsonObject>& Out,
+								  const TCHAR* Endpoint)
+	{
+		if (GetWriteMode() == EMifWriteMode::Full) { return false; }
+		if (AbsolutePath.IsEmpty()) { return false; }
+
+		FString Full = FPaths::ConvertRelativePathToFull(AbsolutePath);
+		FPaths::NormalizeFilename(Full);
+		FString Project = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
+		FPaths::NormalizeFilename(Project);
+
+		// StartsWith with case-insensitivity: Windows paths differ in case for the same directory, and
+		// a case-sensitive compare here would refuse legitimate writes on the machine this runs on.
+		if (Full.StartsWith(Project, ESearchCase::IgnoreCase)) { return false; }
+
+		Fail(Out, FString::Printf(
+			TEXT("%s: the safety gate is in '%s' mode, which confines file output to the project "
+				 "directory (%s). '%s' is outside it. OMIT the file parameter to use the default "
+				 "under <ProjectSaved>/MifBridge, which is where the Blender round trip already "
+				 "writes, or restart with MIF_BRIDGE_WRITE_MODE=full to write anywhere. NOTHING was "
+				 "written."),
+			Endpoint, WriteModeName(GetWriteMode()), *Project, *Full));
+		Out->SetStringField(TEXT("refusedBy"), TEXT("safety-gate"));
+		Out->SetStringField(TEXT("refusedRule"), TEXT("file-outside-project"));
+		return true;
+	}
+
 	// =============================================================================================
 	// THE SCRATCH-PATH WATCH: which REAL assets a call dirtied, reported in that call's own response.
 	//

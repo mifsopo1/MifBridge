@@ -84,6 +84,12 @@ namespace MifBridge
 	/** Watches which packages OUTSIDE /Game/_Mif a call dirties, and reports them in that call's own
 	 *  response. DETECTION, not prevention - see the long note in MifBridgeSafety.cpp for why, and
 	 *  for the two engine limitations that make a clean report good evidence rather than a proof. */
+	/** In a gated mode, refuse an EXPLICIT file path outside the project directory. Returns true if
+	 *  it refused (and has already populated Out). The default export path is inside the project, so
+	 *  this costs the Blender round trip nothing. */
+	bool RefuseFileOutsideProject(const FString& AbsolutePath, const TSharedRef<FJsonObject>& Out,
+		const TCHAR* Endpoint);
+
 	class FMifScratchWatch
 	{
 	public:

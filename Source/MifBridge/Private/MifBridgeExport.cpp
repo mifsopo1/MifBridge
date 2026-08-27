@@ -518,6 +518,18 @@ namespace MifBridge
 		FString RequestedFile = JStrAny(In, { TEXT("file"), TEXT("filename"), TEXT("outPath") });
 		RequestedFile.TrimStartAndEndInline();
 
+		// AN EXPLICIT PATH OUTSIDE THE PROJECT IS REFUSED IN A GATED MODE.
+		//
+		// Checked HERE, before any of the format resolution below, so nothing is computed or created
+		// on a path that will not be written. The DEFAULT path is unaffected - it lands under
+		// <ProjectSaved>/MifBridge/Export - which is why this costs the Blender round trip nothing:
+		// that pipeline sends no file parameter at all.
+		if (!RequestedFile.IsEmpty()
+			&& RefuseFileOutsideProject(RequestedFile, Out, TEXT("export_asset")))
+		{
+			return;
+		}
+
 		FString Format = JStrAny(In, { TEXT("format"), TEXT("type"), TEXT("extension") });
 		Format.TrimStartAndEndInline();
 		Format.RemoveFromStart(TEXT("."));
