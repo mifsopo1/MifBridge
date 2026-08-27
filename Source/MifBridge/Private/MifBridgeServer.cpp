@@ -311,7 +311,7 @@ bool FMifBridgeServer::HandleHttp(const FString& Endpoint, const FHttpServerRequ
 	// BEFORE dispatch, and flushed. MIF_DBG above is gated behind a CVar that defaults to false
 	// and goes to UE_LOG, which buffers - so on a normal run neither of those survives a hard
 	// kill. This does. See MifBridgeJournal.cpp for why the ordering is the whole point.
-	MifBridge::JournalCallStart(Endpoint, BodyStr.Len());
+	MifBridge::JournalCallStart(Endpoint, BodyStr);
 
 	// --- Run the endpoint on the game thread, at a tick-safe point ----------
 	//

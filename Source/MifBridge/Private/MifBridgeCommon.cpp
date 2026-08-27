@@ -1931,6 +1931,13 @@ namespace MifBridge
 
 	int32 MifDescribeObservedEndpointCount() { return GMifObservedParamsByEndpoint.Num(); }
 
+	// Built-ins plus provider-registered externals - the same total self_audit reports. Added for the
+	// editor panel, which wants the number without running a whole self_audit to get it.
+	int32 EndpointCount()
+	{
+		return Handlers().Num() + ExternalRegistry().Num();
+	}
+
 	bool RejectUnknownParams(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out,
 		std::initializer_list<const TCHAR*> AcceptedKeys, const TCHAR* AcceptedSummary,
 		std::initializer_list<TPair<const TCHAR*, const TCHAR*>> KeyNotes)

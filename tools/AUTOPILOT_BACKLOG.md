@@ -14,6 +14,59 @@ it off and write one line saying why it was dropped — do not leave it open to 
 
 ## Open
 
+### Project dashboard / brainmap — added 2026-08-26 at Andre's request
+
+Andre sent screenshots of the competitor's Project Dashboard (tabs: Dependency Graph, Complexity
+Heatmap, Asset Distribution, Inheritance Tree, Performance) plus its mermaid-style flow diagrams, and
+asked for the equivalent engine-side, purple-branded. He then said to put it on this backlog rather
+than build it inline.
+
+SPLIT DELIBERATELY INTO DATA AND VISUAL, because they are wildly different sizes. The data endpoints
+are ordinary MifBridge work — read the asset registry, shape JSON, test it. The interactive
+force-directed graph is a large Slate build and is the only part that genuinely needs a session of its
+own. Do the data first: it is independently useful over MCP even with no widget, and every visual is a
+consumer of it.
+
+- [ ] `project_dependency_graph` — nodes and edges for the asset dependency graph. Build on the
+      existing referencer machinery rather than a second traversal (grep get_referencers /
+      get_dependencies first — one of them already walks this). Needs: a root filter or path prefix so
+      it does not return the whole project by default, a depth cap, and a `truncated` flag. The DDS2
+      project has 588 discovered plugins and thousands of assets — an uncapped graph is a hang, and
+      this project's rule is that a cap must always be reported.
+
+- [ ] `project_inheritance_tree` — Blueprint and native class parent/child tree. describe_class
+      already resolves a single class; this is the transitive version. Watch the cooked case: a cooked
+      Blueprint's generated class is present but its editor-only data may not be, and gotchas 6c
+      covers what that costs.
+
+- [ ] `project_asset_distribution` — counts by class, by folder, by size. Pure Asset Registry, so it
+      can be a read that loads nothing (the list_level_sequences pattern). Report
+      `registryStillScanning` for the same reason that one does: a low count during a scan is
+      indistinguishable from a low count.
+
+- [ ] `project_complexity_metrics` — per-Blueprint node count, graph count, function count, variable
+      count, and reference count, so a "heatmap" has something real to colour. Everything needed is
+      already reachable through the existing blueprint reads; this is aggregation, not new engine
+      surface.
+
+- [ ] Performance tab equivalent. The competitor reads Unreal Insights traces. Decide FIRST whether
+      that is worth it here or whether the existing perf endpoints (there is already a
+      test_perf_stats.py) cover enough. This is the item most likely to be worth declining — judge it
+      on value for DDS2 modding, not on matching a feature list.
+
+- [ ] The in-editor dashboard itself: extend MifBridgePanel.cpp with tabs over the endpoints above.
+      Asset distribution renders as bars and the inheritance tree as an STreeView — both are ordinary
+      Slate and worth doing early. The DEPENDENCY GRAPH is the hard one: an interactive
+      force-directed node graph needs SNodePanel/SGraphPanel or a custom OnPaint, and is a session of
+      its own rather than an afternoon. Do not start it until the four data endpoints above are built
+      and tested, because a graph widget with no data source is unverifiable.
+
+- [ ] Mermaid-style flow export. The competitor renders a diagram and offers "Open in Window" and
+      "Export PNG". Cheapest useful version here: have the data endpoints emit mermaid text, which
+      renders anywhere without a widget at all. Worth doing before the Slate graph, because it
+      delivers the same understanding for a fraction of the work.
+
+
 - [x] From the postcondition triage: the setters and connectors are the MEDIUM entries that could still fail silently, unlike the creation ones. Check connect_material_expressions (the material analogue of connect_pins, which had exactly this defect), set_component_transform and set_actor_transform for whether a refused write is reported.
 
 - [x] select_level_actors: name the actorPaths that did not resolve. `selected:0` currently reads the same as "these exist and none matched", so a caller doing select-then-operate-on-selection gets an empty selection and no reason.

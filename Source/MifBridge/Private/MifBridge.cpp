@@ -135,6 +135,10 @@ void FMifBridgeModule::ShutdownModule()
 	// A CLEAN shutdown says so. Its ABSENCE at the next launch is what separates "the editor was
 	// closed" from "the editor died" - a timestamp alone cannot tell you which. Written first,
 	// before anything else can fail during teardown.
+	// Before the journal closes: the spawner holds a lambda inside this DLL, and leaving it registered
+	// past unload is a dangling call the next tab invocation would make.
+	MifBridge::UnregisterPanel();
+
 	MifBridge::JournalClose(TEXT("module-shutdown"));
 
 	UToolMenus::UnRegisterStartupCallback(this);
@@ -196,6 +200,12 @@ void FMifBridgeModule::RegisterMenus()
 {
 	FToolMenuOwnerScoped OwnerScoped(this);
 
+	// The panel's tab spawner registers HERE rather than in StartupModule, because RegisterMenus runs
+	// from UToolMenus::RegisterStartupCallback - i.e. after the editor UI machinery is up, and never at
+	// all in a process without one. RegisterPanel checks FSlateApplication::IsInitialized() as well,
+	// because EHostType::Editor DOES load in commandlets.
+	MifBridge::RegisterPanel();
+
 	UToolMenu* Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Tools");
 	if (!Menu)
 	{
@@ -203,6 +213,15 @@ void FMifBridgeModule::RegisterMenus()
 	}
 
 	FToolMenuSection& Section = Menu->FindOrAddSection("MifBridge");
+
+	Section.AddMenuEntry(
+		"MifBridgePanel",
+		LOCTEXT("MifPanel", "Mif Bridge: Live Panel"),
+		LOCTEXT("MifPanelTip",
+			"Open the MifBridge panel - port, safety-gate mode and recent calls, updating live. "
+			"Read-only; the bridge does not depend on it and runs headless without it."),
+		FSlateIcon(),
+		FUIAction(FExecuteAction::CreateLambda([]() { MifBridge::OpenPanel(); })));
 
 	Section.AddMenuEntry(
 		"MifBridgeToggle",

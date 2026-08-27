@@ -68,8 +68,43 @@ namespace MifBridge
 	/** True when the endpoint must not run; fills Out with a refusal saying why and how to unlock. */
 	bool RefuseIfGated(const FString& Endpoint, const TSharedRef<FJsonObject>& Out);
 
+	/** One completed bridge call, as the editor panel wants to render it. */
+	struct FMifCallRecord
+	{
+		FString Endpoint;
+		/** What the call was ABOUT - an asset path, actor name or class, lifted from the payload.
+		 *  Empty when the payload named nothing recognisable. A display aid: 'find_assets' alone says
+		 *  nothing, 'find_assets  Texture2D' says what happened. */
+		FString Subject;
+		/** True when Subject looks like a /Game/... object path, i.e. something worth clicking. */
+		bool    bSubjectIsAsset = false;
+		double  Milliseconds = 0.0;
+		double  WhenSeconds = 0.0;   // FPlatformTime::Seconds at completion
+		bool    bOk = false;
+	};
+
+	/** Newest first. Fed by the journal hooks, kept in memory, independent of the on-disk file. */
+	void GetRecentCalls(TArray<FMifCallRecord>& Out, int32 Max);
+	int64 GetTotalCallCount();
+	int32 EndpointCount();
+	/** True while a handler is running; OutSeconds is how long it has been in there. */
+	bool GetInFlight(FString& OutEndpoint, double& OutSeconds);
+
+	// THE EDITOR PANEL (MifBridgePanel.cpp). Strictly optional and strictly one-way: the panel reads
+	// the bridge and writes nothing back. The server starts earlier and independently and holds no
+	// reference to any widget - delete the panel and the bridge is unchanged. Headless is an ADVANTAGE
+	// of this design, not a gap, and nothing here may compromise it.
+	/** Write one in-editor bug report into Saved/MifBridge/reports/ for the autonomous loop.
+	 *  See the header comment in MifBridgeJournal.cpp on why the trust model differs from docs/12. */
+	bool WriteLocalReport(const FString& Endpoint, const FString& PayloadJson,
+						  const FString& Actual, const FString& Notes, FString& OutPath);
+
+	void RegisterPanel();
+	void UnregisterPanel();
+	void OpenPanel();
+
 	void JournalOpen(int32 Port);
-	void JournalCallStart(const FString& Endpoint, int32 BodyBytes);
+	void JournalCallStart(const FString& Endpoint, const FString& Body);
 	void JournalCallEnd(const FString& Endpoint, bool bOk);
 	void JournalClose(const TCHAR* Reason);
 	/** RAII marker for the above. batch declares one beside its FScopedTransaction. Not reentrant by
