@@ -1528,8 +1528,41 @@ namespace MifBridge
 		const int32 Before = (Material ? Material->GetExpressions() : Function->GetExpressions()).Num();
 		if (bAll)
 		{
-			if (Material) { UMaterialEditingLibrary::DeleteAllMaterialExpressions(Material); }
-			else { UMaterialEditingLibrary::DeleteAllMaterialExpressionsInFunction(Function); }
+			// DO NOT call UMaterialEditingLibrary::DeleteAllMaterialExpressions. It is BROKEN, in both
+			// 5.3 and 5.7, and it fails quietly:
+			//
+			//     for (UMaterialExpression* Expression : Material->GetExpressions())
+			//         DeleteMaterialExpression(Material, Expression);
+			//
+			// GetExpressions() hands back a TConstArrayView over the LIVE array, and
+			// DeleteMaterialExpression removes from that same array. So the loop is walking a view
+			// whose backing store is shrinking underneath it: each removal shifts the remaining
+			// elements down one, the iterator advances past the shifted element, and every other
+			// expression is skipped. The result is that SOME survive rather than none, which is far
+			// harder to notice than a clean no-op.
+			//
+			// Reported 2026-08-27 from Curfew on stock 5.7: a clear returned ok and left three
+			// expressions behind, and the reporter's guess at the cause - iterating while removing -
+			// was exactly this. Deleting the same three BY NAME worked, which is the tell: the
+			// per-expression call is fine, only the loop over it is wrong.
+			//
+			// Snapshot first, then delete from the snapshot. The array may reallocate during the
+			// loop and the snapshot does not care.
+			TArray<UMaterialExpression*> Doomed;
+			{
+				TConstArrayView<TObjectPtr<UMaterialExpression>> Live =
+					Material ? Material->GetExpressions() : Function->GetExpressions();
+				Doomed.Reserve(Live.Num());
+				for (const TObjectPtr<UMaterialExpression>& Expr : Live)
+				{
+					if (Expr) { Doomed.Add(Expr); }
+				}
+			}
+			for (UMaterialExpression* Expr : Doomed)
+			{
+				if (Material) { UMaterialEditingLibrary::DeleteMaterialExpression(Material, Expr); }
+				else { UMaterialEditingLibrary::DeleteMaterialExpressionInFunction(Function, Expr); }
+			}
 		}
 		else
 		{
@@ -1547,6 +1580,31 @@ namespace MifBridge
 
 		Out->SetNumberField(TEXT("deleted"), Before - After);
 		Out->SetNumberField(TEXT("remaining"), After);
+
+		// A CLEAR THAT CANNOT PROVE IT CLEARED IS WORSE THAN NO CLEAR - the house rule, and this
+		// endpoint was breaking it. The counts above were always correct, but ok:true alongside
+		// deleted:0 reads as success to anything that checks the status rather than the arithmetic,
+		// and that is exactly how the engine bug above went unnoticed.
+		//
+		// all=true means EMPTY. Anything left is a failure, and it names the survivors so the caller
+		// can delete them individually - which works, and is the documented workaround.
+		if (bAll && After > 0)
+		{
+			TArray<FString> Survivors;
+			TConstArrayView<TObjectPtr<UMaterialExpression>> Left =
+				Material ? Material->GetExpressions() : Function->GetExpressions();
+			for (const TObjectPtr<UMaterialExpression>& Expr : Left)
+			{
+				if (Expr) { Survivors.Add(Expr->GetName()); }
+			}
+			Fail(Out, FString::Printf(
+				TEXT("all=true asked for an EMPTY graph and %d expression(s) survived: %s. %d were "
+					 "deleted, so this is a partial clear, not a no-op - the graph is now in a state "
+					 "neither you nor it asked for. Delete the survivors by name (that path is "
+					 "verified working) and re-read with list_material_expressions."),
+				After, *FString::Join(Survivors, TEXT(", ")), Before - After));
+			return;
+		}
 	}
 
 	// --- list_material_expressions -------------------------------------------------------------------

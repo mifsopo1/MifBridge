@@ -136,6 +136,39 @@ def main():
         check("T355 and the expression survives the refusal",
               graph(mp).get("numExpressions") == before, graph(mp).get("numExpressions"))
 
+    # ------------------------------------------------------------------ T356 all=true means EMPTY
+    # Reported 2026-08-27 from Curfew on stock 5.7: delete_material_expression(all=True) returned
+    # ok and left three expressions behind. The engine's own DeleteAllMaterialExpressions iterates
+    # a TConstArrayView over the LIVE array while removing from it, so each removal shifts the
+    # remainder down and the loop steps past every other element. SOME survive, not none - which is
+    # much harder to spot than a clean no-op, and is why it went unnoticed.
+    #
+    # This asserts the POSTCONDITION rather than the status, because ok:true was exactly what the
+    # broken version returned. An all-clear that leaves anything behind is a failed clear.
+    print("")
+    print("=== T356: all=true has to actually empty the graph ===")
+    for i in range(4):
+        M.call("add_material_expression",
+               {"material": mp, "expressionClass": "MaterialExpressionConstant",
+                "x": -300, "y": i * 90})
+    seeded = graph(mp).get("numExpressions") or 0
+    check("T356 the graph has several expressions to clear", seeded >= 4, "numExpressions=%s" % seeded)
+
+    c = M.call("delete_material_expression", {"material": mp, "all": True})
+    left = graph(mp).get("numExpressions")
+    # The endpoint now REFUSES a partial clear rather than reporting success, so either it emptied
+    # the graph and said ok, or it did not and said so. Both are acceptable; ok:true with survivors
+    # is the one thing that must never happen again.
+    if c.get("ok") is True:
+        check("T356 ok:true means the graph is actually empty", left == 0,
+              "reported ok with numExpressions=%s" % left)
+    else:
+        check("T356 a partial clear is reported as a failure, not a success",
+              "survived" in (c.get("error") or ""), (c.get("error") or "")[:200])
+        check("T356 and the failure names what is left",
+              str(left) in (c.get("error") or ""), (c.get("error") or "")[:200])
+    check("T356 the clear removed something rather than nothing",
+          (left or 0) < seeded, "%s -> %s" % (seeded, left))
     for label, payload, expect in (
         ("unknown expression class", {"material": mp, "expressionClass": "NoSuchExpr_zz"}, ""),
         ("missing material", {"material": "/Game/NoSuchMat_zz",

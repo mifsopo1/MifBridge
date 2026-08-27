@@ -1400,3 +1400,58 @@ rather than a requirement.
 Diagnosed from the load failure by the Curfew session, including the `GetLastError=126` reading that
 points at a dependency rather than the DLL. They flagged it rather than patching the vendored copy,
 which is why the evidence above could be gathered against DDS2 before anything was changed.
+
+
+## 18. `delete_material_expression(all=true)` cleared part of the graph and reported success — FIXED
+
+Reported 2026-08-27 from Curfew, stock UE 5.7, on `/Game/CF/Materials/M_CF_Sand`. A clear returned
+`ok: true` and left three expressions behind (`Constant3Vector_0`, `LinearInterpolate_0`,
+`Constant_1`). Deleting the same three **by name** worked perfectly.
+
+### The cause is in the ENGINE, and the reporter guessed it exactly
+
+```cpp
+// MaterialEditingLibrary.cpp - present in BOTH 5.3 and 5.7
+void UMaterialEditingLibrary::DeleteAllMaterialExpressions(UMaterial* Material)
+{
+    for (UMaterialExpression* Expression : Material->GetExpressions())   // a VIEW over the LIVE array
+        DeleteMaterialExpression(Material, Expression);                  // ...which removes from it
+}
+```
+
+`GetExpressions()` returns a `TConstArrayView` over the array that `DeleteMaterialExpression` is
+removing from. Each removal shifts the remainder down one, the iterator then advances past the
+shifted element, and **every other expression is skipped**.
+
+That is why *some* survived rather than none, and it is the detail that made this hard to notice: a
+clean no-op gets spotted immediately, a half-done clear looks like it worked. The reporter's guess -
+"iterating the expressions array while removing from it, which in UE's TArray skips every other
+element" - was right down to the mechanism, from the behaviour alone and without the source.
+
+### Two fixes, because there were two defects
+
+**The engine bug is worked around.** The handler no longer calls
+`DeleteAllMaterialExpressions`. It snapshots the expression list into its own `TArray` first and
+deletes from the snapshot, so reallocation of the live array during the loop is irrelevant. The
+per-expression engine call was never broken - only the loop over it - which is exactly what
+"deleting by name works" was telling us.
+
+**The silent success was a separate defect and is the more important one.** The handler already
+computed `deleted` and `remaining` correctly and returned them. It also returned `ok: true`. Anything
+checking the status rather than doing the arithmetic saw success, which is how an engine bug this
+visible survived. `all=true` asks for an EMPTY graph, so anything left is now a failure that names
+the survivors and points at the by-name path.
+
+### Regression
+
+`tools/test_material_graph.py` T356 seeds a graph, clears it, and asserts the **postcondition** -
+either `ok:true` with zero expressions remaining, or an explicit failure naming what survived.
+Deliberately not an assertion on `ok`, because `ok:true` is precisely what the broken version
+returned.
+
+### Status
+
+Fixed and **built** on 5.3 (DLL 3,950,592 at 23:06). **Not yet run against a live editor** - the SDK
+editor was closed at the time and the 5.7 engine was holding a Live Coding lock from another
+session. T356 runs it on the next regression pass. The third instance this session of *a clear that
+cannot prove it cleared*, after the World Partition save and `Build.bat`'s exit code.
