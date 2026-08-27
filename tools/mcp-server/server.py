@@ -2996,6 +2996,14 @@ def perf_heavy_actors(limit: int = 40, sort_by: str = None) -> dict:
 
 
 @mcp.tool()
+def blueprint_inheritance_tree(path_prefix: str = "/Game/", root: str = None,
+                               max_depth: int = 0) -> dict:
+    "The project's Blueprint class hierarchy, built ENTIRELY from asset registry tags - it LOADS NOTHING. Parent comes from FBlueprintTags::ParentClassPath, published per asset, which is why this is safe on a COOKED project where loading Blueprints can kill the editor. Pass root (a blueprint name, its _C class name, or a NATIVE class like 'Actor') to get one subtree; nativeRoots in a no-argument call lists the native classes this project actually derives from. maxDepth 0 is unlimited, and a truncated node reports childrenNotShown rather than looking like a leaf. Always check registryStillScanning: at editor startup a partial tree is indistinguishable from a small project. Blueprint-ness is detected by TAG, not class name, so WidgetBlueprint and AnimBlueprint are included."
+    return _post("blueprint_inheritance_tree", pathPrefix=path_prefix, root=root,
+                 maxDepth=max_depth)
+
+
+@mcp.tool()
 def project_dependency_graph(path_prefix: str, max_nodes: int = 300,
                              include_external: bool = False) -> dict:
     "The dependency graph under a path prefix: nodes (packages) and edges (A depends on B). Each node reports dependsOn AND referencedBy, because they answer different questions - 'what does this need' versus 'what breaks if I delete it'. path_prefix needs at least two segments (e.g. /Game/Blueprints): GetReferencers runs PER ASSET, so a mount root is a stopped game thread, not a slow call. Capped at max_nodes and reports `truncated` plus `matched` - a truncated graph is a PREFIX of the real one, not a sample, so narrow the prefix rather than raising the cap."

@@ -31,11 +31,46 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Misc/PackageName.h"
+#include "Blueprint/BlueprintSupport.h"   // FBlueprintTags - 5.3 :36-40, 5.7 :30-34
 
 namespace MifBridge
 {
 	namespace
 	{
+		/** "/Game/AI/BP_Guard.BP_Guard_C" -> "/Game/AI/BP_Guard.BP_Guard".
+		 *
+		 *  The parent tag holds a GENERATED CLASS path and the asset it names holds an ASSET path, and
+		 *  they differ by the _C suffix. Joining children to parents without this produces a tree in
+		 *  which every node is a root, because no child's parent ever matches an asset - a wrong answer
+		 *  that looks like a plausible one. */
+		FString ClassPathToAssetPath(const FString& In)
+		{
+			// EXPORT TEXT FIRST. The tag does not hold a bare path - it holds UE export-text form,
+			// which is  BlueprintGeneratedClass'/Game/AI/BP_Guard.BP_Guard_C'  including the class
+			// prefix and the surrounding single quotes.
+			//
+			// The first version of this called RemoveFromEnd("_C") on that string. The trailing quote
+			// meant it never matched, so no child's parent ever equalled an asset path, and the tree
+			// came back as 2855 roots with zero children - precisely the failure the comment above it
+			// warned about, in the same commit that warned about it. Predicting a bug is not the same
+			// as avoiding it; only running it told me.
+			FString S = FPackageName::ExportTextPathToObjectPath(In);
+			S.RemoveFromEnd(TEXT("_C"));
+			return S;
+		}
+
+		/** "/Script/Engine.Actor" -> "Actor". The name a caller recognises, not the mangled path. */
+		FString ClassPathToShortName(const FString& In)
+		{
+			// Same export-text unwrap - without it every native root came back as "Actor'" with a
+			// trailing quote, which is the kind of detail that survives all the way into a UI.
+			FString S = FPackageName::ExportTextPathToObjectPath(In);
+			S.RemoveFromEnd(TEXT("_C"));
+			int32 Dot = INDEX_NONE;
+			if (S.FindLastChar(TEXT('.'), Dot)) { S = S.Mid(Dot + 1); }
+			return S;
+		}
+
 		IAssetRegistry& ProjRegistry()
 		{
 			return FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
@@ -251,4 +286,215 @@ namespace MifBridge
 		Out->SetBoolField(TEXT("foldersTruncated"), ByFolder.Num() > TopFolders);
 		Out->SetBoolField(TEXT("registryStillScanning"), ProjRegistry().IsLoadingAssets());
 	}
+
+	// --- blueprint_inheritance_tree -------------------------------------------------------------
+	//   in:  { pathPrefix? = "/Game/", root? (a class path or name to subtree from), maxDepth? = 0 }
+	//   out: { roots[ { class, blueprint, children[...] } ], count, nativeRoots[], orphans[] }
+	// Bucket: READ. Asset Registry only - LOADS NOTHING.
+	//
+	// THE WHOLE POINT IS THAT IT LOADS NOTHING. A blueprint's parent is published as an ASSET REGISTRY
+	// TAG, so the entire inheritance graph of a project can be built from metadata the registry
+	// already holds. Loading every Blueprint to ask GeneratedClass->GetSuperClass() would be correct,
+	// far slower, and on a COOKED project actively dangerous - docs/02 section 6c records what loading
+	// cooked Blueprints costs, and issue 16 is an editor that died doing it.
+	//
+	// Verified in BOTH trees before use:
+	//   FBlueprintTags::ParentClassPath        5.3 BlueprintSupport.h:38   5.7 :32
+	//   FBlueprintTags::NativeParentClassPath  5.3 :40                     5.7 :34
+	//   FBlueprintTags::GeneratedClassPath     5.3 :36                     5.7 :30
+	// Same names, same COREUOBJECT_API export, same meaning. No guard needed.
+	//
+	// THE TAG IS A PATH, NOT A NAME, and the two spellings do not match each other. The tag holds
+	// something like "/Game/AI/BP_Guard.BP_Guard_C" - the GENERATED CLASS path, with the _C suffix -
+	// while the asset it refers to is "/Game/AI/BP_Guard.BP_Guard". Joining children to parents means
+	// normalising one to the other, and getting that wrong produces a tree where every node is a root
+	// because nothing ever matches. Normalised here, once, in ClassPathToAssetPath.
+	void H_blueprint_inheritance_tree(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("pathPrefix"), TEXT("prefix"), TEXT("root"), TEXT("maxDepth") },
+			TEXT("pathPrefix (alias: prefix, default /Game/); root (a class or blueprint name to "
+				 "subtree from); maxDepth (0 = unlimited)"),
+			{ { TEXT("blueprintId"), TEXT("this reads the WHOLE project's tree from the asset registry; pass root to narrow it") },
+			  { TEXT("class"), TEXT("spell it root - and it accepts a native class name like Actor as well as a blueprint") } }))
+		{
+			return;
+		}
+
+		const FString Prefix = JStrAny(In, { TEXT("pathPrefix"), TEXT("prefix") }, TEXT("/Game/"));
+		const FString RootWanted = JStr(In, TEXT("root"));
+		const int32 MaxDepth = (int32)JNum(In, TEXT("maxDepth"), 0.0);
+
+		TArray<FAssetData> Assets;
+		ProjRegistry().GetAssetsByPath(FName(*Prefix), Assets, /*bRecursive*/ true);
+
+		// assetPath -> parent assetPath (or a NATIVE class name when the parent is not a blueprint)
+		TMap<FString, FString> ParentOf;
+		TMap<FString, FString> NativeParentOf;
+		TSet<FString> Blueprints;
+
+		for (const FAssetData& A : Assets)
+		{
+			// Blueprint-ness by TAG, not by class name: a Blueprint subclass such as
+			// WidgetBlueprint or AnimBlueprint is still a blueprint and still has these tags, and
+			// matching on ClassName would silently drop every one of them.
+			FString ParentPath;
+			if (!A.GetTagValue(FBlueprintTags::ParentClassPath, ParentPath) || ParentPath.IsEmpty())
+			{
+				continue;
+			}
+			const FString Self = A.GetObjectPathString();
+			Blueprints.Add(Self);
+			ParentOf.Add(Self, ClassPathToAssetPath(ParentPath));
+
+			FString NativeParent;
+			if (A.GetTagValue(FBlueprintTags::NativeParentClassPath, NativeParent))
+			{
+				NativeParentOf.Add(Self, ClassPathToShortName(NativeParent));
+			}
+		}
+
+		// children keyed by parent. A parent that is not itself a blueprint in this scan is a NATIVE
+		// root - the tree stops there, which is correct: C++ classes are not assets and have no
+		// registry entry to walk.
+		TMap<FString, TArray<FString>> ChildrenOf;
+		TSet<FString> NativeRoots;
+		for (const TPair<FString, FString>& P : ParentOf)
+		{
+			ChildrenOf.FindOrAdd(P.Value).Add(P.Key);
+			if (!Blueprints.Contains(P.Value))
+			{
+				// Report the NATIVE class name rather than the mangled path - "Actor", not
+				// "/Script/Engine.Actor" - because that is the name a caller recognises.
+				const FString* Native = NativeParentOf.Find(P.Key);
+				NativeRoots.Add(Native ? *Native : ClassPathToShortName(P.Value));
+			}
+		}
+		for (TPair<FString, TArray<FString>>& P : ChildrenOf)
+		{
+			P.Value.Sort();   // stable output; a tree that reorders between calls is unreadable
+		}
+
+		// Recursive build with a VISITED set. A blueprint hierarchy cannot legally contain a cycle -
+		// the editor refuses to create one - but this reads registry METADATA, which can be stale or
+		// hand-edited, and a cycle here would hang the bridge on the game thread rather than returning
+		// a bad answer. Cheap insurance against the failure mode that costs most.
+		TSet<FString> Visited;
+		TFunction<TSharedPtr<FJsonValue>(const FString&, int32)> Build =
+			[&](const FString& Node, int32 Depth) -> TSharedPtr<FJsonValue>
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("blueprint"), Node);
+			J->SetStringField(TEXT("name"), FPackageName::ObjectPathToObjectName(Node));
+			if (const FString* Native = NativeParentOf.Find(Node))
+			{
+				J->SetStringField(TEXT("nativeParent"), *Native);
+			}
+			if (Visited.Contains(Node))
+			{
+				J->SetBoolField(TEXT("cycle"), true);
+				J->SetStringField(TEXT("note"),
+					TEXT("already seen on this branch - the registry metadata describes a cycle, which "
+						 "a real blueprint hierarchy cannot contain. Not descended into."));
+				return MakeShared<FJsonValueObject>(J);
+			}
+			Visited.Add(Node);
+
+			const TArray<FString>* Kids = ChildrenOf.Find(Node);
+			int32 Descendants = 0;
+			if (Kids && (MaxDepth <= 0 || Depth < MaxDepth))
+			{
+				TArray<TSharedPtr<FJsonValue>> ChildJson;
+				for (const FString& K : *Kids)
+				{
+					ChildJson.Add(Build(K, Depth + 1));
+					++Descendants;
+				}
+				J->SetArrayField(TEXT("children"), ChildJson);
+			}
+			else if (Kids && Kids->Num() > 0)
+			{
+				// TRUNCATED, and it says so. A depth limit that silently drops children reports a leaf
+				// that is not one.
+				J->SetNumberField(TEXT("childrenNotShown"), Kids->Num());
+				J->SetStringField(TEXT("note"), TEXT("maxDepth reached - children exist and were not expanded."));
+			}
+			J->SetNumberField(TEXT("directChildren"), Kids ? Kids->Num() : 0);
+			Visited.Remove(Node);
+			return MakeShared<FJsonValueObject>(J);
+		};
+
+		TArray<TSharedPtr<FJsonValue>> Roots;
+		if (!RootWanted.IsEmpty())
+		{
+			// Subtree mode: match a blueprint by full path, by asset name, or by its _C class name.
+			const FString WantedAsset = ClassPathToAssetPath(RootWanted);
+			const FString WantedName = FPackageName::ObjectPathToObjectName(WantedAsset);
+			bool bFound = false;
+			for (const FString& BP : Blueprints)
+			{
+				if (BP == WantedAsset || FPackageName::ObjectPathToObjectName(BP) == WantedName)
+				{
+					Roots.Add(Build(BP, 0));
+					bFound = true;
+				}
+			}
+			if (!bFound)
+			{
+				// A NATIVE root is a legitimate thing to ask for - "show me everything deriving from
+				// Actor" - and it is not a blueprint, so the loop above will never find it.
+				const TArray<FString>* Kids = ChildrenOf.Find(RootWanted);
+				for (const TPair<FString, FString>& P : NativeParentOf)
+				{
+					if (P.Value == RootWanted && !ParentOf.Contains(P.Key)) { continue; }
+				}
+				if (!Kids)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("no blueprint or native root called '%s' under %s. nativeRoots in a call "
+							 "with no root parameter lists the native classes this project actually "
+							 "derives from."), *RootWanted, *Prefix));
+					return;
+				}
+				for (const FString& K : *Kids) { Roots.Add(Build(K, 0)); }
+			}
+		}
+		else
+		{
+			// Whole project: a root is a blueprint whose parent is not itself a blueprint here.
+			TArray<FString> Sorted;
+			for (const FString& BP : Blueprints)
+			{
+				const FString* P = ParentOf.Find(BP);
+				if (!P || !Blueprints.Contains(*P)) { Sorted.Add(BP); }
+			}
+			Sorted.Sort();
+			for (const FString& BP : Sorted) { Roots.Add(Build(BP, 0)); }
+		}
+
+		TArray<TSharedPtr<FJsonValue>> NativeJson;
+		TArray<FString> NativeSorted = NativeRoots.Array();
+		NativeSorted.Sort();
+		for (const FString& N : NativeSorted) { NativeJson.Add(MakeShared<FJsonValueString>(N)); }
+
+		Out->SetArrayField(TEXT("roots"), Roots);
+		Out->SetNumberField(TEXT("blueprintCount"), Blueprints.Num());
+		Out->SetArrayField(TEXT("nativeRoots"), NativeJson);
+		Out->SetNumberField(TEXT("assetsScanned"), Assets.Num());
+		Out->SetStringField(TEXT("source"),
+			TEXT("asset registry tags only - NOTHING was loaded. Parent is FBlueprintTags::"
+				 "ParentClassPath, published per asset, so this is safe on a cooked project where "
+				 "loading Blueprints is not."));
+
+		// The registry can still be scanning at editor startup, and a partial tree looks exactly like
+		// a small project. Say which one it is rather than letting the count be misread.
+		if (ProjRegistry().IsLoadingAssets())
+		{
+			Out->SetBoolField(TEXT("registryStillScanning"), true);
+			Out->SetStringField(TEXT("scanNote"),
+				TEXT("the asset registry is STILL SCANNING, so this tree is incomplete. Call again "
+					 "once it settles - a partial tree is indistinguishable from a small project."));
+		}
+	}
+
 }

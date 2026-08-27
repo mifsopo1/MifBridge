@@ -1495,6 +1495,9 @@ namespace MifBridge
 	// PROJECT STRUCTURE - the brainmap data (MifBridgeProject.cpp). Every one of these is BOUNDED
 	// and reports when it bounded something: GetReferencers runs per asset, so an unbounded graph
 	// is a stopped game thread rather than a slow answer.
+	/** The class hierarchy from ASSET REGISTRY TAGS - loads nothing, so it is safe on a cooked
+	 *  project where loading Blueprints is not (docs/06 issue 16). */
+	MIF_DECL(blueprint_inheritance_tree);
 	MIF_DECL(project_dependency_graph);
 	MIF_DECL(project_asset_distribution);
 

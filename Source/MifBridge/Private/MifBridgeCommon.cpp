@@ -379,6 +379,7 @@ namespace MifBridge
 			MIF_BIND(create_data_layer);
 			MIF_BIND(add_actor_to_data_layer);
 			MIF_BIND(remove_actor_from_data_layer);
+			MIF_BIND(blueprint_inheritance_tree);
 			MIF_BIND(project_dependency_graph);
 			MIF_BIND(project_asset_distribution);
 			MIF_BIND(perf_heavy_actors);
