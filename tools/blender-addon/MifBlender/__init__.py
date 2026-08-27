@@ -29,9 +29,29 @@ bl_info = {
     "category": "Import-Export",
 }
 
-# Pinned to 4.4: every io_scene_fbx and bmesh.ops default this addon relies on
-# was read from a live 4.4.0. 3.6 / 4.2 / 5.0 are NOT verified -- the exporter's
-# properties have changed between releases (use_ascii, for one, is gone in 4.4).
+# The 4.4 floor is now CONSERVATIVE rather than unverified. Measured 2026-08-27 with
+# tools/blender_probe.py and tools/test_blender_ops.py, on four real installs:
+#
+#   version     imports  registers  18 ops  FBX kwargs  op suite
+#   3.6.23        yes      yes        yes    all present   12/12
+#   4.2.17 LTS    yes      yes        yes    all present   12/12
+#   4.4.0         yes      yes        yes    all present   12/12
+#   5.0.1         yes      yes        yes    all present   12/12
+#
+# The worry this comment used to carry was real but did not bite: the exporter's
+# properties DO move between releases -- use_ascii is gone in 4.4 -- but that is one
+# this addon never passes. All 17 kwargs in FBX_EXPORT_ARGS, all 3 in FBX_IMPORT_ARGS,
+# the 4 enum values (FBX_SCALE_NONE / FACE / SRGB / AUTO) and all 6 bmesh.ops are still
+# real on 5.0.1.
+#
+# Blender 5.0 still ships 25 legacy bl_info addons of its own and still has
+# addon_utils.enable, so the extensions manifest is NOT required. Determined by running
+# it, not by reading release notes.
+#
+# The floor stays at 4.4 anyway, and that is a decision rather than an oversight: the op
+# SUITE covers set_material_slots and the read ops around it, not the FBX mesh round
+# trip. The kwargs are proven present on 3.6; the round trip through them is not proven
+# on 3.6. Lower the floor when something exercises it.
 
 import importlib
 import os
