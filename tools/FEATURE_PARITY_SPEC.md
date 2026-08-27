@@ -215,7 +215,19 @@ Never work from a typed list — one was fabricated once and a third of it was i
   IK Rig APIs missing and every one was an artefact of CRLF line endings in a temp file.
   builds for 5.3.2 and 5.7 only because every API it touches happens to exist in both. This is the
   first thing that breaks as breadth grows toward parity, and it needs a policy before it does.
-- [ ] **The Curfew copy is vendored, not linked.** MEASURED 2026-08-26 (late), replacing the earlier
+- [x] **TOOLING DONE 2026-08-26 (commit 93e23ba); the switch itself is Andre's decision.**
+  tools/make_release.py builds a versioned zip with a RELEASE_MANIFEST.json carrying the version, the
+  MIF_BIND endpoint count, an engine compatibility matrix, and a SHA-256 over path+content. --check
+  compares a zip against the tree and reports three outcomes, the middle of which is what the Curfew
+  drift actually was: SAME VERSION, DIFFERENT CONTENT - which a version number alone calls equal.
+  Verified by doing it rather than by reading: introduced a local edit, --check caught it, reverted,
+  --check said IDENTICAL. First artifact 0.4.1, 259 files, 286 endpoints. Written up in
+  docs/14_RELEASE_AND_SYNC.md with the three options for what to do next.
+  STILL A DECISION, not a task: actually switching Curfew from vendored to released changes how Andre's
+  other project consumes the plugin. Recommendation is a tagged zip plus this script rather than a
+  submodule. The cheapest thing worth doing immediately regardless is running --check periodically -
+  it does not prevent drift but it makes drift VISIBLE, which is the property that was missing.
+  ORIGINAL: MEASURED 2026-08-26 (late), replacing the earlier
   rough figure in this item with real numbers, because this needs Andre's decision and he should not
   have to re-derive it:
 
