@@ -97,7 +97,17 @@ def analyse(records):
                 # Grouped by REASON, not merely counted. Auditing failures by endpoint name alone means
                 # reading test source to tell a deliberate refusal from a defect; the reason separates
                 # them at a glance, which is what that audit lacked.
-                key = (r.get("ep") or "?", (r.get("err") or "(no reason recorded)")[:70])
+                # A STRING key, not a tuple. The tuple version read better here and made the whole
+                # session dict UNSERIALISABLE: json.dumps raises "keys must be str, int, float, bool
+                # or None, not tuple", and test_crash_journal does exactly that when reporting a
+                # session. analyse() itself worked fine, which is why my own check missed it - I ran
+                # analyse and printed the length, and never serialised the result.
+                #
+                # "" (unit separator) rather than a visible character: an endpoint name cannot
+                # contain it and neither can a refusal message, so splitting it back apart is exact
+                # rather than a guess about which " | " was the delimiter.
+                key = "%s%s" % (r.get("ep") or "?",
+                                    (r.get("err") or "(no reason recorded)")[:70])
                 cur["failures"][key] = cur["failures"].get(key, 0) + 1
             ms = float(r.get("ms") or 0.0)
             if ms > cur["slowest"][1]:
@@ -158,7 +168,8 @@ def report(records):
         fails = s.get("failures") or {}
         if fails:
             print("        %d failed call(s), most common:" % sum(fails.values()))
-            for (fep, why), n in sorted(fails.items(), key=lambda kv: -kv[1])[:5]:
+            for k, n in sorted(fails.items(), key=lambda kv: -kv[1])[:5]:
+                fep, _, why = k.partition("")
                 print("          %3dx %-24s %s" % (n, fep[:24], why))
         for ep in s["unfinished"]:
             bad += 1
