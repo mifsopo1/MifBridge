@@ -1145,7 +1145,13 @@ namespace MifBridge
 			return;
 		}
 
-		UClass* HostClass = InterfaceOrParent.IsEmpty() ? Blueprint->ParentClass : ResolveClassAllowingCppPrefix(InterfaceOrParent, Blueprint);
+
+		// .Get() because 5.7 will not pick a common type between TSubclassOf<UObject> and a
+		// raw UClass* in a ternary (C2445). 5.3 accepts it, so this is invisible from a 5.3
+		// machine - found by the Curfew session compiling on 5.7.
+		UClass* HostClass = InterfaceOrParent.IsEmpty()
+			? Blueprint->ParentClass.Get()
+			: ResolveClassAllowingCppPrefix(InterfaceOrParent, Blueprint);
 		if (!HostClass)
 		{
 			Fail(Out, FString::Printf(TEXT("interfaceOrParent class not found: '%s'"), *InterfaceOrParent));
@@ -1348,7 +1354,13 @@ namespace MifBridge
 			return;
 		}
 
-		UClass* ParentClass = ParentName.IsEmpty() ? Blueprint->ParentClass : ResolveClassAllowingCppPrefix(ParentName, Blueprint);
+
+		// .Get() because 5.7 will not pick a common type between TSubclassOf<UObject> and a
+		// raw UClass* in a ternary (C2445). 5.3 accepts it, so this is invisible from a 5.3
+		// machine - found by the Curfew session compiling on 5.7.
+		UClass* ParentClass = ParentName.IsEmpty()
+			? Blueprint->ParentClass.Get()
+			: ResolveClassAllowingCppPrefix(ParentName, Blueprint);
 		if (!ParentClass)
 		{
 			Fail(Out, FString::Printf(TEXT("parent class not found: '%s'"), *ParentName));

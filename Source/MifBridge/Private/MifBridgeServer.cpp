@@ -2,6 +2,7 @@
 #include "MifBridgeServer.h"
 
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"   // MIF_ENGINE_5_7_PLUS - see the shim below
 #include "MifBridgeLog.h"
 
 #include "Containers/Ticker.h"
@@ -100,6 +101,35 @@ FMifBridgeServer::~FMifBridgeServer()
 	Stop();
 }
 
+// FHttpRequestHandler CHANGED KIND between the two engines this plugin targets.
+//
+//   5.3: typedef TFunction<bool(const FHttpServerRequest&, const FHttpResultCallback&)>
+//   5.7: using    TDelegate<bool(const FHttpServerRequest&, const FHttpResultCallback&)>
+//
+// TFunction converts from a bare lambda implicitly. TDelegate does not, so the same code that
+// compiles on 5.3 is a C2440 on 5.7. Found by the Curfew session building the synced plugin on 5.7
+// for the first time - invisible from here, because 5.3 is perfectly happy with it.
+//
+// This is a FOURTH shape for docs/02_GOTCHAS.md section 14, and the most awkward one so far. The
+// others are symbols added, symbols removed, and identical code one compiler is stricter about.
+// This is a type that still exists under the same name and is a DIFFERENT KIND of thing - so there
+// is no missing symbol to grep for and no deprecation warning to catch it.
+//
+// The guard is required rather than cosmetic: CreateLambda does not exist on TFunction, so there is
+// no single spelling that satisfies both.
+//
+// VARIADIC, and it has to be. A lambda's parameter list contains commas, so a single-parameter macro
+// sees MIF_HTTP_HANDLER(a, b) and reports 'too many arguments' - then the broken expansion corrupts
+// everything after it. The first attempt produced seven errors from that one cause, including an
+// 'illegal else without matching if' ninety lines earlier that had nothing wrong with it.
+//
+// Which is exactly the lesson the Curfew session sent over while this was being written: deduplicate
+// by cause before believing an error count. Their build showed 23 errors from 5 root causes.
+#if MIF_ENGINE_5_7_PLUS
+	#define MIF_HTTP_HANDLER(...) FHttpRequestHandler::CreateLambda(__VA_ARGS__)
+#else
+	#define MIF_HTTP_HANDLER(...) FHttpRequestHandler(__VA_ARGS__)
+#endif
 bool FMifBridgeServer::Start()
 {
 	if (bRunning)
@@ -119,11 +149,11 @@ bool FMifBridgeServer::Start()
 	{
 		const FString PathStr = FString::Printf(TEXT("/api/%s"), *Name);
 
-		FHttpRequestHandler Handler =
+		FHttpRequestHandler Handler = MIF_HTTP_HANDLER(
 			[this, Name](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete) -> bool
 			{
 				return this->HandleHttp(Name, Request, OnComplete);
-			};
+			});
 
 		FHttpRouteHandle Route = Router->BindRoute(FHttpPath(PathStr), EHttpServerRequestVerbs::VERB_POST, Handler);
 		if (Route.IsValid())
@@ -145,7 +175,7 @@ bool FMifBridgeServer::Start()
 	//
 	// A preprocessor runs BEFORE routing, so an unknown /api/ path can be answered properly. It returns
 	// false for everything it does not handle, which leaves normal routing untouched.
-	Router->RegisterRequestPreprocessor(
+	Router->RegisterRequestPreprocessor(MIF_HTTP_HANDLER(
 		[](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete) -> bool
 		{
 			const FString Path = Request.RelativePath.GetPath();
@@ -217,7 +247,7 @@ bool FMifBridgeServer::Start()
 			}
 			OnComplete(MakeJsonResponse(Err, EHttpServerResponseCodes::NotFound));
 			return true;
-		});
+		}));
 
 	Http.StartAllListeners();
 	// Routes are now bound, once per name. Any later RegisterExternalEndpoint call would produce a

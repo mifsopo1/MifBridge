@@ -34,6 +34,18 @@
 // editor-only module (never a runtime dependency of a cooked mod — Build.cs header), which is
 // why the WITH_EDITORONLY_DATA members used below need no preprocessor guards.
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"
+// FStringOutputDevice MOVED between the two engines this plugin targets:
+//   5.3: declared in Containers/UnrealString.h, reached transitively through CoreMinimal
+//   5.7: promoted to its own header, Misc/StringOutputDevice.h, and no longer pulled in for free
+//
+// So the include is REQUIRED on 5.7 and IMPOSSIBLE on 5.3 - that path does not exist there, and an
+// unguarded include is a fatal C1083. The Curfew session hit the 5.7 half and could not see the 5.3
+// half; building here caught it. A fifth shape for docs/02_GOTCHAS.md section 14: same type, same
+// name, different HEADER.
+#if MIF_ENGINE_5_7_PLUS
+#include "Misc/StringOutputDevice.h"
+#endif
 
 // list_material_parameters: FMaterialCachedParameters survives cook, which is the whole reason this
 // endpoint is worth having on a shipped game.

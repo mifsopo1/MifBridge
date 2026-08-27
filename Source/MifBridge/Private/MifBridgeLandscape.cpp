@@ -18,6 +18,7 @@
 // (LANDSCAPE_ZSCALE), so with the default scale of 100 a step is 0.78125 units and the usable range
 // is roughly +/-25600. HeightToWorld/WorldToHeight below are the only places that constant appears.
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"   // MIF_ENGINE_5_7_PLUS - Import gained a parameter
 #include "MifBridgeLog.h"
 
 #include "Editor.h"
@@ -264,7 +265,17 @@ namespace MifBridge
 		// Edit layers OFF: this endpoint writes heights and weights directly, and the direct-edit path
 		// (FLandscapeEditDataInterface) is what sculpt_landscape/paint_landscape use. Turning layers on
 		// here would make those writes land in a layer that is never composited.
-		Landscape->bCanHaveLayersContent = false;
+		// The FIELD is bCanHaveLayersContent_DEPRECATED in 5.7 (Landscape.h:664) and assigning it no
+		// longer compiles. The getter/toggle pair exists in BOTH trees, so no version guard is needed
+		// here - CanHaveLayersContent at LandscapeProxy.h:1444 (5.3) / :1578 (5.7), and
+		// ToggleCanHaveLayersContent at Landscape.h:345 (5.3) / :543 (5.7).
+		//
+		// Toggle rather than set, because that is the only mutator offered - hence the guard: calling
+		// it unconditionally would ENABLE edit layers on a landscape that already had them off.
+		if (Landscape->CanHaveLayersContent())
+		{
+			Landscape->ToggleCanHaveLayersContent();
+		}
 		Landscape->SetLandscapeGuid(FGuid::NewGuid());
 
 		const FString MaterialPath = JStrAny(In, { TEXT("material"), TEXT("landscapeMaterial") });
@@ -285,12 +296,29 @@ namespace MifBridge
 		TMap<FGuid, TArray<FLandscapeImportLayerInfo>> LayerPerLayer;
 		LayerPerLayer.Add(FGuid(), MoveTemp(ImportLayers));
 
+		// ALandscapeProxy::Import's trailing parameter differs in BOTH type and defaultedness:
+		//   5.3 LandscapeProxy.h:1220  const TArray<FLandscapeLayer>* InImportLayers = nullptr
+		//   5.7 LandscapeProxy.h:1398  const TArrayView<const FLandscapeLayer>& InImportLayers
+		// 5.3 has a default so eleven arguments compile; 5.7 has none and wants a TArrayView. No single
+		// spelling satisfies both, so this is one of the few places a real version guard is unavoidable.
+		//
+		// EMPTY is correct: edit layers are switched off immediately above, so there are none to pass.
+#if MIF_ENGINE_5_7_PLUS
+		Landscape->Import(
+			Landscape->GetLandscapeGuid(),
+			0, 0, VertsX - 1, VertsY - 1,
+			SectionsPerComponent, QuadsPerSection,
+			HeightPerLayer, nullptr,
+			LayerPerLayer, ELandscapeImportAlphamapType::Additive,
+			TArrayView<const FLandscapeLayer>());
+#else
 		Landscape->Import(
 			Landscape->GetLandscapeGuid(),
 			0, 0, VertsX - 1, VertsY - 1,
 			SectionsPerComponent, QuadsPerSection,
 			HeightPerLayer, nullptr,
 			LayerPerLayer, ELandscapeImportAlphamapType::Additive);
+#endif
 
 		// Mirrors what the editor's New Landscape tool does after importing — without this the
 		// landscape renders but has no ULandscapeInfo, and every later edit call finds nothing.

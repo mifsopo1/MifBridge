@@ -1,5 +1,17 @@
 // MifBridge — session/assets, introspection, variables, and compile read-back endpoints.
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"
+// FStringOutputDevice MOVED between the two engines this plugin targets:
+//   5.3: declared in Containers/UnrealString.h, reached transitively through CoreMinimal
+//   5.7: promoted to its own header, Misc/StringOutputDevice.h, and no longer pulled in for free
+//
+// So the include is REQUIRED on 5.7 and IMPOSSIBLE on 5.3 - that path does not exist there, and an
+// unguarded include is a fatal C1083. The Curfew session hit the 5.7 half and could not see the 5.3
+// half; building here caught it. A fifth shape for docs/02_GOTCHAS.md section 14: same type, same
+// name, different HEADER.
+#if MIF_ENGINE_5_7_PLUS
+#include "Misc/StringOutputDevice.h"
+#endif
 #include "Engine/Level.h"   // ULevel::GetExternalActorsPath
 #include "FileHelpers.h"   // FEditorFileUtils::GetDirtyContentPackages - save_package warns about unsaved external actors
 #include "MifBridgeLog.h"

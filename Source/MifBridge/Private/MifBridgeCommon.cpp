@@ -2,6 +2,7 @@
 #include "Engine/World.h"       // UWorld / EWorldType for CollectPIEWorlds
 #include "Engine/Engine.h"      // GEngine->GetWorldContexts for CollectPIEWorlds
 #include "MifBridgeHandlers.h"
+#include "AssetRegistry/AssetRegistryModule.h"   // UE 5.7 tightened IWYU - no longer pulled in transitively
 #include "Misc/ScopeExit.h"
 #include "TimerManager.h"                    // SetTimerForNextTick - MifDeferToNextTick
 #include "MifBridgeEndpointRegistry.h"      // Public/ — the provider registration interface

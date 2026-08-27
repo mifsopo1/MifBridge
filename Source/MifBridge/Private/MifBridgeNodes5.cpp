@@ -34,6 +34,18 @@
 // build happened to put Nodes5 and Nodes6 in the same translation unit, which is not a guarantee.
 // Do NOT copy either function into another file: see the C2084 note in MifBridgeHandlers.h.
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"
+// FStringOutputDevice MOVED between the two engines this plugin targets:
+//   5.3: declared in Containers/UnrealString.h, reached transitively through CoreMinimal
+//   5.7: promoted to its own header, Misc/StringOutputDevice.h, and no longer pulled in for free
+//
+// So the include is REQUIRED on 5.7 and IMPOSSIBLE on 5.3 - that path does not exist there, and an
+// unguarded include is a fatal C1083. The Curfew session hit the 5.7 half and could not see the 5.3
+// half; building here caught it. A fifth shape for docs/02_GOTCHAS.md section 14: same type, same
+// name, different HEADER.
+#if MIF_ENGINE_5_7_PLUS
+#include "Misc/StringOutputDevice.h"
+#endif
 #include "MifBridgeLog.h"
 
 #include "UObject/UnrealType.h"        // FProperty, FStructProperty, FObjectProperty, Import/ExportText, FScript*Helper
@@ -244,7 +256,10 @@ namespace MifBridge
 		// entry name, and a wrong name imports as 0 — i.e. the FIRST entry, a plausible-looking value.
 		const FEnumProperty* EnumP = CastField<FEnumProperty>(Prop);
 		const FByteProperty* ByteP = CastField<FByteProperty>(Prop);
-		const UEnum* Enum = EnumP ? EnumP->GetEnum() : (ByteP ? ByteP->Enum : nullptr);
+		// ToRawPtr on the inner branch: 5.7 cannot reconcile TObjectPtr<UEnum> with nullptr in a
+		// ternary. Same C2445 family as the two in MifBridgeNodes.cpp.
+		const UEnum* Enum = EnumP ? EnumP->GetEnum()
+							  : (ByteP ? ToRawPtr(ByteP->Enum) : nullptr);
 		if (Enum != nullptr)
 		{
 			if (bOutValidated) { *bOutValidated = true; }
