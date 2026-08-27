@@ -1008,11 +1008,24 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
       quietly lost. The endpoint now at least reports `removedCount` and `removedWidgets`, so the
       subtree is disclosed either way.
 
-- [ ] **C++ & Modules** — a DDS2 mod is Blueprint plus a `_P` pak. Cooked-game mods cannot add
+- [x] **C++ & Modules** - RESOLVED 2026-08-27, and split in two.
+      BUILT: live_coding_status and live_coding_compile. Only the editor can compile inside its
+      own running process and report whether it took - the same argument MifBridge was
+      founded on for Blueprints. live_coding_status also answers a question that had cost
+      this project real time: whether something is holding the editor's DLLs so an external
+      build will silently do nothing. Against Andre's editor it answered yes.
+      NOT BUILT, deliberately: endpoints that read and write .cpp/.h. An agent already has
+      file tools and does that better without an HTTP round trip. Adding them would be
+      tool-count parity rather than capability - the exact thing this spec says not to chase.
       REOPENED - declined because a cooked mod cannot add C++ modules. Curfew is UNCOOKED 5.7 and can. The decline text even said 'this is a real competitor advantage for general UE development'.
       C++ modules, so "read and write .cpp/.h and modify the codebase" has no target here. This is a
       real competitor advantage for general UE development and a non-feature for this use case.
-- [ ] **Build Config** — same reason. The mod build is `trigger_cook` plus pak, which is already
+- [~] **Build Config** - declined again 2026-08-27, on NEW reasoning.
+      The old decline was cooked-only and invalid. This one is not: .Target.cs and .Build.cs are
+      plain files an agent can already read and edit directly, and nothing about them needs a
+      running editor. The only part that did - triggering a compile and reading the result -
+      is live_coding_compile, which now exists.
+      Reconsider if a case appears that genuinely needs the EDITOR's view of build state.
       REOPENED - declined as 'the mod build is trigger_cook plus pak'. An uncooked 5.7 project has real build configuration.
       covered; there is no per-mod build configuration to edit.
 - [ ] **MetaHuman** — requires MetaHuman assets and the plugin pipeline; not present in DDS2 and not
