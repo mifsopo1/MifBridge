@@ -418,6 +418,12 @@ public:
 							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
 							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 5))
 					]
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						MifTabButton(LOCTEXT("TabSplit", "SKELETAL SPLIT"), 6,
+							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
+							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 6))
+					]
 					+ SHorizontalBox::Slot().FillWidth(1.f)
 					[
 						SNew(SSpacer)
@@ -484,6 +490,18 @@ public:
 								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
 						]
 					]
+					+ SWidgetSwitcher::Slot()
+					[
+						// Lazy like Behavior: the asset list comes from the registry and does not change
+						// while the editor idles. Each mesh is analysed on click via
+						// H_analyze_skeletal_split, so the split map is always read fresh.
+						SAssignNew(SplitHost, SBox)
+						[
+							SNew(STextBlock)
+								.Text(LOCTEXT("SplitLazy", "finding skeletal meshes..."))
+								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
+						]
+					]
 				]
 			]
 		];
@@ -497,11 +515,13 @@ private:
 	TSharedPtr<SBox> PerfHost;
 	TSharedPtr<SBox> InheritHost;
 	TSharedPtr<SBox> BehaviorHost;
+	TSharedPtr<SBox> SplitHost;
 	int32 ActiveTab = 0;
 	bool  bBrainBuilt = false;
 	bool  bHeatBuilt = false;
 	bool  bInheritBuilt = false;
 	bool  bBehaviorBuilt = false;
+	bool  bSplitBuilt = false;
 
 	int32 GetActiveTab() const { return ActiveTab; }
 
@@ -535,6 +555,13 @@ private:
 			// Each tree is described on click, so what you are looking at is always read fresh.
 			bBehaviorBuilt = true;
 			BehaviorHost->SetContent(MifBridge::MakeBehaviorWidget());
+		}
+		if (Index == 6 && !bSplitBuilt && SplitHost.IsValid())
+		{
+			// Once, same reasoning as Behavior directly above: the asset list is registry-only, each
+			// mesh's split map is analysed fresh on click.
+			bSplitBuilt = true;
+			SplitHost->SetContent(MifBridge::MakeSkeletalSplitWidget());
 		}
 		// REBUILT EVERY TIME, not once. The first version cached these on first switch, and Andre
 		// opened IslaSombra to find the panel still describing Untitled_1 - a census of a level that

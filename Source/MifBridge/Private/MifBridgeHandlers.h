@@ -163,6 +163,9 @@ namespace MifBridge
 	/** The BEHAVIOR tab. Calls H_describe_behavior_tree, so the view and the endpoint
 	 *  cannot disagree about a project's AI. */
 	TSharedRef<SWidget> MakeBehaviorWidget();
+	/** The SKELETAL SPLIT tab. Calls H_analyze_skeletal_split, so the view and the endpoint
+	 *  cannot disagree about whether a mesh could be split, or where. */
+	TSharedRef<SWidget> MakeSkeletalSplitWidget();
 	/** The complexity heatmap: every package under a prefix, sorted by connection count and
 	 *  coloured by RANK rather than absolute value - see the file header for why. */
 	TSharedRef<SWidget> MakeHeatmapWidget();
