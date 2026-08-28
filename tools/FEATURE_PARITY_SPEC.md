@@ -2611,3 +2611,42 @@ cannot become one giant blocking item:
       integration contract for every existing consumer and is a project on its own. Flagging both rather
       than picking one and running, since this is the kind of consequential, hard-to-cheaply-reverse call
       that is Andre's to make.
+
+- [x] **list_virtual_bones and list_morph_targets - more Skeletal Mesh Editor coverage.** DONE
+      2026-08-28, Andre's ask after restarting the UE 5.7 probe. list_bones only reaches the
+      ReferenceSkeleton; virtual bones and morph targets each live in their own separate array and
+      had no reader at all.
+
+      list_virtual_bones reads USkeleton::GetVirtualBones() - a plain, non-editor-only UPROPERTY,
+      identical on 5.3 and 5.7. Accepts a Skeleton or a SkeletalMesh (resolved via GetSkeleton(), the
+      same pattern list_bones already uses for its retargeting-mode lookup).
+
+      list_morph_targets uses the engine's OWN K2_GetAllMorphTargetNames() rather than re-deriving the
+      list from the MorphTargets UPROPERTY array by hand. Deliberately checked this was NOT the same
+      trap as analyze_skeletal_split's ImportedModel crash (this file, above): morph targets are
+      RUNTIME data - a cooked build needs them to deform a face at play time - so the declaration
+      carries no WITH_EDITORONLY_DATA guard, unlike ImportedModel. Reasoned from the header first, then
+      MEASURED rather than trusted: every one of DDS2's 188 real cooked SkeletalMesh assets was called
+      against directly, zero crashes, zero failures.
+
+      Per-target hasDataForLod / vertexCount distinguishes a morph target that actually deforms
+      geometry at a given LOD from one that was declared but never sculpted there - reported as a bool
+      plus an optional count rather than a confusing vertexCount:0 either way.
+
+      VERIFIED ON BOTH ENGINES: Build.bat against DDS2's real UE 5.3.2 (buildcheck.py clean on all
+      three independent signals - no error/fatal/LNK token, no "Result: Failed", DLL mtime moved), and
+      make_engine_probe.py --engine 5.7 --build (Result: Succeeded, MifBridgeSkeleton.cpp compiled
+      clean).
+
+      LIVE-VERIFIED EXHAUSTIVELY, not sampled: tools/test_list_bones.py's new T790/T791 call both
+      endpoints against EVERY Skeleton (21) and EVERY SkeletalMesh (188) DDS2 actually has, because the
+      property worth proving is crash safety at scale on real cooked content - the exact class of
+      failure analyze_skeletal_split's own postmortem describes for a different accessor. All 209 calls
+      succeeded. DDS2 turns out to use NEITHER feature - no virtual bones on any of its 21 skeletons, no
+      morph targets on any of its 188 meshes - which is a genuine finding about this project's content,
+      not a reason to skip checking. The POSITIVE (non-empty) read path is honestly logged as unproven
+      on this project's content, matching test_landscape_info.py's own discipline for its unreachable
+      World Partition branch, rather than assumed correct from the empty-path passing.
+
+      Both endpoints follow list_bones' existing alias convention (path/assetPath/skeleton/mesh);
+      param_reach_baseline.txt gained the same ALIAS entries list_bones already carries.
