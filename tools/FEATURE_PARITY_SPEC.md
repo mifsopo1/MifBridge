@@ -1324,8 +1324,9 @@ engine has no such class registered in this build, which is as definitive as it 
       way GAS/MVVM/MetaHuman were verified against fixtures instead of real project content. See the
       DONE entry near the end of this file. LiveLink, MassEntity, ModularGameplay remain declined - but
       on re-examination each of those has a SPECIFIC reason beyond "no test project uses it" (LiveLink
-      needs an external data source; MassEntity and ModularGameplay were not re-examined this pass and
-      should not be assumed correctly declined just because they were not the one caught tonight).
+      needs an external data source; MassEntity and ModularGameplay were re-examined later the same
+      night with the same rigor - see the dedicated entry near the end of this file for the real,
+      technical reason each is still blocked, distinct from this entry's original mistake).
 - [x] **Metasound - the audio read half.** DONE 2026-08-27. `describe_metasound`, both engines.
       VERIFIED AGAINST REAL CONTENT, which is why it was chosen: MS_OneArmedBandit reports 10 inputs
       (PullLever/Trigger, RollersRemaining/Int32, Reward/Float ...), 2 outputs, 97 nodes, 111 edges,
@@ -3444,3 +3445,53 @@ cannot become one giant blocking item:
       HONEST FLAG FOR NEXT TIME: MassEntity and ModularGameplay were NOT re-examined this pass just
       because LevelSnapshots was the one caught - they should not be assumed correctly declined without
       the same re-check LevelSnapshots just got.
+- [~] **ModularGameplay and MassEntity re-examined with the same rigor LevelSnapshots got - both
+      still declined, but now for real, SPECIFIC technical reasons instead of "no test project uses
+      it."** Checked 2026-08-28, the honest follow-up flagged when LevelSnapshots was reopened (that
+      entry explicitly said these two "should not be assumed correctly declined without the same
+      re-check").
+      MODULARGAMEPLAY: UGameFrameworkComponentManager (Components/GameFrameworkComponentManager.h) is a
+      UGameInstanceSubsystem, not a UWorldSubsystem or UEditorSubsystem. Its own class comment says
+      "Any actors that are in memory when a request is made will automatically get the components" and
+      GetForActor's default is bOnlyGameWorlds=true - this is infrastructure for actors as they SPAWN
+      DURING PLAY, not for editor-placed actors. A UGameInstanceSubsystem only exists once
+      UGameInstance::Init() has run, which happens for PIE or a packaged game - the bare editor world
+      this project's own EditorWorld() helper returns has no UGameInstance at all (that is precisely
+      why EditorWorld() and ActiveWorld() are two different helpers here - MifBridgeHandlers.h's own
+      doc comment on ActiveWorld() exists BECAUSE PIE and editor worlds answer differently). Building
+      add_component_request/add_receiver endpoints against this subsystem would only be exercisable
+      during PIE, which this project has a standing rule against starting. Genuinely blocked by an
+      existing, unrelated standing rule - not "nobody needs it."
+      MASSENTITY: UMassEntitySubsystem (MassEntitySubsystem.h) IS a UWorldSubsystem (exists in the
+      editor world, unlike ModularGameplay's manager) - but its own class comment says its "sole
+      responsibility... is to host the default instance of FMassEntityManager... All the
+      GAMEPLAY-related use cases of Mass (found in MassGameplay and related plugins) use this by
+      default." FMassEntityManager is a plain C++ class, not a UCLASS/USTRUCT - nothing reflectable a
+      JSON bridge can drive generically. The actual authorable surface (Fragments as project-specific
+      C++ structs, Traits, spawner config assets) lives entirely in MassGameplay, a SEPARATE plugin
+      that is NOT currently linked in Build.cs. Building real capability here would need either
+      hardcoding project-specific Fragment types that do not exist in either project, or adding a new
+      plugin dependency (MassGameplay) - a bigger, more deliberate decision than reopening an
+      already-linked module, and one that should go to Andre rather than be added unilaterally on the
+      strength of "the linked module turned out to have nothing generic in it."
+      Both are real, specific, technically-grounded declines - not the "zero plan or presence" mistake
+      corrected in the LevelSnapshots entry. Verified by reading the actual subsystem base classes and
+      class-level doc comments, cross-checked against this project's own already-established
+      EditorWorld()-vs-ActiveWorld() distinction (MifBridgeHandlers.h) rather than assumed.
+      IF ANDRE WANTS MassEntity PURSUED: the concrete next step is adding MassGameplay to Build.cs
+      (AddPluginModules pattern, same as every other optional plugin here) and re-examining what
+      UMassEntityConfigAsset/spawner authoring actually offers - not attempted here since it is a new
+      dependency decision, not a re-examination of one already made.
+
+      LIVELINK ALSO SPOT-CHECKED, briefly, while already re-examining this pair: "needs an external
+      data source" is LESS certain than it sounds. LiveLink/Source/LiveLink/Public/VirtualSubjects/
+      LiveLinkBlueprintVirtualSubject.h defines a `Blueprintable, Abstract` virtual-subject base class
+      that feeds LiveLink data WITHOUT any real hardware - the module is already linked
+      (MIF_WITH_LIVELINK). This is a genuine, not-yet-closed lead, not a confirmed fixture-testable
+      capability the way LevelSnapshots turned out to be: ULiveLinkBlueprintVirtualSubject's lifecycle
+      (Initialize/Update, subject registration via FLiveLinkSubjectKey and ILiveLinkClient, driven by
+      LiveLinkClient.h's subsystem) is materially more involved than a simple create-asset-and-read-
+      property pattern, and was not investigated deeply enough this pass to say either way whether it
+      is genuinely fixture-testable without PIE. Recorded here rather than left silently declined:
+      LiveLink's "needs external data source" reasoning should be treated as UNVERIFIED, not confirmed,
+      until someone actually spends the time tracing the virtual-subject registration path end to end.
