@@ -1100,7 +1100,18 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
 - [x] **PCG** - BUILT 2026-08-27. list_pcg_graphs, describe_pcg_graph, list_pcg_components, pcg_generate, pcg_cleanup.
       Two separate decline entries existed for PCG, both reopened and both left showing as open work after it was built - which is its own small lesson about editing a spec by pattern rather than reading it. The endpoints are live and verified on 5.3 and 5.7.
       REOPENED, and this is the one the old rule cost most. Declined as 'a DDS2 mod does not regenerate the world'. Curfew is a CITY BUILDER on 5.7 - procedural generation is close to its whole point.
-- [~] **Slate** — Slate is C++ UI. Mods use UMG, which is covered.
+- [~] **Slate** — declined, RE-REASONED 2026-08-28 on the system rather than the project (same shape
+      as the Control Rig authoring item below). The original reasoning ("Mods use UMG, which is
+      covered") is the superseded "irrelevant to cooked modding" pattern, caught auditing declined
+      items against the post-2026-08-26 rule. The real reason holds regardless of DDS2 vs Curfew:
+      VERIFIED, SWidget.h:153 - `class SWidget : public FSlateControlledConstruction, public
+      TSharedFromThis<SWidget>` - NOT UObject-derived. Every existing MifBridge endpoint operates by
+      reflecting UObject/UPROPERTY/UCLASS data (FindObject, property iteration, the asset registry);
+      Slate widgets are TSharedRef-managed C++ constructs built via declarative macros (SNew/
+      SAssignNew) with their own bespoke, limited reflection (SLATE_DECLARE_WIDGET_API, what the
+      Widget Reflector debug tool uses) that shares nothing with that machinery. Reaching Slate would
+      mean building an entirely separate introspection subsystem from scratch, not extending an
+      existing pattern - a real architectural wall, not a judgment call about whether Curfew needs it.
 - [~] **Async Tasks** — a Blueprint-graph concern already reachable through the normal node endpoints;
       there is no separate authoring surface to add.
 
@@ -1113,6 +1124,16 @@ engine has no such class registered in this build, which is as definitive as it 
 - [~] **GAS Abilities / Attribute Sets** — declined. `GameplayAbilities` is not enabled in
       DrugDealerSimulator2.uproject, and `find_assets` cannot even resolve the `GameplayAbility` or
       `AttributeSet` classes. DDS2 does not use GAS, so the entire category is a non-feature here.
+      CORRECTED 2026-08-28, found stale while auditing declined items against the post-2026-08-26
+      judging rule: this reasoning is exactly the superseded "irrelevant to cooked modding" pattern -
+      judged for DDS2 alone, and DDS2 genuinely has no GAS content, but MifBridge serves Curfew too.
+      The GameplayEffect modifier slice of this category WAS built and is DONE - see "GameplayEffect
+      modifier authoring" below, which never cross-referenced back to correct this entry, the same gap
+      the Control Rig/IK Rig item above was caught and fixed for. Left as declined here rather than
+      flipped to `[x]`: what shipped is deliberately narrow (Modifiers/Executions only, per that
+      entry's own SCOPE note) - Tags, immunity and conditional effects via GEComponents remain
+      genuinely unbuilt, so "declined" is still the accurate word for the REST of this category, just
+      not for all of it.
 - [x] **PCG** - BUILT 2026-08-27. list_pcg_graphs, describe_pcg_graph, list_pcg_components, pcg_generate, pcg_cleanup.
       REOPENED, and this is the one the old rule cost most. Declined as 'a DDS2 mod does not regenerate the world'. Curfew is a CITY BUILDER on 5.7 - procedural generation is close to its whole point.
       reasoning rather than resting on it.
