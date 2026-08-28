@@ -4,11 +4,9 @@
   "add_make_map",
   "add_self",
   "add_sequence",
-  "add_sequence_track",
   "describe_live_widget",
   "list_live_widgets",
   "list_pie_actors",
-  "load_level",
   "move_actor_to",
   "pcg_cleanup",
   "pcg_generate",
@@ -172,7 +170,11 @@
    "test_reroute.py"
   ],
   "add_sequence_possessable": [
+   "test_sequencer_authoring.py",
    "test_uncovered_reads8.py"
+  ],
+  "add_sequence_track": [
+   "test_sequencer_authoring.py"
   ],
   "add_simplified_collision": [
    "test_simplified_collision_guard.py"
@@ -368,6 +370,7 @@
    "test_ik_goals_solvers.py",
    "test_ik_rig.py",
    "test_node_spawns.py",
+   "test_sequencer_authoring.py",
    "test_textures.py",
    "test_uncovered_reads8.py"
   ],
@@ -492,6 +495,7 @@
    "test_reroute.py",
    "test_rollback_real.py",
    "test_selfpin.py",
+   "test_sequencer_authoring.py",
    "test_set_struct_member.py",
    "test_textures.py",
    "test_thumbnails.py",
@@ -539,7 +543,8 @@
    "test_uncovered_reads.py"
   ],
   "describe_level_sequence": [
-   "test_sequencer.py"
+   "test_sequencer.py",
+   "test_sequencer_authoring.py"
   ],
   "describe_metasound": [
    "test_metasound.py"
@@ -878,6 +883,7 @@
    "test_ik_authoring.py"
   ],
   "list_sequence_bindings": [
+   "test_sequencer_authoring.py",
    "test_uncovered_reads4.py"
   ],
   "list_sockets": [
@@ -934,6 +940,9 @@
   ],
   "live_coding_status": [
    "test_uncovered_reads4.py"
+  ],
+  "load_level": [
+   "test_load_level_guard.py"
   ],
   "move_node": [
    "test_find_and_move.py"
@@ -1145,6 +1154,7 @@
   "self_audit": [
    "test_duplicate_cooked_guard.py",
    "test_graph_patch.py",
+   "test_load_level_guard.py",
    "test_macro_dispatch.py",
    "test_mcp_post_errors.py",
    "test_modal_hazards.py",
@@ -1304,6 +1314,7 @@
   "spawn_actor_in_level": [
    "test_audit_fixes.py",
    "test_perf_stats.py",
+   "test_sequencer_authoring.py",
    "test_snap_ground.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads8.py"

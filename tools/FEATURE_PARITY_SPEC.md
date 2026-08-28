@@ -3205,3 +3205,48 @@ cannot become one giant blocking item:
       parity_check.py clean. test_collision.py (the pre-existing, unrelated collision-PROFILE suite)
       re-checked for regressions: still 22/22 clean.
       coverage_gaps.json: 25 -> 23.
+
+- [~] **load_level's SUCCESS path is permanently declined - it discards the current open level's
+      unsaved state with NO confirm gate at all.** Declined 2026-08-28, tools/test_load_level_guard.py
+      tests only the two refusal paths (empty path, nonexistent map file), both proven safe by reading
+      the handler's own control flow (both return before MifDeferToNextTick is ever reached).
+      mifaudit.py's own DENY list already refuses load_level for exactly this reason, alongside
+      new_level/open_level. Unlike trace_start's DENY entry (which this project already bypasses
+      narrowly and deliberately elsewhere, since that guard exists only to stop a BLIND SWEEP from an
+      accidental side effect), load_level's DENY is about the operation itself being inherently
+      state-destroying by design - there is no scratch_confirm-style technique that can prove "this
+      particular open level is safe to discard" the way a payload can be proven scratch-only by path.
+      6/6 PASS on the refusal paths, both driven via M.raw_post since mifaudit's DENY intercepts this
+      endpoint unconditionally before even a safe payload is inspected.
+
+- [x] **Real bug found and fixed: create_asset produced a malformed LevelSequence, and it was
+      blocking add_sequence_possessable/add_sequence_track's entire success path.** DONE 2026-08-28.
+      Investigating why add_sequence_track (the last genuinely open item in coverage_gaps.json)
+      couldn't be closed found create_asset{class:"LevelSequence"} returns ok:true for an asset
+      add_sequence_possessable then refuses live: "has no MovieScene. The asset exists but is
+      malformed." create_asset's generic path is a bare NewObject<UObject>, and ULevelSequence needs
+      one more call - Initialize(), which creates its internal UMovieScene sub-object - the exact
+      extra step the engine's own stock "Add Level Sequence" content-browser action takes
+      (ULevelSequenceFactoryNew::FactoryCreateNew, confirmed by reading that engine source directly).
+      Fixed in MifBridgeUserTypes.cpp's H_create_asset: after NewObject succeeds, if the result is a
+      ULevelSequence, call Initialize() before registering it - checked by exact TYPE, not by class
+      NAME the way this session's cooked-asset crash guards are, because this is a construction step
+      to run, not a class to refuse.
+      Verified with a real Build.bat on both engines (DDS2's 5.3.2 and the 5.7 probe, buildcheck.py-
+      clean both times) before writing the test suite, not inferred from the source. Then drove the
+      FULL sequencer chain live for the first time ever on this project: create_asset -> a real
+      MovieScene exists (describe_level_sequence reads it back) -> add_sequence_possessable binds a
+      real actor for real (a guid comes back, a duplicate bind is refused) -> add_sequence_track adds
+      a real track against that guid (an unknown guid is refused) -> list_sequence_bindings reflects
+      both writes independently. New suite tools/test_sequencer_authoring.py, T970-T973, 12/12 PASS.
+      Same /Temp/-actor-path discipline as set_niagara_component_parameter earlier this session:
+      add_sequence_possessable is confirm-gated but addressed by an actor instance path scratch_confirm
+      correctly refuses to trust blindly, so this uses M.raw_post narrowly, justified because the
+      bound actor was proven safe by construction one line earlier in the same run.
+      test_create_asset.py (the pre-existing, general create_asset suite) re-checked for regressions:
+      still 20/20 clean - the LevelSequence special-case does not affect any other asset class.
+      parity_check.py clean. coverage_gaps.json: 22 -> 21.
+      This closes the coverage sweep that began this session at 113 uncovered endpoints: every
+      remaining entry in coverage_gaps.json is now either a confirmed static-matching false negative
+      (4, already declined) or an endpoint permanently out of reach under this project's own standing
+      PIE/save/PCG rules (17, already declined). Nothing genuinely open remains.

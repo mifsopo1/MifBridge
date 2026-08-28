@@ -27,6 +27,7 @@
 #include "EdGraph/EdGraphPin.h"   // FEdGraphPinType — complete type needed for ToPinType()/MakePinType
 #include "Engine/DataTable.h"
 #include "Engine/UserDefinedEnum.h"
+#include "LevelSequence.h"        // ULevelSequence::Initialize() - create_asset's one post-construction special case
 #include "Engine/UserDefinedStruct.h"
 #include "Kismet2/EnumEditorUtils.h"
 #include "Kismet2/StructureEditorUtils.h"
@@ -749,6 +750,20 @@ namespace MifBridge
 		{
 			Fail(Out, FString::Printf(TEXT("NewObject<%s> returned null"), *Class->GetName()));
 			return;
+		}
+
+		// A BARE NewObject<ULevelSequence> IS MALFORMED - "the asset exists but is malformed", found
+		// live 2026-08-28 driving add_sequence_possessable against one. ULevelSequenceFactoryNew (the
+		// stock content-browser "Add Level Sequence" action, LevelSequenceFactoryNew.cpp) does exactly
+		// this NewObject call and then ONE more: NewLevelSequence->Initialize(), which creates and
+		// assigns the internal UMovieScene sub-object every other Sequencer endpoint in this plugin
+		// assumes exists (add_sequence_possessable's own error names it: "has no MovieScene"). Checked
+		// by exact type, not by name-string like the cooked-asset guards elsewhere in this plugin,
+		// because this is a construction step to RUN, not a class to refuse - a wrong match here would
+		// silently skip real initialisation rather than silently allow a crash.
+		if (ULevelSequence* NewSequence = Cast<ULevelSequence>(Asset))
+		{
+			NewSequence->Initialize();
 		}
 
 		// WITHOUT THESE TWO LINES THE ASSET IS A GHOST. It answers get_property and set_property
