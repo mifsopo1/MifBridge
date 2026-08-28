@@ -2901,3 +2901,22 @@ cannot become one giant blocking item:
       rooting at every one of DDS2's ~140 real advertised native roots, not a sample. 299/299 PASS.
       coverage_gaps.json refreshed for real: 113 -> 92 across this session's three batches, from an
       exhaustive live scan, not assumed.
+
+- [x] **Closed 8 more zero-coverage endpoints - animation, collision, foliage, perf, sequences, live
+      coding.** DONE 2026-08-28, fourth batch. describe_animation, list_animations, get_collision,
+      list_foliage_instances, perf_heavy_actors, list_sequence_bindings, live_coding_status,
+      live_coding_compile - tools/test_uncovered_reads4.py.
+      live_coding_status/live_coding_compile are notable: both were used extensively earlier the
+      same session (verifying a Live Coding hot-patch live while Andre reviewed the Skeletal Split
+      panel), so the real behaviour was already understood first-hand before this suite existed -
+      it just needed writing down as a committed test. The actual hot-patch compile path stays
+      deliberately unexercised: starting Live Coding changes how the editor holds its DLLs for the
+      rest of that session, which the endpoint's own guard already treats as a person's decision,
+      not something a routine sweep should trigger. Tests the refusal paths - no confirm, no wait
+      option, and (adaptively) the "not started" guard, which turned out NOT to apply this run since
+      DDS2 had Live Coding already running on this particular launch - logged honestly as unproven
+      rather than assumed either way.
+      38/38 PASS, verified live against DDS2; nothing saved, editor closed after.
+      coverage_gaps.json refreshed: 92 -> 84 uncovered. Across all four batches this session: 29
+      previously-untested endpoints closed plus one two-part real bug found and fixed
+      (blueprint_inheritance_tree's nativeRoots).
