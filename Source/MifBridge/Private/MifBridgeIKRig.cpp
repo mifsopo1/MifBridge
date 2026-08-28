@@ -995,12 +995,35 @@ namespace MifBridge
 		}
 		else
 		{
+			// THE IK RIG PROCESSOR CHANGED KIND IN 5.6, same migration as the retarget processor
+			// elsewhere in this file (search "THE RETARGET PROCESSOR CHANGED KIND IN 5.6") - but here
+			// the deprecated wrapper's replacement Log is an outright DECOY, not just a narrowed
+			// check: IKRigProcessor.h's own comment on UIKRigProcessor::Log says "the deprecated
+			// logging system will no longer function. It's here to avoid compilation issues." The
+			// wrapper's Initialize() runs the real work through a PRIVATE FIKRigProcessor member
+			// (Processor.Initialize(...) internally) whose real Log the wrapper's public interface
+			// never exposes anywhere. So on 5.6+, reading Proc->Log as this code used to - unconditionally,
+			// no version gate at all - ALWAYS returned an empty log: runtimeWarnings/runtimeErrors
+			// reported nothing even when the real initialisation genuinely warned or failed with a real
+			// reason, e.g. exactly the "a goal connected to NO solver" case this function's own
+			// runtimeNote below already promises to surface. bInit itself was still correct (IsInitialized()
+			// forwards to the real processor), so this was a silently-empty-diagnostics bug, not a wrong
+			// verdict - found by reading IKRigProcessor.h fully rather than stopping at the deprecation
+			// warning's headline text.
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			FIKRigProcessor Processor;
+			Processor.Initialize(Rig, PreviewMesh, FIKRigGoalContainer());
+			const bool bInit = Processor.IsInitialized();
+			Out->SetBoolField(TEXT("runtimeInitialized"), bInit);
+			IKCopyLog(Processor.Log, Out);
+#else
 			// Held in a TStrongObjectPtr because the processor is a UObject referenced by nothing else.
 			TStrongObjectPtr<UIKRigProcessor> Proc(NewObject<UIKRigProcessor>(GetTransientPackage()));
 			Proc->Initialize(Rig, PreviewMesh);
 			const bool bInit = Proc->IsInitialized();
 			Out->SetBoolField(TEXT("runtimeInitialized"), bInit);
 			IKCopyLog(Proc->Log, Out);
+#endif
 			Out->SetStringField(TEXT("runtimeNote"), bInit
 				? TEXT("the engine initialised this rig successfully against its preview mesh, so it "
 					   "would run. Any runtimeWarnings above are real but not fatal - note that a goal "
