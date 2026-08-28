@@ -2729,3 +2729,26 @@ cannot become one giant blocking item:
       DDS2's 5.3.2 (buildcheck.py clean on all three signals) and the 5.7 probe (Result: Succeeded) -
       the Live Coding patch he saw live was real, not just applied-and-hoped. Committed and pushed
       (5c7242e).
+
+- [x] **ops_gen.py test coverage - the Blender addon's local ComfyUI generation pipeline.** DONE
+      2026-08-28, Andre's ask for equal depth on the Blender side, not just UE. Auditing the addon's
+      20 ops against the two existing Blender suites found 15 covered, 5 not: gen_status, gen_image,
+      gen_mesh, gen_texture, gen_asset - the ENTIRE ops_gen.py module, zero coverage before this.
+      Real generation needs a running ComfyUI with Hunyuan3D-2 custom nodes and multi-gigabyte
+      checkpoints - confirmed NOT present on this machine (nothing answers on 127.0.0.1:8188), and
+      standing up a GPU generation stack is out of scope for a coverage sweep.
+      So tools/test_blender_gen.py (T800-T801) proves what is actually provable: parameter contracts
+      needing no backend (gen_mesh refuses without an image, gen_texture without a mesh path, every
+      op's reject_unknown guard), and the graceful-failure path when ComfyUI is unreachable - the state
+      every one of these five ops is ACTUALLY in on a machine without ComfyUI set up, not a contrived
+      edge case. All five share one failure message from one _post() call inside
+      _object_info/_require_nodes; checked identically across all five rather than assumed from
+      gen_image's path alone. Each also had to fail FAST rather than hang for its real default timeout
+      (600-3600s) - genuinely provable since a connection refusal is immediate.
+      Explicitly logged as UNPROVEN, not silently skipped: what a real generation actually produces.
+      Written so a future run WITH ComfyUI reachable still passes (via gen_status's real capability
+      report) rather than needing rewriting, and still declines to attempt a real multi-minute GPU job
+      inline.
+      Verified against a freshly launched, disposable Blender 4.4 (--factory-startup, killed
+      afterward, not a reused stale instance - the exact mistake this project already filed a
+      postmortem about earlier the same day). 20/20 PASS.
