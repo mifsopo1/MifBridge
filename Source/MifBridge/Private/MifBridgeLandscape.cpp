@@ -96,6 +96,20 @@ namespace MifBridge
 			if (Path.IsEmpty()) { return nullptr; }
 			return LoadObject<ULandscapeLayerInfoObject>(nullptr, *Path);
 		}
+
+		// ULandscapeLayerInfoObject::LayerName is UE_DEPRECATED(5.7, "Property will be made private.
+		// Use public Getters/Setter instead.") - GetLayerName() just returns the same field
+		// (LandscapeLayerInfoObject.h:140), so this is forward-compat only, not a behaviour change
+		// like FStaticMeshBatchRelevance::LODIndex was. No getter exists on 5.3 (confirmed by grep of
+		// D:/UE532's LandscapeLayerInfoObject.h - the field there is plain, no deprecation).
+		FName MifLayerInfoName(const ULandscapeLayerInfoObject* Info)
+		{
+#if MIF_ENGINE_AT_LEAST(5, 7)
+			return Info->GetLayerName();
+#else
+			return Info->LayerName;
+#endif
+		}
 	}
 
 	// --- create_landscape ---------------------------------------------------
@@ -234,7 +248,7 @@ namespace MifBridge
 					return;
 				}
 
-				FLandscapeImportLayerInfo Import(Info->LayerName);
+				FLandscapeImportLayerInfo Import(MifLayerInfoName(Info));
 				Import.LayerInfo = Info;
 				Import.SourceFilePath = TEXT("");
 
@@ -245,7 +259,7 @@ namespace MifBridge
 				Import.LayerData.Init(Fill, VertsX * VertsY);
 
 				TSharedRef<FJsonObject> LOut = MakeShared<FJsonObject>();
-				LOut->SetStringField(TEXT("name"), Info->LayerName.ToString());
+				LOut->SetStringField(TEXT("name"), MifLayerInfoName(Info).ToString());
 				LOut->SetStringField(TEXT("layerInfo"), Info->GetPathName());
 				LOut->SetNumberField(TEXT("weight"), Weight);
 				LayersOut.Add(MakeShared<FJsonValueObject>(LOut));
@@ -716,7 +730,7 @@ namespace MifBridge
 		Landscape->PostEditChange();
 
 		Out->SetNumberField(TEXT("verticesTouched"), Touched);
-		Out->SetStringField(TEXT("layer"), LayerInfo->LayerName.ToString());
+		Out->SetStringField(TEXT("layer"), MifLayerInfoName(LayerInfo).ToString());
 		Out->SetStringField(TEXT("layerInfo"), LayerInfo->GetPathName());
 	}
 
