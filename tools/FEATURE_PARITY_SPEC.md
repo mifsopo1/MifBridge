@@ -2810,3 +2810,26 @@ cannot become one giant blocking item:
       real armature's name; a non-mesh object has no armatureModifier KEY at all, not a null one).
       38/38 PASS, verified on BOTH Blender 4.4 and 5.0 (re-ran after adding T813, not assumed from
       the earlier ops_rig.py run which predated this field).
+
+- [x] **list_modifiers - the Blender modifier stack, decoded per type.** DONE 2026-08-28, same
+      sweep as ops_rig.py/armatureModifier above, rounding out the same question: "what will
+      export actually produce". A Mirror or Subsurf still on the stack changes the exported
+      geometry and nothing could see that before spending an export finding out.
+      Reports the stack in EVALUATION ORDER, always: name/type/showViewport/showRender (a modifier
+      disabled at render is present but INERT, reported as such rather than omitted). Curated
+      `settings` dict for the seven types that matter to a game-mesh pipeline (ARMATURE, MIRROR,
+      SOLIDIFY, BEVEL, SUBSURF, DECIMATE, TRIANGULATE) - deliberately not exhaustive across
+      Blender's 100+ modifier types, since this addon only READS modifiers, never authors them,
+      and hand-describing every type would be effort spent on the wrong problem. A type outside the
+      curated list still reports name/type/visibility, never silently dropped.
+      Extended tools/test_blender_rig.py: T810/T811 for the parameter contract and empty-stack
+      case (always provable), new T814 for the populated case - a real Armature + Solidify stack,
+      in order, real decoded settings, and the disabled-at-render case correctly distinguished from
+      absent. 48/48 PASS, verified on both Blender 4.4 and 5.0; test_blender_ops.py still 12/12, no
+      regression.
+      bl_list_modifiers MCP wrapper added. parity_check.py clean: 23->24 addon ops, 30->31 _blender
+      call sites, 371->372 @mcp.tool wrappers.
+      Andre's Blender-side ask for this session is now complete: armature bones, shape keys, vertex
+      groups, mesh<->armature linkage, and the full modifier stack are all readable, all verified
+      empty-state AND populated, all on both installed modern Blender versions (4.4, 5.0 - the two
+      of his requested 4.4-5.2 range actually present on this machine).
