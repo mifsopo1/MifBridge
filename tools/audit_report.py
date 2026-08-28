@@ -49,6 +49,12 @@ TRIAGED = {
     ("GHOST_OK", "invoke_editor_tab"):
         "NOT A BUG - the response says manager:'global', and `asset` is only consulted when "
         "manager='assetEditor'. The ghost value was correctly irrelevant to the call that ran.",
+    ("GHOST_OK", "capture_viewport"):
+        "NOT A BUG - `path` here is a WRITE destination ('where to write the PNG'), not a reference "
+        "that must already exist, confirmed by reading the handler's own accepted-summary text. A "
+        "nonexistent output path succeeding is the entire point of a write - same shape as "
+        "create_blueprint's already-triaged false positive, just not caught by the ghost probe's "
+        "create_/add_/spawn_/import_ prefix skip because capture_ isn't one of those prefixes.",
     ("HANG", "recipe_reset_and_loop"):
         "UNCONFIRMED - one observation, recorded by the OLD hang logic that did not retry. The "
         "handler has no unbounded loop (it iterates MacroGraphs, 24 entries) and most likely paid "
