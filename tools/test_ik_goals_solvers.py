@@ -146,6 +146,36 @@ def main():
           v.get("purpose") == "retargeting" and v.get("valid") is True,
           "purpose=%s problems=%s" % (v.get("purpose"), json.dumps(v.get("problems"))[:140]))
 
+    # ---------------------------------------------------------------- T262b runtimeWarnings, for real
+    # REGRESSION LOCK for the fix in 3406cff: on UE 5.6+, UIKRigProcessor is a deprecated thin wrapper
+    # around FIKRigProcessor, and its Log member is a documented DECOY ("the deprecated logging system
+    # will no longer function... here to avoid compilation issues" - IKRigProcessor.h). Reading it, as
+    # this code used to unconditionally, made runtimeWarnings/runtimeErrors silently empty on every
+    # 5.6+ engine even when the real processor genuinely warned - and nothing here would have caught
+    # it, because every check above only ever asserts runtimeInitialized, never the warning/error text
+    # itself. A rig with a goal deliberately left unconnected from any solver is the engine's own
+    # documented "warns but still initialises" case (see the runtimeNote every list_ik_rig response
+    # already carries), which makes it the natural fixture for this: bInit stays True either way, so
+    # only reading the REAL log - not a decoy - can tell the two states apart.
+    print("\n=== T262b: an unconnected goal's warning survives to runtimeWarnings, not a decoy log ===")
+    warn = new_rig("T262warn", st)
+    M.call("set_ik_rig_retarget_root", {"path": warn, "bone": "pelvis"})
+    M.call("add_ik_retarget_chain", {"path": warn, "name": "Spine",
+                                     "startBone": "spine_01", "endBone": "spine_05"})
+    M.call("add_ik_solver", {"path": warn, "solverClass": "IKRig_LimbSolver"})
+    M.call("add_ik_goal", {"path": warn, "name": "OrphanGoal", "bone": "foot_r"})
+    # Deliberately no set_ik_goal_solver_connection - that is the whole point of this fixture.
+    v = M.call("list_ik_rig", {"path": warn})
+    check("T262b the structural/engine verdict still says initialised (warnings are not fatal)",
+          v.get("runtimeInitialized") is True,
+          "runtimeInitialized=%s note=%s" % (v.get("runtimeInitialized"),
+                                             (v.get("runtimeNote") or "")[:140]))
+    warnings = v.get("runtimeWarnings") or []
+    check("T262b and runtimeWarnings is non-empty, not the decoy log's permanent []",
+          len(warnings) > 0, json.dumps(v.get("runtimeWarnings"))[:200])
+    check("T262b naming the actual orphaned goal, not a generic message",
+          any("OrphanGoal" in str(w) for w in warnings), json.dumps(warnings)[:220])
+
     empty = new_rig("T262empty", st)
     v = M.call("list_ik_rig", {"path": empty})
     check("T262 but a rig that does NEITHER is still called out",
