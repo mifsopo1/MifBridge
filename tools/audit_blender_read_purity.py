@@ -34,18 +34,10 @@ docstring for the --background --factory-startup --python-expr invocation), AND 
 object already in the scene - import one with import_mesh first if the scene is empty.
 """
 import copy
-import json
-import os
-import socket
-import struct
 import sys
 
-HOST = os.environ.get("MIF_BLENDER_HOST", "127.0.0.1")
-try:
-    PORT = int(os.environ.get("MIF_BLENDER_PORT", "8792"))
-except ValueError:
-    PORT = 8792
-TOKEN = os.environ.get("MIF_BLENDER_TOKEN", os.environ.get("MIF_BRIDGE_TOKEN", "dev"))
+from blender_audit_common import call as _call
+from blender_audit_common import HOST, PORT
 
 # Fields object_info reports that describe GEOMETRY/TRANSFORM, i.e. what a read must not move. Deliberately
 # excludes nothing structural - if ops_common.object_info grows a new geometry-shaped field, add it here
@@ -69,29 +61,6 @@ CANDIDATES = [
 # about whether a resolved selection mutates - boundaryOnly with no positional filter matches
 # whatever boundary edges the target object has, same predicate mif_mesh_roundtrip falls back to.
 _SELECT_EDGES_PARAMS = {"boundaryOnly": True}
-
-
-def _call(op, params, timeout=30.0):
-    s = socket.create_connection((HOST, PORT), timeout=timeout)
-    try:
-        msg = json.dumps({"endpoint": op, "token": TOKEN, "params": params}).encode("utf-8")
-        s.sendall(struct.pack(">I", len(msg)) + msg)
-        hdr = b""
-        while len(hdr) < 4:
-            chunk = s.recv(4 - len(hdr))
-            if not chunk:
-                raise RuntimeError("connection closed reading length header")
-            hdr += chunk
-        n = struct.unpack(">I", hdr)[0]
-        body = b""
-        while len(body) < n:
-            chunk = s.recv(n - len(body))
-            if not chunk:
-                raise RuntimeError("connection closed reading body")
-            body += chunk
-        return json.loads(body.decode("utf-8"))
-    finally:
-        s.close()
 
 
 def snapshot():
