@@ -181,6 +181,13 @@ def main():
         check("T346 and it is gone",
               not any((x.get("Name") or x.get("name")) == "Row_A" for x in rows),
               json.dumps(rows)[:170])
+        # The DataTable asset itself was never deleted here, only emptied of rows - a real, separate
+        # gap found via a full-suite regression sweep: test_node_spawns.py's T337 looks up "a real
+        # DataTable" via find_assets with no pathPrefix filter, and when this suite runs first
+        # (alphabetically "confirm" < "node") it can pick up THIS now-empty scratch table instead of
+        # a genuine DDS2 one, producing an empty rowName and a node that fails to compile - a false
+        # failure in a different suite entirely, caused by this suite's own incomplete cleanup.
+        SC.confirm_call("delete_asset", {"path": dt})
 
     SC.confirm_call("delete_asset", {"path": bp})
     print("\n" + "=" * 72)

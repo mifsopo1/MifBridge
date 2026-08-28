@@ -83,8 +83,13 @@ def main():
 
     print("\n=== T952: set_current_sublevel ===")
     to_sub = M.call("set_current_sublevel", {"path": "/Game/Maps/MifWeaponTest"})
-    check("T952 switching to the sublevel succeeds", to_sub.get("ok") is True and to_sub.get("changed") is True,
-          json.dumps(to_sub)[:200])
+    # changed:True is not the only honest success - a full-suite regression sweep found this suite's
+    # OWN earlier calls (or a prior pass of this same suite, since run_all_suites runs everything
+    # twice) can already have left MifWeaponTest as the current level by the time this line runs, and
+    # set_current_sublevel correctly answers ok:true, changed:false, "already the current level -
+    # nothing was changed" rather than pretending to switch. What actually matters is currentLevel
+    # ending up right, not whether a switch was NEEDED to get there.
+    check("T952 switching to the sublevel succeeds", to_sub.get("ok") is True, json.dumps(to_sub)[:200])
     check("T952 and reports the right currentLevel", to_sub.get("currentLevel") == "/Game/Maps/MifWeaponTest",
           to_sub.get("currentLevel"))
     back = M.call("set_current_sublevel", {"path": "persistent"})

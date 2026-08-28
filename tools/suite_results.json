@@ -4,7 +4,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 5.3,
+  "seconds": 1.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -13,7 +13,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 5.3,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -22,7 +22,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 1.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -31,9 +31,27 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
+ },
+ {
+  "suite": "test_blender_gen.py",
+  "pass": 1,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
+  "editorSurvived": true,
+  "tail": "MifBlender gen ops (ops_gen.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
+ },
+ {
+  "suite": "test_blender_mesh.py",
+  "pass": 1,
+  "rc": 2,
+  "summary": "",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "tail": "MifBlender mesh pipeline - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Nothing answered a ping on 127.0.0.1:8792, so no op was exercised.\n  Start one with:  python tools/blender_probe.py --serve <version>\n  Reason: ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it"
  },
  {
   "suite": "test_blender_ops.py",
@@ -45,11 +63,20 @@
   "tail": "MifBlender addon ops - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) on purpose."
  },
  {
+  "suite": "test_blender_rig.py",
+  "pass": 1,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
+  "editorSurvived": true,
+  "tail": "MifBlender rig ops (ops_rig.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
+ },
+ {
   "suite": "test_capture_viewport.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 34   FAIL 0",
-  "seconds": 6.4,
+  "summary": "PASS 33   FAIL 0",
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -58,7 +85,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.4,
+  "seconds": 1.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -67,7 +94,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 12.7,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -76,7 +103,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 14.7,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -85,7 +112,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 15.0,
+  "seconds": 4.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -103,7 +130,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 5.0,
+  "seconds": 1.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -112,7 +139,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 1.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -121,7 +148,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 9.3,
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_duplicate_cooked_guard.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 11   FAIL 0",
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -130,7 +166,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.9,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -139,7 +175,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -148,16 +184,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 10.7,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
+ },
+ {
+  "suite": "test_find_tools.py",
+  "pass": 1,
+  "rc": 1,
+  "summary": "PASS 21   FAIL 1",
+  "seconds": 0.2,
+  "editorSurvived": true,
+  "tail": "=== T783: limit truncates and says so honestly ===\n  PASS  T783 count respects limit\n  PASS  T783 matched reports the TRUE total, not the trimmed one\n  PASS  T783 truncated is set when there is more than what was returned\n  PASS  T783 and the note says so in a way a caller can act on\n\n=== T784: no match is a real, explained answer - not silence or a crash ===\n  PASS  T784 it still succeeds\n  PASS  T784 with zero results\n  PASS  T784 and a note explaining why rather than an empty body\n\n=== T785: an empty keyword is refused rather than returning everything ===\n  PASS  T785 keyword='' is refused\n  PASS  T785 and the refusal says why\n  PASS  T785 keyword='   ' is refused\n  PASS  T785 and the refusal says why\n\n=== T786: find_tools does not recommend searching for itself ===\n  PASS  T786 find_tools excludes itself from its own results\n\n========================================================================\nPASS 21   FAIL 1\n  FAILED: T780 every result actually contains the keyword somewhere\n          [{\"name\": \"analyze_skeletal_split\", \"summary\": \"What splitting a SkeletalMesh WOULD produce, without splitting it. Reports each render section's vertex/triangle counts and the bones it is skinned to, then per bone which sections it reaches - a bone...\", \"params\": [\"path\", \"lod\"]}, {\"name\": \"bl_decim\n========================================================================"
  },
  {
   "suite": "test_foliage_modes.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -166,7 +211,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -184,7 +229,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -193,7 +238,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 15.8,
+  "seconds": 0.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -202,7 +247,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 11.8,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -211,7 +256,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 22.0,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -219,8 +264,8 @@
   "suite": "test_ik_goals_solvers.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 53   FAIL 0",
-  "seconds": 18.4,
+  "summary": "PASS 56   FAIL 0",
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -229,7 +274,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 14.0,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -238,7 +283,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 10.7,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -247,7 +292,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 8.7,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -255,8 +300,8 @@
   "suite": "test_landscape_info.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 18   FAIL 0",
-  "seconds": 5.1,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -264,8 +309,17 @@
   "suite": "test_list_bones.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 39   FAIL 0",
-  "seconds": 12.7,
+  "summary": "PASS 68   FAIL 0",
+  "seconds": 5.6,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_load_level_guard.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 6   FAIL 0",
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -274,7 +328,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 5.4,
+  "seconds": 1.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -283,7 +337,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 11.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -292,7 +346,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 11.7,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -301,7 +355,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 8.7,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -319,7 +373,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 10.4,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -328,7 +382,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 4.7,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -337,7 +391,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 10.0,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -346,7 +400,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -355,25 +409,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 17.0,
+  "seconds": 5.9,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_node_spawns.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 42   FAIL 0",
-  "seconds": 34.0,
+  "rc": 1,
+  "summary": "PASS 98   FAIL 2",
+  "seconds": 5.0,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "\n=== T339: add_component_bound_event - needs a real component on the scratch blueprint ===\n  PASS  T339 (setup) a SphereComponent is added to the scratch blueprint\n  PASS  T339 binding a real delegate on a real component succeeds\n  PASS  T339 the bound-event node is really in the graph\n  PASS  T339 an unknown delegate name refuses\n  PASS  T339 an unknown component name refuses\n  FAIL  T339 the blueprint still compiles with the bound event too   errors=1\n  PASS  T337 with no dataTable/rowName still succeeds (both optional - the node is placed untyped)\n  PASS  T337 the untyped node is really in the graph\n\n=== T340: add_widget_binding - own scratch WidgetBlueprint with a real tree widget ===\n  PASS  T340 (setup) a scratch WidgetBlueprint is created\n  PASS  T340 (setup) a TextBlock is added under the auto-created root\n  PASS  T340 binding a property on a real tree widget succeeds\n  PASS  T340 and reports a real bindingCount\n  PASS  T340 an unknown widget name refuses (would be dropped silently on compile)\n\n========================================================================\nPASS 98   FAIL 2\n  FAILED: T336-338 the blueprint still compiles with everything placed so far\n          errors=1 [{\"severity\": \"error\", \"text\": \"'None' row name is not stored in 'DataTable /Game/_MifCG/DT_37060.DT_37060'.  Get Data Table Row DT_37060\", \"nodeGuid\": \"15F4813D4362AF4530D9D3910DFDFC1A\"}]\n  FAILED: T339 the blueprint still compiles with the bound event too\n          errors=1\n========================================================================"
  },
  {
   "suite": "test_perf_stats.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -382,7 +436,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 10.4,
+  "seconds": 0.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -391,7 +445,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 12.0,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -400,7 +454,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -409,7 +463,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 46   FAIL 0",
-  "seconds": 3.7,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -418,7 +472,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -427,7 +481,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -445,7 +499,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -454,25 +508,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 7.8,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_safety_gate.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 51   FAIL 0",
-  "seconds": 15.7,
+  "rc": 1,
+  "summary": "PASS 5   FAIL 0",
+  "seconds": 2.2,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up on pid 26148 (DrugDealerSimulator2.uproject) - 346 endpoints, built Aug 28 2026 12:44:42\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 5   FAIL 0"
  },
  {
   "suite": "test_selfpin.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 25.8,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -481,7 +535,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_sequencer_authoring.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -490,7 +553,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.4,
+  "seconds": 2.9,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_simplified_collision_guard.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -499,7 +571,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 24.0,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -508,7 +580,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 4.4,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -517,7 +589,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 8.0,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -526,7 +598,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 9.7,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -535,7 +607,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 8.4,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -544,7 +616,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.3,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -553,7 +625,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -562,7 +634,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 9.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -571,7 +643,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.3,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -580,7 +652,79 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 39   FAIL 0",
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads2.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 60   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads3.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 299   FAIL 0",
+  "seconds": 17.0,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads4.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 37   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads5.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 52   FAIL 0",
+  "seconds": 10.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads6.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 30   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads7.py",
+  "pass": 1,
+  "rc": 1,
+  "summary": "PASS 28   FAIL 1",
+  "seconds": 4.6,
+  "editorSurvived": true,
+  "tail": "=== T956: set_water_body_spline - a scratch water body, a real 4-point loop ===\n  PASS  T956 (setup) a scratch Lake water body is created\n  PASS  T956 succeeds\n  PASS  T956 the spline really has the 4 points now\n\n=== T957: add_spawn_actor - a SpawnActorFromClass node ===\n  PASS  T957 (setup) a scratch blueprint is created\n  PASS  T957 succeeds\n  PASS  T957 the node is really in the graph\n\n=== T958: add_nav_volume ===\n  PASS  T958 succeeds\n  PASS  T958 reports the coverage size back\n\n=== T959: add_gameplay_effect_modifier - validation only, no real AttributeSet on this project ===\n  PASS  T959 (setup) a scratch GameplayEffect blueprint is created\n  PASS  T959 a non-CDO Blueprint class path is refused\n  PASS  T959 an unknown attribute on the CDO is refused\n  PASS  T959 and names the real reason - the base AttributeSet declares no such property\n\n========================================================================\nPASS 28   FAIL 1\n  FAILED: T952 switching to the sublevel succeeds\n          {\"ok\": true, \"changed\": false, \"currentLevel\": \"/Game/Maps/MifWeaponTest\", \"previousLevel\": \"/Game/Maps/MifWeaponTest\", \"note\": \"already the current level \\u2014 nothing was changed\"}\n========================================================================"
+ },
+ {
+  "suite": "test_uncovered_reads8.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -589,7 +733,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 89.7,
+  "seconds": 5.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -598,7 +742,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 4.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -607,7 +751,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 5.4,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -616,7 +760,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 6.0,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -625,7 +769,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 15.0,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -634,7 +778,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 5.0,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -643,7 +787,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 10.0,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -652,7 +796,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -661,7 +805,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 10.4,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -670,7 +814,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 5.3,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -679,7 +823,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 5.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -687,8 +831,8 @@
   "suite": "test_audio_nav.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 22   FAIL 0",
-  "seconds": 6.0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -697,9 +841,27 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.4,
+  "seconds": 3.9,
   "editorSurvived": true,
   "tail": ""
+ },
+ {
+  "suite": "test_blender_gen.py",
+  "pass": 2,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
+  "editorSurvived": true,
+  "tail": "MifBlender gen ops (ops_gen.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
+ },
+ {
+  "suite": "test_blender_mesh.py",
+  "pass": 2,
+  "rc": 2,
+  "summary": "",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "tail": "MifBlender mesh pipeline - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Nothing answered a ping on 127.0.0.1:8792, so no op was exercised.\n  Start one with:  python tools/blender_probe.py --serve <version>\n  Reason: ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it"
  },
  {
   "suite": "test_blender_ops.py",
@@ -711,11 +873,20 @@
   "tail": "MifBlender addon ops - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) on purpose."
  },
  {
+  "suite": "test_blender_rig.py",
+  "pass": 2,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
+  "editorSurvived": true,
+  "tail": "MifBlender rig ops (ops_rig.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
+ },
+ {
   "suite": "test_capture_viewport.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 34   FAIL 0",
-  "seconds": 6.7,
+  "summary": "PASS 33   FAIL 0",
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -724,7 +895,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -733,7 +904,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 9.8,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -742,7 +913,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -751,7 +922,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 15.0,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -760,7 +931,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -769,7 +940,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 5.0,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -777,8 +948,8 @@
   "suite": "test_data_layer_writes.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 19   FAIL 0",
-  "seconds": 5.7,
+  "summary": "PASS 36   FAIL 0",
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -787,7 +958,16 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 17.7,
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_duplicate_cooked_guard.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 11   FAIL 0",
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -796,7 +976,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -805,7 +985,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 6.3,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -814,16 +994,25 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 10.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
+ },
+ {
+  "suite": "test_find_tools.py",
+  "pass": 2,
+  "rc": 1,
+  "summary": "PASS 21   FAIL 1",
+  "seconds": 0.1,
+  "editorSurvived": true,
+  "tail": "=== T783: limit truncates and says so honestly ===\n  PASS  T783 count respects limit\n  PASS  T783 matched reports the TRUE total, not the trimmed one\n  PASS  T783 truncated is set when there is more than what was returned\n  PASS  T783 and the note says so in a way a caller can act on\n\n=== T784: no match is a real, explained answer - not silence or a crash ===\n  PASS  T784 it still succeeds\n  PASS  T784 with zero results\n  PASS  T784 and a note explaining why rather than an empty body\n\n=== T785: an empty keyword is refused rather than returning everything ===\n  PASS  T785 keyword='' is refused\n  PASS  T785 and the refusal says why\n  PASS  T785 keyword='   ' is refused\n  PASS  T785 and the refusal says why\n\n=== T786: find_tools does not recommend searching for itself ===\n  PASS  T786 find_tools excludes itself from its own results\n\n========================================================================\nPASS 21   FAIL 1\n  FAILED: T780 every result actually contains the keyword somewhere\n          [{\"name\": \"analyze_skeletal_split\", \"summary\": \"What splitting a SkeletalMesh WOULD produce, without splitting it. Reports each render section's vertex/triangle counts and the bones it is skinned to, then per bone which sections it reaches - a bone...\", \"params\": [\"path\", \"lod\"]}, {\"name\": \"bl_decim\n========================================================================"
  },
  {
   "suite": "test_foliage_modes.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -832,7 +1021,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -850,7 +1039,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -859,7 +1048,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 15.8,
+  "seconds": 0.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -868,7 +1057,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 11.0,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -877,7 +1066,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 22.0,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -885,8 +1074,8 @@
   "suite": "test_ik_goals_solvers.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 53   FAIL 0",
-  "seconds": 18.4,
+  "summary": "PASS 56   FAIL 0",
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -895,7 +1084,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 14.0,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -904,7 +1093,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 10.7,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -913,7 +1102,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 8.7,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -921,8 +1110,8 @@
   "suite": "test_landscape_info.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 18   FAIL 0",
-  "seconds": 5.1,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -930,8 +1119,17 @@
   "suite": "test_list_bones.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 39   FAIL 0",
-  "seconds": 12.7,
+  "summary": "PASS 68   FAIL 0",
+  "seconds": 4.9,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_load_level_guard.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 6   FAIL 0",
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -940,7 +1138,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 5.5,
+  "seconds": 0.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -949,7 +1147,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 11.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -958,7 +1156,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 11.7,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -967,7 +1165,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 8.7,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -985,7 +1183,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 10.4,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -994,7 +1192,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 4.7,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1003,7 +1201,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 10.0,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1012,7 +1210,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1021,25 +1219,25 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 17.0,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_node_spawns.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 42   FAIL 0",
-  "seconds": 34.0,
+  "rc": 1,
+  "summary": "PASS 98   FAIL 2",
+  "seconds": 5.3,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "\n=== T339: add_component_bound_event - needs a real component on the scratch blueprint ===\n  PASS  T339 (setup) a SphereComponent is added to the scratch blueprint\n  PASS  T339 binding a real delegate on a real component succeeds\n  PASS  T339 the bound-event node is really in the graph\n  PASS  T339 an unknown delegate name refuses\n  PASS  T339 an unknown component name refuses\n  FAIL  T339 the blueprint still compiles with the bound event too   errors=1\n  PASS  T337 with no dataTable/rowName still succeeds (both optional - the node is placed untyped)\n  PASS  T337 the untyped node is really in the graph\n\n=== T340: add_widget_binding - own scratch WidgetBlueprint with a real tree widget ===\n  PASS  T340 (setup) a scratch WidgetBlueprint is created\n  PASS  T340 (setup) a TextBlock is added under the auto-created root\n  PASS  T340 binding a property on a real tree widget succeeds\n  PASS  T340 and reports a real bindingCount\n  PASS  T340 an unknown widget name refuses (would be dropped silently on compile)\n\n========================================================================\nPASS 98   FAIL 2\n  FAILED: T336-338 the blueprint still compiles with everything placed so far\n          errors=1 [{\"severity\": \"error\", \"text\": \"'None' row name is not stored in 'DataTable /Game/_MifCG/DT_37060.DT_37060'.  Get Data Table Row DT_37060\", \"nodeGuid\": \"EEC92171465341691AEFA79A33908E24\"}]\n  FAILED: T339 the blueprint still compiles with the bound event too\n          errors=1\n========================================================================"
  },
  {
   "suite": "test_perf_stats.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1048,7 +1246,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 10.5,
+  "seconds": 0.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1057,7 +1255,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 12.0,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1066,7 +1264,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 7.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1075,7 +1273,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 46   FAIL 0",
-  "seconds": 3.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1084,7 +1282,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1093,7 +1291,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1111,7 +1309,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1120,25 +1318,25 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 7.8,
+  "seconds": 0.7,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_safety_gate.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 51   FAIL 0",
-  "seconds": 15.7,
+  "rc": 1,
+  "summary": "PASS 5   FAIL 0",
+  "seconds": 2.4,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up on pid 26148 (DrugDealerSimulator2.uproject) - 346 endpoints, built Aug 28 2026 12:44:42\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 5   FAIL 0"
  },
  {
   "suite": "test_selfpin.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 26.1,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1147,7 +1345,16 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_sequencer_authoring.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1156,7 +1363,16 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.4,
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_simplified_collision_guard.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1165,7 +1381,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 24.0,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1174,7 +1390,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 4.3,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1183,7 +1399,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 8.0,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1192,7 +1408,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 9.7,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1201,7 +1417,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 8.4,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1210,7 +1426,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.2,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1219,7 +1435,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 6.7,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1228,7 +1444,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 9.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1237,7 +1453,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 7.4,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1246,7 +1462,79 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 2.9,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 39   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads2.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 60   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads3.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 298   FAIL 0",
+  "seconds": 18.8,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads4.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 37   FAIL 0",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads5.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 52   FAIL 0",
+  "seconds": 4.7,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads6.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 30   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads7.py",
+  "pass": 2,
+  "rc": 1,
+  "summary": "PASS 28   FAIL 1",
+  "seconds": 4.0,
+  "editorSurvived": true,
+  "tail": "=== T956: set_water_body_spline - a scratch water body, a real 4-point loop ===\n  PASS  T956 (setup) a scratch Lake water body is created\n  PASS  T956 succeeds\n  PASS  T956 the spline really has the 4 points now\n\n=== T957: add_spawn_actor - a SpawnActorFromClass node ===\n  PASS  T957 (setup) a scratch blueprint is created\n  PASS  T957 succeeds\n  PASS  T957 the node is really in the graph\n\n=== T958: add_nav_volume ===\n  PASS  T958 succeeds\n  PASS  T958 reports the coverage size back\n\n=== T959: add_gameplay_effect_modifier - validation only, no real AttributeSet on this project ===\n  PASS  T959 (setup) a scratch GameplayEffect blueprint is created\n  PASS  T959 a non-CDO Blueprint class path is refused\n  PASS  T959 an unknown attribute on the CDO is refused\n  PASS  T959 and names the real reason - the base AttributeSet declares no such property\n\n========================================================================\nPASS 28   FAIL 1\n  FAILED: T952 switching to the sublevel succeeds\n          {\"ok\": true, \"changed\": false, \"currentLevel\": \"/Game/Maps/MifWeaponTest\", \"previousLevel\": \"/Game/Maps/MifWeaponTest\", \"note\": \"already the current level \\u2014 nothing was changed\"}\n========================================================================"
+ },
+ {
+  "suite": "test_uncovered_reads8.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1255,7 +1543,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 89.4,
+  "seconds": 5.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1264,7 +1552,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 4.3,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1273,7 +1561,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 5.4,
+  "seconds": 0.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1282,7 +1570,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 6.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1291,7 +1579,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 14.0,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1300,7 +1588,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 4.7,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1309,7 +1597,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 10.0,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1318,7 +1606,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1327,7 +1615,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 10.4,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  }

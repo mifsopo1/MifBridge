@@ -114,8 +114,16 @@ def main():
     names = [x["name"] for x in r.get("results") or []]
     check("T780 and finds a tool that genuinely has 'skeletal' in its name",
           "analyze_skeletal_split" in names, names[:10])
-    check("T780 every result actually contains the keyword somewhere",
-          all("skeletal" in (x["name"] + " " + x["summary"]).lower() for x in r.get("results") or []),
+    # Match against the FULL description, not the trimmed summary - find_tools' own docstring is
+    # explicit that the summary is only "the first ~200 chars of the description, not the full
+    # docstring", so a description longer than that can legitimately match on a keyword the summary
+    # never reaches (confirmed live: list_virtual_bones matches via "SkeletalMesh" appearing after its
+    # summary's cutoff). Asserting the keyword must appear in the trimmed preview was this test's own
+    # wrong assumption, not something find_tools ever promised.
+    full_desc = {t.name: (t.description or "") for t in server.mcp._tool_manager.list_tools()}
+    check("T780 every result's FULL description actually contains the keyword somewhere",
+          all("skeletal" in (x["name"] + " " + full_desc.get(x["name"], "")).lower()
+              for x in r.get("results") or []),
           json.dumps(r.get("results"))[:300])
 
     print("")

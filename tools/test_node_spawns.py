@@ -341,16 +341,25 @@ def main():
     check("T336 an unknown function name refuses", q.get("ok") is False, q.get("error"))
 
     # ------------------------------------------------------------------ T337 add_get_data_table_row
+    # A full-suite regression sweep found this picking up a DIFFERENT suite's leftover, now-EMPTY
+    # scratch DataTable (test_confirm_gated.py's T346 creates one under /Game/_MifCG and never deletes
+    # the table itself, only its rows - fixed there too, but this suite's OWN query had no pathPrefix
+    # filter at all, so it deserved the same "exclude scratch" fix test_set_struct_member.py's T153
+    # already needed for the identical reason). Fetches several candidates and picks the first one that
+    # is both non-scratch AND actually has rows, rather than trusting whatever find_assets returns first.
     print("\n=== T337: add_get_data_table_row - against a REAL DataTable, not fabricated ===")
-    tables = M.call("find_assets", {"class": "DataTable", "limit": 1}).get("assets") or []
-    if tables:
-        tpath = tables[0].get("path")
-        rows = M.call("read_datatable", {"path": tpath}).get("rows") or []
+    tpath, row_name = None, None
+    for cand in (M.call("find_assets", {"class": "DataTable", "limit": 20}).get("assets") or []):
+        p = cand.get("path") or ""
+        if p.startswith(SC.SCRATCH_PREFIXES):
+            continue
+        crows = M.call("read_datatable", {"path": p}).get("rows") or []
+        if crows and isinstance(crows[0], dict) and crows[0].get("Name"):
+            tpath, row_name = p, crows[0].get("Name")
+            break
+    if tpath:
         # read_datatable's "rows" is UE's OWN GetTableAsJSON() export - an array of row objects each
         # carrying "Name" (capitalised, UE's DataTableJSON convention), not a caller-invented shape.
-        row_name = None
-        if rows and isinstance(rows[0], dict):
-            row_name = rows[0].get("Name")
         r = M.call("add_get_data_table_row",
                    {"graphId": graph, "dataTable": tpath, "rowName": row_name or ""})
         guid = r.get("nodeGuid") or (r.get("node") or {}).get("guid")
