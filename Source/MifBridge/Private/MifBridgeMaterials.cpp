@@ -1709,16 +1709,19 @@ namespace MifBridge
 
 			if (bConnections)
 			{
-				// GetInputsView is an ENGINE_API virtual (MaterialExpression.h:351) — works
-				// uniformly for material AND function graphs (the library's
-				// GetInputsForMaterialExpression null-gates on a UMaterial, so it would report
-				// nothing for functions). Indices align with GetMaterialExpressionInputNames.
+				// GetInput(int32) is an ENGINE_API virtual (MaterialExpression.h:336, "required to
+				// return nullptr for invalid input indices") — works uniformly for material AND
+				// function graphs (the library's GetInputsForMaterialExpression null-gates on a
+				// UMaterial, so it would report nothing for functions). Indices align with
+				// GetMaterialExpressionInputNames. NOT GetInputsView(): UE_DEPRECATED(5.5, "Use
+				// FExpressionInputIterator instead or GetInput() directly") - FExpressionInputIterator
+				// does not exist at all on 5.3 (confirmed by grep of D:/UE532's MaterialExpression.h),
+				// but GetInput() is identical and un-deprecated on both, so it needs no version gate.
 				const TArray<FString> InputNames = UMaterialEditingLibrary::GetMaterialExpressionInputNames(Expr);
-				TArrayView<FExpressionInput*> Inputs = Expr->GetInputsView();
 				TArray<TSharedPtr<FJsonValue>> InputRows;
-				for (int32 InputIdx = 0; InputIdx < Inputs.Num(); ++InputIdx)
+				for (int32 InputIdx = 0; InputIdx < InputNames.Num(); ++InputIdx)
 				{
-					const FExpressionInput* Input = Inputs[InputIdx];
+					const FExpressionInput* Input = Expr->GetInput(InputIdx);
 					if (!Input || !Input->Expression)
 					{
 						continue;
