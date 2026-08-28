@@ -2994,3 +2994,50 @@ cannot become one giant blocking item:
       test_node_spawns.py itself: 101/101 (was 66/66 before this pass - T333/T333b/T336-T340 are all
       new or upgraded checks). test_confirm_gated.py re-checked after the scratch_confirm.py doc edit:
       33/33 still clean. parity_check.py clean. coverage_gaps.json refreshed: 75 -> 69.
+
+- [x] **Fifth read/write batch: level-actor ops, blueprint editing utilities, profiling, and two more
+      confirm-gated removals.** DONE 2026-08-28, tools/test_uncovered_reads5.py. backup_blueprint,
+      list_object_properties, list_sublevels, duplicate_actors, reset_property_to_default,
+      select_level_actors, close_asset_editors, open_asset_editor, open_blueprint,
+      set_variable_default, set_widget_is_variable, create_material_function, read_modloader_log,
+      trace_start/trace_stop, create_data_layer, remove_function, remove_variable, set_cast_purity -
+      19 endpoints, 52/52 PASS.
+      Five wrong assumptions of mine, all caught by running live rather than trusting the plan:
+      backup_blueprint refuses a never-saved scratch blueprint ("nothing to back up") - correct,
+      re-pointed at a real, already-saved DDS2 blueprint instead (backup_blueprint only COPIES the
+      package file, never touches the original, so this is safe against real content; the stray .bak
+      it leaves next to the real asset is cleaned up directly afterward, since it isn't a UE asset
+      delete_asset can reach). list_object_properties needs objectPath, not blueprintId alone.
+      spawn_actor_in_level's and duplicate_actors' actorPath lives nested under "actor"/"actors", not
+      top-level - two separate wrong extractions from the same wrong assumption about response shape.
+      get_property reports a bool property as the STRING "False", not a Python bool. pathPrefix in
+      find_assets wants a folder, not the exact asset's own path, confirmed by testing both forms
+      side by side rather than guessing which was right.
+      One real, permanent, correctly-declined finding: move_actor_to's name suggests a general
+      transform setter, but it moves an actor via its AI Controller, which "only exists at runtime" -
+      confirmed live it refuses outside PIE. Filed with the PIE-dependent family, not forced.
+      One flipped assumption: create_data_layer was expected to refuse (DDS2's landscape map assumed
+      non-World-Partition from older session context) but the editor's CURRENTLY open level answered
+      ok:true for real - checked live instead of trusting old notes, real success-path coverage
+      landed instead of a refusal test. Its own response says the layer is in-memory only, matching
+      this whole project's save invariant, so no cleanup call was even attempted.
+      One deliberate, narrow bypass: trace_start is in mifaudit.py's own DENY list, but that guard's
+      own comment names the exact exception - "a blind sweep... tracing is a deliberate act with a
+      matching stop" - which is exactly what a dedicated, immediately-paired start/stop test is.
+      Used M.raw_post directly, the same mechanism scratch_confirm.py already uses to bypass
+      FORBIDDEN_KEYS narrowly, without touching the DENY list itself for every other caller.
+      remove_function/remove_variable both closed for real via scratch_confirm.confirm_call, same
+      correction as test_node_spawns.py's T333/T333b earlier this session.
+      DECLINED in this batch, filed with reasons in the suite's own docstring rather than silently
+      skipped: the PIE-only family (list_pie_actors, pie_status, pie_load/unload_level_instance,
+      spawn_actor_in_pie, move_actor_to, describe_live_widget, list_live_widgets, the 5 ui_scenario_*
+      endpoints), the save-forbidden pair (save_dirty_packages, save_level_as), and pcg_generate/
+      pcg_cleanup (already-documented structural wall - no node-authoring endpoints exist to build
+      real PCG graph content against).
+      DEFERRED, not declined - real work still to do: retarget_variable_node,
+      recipe_override_and_call_parent, set_niagara_component_parameter, remove_widget_binding,
+      remove_collision, remove_sublevel (discardUnsaved has NO scratch_confirm exemption, ever),
+      bind_landscape_rvt, reimport_asset, set_asset_thumbnail, load_level (switches the editor's open
+      level - real state risk, deserves its own careful batch).
+      parity_check.py clean. test_confirm_gated.py (33/33) and test_node_spawns.py (101/101)
+      re-checked for regressions, both still clean. coverage_gaps.json: 69 -> 50.
