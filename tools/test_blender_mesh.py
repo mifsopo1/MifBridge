@@ -376,7 +376,24 @@ def main():
     # The one that matters for Unreal. A lightmap belongs on a SECOND UV channel, and the layer
     # has to be made active BEFORE the unwrap or the operator writes into whichever was active -
     # which is how a lightmap lands on top of the base UVs and nobody notices until the bake.
-    r = call("uv_unwrap", object=name, method="LIGHTMAP", uvLayer="MifLightmap")
+    #
+    # AGAINST A FRESH IMPORT OF THE ORIGINAL CUBE, not `name` - by this point `name` has been
+    # through extrude_skirt (T767, forced split via allowNonBoundary), bevel_edges (T768), a
+    # COLLAPSE decimate (T772) and a DISSOLVE decimate that merges coplanar faces into n-gons
+    # (T773). VERIFIED 2026-08-28: Blender 3.6.23's own built-in uv.lightmap_pack throws
+    # ZeroDivisionError (uvcalc_lightmap.py prettyface.__init__, box_fit_2d projecting a
+    # degenerate n-gon to zero width) on THAT battle-scarred mesh specifically - and does NOT on
+    # the same cube fresh, confirmed by hand against a factory-startup instance. That is a real,
+    # narrow Blender 3.6 limitation on pathological n-gon geometry, not something an ordinary
+    # LIGHTMAP call on non-mangled geometry hits, and not something this suite should be
+    # reporting as "LIGHTMAP is broken on 3.6" - `out` is still the untouched FBX T763 exported
+    # before any of those edits ran, so re-importing it gives LIGHTMAP the same kind of input a
+    # real caller actually gives it.
+    fresh = call("import_mesh", file=out, clearScene=False, rename="MifLightmapFreshCube")
+    fresh_name = ((fresh.get("imported") or [{}])[0]).get("name") if fresh.get("ok") is not False else None
+    check("T777 setup: a fresh copy of the original cube imported", bool(fresh_name),
+          json.dumps(fresh)[:200])
+    r = call("uv_unwrap", object=fresh_name, method="LIGHTMAP", uvLayer="MifLightmap")
     check("T777 lightmap unwrap succeeded", r.get("ok") is not False, r.get("error"))
     check("T777 it created the named layer", r.get("createdLayer") == "MifLightmap",
           json.dumps(r)[:200])
@@ -387,6 +404,8 @@ def main():
           "%s -> %s" % (r.get("uvLayersBefore"), r.get("uvLayersAfter")))
     print("       %s -> %s" % (json.dumps(r.get("uvLayersBefore")),
                                json.dumps(r.get("uvLayersAfter"))))
+    if fresh_name:
+        call("delete_object", object=fresh_name)
 
     print("")
     print("=== T778: ANGLE without seams is warned about, not silently wrong ===")

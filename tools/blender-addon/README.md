@@ -39,18 +39,21 @@ so both can run at once.)
 
 | version | imports | registers | 20 ops | FBX kwargs | mesh suite | ops suite |
 |---|---|---|---|---|---|---|
-| 3.6.23 | ✅ | ✅ | ✅ | all present | **73/77** ⚠️ | **12/12** |
-| 4.2.17 LTS | ✅ | ✅ | ✅ | all present | **77/77** | **12/12** |
-| 4.4.0 | ✅ | ✅ | ✅ | all present | **77/77** | **12/12** |
-| **5.0.1** | ✅ | ✅ | ✅ | all present | **77/77** | **12/12** |
+| 3.6.23 | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** |
+| 4.2.17 LTS | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** |
+| 4.4.0 | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** |
+| **5.0.1** | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** |
 
-⚠️ **3.6.23 CORRECTED 2026-08-27/28** - the 77/77 above was wrong; re-measured, reproducibly, on a
-fresh factory-startup instance. The 4 failures are all T777 (`uv_unwrap` method LIGHTMAP): Blender
-3.6.23's OWN built-in `bl_operators/uvcalc_lightmap.py:270` (`bpy.ops.uv.lightmap_pack`, not addon
-code) throws `ZeroDivisionError: float division by zero` in `prettyface()` packing a plain cube's
-quad faces. Not caused by anything in this addon - SMART and ANGLE unwrap are unaffected, and this
-is the Blender-shipped operator itself failing on its own default test geometry. Root-caused but not
-yet fixed or worked around; see the FEATURE_PARITY_SPEC.md entry for this date.
+**3.6.23 note, resolved 2026-08-28** - this briefly showed 73/77 (see git history / FEATURE_PARITY_SPEC.md
+for that date if you want the full story). Root cause was never a general "LIGHTMAP is broken on
+3.6" - it was T777 in the test SUITE handing `uv.lightmap_pack` a mesh that six prior destructive
+test steps (extrude, bevel, two decimates including a coplanar-merging DISSOLVE) had turned into
+pathological n-gon geometry. Blender 3.6.23's own built-in `uvcalc_lightmap.py:270` genuinely does
+throw `ZeroDivisionError` on a degenerate n-gon like that (a real, narrow limitation in 3.6's
+decades-old contributed script, confirmed absent on 4.2+) - but an ordinary LIGHTMAP call on
+ordinary geometry, as any real caller sends, never reaches it. The test now imports a fresh,
+untouched copy of the original cube specifically for the LIGHTMAP check rather than reusing the
+battle-scarred one, and all four versions are clean.
 
 Reproduce the whole thing in one command each:
 
