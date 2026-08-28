@@ -4208,6 +4208,12 @@ def bl_list_vertex_groups(object_name: str) -> dict:
 
 
 @mcp.tool()
+def bl_list_modifiers(object_name: str) -> dict:
+    "The modifier stack on a Blender mesh object, in EVALUATION ORDER (top to bottom in the Modifier Properties panel, which is also application order) - answers 'what will bl_export_mesh actually produce' before spending an export to find out. Each entry reports name, type, showViewport, showRender (a modifier with both false changes nothing at export or in the viewport - it is present but inert, not absent) and, for the types that matter most to a game-mesh pipeline (ARMATURE, MIRROR, SOLIDIFY, BEVEL, SUBSURF, DECIMATE, TRIANGULATE), a curated `settings` dict of the fields that actually change the resulting geometry - not every property Blender exposes for that type, and NOT decoded for a type outside that list (still reported by name/type, just without settings). ARMATURE's settings.object is the SAME pairing bl_object_info's armatureModifier reports, seen here in context with the rest of the stack rather than in isolation. Read-only."
+    return _blender("list_modifiers", object=object_name)
+
+
+@mcp.tool()
 def bl_import_mesh(file: str, clear_scene: bool = True) -> dict:
     "Import an FBX file into Blender and report what arrived. FBX ONLY - the addon hard-refuses every other extension, OBJ included, because FBX is the only format whose axis and unit round trip with Unreal is verified (UE's OBJ exporter swaps Y/Z, de-indexes to three verts per triangle and writes no normals). Pass NO axis settings anywhere: with use_manual_orientation off the importer reads FrontAxis/UpAxis/CoordAxis out of the file, and an FBX written by Unreal declares Z-up / -Y-front / right-handed / cm, which reverse-maps to Blender's own system and applies an identity conversion - the mesh lands unrotated and 1 uu becomes 0.01 Blender units. The created objects are recovered by diffing bpy.data.objects before and after, because the import operators return nothing. clear_scene defaults TRUE so each run starts from a known scene; set it false to import alongside existing objects. Returns imported[] with a full object_info per object - MORE THAN ONE object means the FBX carried LODs, collision or an armature and the source should be re-exported with level_of_detail:false and collision:false."
     return _blender("import_mesh", file=file, clearScene=clear_scene)

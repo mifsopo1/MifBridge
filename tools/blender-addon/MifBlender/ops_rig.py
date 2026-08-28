@@ -151,8 +151,67 @@ def op_list_vertex_groups(params):
     }
 
 
+# A handful of settings PER TYPE that actually decide what export produces, not every property
+# Blender exposes for that type - e.g. Mirror's use_axis/merge_threshold change the resulting
+# geometry, its vertex_group/bisect settings are refinements on top. Curated rather than
+# exhaustive on purpose: Blender ships 100+ modifier types, and hand-describing all of them for
+# one addon nobody has asked to author modifiers through (only READ what is already there) would
+# be effort spent on the wrong problem. A type not listed here still reports name/type/visibility
+# - never silently dropped, just without a decoded settings dict.
+_MODIFIER_FIELDS = {
+    "ARMATURE": (("object", lambda m: m.object.name if m.object else None),),
+    "MIRROR": (("axisX", lambda m: bool(m.use_axis[0])), ("axisY", lambda m: bool(m.use_axis[1])),
+              ("axisZ", lambda m: bool(m.use_axis[2])),
+              ("mergeThreshold", lambda m: round(float(m.merge_threshold), 6))),
+    "SOLIDIFY": (("thickness", lambda m: round(float(m.thickness), 6)),),
+    "BEVEL": (("width", lambda m: round(float(m.width), 6)), ("segments", lambda m: int(m.segments))),
+    "SUBSURF": (("levels", lambda m: int(m.levels)),
+               ("renderLevels", lambda m: int(m.render_levels))),
+    "DECIMATE": (("decimateType", lambda m: str(m.decimate_type)),
+                ("ratio", lambda m: round(float(m.ratio), 6))),
+    "TRIANGULATE": (("quadMethod", lambda m: str(m.quad_method)),),
+}
+
+
+def _modifier_dict(mod):
+    row = {
+        "name": mod.name,
+        "type": mod.type,
+        "showViewport": bool(mod.show_viewport),
+        "showRender": bool(mod.show_render),
+    }
+    fields = _MODIFIER_FIELDS.get(mod.type)
+    if fields:
+        settings = {}
+        for key, getter in fields:
+            try:
+                settings[key] = getter(mod)
+            except Exception:  # noqa: BLE001 - a field this addon's own curation got wrong for
+                                # some modifier sub-state must not take the whole row down with it
+                settings[key] = None
+        row["settings"] = settings
+    return row
+
+
+def op_list_modifiers(params):
+    """The modifier stack on a mesh object, in EVALUATION ORDER (top to bottom in the Modifier
+    Properties panel, which is also the order they apply in). Answers "what will export_mesh
+    actually produce" before spending an export on finding out - a Mirror or Subsurf still in the
+    stack changes the exported geometry; a disabled one (showViewport/showRender both false)
+    does not, and both states are reported rather than only "is it there"."""
+    reject_unknown(params, {"object", "name"}, "list_modifiers")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+    rows = [_modifier_dict(m) for m in obj.modifiers]
+    return {
+        "object": obj.name,
+        "count": len(rows),
+        "modifiers": rows,
+    }
+
+
 OPS = {
     "list_bones": op_list_bones,
     "list_shape_keys": op_list_shape_keys,
     "list_vertex_groups": op_list_vertex_groups,
+    "list_modifiers": op_list_modifiers,
 }

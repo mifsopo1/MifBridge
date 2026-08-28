@@ -1,6 +1,7 @@
-"""ops_rig.py - list_bones / list_shape_keys / list_vertex_groups, the character-rigging reads
-the Blender addon had NONE of before this file - plus object_info's new armatureModifier field
-(ops_common.py), which closes the last gap: knowing which armature actually deforms a mesh.
+"""ops_rig.py - list_bones / list_shape_keys / list_vertex_groups / list_modifiers, the
+mesh-construction-state reads the Blender addon had NONE of before this file - plus object_info's
+new armatureModifier field (ops_common.py), which closes the gap of knowing which armature
+actually deforms a mesh.
 
 WHY THIS EXISTS. Andre's ask for full depth on the Blender side surfaced this while auditing
 ops_common.object_info(): it reports transform/bounds/materials/UVs for a MESH and NOTHING for
@@ -117,6 +118,9 @@ sk.slider_min = 0.0
 sk.slider_max = 1.0
 mod = mesh_obj.modifiers.new(name="Armature", type='ARMATURE')
 mod.object = arm_obj
+solid = mesh_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
+solid.thickness = 0.25
+solid.show_render = False
 """
 
 
@@ -132,8 +136,8 @@ def main():
     print("")
 
     # ------------------------------------------------------------------ T810 parameter contracts
-    print("=== T810: parameter contracts, all three ops ===")
-    for op in ("list_bones", "list_shape_keys", "list_vertex_groups"):
+    print("=== T810: parameter contracts, all four ops ===")
+    for op in ("list_bones", "list_shape_keys", "list_vertex_groups", "list_modifiers"):
         r = call(op)
         check("T810 %s with no object refuses" % op, r.get("ok") is False, r.get("error"))
         r = call(op, object="NoSuchThing_zz")
@@ -149,6 +153,10 @@ def main():
     r = call("list_bones", object="Cube")
     check("T811 list_bones refuses a MESH (not an ARMATURE)",
           r.get("ok") is False and "ARMATURE" in str(r.get("error", "")), r.get("error"))
+
+    r = call("list_modifiers", object="Cube")
+    check("T811 list_modifiers on a mesh with none succeeds with an empty stack",
+          r.get("ok") is True and r.get("count") == 0 and r.get("modifiers") == [], r)
 
     r = call("list_shape_keys", object="Cube")
     check("T811 list_shape_keys on a mesh with none succeeds", r.get("ok") is True, r)
@@ -173,13 +181,14 @@ def main():
     if probe.get("ok") is False:
         check("T812 (not exercised: run_python is disabled, the correct default - "
               "nothing here builds real rig content to adopt instead)", True)
-        UNPROVEN.append("the POPULATED path for all three ops - armature-space bone positions "
+        UNPROVEN.append("the POPULATED path for all four ops - armature-space bone positions "
                         "and parent linkage, a shape key's basis/relative pairing, a vertex "
-                        "group's weighted vertex count - and object_info's armatureModifier "
-                        "field, which needs a real Armature modifier to report anything but "
-                        "null. Needs run_python enabled (Edit > Preferences > Add-ons > "
-                        "MifBlender > 'Allow run_python') to build test content; this suite "
-                        "does not flip that preference itself.")
+                        "group's weighted vertex count, a decoded per-type modifier settings "
+                        "dict - and object_info's armatureModifier field, which needs a real "
+                        "Armature modifier to report anything but null. Needs run_python "
+                        "enabled (Edit > Preferences > Add-ons > MifBlender > 'Allow "
+                        "run_python') to build test content; this suite does not flip that "
+                        "preference itself.")
     else:
         r = call("run_python", code=RIG_CODE)
         check("T812 building the test rig succeeded", r.get("ok") is not False, r.get("error"))
@@ -239,6 +248,31 @@ def main():
         oi2 = call("object_info", object="Camera")
         check("T813 a non-mesh object has no armatureModifier field at all (not null - absent)",
               "armatureModifier" not in (oi2.get("object") or {}), oi2)
+
+        # ------------------------------------------------------------- T814 the modifier stack
+        print("")
+        print("=== T814: list_modifiers reports the full stack, decoded per type ===")
+        lm = call("list_modifiers", object="MifTestMesh")
+        check("T814 list_modifiers succeeds", lm.get("ok") is True, json.dumps(lm)[:200])
+        mods = {row["type"]: row for row in (lm.get("modifiers") or [])}
+        check("T814 both modifiers are present, in stack order",
+              [m["type"] for m in (lm.get("modifiers") or [])] == ["ARMATURE", "SOLIDIFY"],
+              [m.get("type") for m in (lm.get("modifiers") or [])])
+        if "ARMATURE" in mods:
+            check("T814 ARMATURE settings name the real armature",
+                  (mods["ARMATURE"].get("settings") or {}).get("object") == "MifTestArmature",
+                  mods["ARMATURE"])
+            check("T814 ARMATURE is enabled in viewport and render (the default)",
+                  mods["ARMATURE"]["showViewport"] is True and mods["ARMATURE"]["showRender"] is True,
+                  mods["ARMATURE"])
+        if "SOLIDIFY" in mods:
+            check("T814 SOLIDIFY settings report the real thickness",
+                  abs((mods["SOLIDIFY"].get("settings") or {}).get("thickness", -1) - 0.25) < 1e-6,
+                  mods["SOLIDIFY"])
+            check("T814 SOLIDIFY's showRender:false round-trips (it is present but INERT at "
+                  "render/export, not absent)",
+                  mods["SOLIDIFY"]["showRender"] is False and mods["SOLIDIFY"]["showViewport"] is True,
+                  mods["SOLIDIFY"])
 
         call("delete_object", objects=["MifTestArmature", "MifTestMesh"])
 
