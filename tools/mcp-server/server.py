@@ -2111,6 +2111,79 @@ def describe_endpoint(name: str) -> dict:
     return _post("describe_endpoint", name=name)
 
 
+@mcp.tool()
+def find_tools(keyword: str, limit: int = 15) -> dict:
+    """Search this MCP server's own tool names and descriptions for a keyword, so you can find the
+    right tool among all of them without reading through the whole list or guessing a name.
+
+    Matches keyword (case-insensitive substring) against each tool's name first, then its
+    description; name matches are ranked first since a tool named for what you asked is almost
+    always more relevant than one that merely mentions it in passing. Each hit reports name and a
+    trimmed summary (first ~200 chars of the description, not the full docstring) plus its
+    parameter names - enough to judge relevance and call it directly, without a second lookup.
+
+    This is LOCAL: it reads this server's own registered tool metadata and needs no running editor,
+    so it works even before the bridge is reachable. It does not call describe_endpoint or the
+    bridge's self_audit - those report the UNREAL-side C++ handler surface (parameter guards,
+    read-only/transacted bucket, build signatures); this reports the MCP TOOL surface as this Python
+    process actually registered it, which is the thing an MCP client is choosing between.
+
+    No matches is real information, not a failure: it means try a different word (e.g. "bone" instead
+    of "skeleton", or "widget" instead of "UI") rather than that nothing exists for the concept.
+    """
+    q = (keyword or "").strip().lower()
+    if not q:
+        return {"ok": False, "error": "keyword is required - a substring to search tool names/descriptions for."}
+    try:
+        tools = mcp._tool_manager.list_tools()
+    except Exception as e:
+        return {"ok": False, "error": "could not read this server's own tool registry: %s" % e}
+
+    name_hits, desc_hits = [], []
+    for t in tools:
+        name = t.name or ""
+        desc = t.description or ""
+        if t.name == "find_tools":
+            continue   # searching for the search tool itself is never the point
+        hit_name = q in name.lower()
+        hit_desc = (not hit_name) and q in desc.lower()
+        if not (hit_name or hit_desc):
+            continue
+        try:
+            params = list((t.parameters or {}).get("properties", {}).keys())
+        except Exception:
+            params = []
+        # Collapsed whitespace: a multi-line docstring's indentation and newlines are real content
+        # for a human reading source, but noise in a 200-char summary meant to be judged at a glance.
+        flat = " ".join(desc.split())
+        row = {
+            "name": name,
+            "summary": (flat[:200] + "...") if len(flat) > 200 else flat,
+            "params": params,
+        }
+        (name_hits if hit_name else desc_hits).append(row)
+
+    name_hits.sort(key=lambda r: r["name"])
+    desc_hits.sort(key=lambda r: r["name"])
+    results = (name_hits + desc_hits)[:max(1, limit)]
+    truncated = len(name_hits) + len(desc_hits) > len(results)
+    out = {
+        "ok": True,
+        "keyword": keyword,
+        "count": len(results),
+        "matched": len(name_hits) + len(desc_hits),
+        "results": results,
+    }
+    if truncated:
+        out["truncated"] = True
+        out["note"] = ("%d total matches, showing %d - narrow the keyword or raise limit to see the rest."
+                        % (len(name_hits) + len(desc_hits), len(results)))
+    if not results:
+        out["note"] = ("no tool name or description contains %r. Try a different word for the same "
+                        "concept, or self_audit for the full endpoint list this server wraps." % keyword)
+    return out
+
+
 # --------------------------------------------------------------------------
 # Level / placed-actor editing (the level currently open in the editor)
 # --------------------------------------------------------------------------
