@@ -478,6 +478,7 @@
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
    "test_duplicate_cooked_guard.py",
+   "test_enums.py",
    "test_find_and_move.py",
    "test_function_flags.py",
    "test_graph_patch.py",

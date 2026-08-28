@@ -3250,3 +3250,39 @@ cannot become one giant blocking item:
       remaining entry in coverage_gaps.json is now either a confirmed static-matching false negative
       (4, already declined) or an endpoint permanently out of reach under this project's own standing
       PIE/save/PCG rules (17, already declined). Nothing genuinely open remains.
+
+- [x] **docs/06 section 13 (A/B/C) was stale - all three were already fixed on 2026-08-26, one with
+      zero test coverage of its own.** DONE 2026-08-28. With the endpoint coverage sweep and the
+      Stop-hook holding at 0 open for many cycles, checked a DIFFERENT tracking location than the
+      spec - docs/06_OPEN_ISSUES_FROM_USE.md, this project's own "defect found in use" log - rather
+      than continuing to just re-verify git/GitHub state cycle after cycle. Section 13 named three
+      real, verified-against-source bugs (A: the safety-net TGuardValue-restores-on-scope-exit gap
+      for six deferred engine calls, called "the worst failure this server has"; B:
+      rename_event_dispatcher asserting a rename it never checked; C: create_enum guarding on the
+      wrong predicate for duplicate display names) and its own title still read "VERIFIED, NOT YET
+      FIXED".
+      Checked the actual current source before assuming that was still true, and it was not: all
+      three were fixed in commit 9525ce5 (2026-08-26, "six endpoints that reported success while
+      doing something else") - the same day the doc's own status table was updated for a DIFFERENT
+      eight-endpoint batch, just never reported back to section 13. Confirmed A specifically by
+      finding MifDeferToNextTick (MifBridgeCommon.cpp:1421) - exactly the "one helper that re-arms
+      the guard inside the lambda" the doc asked for - and tracing it to all five real deferred call
+      sites (new_level, load_level, and three MifBridgeStreaming.cpp verbs).
+      B already had real regression coverage (test_components_dispatchers.py T325, via
+      scratch_confirm). C did not: create_enum's OWN values[] array parameter - the exact code path
+      the fix touched - had never been called with an actual duplicate anywhere in this repo;
+      test_enums.py only ever exercised the sibling add_enum_value one-at-a-time path. Added T301
+      (a clean values[] list, then one with a genuine duplicate, verifying the warning and that the
+      duplicate keeps its generated name rather than silently claiming the name it asked for - from
+      both the write's own response and an independent read-back).
+      While in the file, fixed two more small, real things found by reading rather than assuming:
+      T305's own trailing note claimed remove_enum_value's success path was a permanent gap for the
+      same reason already corrected elsewhere in this session - it is one of scratch_confirm's nine
+      genuinely-unblockable endpoints, already proven by test_confirm_gated.py's T345 - upgraded T305
+      to the real removal here too. And T300's own scratch enum was never deleted at the end of the
+      file at all - added the missing cleanup.
+      Updated docs/06 section 13 itself to mark A/B/C fixed with the commit and verification method,
+      rather than leaving stale "not yet fixed" language standing against a codebase where it no
+      longer applies.
+      test_enums.py: 35/35 -> 44/44. test_confirm_gated.py re-checked for regressions (33/33, still
+      clean). parity_check.py clean.

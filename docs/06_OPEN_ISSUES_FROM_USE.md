@@ -630,11 +630,33 @@ coincidences.
 
 ---
 
-## 13. Four more from the same hunt — VERIFIED, NOT YET FIXED
+## 13. Four more from the same hunt — A, B and C now FIXED (2026-08-28 update); O remains declined
 
-Each of these I confirmed against the source myself; they are queued behind the eight in section 12
-rather than written, because writing unbuilt code into a file that already holds tested code is how a
-commit stops meaning what it says.
+**UPDATE 2026-08-28.** This section sat as "verified, not yet fixed" for two days after being queued
+behind section 12. Re-checked against the current source rather than assumed still open, because a
+doc that claims something is broken after it has been fixed is worse than no doc at all — a reader
+acts on the claim, not the code. A, B and C were ALL fixed in commit `9525ce5` (2026-08-26,
+"fix(silent-success): six endpoints that reported success while doing something else") — the same
+commit that closed section 12's eight, just never reported back here. All three re-verified live
+against the current build, not just read in the diff:
+
+- **A**: `MifDeferToNextTick` (MifBridgeCommon.cpp:1421) is exactly the "one helper that re-arms the
+  guard inside the lambda" this section asked for — it wraps every deferred call in its own
+  `TGuardValue<bool> UnattendedGuard(GIsRunningUnattendedScript, true)` before running the real work.
+  Confirmed at all five real call sites this section named (new_level, load_level, and the three
+  MifBridgeStreaming.cpp verbs — line numbers have since shifted with file growth, but the same
+  logical sites), not assumed from the helper's existence alone.
+- **B**: `rename_event_dispatcher` now reads back both halves and fails loudly naming which one moved,
+  instead of asserting `true` over two engine calls that answer nothing. Regression: `tools/
+  test_components_dispatchers.py` T325, via `scratch_confirm.py`'s real success path.
+- **C**: `create_enum`'s `values[]` loop now checks `SetEnumeratorDisplayName`'s return value and
+  warns per entry instead of discarding it. This fix itself had ZERO test coverage until today, found
+  while updating this file rather than trusted from the commit message alone — `tools/test_enums.py`
+  T301 now drives `create_enum`'s OWN `values[]` path directly (a clean list, then a genuine
+  duplicate), confirming the duplicate keeps its generated name and the response carries a warning
+  naming it, both from the write's own response AND an independent read-back.
+
+Original text below, preserved for the reasoning; do not re-file A/B/C.
 
 **A. Every DEFERRED engine call escapes the modal backstop.** The most important one, because it is a
 hole in the safety net rather than in one endpoint. `RunEndpoint` runs each handler under
