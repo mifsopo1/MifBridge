@@ -2551,9 +2551,23 @@ cannot become one giant blocking item:
       six deprecation-sweep fixes (GetBindings, UIKRigProcessor, ElementSize, bCustomizedCollision,
       LODIndex, GetMaterialResource, GetInputsView, LayerName) regressed nothing elsewhere in the
       module.
-- [ ] **test_blender_mesh.py T767 fails on a fresh run.** Found 2026-08-28 as a byproduct of the sweep
-      above, NOT investigated - Blender-domain, unrelated to today's UE-side work. "a closed mesh has
-      no boundary to skirt, and it says so" - fails with no error text captured. Shape matches the
-      already-diagnosed LIGHTMAP failure from earlier this session (a shared fixture mangled by an
-      earlier destructive test in the same run, not a real 3.6 defect) - worth checking against that
-      same theory before assuming a new regression.
+- [x] **test_blender_mesh.py T767's failure was a stale Blender process, not a bug.** Found and closed
+      2026-08-28. root cause: run_all_suites.py globs test_*.py and runs whatever it finds against
+      port 8791 (Unreal) - it has NO Blender lifecycle management at all (confirmed by reading
+      run_blender_suites.py's own docstring: "nothing in that runner knows how to start a Blender").
+      When my full-sweep run included test_blender_mesh.py, it silently reused whatever was ALREADY
+      listening on port 8792 - a Blender process confirmed (by PID and StartTime) to have been running
+      continuously since 2026-08-27 22:04:01, over 4.5 hours and one calendar day earlier, carrying
+      whatever ad-hoc mutations had accumulated on its scene from unrelated earlier activity. The
+      suite's own docstring says it is "SELF-CONTAINED ON PURPOSE" by exporting the FACTORY-STARTUP
+      Cube - a precondition that instance had long since stopped satisfying.
+      CONFIRMED, not just theorised: killed both the stale instance and an orphaned one from a failed
+      run_blender_suites.py attempt, launched Blender 4.4 completely fresh by hand (--background
+      --factory-startup, the same invocation run_blender_suites.py uses), and ran test_blender_mesh.py
+      directly against it - PASS 78, FAIL 0, every single check including T767. Not a MifBridge bug,
+      not a regression from today's UE-side deprecation work.
+      REAL HAZARD WORTH REMEMBERING: run_all_suites.py (or any ad-hoc `--once` sweep that happens to
+      include test_blender_*.py) will silently produce misleading Blender results if a stale instance
+      is already listening on 8792 - it has no way to know the difference between a freshly-started
+      one and a days-old one. Blender suites should be run through run_blender_suites.py specifically
+      (which starts fresh and owns the whole lifecycle), not swept in via run_all_suites.py's glob.
