@@ -326,6 +326,16 @@ def main():
         r = M.call("list_morph_targets", {"path": richest_mt})
         check("T791 it answers", r.get("ok") is True, json.dumps(r)[:160])
         mts = r.get("morphTargets") or []
+        # GUARDED FIRST, same reason as T221's own guard above: all([]) is True, so every all(...)
+        # check below would pass vacuously if this fresh call disagreed with the scan that chose
+        # richest_mt (richest_mt_count > 0 came from an EARLIER, separate call - this one re-asks the
+        # same endpoint on the same asset, and a real inconsistency between the two should fail loudly
+        # here rather than let every check below pass on an empty list. Dormant on DDS2 today (this
+        # branch never runs - see the UNPROVEN note above), which is exactly why a static audit
+        # (audit_vacuous_checks.py) found it and live execution never had the chance to.
+        check("T791 the fresh call actually returned morph targets to check",
+              len(mts) > 0, "morphTargets=%d despite richest_mt_count=%d - every check below would "
+              "pass vacuously" % (len(mts), richest_mt_count))
         check("T791 count matches what was returned", r.get("count") == len(mts),
               "%s vs %d" % (r.get("count"), len(mts)))
         check("T791 every target has a name and its own asset path",
