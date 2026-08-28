@@ -2702,7 +2702,7 @@ cannot become one giant blocking item:
       explicitly rather than assuming it carried over from earlier in a session. Full writeup in
       docs/01_POSTMORTEMS.md.
 
-- [ ] **Finish and commit the SKELETAL SPLIT panel tab.** In flight 2026-08-28, not yet a [x].
+- [x] **SKELETAL SPLIT panel tab.** DONE 2026-08-28.
       MifBridgeSkeletalSplitView.cpp (new file) + MifBridgePanel.cpp (tab index 6) - the fourth of
       Andre's four in-editor asks, closing the gap the other three (write-mode dropdown, inheritance
       tree, behavior tree diagram) already closed on 2026-08-27: analyze_skeletal_split has had a bridge
@@ -2724,8 +2724,8 @@ cannot become one giant blocking item:
       him mid-review - Live Coding was already active for that session (checked with live_coding_status
       first), so this was live_coding_compile's intended use, not a shortcut around the project's normal
       verification standard.
-      STILL OWED, and why this stays [ ] rather than [x]: a real Build.bat compile of the color-fix
-      specifically (Live Coding patches are for fast iteration in front of Andre, not proof - this
-      project's own standing rule is every C++ change gets verified by a REAL compile). Deliberately
-      deferred until Andre is not actively watching that editor, since Build.bat cannot replace a DLL
-      Live Coding is holding open anyway. Also not yet committed/pushed.
+      The color-fix's REAL Build.bat verification (deferred while Andre was actively watching the
+      editor live) is now done too: closed the editor once his review looked finished, rebuilt on BOTH
+      DDS2's 5.3.2 (buildcheck.py clean on all three signals) and the 5.7 probe (Result: Succeeded) -
+      the Live Coding patch he saw live was real, not just applied-and-hoped. Committed and pushed
+      (5c7242e).
