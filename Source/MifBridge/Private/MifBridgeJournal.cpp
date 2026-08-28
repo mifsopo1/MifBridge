@@ -202,15 +202,17 @@ namespace MifBridge
 	// point of the file.
 	void JournalCallStart(const FString& Endpoint, const FString& Body, const FString& Agent)
 	{
-		// GPendingAgent is set even when the on-disk journal is off (mirrors GPendingSubject below,
-		// and matches the reason the ring is filled unconditionally in JournalCallEnd): the panel's
-		// live view must not depend on the disk-journal CVar.
+		// GPendingAgent, the in-flight endpoint/timing, and GPendingSubject/GPendingIsAsset are all
+		// set even when the on-disk journal is off (matches the reason the ring is filled
+		// unconditionally in JournalCallEnd): the panel's live view - subject, asset link, and the
+		// "working" indicator - must not depend on the disk-journal CVar. Only the WriteRaw call below
+		// is gated on GJournal.
 		GPendingAgent = Agent;
-		if (!GJournal) { return; }
 		GCallStartSeconds = FPlatformTime::Seconds();
 		GInFlightEndpoint = Endpoint;
 		GInFlightSince = GCallStartSeconds;
 		ExtractSubject(Body, GPendingSubject, GPendingIsAsset);
+		if (!GJournal) { return; }
 		WriteRaw(FString::Printf(
 			TEXT("{\"t\":\"%s\",\"ev\":\"start\",\"ep\":\"%s\",\"bytes\":%d,\"agent\":\"%s\"}\n"),
 			*FDateTime::UtcNow().ToIso8601(), *Esc(Endpoint), Body.Len(), *Esc(Agent)));
