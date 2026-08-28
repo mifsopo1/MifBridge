@@ -31,6 +31,8 @@
 #include "IO/IoDispatcher.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "MifBridgeVersion.h"                      // MIF_ENGINE_AT_LEAST - FStaticMeshBatchRelevance::LODIndex
+#include "RHIGlobals.h"                            // GShaderPlatformForFeatureLevel - MifGetMaterialResource
 #include "Misc/PackagePath.h"
 #include "Misc/Paths.h"
 #include "UObject/Package.h"
@@ -551,6 +553,23 @@ namespace MifBridge
 		OutNames.Sort();
 	}
 
+	// UMaterialInterface::GetMaterialResource(ERHIFeatureLevel::Type) is UE_DEPRECATED(5.7, "Please
+	// use GetMaterialResource with EShaderPlatform argument and not ERHIFeatureLevel::Type") - unlike
+	// the LODIndex case above, this one IS just a signature change, not a decoy: the EShaderPlatform
+	// overload does not exist at all on 5.3 (confirmed by grep of D:/UE532's MaterialInterface.h), so
+	// the feature-level overload must stay there. GShaderPlatformForFeatureLevel[FeatureLevel] is the
+	// engine's own standard conversion (RHIGlobals.h, identical on both 5.3 and 5.7 - confirmed by
+	// grep), so no gate is needed for the lookup itself, only for which overload to call with it.
+	static const FMaterialResource* MifGetMaterialResource(UMaterialInterface* Mat, ERHIFeatureLevel::Type FeatureLevel)
+	{
+		if (!Mat) { return nullptr; }
+#if MIF_ENGINE_AT_LEAST(5, 7)
+		return Mat->GetMaterialResource(GShaderPlatformForFeatureLevel[FeatureLevel]);
+#else
+		return Mat->GetMaterialResource(FeatureLevel);
+#endif
+	}
+
 	// Shader counts + type names for every entry in a component's MaterialInstances, not just slot 0.
 	// Rendering picks AvailableMaterials[LODIndexToMaterialIndex[LOD]], and these components draw at
 	// LOD 2-3, so slot 0 is not necessarily the material that actually draws.
@@ -560,7 +579,7 @@ namespace MifBridge
 		J->SetNumberField(TEXT("slot"), SlotIndex);
 		J->SetStringField(TEXT("material"), Mat ? Mat->GetPathName() : TEXT("<null>"));
 
-		const FMaterialResource* Res = Mat ? Mat->GetMaterialResource(FeatureLevel) : nullptr;
+		const FMaterialResource* Res = MifGetMaterialResource(Mat, FeatureLevel);
 		FMaterialShaderMap* ShaderMap = Res ? Res->GetGameThreadShaderMap() : nullptr;
 		if (!ShaderMap)
 		{
@@ -748,7 +767,7 @@ namespace MifBridge
 					// nothing while every CPU-side check above still looks perfectly healthy. This is the only
 					// remaining thing that distinguishes a landscape component that renders from one that
 					// doesn't, and it matches a freshly-compiled material fixing some plots.
-					const FMaterialResource* Res = MatIface->GetMaterialResource(WorldFeatureLevel);
+					const FMaterialResource* Res = MifGetMaterialResource(MatIface, WorldFeatureLevel);
 					if (!Res)
 					{
 						++NumNoMatResource;
@@ -1057,7 +1076,19 @@ namespace MifBridge
 					for (const FStaticMeshBatchRelevance& R : Info->StaticMeshRelevances)
 					{
 						FRel Rel;
+						// R.LODIndex is UE_DEPRECATED(5.4, "...doesn't contain valid data anymore! Use
+						// GetLODIndex() function instead.") - not a future-compat warning like most of
+						// this sweep's other fixes, an ACTIVE one: the field itself is a stub bitfield on
+						// 5.4+ and reading it returns garbage, not merely a discouraged-but-correct value.
+						// This diagnostic endpoint's whole purpose is explaining why a landscape draws or
+						// doesn't, and "lod" silently reporting nonsense defeats that on every 5.4+ engine
+						// this plugin runs on. GetLODIndex() does not exist at all on 5.3 (confirmed by
+						// grep of D:/UE532's StaticMeshBatch.h - the field there is a plain, valid int8).
+#if MIF_ENGINE_AT_LEAST(5, 4)
+						Rel.LODIndex = R.GetLODIndex();
+#else
 						Rel.LODIndex = R.LODIndex;
+#endif
 						Rel.ScreenSize = R.ScreenSize;
 						Rel.bUseForMaterial = R.bUseForMaterial != 0;
 						Rel.bRenderToVirtualTexture = R.bRenderToVirtualTexture != 0;
