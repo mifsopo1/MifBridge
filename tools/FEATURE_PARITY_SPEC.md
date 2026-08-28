@@ -2792,3 +2792,21 @@ cannot become one giant blocking item:
       Blender 5.0 instance (the highest installed version) after the 4.4 run above - 34/34 PASS
       there too, including the full populated path. Andre asked for the range 4.4-5.2; only 4.4 and
       5.0 are installed on this machine, so those are the two actually verified.
+
+- [x] **object_info.armatureModifier - closes the mesh<->armature link.** DONE 2026-08-28, same
+      sweep as ops_rig.py above. ops_rig.py can read an armature's bones and a mesh's vertex
+      groups, but nothing said WHICH armature actually deforms a given mesh - a caller had to
+      already know the pairing. object_info() now reports armatureModifier: the ARMATURE object's
+      name if the mesh has an Armature modifier bound to one, else null.
+      Keyed on the MODIFIER on purpose, not obj.parent: a mesh can be parented to an armature (the
+      common workflow) with no Armature modifier at all, and parenting alone deforms nothing - only
+      the modifier does. Reading parent would report a rig that is not actually rigging the mesh.
+      object_info() is called from 8 sites across ops_mesh.py/ops_scene.py - purely additive (one
+      more dict key, nothing existing changes shape) but re-ran the full existing Blender suites
+      anyway to confirm no regression: test_blender_ops.py 12/12, test_blender_mesh.py 78/78, both
+      still green.
+      Extended tools/test_blender_rig.py (T811, T813) for both the empty case (an unrigged Cube
+      reports armatureModifier:null) and the populated case (a real Armature modifier reports the
+      real armature's name; a non-mesh object has no armatureModifier KEY at all, not a null one).
+      38/38 PASS, verified on BOTH Blender 4.4 and 5.0 (re-ran after adding T813, not assumed from
+      the earlier ops_rig.py run which predated this field).
