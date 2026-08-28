@@ -2650,3 +2650,27 @@ cannot become one giant blocking item:
 
       Both endpoints follow list_bones' existing alias convention (path/assetPath/skeleton/mesh);
       param_reach_baseline.txt gained the same ALIAS entries list_bones already carries.
+
+- [~] **The rest of the obvious Skeletal Mesh Editor surface (PhysicsAsset, LODInfo) needs no new
+      endpoint - CHECKED, not assumed, 2026-08-28.** After building list_virtual_bones and
+      list_morph_targets (the two fields that genuinely had no reader - names live in separate arrays
+      reflection cannot resolve to text on its own), I read the remaining candidates' declarations
+      before writing more handlers.
+
+      `USkeletalMesh::PhysicsAsset` (SkeletalMesh.h:1325) and `LODInfo` (SkeletalMesh.h:806) are both
+      plain `UPROPERTY(EditAnywhere, ...)` fields - the UE_DEPRECATED wrapping above each is a
+      C++-DIRECT-ACCESS deprecation ("use GetPhysicsAsset()/GetLODInfoArray() instead"), which does not
+      affect reflection at all: get_property/set_property read the FProperty directly via
+      ExportText_Direct, the same path the Details panel and copy/paste use, and neither of those cares
+      what the C++ accessor convention is. Both are already reachable today:
+      `get_property {path, propertyPath:"PhysicsAsset"}` and `{propertyPath:"LODInfo"}` (or
+      `LODInfo[0].ScreenSize` etc. for one LOD's settings) work through the existing generic endpoint.
+
+      Building dedicated list_physics_asset / list_lod_info handlers for these would have been exactly
+      the parallel-system mistake Andre's own standards warn against - re-solving a problem the generic
+      reflection path already solves, for no reason bones/virtual-bones/morph-targets had (those three
+      needed NAME resolution or a convenience function reflection cannot provide on its own).
+      Not verified live against real DDS2 content in this pass - the reasoning is a header read, and if
+      either ExportText output turns out to be unreadable in practice (LODInfo is a large struct; a
+      confirmed rough edge would be a real, separate, small finding) that is a live-verification task
+      for whoever next has cause to read one, not a reason to build a second endpoint pre-emptively.
