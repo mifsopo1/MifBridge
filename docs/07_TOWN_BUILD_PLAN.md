@@ -104,7 +104,12 @@ Final checks: `compile` on any authored Blueprint returns 0/0; `pie_status` repo
    true before the world exists. The correct test is `PlayWorld->HasBegunPlay()`. Until that is
    fixed, the script must sleep after "running" before querying the pawn. *(Fix pending, plugin-side.)*
 3. **`list_object_properties` returned zero bytes on `Ultra_Dynamic_Sky`** (~545 properties) — a
-   probable size/timeout bug. Use `describe_class` for large objects instead. *(Bug to investigate.)*
+   probable size/timeout bug. Use `describe_class` for large objects instead. *(RE-CHECKED
+   2026-08-28 against a real DDS2 Ultra_Dynamic_Sky instance and it does NOT reproduce: 634
+   properties, both with an explicit high limit and with the default limit=200 (honestly reported
+   as truncated, matched:634). Whatever caused the zero-byte response before is not present now -
+   left as "does not currently reproduce" rather than claimed fixed, since the original root cause
+   was never identified. If it recurs, get the exact engine build and property count at the time.)*
 4. **The level is `Untitled` and unsaved.** Save it to a real `/Game/Maps/` path as stage 0 or the
    whole build is one crash from gone — as already happened once.
 5. **Cooked-content buildings** (`/DDS2Casino/`) cannot be modified, only placed. Fine for meshes.
