@@ -2504,17 +2504,28 @@ cannot become one giant blocking item:
       no 5.3 regression. Commits: 717272e, 11f7893, 27af774.
 
 - [ ] **Landscape edit-layer migration - an architecture decision, not a warning fix.** Found
-      2026-08-28, deliberately NOT acted on. `ALandscape::CanHaveLayersContent()` /
-      `ToggleCanHaveLayersContent()` (create_landscape's "keep edit layers off" setup, so
-      sculpt_landscape/paint_landscape's direct writes land somewhere that actually composites) are
-      now UE_DEPRECATED(5.7) - and unlike everything else in this sweep, it is not the accessor that
-      changed, it is the underlying CONCEPT: Epic's message is "Non-edit layer landscapes are
-      deprecated, all landscapes use the edit layer system now." The suggested replacement,
-      `ConvertNonEditLayerLandscape()`, converts a landscape INTO edit layers - the opposite of what
-      this code wants, not a drop-in swap.
-      Current code still compiles and works correctly today on both 5.3 and 5.7; the deprecation only
-      warns about a future removal. Whether create_landscape should keep making non-edit-layer
-      landscapes going forward, or be redesigned to write through an edit layer instead (which would
-      need FLandscapeEditDataInterface's behaviour re-verified under edit-layers-on - a materially
-      different code path, not investigated) is Andre's call. Revisit if a future engine actually
-      removes the non-edit-layer path, or if Andre wants it addressed proactively.
+      2026-08-28, deliberately NOT acted on - this is Andre's call, not something to redesign
+      unilaterally mid-autopilot. `ALandscape::CanHaveLayersContent()` / `ToggleCanHaveLayersContent()`
+      (create_landscape's "keep edit layers off" setup) are now UE_DEPRECATED(5.7): not a renamed
+      accessor, the underlying CONCEPT - Epic's message is "Non-edit layer landscapes are deprecated,
+      all landscapes use the edit layer system now." Current code still compiles and works correctly
+      today on both 5.3 and 5.7; the deprecation only warns about a future removal.
+      RESEARCHED FURTHER, 2026-08-28, read-only (no code touched) - this de-risks the eventual call
+      more than first thought. sculpt_landscape/paint_landscape already construct
+      `FLandscapeEditDataInterface Edit(Info)` with the plain, no-GUID constructor - and that
+      constructor's own doc comment (LandscapeEdit.h:163) says it "will build an interface that works
+      in the current edit layer (uses the ALandscape PrivateEditingLayer state)." So the EXISTING
+      write code is already edit-layer-aware and would likely keep writing correctly even with edit
+      layers left on, targeting whichever layer is "current" rather than requiring layers off - this
+      is not the "materially different code path" first assumed. The one piece NOT verified: whether
+      a freshly-created edit-layers-enabled landscape has any layer marked "current" by default, or
+      whether one has to be added first (e.g. via AddLayer) before "current edit layer" resolves to
+      anything real - that needs an actual live test on the probe, not a header read, and was left for
+      Andre's decision rather than chased down further.
+      So the live options, now sharper: (a) leave create_landscape exactly as it is - deprecated but
+      functional today on both engines, revisit only when a future engine actually removes the
+      non-edit-layer path; or (b) create WITH edit layers on (skip the Toggle entirely) and let the
+      already-existing write code target the current layer, once someone verifies a fresh landscape
+      actually has one. (b) may be a much smaller change than "redesign the write path" - possibly
+      just deleting the CanHaveLayersContent/Toggle block - but that is exactly the kind of pleasant
+      surprise that should be confirmed live before committing to it, not assumed from a header.
