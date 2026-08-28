@@ -130,10 +130,13 @@ roadmap two days after everything on it had already landed:
    new code needed, confirmed by actually checking rather than assumed.
 5. Everything else on demand — MVVM's FieldNotify gap landed 2026-08-27 (viewmodel authoring itself
    already worked with zero new code). GeometryScripting landed 2026-08-28: `create_procedural_mesh`
-   (box/sphere generation, GeometryFramework/GeometryCore + the already-linked GeometryScripting
-   plugin) and `describe_dynamic_mesh`, `tools/test_geometryscript.py`, 27/27, both engines - see the
-   spec's dated entry. Still genuinely idle and declined pending an actual ask: LevelSnapshots,
-   LiveLink, MassEntity, ModularGameplay.
+   (box, sphere, cylinder, cone, torus - GeometryFramework/GeometryCore + the already-linked
+   GeometryScripting plugin) and `describe_dynamic_mesh`, `tools/test_geometryscript.py`, 41/41, both
+   engines - see the spec's dated entries. `MediaExt` checked 2026-08-28 and closed with ZERO new
+   code, same shape as Vehicles: DDS2's real (if small) Media setup - a MediaPlayer, FileMediaSource,
+   MediaPlaylist, 4 MediaTexture assets - is already fully readable through `list_object_properties`.
+   Still genuinely idle and declined pending an actual ask: LevelSnapshots, LiveLink, MassEntity,
+   ModularGameplay.
 
 Original suggested order preserved below for the reasoning; do not re-plan items 1-4 from it.
 

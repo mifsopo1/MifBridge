@@ -3363,3 +3363,26 @@ cannot become one giant blocking item:
       refused" example, written before cylinder existed as a real shape - correctly failed once cylinder
       support landed, for the right reason (cylinder is now valid), fixed to use a still-genuinely-bad
       shape name instead.
+- [x] **MediaExt - zero new code needed, same shape as ChaosVehicles.** DONE 2026-08-28, checked while
+      continuing the "1:1 Fab marketplace parity" thread. `MediaAssets` has been an unconditional
+      Build.cs dependency since the 2026-08-26 breadth batch and had NOTHING using it - not even gated
+      behind a MIF_WITH_* macro (it is an always-present engine module, so parity_check's PLUGIN IDLE
+      check does not even see it - the worst-of-both-worlds state this spec keeps flagging elsewhere,
+      just invisible to the one tool that catches it).
+      CHECKED AGAINST REAL CONTENT FIRST: DDS2 has a small but genuine Media setup - a MediaPlayer, a
+      FileMediaSource, a MediaPlaylist, and 4 MediaTexture assets, all under /Game/GUI/Demo (an
+      end-of-demo video background). list_object_properties already reads every field that matters:
+        FileMediaSource.FilePath -> the real .mp4 path on disk
+        MediaPlayer.Playlist/PlaylistIndex/Loop/PlayOnOpen -> full playback configuration
+        MediaPlaylist.Items -> resolved to real asset object paths, not opaque references
+        MediaTexture.MediaPlayer -> correctly cross-links back to the player that feeds it
+      Same finding as ChaosVehicles (FEATURE_PARITY_SPEC.md, 2026-08-27): the generic property tools
+      already cover the whole static-configuration surface, so a dedicated describe_media_* endpoint
+      would be exactly the tool-count parity this spec has repeatedly declined to chase (describe_
+      metasound's own entry makes the identical call for list_metasounds vs find_assets). No new code
+      written, no new test file - nothing changed to regress, since list_object_properties' own coverage
+      already protects this.
+      NOT covered, same reason as ChaosVehicles and the PIE-family declines elsewhere in this spec: a
+      MediaPlayer's actual playback state (IsPlaying, current time, opened track list) only exists once
+      something has called OpenSource/Play at runtime - static describe cannot see it, and this project
+      has a standing rule against starting PIE to look.
