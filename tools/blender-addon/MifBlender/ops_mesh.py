@@ -756,6 +756,47 @@ def op_bevel_edges(params):
                 "max %s (Blender units); selection breakdown: %s"
                 % (obj.name, rnd(lo0), rnd(hi0), criteria))
 
+        # affect='EDGES' is a SILENT NO-OP on a pure boundary edge (exactly one linked face) -
+        # VERIFIED empirically 2026-08-27/28 on both a minimal test plane and this addon's own
+        # barrel fixture: bmesh.ops.bevel(geom=boundary_edges, affect='EDGES', ...) leaves
+        # vert/face counts bit-for-bit unchanged regardless of offset or segment count, while
+        # ok:true and every reported "before" field were still correct - a confidently-wrong
+        # answer for exactly the tool's own headline use case (_MIF_DEFAULT_EDGE_SELECTOR's
+        # comment: "the two long edges of a road/sidewalk tile", which boundaryOnly selects as
+        # PURE boundary edges by construction). affect='VERTICES' with the same edges' vertices
+        # as geom genuinely bevels them - also verified empirically, same fixture.
+        #
+        # affect='VERTICES' is NOT a universal replacement, though: on already-working interior
+        # edges it produces MORE geometry than affect='EDGES' for the identical selection (measured:
+        # +368 verts vs +141 for the same 21-edge sharp-angle selection on the barrel) - a vertex
+        # bevel treats every touched vertex as its own corner rather than following the edge loop's
+        # dihedral, which is a real behaviour change, not just a bug fix, for the case that already
+        # worked. So this is NOT swapped in wholesale - only routed to boundary edges, which is the
+        # ONLY case that was actually broken.
+        #
+        # boundaryOnly and the angle selector (min/maxAngleDeg) are each PURE by construction -
+        # boundaryOnly keeps only len(link_faces)==1, and calc_face_angle(None) returns None (and
+        # is skipped) for exactly those same edges - so in normal use this partition is never mixed.
+        # A mixed selection is only reachable via axis+side, edgeIndices or allEdges, and mixing the
+        # two Blender bevel algorithms in one call has no single correct answer, so it is refused
+        # rather than guessed at.
+        boundary_edges = [e for e in edges if len(e.link_faces) == 1]
+        other_edges = [e for e in edges if len(e.link_faces) != 1]
+        if boundary_edges and other_edges:
+            raise MifOpError(
+                "the selection mixes %d boundary edge(s) (one linked face) with %d non-boundary "
+                "edge(s) - these need different Blender bevel algorithms (affect='VERTICES' vs "
+                "'EDGES') and there is no single correct way to bevel both in one call. Make two "
+                "calls: one with a selector that matches only boundary edges (boundaryOnly:true), "
+                "one that matches only the rest (minAngleDeg/maxAngleDeg, or edgeIndices filtered "
+                "by hand)." % (len(boundary_edges), len(other_edges)))
+        if boundary_edges:
+            bevel_affect = "VERTICES"
+            bevel_geom = list({v for e in boundary_edges for v in e.verts})
+        else:
+            bevel_affect = "EDGES"
+            bevel_geom = edges
+
         # Resolved BEFORE the edit: preserveAxes defaults to assertAxes, and a
         # bad axis name should refuse without having touched the mesh.
         assert_axes, preserve, snap_tol, seam_on_tol, seam_band = _guard_axes(
@@ -786,15 +827,17 @@ def op_bevel_edges(params):
 
         bmesh.ops.bevel(
             bm,
-            geom=edges,
+            geom=bevel_geom,
             offset=offset,
             offset_type=str(take(params, "offsetType", default="OFFSET")).upper(),
             segments=segments,
             profile=take_float(params, "profile", default=0.5),
-            # affect defaults to 'VERTICES' and material defaults to 0. Both are
-            # wrong here: we bevel EDGES, and material=0 would drag every new
-            # face into the first material slot instead of inheriting.
-            affect="EDGES",
+            # affect is 'EDGES' for a normal (non-boundary) selection and 'VERTICES' for a pure
+            # boundary one - see the note above where bevel_affect/bevel_geom are computed; a
+            # boundary edge has only one linked face, and affect='EDGES' is a silent no-op on
+            # those regardless of offset or segments. material=0 would drag every new face into
+            # the first material slot instead of inheriting, which -1 avoids either way.
+            affect=bevel_affect,
             material=-1,
             clamp_overlap=take_bool(params, "clampOverlap", default=True),
             loop_slide=take_bool(params, "loopSlide", default=True),
@@ -856,6 +899,18 @@ def op_bevel_edges(params):
                     "along %s this will shear the seam -- use preserveAxes/assertAxes."
                     % ("XYZ"[i], size0[i], size1[i], delta[i] * UU_PER_BU, "XYZ"[i]))
         warnings.extend(_seam_warnings(seam, guarded, criteria, seam_band))
+
+        # REFUSE RATHER THAN PRETEND, same discipline as decimate_mesh: a non-empty selection
+        # that added no geometry at all is not success, whatever bmesh.ops.bevel itself returned.
+        # This is a safety net behind the boundary/interior split above, not a replacement for it -
+        # it exists for whatever combination of offset/segments/topology neither experiment covered.
+        if len(bm.verts) == verts0 and len(bm.faces) == faces0:
+            raise MifOpError(
+                "bevel selected %d edge(s) on '%s' but added no geometry at all - vert and face "
+                "counts are unchanged. The mesh was NOT modified. This can happen when "
+                "clamp_overlap reduces every selected edge's effective offset to zero against "
+                "tightly packed neighbouring geometry; try a smaller offset, or check the "
+                "selection with select_edges first." % (len(edges), obj.name))
 
         bm.normal_update()
         bm.to_mesh(mesh)

@@ -252,8 +252,15 @@ def main():
           str(r.get("error"))[:180])
     check("T768 and that refusal names bevel_edges, not a sibling",
           "bevel_edges" in str(r.get("error", "")), str(r.get("error"))[:180])
+    # boundaryOnly, not allEdges: by T768's point in the suite the mesh (post-T767's forced
+    # allowNonBoundary extrude) has BOTH boundary and interior edges, and bevel_edges correctly
+    # REFUSES a selection that mixes the two - they need different Blender bevel algorithms
+    # (affect='VERTICES' for boundary edges, affect='EDGES' for the rest; affect='EDGES' is a
+    # silent no-op on a pure boundary edge - VERIFIED 2026-08-27/28, see ops_mesh.py's
+    # op_bevel_edges). boundaryOnly is a PURE selection (guaranteed by _select_edges' own
+    # filtering) and additionally exercises the exact case that was broken until this fix.
     b0 = verts(name)
-    r = call("bevel_edges", object=name, offset=0.01, allEdges=True)
+    r = call("bevel_edges", object=name, offset=0.01, boundaryOnly=True)
     check("T768 with a selector it runs", r.get("ok") is not False, r.get("error"))
     b1 = verts(name)
     check("T768 and bevelling adds geometry", isinstance(b1, (int, float)) and b1 >= b0,
