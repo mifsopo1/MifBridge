@@ -2874,3 +2874,30 @@ cannot become one giant blocking item:
       failure naming the field via ignoredParameters), not silently defaulted by the handler - read
       MifBridgeCommon.cpp's JBool/ReportParamTypeViolations before asserting it.
       60/60 PASS, verified live against DDS2 (UE 5.3.2); nothing saved, editor closed after.
+
+- [x] **Closed 6 more zero-coverage reads AND fixed a real bug - blueprint_inheritance_tree's
+      nativeRoots never actually walked.** DONE 2026-08-28, third batch. validate, nav_status,
+      focus_viewport, blueprint_inheritance_tree, scene_report, list_mounted_containers -
+      tools/test_uncovered_reads3.py.
+      TWO REAL BUGS FOUND, not test mistakes. (1) ChildrenOf was keyed by the FULL native class
+      path ("/Script/Engine.Actor") while nativeRoots advertised the SHORT name ("Actor") a caller
+      was told to pass back into `root` - two different transforms of the same value that could
+      never match. A dead loop (iterates NativeParentOf, if/continue, no other statement) sat right
+      where the fix belonged - apparently left mid-edit. Fixed with a short-name-matched fallback
+      lookup.
+      (2) Found only because the regression test roots at EVERY advertised native root rather than
+      trusting the first: two names still failed - both real DDS2 content, both third-party
+      environment plugins (Oceanology, Riverology). Traced with find_assets, not guessed:
+      BP_OceanologyInfiniteOcean_ChildBTR's direct parent lives in /Oceanology_Plugin/... - a real
+      blueprint OUTSIDE the default /Game/ pathPrefix, invisible to this scan - and
+      NativeParentClassPath's tag walks PAST that invisible parent to a deep native ancestor with no
+      relationship to what ChildrenOf was keyed by. Fixed at the source: only trust the
+      deep-ancestor shortcut when the immediate parent's class path genuinely starts "/Script/";
+      otherwise report the immediate (possibly out-of-prefix) parent's own short name, honestly
+      naming what it is instead of misnaming it as a native class several hops removed.
+      Verified on both engines after EACH fix (Build.bat on DDS2's 5.3.2, buildcheck.py clean;
+      make_engine_probe.py --build on 5.7, Result: Succeeded), not just once at the end. Live-tested
+      against real DDS2 content both times - the final run put 299 checks through T843 alone,
+      rooting at every one of DDS2's ~140 real advertised native roots, not a sample. 299/299 PASS.
+      coverage_gaps.json refreshed for real: 113 -> 92 across this session's three batches, from an
+      exhaustive live scan, not assumed.
