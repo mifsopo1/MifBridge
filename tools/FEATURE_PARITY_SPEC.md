@@ -1543,6 +1543,66 @@ contradicts this file, the analysis wins — it read the code and this file matc
   it was not merely unproven, it was broken, and would have stayed broken indefinitely because the
   stated blocker (scratch-mode `import_asset` refusal) was real but not the actual cause.
 
+- [x] **Blender-side testing depth brought toward UE-side parity, and it immediately found a real bug.**
+  DONE 2026-08-27/28. Andre, directly: "make sure our blender porting and endpoints are as indepth
+  testing wise as our UE side". Measured the actual gap first rather than guessing at scope: the UE
+  side had ~15 `audit_*.py` cross-cutting checks (dead params, vacuous checks, mode params,
+  postconditions, read purity, blocking, modals, fuzzing...) against 4 files total on the Blender side
+  (`blender_probe.py`, `test_blender_mesh.py`, `test_blender_ops.py`, `run_blender_suites.py`) - solid
+  on "does each op run without erroring", zero coverage of the structural bug classes that actually
+  bite, which is exactly what the mesh-roundtrip fidelity-gate bug (the item directly above this one)
+  turned out to be.
+
+  ADDED TWO PIECES, ported from the UE side's own methodology rather than invented fresh:
+    `tools/audit_blender_read_purity.py` - does an op named/documented like a read leave a mark.
+    Snapshots every mesh object's geometry+transform via object_info before/after each candidate
+    (ping, scene_info, list_objects, object_info, select_edges). Verified `select_edges`'s own
+    docstring claim ("READ-ONLY: the bmesh is never written back") rather than trusting it - clean.
+    `tools/audit_blender_postconditions.py` - does a WRITE op's claimed effect independently
+    re-verify, the Blender-side version of "ok:true is not proof". Runs all 7 write ops
+    (uv_unwrap, set_material_slots, extrude_skirt, bevel_edges, decimate_mesh, delete_object,
+    clear_scene) against a real, non-trivial mesh and re-checks each one's SPECIFIC claim via a
+    separate object_info/scene_info call, not the op's own response.
+  Factored the shared socket helper both scripts need into `tools/blender_audit_common.py` rather
+  than duplicate it a second time.
+
+  THE POSTCONDITION CHECK FOUND A REAL BUG ON THE FIRST RUN. `bevel_edges` with `boundaryOnly:true`
+  reported `ok:true`, correct `selectedEdges:92`, and every "before" field right - and added
+  literally zero geometry (vertsBefore==vertsAfter, facesBefore==facesAfter). ROOT CAUSE, isolated
+  with a minimal standalone Blender script (not the addon) before touching any real code:
+  `bmesh.ops.bevel(geom=edges, affect='EDGES', ...)` is a genuine Blender API no-op on a PURE
+  boundary edge (exactly one linked face) - VERIFIED on both a bare test plane (4 boundary edges, 4
+  BOTH before AND after) and the barrel fixture, reproducible across every offset/segment
+  combination tried. This is `bevel_edges`'s own PRIMARY documented use case -
+  `_MIF_DEFAULT_EDGE_SELECTOR`'s own comment calls it "the two long edges of a road/sidewalk tile",
+  which `boundaryOnly` selects as pure boundary edges BY CONSTRUCTION. The tool's headline capability
+  had silently done nothing, forever, and the existing 77-test suite never caught it because nothing
+  in it exercised `bevel_edges` against a pure-boundary selection with real dimensions.
+
+  FIX, not a guess: `affect='VERTICES'` genuinely bevels boundary edges (verified same two fixtures),
+  but is NOT a safe universal swap - on already-working interior edges it produces MORE geometry than
+  `affect='EDGES'` for the identical selection (368 vs 141 added verts, one measured case), a real
+  topology difference for a case that already worked correctly. So `op_bevel_edges` now partitions
+  the selection by manifoldness: pure-boundary routes through VERTICES, everything else keeps the
+  proven EDGES path unchanged, and a MIXED selection is refused with a clear message (there is no
+  single correct algorithm for both in one call) rather than guessed at - the two primary selectors
+  (`boundaryOnly`, angle-based) are each pure by construction, so this only bites `axis+side`,
+  `edgeIndices` or `allEdges` selections that genuinely mix edge types. Added a defense-in-depth
+  "refuse rather than pretend" postcondition check too, matching `decimate_mesh`'s own established
+  pattern, for whatever this fix's two known cases do not cover.
+
+  VERIFIED: `test_blender_mesh.py`'s T768 had used `allEdges:true`, which on its own test mesh is
+  exactly a mixed selection - correctly refused now, meaning it had never actually verified either
+  bevel path worked. Switched to `boundaryOnly:true`, which is pure AND exercises the exact case that
+  was broken. Full suite reran 77/77 + 12/12 clean on 4.2.17 LTS, 4.4.0, 5.0.1.
+
+  SIDE FINDING, also corrected rather than left standing: Blender 3.6.23 is actually 73/77, not the
+  77/77 the addon's own README claimed - re-measured, reproducibly, on two fresh instances. Unrelated
+  to this fix (a different op, `uv_unwrap` method LIGHTMAP): Blender 3.6.23's OWN built-in
+  `bl_operators/uvcalc_lightmap.py:270` throws `ZeroDivisionError` packing a plain cube's quad faces.
+  README corrected; the actual fix filed as a separate task (`task_a8375a1b`) rather than chased here,
+  to keep this commit scoped to the bug the postcondition audit was built to find.
+
 - [~] **DECLINED 2026-08-26: the `droppedByValidation` path is UNREACHABLE through this endpoint.**
   This item was filed hours before the finding behind it was corrected, and the corrected finding
   removes the item. AddSample -> ValidateSampleValue -> IsTooCloseToExistingSamplePoint calls the SAME
