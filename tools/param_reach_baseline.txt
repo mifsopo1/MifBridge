@@ -200,7 +200,6 @@ set_material_parameter.parametername
 set_material_parameter.value
 set_niagara_component_parameter.parameter
 set_pin_default.default
-set_pin_default.graphid
 set_pin_default.guid
 set_pin_default.name
 set_pin_type.guid

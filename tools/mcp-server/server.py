@@ -875,9 +875,9 @@ def reconnect_pin(src_node: str, src_pin: str, dst_node: str, dst_pin: str,
 
 
 @mcp.tool()
-def set_pin_default(node: str, pin: str, value: str) -> dict:
-    "Set a literal default value on an input pin (schema-formatted)."
-    return _post("set_pin_default", node=node, pin=pin, value=value)
+def set_pin_default(node: str, pin: str, value: str, graph_id: str = "") -> dict:
+    "Set a literal default value on an input pin (schema-formatted). graph_id is '<blueprintPath>::<graphName>' from open_blueprint / list_graphs / list_nodes; it scopes the node guid lookup to that graph instead of the global scan, which is the only way to disambiguate two loaded copies of a blueprint sharing NodeGuids. Optional, omitted when blank."
+    return _post("set_pin_default", node=node, pin=pin, value=value, graphId=graph_id or None)
 
 
 @mcp.tool()
