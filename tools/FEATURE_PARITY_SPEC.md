@@ -2788,3 +2788,7 @@ cannot become one giant blocking item:
       parity_check.py's ADDON_OP_MODULES; bl_list_bones/bl_list_shape_keys/bl_list_vertex_groups MCP
       wrappers added. parity_check.py clean: 20->23 addon ops, 27->30 _blender call sites, 368->371
       @mcp.tool wrappers, all matching.
+      CROSS-VERSION CONFIRMED, not assumed: re-ran the full suite against a fresh, properly-enabled
+      Blender 5.0 instance (the highest installed version) after the 4.4 run above - 34/34 PASS
+      there too, including the full populated path. Andre asked for the range 4.4-5.2; only 4.4 and
+      5.0 are installed on this machine, so those are the two actually verified.
