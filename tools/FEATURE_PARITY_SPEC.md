@@ -3348,8 +3348,18 @@ cannot become one giant blocking item:
       either project). GeometryScripting is no longer part of that group - it has a real, live-verified
       capability now, scoped honestly to generation rather than to editing DDS2's existing (cooked,
       structurally unreadable) mesh content.
-      NOT YET DONE, if this thread continues: mesh booleans/deformations, more primitive shapes
-      (cylinder/cone/torus - all exist in MeshPrimitiveFunctions.h and were not needed for this batch),
-      LOD>0 read support, exposing the Nanite options CopyMeshToStaticMesh's options struct already
-      carries. The remaining four idle plugins (LevelSnapshots, LiveLink, MassEntity, ModularGameplay)
-      are next if the "1:1 Fab marketplace parity" effort continues past this batch.
+      NOT YET DONE, if this thread continues: mesh booleans/deformations, LOD>0 read support, exposing
+      the Nanite options CopyMeshToStaticMesh's options struct already carries. The remaining four idle
+      plugins (LevelSnapshots, LiveLink, MassEntity, ModularGameplay) are next if the "1:1 Fab
+      marketplace parity" effort continues past this batch.
+      UPDATE same day, second pass: cylinder, cone, torus added to create_procedural_mesh
+      (AppendCylinder/AppendCone/AppendTorus - identical signatures on both engines, no version guard
+      needed, unlike CopyMeshToStaticMesh). Cone's topRadius=0 (a true point) tested specifically as the
+      shape most likely to have an off-by-one in cap triangulation - clean. Shape-specific refusals:
+      torus minorRadius >= majorRadius (self-intersecting tube), cone with both radii 0 (degenerate
+      line), zero height on cylinder/cone. tools/test_geometryscript.py: 27 -> 41 checks, all passing,
+      both engines rebuilt clean via Build.bat + buildcheck.py. One stale test caught and fixed in the
+      process, not a handler bug: the ORIGINAL T1005 used shape:"cylinder" as its "this should be
+      refused" example, written before cylinder existed as a real shape - correctly failed once cylinder
+      support landed, for the right reason (cylinder is now valid), fixed to use a still-genuinely-bad
+      shape name instead.

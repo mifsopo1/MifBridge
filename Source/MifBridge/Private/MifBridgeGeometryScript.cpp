@@ -139,10 +139,20 @@ namespace MifBridge
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("path"), TEXT("assetPath"), TEXT("shape"),
 			  TEXT("dimensionX"), TEXT("dimensionY"), TEXT("dimensionZ"), TEXT("steps"),
-			  TEXT("radius"), TEXT("stepsPhi"), TEXT("stepsTheta") },
-			TEXT("path (alias: assetPath) - where to create the new StaticMesh; shape (box|sphere); ")
+			  TEXT("radius"), TEXT("stepsPhi"), TEXT("stepsTheta"),
+			  TEXT("height"), TEXT("radialSteps"), TEXT("heightSteps"), TEXT("capped"),
+			  TEXT("baseRadius"), TEXT("topRadius"),
+			  TEXT("majorRadius"), TEXT("minorRadius"), TEXT("majorSteps"), TEXT("minorSteps") },
+			TEXT("path (alias: assetPath) - where to create the new StaticMesh; ")
+			TEXT("shape (box|sphere|cylinder|cone|torus); ")
 			TEXT("box: dimensionX/Y/Z (default 100 each), steps (subdivision on all three axes, default 0); ")
-			TEXT("sphere: radius (default 50), stepsPhi/stepsTheta (default 10/16)"),
+			TEXT("sphere: radius (default 50), stepsPhi/stepsTheta (default 10/16); ")
+			TEXT("cylinder: radius (default 50), height (default 100), radialSteps (default 12), ")
+			TEXT("heightSteps (default 0), capped (default true); ")
+			TEXT("cone: baseRadius (default 50), topRadius (default 5), height (default 100), ")
+			TEXT("radialSteps (default 12), heightSteps (default 4), capped (default true); ")
+			TEXT("torus: majorRadius (default 50), minorRadius (default 25), majorSteps (default 16), ")
+			TEXT("minorSteps (default 8)"),
 			{ { TEXT("class"), TEXT("this always creates a StaticMesh - there is no other class here") },
 			  { TEXT("size"), TEXT("box takes dimensionX/dimensionY/dimensionZ, not a single size") } }))
 		{
@@ -158,10 +168,13 @@ namespace MifBridge
 		}
 
 		const FString Shape = JStr(In, TEXT("shape")).ToLower();
-		if (Shape != TEXT("box") && Shape != TEXT("sphere"))
+		static const TCHAR* KnownShapes[] = { TEXT("box"), TEXT("sphere"), TEXT("cylinder"), TEXT("cone"), TEXT("torus") };
+		bool bKnownShape = false;
+		for (const TCHAR* S : KnownShapes) { if (Shape == S) { bKnownShape = true; break; } }
+		if (!bKnownShape)
 		{
 			Fail(Out, FString::Printf(
-				TEXT("shape '%s' is not one of box, sphere. NOTHING was created."), *Shape));
+				TEXT("shape '%s' is not one of box, sphere, cylinder, cone, torus. NOTHING was created."), *Shape));
 			return;
 		}
 
@@ -193,7 +206,7 @@ namespace MifBridge
 				(float)DimX, (float)DimY, (float)DimZ, Steps, Steps, Steps,
 				EGeometryScriptPrimitiveOriginMode::Center, Debug);
 		}
-		else // sphere
+		else if (Shape == TEXT("sphere"))
 		{
 			const double Radius = JNum(In, TEXT("radius"), 50.0);
 			const int32 StepsPhi = FMath::Clamp(JInt(In, TEXT("stepsPhi"), 10), 3, 128);
@@ -206,6 +219,70 @@ namespace MifBridge
 			UGeometryScriptLibrary_MeshPrimitiveFunctions::AppendSphereLatLong(
 				DynMesh, PrimitiveOptions, FTransform::Identity,
 				(float)Radius, StepsPhi, StepsTheta,
+				EGeometryScriptPrimitiveOriginMode::Center, Debug);
+		}
+		else if (Shape == TEXT("cylinder"))
+		{
+			const double Radius = JNum(In, TEXT("radius"), 50.0);
+			const double Height = JNum(In, TEXT("height"), 100.0);
+			const int32 RadialSteps = FMath::Clamp(JInt(In, TEXT("radialSteps"), 12), 3, 128);
+			const int32 HeightSteps = FMath::Clamp(JInt(In, TEXT("heightSteps"), 0), 0, 64);
+			const bool bCapped = JBool(In, TEXT("capped"), true);
+			if (Radius <= 0.0 || Height <= 0.0)
+			{
+				Fail(Out, TEXT("radius and height must both be greater than 0. NOTHING was created."));
+				return;
+			}
+			UGeometryScriptLibrary_MeshPrimitiveFunctions::AppendCylinder(
+				DynMesh, PrimitiveOptions, FTransform::Identity,
+				(float)Radius, (float)Height, RadialSteps, HeightSteps, bCapped,
+				EGeometryScriptPrimitiveOriginMode::Center, Debug);
+		}
+		else if (Shape == TEXT("cone"))
+		{
+			const double BaseRadius = JNum(In, TEXT("baseRadius"), 50.0);
+			const double TopRadius = JNum(In, TEXT("topRadius"), 5.0);
+			const double Height = JNum(In, TEXT("height"), 100.0);
+			const int32 RadialSteps = FMath::Clamp(JInt(In, TEXT("radialSteps"), 12), 3, 128);
+			const int32 HeightSteps = FMath::Clamp(JInt(In, TEXT("heightSteps"), 4), 1, 64);
+			const bool bCapped = JBool(In, TEXT("capped"), true);
+			if (BaseRadius < 0.0 || TopRadius < 0.0 || Height <= 0.0)
+			{
+				Fail(Out, TEXT("baseRadius/topRadius must not be negative and height must be greater than 0. NOTHING was created."));
+				return;
+			}
+			if (BaseRadius == 0.0 && TopRadius == 0.0)
+			{
+				Fail(Out, TEXT("baseRadius and topRadius cannot both be 0 - that is a degenerate line, not a cone. NOTHING was created."));
+				return;
+			}
+			UGeometryScriptLibrary_MeshPrimitiveFunctions::AppendCone(
+				DynMesh, PrimitiveOptions, FTransform::Identity,
+				(float)BaseRadius, (float)TopRadius, (float)Height, RadialSteps, HeightSteps, bCapped,
+				EGeometryScriptPrimitiveOriginMode::Center, Debug);
+		}
+		else // torus
+		{
+			const double MajorRadius = JNum(In, TEXT("majorRadius"), 50.0);
+			const double MinorRadius = JNum(In, TEXT("minorRadius"), 25.0);
+			const int32 MajorSteps = FMath::Clamp(JInt(In, TEXT("majorSteps"), 16), 3, 128);
+			const int32 MinorSteps = FMath::Clamp(JInt(In, TEXT("minorSteps"), 8), 3, 128);
+			if (MajorRadius <= 0.0 || MinorRadius <= 0.0)
+			{
+				Fail(Out, TEXT("majorRadius and minorRadius must both be greater than 0. NOTHING was created."));
+				return;
+			}
+			if (MinorRadius >= MajorRadius)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("minorRadius (%f) must be less than majorRadius (%f) - otherwise the tube overlaps ")
+					TEXT("itself through the center. NOTHING was created."), MinorRadius, MajorRadius));
+				return;
+			}
+			FGeometryScriptRevolveOptions RevolveOptions;
+			UGeometryScriptLibrary_MeshPrimitiveFunctions::AppendTorus(
+				DynMesh, PrimitiveOptions, FTransform::Identity, RevolveOptions,
+				(float)MajorRadius, (float)MinorRadius, MajorSteps, MinorSteps,
 				EGeometryScriptPrimitiveOriginMode::Center, Debug);
 		}
 

@@ -3322,11 +3322,19 @@ def describe_niagara_system(path: str) -> dict:
 def create_procedural_mesh(path: str, shape: str,
                            dimension_x: float = None, dimension_y: float = None, dimension_z: float = None,
                            steps: int = None, radius: float = None,
-                           steps_phi: int = None, steps_theta: int = None) -> dict:
-    "Generate a procedural StaticMesh (box or sphere) from GeometryScript and create it fresh at `path` (must not already exist - this never overwrites). shape is 'box' or 'sphere'. box: dimension_x/y/z (default 100 each), steps (subdivision on all three axes, default 0). sphere: radius (default 50), steps_phi/steps_theta (default 10/16). Returns real read-back vertexCount/triangleCount/bounds, not just ok:true. Refuses on an engine build with no GeometryScripting plugin. Nothing is saved - like every other create_* endpoint, the asset lives only in the editor's in-memory package until something explicitly saves it."
+                           steps_phi: int = None, steps_theta: int = None,
+                           height: float = None, radial_steps: int = None, height_steps: int = None,
+                           capped: bool = None, base_radius: float = None, top_radius: float = None,
+                           major_radius: float = None, minor_radius: float = None,
+                           major_steps: int = None, minor_steps: int = None) -> dict:
+    "Generate a procedural StaticMesh from GeometryScript and create it fresh at `path` (must not already exist - this never overwrites). shape is one of box, sphere, cylinder, cone, torus. box: dimension_x/y/z (default 100 each), steps (subdivision on all three axes, default 0). sphere: radius (default 50), steps_phi/steps_theta (default 10/16). cylinder: radius (default 50), height (default 100), radial_steps (default 12), height_steps (default 0), capped (default true). cone: base_radius (default 50), top_radius (default 5), height (default 100), radial_steps (default 12), height_steps (default 4), capped (default true) - set top_radius to 0 for a true point. torus: major_radius (default 50), minor_radius (default 25, must be less than major_radius), major_steps (default 16), minor_steps (default 8). Returns real read-back vertexCount/triangleCount/bounds, not just ok:true. Refuses on an engine build with no GeometryScripting plugin. Nothing is saved - like every other create_* endpoint, the asset lives only in the editor's in-memory package until something explicitly saves it."
     return _post("create_procedural_mesh", path=path, shape=shape,
                  dimensionX=dimension_x, dimensionY=dimension_y, dimensionZ=dimension_z,
-                 steps=steps, radius=radius, stepsPhi=steps_phi, stepsTheta=steps_theta)
+                 steps=steps, radius=radius, stepsPhi=steps_phi, stepsTheta=steps_theta,
+                 height=height, radialSteps=radial_steps, heightSteps=height_steps, capped=capped,
+                 baseRadius=base_radius, topRadius=top_radius,
+                 majorRadius=major_radius, minorRadius=minor_radius,
+                 majorSteps=major_steps, minorSteps=minor_steps)
 
 
 @mcp.tool()

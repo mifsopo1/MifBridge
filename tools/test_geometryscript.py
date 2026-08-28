@@ -31,6 +31,13 @@ matching the class of cooked-asset limitation this whole project has hit and han
 DECLINED for this batch: LOD>0 read testing (needs a real multi-LOD mesh, none of DDS2's are guaranteed
 to have one at a stable path) and Nanite-related options (FGeometryScriptCopyMeshToAssetOptions exposes
 them but create_procedural_mesh does not surface them yet - not exercised because nothing calls them).
+
+T1020-T1027, added same day in a second pass: cylinder, cone, torus - AppendCylinder/AppendCone/
+AppendTorus, identical signatures on both engines (checked, no version guard needed unlike
+CopyMeshToStaticMesh). T1022 cone with topRadius=0 (a true point) - the shape most likely to have an
+off-by-one in its cap triangulation. T1024-T1026 refusals specific to these three: torus minorRadius
+>= majorRadius (a self-intersecting tube), cone with both radii 0 (a degenerate line), cylinder with
+zero height. T1027 torus create/describe round-trip, same reasoning as T1003.
 """
 import json
 import sys
@@ -108,10 +115,10 @@ def main():
 
     # ------------------------------------------------------------------ T1005-T1009 refusals, exact reason
     print("\n=== T1005-T1009: refusals checked for the specific reason, not just ok:false ===")
-    bad_shape = M.call("create_procedural_mesh", {"path": base + "/SM_Bad", "shape": "cylinder"})
+    bad_shape = M.call("create_procedural_mesh", {"path": base + "/SM_Bad", "shape": "pyramid"})
     check("T1005 unknown shape is refused", bad_shape.get("ok") is False, bad_shape)
     check("T1005 refusal names the bad value and says nothing was created",
-          "cylinder" in (bad_shape.get("error") or "") and "NOTHING was created" in (bad_shape.get("error") or ""),
+          "pyramid" in (bad_shape.get("error") or "") and "NOTHING was created" in (bad_shape.get("error") or ""),
           bad_shape.get("error"))
 
     unknown_param = M.call("create_procedural_mesh", {"path": base + "/SM_Bad2", "shape": "box", "size": 50})
@@ -162,6 +169,68 @@ def main():
     else:
         check("T1011 (skipped) no /DDS2Casino/ StaticMesh found to test against", True,
               "not a failure - just nothing to exercise this against on this content set")
+
+    # ------------------------------------------------------------------ T1020 cylinder
+    print("\n=== T1020: cylinder generation ===")
+    cyl_path = base + "/SM_Cylinder"
+    rcyl = M.call("create_procedural_mesh", {"path": cyl_path, "shape": "cylinder",
+                                              "radius": 40, "height": 120, "radialSteps": 16})
+    check("T1020 cylinder succeeds", rcyl.get("ok") is True, json.dumps(rcyl)[:200])
+    cb = rcyl.get("bounds") or {}
+    check("T1020 cylinder bounds match radius*2 on X/Y and height on Z",
+          abs(cb.get("sizeX", 0) - 80) < 0.01 and abs(cb.get("sizeY", 0) - 80) < 0.01
+          and abs(cb.get("sizeZ", 0) - 120) < 0.01, cb)
+    if rcyl.get("ok"):
+        created_paths.append(cyl_path)
+
+    # ------------------------------------------------------------------ T1022 cone (topRadius=0, a point)
+    print("\n=== T1022: cone generation, topRadius=0 (a true point) ===")
+    cone_path = base + "/SM_Cone"
+    rcone = M.call("create_procedural_mesh", {"path": cone_path, "shape": "cone",
+                                               "baseRadius": 50, "topRadius": 0, "height": 100})
+    check("T1022 cone(topRadius=0) succeeds", rcone.get("ok") is True, json.dumps(rcone)[:200])
+    check("T1022 cone has real geometry", rcone.get("vertexCount", 0) > 0 and rcone.get("triangleCount", 0) > 0, rcone)
+    coneb = rcone.get("bounds") or {}
+    check("T1022 cone bounds match baseRadius*2 on X/Y and height on Z",
+          abs(coneb.get("sizeX", 0) - 100) < 0.01 and abs(coneb.get("sizeY", 0) - 100) < 0.01
+          and abs(coneb.get("sizeZ", 0) - 100) < 0.01, coneb)
+    if rcone.get("ok"):
+        created_paths.append(cone_path)
+
+    # ------------------------------------------------------------------ T1023 torus
+    print("\n=== T1023: torus generation ===")
+    torus_path = base + "/SM_Torus"
+    rtor = M.call("create_procedural_mesh", {"path": torus_path, "shape": "torus",
+                                              "majorRadius": 60, "minorRadius": 15})
+    check("T1023 torus succeeds", rtor.get("ok") is True, json.dumps(rtor)[:200])
+    torb = rtor.get("bounds") or {}
+    check("T1023 torus outer diameter is 2*(majorRadius+minorRadius) on X/Y",
+          abs(torb.get("sizeX", 0) - 150) < 0.01 and abs(torb.get("sizeY", 0) - 150) < 0.01, torb)
+    check("T1023 torus tube height is 2*minorRadius on Z", abs(torb.get("sizeZ", 0) - 30) < 0.01, torb)
+    if rtor.get("ok"):
+        created_paths.append(torus_path)
+
+    # ------------------------------------------------------------------ T1024-T1026 shape-specific refusals
+    print("\n=== T1024-T1026: refusals specific to cylinder/cone/torus ===")
+    bad_torus = M.call("create_procedural_mesh", {"path": base + "/SM_BadTorus", "shape": "torus",
+                                                   "majorRadius": 30, "minorRadius": 40})
+    check("T1024 torus with minorRadius >= majorRadius is refused (self-intersecting tube)",
+          bad_torus.get("ok") is False, bad_torus)
+
+    bad_cone = M.call("create_procedural_mesh", {"path": base + "/SM_BadCone", "shape": "cone",
+                                                  "baseRadius": 0, "topRadius": 0})
+    check("T1025 cone with both radii 0 is refused (degenerate line)", bad_cone.get("ok") is False, bad_cone)
+
+    bad_cyl = M.call("create_procedural_mesh", {"path": base + "/SM_BadCyl", "shape": "cylinder", "height": 0})
+    check("T1026 cylinder with zero height is refused", bad_cyl.get("ok") is False, bad_cyl)
+
+    # ------------------------------------------------------------------ T1027 torus create/describe round-trip
+    print("\n=== T1027: describe_dynamic_mesh reads back the torus exactly ===")
+    dtor = M.call("describe_dynamic_mesh", {"path": torus_path})
+    check("T1027 describe succeeds", dtor.get("ok") is True, json.dumps(dtor)[:200])
+    check("T1027 vertexCount matches exactly", dtor.get("vertexCount") == rtor.get("vertexCount"),
+          "create=%s describe=%s" % (rtor.get("vertexCount"), dtor.get("vertexCount")))
+    check("T1027 a torus is reported closed", dtor.get("isClosed") is True, dtor)
 
     # ------------------------------------------------------------------ cleanup
     for p in created_paths:
