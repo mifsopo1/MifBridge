@@ -3319,6 +3319,23 @@ def describe_niagara_system(path: str) -> dict:
 
 
 @mcp.tool()
+def create_procedural_mesh(path: str, shape: str,
+                           dimension_x: float = None, dimension_y: float = None, dimension_z: float = None,
+                           steps: int = None, radius: float = None,
+                           steps_phi: int = None, steps_theta: int = None) -> dict:
+    "Generate a procedural StaticMesh (box or sphere) from GeometryScript and create it fresh at `path` (must not already exist - this never overwrites). shape is 'box' or 'sphere'. box: dimension_x/y/z (default 100 each), steps (subdivision on all three axes, default 0). sphere: radius (default 50), steps_phi/steps_theta (default 10/16). Returns real read-back vertexCount/triangleCount/bounds, not just ok:true. Refuses on an engine build with no GeometryScripting plugin. Nothing is saved - like every other create_* endpoint, the asset lives only in the editor's in-memory package until something explicitly saves it."
+    return _post("create_procedural_mesh", path=path, shape=shape,
+                 dimensionX=dimension_x, dimensionY=dimension_y, dimensionZ=dimension_z,
+                 steps=steps, radius=radius, stepsPhi=steps_phi, stepsTheta=steps_theta)
+
+
+@mcp.tool()
+def describe_dynamic_mesh(path: str, lod: int = None) -> dict:
+    "Read-only geometry stats for a StaticMesh asset via GeometryScript: vertexCount, triangleCount, isClosed, and bounds, converted from the given LOD (default 0). Nothing is written to the source asset. A COOKED mesh's editor-only MeshDescription may be stripped, in which case this reports failure with debugMessages explaining why rather than guessing at zeros."
+    return _post("describe_dynamic_mesh", path=path, lod=lod)
+
+
+@mcp.tool()
 def list_niagara_emitters(path: str, name_contains: str = None,
                           include_disabled: bool = True) -> dict:
     "List a NiagaraSystem's emitters with their index, name, GUID and enabled state. Address an emitter by INDEX rather than name where you can: names are not guaranteed unique within a system. totalEmitters is the unfiltered count, so a filtered list can never be mistaken for the whole thing."

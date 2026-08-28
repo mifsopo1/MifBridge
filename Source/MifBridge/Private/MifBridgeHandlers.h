@@ -1562,6 +1562,12 @@ namespace MifBridge
 	MIF_DECL(list_game_feature_plugins);
 	MIF_DECL(describe_game_feature_plugin);
 
+	// GEOMETRY SCRIPT (MifBridgeGeometryScript.cpp). Plugin-guarded (MIF_WITH_GEOMETRYSCRIPT).
+	// create_procedural_mesh is the first WRITE endpoint that builds a mesh from nothing rather than
+	// copying or reading an existing one; describe_dynamic_mesh is its read-only companion.
+	MIF_DECL(create_procedural_mesh);
+	MIF_DECL(describe_dynamic_mesh);
+
 	// DATA LAYERS - the WRITE half (MifBridgeStreaming.cpp). Unblocked 2026-08-26 when Andre
 	// authorised the DataLayerEditor dependency. SetDataLayerVisibility returns VOID, so both of
 	// these read the state back and report verified separately from changed.

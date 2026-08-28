@@ -1310,6 +1310,11 @@ engine has no such class registered in this build, which is as definitive as it 
       bAllowCPUAccess finding above). Andre's call: leave the dependencies linked rather than drop
       them (a future project may want one), but stop this spec item surfacing them as open work.
       Revisit individually if either project ever actually adopts one.
+      UPDATE 2026-08-28: GeometryScripting revisited and no longer declined - see the DONE entry near
+      the end of this file ("GeometryScripting - the WRITE half is real..."). The bAllowCPUAccess
+      finding above was correct and still stands for reading EXISTING cooked meshes; it just turned out
+      not to cover generating a brand-new one, which needed no module beyond what was already linked.
+      LevelSnapshots, LiveLink, MassEntity, ModularGameplay are still accurately declined.
 - [x] **Metasound - the audio read half.** DONE 2026-08-27. `describe_metasound`, both engines.
       VERIFIED AGAINST REAL CONTENT, which is why it was chosen: MS_OneArmedBandit reports 10 inputs
       (PullLever/Trigger, RollersRemaining/Int32, Reward/Float ...), 2 outputs, 97 nodes, 111 edges,
@@ -3286,3 +3291,65 @@ cannot become one giant blocking item:
       longer applies.
       test_enums.py: 35/35 -> 44/44. test_confirm_gated.py re-checked for regressions (33/33, still
       clean). parity_check.py clean.
+- [x] **GeometryScripting - the WRITE half is real, and it needed no new module dependency.** DONE
+      2026-08-28, at Andre's direct request for parity with the Fab marketplace competitor
+      docs/13_COMPETITOR_GAP_MAP.md analyses. This CORRECTS the framing of the "declined" entry above
+      (2026-08-27) rather than contradicting its finding - that entry measured the READ path
+      specifically (CopyMeshFromStaticMesh against DDS2's EXISTING cooked StaticMeshes, blocked because
+      SourceModel is stripped by cooking and RenderData needs bAllowCPUAccess=true, which all 111
+      sampled meshes had false) and was correct about that. It never examined the WRITE path, which
+      does not read a cooked mesh at all - it builds a brand-new one.
+      Two endpoints, MifBridgeGeometryScript.cpp (new file), MIF_WITH_GEOMETRYSCRIPT-guarded (already
+      linked since before this session - only GeometryFramework/GeometryCore, the unconditional engine
+      RUNTIME modules for UDynamicMesh/FDynamicMesh3 direct query access, were newly added to Build.cs):
+        create_procedural_mesh - box or sphere, generated via AppendBox/AppendSphereLatLong into a
+          UDynamicMesh, then CopyMeshToStaticMesh onto a FRESH NewObject<UStaticMesh>() (never an
+          existing asset - path must not already exist). Returns real read-back vertexCount/
+          triangleCount/bounds, not just ok:true.
+        describe_dynamic_mesh - the read companion, CopyMeshFromStaticMesh + FDynamicMesh3 query
+          (vertexCount/triangleCount/isClosed/bounds). Works on the meshes create_procedural_mesh makes
+          (never cooked, never stripped); confirmed LIVE to fail gracefully with a named reason on a
+          real DDS2Casino StaticMesh (SM_Heart_8: "Requested SourceModel LOD is null, only RenderData
+          Mesh is available"), exactly matching the 2026-08-27 finding rather than contradicting it -
+          the bridge stayed healthy immediately after, no crash.
+      A REAL BUG FOUND AND FIXED DURING LIVE TESTING, same shape as the two prior editor-crash entries
+      in this file though this one did not crash anything: the first version of
+      create_procedural_mesh's destination check used plain FPackageName::DoesPackageExist, which -
+      confirmed live before the fix - answers false for an object that exists only in memory and was
+      never saved, which is every mesh this endpoint itself creates (nothing here is ever saved, this
+      project's standing invariant). Calling create_procedural_mesh twice at the same path SILENTLY
+      OVERWROTE the first mesh instead of refusing. Fixed to the exact pattern H_create_asset already
+      uses for the identical reason (MifBridgeUserTypes.cpp, itself a correction for this cooked-editor
+      mod-kit's IoDispatcher/pak-container behavior): check a real file on disk via
+      DoesPackageExistEx(..., FileSystem) OR an object already FindObject-loaded in memory. Re-verified
+      live: a second create at the same path is now refused, and the original mesh's geometry is
+      provably untouched by reading it back.
+      A SECOND REAL BUG, caught only by the two-engine discipline: the first compile succeeded on
+      DDS2's 5.3.2 (unity build) but failed on the 5.7 probe with `error C2065: 'LogMifBridge':
+      undeclared identifier` - the file used UE_LOG without including MifBridgeLog.h, masked on 5.3.2
+      because the unity build happened to batch it with a file that pulled the include in first, caught
+      on 5.7 because its adaptive non-unity build compiled the new file alone. Fixed by adding the
+      include directly rather than relying on the accident of unity-batching.
+      THE VERSION SPLIT, read from both engine trees before writing rather than assumed:
+      CopyMeshToStaticMesh grew a bUseSectionMaterials parameter in 5.5 (the pre-5.5 6-arg form still
+      compiles on 5.7 but is UE_DEPRECATED(5.5,...); 5.3.2 only has the 6-arg form). Guarded with
+      `#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 5`; both branches built clean, zero new
+      warnings, on their respective engines.
+      VERIFIED LIVE, both engines rebuilt via Build.bat + buildcheck.py (not eyeballed - this project's
+      own standing rule): box with steps=0 vs steps=5 proved the subdivision parameter is actually
+      wired through GeometryScript (8 vs 98 vertices) rather than silently ignored; sphere generation;
+      create/describe round-trip reads back the exact same vertex/triangle counts through a different
+      code path than the one that wrote them; every refusal path (bad shape, unrecognised parameter,
+      non-positive dimension on both shapes, path outside /Game/, the overwrite guard) checked for its
+      SPECIFIC reason, not just ok:false. tools/test_geometryscript.py, 27/27 checks. parity_check.py
+      clean (348 _post endpoints, 336 MIF_BIND, no drift; GeometryScripting no longer in PLUGIN IDLE).
+      THE DECLINED LIST ABOVE NOW READS AS FOUR, NOT FIVE: LevelSnapshots, LiveLink, MassEntity,
+      ModularGameplay remain correctly declined for the reason given there (zero plan or presence in
+      either project). GeometryScripting is no longer part of that group - it has a real, live-verified
+      capability now, scoped honestly to generation rather than to editing DDS2's existing (cooked,
+      structurally unreadable) mesh content.
+      NOT YET DONE, if this thread continues: mesh booleans/deformations, more primitive shapes
+      (cylinder/cone/torus - all exist in MeshPrimitiveFunctions.h and were not needed for this batch),
+      LOD>0 read support, exposing the Nanite options CopyMeshToStaticMesh's options struct already
+      carries. The remaining four idle plugins (LevelSnapshots, LiveLink, MassEntity, ModularGameplay)
+      are next if the "1:1 Fab marketplace parity" effort continues past this batch.

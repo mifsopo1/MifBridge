@@ -111,9 +111,17 @@ public class MifBridge : ModuleRules
 			"GameplayTags",      // FGameplayTag / UGameplayTagsManager - useful alone, required by GAS
 			"MediaAssets",       // UMediaPlayer / UMediaSource
 			"AudioExtensions",   // audio interfaces shared by MetaSounds and the base audio path
-			"DataLayerEditor"    // UDataLayerEditorSubsystem - the WRITE half of Data Layers, which
+			"DataLayerEditor",   // UDataLayerEditorSubsystem - the WRITE half of Data Layers, which
 			                     // list_data_layers could not reach. Reported as a needed dependency
 			                     // earlier today, now authorised.
+			"GeometryFramework", // UDynamicMesh - the runtime mesh container GeometryScript operates on.
+			                     // Verified present under Engine/Source/Runtime in BOTH 5.3.2 and 5.7 -
+			                     // an engine RUNTIME module, not the GeometryScripting PLUGIN (that one
+			                     // stays gated behind MIF_WITH_GEOMETRYSCRIPT below, since a project can
+			                     // ship without it; UDynamicMesh itself cannot be missing).
+			"GeometryCore"       // FDynamicMesh3 - direct query access (VertexCount/TriangleCount/
+			                     // GetBounds) via UDynamicMesh::ProcessMesh, cleaner than routing every
+			                     // read through the Blueprint-function-library ExpandEnumAsExecs pattern.
 		});
 
 		// ---- BREADTH BATCH: PLUGIN modules, detected not assumed --------------------------

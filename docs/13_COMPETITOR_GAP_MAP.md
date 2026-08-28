@@ -128,8 +128,12 @@ roadmap two days after everything on it had already landed:
 4. ~~**Water**, **Vehicles**~~ — both DONE. Water: full read+write 2026-08-27. Vehicles: existing
    generic tools (create_blueprint, add_component, set_property) already cover it completely - zero
    new code needed, confirmed by actually checking rather than assumed.
-5. Everything else on demand — still genuinely idle (GeometryScripting, LevelSnapshots, LiveLink,
-   MassEntity, MVVM), declined in the spec pending an actual ask, not built.
+5. Everything else on demand — MVVM's FieldNotify gap landed 2026-08-27 (viewmodel authoring itself
+   already worked with zero new code). GeometryScripting landed 2026-08-28: `create_procedural_mesh`
+   (box/sphere generation, GeometryFramework/GeometryCore + the already-linked GeometryScripting
+   plugin) and `describe_dynamic_mesh`, `tools/test_geometryscript.py`, 27/27, both engines - see the
+   spec's dated entry. Still genuinely idle and declined pending an actual ask: LevelSnapshots,
+   LiveLink, MassEntity, ModularGameplay.
 
 Original suggested order preserved below for the reasoning; do not re-plan items 1-4 from it.
 
