@@ -159,6 +159,47 @@ def main():
                 else:
                     check("T522 (diagnose_landscape cross-check unavailable)", True)
 
+                # ---------------------------------------------------------- T523 diagnose_landscape_draws
+                # REGRESSION LOCK for the fix in 11f7893: FStaticMeshBatchRelevance::LODIndex is
+                # UE_DEPRECATED(5.4, "...doesn't contain valid data anymore! Use GetLODIndex() function
+                # instead.") - not a forward-compat warning, a live bug on every 5.4+ engine. Before the
+                # fix, "lod" silently held whatever the stub bitfield happened to contain instead of a
+                # real LOD index, and nothing here would have caught it: diagnose_landscape_draws had NO
+                # suite at all (coverage_gaps.py, 2026-08-28). A fix with no test locking it in is a fix
+                # with a shelf life - the same lesson add_timeline and landscape_info itself already
+                # taught this project.
+                print("")
+                print("=== T523: diagnose_landscape_draws reports REAL lod indices, not stub garbage ===")
+                dd = M.call("diagnose_landscape_draws", {"limit": 50}, timeout=120)
+                check("T523 it succeeds", dd.get("ok") is True, json.dumps(dd)[:220])
+                sample = dd.get("sample") or []
+                check("T523 and samples at least one component from the landscape just created",
+                      len(sample) > 0, json.dumps(dd)[:220])
+                if sample:
+                    # A single, precise property: for EVERY component, the DISTINCT lod values - once
+                    # deduplicated, since more than one relevance can legitimately share an lod (a
+                    # material pass and a non-material pass both at LOD 0 is real, seen live) - form a
+                    # CONTIGUOUS run starting at 0. The deprecated field, once it stopped tracking real
+                    # data, had no reason to produce that shape at all: an unmoving stub bitfield would
+                    # far more likely repeat, skip, or sit outside a sane 0..staticMeshCount range.
+                    bad = []
+                    for entry in sample:
+                        rels = entry.get("staticMeshRelevances") or []
+                        lods = sorted(set(r.get("lod") for r in rels if isinstance(r.get("lod"), int)))
+                        smCount = entry.get("staticMeshes")
+                        ok = (bool(lods) and lods[0] == 0
+                              and lods == list(range(lods[0], lods[-1] + 1))
+                              and (not isinstance(smCount, (int, float)) or lods[-1] < smCount))
+                        if not ok:
+                            bad.append({"component": entry.get("component"), "lods": lods,
+                                        "staticMeshes": smCount})
+                    check("T523 every sampled component's distinct lod values are a contiguous 0..N run",
+                          not bad, json.dumps(bad)[:300])
+                    print("       %d component(s) sampled, lod shapes: %s"
+                          % (len(sample),
+                             [sorted(set(r.get("lod") for r in (e.get("staticMeshRelevances") or [])))
+                              for e in sample[:4]]))
+
     UNPROVEN.append("the WORLD PARTITION branch - proxyCount>0, proxyComponents>0 and the "
                     "componentsNote that fires when components==0. That is the actual bug 73c4b8e "
                     "fixed. It needs a World Partition map with streaming proxies; the only ones here "
