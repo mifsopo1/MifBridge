@@ -38,6 +38,7 @@
 #include "Engine/CollisionProfile.h"
 #include "Components/PrimitiveComponent.h"
 #include "MifBridgeLog.h"
+#include "MifBridgeVersion.h"               // MIF_ENGINE_AT_LEAST - SetCustomizedCollision, 5.7-only
 
 #include "Editor.h"                        // GEditor - Begin/EndTransaction
 #include "Engine/StaticMesh.h"
@@ -351,7 +352,15 @@ namespace MifBridge
 		RefreshCollisionChange(*Mesh);      // push the change out to every component instanced from this mesh
 		Mesh->MarkPackageDirty();
 #if WITH_EDITORONLY_DATA
+		// bCustomizedCollision is UE_DEPRECATED(5.7, "...it will become private soon; use
+		// UStaticMesh::GetCustomizedCollision() or UStaticMesh::SetCustomizedCollision()."), but
+		// SetCustomizedCollision does not exist at all on 5.3 (confirmed by grep of D:/UE532's
+		// StaticMesh.h) - the direct field is the only option there.
+#if MIF_ENGINE_AT_LEAST(5, 7)
+		Mesh->SetCustomizedCollision(true);
+#else
 		Mesh->bCustomizedCollision = true;
+#endif
 #endif
 
 		Out->SetStringField(TEXT("path"), NormalizePackagePath(JStr(In, TEXT("path"))));
@@ -440,7 +449,15 @@ namespace MifBridge
 		RefreshCollisionChange(*Mesh);
 		Mesh->MarkPackageDirty();
 #if WITH_EDITORONLY_DATA
+		// bCustomizedCollision is UE_DEPRECATED(5.7, "...it will become private soon; use
+		// UStaticMesh::GetCustomizedCollision() or UStaticMesh::SetCustomizedCollision()."), but
+		// SetCustomizedCollision does not exist at all on 5.3 (confirmed by grep of D:/UE532's
+		// StaticMesh.h) - the direct field is the only option there.
+#if MIF_ENGINE_AT_LEAST(5, 7)
+		Mesh->SetCustomizedCollision(true);
+#else
 		Mesh->bCustomizedCollision = true;
+#endif
 #endif
 
 		UBodySetup* BSAfter = Mesh->GetBodySetup();

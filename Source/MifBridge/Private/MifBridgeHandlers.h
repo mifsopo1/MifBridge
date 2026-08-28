@@ -587,6 +587,12 @@ namespace MifBridge
 	 *  (MifBridgeNodes5.cpp), same helper underneath; only the ArrayDim loop differs. */
 	TSharedPtr<FJsonValue> PropertyValueToTypedJsonElement(const FProperty* Prop, const void* ValueAddr, UObject* Owner);
 
+	/** FProperty::ElementSize is UE_DEPRECATED(5.5, "Use GetElementSize/SetElementSize instead.") -
+	 *  but GetElementSize() does not exist at all on 5.3 (confirmed by grep of D:/UE532's
+	 *  UnrealType.h), so callers cannot just switch to it. One shared, version-gated wrapper instead
+	 *  of a #if at each of the dozen-plus call sites across MifBridgeCommon/Details/Nodes5.cpp. */
+	int32 MifPropertyElementSize(const FProperty* Prop);
+
 	// --- Component ORIGIN vocabulary + enumeration ---------------------------
 	// Batch J shipped four route words in MifBridgeInherited.cpp as file-local literals; Batch N needs
 	// the same four in MifBridgeComponents.cpp (list_components). Two files spelling the same state is

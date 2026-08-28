@@ -720,7 +720,7 @@ namespace MifBridge
 		Items.Reserve(Prop->ArrayDim);
 		for (int32 i = 0; i < Prop->ArrayDim; ++i)
 		{
-			Items.Add(TypedJsonOne(Prop, (const uint8*)ValueAddr + (SIZE_T)i * Prop->ElementSize, Owner, Depth));
+			Items.Add(TypedJsonOne(Prop, (const uint8*)ValueAddr + (SIZE_T)i * MifPropertyElementSize(Prop), Owner, Depth));
 		}
 		return MakeShared<FJsonValueArray>(Items);
 	}
@@ -1180,8 +1180,8 @@ namespace MifBridge
 		const bool bSetFlagNow = bGateClosed && OverrideFlagMode == TEXT("set") && EC.FlagProp && Res.LeafContainerAddr;
 		{
 			FScratchValue Scratch(Leaf);
-			uint8* LeafArrayBase = (uint8*)LeafAddr - (SIZE_T)Res.LeafCArrayIndex * Leaf->ElementSize;
-			uint8* ScratchElem   = (uint8*)Scratch.Mem + (SIZE_T)Res.LeafCArrayIndex * Leaf->ElementSize;
+			uint8* LeafArrayBase = (uint8*)LeafAddr - (SIZE_T)Res.LeafCArrayIndex * MifPropertyElementSize(Leaf);
+			uint8* ScratchElem   = (uint8*)Scratch.Mem + (SIZE_T)Res.LeafCArrayIndex * MifPropertyElementSize(Leaf);
 			Leaf->CopyCompleteValue(Scratch.Mem, LeafArrayBase);   // start from the CURRENT value, so a partial
 			                                                       // import that only sets some struct members
 			                                                       // behaves like the Details panel does.

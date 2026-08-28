@@ -91,8 +91,8 @@ namespace MifBridge
 			const int32 Count = bSingleElement ? 1 : FMath::Max(Prop->ArrayDim, 1);
 			for (int32 i = 0; i < Count; ++i)
 			{
-				const uint8* A = (const uint8*)ValueAddr   + (SIZE_T)i * Prop->ElementSize;
-				const uint8* B = (const uint8*)DefaultAddr + (SIZE_T)i * Prop->ElementSize;
+				const uint8* A = (const uint8*)ValueAddr   + (SIZE_T)i * MifPropertyElementSize(Prop);
+				const uint8* B = (const uint8*)DefaultAddr + (SIZE_T)i * MifPropertyElementSize(Prop);
 				if (!Prop->Identical(A, B, PortFlags)) { return true; }
 			}
 			return false;
@@ -123,8 +123,8 @@ namespace MifBridge
 			const int32 Count = bSingleElement ? 1 : FMath::Max(Prop->ArrayDim, 1);
 			for (int32 i = 0; i < Count; ++i)
 			{
-				const uint8* A = (const uint8*)ValueAddr   + (SIZE_T)i * Prop->ElementSize;
-				const uint8* B = (const uint8*)DefaultAddr + (SIZE_T)i * Prop->ElementSize;
+				const uint8* A = (const uint8*)ValueAddr   + (SIZE_T)i * MifPropertyElementSize(Prop);
+				const uint8* B = (const uint8*)DefaultAddr + (SIZE_T)i * MifPropertyElementSize(Prop);
 				if (!Prop->Identical(A, B, PortFlags))
 				{
 					OutReason = (Count > 1)
@@ -166,7 +166,7 @@ namespace MifBridge
 			for (int32 i = 0; i < Prop->ArrayDim; ++i)
 			{
 				if (i > 0) { S += TEXT(","); }
-				S += MifDetailsExportOne(Prop, (const uint8*)Addr + (SIZE_T)i * Prop->ElementSize, Owner);
+				S += MifDetailsExportOne(Prop, (const uint8*)Addr + (SIZE_T)i * MifPropertyElementSize(Prop), Owner);
 			}
 			return S + TEXT(")");
 		}
@@ -351,7 +351,7 @@ namespace MifBridge
 			Row->SetStringField(TEXT("type"), Prop->GetCPPType());
 			Row->SetStringField(TEXT("propertyClass"), Prop->GetClass()->GetName());
 			Row->SetNumberField(TEXT("arrayDim"), Prop->ArrayDim);
-			Row->SetNumberField(TEXT("elementSize"), Prop->ElementSize);
+			Row->SetNumberField(TEXT("elementSize"), MifPropertyElementSize(Prop));
 			if (UStruct* OwnerStruct = Prop->GetOwnerStruct())
 			{
 				Row->SetStringField(TEXT("owner"), OwnerStruct->GetName());
@@ -1264,7 +1264,7 @@ namespace MifBridge
 			if (!DefaultRes.Leaf
 				|| DefaultRes.Leaf->GetClass()  != Leaf->GetClass()
 				|| DefaultRes.Leaf->ArrayDim    != Leaf->ArrayDim
-				|| DefaultRes.Leaf->ElementSize != Leaf->ElementSize)
+				|| MifPropertyElementSize(DefaultRes.Leaf) != MifPropertyElementSize(Leaf))
 			{
 				Out->SetBoolField(TEXT("changed"), false);
 				Out->SetBoolField(TEXT("verified"), false);
@@ -1285,11 +1285,11 @@ namespace MifBridge
 					TEXT("redeclares an inherited name with a different type. What to do: reopen or recompile the asset so the archetype ")
 					TEXT("is rebuilt and call this again, or write the intended value explicitly with set_property, which never touches ")
 					TEXT("the archetype's memory. Nothing was changed."),
-					*PropertyPath, *Leaf->GetClass()->GetName(), Leaf->ArrayDim, Leaf->ElementSize,
+					*PropertyPath, *Leaf->GetClass()->GetName(), Leaf->ArrayDim, MifPropertyElementSize(Leaf),
 					*Archetype->GetPathName(),
 					DefaultRes.Leaf ? *DefaultRes.Leaf->GetClass()->GetName() : TEXT("<unresolved>"),
 					DefaultRes.Leaf ? DefaultRes.Leaf->ArrayDim : 0,
-					DefaultRes.Leaf ? DefaultRes.Leaf->ElementSize : 0));
+					DefaultRes.Leaf ? MifPropertyElementSize(DefaultRes.Leaf) : 0));
 				return;
 			}
 			DefaultAddr   = DefaultRes.LeafAddr;

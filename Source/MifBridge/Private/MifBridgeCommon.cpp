@@ -64,6 +64,17 @@
 
 namespace MifBridge
 {
+	// --- Small cross-file utilities ------------------------------------------
+
+	int32 MifPropertyElementSize(const FProperty* Prop)
+	{
+#if MIF_ENGINE_AT_LEAST(5, 5)
+		return Prop->GetElementSize();
+#else
+		return Prop->ElementSize;
+#endif
+	}
+
 	// --- Registry / dispatch ------------------------------------------------
 
 	const TMap<FString, FHandlerFn>& Handlers()
@@ -2558,7 +2569,7 @@ namespace MifBridge
 						return false;
 					}
 					SegContainerAddr = EffAddr;
-					EffAddr = (uint8*)EffAddr + (SIZE_T)Index * EffProp->ElementSize;
+					EffAddr = (uint8*)EffAddr + (SIZE_T)Index * MifPropertyElementSize(EffProp);
 					SegCArrayIndex   = Index;
 					SegElementIndex  = Index;
 					SegContainerProp = EffProp;
