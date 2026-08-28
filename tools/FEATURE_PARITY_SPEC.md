@@ -2674,3 +2674,30 @@ cannot become one giant blocking item:
       either ExportText output turns out to be unreadable in practice (LODInfo is a large struct; a
       confirmed rough edge would be a real, separate, small finding) that is a live-verification task
       for whoever next has cause to read one, not a reason to build a second endpoint pre-emptively.
+
+- [x] **`tools/endpoints_current.json` was silently stale for two days - found and fixed 2026-08-28.**
+      While checking whether today's new list_virtual_bones/list_morph_targets showed up in
+      coverage_gaps.py's report, they were absent entirely - not covered, not uncovered, just missing.
+      Root cause: the snapshot is documented (README.md, this file's own header) as "regenerated from
+      the live editor's self_audit", but nothing in the repo ever performed that regeneration. It was a
+      hand-written file from 2026-08-26 (286 names) that coverage_gaps.py trusted unconditionally. The
+      real surface had grown to 334 (confirmed by BOTH a live self_audit and an independent static
+      MIF_DECL count, which agreed exactly) - 60 added, 12 removed/renamed, across two days including
+      the IK Rig fixes, water bodies, data layers, MVVM, and both of today's own endpoints. Every
+      "uncovered" list this tool produced in that window, including one read earlier in this very
+      session, was computed over the wrong universe with no signal anything was wrong.
+      Fixed two ways: coverage_gaps.py now diffs the snapshot against a static MIF_DECL extraction on
+      every run and warns loudly on disagreement (still editor-free for the check itself); new
+      tools/refresh_endpoints_snapshot.py pulls a live self_audit and regenerates the snapshot for real
+      - the step that never existed before. VERIFIED the warning actually fires: deliberately corrupted
+      a scratch copy (3 real endpoints removed, 1 fake added), confirmed the warning named both
+      correctly, restored the real file. Regenerated endpoints_current.json for real (334, matches
+      parity_check.py's MIF_BIND count) and refreshed coverage_gaps.json against the corrected universe
+      (113 genuinely uncovered, not whatever the stale run reported).
+      SEPARATE NEAR-MISS FOUND WHILE CHASING THIS: relaunching the probe to get a live self_audit, I
+      never set MIF_BRIDGE_PORT, which falls back to 8791 - DDS2's own default - rather than the 8801
+      the probe is meant to use. Polled the wrong port for several minutes before Andre asked directly
+      whether ports were "setup dual". No actual collision happened only because DDS2's editor was
+      closed at the time; this is now recorded so future probe launches (mine or anyone's) set the port
+      explicitly rather than assuming it carried over from earlier in a session. Full writeup in
+      docs/01_POSTMORTEMS.md.
