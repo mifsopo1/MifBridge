@@ -2474,3 +2474,47 @@ cannot become one giant blocking item:
       `-unattended` (suppresses modal dialogs editor-wide, the standard flag for non-interactive/CI UE
       launches) - no dialog on either launch after adding it. Worth remembering: default new probe
       launches to `-unattended` from the start rather than discovering this the hard way again.
+
+## UE 5.7 deprecation sweep, 2026-08-28 - a full rebuild surfaces what incremental builds hide
+
+- [x] **Six deprecated-API call sites fixed after a genuine `-Rebuild`, not an incremental build.**
+      DONE 2026-08-28. Incremental builds only show warnings for files actually recompiled, which is
+      exactly how two of today's IK Rig-adjacent fixes (GetBindings, UIKRigProcessor) sat unnoticed for
+      a build cycle - forcing a full `-Rebuild` of the UE 5.7 probe surfaced every remaining warning in
+      the module at once. Fixed the ones that were either genuinely broken today or a clean, low-risk
+      swap; deliberately left the ones that needed real design judgment (see below).
+      `FProperty::ElementSize` (13 call sites, three files, UE_DEPRECATED 5.5, no replacement exists on
+      5.3) - one shared `MifPropertyElementSize()` helper instead of a `#if` at every site.
+      `UStaticMesh::bCustomizedCollision` (2 sites, UE_DEPRECATED 5.7) - gated inline to
+      `SetCustomizedCollision()`.
+      `FStaticMeshBatchRelevance::LODIndex` (1 site, `diagnose_landscape_draws`) - THE SERIOUS ONE. Its
+      own deprecation text says "doesn't contain valid data anymore" on 5.4+, not merely discouraged -
+      so this diagnostic's `"lod"` field had been silently wrong on every 5.4+ engine including 5.7.
+      Fixed with `GetLODIndex()`. Not independently live-tested against real landscape content this
+      pass; the fix rests on the engine's own explicit documentation rather than a subtle behaviour
+      that needed reproducing, but a real call against DDS2 content would close this out properly.
+      `UMaterialInterface::GetMaterialResource(ERHIFeatureLevel)` (2 sites, UE_DEPRECATED 5.7) - needed
+      an actual parameter-type change, not a rename; added `MifGetMaterialResource()` using the
+      engine's own `GShaderPlatformForFeatureLevel[]` conversion (identical on both engines).
+      `UMaterialExpression::GetInputsView()` (1 site) - UE_DEPRECATED(5.5) tag sits on the line ABOVE
+      the declaration, which is why an earlier single-line grep during the same sweep missed it and
+      logged it as needing more digging. `GetInput(int32)` is identical and un-deprecated on both
+      engines, so the fix needed no version gate at all.
+      All six verified via a real Build.bat on both engines - buildcheck.py: BUILD OK, warnings gone,
+      no 5.3 regression. Commits: 717272e, 11f7893, 27af774.
+
+- [ ] **Landscape edit-layer migration - an architecture decision, not a warning fix.** Found
+      2026-08-28, deliberately NOT acted on. `ALandscape::CanHaveLayersContent()` /
+      `ToggleCanHaveLayersContent()` (create_landscape's "keep edit layers off" setup, so
+      sculpt_landscape/paint_landscape's direct writes land somewhere that actually composites) are
+      now UE_DEPRECATED(5.7) - and unlike everything else in this sweep, it is not the accessor that
+      changed, it is the underlying CONCEPT: Epic's message is "Non-edit layer landscapes are
+      deprecated, all landscapes use the edit layer system now." The suggested replacement,
+      `ConvertNonEditLayerLandscape()`, converts a landscape INTO edit layers - the opposite of what
+      this code wants, not a drop-in swap.
+      Current code still compiles and works correctly today on both 5.3 and 5.7; the deprecation only
+      warns about a future removal. Whether create_landscape should keep making non-edit-layer
+      landscapes going forward, or be redesigned to write through an edit layer instead (which would
+      need FLandscapeEditDataInterface's behaviour re-verified under edit-layers-on - a materially
+      different code path, not investigated) is Andre's call. Revisit if a future engine actually
+      removes the non-edit-layer path, or if Andre wants it addressed proactively.
