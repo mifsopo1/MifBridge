@@ -2701,3 +2701,31 @@ cannot become one giant blocking item:
       closed at the time; this is now recorded so future probe launches (mine or anyone's) set the port
       explicitly rather than assuming it carried over from earlier in a session. Full writeup in
       docs/01_POSTMORTEMS.md.
+
+- [ ] **Finish and commit the SKELETAL SPLIT panel tab.** In flight 2026-08-28, not yet a [x].
+      MifBridgeSkeletalSplitView.cpp (new file) + MifBridgePanel.cpp (tab index 6) - the fourth of
+      Andre's four in-editor asks, closing the gap the other three (write-mode dropdown, inheritance
+      tree, behavior tree diagram) already closed on 2026-08-27: analyze_skeletal_split has had a bridge
+      endpoint since then but nothing showed it INSIDE the editor. Calls H_analyze_skeletal_split's own
+      handler directly, same rule as MifBridgeBehaviorView.cpp. Mesh picker on the left; on the right, a
+      colour-coded "material splitting map" - one chip per section/material, a bone list where each bone
+      shows a coloured badge per section it touches plus separable/shared/unused.
+      Compiles clean on BOTH DDS2's real 5.3.2 (Build.bat) and a freshly rebuilt 5.7 probe
+      (make_engine_probe.py --build). Caught SWrapBox::UseAllottedWidth being 5.3-deprecated and fully
+      REMOVED on 5.7 (replaced by UseAllottedSize) by reading both headers before building, not from a
+      failed build.
+      Andre reviewed it LIVE in his own running editor and caught a real rendering bug no JSON check
+      would have: SBorder's default BorderImage is a thin frame brush, so BorderBackgroundColor alone
+      only tinted that outline - the section chips read as the panel's dark background with a faint
+      coloured edge instead of a solid fill. Fixed with an explicit WhiteBrush (the same solid-fill
+      brush MifBridgeBrainmap.cpp and MifBridgePanel.cpp's own Flat() helper already use), on both the
+      section strip and the per-bone badge squares.
+      Pushed into Andre's ALREADY-RUNNING editor via live_coding_compile rather than restarting it under
+      him mid-review - Live Coding was already active for that session (checked with live_coding_status
+      first), so this was live_coding_compile's intended use, not a shortcut around the project's normal
+      verification standard.
+      STILL OWED, and why this stays [ ] rather than [x]: a real Build.bat compile of the color-fix
+      specifically (Live Coding patches are for fast iteration in front of Andre, not proof - this
+      project's own standing rule is every C++ change gets verified by a REAL compile). Deliberately
+      deferred until Andre is not actively watching that editor, since Build.bat cannot replace a DLL
+      Live Coding is holding open anyway. Also not yet committed/pushed.
