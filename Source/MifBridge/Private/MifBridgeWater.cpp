@@ -182,6 +182,16 @@ namespace MifBridge
 
 			// A body with no zone does not render in 5.1+. Reporting it as a plain null would leave a
 			// caller guessing whether that is normal.
+			//
+			// UpdateWaterZones() FIRST: GetWaterZone() only returns the CACHED OwningWaterZone field,
+			// which nothing here has asked to recompute. VERIFIED 2026-08-28 (create_water_zone's own
+			// coverage count, same file): a body created moments before a covering zone can still read
+			// back with a stale zone reference matching neither the new zone nor null, because the
+			// recompute this forces is otherwise left to whatever OTHER tick happens to run it, whenever
+			// that is. This function is shared by create_water_body, describe_water_body and
+			// list_water_bodies, so a caller reading a body right after changing the zone situation
+			// around it is exactly the case this closes.
+			if (BodyComp) { BodyComp->UpdateWaterZones(); }
 			if (AWaterZone* Zone = BodyComp ? BodyComp->GetWaterZone() : nullptr)
 			{
 				J->SetStringField(TEXT("waterZone"), Zone->GetPathName());
@@ -462,10 +472,17 @@ namespace MifBridge
 
 		WaterBodySummary(Body, Out);
 		Out->SetNumberField(TEXT("splinePointsSet"), PointsSet);
+		// NOT an unconditional "it still needs a zone" claim - that was wrong often enough to remove.
+		// VERIFIED 2026-08-28: the actor factory frequently auto-spawns its own default AWaterZone
+		// covering a body created with none nearby, so "still needs one" is sometimes already false by
+		// the time this response is built. WaterBodySummary just reported the ACTUAL state above -
+		// waterZone if one covers it (auto-spawned or otherwise), waterZoneNote if genuinely none does
+		// - so this note only adds the parts that are true unconditionally.
 		Out->SetStringField(TEXT("note"),
 			TEXT("nothing was saved - this body exists in the open level only. Materials come from the "
-				 "engine's own water actor factory, so this body has them. It still needs an AWaterZone "
-				 "covering it to render at all - see waterZone above."));
+				 "engine's own water actor factory, so this body has them. Whether it renders depends on "
+				 "waterZone above, not on anything this call does separately - see waterZoneNote if it "
+				 "is empty."));
 		UE_LOG(LogMifBridge, Log, TEXT("create_water_body: %s '%s' with %d spline point(s)"),
 			*TypeStr, *Body->GetActorLabel(), PointsSet);
 #endif
@@ -577,13 +594,35 @@ namespace MifBridge
 		// THE NUMBER THAT ANSWERS THE ACTUAL QUESTION. Nobody creates a zone for its own sake - they
 		// create one so that bodies render. A body finds its zone by OVERLAP, so the only way to know
 		// whether this zone did any good is to ask every body afterwards.
-		int32 Covered = 0, Orphaned = 0;
+		//
+		// GetWaterZone() is NOT live - it returns the CACHED OwningWaterZone field, which only changes
+		// when UpdateWaterZones() runs (WaterBodyComponent.cpp:374-413: computes world bounds, calls
+		// UWaterSubsystem::FindWaterZone, and only THEN writes OwningWaterZone). MarkForRebuild above
+		// does not call it, so this forces the recompute per body rather than trust a cache that
+		// something else might not have refreshed yet.
+		//
+		// THE REAL SURPRISE, found chasing what looked like that staleness (VERIFIED 2026-08-28,
+		// isolated with TActorIterator<AWaterZone> logging directly in this handler on a level
+		// confirmed to have ZERO pre-existing zones): create_water_body's own actor factory ALREADY
+		// auto-spawns a default, unlabeled AWaterZone covering the new body if none exists yet - an
+		// engine behaviour this file's own comments never mention. So a body created via
+		// create_water_body and THEN covered by an explicit create_water_zone call is very often
+		// already covered by that auto-spawned zone, not the new one. The two counters below used to
+		// be the whole story - covered BY THIS ZONE, or ORPHANED - and a body in that third state
+		// (covered, just not by this call) fell through BOTH silently: bodiesNowCovered:0 and
+		// bodiesStillWithoutZone:0 together, which reads as "nothing happened" when the true state is
+		// "already fine, for a reason unrelated to this call." That is the confidently-uninformative
+		// answer this project keeps finding, so the third state is now named rather than left to be
+		// inferred from two zeros that do not sum to the body count.
+		int32 Covered = 0, Orphaned = 0, CoveredElsewhere = 0;
 		TArray<TSharedPtr<FJsonValue>> StillOrphaned;
+		TArray<TSharedPtr<FJsonValue>> CoveredElsewhereList;
 		for (TActorIterator<AWaterBody> It(World); It; ++It)
 		{
 			AWaterBody* Body = *It;
 			if (!Body) { continue; }
 			UWaterBodyComponent* Comp = Body->GetWaterBodyComponent();
+			if (Comp) { Comp->UpdateWaterZones(); }
 			AWaterZone* Found = Comp ? Comp->GetWaterZone() : nullptr;
 			if (Found == Zone) { ++Covered; }
 			else if (Found == nullptr)
@@ -591,12 +630,20 @@ namespace MifBridge
 				++Orphaned;
 				StillOrphaned.Add(MakeShared<FJsonValueString>(Body->GetActorLabel()));
 			}
+			else
+			{
+				++CoveredElsewhere;
+				CoveredElsewhereList.Add(MakeShared<FJsonValueString>(FString::Printf(
+					TEXT("%s (zone: %s)"), *Body->GetActorLabel(), *Found->GetActorLabel())));
+			}
 		}
 		Out->SetStringField(TEXT("actorPath"), Zone->GetPathName());
 		Out->SetStringField(TEXT("label"), Zone->GetActorLabel());
 		Out->SetNumberField(TEXT("bodiesNowCovered"), Covered);
 		Out->SetNumberField(TEXT("bodiesStillWithoutZone"), Orphaned);
 		Out->SetArrayField(TEXT("stillWithoutZone"), StillOrphaned);
+		Out->SetNumberField(TEXT("bodiesCoveredByOtherZone"), CoveredElsewhere);
+		Out->SetArrayField(TEXT("coveredByOtherZone"), CoveredElsewhereList);
 		if (Orphaned > 0)
 		{
 			// NAMED, not counted. "three bodies are still invisible" without saying which leaves the
@@ -605,6 +652,16 @@ namespace MifBridge
 				TEXT("%d water body(ies) are still outside every zone and will not render - see "
 					 "stillWithoutZone. Move this zone, or give it a larger extentX/extentY."),
 				Orphaned));
+		}
+		if (CoveredElsewhere > 0)
+		{
+			Out->SetStringField(TEXT("coverageNote"), FString::Printf(
+				TEXT("%d water body(ies) already render via a DIFFERENT zone - see coveredByOtherZone. "
+					 "This is often create_water_body's own default zone, auto-spawned by the actor "
+					 "factory when a body is created with none nearby. This new zone made no difference "
+					 "to them; that is not a failure of this call, and bodiesNowCovered correctly "
+					 "excludes them."),
+				CoveredElsewhere));
 		}
 		Out->SetStringField(TEXT("note"),
 			TEXT("nothing was saved - this zone exists in the open level only. Its far-distance "
