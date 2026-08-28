@@ -144,12 +144,13 @@ def remove_timer():
 def _op_table():
     # Imported here rather than at module scope so a syntax error in an ops
     # module surfaces as a per-request error instead of a dead addon.
-    from . import ops_scene, ops_mesh, ops_gen
+    from . import ops_scene, ops_mesh, ops_gen, ops_rig
 
     table = {}
     table.update(ops_scene.OPS)
     table.update(ops_mesh.OPS)
     table.update(ops_gen.OPS)
+    table.update(ops_rig.OPS)
     return table
 
 

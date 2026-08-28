@@ -4190,6 +4190,24 @@ def bl_object_info(object_name: str) -> dict:
 
 
 @mcp.tool()
+def bl_list_bones(object_name: str, name_contains: str = "") -> dict:
+    "The REST-POSE bone hierarchy of a Blender ARMATURE object - the same question UE's list_bones answers for a Skeleton's ReferenceSkeleton, asked on the authoring side instead. object_name must be an ARMATURE; bl_list_objects with object_type:'ARMATURE' finds one. Each bone reports name, parent (name, null for the root), headArmatureSpaceBU/tailArmatureSpaceBU (ARMATURE-space, not parent-relative - these are head_local/tail_local, already composed through every ancestor, so they compare directly against a reference skeleton without walking the parent chain yourself), length, useDeform (false means this bone is a mechanism/control bone that does not skin any geometry) and childCount. name_contains filters. Read-only."
+    return _blender("list_bones", object=object_name, nameContains=name_contains or None)
+
+
+@mcp.tool()
+def bl_list_shape_keys(object_name: str) -> dict:
+    "Shape keys on a Blender mesh object - Blender's name for what Unreal calls morph targets (compare against UE's list_morph_targets on the same character). Each entry reports name, value (the current slider position), sliderMin/sliderMax, mute, isBasis (the neutral pose the others are relative to, not a real pose target itself) and relativeTo. A mesh with none reports hasShapeKeys:false and count:0 rather than an error - most game meshes have none; only facial/blend-shape ones need them. Read-only."
+    return _blender("list_shape_keys", object=object_name)
+
+
+@mcp.tool()
+def bl_list_vertex_groups(object_name: str) -> dict:
+    "Vertex groups on a Blender mesh object - the bone-weight assignment groups a skinned mesh needs one per deforming bone, named to match the armature's bone names by Blender convention. Each entry reports name, index and weightedVertexCount (how many vertices actually have a non-zero weight in this group) plus influencesGeometry (weightedVertexCount > 0) - a group with ZERO weighted vertices means this mesh will not deform at all on that bone, the same class of rigging bug UE's analyze_skeletal_split flags via influencesGeometry on the cooked side. A mesh with no vertex groups reports count:0 with a note rather than an error. Read-only."
+    return _blender("list_vertex_groups", object=object_name)
+
+
+@mcp.tool()
 def bl_import_mesh(file: str, clear_scene: bool = True) -> dict:
     "Import an FBX file into Blender and report what arrived. FBX ONLY - the addon hard-refuses every other extension, OBJ included, because FBX is the only format whose axis and unit round trip with Unreal is verified (UE's OBJ exporter swaps Y/Z, de-indexes to three verts per triangle and writes no normals). Pass NO axis settings anywhere: with use_manual_orientation off the importer reads FrontAxis/UpAxis/CoordAxis out of the file, and an FBX written by Unreal declares Z-up / -Y-front / right-handed / cm, which reverse-maps to Blender's own system and applies an identity conversion - the mesh lands unrotated and 1 uu becomes 0.01 Blender units. The created objects are recovered by diffing bpy.data.objects before and after, because the import operators return nothing. clear_scene defaults TRUE so each run starts from a known scene; set it false to import alongside existing objects. Returns imported[] with a full object_info per object - MORE THAN ONE object means the FBX carried LODs, collision or an armature and the source should be re-exported with level_of_detail:false and collision:false."
     return _blender("import_mesh", file=file, clearScene=clear_scene)

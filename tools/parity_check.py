@@ -59,7 +59,7 @@ ADDON_DIR = os.path.join(HERE, "blender-addon", "MifBlender")
 # generation chain) was added to the addon and this tuple was not updated, so the
 # checker blamed five correct wrappers instead of itself. Cross-check against
 # server.py's `table.update(...)` calls, which are the real registry.
-ADDON_OP_MODULES = ("ops_scene.py", "ops_mesh.py", "ops_gen.py")
+ADDON_OP_MODULES = ("ops_scene.py", "ops_mesh.py", "ops_gen.py", "ops_rig.py")
 
 UE_BIND_FILE = os.path.join(ROOT, "Source", "MifBridge", "Private", "MifBridgeCommon.cpp")
 
