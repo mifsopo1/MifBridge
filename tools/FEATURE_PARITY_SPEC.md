@@ -2419,3 +2419,58 @@ cannot become one giant blocking item:
       capture path would need a separate opt-in component (UE4SS-side helper, external harness) and is
       not required for any of the three items above. Revisit only if packaged-runtime automation
       becomes a broader goal on its own merits, not as a rider on this proposal.
+
+## UE 5.6+/5.7 IK Retargeter chain mapping, 2026-08-28 - chainCount:0, silently, for two separate reasons
+
+- [x] **`set_retarget_rigs`/`auto_map_retarget_chains`/`set_retarget_chain_mapping`/`list_retarget_chain_mapping`
+      all read back `chainCount:0` on UE 5.6+/5.7, silently.** FIXED 2026-08-28. Found while leaning
+      into 5.7-specific work on the probe: a retargeter built through this file's own `create_asset` +
+      `AddDefaultOps()` path reported zero mapped chains no matter what was tried, on an engine build
+      that compiled clean and ran clean - no warning, no error, just an empty array where two real
+      chains should have been.
+      TWO SEPARATE BUGS, found by reading the engine's own .cpp bodies rather than trusting header doc
+      comments (which were actively misleading both times):
+      1. `UIKRetargeterController::SetIKRig()`'s reinit-ops loop only fires for the SOURCE rig ("we do
+         NOT auto-update the target IK rig as this may be overridden" - its own comment), and even then
+         resolves the target through `GetTargetIKRigForOp()`, which only returns a per-op CUSTOM
+         override and never falls back to the retargeter's global target - so a default-created
+         retargeter's ops never got a working chain mapping through `SetIKRig` alone, on either side.
+         `AssignIKRigToAllOps()` is the engine's own public, documented fix for exactly this case ("Force
+         all ops to use the assigned IK Rig and update their chain mappings") - the same call path the
+         Retarget Chains panel's Source/Target combo boxes drive in the real editor UI.
+      2. The read path used `GetChainMapping(NAME_None)`, whose doc comment claims "returns the first
+         chain mapping it finds" but whose actual loop (`IKRetargeterController.cpp:1062`) only skips an
+         op when the name doesn't match - passing `NAME_None` short-circuits on op index 0 and returns
+         THAT op's mapping unconditionally, null or not. Op 0 in `AddDefaultOps`' fixed order is always
+         "Pelvis Motion", which never owns a chain mapping - so this overload returns null on every
+         normally-configured retargeter. Fixed by walking the ops directly and taking the first non-null
+         mapping, which is what the doc comment describes and the function does not do.
+      A THIRD BUG surfaced live while verifying the first two: `FName::ToString()` on `NAME_None` renders
+      the literal string `"None"`, not empty, so `bMapped = !SourceName.IsEmpty()` reported `mapped:true`
+      for a chain an exact-mode auto-map had genuinely left unmapped. Fixed by checking `IsNone()` before
+      stringifying, in both the 5.6+ and 5.3 read branches - the second branch was carrying the same bug,
+      just never triggered because 5.3's `auto_map_retarget_chains` had never been run in exact mode
+      against a genuinely-unmappable chain during this session's earlier 5.3 testing.
+      VERIFIED LIVE against a real UE 5.7 probe editor, not inferred from the fix reading right: built a
+      real cross-rig pair on the standard UE5 mannequin skeleton (`SKM_Biped_Template`, 161 bones) -
+      source with one `LeftArm` chain, target with `LeftArm` and `RightLeg` - and confirmed all four
+      endpoints now report `chainCount:2`, `LeftArm`/`LeftArm` at `nameMatchScore:1.0` (exact match), and
+      `RightLeg`/`LeftArm` at `nameMatchScore:0.5333` correctly flagged in `lowConfidenceMappings` (a leg
+      chain fuzzy-matched to an arm chain because no leg chain existed on the source to compete with it -
+      the exact reproduction this session's earlier confidence-score fix was built to catch). Re-ran
+      `auto_map_retarget_chains` in exact mode afterward and confirmed `RightLeg` correctly flips to
+      `mapped:false, sourceChain:""` once there is no exact name match to fall back on.
+      VERIFIED via a real `Build.bat` (not Live Coding - this session's established, non-negotiable
+      verification standard) on BOTH engines: `buildcheck.py` reports `BUILD OK` on the UE 5.7 probe and
+      on DDS2's own 5.3.2 tree. The 5.3 rebuild also incidentally closed a previously-flagged, low-priority
+      loose end: `MifBridgeMetaHuman.cpp`'s `#if !MIF_WITH_METAHUMAN` refusal branch had never been
+      independently re-verified with a real Build.bat specifically on 5.3 (it was reasoned safe by
+      inference only) - this build compiles the whole module, so it now is.
+      A GENUINE, UNRELATED SURPRISE while relaunching the probe for this investigation: a plain
+      `UnrealEditor.exe <project>` launch twice hung on a Slate "Restore Packages" modal that blocks the
+      editor's boot outright (no native child controls to read its button text - Slate renders its own
+      widgets, not Win32 controls, so it cannot be inspected or dismissed via `EnumChildWindows`). Cause
+      not identified; not seen on any of this session's many earlier probe launches. Worked around with
+      `-unattended` (suppresses modal dialogs editor-wide, the standard flag for non-interactive/CI UE
+      launches) - no dialog on either launch after adding it. Worth remembering: default new probe
+      launches to `-unattended` from the start rather than discovering this the hard way again.
