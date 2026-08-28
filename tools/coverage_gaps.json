@@ -31,19 +31,12 @@
   "create_data_layer",
   "create_material_function",
   "create_metahuman_character",
-  "describe_animation",
   "describe_live_widget",
   "duplicate_actors",
-  "get_collision",
-  "list_animations",
-  "list_foliage_instances",
   "list_live_widgets",
   "list_object_properties",
   "list_pie_actors",
-  "list_sequence_bindings",
   "list_sublevels",
-  "live_coding_compile",
-  "live_coding_status",
   "load_level",
   "move_actor_to",
   "open_asset_editor",
@@ -51,7 +44,6 @@
   "paint_landscape",
   "pcg_cleanup",
   "pcg_generate",
-  "perf_heavy_actors",
   "pie_load_level_instance",
   "pie_status",
   "pie_unload_level_instance",
@@ -476,6 +468,9 @@
   "delete_material_expression": [
    "test_material_graph.py"
   ],
+  "describe_animation": [
+   "test_uncovered_reads4.py"
+  ],
   "describe_behavior_tree": [
    "test_sockets_ai.py"
   ],
@@ -575,7 +570,8 @@
    "test_thumbnails.py",
    "test_uncovered_reads.py",
    "test_uncovered_reads2.py",
-   "test_uncovered_reads3.py"
+   "test_uncovered_reads3.py",
+   "test_uncovered_reads4.py"
   ],
   "find_nodes": [
    "test_anim_nodes.py",
@@ -586,6 +582,9 @@
   ],
   "get_actor_bounds": [
    "test_uncovered_reads2.py"
+  ],
+  "get_collision": [
+   "test_uncovered_reads4.py"
   ],
   "get_cvar": [
    "test_uncovered_reads2.py"
@@ -660,6 +659,9 @@
   "layout_material_expressions": [
    "test_material_graph.py"
   ],
+  "list_animations": [
+   "test_uncovered_reads4.py"
+  ],
   "list_blackboard_keys": [
    "test_create_asset.py",
    "test_sockets_ai.py"
@@ -708,6 +710,9 @@
   "list_enum_values": [
    "test_confirm_gated.py",
    "test_enums.py"
+  ],
+  "list_foliage_instances": [
+   "test_uncovered_reads4.py"
   ],
   "list_functions": [
    "test_function_flags.py"
@@ -803,6 +808,9 @@
   "list_retarget_chain_mapping": [
    "test_ik_authoring.py"
   ],
+  "list_sequence_bindings": [
+   "test_uncovered_reads4.py"
+  ],
   "list_sockets": [
    "test_list_bones.py",
    "test_sockets_ai.py"
@@ -846,6 +854,12 @@
    "test_widget_animation.py",
    "test_widget_animation_props.py"
   ],
+  "live_coding_compile": [
+   "test_uncovered_reads4.py"
+  ],
+  "live_coding_status": [
+   "test_uncovered_reads4.py"
+  ],
   "move_node": [
    "test_find_and_move.py"
   ],
@@ -866,6 +880,9 @@
   ],
   "override_inherited_component": [
    "test_inherited_components.py"
+  ],
+  "perf_heavy_actors": [
+   "test_uncovered_reads4.py"
   ],
   "project_asset_distribution": [
    "test_project_graph.py"
