@@ -3071,3 +3071,41 @@ cannot become one giant blocking item:
       SC.confirm_call.__wrapped__ that would have altered the shared module's function object for no
       reason - removed before running, not left in as dead code.
       parity_check.py clean. coverage_gaps.json: 50 -> 40.
+
+- [~] **17 endpoints in coverage_gaps.json are permanently out of reach under this project's own
+      standing safety rules, not untested by oversight.** Declined 2026-08-28 - stated formally here
+      rather than left as informal notes scattered across six batches' test-file docstrings, since the
+      spec is what the autopilot loop actually reads to judge "open" vs "done".
+      PIE-only (11): list_pie_actors, pie_status, pie_load_level_instance, pie_unload_level_instance,
+      spawn_actor_in_pie, move_actor_to (confirmed live: moves via AI Controller, "needs a running PIE
+      session"), describe_live_widget, list_live_widgets (both need a LIVE widget instance, which in
+      practice means a running PIE world), ui_scenario_activate/capture/start/status/stop (the Phase C
+      PIE-driven scenario runner, 5 endpoints) - all forbidden by the standing rule against starting
+      PIE during autonomous/unattended work.
+      Save-forbidden (2): save_dirty_packages, save_level_as - forbidden by the standing rule against
+      saving.
+      Structural wall (2): pcg_generate, pcg_cleanup - PCG has no node-authoring endpoints in this
+      bridge, so there is no way to build real graph content to generate FROM; confirmed, not assumed.
+      Any of these can be revisited if the standing PIE/save rules themselves change, or if a future
+      session adds PCG node-authoring - this is a decline against CURRENT constraints, not a claim
+      these endpoints are broken or not worth having.
+
+- [x] **Real editor crash found and fixed: duplicate_asset on a cooked StaticMesh.** DONE 2026-08-28.
+      Live-probing duplicate_asset for coverage (a real DDS2 Brushify mesh, S_Volcano_02) took the
+      whole editor down - Assertion failed: Owner->IsMeshDescriptionValid(0) inside UStaticMesh::Build,
+      confirmed via the crash dump's own log. Same root cause, different subsystem, as the ALREADY-
+      GUARDED cooked-Niagara crash: cook strips editor-only bulk data (MeshDescription here, emitter
+      data there) that a post-duplicate rebuild/PostLoad step unconditionally dereferences. Fixed by
+      widening the existing Niagara guard block in MifBridgeAssetOps.cpp to also cover a cooked
+      StaticMesh, checked by class name, same reasoning the Niagara guard already used. Verified with
+      a REAL Build.bat on both engines this plugin targets - DDS2's actual 5.3.2 and the 5.7 probe,
+      buildcheck.py-clean on all three signals both times - then re-ran the EXACT call that crashed
+      the editor and confirmed it now refuses cleanly with self_audit answering immediately after (the
+      real proof a fatal-assertion guard held, not just the refusal's own ok:false). Also confirmed
+      the pre-existing Niagara refusal still fires after the restructure, and that an ordinary
+      non-cooked scratch Blueprint still duplicates successfully - the guard did not widen into
+      refusing every asset of a checked class. New suite tools/test_duplicate_cooked_guard.py, 11/11
+      PASS. docs/02_GOTCHAS.md section 6c's table gained a fourth row; full incident in
+      docs/01_POSTMORTEMS.md ("duplicate_asset on a cooked StaticMesh crashed the editor").
+      Regression-checked test_niagara.py (53/53), test_material_write.py (22/22), test_modal_guard.py
+      (13/13), test_fuzz_detector.py (17/17) - all four also touch duplicate_asset, all still clean.

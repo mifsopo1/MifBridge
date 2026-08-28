@@ -442,20 +442,42 @@ namespace MifBridge
 		// Checked by CLASS NAME rather than by type on purpose: recognising an asset in order to
 		// REFUSE it does not justify taking a dependency on the whole Niagara plugin module, and a
 		// string check keeps working in a build where Niagara is not compiled in at all.
+		// DUPLICATING A COOKED STATIC MESH ALSO CRASHES THE EDITOR, same family, different subsystem.
+		// Found live 2026-08-28 duplicating a real DDS2 mesh (S_Volcano_02):
+		//
+		//   AssetTools.DuplicateAsset -> rebuilds the new copy -> UStaticMesh::Build
+		//   Assertion failed: Owner->IsMeshDescriptionValid(0) [StaticMesh.cpp:3086]
+		//
+		// Cook strips the editable MeshDescription bulk data (not needed at runtime, which reads the
+		// baked render/collision data instead); the post-duplicate rebuild step unconditionally
+		// expects it to be there. This is a hard assertion, not a caught exception, so - same as the
+		// Niagara case - it takes the whole editor down rather than returning an error.
+		//
+		// READING a cooked StaticMesh is fine (get_property, bounds, LOD counts, materials). It is
+		// DUPLICATION specifically that dies, because that is what triggers the rebuild.
 		{
 			const FString AssetClassName = Asset->GetClass()->GetName();
 			const bool bNiagara = AssetClassName == TEXT("NiagaraSystem")
 				|| AssetClassName == TEXT("NiagaraEmitter");
+			const bool bStaticMesh = AssetClassName == TEXT("StaticMesh");
 			const UPackage* SrcPackage = Asset->GetOutermost();
 			const bool bCooked = SrcPackage && SrcPackage->HasAnyPackageFlags(PKG_Cooked);
-			if (bNiagara && bCooked)
+			if ((bNiagara || bStaticMesh) && bCooked)
 			{
 				Fail(Out, FString::Printf(
-					TEXT("'%s' is a COOKED %s, and duplicating one CRASHES the editor inside Niagara's "
-						 "own PostLoad — cook strips the editor-only emitter data that the copy's "
-						 "PostLoad then dereferences. Refused rather than attempted. Reading it is "
-						 "safe: get_property reaches ExposedParameters and add_function_call reaches "
-						 "the runtime Niagara surface."), *RawPath, *AssetClassName));
+					TEXT("'%s' is a COOKED %s, and duplicating one CRASHES the editor %s. Cook strips "
+						 "the editor-only data the post-duplicate rebuild step then dereferences. "
+						 "Refused rather than attempted. Reading it is safe - it is specifically "
+						 "DUPLICATION that dies."),
+					*RawPath, *AssetClassName,
+					bNiagara
+						? TEXT("inside Niagara's own PostLoad (EXCEPTION_ACCESS_VIOLATION reading 0x30 "
+							   "in FVersionedNiagaraEmitterData::PostLoad) - get_property reaches "
+							   "ExposedParameters and add_function_call reaches the runtime surface "
+							   "instead")
+						: TEXT("inside UStaticMesh::Build (Assertion failed: "
+							   "Owner->IsMeshDescriptionValid(0), StaticMesh.cpp:3086) - get_property, "
+							   "bounds and LOD/material reads all still work instead")));
 				return;
 			}
 		}

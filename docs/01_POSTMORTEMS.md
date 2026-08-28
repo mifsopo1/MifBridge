@@ -1656,3 +1656,63 @@ launches just because it was true earlier in the same conversation. `MIF_BRIDGE_
 for the probe at some earlier point this session; every *later* launch needed it set again, explicitly,
 and assuming otherwise cost several minutes of polling the wrong port before a direct question from
 Andre - not my own process discipline - caught it.
+
+## `duplicate_asset` on a cooked StaticMesh crashed the editor - same root cause as the Niagara guard, one subsystem over (2026-08-28)
+
+**Symptom.** Mid-way through a coverage batch, a live probe of `duplicate_asset` against a real DDS2
+static mesh (`S_Volcano_02`, Brushify content) returned nothing - the HTTP connection was forcibly
+closed. `Get-Process` on the editor's PID a moment later found no such process. The whole editor was
+gone.
+
+**Root cause.** `D:\DDS2SDK\Game\Saved\Crashes\UECC-Windows-.../DrugDealerSimulator2.log` had the
+exact moment:
+
+```
+LogStaticMesh: Display: Building static mesh SM_ProbeMesh...
+LogWindows: Error: appError called: Assertion failed: Owner->IsMeshDescriptionValid(0)
+  [File:D:\UE532\Engine\Source\Runtime\Engine\Private\StaticMesh.cpp] [Line: 3086]
+Bad MeshDescription on /Game/_MifReads7/SM_ProbeMesh.SM_ProbeMesh
+```
+
+`duplicate_asset`'s handler was already carrying a guard and a five-line comment for exactly this
+SHAPE of bug, just for a different asset type: `MifBridgeAssetOps.cpp` refuses duplicating a cooked
+`NiagaraSystem`/`NiagaraEmitter` because cook strips editor-only emitter data that the copy's
+`PostLoad` then dereferences, crashing inside Niagara's own code. A cooked `StaticMesh` has the
+identical structure: cook strips the editable `MeshDescription` bulk data (not needed at runtime,
+which reads the baked render/collision buffers instead), and `AssetTools.DuplicateAsset`'s
+post-duplicate rebuild step (`UStaticMesh::Build`) unconditionally assumes that data exists. DDS2 is
+built from `D:/UE532`, "Brando's cooked-editor fork" per this project's own standing notes - its
+content-heavy Brushify meshes are cooked assets, exactly the shape this bug needs. This is a hard
+`checkf`-style assertion, not a caught exception, so - same as the Niagara case - it takes the whole
+process down rather than returning an error, and there is no MifBridge frame anywhere near the top of
+the crash stack.
+
+**Fix.** Extended the SAME guard block `duplicate_asset` already had for Niagara: added a
+`bStaticMesh` check alongside `bNiagara`, both gated on `PKG_Cooked`, refusing with a message that
+names the real mechanism (`UStaticMesh::Build`, the exact assertion text and line) rather than a
+generic failure. Checked by class NAME, matching the existing Niagara guard's own reasoning:
+recognising an asset in order to refuse it should not require a hard dependency on that asset type's
+whole module, and a string check keeps working in a build where the module is not compiled in at all.
+
+**Verified against real content:** re-ran the EXACT call that crashed the editor
+(`duplicate_asset` on `S_Volcano_02`) after a real `Build.bat` on both engines this plugin
+targets - DDS2's actual 5.3.2 and the 5.7 probe, both `buildcheck.py`-clean on all three signals. The
+call now refuses cleanly with the new message, and `self_audit` answers immediately afterward,
+confirming the editor is genuinely still alive rather than merely appearing to respond before a
+delayed crash. Also re-verified the pre-existing Niagara refusal still fires (the guard block was
+restructured, not just extended, so this was a real regression risk, not a formality) and that an
+ordinary, non-cooked scratch Blueprint still duplicates successfully - the widened guard did not
+become "refuse everything of a checked class," only cooked instances of one.
+New regression suite: `tools/test_duplicate_cooked_guard.py`, both refusals plus the still-works
+control case, 11/11 PASS.
+
+### The general rule
+
+A crash-class bug found in one asset type is a reason to search the SAME endpoint for siblings with
+the same shape, not just fix the one instance and move on. `duplicate_asset` already had a five-line
+comment explaining precisely this failure mode for Niagara; the comment described the mechanism
+generally enough ("cook strips editor-only data that the copy's re-initialisation then dereferences")
+that a StaticMesh instance of the same bug should have been suspected the day the Niagara guard was
+written, not discovered by accident nine days later mid-way through an unrelated coverage sweep. When
+a guard's own justification names a GENERAL mechanism rather than something specific to one class,
+check whether other classes share that mechanism before considering the guard complete.

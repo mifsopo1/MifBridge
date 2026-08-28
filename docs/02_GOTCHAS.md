@@ -520,24 +520,26 @@ it fails depends on how defensively that subsystem was written:
 | `UUserDefinedStruct` | every `FStructureEditorUtils` entry point | `CastChecked` on null EditorData — **fatal**, not an error return |
 | `UMaterial` | the expression graph is gone | `list_material_expressions` honestly reports `numExpressions: 0, cooked: true` |
 | `UNiagaraSystem` | duplication re-runs `PostLoad` | `EXCEPTION_ACCESS_VIOLATION` inside `FVersionedNiagaraEmitterData::PostLoad` — **fatal**, and with no MifBridge frame in the stack |
+| `UStaticMesh` | duplication rebuilds the copy | `Assertion failed: Owner->IsMeshDescriptionValid(0)` inside `UStaticMesh::Build` (`StaticMesh.cpp:3086`) — **fatal**. Found live 2026-08-28 duplicating a real DDS2 mesh; full incident in `docs/01_POSTMORTEMS.md`. |
 
-**Two of the three take the editor down rather than returning an error**, so "does this asset have
+**Three of the four take the editor down rather than returning an error**, so "does this asset have
 editor data?" is a question to ask BEFORE the operation, not a failure to handle afterwards.
 
 What still works on cooked assets, and is the right route:
 
 * **Reading through reflection.** `get_property` and `list_object_properties` walk cooked assets fine,
   including deep paths — a cooked Niagara system's `ExposedParameters` yields its user parameters with
-  names and types.
+  names and types, and a cooked StaticMesh's bounds/LOD count/materials all read fine too.
 * **Cached//runtime tables.** `FMaterialCachedParameters` survives cook, which is why
   `list_material_parameters` works on shipped materials where the expression listing cannot.
 * **The runtime BlueprintCallable surface**, via `add_function_call`.
 
 Guards that exist today: `LoadUserStruct` refuses cooked structs (MifBridgeUserTypes.cpp), and
-`duplicate_asset` refuses cooked Niagara (MifBridgeAssetOps.cpp). The Niagara one checks the class
-NAME rather than the type on purpose — recognising an asset in order to REFUSE it does not justify
-taking a dependency on that whole plugin module, and a string check keeps working in a build where the
-plugin is not compiled in.
+`duplicate_asset` refuses a cooked Niagara asset OR a cooked StaticMesh (MifBridgeAssetOps.cpp, one
+guard block covering both). Both are checked by class NAME rather than by type on purpose —
+recognising an asset in order to REFUSE it does not justify taking a dependency on that whole plugin
+module, and a string check keeps working in a build where the module is not compiled in. Regression
+coverage: `tools/test_duplicate_cooked_guard.py`.
 
 ## 7. Behaviours that are not bugs
 
