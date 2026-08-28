@@ -3177,3 +3177,31 @@ cannot become one giant blocking item:
       own separate construction proof for a different scratch actor, judged worth its own deliberate
       pass rather than a second quick reuse of the same one-off.
       parity_check.py clean. coverage_gaps.json: 30 -> 25.
+
+- [x] **Second real editor crash found and fixed, same day, same investigation thread:
+      add_simplified_collision on a cooked StaticMesh.** DONE 2026-08-28. Immediately after fixing
+      duplicate_asset's cooked-StaticMesh crash, testing add_simplified_collision{shape:"box"} on the
+      SAME real DDS2 mesh ALSO crashed the editor - EXCEPTION_ACCESS_VIOLATION reading 0x50 inside
+      UnrealEditor-MeshDescription.dll. The reasoning that led to testing it live (BodySetup/AggGeom
+      "looked like" a different data path from the MeshDescription bulk data that had just crashed
+      duplicate_asset) was wrong for THIS endpoint. Read the actual engine source
+      (GeomFitUtils.cpp) rather than guessing again: GenerateBoxAsSimpleCollision dereferences
+      StaticMesh->GetMeshDescription(0) with NO NULL CHECK, and it is null on any cooked mesh. Every
+      shape (sphere, capsule, k-DOP) shares the same failure, not just box - confirmed by driving all
+      four shape families against the same mesh post-fix. Fixed in MifBridgeCollision.cpp with a
+      direct GetMeshDescription(0)==nullptr check before any generator runs - a deliberately different,
+      more precise technique than duplicate_asset's PKG_Cooked-based guard, chosen because the exact
+      failure condition was cheap to check directly here. remove_collision was NOT touched, after
+      actually reading (not assuming) that it only touches BodySetup/AggGeom, never MeshDescription -
+      confirmed live with a real removal against real content, self_audit answering after.
+      Verified with a REAL Build.bat on both engines (DDS2's 5.3.2 and the 5.7 probe, buildcheck.py-
+      clean both times, DLL timestamp confirmed fresh), then re-ran the exact crashing call - all four
+      shape families now refuse cleanly, self_audit answers after each one. New suite
+      tools/test_simplified_collision_guard.py, T930-T932, 24/24 PASS. docs/02_GOTCHAS.md section 6c's
+      table gained a fifth row (four incidents were three when this session started this morning);
+      full incident in docs/01_POSTMORTEMS.md, with an explicit general-rule note that two crashes
+      sharing a mechanism in the SAME file still needed two independently-read, independently-fixed
+      functions, not one guard covering both.
+      parity_check.py clean. test_collision.py (the pre-existing, unrelated collision-PROFILE suite)
+      re-checked for regressions: still 22/22 clean.
+      coverage_gaps.json: 25 -> 23.

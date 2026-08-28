@@ -1716,3 +1716,72 @@ that a StaticMesh instance of the same bug should have been suspected the day th
 written, not discovered by accident nine days later mid-way through an unrelated coverage sweep. When
 a guard's own justification names a GENERAL mechanism rather than something specific to one class,
 check whether other classes share that mechanism before considering the guard complete.
+
+## add_simplified_collision crashed the editor on a cooked StaticMesh - a second, genuinely different bug found the same day as duplicate_asset's (2026-08-28)
+
+**Symptom.** Immediately after fixing and shipping the `duplicate_asset` cooked-StaticMesh crash (see
+the postmortem above this one), testing `add_simplified_collision{shape:"box"}` against the SAME real
+DDS2 mesh (`S_Volcano_02`) also took the editor down. The reasoning that led to testing it live at all
+was that `add_simplified_collision`/`remove_collision` operate on `BodySetup`/`AggGeom` - simple
+collision primitives - a data path that looked genuinely different from the `MeshDescription` bulk
+data that had just crashed `duplicate_asset`. That reasoning was WRONG for `add_simplified_collision`
+specifically (right for `remove_collision`, see below).
+
+**Root cause.** The crash dump (`UECC-Windows-.../CrashContext.runtime-xml`) named the exception
+directly: `EXCEPTION_ACCESS_VIOLATION reading address 0x0000000000000050`, both stack frames inside
+`UnrealEditor-MeshDescription.dll`. Rather than guess from that alone, read the actual engine source
+(`D:/UE532/Engine/Source/Editor/UnrealEd/Private/GeomFitUtils.cpp`) and found the exact line:
+
+```cpp
+int32 GenerateBoxAsSimpleCollision(UStaticMesh* StaticMesh)
+{
+    ...
+    StaticMesh->GetMeshDescription(0)->ComputeBoundingBox().GetCenterAndExtents(Center, Extents);
+```
+
+No null check. On a cooked mesh, `GetMeshDescription(0)` returns `nullptr` (the editor-only geometry
+bulk data is stripped, same underlying fact as the `duplicate_asset` incident), and the arrow
+dereference is the access violation - reading offset `0x50` is consistent with touching an early
+member of a null `FMeshDescription*`. The sphere/capsule generator (`CalcBoundingSphere`) takes an
+`FMeshDescription*` parameter directly and dereferences it on its first line too, so every shape this
+endpoint can produce shares the identical failure mode, not just the box shape that happened to be
+tested first - confirmed afterward by driving all four shape families against the same mesh post-fix
+and getting a clean refusal every time, rather than trusting that one function's fix generalised.
+
+**Fix.** Added a direct check in `MifBridgeCollision.cpp`'s `H_add_simplified_collision`:
+`if (!Mesh->GetMeshDescription(0))`, refused before any shape generator runs, naming the real
+mechanism in the response. Checked against the LITERAL condition about to be dereferenced rather than
+inferred from a `PKG_Cooked` package flag (the technique `duplicate_asset`'s guard from earlier the
+same day uses) - a deliberately different, more precise technique, chosen because the precise
+condition was cheap to check directly here.
+
+`remove_collision` was NOT touched, on purpose, after actually reading its handler rather than
+assuming the whole `MifBridgeCollision.cpp` file needed the same treatment: it calls
+`BS->RemoveSimpleCollision()` on the existing `AggGeom` primitive array, which needs no mesh geometry
+at all. Verified live rather than left as an inference - a real `remove_collision{confirm:true}` call
+against the same mesh, immediately after the crash investigation, succeeded and reported
+`self_audit` still answering.
+
+**Verified against real content:** re-ran the EXACT call that crashed the editor
+(`add_simplified_collision{shape:"box"}` on `S_Volcano_02`) after a real `Build.bat` on both engines
+this plugin targets - DDS2's actual 5.3.2 and the 5.7 probe, `buildcheck.py`-clean on all three
+signals both times. Confirmed the DLL's build timestamp matched the fresh build before trusting the
+retest. All four shape families (box, sphere, capsule, k-DOP) now refuse cleanly with `self_audit`
+answering immediately after each one. New regression suite:
+`tools/test_simplified_collision_guard.py`, T930-T932, 24/24 PASS - including a real
+`remove_collision` removal against real content (consistent with this whole project's "nothing is
+ever saved, so it reverts on restart" precedent, and necessary here because there is no
+`create_static_mesh` endpoint to build a genuinely disposable mesh instead).
+
+### The general rule
+
+Two crashes in one endpoint FAMILY, on the same mesh, in the same investigation, both caused by a
+missing null check on `GetMeshDescription()` in engine code this plugin calls into - but two
+DIFFERENT functions, in two different files, requiring two different fixes. The lesson from the first
+crash's own postmortem ("check whether other classes share a guard's general mechanism") does not
+fully cover this one: the mechanism here was shared between `duplicate_asset` and
+`add_simplified_collision`, but they are not siblings of the SAME guard - they needed two separate,
+independently-verified fixes in two separate handler files. Superficial reasoning about "this data
+path looks different" (BodySetup vs. render data) was wrong for one of the two functions in the same
+source file and right for the other - the only way to know which was true for each was to read that
+SPECIFIC function's own body, not to reason by analogy from the file or class it lives in.

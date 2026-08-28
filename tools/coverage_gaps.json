@@ -5,7 +5,6 @@
   "add_self",
   "add_sequence",
   "add_sequence_track",
-  "add_simplified_collision",
   "describe_live_widget",
   "list_live_widgets",
   "list_pie_actors",
@@ -16,7 +15,6 @@
   "pie_load_level_instance",
   "pie_status",
   "pie_unload_level_instance",
-  "remove_collision",
   "save_dirty_packages",
   "save_level_as",
   "spawn_actor_in_pie",
@@ -175,6 +173,9 @@
   ],
   "add_sequence_possessable": [
    "test_uncovered_reads8.py"
+  ],
+  "add_simplified_collision": [
+   "test_simplified_collision_guard.py"
   ],
   "add_spawn_actor": [
    "test_uncovered_reads7.py"
@@ -617,6 +618,7 @@
    "test_node_spawns.py",
    "test_ported_anim.py",
    "test_set_struct_member.py",
+   "test_simplified_collision_guard.py",
    "test_sockets_ai.py",
    "test_structs.py",
    "test_textures.py",
@@ -1020,6 +1022,9 @@
   "remove_actor_from_data_layer": [
    "test_data_layer_writes.py"
   ],
+  "remove_collision": [
+   "test_simplified_collision_guard.py"
+  ],
   "remove_component": [
    "test_components_dispatchers.py",
    "test_confirm_gated.py"
@@ -1148,6 +1153,7 @@
    "test_safety_gate.py",
    "test_selfpin.py",
    "test_set_struct_member.py",
+   "test_simplified_collision_guard.py",
    "test_unknown_endpoint.py",
    "test_v3_apply.py"
   ],

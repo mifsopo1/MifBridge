@@ -511,7 +511,7 @@ exists.
 
 ## 6c. COOKED assets keep their runtime data and lose their editor data
 
-Three separate incidents, one cause. A cooked asset loads and behaves correctly at runtime, and its
+Four separate incidents, one cause. A cooked asset loads and behaves correctly at runtime, and its
 EDITOR-only data was stripped. Anything editor-side that reaches for that data finds nothing, and how
 it fails depends on how defensively that subsystem was written:
 
@@ -520,10 +520,11 @@ it fails depends on how defensively that subsystem was written:
 | `UUserDefinedStruct` | every `FStructureEditorUtils` entry point | `CastChecked` on null EditorData — **fatal**, not an error return |
 | `UMaterial` | the expression graph is gone | `list_material_expressions` honestly reports `numExpressions: 0, cooked: true` |
 | `UNiagaraSystem` | duplication re-runs `PostLoad` | `EXCEPTION_ACCESS_VIOLATION` inside `FVersionedNiagaraEmitterData::PostLoad` — **fatal**, and with no MifBridge frame in the stack |
-| `UStaticMesh` | duplication rebuilds the copy | `Assertion failed: Owner->IsMeshDescriptionValid(0)` inside `UStaticMesh::Build` (`StaticMesh.cpp:3086`) — **fatal**. Found live 2026-08-28 duplicating a real DDS2 mesh; full incident in `docs/01_POSTMORTEMS.md`. |
+| `UStaticMesh` (duplication) | duplication rebuilds the copy | `Assertion failed: Owner->IsMeshDescriptionValid(0)` inside `UStaticMesh::Build` (`StaticMesh.cpp:3086`) — **fatal**. Found live 2026-08-28 duplicating a real DDS2 mesh; full incident in `docs/01_POSTMORTEMS.md`. |
+| `UStaticMesh` (simple collision) | every shape generator needs real geometry to fit against | `EXCEPTION_ACCESS_VIOLATION` reading `0x50` inside `UnrealEditor-MeshDescription.dll` — `GeomFitUtils.cpp`'s `GenerateBoxAsSimpleCollision` dereferences `GetMeshDescription(0)` with **no null check**. Found live the SAME day, same investigation thread, a genuinely different endpoint and a genuinely different missing check — not a repeat of the row above. Full incident in `docs/01_POSTMORTEMS.md`. |
 
-**Three of the four take the editor down rather than returning an error**, so "does this asset have
-editor data?" is a question to ask BEFORE the operation, not a failure to handle afterwards.
+**All five take the editor down rather than returning an error**, so "does this asset have editor
+data?" is a question to ask BEFORE the operation, not a failure to handle afterwards.
 
 What still works on cooked assets, and is the right route:
 
@@ -533,13 +534,20 @@ What still works on cooked assets, and is the right route:
 * **Cached//runtime tables.** `FMaterialCachedParameters` survives cook, which is why
   `list_material_parameters` works on shipped materials where the expression listing cannot.
 * **The runtime BlueprintCallable surface**, via `add_function_call`.
+* **`remove_collision` on a cooked StaticMesh is fine** — it only touches `BodySetup`/`AggGeom`
+  (existing collision primitives), never `MeshDescription`, so it needs no guard at all. Confirmed
+  live, not assumed from the shared "collision code" framing that made the row above look scarier
+  than it needed to for this one.
 
-Guards that exist today: `LoadUserStruct` refuses cooked structs (MifBridgeUserTypes.cpp), and
+Guards that exist today: `LoadUserStruct` refuses cooked structs (MifBridgeUserTypes.cpp),
 `duplicate_asset` refuses a cooked Niagara asset OR a cooked StaticMesh (MifBridgeAssetOps.cpp, one
-guard block covering both). Both are checked by class NAME rather than by type on purpose —
-recognising an asset in order to REFUSE it does not justify taking a dependency on that whole plugin
-module, and a string check keeps working in a build where the module is not compiled in. Regression
-coverage: `tools/test_duplicate_cooked_guard.py`.
+guard block covering both), and `add_simplified_collision` refuses any StaticMesh with no
+`MeshDescription`, checked directly rather than via `PKG_Cooked` since the null pointer is the literal
+thing about to be dereferenced (MifBridgeCollision.cpp). The first two are checked by class NAME on
+purpose — recognising an asset in order to REFUSE it does not justify taking a dependency on that
+whole plugin module, and a string check keeps working in a build where the module is not compiled in.
+Regression
+coverage: `tools/test_duplicate_cooked_guard.py`, `tools/test_simplified_collision_guard.py`.
 
 ## 7. Behaviours that are not bugs
 

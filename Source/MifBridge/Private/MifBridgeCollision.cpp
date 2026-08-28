@@ -399,6 +399,30 @@ namespace MifBridge
 			return;
 		}
 
+		// EVERY shape generator in GeomFitUtils.cpp needs real triangle data to fit against, and every
+		// one of them gets it via StaticMesh->GetMeshDescription(0) - box dereferences it directly
+		// with NO null check (GenerateBoxAsSimpleCollision: "GetMeshDescription(0)->ComputeBoundingBox()"),
+		// and the sphere/capsule path hands the same possibly-null pointer straight into
+		// CalcBoundingSphere, which dereferences it on its first line. On a COOKED static mesh this
+		// bulk data is stripped and GetMeshDescription(0) returns null - found live 2026-08-28,
+		// EXCEPTION_ACCESS_VIOLATION reading address 0x50 inside UnrealEditor-MeshDescription.dll,
+		// same crash-class as the already-fixed duplicate_asset guard (MifBridgeAssetOps.cpp) but a
+		// genuinely different endpoint and a genuinely different missing-null-check, not the same bug
+		// twice. Checked directly against the actual failure condition (GetMeshDescription(0) == null)
+		// rather than inferred from PKG_Cooked, since that is the literal thing about to be
+		// dereferenced.
+		if (!Mesh->GetMeshDescription(0))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no MeshDescription (editor-only geometry data, stripped on cook), and "
+					 "every shape generator here needs it to fit a shape against - CRASHES the editor "
+					 "with EXCEPTION_ACCESS_VIOLATION otherwise (GeomFitUtils.cpp dereferences "
+					 "GetMeshDescription(0) with no null check). Refused rather than attempted. "
+					 "remove_collision still works (it only touches BodySetup, not geometry)."),
+				*JStr(In, TEXT("path"))));
+			return;
+		}
+
 		UBodySetup* BSBefore = Mesh->GetBodySetup();
 		const int32 Before = BSBefore ? BSBefore->AggGeom.GetElementCount() : 0;
 
