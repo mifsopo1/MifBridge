@@ -35,6 +35,18 @@
  * normal behaviour; a deadline needing manual cleanup is one that quietly runs for a week. The kill
  * switch is still checked first, so AUTOPILOT_OFF stops a night shift instantly.
  *
+ * THE ITERATION CAP DURING A NIGHT SHIFT DOES NOT STOP THE SHIFT (2026-08-28). It used to: hitting
+ * MAX_CONTINUES_NIGHT called allowStop(), which really ends the turn - no more blocking - and the run
+ * only continued again once something else re-invoked the session (Andre noticing and re-prompting,
+ * or the hourly mifbridge-autonomous-resume task). That is a real gap, not a graceful pause: Andre
+ * asked mid-week why a run had stopped, and the answer was this cap, silently ending a shift that was
+ * supposed to run unattended until its OWN deadline. The file's own comment already said the design
+ * intent - "a night shift is bounded by the CLOCK, so the iteration cap is only a backstop" - the code
+ * just did not honour it. Now: while a night shift is active, hitting the cap resets the counter and
+ * keeps blocking instead of calling allowStop(). The clock (NIGHT_UNTIL) and the kill switch
+ * (AUTOPILOT_OFF) remain the only two ways a night shift actually ends; the cap still applies, and
+ * still stops the loop for real, on an ordinary run with no deadline.
+ *
  * Exit 0 with {"decision":"block","reason":...} keeps the turn alive and feeds reason back as the
  * next instruction.
  */
@@ -157,12 +169,18 @@ if (open.length === 0 && nightMsLeft === 0) {
 
 // --- 3. iteration cap -----------------------------------------------------
 const cap = nightMsLeft > 0 ? MAX_CONTINUES_NIGHT : MAX_CONTINUES;
-const count = readCount() + 1;
+let count = readCount() + 1;
 if (count > cap) {
-  allowStop(
-    "Parity autopilot: hit the " + cap + "-continue cap with " + open.length +
-    " item(s) still open. Stopping so this cannot loop forever - reset by deleting " + COUNTER + "."
-  );
+  if (nightMsLeft > 0) {
+    // A night/week shift is bounded by NIGHT_UNTIL, not by this counter - see the comment above. Reset
+    // and keep going rather than really stopping; the clock and the kill switch are what end this.
+    count = 1;
+  } else {
+    allowStop(
+      "Parity autopilot: hit the " + cap + "-continue cap with " + open.length +
+      " item(s) still open. Stopping so this cannot loop forever - reset by deleting " + COUNTER + "."
+    );
+  }
 }
 try { fs.writeFileSync(COUNTER, String(count)); } catch (_) {}
 
