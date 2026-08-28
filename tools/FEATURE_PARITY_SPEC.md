@@ -2505,8 +2505,16 @@ cannot become one giant blocking item:
       the declaration, which is why an earlier single-line grep during the same sweep missed it and
       logged it as needing more digging. `GetInput(int32)` is identical and un-deprecated on both
       engines, so the fix needed no version gate at all.
-      All six verified via a real Build.bat on both engines - buildcheck.py: BUILD OK, warnings gone,
-      no 5.3 regression. Commits: 717272e, 11f7893, 27af774.
+      `ULandscapeLayerInfoObject::LayerName` (3 sites, UE_DEPRECATED 5.7, forward-compat only -
+      GetLayerName() just returns the same field) - one small MifLayerInfoName() helper, no getter
+      on 5.3 so it needed the gate.
+      All seven verified via a real Build.bat on both engines - buildcheck.py: BUILD OK, warnings
+      gone, no 5.3 regression. Commits: 717272e, 11f7893, 27af774, 4a9b7af.
+      The full-rebuild warning list is now exhausted - the two remaining entries are correctly out
+      of scope: `GetChildren` name-shadowing in MifBridgeBehaviorView.cpp/MifBridgeInheritView.cpp
+      is pre-existing on 5.3 too (confirmed against an earlier log from today), not a 5.7-specific
+      issue; `FInputKeyEventArgs` is the deliberate portability tradeoff already documented at its
+      call site (the UI scenario runner entry above).
 
 - [~] **Landscape edit-layer migration - an architecture decision, not a warning fix.** Found
       2026-08-28, deliberately NOT acted on - this is Andre's call, not something to redesign
