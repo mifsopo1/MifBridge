@@ -154,6 +154,28 @@ def scratch_fixtures():
     acts = M.call("list_level_actors", {"limit": 3}, timeout=60).get("actors") or []
     if acts:
         fx["actorPath"] = acts[0].get("path") or acts[0].get("actorPath")
+    # describe_water_body is addressed by a PLACED actor's path, not an asset - find_assets cannot
+    # supply one, and list_water_bodies on a fresh/unpopulated level correctly reports zero. Spawning
+    # one here is the only way to exercise it at all; found unexercised 2026-08-28 alongside the
+    # /Game/-only pathPrefix bug above.
+    wb = M.call("create_water_body", {"type": "River", "label": "PureWaterProbe_%d" % st,
+                                      "x": 900000, "y": 900000, "z": 900000,
+                                      "points": [{"x": 900000, "y": 900000, "z": 900000},
+                                                 {"x": 900100, "y": 900000, "z": 900000}]}, timeout=90)
+    if wb.get("actorPath"):
+        fx["waterBodyActor"] = wb["actorPath"]
+    # list_ik_rig/list_retarget_chain_mapping: this project has zero real IKRigDefinition/IKRetargeter
+    # assets (confirmed 2026-08-28), so EXTRA_CLASSES sampling alone can never feed them. A bare,
+    # unconfigured asset via create_asset is enough - both endpoints answer real (if empty) data
+    # against one rather than refusing, which is all read-purity needs.
+    ikr = M.call("create_asset", {"path": "/Game/_MifPure/IKR_%d" % st, "class": "IKRigDefinition"},
+                timeout=60)
+    if ikr.get("assetPath"):
+        fx["ikRig"] = ikr["assetPath"]
+    ikrt = M.call("create_asset", {"path": "/Game/_MifPure/IKRT_%d" % st, "class": "IKRetargeter"},
+                 timeout=60)
+    if ikrt.get("assetPath"):
+        fx["ikRetargeter"] = ikrt["assetPath"]
     return fx
 
 
@@ -187,9 +209,23 @@ def special_payloads(ep, acc, ctx, assets):
                            # by this sweep unless it is fed, and silence looks identical to purity.
                            ("NiagaraSystem", "describe_niagara_system", "path"),
                            ("NiagaraSystem", "list_niagara_emitters", "path"),
-                           ("LevelSequence", "describe_level_sequence", "path")):
+                           ("LevelSequence", "describe_level_sequence", "path"),
+                           # Added 2026-08-28, same reason and same shape - list_sequence_bindings
+                           # already had a real LevelSequence sampled (EXTRA_CLASSES), it was just
+                           # never wired to receive one. list_input_mappings/describe_metasound needed
+                           # their OWN classes added to EXTRA_CLASSES above as well as this wiring.
+                           ("LevelSequence", "list_sequence_bindings", "path"),
+                           ("InputMappingContext", "list_input_mappings", "path"),
+                           ("MetaSoundSource", "describe_metasound", "path")):
         if ep == name and assets.get(cls):
             out.append({key: assets[cls][0]})
+    if ep == "describe_gameplay_tag" and "tag" in acc:
+        # Addressed by TAG STRING, not an asset path - find_assets cannot supply one. A tag actually
+        # registered in this project answers the real branch; list_gameplay_tags is itself a read, so
+        # asking it here does not cost this sweep a mutating call.
+        tags = M.call("list_gameplay_tags", {"limit": 1}).get("tags") or []
+        if tags and tags[0].get("tag"):
+            out.append({"tag": tags[0]["tag"]})
     if ep == "describe_game_feature_plugin":
         # Addressed by plugin NAME, not asset path. MifBridge itself always exists and is deliberately
         # NOT a game feature, which exercises the answered-not-refused branch.
@@ -198,6 +234,14 @@ def special_payloads(ep, acc, ctx, assets):
         out.append({"path": fx["dataTable"], "rowName": "PureRow"})
     if fx.get("splineActor") and ep == "get_spline_points":
         out.append({"actorPath": fx["splineActor"]})
+    if fx.get("waterBodyActor") and ep == "describe_water_body":
+        out.append({"path": fx["waterBodyActor"]})
+    # Fixture-based fallback for list_ik_rig/list_retarget_chain_mapping: tried FIRST against a real
+    # sampled asset (the loop below), a scratch one only if this project has none of its own.
+    if fx.get("ikRig") and ep == "list_ik_rig":
+        out.append({"rig": fx["ikRig"]})
+    if fx.get("ikRetargeter") and ep == "list_retarget_chain_mapping":
+        out.append({"retargeter": fx["ikRetargeter"]})
     if ep == "get_cvar":
         out.append({"name": "r.ScreenPercentage"})
     g, bid = ctx.get("graphId"), ctx.get("blueprintId")
@@ -248,19 +292,30 @@ def dirty_set():
 # Classes the by-class table does not cover but that specific reads need. Without these,
 # describe_behavior_tree, list_blackboard_keys, list_ik_rig, list_retarget_chain_mapping and
 # list_niagara_user_parameters can never be exercised and are reported as "attempted only" forever.
+# InputMappingContext and MetaSoundSource added 2026-08-28 for list_input_mappings/describe_metasound,
+# found unexercised the same day as the /Game/-only pathPrefix bug above - both take a real asset of
+# their own class and neither had one sampled at all before this.
 EXTRA_CLASSES = ("BehaviorTree", "BlackboardData", "IKRigDefinition", "IKRetargeter",
-                 "NiagaraSystem", "LevelSequence")
+                 "NiagaraSystem", "LevelSequence", "InputMappingContext", "MetaSoundSource")
 
 
 def sample_assets():
+    # NO pathPrefix restriction. This used to hardcode "/Game/", which silently missed every real
+    # asset living under a DIFFERENT mount point - DDS2Casino content in this project, and whatever
+    # a different project's own content plugin is called. Found 2026-08-28: get_collision,
+    # list_input_mappings, list_material_parameters, list_sequence_bindings and list_sockets all had
+    # real, exercisable content sitting under /DDS2Casino/ the whole time and were reported
+    # "attempted only" purely because the sampler never looked there. A general UE5 tool cannot
+    # assume its own project's mount point name, so this now searches everywhere and lets the class
+    # filter do the narrowing.
     out = {}
     for cls in EXTRA_CLASSES:
-        r = M.call("find_assets", {"class": cls, "pathPrefix": "/Game/", "limit": 2})
+        r = M.call("find_assets", {"class": cls, "limit": 2})
         for a in (r.get("assets") or []):
             if a.get("path"):
                 out.setdefault(cls, []).append(a["path"])
     for cls, _ in BY_CLASS:
-        r = M.call("find_assets", {"class": cls, "pathPrefix": "/Game/", "limit": 2})
+        r = M.call("find_assets", {"class": cls, "limit": 2})
         for a in (r.get("assets") or []):
             if a.get("path"):
                 out.setdefault(cls, []).append(a["path"])
