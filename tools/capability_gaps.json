@@ -1,0 +1,368 @@
+[
+ {
+  "class": "Blueprint",
+  "assets": 500,
+  "writeEndpoints": []
+ },
+ {
+  "class": "StaticMesh",
+  "assets": 500,
+  "writeEndpoints": []
+ },
+ {
+  "class": "AnimSequence",
+  "assets": 500,
+  "writeEndpoints": []
+ },
+ {
+  "class": "Material",
+  "assets": 500,
+  "writeEndpoints": [
+   "add_material_expression",
+   "connect_material_expressions",
+   "connect_material_property",
+   "create_material",
+   "create_material_function",
+   "create_material_instance",
+   "delete_material_expression",
+   "set_material_parameter"
+  ]
+ },
+ {
+  "class": "MaterialInstanceConstant",
+  "assets": 500,
+  "writeEndpoints": [
+   "add_material_expression",
+   "connect_material_expressions",
+   "connect_material_property",
+   "create_material",
+   "create_material_function",
+   "create_material_instance",
+   "delete_material_expression",
+   "set_material_parameter"
+  ]
+ },
+ {
+  "class": "MaterialFunction",
+  "assets": 500,
+  "writeEndpoints": [
+   "add_material_expression",
+   "connect_material_expressions",
+   "connect_material_property",
+   "create_material",
+   "create_material_function",
+   "create_material_instance",
+   "delete_material_expression",
+   "set_material_parameter"
+  ]
+ },
+ {
+  "class": "Texture2D",
+  "assets": 500,
+  "writeEndpoints": [
+   "import_texture",
+   "set_texture_settings"
+  ]
+ },
+ {
+  "class": "SoundWave",
+  "assets": 500,
+  "writeEndpoints": []
+ },
+ {
+  "class": "World",
+  "assets": 500,
+  "writeEndpoints": []
+ },
+ {
+  "class": "DataTable",
+  "assets": 436,
+  "writeEndpoints": [
+   "create_datatable",
+   "delete_datatable_rows"
+  ]
+ },
+ {
+  "class": "SoundCue",
+  "assets": 354,
+  "writeEndpoints": []
+ },
+ {
+  "class": "UserDefinedEnum",
+  "assets": 289,
+  "writeEndpoints": []
+ },
+ {
+  "class": "SkeletalMesh",
+  "assets": 188,
+  "writeEndpoints": []
+ },
+ {
+  "class": "MetaSoundSource",
+  "assets": 185,
+  "writeEndpoints": []
+ },
+ {
+  "class": "DataAsset",
+  "assets": 180,
+  "writeEndpoints": []
+ },
+ {
+  "class": "PhysicsAsset",
+  "assets": 164,
+  "writeEndpoints": []
+ },
+ {
+  "class": "UserDefinedStruct",
+  "assets": 140,
+  "writeEndpoints": []
+ },
+ {
+  "class": "WidgetBlueprint",
+  "assets": 78,
+  "writeEndpoints": [
+   "add_create_widget",
+   "add_tree_widget",
+   "add_widget_animation",
+   "add_widget_animation_track",
+   "add_widget_binding",
+   "remove_tree_widget",
+   "remove_widget_animation",
+   "remove_widget_animation_track",
+   "remove_widget_binding",
+   "rename_tree_widget",
+   "set_widget_animation_keys",
+   "set_widget_animation_range",
+   "set_widget_is_variable"
+  ]
+ },
+ {
+  "class": "PrimaryDataAsset",
+  "assets": 77,
+  "writeEndpoints": []
+ },
+ {
+  "class": "InputAction",
+  "assets": 68,
+  "writeEndpoints": []
+ },
+ {
+  "class": "NiagaraEmitter",
+  "assets": 50,
+  "writeEndpoints": [
+   "set_niagara_component_parameter"
+  ]
+ },
+ {
+  "class": "CurveFloat",
+  "assets": 47,
+  "writeEndpoints": []
+ },
+ {
+  "class": "AnimMontage",
+  "assets": 44,
+  "writeEndpoints": []
+ },
+ {
+  "class": "TextureCube",
+  "assets": 44,
+  "writeEndpoints": [
+   "import_texture",
+   "set_texture_settings"
+  ]
+ },
+ {
+  "class": "FoliageType_InstancedStaticMesh",
+  "assets": 42,
+  "writeEndpoints": [
+   "add_foliage_instances"
+  ]
+ },
+ {
+  "class": "NiagaraSystem",
+  "assets": 38,
+  "writeEndpoints": [
+   "set_niagara_component_parameter"
+  ]
+ },
+ {
+  "class": "SoundClass",
+  "assets": 33,
+  "writeEndpoints": []
+ },
+ {
+  "class": "TextureRenderTarget2D",
+  "assets": 29,
+  "writeEndpoints": [
+   "import_texture",
+   "set_texture_settings"
+  ]
+ },
+ {
+  "class": "SoundAttenuation",
+  "assets": 23,
+  "writeEndpoints": []
+ },
+ {
+  "class": "Skeleton",
+  "assets": 21,
+  "writeEndpoints": []
+ },
+ {
+  "class": "MaterialParameterCollection",
+  "assets": 19,
+  "writeEndpoints": [
+   "add_material_expression",
+   "connect_material_expressions",
+   "connect_material_property",
+   "create_material",
+   "create_material_function",
+   "create_material_instance",
+   "delete_material_expression",
+   "set_material_parameter"
+  ]
+ },
+ {
+  "class": "ParticleSystem",
+  "assets": 19,
+  "writeEndpoints": []
+ },
+ {
+  "class": "BehaviorTree",
+  "assets": 17,
+  "writeEndpoints": []
+ },
+ {
+  "class": "BlendSpace",
+  "assets": 16,
+  "writeEndpoints": [
+   "set_blendspace_samples"
+  ]
+ },
+ {
+  "class": "PoseAsset",
+  "assets": 14,
+  "writeEndpoints": []
+ },
+ {
+  "class": "CurveLinearColor",
+  "assets": 13,
+  "writeEndpoints": []
+ },
+ {
+  "class": "PCGGraph",
+  "assets": 10,
+  "writeEndpoints": []
+ },
+ {
+  "class": "AnimBlueprint",
+  "assets": 9,
+  "writeEndpoints": [
+   "add_anim_node",
+   "add_widget_animation",
+   "add_widget_animation_track",
+   "remove_widget_animation",
+   "remove_widget_animation_track",
+   "set_widget_animation_keys",
+   "set_widget_animation_range"
+  ]
+ },
+ {
+  "class": "SoundMix",
+  "assets": 9,
+  "writeEndpoints": []
+ },
+ {
+  "class": "LandscapeGrassType",
+  "assets": 7,
+  "writeEndpoints": [
+   "create_landscape"
+  ]
+ },
+ {
+  "class": "InputMappingContext",
+  "assets": 7,
+  "writeEndpoints": []
+ },
+ {
+  "class": "LevelSequence",
+  "assets": 4,
+  "writeEndpoints": []
+ },
+ {
+  "class": "BlackboardData",
+  "assets": 4,
+  "writeEndpoints": [
+   "add_blackboard_key"
+  ]
+ },
+ {
+  "class": "Landscape",
+  "assets": 3,
+  "writeEndpoints": [
+   "create_landscape"
+  ]
+ },
+ {
+  "class": "ControlRigBlueprint",
+  "assets": 2,
+  "writeEndpoints": []
+ },
+ {
+  "class": "AnimComposite",
+  "assets": 2,
+  "writeEndpoints": []
+ },
+ {
+  "class": "CurveVector",
+  "assets": 1,
+  "writeEndpoints": []
+ },
+ {
+  "class": "NavigationData",
+  "assets": 1,
+  "writeEndpoints": []
+ },
+ {
+  "class": "SubsurfaceProfile",
+  "assets": 1,
+  "writeEndpoints": []
+ },
+ {
+  "class": "AimOffsetBlendSpace",
+  "assets": 0,
+  "writeEndpoints": []
+ },
+ {
+  "class": "IKRigDefinition",
+  "assets": 0,
+  "writeEndpoints": []
+ },
+ {
+  "class": "IKRetargeter",
+  "assets": 0,
+  "writeEndpoints": []
+ },
+ {
+  "class": "CurveTable",
+  "assets": 0,
+  "writeEndpoints": []
+ },
+ {
+  "class": "AIController",
+  "assets": 0,
+  "writeEndpoints": []
+ },
+ {
+  "class": "GameplayEffect",
+  "assets": 0,
+  "writeEndpoints": [
+   "add_gameplay_effect_modifier"
+  ]
+ },
+ {
+  "class": "AttributeSet",
+  "assets": 0,
+  "writeEndpoints": []
+ }
+]
