@@ -1314,7 +1314,18 @@ engine has no such class registered in this build, which is as definitive as it 
       the end of this file ("GeometryScripting - the WRITE half is real..."). The bAllowCPUAccess
       finding above was correct and still stands for reading EXISTING cooked meshes; it just turned out
       not to cover generating a brand-new one, which needed no module beyond what was already linked.
-      LevelSnapshots, LiveLink, MassEntity, ModularGameplay are still accurately declined.
+      SECOND UPDATE, same night: LevelSnapshots ALSO no longer declined, and this correction matters
+      more than GeometryScripting's - this one was declined for the WRONG REASON, not a reason that
+      later turned out incomplete. "Zero plan or presence in either project" is exactly the mistake
+      autopilot-continue.js's own comment block warns against by name: MifBridge is a general UE5 tool,
+      and neither test project needing something yet is not the same as it being worthless to every UE5
+      user. Capture/restore of level state needs no DDS2/Curfew-specific content to be valuable OR to be
+      tested - it operates on whatever level is open, verified here with a scratch actor exactly the
+      way GAS/MVVM/MetaHuman were verified against fixtures instead of real project content. See the
+      DONE entry near the end of this file. LiveLink, MassEntity, ModularGameplay remain declined - but
+      on re-examination each of those has a SPECIFIC reason beyond "no test project uses it" (LiveLink
+      needs an external data source; MassEntity and ModularGameplay were not re-examined this pass and
+      should not be assumed correctly declined just because they were not the one caught tonight).
 - [x] **Metasound - the audio read half.** DONE 2026-08-27. `describe_metasound`, both engines.
       VERIFIED AGAINST REAL CONTENT, which is why it was chosen: MS_OneArmedBandit reports 10 inputs
       (PullLever/Trigger, RollersRemaining/Int32, Reward/Float ...), 2 outputs, 97 nodes, 111 edges,
@@ -3386,3 +3397,50 @@ cannot become one giant blocking item:
       MediaPlayer's actual playback state (IsPlaying, current time, opened track list) only exists once
       something has called OpenSource/Play at runtime - static describe cannot see it, and this project
       has a standing rule against starting PIE to look.
+- [x] **LevelSnapshots - reopened and built the same night it was wrongly declined.** DONE 2026-08-28.
+      The earlier decline this same night ("GeometryScripting, LevelSnapshots, LiveLink, MassEntity,
+      ModularGameplay... zero plan or presence in either project") was corrected after re-reading
+      autopilot-continue.js in full at Andre's direct prompt ("your supposed to be doing everything in
+      depth. way farther than just dds2, check your stop hooks"). That file's own comment block says it
+      explicitly: MifBridge is a GENERAL UE5 tool, DDS2 and Curfew are the two it is TESTED on "not the
+      limit of who it is for," and a decline reasoned from "neither test project needs this yet" is the
+      exact mistake the file was rewritten to stop happening. This is a real, substantive correction to
+      how this session was triaging work, not a minor addendum - see the UPDATE block on the original
+      decline entry above.
+      Three endpoints, MifBridgeLevelSnapshots.cpp (new file), MIF_WITH_LEVELSNAPSHOTS-guarded (the
+      module dependency was already linked from the 2026-08-26 breadth batch - this is the first file
+      to use it):
+        create_level_snapshot - captures the CURRENT editor world's full actor/property state into a
+          new, unsaved LevelSnapshot asset (path must not already exist - same overwrite guard as
+          create_procedural_mesh, same underlying disk-or-loaded-object check).
+        describe_level_snapshot - read-only summary (numSavedActors, mapPath, captureTime,
+          snapshotName, description), independently re-loaded rather than trusted from memory.
+        apply_level_snapshot - restores every captured property back onto the CURRENT editor world.
+          Refuses if the snapshot's own recorded mapPath does not match the level currently open - a
+          safety check the ENGINE's own ApplySnapshotToWorld does not perform itself (its .cpp
+          implementation only null-checks TargetWorld and Snapshot, no map validation at all; the
+          lower-level ULevelSnapshot::ApplySnapshotToWorld's own header comment says outright "we
+          assume the world matches").
+      BUILT AGAINST A FIXTURE, same discipline as GAS/MVVM/MetaHuman when neither project had real
+      content yet - not declined for lacking it. tools/test_levelsnapshots.py spawns a scratch actor at
+      the origin, snapshots the level, moves the actor to (500,500,500), INDEPENDENTLY reads back the
+      moved position via list_level_actors (not trusted from set_actor_transform's own response),
+      applies the snapshot, then independently reads the position AGAIN and confirms it is back at the
+      origin. This is a real, verified rollback - not ok:true trusted on faith. 20/20 checks, both
+      engines rebuilt clean via Build.bat + buildcheck.py.
+      A REAL API CHOICE MADE DELIBERATELY, not defaulted into: the engine's own
+      TakeLevelSnapshot_Internal helper creates its ULevelSnapshot with RF_NoFlags, which would not
+      reliably survive as a later-findable asset the way every other create_* endpoint here needs.
+      Called ULevelSnapshot's own public SetSnapshotName/SetSnapshotDescription/SnapshotWorld directly
+      on a NewObject built with RF_Public | RF_Standalone | RF_Transactional instead, matching
+      H_create_datatable's established template rather than the Blueprint-facing convenience wrapper.
+      DECLINED for this batch, verified by reading the handler's control flow rather than reproduced
+      live: the map-mismatch refusal (applying a snapshot to a different level than it was captured in)
+      would need load_level to trigger for real, and this project's own standing rule already treats
+      load_level as too state-destroying to exercise casually for a single refusal-path test - same
+      reasoning as the existing load_level spec entry.
+      parity_check.py clean (351 endpoints, 339 MIF_BIND, no drift - PLUGIN IDLE down to 5:
+      ChaosVehiclesPlugin, LiveLink, MassEntity, ModelViewViewModel, ModularGameplay).
+      HONEST FLAG FOR NEXT TIME: MassEntity and ModularGameplay were NOT re-examined this pass just
+      because LevelSnapshots was the one caught - they should not be assumed correctly declined without
+      the same re-check LevelSnapshots just got.

@@ -408,6 +408,9 @@ namespace MifBridge
 			MIF_BIND(describe_game_feature_plugin);
 			MIF_BIND(create_procedural_mesh);
 			MIF_BIND(describe_dynamic_mesh);
+			MIF_BIND(create_level_snapshot);
+			MIF_BIND(describe_level_snapshot);
+			MIF_BIND(apply_level_snapshot);
 			MIF_BIND(set_data_layer_visibility);
 			MIF_BIND(set_data_layer_loaded_in_editor);
 			MIF_BIND(create_data_layer);

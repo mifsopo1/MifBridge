@@ -1568,6 +1568,14 @@ namespace MifBridge
 	MIF_DECL(create_procedural_mesh);
 	MIF_DECL(describe_dynamic_mesh);
 
+	// LEVEL SNAPSHOTS (MifBridgeLevelSnapshots.cpp). Plugin-guarded (MIF_WITH_LEVELSNAPSHOTS).
+	// Capture/restore editor world state - reopened 2026-08-28 after being wrongly declined for having
+	// no DDS2/Curfew-specific use yet, which this project's own autopilot hook calls out as an invalid
+	// reason (MifBridge is a general UE5 tool, not limited to its two test projects).
+	MIF_DECL(create_level_snapshot);
+	MIF_DECL(describe_level_snapshot);
+	MIF_DECL(apply_level_snapshot);
+
 	// DATA LAYERS - the WRITE half (MifBridgeStreaming.cpp). Unblocked 2026-08-26 when Andre
 	// authorised the DataLayerEditor dependency. SetDataLayerVisibility returns VOID, so both of
 	// these read the state back and report verified separately from changed.

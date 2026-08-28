@@ -3338,6 +3338,24 @@ def create_procedural_mesh(path: str, shape: str,
 
 
 @mcp.tool()
+def create_level_snapshot(path: str, name: str = None, description: str = None) -> dict:
+    "Capture the CURRENT editor world's state (every actor's properties) into a new LevelSnapshot asset at `path` (must not already exist). This is a rollback point - use apply_level_snapshot to restore it later. name defaults to the asset name; description is optional. Returns numSavedActors, mapPath, captureTime. Refuses on an engine build with no LevelSnapshots plugin. Nothing is saved to disk - like every other create_* endpoint, it lives only in the editor's in-memory package."
+    return _post("create_level_snapshot", path=path, name=name, description=description)
+
+
+@mcp.tool()
+def describe_level_snapshot(path: str) -> dict:
+    "Read-only summary of an existing LevelSnapshot asset: numSavedActors, mapPath (the level it was captured in), captureTime, snapshotName, description."
+    return _post("describe_level_snapshot", path=path)
+
+
+@mcp.tool()
+def apply_level_snapshot(path: str) -> dict:
+    "Restore every captured property from a LevelSnapshot asset back onto the CURRENT editor world - the actual rollback. Refuses if the snapshot's own recorded mapPath does not match the level currently open, since applying a snapshot to a different level than it was taken in is undefined behavior the engine itself does not guard against."
+    return _post("apply_level_snapshot", path=path)
+
+
+@mcp.tool()
 def describe_dynamic_mesh(path: str, lod: int = None) -> dict:
     "Read-only geometry stats for a StaticMesh asset via GeometryScript: vertexCount, triangleCount, isClosed, and bounds, converted from the given LOD (default 0). Nothing is written to the source asset. A COOKED mesh's editor-only MeshDescription may be stripped, in which case this reports failure with debugMessages explaining why rather than guessing at zeros."
     return _post("describe_dynamic_mesh", path=path, lod=lod)

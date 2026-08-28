@@ -135,7 +135,12 @@ roadmap two days after everything on it had already landed:
    engines - see the spec's dated entries. `MediaExt` checked 2026-08-28 and closed with ZERO new
    code, same shape as Vehicles: DDS2's real (if small) Media setup - a MediaPlayer, FileMediaSource,
    MediaPlaylist, 4 MediaTexture assets - is already fully readable through `list_object_properties`.
-   Still genuinely idle and declined pending an actual ask: LevelSnapshots, LiveLink, MassEntity,
+   `LevelSnapshots` landed 2026-08-28 too, after being wrongly declined earlier the same night for
+   having "no plan or presence in either project" - a general UE5 capability does not need one, and
+   `tools/test_levelsnapshots.py` (20/20) verifies it against a scratch actor rather than real project
+   content, the same fixture-testing pattern GAS/MVVM/MetaHuman already used. See the spec's dated
+   entry - it explains the correction, not just the feature. Still genuinely idle and declined pending
+   an actual ask, though NOT re-examined with the same rigor this pass: LiveLink, MassEntity,
    ModularGameplay.
 
 Original suggested order preserved below for the reasoning; do not re-plan items 1-4 from it.
