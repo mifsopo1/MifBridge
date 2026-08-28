@@ -2571,3 +2571,43 @@ cannot become one giant blocking item:
       is already listening on 8792 - it has no way to know the difference between a freshly-started
       one and a days-old one. Blender suites should be run through run_blender_suites.py specifically
       (which starts fresh and owns the whole lifecycle), not swept in via run_all_suites.py's glob.
+
+- [x] **find_tools - keyword search over this MCP server's own tool registry.** DONE 2026-08-28,
+      Andre's own ask: "the actual tool usage, making it so when llms use it, they're smarter with it,
+      organized easier to find what they need." 366 @mcp.tool wrappers in server.py had no way to
+      search themselves - an LLM driving MifBridge either already knew the endpoint name or scanned
+      the whole flat list by eye. self_audit lists every endpoint NAME but gives no summary for a
+      built-in one (the summary field only exists for externally-registered endpoints); describe_endpoint
+      needs a name up front, which is the exact thing being searched for.
+      find_tools(keyword) reads mcp._tool_manager.list_tools() LOCALLY - no bridge call, no editor
+      needed, works even before the bridge is reachable. Ranks NAME hits before description-only hits
+      (a tool named for what you asked is almost always more relevant than one that mentions it in
+      passing), and trims each hit's description to a ~200-char whitespace-collapsed summary rather
+      than dumping the full docstring - some of which run to 1000+ characters of hard-won caveats that
+      are exactly right for a human reading source and exactly wrong for a "which tool is this" scan.
+      Reports `matched` (the true total) alongside `count` (what was returned) so truncation is never
+      silent.
+      This is the PYTHON/MCP layer's OWN tool surface, not the C++ endpoint surface self_audit and
+      describe_endpoint report - a deliberate distinction, stated in its own docstring, since those two
+      report what the UNREAL-side handler accepts and this reports what the MCP CLIENT is actually
+      choosing between.
+      TESTED against server.py's real ~366 registered tools (tools/test_find_tools.py, T780-T786): name
+      ranking, truncation honesty, whitespace collapse, empty-keyword refusal, no-match still returning
+      an explained ok:true, and find_tools excluding itself from its own results. Needed a RICHER
+      FakeMCP than test_mcp_post_errors.py's - that suite's stub is a bare `lambda fn: fn` passthrough
+      with nothing to search, so this suite's stub actually records what @mcp.tool() decorates.
+      parity_check.py passes unchanged: find_tools makes no _post() call, so it sits in the same
+      unaccounted-for-by-design bucket as the existing mif_* composite tools, not a drift.
+      NOT YET DONE, and worth Andre's steer rather than my own guess: the bigger lever behind the same
+      ask is the ~55-70K tokens of docstring text loaded into EVERY session just by connecting to this
+      MCP server (measured: server.py is ~99K tokens of source, and the docstrings ARE the tool
+      descriptions FastMCP sends over the wire). find_tools helps an LLM's OWN reasoning find the right
+      call faster; it does not reduce that upfront cost, because MCP's tools/list response has no
+      concept of "deferred" the way this coding harness's own ToolSearch pattern does for ITS tools.
+      Shrinking that would mean either (a) trimming ~366 docstrings down to something terser, which
+      risks losing exactly the hard-won "measured across 40 DDS2 meshes" caveats that took real
+      investigation to establish and that Andre's own standards want kept, or (b) restructuring the MCP
+      surface toward a small core + generic dispatcher + search, mirroring ToolSearch, which changes the
+      integration contract for every existing consumer and is a project on its own. Flagging both rather
+      than picking one and running, since this is the kind of consequential, hard-to-cheaply-reverse call
+      that is Andre's to make.
