@@ -2922,3 +2922,29 @@ cannot become one giant blocking item:
       coverage_gaps.json refreshed: 92 -> 84 uncovered. Across all four batches this session: 29
       previously-untested endpoints closed plus one two-part real bug found and fixed
       (blueprint_inheritance_tree's nativeRoots).
+
+- [x] **Closed 9 more node-adding endpoints, and fixed vacuous checks in the process.** DONE
+      2026-08-28. coverage_gaps.py's remaining list included ~18 add_* blueprint-node endpoints.
+      Checking test_node_spawns.py FIRST found three (add_get_array_item, add_make_map, add_self)
+      were ALREADY covered by its own registry-driven T330 sweep - coverage_gaps.py's static
+      string-match cannot see an endpoint name that is only ever produced by iterating
+      describe_endpoint's live registry, never typed literally in the test source. Confirmed by
+      actually running the suite and reading its "driving: ..." line rather than assuming.
+      Added T334 for the genuinely missing ones needing a real argument: add_class_cast,
+      add_format_text, add_switch_int/string/enum, add_get_subsystem, add_literal,
+      add_enhanced_input_action (against a real InputAction asset - DDS2 has real Enhanced Input
+      content). All placed on the SAME scratch blueprint T330-T333 already set up; every node
+      individually resolvable via get_node afterward, and the graph still compiles with all tiers'
+      nodes present together.
+      Added T335 for add_blackboard_key on its own scratch BlackboardData - which hit the exact wall
+      remove_node's existing test already documents: mifaudit.py's FORBIDDEN_KEYS strips `confirm`
+      from every call this harness makes, so a confirm-gated endpoint's success path is
+      structurally unreachable here. For add_blackboard_key specifically that ALSO makes the
+      duplicate-name and bad-type checks unreachable, since the handler tests confirm FIRST - an
+      earlier draft of this test asserted "duplicate refused" and "bad type refused" as proof of
+      those specific checks, when both were actually re-triggering the SAME confirm refusal for an
+      unrelated reason. Caught only by reading the literal error text under a passing check, not by
+      the check's own name - a true assertion proving the wrong thing looks identical to a correct
+      one until you read what it actually verified. Fixed to test only what this harness can reach,
+      named for what it actually proves.
+      66/66 PASS. coverage_gaps.json refreshed: 84 -> 75.
