@@ -1423,3 +1423,163 @@ across a **collection** cuts 202 to **8**, of which **3** were worth strengtheni
 span gatherer ran on paren depth alone, so it swallowed the following `check(` and matched it twice
 per rule. Four findings for one problem is exactly the noise that gets a tool ignored. It now stops
 at the next `check(`, and one bad assertion reports once per rule it actually breaks.
+
+## `chainCount:0` on every IK Retargeter endpoint, on every UE 5.6+ engine, silently (2026-08-28)
+
+**Symptom.** `set_retarget_rigs`, `auto_map_retarget_chains`, `set_retarget_chain_mapping` and
+`list_retarget_chain_mapping` all reported `chainCount:0` on a UE 5.7 probe - not an error, `ok:true`,
+just an empty mapping array where two real chains should have been. Compiled clean. Ran clean. The
+kind of wrong that never trips a build.
+
+**Root cause, and it took three tries to find all of it,** because the engine's own header comments
+actively pointed the wrong way twice.
+
+*First bug.* `UIKRetargeterController::SetIKRig()`'s reinit loop only fires when
+`SourceOrTarget == Source` ("we do NOT auto-update the target IK rig as this may be overridden" -
+its own comment), and even then resolves the target through `GetTargetIKRigForOp()`, which only ever
+returns a per-op CUSTOM override and never falls back to the retargeter's global target. A
+default-created retargeter's ops never get a working chain mapping through `SetIKRig` alone, on
+either side. Fixed by also calling `AssignIKRigToAllOps()` - a separate, public, documented API whose
+own comment says exactly what was needed ("Force all ops to use the assigned IK Rig and update their
+chain mappings") but which `SetIKRig` never delegates to.
+
+*Second bug, found only by reading the .cpp, not the header:*
+
+```cpp
+const FRetargetChainMapping* UIKRetargeterController::GetChainMapping(const FName InOpName) const
+{
+    for (int32 OpIndex = 0; OpIndex < GetNumRetargetOps(); ++OpIndex)
+    {
+        FIKRetargetOpBase* Op = GetRetargetOpByIndex(OpIndex);
+        if (InOpName != NAME_None && Op->GetName() != InOpName) { continue; }
+        return Op->GetChainMapping();   // returns whatever op 0 has, null or not
+    }
+    return nullptr;
+}
+```
+
+The header comment says this "returns the first chain mapping it finds" when called with `NAME_None`.
+The code does not skip nulls - passing `NAME_None` makes the `continue` condition false on iteration
+one, so it unconditionally returns op index 0's mapping. Op 0 in `AddDefaultOps()`'s fixed order is
+always "Pelvis Motion", which never owns a chain mapping. So this overload returns null on **every**
+normally-configured retargeter, not "the first real one" - reproduced live: a retargeter whose "FK
+Chains" op (index 1) held a fully populated, correct `ChainMap` (confirmed by dumping the raw
+`RetargetOps` array via `get_property`) still read back `chainCount:0` through this call. Fixed by
+walking the ops directly and taking the first non-null mapping - the behaviour the comment describes,
+just not what the function does.
+
+*Third bug, found live while verifying the first two:* `FName::ToString()` on `NAME_None` renders the
+literal string `"None"`, not empty. `bMapped = !SourceName.IsEmpty()` therefore reported `mapped:true`
+for a chain an exact-mode auto-map had genuinely left unmapped. The 5.3 read path carried the identical
+bug - just never triggered, because nothing had run `auto_map_retarget_chains` in exact mode against a
+genuinely-unmappable chain on 5.3 before. Fixed by checking `IsNone()` before stringifying, on both
+branches.
+
+**Fix.** All three, in `MifBridgeIKRig.cpp`: call `AssignIKRigToAllOps()` after `SetIKRig()`; read chain
+mappings by walking `GetRetargetOpByIndex()` instead of the ambiguous convenience overload; treat
+`NAME_None` as empty before it becomes a JSON string.
+
+**Verified live**, not just compiled: built a real cross-rig pair on the standard UE5 mannequin
+skeleton - `LeftArm`/`LeftArm` scores 1.0, `RightLeg`/`LeftArm` (no leg chain existed to compete)
+scores 0.5333 and is flagged low-confidence, and exact mode correctly reports the same chain
+`mapped:false` once nothing matches.
+
+### The general rule
+
+A UE_DEPRECATED warning names the symptom (this will stop compiling), not necessarily the actual
+present-day behaviour. `GetChainMapping(NAME_None)`'s bug had nothing to do with the deprecation that
+led to the investigation - it was a pre-existing, undeprecated bug in a "convenience" overload that
+just happened to be adjacent to the code this session was migrating. Reading the .cpp body of anything
+being touched, not trusting the header's doc comment, is what found it. The header would have shipped
+the fix broken.
+
+## `FStaticMeshBatchRelevance::LODIndex` reported garbage on every UE 5.4+ engine (2026-08-28)
+
+**Symptom.** `diagnose_landscape_draws`'s `"lod"` field, on any engine 5.4 or newer including 5.7.
+Nothing crashed, nothing refused - the field just held a number that did not mean what the field name
+said it meant, on a diagnostic endpoint whose entire purpose is explaining why a landscape does or
+does not draw.
+
+**Root cause.** Found systematically, not by suspicion: a full `-Rebuild` of the whole module (not an
+incremental build, which only recompiles touched files and had already let two other fixes slip past
+unnoticed for a build cycle) surfaced every remaining deprecation warning in one pass. Most of them
+were the unremarkable "will be made private, use the getter" shape. This one's wording was different:
+
+```cpp
+UE_DEPRECATED(5.4, "Public LODIndex member is deprecated and doesn't contain valid data anymore! "
+                    "Use GetLODIndex() function instead.")
+int8 LODIndex : 1;
+```
+
+"Doesn't contain valid data anymore" is not a forward-compatibility notice, it is a present-tense
+statement that the field is already wrong. `GetLODIndex()` reads a different, correctly-packed
+member (`UnsignedLODIndex`) the deprecated field no longer tracks. On 5.3 the field is a plain, valid
+`int8` with no deprecation at all - so the bug is specific to the exact engine range (5.4, 5.5, 5.6,
+5.7) this plugin actually targets on its newer side.
+
+**Fix.** `GetLODIndex()` on 5.4+, the field itself on 5.3 (the only option there, and correct there).
+
+**Verified against real content:** `diagnose_landscape_draws` against 256 real DDS2 landscape
+components, post-fix, on the real editor - reports a clean `lod: 0,1,2,3,4,5` sequence per component
+(6 static meshes, 6 LODs, correctly ordered by decreasing screen-size threshold), which is exactly
+what the six real LODs of a landscape component should look like, and which the deprecated field could
+not have produced by construction once it stopped being written to.
+
+### The general rule
+
+Most `UE_DEPRECATED` messages in this codebase's experience are "this will stop compiling on a future
+engine" - true, but not urgent, and safe to batch with the other renames in the same sweep. This one
+read the same at a glance. The tell is in the adverb: "doesn't work anymore" is a claim about NOW,
+not about SOON. Every deprecation message in a sweep like this is worth reading in full, not
+pattern-matched against the eleven other ones that turned out to be cosmetic.
+
+## A stale, day-old Blender process made a passing test suite look broken (2026-08-28)
+
+**Symptom.** `test_blender_mesh.py`'s T767 ("a closed mesh has no boundary to skirt, and it says so")
+failed during a full regression sweep run to confirm today's UE-side fixes hadn't broken anything else.
+`extrude_skirt(boundaryOnly=True)` against what the test believed was a fresh factory cube returned
+`ok:true` instead of the expected refusal - meaning the mesh it ran against already had real boundary
+edges, i.e. was not the closed cube the test's whole design assumes.
+
+**Root cause.** `run_all_suites.py` globs every `tools/test_*.py` and runs it against whatever answers
+on the Unreal bridge port - it has no Blender lifecycle management of any kind (confirmed by reading
+`run_blender_suites.py`'s own docstring: "nothing in that runner knows how to start a Blender"). When
+the sweep reached `test_blender_mesh.py`, it silently reused whatever was already listening on
+Blender's port. `ping`'s response named the PID; `Get-Process -Id <that PID>` named its `StartTime`:
+2026-08-27 22:04:01 - over four and a half hours, and one calendar day, before the sweep that hit
+T767. `test_blender_mesh.py`'s own docstring says it is "SELF-CONTAINED ON PURPOSE" by exporting the
+factory-startup Cube once and reusing that export all suite long - a guarantee that instance had long
+since stopped satisfying, from whatever unrelated activity had run against it across the hours in
+between.
+
+**Confirmed, not just theorised - the first two attempts at confirming it made the diagnosis take
+much longer than it should have.** Two different runner scripts (`run_all_suites.py`, then
+`run_blender_suites.py --only 4.4`) each appeared to hang for several minutes producing zero output,
+and were killed as apparently stuck. Neither was actually stuck: Python fully buffers stdout when it
+is not attached to a terminal, so a script doing real work - including, the second time, genuinely
+cold-starting a whole copy of Blender - writes nothing to a redirected log until it exits or the buffer
+fills. Killing both processes early lost the confirmation runs entirely and cost real time before the
+buffering explanation was recognised. The diagnosis that actually landed came from bypassing both
+wrapper scripts: killing the stale instance by hand, launching Blender 4.4 directly with the exact
+`--background --factory-startup` invocation `run_blender_suites.py` uses, and running
+`test_blender_mesh.py` against it directly. PASS 78, FAIL 0 - every check, including T767.
+
+**Fix.** None needed to MifBridge or to the test. The finding is entirely about which Blender instance
+a sweep talks to.
+
+### The general rule, twice
+
+A test-running wrapper that does not manage the lifecycle of what it is testing against will silently
+adopt whatever state that thing is already in - and a long-lived headless process is exactly the kind
+of state that accumulates invisibly across hours nobody was watching it. `run_all_suites.py` including
+`test_blender_*.py` in its glob was itself a latent trap: it runs, it reports real PASS/FAIL numbers,
+and nothing about a green or red result distinguishes "tested against what the suite assumes" from
+"tested against four hours of somebody else's leftovers." Blender suites need `run_blender_suites.py`
+specifically, which owns Blender's whole lifecycle end to end, not an ad-hoc sweep that happens to find
+a port already answering.
+
+Second: a background process that produces no output is not evidence it is stuck. Redirected stdout
+buffering looks identical to a hang for as long as you are only watching the log file. Checking whether
+the process is still alive, and whether the thing it should be doing had visibly happened (here, a
+fresh PID with a fresh StartTime once Blender actually launched), is the real signal; an empty log
+file on its own is not.
