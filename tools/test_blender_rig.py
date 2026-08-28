@@ -1,5 +1,6 @@
 """ops_rig.py - list_bones / list_shape_keys / list_vertex_groups, the character-rigging reads
-the Blender addon had NONE of before this file.
+the Blender addon had NONE of before this file - plus object_info's new armatureModifier field
+(ops_common.py), which closes the last gap: knowing which armature actually deforms a mesh.
 
 WHY THIS EXISTS. Andre's ask for full depth on the Blender side surfaced this while auditing
 ops_common.object_info(): it reports transform/bounds/materials/UVs for a MESH and NOTHING for
@@ -114,6 +115,8 @@ mesh_obj.shape_key_add(name="Basis")
 sk = mesh_obj.shape_key_add(name="Smile")
 sk.slider_min = 0.0
 sk.slider_max = 1.0
+mod = mesh_obj.modifiers.new(name="Armature", type='ARMATURE')
+mod.object = arm_obj
 """
 
 
@@ -159,6 +162,10 @@ def main():
     check("T811 and count/array agree at zero with a note",
           r.get("count") == 0 and r.get("vertexGroups") == [] and bool(r.get("note")), r)
 
+    r = call("object_info", object="Cube")
+    check("T811 object_info on an unrigged mesh reports armatureModifier:null",
+          r.get("ok") is True and (r.get("object") or {}).get("armatureModifier") is None, r)
+
     # ------------------------------------------------------------------ T812 the populated path
     print("")
     print("=== T812: the POPULATED path - needs run_python (off by default) ===")
@@ -168,9 +175,11 @@ def main():
               "nothing here builds real rig content to adopt instead)", True)
         UNPROVEN.append("the POPULATED path for all three ops - armature-space bone positions "
                         "and parent linkage, a shape key's basis/relative pairing, a vertex "
-                        "group's weighted vertex count. Needs run_python enabled (Edit > "
-                        "Preferences > Add-ons > MifBlender > 'Allow run_python') to build test "
-                        "content; this suite does not flip that preference itself.")
+                        "group's weighted vertex count - and object_info's armatureModifier "
+                        "field, which needs a real Armature modifier to report anything but "
+                        "null. Needs run_python enabled (Edit > Preferences > Add-ons > "
+                        "MifBlender > 'Allow run_python') to build test content; this suite "
+                        "does not flip that preference itself.")
     else:
         r = call("run_python", code=RIG_CODE)
         check("T812 building the test rig succeeded", r.get("ok") is not False, r.get("error"))
@@ -215,6 +224,21 @@ def main():
                   groups["root"]["weightedVertexCount"] == 4, groups["root"])
             check("T812 influencesGeometry is true", groups["root"]["influencesGeometry"] is True,
                   groups["root"])
+
+        # ------------------------------------------------------------- T813 mesh<->armature linkage
+        # object_info's own new field (ops_common.py), not ops_rig.py - the pairing that closes the
+        # loop between "what bones does this armature have" and "which armature deforms this mesh".
+        print("")
+        print("=== T813: object_info reports which armature deforms the mesh ===")
+        oi = call("object_info", object="MifTestMesh")
+        check("T813 object_info succeeds", oi.get("ok") is True, json.dumps(oi)[:200])
+        obj_info = oi.get("object") or {}
+        check("T813 armatureModifier names the real armature",
+              obj_info.get("armatureModifier") == "MifTestArmature", obj_info.get("armatureModifier"))
+
+        oi2 = call("object_info", object="Camera")
+        check("T813 a non-mesh object has no armatureModifier field at all (not null - absent)",
+              "armatureModifier" not in (oi2.get("object") or {}), oi2)
 
         call("delete_object", objects=["MifTestArmature", "MifTestMesh"])
 

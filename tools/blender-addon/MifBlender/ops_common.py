@@ -247,6 +247,14 @@ def object_info(obj, with_counts=True):
                           for s in obj.material_slots],
         "uvLayers": [uv.name for uv in obj.data.uv_layers],
         "hasCustomSplitNormals": bool(obj.data.has_custom_normals),
+        # WHICH ARMATURE DEFORMS THIS MESH, if any - the pairing nothing else in this addon
+        # reported before ops_rig.py existed. An ARMATURE modifier's .object is the actual rig at
+        # DEFORM TIME; obj.parent can point at an armature too (the common "parent to armature"
+        # workflow), but parenting alone does not deform anything without the modifier, so only the
+        # modifier is reported here - that is the field ops_rig.list_bones' object name lines up
+        # against, not a guess from the object hierarchy.
+        "armatureModifier": next(
+            (m.object.name for m in obj.modifiers if m.type == "ARMATURE" and m.object), None),
     })
     if with_counts:
         info.update(mesh_counts(obj))
