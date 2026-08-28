@@ -12,31 +12,22 @@
   "add_spawn_actor",
   "add_sublevel",
   "bind_landscape_rvt",
-  "create_metahuman_character",
   "describe_live_widget",
   "list_live_widgets",
   "list_pie_actors",
   "load_level",
   "move_actor_to",
-  "paint_landscape",
   "pcg_cleanup",
   "pcg_generate",
   "pie_load_level_instance",
   "pie_status",
   "pie_unload_level_instance",
   "preview_composite_widget",
-  "preview_widget",
-  "recipe_override_and_call_parent",
   "reimport_asset",
   "remove_collision",
   "remove_sublevel",
-  "remove_widget_binding",
-  "reparent_blueprint",
-  "retarget_variable_node",
-  "run_console_captured",
   "save_dirty_packages",
   "save_level_as",
-  "sculpt_landscape",
   "set_asset_thumbnail",
   "set_current_sublevel",
   "set_niagara_component_parameter",
@@ -44,7 +35,6 @@
   "set_sublevel_visibility",
   "set_water_body_spline",
   "spawn_actor_in_pie",
-  "spawn_metahuman_actor",
   "ui_scenario_activate",
   "ui_scenario_capture",
   "ui_scenario_start",
@@ -213,6 +203,7 @@
    "test_node_spawns.py",
    "test_rename_widget.py",
    "test_uncovered_reads5.py",
+   "test_uncovered_reads6.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation_props.py",
    "test_widget_animation_track.py",
@@ -230,6 +221,7 @@
    "test_selfpin.py",
    "test_transactions.py",
    "test_uncovered_reads5.py",
+   "test_uncovered_reads6.py",
    "test_undo_integrity.py",
    "test_v3_apply.py"
   ],
@@ -241,6 +233,7 @@
    "test_node_spawns.py",
    "test_rollback_real.py",
    "test_selfpin.py",
+   "test_uncovered_reads6.py",
    "test_v3_apply.py"
   ],
   "add_variable_set": [
@@ -262,7 +255,8 @@
    "test_widget_animation_track.py"
   ],
   "add_widget_binding": [
-   "test_node_spawns.py"
+   "test_node_spawns.py",
+   "test_uncovered_reads6.py"
   ],
   "analyze_skeletal_split": [
    "test_find_tools.py"
@@ -334,6 +328,7 @@
    "test_selfpin.py",
    "test_timeline.py",
    "test_uncovered_reads5.py",
+   "test_uncovered_reads6.py",
    "test_undo_integrity.py",
    "test_v3_apply.py",
    "test_widget_anim_recreate.py",
@@ -398,6 +393,7 @@
    "test_timeline.py",
    "test_transactions.py",
    "test_uncovered_reads5.py",
+   "test_uncovered_reads6.py",
    "test_undo_integrity.py",
    "test_v3_apply.py",
    "test_widget_anim_recreate.py",
@@ -432,7 +428,8 @@
    "test_undo_integrity.py"
   ],
   "create_landscape": [
-   "test_landscape_info.py"
+   "test_landscape_info.py",
+   "test_uncovered_reads6.py"
   ],
   "create_material": [
    "test_material_graph.py"
@@ -442,6 +439,9 @@
   ],
   "create_material_instance": [
    "test_material_write.py"
+  ],
+  "create_metahuman_character": [
+   "test_uncovered_reads6.py"
   ],
   "create_struct": [
    "test_node_spawns.py",
@@ -482,6 +482,7 @@
    "test_textures.py",
    "test_thumbnails.py",
    "test_uncovered_reads5.py",
+   "test_uncovered_reads6.py",
    "test_v3_apply.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation.py",
@@ -607,7 +608,8 @@
    "test_uncovered_reads2.py",
    "test_uncovered_reads3.py",
    "test_uncovered_reads4.py",
-   "test_uncovered_reads5.py"
+   "test_uncovered_reads5.py",
+   "test_uncovered_reads6.py"
   ],
   "find_nodes": [
    "test_anim_nodes.py",
@@ -777,6 +779,7 @@
    "test_pins.py",
    "test_recipes.py",
    "test_uncovered_reads5.py",
+   "test_uncovered_reads6.py",
    "test_undo_integrity.py"
   ],
   "list_ik_rig": [
@@ -931,13 +934,20 @@
    "test_uncovered_reads5.py"
   ],
   "open_blueprint": [
-   "test_uncovered_reads5.py"
+   "test_uncovered_reads5.py",
+   "test_uncovered_reads6.py"
   ],
   "override_inherited_component": [
    "test_inherited_components.py"
   ],
+  "paint_landscape": [
+   "test_uncovered_reads6.py"
+  ],
   "perf_heavy_actors": [
    "test_uncovered_reads4.py"
+  ],
+  "preview_widget": [
+   "test_uncovered_reads6.py"
   ],
   "project_asset_distribution": [
    "test_project_graph.py"
@@ -958,6 +968,9 @@
   ],
   "recipe_argmax_over_components": [
    "test_recipes.py"
+  ],
+  "recipe_override_and_call_parent": [
+   "test_uncovered_reads6.py"
   ],
   "recipe_reset_and_loop": [
    "test_recipes.py"
@@ -1031,6 +1044,9 @@
   "remove_widget_animation_track": [
    "test_widget_animation_props.py"
   ],
+  "remove_widget_binding": [
+   "test_uncovered_reads6.py"
+  ],
   "rename_asset": [
    "test_modal_guard.py"
   ],
@@ -1054,11 +1070,17 @@
    "test_textures.py",
    "test_thumbnails.py"
   ],
+  "reparent_blueprint": [
+   "test_uncovered_reads6.py"
+  ],
   "reset_property_to_default": [
    "test_uncovered_reads5.py"
   ],
   "resolve_struct": [
    "test_structs.py"
+  ],
+  "retarget_variable_node": [
+   "test_uncovered_reads6.py"
   ],
   "revert_inherited_component": [
    "test_inherited_components.py"
@@ -1066,6 +1088,9 @@
   "run_console": [
    "test_report_intake.py",
    "test_safety_gate.py"
+  ],
+  "run_console_captured": [
+   "test_uncovered_reads6.py"
   ],
   "save_blueprint": [
    "test_safety_gate.py"
@@ -1075,6 +1100,9 @@
   ],
   "scene_report": [
    "test_uncovered_reads3.py"
+  ],
+  "sculpt_landscape": [
+   "test_uncovered_reads6.py"
   ],
   "select_level_actors": [
    "test_uncovered_reads5.py"
@@ -1225,6 +1253,9 @@
   ],
   "spawn_many": [
    "test_spawn_many.py"
+  ],
+  "spawn_metahuman_actor": [
+   "test_uncovered_reads6.py"
   ],
   "splice_into_exec": [
    "test_pinlifetime.py"

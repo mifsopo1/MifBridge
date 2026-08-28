@@ -3041,3 +3041,33 @@ cannot become one giant blocking item:
       level - real state risk, deserves its own careful batch).
       parity_check.py clean. test_confirm_gated.py (33/33) and test_node_spawns.py (101/101)
       re-checked for regressions, both still clean. coverage_gaps.json: 69 -> 50.
+
+- [x] **Sixth batch: MetaHuman refusal on real 5.3, landscape sculpt/paint on a scratch landscape, and
+      four "landed but never suited" utilities.** DONE 2026-08-28, tools/test_uncovered_reads6.py.
+      create_metahuman_character/spawn_metahuman_actor, sculpt_landscape/paint_landscape,
+      run_console_captured, reparent_blueprint, preview_widget, retarget_variable_node,
+      recipe_override_and_call_parent, remove_widget_binding - 10 endpoints, 30/30 PASS.
+      Closes a specific loose end project memory had flagged by name: MifBridgeMetaHuman.cpp's
+      refusal branch had never been directly re-verified with a real Build.bat run on 5.3
+      specifically - now it has, live, against the actual running DDS2 5.3.2 editor, both endpoints.
+      Landscape work deliberately targets a SCRATCH landscape this test creates far from any real
+      content, never the real DDS2 terrain - even though nothing here is ever saved, painting/
+      sculpting visible real terrain crossed into a different risk category than everything else this
+      session has touched. sculpt_landscape gets full success coverage (raise + smooth, real
+      verticesTouched). paint_landscape gets an honest, informative REFUSAL rather than a forced
+      success: the only LandscapeLayerInfoObject asset handy on this project turned out to be the
+      engine's own __LANDSCAPE_VISIBILITY__ hole layer, not a normal paintable one, and painting a
+      layer the landscape's material never declared is correctly refused - building a real paintable-
+      layer landscape material was judged out of scope for a coverage batch.
+      Two real findings, both caught by running live rather than trusting the plan: a fresh Actor
+      blueprint's EventGraph is NOT empty - it already carries BeginPlay/ActorBeginOverlap/Tick event
+      nodes by default, so recipe_override_and_call_parent's first attempt (targeting ReceiveBeginPlay,
+      the obvious choice) refused "already present in the graph" - switched to ReceiveDestroyed, which
+      is not pre-placed. remove_widget_binding turned out NOT to be confirm-gated at all despite
+      sitting next to remove_function/remove_variable/remove_component in coverage_gaps.py's grouping -
+      a plain call removes it directly, and scratch_confirm.confirm_call on it is actively REJECTED
+      ("unrecognised parameter 'confirm'") since confirm isn't even in its accepted params. Caught and
+      fixed one mistake in my own test before it ran: a stray line mutating
+      SC.confirm_call.__wrapped__ that would have altered the shared module's function object for no
+      reason - removed before running, not left in as dead code.
+      parity_check.py clean. coverage_gaps.json: 50 -> 40.
