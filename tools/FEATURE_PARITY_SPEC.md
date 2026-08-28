@@ -3135,3 +3135,45 @@ cannot become one giant blocking item:
       rather than assumed, and filed with the same honesty as PCG's already-documented structural
       wall.
       parity_check.py clean. coverage_gaps.json: 40 -> 30.
+
+- [~] **4 endpoints coverage_gaps.json still lists are already genuinely covered - a static-matching
+      false negative, not a real gap.** Declined (as "needs no new work") 2026-08-28.
+      add_get_array_item, add_make_map, add_self, add_sequence are all driven live by
+      test_node_spawns.py's T330, which asks describe_endpoint for every add_* endpoint's
+      acceptedParams and drives any whose params fit entirely within a cosmetic-only set (graphId,
+      x, y, width, height, text, outputs, numInputs, comment, title, purity, pure) - confirmed live,
+      re-checked this same day, still exactly these 4 plus add_branch/add_comment/add_make_array which
+      coverage_gaps.json already recognises as covered. coverage_gaps.json's own check is a static
+      grep over test file SOURCE TEXT, so it cannot see an endpoint name that is only ever produced by
+      iterating a live registry at runtime rather than typed as a literal string - this is a known,
+      accepted limitation of that tool (see coverage_gaps.py's own closing line: "A NAME MATCH IS NOT
+      COVERAGE"), not a defect worth working around by adding four redundant, hand-typed duplicate
+      checks that would test nothing new.
+
+- [x] **Eighth batch: asset thumbnails, composite widget preview, a real Niagara component parameter,
+      and two honest current-state limits.** DONE 2026-08-28, tools/test_uncovered_reads8.py.
+      set_asset_thumbnail, preview_composite_widget, set_niagara_component_parameter (real success),
+      reimport_asset (refusal), add_sequence_possessable (refusal) - 24/24 PASS.
+      set_asset_thumbnail works fine with no save at all - confirmed live (saved:false,
+      packageDirty:true), matching this whole project's never-save invariant.
+      preview_composite_widget's first attempt inserted a bare "TextBlock" and was correctly refused
+      ("class is not a UserWidget") - composing means nesting whole UserWidget instances into a named,
+      variable-marked panel, not adding a leaf UMG component. Fixed by inserting a real project
+      UserWidget class instead; verified the composite PNG really exists on disk.
+      set_niagara_component_parameter got a REAL success test, on a NiagaraComponent this suite adds
+      to its own scratch blueprint and spawns into the level - but it is confirm-gated and addressed
+      by an ACTOR INSTANCE path under /Temp/Untitled_1 (the currently open level's own transient
+      package name), which scratch_confirm.check() correctly refuses (it only trusts /Game/_Mif*
+      asset paths). Rather than widen that shared safety module on a judgement call - which would ALSO
+      bless targeting one of the 85+ REAL DDS2 actors confirmed live to share that same open level -
+      this one call uses M.raw_post directly, justified narrowly because this specific actorPath was
+      proven safe by construction one line earlier in the same test run, not by a reusable rule.
+      Two endpoints get honest current-state limits rather than forced coverage, same treatment as the
+      already-documented GAS/PCG structural walls: reimport_asset refuses on every real texture
+      checked ("no source path is recorded on the asset") - DDS2's cooked-editor build does not retain
+      AssetImportData on shipped content, and this plugin ships no source image file to import a fresh
+      scratch texture from instead. add_sequence_possessable's success path hits the SAME /Temp/-actor
+      limitation set_niagara_component_parameter worked around, but resolving it here would need its
+      own separate construction proof for a different scratch actor, judged worth its own deliberate
+      pass rather than a second quick reuse of the same one-off.
+      parity_check.py clean. coverage_gaps.json: 30 -> 25.

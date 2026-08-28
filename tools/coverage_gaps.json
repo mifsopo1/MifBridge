@@ -4,7 +4,6 @@
   "add_make_map",
   "add_self",
   "add_sequence",
-  "add_sequence_possessable",
   "add_sequence_track",
   "add_simplified_collision",
   "describe_live_widget",
@@ -17,13 +16,9 @@
   "pie_load_level_instance",
   "pie_status",
   "pie_unload_level_instance",
-  "preview_composite_widget",
-  "reimport_asset",
   "remove_collision",
   "save_dirty_packages",
   "save_level_as",
-  "set_asset_thumbnail",
-  "set_niagara_component_parameter",
   "spawn_actor_in_pie",
   "ui_scenario_activate",
   "ui_scenario_capture",
@@ -73,6 +68,7 @@
    "test_idempotence.py",
    "test_inherited_components.py",
    "test_node_spawns.py",
+   "test_uncovered_reads8.py",
    "test_undo_integrity.py"
   ],
   "add_component_bound_event": [
@@ -177,6 +173,9 @@
   "add_reroute": [
    "test_reroute.py"
   ],
+  "add_sequence_possessable": [
+   "test_uncovered_reads8.py"
+  ],
   "add_spawn_actor": [
    "test_uncovered_reads7.py"
   ],
@@ -206,6 +205,7 @@
    "test_rename_widget.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
+   "test_uncovered_reads8.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation_props.py",
    "test_widget_animation_track.py",
@@ -334,6 +334,7 @@
    "test_timeline.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
+   "test_uncovered_reads8.py",
    "test_undo_integrity.py",
    "test_v3_apply.py",
    "test_widget_anim_recreate.py",
@@ -366,7 +367,8 @@
    "test_ik_goals_solvers.py",
    "test_ik_rig.py",
    "test_node_spawns.py",
-   "test_textures.py"
+   "test_textures.py",
+   "test_uncovered_reads8.py"
   ],
   "create_blueprint": [
    "test_anim_nodes.py",
@@ -401,6 +403,7 @@
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
    "test_uncovered_reads7.py",
+   "test_uncovered_reads8.py",
    "test_undo_integrity.py",
    "test_v3_apply.py",
    "test_widget_anim_recreate.py",
@@ -494,6 +497,7 @@
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
    "test_uncovered_reads7.py",
+   "test_uncovered_reads8.py",
    "test_v3_apply.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation.py",
@@ -622,7 +626,8 @@
    "test_uncovered_reads3.py",
    "test_uncovered_reads4.py",
    "test_uncovered_reads5.py",
-   "test_uncovered_reads6.py"
+   "test_uncovered_reads6.py",
+   "test_uncovered_reads8.py"
   ],
   "find_nodes": [
    "test_anim_nodes.py",
@@ -962,6 +967,9 @@
   "perf_heavy_actors": [
    "test_uncovered_reads4.py"
   ],
+  "preview_composite_widget": [
+   "test_uncovered_reads8.py"
+  ],
   "preview_widget": [
    "test_uncovered_reads6.py"
   ],
@@ -1005,6 +1013,9 @@
   ],
   "refresh_node": [
    "test_array_wildcard_durability.py"
+  ],
+  "reimport_asset": [
+   "test_uncovered_reads8.py"
   ],
   "remove_actor_from_data_layer": [
    "test_data_layer_writes.py"
@@ -1149,6 +1160,9 @@
   "set_actor_transform": [
    "test_snap_ground.py"
   ],
+  "set_asset_thumbnail": [
+   "test_uncovered_reads8.py"
+  ],
   "set_blendspace_samples": [
    "test_ported_anim.py"
   ],
@@ -1199,6 +1213,9 @@
   ],
   "set_material_parameter": [
    "test_material_write.py"
+  ],
+  "set_niagara_component_parameter": [
+   "test_uncovered_reads8.py"
   ],
   "set_pin_default": [
    "test_enums.py",
@@ -1268,7 +1285,8 @@
    "test_widget_anim_recreate.py"
   ],
   "set_widget_is_variable": [
-   "test_uncovered_reads5.py"
+   "test_uncovered_reads5.py",
+   "test_uncovered_reads8.py"
   ],
   "shader_compile_status": [
    "test_material_graph.py"
@@ -1281,7 +1299,8 @@
    "test_audit_fixes.py",
    "test_perf_stats.py",
    "test_snap_ground.py",
-   "test_uncovered_reads5.py"
+   "test_uncovered_reads5.py",
+   "test_uncovered_reads8.py"
   ],
   "spawn_many": [
    "test_spawn_many.py"
