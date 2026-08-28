@@ -117,6 +117,8 @@ list_level_sequences.name
 list_level_sequences.search
 list_material_expressions.material
 list_material_parameters.material
+list_morph_targets.mesh
+list_morph_targets.skeletalmesh
 list_niagara_emitters.system
 list_niagara_user_parameters.system
 list_object_properties.actorpath
@@ -129,6 +131,8 @@ list_transactions.count
 list_transactions.include_objects
 list_transactions.max
 list_transactions.start
+list_virtual_bones.mesh
+list_virtual_bones.skeleton
 move_node.graphid
 move_tree_widget.confirm
 open_blueprint.blueprintid

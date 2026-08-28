@@ -16,6 +16,14 @@ this endpoint's first run reported 161 bones for four different humanoid skeleto
 a bug and was not: they are all UE5-Mannequin-structure rigs. Reading a bicycle (9), a cube (2) and a
 one-joint default mesh (1) back correctly is what settled that, so it is kept as a test rather than
 thrown away as a debugging step.
+
+T790/T791 cover the two siblings added alongside list_bones later: list_virtual_bones (USkeleton's
+VirtualBones array - links between two REAL bones, not in the ReferenceSkeleton list_bones walks) and
+list_morph_targets (SkeletalMesh morph target names via K2_GetAllMorphTargetNames()). T791 sweeps
+EVERY SkeletalMesh in the project rather than a sample, because the property worth proving is crash
+safety on real cooked content - the same class of failure analyze_skeletal_split's own postmortem
+describes for a DIFFERENT editor-only accessor. See T791's own comment for what this project's content
+can and cannot prove about the positive (real morph delta) path.
 """
 import json
 import sys
@@ -23,6 +31,7 @@ import sys
 import mifaudit as M
 
 PASS, FAIL = [], []
+UNPROVEN = []
 
 
 def check(name, cond, detail=""):
@@ -210,10 +219,154 @@ def main():
         check("T226 mesh and skeleton agree on this asset, so no note is needed",
               "sourceNote" not in m, m.get("sourceNote"))
 
+    # ------------------------------------------------------------------ T790 list_virtual_bones
+    print("\n=== T790: list_virtual_bones - links a rigger added BETWEEN two real bones ===")
+    v = M.call("list_virtual_bones", {"path": biggest})
+    check("T790 it answers", v.get("ok") is True, json.dumps(v)[:160])
+    vbones = v.get("virtualBones") or []
+    check("T790 count matches what was returned", v.get("count") == len(vbones),
+          "%s vs %d" % (v.get("count"), len(vbones)))
+    check("T790 it names the skeleton it read", bool(v.get("skeleton")), v.get("skeleton"))
+    if not vbones:
+        check("T790 zero is explained rather than left as a bare empty array",
+              bool(v.get("note")), json.dumps(v)[:160])
+    else:
+        real_names = {b.get("name") for b in bones}   # `bones` is list_bones' result on `biggest`, above
+        check("T790 every source bone is a real bone on this skeleton",
+              all(vb.get("source") in real_names for vb in vbones),
+              [vb for vb in vbones if vb.get("source") not in real_names])
+        check("T790 every target bone is a real bone on this skeleton",
+              all(vb.get("target") in real_names for vb in vbones),
+              [vb for vb in vbones if vb.get("target") not in real_names])
+        check("T790 every virtual bone has its own generated name",
+              all(vb.get("name") for vb in vbones), vbones[:3])
+
+    # EXHAUSTIVE across every Skeleton in the project (21 at the time this was written), same reason
+    # as T791's full sweep: crash safety on real content is worth proving at scale, not on one sample.
+    any_real_vbones = False
+    vb_failed = []
+    for p in skels:
+        q = M.call("list_virtual_bones", {"path": p}, timeout=60)
+        if not q.get("ok"):
+            vb_failed.append((p, q))
+            continue
+        if (q.get("count") or 0) > 0:
+            any_real_vbones = True
+    check("T790 every one of the %d skeletons in this project answered without failing" % len(skels),
+          not vb_failed, [p for p, _ in vb_failed[:5]])
+    if not any_real_vbones:
+        check("T790 (POSITIVE path NOT exercised: no Skeleton in this project defines any virtual "
+              "bone - confirmed across all %d, not just `biggest`)" % len(skels), True)
+        UNPROVEN.append("list_virtual_bones' populated-array path (source/target cross-checked "
+                        "against real bone names) - no Skeleton in this project (all %d scanned) "
+                        "defines a virtual bone. Crash safety IS proven across all %d." % (len(skels), len(skels)))
+
+    # A SkeletalMesh resolves through its assigned Skeleton, same as list_bones does.
+    vm = M.call("list_virtual_bones", {"path": sm})
+    check("T790 a SkeletalMesh path is accepted (resolves via GetSkeleton())",
+          vm.get("ok") is True, json.dumps(vm)[:160])
+
+    for label, payload, expect in (
+        ("no path", {}, "path is required"),
+        ("missing asset", {"path": "/Game/NoSuchSkeleton_zz"}, "no asset at"),
+        ("a non-skeleton asset", {"path": notskel}, "virtual bones"),
+        ("an unknown parameter", {"path": biggest, "bone": "x"}, "filter the result"),
+    ):
+        q = M.call("list_virtual_bones", payload)
+        check("T790 %s refused" % label, q.get("ok") is False, json.dumps(q)[:150])
+        check("T790 %s explains" % label, expect in (q.get("error") or ""), (q.get("error") or "")[:170])
+
+    # ------------------------------------------------------------------ T791 list_morph_targets
+    print("\n=== T791: list_morph_targets - names nothing else could give ===")
+    # EXHAUSTIVE, not sampled: every SkeletalMesh in the project (188 at the time this was written),
+    # because the thing most worth proving here is the SAME thing analyze_skeletal_split's postmortem
+    # already crashed the editor over once - does this handler survive being called on real COOKED
+    # content, at scale, without exception. A sample could get lucky; a full sweep cannot.
+    #
+    # MEASURED, NOT ASSUMED: DDS2 turns out to have ZERO morph targets on ANY of its 188 SkeletalMesh
+    # assets - this project's characters are not morph-target-driven. That is a genuine finding about
+    # THIS project's content, not a reason to skip the check: every one of the 188 calls still had to
+    # succeed cleanly (ok:true, a real note) for T791 below to pass, which is exactly the crash-safety
+    # property this endpoint's own header comment claims and needs proving, not assuming.
+    #
+    # WHAT THIS MACHINE CANNOT REACH: hasDataForLod:true with a real vertexCount - the POSITIVE data
+    # path - has no content on this project to exercise it against. Said here rather than implied by a
+    # quiet pass, same discipline test_landscape_info.py uses for the World Partition branch it cannot
+    # reach either.
+    meshes = [a.get("path") for a in
+              (M.call("find_assets", {"class": "SkeletalMesh", "limit": 500}).get("assets") or [])]
+    check("T791 there is at least one SkeletalMesh to scan", len(meshes) > 0, len(meshes))
+    ranked_mt = []
+    scan_failed = []
+    for p in meshes:
+        q = M.call("list_morph_targets", {"path": p}, timeout=60)
+        if not q.get("ok"):
+            scan_failed.append((p, q))
+            continue
+        ranked_mt.append((q.get("count") or 0, p))
+    ranked_mt.sort(reverse=True)
+    richest_mt_count, richest_mt = ranked_mt[0] if ranked_mt else (0, None)
+    print("SkeletalMeshes scanned: %d   richest in morph targets: %s (%d)"
+          % (len(meshes), (richest_mt or "").split("/")[-1] if richest_mt else "-", richest_mt_count))
+    check("T791 every one of the %d real assets answered without failing" % len(meshes),
+          not scan_failed, [p for p, _ in scan_failed[:5]])
+
+    if richest_mt_count == 0:
+        # A real, sayable outcome for THIS project's content - not skipped silently.
+        check("T791 (POSITIVE vertexCount path NOT exercised: no SkeletalMesh in this project has "
+              "any morph target - confirmed across all %d, not just a sample)" % len(meshes), True)
+        UNPROVEN.append("list_morph_targets' hasDataForLod:true / vertexCount path - no SkeletalMesh "
+                        "in this project (all %d scanned) has any morph target to exercise it against. "
+                        "Crash safety on real cooked content IS proven (every one of the %d calls "
+                        "succeeded); reading a REAL delta count is not." % (len(meshes), len(meshes)))
+        r0 = M.call("list_morph_targets", {"path": meshes[0]}) if meshes else {}
+        check("T791 the zero-count path still answers cleanly and explains itself",
+              r0.get("ok") is True and bool(r0.get("note")), json.dumps(r0)[:200])
+    else:
+        r = M.call("list_morph_targets", {"path": richest_mt})
+        check("T791 it answers", r.get("ok") is True, json.dumps(r)[:160])
+        mts = r.get("morphTargets") or []
+        check("T791 count matches what was returned", r.get("count") == len(mts),
+              "%s vs %d" % (r.get("count"), len(mts)))
+        check("T791 every target has a name and its own asset path",
+              all(mt.get("name") and mt.get("path") for mt in mts),
+              "a morph target is missing a name or path")
+        check("T791 hasDataForLod is a real bool on every entry",
+              all(isinstance(mt.get("hasDataForLod"), bool) for mt in mts),
+              [mt.get("hasDataForLod") for mt in mts[:5]])
+        # THE FIELD THIS EXISTS TO GET RIGHT: a target reporting data must give a real vertex count;
+        # one reporting no data must not claim a count at all (that would be the confusing "0 either
+        # way" this handler's own comment says it refuses to produce).
+        check("T791 hasDataForLod:true always carries a real vertexCount",
+              all((not mt.get("hasDataForLod")) or isinstance(mt.get("vertexCount"), (int, float))
+                  for mt in mts),
+              [mt for mt in mts if mt.get("hasDataForLod") and "vertexCount" not in mt])
+        check("T791 hasDataForLod:false never carries a vertexCount",
+              all(mt.get("hasDataForLod") or "vertexCount" not in mt for mt in mts),
+              [mt for mt in mts if not mt.get("hasDataForLod") and "vertexCount" in mt])
+        check("T791 at least one target on the richest mesh actually has LOD0 data",
+              any(mt.get("hasDataForLod") for mt in mts), [mt.get("hasDataForLod") for mt in mts[:5]])
+
+    for label, payload, expect in (
+        ("no path", {}, "path is required"),
+        ("missing asset", {"path": "/Game/NoSuchMesh_zz"}, "no SkeletalMesh at"),
+        ("a Skeleton rather than a mesh", {"path": biggest}, "no SkeletalMesh at"),
+        ("negative lod", {"path": meshes[0] if meshes else sm, "lod": -1}, "invalid"),
+        ("an unknown parameter", {"path": sm, "name": "x"}, "filter the result"),
+    ):
+        q = M.call("list_morph_targets", payload)
+        check("T791 %s refused" % label, q.get("ok") is False, json.dumps(q)[:150])
+        check("T791 %s explains" % label, expect in (q.get("error") or ""), (q.get("error") or "")[:170])
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:
         print("  FAILED: %s\n          %s" % x)
+    if UNPROVEN:
+        print("")
+        print("NOT PROVEN BY THIS SUITE (green above does not cover these):")
+        for u in UNPROVEN:
+            print("  - %s" % u)
     print("=" * 72)
     return 1 if FAIL else 0
 

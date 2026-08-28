@@ -2726,6 +2726,40 @@ def list_bones(path: str, name_contains: str = "", root: str = "",
 
 
 @mcp.tool()
+def list_virtual_bones(path: str) -> dict:
+    """List virtual bones on a Skeleton - links a rigger added BETWEEN two real bones, baked into
+    every animation on that skeleton at playback time.
+
+    list_bones does not report these: they live in a separate array (USkeleton.VirtualBones), not in
+    the ReferenceSkeleton list_bones walks. Pass a Skeleton, or a SkeletalMesh - its assigned Skeleton
+    is read the same way list_bones resolves one.
+
+    Each entry reports name (the virtual bone's own generated name), source and target (the two real
+    bones it links). Zero virtual bones is a normal answer, not a failure - most skeletons never need
+    one, and the response says so explicitly rather than leaving an empty array to interpret.
+    """
+    return _post("list_virtual_bones", path=path)
+
+
+@mcp.tool()
+def list_morph_targets(path: str, lod: int = 0) -> dict:
+    """List morph target names on a SkeletalMesh, with per-LOD data presence.
+
+    Nothing else names a morph target - MorphTargets is a UPROPERTY array of object references, not
+    names, so this uses the engine's own K2_GetAllMorphTargetNames() rather than re-deriving the list.
+    Runtime data, not editor-only: a cooked mesh keeps its morph targets (unlike analyze_skeletal_split's
+    ImportedModel, which cooking strips), so this works the same on cooked and uncooked content.
+
+    hasDataForLod (checked at `lod`, default 0) distinguishes a morph target that actually deforms
+    geometry at that LOD from one that was declared but has nothing there - a real difference, not
+    reported as a confusing vertexCount of 0 either way; vertexCount is included only when there is
+    data. Zero morph targets is normal for most meshes - only ones authored for facial or blend-shape
+    animation need them, and the response says so.
+    """
+    return _post("list_morph_targets", path=path, lod=lod)
+
+
+@mcp.tool()
 def list_sockets(path: str) -> dict:
     """List the sockets on a SkeletalMesh or StaticMesh asset.
 

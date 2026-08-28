@@ -30,6 +30,7 @@
 #include "Rendering/SkinWeightVertexBuffer.h"
 
 #include "Animation/Skeleton.h"
+#include "Animation/MorphTarget.h"
 #include "Engine/SkeletalMesh.h"
 #include "ReferenceSkeleton.h"
 
@@ -238,6 +239,186 @@ namespace MifBridge
 		}
 		Out->SetArrayField(TEXT("bones"), Bones);
 		UE_LOG(LogMifBridge, Log, TEXT("list_bones: %d of %d on %s"), Shown, Num, *Asset->GetName());
+	}
+
+	// --- list_virtual_bones ----------------------------------------------------------
+	//   in:  { path (aliases: assetPath, skeleton, mesh) }
+	//   out: { skeleton, count, virtualBones:[{ name, source, target }] }
+	//
+	// Virtual bones are new links a rigger adds BETWEEN two existing bones (Skeleton Editor's "Add
+	// Virtual Bone") and are baked into every animation on that skeleton at playback - list_bones does
+	// not report them, because they are not in the ReferenceSkeleton it walks; they live in a separate
+	// array (USkeleton::VirtualBones) that list_bones has no reason to touch.
+	//
+	// SKELETON-ONLY DATA, MESH ACCEPTED ANYWAY. Same resolution list_bones already uses: a
+	// SkeletalMesh's own Skeleton is looked up via GetSkeleton(), because "which skeleton does this
+	// mesh's virtual bone set come from" is the same question list_bones already answers for the
+	// reference skeleton, and forcing a caller to resolve it themselves first would just move the
+	// lookup, not remove it.
+	//
+	// Verified in BOTH trees before writing: USkeleton::GetVirtualBones() and the plain,
+	// non-editor-only UPROPERTY() FVirtualBone{SourceBoneName,TargetBoneName,VirtualBoneName} are
+	// identical on 5.3 and 5.7 (Skeleton.h). No version guard needed.
+	void H_list_virtual_bones(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("skeleton"), TEXT("mesh") },
+			TEXT("path (aliases: assetPath, skeleton, mesh) - a Skeleton, or a SkeletalMesh whose "
+				 "assigned Skeleton will be read"),
+			{ { TEXT("bone"), TEXT("this lists ALL virtual bones - filter the result rather than the query") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("skeleton"), TEXT("mesh") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - a Skeleton, or a SkeletalMesh whose Skeleton will be read."));
+			return;
+		}
+		UObject* Asset = LoadObject<UObject>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("no asset at %s"), *Path));
+			return;
+		}
+
+		USkeleton* Skeleton = Cast<USkeleton>(Asset);
+		if (!Skeleton)
+		{
+			if (USkeletalMesh* Mesh = Cast<USkeletalMesh>(Asset))
+			{
+				Skeleton = Mesh->GetSkeleton();
+				if (!Skeleton)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("%s has no Skeleton assigned, so there is no virtual bone set to read."), *Path));
+					return;
+				}
+			}
+			else
+			{
+				Fail(Out, FString::Printf(
+					TEXT("%s is a %s. This reads a Skeleton, or a SkeletalMesh (via its assigned "
+						 "Skeleton); nothing else has virtual bones."), *Path, *Asset->GetClass()->GetName()));
+				return;
+			}
+		}
+
+		const TArray<FVirtualBone>& VBones = Skeleton->GetVirtualBones();
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		for (const FVirtualBone& VB : VBones)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("name"), VB.VirtualBoneName.ToString());
+			J->SetStringField(TEXT("source"), VB.SourceBoneName.ToString());
+			J->SetStringField(TEXT("target"), VB.TargetBoneName.ToString());
+			Rows.Add(MakeShared<FJsonValueObject>(J));
+		}
+
+		Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+		Out->SetNumberField(TEXT("count"), Rows.Num());
+		Out->SetArrayField(TEXT("virtualBones"), Rows);
+		if (Rows.Num() == 0)
+		{
+			// A real, common answer, not a defect - most skeletons never need one. Said explicitly so a
+			// caller does not read an empty array as "the read failed".
+			Out->SetStringField(TEXT("note"),
+				TEXT("this skeleton defines no virtual bones. That is normal, not an error - most "
+					 "skeletons never need one."));
+		}
+		UE_LOG(LogMifBridge, Log, TEXT("list_virtual_bones: %d on %s"), Rows.Num(), *Skeleton->GetName());
+	}
+
+	// --- list_morph_targets ----------------------------------------------------------
+	//   in:  { path (aliases: assetPath, mesh, skeletalMesh), lod? = 0 }
+	//   out: { assetPath, count, lod, morphTargets:[{ name, path, hasDataForLod, vertexCount? }] }
+	//
+	// Morph target NAMES were unreachable the same way bone names were: USkeletalMesh::MorphTargets is
+	// a UPROPERTY (so reflection COULD walk it) but holds object references, not names, and the
+	// engine's own convenience function - K2_GetAllMorphTargetNames(), Blueprint-exposed for exactly
+	// this - is the API this handler uses rather than re-deriving the same list by hand.
+	//
+	// NOT THE ImportedModel TRAP. analyze_skeletal_split's postmortem (this file, above) crashed the
+	// editor calling an editor-only accessor on a cooked mesh. MorphTargets is a DIFFERENT property:
+	// morph targets are RUNTIME data - a cooked build needs them to actually deform a face at play
+	// time - so unlike ImportedModel there is no WITH_EDITORONLY_DATA guard on the declaration (see
+	// this file's own earlier read of SkeletalMesh.h), and GetMorphTargets()'s
+	// WaitUntilAsyncPropertyReleased call is waiting for the engine's async BUILD/load task, not for
+	// editor-only source data that a cooked asset never had. Confirmed against real COOKED DDS2
+	// content before this was trusted, not assumed from the header alone - see the spec entry for the
+	// live-verification result.
+	//
+	// hasDataForLod is reported per target because a morph target CAN exist with no data at a given
+	// LOD (it was authored for LOD0 and the reduction settings dropped it, or it was declared but
+	// never sculpted) - that is a real, different answer from "this target does nothing", and
+	// vertexCount is included only when there is data, rather than reported as a confusing 0 either way.
+	void H_list_morph_targets(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("mesh"), TEXT("skeletalMesh"), TEXT("lod") },
+			TEXT("path (aliases: assetPath, mesh, skeletalMesh) - a SkeletalMesh asset; lod (default 0) "
+				 "- which LOD's data presence to report per target"),
+			{ { TEXT("name"), TEXT("this lists ALL morph targets - filter the result rather than the query") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"),
+										   TEXT("mesh"), TEXT("skeletalMesh") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - a SkeletalMesh asset."));
+			return;
+		}
+		USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		if (!Mesh)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no SkeletalMesh at '%s'. list_bones takes the same path if you want to check it "
+					 "resolves."), *Path));
+			return;
+		}
+
+		const int32 Lod = (int32)JNum(In, TEXT("lod"), 0.0);
+		if (Lod < 0)
+		{
+			Fail(Out, FString::Printf(TEXT("lod %d is invalid - lod must be 0 or greater."), Lod));
+			return;
+		}
+
+		const TArray<TObjectPtr<UMorphTarget>>& Targets = Mesh->GetMorphTargets();
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		for (const UMorphTarget* MT : Targets)
+		{
+			if (!MT) { continue; }   // a null entry would be a real defect elsewhere; skip rather than crash reporting it
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("name"), MT->GetFName().ToString());
+			J->SetStringField(TEXT("path"), MT->GetPathName());
+			const bool bHasData = MT->HasDataForLOD(Lod);
+			J->SetBoolField(TEXT("hasDataForLod"), bHasData);
+			if (bHasData)
+			{
+				const TArray<FMorphTargetLODModel>& LodModels = MT->GetMorphLODModels();
+				if (LodModels.IsValidIndex(Lod))
+				{
+					J->SetNumberField(TEXT("vertexCount"), LodModels[Lod].NumVertices);
+				}
+			}
+			Rows.Add(MakeShared<FJsonValueObject>(J));
+		}
+
+		Out->SetStringField(TEXT("assetPath"), Mesh->GetPathName());
+		Out->SetNumberField(TEXT("lod"), Lod);
+		Out->SetNumberField(TEXT("count"), Rows.Num());
+		Out->SetArrayField(TEXT("morphTargets"), Rows);
+		if (Rows.Num() == 0)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("this mesh has no morph targets. That is normal for most meshes - only ones "
+					 "authored for facial or blend-shape animation need them."));
+		}
+		UE_LOG(LogMifBridge, Log, TEXT("list_morph_targets: %d on %s"), Rows.Num(), *Mesh->GetName());
 	}
 
 	// --- analyze_skeletal_split -----------------------------------------------------------------

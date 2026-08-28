@@ -1341,6 +1341,12 @@ namespace MifBridge
 	/** The bone hierarchy of a Skeleton or SkeletalMesh. Nothing else could name a bone:
 	 *  ReferenceSkeleton is not a UPROPERTY, so reflection cannot reach it. */
 	MIF_DECL(list_bones);
+	/** Virtual bones on a Skeleton (or a SkeletalMesh's assigned Skeleton) - links a rigger added
+	 *  BETWEEN two real bones. Not in the ReferenceSkeleton list_bones walks. */
+	MIF_DECL(list_virtual_bones);
+	/** Morph target names on a SkeletalMesh, with per-LOD data presence. Uses the engine's own
+	 *  K2_GetAllMorphTargetNames() rather than re-deriving the list from the UPROPERTY array. */
+	MIF_DECL(list_morph_targets);
 	/** What a mesh split WOULD produce, per section and per bone. The read half of the mesh
 	 *  splitter - splitting creates assets, which this bridge does not do. */
 	MIF_DECL(analyze_skeletal_split);
