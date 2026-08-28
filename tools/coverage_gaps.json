@@ -27,44 +27,25 @@
   "add_widget_binding",
   "backup_blueprint",
   "bind_landscape_rvt",
-  "blueprint_inheritance_tree",
   "close_asset_editors",
   "create_data_layer",
   "create_material_function",
   "create_metahuman_character",
   "describe_animation",
-  "describe_gameplay_tag",
   "describe_live_widget",
-  "describe_pcg_graph",
-  "describe_property",
-  "describe_state_tree",
-  "describe_water_body",
-  "diff_properties_vs_default",
   "duplicate_actors",
-  "focus_viewport",
-  "get_actor_bounds",
   "get_collision",
-  "get_cvar",
-  "get_dependencies",
   "list_animations",
-  "list_editor_commands",
   "list_foliage_instances",
-  "list_gameplay_tags",
-  "list_input_mappings",
   "list_live_widgets",
-  "list_mounted_containers",
   "list_object_properties",
-  "list_pcg_components",
-  "list_pcg_graphs",
   "list_pie_actors",
   "list_sequence_bindings",
-  "list_state_trees",
   "list_sublevels",
   "live_coding_compile",
   "live_coding_status",
   "load_level",
   "move_actor_to",
-  "nav_status",
   "open_asset_editor",
   "open_blueprint",
   "paint_landscape",
@@ -91,7 +72,6 @@
   "run_console_captured",
   "save_dirty_packages",
   "save_level_as",
-  "scene_report",
   "sculpt_landscape",
   "select_level_actors",
   "set_asset_thumbnail",
@@ -111,8 +91,7 @@
   "ui_scenario_capture",
   "ui_scenario_start",
   "ui_scenario_status",
-  "ui_scenario_stop",
-  "validate"
+  "ui_scenario_stop"
  ],
  "covered": {
   "add_actor_to_data_layer": [
@@ -303,6 +282,9 @@
    "test_modal_hazards.py",
    "test_safety_gate.py"
   ],
+  "blueprint_inheritance_tree": [
+   "test_uncovered_reads3.py"
+  ],
   "build_navmesh": [
    "test_safety_gate.py"
   ],
@@ -446,6 +428,7 @@
    "test_unchecked_returns.py"
   ],
   "create_water_body": [
+   "test_uncovered_reads.py",
    "test_water_zone.py"
   ],
   "create_water_zone": [
@@ -509,6 +492,9 @@
   "describe_game_feature_plugin": [
    "test_game_features.py"
   ],
+  "describe_gameplay_tag": [
+   "test_uncovered_reads.py"
+  ],
   "describe_level_sequence": [
    "test_sequencer.py"
   ],
@@ -522,11 +508,26 @@
    "test_fuzz_detector.py",
    "test_modal_guard.py"
   ],
+  "describe_pcg_graph": [
+   "test_uncovered_reads.py"
+  ],
+  "describe_property": [
+   "test_uncovered_reads2.py"
+  ],
+  "describe_state_tree": [
+   "test_uncovered_reads.py"
+  ],
+  "describe_water_body": [
+   "test_uncovered_reads.py"
+  ],
   "diagnose_landscape": [
    "test_landscape_info.py"
   ],
   "diagnose_landscape_draws": [
    "test_landscape_info.py"
+  ],
+  "diff_properties_vs_default": [
+   "test_uncovered_reads2.py"
   ],
   "disconnect_pin": [
    "test_pins.py"
@@ -571,14 +572,29 @@
    "test_sockets_ai.py",
    "test_structs.py",
    "test_textures.py",
-   "test_thumbnails.py"
+   "test_thumbnails.py",
+   "test_uncovered_reads.py",
+   "test_uncovered_reads2.py",
+   "test_uncovered_reads3.py"
   ],
   "find_nodes": [
    "test_anim_nodes.py",
    "test_find_and_move.py"
   ],
+  "focus_viewport": [
+   "test_uncovered_reads3.py"
+  ],
+  "get_actor_bounds": [
+   "test_uncovered_reads2.py"
+  ],
+  "get_cvar": [
+   "test_uncovered_reads2.py"
+  ],
   "get_datatable_row": [
    "test_datatables.py"
+  ],
+  "get_dependencies": [
+   "test_uncovered_reads2.py"
   ],
   "get_inherited_component": [
    "test_inherited_components.py"
@@ -653,6 +669,7 @@
    "test_safety_gate.py"
   ],
   "list_bones": [
+   "test_blender_rig.py",
    "test_find_tools.py",
    "test_ik_authoring.py",
    "test_ik_goals_solvers.py",
@@ -685,6 +702,9 @@
    "test_components_dispatchers.py",
    "test_idempotence.py"
   ],
+  "list_editor_commands": [
+   "test_uncovered_reads2.py"
+  ],
   "list_enum_values": [
    "test_confirm_gated.py",
    "test_enums.py"
@@ -694,6 +714,9 @@
   ],
   "list_game_feature_plugins": [
    "test_game_features.py"
+  ],
+  "list_gameplay_tags": [
+   "test_uncovered_reads.py"
   ],
   "list_graphs": [
    "test_anim_nodes.py",
@@ -718,6 +741,9 @@
   "list_ik_solver_types": [
    "test_ik_goals_solvers.py"
   ],
+  "list_input_mappings": [
+   "test_uncovered_reads.py"
+  ],
   "list_interfaces": [
    "test_interfaces.py",
    "test_undo_integrity.py"
@@ -730,6 +756,8 @@
    "test_safety_gate.py",
    "test_snap_ground.py",
    "test_spawn_many.py",
+   "test_uncovered_reads2.py",
+   "test_uncovered_reads3.py",
    "test_water_zone.py"
   ],
   "list_level_sequences": [
@@ -745,6 +773,9 @@
   ],
   "list_morph_targets": [
    "test_list_bones.py"
+  ],
+  "list_mounted_containers": [
+   "test_uncovered_reads3.py"
   ],
   "list_niagara_emitters": [
    "test_niagara.py"
@@ -763,12 +794,21 @@
    "test_selfpin.py",
    "test_undo_integrity.py"
   ],
+  "list_pcg_components": [
+   "test_uncovered_reads.py"
+  ],
+  "list_pcg_graphs": [
+   "test_uncovered_reads.py"
+  ],
   "list_retarget_chain_mapping": [
    "test_ik_authoring.py"
   ],
   "list_sockets": [
    "test_list_bones.py",
    "test_sockets_ai.py"
+  ],
+  "list_state_trees": [
+   "test_uncovered_reads.py"
   ],
   "list_struct_members": [
    "test_set_struct_member.py",
@@ -797,6 +837,7 @@
    "test_list_bones.py"
   ],
   "list_water_bodies": [
+   "test_uncovered_reads.py",
    "test_water_zone.py"
   ],
   "list_widget_animations": [
@@ -816,6 +857,9 @@
   ],
   "nav_project_point": [
    "test_audio_nav.py"
+  ],
+  "nav_status": [
+   "test_uncovered_reads3.py"
   ],
   "new_level": [
    "test_report_intake.py"
@@ -940,6 +984,9 @@
   ],
   "save_package": [
    "test_safety_gate.py"
+  ],
+  "scene_report": [
+   "test_uncovered_reads3.py"
   ],
   "self_audit": [
    "test_graph_patch.py",
@@ -1101,6 +1148,9 @@
   "undo_transactions": [
    "test_transactions.py",
    "test_undo_integrity.py"
+  ],
+  "validate": [
+   "test_uncovered_reads3.py"
   ],
   "wrap_tree_widget": [
    "test_widget_tree.py"

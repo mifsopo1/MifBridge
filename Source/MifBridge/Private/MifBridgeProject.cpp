@@ -364,10 +364,37 @@ namespace MifBridge
 			ChildrenOf.FindOrAdd(P.Value).Add(P.Key);
 			if (!Blueprints.Contains(P.Value))
 			{
-				// Report the NATIVE class name rather than the mangled path - "Actor", not
-				// "/Script/Engine.Actor" - because that is the name a caller recognises.
-				const FString* Native = NativeParentOf.Find(P.Key);
-				NativeRoots.Add(Native ? *Native : ClassPathToShortName(P.Value));
+				// FOUND LIVE: reporting NativeParentOf's value here unconditionally was wrong for a
+				// SECOND reason, distinct from the ChildrenOf key-shape bug fixed above. "Not in
+				// Blueprints" has two different causes this treated as one: the parent genuinely IS a
+				// native (non-blueprint) class, OR the parent IS a blueprint but lives in a PLUGIN
+				// content root (e.g. /Oceanology_Plugin/...) outside pathPrefix, so this /Game/-only
+				// scan never saw it. NativeParentOf's value (from the NativeParentClassPath tag) walks
+				// PAST every blueprint layer to the deepest native ancestor regardless of which case
+				// this is - for the second case that name has no relationship to P.Value at all, so no
+				// string transform of P.Value can ever match it, and root would refuse every value
+				// this endpoint itself advertised. VERIFIED against real DDS2 content:
+				// BP_OceanologyInfiniteOcean_ChildBTR's direct parent is
+				// /Oceanology_Plugin/.../BP_OceanologyInfiniteOcean - a real blueprint, not a native
+				// class - while NativeParentOf reported the unrelated "OceanologyInfiniteOcean" (its
+				// native-most ancestor, several hops further up).
+				//
+				// A genuinely NATIVE class path always starts "/Script/" (export-text form
+				// Class'/Script/Module.Name') - no blueprint asset, in-prefix or out, is ever shaped
+				// that way. So only trust NativeParentOf when P.Value itself is a native reference;
+				// otherwise this IS the case being described, and the honest, WALKABLE name is
+				// P.Value's own short name - the same value ChildrenOf is actually keyed by.
+				if (P.Value.StartsWith(TEXT("/Script/")))
+				{
+					// Report the NATIVE class name rather than the mangled path - "Actor", not
+					// "/Script/Engine.Actor" - because that is the name a caller recognises.
+					const FString* Native = NativeParentOf.Find(P.Key);
+					NativeRoots.Add(Native ? *Native : ClassPathToShortName(P.Value));
+				}
+				else
+				{
+					NativeRoots.Add(ClassPathToShortName(P.Value));
+				}
 			}
 		}
 		for (TPair<FString, TArray<FString>>& P : ChildrenOf)
@@ -443,10 +470,26 @@ namespace MifBridge
 			{
 				// A NATIVE root is a legitimate thing to ask for - "show me everything deriving from
 				// Actor" - and it is not a blueprint, so the loop above will never find it.
+				//
+				// FOUND LIVE, NOT ASSUMED: a direct ChildrenOf.Find(RootWanted) here always failed for
+				// the exact values this endpoint itself advertises. ChildrenOf is keyed by
+				// ClassPathToAssetPath's output for a native parent - the FULL path,
+				// "/Script/Engine.Actor" - while nativeRoots (below) reports the SHORT name via
+				// ClassPathToShortName, "Actor", because that is "the name a caller recognises". A
+				// caller who did exactly what the error message tells them to - call with no root, read
+				// nativeRoots, pass one back in - got refused every time. Fixed by matching on the short
+				// name too, the same normalisation nativeRoots already applies.
 				const TArray<FString>* Kids = ChildrenOf.Find(RootWanted);
-				for (const TPair<FString, FString>& P : NativeParentOf)
+				if (!Kids)
 				{
-					if (P.Value == RootWanted && !ParentOf.Contains(P.Key)) { continue; }
+					for (TPair<FString, TArray<FString>>& P : ChildrenOf)
+					{
+						if (ClassPathToShortName(P.Key).Equals(RootWanted, ESearchCase::IgnoreCase))
+						{
+							Kids = &P.Value;
+							break;
+						}
+					}
 				}
 				if (!Kids)
 				{
