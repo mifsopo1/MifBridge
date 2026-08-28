@@ -2503,7 +2503,7 @@ cannot become one giant blocking item:
       All six verified via a real Build.bat on both engines - buildcheck.py: BUILD OK, warnings gone,
       no 5.3 regression. Commits: 717272e, 11f7893, 27af774.
 
-- [ ] **Landscape edit-layer migration - an architecture decision, not a warning fix.** Found
+- [~] **Landscape edit-layer migration - an architecture decision, not a warning fix.** Found
       2026-08-28, deliberately NOT acted on - this is Andre's call, not something to redesign
       unilaterally mid-autopilot. `ALandscape::CanHaveLayersContent()` / `ToggleCanHaveLayersContent()`
       (create_landscape's "keep edit layers off" setup) are now UE_DEPRECATED(5.7): not a renamed
