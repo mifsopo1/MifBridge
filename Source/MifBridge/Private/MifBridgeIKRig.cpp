@@ -43,6 +43,13 @@
                                            // 5.3 has this only as an EXPERIMENTAL PLUGIN
                                            // (Plugins/Experimental/StructUtils), which is
                                            // why the include is inside this branch.
+#include "Retargeter/IKRetargetChainMapping.h"   // FRetargetChainMapping, FRetargetChainPair - the
+                                           // real chain-mapping storage on 5.6+, see IKGetChainMappingPairs.
+                                           // Does not exist on 5.3 at all (confirmed: no such file
+                                           // under D:/UE532/Engine/Plugins/Animation/IKRig).
+#include "Retargeter/IKRetargetOps.h"     // FIKRetargetOpBase - full definition needed to call
+                                           // GetName()/GetChainMapping() on a *GetRetargetOpByIndex()
+                                           // result; the controller header only forward-declares it.
 #else
 #include "Rig/Solvers/IKRigSolver.h"   // UIKRigSolver - null entries are a crash vector, see IKNullEntryReason
 #endif
@@ -262,6 +269,28 @@ namespace MifBridge
 				Fail(Out, TEXT("could not get a controller for this retargeter. NOTHING was changed."));
 				return nullptr;
 			}
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			// VERIFIED 2026-08-28 against a real UE 5.7 editor, not assumed from reading the header:
+			// 5.6+ moved chain mapping OFF the flat ChainSettings array this file's own IKWriteMapping
+			// reads (Asset->GetAllChainSettings()) and onto per-Op FRetargetChainMapping structs
+			// (IKRetargeterController.cpp's SetIKRig/AutoMapChains both operate through
+			// GetRetargetOpByIndex()->GetChainMapping() now, not ChainSettings at all). A retargeter
+			// with zero Ops - which is exactly what create_asset produces, since it NewObjects the
+			// class directly rather than going through UIKRetargetFactory::FactoryCreateNew, the same
+			// "raw-spawn skips factory setup" trap this file's header comment already names for water
+			// bodies and MetaHuman characters - has nothing for AutoMapChains to write into, so every
+			// retargeter this endpoint family created reported chainCount:0 forever on 5.6+, silently,
+			// while compiling and running clean. AddDefaultOps() is the exact call
+			// UIKRetargetFactory::FactoryCreateNew makes (IKRetargetFactory.cpp:32) and is documented
+			// idempotent ("If any of these ops are already present, they will not be re-added"), so
+			// calling it unconditionally here repairs a bare create_asset retargeter and is a genuine
+			// no-op on one already built through the factory or by a prior call to this same resolver.
+			// On 5.3 this whole Ops concept does not exist - AddDefaultOps is not even a symbol in
+			// D:/UE532/Engine/Plugins/Animation/IKRig, confirmed by grep, not inferred - and chain
+			// mapping already worked correctly there without it, which is why this is gated rather than
+			// unconditional.
+			C->AddDefaultOps();
+#endif
 			return C;
 		}
 
@@ -557,7 +586,71 @@ namespace MifBridge
 			return 1.0f - (Algo::LevenshteinDistance(ALower, BLower) / WorstCase);
 		}
 
-		void IKWriteMapping(const UIKRetargeter* Asset, const TSharedRef<FJsonObject>& Out)
+		/** [(targetChainName, sourceChainName)] pairs, from whichever storage this engine actually
+		 *  populates. VERIFIED LIVE 2026-08-28 against a real UE 5.7 editor: Asset->GetAllChainSettings()
+		 *  (the 5.3-era flat array) reads back EMPTY on 5.6+ regardless of what auto_map_retarget_chains
+		 *  or set_retarget_rigs already correctly wrote, because 5.6 moved the real data onto a per-Op
+		 *  FRetargetChainMapping (IKRetargeterController.cpp's own SetIKRig/AutoMapChains write there, not
+		 *  to ChainSettings - confirmed by reading both, not inferred from the deprecation warning alone).
+		 *  DOES NOT use C->GetChainMapping(NAME_None) - its own doc comment claims "returns the first
+		 *  chain mapping it finds", but the actual loop (IKRetargeterController.cpp:1062) only skips an
+		 *  op when InOpName != NAME_None; passing NAME_None makes that condition false on iteration one,
+		 *  so it unconditionally returns OP INDEX 0's mapping, null or not, without ever checking whether
+		 *  it's null and moving on. Op 0 in AddDefaultOps' fixed order is always "Pelvis Motion", which
+		 *  never owns a chain mapping - so this overload returns nullptr on every normally-configured
+		 *  retargeter, not "the first real one". Reproduced live: a retargeter whose "FK Chains" op
+		 *  (index 1) held a fully populated, correct ChainMap (confirmed by dumping the raw RetargetOps
+		 *  array via get_property) still read back chainCount:0 through GetChainMapping(NAME_None). Walk
+		 *  the ops directly instead and take the first non-null mapping - the behaviour the header
+		 *  comment describes, just not what the function does. 5.3 has no Op system at all - none of
+		 *  this is a symbol there - so this stays on the original, proven path. */
+		TArray<TPair<FString, FString>> IKGetChainMappingPairs(
+			const UIKRetargeter* Asset, UIKRetargeterController* C)
+		{
+			TArray<TPair<FString, FString>> Out;
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			const FRetargetChainMapping* Mapping = nullptr;
+			for (int32 OpIndex = 0; OpIndex < C->GetNumRetargetOps(); ++OpIndex)
+			{
+				if (FIKRetargetOpBase* Op = C->GetRetargetOpByIndex(OpIndex))
+				{
+					if (FRetargetChainMapping* CM = Op->GetChainMapping())
+					{
+						Mapping = CM;
+						break;
+					}
+				}
+			}
+			if (Mapping)
+			{
+				for (const FRetargetChainPair& Pair : Mapping->GetChainPairs())
+				{
+					// FName::ToString() on NAME_None renders the literal string "None" - NOT empty -
+					// so an unmapped chain's source must be forced to an empty string here. Caught live
+					// 2026-08-28: an exact-mode auto-map correctly left a chain unmapped
+					// (SourceChainName == NAME_None), but IKWriteMapping's bMapped = !SourceName.IsEmpty()
+					// saw the non-empty string "None" and reported mapped:true, sourceChain:"None" for a
+					// chain that was genuinely unmapped - the same "silently reports success/data that
+					// isn't real" failure class this file exists to catch, just found on the write side
+					// of this exact fix instead of by inspection.
+					Out.Emplace(
+						Pair.TargetChainName.ToString(),
+						Pair.SourceChainName.IsNone() ? FString() : Pair.SourceChainName.ToString());
+				}
+			}
+#else
+			for (const TObjectPtr<URetargetChainSettings>& CS : Asset->GetAllChainSettings())
+			{
+				if (!CS) { continue; }
+				Out.Emplace(
+					CS->TargetChain.ToString(),
+					CS->SourceChain.IsNone() ? FString() : CS->SourceChain.ToString());
+			}
+#endif
+			return Out;
+		}
+
+		void IKWriteMapping(const UIKRetargeter* Asset, UIKRetargeterController* C, const TSharedRef<FJsonObject>& Out)
 		{
 			// VERIFIED 2026-08-28: the engine's own fuzzy auto-map accepts any candidate scoring above
 			// 0.2 (its own threshold, IKRetargeterController.cpp:353) - so with only one source chain
@@ -569,15 +662,14 @@ namespace MifBridge
 			// the SAME engine behaviour the editor's own "Auto-Map Chains" button has, not a MifBridge
 			// bug - the fix is reporting the number the engine never surfaces, not changing the mapping.
 			TArray<TSharedPtr<FJsonValue>> Rows, Unmapped, LowConfidence;
-			for (const TObjectPtr<URetargetChainSettings>& CS : Asset->GetAllChainSettings())
+			for (const TPair<FString, FString>& CS : IKGetChainMappingPairs(Asset, C))
 			{
-				if (!CS) { continue; }
 				TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
-				const FString TargetName = CS->TargetChain.ToString();
-				const FString SourceName = CS->SourceChain.ToString();
+				const FString TargetName = CS.Key;
+				const FString SourceName = CS.Value;
 				R->SetStringField(TEXT("targetChain"), TargetName);
 				R->SetStringField(TEXT("sourceChain"), SourceName);
-				const bool bMapped = !CS->SourceChain.IsNone();
+				const bool bMapped = !SourceName.IsEmpty();
 				R->SetBoolField(TEXT("mapped"), bMapped);
 				if (!bMapped)
 				{
@@ -1321,6 +1413,25 @@ namespace MifBridge
 		if (Src) { C->SetIKRig(ERetargetSourceOrTarget::Source, Src); }
 		if (Tgt) { C->SetIKRig(ERetargetSourceOrTarget::Target, Tgt); }
 
+#if MIF_ENGINE_AT_LEAST(5, 6)
+		// VERIFIED 2026-08-28 against a real UE 5.7 editor, root-caused by reading the engine source
+		// (not the header comments, which are misleading here): SetIKRig()'s own reinit-ops loop only
+		// runs when SourceOrTarget==Source ("we do NOT auto-update the target IK rig as this may be
+		// overridden" - IKRetargeterController.cpp:92), and even then it resolves the target through
+		// GetTargetIKRigForOp(), which ONLY returns a per-op CUSTOM override
+		// (Op->GetCustomTargetIKRig(), base-class default nullptr) - it never falls back to the
+		// retargeter's global TargetIKRigAsset. So a default-created retargeter's ops (from
+		// AddDefaultOps(), see IKResolveRetargeter above) never get a working FRetargetChainMapping
+		// this way: SetIKRig(Target,...) alone. AssignIKRigToAllOps() is the engine's own public,
+		// documented answer to exactly this ("Force all ops to use the assigned IK Rig and update
+		// their chain mappings" - IKRetargeterController.h:159) - it calls each op's polymorphic
+		// OnAssignIKRig(), which both applies the rig and re-autos the chain mapping. This is the same
+		// path the Retarget Chains panel's Source/Target combo boxes drive in the editor UI. Does not
+		// exist on 5.3 (confirmed absent via grep of D:/UE532's IKRig plugin source).
+		if (Src) { C->AssignIKRigToAllOps(ERetargetSourceOrTarget::Source, Src); }
+		if (Tgt) { C->AssignIKRigToAllOps(ERetargetSourceOrTarget::Target, Tgt); }
+#endif
+
 		IKMarkDirty(Asset);
 		Out->SetStringField(TEXT("retargeter"), Asset->GetPathName());
 		// Through the controller, which is the only door on 5.7 and an equally valid one on 5.3.
@@ -1329,7 +1440,7 @@ namespace MifBridge
 		Out->SetStringField(TEXT("sourceRig"), SrcRig ? SrcRig->GetPathName() : FString());
 		Out->SetStringField(TEXT("targetRig"), TgtRig ? TgtRig->GetPathName() : FString());
 
-		IKWriteMapping(Asset, Out);
+		IKWriteMapping(Asset, C, Out);
 		// Stated because it is surprising: setting a rig here already auto-mapped the chains.
 		Out->SetStringField(TEXT("note"),
 			TEXT("setting a rig does more than store it: the preview mesh is copied off the rig, the "
@@ -1416,7 +1527,7 @@ namespace MifBridge
 		Out->SetStringField(TEXT("retargeter"), Asset->GetPathName());
 		Out->SetStringField(TEXT("mode"), Mode);
 		Out->SetBoolField(TEXT("remapExisting"), bRemap);
-		IKWriteMapping(Asset, Out);
+		IKWriteMapping(Asset, C, Out);
 		if (bClearImpliedRemap)
 		{
 			Out->SetStringField(TEXT("clearNote"),
@@ -1502,7 +1613,7 @@ namespace MifBridge
 		Out->SetStringField(TEXT("retargeter"), Asset->GetPathName());
 		Out->SetStringField(TEXT("targetChain"), Target);
 		Out->SetStringField(TEXT("sourceChain"), Source);
-		IKWriteMapping(Asset, Out);
+		IKWriteMapping(Asset, C, Out);
 #endif
 	}
 
@@ -1583,7 +1694,7 @@ namespace MifBridge
 		Out->SetStringField(TEXT("retargeter"), Asset->GetPathName());
 		Out->SetStringField(TEXT("sourceRig"), IsValid(Src) ? Src->GetPathName() : FString());
 		Out->SetStringField(TEXT("targetRig"), IsValid(Tgt) ? Tgt->GetPathName() : FString());
-		IKWriteMapping(Asset, Out);
+		IKWriteMapping(Asset, C, Out);
 		// The engine's verdict - with the caveat that ON THIS SIDE the flag is not one.
 		// UIKRetargetProcessor::bIsInitialized is set UNCONDITIONALLY at
 		// IKRetargetProcessor.cpp:1566, after the root and chain initialisations have been allowed to
