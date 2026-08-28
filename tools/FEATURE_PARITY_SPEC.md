@@ -1657,6 +1657,69 @@ contradicts this file, the analysis wins — it read the code and this file matc
   already handled correctly. "0 and 0" was true at the field level and misleading at the level a
   caller actually reads it.
 
+- [x] **Blender 3.6.23 LIGHTMAP failure closed for real - it was the test mangling its own fixture.**
+  DONE 2026-08-28 (`task_a8375a1b`, picked up directly instead of left for a separate session).
+  Reproducing fresh nearly failed to reproduce at all: a plain factory-startup Cube unwraps LIGHTMAP
+  fine on 3.6.23. Root cause was in `test_blender_mesh.py` itself: T777 reused the SAME Cube every
+  earlier test (T765-T776) had already mangled - forced-split extrude_skirt, bevel_edges, a COLLAPSE
+  decimate, then a DISSOLVE decimate that merges coplanar faces into n-gons - and Blender 3.6.23's
+  own built-in `uvcalc_lightmap.py` genuinely throws `ZeroDivisionError` on the resulting pathological
+  n-gon (`box_fit_2d` projecting it to zero width). Never a general "LIGHTMAP is broken on 3.6" claim.
+  T777 now imports a fresh copy of the ORIGINAL untouched cube (the same FBX T763 exported before any
+  editing) specifically for the LIGHTMAP check. All four installed Blender versions now pass 78/78 +
+  12/12 clean. README corrected for the third time on this exact table - each revision closer to the
+  truth than the last, which is itself worth remembering: the first "fix" (documenting 73/77 as a
+  known limitation) was accurate as far as it went but stopped one level short of the real cause.
+  Pushed 23e126f.
+
+- [x] **A Discord code-quality suggestion, checked systematically rather than assumed correct.**
+  DONE 2026-08-28. Andre relayed a screenshot (V1 + "Mov JR"): "add error messages before return false
+  or return nullptr, where applicable." Rather than spot-check a file or two, swept ALL of
+  `Source/MifBridge/Private/*.cpp`: 32 raw `return false;`/`return nullptr;` hits across 5 files,
+  every one already sets a clear `OutError`/`OutWhyNot` string first. 482 raw bare `return;` hits
+  inside `H_` handlers, but 465 were the `RejectUnknownParams(...) {return;}` guard (which already
+  calls `Fail()` internally - invisible to a short context-window check); filtering that idiom out
+  left 17 candidates, checked individually: 5 were plain success-path returns (nothing to explain),
+  12 were `if (!ResolveBlueprintField(...)) return;` / `if (!ResolveNodeField(...)) return;` -
+  confirmed both shared resolvers already call `Fail(Out, ...)` before returning null, same pattern.
+  Zero genuine gaps. Reported this back honestly rather than manufacture a cosmetic diff to look
+  responsive - new standing feedback memory on how to handle this class of relayed suggestion going
+  forward.
+
+- [x] **IK Rig had never touched a real asset in this project - and auto-mapping can lie by omission.**
+  DONE 2026-08-28. Continued "test the tool's own headline claim live" - the fourth real finding it
+  has produced this session. First check on the 18-endpoint IK Rig family: zero `IKRigDefinition` or
+  `IKRetargeter` assets existed anywhere in DDS2. Built two real rigs from real project skeletal
+  meshes (`SKM_Manny`, 161 bones; `SKM_Manny_Simple`, 89 bones) and ran create -> `set_ik_rig_mesh` ->
+  `set_ik_rig_retarget_root` -> `add_ik_retarget_chain` -> create `IKRetargeter` -> `set_retarget_rigs`
+  for real, for the first time this family has ever been exercised end to end.
+
+  Mostly correct - authoring and reads all worked exactly as documented, independently verified. But
+  auto-mapping a "RightLeg" target chain against a source rig with ONLY a "LeftArm" chain (no leg to
+  compete with it) silently mapped RightLeg to LeftArm and reported `mapped:true, unmappedCount:0` -
+  identical to a genuine match. Traced into the ENGINE source, not assumed: MifBridge calls
+  `UIKRetargeterController::AutoMapChains` directly (not a MifBridge reimplementation), and the
+  engine's own fuzzy matcher (`IKRetargeterController.cpp:349-366`, Levenshtein similarity) accepts
+  anything scoring above its own floor of 0.2 - a permissive bar that lets a desperate fallback match
+  through with the same `mapped:true` as a confident one. This is the SAME behaviour the editor's own
+  "Auto-Map Chains" button has, not a MifBridge logic bug - the fix is surfacing a number the engine
+  computes and discards internally, not changing what gets mapped.
+
+  Added `nameMatchScore` (0.0-1.0, the engine's own exact scoring formula, reproduced independently)
+  to every mapped row across `set_retarget_rigs`/`auto_map_retarget_chains`/`list_retarget_chain_mapping`'s
+  shared `IKWriteMapping`, plus `lowConfidenceMappings`/`lowConfidenceNote` below a threshold. First
+  attempt used 0.5 - RE-TESTED against the actual reproduction rather than trusted, and RightLeg/LeftArm
+  scored 0.5333, ABOVE it, missing the exact case this was built to catch. Corrected to 0.6 after
+  measuring instead of re-guessing. Worth remembering on its own: an unverified threshold is exactly
+  the class of claim this whole session has been finding bugs in elsewhere - caught it in my own work
+  by applying the same "verify against the real repro, not the estimate" rule before shipping it.
+
+  Verified live after each rebuild (never trusted Live Coding once for this one, after the water-zone
+  lesson): exact match (LeftArm/LeftArm) scores 1.0 and passes clean; the bad match is correctly
+  flagged with an explanatory note. Built clean on UE 5.3 (real project, three real Build.bat +
+  relaunch cycles across the fix and the threshold correction) and UE 5.7 (probe, buildcheck
+  confirmed). Pushed 0f2ddab.
+
 - [~] **DECLINED 2026-08-26: the `droppedByValidation` path is UNREACHABLE through this endpoint.**
   This item was filed hours before the finding behind it was corrected, and the corrected finding
   removes the item. AddSample -> ValidateSampleValue -> IsTooCloseToExistingSamplePoint calls the SAME
