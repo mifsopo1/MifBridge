@@ -2087,9 +2087,12 @@ Use self_audit for the count; it asks the running DLL.
       PostLoad, and duplicate_asset already refuses cooked Niagara for that reason. Writing to
       the placed component keeps that hazard off the code path entirely, and is what you
       actually want when tuning one instance rather than every instance in the project.
-      NOT FULLY EXERCISED LIVE: the confirm gate and actor resolution are verified, but
-      mifaudit strips `confirm` by design, so the type-inference refusal could not be reached
-      through the harness. Its logic is straight-line and reviewed, and it is untested.
+      LIVE-VERIFIED 2026-08-28, DIRECTLY against the bridge (mifaudit still cannot reach this -
+      it strips `confirm` by design - but a direct HTTP call is not bound by that): spawned a real
+      NiagaraActor, assigned BoatFoamTrail (a real DDS2 system with a plain float user parameter),
+      and confirmed the type-inference refusal fires exactly as written - a bare number with no
+      `type` correctly refuses ("could be a float or an int") before touching the component, and
+      an explicit `type:"float"` call afterward succeeds normally. Test actor deleted afterward.
       describe_niagara_system, list_niagara_emitters, list_niagara_user_parameters and nothing that
       writes. Note the hazard already on file: duplicating a cooked UNiagaraSystem crashes the editor
       (docs/02 section 6c), so DDS2 authoring is constrained. Curfew is uncooked and is not.
