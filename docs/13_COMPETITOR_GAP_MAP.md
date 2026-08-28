@@ -109,6 +109,30 @@ Only `Mover` is deliberately left out: it is 5.7-only and needs an `ENGINE_MINOR
 
 ## Suggested order, if the goal is parity
 
+**UPDATE 2026-08-28: every item below has since been executed or explicitly declined.** Checked
+against the current FEATURE_PARITY_SPEC.md rather than assumed, because this list read like an open
+roadmap two days after everything on it had already landed:
+
+1. ~~**Niagara** and **Sequencer**~~ — DONE. Sequencer authoring (create_asset producing a valid
+   LevelSequence) landed 2026-08-28 (`abaa44c`); both have real regression suites (`test_sequencer.py`,
+   `test_sequencer_authoring.py`, `test_niagara.py`, `test_niagara_params.py`).
+2. ~~**Game Features**~~ — DONE, but split into two SEPARATE plugin modules this doc's own title
+   conflated. `GameFeatures` (the subsystem itself: `list_game_feature_plugins`,
+   `describe_game_feature_plugin`) landed 2026-08-26, tested against DDS2's two real GameFeatureData
+   assets (ChristmasDlc, DDS2Casino) — `tools/test_game_features.py`, 68/68. `ModularGameplay` (a
+   DIFFERENT module - `UGameFrameworkComponentManager`/component extension by tag, not the
+   plugin-loading subsystem) was separately triaged and DECLINED in the spec, with reasoning.
+3. ~~**GAS**~~ — partially DONE. `add_gameplay_effect_modifier` exists and is tested (validation-only,
+   since DDS2 has no real AttributeSet content to succeed against - the same honest shape as
+   MetaHuman-on-5.3). Broader ability/attribute-set AUTHORING is declined in the spec.
+4. ~~**Water**, **Vehicles**~~ — both DONE. Water: full read+write 2026-08-27. Vehicles: existing
+   generic tools (create_blueprint, add_component, set_property) already cover it completely - zero
+   new code needed, confirmed by actually checking rather than assumed.
+5. Everything else on demand — still genuinely idle (GeometryScripting, LevelSnapshots, LiveLink,
+   MassEntity, MVVM), declined in the spec pending an actual ask, not built.
+
+Original suggested order preserved below for the reasoning; do not re-plan items 1-4 from it.
+
 1. ~~**Niagara** and **Sequencer**~~ — both STARTED, read halves delivered 2026-08-26.
 2. **Game Features** — the one on this list that is *about modding*, which is DDS2's whole case.
 3. **GAS** — Curfew-shaped.
