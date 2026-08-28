@@ -18,6 +18,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -87,11 +88,17 @@ def main():
 
     # ------------------------------------------------------------------ T153 the crash guard
     print("\n=== T153 [crash guard]: a COOKED struct is refused, not asserted into ===")
+    # Any /Game/_Mif* scratch struct is disqualified, not just this suite's own _MifStruct - an
+    # orphaned scratch struct left behind by a DIFFERENT suite (delete_asset cannot always reach an
+    # in-memory struct handle, so one can genuinely be sitting there) is not cooked and would make this
+    # guard test something else entirely: an ordinary "unknown member" refusal instead of the fatal-
+    # cast guard this test exists to prove.
     cooked = None
     for a in (M.call("find_assets", {"class": "UserDefinedStruct", "pathPrefix": "/Game/",
-                                     "limit": 8}).get("assets") or []):
-        if "_MifStruct" not in (a.get("path") or ""):
-            cooked = a.get("path")
+                                     "limit": 20}).get("assets") or []):
+        p = a.get("path") or ""
+        if not p.startswith(SC.SCRATCH_PREFIXES):
+            cooked = p
             break
     check("T153 found a base-game struct to try", bool(cooked), cooked)
     if cooked:
@@ -128,7 +135,7 @@ def main():
           isinstance(r.get("dependentDataTableCount"), (int, float)),
           json.dumps({k: v for k, v in r.items() if k != "member"})[:200])
 
-    M.call("delete_asset", {"path": sp})
+    SC.confirm_call("delete_asset", {"path": sp})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f in FAIL:

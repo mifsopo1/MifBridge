@@ -1,13 +1,9 @@
 {
  "uncovered": [
-  "add_component_bound_event",
-  "add_create_widget",
   "add_gameplay_effect_modifier",
   "add_get_array_item",
-  "add_get_data_table_row",
   "add_make_map",
   "add_nav_volume",
-  "add_parent_call",
   "add_self",
   "add_sequence",
   "add_sequence_possessable",
@@ -15,7 +11,6 @@
   "add_simplified_collision",
   "add_spawn_actor",
   "add_sublevel",
-  "add_widget_binding",
   "backup_blueprint",
   "bind_landscape_rvt",
   "close_asset_editors",
@@ -48,7 +43,6 @@
   "remove_sublevel",
   "remove_variable",
   "remove_widget_binding",
-  "rename_event",
   "reparent_blueprint",
   "reset_property_to_default",
   "retarget_variable_node",
@@ -92,6 +86,7 @@
   "add_branch": [
    "test_confirm_gated.py",
    "test_find_and_move.py",
+   "test_node_spawns.py",
    "test_undo_integrity.py"
   ],
   "add_break_struct": [
@@ -115,7 +110,14 @@
    "test_confirm_gated.py",
    "test_idempotence.py",
    "test_inherited_components.py",
+   "test_node_spawns.py",
    "test_undo_integrity.py"
+  ],
+  "add_component_bound_event": [
+   "test_node_spawns.py"
+  ],
+  "add_create_widget": [
+   "test_node_spawns.py"
   ],
   "add_custom_event": [
    "test_node_spawns.py",
@@ -153,6 +155,9 @@
    "test_selfpin.py",
    "test_undo_integrity.py",
    "test_v3_apply.py"
+  ],
+  "add_get_data_table_row": [
+   "test_node_spawns.py"
   ],
   "add_get_subsystem": [
    "test_node_spawns.py"
@@ -195,6 +200,9 @@
   "add_override_event": [
    "test_graph_patch.py"
   ],
+  "add_parent_call": [
+   "test_node_spawns.py"
+  ],
   "add_pin": [
    "test_pinlifetime.py"
   ],
@@ -220,6 +228,7 @@
    "test_timeline.py"
   ],
   "add_tree_widget": [
+   "test_node_spawns.py",
    "test_rename_widget.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation_props.py",
@@ -267,6 +276,9 @@
    "test_widget_anim_recreate.py",
    "test_widget_animation_props.py",
    "test_widget_animation_track.py"
+  ],
+  "add_widget_binding": [
+   "test_node_spawns.py"
   ],
   "analyze_skeletal_split": [
    "test_find_tools.py"
@@ -913,7 +925,8 @@
   ],
   "read_datatable": [
    "test_confirm_gated.py",
-   "test_datatables.py"
+   "test_datatables.py",
+   "test_node_spawns.py"
   ],
   "recipe_add_debug_print": [
    "test_recipes.py"
@@ -989,6 +1002,9 @@
   ],
   "rename_asset": [
    "test_modal_guard.py"
+  ],
+  "rename_event": [
+   "test_node_spawns.py"
   ],
   "rename_event_dispatcher": [
    "test_components_dispatchers.py"

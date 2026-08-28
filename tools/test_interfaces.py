@@ -20,6 +20,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -127,8 +128,8 @@ def main():
     check("T314 removing something that is not an interface is refused",
           notimpl.get("ok") is False, (notimpl.get("error") or "")[:150])
 
-    M.call("delete_asset", {"path": bpath})
-    M.call("delete_asset", {"path": ipath})
+    SC.confirm_call("delete_asset", {"path": bpath})
+    SC.confirm_call("delete_asset", {"path": ipath})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

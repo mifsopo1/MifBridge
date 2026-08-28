@@ -2948,3 +2948,49 @@ cannot become one giant blocking item:
       one until you read what it actually verified. Fixed to test only what this harness can reach,
       named for what it actually proves.
       66/66 PASS. coverage_gaps.json refreshed: 84 -> 75.
+
+- [x] **scratch_confirm.py's "permanent gap" for remove_node/rename_event was wrong - both close for
+      real, plus 5 more node-adding endpoints (T336-T340) and 19 files' dead delete_asset cleanup.**
+      DONE 2026-08-28. Finishing the T334/T335 sweep with T336 (add_parent_call), T337
+      (add_get_data_table_row against a real DataTable), T338 (add_create_widget against a real
+      WidgetBlueprint), T339 (add_component_bound_event on a real SphereComponent), T340
+      (add_widget_binding on its own scratch WidgetBlueprint) surfaced four wrong assumptions of my
+      own, all fixed: T337's rowNameApplied is UE's own pin export text ("Name|None|"), not a bare
+      echo - loosened to startswith. The deliberately-unconfigured add_get_data_table_row probe node
+      (added to prove the optional-params path) was sitting in the graph when a "still compiles"
+      assertion ran - real UE behaviour, not a bug, moved to after every compile check instead. T340
+      assumed an empty WidgetBlueprint tree; create_blueprint auto-creates a root CanvasPanel_0
+      (confirmed live via list_tree_widgets) - switched from asRoot to parentName.
+      Investigating one of those cleanup calls (M.call("delete_asset",...) failing with "requires
+      confirm=true") surfaced something bigger: mifaudit's FORBIDDEN_KEYS strips confirm from EVERY
+      call, always has, and 3 real orphaned scratch assets were sitting in the open editor's memory
+      from earlier failed runs as proof. tools/scratch_confirm.py already existed to solve exactly
+      this - lets confirm through only when every path in the payload is provably /Game/_Mif* - and
+      test_confirm_gated.py already used it for 7 endpoints. Its own docstring claimed remove_node and
+      rename_event could NEVER be unblocked this way (guid-only, no path parameter) - checked that
+      claim directly rather than trusting it, and it was wrong: both accept an OPTIONAL graphId, and
+      the graphId this bridge returns is itself a full object path ("/Game/_MifX/BP_1.BP_1::EventGraph"),
+      confirmed live, so it satisfies the same path check when the owning blueprint is scratch. Fixed
+      scratch_confirm.py's docstring and self-test (added the WITH-graphId case to OK, split the BAD
+      case into "no graphId" vs "graphId pointing at a real blueprint"). Rewrote test_node_spawns.py's
+      T333 to do the real removal (a disposable throwaway node), and added T333b for rename_event,
+      which had ZERO coverage anywhere in this repo before - not even a refusal check. Also rewrote
+      T335 (add_blackboard_key) from confirm-gate-only to a real success/duplicate/bad-type test via
+      scratch_confirm, since it takes a `path` too and the original "same gap as remove_node" framing
+      was wrong for the same reason.
+      Then generalised the delete_asset finding: grep across every test_*.py found the SAME dead
+      M.call("delete_asset", ...) pattern in 19 files, 22 call sites total - including
+      test_confirm_gated.py, the file that pioneered scratch_confirm usage, which still had one
+      leftover dead cleanup call itself. Routed all 22 through SC.confirm_call. One of those fixes
+      exposed a second real, narrow, pre-existing bug: test_set_struct_member.py's T153 picks "any
+      UserDefinedStruct not under my own _MifStruct prefix" to stand in for a cooked base-game struct
+      - with a real orphaned _MifNodes struct now present (delete_asset genuinely cannot reclaim an
+      in-memory UserDefinedStruct handle - confirmed via its own error text, self-resolves on editor
+      restart, not a fix I could make), that heuristic grabbed MY leftover scratch struct instead and
+      got an ordinary "unknown member" refusal rather than the fatal-cast guard the test exists to
+      prove. Fixed the filter to exclude every /Game/_Mif* prefix via scratch_confirm.SCRATCH_PREFIXES,
+      not just this suite's own.
+      All 19 files + test_node_spawns.py re-run live individually after their fixes: every one 0 FAIL.
+      test_node_spawns.py itself: 101/101 (was 66/66 before this pass - T333/T333b/T336-T340 are all
+      new or upgraded checks). test_confirm_gated.py re-checked after the scratch_confirm.py doc edit:
+      33/33 still clean. parity_check.py clean. coverage_gaps.json refreshed: 75 -> 69.

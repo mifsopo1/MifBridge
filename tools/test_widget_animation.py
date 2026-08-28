@@ -21,6 +21,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -106,7 +107,7 @@ def main():
     check("T84 compiles clean", c.get("ok") is True and c.get("numErrors", 1) == 0,
           "errors=%s %s" % (c.get("numErrors"), json.dumps(c.get("messages", []))[:250]))
 
-    M.call("delete_asset", {"path": path})
+    SC.confirm_call("delete_asset", {"path": path})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f in FAIL:

@@ -17,6 +17,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -116,7 +117,7 @@ def main():
         check("T164 %s refused" % name, z.get("ok") is False, json.dumps(z)[:150])
         check("T164 %s explains" % name, expect in (z.get("error") or ""), (z.get("error") or "")[:140])
 
-    M.call("delete_asset", {"path": bp})
+    SC.confirm_call("delete_asset", {"path": bp})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f in FAIL:

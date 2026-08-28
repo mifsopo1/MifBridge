@@ -43,6 +43,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -212,7 +213,7 @@ def main():
     check("T254 a 'length' parameter is pointed at endTime",
           q.get("ok") is False and "endTime" in (q.get("error") or ""), (q.get("error") or "")[:160])
 
-    M.call("delete_asset", {"path": p})
+    SC.confirm_call("delete_asset", {"path": p})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

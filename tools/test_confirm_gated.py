@@ -182,7 +182,7 @@ def main():
               not any((x.get("Name") or x.get("name")) == "Row_A" for x in rows),
               json.dumps(rows)[:170])
 
-    M.call("delete_asset", {"path": bp})
+    SC.confirm_call("delete_asset", {"path": bp})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

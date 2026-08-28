@@ -25,6 +25,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -184,7 +185,7 @@ def main():
     check("T445 the blueprint still compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,
           "errors=%s" % c.get("numErrors"))
 
-    M.call("delete_asset", {"path": "/Game/_MifPin/BP_%d" % st})
+    SC.confirm_call("delete_asset", {"path": "/Game/_MifPin/BP_%d" % st})
     print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

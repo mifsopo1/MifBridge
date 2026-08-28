@@ -7,19 +7,22 @@ unattended overnight run cannot destroy a real asset.
 The cost has become visible though. Eleven mutating endpoints had NO success-path coverage because of
 it, and those are exactly the endpoints where a silent failure costs most.
 
-NINE of them this module genuinely unblocks, because each names its target by an asset path:
-write_datatable_rows, delete_datatable_rows, remove_enum_value, remove_interface, remove_component,
-revert_inherited_component, rename_variable, rename_function, rename_event_dispatcher.
+NINE of them name their target by a required asset path: write_datatable_rows, delete_datatable_rows,
+remove_enum_value, remove_interface, remove_component, revert_inherited_component, rename_variable,
+rename_function, rename_event_dispatcher.
 
-TWO IT CANNOT, and this list used to claim all eleven. remove_node and rename_event are addressed
-PURELY BY GUID - nodeGuid plus an optional graphId, with no path parameter to pass even if you
-wanted to - so check() refuses them every time and always will. They remain uncovered on the
-success path. That is a real gap, recorded here rather than papered over: the alternative is a
-reader believing these two are tested when nothing has ever exercised them.
+TWO MORE, remove_node and rename_event, are addressed primarily by nodeGuid - but both also accept an
+OPTIONAL graphId ("disambiguates a reused guid", per describe_endpoint), and a graphId returned by
+this bridge is itself a full object path (confirmed live: "/Game/_MifX/BP_1.BP_1::EventGraph"), which
+IS pathlike and DOES satisfy check() when the owning blueprint is scratch. An earlier version of this
+docstring claimed these two "have no path parameter to pass even if you wanted to" - that was wrong,
+caught only by actually calling remove_node with graphId included and watching it succeed (see
+test_confirm_gated.py's T343, and test_node_spawns.py's T333). Passing graphId is the ordinary case
+anyway: locating a node to remove or rename means you already have the graph it lives in.
 
-Widening the guard for them would mean trusting a guid, which is precisely the thing a guid cannot
-prove. Closing it properly means giving those two endpoints an optional blueprintId, which is an
-engine-side change and a parity update, not a change to this file.
+What check() genuinely cannot do is bless a bare {nodeGuid} with no graphId at all - there the guid is
+all there is, and a guid proves nothing about which asset it belongs to. That narrower case is refused
+and always will be; it just is not the common one.
 
 THE POINT OF THE GUARD IS NOT "never send confirm". It is "never destroy something that matters". A
 payload whose every path lies under /Game/_Mif cannot destroy something that matters: those assets are
@@ -89,13 +92,14 @@ def check(payload):
                 "particular would turn a disposable test artefact into a real one" % k)
     found = paths_in(payload)
     if not found:
-        # Absence of evidence is not evidence of safety: an endpoint addressed only by guid could be
-        # pointing at anything.
+        # Absence of evidence is not evidence of safety: a bare guid with no graphId could be
+        # pointing at anything. remove_node/rename_event pass this check fine WITH a graphId - see
+        # the module docstring - this refusal is for the narrower case of neither being present.
         raise NotScratch(
             "no asset path in this payload, so it cannot be shown to be scratch-only. Address the "
-            "target by a /Game/_Mif... path, or do not use confirm here. NOTE: remove_node and "
-            "rename_event are addressed only by guid and have no path parameter at all, so they "
-            "can never satisfy this and are knowingly uncovered - see the module docstring.")
+            "target by a /Game/_Mif... path, or do not use confirm here. For remove_node/rename_event "
+            "specifically: pass graphId too, not just nodeGuid - the graphId this bridge returns is "
+            "itself a full object path, and check() accepts it when the owning blueprint is scratch.")
     bad = [p for p in found if not is_scratch(p)]
     if bad:
         raise NotScratch(
@@ -125,6 +129,10 @@ if __name__ == "__main__":
         {"blueprintId": "/Game/_MifNodes/BP_1.BP_1", "oldName": "A", "newName": "B"},
         {"rows": [{"Name": "R"}], "path": "/Game/_MifDT/T_1"},
         {"nested": {"deep": ["/Game/_MifX/Thing"]}},
+        # remove_node/rename_event's real shape WITH graphId - a real object path, not a bare guid -
+        # so this is the common case, and it is allowed.
+        {"nodeGuid": "6A1F00006A1F00006A1F00006A1F0000",
+         "graphId": "/Game/_MifNodes/BP_1.BP_1::EventGraph"},
     ]
     BAD = [
         ({}, "no path at all"),
@@ -134,7 +142,9 @@ if __name__ == "__main__":
         ({"nested": {"deep": ["/Game/Real/Thing"]}}, "a real path buried in a nested structure"),
         ({"path": "/DDS2Casino/Asset/Thing"}, "another mount point entirely"),
         ({"nodeGuid": "6A1F-DEAD", "graphId": "9C2E-BEEF"},
-         "remove_node/rename_event shape - guid-only, so it can NEVER be unblocked"),
+         "remove_node/rename_event WITHOUT graphId as a real path - a bare guid proves nothing"),
+        ({"nodeGuid": "6A1F-DEAD", "graphId": "/Game/Real/BP_1.BP_1::EventGraph"},
+         "remove_node/rename_event pointed at a REAL blueprint's graph, not a scratch one"),
     ]
     bad_count = 0
     for p in OK:

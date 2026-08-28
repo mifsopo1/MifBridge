@@ -29,6 +29,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -150,7 +151,7 @@ def main():
               "the pin is wildcard AND the blueprint compiles clean - this is precisely the "
               "condition 06_OPEN_ISSUES §5 describes as stubbed during cook")
 
-    M.call("delete_asset", {"path": bp})
+    SC.confirm_call("delete_asset", {"path": bp})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

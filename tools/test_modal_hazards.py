@@ -232,7 +232,7 @@ def main():
               "unattendedGuard=%s inside batch - ops dispatched by batch would run unguarded, so a "
               "modal in any of them hangs the bridge" % inner)
 
-    M.call("delete_asset", {"path": "/Game/_MifModal/BP_%d" % st})
+    SC.confirm_call("delete_asset", {"path": "/Game/_MifModal/BP_%d" % st})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

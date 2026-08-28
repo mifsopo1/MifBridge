@@ -187,7 +187,7 @@ def main():
           "orphanedNodeCount=%s - a caller who is not told goes looking for the compile error blind"
           % rm.get("orphanedNodeCount"))
 
-    M.call("delete_asset", {"path": bpath})
+    SC.confirm_call("delete_asset", {"path": bpath})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

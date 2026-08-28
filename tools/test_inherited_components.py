@@ -26,6 +26,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -175,8 +176,8 @@ def main():
           own.get("ok") is False and "set_property" in (own.get("error") or ""),
           (own.get("error") or "")[:200])
 
-    M.call("delete_asset", {"path": child_path})
-    M.call("delete_asset", {"path": parent_path})
+    SC.confirm_call("delete_asset", {"path": child_path})
+    SC.confirm_call("delete_asset", {"path": parent_path})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

@@ -19,6 +19,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -106,7 +107,7 @@ def main():
             check("T131 and is marked as this instance's own override",
                   bool(b) and b[0].get("overriddenOnThisInstance") is True,
                   b[0].get("overriddenOnThisInstance") if b else None)
-        M.call("delete_asset", {"path": mi2})
+        SC.confirm_call("delete_asset", {"path": mi2})
 
     # ------------------------------------------------------------------ T132 guards
     print("\n=== T132: guards ===")
@@ -128,7 +129,7 @@ def main():
     check("T133 'texture' now points at the real key",
           "plural key is 'textures'" in (q.get("error") or ""), (q.get("error") or "")[:150])
 
-    M.call("delete_asset", {"path": mi})
+    SC.confirm_call("delete_asset", {"path": mi})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f in FAIL:

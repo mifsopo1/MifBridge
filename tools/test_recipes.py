@@ -29,6 +29,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -131,7 +132,7 @@ def main():
                   "no response in 60s - that is the modal/blocking hang, and it takes the bridge with it")
     check("T423 the bridge is still answering", M.bridge_responsive() is True, "bridge died")
 
-    M.call("delete_asset", {"path": "/Game/_MifRec/BP_%d" % st})
+    SC.confirm_call("delete_asset", {"path": "/Game/_MifRec/BP_%d" % st})
     print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

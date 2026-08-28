@@ -19,6 +19,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -112,7 +113,7 @@ def main():
     check("T183 the tree is unchanged after every refusal",
           sorted(names2) == sorted(names), "%s vs %s" % (sorted(names2), sorted(names)))
 
-    M.call("delete_asset", {"path": p})
+    SC.confirm_call("delete_asset", {"path": p})
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f in FAIL:
