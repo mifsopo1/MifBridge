@@ -106,10 +106,26 @@ def main():
         d = M.call("describe_endpoint", {"name": name}, timeout=30)
         if not d.get("ok"):
             continue
-        table = set(str(x).lower() for x in (d.get("acceptedParams") or []))
-        if not table:
+        # describe_endpoint's status is not the two-way split an empty acceptedParams list would
+        # suggest. Truthiness of acceptedParams cannot separate "no row at all" (acceptedParams
+        # omitted) from a genuine, complete zero-param row (acceptedParams:[], acceptsNoParameters:
+        # true, e.g. list_mounted_containers) - `[] or []` is falsy either way - so this branches on
+        # `status` instead. There are FOUR values in practice, not the three named in
+        # MifBridgeDescribe.cpp's header comment: "params_declared" (a static table row, possibly
+        # empty-by-design), "params_observed" (STATE 2a in that file - no static row, but
+        # RejectUnknownParams for this endpoint actually ran this session and its accepted keys were
+        # captured live - just as usable as a table row for a drift check), "params_not_declared"
+        # (neither exists - genuinely no row), and "no_such_endpoint" (ok:false, already skipped
+        # above). Treating params_observed as unusable would silently drop ~41 endpoints from drift
+        # checking for no reason; treating an empty list as norow (the original bug here) overcounted
+        # norow by the ~14 endpoints that legitimately take zero parameters.
+        status = d.get("status")
+        if status == "params_not_declared":
             norow += 1          # no row at all; the endpoint's own coverage figure already counts these
             continue
+        if status not in ("params_declared", "params_observed"):
+            continue             # no_such_endpoint, or a status this script does not know about
+        table = set(str(x).lower() for x in (d.get("acceptedParams") or []))
         checked += 1
         missing = sorted(accepted - table)
         if missing:
