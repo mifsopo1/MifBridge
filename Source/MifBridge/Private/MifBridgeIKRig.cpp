@@ -57,6 +57,7 @@
 #include "UObject/StrongObjectPtr.h"       // processors are held only by our local pointer
 #include "Engine/SkeletalMesh.h"
 #include "UObject/Package.h"                // MarkPackageDirty
+#include "Algo/LevenshteinDistance.h"        // same header IKRetargeterController.cpp uses - see IKWriteMapping
 #endif
 
 namespace MifBridge
@@ -543,20 +544,64 @@ namespace MifBridge
 		/** The live chain mapping, target-chain-keyed. ChainSettings, NOT the ChainMapping property -
 		 *  FRetargetChainMap has been deprecated since 5.1 (IKRetargeter.h:18) and a write to it is
 		 *  read by nothing. */
+		// The SAME formula UIKRetargeterController::AutoMapChains uses (IKRetargeterController.cpp:352-359),
+		// reproduced here rather than read back from the engine, because it computes the score as a local
+		// loop variable and never stores it anywhere - a caller has no way to ask the engine "how good was
+		// this match" after the fact. 1.0 = identical names, 0.0 = completely dissimilar.
+		float IKNameMatchScore(const FString& A, const FString& B)
+		{
+			const FString ALower = A.ToLower();
+			const FString BLower = B.ToLower();
+			float WorstCase = ALower.Len() + BLower.Len();
+			WorstCase = WorstCase < 1.0f ? 1.0f : WorstCase;
+			return 1.0f - (Algo::LevenshteinDistance(ALower, BLower) / WorstCase);
+		}
+
 		void IKWriteMapping(const UIKRetargeter* Asset, const TSharedRef<FJsonObject>& Out)
 		{
-			TArray<TSharedPtr<FJsonValue>> Rows, Unmapped;
+			// VERIFIED 2026-08-28: the engine's own fuzzy auto-map accepts any candidate scoring above
+			// 0.2 (its own threshold, IKRetargeterController.cpp:353) - so with only one source chain
+			// available, a target chain with almost NOTHING in common with it can still get mapped,
+			// reported ok:true, mapped:true, with no signal anything is wrong. Reproduced directly: a
+			// "RightLeg" target chain, no matching leg chain on the source rig, mapped itself to the
+			// only source chain that existed ("LeftArm") at a measured score of 0.5333 - a retarget that would
+			// visibly break (a leg animating like an arm) while every field here said it worked. This is
+			// the SAME engine behaviour the editor's own "Auto-Map Chains" button has, not a MifBridge
+			// bug - the fix is reporting the number the engine never surfaces, not changing the mapping.
+			TArray<TSharedPtr<FJsonValue>> Rows, Unmapped, LowConfidence;
 			for (const TObjectPtr<URetargetChainSettings>& CS : Asset->GetAllChainSettings())
 			{
 				if (!CS) { continue; }
 				TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
-				R->SetStringField(TEXT("targetChain"), CS->TargetChain.ToString());
-				R->SetStringField(TEXT("sourceChain"), CS->SourceChain.ToString());
+				const FString TargetName = CS->TargetChain.ToString();
+				const FString SourceName = CS->SourceChain.ToString();
+				R->SetStringField(TEXT("targetChain"), TargetName);
+				R->SetStringField(TEXT("sourceChain"), SourceName);
 				const bool bMapped = !CS->SourceChain.IsNone();
 				R->SetBoolField(TEXT("mapped"), bMapped);
 				if (!bMapped)
 				{
-					Unmapped.Add(MakeShared<FJsonValueString>(CS->TargetChain.ToString()));
+					Unmapped.Add(MakeShared<FJsonValueString>(TargetName));
+				}
+				else
+				{
+					const float Score = IKNameMatchScore(TargetName, SourceName);
+					R->SetNumberField(TEXT("nameMatchScore"), Score);
+					// 0.6 is not the engine's own bar (0.2) - it is deliberately stricter, because the
+					// question here is "does this look like a real semantic match", not "did the fuzzy
+					// search find literally anything above its floor". MEASURED 2026-08-28 on the actual
+					// reproduction: RightLeg/LeftArm (a leg silently mapped to an arm, no leg chain to
+					// compete with it) scores 0.5333 - a first attempt at this threshold used 0.5 and
+					// missed it, which is why this number is written down as measured rather than
+					// guessed a second time. LeftArm/LeftArm (an exact match) scores 1.0.
+					if (Score < 0.6f)
+					{
+						TSharedRef<FJsonObject> LC = MakeShared<FJsonObject>();
+						LC->SetStringField(TEXT("targetChain"), TargetName);
+						LC->SetStringField(TEXT("sourceChain"), SourceName);
+						LC->SetNumberField(TEXT("nameMatchScore"), Score);
+						LowConfidence.Add(MakeShared<FJsonValueObject>(LC));
+					}
 				}
 				Rows.Add(MakeShared<FJsonValueObject>(R));
 			}
@@ -573,6 +618,19 @@ namespace MifBridge
 						 "but at runtime those parts of the body are simply not retargeted - map them "
 						 "with set_retarget_chain_mapping, or re-run auto_map_retarget_chains with "
 						 "mode=fuzzy."));
+			}
+			if (LowConfidence.Num() > 0)
+			{
+				Out->SetArrayField(TEXT("lowConfidenceMappings"), LowConfidence);
+				Out->SetStringField(TEXT("lowConfidenceNote"), FString::Printf(
+					TEXT("%d chain(s) are MAPPED (mapped:true, so unmappedCount does not count them) but "
+						 "their target and source chain NAMES barely resemble each other (nameMatchScore "
+						 "below 0.6) - this is the fuzzy auto-mapper accepting the least-bad option it "
+						 "could find, not a confident match, and retargeting through it is likely to look "
+						 "wrong (e.g. a leg chain silently mapped to an arm chain because no leg chain "
+						 "existed to compete with it). Check lowConfidenceMappings and consider "
+						 "set_retarget_chain_mapping to fix them by hand, or leave them unmapped."),
+					LowConfidence.Num()));
 			}
 		}
 	}

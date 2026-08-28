@@ -2355,6 +2355,9 @@ def set_retarget_rigs(path: str, source: str = "", target: str = "") -> dict:
 
     Both rigs are resolved before either is applied, so a typo in one does not leave the retargeter
     half-wired by the other.
+
+    The mapping this produces is auto-mapped by fuzzy name match, same as auto_map_retarget_chains -
+    read that tool's docstring for nameMatchScore/lowConfidenceMappings, which apply here too.
     """
     return _post("set_retarget_rigs", path=path, source=source or None, target=target or None)
 
@@ -2379,6 +2382,18 @@ def auto_map_retarget_chains(path: str, mode: str = "fuzzy", remap_existing: boo
 
     Reports the full mapping and, separately, the target chains left UNMAPPED - those parts of the
     body are simply not retargeted at runtime, which nothing else tells you.
+
+    Each mapped row also carries nameMatchScore (0.0-1.0, Levenshtein similarity between the target
+    and source chain names) - VERIFIED 2026-08-28: the engine's own fuzzy matcher accepts anything
+    scoring above its own floor of 0.2, so with a small or mismatched set of source chains a target
+    chain can get mapped to something almost unrelated (a leg chain mapped to an arm chain, because
+    no leg chain existed to compete with it) and still report mapped:true - the SAME behaviour the
+    editor's own "Auto-Map Chains" button has, since this calls the identical engine function.
+    lowConfidenceMappings/lowConfidenceNote flag anything scoring below 0.6 (a stricter bar than the
+    engine's own, chosen to mean "does this look like a real match" rather than "did anything clear
+    the floor" - measured against the actual reproduction: RightLeg mapped to LeftArm, with no leg
+    chain to compete, scores 0.5333) - mapped:true with a low score is the one shape that would
+    otherwise look identical to a confident exact match.
     """
     return _post("auto_map_retarget_chains", path=path, mode=mode, remapExisting=remap_existing)
 
@@ -2407,6 +2422,10 @@ def list_retarget_chain_mapping(path: str) -> dict:
     Reads ChainSettings, which is the live mapping. The asset also carries a ChainMapping property -
     that is FRetargetChainMap, deprecated since 5.1 - and a set_property write to it succeeds while
     being read by nothing.
+
+    Each mapped row also carries nameMatchScore (0.0-1.0) - see auto_map_retarget_chains' docstring
+    for what it means and why a mapped:true row can still be a bad match worth checking via
+    lowConfidenceMappings/lowConfidenceNote.
     """
     return _post("list_retarget_chain_mapping", path=path)
 
