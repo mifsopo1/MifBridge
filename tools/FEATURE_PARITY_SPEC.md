@@ -2855,3 +2855,22 @@ cannot become one giant blocking item:
       back - actorPath, waterBodyType and every spline point cross-checked against what was actually
       created, plus includeSplinePoints:false correctly omitting the array rather than an empty one.
       39/39 PASS, verified live against DDS2 (UE 5.3.2); nothing saved, editor closed after.
+
+- [x] **Closed 6 more zero-coverage reads - bounds, cvar, deps, commands, properties.** DONE
+      2026-08-28, second batch of the same sweep. get_actor_bounds, get_cvar, get_dependencies,
+      list_editor_commands, describe_property, diff_properties_vs_default -
+      tools/test_uncovered_reads2.py.
+      describe_property and diff_properties_vs_default are the two with real teeth: the
+      Details-panel introspection (property flags, metadata, EditCondition, "what does this object
+      actually override from its archetype") this bridge was otherwise blind without. Tested
+      against a real placed actor from the open level.
+      CAUGHT A WRONG ASSUMPTION OF MY OWN before it shipped: my first draft assumed
+      list_editor_commands with an unknown context would quietly return zero matches. It does not -
+      it REFUSES, with near-miss suggestions and the real context count, guarding the exact "typo
+      silently returns nothing" trap this codebase avoids everywhere else. Fixed after actually
+      running it and reading the handler rather than trusting the assumption.
+      Verified JBool's wrong-type contract precisely rather than assumed: a non-bool `deep` is
+      refused by RunEndpoint's generic wrapper (any recorded param-type violation becomes a hard
+      failure naming the field via ignoredParameters), not silently defaulted by the handler - read
+      MifBridgeCommon.cpp's JBool/ReportParamTypeViolations before asserting it.
+      60/60 PASS, verified live against DDS2 (UE 5.3.2); nothing saved, editor closed after.
