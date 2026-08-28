@@ -2752,3 +2752,39 @@ cannot become one giant blocking item:
       Verified against a freshly launched, disposable Blender 4.4 (--factory-startup, killed
       afterward, not a reused stale instance - the exact mistake this project already filed a
       postmortem about earlier the same day). 20/20 PASS.
+
+- [x] **ops_rig.py - Blender-side armature/shape-key/vertex-group reads.** DONE 2026-08-28, Andre's
+      ask for full Blender depth to match the UE side. object_info() (ops_common.py) reports
+      transform/bounds/materials/UVs for a MESH and nothing for an ARMATURE beyond its bare
+      transform, and shape keys and vertex groups are absent even for a mesh - a real gap on a
+      character-driven pipeline. The UE side can already read a skeleton's bones, virtual bones and
+      morph targets (MifBridgeSkeleton.cpp, added earlier the same day); nothing on the Blender side,
+      where a rigger actually AUTHORS that data, could read any of it back until now.
+      Three new read-only ops, named to match the UE side on purpose: list_bones (rest-pose bone
+      hierarchy of an ARMATURE - mirrors UE's list_bones on a Skeleton's ReferenceSkeleton),
+      list_shape_keys (Blender's name for what UE calls morph targets, cross-referenced in both
+      docstrings), list_vertex_groups (bone-weight assignment groups, reporting weightedVertexCount
+      per group so a group with ZERO weighted vertices - a rig that cannot deform on that bone at
+      all - is visible, the same class of bug UE's analyze_skeletal_split flags via
+      influencesGeometry).
+      FOUND A REAL BUG THROUGH LIVE VERIFICATION, not assumed from the API: bpy.types.Bone has no
+      .roll attribute - that is EditBone-only, valid only in Edit Mode - so the first version
+      crashed on any real armature with AttributeError. Caught only because the populated code path
+      was actually exercised against real content rather than trusted from reading Blender's API.
+      Dropped the field rather than chasing a workaround.
+      VERIFIED PROPERLY, not just the empty-state paths: launched a disposable Blender 4.4 instance
+      with the addon PROPERLY ENABLED via bpy.ops.preferences.addon_enable (the raw sys.path import
+      other manual checks use bypasses Blender's own addon-preferences registration, so
+      run_python's real default of allowed never applied under that bypass - this is why the first
+      manual smoke test reported it disabled when the class default is actually True). With the
+      addon properly enabled, built a real 2-bone armature, a mesh with a shape key pair and a
+      vertex group, and proved the POPULATED path end to end - armature-space bone positions,
+      parent/child linkage, shape key basis/relative pairing, vertex group weighted counts.
+      tools/test_blender_rig.py, T810-T812, 34/34 PASS. Degrades honestly to logging the populated
+      path as unproven when run_python is off (the correct default for anyone else running this
+      suite), matching the discipline test_blender_gen.py already established for ComfyUI being
+      unreachable.
+      Wired into server.py's _op_table(), __init__.py's _SUBMODULES reload list, and
+      parity_check.py's ADDON_OP_MODULES; bl_list_bones/bl_list_shape_keys/bl_list_vertex_groups MCP
+      wrappers added. parity_check.py clean: 20->23 addon ops, 27->30 _blender call sites, 368->371
+      @mcp.tool wrappers, all matching.
