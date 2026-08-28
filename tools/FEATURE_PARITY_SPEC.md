@@ -2833,3 +2833,25 @@ cannot become one giant blocking item:
       groups, mesh<->armature linkage, and the full modifier stack are all readable, all verified
       empty-state AND populated, all on both installed modern Blender versions (4.4, 5.0 - the two
       of his requested 4.4-5.2 range actually present on this machine).
+
+- [x] **Closed 9 endpoints with zero test coverage - Gameplay Tags, PCG, State Tree, Water, Input.**
+      DONE 2026-08-28. coverage_gaps.py's 113-item list included five self-contained read-only
+      clusters nothing had exercised: list_gameplay_tags/describe_gameplay_tag,
+      list_pcg_graphs/describe_pcg_graph/list_pcg_components, list_state_trees/describe_state_tree,
+      describe_water_body, list_input_mappings. Batched into tools/test_uncovered_reads.py rather
+      than five files.
+      Gameplay Tags, PCG and State Tree were each declined once specifically because "DDS2 does not
+      use it", then reopened for judging a general-purpose tool by one test project - so DDS2 having
+      none of PCG/StateTree is the documented EXPECTED state, and the suite says so rather than
+      treating an empty result as an accident.
+      MEASURED, not assumed, and more informative than expected on two: DDS2 actually HAS real
+      gameplay tags AND real InputMappingContext assets registered now, so those two got genuine
+      POPULATED-path coverage (real tag hierarchy, real key bindings with triggers/modifiers) - not
+      just the empty-state path this session expected going in. PCG and State Tree confirmed
+      genuinely empty (not assumed) and logged honestly as unproven beyond the empty-state/parameter
+      checks.
+      Water got full populated coverage on real content: create_water_body already has coverage, so
+      this suite makes a real scratch Lake with a 3-point spline and describe_water_body reads it
+      back - actorPath, waterBodyType and every spline point cross-checked against what was actually
+      created, plus includeSplinePoints:false correctly omitting the array rather than an empty one.
+      39/39 PASS, verified live against DDS2 (UE 5.3.2); nothing saved, editor closed after.
