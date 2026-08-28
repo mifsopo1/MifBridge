@@ -1603,6 +1603,60 @@ contradicts this file, the analysis wins — it read the code and this file matc
   README corrected; the actual fix filed as a separate task (`task_a8375a1b`) rather than chased here,
   to keep this commit scoped to the bug the postcondition audit was built to find.
 
+- [x] **`create_water_zone`'s coverage count silently omitted a real, legitimate third state.**
+  DONE 2026-08-28. Pivoted to the UE side and applied the same discipline that found the two Blender
+  bugs above: pick a headline, falsifiable claim and actually test it live. `create_water_zone`'s own
+  docstring says the response reports "what it picked up - bodiesNowCovered, plus stillWithoutZone
+  naming every body that is STILL invisible." Tested: create a Lake, create a huge covering Zone over
+  it, read both counters. Got 0 and 0 - on a level with exactly one body a 100000x100000 zone was
+  centered on. Two numbers meant to partition every body in the level covered neither.
+
+  THREE LEADS, two wrong, in order:
+  1. Suspected a stale cache - `GetWaterZone()` genuinely does only return a cached `OwningWaterZone`
+     field, refreshed only by `UpdateWaterZones()`, which `MarkForRebuild` never calls (confirmed by
+     reading WaterBodyComponent.cpp, not guessed). Added the call. Recompiled via Live Coding.
+     IDENTICAL 0/0. This half of the fix was kept anyway - it is a real, harmless improvement - but it
+     was not the cause.
+  2. Suspected Live Coding itself. Andre approved closing the DDS2 editor for a real Build.bat rebuild
+     (asked first, since it touches his live environment - AskUserQuestion, he chose "close and
+     rebuild now"). Full rebuild, buildcheck.py confirmed, relaunched, retested - STILL 0/0. Ruled out
+     Live Coding for THIS bug, but a follow-up diagnostic build then PROVED Live Coding had ALSO
+     silently failed to apply a temporary logging change - compiled, reported success, the new field
+     never appeared in a live response. Confirmed independently, twice, in one session: exactly the
+     failure mode `live_coding_status`'s own buildNote already names ("has been observed REPORTING
+     SUCCESS anyway while changing nothing"). Recorded as a standing rule in memory: from now on, if a
+     Live Coding compile's expected effect does not show up live, do not keep debugging the C++ logic
+     first - assume Live Coding lied, do a real rebuild, THEN judge the fix.
+  3. The real one, found once diagnostic logging was proven to actually run: `Comp->GetWaterZone()`
+     was returning a genuine, non-null, DIFFERENT `AWaterZone` than the one just created - not stale,
+     a different real object. `TActorIterator<AWaterZone>` inside the handler found a zone that
+     `list_level_actors {classFilter:'WaterZone'}` never reported existed. Isolated further: calling
+     ONLY `create_water_body` (never `create_water_zone`) on a confirmed-empty level already produced
+     a body with `waterZone` set, to an auto-spawned, unlabeled "WaterZone" actor. ROOT CAUSE:
+     `create_water_body`'s own actor factory auto-spawns a default `AWaterZone` covering a new body
+     when none exists nearby - a real, undocumented (in this file) ENGINE behavior, not a defect. A
+     body created and then given an EXPLICIT zone is therefore very often already covered by that
+     auto-spawned one: genuinely not covered by the new zone (0, correct), genuinely not orphaned (0,
+     also correct) - the response just never named the state "covered, by something else."
+
+  FIX: `bodiesCoveredByOtherZone` / `coveredByOtherZone` as a named third counter, with a
+  `coverageNote` spelling out why. Also corrected `create_water_body`'s own static response note,
+  which unconditionally claimed a new body "still needs" a zone - sometimes already false; the
+  per-body `WaterBodySummary` call right above it already reports the true state via
+  `waterZone`/`waterZoneNote`, so the static note no longer contradicts it. Both `@mcp.tool`
+  docstrings in server.py updated to document the auto-spawn behavior and the new field.
+
+  VERIFIED all three states live, after the FINAL real rebuild (not Live Coding): true first-time
+  coverage (1/0/0), already-covered-elsewhere (0/0/1 with the note), and the pre-existing orphaned
+  path untouched. Built clean on 5.3 (five real Build.bat + relaunch cycles across this
+  investigation - Live Coding was never trusted again after lead 2) and 5.7 (probe, buildcheck
+  confirmed). Pushed 25a79f3.
+
+  Same shape as the mesh-roundtrip and bevel_edges findings, from a different angle: this was not a
+  bug in the code being tested - it was a bug in the RESPONSE'S HONESTY about a real state the code
+  already handled correctly. "0 and 0" was true at the field level and misleading at the level a
+  caller actually reads it.
+
 - [~] **DECLINED 2026-08-26: the `droppedByValidation` path is UNREACHABLE through this endpoint.**
   This item was filed hours before the finding behind it was corrected, and the corrected finding
   removes the item. AddSample -> ValidateSampleValue -> IsTooCloseToExistingSamplePoint calls the SAME
