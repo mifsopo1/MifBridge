@@ -1,6 +1,5 @@
 {
  "uncovered": [
-  "add_anim_node",
   "add_class_cast",
   "add_component_bound_event",
   "add_create_widget",
@@ -21,33 +20,20 @@
   "add_switch_enum",
   "add_switch_int",
   "add_switch_string",
-  "add_timeline",
   "add_widget_binding",
   "backup_blueprint",
   "bind_landscape_rvt",
-  "build_navmesh",
   "close_asset_editors",
-  "create_editable_child",
-  "create_landscape",
   "create_material_function",
-  "delete_level_actor",
   "describe_animation",
   "describe_property",
-  "diagnose_landscape",
   "diagnose_landscape_draws",
   "diff_properties_vs_default",
   "duplicate_actors",
-  "edit_container",
-  "exec_console",
-  "export_asset",
   "focus_viewport",
   "get_actor_bounds",
   "get_cvar",
   "get_dependencies",
-  "get_perf_stats",
-  "get_spline_points",
-  "import_asset",
-  "invoke_editor_command",
   "kr_analyze_ubergraph",
   "kr_batch_reconstruct",
   "kr_classify_drift",
@@ -60,9 +46,7 @@
   "kr_reconstruct_request",
   "kr_reconstruct_status",
   "kr_verify_fidelity",
-  "landscape_info",
   "list_animations",
-  "list_blueprints",
   "list_editor_commands",
   "list_mounted_containers",
   "list_object_properties",
@@ -71,7 +55,6 @@
   "load_level",
   "move_actor_to",
   "nav_status",
-  "new_level",
   "open_asset_editor",
   "open_blueprint",
   "paint_landscape",
@@ -90,33 +73,26 @@
   "reparent_blueprint",
   "reset_property_to_default",
   "retarget_variable_node",
-  "run_console",
   "run_console_captured",
-  "save_blueprint",
   "save_dirty_packages",
   "save_level_as",
-  "save_package",
   "scene_report",
   "sculpt_landscape",
   "select_level_actors",
-  "send_editor_key",
   "set_asset_thumbnail",
   "set_cast_purity",
   "set_current_sublevel",
-  "set_cvar",
-  "set_spline_points",
   "set_sublevel_streaming",
   "set_sublevel_visibility",
   "set_variable_default",
   "set_widget_is_variable",
   "spawn_actor_in_pie",
-  "spawn_many",
-  "start_pie",
-  "stop_pie",
-  "trigger_cook",
   "validate"
  ],
  "covered": {
+  "add_anim_node": [
+   "test_anim_nodes.py"
+  ],
   "add_bind_dispatcher": [
    "test_macro_dispatch.py"
   ],
@@ -193,6 +169,7 @@
    "test_undo_integrity.py"
   ],
   "add_macro_instance": [
+   "test_cooked_class_trap.py",
    "test_macro_dispatch.py"
   ],
   "add_make_array": [
@@ -218,7 +195,12 @@
   ],
   "add_struct_member": [
    "test_node_spawns.py",
-   "test_structs.py"
+   "test_structs.py",
+   "test_unchecked_returns.py"
+  ],
+  "add_timeline": [
+   "test_report_intake.py",
+   "test_timeline.py"
   ],
   "add_tree_widget": [
    "test_rename_widget.py",
@@ -230,6 +212,7 @@
   "add_variable": [
    "test_array_wildcard_durability.py",
    "test_confirm_gated.py",
+   "test_edit_container.py",
    "test_graph_patch.py",
    "test_idempotence.py",
    "test_modal_hazards.py",
@@ -286,7 +269,11 @@
    "test_ik_authoring.py"
   ],
   "batch": [
-   "test_modal_hazards.py"
+   "test_modal_hazards.py",
+   "test_safety_gate.py"
+  ],
+  "build_navmesh": [
+   "test_safety_gate.py"
   ],
   "capture_camera": [
    "test_capture_viewport.py"
@@ -302,6 +289,7 @@
    "test_audit_fixes.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
+   "test_edit_container.py",
    "test_find_and_move.py",
    "test_function_flags.py",
    "test_graph_patch.py",
@@ -315,9 +303,11 @@
    "test_pins.py",
    "test_recipes.py",
    "test_rename_widget.py",
+   "test_report_intake.py",
    "test_reroute.py",
    "test_rollback_real.py",
    "test_selfpin.py",
+   "test_timeline.py",
    "test_undo_integrity.py",
    "test_v3_apply.py",
    "test_widget_anim_recreate.py",
@@ -352,11 +342,14 @@
    "test_textures.py"
   ],
   "create_blueprint": [
+   "test_anim_nodes.py",
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_collision.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
+   "test_cooked_class_trap.py",
+   "test_edit_container.py",
    "test_find_and_move.py",
    "test_function_flags.py",
    "test_fuzz_detector.py",
@@ -375,6 +368,7 @@
    "test_reroute.py",
    "test_rollback_real.py",
    "test_selfpin.py",
+   "test_timeline.py",
    "test_transactions.py",
    "test_undo_integrity.py",
    "test_v3_apply.py",
@@ -387,6 +381,9 @@
   "create_datatable": [
    "test_confirm_gated.py",
    "test_datatables.py"
+  ],
+  "create_editable_child": [
+   "test_cooked_class_trap.py"
   ],
   "create_enum": [
    "test_confirm_gated.py",
@@ -402,6 +399,9 @@
    "test_pinlifetime.py",
    "test_undo_integrity.py"
   ],
+  "create_landscape": [
+   "test_landscape_info.py"
+  ],
   "create_material": [
    "test_material_graph.py"
   ],
@@ -411,7 +411,8 @@
   "create_struct": [
    "test_node_spawns.py",
    "test_set_struct_member.py",
-   "test_structs.py"
+   "test_structs.py",
+   "test_unchecked_returns.py"
   ],
   "delete_asset": [
    "test_array_wildcard_durability.py",
@@ -436,6 +437,8 @@
    "test_rollback_real.py",
    "test_selfpin.py",
    "test_set_struct_member.py",
+   "test_textures.py",
+   "test_thumbnails.py",
    "test_v3_apply.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation.py",
@@ -445,6 +448,10 @@
   "delete_datatable_rows": [
    "test_confirm_gated.py",
    "test_datatables.py"
+  ],
+  "delete_level_actor": [
+   "test_perf_stats.py",
+   "test_unknown_endpoint.py"
   ],
   "delete_material_expression": [
    "test_material_graph.py"
@@ -456,12 +463,18 @@
    "test_function_flags.py"
   ],
   "describe_endpoint": [
+   "test_crash_journal.py",
    "test_graph_patch.py",
-   "test_node_spawns.py"
+   "test_node_spawns.py",
+   "test_safety_gate.py",
+   "test_unknown_endpoint.py"
   ],
   "describe_package": [
    "test_fuzz_detector.py",
    "test_modal_guard.py"
+  ],
+  "diagnose_landscape": [
+   "test_landscape_info.py"
   ],
   "disconnect_pin": [
    "test_pins.py"
@@ -477,8 +490,19 @@
   "duplicate_tree_widget": [
    "test_widget_tree.py"
   ],
+  "edit_container": [
+   "test_edit_container.py"
+  ],
+  "exec_console": [
+   "test_safety_gate.py"
+  ],
+  "export_asset": [
+   "test_safety_gate.py"
+  ],
   "find_assets": [
+   "test_anim_nodes.py",
    "test_audio_nav.py",
+   "test_cooked_class_trap.py",
    "test_create_asset.py",
    "test_datatables.py",
    "test_foliage_modes.py",
@@ -487,7 +511,10 @@
    "test_material_graph.py",
    "test_material_params.py",
    "test_material_write.py",
+   "test_metasound.py",
+   "test_niagara.py",
    "test_niagara_params.py",
+   "test_ported_anim.py",
    "test_set_struct_member.py",
    "test_sockets_ai.py",
    "test_structs.py",
@@ -495,6 +522,7 @@
    "test_thumbnails.py"
   ],
   "find_nodes": [
+   "test_anim_nodes.py",
    "test_find_and_move.py"
   ],
   "get_datatable_row": [
@@ -519,16 +547,25 @@
    "test_reroute.py",
    "test_rollback_real.py",
    "test_selfpin.py",
+   "test_timeline.py",
    "test_undo_integrity.py",
    "test_v3_apply.py"
+  ],
+  "get_perf_stats": [
+   "test_perf_stats.py"
   ],
   "get_property": [
    "test_collision.py",
    "test_components_dispatchers.py",
-   "test_niagara_params.py"
+   "test_landscape_info.py",
+   "test_niagara_params.py",
+   "test_timeline.py"
   ],
   "get_referencers": [
    "test_fuzz_detector.py"
+  ],
+  "get_spline_points": [
+   "test_unknown_endpoint.py"
   ],
   "get_viewport_camera": [
    "test_capture_viewport.py"
@@ -536,11 +573,21 @@
   "implement_interface_function": [
    "test_interfaces.py"
   ],
+  "import_asset": [
+   "test_safety_gate.py"
+  ],
   "import_texture": [
    "test_textures.py"
   ],
+  "invoke_editor_command": [
+   "test_safety_gate.py"
+  ],
   "invoke_editor_tab": [
-   "test_audit_fixes.py"
+   "test_audit_fixes.py",
+   "test_safety_gate.py"
+  ],
+  "landscape_info": [
+   "test_landscape_info.py"
   ],
   "layout_material_expressions": [
    "test_material_graph.py"
@@ -549,10 +596,15 @@
    "test_create_asset.py",
    "test_sockets_ai.py"
   ],
+  "list_blueprints": [
+   "test_cooked_class_trap.py",
+   "test_safety_gate.py"
+  ],
   "list_bones": [
    "test_ik_authoring.py",
    "test_ik_goals_solvers.py",
-   "test_list_bones.py"
+   "test_list_bones.py",
+   "test_ported_anim.py"
   ],
   "list_collision_profiles": [
    "test_collision.py"
@@ -568,7 +620,10 @@
    "test_datatables.py"
   ],
   "list_dirty_packages": [
-   "test_create_asset.py"
+   "test_create_asset.py",
+   "test_data_layer_writes.py",
+   "test_perf_stats.py",
+   "test_ported_anim.py"
   ],
   "list_dispatchers": [
    "test_components_dispatchers.py",
@@ -582,6 +637,7 @@
    "test_function_flags.py"
   ],
   "list_graphs": [
+   "test_anim_nodes.py",
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_components_dispatchers.py",
@@ -608,8 +664,14 @@
    "test_undo_integrity.py"
   ],
   "list_level_actors": [
+   "test_data_layer_writes.py",
    "test_foliage_modes.py",
-   "test_snap_ground.py"
+   "test_landscape_info.py",
+   "test_perf_stats.py",
+   "test_safety_gate.py",
+   "test_snap_ground.py",
+   "test_spawn_many.py",
+   "test_water_zone.py"
   ],
   "list_material_expressions": [
    "test_material_graph.py",
@@ -642,9 +704,12 @@
   ],
   "list_struct_members": [
    "test_set_struct_member.py",
-   "test_structs.py"
+   "test_structs.py",
+   "test_unchecked_returns.py"
   ],
   "list_transactions": [
+   "test_perf_stats.py",
+   "test_spawn_many.py",
    "test_transactions.py",
    "test_undo_integrity.py"
   ],
@@ -657,7 +722,8 @@
    "test_confirm_gated.py",
    "test_idempotence.py",
    "test_transactions.py",
-   "test_undo_integrity.py"
+   "test_undo_integrity.py",
+   "test_unknown_endpoint.py"
   ],
   "list_widget_animations": [
    "test_rename_widget.py",
@@ -676,6 +742,9 @@
   ],
   "nav_project_point": [
    "test_audio_nav.py"
+  ],
+  "new_level": [
+   "test_report_intake.py"
   ],
   "override_inherited_component": [
    "test_inherited_components.py"
@@ -734,7 +803,8 @@
   ],
   "remove_node": [
    "test_confirm_gated.py",
-   "test_node_spawns.py"
+   "test_node_spawns.py",
+   "test_recipes.py"
   ],
   "remove_pin": [
    "test_pinlifetime.py"
@@ -778,6 +848,16 @@
   "revert_inherited_component": [
    "test_inherited_components.py"
   ],
+  "run_console": [
+   "test_report_intake.py",
+   "test_safety_gate.py"
+  ],
+  "save_blueprint": [
+   "test_safety_gate.py"
+  ],
+  "save_package": [
+   "test_safety_gate.py"
+  ],
   "self_audit": [
    "test_graph_patch.py",
    "test_macro_dispatch.py",
@@ -785,9 +865,14 @@
    "test_modal_hazards.py",
    "test_pinlifetime.py",
    "test_rollback_real.py",
+   "test_safety_gate.py",
    "test_selfpin.py",
    "test_set_struct_member.py",
+   "test_unknown_endpoint.py",
    "test_v3_apply.py"
+  ],
+  "send_editor_key": [
+   "test_safety_gate.py"
   ],
   "set_actor_label": [
    "test_audit_fixes.py"
@@ -800,6 +885,9 @@
   ],
   "set_component_transform": [
    "test_components_dispatchers.py"
+  ],
+  "set_cvar": [
+   "test_safety_gate.py"
   ],
   "set_function_flags": [
    "test_function_flags.py"
@@ -846,9 +934,13 @@
   "set_retarget_rigs": [
    "test_ik_authoring.py"
   ],
+  "set_spline_points": [
+   "test_report_intake.py"
+  ],
   "set_struct_member": [
    "test_set_struct_member.py",
-   "test_structs.py"
+   "test_structs.py",
+   "test_unchecked_returns.py"
   ],
   "set_texture_settings": [
    "test_textures.py",
@@ -859,6 +951,7 @@
    "test_undo_integrity.py"
   ],
   "set_variable_type": [
+   "test_idempotence.py",
    "test_modal_hazards.py",
    "test_undo_integrity.py"
   ],
@@ -878,14 +971,25 @@
    "test_material_graph.py"
   ],
   "snap_actors_to_ground": [
+   "test_report_intake.py",
    "test_snap_ground.py"
   ],
   "spawn_actor_in_level": [
    "test_audit_fixes.py",
+   "test_perf_stats.py",
    "test_snap_ground.py"
+  ],
+  "spawn_many": [
+   "test_spawn_many.py"
   ],
   "splice_into_exec": [
    "test_pinlifetime.py"
+  ],
+  "start_pie": [
+   "test_safety_gate.py"
+  ],
+  "stop_pie": [
+   "test_safety_gate.py"
   ],
   "thumbnail_capabilities": [
    "test_thumbnails.py"
@@ -895,6 +999,9 @@
   ],
   "trace_ground": [
    "test_audit_fixes.py"
+  ],
+  "trigger_cook": [
+   "test_safety_gate.py"
   ],
   "undo_transactions": [
    "test_transactions.py",
