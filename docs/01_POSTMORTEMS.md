@@ -1583,3 +1583,76 @@ buffering looks identical to a hang for as long as you are only watching the log
 the process is still alive, and whether the thing it should be doing had visibly happened (here, a
 fresh PID with a fresh StartTime once Blender actually launched), is the real signal; an empty log
 file on its own is not.
+
+## `endpoints_current.json` was silently stale for two days, and the tool reading it never said so (2026-08-28)
+
+**Symptom.** Andre asked me to check on the standing UE 5.7 probe editor, which had exited on its own
+during a long idle stretch. Relaunching it (to answer that question) meant setting up the bridge again,
+and while doing unrelated follow-up work I ran `coverage_gaps.py` to see whether two just-added
+endpoints (`list_virtual_bones`, `list_morph_targets`) showed up as covered. They did not appear
+anywhere in the report at all - not covered, not uncovered, simply absent.
+
+**Root cause.** `coverage_gaps.py` reads its list of "every endpoint that exists" from
+`tools/endpoints_current.json` - a plain JSON array, described in its own file header and in
+`README.md`/`FEATURE_PARITY_SPEC.md` as "a snapshot of self_audit... regenerated from the live editor".
+Nothing in the repository actually did that regeneration. It was a hand-written file dated
+2026-08-26, 286 names. By the time this was noticed the real surface (confirmed by both a live
+`self_audit` and an independent static `MIF_DECL` count from `MifBridgeHandlers.h`, which agreed
+exactly at 334) had grown by 60 added endpoints and lost 12 removed or renamed ones across two days of
+real feature work - the IK Rig fixes, deprecation sweep, MVVM, water bodies, data layers, and both of
+today's own new skeletal endpoints, none of which the snapshot had ever heard of.
+
+`coverage_gaps.py` had no way to know this. It loaded the JSON file, trusted it completely, and
+computed "named in a suite" / "named nowhere" over whatever universe the file happened to contain -
+286 stale names instead of 334 real ones - with **no signal anywhere in its output** that the input
+itself might be wrong. A tool built specifically to catch silent gaps had become one.
+
+**How much this actually cost, honestly.** The direct fix - once the mismatch was noticed - took
+maybe twenty minutes: pull a live `self_audit`, diff it against the old snapshot, regenerate it,
+re-run the report. The 30-minute-plus cost is upstream of that: an unrelated port-configuration bug
+(below) ate most of the wall-clock time getting a live editor to answer at all, and the deeper cost is
+unmeasurable - every coverage judgement anyone made by reading this tool's output across the last two
+days, including some inside this very session, was silently computed over the wrong endpoint universe
+and nobody could have known.
+
+**A second, independent bug surfaced while chasing this one.** Relaunching the probe editor to get a
+live `self_audit` reading, I never set `MIF_BRIDGE_PORT` in its environment - the plugin's own code
+(`MifBridge.cpp`) falls back to **8791, the exact same default DDS2's real editor uses**, when that
+variable is unset or unusable. I had assumed the probe was still on 8801 from an earlier point in this
+session and polled that port for several minutes while the editor sat ready on 8791 the whole time.
+Andre caught it by asking a direct question ("make sure ports aren't setup dual") rather than me
+noticing it myself. Nothing collided this time only because DDS2's editor happened to be closed at
+that moment - if both had been running, one would have silently failed to bind (the plugin's own code
+comment names exactly this failure mode: an editor "failed with 'HttpListener unable to bind to
+127.0.0.1:8791', and got counted as the cook's").
+
+**Fix.** Both bugs, separately:
+  - `coverage_gaps.py` now diffs its snapshot against a static `MIF_DECL` extraction from
+    `MifBridgeHandlers.h` on every run and prints a loud, impossible-to-miss warning naming every
+    added/removed endpoint on any disagreement - staying editor-free for the check itself, since the
+    static extraction needs no running process.
+  - `tools/refresh_endpoints_snapshot.py` is new: the regeneration step that never existed. Pulls a
+    live `self_audit` (the documented authority - it reports endpoints "actually dispatching", a
+    stronger claim than a declaration list alone) and rewrites the snapshot for real, in the same
+    format and CRLF convention.
+  - The port mistake has no code fix - it is a process-discipline one. Recorded here so the next probe
+    launch (mine or anyone's) sets `MIF_BRIDGE_PORT=8801` explicitly rather than assuming a value
+    carried over from an earlier point in a session, since Bash tool calls do not share persistent
+    shell state and nothing enforces the assumption being true.
+
+### The general rule, twice
+
+A snapshot file with no regeneration mechanism does not become stale gracefully - it becomes wrong
+silently, and the tool reading it has no way to distinguish "current" from "two days old and missing
+a fifth of the real surface" unless something is built specifically to check. Documentation saying a
+file is "regenerated from X" is a claim about intent, not a description of what actually happens; if
+nothing in the repository performs that regeneration, the doc comment is describing a process that
+does not exist. The fix that actually prevents recurrence is not "regenerate it once and move on" - it
+is a live disagreement check that fires on every future run, so the *next* time this drifts, the tool
+says so instead of quietly answering wrong.
+
+Second: a configuration value that depends on environment state does not persist across process
+launches just because it was true earlier in the same conversation. `MIF_BRIDGE_PORT` was set correctly
+for the probe at some earlier point this session; every *later* launch needed it set again, explicitly,
+and assuming otherwise cost several minutes of polling the wrong port before a direct question from
+Andre - not my own process discipline - caught it.
