@@ -1,17 +1,12 @@
 {
  "uncovered": [
-  "add_gameplay_effect_modifier",
   "add_get_array_item",
   "add_make_map",
-  "add_nav_volume",
   "add_self",
   "add_sequence",
   "add_sequence_possessable",
   "add_sequence_track",
   "add_simplified_collision",
-  "add_spawn_actor",
-  "add_sublevel",
-  "bind_landscape_rvt",
   "describe_live_widget",
   "list_live_widgets",
   "list_pie_actors",
@@ -25,15 +20,10 @@
   "preview_composite_widget",
   "reimport_asset",
   "remove_collision",
-  "remove_sublevel",
   "save_dirty_packages",
   "save_level_as",
   "set_asset_thumbnail",
-  "set_current_sublevel",
   "set_niagara_component_parameter",
-  "set_sublevel_streaming",
-  "set_sublevel_visibility",
-  "set_water_body_spline",
   "spawn_actor_in_pie",
   "ui_scenario_activate",
   "ui_scenario_capture",
@@ -128,6 +118,9 @@
    "test_undo_integrity.py",
    "test_v3_apply.py"
   ],
+  "add_gameplay_effect_modifier": [
+   "test_uncovered_reads7.py"
+  ],
   "add_get_data_table_row": [
    "test_node_spawns.py"
   ],
@@ -166,6 +159,9 @@
   "add_material_expression": [
    "test_material_graph.py"
   ],
+  "add_nav_volume": [
+   "test_uncovered_reads7.py"
+  ],
   "add_node_pin": [
    "test_pins.py"
   ],
@@ -181,10 +177,16 @@
   "add_reroute": [
    "test_reroute.py"
   ],
+  "add_spawn_actor": [
+   "test_uncovered_reads7.py"
+  ],
   "add_struct_member": [
    "test_node_spawns.py",
    "test_structs.py",
    "test_unchecked_returns.py"
+  ],
+  "add_sublevel": [
+   "test_uncovered_reads7.py"
   ],
   "add_switch_enum": [
    "test_node_spawns.py"
@@ -285,6 +287,9 @@
    "test_modal_hazards.py",
    "test_safety_gate.py"
   ],
+  "bind_landscape_rvt": [
+   "test_uncovered_reads7.py"
+  ],
   "blueprint_inheritance_tree": [
    "test_uncovered_reads3.py"
   ],
@@ -371,6 +376,7 @@
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
    "test_cooked_class_trap.py",
+   "test_duplicate_cooked_guard.py",
    "test_edit_container.py",
    "test_find_and_move.py",
    "test_function_flags.py",
@@ -394,6 +400,7 @@
    "test_transactions.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
+   "test_uncovered_reads7.py",
    "test_undo_integrity.py",
    "test_v3_apply.py",
    "test_widget_anim_recreate.py",
@@ -429,7 +436,8 @@
   ],
   "create_landscape": [
    "test_landscape_info.py",
-   "test_uncovered_reads6.py"
+   "test_uncovered_reads6.py",
+   "test_uncovered_reads7.py"
   ],
   "create_material": [
    "test_material_graph.py"
@@ -451,6 +459,7 @@
   ],
   "create_water_body": [
    "test_uncovered_reads.py",
+   "test_uncovered_reads7.py",
    "test_water_zone.py"
   ],
   "create_water_zone": [
@@ -461,6 +470,7 @@
    "test_collision.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
+   "test_duplicate_cooked_guard.py",
    "test_find_and_move.py",
    "test_function_flags.py",
    "test_graph_patch.py",
@@ -483,6 +493,7 @@
    "test_thumbnails.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
+   "test_uncovered_reads7.py",
    "test_v3_apply.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation.py",
@@ -566,6 +577,7 @@
    "test_uncovered_reads5.py"
   ],
   "duplicate_asset": [
+   "test_duplicate_cooked_guard.py",
    "test_fuzz_detector.py",
    "test_material_write.py",
    "test_modal_guard.py"
@@ -588,6 +600,7 @@
    "test_cooked_class_trap.py",
    "test_create_asset.py",
    "test_datatables.py",
+   "test_duplicate_cooked_guard.py",
    "test_foliage_modes.py",
    "test_ik_rig.py",
    "test_list_bones.py",
@@ -654,6 +667,7 @@
    "test_selfpin.py",
    "test_timeline.py",
    "test_uncovered_reads5.py",
+   "test_uncovered_reads7.py",
    "test_undo_integrity.py",
    "test_v3_apply.py"
   ],
@@ -780,6 +794,7 @@
    "test_recipes.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
+   "test_uncovered_reads7.py",
    "test_undo_integrity.py"
   ],
   "list_ik_rig": [
@@ -871,7 +886,8 @@
    "test_unchecked_returns.py"
   ],
   "list_sublevels": [
-   "test_uncovered_reads5.py"
+   "test_uncovered_reads5.py",
+   "test_uncovered_reads7.py"
   ],
   "list_transactions": [
    "test_perf_stats.py",
@@ -1031,6 +1047,9 @@
   "remove_struct_member": [
    "test_structs.py"
   ],
+  "remove_sublevel": [
+   "test_uncovered_reads7.py"
+  ],
   "remove_tree_widget": [
    "test_widget_tree.py"
   ],
@@ -1108,6 +1127,7 @@
    "test_uncovered_reads5.py"
   ],
   "self_audit": [
+   "test_duplicate_cooked_guard.py",
    "test_graph_patch.py",
    "test_macro_dispatch.py",
    "test_mcp_post_errors.py",
@@ -1143,6 +1163,9 @@
   ],
   "set_component_transform": [
    "test_components_dispatchers.py"
+  ],
+  "set_current_sublevel": [
+   "test_uncovered_reads7.py"
   ],
   "set_cvar": [
    "test_safety_gate.py"
@@ -1207,6 +1230,12 @@
    "test_structs.py",
    "test_unchecked_returns.py"
   ],
+  "set_sublevel_streaming": [
+   "test_uncovered_reads7.py"
+  ],
+  "set_sublevel_visibility": [
+   "test_uncovered_reads7.py"
+  ],
   "set_texture_settings": [
    "test_textures.py",
    "test_thumbnails.py"
@@ -1225,6 +1254,9 @@
   ],
   "set_viewport_camera": [
    "test_capture_viewport.py"
+  ],
+  "set_water_body_spline": [
+   "test_uncovered_reads7.py"
   ],
   "set_widget_animation_keys": [
    "test_rename_widget.py",

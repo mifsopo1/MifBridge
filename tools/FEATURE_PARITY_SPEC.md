@@ -3109,3 +3109,29 @@ cannot become one giant blocking item:
       docs/01_POSTMORTEMS.md ("duplicate_asset on a cooked StaticMesh crashed the editor").
       Regression-checked test_niagara.py (53/53), test_material_write.py (22/22), test_modal_guard.py
       (13/13), test_fuzz_detector.py (17/17) - all four also touch duplicate_asset, all still clean.
+
+- [x] **Seventh batch: sublevels, landscape RVT binding, a water body spline, a spawn-actor node, a
+      nav volume, and GAS's add_gameplay_effect_modifier.** DONE 2026-08-28,
+      tools/test_uncovered_reads7.py. add_sublevel, set_current_sublevel, set_sublevel_streaming,
+      set_sublevel_visibility, remove_sublevel (refusal), bind_landscape_rvt, set_water_body_spline,
+      add_spawn_actor, add_nav_volume, add_gameplay_effect_modifier - 10 endpoints, 29/29 PASS.
+      Real finding: every real DDS2 gameplay map is COOKED .pak content with no loose .umap on disk,
+      so add_sublevel correctly refuses them - confirmed live against testing_iga before finding
+      /Game/Maps/MifWeaponTest, one of the very few LOOSE maps left in this whole project (its name
+      suggests an earlier MifBridge session already created it as scratch/test content).
+      remove_sublevel's success path stays a genuine, permanent gap, filed honestly rather than routed
+      around: merely ADDING a sublevel (before any other change) is enough to dirty the persistent
+      level's streaming setup, and discardUnsaved has NO scratch_confirm exemption, ever.
+      Two wrong assumptions of my own, both from state built up during this same session's live
+      probing rather than a fresh run: add_sublevel's response shape differs between a fresh add
+      (deferred:true) and an idempotent re-add (alreadyPresent:true) - the test now accepts either.
+      A RuntimeVirtualTextureVolume turned out to be a SCENE-WIDE contract for one RVT asset, not
+      per-landscape - binding the same RVT to a second scratch landscape reused the volume an earlier
+      bind had already created rather than making a new one - the test now checks either
+      volumesCreated or alreadyPresent, whichever the call actually produced.
+      add_gameplay_effect_modifier gets VALIDATION coverage only, not a real success path: DDS2 itself
+      has no custom AttributeSet class with declared attributes anywhere in the project (GAS was built
+      for a different, related project per this project's own memory) - confirmed live via find_assets
+      rather than assumed, and filed with the same honesty as PCG's already-documented structural
+      wall.
+      parity_check.py clean. coverage_gaps.json: 40 -> 30.
