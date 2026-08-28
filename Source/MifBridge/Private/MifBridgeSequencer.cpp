@@ -206,7 +206,11 @@ namespace MifBridge
 		}
 
 		TSharedRef<FJsonObject> Counts = MakeShared<FJsonObject>();
-		Counts->SetNumberField(TEXT("bindings"), Scene->GetBindings().Num());
+		// CONST pointer, deliberately: forces the const GetBindings() overload. The non-const one is
+		// UE_DEPRECATED(5.7, "Getting non-const access ... is no longer allowed. Please use const
+		// GetBindings()") - same reasoning already applied in MifBridgeSequencerWrite.cpp, this call
+		// site was just missed since it is read-only and never needed Scene non-const for anything else.
+		Counts->SetNumberField(TEXT("bindings"), const_cast<const UMovieScene*>(Scene)->GetBindings().Num());
 		Counts->SetNumberField(TEXT("possessables"), Scene->GetPossessableCount());
 		Counts->SetNumberField(TEXT("spawnables"), Scene->GetSpawnableCount());
 		Counts->SetNumberField(TEXT("rootTracks"), Scene->GetTracks().Num());

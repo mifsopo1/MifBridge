@@ -75,7 +75,11 @@ namespace MifBridge
 			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
 			J->SetStringField(TEXT("name"), Anim->GetFName().ToString());
 			J->SetStringField(TEXT("displayLabel"), Anim->GetDisplayLabel());
-			UMovieScene* MS = Anim->GetMovieScene();
+			// CONST, deliberately: this function only ever reads MS, and a const pointer selects the
+			// const GetBindings() overload - the non-const one is UE_DEPRECATED(5.7, "Getting non-const
+			// access ... is no longer allowed. Please use const GetBindings()"), same reasoning already
+			// applied in MifBridgeSequencerWrite.cpp and MifBridgeSequencer.cpp's describe_level_sequence.
+			const UMovieScene* MS = Anim->GetMovieScene();
 			if (!MS)
 			{
 				// Reported rather than skipped: an animation without a MovieScene is exactly the
