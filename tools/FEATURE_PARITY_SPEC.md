@@ -2490,9 +2490,11 @@ cannot become one giant blocking item:
       `FStaticMeshBatchRelevance::LODIndex` (1 site, `diagnose_landscape_draws`) - THE SERIOUS ONE. Its
       own deprecation text says "doesn't contain valid data anymore" on 5.4+, not merely discouraged -
       so this diagnostic's `"lod"` field had been silently wrong on every 5.4+ engine including 5.7.
-      Fixed with `GetLODIndex()`. Not independently live-tested against real landscape content this
-      pass; the fix rests on the engine's own explicit documentation rather than a subtle behaviour
-      that needed reproducing, but a real call against DDS2 content would close this out properly.
+      Fixed with `GetLODIndex()`. LIVE-VERIFIED 2026-08-28 against DDS2's real editor (not just the
+      5.7 probe): `diagnose_landscape_draws` against the currently-loaded level's 256 real landscape
+      components now reports a clean `lod: 0,1,2,3,4,5` sequence per component (6 static meshes, 6
+      LODs, correctly ordered by decreasing screenSize threshold) - genuinely correct data, not the
+      garbage the deprecated field would have produced.
       `UMaterialInterface::GetMaterialResource(ERHIFeatureLevel)` (2 sites, UE_DEPRECATED 5.7) - needed
       an actual parameter-type change, not a rename; added `MifGetMaterialResource()` using the
       engine's own `GShaderPlatformForFeatureLevel[]` conversion (identical on both engines).
