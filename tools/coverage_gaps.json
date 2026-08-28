@@ -1,10 +1,12 @@
 {
  "uncovered": [
+  "add_blackboard_key",
   "add_class_cast",
   "add_component_bound_event",
   "add_create_widget",
   "add_enhanced_input_action",
   "add_format_text",
+  "add_gameplay_effect_modifier",
   "add_get_array_item",
   "add_get_data_table_row",
   "add_get_subsystem",
@@ -14,6 +16,8 @@
   "add_parent_call",
   "add_self",
   "add_sequence",
+  "add_sequence_possessable",
+  "add_sequence_track",
   "add_simplified_collision",
   "add_spawn_actor",
   "add_sublevel",
@@ -23,44 +27,55 @@
   "add_widget_binding",
   "backup_blueprint",
   "bind_landscape_rvt",
+  "blueprint_inheritance_tree",
   "close_asset_editors",
+  "create_data_layer",
   "create_material_function",
+  "create_metahuman_character",
   "describe_animation",
+  "describe_gameplay_tag",
+  "describe_live_widget",
+  "describe_pcg_graph",
   "describe_property",
-  "diagnose_landscape_draws",
+  "describe_state_tree",
+  "describe_water_body",
   "diff_properties_vs_default",
   "duplicate_actors",
   "focus_viewport",
   "get_actor_bounds",
+  "get_collision",
   "get_cvar",
   "get_dependencies",
-  "kr_analyze_ubergraph",
-  "kr_batch_reconstruct",
-  "kr_classify_drift",
-  "kr_disassemble_function",
-  "kr_drift_census",
-  "kr_dump_blueprint",
-  "kr_list_cooked_blueprints",
-  "kr_list_events",
-  "kr_pin_type_from_property",
-  "kr_reconstruct_request",
-  "kr_reconstruct_status",
-  "kr_verify_fidelity",
   "list_animations",
   "list_editor_commands",
+  "list_foliage_instances",
+  "list_gameplay_tags",
+  "list_input_mappings",
+  "list_live_widgets",
   "list_mounted_containers",
   "list_object_properties",
+  "list_pcg_components",
+  "list_pcg_graphs",
   "list_pie_actors",
+  "list_sequence_bindings",
+  "list_state_trees",
   "list_sublevels",
+  "live_coding_compile",
+  "live_coding_status",
   "load_level",
   "move_actor_to",
   "nav_status",
   "open_asset_editor",
   "open_blueprint",
   "paint_landscape",
+  "pcg_cleanup",
+  "pcg_generate",
+  "perf_heavy_actors",
   "pie_load_level_instance",
   "pie_status",
   "pie_unload_level_instance",
+  "preview_composite_widget",
+  "preview_widget",
   "read_modloader_log",
   "recipe_override_and_call_parent",
   "reimport_asset",
@@ -82,14 +97,27 @@
   "set_asset_thumbnail",
   "set_cast_purity",
   "set_current_sublevel",
+  "set_niagara_component_parameter",
   "set_sublevel_streaming",
   "set_sublevel_visibility",
   "set_variable_default",
+  "set_water_body_spline",
   "set_widget_is_variable",
   "spawn_actor_in_pie",
+  "spawn_metahuman_actor",
+  "trace_start",
+  "trace_stop",
+  "ui_scenario_activate",
+  "ui_scenario_capture",
+  "ui_scenario_start",
+  "ui_scenario_status",
+  "ui_scenario_stop",
   "validate"
  ],
  "covered": {
+  "add_actor_to_data_layer": [
+   "test_data_layer_writes.py"
+  ],
   "add_anim_node": [
    "test_anim_nodes.py"
   ],
@@ -250,6 +278,9 @@
    "test_widget_anim_recreate.py",
    "test_widget_animation_props.py",
    "test_widget_animation_track.py"
+  ],
+  "analyze_skeletal_split": [
+   "test_find_tools.py"
   ],
   "apply_graph_patch": [
    "test_audit_fixes.py",
@@ -414,6 +445,12 @@
    "test_structs.py",
    "test_unchecked_returns.py"
   ],
+  "create_water_body": [
+   "test_water_zone.py"
+  ],
+  "create_water_zone": [
+   "test_water_zone.py"
+  ],
   "delete_asset": [
    "test_array_wildcard_durability.py",
    "test_collision.py",
@@ -469,11 +506,26 @@
    "test_safety_gate.py",
    "test_unknown_endpoint.py"
   ],
+  "describe_game_feature_plugin": [
+   "test_game_features.py"
+  ],
+  "describe_level_sequence": [
+   "test_sequencer.py"
+  ],
+  "describe_metasound": [
+   "test_metasound.py"
+  ],
+  "describe_niagara_system": [
+   "test_niagara.py"
+  ],
   "describe_package": [
    "test_fuzz_detector.py",
    "test_modal_guard.py"
   ],
   "diagnose_landscape": [
+   "test_landscape_info.py"
+  ],
+  "diagnose_landscape_draws": [
    "test_landscape_info.py"
   ],
   "disconnect_pin": [
@@ -601,6 +653,7 @@
    "test_safety_gate.py"
   ],
   "list_bones": [
+   "test_find_tools.py",
    "test_ik_authoring.py",
    "test_ik_goals_solvers.py",
    "test_list_bones.py",
@@ -615,6 +668,9 @@
    "test_confirm_gated.py",
    "test_idempotence.py",
    "test_undo_integrity.py"
+  ],
+  "list_data_layers": [
+   "test_data_layer_writes.py"
   ],
   "list_datatables": [
    "test_datatables.py"
@@ -635,6 +691,9 @@
   ],
   "list_functions": [
    "test_function_flags.py"
+  ],
+  "list_game_feature_plugins": [
+   "test_game_features.py"
   ],
   "list_graphs": [
    "test_anim_nodes.py",
@@ -673,6 +732,9 @@
    "test_spawn_many.py",
    "test_water_zone.py"
   ],
+  "list_level_sequences": [
+   "test_sequencer.py"
+  ],
   "list_material_expressions": [
    "test_material_graph.py",
    "test_material_params.py"
@@ -680,6 +742,12 @@
   "list_material_parameters": [
    "test_material_params.py",
    "test_material_write.py"
+  ],
+  "list_morph_targets": [
+   "test_list_bones.py"
+  ],
+  "list_niagara_emitters": [
+   "test_niagara.py"
   ],
   "list_niagara_user_parameters": [
    "test_niagara_params.py"
@@ -725,6 +793,12 @@
    "test_undo_integrity.py",
    "test_unknown_endpoint.py"
   ],
+  "list_virtual_bones": [
+   "test_list_bones.py"
+  ],
+  "list_water_bodies": [
+   "test_water_zone.py"
+  ],
   "list_widget_animations": [
    "test_rename_widget.py",
    "test_widget_anim_recreate.py",
@@ -748,6 +822,12 @@
   ],
   "override_inherited_component": [
    "test_inherited_components.py"
+  ],
+  "project_asset_distribution": [
+   "test_project_graph.py"
+  ],
+  "project_dependency_graph": [
+   "test_project_graph.py"
   ],
   "read_datatable": [
    "test_confirm_gated.py",
@@ -776,6 +856,9 @@
   ],
   "refresh_node": [
    "test_array_wildcard_durability.py"
+  ],
+  "remove_actor_from_data_layer": [
+   "test_data_layer_writes.py"
   ],
   "remove_component": [
    "test_components_dispatchers.py",
@@ -880,6 +963,12 @@
   "set_actor_transform": [
    "test_snap_ground.py"
   ],
+  "set_blendspace_samples": [
+   "test_ported_anim.py"
+  ],
+  "set_bone_translation_retargeting": [
+   "test_ported_anim.py"
+  ],
   "set_collision": [
    "test_collision.py"
   ],
@@ -888,6 +977,12 @@
   ],
   "set_cvar": [
    "test_safety_gate.py"
+  ],
+  "set_data_layer_loaded_in_editor": [
+   "test_data_layer_writes.py"
+  ],
+  "set_data_layer_visibility": [
+   "test_data_layer_writes.py"
   ],
   "set_function_flags": [
    "test_function_flags.py"
