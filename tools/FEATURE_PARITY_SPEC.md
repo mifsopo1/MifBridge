@@ -2913,9 +2913,11 @@ cannot become one giant blocking item:
       deliberately unexercised: starting Live Coding changes how the editor holds its DLLs for the
       rest of that session, which the endpoint's own guard already treats as a person's decision,
       not something a routine sweep should trigger. Tests the refusal paths - no confirm, no wait
-      option, and (adaptively) the "not started" guard, which turned out NOT to apply this run since
-      DDS2 had Live Coding already running on this particular launch - logged honestly as unproven
-      rather than assumed either way.
+      option, and (adaptively) the guard for when Live Coding has never been turned on for the
+      session - this test item ITSELF is fully DONE and committed regardless, but that specific
+      guard branch happened not to fire on this particular run, since DDS2 already had Live Coding
+      running when this suite checked - logged honestly as unproven on this run rather than assumed
+      either way.
       38/38 PASS, verified live against DDS2; nothing saved, editor closed after.
       coverage_gaps.json refreshed: 92 -> 84 uncovered. Across all four batches this session: 29
       previously-untested endpoints closed plus one two-part real bug found and fixed

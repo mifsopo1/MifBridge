@@ -1,16 +1,10 @@
 {
  "uncovered": [
-  "add_blackboard_key",
-  "add_class_cast",
   "add_component_bound_event",
   "add_create_widget",
-  "add_enhanced_input_action",
-  "add_format_text",
   "add_gameplay_effect_modifier",
   "add_get_array_item",
   "add_get_data_table_row",
-  "add_get_subsystem",
-  "add_literal",
   "add_make_map",
   "add_nav_volume",
   "add_parent_call",
@@ -21,9 +15,6 @@
   "add_simplified_collision",
   "add_spawn_actor",
   "add_sublevel",
-  "add_switch_enum",
-  "add_switch_int",
-  "add_switch_string",
   "add_widget_binding",
   "backup_blueprint",
   "bind_landscape_rvt",
@@ -95,6 +86,9 @@
   "add_bind_dispatcher": [
    "test_macro_dispatch.py"
   ],
+  "add_blackboard_key": [
+   "test_node_spawns.py"
+  ],
   "add_branch": [
    "test_confirm_gated.py",
    "test_find_and_move.py",
@@ -107,6 +101,9 @@
    "test_components_dispatchers.py"
   ],
   "add_cast": [
+   "test_node_spawns.py"
+  ],
+  "add_class_cast": [
    "test_node_spawns.py"
   ],
   "add_comment": [
@@ -124,6 +121,9 @@
    "test_node_spawns.py",
    "test_pinlifetime.py"
   ],
+  "add_enhanced_input_action": [
+   "test_node_spawns.py"
+  ],
   "add_enum_literal": [
    "test_audit_fixes.py"
   ],
@@ -139,6 +139,9 @@
   "add_foliage_instances": [
    "test_foliage_modes.py"
   ],
+  "add_format_text": [
+   "test_node_spawns.py"
+  ],
   "add_function_call": [
    "test_array_wildcard_durability.py",
    "test_find_and_move.py",
@@ -150,6 +153,9 @@
    "test_selfpin.py",
    "test_undo_integrity.py",
    "test_v3_apply.py"
+  ],
+  "add_get_subsystem": [
+   "test_node_spawns.py"
   ],
   "add_ik_goal": [
    "test_ik_goals_solvers.py"
@@ -166,6 +172,9 @@
   "add_interface": [
    "test_interfaces.py",
    "test_undo_integrity.py"
+  ],
+  "add_literal": [
+   "test_node_spawns.py"
   ],
   "add_macro_instance": [
    "test_cooked_class_trap.py",
@@ -196,6 +205,15 @@
    "test_node_spawns.py",
    "test_structs.py",
    "test_unchecked_returns.py"
+  ],
+  "add_switch_enum": [
+   "test_node_spawns.py"
+  ],
+  "add_switch_int": [
+   "test_node_spawns.py"
+  ],
+  "add_switch_string": [
+   "test_node_spawns.py"
   ],
   "add_timeline": [
    "test_report_intake.py",
@@ -344,6 +362,7 @@
    "test_ik_authoring.py",
    "test_ik_goals_solvers.py",
    "test_ik_rig.py",
+   "test_node_spawns.py",
    "test_textures.py"
   ],
   "create_blueprint": [
@@ -562,6 +581,7 @@
    "test_metasound.py",
    "test_niagara.py",
    "test_niagara_params.py",
+   "test_node_spawns.py",
    "test_ported_anim.py",
    "test_set_struct_member.py",
    "test_sockets_ai.py",
@@ -664,6 +684,7 @@
   ],
   "list_blackboard_keys": [
    "test_create_asset.py",
+   "test_node_spawns.py",
    "test_sockets_ai.py"
   ],
   "list_blueprints": [
