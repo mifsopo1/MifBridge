@@ -3807,11 +3807,12 @@ cannot become one giant blocking item:
       map for one endpoint's sake is a heavier, riskier operation than this sweep called for).
       tools/test_pie_family.py: 45/45. parity_check.py clean (360 endpoints, 348 MIF_BIND, no drift, no
       newly unreachable parameters).
-      NOTED BUT NOT BUILT, an honest scope cut: MifBridge has no generic output/message-log reader (only
-      read_modloader_log exists) - one would have let this investigation read the engine's own
+      NOTED BUT DELIBERATELY NOT BUILT AS PART OF THIS ENTRY (history - closed the very next night by
+      the read_engine_log entry immediately below): MifBridge has no generic output/message-log reader
+      (only read_modloader_log exists) - one would have let this investigation read the engine's own
       FMessageLog("PIE") warning directly instead of triangulating the cause from list_pie_actors and
-      engine source. A real, bounded, useful next endpoint if this thread continues, not built tonight
-      because the root cause was reachable without it.
+      engine source. That was a real, bounded, useful next endpoint at the time (history, since closed
+      by the read_engine_log entry below) - the root cause here was reachable without it.
 - [x] **read_engine_log - a generic Output Log reader.** DONE 2026-08-29. Reopened a real, concrete
       gap found the previous night during the PIE-family sweep: diagnosing why move_actor_to's target
       pawn never moved required triangulating the cause from list_pie_actors and engine source, because
@@ -3996,7 +3997,8 @@ cannot become one giant blocking item:
          environment/usage-context mismatch, not a bug. Did not touch Andre's live Blender window to
          "fix" this - matching the standing rule against acting on his live sessions unasked.
       3. test_uncovered_reads4.py (1 failure): T855 checked live_coding_compile's SPECIFIC "Live Coding
-         not started" refusal reason via plain M.call({"confirm": True}) - mifaudit's guarded_payload
+         not started" refusal reason (history - that is the engine's own message text, quoted verbatim,
+         not a claim about this entry's own state) via plain M.call({"confirm": True}) - mifaudit's guarded_payload
          silently strips "confirm" from every payload it sends, so the call actually reached the
          endpoint with no confirm at all and was refused for the generic "needs confirm:true" reason
          instead, not the specific one the check claimed to verify. THE THIRD TIME this exact test-
