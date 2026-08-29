@@ -2,17 +2,20 @@
  {
   "class": "Blueprint",
   "assets": 500,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "StaticMesh",
   "assets": 500,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "AnimSequence",
   "assets": 500,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "Material",
@@ -26,7 +29,8 @@
    "create_material_instance",
    "delete_material_expression",
    "set_material_parameter"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "MaterialInstanceConstant",
@@ -40,7 +44,8 @@
    "create_material_instance",
    "delete_material_expression",
    "set_material_parameter"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "MaterialFunction",
@@ -54,7 +59,8 @@
    "create_material_instance",
    "delete_material_expression",
    "set_material_parameter"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "Texture2D",
@@ -62,60 +68,72 @@
   "writeEndpoints": [
    "import_texture",
    "set_texture_settings"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "SoundWave",
   "assets": 500,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "World",
   "assets": 500,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "DataTable",
   "assets": 436,
   "writeEndpoints": [
+   "add_get_data_table_row",
    "create_datatable",
    "delete_datatable_rows"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "SoundCue",
   "assets": 354,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "UserDefinedEnum",
-  "assets": 289,
-  "writeEndpoints": []
+  "assets": 290,
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "SkeletalMesh",
   "assets": 188,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "MetaSoundSource",
   "assets": 185,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "DataAsset",
   "assets": 180,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "PhysicsAsset",
   "assets": 164,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "UserDefinedStruct",
   "assets": 140,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "WidgetBlueprint",
@@ -134,34 +152,42 @@
    "set_widget_animation_keys",
    "set_widget_animation_range",
    "set_widget_is_variable"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "PrimaryDataAsset",
   "assets": 77,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "InputAction",
   "assets": 68,
-  "writeEndpoints": []
+  "writeEndpoints": [
+   "add_enhanced_input_action"
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "NiagaraEmitter",
   "assets": 50,
   "writeEndpoints": [
    "set_niagara_component_parameter"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "CurveFloat",
   "assets": 47,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "AnimMontage",
-  "assets": 44,
-  "writeEndpoints": []
+  "assets": 45,
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "TextureCube",
@@ -169,26 +195,30 @@
   "writeEndpoints": [
    "import_texture",
    "set_texture_settings"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "FoliageType_InstancedStaticMesh",
   "assets": 42,
   "writeEndpoints": [
    "add_foliage_instances"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "NiagaraSystem",
   "assets": 38,
   "writeEndpoints": [
    "set_niagara_component_parameter"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "SoundClass",
   "assets": 33,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "TextureRenderTarget2D",
@@ -196,17 +226,20 @@
   "writeEndpoints": [
    "import_texture",
    "set_texture_settings"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "SoundAttenuation",
   "assets": 23,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "Skeleton",
   "assets": 21,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "MaterialParameterCollection",
@@ -220,39 +253,46 @@
    "create_material_instance",
    "delete_material_expression",
    "set_material_parameter"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "ParticleSystem",
   "assets": 19,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "BehaviorTree",
   "assets": 17,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "BlendSpace",
   "assets": 16,
   "writeEndpoints": [
    "set_blendspace_samples"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "PoseAsset",
   "assets": 14,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "CurveLinearColor",
   "assets": 13,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "PCGGraph",
   "assets": 10,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "AnimBlueprint",
@@ -265,104 +305,133 @@
    "remove_widget_animation_track",
    "set_widget_animation_keys",
    "set_widget_animation_range"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "SoundMix",
   "assets": 9,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "LandscapeGrassType",
   "assets": 7,
   "writeEndpoints": [
    "create_landscape"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "InputMappingContext",
   "assets": 7,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "LevelSequence",
   "assets": 4,
-  "writeEndpoints": []
+  "writeEndpoints": [
+   "apply_level_snapshot",
+   "create_level_snapshot",
+   "set_sublevel_streaming"
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "BlackboardData",
   "assets": 4,
   "writeEndpoints": [
    "add_blackboard_key"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "Landscape",
   "assets": 3,
   "writeEndpoints": [
    "create_landscape"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
+ },
+ {
+  "class": "AnimComposite",
+  "assets": 3,
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "ControlRigBlueprint",
   "assets": 2,
-  "writeEndpoints": []
- },
- {
-  "class": "AnimComposite",
-  "assets": 2,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "CurveVector",
   "assets": 1,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "NavigationData",
   "assets": 1,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "SubsurfaceProfile",
   "assets": 1,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "AimOffsetBlendSpace",
   "assets": 0,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "IKRigDefinition",
   "assets": 0,
-  "writeEndpoints": []
+  "writeEndpoints": [
+   "set_ik_rig_mesh",
+   "set_ik_rig_retarget_root"
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "IKRetargeter",
   "assets": 0,
-  "writeEndpoints": []
+  "writeEndpoints": [
+   "add_ik_retarget_chain",
+   "remove_ik_retarget_chain"
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "CurveTable",
   "assets": 0,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "AIController",
   "assets": 0,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "GameplayEffect",
   "assets": 0,
   "writeEndpoints": [
    "add_gameplay_effect_modifier"
-  ]
+  ],
+  "genericCreateAssetCandidate": true
  },
  {
   "class": "AttributeSet",
   "assets": 0,
-  "writeEndpoints": []
+  "writeEndpoints": [],
+  "genericCreateAssetCandidate": true
  }
 ]

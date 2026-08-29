@@ -13,6 +13,13 @@ Two guards exist because of what they prevent rather than for tidiness:
     complaint until runtime;
   * the destination check had two real bugs found by testing rather than reasoning, both recorded in
     T143's comments - they are the interesting part of this file.
+
+T145, added 2026-08-29: create_asset's genericness is itself a finding worth pinning down, not just
+using. tools/capability_gaps.py's own weak name-match heuristic had been flagging 18 classes (curves,
+AnimMontage, ParticleSystem, sound classes, UserDefinedEnum, PCGGraph and more) as having no author
+endpoint - true by NAME, since none has a dedicated one, but false as a capability claim, since every
+one of them is reachable through this generic endpoint. Verified live before writing the assertion,
+not assumed from the class list alone.
 """
 import json
 import random
@@ -108,6 +115,34 @@ def main():
         check("T144 %s explains" % cls, expect in (q.get("error") or ""), (q.get("error") or "")[:140])
     q = M.call("create_asset", {"path": path + "_z"})
     check("T144 a missing class is refused", q.get("ok") is False, json.dumps(q)[:150])
+
+    # ------------------------------------------------------------------ T145 the generic breadth
+    print("\n=== T145 [found 2026-08-29]: create_asset covers classes tools/capability_gaps.py missed ===")
+    # capability_gaps.py's own weak name-match heuristic flagged 18 classes as having "no write
+    # endpoint by name" - CurveFloat, AnimMontage, ParticleSystem, SoundClass, UserDefinedEnum,
+    # PCGGraph and others. None of them has a DEDICATED author endpoint, which is why the heuristic
+    # missed them, but every one of them is a concrete, non-Actor, non-Blueprint UObject subclass -
+    # exactly what create_asset is generic over. Live-tested by hand before this suite existed (9 of
+    # 11 spot-checked succeeded outright; the other 2 correctly refused as abstract, covered below).
+    # This locks that finding in as regression coverage rather than leaving it as a one-off finding
+    # that could silently stop being true.
+    for cls in ("CurveFloat", "AnimMontage", "ParticleSystem", "SoundClass", "UserDefinedEnum",
+                "PCGGraph", "CurveVector", "SubsurfaceProfile"):
+        gp = M.call("create_asset", {"path": path + "_generic_" + cls, "class": cls})
+        check("T145 %s creates via the generic path" % cls, gp.get("ok") is True, json.dumps(gp)[:200])
+        check("T145 %s is registered, not just in memory" % cls, gp.get("registered") is True,
+              json.dumps(gp)[:200])
+    # The other half of the same finding: an abstract class in this same "no dedicated endpoint"
+    # bucket is refused the SAME informative way T142 already proved for PrimaryDataAsset/DataAsset -
+    # not a silent failure, and not a different code path for classes nobody wrote a dedicated
+    # endpoint for.
+    for cls in ("NavigationData",):
+        na = M.call("create_asset", {"path": path + "_abstract_" + cls, "class": cls})
+        check("T145 %s (abstract) is refused, not silently broken" % cls, na.get("ok") is False,
+              json.dumps(na)[:200])
+        check("T145 %s explains the cooked-game consequence" % cls,
+              "ABSTRACT" in (na.get("error") or "") and "cooked game" in (na.get("error") or ""),
+              (na.get("error") or "")[:200])
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

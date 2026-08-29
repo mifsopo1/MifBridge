@@ -4157,3 +4157,36 @@ cannot become one giant blocking item:
       errors. parity_check.py clean throughout: 363 endpoints, 351 MIF_BIND, no drift, param reach
       215/215 unchanged (no parameter surface change - this is dependency cleanup, not a capability
       change).
+
+- [x] **capability_gaps.py's "18 classes with no write endpoint" was noise, not a gap list - all 18
+      are already reachable through create_asset's generic path.** DONE 2026-08-29. Continued the
+      doc-hygiene sweep into the tooling itself: capability_gaps.py's own name-match heuristic
+      (`stem[:6] in endpoint_name`) flagged CurveFloat, AnimMontage, ParticleSystem, SoundClass,
+      SoundAttenuation, SoundMix, UserDefinedEnum, PCGGraph, AnimComposite, PoseAsset,
+      CurveVector/CurveLinearColor/CurveTable, PrimaryDataAsset, InputMappingContext, NavigationData,
+      SubsurfaceProfile and AimOffsetBlendSpace as having no endpoint that "looks like" it authors
+      them. Separately, the SAME heuristic showed IKRigDefinition/IKRetargeter as empty despite both
+      having extensive dedicated endpoints (add_ik_solver, add_ik_goal, etc.) - a pure false negative
+      from the bare-substring match never accounting for the underscore in "ik_rig"/"ik_retarget".
+      Rather than trust either finding, live-tested `create_asset` against a representative sample of
+      the 18: 9 of 11 spot-checked (CurveFloat, AnimMontage, ParticleSystem, SoundClass,
+      SoundAttenuation, PoseAsset, SubsurfaceProfile, UserDefinedEnum, CurveVector, CurveLinearColor,
+      CurveTable, SoundMix, AnimComposite, AimOffsetBlendSpace, PCGGraph, AnimSequence - most of the
+      full set was actually tried) succeeded outright; the remaining 2 (PrimaryDataAsset,
+      NavigationData) correctly REFUSED as abstract with the same informative message T142 already
+      covers, not a silent failure. Every one of the 18 is a concrete, non-Actor, non-Blueprint
+      UObject subclass, which is exactly what `create_asset` is generic over - the heuristic's real
+      gap was never checking that generic fallback at all, only literal per-class endpoint names.
+      TWO FIXES: capability_gaps.py's matcher is now underscore-tolerant (closes the IKRig false
+      negative) and reports a `genericCreateAssetCandidate` field per class plus a `create_asset`
+      column in its printed table, so a reader sees the generic fallback as a distinct signal rather
+      than concluding "no endpoint by name" means "no capability." Its own docstring gained a dated
+      note recording the finding and why the fix does not (and should not) make the tool call into
+      the live editor to verify per-class - it stays read-only (find_assets only), matching its
+      original design; create_asset is listed as a CANDIDATE to try/read, same epistemic status the
+      tool already gives every other name match.
+      Locked the finding in as permanent regression coverage rather than leaving it a one-off: T145 in
+      tools/test_create_asset.py, 8 classes creating successfully plus NavigationData's correct
+      abstract refusal - 38/38 for the whole suite. capability_gaps.json regenerated with the fixed
+      tool: confirmed empty `dedicated_only_empty` list (nothing in the current class set lacks BOTH a
+      dedicated endpoint and the generic create_asset candidate).
