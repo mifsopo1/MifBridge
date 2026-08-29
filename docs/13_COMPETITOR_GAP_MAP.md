@@ -127,7 +127,11 @@ roadmap two days after everything on it had already landed:
    MetaHuman-on-5.3). Broader ability/attribute-set AUTHORING is declined in the spec.
 4. ~~**Water**, **Vehicles**~~ — both DONE. Water: full read+write 2026-08-27. Vehicles: existing
    generic tools (create_blueprint, add_component, set_property) already cover it completely - zero
-   new code needed, confirmed by actually checking rather than assumed.
+   new code needed, confirmed by actually checking rather than assumed. **Follow-up, 2026-08-29:** since
+   nothing was ever going to need vehicle-specific C++, the `ChaosVehiclesPlugin` module dependency this
+   conclusion made pointless was actually dropped from `MifBridge.uplugin`/`Build.cs` - it had been
+   sitting linked-but-unused since before this map was written (parity_check.py's "PLUGIN IDLE" advisory
+   had been flagging it the whole time). See the spec's dated entry.
 5. Everything else on demand — MVVM's FieldNotify gap landed 2026-08-27 (viewmodel authoring itself
    already worked with zero new code). GeometryScripting landed 2026-08-28: `create_procedural_mesh`
    (box, sphere, cylinder, cone, torus - GeometryFramework/GeometryCore + the already-linked
@@ -139,9 +143,29 @@ roadmap two days after everything on it had already landed:
    having "no plan or presence in either project" - a general UE5 capability does not need one, and
    `tools/test_levelsnapshots.py` (20/20) verifies it against a scratch actor rather than real project
    content, the same fixture-testing pattern GAS/MVVM/MetaHuman already used. See the spec's dated
-   entry - it explains the correction, not just the feature. Still genuinely idle and declined pending
-   an actual ask, though NOT re-examined with the same rigor this pass: LiveLink, MassEntity,
-   ModularGameplay.
+   entry - it explains the correction, not just the feature.
+   **UPDATE 2026-08-29 - this paragraph was itself stale.** It said LiveLink, MassEntity and
+   ModularGameplay were "still genuinely idle... NOT re-examined." Checked against
+   `FEATURE_PARITY_SPEC.md` (the current, actively-maintained source of truth) rather than trusting this
+   file's own prior claim: both LiveLink and ModularGameplay WERE re-examined and built the very next
+   day, 2026-08-28 - this paragraph just never got the follow-up edit.
+   **LiveLink** - the "needs external data source" decline was wrong, same shape as LevelSnapshots'
+   wrong decline above. `push_livelink_transform`/`describe_livelink_subject`
+   (`MifBridgeLiveLink.cpp`) push through `ILiveLinkClient` (an unconditional engine module, no plugin
+   guard needed) via a minimal scratch `ILiveLinkSource`. `tools/test_livelink.py`, 21/21, verified live
+   with real `start_pie`/`stop_pie`, both engines.
+   **ModularGameplay** - the earlier decline ("needs PIE, which this project has a standing rule
+   against starting") unblocked itself the moment Andre authorised PIE use generally the same night.
+   `add_game_framework_receiver`/`add_game_framework_component_request`/
+   `remove_game_framework_component_request` now exist. See the spec's dated entries for both.
+   **MassEntity is the one still correctly declined**, for a real structural reason rather than "nobody
+   asked": `FMassEntityManager` is a plain C++ class, not reflectable by a JSON bridge, and the actual
+   authorable surface (Fragments, Traits, spawner configs) lives in the separate `MassGameplay` plugin,
+   not currently linked. Building it would mean either hardcoding project-specific Fragment types that
+   do not exist in either project, or linking a plugin purely speculatively - the same "build cost, no
+   capability" trap the Vehicles dependency above was just found to be sitting in. Left linked rather
+   than dropped, unlike Vehicles: this one is genuinely pending a future ask that could make it worth
+   building, not a closed "zero new code needed" conclusion.
 
 Original suggested order preserved below for the reasoning; do not re-plan items 1-4 from it.
 
