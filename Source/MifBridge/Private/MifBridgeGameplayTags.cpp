@@ -169,4 +169,21 @@ namespace MifBridge
 					 "read. This is unusual and worth reporting if you see it."));
 		}
 	}
+
+	// add_gameplay_tag WAS ATTEMPTED HERE, 2026-08-29, and DOES NOT EXIST - the compiler, not a
+	// design choice, is why. UGameplayTagsManager::AddTagTableRow looked public from the header
+	// (GAMEPLAYTAGS_API, no access specifier visible in a plain grep) and is documented as the exact
+	// call PopulateTreeFromDataTable makes per ini row - but it sits under a `private:` block
+	// (GameplayTagsManager.h:739 in 5.3, gated to `friend class SAddNewGameplayTagSourceWidget` and
+	// two others), which only the actual build caught: MifBridgeGameplayTags.cpp(246): error C2248
+	// 'cannot access private member'. The other candidate, AddNativeGameplayTag(FName, FString), is
+	// ALSO private (same file, :253-370 - a different private block, same result). Checked both
+	// before reverting rather than stopping at the first failure.
+	// THE LESSON, this project's own repeatedly-learned one, re-learned here in real time: reading a
+	// header for a GAMEPLAYTAGS_API-decorated declaration is not the same as knowing it is callable -
+	// only the compiler resolves access specifiers reliably, and grepping the file did not surface
+	// the `private:` line sitting above the match. There is no public runtime API to add a gameplay
+	// tag to the live tree; the entire mutating surface is deliberately gated to the engine's own
+	// "Add New Gameplay Tag Source" editor widget and native UE_DEFINE_GAMEPLAY_TAG registration.
+	// Filed as correctly impossible, not merely undiscovered - see FEATURE_PARITY_SPEC.md.
 }

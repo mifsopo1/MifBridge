@@ -4190,3 +4190,64 @@ cannot become one giant blocking item:
       abstract refusal - 38/38 for the whole suite. capability_gaps.json regenerated with the fixed
       tool: confirmed empty `dedicated_only_empty` list (nothing in the current class set lacks BOTH a
       dedicated endpoint and the generic create_asset candidate).
+
+- [ ] **Read/write asymmetry, re-tried with a per-file matcher instead of the naive verb-stripped
+      name comparison the earlier attempt found too noisy.** Investigated 2026-08-29, as part of the
+      same autopilot pass that fixed capability_gaps.py. Grouped handlers by SOURCE FILE rather than
+      by string-matching names, then looked for files that are all-read or all-write with 2+ handlers -
+      six all-read, four all-write. Checked each rather than trusting the grouping:
+      - MifBridgeSequencer.cpp (list/describe only) - a false positive from the grouping itself:
+        MifBridgeSequencerWrite.cpp is a SEPARATE file holding the write half, already built and
+        tested. Not a gap.
+      - MifBridgeLiveWidgets.cpp (list_live_widgets/describe_live_widget) - legitimately one-
+        directional. A "live widget" is a runtime instance the running game already created; there is
+        no sensible "create a live widget instance" operation to pair it with, since authoring happens
+        at the Blueprint level (add_create_widget) not the running-instance level.
+      - MifBridgeNodes6.cpp (get_property/list_object_properties) - both are GENERIC readers with no
+        single node/asset type of their own; their write counterpart (set_property) lives in a
+        different, much larger shared file. Not a per-file gap, another grouping false positive.
+      - MifBridgeImport.cpp (import_asset/import_texture/etc., all write) - importing is inherently
+        one-directional; "describe an import" is not a meaningful read to pair it with.
+      - MifBridgeGameFramework.cpp (the ModularGameplay component-request family, all write) - request-
+        based by design (UGameFrameworkComponentManager), not naturally queryable.
+      Three candidates, checked against the engine source AND, for the one that looked buildable,
+      against the actual compiler - which is where the real finding was:
+      - **GameplayTags authoring - TRIED, AND CORRECTLY IMPOSSIBLE, not merely undiscovered.**
+        `UGameplayTagsManager::AddTagTableRow(const FGameplayTagTableRow&, FName SourceName, bool)`
+        looked public from the header (`GAMEPLAYTAGS_API`, no access specifier visible in a plain
+        grep) and matches PopulateTreeFromDataTable's own per-row call exactly. Written as
+        `add_gameplay_tag`, and the BUILD caught what the header read missed:
+        `MifBridgeGameplayTags.cpp(246): error C2248 'UGameplayTagsManager::AddTagTableRow': cannot
+        access private member`. It sits under a `private:` block (GameplayTagsManager.h:739, gated to
+        `friend class SAddNewGameplayTagSourceWidget` and two others). The other candidate,
+        `AddNativeGameplayTag(FName, FString)`, is ALSO private (:253-370, a different private block,
+        checked before reverting rather than stopping at the first failure). There is no public
+        runtime API to add a gameplay tag to the live tree - the entire mutating surface is
+        deliberately gated to the engine's own "Add New Gameplay Tag Source" editor widget and native
+        `UE_DEFINE_GAMEPLAY_TAG` compile-time registration. Reverted (handler, MIF_DECL/MIF_BIND,
+        server.py wrapper) rather than shipped broken. THE LESSON, this project's own repeatedly-
+        learned one, re-learned here in real time: reading a header for a decorated declaration is not
+        the same as knowing it is callable. Grep does not surface an access specifier sitting above
+        the match; only the compiler resolves it reliably. "There is a compiler for this" (18_START_
+        HERE.md, about engine-version differences) turns out to apply to access control too, not just
+        symbol shape.
+      - **GameFeatures activate/deactivate** - list/describe exist, nothing (de)activates a plugin.
+        `UGameFeaturesSubsystem::LoadAndActivateGameFeaturePlugin`/`DeactivateGameFeaturePlugin` are
+        PUBLIC (not re-verified by compiling, given the GameplayTags lesson just above - treat as
+        "plausible, not confirmed" until someone actually builds against it), but both are ASYNC
+        (delegate-based, no synchronous variant found) and the module itself lives under
+        `Engine/Plugins/Experimental/GameFeatures` - loading a whole feature plugin into the running
+        editor is also a heavier mutation than most of what this bridge does, closer in kind to the
+        endpoints the safety gate already treats specially than to an ordinary content write. Not
+        built - needs the same kind of deliberate call the export_asset scratch-gate question in
+        docs/06 §21 was left as, not something to decide in passing, AND needs its own compile-time
+        access check before anyone trusts it is reachable at all.
+      - **StateTree authoring** - list_state_trees/describe_state_tree exist, nothing authors one.
+        Correctly one-directional, not a gap: `StateTreeEditorData`/`StateTreeEditorModule` is a
+        bespoke editor object model, the same shape docs/06_CAPABILITY_ROADMAP.md already documents
+        for Control Rig ("every edit must go through URigVMController; different object model") -
+        genuinely out of scope for the same structural reason, not merely undiscovered.
+      GameplayTags and StateTree are both now correctly DECLINED, for the same epistemic weight even
+      though the reasons differ (one a private API, one a different object model). GameFeatures stays
+      OPEN, and now carries an explicit warning that its "public" reading is unverified by a real
+      build.
