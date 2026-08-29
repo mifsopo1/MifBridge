@@ -75,14 +75,19 @@ TRIAGED = {
         "NOT A BUG - it answers executed:false with a note saying it is plan-only and does not cook "
         "from inside the editor. Honest.",
     ("GHOST_OK", "trace_ground"):
-        "MINOR, not fixed - the ghost value went to ignoreActor, and an actor that does not exist is "
-        "nothing to ignore, so the trace is still correct. Worth a warning naming the unresolved "
-        "actor, but it cannot produce a wrong answer.",
+        "FIXED, and this entry was stale (found 2026-08-29) - verified live in MifBridgeSpatial.cpp "
+        "rather than assumed: an unresolvable ignoreActor is now a hard REFUSAL (Fail, NOTHING was "
+        "traced), not a warning. This entry's own 'cannot produce a wrong answer' turned out to "
+        "understate the real risk - the fix's own comment says the old silent-ignore behaviour could "
+        "hit 'the very actor you asked to exclude', which is a wrong answer, not just a missing one. "
+        "AUTOPILOT_BACKLOG.md records this as done with test coverage (test_audit_fixes.py T46/T47).",
     ("GHOST_OK", "select_level_actors"):
-        "REAL but not yet fixed - selected:0 for paths that do not resolve reads the same as "
-        "'these actors exist and none matched'. A caller doing select-then-operate-on-selection gets "
-        "an empty selection and no reason. Should name the unresolved paths. Deferred so the six "
-        "changesets already written get built and tested first.",
+        "FIXED, and this entry was stale (found 2026-08-29) - verified live rather than assumed: "
+        "select_level_actors {actorPaths:[<an unresolvable path>]} now returns "
+        "notFound:[<the exact path>] alongside selected:0, so a caller can already tell "
+        "'nothing matched' from 'none of these resolved'. This entry used to defer the fix behind "
+        "other changesets; whichever of those landed it, the response already carries the field this "
+        "entry asked for.",
     ("LEAK", "list_editor_commands"):
         "NOT A LEAK - the detector matched '.cpp:' against this module's deliberate habit of citing "
         "the engine header that explains a limitation. Detector narrowed to markers that cannot "
