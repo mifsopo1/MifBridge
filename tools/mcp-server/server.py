@@ -3393,6 +3393,28 @@ def remove_game_framework_component_request(request_id: str) -> dict:
 
 
 @mcp.tool()
+def add_mvvm_viewmodel(widget_blueprint_path: str, view_model_class: str) -> dict:
+    "Add a viewmodel instance to a Widget Blueprint's MVVM view (creating the view if it doesn't have one yet). Returns viewModelName and viewModelId - you need the NAME for add_mvvm_binding's sourceViewModelName. The viewmodel class does not need to be pre-registered anywhere; any UObject subclass the engine's own AddViewModel accepts works."
+    return _post("add_mvvm_viewmodel", widgetBlueprintPath=widget_blueprint_path, viewModelClass=view_model_class)
+
+
+@mcp.tool()
+def add_mvvm_binding(widget_blueprint_path: str, source_view_model_name: str, source_property_name: str,
+                     destination_widget_name: str, destination_property_name: str, binding_mode: str = None) -> dict:
+    "Bind a viewmodel property to a widget property - the actual MVVM connection add_mvvm_viewmodel's FieldNotify groundwork makes possible. source_view_model_name must already exist (call add_mvvm_viewmodel first); destination_widget_name must be a real named widget in the Blueprint's tree. binding_mode: oneWayToDestination (default - viewmodel drives widget), oneTimeToDestination, twoWay, oneWayToSource (widget drives viewmodel). Both properties are resolved by name via ordinary reflection on the viewmodel/widget class - refuses by name if either doesn't exist."
+    return _post("add_mvvm_binding", widgetBlueprintPath=widget_blueprint_path,
+                 sourceViewModelName=source_view_model_name, sourcePropertyName=source_property_name,
+                 destinationWidgetName=destination_widget_name, destinationPropertyName=destination_property_name,
+                 bindingMode=binding_mode)
+
+
+@mcp.tool()
+def describe_mvvm_view(widget_blueprint_path: str) -> dict:
+    "Read-only: lists every viewmodel and binding on a Widget Blueprint's MVVM view. hasView:false (with empty arrays) means the Blueprint has no MVVM view at all yet - this never CREATES one, unlike add_mvvm_viewmodel/add_mvvm_binding which do if needed."
+    return _post("describe_mvvm_view", widgetBlueprintPath=widget_blueprint_path)
+
+
+@mcp.tool()
 def create_mesh_boolean(target_path: str, tool_path: str, operation: str, output_path: str,
                         tool_offset_x: float = None, tool_offset_y: float = None, tool_offset_z: float = None) -> dict:
     "Combine two EXISTING StaticMesh assets (union, intersection, or subtract) into a THIRD, new StaticMesh at output_path (must not already exist). tool_offset_x/y/z (default 0) translate tool_path before the operation, so it actually overlaps target_path - two meshes both centered at the origin need no offset. Both inputs are read the same way describe_dynamic_mesh reads them - a real COOKED mesh's editor-only geometry data is usually stripped, so this works best on meshes create_procedural_mesh made. Returns real read-back vertexCount/triangleCount/bounds. Fails cleanly (not silently) if the operation produces an empty result, e.g. a subtract that removes everything."

@@ -3669,3 +3669,62 @@ cannot become one giant blocking item:
       an added, defaulted third parameter on AddComponentRequest, which does not affect the 2-arg call
       used here). parity_check.py clean (357 endpoints, 345 MIF_BIND, no drift - ModularGameplay no
       longer in PLUGIN IDLE, down to 3: ChaosVehiclesPlugin, MassEntity, ModelViewViewModel).
+- [x] **MVVM View Bindings - the other half of the 2026-08-27 FieldNotify work, left explicitly
+      "unexplored" at the time.** DONE 2026-08-28. That earlier work made a Blueprint variable
+      MVVM-bindable; this is what actually CONNECTS one to a widget.
+      TWO NEW MODULE DEPENDENCIES beyond the base ModelViewViewModel already linked:
+      ModelViewViewModelEditor (UMVVMEditorSubsystem, the authoring entry point) and
+      ModelViewViewModelBlueprint (UMVVMBlueprintView / FMVVMBlueprintPropertyPath /
+      FMVVMBlueprintViewBinding) - the base module only carries the RUNTIME FieldNotify surface the
+      earlier work used, confirmed by checking where UMVVMBlueprintView actually lives before assuming
+      the already-linked module had it.
+      Three endpoints, MifBridgeMVVM.cpp (new file): add_mvvm_viewmodel, add_mvvm_binding (source
+      resolved by name against a registered viewmodel's class via ordinary FindPropertyByName
+      reflection - the same pattern GAS's add_gameplay_effect_modifier uses for FGameplayAttribute;
+      destination resolved by walking the Widget Blueprint's own WidgetTree for a named widget, same
+      reflection on ITS class), describe_mvvm_view (read-only, uses GetView not RequestView - never
+      creates the MVVM extension on a Blueprint that never had one).
+      A REAL COMPILE-TIME ENGINE HEADER BUG, caught by the first build attempt on 5.3.2: both
+      MVVMEditorSubsystem.h and MVVMPropertyPath.h end with a `#if
+      UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_2` backward-compat block reaching for a header under
+      their OWN module's Private/ folder - invisible to an external module compiling against them,
+      which is exactly what MifBridge is. Fatal C1083 (cannot open MVVMBindingSource.h). Fixed by
+      locally forcing that macro false for the duration of these includes - a legitimate override of a
+      plain UBT-injected preprocessor define (TargetRules.cs), not a workaround for anything load-
+      bearing; nothing this file uses comes from the dead compat block.
+      A REAL PARAMETER-RESOLUTION BUG IN THIS FILE'S OWN FIRST VERSION, caught live, one level deeper
+      than RejectUnknownParams alone can see: widgetBlueprintPath was a correctly ACCEPTED key, but the
+      shared ResolveBlueprintField helper only ever READS "blueprintId"/"path" - so a call passing only
+      widgetBlueprintPath silently resolved nothing, failing with a generic "missing blueprint path"
+      error even though the caller's own accepted key was right there in the payload. Exactly the "an
+      ignored parameter is worse than a rejected one" failure class RejectUnknownParams exists to catch
+      - just past where that guard's own visibility ends (it checks keys are ACCEPTED, not that
+      accepted keys are actually READ). Fixed by resolving the path directly with all three spellings
+      before calling the lower-level ResolveBlueprint.
+      REAL 5.7 API DRIFT, caught by the second engine's build, not assumed from the 5.3.2 header alone:
+      AddViewModel returns FGuid directly on 5.7 (FName on 5.3.2, needing a FindViewModel(Name) lookup
+      to get the id - both engines still support both FindViewModel overloads, so this reads back
+      identically either way); SetDestinationPathForBinding grew a mandatory bAllowEventConversion
+      parameter on 5.7 with no default (5.7's own newer MVVM Events/Conditions feature this endpoint
+      does not use - passed false). Both version-guarded, both engines rebuilt clean after.
+      VERIFIED LIVE with a real end-to-end pipeline, not just individual API calls: created a real
+      MVVMViewModelBase-derived Blueprint with a FieldNotify Text variable, a real Widget Blueprint
+      (blueprintType:"WidgetBlueprint" - a plain create_blueprint with parentClass:UserWidget and no
+      blueprintType does NOT produce a real Widget Blueprint asset, caught live before assuming it
+      would) with a named TextBlock, added the viewmodel and a binding, then COMPILED the Widget
+      Blueprint - the actual correctness test, since add_mvvm_binding reporting ok:true only proves the
+      binding RECORD was created, not that it is valid. First tried binding a String-typed source to
+      the TextBlock's Text (FText) property: compiled with a real, specific engine error ("does not
+      match the type of the destination property... conversion function is required") - correct,
+      expected MVVM compiler behavior, not a bug in this endpoint. A Text-typed source to the same
+      Text-typed destination compiled with zero errors, proving the real, positive path end to end.
+      tools/test_mvvm.py: 22/22, both engines rebuilt clean via Build.bat + buildcheck.py.
+      parity_check.py clean (360 endpoints, 348 MIF_BIND, no drift - ModelViewViewModel no longer in
+      PLUGIN IDLE, down to just 2: ChaosVehiclesPlugin and MassEntity, both already correctly,
+      specifically declined).
+      DECLINED for this batch, an honest scope cut rather than an oversight: remove_mvvm_viewmodel /
+      remove_mvvm_binding were not built (the subsystem's own RemoveViewModel/RemoveBinding exist and
+      would be simple to wire on top of this same file). Conversion-function wiring
+      (SetSourceToDestinationConversionFunction) was similarly out of scope - this batch covers plain
+      type-matched property bindings only, which is exactly what the compile-error finding above proves
+      is enforced correctly even without conversion-function support built yet.

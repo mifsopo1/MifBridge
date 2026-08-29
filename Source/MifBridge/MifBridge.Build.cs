@@ -205,7 +205,13 @@ public class MifBridge : ModuleRules
 		AddPluginModules("MIF_WITH_MODULARGAMEPLAY", "ModularGameplay",
 			new string[] { "ModularGameplay" });
 		AddPluginModules("MIF_WITH_MVVM", "ModelViewViewModel",
-			new string[] { "ModelViewViewModel" });
+			new string[] { "ModelViewViewModel", "ModelViewViewModelBlueprint", "ModelViewViewModelEditor" });
+			// Grew 2026-08-28 for real View Binding authoring (add_mvvm_viewmodel/add_mvvm_binding):
+			// UMVVMEditorSubsystem lives in ModelViewViewModelEditor, UMVVMBlueprintView/
+			// FMVVMBlueprintPropertyPath/FMVVMBlueprintViewBinding in ModelViewViewModelBlueprint -
+			// neither in the base ModelViewViewModel module already linked (that one only has the
+			// runtime UMVVMViewModelBase/FieldNotify surface the 2026-08-27 work used). Verified present
+			// under Engine/Plugins/Runtime in both 5.3.2 and 5.7 before adding.
 		AddPluginModules("MIF_WITH_WATER", "Water",
 			new string[] { "Water" });
 		AddPluginModules("MIF_WITH_VEHICLES", "ChaosVehiclesPlugin",

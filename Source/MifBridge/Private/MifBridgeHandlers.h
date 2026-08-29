@@ -1592,6 +1592,12 @@ namespace MifBridge
 	MIF_DECL(add_game_framework_component_request);
 	MIF_DECL(remove_game_framework_component_request);
 
+	// MVVM (MifBridgeMVVM.cpp). Plugin-guarded (MIF_WITH_MVVM). The other half of the 2026-08-27
+	// FieldNotify work - View Bindings, left explicitly unexplored at the time.
+	MIF_DECL(add_mvvm_viewmodel);
+	MIF_DECL(add_mvvm_binding);
+	MIF_DECL(describe_mvvm_view);
+
 	// DATA LAYERS - the WRITE half (MifBridgeStreaming.cpp). Unblocked 2026-08-26 when Andre
 	// authorised the DataLayerEditor dependency. SetDataLayerVisibility returns VOID, so both of
 	// these read the state back and report verified separately from changed.

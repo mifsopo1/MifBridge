@@ -417,6 +417,9 @@ namespace MifBridge
 			MIF_BIND(add_game_framework_receiver);
 			MIF_BIND(add_game_framework_component_request);
 			MIF_BIND(remove_game_framework_component_request);
+			MIF_BIND(add_mvvm_viewmodel);
+			MIF_BIND(add_mvvm_binding);
+			MIF_BIND(describe_mvvm_view);
 			MIF_BIND(set_data_layer_visibility);
 			MIF_BIND(set_data_layer_loaded_in_editor);
 			MIF_BIND(create_data_layer);
