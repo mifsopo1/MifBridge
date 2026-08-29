@@ -20,7 +20,15 @@ ok:true:
   T433  remove  - RemoveWidget is always recursive. Removing one container and removing a container
                   holding twelve widgets used to be indistinguishable answers (`removed: true`), so
                   the response now reports removedCount and removedWidgets. That disclosure is what
-                  T433 protects.
+                  T433 protects. Also confirm-gated as of 2026-08-29 (see below) - the family's own
+                  remaining inconsistency, closed on Andre's explicit call rather than fixed silently.
+
+CONFIRM GATE, added 2026-08-29: remove_tree_widget had no confirm=true requirement while
+remove_component, remove_variable, remove_function and remove_event_dispatcher all do - flagged for
+days in tools/FEATURE_PARITY_SPEC.md's "Deliberately not pursuing" section specifically because adding
+it is a judgement call that could break an existing caller's script, not a bug to fix unilaterally.
+Asked; Andre said add it. T433 now checks the refusal path first (and that the widget is genuinely
+still there afterward) before exercising the real removal with confirm=true.
 
 A note on setup that cost a first run: a fresh WidgetBlueprint ALREADY HAS a CanvasPanel_0 root, so
 add_tree_widget with asRoot:true is correctly refused. Build under the existing root instead - the
@@ -31,6 +39,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -129,8 +138,19 @@ def main():
     print("")
     print("=== T433 [the point]: removal is recursive, and must say how much it took ===")
     build("TextBlock", "Solo_%d" % st, root)
-    leaf = M.call("remove_tree_widget", {"blueprintId": bid, "widgetName": "Solo_%d" % st})
-    check("T433 removing a leaf succeeds", leaf.get("ok") is True, json.dumps(leaf)[:200])
+    no_confirm = M.call("remove_tree_widget", {"blueprintId": bid, "widgetName": "Solo_%d" % st})
+    check("T433 without confirm is refused - added 2026-08-29, same gate every other remove_* endpoint has",
+          no_confirm.get("ok") is False, json.dumps(no_confirm)[:200])
+    still_there = tree()
+    check("T433 the refusal left the widget in place - nothing removed",
+          "Solo_%d" % st in still_there, still_there)
+
+    # NOT M.call - guarded_payload strips "confirm" from every payload, which is exactly why the
+    # no_confirm probe above genuinely gets refused. SC.confirm_call bypasses that strip deliberately
+    # and narrowly, after checking the target is provably scratch (bid is this test's own throwaway
+    # WidgetBlueprint, created above).
+    leaf = SC.confirm_call("remove_tree_widget", {"blueprintId": bid, "widgetName": "Solo_%d" % st})
+    check("T433 removing a leaf succeeds with confirm=true", leaf.get("ok") is True, json.dumps(leaf)[:200])
     check("T433 and reports exactly one removed", leaf.get("removedCount") == 1,
           json.dumps(leaf)[:200])
 
@@ -140,7 +160,7 @@ def main():
     build("TextBlock", "D1", "Doomed")
     build("Button", "D2", "Doomed")
     build("TextBlock", "D3", "D2")
-    r = M.call("remove_tree_widget", {"blueprintId": bid, "widgetName": "Doomed"})
+    r = SC.confirm_call("remove_tree_widget", {"blueprintId": bid, "widgetName": "Doomed"})
     check("T433 removing a container succeeds", r.get("ok") is True, json.dumps(r)[:200])
     check("T433 and reports the WHOLE subtree it took", r.get("removedCount") == 4,
           "removedCount=%s, expected 4 (Doomed + D1 + D2 + D3)" % r.get("removedCount"))
@@ -160,10 +180,15 @@ def main():
                                               "parentName": root}),
                         ("duplicate_tree_widget", {"blueprintId": bid, "widgetName": "NoSuch_zz"}),
                         ("wrap_tree_widget", {"blueprintId": bid, "widgetName": "NoSuch_zz",
-                                              "wrapperClass": "SizeBox"}),
-                        ("remove_tree_widget", {"blueprintId": bid, "widgetName": "NoSuch_zz"})):
+                                              "wrapperClass": "SizeBox"})):
         q = M.call(ep, payload)
         check("T434 %s refuses an unknown widget" % ep, q.get("ok") is False, json.dumps(q)[:170])
+    # NOT M.call in this shared loop above - guarded_payload strips "confirm" from every payload
+    # regardless of endpoint, so a plain M.call here would refuse for the WRONG reason (missing
+    # confirm, not the unknown widget this test is actually about). SC.confirm_call bypasses the
+    # strip the same narrow, provably-safe way T433 already does.
+    rq = SC.confirm_call("remove_tree_widget", {"blueprintId": bid, "widgetName": "NoSuch_zz"})
+    check("T434 remove_tree_widget refuses an unknown widget", rq.get("ok") is False, json.dumps(rq)[:170])
     q = M.call("wrap_tree_widget", {"blueprintId": bid, "widgetName": "Box",
                                     "wrapperClass": "TextBlock"})
     check("T434 wrapping in a non-panel class is refused", q.get("ok") is False,
@@ -180,10 +205,6 @@ def main():
     for x in FAIL:
         print("  FAILED: %s\n          %s" % x)
     print("=" * 72)
-    print("OPEN QUESTION for a human, not a defect: remove_tree_widget is NOT confirm-gated, while")
-    print("remove_component, remove_variable, remove_function and remove_event_dispatcher all are.")
-    print("It deletes a whole subtree in one call. Adding the gate would be consistent but would break")
-    print("any existing caller, so it is surfaced rather than decided here.")
     return 1 if FAIL else 0
 
 

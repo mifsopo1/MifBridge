@@ -1601,9 +1601,9 @@ def add_tree_widget(blueprint_id: str, widget_class: str, name: str = "", parent
 
 
 @mcp.tool()
-def remove_tree_widget(blueprint_id: str, widget_name: str) -> dict:
-    "Remove a widget from a Widget Blueprint's tree (handles child, root and named-slot cases)."
-    return _post("remove_tree_widget", blueprintId=blueprint_id, widgetName=widget_name)
+def remove_tree_widget(blueprint_id: str, widget_name: str, confirm: bool = False) -> dict:
+    "Remove a widget from a Widget Blueprint's tree (handles child, root and named-slot cases). Removes the widget's WHOLE SUBTREE in one call - requires confirm=True."
+    return _post("remove_tree_widget", blueprintId=blueprint_id, widgetName=widget_name, confirm=confirm)
 
 
 # --------------------------------------------------------------------------

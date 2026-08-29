@@ -1235,7 +1235,7 @@ namespace MifBridge
 		static const TCHAR* const GMifDescKeys_remove_sublevel[] = {
 			TEXT("path"), TEXT("packagePath"), TEXT("level"), TEXT("discardUnsaved"), nullptr };
 		static const TCHAR* const GMifDescKeys_remove_tree_widget[] = {
-			TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), nullptr };
+			TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), TEXT("confirm"), nullptr };
 		static const TCHAR* const GMifDescNotes_remove_tree_widget[] = {
 			TEXT("name"), TEXT("the widget parameter is called widgetName"),
 			TEXT("widget"), TEXT("spell it widgetName"),
@@ -2108,7 +2108,7 @@ namespace MifBridge
 			  TEXT("path (packagePath, level), discardUnsaved (bool)"),
 			  TEXT("MifBridgeStreaming.cpp"), 711, nullptr },
 			{ TEXT("remove_tree_widget"), GMifDescKeys_remove_tree_widget, GMifDescNotes_remove_tree_widget,
-			  TEXT("blueprintId (alias: path), widgetName"),
+			  TEXT("blueprintId (alias: path), widgetName, confirm=true"),
 			  TEXT("MifBridgeWidgets.cpp"), 356, nullptr },
 			{ TEXT("remove_variable"), GMifDescKeys_remove_variable, nullptr,
 			  TEXT("blueprintId (alias: path), name, confirm=true"),

@@ -1592,12 +1592,26 @@ namespace MifBridge
 	void H_remove_tree_widget(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName") },
-			TEXT("blueprintId (alias: path), widgetName"),
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), TEXT("confirm") },
+			TEXT("blueprintId (alias: path), widgetName, confirm=true - required because this removes ")
+			TEXT("the widget's WHOLE SUBTREE in one call, same as every other remove_* endpoint's gate"),
 			{ { TEXT("name"), TEXT("the widget parameter is called widgetName") },
 			  { TEXT("widget"), TEXT("spell it widgetName") },
 			  { TEXT("recursive"), TEXT("not a parameter — RemoveWidget always takes the widget's whole subtree with it") } }))
 		{
+			return;
+		}
+		// Added 2026-08-29, on Andre's explicit call: every other remover in this family
+		// (remove_component, remove_variable, remove_function, remove_event_dispatcher) requires
+		// confirm=true, and this one deletes a whole subtree - sometimes several widgets - in a
+		// single call without it. Left as a known, flagged inconsistency for days
+		// (tools/FEATURE_PARITY_SPEC.md's own "Deliberately not pursuing" entry) specifically because
+		// it is a judgement call that could break an existing caller's script, not a bug to silently
+		// fix - asked, and Andre said add it.
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("remove_tree_widget requires confirm=true - it removes the widget's whole ")
+						  TEXT("subtree in one call. Nothing was removed."));
 			return;
 		}
 

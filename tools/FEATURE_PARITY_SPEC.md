@@ -998,15 +998,30 @@ audit named them, but the audit has been wrong about "cheap" once already (Niaga
 
 ## Deliberately not pursuing
 
-- [~] **`remove_tree_widget` has no confirm gate — left for Andre to decide, not declined on merit.**
-      Every other remover requires `confirm:true` (`remove_component`, `remove_variable`,
-      `remove_function`, `remove_event_dispatcher`), and this one deletes a widget's whole SUBTREE in a
-      single call — four widgets went in one call while testing. Adding the gate would make the family
-      consistent and would BREAK any existing caller, which is a judgement about your scripts rather
-      than about the code, so it is not something to change unattended at 5am. Marked `[~]` so the stop
-      hook does not block on it; `tools/test_widget_tree.py` prints it on every run so it cannot get
-      quietly lost. The endpoint now at least reports `removedCount` and `removedWidgets`, so the
-      subtree is disclosed either way.
+- [x] **`remove_tree_widget` confirm gate.** RESOLVED 2026-08-29 - asked Andre directly rather than
+      deciding unilaterally ("left for Andre to decide, not declined on merit" - see the original entry
+      below, kept for the history). He said add it. `H_remove_tree_widget` (MifBridgeWidgets.cpp) now
+      requires `confirm:true`, the same shape `remove_variable` already uses, refusing with "nothing was
+      removed" when it is missing. Updated the matching describe_endpoint table row
+      (MifBridgeDescribe.cpp), the MCP wrapper (`confirm` defaults to `False`), and
+      `tools/test_widget_tree.py` - which used to print this exact inconsistency as an open question on
+      every run; that printout is gone, T433 now checks the refusal path first (and that the widget is
+      genuinely still in the tree afterward) before exercising the real removal via
+      `scratch_confirm.confirm_call` (plain `M.call` cannot send `confirm` at all - `guarded_payload`
+      strips that key from every payload, which is exactly what makes the refusal-path check honest).
+      T434's unknown-widget refusal for this endpoint moved out of the shared four-endpoint loop for the
+      same reason - inside that loop a bare `M.call` would refuse for the wrong reason (missing confirm,
+      not the unknown widget the test is actually about) and pass anyway, silently testing the wrong
+      thing. tools/test_widget_tree.py: 37/37. Both engines rebuilt clean (5.3.2 against the real DDS2
+      project, 5.7 via make_engine_probe.py). parity_check.py clean: 363 endpoints, 351 MIF_BIND, no
+      drift.
+      Original entry, for the history: every other remover requires `confirm:true`
+      (`remove_component`, `remove_variable`, `remove_function`, `remove_event_dispatcher`), and this
+      one deletes a widget's whole SUBTREE in a single call — four widgets went in one call while
+      testing. Adding the gate would make the family consistent and would BREAK any existing caller,
+      which is a judgement about your scripts rather than about the code, so it was not something to
+      change unattended at 5am. The endpoint already reported `removedCount` and `removedWidgets`
+      before this, so the subtree was disclosed either way even without the gate.
 
 - [x] **C++ & Modules** - RESOLVED 2026-08-27, and split in two.
       BUILT: live_coding_status and live_coding_compile. Only the editor can compile inside its
