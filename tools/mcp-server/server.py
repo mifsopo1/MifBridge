@@ -831,21 +831,21 @@ def resolve_struct(name: str) -> dict:
 
 
 @mcp.tool()
-def move_node(node_guid: str, x: int, y: int) -> dict:
-    "Move a node to a new position."
-    return _post("move_node", nodeGuid=node_guid, x=x, y=y)
+def move_node(node_guid: str, x: int, y: int, graph_id: str = None) -> dict:
+    "Move a node to a new position. graph_id is optional and only matters if the SAME node guid exists in more than one loaded copy of a Blueprint (e.g. a cooked original plus an editable child made via create_editable_child) - without it, the lookup is global and could hit either copy."
+    return _post("move_node", nodeGuid=node_guid, x=x, y=y, graphId=graph_id)
 
 
 @mcp.tool()
-def remove_node(node_guid: str, confirm: bool = False) -> dict:
-    "Remove a node. Requires confirm=True."
-    return _post("remove_node", nodeGuid=node_guid, confirm=confirm)
+def remove_node(node_guid: str, confirm: bool = False, graph_id: str = None) -> dict:
+    "Remove a node. Requires confirm=True. graph_id is optional and only matters if the SAME node guid exists in more than one loaded copy of a Blueprint (e.g. a cooked original plus an editable child made via create_editable_child) - without it, the lookup is global and could hit either copy."
+    return _post("remove_node", nodeGuid=node_guid, confirm=confirm, graphId=graph_id)
 
 
 @mcp.tool()
-def refresh_node(node_guid: str) -> dict:
-    "Reconstruct a node (ReconstructNode) — re-reads its function/variable/pins."
-    return _post("refresh_node", nodeGuid=node_guid)
+def refresh_node(node_guid: str, graph_id: str = None) -> dict:
+    "Reconstruct a node (ReconstructNode) — re-reads its function/variable/pins. graph_id is optional and only matters if the SAME node guid exists in more than one loaded copy of a Blueprint (e.g. a cooked original plus an editable child made via create_editable_child) - without it, the lookup is global and could hit either copy."
+    return _post("refresh_node", nodeGuid=node_guid, graphId=graph_id)
 
 
 # --------------------------------------------------------------------------
@@ -1402,9 +1402,9 @@ def rename_function(new_name: str, graph_id: str = "", blueprint_id: str = "", o
 
 
 @mcp.tool()
-def rename_event(node_guid: str, new_name: str, confirm: bool = False) -> dict:
-    "Rename a Custom Event by node guid. Refuses an OVERRIDE event (its name is fixed by the parent declaration). Requires confirm=True."
-    return _post("rename_event", nodeGuid=node_guid, newName=new_name, confirm=confirm)
+def rename_event(node_guid: str, new_name: str, confirm: bool = False, graph_id: str = None) -> dict:
+    "Rename a Custom Event by node guid. Refuses an OVERRIDE event (its name is fixed by the parent declaration). Requires confirm=True. graph_id is optional and only matters if the SAME node guid exists in more than one loaded copy of a Blueprint (e.g. a cooked original plus an editable child made via create_editable_child) - without it, the lookup is global and could hit either copy."
+    return _post("rename_event", nodeGuid=node_guid, newName=new_name, confirm=confirm, graphId=graph_id)
 
 
 @mcp.tool()

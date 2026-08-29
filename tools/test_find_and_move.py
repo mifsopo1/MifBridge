@@ -13,6 +13,17 @@ matching titles by accident, and so the distinction is written somewhere a perso
 
 find_nodes searches ONE graph, deliberately - it takes graphId, not blueprintId. That is also asserted,
 because "searches everything" is the natural assumption and it is wrong.
+
+T464, added 2026-08-29: tools/param_reach.py (which checks whether the MCP tools in server.py can
+actually SEND every parameter the C++ endpoints accept - a different question from parity_check.py's
+name-level check) flagged move_node.graphid, remove_node.graphid, refresh_node.graphid and
+rename_event.graphid as UNREACHABLE - the C++ accepted an optional graphId that scopes a node-guid
+lookup to one graph (real, documented reason: a cooked Blueprint's editable child can carry the same
+node guids as the original if both are loaded), but no MCP tool ever sent it, so an agent driving
+through MCP had no way to disambiguate at all. Fixed by wiring graph_id through all four wrappers. T464
+proves the scoping is genuinely ENFORCED, not just accepted-and-ignored: fg (T462's own Helper function
+graph) really does not contain bguid, so passing it is refused by name rather than silently falling
+through to the global lookup that would have found the node anyway.
 """
 import json
 import sys
@@ -134,6 +145,71 @@ def main():
     c = M.call("compile", {"blueprintId": bid})
     check("T463 the blueprint still compiles",
           c.get("ok") is True and c.get("numErrors", 1) == 0, "errors=%s" % c.get("numErrors"))
+
+    # ------------------------------------------------------------------ T464 graphId disambiguation
+    # move_node/remove_node/refresh_node/rename_event all accept an OPTIONAL graphId that SCOPES the
+    # node-guid lookup to one graph - documented (ResolveNodeField, MifBridgeCommon.cpp) as existing
+    # for when the SAME node guid exists in more than one loaded copy of a Blueprint (a cooked original
+    # plus an editable child made via create_editable_child is the real, recurring case in this
+    # project). param_reach.py had flagged all four as UNREACHABLE - the C++ accepted graphId, but no
+    # MCP tool in server.py ever sent it, so an agent using the MCP tools had no way to invoke the
+    # disambiguation at all. Fixed 2026-08-29 by wiring graph_id through all four wrappers.
+    # This does not reproduce an actual guid collision (that needs two loaded copies of one Blueprint,
+    # a heavier setup than this suite's scope) - it proves the SCOPING itself is real and enforced: fg
+    # (T462's Helper function graph) genuinely does not contain bguid, so passing it should refuse by
+    # name rather than silently falling through to the global lookup that would have found the node
+    # anyway.
+    print("")
+    print("=== T464: graphId genuinely SCOPES the node lookup, not just accepted-and-ignored ===")
+    if fg:
+        wrong_scope = M.call("move_node", {"graphId": fg, "nodeGuid": bguid, "x": 500, "y": 500})
+        check("T464 move_node with a graphId that does not contain the node is refused",
+              wrong_scope.get("ok") is False, json.dumps(wrong_scope)[:200])
+        check("T464 the refusal names the graph, not a generic 'not found'",
+              fg in (wrong_scope.get("error") or ""), wrong_scope.get("error"))
+        still_at_old_pos = node_of(bguid)
+        check("T464 the wrongly-scoped call genuinely moved nothing",
+              (still_at_old_pos.get("x"), still_at_old_pos.get("y")) == (999, 777), still_at_old_pos)
+
+        refresh_wrong = M.call("refresh_node", {"graphId": fg, "nodeGuid": bguid})
+        check("T464 refresh_node with the wrong graphId is refused the same way",
+              refresh_wrong.get("ok") is False and fg in (refresh_wrong.get("error") or ""),
+              refresh_wrong.get("error"))
+
+        ev = M.call("add_custom_event", {"graphId": eg, "name": "MifScopeProbe_%d" % st, "x": 1200, "y": 1200})
+        ev_guid = ev.get("nodeGuid") or (ev.get("node") or {}).get("guid")
+        check("T464 (setup) a throwaway custom event exists", bool(ev_guid), json.dumps(ev)[:170])
+        if ev_guid:
+            # NOT plain M.call - confirm is checked BEFORE graph-scoping in H_rename_event (verified
+            # live, not assumed: a first attempt via M.call got "requires confirm=true" instead of the
+            # graph-scope error, since guarded_payload strips "confirm" from every payload). Use
+            # scratch_confirm so the call actually reaches the scoping check this test is about.
+            rename_wrong = SC.confirm_call("rename_event", {"graphId": fg, "nodeGuid": ev_guid,
+                                                             "newName": "ShouldNotApply"})
+            check("T464 rename_event with the wrong graphId is refused",
+                  rename_wrong.get("ok") is False and fg in (rename_wrong.get("error") or ""),
+                  rename_wrong.get("error"))
+            still_named = M.call("get_node", {"graphId": eg, "nodeGuid": ev_guid}).get("node") or {}
+            check("T464 the wrongly-scoped rename left the real name in place",
+                  still_named.get("title") == "MifScopeProbe_%d" % st, still_named)
+
+            rename_right = SC.confirm_call("rename_event", {
+                "graphId": eg, "nodeGuid": ev_guid, "newName": "MifScopeProbeRenamed_%d" % st})
+            check("T464 rename_event with the CORRECT graphId succeeds", rename_right.get("ok") is True,
+                  json.dumps(rename_right)[:200])
+
+            remove_wrong = SC.confirm_call("remove_node", {"graphId": fg, "nodeGuid": ev_guid})
+            check("T464 remove_node with the wrong graphId is refused", remove_wrong.get("ok") is False,
+                  json.dumps(remove_wrong)[:200])
+            still_there = M.call("get_node", {"graphId": eg, "nodeGuid": ev_guid})
+            check("T464 the wrongly-scoped remove left the node in place",
+                  still_there.get("ok") is True, still_there)
+
+            remove_right = SC.confirm_call("remove_node", {"graphId": eg, "nodeGuid": ev_guid})
+            check("T464 remove_node with the CORRECT graphId succeeds", remove_right.get("ok") is True,
+                  json.dumps(remove_right)[:200])
+            gone = M.call("get_node", {"graphId": eg, "nodeGuid": ev_guid})
+            check("T464 and the node is really gone", gone.get("ok") is False, gone)
 
     SC.confirm_call("delete_asset", {"path": "/Game/_MifFind/BP_%d" % st})
     print("")

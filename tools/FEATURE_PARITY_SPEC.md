@@ -3849,3 +3849,32 @@ cannot become one giant blocking item:
       Both engines rebuilt clean (5.3.2 against the real DDS2 project after closing the unattended,
       headless editor instance holding the DLL locked; 5.7 via make_engine_probe.py against the
       installed engine). parity_check.py clean: 363 endpoints, 351 MIF_BIND, no drift.
+- [x] **move_node/remove_node/refresh_node/rename_event's graphId disambiguation - unreachable
+      from MCP.** DONE 2026-08-29. Found by actually digging past coverage_gaps.py's "0 open" reading
+      rather than stopping there (see [[feedback-autopilot-keep-digging]] in memory) - checked
+      tools/param_reach.py instead, a DIFFERENT tool from parity_check.py: it asks whether the MCP
+      tools in server.py can actually SEND every parameter a C++ endpoint accepts, not just whether the
+      endpoint NAME is covered somewhere.
+      All four endpoints accept an OPTIONAL graphId that scopes a node-guid lookup to one graph
+      (ResolveNodeField, MifBridgeCommon.cpp) - real, documented reason: the SAME node guid can exist
+      in more than one loaded copy of a Blueprint, and the recurring case in this project is a cooked
+      original plus an editable child made via create_editable_child. Without graphId the lookup is
+      global and silently picks whichever copy FindObject finds first. The C++ side already worked
+      correctly; no MCP tool in server.py ever sent graphId, so an agent driving through MCP had no way
+      to invoke the disambiguation at all - the exact "capability exists, tool cannot express it" class
+      param_reach.py was built to catch (its own founding example: add_bind_dispatcher's targetClass).
+      Fixed by wiring graph_id (optional, default None) through all four wrappers.
+      tools/test_find_and_move.py grew T464, proving the scoping is genuinely ENFORCED rather than
+      accepted-and-ignored: passed a real graphId (fg, the Helper function graph from T462) that
+      provably does NOT contain the target node, and confirmed the call refuses BY NAME rather than
+      silently falling through to the global lookup that would have found the node anyway - for all
+      four endpoints, then confirmed the CORRECT graphId succeeds normally.
+      A REAL, VERIFIED-NOT-ASSUMED FINDING ALONG THE WAY: rename_event checks confirm=true BEFORE
+      graph-scoping, not after - a first draft of the wrong-scope test passed confirm through plain
+      M.call (which mifaudit's guarded_payload silently strips from every payload) and got "requires
+      confirm=true" instead of the graph-scope refusal it was actually testing for. Fixed by using
+      scratch_confirm.confirm_call, same as every other confirm-gated real call in this suite.
+      NO C++ CHANGED - this was purely the MCP wrapper layer (tools/mcp-server/server.py) plus
+      tools/param_reach_baseline.txt (217 entries now, down from 221) and the test. No engine rebuild
+      needed. tools/test_find_and_move.py: 33/33. parity_check.py clean: 363 endpoints, 351 MIF_BIND, no
+      drift, param reach 217/217 baseline.

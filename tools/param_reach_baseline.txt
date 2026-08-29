@@ -133,7 +133,6 @@ list_transactions.max
 list_transactions.start
 list_virtual_bones.mesh
 list_virtual_bones.skeleton
-move_node.graphid
 move_tree_widget.confirm
 open_blueprint.blueprintid
 override_inherited_component.asset
@@ -149,7 +148,6 @@ recompile_material.asset
 recompile_material.material
 redo_transactions.steps
 redo_transactions.to_index
-refresh_node.graphid
 remove_actor_from_data_layer.datalayer
 remove_actor_from_data_layer.layer
 remove_enum_value.displayname
@@ -158,10 +156,8 @@ remove_ik_goal.rig
 remove_ik_retarget_chain.rig
 remove_ik_solver.rig
 remove_interface.class
-remove_node.graphid
 remove_pin.name
 remove_sublevel.level
-rename_event.graphid
 rename_event.to
 rename_event_dispatcher.dispatcher
 rename_event_dispatcher.to
