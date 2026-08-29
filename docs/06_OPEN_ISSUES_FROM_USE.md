@@ -982,12 +982,20 @@ refuse it here rather than let it sit in an EventGraph looking placed" — and t
 AnimGraph and an EventGraph, so `add_anim_node` targeting the EventGraph of a perfectly valid
 AnimBlueprint passes the guard and places a node into exactly the graph the comment names. It compiles
 to nothing and the response reports it placed.
-The fix is to test the GRAPH's schema (`UAnimationGraphSchema`) rather than the owning blueprint's
-class. NOT YET WRITTEN — filed rather than added, because seven fixes were already written and
-unbuilt at the time and piling on raises the chance of a build failure that blocks all of them.
+**FIXED, and this entry was stale.** `MifBridgeAnimation.cpp:696-708` now tests the GRAPH's schema
+(`Graph->GetSchema()->IsA<UAnimationGraphSchema>()`), not the owning blueprint's class — shipped in
+`3b5b42b` ("fix(anim): add_anim_node could TERMINATE the editor - the guard checked the blueprint,
+not the graph"). Live testing found the real failure was worse than this entry's own guess: it is not
+a silent no-op ("compiles to nothing"). `UAnimGraphNode_StateMachineBase::PostPlacedNewNode` does a
+`CastChecked<UAnimationGraph>(GetGraph())` on the node it was just handed, a failed `CastChecked` is
+**fatal** rather than returning null, and the process terminates mid-request with no error response at
+all - see PM-013 (`docs/01_POSTMORTEMS.md`). The code comment at the fix site records this in full,
+including the exact crash line. Covered by a dedicated live test, `tools/test_anim_nodes.py`, which
+reproduces the state-machine-into-EventGraph case against a running editor and asserts the bridge
+survives and refuses by name, plus the legitimate AnimGraph placement still succeeding.
 This is the "a comment asserting what the code does needs a test, not prose" failure recorded in the
-snap_actors_to_ground postmortem, arrived at from the other side: here the comment is right about the
-intent and the code is narrower than the comment.
+snap_actors_to_ground postmortem, arrived at from the other side: here the comment was right about the
+intent and the code was narrower than the comment — until PM-013 forced the gap shut.
 
 **F. `spawn_many` swallowed an unloadable mesh path twice.** The shared mesh is loaded with
 `LOAD_NoWarn | LOAD_Quiet`, which kills the engine's own log line, and the assignment in the loop is
