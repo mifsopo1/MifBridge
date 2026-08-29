@@ -44,9 +44,15 @@ no session at all.
 
 ## The rules that are not negotiable
 
-* **Do NOT save assets, start PIE, or touch anything outside the SDK editor.** This is Andre's
-  standing instruction, and it holds regardless of what the safety gate permits — the gate is a
-  backstop under the rule, not the rule.
+* **Do NOT save assets, or touch anything outside the SDK editor.** This is Andre's standing
+  instruction, and it holds regardless of what the safety gate permits — the gate is a backstop
+  under the rule, not the rule.
+* **PIE is authorised, as of 2026-08-28** — this file used to forbid it outright; that clause was
+  corrected 2026-08-29 because it was actively wrong, not just imprecise. Use `start_pie`/`stop_pie`
+  when they are genuinely the right tool, always stop PIE cleanly afterward, and avoid unattended
+  sweeps that start and leave PIE sessions running unsupervised. See
+  `~/.claude/projects/D--DDS2SDK-Game-Plugins-MifBridge/memory/feedback-pie-authorized.md` for the
+  exact wording of the authorisation if there is ever doubt.
 * Scratch assets under `/Game/_Mif*` only. Never send `confirm:true` except through
   `tools/scratch_confirm.py`.
 * **Always CRLF.**
