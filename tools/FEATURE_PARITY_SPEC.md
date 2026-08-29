@@ -4046,3 +4046,39 @@ cannot become one giant blocking item:
       disk, so that map's own saved state is unaffected either way).
       Re-verified: test_uncovered_reads7.py 30/30, test_pie_family.py 45/45. parity_check.py clean: 363
       endpoints, 351 MIF_BIND, no drift, param reach 215/215 unchanged.
+
+- [x] **`project_dependency_graph` gains `mermaid:true` - a Mermaid flowchart-TD text export, additive
+      alongside nodes/edges.** DONE 2026-08-29. From AUTOPILOT_BACKLOG.md's "Mermaid-style flow
+      export" item, filed as "the cheapest useful version" of the competitor's diagram export -
+      renders anywhere a Mermaid viewer exists (docs, GitHub, the Artifact tool) with no panel code.
+      Node ids are synthesised (N0, N1, ...) rather than derived from the package path, since a
+      Mermaid flowchart id cannot contain '/' or '.' and every package path has both; the real name
+      is the quoted label instead, with '"' and newlines escaped so a pathological asset name cannot
+      break the diagram syntax. Capped at the same maxNodes the JSON response already uses.
+      FOUND LIVE BY T644, NOT ASSUMED: an edge target can be unlabeled two different ways, not one -
+      includeExternal keeps edges leaving pathPrefix entirely, but maxNodes truncating the outer node
+      walk ALSO produces an unlabeled target, because InPrefix (which decides "external":false) is
+      built from the FULL unfiltered Assets scan while the emitted Nodes array stops at the cap. A
+      package can be genuinely internal to the prefix and still never have been walked as its own
+      node. The first draft of T644 assumed "includeExternal:false means every edge target is a
+      returned node" and was wrong; fixed to compute the real expected count (returned nodes + first-
+      seen-only edge targets) rather than asserting a number that only held some of the time. The
+      mermaid builder itself needed no fix for this - it already labels any first-seen target however
+      it got there, which is why only the test's assumption was corrected, not the endpoint.
+      Additive by construction: mermaid omitted leaves the response byte-identical to before this
+      change (T644 asserts the field is absent, not just falsy). server.py's wrapper and
+      RejectUnknownParams's AcceptedSummary both updated; `format` is explicitly refused with a hint
+      pointing at `mermaid`, since `format` already means "export file type" elsewhere in this plugin
+      (export_asset, import_texture) and reusing it here would collide with that convention.
+      blueprint_inheritance_tree was deliberately left alone - it is a tree, not a general graph, and
+      its own STreeView widget (MifBridgeInheritView.cpp, already shipped) gives the same
+      understanding with no export step; reopen only if a text-portable form of that one specifically
+      is wanted later.
+      Built and verified live on 5.3: 57/57 in test_project_graph.py (T640-T644), including a real
+      mermaid sample against /Game/Blueprints sanity-checked by hand. parity_check.py clean: 363
+      endpoints, 351 MIF_BIND, no drift, param reach 215/215 unchanged (the new `mermaid` param is
+      reachable - sent by server.py, accepted by RejectUnknownParams).
+      Also closed two other AUTOPILOT_BACKLOG.md items found stale during the same pass, both already
+      shipped before this change and never marked done: `project_inheritance_tree` (built as
+      `blueprint_inheritance_tree`, a44d428) and the STreeView "Inheritance tree view" tab
+      (MifBridgeInheritView.cpp, c7bc493, wired into MifBridgePanel.cpp as the INHERITANCE tab).

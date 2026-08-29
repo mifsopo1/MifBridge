@@ -146,6 +146,69 @@ def main():
 
     check("T643 the bridge is still answering", M.bridge_responsive() is True, "bridge died")
 
+    # ------------------------------------------------------------------ T644 mermaid export
+    print("")
+    print("=== T644 [mermaid export]: additive, not a mode switch ===")
+    # Default (mermaid omitted) must be byte-for-byte the old shape - no `mermaid` key at all, so an
+    # existing caller reading only nodes/edges never sees a change.
+    m_off = M.call("project_dependency_graph",
+                   {"pathPrefix": "/Game/Blueprints", "maxNodes": 10}, timeout=180)
+    check("T644 mermaid omitted -> no mermaid field", "mermaid" not in m_off, json.dumps(m_off)[:200])
+
+    m = M.call("project_dependency_graph",
+               {"pathPrefix": "/Game/Blueprints", "maxNodes": 10, "mermaid": True}, timeout=180)
+    check("T644 mermaid:true still succeeds", m.get("ok") is True, json.dumps(m)[:200])
+    if m.get("ok"):
+        text = m.get("mermaid")
+        check("T644 mermaid is a string", isinstance(text, str), repr(text)[:120])
+        # nodes/edges are still present alongside it - additive, never a replacement.
+        check("T644 nodes/edges are still present too",
+              isinstance(m.get("nodes"), list) and isinstance(m.get("edges"), list),
+              json.dumps({k: type(m.get(k)).__name__ for k in ("nodes", "edges", "mermaid")}))
+        if isinstance(text, str):
+            lines = text.splitlines()
+            check("T644 starts with the flowchart declaration",
+                  bool(lines) and lines[0].strip() == "flowchart TD", lines[:2])
+            node_lines = [ln for ln in lines if ln.strip().startswith("N") and "[\"" in ln]
+            arrow_lines = [ln for ln in lines if "-->" in ln]
+            nodes = m.get("nodes") or []
+            edges = m.get("edges") or []
+            # FOUND LIVE, NOT ASSUMED: with maxNodes truncating the outer node walk, an edge's "to"
+            # can be a package that IS under pathPrefix (so "external":false, includeExternal never
+            # applies to it) but was never itself walked as a node, because the walk broke at maxNodes
+            # before reaching it - InPrefix is built from the FULL unfiltered Assets scan, not from
+            # the truncated Nodes list. So "every edge target is a returned node" is only true when
+            # nothing was truncated; a first draft of this test assumed it always held and was wrong.
+            # The endpoint's own T642 above only ever asserted the STARTS-at side for exactly this
+            # reason. The mermaid builder handles it correctly (labels any first-seen target however
+            # it got there) - what this checks is that node_lines accounts for precisely those extra,
+            # unreturned-but-referenced targets, not zero of them and not an unexplained number.
+            returned_pkgs = {str(n.get("package")) for n in nodes}
+            extra_targets = {str(e.get("to")) for e in edges} - returned_pkgs
+            expected_node_lines = len(nodes) + len(extra_targets)
+            check("T644 node lines = returned nodes + first-seen-only edge targets",
+                  len(node_lines) == expected_node_lines,
+                  "%d node lines, expected %d nodes + %d extra targets = %d: %s" %
+                  (len(node_lines), len(nodes), len(extra_targets), expected_node_lines, node_lines[:3]))
+            check("T644 one arrow per edge", len(arrow_lines) == len(edges),
+                  "%d arrows for %d edges" % (len(arrow_lines), len(edges)))
+            # ids must be unique and stable within the one response - same package, same id, every time.
+            ids = [ln.strip().split("[", 1)[0] for ln in node_lines]
+            check("T644 node ids are unique", len(ids) == len(set(ids)), ids[:10])
+
+    # includeExternal + mermaid together must not crash, and now CAN legitimately carry more node
+    # lines than nodeCount (the first-seen-external-target case the handler documents).
+    me = M.call("project_dependency_graph",
+                {"pathPrefix": "/Game/Blueprints", "maxNodes": 10,
+                 "includeExternal": True, "mermaid": True}, timeout=180)
+    check("T644 includeExternal + mermaid together succeeds", me.get("ok") is True,
+          json.dumps(me)[:200])
+    if me.get("ok"):
+        check("T644 and mermaid is still a non-empty string",
+              isinstance(me.get("mermaid"), str) and len(me["mermaid"]) > 0, repr(me.get("mermaid"))[:120])
+
+    check("T644 the bridge is still answering", M.bridge_responsive() is True, "bridge died")
+
     print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

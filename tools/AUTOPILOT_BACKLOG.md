@@ -37,7 +37,16 @@ consumer of it.
       project has 588 discovered plugins and thousands of assets — an uncapped graph is a hang, and
       this project's rule is that a cap must always be reported.
 
-- [ ] `project_inheritance_tree` — Blueprint and native class parent/child tree. describe_class
+- [x] DONE (a44d428), and this entry was stale - the endpoint already existed under the name
+      `blueprint_inheritance_tree` when this was checked 2026-08-29. Reads the whole project's
+      hierarchy off Asset Registry tags alone (FBlueprintTags::ParentClassPath /
+      NativeParentClassPath) - LOADS NOTHING, so the cooked-content cost this item warned about
+      (gotchas 6c) never applies. Supports root (subtree from a blueprint or native class name) and
+      maxDepth, reports nativeRoots, cycle detection against stale/hand-edited registry metadata, and
+      registryStillScanning. Several real bugs were found and fixed live during its own development
+      (documented inline in MifBridgeProject.cpp:290-541) - a class-path-vs-asset-path suffix
+      mismatch that made every node its own root, and a native-root lookup that matched against the
+      wrong string shape. Tested: T843 in test_uncovered_reads3.py. ORIGINAL: `project_inheritance_tree` — Blueprint and native class parent/child tree. describe_class
       already resolves a single class; this is the transitive version. Watch the cooked case: a cooked
       Blueprint's generated class is present but its editor-only data may not be, and gotchas 6c
       covers what that costs.
@@ -80,7 +89,19 @@ consumer of it.
       its own rather than an afternoon. Do not start it until the four data endpoints above are built
       and tested, because a graph widget with no data source is unverifiable.
 
-- [ ] Mermaid-style flow export. The competitor renders a diagram and offers "Open in Window" and
+- [x] DONE 2026-08-29 (build in flight, tested once it lands). `project_dependency_graph` takes
+      mermaid:true, additive alongside the existing nodes/edges (no field removed, no shape change for
+      an existing caller who never passes it) - returns a `mermaid` string field holding a
+      `flowchart TD` diagram, capped at the same maxNodes. Node ids are synthesised (N0, N1, ...)
+      rather than derived from the package path, since a Mermaid id cannot contain '/' or '.' and
+      every package path has both; the real name is the quoted label instead. Handles the
+      includeExternal case too - an edge target outside pathPrefix has no node-loop label yet, so it
+      gets one the first time it is seen as an edge endpoint. T644 in test_project_graph.py covers the
+      additive contract (mermaid omitted -> field absent), line-count parity against nodeCount/edgeCount,
+      and includeExternal+mermaid together. blueprint_inheritance_tree was left alone - it is a tree,
+      not a general graph, and its own STreeView widget (MifBridgeInheritView.cpp, already shipped)
+      already gives the same understanding with no export step; reopen only if a text-portable form of
+      that one is actually wanted. ORIGINAL: Mermaid-style flow export. The competitor renders a diagram and offers "Open in Window" and
       "Export PNG". Cheapest useful version here: have the data endpoints emit mermaid text, which
       renders anywhere without a widget at all. Worth doing before the Slate graph, because it
       delivers the same understanding for a fraction of the work.
@@ -388,24 +409,21 @@ consumer of it.
       done nothing. Arrays turned out to be a hole in the module's documented silent-ignore backstop,
       so the fix is a checked JArray reader across all 19 request-array reads, not a message change.
 
-- [ ] Inheritance tree view - the one dashboard tab still missing.
+- [x] DONE (c7bc493), and this entry was stale as of 2026-08-29 - both the "STILL TO CONFIRM" symbol
+      question and the tab itself are resolved. FBlueprintTags::ParentClassPath / NativeParentClassPath
+      confirmed at 5.3 BlueprintSupport.h:38/40 and 5.7 :32/34, same names, same COREUOBJECT_API export
+      on both engines - no guard needed. MifBridgeInheritView.cpp (369 lines) builds an STreeView over
+      MifBridge::MakeInheritWidget(), wired into MifBridgePanel.cpp as the fifth tab (index 4,
+      "INHERITANCE"), lazily built on first visit the same way HEATMAP is. Reads 2855 blueprints of
+      32265 assets on DDS2 without loading one, backed by the blueprint_inheritance_tree endpoint this
+      same backlog entry's sibling item was about (also found stale and closed the same pass). Native
+      roots and blueprint nodes get distinct colouring (Purple/Native), matching the panel's existing
+      palette convention. ORIGINAL: Inheritance tree view - the one dashboard tab still missing.
       The competitor's is collapsible groups (UserWidget 156 blueprints, ActorComponent 36, ...) with
       a coloured pill per class. STreeView is the widget.
-      FEASIBLE WITHOUT LOADING ANYTHING - that was the open question and it is now answered.
-      Blueprint.cpp:988-989 registers both parent-class tags on every Blueprint:
-          OutTags.Add(FAssetRegistryTag(FBlueprintTags::ParentClassPath, ...));
-          OutTags.Add(FAssetRegistryTag(FBlueprintTags::NativeParentClassPath, ...));
-      so FAssetData::GetTagValue reads the parent straight off the registry and no Blueprint is
-      opened, which is what makes it safe on cooked content (gotchas 6c).
-      STILL TO CONFIRM: the exact symbol path for FBlueprintTags. Header greps for its declaration
-      came back inconsistent and the editor was busy at the time, so this was not settled. Check it
-      against a real asset before writing the handler rather than trusting a header search - and if
-      the symbol is awkward to reach, the tag KEY string works just as well through GetTagValue.
 
-- [ ] Mermaid export from the graph endpoints.
-      Still worth doing BEFORE any more Slate graph work: it delivers most of the same understanding
-      for a fraction of the effort, renders anywhere, and needs no widget. The competitor offers
-      "Open in Window" and "Export PNG" on theirs.
+- [x] DONE 2026-08-29 - duplicate of the "Mermaid-style flow export" item under Open above. See that
+      entry for what shipped (project_dependency_graph's mermaid:true parameter, T644).
 
 - [ ] Real asset THUMBNAILS in the brainmap, instead of class icons.
       Andre asked for "viewport icons of each item or cached images". Class icons shipped because

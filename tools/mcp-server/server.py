@@ -3280,10 +3280,10 @@ def blueprint_inheritance_tree(path_prefix: str = "/Game/", root: str = None,
 
 @mcp.tool()
 def project_dependency_graph(path_prefix: str, max_nodes: int = 300,
-                             include_external: bool = False) -> dict:
-    "The dependency graph under a path prefix: nodes (packages) and edges (A depends on B). Each node reports dependsOn AND referencedBy, because they answer different questions - 'what does this need' versus 'what breaks if I delete it'. path_prefix needs at least two segments (e.g. /Game/Blueprints): GetReferencers runs PER ASSET, so a mount root is a stopped game thread, not a slow call. Capped at max_nodes and reports `truncated` plus `matched` - a truncated graph is a PREFIX of the real one, not a sample, so narrow the prefix rather than raising the cap."
+                             include_external: bool = False, mermaid: bool = False) -> dict:
+    "The dependency graph under a path prefix: nodes (packages) and edges (A depends on B). Each node reports dependsOn AND referencedBy, because they answer different questions - 'what does this need' versus 'what breaks if I delete it'. path_prefix needs at least two segments (e.g. /Game/Blueprints): GetReferencers runs PER ASSET, so a mount root is a stopped game thread, not a slow call. Capped at max_nodes and reports `truncated` plus `matched` - a truncated graph is a PREFIX of the real one, not a sample, so narrow the prefix rather than raising the cap. mermaid=True adds a `mermaid` flowchart-TD text field alongside nodes/edges, renderable anywhere a Mermaid viewer exists with no widget at all."
     return _post("project_dependency_graph", pathPrefix=path_prefix, maxNodes=max_nodes,
-                 includeExternal=include_external)
+                 includeExternal=include_external, mermaid=mermaid)
 
 
 @mcp.tool()

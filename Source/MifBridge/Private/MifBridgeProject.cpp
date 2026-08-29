@@ -116,22 +116,31 @@ namespace MifBridge
 	}
 
 	// --- project_dependency_graph ---------------------------------------------
-	//   in:  { pathPrefix, maxNodes?, includeExternal? }
+	//   in:  { pathPrefix, maxNodes?, includeExternal?, mermaid? }
 	//   out: { nodes:[{package,name,class,dependsOn,referencedBy}], edges:[{from,to}],
-	//          nodeCount, edgeCount, truncated, matched }
+	//          nodeCount, edgeCount, truncated, matched, mermaid? }
 	//
 	// The brainmap's data. Nodes are packages under pathPrefix; an edge from A to B means A depends on
 	// B. Edges to packages OUTSIDE the prefix are dropped by default, because a graph whose every node
 	// trails off into /Engine is unreadable - includeExternal:true keeps them.
+	//
+	// mermaid:true adds a `mermaid` TEXT field alongside the existing nodes/edges - additive, so an
+	// existing caller reading only nodes/edges sees no change. AUTOPILOT_BACKLOG.md filed this as "the
+	// cheapest useful version" of the competitor's diagram export, worth doing before any Slate graph
+	// widget: it renders anywhere a Mermaid viewer exists (docs, GitHub, the Artifact tool) with no
+	// panel code at all. Node ids are synthesised (N0, N1, ...) rather than derived from the package
+	// path, because a Mermaid flowchart id cannot contain '/' or '.' and every package path has both.
 	void H_project_dependency_graph(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("pathPrefix"), TEXT("path"), TEXT("maxNodes"), TEXT("includeExternal") },
+			{ TEXT("pathPrefix"), TEXT("path"), TEXT("maxNodes"), TEXT("includeExternal"), TEXT("mermaid") },
 			TEXT("pathPrefix (alias: path) - at least two segments, e.g. /Game/Blueprints; "
 				 "maxNodes (default 300); includeExternal (default false - keep edges that leave the "
-				 "prefix)"),
+				 "prefix); mermaid (default false - also return a `mermaid` flowchart-TD text field, "
+				 "capped at the same maxNodes)"),
 			{ { TEXT("depth"), TEXT("this returns the whole dependency set under the prefix in one pass; there is no recursion depth to set") },
-			  { TEXT("limit"), TEXT("maxNodes is the cap here - and it is reported as `truncated` rather than applied silently") } }))
+			  { TEXT("limit"), TEXT("maxNodes is the cap here - and it is reported as `truncated` rather than applied silently") },
+			  { TEXT("format"), TEXT("spell it mermaid - this is a boolean add-on, not an output-format switch; nodes/edges are always returned too") } }))
 		{
 			return;
 		}
@@ -146,6 +155,7 @@ namespace MifBridge
 
 		const int32 MaxNodes = FMath::Clamp(JInt(In, TEXT("maxNodes"), 300), 1, 5000);
 		const bool bIncludeExternal = JBool(In, TEXT("includeExternal"), false);
+		const bool bMermaid = JBool(In, TEXT("mermaid"), false);
 
 		TArray<FAssetData> Assets;
 		ProjRegistry().GetAssetsByPath(FName(*Prefix), Assets, /*bRecursive*/ true);
@@ -210,6 +220,74 @@ namespace MifBridge
 				TEXT("stopped at maxNodes=%d of %d matching assets. The graph below is a PREFIX of the "
 					 "real one, not a sample of it - narrow pathPrefix for a complete picture of a "
 					 "smaller area rather than raising the cap."), MaxNodes, Assets.Num()));
+		}
+
+		if (bMermaid)
+		{
+			// Package path -> synthesised "N<k>" id. A Mermaid flowchart id is a bare identifier and
+			// cannot contain '/' or '.', which every package path has, so the real name only ever
+			// appears inside a quoted LABEL, never as the id itself.
+			TMap<FString, FString> IdOf;
+			TSet<FString> Labeled;
+			auto Escape = [](const FString& Raw) -> FString
+			{
+				// Mermaid reads the label up to the closing '"' and treats a literal newline as the end
+				// of the node statement, so both have to go before this can ever be unsafe to emit.
+				FString S = Raw;
+				S.ReplaceInline(TEXT("\""), TEXT("'"));
+				S.ReplaceInline(TEXT("\n"), TEXT(" "));
+				S.ReplaceInline(TEXT("\r"), TEXT(""));
+				return S;
+			};
+			auto MermaidId = [&IdOf](const FString& Pkg) -> FString
+			{
+				if (const FString* Existing = IdOf.Find(Pkg)) { return *Existing; }
+				const FString NewId = FString::Printf(TEXT("N%d"), IdOf.Num());
+				IdOf.Add(Pkg, NewId);
+				return NewId;
+			};
+			auto ShortName = [](const FString& Pkg) -> FString
+			{
+				int32 Slash = INDEX_NONE;
+				return Pkg.FindLastChar(TEXT('/'), Slash) ? Pkg.Mid(Slash + 1) : Pkg;
+			};
+
+			TArray<FString> Lines;
+			Lines.Add(TEXT("flowchart TD"));
+			for (const TSharedPtr<FJsonValue>& NV : Nodes)
+			{
+				const TSharedPtr<FJsonObject> NObj = NV->AsObject();
+				const FString Pkg = NObj->GetStringField(TEXT("package"));
+				Lines.Add(FString::Printf(TEXT("    %s[\"%s\"]"),
+					*MermaidId(Pkg), *Escape(NObj->GetStringField(TEXT("name")))));
+				Labeled.Add(Pkg);
+			}
+			for (const TSharedPtr<FJsonValue>& EV : Edges)
+			{
+				const TSharedPtr<FJsonObject> EObj = EV->AsObject();
+				const FString From = EObj->GetStringField(TEXT("from"));
+				const FString To = EObj->GetStringField(TEXT("to"));
+				const FString FromId = MermaidId(From);
+				const FString ToId = MermaidId(To);
+				// A target can reach here unlabeled two different ways, not just one: includeExternal
+				// keeps edges leaving pathPrefix entirely, but FOUND LIVE (T644) - maxNodes truncating
+				// the outer walk ALSO produces this, because InPrefix (deciding "external") is built
+				// from the full unfiltered Assets scan while Nodes above stops at the cap. A package
+				// can be genuinely internal to the prefix and still never have been walked as its own
+				// node. Either way the fix is the same: give it a label the first time it is seen, or
+				// it renders as a bare "N7" with nothing readable on it.
+				if (!Labeled.Contains(To))
+				{
+					Lines.Add(FString::Printf(TEXT("    %s[\"%s\"]"), *ToId, *Escape(ShortName(To))));
+					Labeled.Add(To);
+				}
+				Lines.Add(FString::Printf(TEXT("    %s --> %s"), *FromId, *ToId));
+			}
+			if (Nodes.Num() == 0)
+			{
+				Lines.Add(TEXT("    N0[\"(no assets matched pathPrefix)\"]"));
+			}
+			Out->SetStringField(TEXT("mermaid"), FString::Join(Lines, TEXT("\n")));
 		}
 	}
 
