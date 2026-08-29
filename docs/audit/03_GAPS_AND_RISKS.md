@@ -333,6 +333,18 @@ matches no live scope — authoritative census is list_datatables: 379 total / 2
 
 ## 7. Bridge-side defects found during the audit (repairs to EXISTING endpoints, not new endpoints)
 
+> **RE-CHECKED 2026-08-29.** #1, #3, #6, #7, #8 confirmed FIXED against current source (see
+> `docs/audit/07_SELF_AUDIT_FINDINGS.md`'s own staleness header and `FEATURE_PARITY_SPEC.md` for the
+> #3/connect_pins account specifically). #2 (add_foliage_instances) is addressed, though not exactly
+> either proposed way: it now has a genuine dual mode - `foliageType` places real
+> `AInstancedFoliageActor` instances via `GetInstancedFoliageActorForCurrentLevel`, `mesh` stays the
+> HISM-holder shape but is honestly documented as that rather than claiming to be foliage-system
+> content - both live under the one endpoint rather than a separate `paint_foliage`. #4
+> (trigger_cook plan-only) and #5 (get_datatable_row's whole-table read per row) are both still
+> exactly as described - #4 is a documented, understood boundary (see the GHOST_OK triage in
+> tools/audit_report.py: "NOT A BUG... plan-only... Honest"), #5 is a real but unconfirmed-feasible
+> perf question nobody has picked up.
+
 | # | Defect | Evidence | Repair |
 |---|---|---|---|
 | 1 | **`find_assets` silently ignores unknown parameters** — live-proven twice: `{"className": ...}` returned ALL 37,131 assets with no error; `{"recursive": false}` accepted silently. The correct parameter is **`class`**, not `className` (handler reads only pathPrefix/class/nameContains/origin/recursiveClasses/limit). This is a live instance of the brief's #1 bug class in a shipped READ endpoint | MifBridgeCooked.cpp:193–198; [work/G2_sequencer_umg_input.md](work/G2_sequencer_umg_input.md) neg #8, [work/G3_niagara_audio_physics.md](work/G3_niagara_audio_physics.md) coverage log, [work/J_dds2_project.md](work/J_dds2_project.md) neg #9 | Unknown-param rejection in H_find_assets; then sweep EVERY handler for the same hole (get_property already errors correctly — the pattern exists in-house) |
