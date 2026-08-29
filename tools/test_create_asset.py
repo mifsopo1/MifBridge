@@ -144,6 +144,32 @@ def main():
               "ABSTRACT" in (na.get("error") or "") and "cooked game" in (na.get("error") or ""),
               (na.get("error") or "")[:200])
 
+    # ------------------------------------------------------------------ T146 the crash this session found
+    print("\n=== T146 [CRASH found live 2026-08-29]: create_asset{class:NiagaraSystem} took the editor down ===")
+    # Found while checking whether create_asset's generic breadth (T145) extended to NiagaraSystem
+    # too - it does not, on its own: a bare NewObject<UNiagaraSystem> crashed the editor mid-call
+    # (the crash journal showed a "start" for this exact create_asset with no matching "end"). The
+    # stock "New Niagara System" factory does the same NewObject and then ONE more call,
+    # UNiagaraSystemFactoryNew::InitializeSystem, which MifBridgeUserTypes.cpp now also makes - the
+    # same shape as the ULevelSequence::Initialize() fix a few lines above it in that file. THE
+    # assertion here is not just ok:true - it is that the bridge answers AT ALL afterward, because a
+    # suite that only checks the response would pass just as happily against an editor that had
+    # already died one call earlier (same discipline as test_anim_nodes.py's T550).
+    niagara_path = path + "_niagara_crash_fix"
+    nr = M.call("create_asset", {"path": niagara_path, "class": "NiagaraSystem"}, timeout=90)
+    check("T146 create_asset succeeds", nr.get("ok") is True, json.dumps(nr)[:220])
+    check("T146 THE EDITOR IS STILL ALIVE",
+          M.bridge_responsive() is True,
+          "the bridge stopped answering - create_asset{class:NiagaraSystem} crashed the editor again")
+    if nr.get("ok"):
+        # Not just "did not crash" - genuinely well-formed, the same standard T141 holds create_asset
+        # to generally: read back through a REAL Niagara-aware endpoint, not just re-asked of itself.
+        desc = M.call("describe_niagara_system", {"path": niagara_path}, timeout=60)
+        check("T146 the created system is genuinely usable, not just non-crashing",
+              desc.get("ok") is True, json.dumps(desc)[:220])
+        check("T146 and reports the expected empty-system shape (0 emitters, none added yet)",
+              desc.get("emitterCount") == 0, json.dumps(desc)[:220])
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f2 in FAIL:

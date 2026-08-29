@@ -28,6 +28,10 @@
 #include "Engine/DataTable.h"
 #include "Engine/UserDefinedEnum.h"
 #include "LevelSequence.h"        // ULevelSequence::Initialize() - create_asset's one post-construction special case
+#if MIF_WITH_NIAGARA
+#include "NiagaraSystem.h"
+#include "NiagaraSystemFactoryNew.h"   // UNiagaraSystemFactoryNew::InitializeSystem - see the NiagaraSystem special case below
+#endif
 #include "Engine/UserDefinedStruct.h"
 #include "Kismet2/EnumEditorUtils.h"
 #include "Kismet2/StructureEditorUtils.h"
@@ -765,6 +769,27 @@ namespace MifBridge
 		{
 			NewSequence->Initialize();
 		}
+
+#if MIF_WITH_NIAGARA
+		// A BARE NewObject<UNiagaraSystem> CRASHES THE EDITOR - found live 2026-08-29, not assumed.
+		// The stock "New Niagara System" factory (UNiagaraSystemFactoryNew::FactoryCreateNew,
+		// NiagaraSystemFactoryNew.cpp:111-171) does exactly this NewObject call and then ONE more:
+		// InitializeSystem(NewSystem, true), which sets up the exposed-parameters store and the
+		// default System-Update/Emitter pipeline stages every other Niagara operation on this system
+		// assumes exist. Skipping it left the system in a state that crashed inside this very handler
+		// before it could even respond - the crash journal showed a "start" for this create_asset call
+		// with no matching "end". Same shape as ULevelSequence's fix above, one asset class over: a
+		// generic NewObject is not what the engine's own "New X" action actually does.
+		// InitializeSystem is public and static (NiagaraSystemFactoryNew.h:29), verified identical in
+		// both engines (5.3 and 5.7, same line number). Deliberately NOT also calling
+		// NewSystem->RequestCompile(false), which the real factory does last: that starts real script
+		// compilation, a heavier and separately-triggerable operation, and InitializeSystem alone is
+		// the specific call proven necessary to stop the crash.
+		if (UNiagaraSystem* NewNiagaraSystem = Cast<UNiagaraSystem>(Asset))
+		{
+			UNiagaraSystemFactoryNew::InitializeSystem(NewNiagaraSystem, /*bCreateDefaultNodes*/ true);
+		}
+#endif
 
 		// WITHOUT THESE TWO LINES THE ASSET IS A GHOST. It answers get_property and set_property
 		// perfectly, never appears in find_assets or save_dirty_packages, and evaporates on restart -

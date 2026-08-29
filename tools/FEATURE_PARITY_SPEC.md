@@ -4302,3 +4302,39 @@ cannot become one giant blocking item:
       `AddComponentRequest`. All six accepted into the baseline with this entry as the reason.
       Both engines built clean (5.3.2 real project, 5.7 probe). parity_check.py clean throughout: 363
       endpoints, 351 MIF_BIND, no drift, param reach 215/215 unchanged.
+
+- [x] **CRASH FOUND AND FIXED: create_asset{class:NiagaraSystem} took the editor down.** DONE
+      2026-08-29. Found while spot-checking whether the generic create_asset breadth verified for
+      T145's 18 classes also covered a few more asset types cited in the original 2026-07-26 audit's
+      unresolved policy list (docs/audit/04_OPEN_QUESTIONS.md §1.1) - InputAction and
+      InputMappingContext both succeeded, and the very next call, `create_asset {class:
+      "NiagaraSystem"}`, took the editor down mid-request. Confirmed via the crash journal: a
+      `create_asset` "start" entry with no matching "end" - the exact crash signature this project's
+      own tooling exists to catch.
+      ROOT CAUSE, read from the engine source rather than assumed: the stock "New Niagara System"
+      factory (`UNiagaraSystemFactoryNew::FactoryCreateNew`, NiagaraSystemFactoryNew.cpp:111-171)
+      does the identical `NewObject<UNiagaraSystem>` create_asset's generic path already does, and
+      then ONE more call - `InitializeSystem(NewSystem, true)` - which sets up the exposed-parameters
+      store and the default System-Update/Emitter pipeline stages. A bare NewObject skips that
+      entirely, leaving the system in a state that crashes the editor before the handler can even
+      respond. Same exact shape as the ULevelSequence::Initialize() fix from 2026-08-28, one asset
+      class over - a generic NewObject is not what the engine's own "New X" action actually does, and
+      this project has now found that gap twice.
+      `InitializeSystem` verified PUBLIC and STATIC in both engine trees before use, learning
+      directly from the SAME session's add_gameplay_tag dead end (which looked public from a plain
+      grep and turned out private): checked the exact `public:`/`private:` line boundaries this time
+      (NiagaraSystemFactoryNew.h:28-29, identical in 5.3 and 5.7). Deliberately NOT also calling
+      `RequestCompile(false)`, which the real factory does last - that starts real script compilation,
+      a heavier and separately-triggerable operation, and InitializeSystem alone is the specific call
+      proven necessary to stop the crash.
+      VERIFIED LIVE, carefully: after the fix, `create_asset{class:NiagaraSystem}` succeeds, the
+      editor and bridge stay fully responsive afterward (checked directly, not assumed), and the
+      resulting system reads back through `describe_niagara_system` as genuinely well-formed (0
+      emitters, the correct shape for a fresh system with none added yet) - not just "did not crash."
+      Locked in as T146 in test_create_asset.py, asserting bridge liveness explicitly (same discipline
+      as test_anim_nodes.py's T550) rather than only checking the response. 42/42 for the suite. Both
+      engines built clean. parity_check.py clean throughout: 363 endpoints, 351 MIF_BIND, no drift.
+      Found via docs/audit/ - a 28,472-line, month-old (2026-07-26) audit archive from before this
+      session's own work, itself now confirmed to still hold real, unmined value: its
+      04_OPEN_QUESTIONS.md §1.6 independently described the exact connect_pins schema bug fixed
+      earlier this same session, over a month before it was found again a different way.
