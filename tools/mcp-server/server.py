@@ -3415,6 +3415,18 @@ def describe_mvvm_view(widget_blueprint_path: str) -> dict:
 
 
 @mcp.tool()
+def remove_mvvm_viewmodel(widget_blueprint_path: str, view_model_name: str) -> dict:
+    "Remove a viewmodel from a Widget Blueprint's MVVM view (view_model_name from add_mvvm_viewmodel or describe_mvvm_view). Refuses if the name doesn't exist, or if the engine itself marks that viewmodel non-removable (bCanRemove:false) - it does not silently no-op either way."
+    return _post("remove_mvvm_viewmodel", widgetBlueprintPath=widget_blueprint_path, viewModelName=view_model_name)
+
+
+@mcp.tool()
+def remove_mvvm_binding(widget_blueprint_path: str, binding_id: str) -> dict:
+    "Remove a binding from a Widget Blueprint's MVVM view (binding_id from add_mvvm_binding or describe_mvvm_view). Refuses if no binding with that id exists."
+    return _post("remove_mvvm_binding", widgetBlueprintPath=widget_blueprint_path, bindingId=binding_id)
+
+
+@mcp.tool()
 def create_mesh_boolean(target_path: str, tool_path: str, operation: str, output_path: str,
                         tool_offset_x: float = None, tool_offset_y: float = None, tool_offset_z: float = None) -> dict:
     "Combine two EXISTING StaticMesh assets (union, intersection, or subtract) into a THIRD, new StaticMesh at output_path (must not already exist). tool_offset_x/y/z (default 0) translate tool_path before the operation, so it actually overlaps target_path - two meshes both centered at the origin need no offset. Both inputs are read the same way describe_dynamic_mesh reads them - a real COOKED mesh's editor-only geometry data is usually stripped, so this works best on meshes create_procedural_mesh made. Returns real read-back vertexCount/triangleCount/bounds. Fails cleanly (not silently) if the operation produces an empty result, e.g. a subtract that removes everything."

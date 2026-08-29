@@ -80,6 +80,14 @@ namespace MifBridge
 	{
 		MifNoMVVM(Out);
 	}
+	void H_remove_mvvm_viewmodel(const TSharedRef<FJsonObject>&, const TSharedRef<FJsonObject>& Out)
+	{
+		MifNoMVVM(Out);
+	}
+	void H_remove_mvvm_binding(const TSharedRef<FJsonObject>&, const TSharedRef<FJsonObject>& Out)
+	{
+		MifNoMVVM(Out);
+	}
 #else
 
 	namespace
@@ -407,6 +415,165 @@ namespace MifBridge
 			BindingsJson.Add(MakeShared<FJsonValueObject>(Row));
 		}
 		Out->SetArrayField(TEXT("bindings"), BindingsJson);
+	}
+
+	// --- remove_mvvm_viewmodel --------------------------------------------------------------------
+	//   in:  { widgetBlueprintPath, viewModelName }
+	//   out: { widgetBlueprintPath, viewModelName, removed: true }
+	// Reopened 2026-08-28 - a real, bounded scope cut from the original MVVM batch the same night
+	// ("the subsystem's own RemoveViewModel/RemoveBinding exist and would be simple to wire on top of
+	// this same file"), not new territory. UMVVMEditorSubsystem::RemoveViewModel (engine source,
+	// checked before writing this, not assumed) silently NO-OPS on an unknown name or on a viewmodel
+	// whose own bCanRemove is false - it does not report failure at all. So this handler checks both
+	// BEFORE calling it, and reads the view back afterward rather than trusting a void return.
+	void H_remove_mvvm_viewmodel(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("widgetBlueprintPath"), TEXT("path"), TEXT("blueprintId"), TEXT("viewModelName") },
+			TEXT("widgetBlueprintPath (aliases: path, blueprintId); viewModelName - from ")
+			TEXT("add_mvvm_viewmodel or describe_mvvm_view"),
+			{}))
+		{
+			return;
+		}
+
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+
+		const FString ViewModelName = JStr(In, TEXT("viewModelName"));
+		if (ViewModelName.IsEmpty())
+		{
+			Fail(Out, TEXT("viewModelName is required. NOTHING was removed."));
+			return;
+		}
+
+		UMVVMEditorSubsystem* Subsystem = GetMVVMSubsystem();
+		if (!Subsystem)
+		{
+			Fail(Out, TEXT("UMVVMEditorSubsystem is not available"));
+			return;
+		}
+
+		// GetView, not RequestView - a removal must not create the MVVM extension on a Blueprint that
+		// never had one, same reasoning describe_mvvm_view already uses.
+		UMVVMBlueprintView* View = Subsystem->GetView(WBP);
+		if (!View)
+		{
+			Fail(Out, TEXT("this Widget Blueprint has no MVVM view at all - nothing to remove from."));
+			return;
+		}
+
+		const FMVVMBlueprintViewModelContext* Context = View->FindViewModel(FName(*ViewModelName));
+		if (!Context)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no viewmodel named '%s' on this Widget Blueprint. NOTHING was removed."), *ViewModelName));
+			return;
+		}
+		if (!Context->bCanRemove)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("viewmodel '%s' is marked non-removable (bCanRemove=false) by the engine itself. ")
+				TEXT("NOTHING was removed."), *ViewModelName));
+			return;
+		}
+
+		Subsystem->RemoveViewModel(WBP, FName(*ViewModelName));
+
+		// void return, and the engine source confirms it silently no-ops rather than reporting
+		// failure - read the view back rather than trust the call happened.
+		if (View->FindViewModel(FName(*ViewModelName)) != nullptr)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("RemoveViewModel was called but '%s' is still present on read-back."), *ViewModelName));
+			return;
+		}
+
+		Out->SetStringField(TEXT("widgetBlueprintPath"), WBP->GetPathName());
+		Out->SetStringField(TEXT("viewModelName"), ViewModelName);
+		Out->SetBoolField(TEXT("removed"), true);
+		UE_LOG(LogMifBridge, Log, TEXT("remove_mvvm_viewmodel: %s removes viewmodel '%s'"),
+			*WBP->GetName(), *ViewModelName);
+	}
+
+	// --- remove_mvvm_binding ----------------------------------------------------------------------
+	//   in:  { widgetBlueprintPath, bindingId }
+	//   out: { widgetBlueprintPath, bindingId, removed: true }
+	// UMVVMBlueprintView::RemoveBinding (engine source, checked before writing this) matches by
+	// POINTER IDENTITY against its own internal Bindings array, not by value or by BindingId - so the
+	// FMVVMBlueprintViewBinding* passed to it must be a reference into that SAME array (the
+	// non-const View->GetBindings() below), never a copy pulled out of it. Getting this wrong would
+	// not crash - RemoveBindingAt bounds-checks a not-found index and silently no-ops - but it would
+	// silently remove nothing while still returning ok:true, exactly the class of bug this whole
+	// project's read-back discipline exists to catch.
+	void H_remove_mvvm_binding(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("widgetBlueprintPath"), TEXT("path"), TEXT("blueprintId"), TEXT("bindingId") },
+			TEXT("widgetBlueprintPath (aliases: path, blueprintId); bindingId - from add_mvvm_binding ")
+			TEXT("or describe_mvvm_view"),
+			{}))
+		{
+			return;
+		}
+
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP) { return; }
+
+		const FString BindingIdStr = JStr(In, TEXT("bindingId"));
+		FGuid WantId;
+		if (BindingIdStr.IsEmpty() || !FGuid::Parse(BindingIdStr, WantId))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("bindingId '%s' is not a valid GUID. NOTHING was removed."), *BindingIdStr));
+			return;
+		}
+
+		UMVVMEditorSubsystem* Subsystem = GetMVVMSubsystem();
+		if (!Subsystem)
+		{
+			Fail(Out, TEXT("UMVVMEditorSubsystem is not available"));
+			return;
+		}
+
+		UMVVMBlueprintView* View = Subsystem->GetView(WBP);
+		if (!View)
+		{
+			Fail(Out, TEXT("this Widget Blueprint has no MVVM view at all - nothing to remove from."));
+			return;
+		}
+
+		FMVVMBlueprintViewBinding* Found = nullptr;
+		for (FMVVMBlueprintViewBinding& Binding : View->GetBindings())
+		{
+			if (Binding.BindingId == WantId) { Found = &Binding; break; }
+		}
+		if (!Found)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no binding with id '%s' on this Widget Blueprint. NOTHING was removed."), *BindingIdStr));
+			return;
+		}
+
+		Subsystem->RemoveBinding(WBP, *Found);
+
+		bool bStillPresent = false;
+		for (const FMVVMBlueprintViewBinding& Binding : View->GetBindings())
+		{
+			if (Binding.BindingId == WantId) { bStillPresent = true; break; }
+		}
+		if (bStillPresent)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("RemoveBinding was called but binding '%s' is still present on read-back."), *BindingIdStr));
+			return;
+		}
+
+		Out->SetStringField(TEXT("widgetBlueprintPath"), WBP->GetPathName());
+		Out->SetStringField(TEXT("bindingId"), BindingIdStr);
+		Out->SetBoolField(TEXT("removed"), true);
+		UE_LOG(LogMifBridge, Log, TEXT("remove_mvvm_binding: %s removes binding '%s'"),
+			*WBP->GetName(), *BindingIdStr);
 	}
 #endif
 }

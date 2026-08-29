@@ -264,6 +264,8 @@
  "remove_ik_retarget_chain",
  "remove_ik_solver",
  "remove_interface",
+ "remove_mvvm_binding",
+ "remove_mvvm_viewmodel",
  "remove_node",
  "remove_pin",
  "remove_struct_member",

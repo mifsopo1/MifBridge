@@ -1597,6 +1597,8 @@ namespace MifBridge
 	MIF_DECL(add_mvvm_viewmodel);
 	MIF_DECL(add_mvvm_binding);
 	MIF_DECL(describe_mvvm_view);
+	MIF_DECL(remove_mvvm_viewmodel);
+	MIF_DECL(remove_mvvm_binding);
 
 	// DATA LAYERS - the WRITE half (MifBridgeStreaming.cpp). Unblocked 2026-08-26 when Andre
 	// authorised the DataLayerEditor dependency. SetDataLayerVisibility returns VOID, so both of

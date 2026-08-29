@@ -52,11 +52,22 @@ T1507-T1512: refusals checked for the specific reason - an unregistered viewmode
 source property, an unknown destination widget, an unknown destination property, an invalid
 bindingMode, and describe_mvvm_view called against a Blueprint that is not a Widget Blueprint at all.
 
-DECLINED for this batch: remove_mvvm_viewmodel / remove_mvvm_binding were not built (the subsystem's
-own RemoveViewModel/RemoveBinding exist and are simple to wire, but this batch was already large enough
-- a real, honest scope cut, not an oversight). Conversion-function wiring
-(SetSourceToDestinationConversionFunction) was similarly out of scope - this batch covers plain
-type-matched property bindings only.
+T1513-T1519: remove_mvvm_binding / remove_mvvm_viewmodel - reopened 2026-08-28 later the same night,
+closing the one scope cut this batch had originally made (conversion-function wiring remains out of
+scope; that is a real, larger feature, not a small wiring gap like this one was).
+UMVVMEditorSubsystem::RemoveViewModel and UMVVMBlueprintView::RemoveBinding were both read in engine
+source before writing these handlers, not assumed: RemoveViewModel silently NO-OPS on an unknown name
+or on a viewmodel whose own bCanRemove is false, and UMVVMBlueprintView::RemoveBinding matches by
+POINTER IDENTITY against its internal array, not by value - getting either wrong would not crash (a
+not-found index is bounds-checked and silently ignored) but WOULD report ok:true while removing
+nothing, exactly the failure class this suite's own read-back discipline exists to catch. T1513-T1515
+remove the real binding/viewmodel created above and independently verify via describe_mvvm_view that
+both are actually gone, not just trust removed:true. T1516-T1519 refusals checked for the specific
+reason: an unknown bindingId, a malformed (non-GUID) bindingId, an unknown viewModelName, and calling
+either against a Widget Blueprint with no MVVM view at all.
+
+DECLINED, still out of scope: conversion-function wiring (SetSourceToDestinationConversionFunction) - a
+real, larger feature, not a small wiring gap.
 """
 import json
 import sys
@@ -172,6 +183,56 @@ def main():
     not_widget_bp = M.call("describe_mvvm_view", {"widgetBlueprintPath": vm_path})
     check("T1512 describe_mvvm_view on a non-Widget-Blueprint is refused", not_widget_bp.get("ok") is False,
           not_widget_bp)
+
+    # ------------------------------------------------------------------ T1513-T1519 remove_mvvm_*
+    print("\n=== T1513-T1519: remove_mvvm_binding / remove_mvvm_viewmodel, verified via describe_mvvm_view ===")
+    binding_id = binding.get("bindingId")
+    rm_binding = M.call("remove_mvvm_binding", {"widgetBlueprintPath": wbp_path, "bindingId": binding_id})
+    check("T1513 remove_mvvm_binding succeeds on the real binding created above", rm_binding.get("ok") is True,
+          json.dumps(rm_binding)[:200])
+
+    desc_after_rm_binding = M.call("describe_mvvm_view", {"widgetBlueprintPath": wbp_path})
+    check("T1514 the binding is genuinely gone on read-back - not just removed:true",
+          not any(b.get("bindingId") == binding_id for b in desc_after_rm_binding.get("bindings", [])),
+          desc_after_rm_binding.get("bindings"))
+    check("T1514 the viewmodel is still there - removing a binding does not remove its viewmodel",
+          any(v.get("name") == vm_instance_name for v in desc_after_rm_binding.get("viewModels", [])),
+          desc_after_rm_binding.get("viewModels"))
+
+    rm_vm = M.call("remove_mvvm_viewmodel", {"widgetBlueprintPath": wbp_path, "viewModelName": vm_instance_name})
+    check("T1515 remove_mvvm_viewmodel succeeds on the real viewmodel created above", rm_vm.get("ok") is True,
+          json.dumps(rm_vm)[:200])
+    desc_after_rm_vm = M.call("describe_mvvm_view", {"widgetBlueprintPath": wbp_path})
+    check("T1515 the viewmodel is genuinely gone on read-back - not just removed:true",
+          not any(v.get("name") == vm_instance_name for v in desc_after_rm_vm.get("viewModels", [])),
+          desc_after_rm_vm.get("viewModels"))
+    vm_compile_after_removal = M.call("compile", {"blueprintId": wbp_path})
+    check("T1515 the Widget Blueprint still compiles clean after both removals",
+          vm_compile_after_removal.get("ok") is True and vm_compile_after_removal.get("numErrors") == 0,
+          vm_compile_after_removal)
+
+    unknown_binding = M.call("remove_mvvm_binding", {"widgetBlueprintPath": wbp_path, "bindingId": binding_id})
+    check("T1516 removing the same bindingId twice is refused the second time (already gone)",
+          unknown_binding.get("ok") is False, unknown_binding)
+
+    malformed_id = M.call("remove_mvvm_binding", {"widgetBlueprintPath": wbp_path, "bindingId": "not-a-guid"})
+    check("T1517 a malformed (non-GUID) bindingId is refused", malformed_id.get("ok") is False, malformed_id)
+
+    unknown_vm = M.call("remove_mvvm_viewmodel", {"widgetBlueprintPath": wbp_path, "viewModelName": vm_instance_name})
+    check("T1518 removing the same viewModelName twice is refused the second time (already gone)",
+          unknown_vm.get("ok") is False, unknown_vm)
+
+    no_view_path = base + "/WBP_NoView"
+    no_view_wbp = M.call("create_blueprint", {
+        "path": no_view_path, "parentClass": "/Script/UMG.UserWidget", "blueprintType": "WidgetBlueprint"})
+    check("T1519 (setup) a fresh Widget Blueprint with no MVVM view at all", no_view_wbp.get("ok") is True,
+          json.dumps(no_view_wbp)[:150])
+    no_view_rm = M.call("remove_mvvm_viewmodel", {"widgetBlueprintPath": no_view_path, "viewModelName": "Anything"})
+    check("T1519 remove_mvvm_viewmodel against a Blueprint with no MVVM view at all is refused",
+          no_view_rm.get("ok") is False, no_view_rm)
+    no_view_rm2 = M.call("remove_mvvm_binding", {"widgetBlueprintPath": no_view_path, "bindingId": binding_id})
+    check("T1519 remove_mvvm_binding against a Blueprint with no MVVM view at all is refused",
+          no_view_rm2.get("ok") is False, no_view_rm2)
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

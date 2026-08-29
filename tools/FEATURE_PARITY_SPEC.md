@@ -3722,12 +3722,23 @@ cannot become one giant blocking item:
       parity_check.py clean (360 endpoints, 348 MIF_BIND, no drift - ModelViewViewModel no longer in
       PLUGIN IDLE, down to just 2: ChaosVehiclesPlugin and MassEntity, both already correctly,
       specifically declined).
-      DECLINED for this batch, an honest scope cut rather than an oversight: remove_mvvm_viewmodel /
-      remove_mvvm_binding were not built (the subsystem's own RemoveViewModel/RemoveBinding exist and
-      would be simple to wire on top of this same file). Conversion-function wiring
-      (SetSourceToDestinationConversionFunction) was similarly out of scope - this batch covers plain
-      type-matched property bindings only, which is exactly what the compile-error finding above proves
-      is enforced correctly even without conversion-function support built yet.
+      remove_mvvm_viewmodel / remove_mvvm_binding: REOPENED and CLOSED 2026-08-28, later the same
+      night. Read UMVVMEditorSubsystem::RemoveViewModel and UMVVMBlueprintView::RemoveBinding in engine
+      source before writing either handler, not assumed: RemoveViewModel silently NO-OPS on an unknown
+      name or on a viewmodel whose own bCanRemove is false (checked and refused BEFORE calling it, not
+      after); RemoveBinding matches by POINTER IDENTITY against the view's internal Bindings array, not
+      by value - a copy pulled out of GetBindings() would silently remove nothing while still returning
+      ok:true, so both handlers pass a reference into the live array itself and read the view back
+      afterward to confirm the removal actually happened, matching this whole project's read-back
+      discipline. tools/test_mvvm.py grew T1513-T1519 covering both real removals (verified via
+      describe_mvvm_view, not trusted from removed:true) and their refusal paths. Both engines rebuilt
+      clean (5.3.2 via the real DDS2 project, 5.7 via make_engine_probe.py against the installed
+      engine). parity_check.py clean (362 endpoints, 350 MIF_BIND, no drift).
+      DECLINED, still out of scope: conversion-function wiring
+      (SetSourceToDestinationConversionFunction) - a real, larger feature, not a small wiring gap like
+      the removal endpoints were. This batch still covers plain type-matched property bindings only,
+      which is exactly what the compile-error finding above proves is enforced correctly even without
+      conversion-function support built.
 
 - [x] **The PIE-family testing sweep - 11 endpoints that already existed in source but had never been
       named in any test suite.** DONE 2026-08-28, closing out Andre's own directive ("find all missing
