@@ -176,6 +176,22 @@ def main():
                                    "size": {"x": 2000, "y": 2000, "z": 1000}, "label": "MifReads7NavVol_%d" % st})
     check("T958 succeeds", nv.get("ok") is True, json.dumps(nv)[:200])
     check("T958 reports the coverage size back", nv.get("coverage", {}).get("x") == 2000, nv.get("coverage"))
+    # CLEANUP - added 2026-08-29, found live by a full run_all_suites.py double-pass sweep. This
+    # spawns straight into the EDITOR world (World->SpawnActor in H_add_nav_volume, ActiveWorld() not
+    # a PIE-scoped one), so an uncleaned volume here is NOT torn down when PIE stops - it persists in
+    # the persistent level and gets carried into every LATER PIE session too, one more accumulating
+    # with every run of this suite. That silently broke tools/test_pie_family.py's own T1606 check
+    # (its own "0 NavMeshBoundsVolume actors -> no navigation coverage" precondition is no longer true
+    # once one of these exists ANYWHERE in the level, even parked a million units away and providing
+    # no real coverage where a pawn actually is) - a real "state surviving between runs" bug, not a
+    # test_pie_family.py bug. delete_level_actor addresses a live actor path, not a /Game/... asset,
+    # so scratch_confirm.confirm_call's path-prefix check does not apply here (and would wrongly
+    # refuse it) - M.raw_post is the same narrow, deliberate bypass used elsewhere in this project for
+    # exactly this shape of call.
+    if nv.get("actorPath"):
+        cleanup = M.raw_post("delete_level_actor", {"actorPath": nv["actorPath"], "confirm": True})
+        check("T958 (cleanup) the scratch NavMeshBoundsVolume is removed, not left in the level",
+              cleanup.get("ok") is True, cleanup.get("error"))
 
     # ------------------------------------------------------------------ T959 add_gameplay_effect_modifier
     print("\n=== T959: add_gameplay_effect_modifier - validation only, no real AttributeSet on this project ===")

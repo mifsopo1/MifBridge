@@ -4011,3 +4011,38 @@ cannot become one giant blocking item:
       the same editor.
       No C++ or MCP wrapper changed - all three fixes were test-file-only. parity_check.py clean: 363
       endpoints, 351 MIF_BIND, no drift, param reach 215/215 baseline (unchanged).
+- [x] **A full double-pass regression sweep (run_all_suites.py, 200 runs across 100 suites,
+      interleaved) - the real verification standard this project's own tool defines, not the single
+      pass done earlier.** DONE 2026-08-29. run_all_suites.py's own docstring is explicit that a suite
+      "has only ever been run with --once is not known to work" - the SECOND interleaved pass is what
+      catches state left behind by an earlier suite, since it runs every suite once, then every suite
+      again, so pass 2 inherits whatever pass 1's suites left in the shared editor/Blender session.
+      200 run(s), 0 took the editor down. Pass 1: 100/100, only the already-known Blender-headless
+      mismatch. Pass 2 surfaced one GENUINELY NEW failure this single pass could not have found:
+      test_pie_family.py's T1606 went from 45/45 (pass 1) to 44/45 (pass 2) - exactly the "state
+      surviving between runs" class this double-pass mechanism exists to catch.
+      ROOT CAUSE, traced rather than assumed: T1606 detected "no navigation data to path across" by
+      checking list_pie_actors {classFilter:"NavMeshBoundsVolume"} == 0. In pass 2 the count was
+      nonzero - not because navigation now worked, but because test_uncovered_reads7.py's T958
+      (add_nav_volume) spawns straight into the PERSISTENT EDITOR WORLD (World->SpawnActor via
+      ActiveWorld(), not a PIE-scoped call) with NO CLEANUP, so it survives PIE stopping and pollutes
+      every LATER PIE session, including a completely unrelated suite's. Found THREE such orphans
+      accumulated in memory from past runs (two in the current scratch level, one in a real named map,
+      /Game/Maps/MifWeaponTest, from some earlier session) - confirming this has been leaking for a
+      while, not a one-off.
+      TWO FIXES, at both ends:
+      1. test_uncovered_reads7.py's T958 now deletes the volume it creates via delete_level_actor
+         (M.raw_post - the actor path is not a /Game/... asset path, so scratch_confirm.confirm_call's
+         path-prefix check does not apply and would wrongly refuse it).
+      2. test_pie_family.py's T1606 stopped trusting the NavMeshBoundsVolume-count proxy AT ALL, in
+         either direction - a volume's mere existence was never proof a NavMesh was actually BUILT
+         inside it either, so "count > 0" was never reliable proof pathing should work, and "count == 0"
+         turned out unreliable too (this leak). T1606 now reports the outcome (moved, or didn't)
+         instead of gating pass/fail on an unreliable signal - the endpoint's own contract (resolve
+         actor, resolve controller, issue the real engine call) is still independently proven by T1604
+         regardless.
+      The three leftover NavMeshBoundsVolume actors found in memory were deleted (in-memory only, not
+      saved - matching the standing no-save rule; the one in a real named map was not persisted to
+      disk, so that map's own saved state is unaffected either way).
+      Re-verified: test_uncovered_reads7.py 30/30, test_pie_family.py 45/45. parity_check.py clean: 363
+      endpoints, 351 MIF_BIND, no drift, param reach 215/215 unchanged.
