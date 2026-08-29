@@ -4191,7 +4191,7 @@ cannot become one giant blocking item:
       tool: confirmed empty `dedicated_only_empty` list (nothing in the current class set lacks BOTH a
       dedicated endpoint and the generic create_asset candidate).
 
-- [ ] **Read/write asymmetry, re-tried with a per-file matcher instead of the naive verb-stripped
+- [~] **Read/write asymmetry, re-tried with a per-file matcher instead of the naive verb-stripped
       name comparison the earlier attempt found too noisy.** Investigated 2026-08-29, as part of the
       same autopilot pass that fixed capability_gaps.py. Grouped handlers by SOURCE FILE rather than
       by string-matching names, then looked for files that are all-read or all-write with 2+ handlers -
@@ -4231,23 +4231,28 @@ cannot become one giant blocking item:
         the match; only the compiler resolves it reliably. "There is a compiler for this" (18_START_
         HERE.md, about engine-version differences) turns out to apply to access control too, not just
         symbol shape.
-      - **GameFeatures activate/deactivate** - list/describe exist, nothing (de)activates a plugin.
-        `UGameFeaturesSubsystem::LoadAndActivateGameFeaturePlugin`/`DeactivateGameFeaturePlugin` are
-        PUBLIC (not re-verified by compiling, given the GameplayTags lesson just above - treat as
-        "plausible, not confirmed" until someone actually builds against it), but both are ASYNC
-        (delegate-based, no synchronous variant found) and the module itself lives under
-        `Engine/Plugins/Experimental/GameFeatures` - loading a whole feature plugin into the running
-        editor is also a heavier mutation than most of what this bridge does, closer in kind to the
-        endpoints the safety gate already treats specially than to an ordinary content write. Not
-        built - needs the same kind of deliberate call the export_asset scratch-gate question in
-        docs/06 §21 was left as, not something to decide in passing, AND needs its own compile-time
-        access check before anyone trusts it is reachable at all.
+      - **GameFeatures activate/deactivate - ALREADY DELIBERATELY DECLINED, found in the handler's
+        OWN source rather than re-derived.** `UGameFeaturesSubsystem::LoadAndActivateGameFeaturePlugin`/
+        `DeactivateGameFeaturePlugin` ARE public this time - properly verified by reading the exact
+        `public:`/`private:` boundaries (GameFeaturesSubsystem.h:402 opens public, :522 closes it,
+        every activate/deactivate/unload/release overload sits between them), not just grepped for the
+        API macro the way the GameplayTags mistake above was made. But `H_list_game_feature_plugins`
+        (MifBridgeGameFeatures.cpp) already has an unknown-parameter hint for exactly this:
+        `{ "activate", "this endpoint is read-only; activating a game feature changes what is loaded
+        in the running editor and the bridge does not do that" }`. Whoever built this file already
+        considered and declined it - this read/write-asymmetry pass just never checked the handler's
+        own hints before filing it as an open question, which the earlier draft of this entry
+        wrongly did. Correcting in place rather than leaving both versions standing.
       - **StateTree authoring** - list_state_trees/describe_state_tree exist, nothing authors one.
         Correctly one-directional, not a gap: `StateTreeEditorData`/`StateTreeEditorModule` is a
         bespoke editor object model, the same shape docs/06_CAPABILITY_ROADMAP.md already documents
         for Control Rig ("every edit must go through URigVMController; different object model") -
         genuinely out of scope for the same structural reason, not merely undiscovered.
-      GameplayTags and StateTree are both now correctly DECLINED, for the same epistemic weight even
-      though the reasons differ (one a private API, one a different object model). GameFeatures stays
-      OPEN, and now carries an explicit warning that its "public" reading is unverified by a real
-      build.
+      All three are now correctly DECLINED, for three different reasons: GameplayTags because both
+      candidate APIs are private (found by the compiler), StateTree because it is a different object
+      model (found by reading the engine source), GameFeatures because it was already deliberately
+      declined by an earlier session and documented in the handler itself (found by reading the
+      handler, which this pass should have done before the engine source). The read/write-asymmetry
+      method itself is now validated as worth keeping in the toolbox - six false positives correctly
+      ruled out, one confirmed-impossible finding that saved a future session the same dead end, one
+      correction of this entry's own too-hasty first draft.
