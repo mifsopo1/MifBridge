@@ -19,9 +19,17 @@
 // a call whose parameters it never read. All five now run RejectUnknownParams first, and each
 // handler's `in:` comment was re-derived FROM THE CODE — two of them documented parameters
 // (create_material_instance's `textures`, duplicate_actors' `rotationOffset`) that no line here has
-// ever read. Where a silent drop lives deeper than the top-level key set (per-item objects inside
-// items[]/instances[], create_material_instance's post-creation apply loop) it is marked
-// TODO(audit D.1) on the handler rather than half-fixed.
+// ever read.
+//
+// CLOSED 2026-08-29: this comment used to name three places where a silent drop lived deeper than
+// the top-level key set - spawn_many's items[], add_foliage_instances' instances[] and
+// create_material_instance's post-creation apply loop - each marked TODO(audit D.1) rather than
+// half-fixed. All three are done now: spawn_many and add_foliage_instances both refuse an
+// unrecognised key INSIDE a per-item/per-instance object by name instead of silently ignoring it
+// (found by grepping this file for its own TODO markers, not by re-deriving the list from scratch);
+// create_material_instance's apply loop was already fixed by Batch M, further down in this same
+// file - real unknownParameters[] reporting, validated before the asset exists. No TODO(audit D.1)
+// marker remains anywhere in this file.
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
 
@@ -1163,6 +1171,19 @@ namespace MifBridge
 		// the undo entry without calling FTransaction::Apply (EditorTransaction.cpp:1387-1437), so a
 		// bad instances[7].z left a half-populated foliage actor in the level from a call that said it
 		// had failed. Nothing in the parse needs the actor. See docs/01_POSTMORTEMS.md PM-007.
+		// The per-instance accepted-key set ReadTransform actually reads. Checked BEFORE ReadTransform
+		// itself, in the same parse-everything-before-creating-anything pass this loop already runs -
+		// closes the same TODO(audit D.1) class the file header names ("items[]/instances[]... marked
+		// TODO... rather than half-fixed"), fixed here 2026-08-29 for instances[] the same way it was
+		// fixed for spawn_many's items[] moments earlier. WORSE than spawn_many's version if left open:
+		// spawn_many's per-item model means an ignored key just leaves a default value UNUSED on an
+		// otherwise-independent item; this endpoint is ALL-OR-NOTHING, so a typo'd "rot" instead of
+		// "rotation" would have silently placed that ONE instance at rotation zero while the call
+		// reported full, unqualified success for the whole batch - a wrong VALUE with no error at all,
+		// not just a missed one.
+		static const TCHAR* const PerInstanceKeys[] = {
+			TEXT("x"), TEXT("y"), TEXT("z"), TEXT("location"), TEXT("yaw"), TEXT("rotation"), TEXT("scale") };
+
 		TArray<FTransform> Xforms;
 		Xforms.Reserve(Items->Num());
 		{
@@ -1171,8 +1192,36 @@ namespace MifBridge
 			{
 				++ItemIndex;
 				const TSharedPtr<FJsonObject>* ObjPtr = nullptr;
-				if (!V.IsValid() || !V->TryGetObject(ObjPtr) || !ObjPtr) { continue; }
+				if (!V.IsValid() || !V->TryGetObject(ObjPtr) || !ObjPtr)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("instances[%d]: not an object - each entry must be {x,y,z|location, ")
+						TEXT("rotation|yaw, scale}. No foliage was added and no actor was spawned: the ")
+						TEXT("whole instances[] array is parsed before anything is created."), ItemIndex));
+					return;
+				}
 				const TSharedRef<FJsonObject> Item = ObjPtr->ToSharedRef();
+
+				TArray<FString> UnknownInstanceKeys;
+				for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Item->Values)
+				{
+					bool bKnown = false;
+					for (const TCHAR* K : PerInstanceKeys)
+					{
+						if (Pair.Key.Equals(K, ESearchCase::IgnoreCase)) { bKnown = true; break; }
+					}
+					if (!bKnown) { UnknownInstanceKeys.Add(Pair.Key); }
+				}
+				if (UnknownInstanceKeys.Num() > 0)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("instances[%d]: unrecognised key(s) %s - accepted per-instance keys are ")
+						TEXT("x/y/z (or location), yaw/rotation, scale. No foliage was added and no ")
+						TEXT("actor was spawned: the whole instances[] array is parsed before anything ")
+						TEXT("is created."), ItemIndex, *FString::Join(UnknownInstanceKeys, TEXT(", "))));
+					return;
+				}
+
 				FVector Loc, Scale; FRotator Rot;
 				FString ItemError;
 				if (!ReadTransform(Item, TEXT("instances"), ItemIndex, Loc, Rot, Scale, ItemError))

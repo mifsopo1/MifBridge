@@ -3944,3 +3944,30 @@ cannot become one giant blocking item:
       existing items[] entry already used only accepted keys). Both engines rebuilt clean (5.3.2
       against the real DDS2 project, 5.7 via make_engine_probe.py). parity_check.py clean: 363
       endpoints, 351 MIF_BIND, no drift.
+- [x] **add_foliage_instances' per-instance TODO, the third and last place the file header named,
+      closed.** DONE 2026-08-29, same pass as spawn_many above. The file header (top of
+      MifBridgeAuthoring.cpp) named three places a silent drop could hide deeper than the top-level
+      key set: spawn_many's items[] (fixed earlier this pass), create_material_instance's apply loop
+      (already fixed by an earlier Batch M, confirmed by reading it - the header text describing it as
+      still-open was simply stale), and add_foliage_instances' instances[] - this one.
+      WORSE than the equivalent gap in spawn_many if left open: this endpoint's own PM-007 discipline
+      (docs/01_POSTMORTEMS.md) makes it deliberately ALL-OR-NOTHING - the whole instances[] array is
+      parsed before anything is created, because RunEndpoint's Cancel does not actually roll back a
+      spawned holder actor. Under that model, a typo'd key like "rot" instead of "rotation" would not
+      have failed just that one item the way spawn_many's per-item model would - it would have silently
+      applied a WRONG DEFAULT (rotation zero) to that one instance while the call reported ok:true for
+      the whole batch, with nothing anywhere naming the problem. Fixed the same way as spawn_many: a
+      PerInstanceKeys list (x, y, z, location, yaw, rotation, scale - no label/mesh/material, those are
+      top-level-only here) checked before ReadTransform, hard-failing the WHOLE call by name to match
+      the endpoint's own existing all-or-nothing model.
+      A SECOND bug found and fixed in the same pass, in the same loop: a non-object entry in
+      instances[] used to be silently `continue`d - skipped with no explanation and no failure at all,
+      which actually CONTRADICTED this endpoint's own stated all-or-nothing philosophy (a bad transform
+      correctly hard-fails; a non-object entry did not). Now hard-fails and names the index, consistent
+      with the bad-transform case right next to it.
+      tools/test_foliage_modes.py grew T205/T205b (37/37 total, every pre-existing check unaffected -
+      the existing grid() helper only ever used x/y/z, already inside the accepted set).
+      Updated the file's own header comment to state plainly that all three examples it named are now
+      resolved and no TODO(audit D.1) marker remains anywhere in the file - checked with a fresh grep,
+      not assumed.
+      Both engines rebuilt clean. parity_check.py clean: 363 endpoints, 351 MIF_BIND, no drift.

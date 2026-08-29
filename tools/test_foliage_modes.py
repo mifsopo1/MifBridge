@@ -152,6 +152,43 @@ def main():
           "ignored" in (L.get("labelNote") or "").lower(), (L.get("labelNote") or "")[:200])
     check("T204 and the instances still went in", L.get("instanceCount") == 2, L.get("instanceCount"))
 
+    # ---------------------------------------------------------------- T205 per-instance key guard
+    # Added 2026-08-29 - found by grepping the source for TODO markers: the file header names this
+    # (instances[]'s per-item objects) as one of three places a silent drop could hide deeper than the
+    # top-level key set. WORSE than the equivalent bug in spawn_many if left open: this endpoint's
+    # PM-007 model is ALL-OR-NOTHING, so a typo'd key inside one instance would not have failed that
+    # one item - it would have silently applied a wrong DEFAULT value (rotation zero, say) to that one
+    # instance while the whole call reported ok:true with no error naming anything.
+    print("\n=== T205: an unrecognised key inside ONE instance hard-fails the whole call, by name ===")
+    before205 = (M.call("add_foliage_instances", {"foliageType": ft, "instances": grid(1)})
+                 .get("totalForType"))
+    typo_items = grid(3)
+    typo_items[1]["rot"] = 90
+    q = M.call("add_foliage_instances", {"foliageType": ft, "instances": typo_items})
+    check("T205 the call is refused, not silently accepted with the typo ignored",
+          q.get("ok") is False, json.dumps(q)[:220])
+    check("T205 the refusal names the item index", "instances[1]" in (q.get("error") or ""),
+          (q.get("error") or "")[:220])
+    check("T205 and names the actual bad key", "rot" in (q.get("error") or ""),
+          (q.get("error") or "")[:220])
+    after205 = M.call("add_foliage_instances", {"foliageType": ft, "instances": grid(1)})
+    check("T205 nothing from the refused call was added - true all-or-nothing, matching PM-007",
+          after205.get("totalForType") == before205 + 1,
+          "before=%s after=%s (expected before+1, i.e. only THIS probe call's own instance)"
+          % (before205, after205.get("totalForType")))
+
+    print("\n=== T205b: a non-object entry now explains itself instead of vanishing silently ===")
+    before205b = after205.get("totalForType")
+    mixed = grid(2) + ["not-an-object"]
+    q2 = M.call("add_foliage_instances", {"foliageType": ft, "instances": mixed})
+    check("T205b the call is refused", q2.get("ok") is False, json.dumps(q2)[:220])
+    check("T205b and the refusal names the offending index",
+          "instances[2]" in (q2.get("error") or ""), (q2.get("error") or "")[:220])
+    after205b = M.call("add_foliage_instances", {"foliageType": ft, "instances": grid(1)})
+    check("T205b nothing from the refused call was added",
+          after205b.get("totalForType") == before205b + 1,
+          "before=%s after=%s" % (before205b, after205b.get("totalForType")))
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:
