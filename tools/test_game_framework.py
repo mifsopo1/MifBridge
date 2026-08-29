@@ -1,0 +1,185 @@
+"""ModularGameplay: add_game_framework_receiver, add_game_framework_component_request,
+remove_game_framework_component_request.
+
+Reopened 2026-08-28 once PIE was authorised. UGameFrameworkComponentManager is a
+UGameInstanceSubsystem - unreachable from the plain editor world, which is exactly why this was
+declined earlier the same night with a real, specific technical reason (see the spec's own
+re-examination entry). Once Andre lifted the standing no-PIE rule and asked directly for live PIE
+endpoint testing, the wall that had blocked this was simply gone.
+
+Checked first, not assumed: no base engine Pawn/Character/Controller class calls
+AddGameFrameworkComponentReceiver on itself (grepped Engine/Source/Runtime/Engine - zero hits), so the
+request/receiver system only affects actors that opt in explicitly - a project pattern (Lyra's, for
+example), not an ambient engine feature. Since neither DDS2 nor Curfew has adopted it,
+add_game_framework_receiver exists as its own endpoint so a caller can register a specific actor by
+hand rather than a request silently matching nothing.
+
+T1400-T1401: the no-PIE refusal, checked BEFORE starting PIE - UGameFrameworkComponentManager genuinely
+does not exist outside PIE/a packaged game, and the endpoint says so by name rather than crashing or
+returning a confusing engine-internal error.
+
+T1402-T1406: THE REAL FLOW, live, with real PIE and a real spawned actor. Register a scratch
+StaticMeshActor as a receiver, request that every StaticMeshActor get an AudioComponent, then
+INDEPENDENTLY verify the component actually exists - not via list_components (that tool reads Blueprint
+component TEMPLATES, not live instances - checked and confirmed it is the wrong tool for this before
+reaching for it) but via list_object_properties at the deterministic sub-object path
+CreateComponentOnInstance actually creates (`<ActorPath>.<ComponentClassName>` - read straight from
+GameFrameworkComponentManager.cpp's NewObject call, not guessed). Then remove the request and verify
+the component is genuinely gone.
+
+T1407: A REAL UE LIFECYCLE NUANCE, live-verified rather than assumed either way. Immediately after
+removal, the component's sub-object path is STILL resolvable via list_object_properties -
+DestroyComponent() detaches and marks an object transient/pending-kill but does not immediately
+deallocate it; FindObject-style path resolution can still find a pending-kill object until an actual
+garbage collection pass runs. Forcing one (`run_console {command: "obj gc"}`) makes the object
+genuinely unresolvable. This suite checks BOTH states explicitly so this nuance stays documented rather
+than silently misread as a bug (or the removal endpoint silently misread as broken).
+
+T1408-T1411: refusals checked for the specific reason - a duplicate requestId while one is still
+active, a componentClass that isn't an ActorComponent, removing a requestId that was never created.
+"""
+import json
+import sys
+import time
+
+import mifaudit as M
+
+
+PASS, FAIL = [], []
+
+
+def check(name, cond, detail=""):
+    (PASS if cond else FAIL).append(name if cond else (name, detail))
+    print(("  PASS  " if cond else "  FAIL  ") + name + ("" if cond else "   " + str(detail)))
+
+
+def wait_for_pie_state(target, timeout=30):
+    start = time.time()
+    while time.time() - start < timeout:
+        s = M.raw_post("pie_status", {})
+        if s.get("state") == target:
+            return s
+        time.sleep(1)
+    return M.raw_post("pie_status", {})
+
+
+def main():
+    if not M.wait_for_bridge(timeout=900):
+        print("bridge never came up")
+        return 1
+
+    st = int(time.time() % 100000)
+    request_id = "MifTestRequest%d" % st
+
+    # ------------------------------------------------------------------ T1400-T1401 no-PIE refusal
+    print("\n=== T1400-T1401: refuses cleanly outside PIE, before anything else is tried ===")
+    no_pie = M.call("add_game_framework_receiver", {"actorPath": "whatever"})
+    check("T1400 add_game_framework_receiver refuses with no PIE running", no_pie.get("ok") is False, no_pie)
+    check("T1400 the refusal names the real reason (no UGameInstance), not a generic error",
+          "UGameInstance" in (no_pie.get("error") or ""), no_pie.get("error"))
+
+    no_pie2 = M.call("add_game_framework_component_request", {
+        "receiverClass": "/Script/Engine.StaticMeshActor", "componentClass": "/Script/Engine.AudioComponent"})
+    check("T1401 add_game_framework_component_request refuses with no PIE running",
+          no_pie2.get("ok") is False, no_pie2)
+
+    # ------------------------------------------------------------------ T1402-T1406 the real flow, live
+    print("\n=== T1402-T1406: the real flow - register a receiver, request a component, verify it, remove it ===")
+    # start_pie/stop_pie are in mifaudit's own DENY list - a guard against a BLIND sweep starting PIE,
+    # not against this: a deliberate, narrowly-scoped, immediately-paired start/stop.
+    started = M.raw_post("start_pie", {})
+    check("T1402 start_pie accepted", started.get("ok") is True, started)
+    running_status = wait_for_pie_state("running")
+    check("T1402 PIE actually reached state=running", running_status.get("state") == "running", running_status)
+
+    if running_status.get("state") != "running":
+        print("cannot continue without a running PIE session")
+        return 3
+
+    spawned = M.call("spawn_actor_in_pie", {
+        "class": "StaticMeshActor", "location": {"x": 0, "y": 0, "z": 0}, "label": "MifGFTestActor%d" % st})
+    check("T1402 (setup) scratch actor spawned in PIE", spawned.get("ok") is True, json.dumps(spawned)[:200])
+    actor_path = spawned.get("actor", {}).get("actorPath")
+
+    receiver = M.call("add_game_framework_receiver", {"actorPath": actor_path})
+    check("T1403 add_game_framework_receiver succeeds", receiver.get("ok") is True, receiver)
+
+    req = M.call("add_game_framework_component_request", {
+        "receiverClass": "/Script/Engine.StaticMeshActor", "componentClass": "/Script/Engine.AudioComponent",
+        "requestId": request_id})
+    check("T1404 add_game_framework_component_request succeeds", req.get("ok") is True, req)
+    check("T1404 it echoes back the requestId we gave it", req.get("requestId") == request_id, req)
+
+    # NOT list_components - that tool reads Blueprint component TEMPLATES, not live PIE instances.
+    # CreateComponentOnInstance (GameFrameworkComponentManager.cpp) names the new component after its
+    # CLASS exactly (NewObject<UActorComponent>(ActorInstance, ComponentClass, ComponentClass->GetFName())),
+    # so the sub-object path is deterministic.
+    component_path = actor_path + ".AudioComponent"
+    exists = M.call("list_object_properties", {"objectPath": component_path})
+    check("T1405 the AudioComponent genuinely exists on the actor - independently verified, not just ok:true",
+          exists.get("ok") is True and exists.get("class") == "AudioComponent",
+          "path=%s ok=%s class=%s" % (component_path, exists.get("ok"), exists.get("class")))
+
+    removed = M.call("remove_game_framework_component_request", {"requestId": request_id})
+    check("T1406 remove_game_framework_component_request succeeds", removed.get("ok") is True, removed)
+
+    # ------------------------------------------------------------------ T1407 the real UE lifecycle nuance
+    print("\n=== T1407: a destroyed component stays resolvable-by-path until an actual GC pass runs ===")
+    still_findable = M.call("list_object_properties", {"objectPath": component_path})
+    check("T1407 immediately after removal the path is STILL resolvable (DestroyComponent does not "
+          "instantly deallocate) - this is expected, not a sign removal failed",
+          still_findable.get("ok") is True, still_findable)
+
+    # run_console is in mifaudit's own DENY list too ("drives an external process") - the same
+    # documented, deliberate, narrowly-scoped bypass as start_pie/stop_pie above.
+    M.raw_post("run_console", {"command": "obj gc"})
+    time.sleep(1)
+    gone = M.call("list_object_properties", {"objectPath": component_path})
+    check("T1407 after forcing garbage collection the component is genuinely gone",
+          gone.get("ok") is False, gone)
+
+    # ------------------------------------------------------------------ T1408-T1411 refusals, exact reason
+    print("\n=== T1408-T1411: refusals checked for the specific reason ===")
+    req2 = M.call("add_game_framework_component_request", {
+        "receiverClass": "/Script/Engine.StaticMeshActor", "componentClass": "/Script/Engine.AudioComponent",
+        "requestId": request_id})
+    check("T1408 (setup) a fresh request under the same id succeeds now that the old one was removed",
+          req2.get("ok") is True, req2)
+
+    dupe = M.call("add_game_framework_component_request", {
+        "receiverClass": "/Script/Engine.StaticMeshActor", "componentClass": "/Script/Engine.AudioComponent",
+        "requestId": request_id})
+    check("T1408 a duplicate requestId while one is still active is refused", dupe.get("ok") is False, dupe)
+    check("T1408 refusal names the id already in use", request_id in (dupe.get("error") or ""), dupe.get("error"))
+
+    bad_component = M.call("add_game_framework_component_request", {
+        "receiverClass": "/Script/Engine.StaticMeshActor", "componentClass": "/Script/Engine.StaticMeshActor",
+        "requestId": "MifBadRequest%d" % st})
+    check("T1409 a componentClass that is not an ActorComponent is refused", bad_component.get("ok") is False,
+          bad_component)
+
+    missing_remove = M.call("remove_game_framework_component_request", {"requestId": "MifNeverExisted%d" % st})
+    check("T1410 removing a requestId that was never created is refused", missing_remove.get("ok") is False,
+          missing_remove)
+
+    missing_actor = M.call("add_game_framework_receiver", {"actorPath": "/Temp/NoSuchWorld.NoSuchActor"})
+    check("T1411 registering a receiver for a nonexistent actor is refused", missing_actor.get("ok") is False,
+          missing_actor)
+
+    # cleanup - release the second request too
+    M.call("remove_game_framework_component_request", {"requestId": request_id})
+
+    M.raw_post("stop_pie", {})
+    stopped_status = wait_for_pie_state("stopped")
+    check("(cleanup) PIE stopped cleanly", stopped_status.get("state") == "stopped", stopped_status)
+
+    print("\n" + "=" * 72)
+    print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
+    for x in FAIL:
+        print("  FAILED: %s\n          %s" % x)
+    print("=" * 72)
+    return 1 if FAIL else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

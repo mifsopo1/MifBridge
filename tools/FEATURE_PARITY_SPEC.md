@@ -3626,3 +3626,46 @@ cannot become one giant blocking item:
       identically in both. tools/test_livelink.py: 21/21, both engines rebuilt clean via Build.bat +
       buildcheck.py. parity_check.py clean (354 endpoints, 342 MIF_BIND, no drift - LiveLink no longer
       in PLUGIN IDLE, down to 4: ChaosVehiclesPlugin, MassEntity, ModelViewViewModel, ModularGameplay).
+- [x] **ModularGameplay - the "blocked by no-PIE" decline unblocked itself the moment PIE was
+      authorised.** DONE 2026-08-28. UGameFrameworkComponentManager is a UGameInstanceSubsystem,
+      unreachable from the plain editor world - a real, specific technical wall when it was first
+      re-examined earlier the same night, not a "nobody needs it" excuse. That wall came down when
+      Andre lifted the standing no-PIE rule ("use pie for anything you need... do whatever is needed",
+      see [[feedback-pie-authorized]]) and asked directly for live PIE endpoint testing.
+      CHECKED FIRST, not assumed: grepped Engine/Source/Runtime/Engine for any base Pawn/Character/
+      Controller class calling AddGameFrameworkComponentReceiver on itself - zero hits. The request/
+      receiver system is not an ambient engine feature; it is a pattern a PROJECT's own classes opt
+      into deliberately (Lyra is the canonical example), and neither DDS2 nor Curfew has adopted it.
+      So add_game_framework_receiver is its own endpoint rather than assumed automatic - a caller
+      registers a specific actor explicitly instead of a request silently matching nothing.
+      Three endpoints, MifBridgeGameFramework.cpp (new file), MIF_WITH_MODULARGAMEPLAY-guarded (the
+      module was linked back on 2026-08-26 and never used until now):
+        add_game_framework_receiver - registers one actor as a component-request receiver.
+        add_game_framework_component_request - every CURRENT and FUTURE receiver of a given actor
+          class gets an instance of a given component class, live. Returns a requestId (caller-given
+          or auto-generated) needed to release it later - the request HANDLE must stay alive for the
+          effect to persist (per the manager's own documented contract: destroying it "will remove the
+          associated request from the system" and immediately strips the component from every current
+          receiver), so this file holds it in a file-local static registry, the same shape as
+          MifBridgeLiveLink.cpp's GMifLiveLinkSource before it.
+        remove_game_framework_component_request - releases a request by id.
+      VERIFIED LIVE with real start_pie/spawn_actor_in_pie/stop_pie, not simulated: spawned a scratch
+      StaticMeshActor in PIE, registered it as a receiver, requested every StaticMeshActor get an
+      AudioComponent, then independently confirmed the component genuinely exists - NOT via
+      list_components (that tool reads Blueprint component TEMPLATES, checked and confirmed it is the
+      wrong tool before reaching for it) but via list_object_properties at the deterministic sub-object
+      path CreateComponentOnInstance actually creates (read straight from
+      GameFrameworkComponentManager.cpp's own NewObject call: `<ActorPath>.<ComponentClassName>`, not
+      guessed). Removed the request and confirmed the component was really gone.
+      A REAL UE LIFECYCLE NUANCE FOUND AND DOCUMENTED ALONG THE WAY: immediately after removal the
+      component's path was STILL resolvable via list_object_properties - DestroyComponent() detaches
+      and marks an object transient/pending-kill but does not instantly deallocate it, and
+      FindObject-style path resolution can still find a pending-kill object until an actual garbage
+      collection pass runs. Forcing one (`run_console {command: "obj gc"}`) made it genuinely
+      unresolvable. Documented in both the handler's own file comment and the test suite rather than
+      left to read as a bug in the removal endpoint.
+      tools/test_game_framework.py: 20/20, both engines rebuilt clean via Build.bat + buildcheck.py on
+      the first attempt (both header diffs against 5.7 checked beforehand - only UE_API macro noise and
+      an added, defaulted third parameter on AddComponentRequest, which does not affect the 2-arg call
+      used here). parity_check.py clean (357 endpoints, 345 MIF_BIND, no drift - ModularGameplay no
+      longer in PLUGIN IDLE, down to 3: ChaosVehiclesPlugin, MassEntity, ModelViewViewModel).

@@ -1584,6 +1584,14 @@ namespace MifBridge
 	MIF_DECL(push_livelink_transform);
 	MIF_DECL(describe_livelink_subject);
 
+	// MODULAR GAMEPLAY (MifBridgeGameFramework.cpp). Plugin-guarded (MIF_WITH_MODULARGAMEPLAY).
+	// Reopened 2026-08-28 once PIE was authorised - UGameFrameworkComponentManager is a
+	// UGameInstanceSubsystem, unreachable from the plain editor world, which is why this was
+	// declined earlier the same night before that authorisation.
+	MIF_DECL(add_game_framework_receiver);
+	MIF_DECL(add_game_framework_component_request);
+	MIF_DECL(remove_game_framework_component_request);
+
 	// DATA LAYERS - the WRITE half (MifBridgeStreaming.cpp). Unblocked 2026-08-26 when Andre
 	// authorised the DataLayerEditor dependency. SetDataLayerVisibility returns VOID, so both of
 	// these read the state back and report verified separately from changed.

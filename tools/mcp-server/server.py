@@ -3374,6 +3374,25 @@ def describe_livelink_subject(subject_name: str) -> dict:
 
 
 @mcp.tool()
+def add_game_framework_receiver(actor_path: str) -> dict:
+    "Register ONE actor as a UGameFrameworkComponentManager receiver, opting it into add_game_framework_component_request's auto-attach system. Required first - PIE only (UGameFrameworkComponentManager is a GameInstanceSubsystem, unreachable from the plain editor), and required PER ACTOR since nothing in the engine registers this automatically (checked: no base Pawn/Character/Controller class does it on its own - it is a pattern a project's own classes opt into, like Lyra does, not an ambient feature)."
+    return _post("add_game_framework_receiver", actorPath=actor_path)
+
+
+@mcp.tool()
+def add_game_framework_component_request(receiver_class: str, component_class: str, request_id: str = None) -> dict:
+    "Request that every CURRENT and FUTURE receiver actor of receiver_class (registered via add_game_framework_receiver) get an instance of component_class, live. PIE only. Returns a requestId (echoed back if you passed one, otherwise auto-generated) - keep it, you need it to call remove_game_framework_component_request later, which immediately strips the component from every current receiver. The request handle stays alive in the bridge for the editor session; it is not automatically released when PIE ends."
+    return _post("add_game_framework_component_request", receiverClass=receiver_class,
+                 componentClass=component_class, requestId=request_id)
+
+
+@mcp.tool()
+def remove_game_framework_component_request(request_id: str) -> dict:
+    "Release a component request created by add_game_framework_component_request. Every current receiver actor of that request's class immediately loses the component - the manager's own documented behavior, not something this endpoint does by hand."
+    return _post("remove_game_framework_component_request", requestId=request_id)
+
+
+@mcp.tool()
 def create_mesh_boolean(target_path: str, tool_path: str, operation: str, output_path: str,
                         tool_offset_x: float = None, tool_offset_y: float = None, tool_offset_z: float = None) -> dict:
     "Combine two EXISTING StaticMesh assets (union, intersection, or subtract) into a THIRD, new StaticMesh at output_path (must not already exist). tool_offset_x/y/z (default 0) translate tool_path before the operation, so it actually overlaps target_path - two meshes both centered at the origin need no offset. Both inputs are read the same way describe_dynamic_mesh reads them - a real COOKED mesh's editor-only geometry data is usually stripped, so this works best on meshes create_procedural_mesh made. Returns real read-back vertexCount/triangleCount/bounds. Fails cleanly (not silently) if the operation produces an empty result, e.g. a subtract that removes everything."
