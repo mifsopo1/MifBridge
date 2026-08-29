@@ -4372,3 +4372,40 @@ cannot become one giant blocking item:
       except-branch is not independently exercised by a live test (would need deliberately
       reproducing the hang, which this pass declined to do given the cost already paid finding it) -
       said honestly rather than claimed proven.
+
+## coverage_gaps.py's STALE check false-positives on external provider endpoints, 2026-08-29
+
+Ran param_reach.py (clean, matches its own read baseline exactly - a real negative result, the tool's
+own design already guards against a shallow "0 open" reading) and coverage_gaps.py fresh against the
+live 363-endpoint bridge. The latter's STALE-detector flagged 12 names - all `kr_*` - as "in the
+snapshot but no longer exist in source." They are not stale: `kr_*` is a sibling plugin,
+MifKismetReconstructor, registering its own endpoints through MifBridgeEndpointRegistry.h's provider
+pattern (`RegisterExternalEndpoint`, 12 `Reg(TEXT("kr_..."), ...)` call sites in
+`MifKismetReconstructor/Source/MifKismetReconstructor/Private/MifKrBridgeEndpoints.cpp`). They
+legitimately never appear as `MIF_DECL` in MifBridgeHandlers.h - that split is the whole point of the
+provider mechanism - so coverage_gaps.py's `_live_decl_names()`, which only reads MifBridgeHandlers.h,
+would flag these same 12 names on every single future run, forever. A false alarm that never clears is
+worse than no alarm: it trains whoever reads the output to skip the STALE banner, which is exactly the
+"crying wolf" failure this file's own docstring says it exists to prevent (the tool was written
+specifically because a real staleness bug went unnoticed for two days in 2026-08-28).
+
+FIXED in `tools/coverage_gaps.py`: `_live_decl_names()` now also reads the sibling provider file
+(`EXTERNAL_PROVIDERS` list, one entry today) and extracts its `Reg(TEXT("name"), ...)` call sites the
+same way it extracts `MIF_DECL(name)` from MifBridgeHandlers.h, unioning both sets before the diff.
+Missing provider file is handled the same as a missing MifBridgeHandlers.h always was (caught, skipped,
+never a hard failure) so a checkout without the sibling plugin degrades gracefully rather than crashing.
+Verified: STALE banner is gone on a fresh run, `kr_*` no longer appears anywhere in the output. Pure
+Python, no C++ touched, no engine build needed.
+
+While there, checked the 8 non-`kr_` endpoints coverage_gaps.py still lists as "named nowhere"
+(`add_get_array_item`, `add_make_map`, `add_self`, `add_sequence`, `pcg_cleanup`, `pcg_generate`,
+`save_dirty_packages`, `save_level_as`) rather than trusting the name-match alone. All 8 are already
+accounted for, each with its own dated reasoning already written down before this pass: the four `add_*`
+ones are dynamically covered by test_node_spawns.py's T334 (driven off describe_endpoint's live
+registry, so the literal name is never typed as a quoted string and the static matcher cannot see it -
+documented there since 2026-08-28); `pcg_generate`/`pcg_cleanup` are declined in test_uncovered_reads5.py
+because PCG has no node-authoring endpoint to build real graph content against (re-checked against
+current MifBridgeHandlers.h - still exactly 2 `pcg_*` endpoints, claim still holds); `save_dirty_packages`
+/`save_level_as` are declined there under the standing no-save rule, which is still in force (distinct
+from the PIE rule Andre lifted 2026-08-28 - see feedback-pie-authorized.md). Zero new test-coverage work
+needed; the only real defect in this whole thread was the tool's own false-positive banner.

@@ -35,6 +35,7 @@
    "test_node_spawns.py"
   ],
   "add_branch": [
+   "test_anim_nodes.py",
    "test_confirm_gated.py",
    "test_find_and_move.py",
    "test_node_spawns.py",
@@ -73,6 +74,7 @@
    "test_node_spawns.py"
   ],
   "add_custom_event": [
+   "test_find_and_move.py",
    "test_node_spawns.py",
    "test_pinlifetime.py"
   ],
@@ -370,6 +372,7 @@
    "test_material_graph.py"
   ],
   "connect_pins": [
+   "test_anim_nodes.py",
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_graph_patch.py",
@@ -474,6 +477,7 @@
    "test_uncovered_reads5.py"
   ],
   "create_material_instance": [
+   "test_material_undo.py",
    "test_material_write.py"
   ],
   "create_mesh_boolean": [
@@ -515,6 +519,7 @@
    "test_interfaces.py",
    "test_levelsnapshots.py",
    "test_macro_dispatch.py",
+   "test_material_undo.py",
    "test_material_write.py",
    "test_mesh_boolean.py",
    "test_modal_guard.py",
@@ -547,6 +552,7 @@
   ],
   "delete_level_actor": [
    "test_perf_stats.py",
+   "test_uncovered_reads7.py",
    "test_unknown_endpoint.py"
   ],
   "delete_material_expression": [
@@ -597,6 +603,7 @@
    "test_mvvm.py"
   ],
   "describe_niagara_system": [
+   "test_create_asset.py",
    "test_niagara.py"
   ],
   "describe_package": [
@@ -713,6 +720,7 @@
    "test_snap_ground.py"
   ],
   "get_node": [
+   "test_anim_nodes.py",
    "test_array_wildcard_durability.py",
    "test_confirm_gated.py",
    "test_find_and_move.py",
@@ -897,6 +905,7 @@
   ],
   "list_material_parameters": [
    "test_material_params.py",
+   "test_material_undo.py",
    "test_material_write.py"
   ],
   "list_morph_targets": [
@@ -960,6 +969,7 @@
    "test_uncovered_reads7.py"
   ],
   "list_transactions": [
+   "test_material_undo.py",
    "test_perf_stats.py",
    "test_spawn_many.py",
    "test_transactions.py",
@@ -1097,10 +1107,12 @@
    "test_pins.py"
   ],
   "redo_transactions": [
+   "test_material_undo.py",
    "test_transactions.py"
   ],
   "refresh_node": [
-   "test_array_wildcard_durability.py"
+   "test_array_wildcard_durability.py",
+   "test_find_and_move.py"
   ],
   "reimport_asset": [
    "test_uncovered_reads8.py"
@@ -1149,6 +1161,7 @@
   ],
   "remove_node": [
    "test_confirm_gated.py",
+   "test_find_and_move.py",
    "test_node_spawns.py",
    "test_recipes.py"
   ],
@@ -1181,6 +1194,7 @@
    "test_modal_guard.py"
   ],
   "rename_event": [
+   "test_find_and_move.py",
    "test_node_spawns.py"
   ],
   "rename_event_dispatcher": [
@@ -1249,6 +1263,7 @@
    "test_pinlifetime.py",
    "test_rollback_real.py",
    "test_safety_gate.py",
+   "test_self_audit_modes.py",
    "test_selfpin.py",
    "test_set_struct_member.py",
    "test_simplified_collision_guard.py",
@@ -1317,6 +1332,7 @@
    "test_ik_goals_solvers.py"
   ],
   "set_material_parameter": [
+   "test_material_undo.py",
    "test_material_write.py"
   ],
   "set_niagara_component_parameter": [
@@ -1468,6 +1484,7 @@
    "test_pie_family.py"
   ],
   "undo_transactions": [
+   "test_material_undo.py",
    "test_transactions.py",
    "test_undo_integrity.py"
   ],

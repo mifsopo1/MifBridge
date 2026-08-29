@@ -46,6 +46,17 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 HANDLERS_H = os.path.join(os.path.dirname(HERE), "Source", "MifBridge", "Private", "MifBridgeHandlers.h")
 
+# Endpoints registered by SIBLING plugins via RegisterExternalEndpoint (MifBridgeEndpointRegistry.h's
+# provider pattern) never appear as MIF_DECL in MifBridgeHandlers.h - that is the whole point of the
+# provider split. Without this, every one of them is permanent, unfixable "stale noise": the 12 kr_*
+# endpoints MifKismetReconstructor registers were flagged STALE on every single run (found 2026-08-29),
+# which trains a reader to skip the warning - exactly the "crying wolf" failure this file's own
+# docstring exists to prevent. So a provider's own Reg(TEXT("name"), ...) call sites count as live too.
+EXTERNAL_PROVIDERS = [
+    os.path.join(os.path.dirname(HERE), "..", "MifKismetReconstructor",
+                 "Source", "MifKismetReconstructor", "Private", "MifKrBridgeEndpoints.cpp"),
+]
+
 
 def _live_decl_names():
     """MIF_DECL(...) names straight from source - no editor needed, same extraction parity_check.py
@@ -55,7 +66,14 @@ def _live_decl_names():
         text = open(HANDLERS_H, encoding="utf-8").read()
     except OSError:
         return None
-    return set(re.findall(r"^\s*MIF_DECL\(([A-Za-z0-9_]+)\)", text, re.MULTILINE))
+    names = set(re.findall(r"^\s*MIF_DECL\(([A-Za-z0-9_]+)\)", text, re.MULTILINE))
+    for provider_path in EXTERNAL_PROVIDERS:
+        try:
+            provider_text = open(provider_path, encoding="utf-8").read()
+        except OSError:
+            continue  # sibling plugin not present in this checkout - nothing to add, nothing to break
+        names |= set(re.findall(r'\bReg\(\s*TEXT\("([A-Za-z0-9_]+)"\)', provider_text))
+    return names
 
 
 def main():
