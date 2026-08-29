@@ -717,9 +717,14 @@ namespace MifBridge
 	//   4. a value that parses as neither scalar nor vector is an error NAMING the parameter,
 	//      never a skipped map entry (the old `continue` was itself a silent drop).
 	// Validation is complete BEFORE the first write, so a rejected call mutates nothing.
-	// TODO(audit D.1): this handler never calls MIC->Modify(), so its writes are invisible to the
-	// blanket transaction and Ctrl-Z does not restore the previous parameter values. Separate
-	// (undo-correctness) bug from D-2; left untouched here so this fix stays one concern.
+	// The audit-D.1 undo-correctness TODO that used to live here is FIXED - MIC->Modify() is called
+	// below, right before the first write (search "Modify() BEFORE the first write" in this
+	// function). Verified live 2026-08-29, not just read: set a scalar, confirmed
+	// list_transactions shows a real "Mif Bridge: set_material_parameter" entry (not popped as
+	// transient), called undo_transactions, and confirmed the parameter genuinely reverted. The
+	// stale comment describing the bug as still-open was the actual defect by the time this was
+	// checked - the fix had shipped, the comment above the function just never caught up. See
+	// tools/test_material_undo.py.
 	void H_set_material_parameter(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,

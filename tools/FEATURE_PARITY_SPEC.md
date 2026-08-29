@@ -3896,3 +3896,27 @@ cannot become one giant blocking item:
       tools/test_self_audit_modes.py: 10/10. parity_check.py clean: 363 endpoints, 351 MIF_BIND, no
       drift, param reach 215/215 baseline (down from 221 at the start of this sweep - two batches, six
       parameters total closed).
+- [x] **set_material_parameter's undo-correctness TODO was stale - the fix had already shipped,
+      just untested and undocumented.** DONE (verified) 2026-08-29. Found by a FOURTH search method
+      this session, different from coverage_gaps.py, param_reach.py and re-reading declined spec
+      entries: grepping the C++ source directly for TODO/FIXME markers. A comment above
+      H_set_material_parameter (MifBridgeAuthoring.cpp) read "TODO(audit D.1): this handler never
+      calls MIC->Modify(), so its writes are invisible to the blanket transaction and Ctrl-Z does not
+      restore the previous parameter values" - a real, serious-sounding, self-documented bug.
+      Reading further into the SAME function found `MIC->Modify()` already called, correctly, right
+      before the first write, with its own explanatory comment. The TODO at the top of the function
+      was simply never removed once the fix landed lower down - exactly the "editing by pattern
+      rather than reading it" mistake this spec has caught itself making before (the PCG entry,
+      earlier in this file).
+      VERIFIED LIVE before touching anything, not trusted from reading code alone: created a scratch
+      MaterialInstanceConstant from a real DDS2 master material (PoleCableMat), set its Wind_Intensity
+      scalar to 42, confirmed list_transactions recorded a genuine NEW entry titled for this call (not
+      popped as a no-op transient - the exact failure the stale TODO described), called
+      undo_transactions and confirmed the value genuinely reverted to the parent's default, then
+      redo_transactions and confirmed it came back - a full round trip.
+      Fixed the stale comment to say what actually happened rather than delete it outright (the
+      history of a real bug and its fix is worth keeping). Wrote tools/test_material_undo.py (new
+      file, 12/12) to lock the property in permanently - this specific undo-correctness behavior had
+      NO test before, resting entirely on a comment nobody had re-verified.
+      NO BEHAVIOR CHANGED - comment-only C++ edit, no rebuild needed. parity_check.py clean: 363
+      endpoints, 351 MIF_BIND, no drift.
