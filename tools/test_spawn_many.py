@@ -182,8 +182,11 @@ def main():
     # was a pattern.
     check("T545 one note per refused label, not just the last", len(notes) == 3,
           "labelNotes has %d entries for 3 refused labels: %s" % (len(notes), json.dumps(notes)[:220]))
+    # bool(notes) first: all() over an empty range is vacuously True, which would print a
+    # misleading PASS right next to T545's own len(notes)==3 FAIL if labelNotes ever came back
+    # empty - the exact trap audit_vacuous_checks.py exists to catch (found live, 2026-08-29).
     check("T545 and each note carries its item index",
-          all(("items[%d]" % i) in str(notes[i]) for i in range(min(3, len(notes)))),
+          bool(notes) and all(("items[%d]" % i) in str(notes[i]) for i in range(min(3, len(notes)))),
           json.dumps(notes)[:260])
     # The old single-valued field must be gone, or callers keep reading the one that lied.
     check("T545 the old single-valued labelNote field is gone", "labelNote" not in r,

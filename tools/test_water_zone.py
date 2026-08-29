@@ -193,6 +193,45 @@ def main():
               "render" in str(r.get("coverageWarning", "")), r.get("coverageWarning"))
 
     print("")
+    print("=== T737 [found 2026-08-29 by audit_postconditions.py]: a padded label is trimmed, not lied about ===")
+    # SetActorLabel is void and can silently refuse or trim - create_water_body/create_water_zone
+    # both called it raw. The `label` field already read the real name back either way, so nobody was
+    # ever told a wrong name - but nothing called out a mismatch, so noticing one meant diffing the
+    # request against the response by hand. Fixed with the same SetActorLabelChecked house pattern
+    # already proven for duplicate_actors/spawn_many; this proves it landed here too.
+    padded = "  MifZonePadded_%d  " % STAMP
+    r = M.call("create_water_zone", {"x": 500000.0 + STAMP, "y": 500000.0,
+                                     "extentX": 5000, "extentY": 5000, "label": padded})
+    check("T737 the zone is created", r.get("ok") is True, json.dumps(r)[:220])
+    if r.get("ok"):
+        check("T737 the trimmed label is what actually landed",
+              r.get("label") == padded.strip(), r.get("label"))
+        check("T737 and labelNote explains it was trimmed, not silent",
+              "trimmed" in str(r.get("labelNote", "")).lower(), r.get("labelNote"))
+
+    print("")
+    print("=== T737b: create_water_body gets the same labelNote treatment ===")
+    padded_body = "  MifLakePadded_%d  " % STAMP
+    r = M.call("create_water_body", {"type": "Lake", "x": 500000.0 + STAMP, "y": 900000.0, "z": 0.0,
+                                     "label": padded_body})
+    check("T737b the body is created", r.get("ok") is True, json.dumps(r)[:220])
+    if r.get("ok"):
+        check("T737b the trimmed label is what actually landed",
+              r.get("label") == padded_body.strip(), r.get("label"))
+        check("T737b and labelNote explains it was trimmed",
+              "trimmed" in str(r.get("labelNote", "")).lower(), r.get("labelNote"))
+
+    print("")
+    print("=== T738: an ordinary label needs no note at all ===")
+    r = M.call("create_water_zone", {"x": 500000.0 + STAMP, "y": 700000.0,
+                                     "extentX": 5000, "extentY": 5000,
+                                     "label": "MifZoneOrdinary_%d" % STAMP})
+    check("T738 the zone is created", r.get("ok") is True, json.dumps(r)[:220])
+    if r.get("ok"):
+        check("T738 no labelNote when nothing needed explaining",
+              "labelNote" not in r, json.dumps(list(r.keys()))[:200])
+
+    print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f in FAIL:

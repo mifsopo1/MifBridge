@@ -16,4 +16,4 @@ test_niagara_params.py:108	T210 typeIndex is reported rather than a type name
 test_niagara_params.py:183	T213 vector values report the right number of floats
 test_niagara_params.py:221	T216 and every object offset is a valid index into one of them
 test_selfpin.py:130	PRESENCE of 'sourcesBefore' - T21 rows carry sourcesBefore/After
-test_spawn_many.py:178	T545 and each note carries its item index
+test_spawn_many.py:188	T545 and each note carries its item index

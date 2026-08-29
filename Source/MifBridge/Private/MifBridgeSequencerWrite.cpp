@@ -214,6 +214,21 @@ namespace MifBridge
 			}
 		}
 
+		// REFUSE BEFORE MUTATING. ULevelSequence::BindPossessableObject's ENTIRE body is
+		// `if (Context) { BindingReferences.AddBinding(...); }` (LevelSequence.cpp:424-430) - if
+		// Context is null it is a silent no-op, void, with no way to report it. Context here is
+		// Actor->GetWorld(), so checking it BEFORE AddPossessable means a doomed bind never gets as
+		// far as creating an orphaned slot - "TWO STEPS, and missing the second is the classic
+		// sequencer mistake" (the comment this replaces) described the risk correctly and then did not
+		// guard it. Found by audit_postconditions.py, 2026-08-29.
+		if (!Actor->GetWorld())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no World (BindPossessableObject silently no-ops without one). NOTHING ")
+				TEXT("was changed."), *Actor->GetActorLabel()));
+			return;
+		}
+
 		Scene->Modify();
 		const FGuid Guid = Scene->AddPossessable(Actor->GetActorLabel(), Actor->GetClass());
 		if (!Guid.IsValid())
@@ -222,9 +237,6 @@ namespace MifBridge
 						   "reason. NOTHING was changed."));
 			return;
 		}
-		// TWO STEPS, and missing the second is the classic sequencer mistake: AddPossessable creates
-		// the SLOT, BindPossessableObject attaches the actual object to it. A sequence with the first
-		// and not the second has a binding that resolves to nothing and silently animates nobody.
 		Seq->BindPossessableObject(Guid, *Actor, Actor->GetWorld());
 
 		if (UPackage* Pkg = Seq->GetOutermost()) { Pkg->MarkPackageDirty(); }

@@ -4256,3 +4256,49 @@ cannot become one giant blocking item:
       method itself is now validated as worth keeping in the toolbox - six false positives correctly
       ruled out, one confirmed-impossible finding that saved a future session the same dead end, one
       correction of this entry's own too-hasty first draft.
+
+- [x] **A fresh audit_postconditions.py pass, re-run because new subsystems (Water, Sequencer,
+      GeometryScript, MetaHuman, GameFeatures) had never been checked against it.** DONE 2026-08-29.
+      9 new findings since the baseline. Judged each individually rather than blanket-accepting (a
+      first pass with `--update-baseline` accidentally did exactly that and was reverted before
+      committing - the tool's own discipline is "accept once judged," and judging 9 items in one
+      keystroke is not that).
+      THREE REAL, FIXED:
+      - `create_water_body`/`create_water_zone` (MifBridgeWater.cpp) called the void
+        `AActor::SetActorLabel` directly - the editor can silently refuse or trim a requested label
+        with no way to report it, the same shape already fixed for duplicate_actors/spawn_many
+        earlier this session. `label` in the response already read the real name back either way, so
+        nobody was ever LIED to, but nothing called out a mismatch - a caller had to diff their
+        request against the response by hand to notice. Switched both to the established
+        `SetActorLabelChecked` helper, which adds a `labelNote` field when the actual name differs
+        from what was asked for (trimmed or refused). tools/test_water_zone.py gained T737 (zone,
+        trimmed), T737b (body, trimmed), T738 (ordinary label needs no note) - 29/29 for the suite.
+      - `add_sequence_possessable` (MifBridgeSequencerWrite.cpp): its own comment already named "the
+        classic sequencer mistake" - AddPossessable creates the slot, BindPossessableObject attaches
+        the object, and a sequence with the first and not the second animates nobody - but never
+        guarded it. Read `ULevelSequence::BindPossessableObject`'s actual body
+        (LevelSequence.cpp:424-430): `if (Context) { BindingReferences.AddBinding(...); }` - a null
+        Context (Actor->GetWorld()) is a SILENT NO-OP, void, unreportable. Refuses before mutating now
+        if the actor has no World, so a doomed bind never even creates the orphaned AddPossessable
+        slot. Considered verifying via `LocateBoundObjects` instead (a full read-back) and found real
+        cross-engine API divergence - 5.7's base-class 3-arg overload is now an empty `{}` stub, the
+        real implementation moved to an `FResolveParams`-based overload - so guarding the actual
+        documented failure condition directly was both simpler and safer than chasing that split.
+        test_sequencer_authoring.py (T971) re-run clean, 12/12; the null-World case itself is not
+        independently tested - actors reachable through this bridge's own resolution path
+        (spawn_actor_in_level, UEditorActorSubsystem) are always placed in a real World, so the guard
+        is defense-in-depth for a condition that may be structurally unreachable here, the same
+        honesty already applied to docs/06 §O and §K rather than forcing a misleading test.
+      SIX FALSE POSITIVES, read and judged rather than assumed, all sharing the tool's own documented
+      blind spot ("over-reports handlers that verify via a helper or a checked bool return"):
+      `describe_dynamic_mesh`/`create_mesh_boolean` mutate only a transient GetTransientPackage()-scoped
+      UDynamicMesh used as scratch read-through memory, with every computed value (vertexCount,
+      triangleCount, bounds, etc.) fully reported - the same transient-object shape verified twice
+      already this session for GeometryScript. `save_dirty_packages` checks `bSaved` immediately after
+      every SavePackage/SaveLevel call, both branches fully reported. `set_blendspace_samples` already
+      carries the bIsValid/invalidCount fix from earlier this session. `create_metahuman_character`
+      checks `IsCharacterValid()` immediately after `InitializeMetaHumanCharacter`.
+      `add_game_framework_component_request` checks `Handle.IsValid()` immediately after
+      `AddComponentRequest`. All six accepted into the baseline with this entry as the reason.
+      Both engines built clean (5.3.2 real project, 5.7 probe). parity_check.py clean throughout: 363
+      endpoints, 351 MIF_BIND, no drift, param reach 215/215 unchanged.

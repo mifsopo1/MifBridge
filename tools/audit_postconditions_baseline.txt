@@ -7,6 +7,8 @@ low:add_macro_instance
 low:add_nav_volume
 low:bind_landscape_rvt
 low:create_landscape
+low:create_water_body
+low:create_water_zone
 low:duplicate_actors
 low:edit_container
 low:import_texture
@@ -35,6 +37,7 @@ medium:add_enhanced_input_action
 medium:add_event_dispatcher
 medium:add_format_text
 medium:add_function_call
+medium:add_game_framework_component_request
 medium:add_get_array_item
 medium:add_get_subsystem
 medium:add_ik_retarget_chain
@@ -62,8 +65,11 @@ medium:create_function
 medium:create_material
 medium:create_material_function
 medium:create_material_instance
+medium:create_mesh_boolean
+medium:create_metahuman_character
 medium:delete_asset
 medium:delete_level_actor
+medium:describe_dynamic_mesh
 medium:disconnect_pin
 medium:implement_interface_function
 medium:layout_material_expressions
@@ -75,7 +81,6 @@ medium:refresh_node
 medium:remove_component
 medium:remove_function
 medium:remove_interface
-medium:remove_node
 medium:remove_pin
 medium:remove_sublevel
 medium:remove_tree_widget
@@ -85,7 +90,9 @@ medium:rename_asset
 medium:rename_function
 medium:reparent_blueprint
 medium:revert_inherited_component
+medium:save_dirty_packages
 medium:set_actor_transform
+medium:set_blendspace_samples
 medium:set_collision
 medium:set_component_transform
 medium:set_material_parameter

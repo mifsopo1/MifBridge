@@ -447,8 +447,16 @@ namespace MifBridge
 			return;
 		}
 
+		// SetActorLabel is VOID and can silently refuse or trim a label (a name already taken, illegal
+		// characters, surrounding whitespace) - the same shape found and fixed for duplicate_actors/
+		// spawn_many earlier this session, found here by audit_postconditions.py rather than assumed
+		// absent. WaterBodySummary already reads the actual label back into the response either way,
+		// so a caller was never LIED to - but nothing called out a mismatch, so noticing one meant
+		// diffing the request against the response by hand. SetActorLabelChecked does that diffing and
+		// reports it as labelNote.
 		const FString Label = JStr(In, TEXT("label"));
-		if (!Label.IsEmpty()) { Body->SetActorLabel(Label); }
+		FString ActualLabel, LabelNote;
+		SetActorLabelChecked(Body, Label, ActualLabel, LabelNote);
 
 		// Optional shape in the same call. A river with no spline is not a river, so letting the
 		// caller do it in one round trip is worth the extra parameter.
@@ -471,6 +479,7 @@ namespace MifBridge
 		}
 
 		WaterBodySummary(Body, Out);
+		if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
 		Out->SetNumberField(TEXT("splinePointsSet"), PointsSet);
 		// NOT an unconditional "it still needs a zone" claim - that was wrong often enough to remove.
 		// VERIFIED 2026-08-28: the actor factory frequently auto-spawns its own default AWaterZone
@@ -563,8 +572,13 @@ namespace MifBridge
 			return;
 		}
 
+		// Same SetActorLabel gap as create_water_body just above in this file - void, can silently
+		// refuse or trim. label below already reads the actor's real, current name either way; this
+		// adds the explicit note a caller would otherwise have to diff the request against the
+		// response to notice.
 		const FString Label = JStr(In, TEXT("label"));
-		if (!Label.IsEmpty()) { Zone->SetActorLabel(Label); }
+		FString ActualLabel, LabelNote;
+		SetActorLabelChecked(Zone, Label, ActualLabel, LabelNote);
 		if (bHasX) { Zone->SetZoneExtent(FVector2D(ExtentX, ExtentY)); }
 
 		// Rebuild by FLAG NAME, never by value. EWaterZoneRebuildFlags::All is (~0) in both engines,
@@ -639,6 +653,7 @@ namespace MifBridge
 		}
 		Out->SetStringField(TEXT("actorPath"), Zone->GetPathName());
 		Out->SetStringField(TEXT("label"), Zone->GetActorLabel());
+		if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
 		Out->SetNumberField(TEXT("bodiesNowCovered"), Covered);
 		Out->SetNumberField(TEXT("bodiesStillWithoutZone"), Orphaned);
 		Out->SetArrayField(TEXT("stillWithoutZone"), StillOrphaned);
