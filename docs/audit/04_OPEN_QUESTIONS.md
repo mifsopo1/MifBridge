@@ -10,6 +10,12 @@
 Sources: the 12 verdict-stamped axis files, [work/LIVE_PROBES.md](work/LIVE_PROBES.md),
 [work/_BRIEF.md](work/_BRIEF.md), [00_BASELINE.md](00_BASELINE.md), [PROGRESS.md](PROGRESS.md).
 
+> **RE-CHECKED 2026-08-29 - see [PROGRESS.md](PROGRESS.md) for the full staleness note.** Two items
+> below are resolved and marked in place rather than left to read as open: §1.4 (bucket
+> reclassification) was done long ago. §1.6 (connect_pins schema fix) was genuinely still open until
+> today - found independently a different way this session, fixed, and this is the entry that shows
+> it was flagged correctly a month before anyone acted on it.
+
 ---
 
 ## 1. Policy decisions (need Andre's call)
@@ -74,6 +80,10 @@ wants it. Deciding 1.2 and 1.3 together keeps the precedent coherent.
 
 ### 1.4 Bucket reclassification of existing `describe_class` and `list_enum_values`
 
+**DONE - verified 2026-08-29.** Both are in `IsReadOnlyEndpoint`'s set today
+(MifBridgeCommon.cpp:606), with a comment citing "audit 03_GAPS_AND_RISKS.md §7.6" - this
+recommendation, acted on.
+
 Both are read-shaped but registered in the default TRANSACTED bucket
 ([00_BASELINE.md](00_BASELINE.md) — flagged `*`), so every call pushes an empty undo entry:
 exactly the pollution the read-only bucket exists to prevent. Flagged since the baseline pass
@@ -103,6 +113,18 @@ depending on the single-actor output shape. Deprecation (refuse + redirect) is t
 if Andre prefers one lane; that is a user-visible break and should be a deliberate call.
 
 ### 1.6 `connect_pins` schema fix: behaviour change to a heavily-used endpoint
+
+**DONE - 2026-08-29, over a month after this was filed.** The code had moved (the shared logic is
+now `DoConnect` in MifBridgeNodes.cpp, not `ConnectPinsChecked` at the line cited below - a
+refactor since this was written, not a sign the bug moved with it) but the bug was still exactly
+this: `Schema` was resolved via a hardcoded `K2()` helper regardless of which graph the pins
+belonged to. Found again independently this session via docs/06_CAPABILITY_ROADMAP.md rather than
+via this file, fixed by resolving the schema from the pin's own owning graph instead, verified live
+against a real AnimGraph (a pose output's fan-out is now correctly restricted the way
+`UAnimationGraphSchema` requires, which K2's schema allowed through). See
+FEATURE_PARITY_SPEC.md's dated entry and `tools/test_anim_nodes.py` T553-554 for the full account.
+This item sat correctly identified and unactioned for over a month - worth remembering as a
+concrete case for why re-reading old audit files periodically is worth the time.
 
 `ConnectPinsChecked` hardcodes the K2 schema CDO (MifBridgeCommon.cpp:1494, plus BreakPinLinks
 through the same CDO :1505–1506), so any graph whose schema overrides connection semantics

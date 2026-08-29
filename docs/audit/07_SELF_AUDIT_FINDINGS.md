@@ -1,5 +1,23 @@
 # Self-audit findings — 2026-07-29
 
+> **RE-CHECKED 2026-08-29, ONE MONTH LATER - LARGELY ACTIONED, NOT A LIVE TODO LIST.** Sampled all
+> nine numbered CRITICAL/HIGH findings against current source rather than assumed either way: #2
+> (set_variable_default wiping on non-string), #3 (batch's degraded inline backup), #4
+> (rename_variable/remove_variable silent no-ops + modal hazard), #5 (splice paths discarding
+> TryCreateConnection), #6 (paint_landscape's unchecked layer-membership promise), #7
+> (set_spline_points clearing before validating), #8 (batch silently dropping non-object ops[]
+> entries), #9 (spawn_actor_in_pie missing mesh support) are ALL fixed, several with a comment at the
+> fix site quoting this exact finding's own language. #10's raw coverage stat (132/203 handlers with
+> no RejectUnknownParams) is obsolete on its face - the codebase now has more RejectUnknownParams call
+> sites (395) than handler functions (370). #1 (RunEndpoint's transaction never rolling back a failed
+> mutation) was already self-corrected in place in this very file (see the STRUCK block below) and is
+> tracked as an ongoing architectural fact via `docs/01_POSTMORTEMS.md` PM-007, not an unfixed bug.
+> **`FEATURE_PARITY_SPEC.md` is the current, actively-maintained source of truth.** The MEDIUM/LOW
+> findings below (#11 onward) were NOT individually re-verified this pass - the sample size and hit
+> rate above make them likely also fixed, but that is an inference, not a check; read one before
+> trusting it fixed OR broken. This file stays as a historical record of a thorough, largely-heeded
+> audit, not a place to look for new work.
+
 Six independent adversarial auditors over everything implemented this session (and the
 pre-existing code it touches). Read-only pass; findings ranked by severity.
 

@@ -1,5 +1,22 @@
 # Endpoint audit — progress log
 
+> **RE-DISCOVERED 2026-08-29, A MONTH AFTER THE LAST ENTRY - READ THIS FIRST.** This whole folder
+> (`docs/audit/`) documents the 2026-07-26 to -29 audit run: 40 subagents, ~8.4M tokens, the source
+> material `FEATURE_PARITY_SPEC.md` and `docs/06_CAPABILITY_ROADMAP.md`'s own "13-agent audit"/
+> "8-domain fan-out audit" references point back to. It had gone completely unexamined this session
+> until a routine doc-hygiene pass found it. Two things worth knowing before reading further:
+> - **It is NOT dead weight.** `04_OPEN_QUESTIONS.md` §1.6 independently described connect_pins
+>   hardcoding the K2 pin-connection schema - a real bug, over a month before this session
+>   independently re-found and fixed the same thing a different way. `07_SELF_AUDIT_FINDINGS.md`'s
+>   sampled CRITICAL/HIGH findings (#2-#9) were almost all already fixed, several with a comment at
+>   the fix site quoting the finding's own language - meaning this archive genuinely got acted on,
+>   just never marked as such in its own files.
+> - **`FEATURE_PARITY_SPEC.md` is the current, actively-maintained source of truth** for what is
+>   built vs still open. This log and the axis files under `work/` are frozen at 2026-07-26 - the
+>   endpoint count alone has grown from 241 (Phase-3 close, below) to 363 since. Treat every
+>   remaining `[ ]` in this file and its siblings as "was true a month ago," not "is still open" -
+>   check FEATURE_PARITY_SPEC.md or the live source before trusting either direction.
+
 Purpose: allow an interrupted run to resume without re-deriving anything. Newest entries at the bottom.
 
 ## 2026-07-26 — Step 0 complete (baseline established)
