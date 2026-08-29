@@ -919,8 +919,21 @@ The fix is an array rather than a field - labelNotes[], or folding them into the
 spawn_many already emits per item, which has the advantage of carrying the item index. duplicate_actors
 has no errors[] array, so it needs one or the array form.
 
-NOT YET WRITTEN. Filed rather than fixed because a C++ change needs the editor closed to build, and a
-full regression was in flight at the time.
+FIXED - both, and this entry was stale. Checked 2026-08-29 rather than trusted: both
+MifBridgeAuthoring.cpp:414 (spawn_many) and :575 (duplicate_actors) now do
+`LabelNotes.Add(MakeShared<FJsonValueString>(LabelNote))` inside their per-item loop and emit
+`labelNotes[]` only when non-empty - the array form, not folded into an errors[] array. spawn_many's
+side is proven live by tools/test_spawn_many.py T545 (three refused labels in one call, three distinct
+notes, each naming its own item index, the old single-valued field confirmed gone). duplicate_actors'
+side is verified by READING the source, not by a live reproduction - matching this file's own §R
+precedent ("verified by reading, not by running") for the same honest reason: the ONLY trigger anyone
+has found for a genuine SetActorLabelChecked refusal is a WHITESPACE-ONLY wanted label (found empirically
+while writing T545 - newlines, tabs, control characters and long names all get accepted unchanged), and
+duplicate_actors' own `Wanted` is built as `SourceLabel + Suffix + N`. Getting that whole concatenation
+to be pure whitespace needs the SOURCE actor's OWN label to already be whitespace-only - which the exact
+same refusal mechanism prevents it from ever holding in the first place, the same "the broken state is
+unreachable through this bridge" shape §O documents for the duplicate-pin case. Reading the source is
+therefore the honest verification available here, not a shortcut taken instead of a harder one.
 
 **J. The harness structurally cannot clean up level actors it spawns.**
 delete_level_actor requires confirm=true, and scratch_confirm grants confirm only when every path in
