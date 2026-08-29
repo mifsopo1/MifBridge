@@ -174,8 +174,6 @@ run_console.cmd
 save_dirty_packages.dry_run
 sculpt_landscape.actorpath
 self_audit.compact
-self_audit.includeendpointdetails
-self_audit.includeendpoints
 set_blendspace_samples.blendspace
 set_collision.component
 set_current_sublevel.level

@@ -3878,3 +3878,21 @@ cannot become one giant blocking item:
       tools/param_reach_baseline.txt (217 entries now, down from 221) and the test. No engine rebuild
       needed. tools/test_find_and_move.py: 33/33. parity_check.py clean: 363 endpoints, 351 MIF_BIND, no
       drift, param reach 217/217 baseline.
+- [x] **self_audit's includeEndpointDetails / includeEndpoints - unreachable from MCP, a second
+      finding from the same param_reach.py sweep.** DONE 2026-08-29. H_self_audit (MifBridgeCommon.cpp)
+      accepts two INDEPENDENT overrides of summaryOnly - each defaults to `not summaryOnly` but can be
+      set on its own, so summaryOnly=true + includeEndpoints=true gets the compact health fields PLUS
+      the flat endpoint-name list, without the heavy per-endpoint detail rows that make the full
+      response run into the tens of KB (the exact size problem summaryOnly was built to solve in the
+      first place). The MCP tool only ever exposed the single binary summaryOnly toggle - the middle
+      ground existed in C++ and was invisible to anything driving through MCP.
+      Fixed by adding include_endpoint_details / include_endpoints (both optional, default None so
+      omitted-by-default behavior is unchanged) to the self_audit MCP wrapper.
+      tools/test_self_audit_modes.py (new file): T1720/T1721 prove both override directions actually
+      produce a response distinct from either pure mode - not just accepted-and-ignored. T1722 is a
+      pure regression check, since self_audit is called as a basic sanity/setup step throughout this
+      whole test suite and must keep behaving identically with no arguments or plain summaryOnly.
+      NO C++ CHANGED, same as the graphId fix above - pure MCP wrapper layer, no engine rebuild needed.
+      tools/test_self_audit_modes.py: 10/10. parity_check.py clean: 363 endpoints, 351 MIF_BIND, no
+      drift, param reach 215/215 baseline (down from 221 at the start of this sweep - two batches, six
+      parameters total closed).
