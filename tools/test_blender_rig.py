@@ -150,34 +150,64 @@ def main():
     # ------------------------------------------------------------------ T811 empty-state / type paths
     print("")
     print("=== T811: empty-state and object-type handling on the factory scene ===")
-    r = call("list_bones", object="Cube")
-    check("T811 list_bones refuses a MESH (not an ARMATURE)",
-          r.get("ok") is False and "ARMATURE" in str(r.get("error", "")), r.get("error"))
+    # NOT a safe assumption on a long-lived Blender session: "Cube" is only there on a pristine
+    # factory-startup scene, and run_all_suites.py's own full sweep shares ONE Blender process across
+    # every suite in the run - test_blender_mesh.py's own clear_scene call (T769) empties the scene,
+    # and anything alphabetically after it inherits that emptiness. Live-caught, not assumed: this
+    # exact sequence failed 8/48 checks with "no object named 'Cube'. Present: <scene is empty>"
+    # before this fix, in a full run_all_suites.py pass where test_blender_mesh.py ran first.
+    # Self-heals when possible (run_python is available and this session's own scene really is
+    # missing Cube) rather than just skipping, because "prove nothing" is a worse answer than "prove
+    # it after restoring the one precondition this suite needs" when restoring it is cheap, safe and
+    # scoped to exactly the primitive being tested against. probe is reused below by T812 so the
+    # availability check only ever runs once.
+    probe = call("run_python", code="pass")
+    run_python_available = probe.get("ok") is not False
+    cube_probe = call("object_info", object="Cube")
+    cube_present = cube_probe.get("ok") is not False
+    if not cube_present and run_python_available:
+        fixed = call("run_python", code="import bpy\nbpy.ops.mesh.primitive_cube_add()\n"
+                                         "bpy.context.active_object.name = 'Cube'")
+        check("T811 (setup) the scene had no 'Cube' - a factory-default one was rebuilt so this "
+              "suite does not depend on incidental state left by an earlier suite in the same "
+              "Blender session", fixed.get("ok") is not False, fixed.get("error"))
+        cube_present = fixed.get("ok") is not False
 
-    r = call("list_modifiers", object="Cube")
-    check("T811 list_modifiers on a mesh with none succeeds with an empty stack",
-          r.get("ok") is True and r.get("count") == 0 and r.get("modifiers") == [], r)
+    if not cube_present:
+        check("T811 (not exercised: the scene has no 'Cube' and run_python is disabled, so there "
+              "is no safe way to restore it)", True)
+        UNPROVEN.append("T811's empty-state/type-mismatch checks - the scene had no 'Cube' object "
+                        "(likely cleared by an earlier suite sharing this same Blender session) and "
+                        "run_python is disabled, so this suite could not safely rebuild the one "
+                        "precondition it needs.")
+    else:
+        r = call("list_bones", object="Cube")
+        check("T811 list_bones refuses a MESH (not an ARMATURE)",
+              r.get("ok") is False and "ARMATURE" in str(r.get("error", "")), r.get("error"))
 
-    r = call("list_shape_keys", object="Cube")
-    check("T811 list_shape_keys on a mesh with none succeeds", r.get("ok") is True, r)
-    check("T811 and says hasShapeKeys:false with a note",
-          r.get("hasShapeKeys") is False and bool(r.get("note")), r)
-    check("T811 and count/array agree at zero",
-          r.get("count") == 0 and r.get("shapeKeys") == [], r)
+        r = call("list_modifiers", object="Cube")
+        check("T811 list_modifiers on a mesh with none succeeds with an empty stack",
+              r.get("ok") is True and r.get("count") == 0 and r.get("modifiers") == [], r)
 
-    r = call("list_vertex_groups", object="Cube")
-    check("T811 list_vertex_groups on a mesh with none succeeds", r.get("ok") is True, r)
-    check("T811 and count/array agree at zero with a note",
-          r.get("count") == 0 and r.get("vertexGroups") == [] and bool(r.get("note")), r)
+        r = call("list_shape_keys", object="Cube")
+        check("T811 list_shape_keys on a mesh with none succeeds", r.get("ok") is True, r)
+        check("T811 and says hasShapeKeys:false with a note",
+              r.get("hasShapeKeys") is False and bool(r.get("note")), r)
+        check("T811 and count/array agree at zero",
+              r.get("count") == 0 and r.get("shapeKeys") == [], r)
 
-    r = call("object_info", object="Cube")
-    check("T811 object_info on an unrigged mesh reports armatureModifier:null",
-          r.get("ok") is True and (r.get("object") or {}).get("armatureModifier") is None, r)
+        r = call("list_vertex_groups", object="Cube")
+        check("T811 list_vertex_groups on a mesh with none succeeds", r.get("ok") is True, r)
+        check("T811 and count/array agree at zero with a note",
+              r.get("count") == 0 and r.get("vertexGroups") == [] and bool(r.get("note")), r)
+
+        r = call("object_info", object="Cube")
+        check("T811 object_info on an unrigged mesh reports armatureModifier:null",
+              r.get("ok") is True and (r.get("object") or {}).get("armatureModifier") is None, r)
 
     # ------------------------------------------------------------------ T812 the populated path
     print("")
     print("=== T812: the POPULATED path - needs run_python (off by default) ===")
-    probe = call("run_python", code="pass")
     if probe.get("ok") is False:
         check("T812 (not exercised: run_python is disabled, the correct default - "
               "nothing here builds real rig content to adopt instead)", True)

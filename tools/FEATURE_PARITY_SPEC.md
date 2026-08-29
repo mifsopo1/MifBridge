@@ -3971,3 +3971,43 @@ cannot become one giant blocking item:
       resolved and no TODO(audit D.1) marker remains anywhere in the file - checked with a fresh grep,
       not assumed.
       Both engines rebuilt clean. parity_check.py clean: 363 endpoints, 351 MIF_BIND, no drift.
+- [x] **A full 100-suite regression sweep (run_all_suites.py --once) after tonight's six fixes -
+      three real issues found, all resolved.** DONE 2026-08-29. Every one of tonight's own new/changed
+      tests (test_find_and_move.py, test_foliage_modes.py, test_material_undo.py, test_mvvm.py,
+      test_pie_family.py, test_self_audit_modes.py, test_spawn_many.py) came back green independently
+      of the isolated runs each was verified with at build time - real confirmation the six fixes hold
+      up outside isolation, not just in their own suite. 100 run(s) across 100 suites, 0 took the
+      editor down. Three suites reported failures; investigated each rather than assumed a MifBridge
+      regression:
+      1. test_blender_rig.py (8 failures, all one root cause): T811 assumed Blender's scene still had
+         its factory-default "Cube" object, but test_blender_mesh.py's own clear_scene call (T769,
+         alphabetically earlier in the same sweep, sharing ONE long-lived Blender process across every
+         suite) had emptied it. NOT a MifBridge bug - T812-814 in the same run, which build their own
+         test content, all passed cleanly, proving the actual addon endpoints work. Fixed the TEST:
+         T811 now probes whether "Cube" exists first and, if run_python is available (it was, this
+         session), self-heals by rebuilding a plain cube rather than just skipping - "prove nothing" is
+         a worse answer than restoring the one cheap precondition needed. Falls back to a documented
+         SKIP (matching T812's own established UNPROVEN pattern) when run_python is unavailable too.
+         Re-run: 49/49.
+      2. test_blender_mesh.py (1 failure): T761 checks scene_info reports background:true - correct,
+         because this suite's own header documents it must run against a Blender instance launched
+         headless via tools/blender_probe.py --serve, not an interactive GUI session. The Blender this
+         ran against tonight is Andre's own live, interactive session - CORRECTLY DECLINED as an
+         environment/usage-context mismatch, not a bug. Did not touch Andre's live Blender window to
+         "fix" this - matching the standing rule against acting on his live sessions unasked.
+      3. test_uncovered_reads4.py (1 failure): T855 checked live_coding_compile's SPECIFIC "Live Coding
+         not started" refusal reason via plain M.call({"confirm": True}) - mifaudit's guarded_payload
+         silently strips "confirm" from every payload it sends, so the call actually reached the
+         endpoint with no confirm at all and was refused for the generic "needs confirm:true" reason
+         instead, not the specific one the check claimed to verify. THE THIRD TIME this exact test-
+         writing anti-pattern was found and fixed this session (see remove_tree_widget's and
+         rename_event's own entries above) - genuinely recurring, not a one-off. live_coding_compile has
+         no asset path at all, so scratch_confirm.confirm_call (which requires one to prove
+         scratch-ness) does not apply either; fixed with M.raw_post, the same narrow bypass mifaudit's
+         own docstring documents. Re-run: 40/40.
+      Also caught up on a maintenance task the spec itself asks for during long working sessions:
+      tools/night_heartbeat.py had not been touched in this session before this sweep - touched it
+      throughout the ~2-hour sweep to keep a scheduled resumer from starting a second process against
+      the same editor.
+      No C++ or MCP wrapper changed - all three fixes were test-file-only. parity_check.py clean: 363
+      endpoints, 351 MIF_BIND, no drift, param reach 215/215 baseline (unchanged).

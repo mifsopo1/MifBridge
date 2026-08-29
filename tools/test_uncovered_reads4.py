@@ -148,14 +148,26 @@ def main():
     q = M.call("live_coding_compile", {})
     check("T855 live_coding_compile with no confirm refuses, NOTHING compiled",
           q.get("ok") is False and "confirm" in str(q.get("error", "")).lower(), q.get("error"))
-    q = M.call("live_coding_compile", {"confirm": True, "wait": True})
+    # NOT M.call below - guarded_payload strips "confirm" from every payload it sends (a guard
+    # against a blind sweep accidentally confirming something), which is exactly why the no-confirm
+    # probe above works. live_coding_compile has no asset path at all, so scratch_confirm.confirm_call
+    # cannot be used either - it requires a /Game/_Mif... path in the payload to prove scratch-ness,
+    # and there is nothing here for it to check. M.raw_post is the same narrow, deliberate bypass
+    # mifaudit's own module docstring documents for exactly this shape of call. Found live 2026-08-29
+    # during a full run_all_suites.py sweep: with confirm silently stripped, both calls below were
+    # refused for the generic "needs confirm:true" reason instead of the SPECIFIC one each check
+    # claims to verify - the wait-specific and not-started-specific refusals were never actually
+    # reached.
+    q = M.raw_post("live_coding_compile", {"confirm": True, "wait": True})
     check("T855 wait (deliberately not offered - would take the bridge off the air) is refused",
           q.get("ok") is False, q.get("error"))
+    check("T855 and refused for the SPECIFIC reason (wait), not because confirm was never sent",
+          "wait" in str(q.get("error", "")).lower(), q.get("error"))
 
     if not r.get("started"):
         # The state this whole session's editor launches actually start in: Live Coding is not
         # running until a person turns it on, so confirm:true alone still refuses.
-        q2 = M.call("live_coding_compile", {"confirm": True})
+        q2 = M.raw_post("live_coding_compile", {"confirm": True})
         check("T855 confirm:true alone still refuses when Live Coding has not been started "
               "(starting it is a person's decision, not this call's)",
               q2.get("ok") is False and "not been started" in str(q2.get("error", "")), q2.get("error"))
