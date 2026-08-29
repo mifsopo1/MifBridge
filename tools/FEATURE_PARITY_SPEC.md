@@ -3728,3 +3728,61 @@ cannot become one giant blocking item:
       (SetSourceToDestinationConversionFunction) was similarly out of scope - this batch covers plain
       type-matched property bindings only, which is exactly what the compile-error finding above proves
       is enforced correctly even without conversion-function support built yet.
+
+- [x] **The PIE-family testing sweep - 11 endpoints that already existed in source but had never been
+      named in any test suite.** DONE 2026-08-28, closing out Andre's own directive ("find all missing
+      endpoints that we have not yet covered... only report back once its 100% doner"). Unlike every
+      other entry tonight, THIS BATCH WROTE ZERO NEW C++ - every one of these 11 endpoints
+      (list_pie_actors, list_live_widgets, describe_live_widget, move_actor_to,
+      ui_scenario_start/activate/status/capture/stop, pie_load_level_instance,
+      pie_unload_level_instance) was already fully implemented. coverage_gaps.py (regenerated via
+      refresh_endpoints_snapshot.py after finding it 14 endpoints stale from tonight's own earlier work)
+      flagged them as never named in any suite - the common thread being that every one of them either
+      drives a running game or reads state that only exists once one is, and the standing no-PIE rule
+      made all of it untestable until Andre lifted it earlier tonight.
+      A SECOND coverage_gaps.py finding investigated and correctly ruled OUT as a MifBridge gap: 12
+      kr_* endpoint names (kr_analyze_ubergraph, kr_dump_blueprint, etc.) appear in the live self_audit
+      snapshot but have zero MIF_DECL/grep hits anywhere in this plugin's own source. Confirmed via this
+      repo's own LICENSE file: these belong to the separately-distributed MifKismetReconstructor plugin
+      (GPL-3.0), which registers its own endpoints into the same bridge server at runtime via an
+      engine-provided delegate when installed alongside MifBridge - a cross-repo tooling boundary, not
+      an internal gap.
+      ALL 11 VERIFIED GENUINELY FUNCTIONAL, live, with independent verification rather than trusting
+      ok:true:
+      - list_pie_actors / list_live_widgets / describe_live_widget: real data read back from a running
+        PIE session - 139 actors, the game's own real MainPlayerHUD_C_0 and PlayerLocalPopupsWidget_C_0
+        widget instances with real geometry, a real nested tree including userWidgetContent.
+      - The FULL ui_scenario_* state machine run end to end against real content: positioned the real
+        player pawn next to a real StaticMeshActor, delivered a real 'F' keypress through
+        UGameViewportClient::InputKey, polled ui_scenario_status until the ticker-driven state machine
+        reached READY on its own (9 widgets stable for 3 frames), captured the game viewport to a real
+        2354x1406 PNG - independently confirmed the file exists on disk with real bytes, not just the
+        endpoint's own wroteFile:true - then stopped cleanly.
+      - pie_load_level_instance / pie_unload_level_instance: loaded a real DDS2Casino sublevel
+        (OldBoss_Office, tempPackage:true, parked at z=5000 so it could not interfere with the main
+        level) as a genuine streaming level instance, independently confirmed via list_sublevels that it
+        reached state LoadedVisible with 136 real actors, then unloaded it and independently confirmed
+        via list_sublevels that it was genuinely gone - not just requested:true on either end. Also
+        live-verified the nameOverride collision guard: loading the same name twice in a row is refused
+        with the colliding package path named in the error, not a generic failure.
+      - move_actor_to: accepted a real pawn path and goal, correctly resolved the actor's real
+        controller (BP_DDS2_PlayerController_C) and issued UAIBlueprintHelperLibrary::SimpleMoveToLocation.
+      A REAL FINDING ABOUT THE TEST LEVEL, not a bug in the endpoint, checked rather than assumed:
+      move_actor_to's target pawn never physically moved, even a fraction of a unit, across several
+      seconds of polling. Read UAIBlueprintHelperLibrary::SimpleMoveToLocation
+      (AIBlueprintHelperLibrary.cpp) directly rather than guessing why: it builds a
+      UPathFollowingComponent for ANY controller type via InitNavigationControl (not just AAIController),
+      so this was never a "wrong controller type" problem. list_pie_actors {classFilter:
+      "NavMeshBoundsVolume"} confirmed the real cause - this world (the MifBridge test sandbox,
+      "Untitled_1") has ZERO NavMesh/NavMeshBoundsVolume actors, so the engine's own navigation system
+      has nothing to path across. move_actor_to's own contract (resolve actor, resolve controller, call
+      the real engine API) is verified correct up to that boundary; genuinely observing physical
+      movement would need a navmeshed level, which was out of scope here (loading a full production
+      map for one endpoint's sake is a heavier, riskier operation than this sweep called for).
+      tools/test_pie_family.py: 45/45. parity_check.py clean (360 endpoints, 348 MIF_BIND, no drift, no
+      newly unreachable parameters).
+      NOTED BUT NOT BUILT, an honest scope cut: MifBridge has no generic output/message-log reader (only
+      read_modloader_log exists) - one would have let this investigation read the engine's own
+      FMessageLog("PIE") warning directly instead of triangulating the cause from list_pie_actors and
+      engine source. A real, bounded, useful next endpoint if this thread continues, not built tonight
+      because the root cause was reachable without it.

@@ -5,17 +5,27 @@
   "add_self",
   "add_sequence",
   "describe_live_widget",
+  "kr_analyze_ubergraph",
+  "kr_batch_reconstruct",
+  "kr_classify_drift",
+  "kr_disassemble_function",
+  "kr_drift_census",
+  "kr_dump_blueprint",
+  "kr_list_cooked_blueprints",
+  "kr_list_events",
+  "kr_pin_type_from_property",
+  "kr_reconstruct_request",
+  "kr_reconstruct_status",
+  "kr_verify_fidelity",
   "list_live_widgets",
   "list_pie_actors",
   "move_actor_to",
   "pcg_cleanup",
   "pcg_generate",
   "pie_load_level_instance",
-  "pie_status",
   "pie_unload_level_instance",
   "save_dirty_packages",
   "save_level_as",
-  "spawn_actor_in_pie",
   "ui_scenario_activate",
   "ui_scenario_capture",
   "ui_scenario_start",
@@ -110,6 +120,12 @@
    "test_undo_integrity.py",
    "test_v3_apply.py"
   ],
+  "add_game_framework_component_request": [
+   "test_game_framework.py"
+  ],
+  "add_game_framework_receiver": [
+   "test_game_framework.py"
+  ],
   "add_gameplay_effect_modifier": [
    "test_uncovered_reads7.py"
   ],
@@ -150,6 +166,12 @@
   ],
   "add_material_expression": [
    "test_material_graph.py"
+  ],
+  "add_mvvm_binding": [
+   "test_mvvm.py"
+  ],
+  "add_mvvm_viewmodel": [
+   "test_mvvm.py"
   ],
   "add_nav_volume": [
    "test_uncovered_reads7.py"
@@ -204,6 +226,7 @@
    "test_timeline.py"
   ],
   "add_tree_widget": [
+   "test_mvvm.py",
    "test_node_spawns.py",
    "test_rename_widget.py",
    "test_uncovered_reads5.py",
@@ -221,6 +244,7 @@
    "test_graph_patch.py",
    "test_idempotence.py",
    "test_modal_hazards.py",
+   "test_mvvm.py",
    "test_node_spawns.py",
    "test_rollback_real.py",
    "test_selfpin.py",
@@ -274,6 +298,9 @@
    "test_undo_integrity.py",
    "test_v3_apply.py"
   ],
+  "apply_level_snapshot": [
+   "test_levelsnapshots.py"
+  ],
   "audit_unused": [
    "test_audit_fixes.py"
   ],
@@ -325,6 +352,7 @@
    "test_interfaces.py",
    "test_macro_dispatch.py",
    "test_modal_hazards.py",
+   "test_mvvm.py",
    "test_node_spawns.py",
    "test_pinlifetime.py",
    "test_pins.py",
@@ -394,6 +422,7 @@
    "test_macro_dispatch.py",
    "test_modal_guard.py",
    "test_modal_hazards.py",
+   "test_mvvm.py",
    "test_node_spawns.py",
    "test_pinlifetime.py",
    "test_pins.py",
@@ -446,6 +475,9 @@
    "test_uncovered_reads6.py",
    "test_uncovered_reads7.py"
   ],
+  "create_level_snapshot": [
+   "test_levelsnapshots.py"
+  ],
   "create_material": [
    "test_material_graph.py"
   ],
@@ -455,8 +487,15 @@
   "create_material_instance": [
    "test_material_write.py"
   ],
+  "create_mesh_boolean": [
+   "test_mesh_boolean.py"
+  ],
   "create_metahuman_character": [
    "test_uncovered_reads6.py"
+  ],
+  "create_procedural_mesh": [
+   "test_geometryscript.py",
+   "test_mesh_boolean.py"
   ],
   "create_struct": [
    "test_node_spawns.py",
@@ -481,11 +520,14 @@
    "test_enums.py",
    "test_find_and_move.py",
    "test_function_flags.py",
+   "test_geometryscript.py",
    "test_graph_patch.py",
    "test_inherited_components.py",
    "test_interfaces.py",
+   "test_levelsnapshots.py",
    "test_macro_dispatch.py",
    "test_material_write.py",
+   "test_mesh_boolean.py",
    "test_modal_guard.py",
    "test_modal_hazards.py",
    "test_node_spawns.py",
@@ -530,6 +572,9 @@
   "describe_class": [
    "test_function_flags.py"
   ],
+  "describe_dynamic_mesh": [
+   "test_geometryscript.py"
+  ],
   "describe_endpoint": [
    "test_crash_journal.py",
    "test_graph_patch.py",
@@ -547,8 +592,17 @@
    "test_sequencer.py",
    "test_sequencer_authoring.py"
   ],
+  "describe_level_snapshot": [
+   "test_levelsnapshots.py"
+  ],
+  "describe_livelink_subject": [
+   "test_livelink.py"
+  ],
   "describe_metasound": [
    "test_metasound.py"
+  ],
+  "describe_mvvm_view": [
+   "test_mvvm.py"
   ],
   "describe_niagara_system": [
    "test_niagara.py"
@@ -613,6 +667,7 @@
    "test_datatables.py",
    "test_duplicate_cooked_guard.py",
    "test_foliage_modes.py",
+   "test_geometryscript.py",
    "test_ik_rig.py",
    "test_list_bones.py",
    "test_material_graph.py",
@@ -829,6 +884,7 @@
    "test_data_layer_writes.py",
    "test_foliage_modes.py",
    "test_landscape_info.py",
+   "test_levelsnapshots.py",
    "test_perf_stats.py",
    "test_safety_gate.py",
    "test_snap_ground.py",
@@ -872,6 +928,7 @@
    "test_undo_integrity.py"
   ],
   "list_object_properties": [
+   "test_game_framework.py",
    "test_uncovered_reads5.py"
   ],
   "list_pcg_components": [
@@ -979,6 +1036,10 @@
   "perf_heavy_actors": [
    "test_uncovered_reads4.py"
   ],
+  "pie_status": [
+   "test_game_framework.py",
+   "test_livelink.py"
+  ],
   "preview_composite_widget": [
    "test_uncovered_reads8.py"
   ],
@@ -990,6 +1051,9 @@
   ],
   "project_dependency_graph": [
    "test_project_graph.py"
+  ],
+  "push_livelink_transform": [
+   "test_livelink.py"
   ],
   "read_datatable": [
    "test_confirm_gated.py",
@@ -1049,6 +1113,9 @@
   ],
   "remove_function": [
    "test_uncovered_reads5.py"
+  ],
+  "remove_game_framework_component_request": [
+   "test_game_framework.py"
   ],
   "remove_ik_goal": [
    "test_ik_goals_solvers.py"
@@ -1131,6 +1198,7 @@
    "test_inherited_components.py"
   ],
   "run_console": [
+   "test_game_framework.py",
    "test_report_intake.py",
    "test_safety_gate.py"
   ],
@@ -1154,6 +1222,7 @@
   ],
   "self_audit": [
    "test_duplicate_cooked_guard.py",
+   "test_geometryscript.py",
    "test_graph_patch.py",
    "test_load_level_guard.py",
    "test_macro_dispatch.py",
@@ -1175,6 +1244,7 @@
    "test_audit_fixes.py"
   ],
   "set_actor_transform": [
+   "test_levelsnapshots.py",
    "test_snap_ground.py"
   ],
   "set_asset_thumbnail": [
@@ -1279,6 +1349,7 @@
   ],
   "set_variable_flags": [
    "test_modal_hazards.py",
+   "test_mvvm.py",
    "test_undo_integrity.py"
   ],
   "set_variable_type": [
@@ -1314,11 +1385,15 @@
   ],
   "spawn_actor_in_level": [
    "test_audit_fixes.py",
+   "test_levelsnapshots.py",
    "test_perf_stats.py",
    "test_sequencer_authoring.py",
    "test_snap_ground.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads8.py"
+  ],
+  "spawn_actor_in_pie": [
+   "test_game_framework.py"
   ],
   "spawn_many": [
    "test_spawn_many.py"
@@ -1330,9 +1405,13 @@
    "test_pinlifetime.py"
   ],
   "start_pie": [
+   "test_game_framework.py",
+   "test_livelink.py",
    "test_safety_gate.py"
   ],
   "stop_pie": [
+   "test_game_framework.py",
+   "test_livelink.py",
    "test_safety_gate.py"
   ],
   "thumbnail_capabilities": [
