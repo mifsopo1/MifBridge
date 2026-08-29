@@ -4338,3 +4338,37 @@ cannot become one giant blocking item:
       session's own work, itself now confirmed to still hold real, unmined value: its
       04_OPEN_QUESTIONS.md §1.6 independently described the exact connect_pins schema bug fixed
       earlier this same session, over a month before it was found again a different way.
+
+- [x] **A full single-pass regression sweep hit a real editor hang during test_pie_family.py -
+      root cause not confirmed, but the harness's own timeout handling was found broken along the
+      way and fixed.** DONE 2026-08-29. Kicked off a fresh single-pass run_all_suites.py --once
+      after a cluster of real code changes this session (mermaid export, connect_pins, ChaosVehicles
+      removal, water labels, sequencer possessable, the NiagaraSystem crash fix). 55 of 57 attempted
+      suites passed cleanly (matching every individually-verified fix), 1 was the already-understood
+      Blender headless/interactive mismatch, and test_pie_family.py hung completely: `start_pie`
+      returned `ok:true`, a "New Editor Window" PIE child process spawned, and the MAIN editor's
+      bridge then stopped answering HTTP at all - a genuine socket-level timeout, confirmed with a
+      direct `pie_status` call, not just a slow handler queue. Well past run_all_suites.py's own
+      900s per-suite subprocess timeout with no recovery, force-closed both editor processes
+      (this session's own scratch test infrastructure, nothing saved, matching the standing rule
+      throughout) and relaunched clean.
+      ROOT CAUSE NOT CONFIRMED - said honestly rather than guessed. Live debugging access was gone
+      once the hung processes were closed, and a fresh re-run of test_pie_family.py against an
+      otherwise-idle, freshly-relaunched editor completed cleanly, 45/45, well inside a bounded
+      timeout - the hang did NOT reproduce on a clean attempt. Best available explanation:
+      accumulated state or resource pressure after dozens of suites and hours of editor uptime during
+      the big sweep, not a deterministic bug in start_pie or PIE itself. Filed as a real, observed,
+      NOT-YET-EXPLAINED editor hang for a future session to dig into if it recurs, rather than closed
+      as understood.
+      ONE REAL, FIXABLE BUG FOUND ALONG THE WAY: `wait_for_pie_state`'s own polling loop
+      (test_pie_family.py) had an outer 60s timeout budget that was never actually enforced, because
+      each poll's own `raw_post` call used the SAME 60s default per-call timeout - a single slow or
+      hung poll could burn the entire outer budget by itself, and `raw_post` RAISES `mifaudit.Timeout`
+      on expiry rather than returning a dict, which the loop's bare `s = M.raw_post(...)` never
+      caught. Fixed: each poll now uses a short 10s per-call timeout, wrapped in `try/except
+      M.Timeout`, so the outer budget is honest regardless of what causes a slow poll, and a
+      repeatedly-timing-out bridge produces a clean, reported failure instead of an uncaught crash.
+      Verified the fix does not regress the happy path: 45/45 on the immediate re-run. The specific
+      except-branch is not independently exercised by a live test (would need deliberately
+      reproducing the hang, which this pass declined to do given the cost already paid finding it) -
+      said honestly rather than claimed proven.
