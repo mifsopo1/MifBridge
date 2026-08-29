@@ -70,7 +70,7 @@ of that because they are tracked but are not part of a deployable plugin:
 
 | Engine | Status | Notes |
 |---|---|---|
-| 5.3.2 | **built and tested** | the cooked DDS2 SDK — the primary target. 148 runs across 74 suites green, 0 editor deaths. |
+| 5.3.2 | **built and tested** | the cooked DDS2 SDK — the primary target. As of 2026-08-29: 363 endpoints, 100 test suites, a full double-pass regression sweep (`run_all_suites.py`, 200 runs) clean, 0 editor deaths. The "148 runs across 74 suites" figure this row used to carry was from 2026-08-26 - superseded, not corrected in place, because the underlying numbers (endpoint count, suite count) both moved and a stale count is worse than no count. |
 | 5.7 | **built** | Curfew — compiled on every change via `make_engine_probe.py`. See `02_GOTCHAS.md` §14 for the API splits that differ. |
 
 "Built" means a compiler agreed, not that anyone has used it. 5.7 has no live test run behind it,
