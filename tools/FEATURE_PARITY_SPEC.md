@@ -3495,6 +3495,10 @@ cannot become one giant blocking item:
       is genuinely fixture-testable without PIE. Recorded here rather than left silently declined:
       LiveLink's "needs external data source" reasoning should be treated as UNVERIFIED, not confirmed,
       until someone actually spends the time tracing the virtual-subject registration path end to end.
+      UPDATE, later the same night: closed. The actual path in did not need the virtual-subject
+      lifecycle at all - see the dedicated DONE entry near the end of this file
+      ("LiveLink - the 'needs external data source' decline was wrong too..."). "Needs external data
+      source" was simply wrong, the same shape of mistake as LevelSnapshots's decline.
 - [x] **create_mesh_boolean - a real, silent wrong-answer bug found and fixed live.** DONE 2026-08-28.
       Third GeometryScript endpoint: union/intersection/subtract of two EXISTING StaticMesh assets
       (typically create_procedural_mesh's own output, for the same cooked-content reason
@@ -3579,3 +3583,46 @@ cannot become one giant blocking item:
       Sources: https://developer.blender.org/docs/release_notes/5.0/ ,
       https://developer.blender.org/docs/release_notes/5.0/modeling/ ,
       https://developer.blender.org/docs/release_notes/5.0/python_api/
+- [x] **LiveLink - the "needs external data source" decline was wrong too, same as LevelSnapshots.
+      Reopened, built, and a wrong hypothesis about it caught and corrected the same night.**
+      DONE 2026-08-28. The lead flagged earlier tonight (ULiveLinkBlueprintVirtualSubject) turned out
+      not to be the way in - the actual path is simpler: ILiveLinkClient (Engine/Source/Runtime/
+      LiveLinkInterface, an UNCONDITIONAL engine module, not the LiveLink plugin) is a plain
+      IModularFeature with PushSubjectStaticData_AnyThread/PushSubjectFrameData_AnyThread and a
+      ForceTick() explicitly documented for driving LiveLink "outside of the normal engine tick
+      workflow" - exactly the synchronous push this bridge needs, no Blueprint virtual subject, no
+      real capture hardware, no message-bus connection.
+      NO MIF_WITH_LIVELINK COMPILE GUARD, deliberately different from every other optional-plugin file
+      here: everything used (ILiveLinkClient/ILiveLinkSource/ULiveLinkTransformRole) lives in the
+      always-present LiveLinkInterface module (added to Build.cs unconditionally, alongside
+      GeometryFramework/GeometryCore). What can be absent is a REGISTERED client at runtime (the
+      LiveLink plugin supplies FLiveLinkClient and registers it) - gated with
+      IModularFeatures::IsModularFeatureAvailable instead of a compile-time macro.
+      Two endpoints, MifBridgeLiveLink.cpp (new file): push_livelink_transform (creates/updates a
+      subject via a minimal scratch ILiveLinkSource implementation this file provides, since pushing
+      under an unregistered source Guid is a silent no-op - read straight from
+      FLiveLinkClient::PushSubjectStaticData_Internal rather than assumed) and
+      describe_livelink_subject (reads back through the same EvaluateFrame_AnyThread path a real
+      Blueprint consumer uses).
+      A REAL COMPILE BUG CAUGHT BY THE BUILD: `FLiveLinkSubjectName SubjectName(FName(*Str));` is the
+      classic "most vexing parse" - MSVC parsed it as a function DECLARATION, not object construction,
+      on both engines. Fixed with brace-init. Worth remembering as a concrete instance of a known C++
+      trap, not just a name for it.
+      A WRONG CONCLUSION REACHED AND THEN CORRECTED IN THE SAME SESSION, worth recording honestly
+      rather than only the final right answer. Manual curl testing (push, start PIE, check - each step
+      several real seconds apart) showed a subject going invalid once PIE started, which looked
+      exactly like a PIE-transition effect and got written up as one. An automated test running the
+      same sequence back-to-back, with far less real time between steps, did not reproduce it - that
+      inconsistency was the tell. Traced to FLiveLinkSubject::GetState() (LiveLinkSubject.cpp) instead
+      of re-guessing: a subject reads invalid once FApp::GetCurrentTime() - GetLastPushTime() exceeds
+      ULiveLinkSettings::GetTimeWithoutFrameToBeConsiderAsInvalid() (default 0.5 seconds,
+      LiveLinkSettings.cpp) - a plain wall-clock staleness timeout LiveLink applies to every subject,
+      built for continuously-streaming mocap/camera data, with NO connection to PIE at all. Rewrote
+      both the handler's own doc comment and the test suite to state the real mechanism, not the
+      original wrong one.
+      VERIFIED LIVE with real start_pie/stop_pie (Andre's direct ask for live PIE endpoint testing,
+      after he authorised PIE use generally - see [[feedback-pie-authorized]]): push/read work
+      correctly in the plain editor AND during PIE, and the same 0.5s staleness rule applies
+      identically in both. tools/test_livelink.py: 21/21, both engines rebuilt clean via Build.bat +
+      buildcheck.py. parity_check.py clean (354 endpoints, 342 MIF_BIND, no drift - LiveLink no longer
+      in PLUGIN IDLE, down to 4: ChaosVehiclesPlugin, MassEntity, ModelViewViewModel, ModularGameplay).

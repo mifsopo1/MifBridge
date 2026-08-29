@@ -412,6 +412,8 @@ namespace MifBridge
 			MIF_BIND(create_level_snapshot);
 			MIF_BIND(describe_level_snapshot);
 			MIF_BIND(apply_level_snapshot);
+			MIF_BIND(push_livelink_transform);
+			MIF_BIND(describe_livelink_subject);
 			MIF_BIND(set_data_layer_visibility);
 			MIF_BIND(set_data_layer_loaded_in_editor);
 			MIF_BIND(create_data_layer);

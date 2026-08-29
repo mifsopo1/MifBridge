@@ -1577,6 +1577,13 @@ namespace MifBridge
 	MIF_DECL(describe_level_snapshot);
 	MIF_DECL(apply_level_snapshot);
 
+	// LIVELINK (MifBridgeLiveLink.cpp). NO MIF_WITH_LIVELINK guard - everything used here
+	// (ILiveLinkClient/ILiveLinkSource/ULiveLinkTransformRole) lives in LiveLinkInterface, an
+	// unconditional engine RUNTIME module, not the optional LiveLink plugin itself. Gated at
+	// runtime instead, on whether an ILiveLinkClient is actually registered as a modular feature.
+	MIF_DECL(push_livelink_transform);
+	MIF_DECL(describe_livelink_subject);
+
 	// DATA LAYERS - the WRITE half (MifBridgeStreaming.cpp). Unblocked 2026-08-26 when Andre
 	// authorised the DataLayerEditor dependency. SetDataLayerVisibility returns VOID, so both of
 	// these read the state back and report verified separately from changed.

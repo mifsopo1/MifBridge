@@ -119,9 +119,16 @@ public class MifBridge : ModuleRules
 			                     // an engine RUNTIME module, not the GeometryScripting PLUGIN (that one
 			                     // stays gated behind MIF_WITH_GEOMETRYSCRIPT below, since a project can
 			                     // ship without it; UDynamicMesh itself cannot be missing).
-			"GeometryCore"       // FDynamicMesh3 - direct query access (VertexCount/TriangleCount/
+			"GeometryCore",      // FDynamicMesh3 - direct query access (VertexCount/TriangleCount/
 			                     // GetBounds) via UDynamicMesh::ProcessMesh, cleaner than routing every
 			                     // read through the Blueprint-function-library ExpandEnumAsExecs pattern.
+			"LiveLinkInterface"  // ILiveLinkClient/ILiveLinkSource/ULiveLinkTransformRole - the LiveLink
+			                     // CONTRACT, verified present under Engine/Source/Runtime in BOTH 5.3.2
+			                     // and 5.7. Separate from the LiveLink PLUGIN itself (MIF_WITH_LIVELINK
+			                     // below), which supplies the concrete FLiveLinkClient registered at
+			                     // runtime as an IModularFeatures implementation - this bridge only ever
+			                     // resolves that interface dynamically, so it never needs the plugin's
+			                     // own module to compile, only to have something register at runtime.
 		});
 
 		// ---- BREADTH BATCH: PLUGIN modules, detected not assumed --------------------------
