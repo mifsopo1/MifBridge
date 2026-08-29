@@ -955,25 +955,46 @@ Two candidate fixes, neither obviously right:
 Filed rather than chosen, because widening the confirm guard deserves a deliberate decision rather
 than being done in passing while fixing a test.
 
-**I. "NOTHING was created" is asserted at 31 more sites and has not been checked at any of them.**
-Two foliage sites were corrected today because they promised "NOTHING was created" AFTER real side
-effects had already happened - GetInstancedFoliageActorForCurrentLevel had been called with
-bCreateIfNone=true (so an actor may have been spawned into the level) and AddFoliageType had already
-registered a type on it. PM-007 means there is no rollback that would make the old wording true.
+**I. "NOTHING was created" was asserted at every other site too, and now every one has been checked.**
+**AUDITED CLEAN, 2026-08-29 - no new defects.** Two foliage sites were corrected earlier because they
+promised "NOTHING was created" AFTER real side effects had already happened -
+GetInstancedFoliageActorForCurrentLevel had been called with bCreateIfNone=true (so an actor may have
+been spawned into the level) and AddFoliageType had already registered a type on it. PM-007 means
+there is no rollback that would make the old wording true.
 
-A grep of the built DLL for the old UTF-16 string is what surfaced this: the phrase survives the fix,
-because 31 other Fail() sites use it across MifBridgeIKRig, MifBridgeWidgets, MifBridgeUserTypes,
-MifBridgeAuthoring, MifBridgeAssetOps and MifBridgeNodes3.
+By the time this audit ran the string had grown to 64 occurrences across 12 files - not 31 - since
+MifBridgeGeometryScript, MifBridgeWater, MifBridgeStreaming, MifBridgeLevelSnapshots, MifBridgeMetaHuman
+and MifBridgeAnimation did not exist yet when this item was filed. Every genuinely distinct call site
+(the raw string count over-counts: several are multi-line `Fail(Out, ...)` invocations split across
+several `TEXT()` fragments, or the phrase appearing inside a COMMENT describing the already-fixed
+foliage bug rather than in a live message) was read in place and checked against the question this
+item itself set: does anything before that specific Fail() call Modify(), spawn, register, or otherwise
+touch state the failure does not undo?
 
-MOST OF THEM ARE PROBABLY FINE. The wording is correct for an early parameter refusal - "name,
-startBone and endBone are all required. NOTHING was created." creates nothing and says so. The
-question is only which sites sit AFTER a mutation, the way the two foliage ones did. That is a
-per-site yes/no with a clear finish condition: for each, does anything before the Fail() call
-Modify(), spawn, register or otherwise touch state that the failure does not undo?
+None do. Three shapes account for every site:
+- **Pure parameter/precondition validation** - the large majority. Nothing has been touched yet by the
+  time the guard fires (e.g. add_ik_retarget_chain, add_ik_goal, create_asset, create_water_body,
+  add_data_layer's early checks).
+- **Scratch/transient working state that is thrown away, not the real asset.** Every
+  MifBridgeGeometryScript site builds into a `UDynamicMesh` allocated with `GetTransientPackage()` -
+  explicitly documented at the top of that file as "scratch working memory for the generator, never the
+  asset itself" - and the real asset write happens only after every check has already passed.
+- **The call itself is checked, and the checked failure path is the only one reachable.** Water's
+  `create_water_zone`/`create_water_body` check `FindActorFactoryForActorClass` and `CreateActor`'s own
+  return value before claiming nothing was made; add_data_layer's `CreateDataLayerInstance` failure
+  branch is the one site that legitimately has partial state (`Asset` was already constructed) and it
+  says so explicitly instead - "The asset was constructed but no instance exists" - never claiming
+  NOTHING. add_ik_solver's engine call (`UIKRigController::AddSolver`, both the pre-5.6 class overload
+  and the 5.6+ struct-string overload) was read directly in the 5.3 and 5.7 engine trees: both `Modify()`
+  the rig only after every rejection check, matching the pattern add_ik_retarget_chain's own comment
+  already worked out for the sibling `AddRetargetChain` call (and was already fixed for that call's
+  reserved-name edge case).
 
-Worth doing because the failure mode is the exact one this project keeps hunting: a response that
-tells the caller something reassuring that is not true. An error promising more than it delivers is
-worse than one that admits the mess.
+Worth recording as a finding in its own right, not just a clean bill: the two foliage bugs this item
+was filed to hunt for were real, but they were the ONLY two of what is now 64+ sites, both already
+fixed before this audit ran. The failure mode is real and worth the systematic check when new families
+land (the six files added since this was filed are proof the count keeps growing), but it is not a
+common pattern here - MifBridge's habit of validating fully before touching state held up.
 
 **H. `add_anim_node` guards the BLUEPRINT where its comment promises to guard the GRAPH.** The comment
 reads "An anim node in a non-anim GRAPH compiles to nothing and is a confusing thing to debug, so
