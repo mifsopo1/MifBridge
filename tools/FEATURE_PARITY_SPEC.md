@@ -3526,3 +3526,56 @@ cannot become one giant blocking item:
       parameters after dropping an unused newPath alias that had zero real precedent for this
       endpoint - outputPath alone is the one spelling, matching this handler's own actual design
       rather than copying rename_asset/duplicate_asset's convention without a reason to).
+- [x] **MifBlender verified hands-on against a real Blender 5.0.1 session for the first time, and the
+      install itself was found stale.** DONE 2026-08-28. Andre: "ive never had mifblender installed on
+      5.0+ so it will need full endpoint testing and finding any additions from 4.0+" - the earlier
+      "3.6.23/4.2.17/4.4.0/5.0.1 all green" line above was the automated HEADLESS probe only
+      (run_blender_suites.py, a fresh process per version); nobody had run it against his own live GUI
+      session before.
+      HIS ADDON INSTALL WAS GENUINELY STALE, found before assuming the code itself had a bug. His
+      Blender 5.0 Add-ons list showed NINE identical "MifBlender (MifBridge backend)" entries, all
+      unchecked - his addons folder had one live MifBlender folder plus eight leftover
+      `MifBlender.pre-install-*.bak` folders from an earlier manual reinstall cycle (Aug 10-11), and
+      Blender scans every folder with a valid __init__.py as a separate addon. Checked this repo's own
+      tooling first and confirmed nothing here creates that backup pattern - moved the eight .bak
+      folders out of the addons directory (not deleted) rather than guessing at a source-level fix that
+      did not exist. Once he re-enabled the single remaining entry and it connected, diffing the
+      installed copy against this repo's current addon source showed __init__.py/ops_common.py/
+      ops_mesh.py/server.py all differ, and ops_rig.py - the ENTIRE armature/shape-key/vertex-group
+      reading module - was missing from the install outright. That is why test_blender_mesh.py's
+      decimate_mesh checks failed with "unknown endpoint": a stale INSTALL, not a missing CAPABILITY -
+      confirmed decimate_mesh really is implemented in ops_mesh.py before concluding that. Reinstalled
+      clean (deleted the stale folder, copied the current repo source over, cleared __pycache__) and
+      had him restart Blender rather than just toggle the addon, since a simple disable/enable does not
+      reliably reimport already-loaded Python modules and the addon's own socket server runs a
+      background thread whose teardown on a script-reload was not worth betting his session on.
+      FULL SUITE AGAINST THE NOW-CURRENT INSTALL, HIS REAL LIVE SESSION: 149/158 checks, every one of
+      the 9 "failures" traced to a test-harness artifact rather than a real bug, not filed as bugs:
+        mesh 77/78    - the 1 failure asserts background:True, a headless-only-testing assumption,
+                        correctly False against a real GUI session (which is what this run was).
+        ops 12/12     - clean.
+        rig 40/48     - all 8 failures were "no object named Cube, scene is empty" because the mesh
+                        suite's own last test (clear_scene) had just emptied the scene, from running
+                        suites back-to-back manually against ONE persistent session rather than each
+                        getting its own fresh process the way the headless runner does it.
+        gen 20/20     - ComfyUI is not set up on this machine; the suite proved the clean-failure path
+                        every gen_* op takes instead of hanging, which is the honest ceiling here.
+      5.0-VS-4.X GAP CHECK, against the real release notes rather than recollection (see docs/13-style
+      sourcing discipline applied here too):
+        Six new geometry-nodes-powered modifiers (Array rewrite, Curve to Tube, Geometry Input,
+        Instance on Elements, Scatter on Surface, Randomized Transform). Checked list_modifiers's own
+        _modifier_dict (ops_rig.py) rather than assumed either way: it already degrades gracefully for
+        any unlisted modifier type - reports name/type/visibility, never crashes or drops the row - by
+        the addon's OWN documented design ("A type not listed here still reports... never silently
+        dropped"). Already forward-compatible, no fix needed.
+        Boolean solver rename "FAST" -> "FLOAT" - grepped the whole addon for both strings, zero hits.
+        Not affected.
+        mathutils buffer-protocol dtype change (float64 -> float32 for Vector/Matrix) - the addon's one
+        buffer-protocol-adjacent call (foreach_get into a plain Python list, ops_common.py) does not use
+        the mathutils Vector buffer path this change affects. Not affected.
+        UV editor changes (sync selection overhaul, custom-region island packing) read as mostly
+        interactive UI behavior rather than new Python operator surface - no concrete new capability
+        found for uv_unwrap to call. Worth another look if a real 5.0-only UV gap turns up in practice.
+      Sources: https://developer.blender.org/docs/release_notes/5.0/ ,
+      https://developer.blender.org/docs/release_notes/5.0/modeling/ ,
+      https://developer.blender.org/docs/release_notes/5.0/python_api/
