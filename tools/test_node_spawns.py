@@ -232,10 +232,12 @@ def main():
 
     # ------------------------------------------------------------------ T334 more node endpoints
     # needing a real argument the registry sweep and T331 do not already cover - found by comparing
-    # coverage_gaps.py's list against what T330's own "driving:" line actually swept: three names on
-    # that list (add_get_array_item, add_make_map, add_self) turned out to be dynamically covered by
-    # T330 already - coverage_gaps.py cannot see a name that is never typed as a literal string, only
-    # produced by iterating describe_endpoint's live registry. These are the ones genuinely missing.
+    # coverage_gaps.py's list against what T330's own "driving:" line actually swept: four names on
+    # that list (add_get_array_item, add_make_map, add_self, add_sequence - re-confirmed live
+    # 2026-08-28, since add_sequence's own acceptedParams {graphId,x,y,outputs} are a subset of
+    # COSMETIC too) turned out to be dynamically covered by T330 already - coverage_gaps.py cannot see
+    # a name that is never typed as a literal string, only produced by iterating describe_endpoint's
+    # live registry. These are the ones genuinely missing.
     print("\n=== T334: more node endpoints needing a real argument ===")
     y2 = 900
     node_specific = [
