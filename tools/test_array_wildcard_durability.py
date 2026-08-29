@@ -1,19 +1,22 @@
 """Do array-library wildcard pins stay typed across a node reconstruct?
 
-TWO DOCS DISAGREE, which is why this exists.
+ORIGIN: two docs used to disagree, which is why this exists. RECONCILED 2026-08-26 - kept here as
+regression coverage, not as an open dispute.
 
-  docs/02_GOTCHAS.md §4c says array calls are first-class now: "The old 'Array_Find won't stay typed,
+  docs/02_GOTCHAS.md §4c said array calls are first-class now: "The old 'Array_Find won't stay typed,
   use a ForEachLoop macro' rule no longer applies: the cause was the spawned node class, and it is
   fixed."
 
-  docs/06_OPEN_ISSUES_FROM_USE.md §5 says the opposite and calls it the most severe item in the file:
-  the pin stays wildcard, the node is reconstructed on save/cook, the containing function is STUBBED
-  during the cook, "so the editor says fine and the shipped game silently does nothing". Its triage
-  note asks for a reproduction before any fix is attempted.
+  docs/06_OPEN_ISSUES_FROM_USE.md §5 originally said the opposite and called it the most severe item in
+  the file: the pin stays wildcard, the node is reconstructed on save/cook, the containing function is
+  STUBBED during the cook, "so the editor says fine and the shipped game silently does nothing". Its
+  triage note asked for a reproduction before any fix was attempted.
 
-Both cannot be true. This suite is that reproduction, and its job is to settle which doc is wrong -
-either outcome is a result worth having, and leaving two docs contradicting each other on the most
-severe known defect is worse than either answer.
+This suite IS that reproduction, run for the first time on 2026-08-26. T281 passed, settling it:
+02_GOTCHAS §4c was right, and 06_OPEN_ISSUES §5 was corrected the same day to record the same
+conclusion - both docs now agree. This suite keeps running as regression coverage for that answer,
+not to re-litigate a question that is already settled; see the VERDICT block at the end for what a
+future FAILURE here would mean (a genuine regression, not a live disagreement).
 
 WHAT IT ACTUALLY TESTS. A cook cannot be run from here, so the proxy is refresh_node, which
 02_GOTCHAS §4c itself nominates: "refresh_node still reproduces a reload reconstruct, so it remains
@@ -157,9 +160,20 @@ def main():
     for x in FAIL:
         print("  FAILED: %s\n          %s" % x)
     print("=" * 72)
-    print("VERDICT: if T281 passed, 02_GOTCHAS §4c is right and 06_OPEN_ISSUES §5 is STALE.")
-    print("If T281 failed, §5 is real and this is the reproduction its triage note asked for.")
-    print("Either way one of the two documents must be corrected - they cannot both stand.")
+    # FOUND LIVE, 2026-08-29: this printed as an open question on EVERY run, long after the question
+    # was actually settled - docs/06_OPEN_ISSUES_FROM_USE.md §5 was corrected on 2026-08-26 to say
+    # exactly "the gotchas one was right" (the same conclusion T281 reaches here), so re-announcing
+    # "§5 is STALE" every run is now itself a stale claim about a doc that has already been fixed.
+    # Report the CURRENT run's result against the settled baseline instead of re-litigating it.
+    if post_wild:
+        print("VERDICT: T281 FAILED - the wildcard did NOT survive the reconstruct. This is a")
+        print("REGRESSION against the settled conclusion (docs/06 §5, corrected 2026-08-26): re-open")
+        print("§5, it is no longer stale.")
+    else:
+        print("VERDICT: matches the settled conclusion in docs/02_GOTCHAS.md §4c and")
+        print("docs/06_OPEN_ISSUES_FROM_USE.md §5 (reconciled 2026-08-26) - the reconstruct half stays")
+        print("durable. The cook half remains an honest, permanent limitation (untestable from the")
+        print("bridge), not an open contradiction.")
     return 1 if FAIL else 0
 
 

@@ -601,7 +601,6 @@ namespace MifBridge
 			OutPin = SkipKnots(OutPin);
 			InPin = SkipKnots(InPin);
 
-			const UEdGraphSchema_K2* Schema = K2();
 			UEdGraphNode* OutOwner = OutPin->GetOwningNodeUnchecked();
 			UEdGraphNode* InOwner = InPin->GetOwningNodeUnchecked();
 			if (!OutOwner || !InOwner)
@@ -609,6 +608,24 @@ namespace MifBridge
 				Fail(Out, TEXT("resolved pin has no owning node (orphaned knot chain?)"));
 				return;
 			}
+
+			// THE SCHEMA MUST COME FROM THE PIN'S OWN GRAPH, NOT A HARDCODED K2 ASSUMPTION.
+			// FOUND LIVE, NOT ASSUMED (docs/06_CAPABILITY_ROADMAP.md's "connect_pins hardcodes the
+			// K2 schema CDO, so UAnimationGraphSchema overrides never run" - checked against the
+			// 5.3 engine source rather than taken on the roadmap's word). UAnimationGraphSchema
+			// overrides TryCreateConnection to remove any PROPERTY BINDING on the input pin
+			// (AnimGraphNode->PropertyBindings.Remove) once a real wire replaces it, and overrides
+			// DetermineConnectionResponseOfCompatibleTypedPins to enforce that a pose pin can only
+			// ever have ONE incoming connection (CONNECT_RESPONSE_BREAK_OTHERS_AB). Neither of those
+			// runs through K2's schema, so wiring an AnimGraph node via connect_pins - the exact
+			// path add_anim_node's own response note sends a caller down - left a stale binding
+			// beside the new wire and skipped the pose-tree replacement rule entirely. Falls back to
+			// K2() only if a resolved pin's own graph or schema is somehow unavailable, which should
+			// not happen but costs nothing to guard against.
+			UEdGraph* OwningGraph = OutOwner->GetGraph();
+			const UEdGraphSchema* Schema = OwningGraph ? OwningGraph->GetSchema() : nullptr;
+			if (!Schema) { Schema = K2(); }
+
 			OutOwner->Modify();
 			InOwner->Modify();
 

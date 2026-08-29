@@ -1,5 +1,34 @@
 # MifBridge — capability roadmap
 
+> **STALE AS A WHOLE, RE-CHECKED 2026-08-29 - READ THIS BEFORE TRUSTING ANY ITEM BELOW.** This file is
+> a snapshot from 2026-07-25; the plugin has gone from roughly 230 to 363 endpoints since, and a spot
+> check against the current endpoint list (`grep MIF_DECL MifBridgeHandlers.h`) found most of the
+> "Blocking" and "High value" items already shipped: struct/enum authoring (`create_struct`,
+> `add_struct_member`), PIE control (the whole `pie_*`/`start_pie`/`stop_pie` family), rename for
+> function/event/dispatcher (`rename_function`, `rename_event`, `rename_event_dispatcher` all exist -
+> `rename_graph` does not), variable retype (`set_variable_type`), asset import
+> (`import_asset`/`import_texture`), level-actor handles (`list_level_actors`), and element-level
+> container addressing (`edit_container`). **`FEATURE_PARITY_SPEC.md` is the current, actively-
+> maintained source of truth for what exists - treat every claim below as unverified until checked
+> against it or the live endpoint list, not as a current gap list.**
+>
+> One item confirmed and FIXED this pass, not just found already-done: **"`connect_pins` hardcodes the
+> K2 schema CDO, so `UAnimationGraphSchema` overrides never run"** (named under High value / Structural
+> editing below) was real, checked against the 5.3 engine source rather than taken on this doc's word,
+> and fixed - `connect_pins`/`reconnect_pin` now resolve the schema from the pin's own owning graph.
+> Verified live: `UAnimationGraphSchema`'s pose-tree rule (an output pose pin may have only one link,
+> unlike an ordinary K2 data pin) now correctly breaks a prior connection when a second one is made,
+> which K2's schema would have silently allowed to fan out instead. `tools/test_anim_nodes.py` T553-554,
+> both engines built clean. See `FEATURE_PARITY_SPEC.md`'s dated entry for the full writeup.
+>
+> Items NOT individually re-verified this pass, so still genuinely worth checking before building:
+> local-variable lifecycle (list/rename/remove/set-default for `scope=local` - no `list_variables
+> {scope:"local"}` support found, no dedicated endpoints), a generic add-node-by-class,
+> `UK2Node_CreateDelegate` (bind a dispatcher without a fresh custom event), UMG tree reparent/reorder
+> (`list_tree_widgets` exists; no `reparent_widget`/`reorder_widget` found), and `rename_graph`. Absence
+> of a matching endpoint NAME was confirmed by grep; absence of the underlying CAPABILITY under some
+> other name was not exhaustively ruled out for each one the way it was for `connect_pins`.
+
 From a fan-out audit (2026-07-25): 8 domains audited against the real endpoint list and the UE 5.3
 engine source, each finding adversarially re-verified to strip out "gaps" that were already covered.
 

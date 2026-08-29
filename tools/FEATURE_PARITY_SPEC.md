@@ -4084,3 +4084,53 @@ cannot become one giant blocking item:
       shipped before this change and never marked done: `project_inheritance_tree` (built as
       `blueprint_inheritance_tree`, a44d428) and the STreeView "Inheritance tree view" tab
       (MifBridgeInheritView.cpp, c7bc493, wired into MifBridgePanel.cpp as the INHERITANCE tab).
+
+- [x] **`connect_pins`/`reconnect_pin` hardcoded the K2 schema CDO, so `UAnimationGraphSchema`
+      overrides never ran.** DONE 2026-08-29. Found via docs/06_CAPABILITY_ROADMAP.md, a stale
+      (2026-07-25) roadmap doc being re-checked as part of the same autopilot pass that closed out
+      docs/06_OPEN_ISSUES_FROM_USE.md - checked against the 5.3 engine source directly rather than
+      taken on the roadmap's word, since the roadmap itself was found to be wrong about most of its
+      other claims (most had already shipped).
+      THE REAL BUG, confirmed by reading AnimationGraphSchema.cpp directly: `UAnimationGraphSchema`
+      overrides `TryCreateConnection` to remove a stale `PropertyBindings` entry on the input pin when
+      a real wire replaces it, and overrides `DetermineConnectionResponseOfCompatibleTypedPins` to
+      enforce that a POSE pin - unlike an ordinary K2 data pin - may have only ONE link even on its
+      OUTPUT side; a second connection from the same source must BREAK the first
+      (`CONNECT_RESPONSE_BREAK_OTHERS_AB`), not fan out to both. `DoConnect` (the shared body behind
+      both endpoints, MifBridgeNodes.cpp) resolved `K2()` unconditionally, so wiring any AnimGraph node
+      through either endpoint - the exact path `add_anim_node`'s own response note sends a caller down
+      - used K2's rules regardless of which graph the pins actually belonged to.
+      FIXED by resolving the schema from the pin's own owning graph
+      (`OutOwner->GetGraph()->GetSchema()`), falling back to `K2()` only if a resolved pin's graph or
+      schema is somehow unavailable. `Schema`'s type changed from `const UEdGraphSchema_K2*` to the
+      base `const UEdGraphSchema*` - every method the function calls on it (`CanCreateConnection`,
+      `BreakPinLinks`, `TryCreateConnection`) is a base-class virtual, so nothing else in the function
+      needed to change.
+      VERIFIED LIVE, not just built: probed live against a real AnimGraph BEFORE writing the permanent
+      test, not assumed from reading the engine source alone. SequencePlayer.Pose -> Root.Result
+      connects cleanly; the SAME Pose output connected to a second target (a Slot node's Source pin)
+      returns `"response": "Replace existing connections"` - the engine's own override string - and
+      Root.Result comes back genuinely UNLINKED afterwards, while under the OLD hardcoded-K2 behaviour
+      the output would have silently fanned out to both targets instead, which is an invalid pose graph
+      shape the editor's own AnimGraph tooling would never produce.
+      Regression risk was real and checked directly: connect_pins/reconnect_pin are exercised by 10
+      OTHER suites for ordinary K2 semantics (test_array_wildcard_durability.py,
+      test_audit_fixes.py, test_graph_patch.py, test_pinlifetime.py, test_pins.py, test_reroute.py,
+      test_rollback_real.py, test_selfpin.py, test_undo_integrity.py, test_v3_apply.py) - all 10 re-run
+      clean after the fix, zero behaviour change for the K2 path, since the fix only changes WHICH
+      schema gets picked when the pin's graph is not K2's, never how any schema itself behaves.
+      tools/test_anim_nodes.py gained T553 (the fix itself, 9 live assertions against a real AnimGraph)
+      and T554 (a K2 EventGraph regression control, reusing test_anim_nodes.py's own T552 blueprint) -
+      26/26. Built and verified on BOTH engines: 5.3.2 (DDS2's real project) and the 5.7 probe, a
+      genuine incremental recompile confirmed both times (buildcheck.py + the log actually naming
+      MifBridgeNodes.cpp as recompiled, not a cached no-op). parity_check.py clean: 363 endpoints,
+      351 MIF_BIND, no drift, param reach 215/215 unchanged (no new parameters - this is a resolution
+      fix, not a surface change).
+      Also used this pass to re-check docs/06_CAPABILITY_ROADMAP.md as a whole: most of its other
+      "Blocking"/"High value" items (struct/enum authoring, PIE control, function/event/dispatcher
+      rename, variable retype, asset import, level-actor handles, element-level container addressing)
+      are already shipped under different or the same names, confirmed by grepping the current endpoint
+      list. A handful (local-variable lifecycle, generic add-node-by-class, UK2Node_CreateDelegate,
+      UMG tree reparent/reorder, rename_graph) were NOT individually re-verified the way connect_pins
+      was and are flagged in the doc as still genuinely worth checking, not claimed fixed and not
+      claimed broken. The doc itself now carries a staleness header pointing future readers here first.
