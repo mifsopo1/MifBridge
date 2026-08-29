@@ -3356,6 +3356,14 @@ def apply_level_snapshot(path: str) -> dict:
 
 
 @mcp.tool()
+def create_mesh_boolean(target_path: str, tool_path: str, operation: str, output_path: str,
+                        tool_offset_x: float = None, tool_offset_y: float = None, tool_offset_z: float = None) -> dict:
+    "Combine two EXISTING StaticMesh assets (union, intersection, or subtract) into a THIRD, new StaticMesh at output_path (must not already exist). tool_offset_x/y/z (default 0) translate tool_path before the operation, so it actually overlaps target_path - two meshes both centered at the origin need no offset. Both inputs are read the same way describe_dynamic_mesh reads them - a real COOKED mesh's editor-only geometry data is usually stripped, so this works best on meshes create_procedural_mesh made. Returns real read-back vertexCount/triangleCount/bounds. Fails cleanly (not silently) if the operation produces an empty result, e.g. a subtract that removes everything."
+    return _post("create_mesh_boolean", targetPath=target_path, toolPath=tool_path, operation=operation,
+                 outputPath=output_path, toolOffsetX=tool_offset_x, toolOffsetY=tool_offset_y, toolOffsetZ=tool_offset_z)
+
+
+@mcp.tool()
 def describe_dynamic_mesh(path: str, lod: int = None) -> dict:
     "Read-only geometry stats for a StaticMesh asset via GeometryScript: vertexCount, triangleCount, isClosed, and bounds, converted from the given LOD (default 0). Nothing is written to the source asset. A COOKED mesh's editor-only MeshDescription may be stripped, in which case this reports failure with debugMessages explaining why rather than guessing at zeros."
     return _post("describe_dynamic_mesh", path=path, lod=lod)

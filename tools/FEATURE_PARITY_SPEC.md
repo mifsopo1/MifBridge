@@ -3495,3 +3495,34 @@ cannot become one giant blocking item:
       is genuinely fixture-testable without PIE. Recorded here rather than left silently declined:
       LiveLink's "needs external data source" reasoning should be treated as UNVERIFIED, not confirmed,
       until someone actually spends the time tracing the virtual-subject registration path end to end.
+- [x] **create_mesh_boolean - a real, silent wrong-answer bug found and fixed live.** DONE 2026-08-28.
+      Third GeometryScript endpoint: union/intersection/subtract of two EXISTING StaticMesh assets
+      (typically create_procedural_mesh's own output, for the same cooked-content reason
+      describe_dynamic_mesh has) into a third new one. Reuses the exact read path
+      describe_dynamic_mesh proved and the exact write path create_procedural_mesh proved.
+      THE BUG: ApplyMeshBoolean's own engine implementation (MeshBooleanFunctions.cpp) cannot tell a
+      genuine computation error apart from a LEGITIMATELY EMPTY result - `bSuccess =
+      (ResultMesh.TriangleCount() > 0); if (!bSuccess) { AppendError(...); return TargetMesh; }` -
+      either way it returns the ORIGINAL, COMPLETELY UNCHANGED TargetMesh, never an emptied one. The
+      first version of this handler checked "did the mesh come back with 0 vertices" to detect
+      failure, which can NEVER fire for this failure mode. Live-verified: subtracting a mesh from
+      ITSELF (unambiguously empty) came back ok:true with the original box's exact untouched vertex
+      count and bounds - a silent wrong-answer bug, not a crash, the harder kind to catch. Fixed by
+      reading Debug->Messages for an EGeometryScriptDebugMessageType::ErrorMessage entry instead of
+      trusting the resulting mesh's vertex count - the one honest signal this API actually gives.
+      A SECOND, SMALLER BUG in the same pass: the overwrite-guard error message named the wrong
+      endpoint ("create_procedural_mesh never overwrites") when triggered from create_mesh_boolean,
+      because both share one local path validator with the caller name hardcoded. Fixed by threading
+      a CallerName parameter through.
+      VERIFIED LIVE with real, hand-computed geometry: a box (100^3) and an overlapping sphere
+      (radius 60, NOT fully engulfing - its radius is less than the box's half-diagonal) produced
+      union/intersection bounds matching hand-calculated predictions exactly; an offset subtract
+      produced real partial-cut geometry; self-subtract and a non-overlapping intersection both now
+      correctly refuse with the engine's own error text surfaced in debugMessages.
+      tools/test_mesh_boolean.py: 23/23, both engines rebuilt clean via Build.bat + buildcheck.py
+      across three iterations (initial build, the Debug-message fix, the CallerName fix).
+      tools/test_geometryscript.py re-checked for regressions from the shared validator change: still
+      41/41. parity_check.py clean (352 endpoints, 340 MIF_BIND, no drift, no new unreachable
+      parameters after dropping an unused newPath alias that had zero real precedent for this
+      endpoint - outputPath alone is the one spelling, matching this handler's own actual design
+      rather than copying rename_asset/duplicate_asset's convention without a reason to).

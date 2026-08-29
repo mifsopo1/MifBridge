@@ -1567,6 +1567,7 @@ namespace MifBridge
 	// copying or reading an existing one; describe_dynamic_mesh is its read-only companion.
 	MIF_DECL(create_procedural_mesh);
 	MIF_DECL(describe_dynamic_mesh);
+	MIF_DECL(create_mesh_boolean);
 
 	// LEVEL SNAPSHOTS (MifBridgeLevelSnapshots.cpp). Plugin-guarded (MIF_WITH_LEVELSNAPSHOTS).
 	// Capture/restore editor world state - reopened 2026-08-28 after being wrongly declined for having

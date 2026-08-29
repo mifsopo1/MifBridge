@@ -44,6 +44,7 @@
 #include "UDynamicMesh.h"
 #include "GeometryScript/MeshPrimitiveFunctions.h"
 #include "GeometryScript/MeshAssetFunctions.h"
+#include "GeometryScript/MeshBooleanFunctions.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/StaticMesh.h"
 #include "Misc/PackageName.h"
@@ -67,6 +68,10 @@ namespace MifBridge
 	{
 		MifNoGeometryScript(Out);
 	}
+	void H_create_mesh_boolean(const TSharedRef<FJsonObject>&, const TSharedRef<FJsonObject>& Out)
+	{
+		MifNoGeometryScript(Out);
+	}
 #else
 
 	namespace
@@ -74,7 +79,8 @@ namespace MifBridge
 		// Same shape as create_datatable/create_struct's own local validator (MifBridgeUserTypes.cpp) -
 		// each domain in this codebase keeps its own, rather than a shared one nobody owns the contract
 		// of. Not a new pattern, the established one.
-		bool ValidateNewMeshAssetPath(const FString& Path, FString& OutAssetName, FString& OutError)
+		bool ValidateNewMeshAssetPath(const FString& Path, FString& OutAssetName, FString& OutError,
+			const TCHAR* CallerName = TEXT("create_procedural_mesh"))
 		{
 			if (Path.IsEmpty())
 			{
@@ -108,10 +114,10 @@ namespace MifBridge
 			if (bOnDisk || Existing)
 			{
 				OutError = FString::Printf(
-					TEXT("'%s' is already taken (%s) - create_procedural_mesh never overwrites. ")
+					TEXT("'%s' is already taken (%s) - %s never overwrites. ")
 					TEXT("delete_asset the existing one first or pick another path. NOTHING was created."),
 					*Path, bOnDisk ? TEXT("a package file exists on disk")
-								   : TEXT("an object is already loaded there"));
+								   : TEXT("an object is already loaded there"), CallerName);
 				return false;
 			}
 			return true;
@@ -127,6 +133,34 @@ namespace MifBridge
 			{
 				OutArr.Add(MakeShared<FJsonValueString>(Msg.Message.ToString()));
 			}
+		}
+
+		// Shared by create_mesh_boolean's target/tool reads - both need the identical
+		// LoadObject-then-CopyMeshFromStaticMesh sequence describe_dynamic_mesh already established.
+		// Not shared WITH describe_dynamic_mesh itself: that handler's response shape (lod, isClosed)
+		// differs enough that factoring it in too would trade one duplication for a worse one.
+		bool ReadStaticMeshIntoDynamicMesh(const FString& Path, UDynamicMesh* DynMesh,
+			UGeometryScriptDebug* Debug, FString& OutError)
+		{
+			UStaticMesh* SourceMesh = LoadObject<UStaticMesh>(nullptr, *Path);
+			if (!SourceMesh)
+			{
+				OutError = FString::Printf(TEXT("no StaticMesh at '%s'"), *Path);
+				return false;
+			}
+			FGeometryScriptCopyMeshFromAssetOptions ReadOptions;
+			FGeometryScriptMeshReadLOD ReadLOD;
+			EGeometryScriptOutcomePins Outcome = EGeometryScriptOutcomePins::Failure;
+			UGeometryScriptLibrary_StaticMeshFunctions::CopyMeshFromStaticMesh(
+				SourceMesh, DynMesh, ReadOptions, ReadLOD, Outcome, Debug);
+			if (Outcome != EGeometryScriptOutcomePins::Success)
+			{
+				OutError = FString::Printf(
+					TEXT("CopyMeshFromStaticMesh reported failure reading '%s' - a cooked mesh's ")
+					TEXT("editor-only MeshDescription is stripped, which is the usual cause."), *Path);
+				return false;
+			}
+			return true;
 		}
 	}
 
@@ -437,6 +471,196 @@ namespace MifBridge
 		BoundsJson->SetNumberField(TEXT("sizeY"), Bounds.GetSize().Y);
 		BoundsJson->SetNumberField(TEXT("sizeZ"), Bounds.GetSize().Z);
 		Out->SetObjectField(TEXT("bounds"), BoundsJson);
+	}
+
+	// --- create_mesh_boolean ---------------------------------------------------------------------
+	//   in:  { targetPath (alias: path), toolPath, operation: union|intersection|subtract, outputPath,
+	//          toolOffsetX/Y/Z? (translation applied to toolPath before the op) }
+	//   out: { assetPath, operation, vertexCount, triangleCount, bounds }
+	// Combines two EXISTING StaticMesh assets (typically ones create_procedural_mesh made, since - same
+	// limit as describe_dynamic_mesh - a real cooked mesh's SourceModel is usually stripped) into a
+	// THIRD, new one. Reuses the exact read path describe_dynamic_mesh proved and the exact write path
+	// create_procedural_mesh proved; the only new code here is the boolean call itself and the
+	// two-input plumbing.
+	void H_create_mesh_boolean(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("targetPath"), TEXT("path"), TEXT("toolPath"), TEXT("operation"), TEXT("outputPath"),
+			  TEXT("toolOffsetX"), TEXT("toolOffsetY"), TEXT("toolOffsetZ") },
+			TEXT("targetPath (alias: path) and toolPath - two existing StaticMesh assets; operation ")
+			TEXT("(union|intersection|subtract); outputPath - where to create the result (must not ")
+			TEXT("already exist); toolOffsetX/Y/Z (optional, default 0 - moves toolPath before the ")
+			TEXT("operation so it actually overlaps targetPath)"),
+			{ { TEXT("newPath"), TEXT("the parameter is outputPath") },
+			  { TEXT("output"), TEXT("the parameter is outputPath") } }))
+		{
+			return;
+		}
+
+		const FString TargetPath = JStrAny(In, { TEXT("targetPath"), TEXT("path") });
+		const FString ToolPath = JStr(In, TEXT("toolPath"));
+		const FString OutputPath = JStr(In, TEXT("outputPath"));
+		if (TargetPath.IsEmpty() || ToolPath.IsEmpty())
+		{
+			Fail(Out, TEXT("both targetPath and toolPath are required (existing StaticMesh assets). NOTHING was created."));
+			return;
+		}
+
+		const FString OpStr = JStr(In, TEXT("operation")).ToLower();
+		EGeometryScriptBooleanOperation Operation;
+		if (OpStr == TEXT("union")) { Operation = EGeometryScriptBooleanOperation::Union; }
+		else if (OpStr == TEXT("intersection")) { Operation = EGeometryScriptBooleanOperation::Intersection; }
+		else if (OpStr == TEXT("subtract")) { Operation = EGeometryScriptBooleanOperation::Subtract; }
+		else
+		{
+			Fail(Out, FString::Printf(
+				TEXT("operation '%s' is not one of union, intersection, subtract. NOTHING was created."), *OpStr));
+			return;
+		}
+
+		FString OutputAssetName, PathError;
+		if (!ValidateNewMeshAssetPath(OutputPath, OutputAssetName, PathError, TEXT("create_mesh_boolean")))
+		{
+			Fail(Out, PathError);
+			return;
+		}
+
+		UGeometryScriptDebug* Debug = NewObject<UGeometryScriptDebug>(GetTransientPackage(), NAME_None, RF_Transient);
+
+		UDynamicMesh* TargetDynMesh = NewObject<UDynamicMesh>(GetTransientPackage(), NAME_None, RF_Transient);
+		FString ReadError;
+		if (!ReadStaticMeshIntoDynamicMesh(TargetPath, TargetDynMesh, Debug, ReadError))
+		{
+			TArray<TSharedPtr<FJsonValue>> Msgs;
+			AppendDebugMessages(Debug, Msgs);
+			Out->SetArrayField(TEXT("debugMessages"), Msgs);
+			Fail(Out, FString::Printf(TEXT("reading targetPath failed: %s NOTHING was created."), *ReadError));
+			return;
+		}
+
+		UDynamicMesh* ToolDynMesh = NewObject<UDynamicMesh>(GetTransientPackage(), NAME_None, RF_Transient);
+		if (!ReadStaticMeshIntoDynamicMesh(ToolPath, ToolDynMesh, Debug, ReadError))
+		{
+			TArray<TSharedPtr<FJsonValue>> Msgs;
+			AppendDebugMessages(Debug, Msgs);
+			Out->SetArrayField(TEXT("debugMessages"), Msgs);
+			Fail(Out, FString::Printf(TEXT("reading toolPath failed: %s NOTHING was created."), *ReadError));
+			return;
+		}
+
+		const FVector ToolOffset(
+			JNum(In, TEXT("toolOffsetX"), 0.0), JNum(In, TEXT("toolOffsetY"), 0.0), JNum(In, TEXT("toolOffsetZ"), 0.0));
+		const FTransform ToolTransform(ToolOffset);
+
+		FGeometryScriptMeshBooleanOptions BooleanOptions;
+		UGeometryScriptLibrary_MeshBooleanFunctions::ApplyMeshBoolean(
+			TargetDynMesh, FTransform::Identity, ToolDynMesh, ToolTransform, Operation, BooleanOptions, Debug);
+
+		// THE REAL FAILURE SIGNAL, live-discovered by reproducing it, not read off the header alone.
+		// ApplyMeshBoolean's own .cpp (MeshBooleanFunctions.cpp) treats an empty RESULT identically to a
+		// computation ERROR: `bSuccess = (NewResultMesh.TriangleCount() > 0); if (!bSuccess) { AppendError
+		// (...); return TargetMesh; }` - on EITHER case it appends an error message to Debug and returns
+		// TargetMesh COMPLETELY UNCHANGED, not emptied. Confirmed live: subtracting a mesh from ITSELF (an
+		// unambiguous empty result) came back as the untouched original target, 8 verts, unmodified bounds -
+		// silently indistinguishable from success by vertex/triangle count alone. So the correct check here
+		// is NOT "did the mesh come back empty" (it never does - it comes back UNCHANGED), it's "did the
+		// engine record an error", which is the one signal this API actually gives honestly.
+		bool bBooleanFailed = false;
+		if (Debug)
+		{
+			for (const FGeometryScriptDebugMessage& Msg : Debug->Messages)
+			{
+				if (Msg.MessageType == EGeometryScriptDebugMessageType::ErrorMessage)
+				{
+					bBooleanFailed = true;
+					break;
+				}
+			}
+		}
+		if (bBooleanFailed)
+		{
+			TArray<TSharedPtr<FJsonValue>> Msgs;
+			AppendDebugMessages(Debug, Msgs);
+			Out->SetArrayField(TEXT("debugMessages"), Msgs);
+			Fail(Out, FString::Printf(
+				TEXT("the %s operation failed - see debugMessages. The engine cannot distinguish a real ")
+				TEXT("computation error from a legitimately empty result (a subtract that fully removes the ")
+				TEXT("target, or a non-overlapping intersection) - either way NOTHING was created, and ")
+				TEXT("targetPath/toolPath are UNCHANGED."), *OpStr));
+			return;
+		}
+
+		int32 VertCount = 0, TriCount = 0;
+		FBox Bounds(EForceInit::ForceInit);
+		TargetDynMesh->ProcessMesh([&](const UE::Geometry::FDynamicMesh3& Mesh)
+		{
+			VertCount = Mesh.VertexCount();
+			TriCount = Mesh.TriangleCount();
+			const UE::Geometry::FAxisAlignedBox3d B = Mesh.GetBounds();
+			Bounds = FBox(FVector(B.Min), FVector(B.Max));
+		});
+		if (VertCount == 0 || TriCount == 0)
+		{
+			TArray<TSharedPtr<FJsonValue>> Msgs;
+			AppendDebugMessages(Debug, Msgs);
+			Out->SetArrayField(TEXT("debugMessages"), Msgs);
+			Fail(Out, FString::Printf(
+				TEXT("the %s operation produced an empty mesh (vertices=%d, triangles=%d) with no error ")
+				TEXT("recorded - see debugMessages. NOTHING was created."),
+				*OpStr, VertCount, TriCount));
+			return;
+		}
+
+		UPackage* Package = CreatePackage(*OutputPath);
+		if (!Package)
+		{
+			Fail(Out, FString::Printf(TEXT("failed to create package '%s'"), *OutputPath));
+			return;
+		}
+		UStaticMesh* TargetAsset = NewObject<UStaticMesh>(
+			Package, FName(*OutputAssetName), RF_Public | RF_Standalone | RF_Transactional);
+		if (!TargetAsset)
+		{
+			Fail(Out, TEXT("failed to allocate the new StaticMesh"));
+			return;
+		}
+
+		FGeometryScriptCopyMeshToAssetOptions CopyOptions;
+		FGeometryScriptMeshWriteLOD WriteLOD;
+		EGeometryScriptOutcomePins WriteOutcome = EGeometryScriptOutcomePins::Failure;
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 5
+		UGeometryScriptLibrary_StaticMeshFunctions::CopyMeshToStaticMesh(
+			TargetDynMesh, TargetAsset, CopyOptions, WriteLOD, WriteOutcome, /*bUseSectionMaterials*/ true, Debug);
+#else
+		UGeometryScriptLibrary_StaticMeshFunctions::CopyMeshToStaticMesh(
+			TargetDynMesh, TargetAsset, CopyOptions, WriteLOD, WriteOutcome, Debug);
+#endif
+
+		if (WriteOutcome != EGeometryScriptOutcomePins::Success)
+		{
+			TArray<TSharedPtr<FJsonValue>> Msgs;
+			AppendDebugMessages(Debug, Msgs);
+			Out->SetArrayField(TEXT("debugMessages"), Msgs);
+			Fail(Out, TEXT("CopyMeshToStaticMesh reported failure - see debugMessages. The package was ")
+						  TEXT("created but the asset was never registered, so it will not appear in ")
+						  TEXT("find_assets."));
+			return;
+		}
+
+		FAssetRegistryModule::AssetCreated(TargetAsset);
+		Package->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("assetPath"), TargetAsset->GetPathName());
+		Out->SetStringField(TEXT("operation"), OpStr);
+		Out->SetNumberField(TEXT("vertexCount"), VertCount);
+		Out->SetNumberField(TEXT("triangleCount"), TriCount);
+		TSharedRef<FJsonObject> BoundsJson = MakeShared<FJsonObject>();
+		BoundsJson->SetNumberField(TEXT("sizeX"), Bounds.GetSize().X);
+		BoundsJson->SetNumberField(TEXT("sizeY"), Bounds.GetSize().Y);
+		BoundsJson->SetNumberField(TEXT("sizeZ"), Bounds.GetSize().Z);
+		Out->SetObjectField(TEXT("bounds"), BoundsJson);
+		UE_LOG(LogMifBridge, Log, TEXT("create_mesh_boolean: %s = %s(%s, %s) (%d verts, %d tris)"),
+			*TargetAsset->GetPathName(), *OpStr, *TargetPath, *ToolPath, VertCount, TriCount);
 	}
 #endif
 }
