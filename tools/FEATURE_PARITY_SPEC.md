@@ -4134,3 +4134,26 @@ cannot become one giant blocking item:
       UMG tree reparent/reorder, rename_graph) were NOT individually re-verified the way connect_pins
       was and are flagged in the doc as still genuinely worth checking, not claimed fixed and not
       claimed broken. The doc itself now carries a staleness header pointing future readers here first.
+
+- [x] **Dropped the ChaosVehiclesPlugin dependency - linked, and nothing ever used it.** DONE
+      2026-08-29. parity_check.py's `check_linked_but_unused_plugins` advisory had been flagging this
+      the whole session (`MIF_WITH_VEHICLES` defined in Build.cs, never checked by any source file -
+      confirmed by grep, not assumed). docs/13_COMPETITOR_GAP_MAP.md had already recorded why: vehicle
+      Blueprint authoring is fully covered by the existing generic tools (create_blueprint,
+      add_component, set_property) with zero vehicle-specific C++ ever needed, confirmed by actually
+      checking rather than assumed when that item was closed. Executing a decision the project's own
+      docs had already made, not a new judgment call.
+      Removed `ChaosVehiclesPlugin` from MifBridge.uplugin and the
+      `AddPluginModules("MIF_WITH_VEHICLES", "ChaosVehiclesPlugin", ...)` line from Build.cs, with a
+      comment recording why and how to reinstate it if a future ask needs vehicle-specific reads/writes
+      the generic tools cannot reach. MassEntity was deliberately left alone - docs/13 states that one
+      is "genuinely idle and declined pending an actual ask," a live open decision, not a closed one.
+      Verified both engines. 5.3.2: buildcheck.py clean, editor loads without the dependency (the exact
+      failure class docs/06 issues 17/22 warned about - a project whose own enabled-plugins list
+      disagrees with what Build.cs links), PLUGIN IDLE dropped from 2 to 1 in parity_check.py, endpoint
+      count unchanged at 363, test_confirm_gated.py (33/33) and test_undo_integrity.py (23/23) clean as
+      a broader sanity check. 5.7 probe: a genuine FULL rebuild (89 actions, expected since removing a
+      plugin dependency changes the module graph, not an incremental no-op), Result: Succeeded, zero
+      errors. parity_check.py clean throughout: 363 endpoints, 351 MIF_BIND, no drift, param reach
+      215/215 unchanged (no parameter surface change - this is dependency cleanup, not a capability
+      change).

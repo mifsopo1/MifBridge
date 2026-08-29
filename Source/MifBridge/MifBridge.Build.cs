@@ -214,8 +214,13 @@ public class MifBridge : ModuleRules
 			// under Engine/Plugins/Runtime in both 5.3.2 and 5.7 before adding.
 		AddPluginModules("MIF_WITH_WATER", "Water",
 			new string[] { "Water" });
-		AddPluginModules("MIF_WITH_VEHICLES", "ChaosVehiclesPlugin",
-			new string[] { "ChaosVehicles" });
+		// ChaosVehiclesPlugin/MIF_WITH_VEHICLES DELIBERATELY REMOVED 2026-08-29, not forgotten - it was
+		// linked with no source file ever checking the guard (parity_check.py's check_linked_but_unused_
+		// plugins caught it), and docs/13_COMPETITOR_GAP_MAP.md already recorded WHY nothing checks it:
+		// vehicle Blueprint authoring is fully covered by the existing generic tools (create_blueprint,
+		// add_component, set_property) with zero vehicle-specific C++ needed, confirmed by actually
+		// checking rather than assumed. Reinstate if a future ask needs UChaosWheeledVehicleMovementComponent-
+		// specific reads/writes the generic tools cannot reach.
 		AddPluginModules("MIF_WITH_MASSENTITY", "MassEntity",
 			new string[] { "MassEntity" });
 		AddPluginModules("MIF_WITH_LIVELINK", "LiveLink",

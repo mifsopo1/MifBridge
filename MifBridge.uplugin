@@ -69,11 +69,6 @@
             "Optional": true
         },
         {
-            "Name": "ChaosVehiclesPlugin",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
             "Name": "MassEntity",
             "Enabled": true,
             "Optional": true
