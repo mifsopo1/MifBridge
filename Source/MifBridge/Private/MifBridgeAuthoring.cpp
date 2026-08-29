@@ -185,14 +185,14 @@ namespace MifBridge
 	//          items:[{ x,y,z | location:{}, rotation:{}|yaw, scale|scale:{}, label?, mesh?, material? }] }
 	//   out: { spawned, failed, actors:[{label, actorPath}] }
 	// One call, N actors. Per-item mesh/material override falls back to the top-level default.
-	// Batch D.1: unknown-param guard added (D-2 sweep). It guards TOP-LEVEL keys only — the
-	// per-item objects inside items[] are still read leniently, see the TODO below.
-	// Batch L discharged HALF of the deferred per-item TODO: every transform component in an items[]
-	// entry is now type-checked and a bad one is reported as items[N].<field> with the offending
-	// value, instead of defaulting to 0 and being counted as spawned. What is still open is
-	// UNRECOGNISED keys inside an entry (a typo'd "rot" or "meshPath" is still ignored) and the
-	// non-object entry, which is still counted in `failed` with no reason attached — both need the
-	// per-item equivalent of RejectUnknownParams, which is a wider change than this batch.
+	// Batch D.1: unknown-param guard added (D-2 sweep). It guards TOP-LEVEL keys only.
+	// Batch L type-checked every transform component in an items[] entry - a bad one is reported as
+	// items[N].<field> with the offending value, instead of defaulting to 0 and being counted as
+	// spawned.
+	// CLOSED 2026-08-29: the per-item TODO this comment used to describe as half-discharged is now
+	// fully closed. UNRECOGNISED keys inside an entry (a typo'd "rot" or "meshPath") are refused by
+	// name rather than silently ignored, and a non-object entry now explains itself in errors[]
+	// instead of just incrementing `failed` with nothing attached. See PerItemKeys below.
 	void H_spawn_many(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
@@ -269,11 +269,52 @@ namespace MifBridge
 		TArray<TSharedPtr<FJsonValue>> LabelNotes;
 		int32 Failed = 0;
 
+		// The per-item accepted-key set ReadTransform/the mesh-material block below actually read -
+		// kept as ONE list here rather than duplicated at each call site, so adding a new per-item
+		// field only ever means updating it in one place. Closes the "half discharged" TODO this
+		// function used to carry: unrecognised keys inside an items[] entry (a typo'd "rot" or
+		// "meshPath") used to be silently ignored, exactly the "ignored parameter is worse than a
+		// rejected one" failure class RejectUnknownParams exists to catch at the top level - this is
+		// its per-item equivalent, added 2026-08-29.
+		static const TCHAR* const PerItemKeys[] = {
+			TEXT("x"), TEXT("y"), TEXT("z"), TEXT("location"), TEXT("yaw"), TEXT("rotation"),
+			TEXT("scale"), TEXT("label"), TEXT("mesh"), TEXT("material") };
+
 		for (int32 Index = 0; Index < Items->Num(); ++Index)
 		{
 			const TSharedPtr<FJsonObject>* ObjPtr = nullptr;
-			if (!(*Items)[Index].IsValid() || !(*Items)[Index]->TryGetObject(ObjPtr) || !ObjPtr) { ++Failed; continue; }
+			if (!(*Items)[Index].IsValid() || !(*Items)[Index]->TryGetObject(ObjPtr) || !ObjPtr)
+			{
+				// The OTHER half of the same TODO: a non-object entry used to be counted in `failed`
+				// with nothing in errors[] explaining why - indistinguishable from a spawn that just
+				// failed for some unknown engine reason.
+				++Failed;
+				Errors.Add(MakeShared<FJsonValueString>(FString::Printf(
+					TEXT("items[%d]: not an object - each entry must be {x,y,z|location, rotation|yaw, ")
+					TEXT("scale, label?, mesh?, material?}"), Index)));
+				continue;
+			}
 			const TSharedRef<FJsonObject> Item = ObjPtr->ToSharedRef();
+
+			TArray<FString> UnknownItemKeys;
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Item->Values)
+			{
+				bool bKnown = false;
+				for (const TCHAR* K : PerItemKeys)
+				{
+					if (Pair.Key.Equals(K, ESearchCase::IgnoreCase)) { bKnown = true; break; }
+				}
+				if (!bKnown) { UnknownItemKeys.Add(Pair.Key); }
+			}
+			if (UnknownItemKeys.Num() > 0)
+			{
+				++Failed;
+				Errors.Add(MakeShared<FJsonValueString>(FString::Printf(
+					TEXT("items[%d]: unrecognised key(s) %s - accepted per-item keys are x/y/z ")
+					TEXT("(or location), yaw/rotation, scale, label, mesh, material. NOT spawned."),
+					Index, *FString::Join(UnknownItemKeys, TEXT(", ")))));
+				continue;
+			}
 
 			FVector Loc, Scale; FRotator Rot;
 			FString ItemError;

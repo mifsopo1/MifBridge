@@ -15,6 +15,13 @@ THE TWO FIXES THIS LOCKS IN.
    dropped. Now reported per item, rather than failing the whole call - the actor itself spawned fine
    and the caller may simply have passed a shared default that does not apply to this row.
 
+3. [T546-T547, added 2026-08-29] TWO PER-ITEM HALVES OF THE SAME TODO, closed together. The top-level
+   RejectUnknownParams guard (Batch D.1) only ever covered TOP-LEVEL keys - a typo'd key INSIDE one
+   items[] entry (e.g. "rot" instead of "rotation", "meshPath" instead of "mesh") was silently
+   ignored, and a non-object entry in items[] was counted in `failed` with nothing in errors[]
+   explaining why - indistinguishable from a spawn that failed for some unrelated engine reason. Both
+   are now refused by name, per item, without failing the rest of the batch.
+
 TWO THINGS THIS SUITE IS CAREFUL ABOUT.
 
   * THE GLOBAL UNDO STACK. spawn_many is in the transacted bucket, so RunEndpoint wraps every call in
@@ -181,6 +188,40 @@ def main():
     # The old single-valued field must be gone, or callers keep reading the one that lied.
     check("T545 the old single-valued labelNote field is gone", "labelNote" not in r,
           json.dumps(list(r.keys()))[:200])
+
+    # ------------------------------------------------------------------ T546-T547 per-item guard
+    print("")
+    print("=== T546: an unrecognised key INSIDE one item is refused by name, not silently ignored ===")
+    before = sm_count()
+    r = M.call("spawn_many", {"items": [{"x": 0, "y": 0, "z": 900},
+                                        {"x": 200, "y": 0, "z": 900, "rot": 90}],
+                              "labelPrefix": "MifBadKey_%d" % st}, timeout=120)
+    check("T546 the call still succeeds overall - one bad item does not take the batch with it",
+          r.get("ok") is True, json.dumps(r)[:220])
+    check("T546 only the good item spawned", r.get("spawned") == 1, json.dumps(r)[:220])
+    check("T546 the bad one is counted in failed", r.get("failed") == 1, json.dumps(r)[:220])
+    errs = json.dumps(r.get("errors") or [])
+    check("T546 the error names the item index", "items[1]" in errs, errs[:260])
+    check("T546 and names the actual bad key - not a generic message", "rot" in errs, errs[:260])
+    check("T546 the level really gained only one actor", sm_count() == before + 1,
+          "count %s -> %s" % (before, sm_count()))
+
+    print("")
+    print("=== T547: a non-object item explains itself in errors[], not just a bare failed count ===")
+    before = sm_count()
+    r = M.call("spawn_many", {"items": [{"x": 0, "y": 100, "z": 900}, "not-an-object", 12345],
+                              "labelPrefix": "MifNonObj_%d" % st}, timeout=120)
+    check("T547 the call still succeeds overall", r.get("ok") is True, json.dumps(r)[:220])
+    check("T547 only the real item spawned", r.get("spawned") == 1, json.dumps(r)[:220])
+    check("T547 both non-object entries are counted in failed", r.get("failed") == 2, json.dumps(r)[:220])
+    errs547 = r.get("errors") or []
+    check("T547 errors[] carries an explanation for EACH non-object entry, not zero",
+          len(errs547) >= 2, json.dumps(errs547)[:260])
+    check("T547 the explanations name the item indices",
+          "items[1]" in json.dumps(errs547) and "items[2]" in json.dumps(errs547),
+          json.dumps(errs547)[:260])
+    check("T547 the level really gained only one actor", sm_count() == before + 1,
+          "count %s -> %s" % (before, sm_count()))
 
     print("")
     print("=" * 72)

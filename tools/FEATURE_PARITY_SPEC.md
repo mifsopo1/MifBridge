@@ -3920,3 +3920,27 @@ cannot become one giant blocking item:
       NO test before, resting entirely on a comment nobody had re-verified.
       NO BEHAVIOR CHANGED - comment-only C++ edit, no rebuild needed. parity_check.py clean: 363
       endpoints, 351 MIF_BIND, no drift.
+- [x] **spawn_many's per-item TODO, explicitly marked "half discharged," is now fully closed.**
+      DONE 2026-08-29. Found by the same TODO-grep method that caught the set_material_parameter stale
+      comment above - a genuinely open one this time, not stale. The comment above H_spawn_many
+      (MifBridgeAuthoring.cpp) said outright: "Batch L discharged HALF of the deferred per-item TODO...
+      What is still open is UNRECOGNISED keys inside an entry (a typo'd 'rot' or 'meshPath' is still
+      ignored) and the non-object entry, which is still counted in `failed` with no reason attached."
+      Both fixed together:
+      1. A typo'd or unrecognised key inside ONE items[] entry (e.g. "rot" instead of "rotation") used
+         to be silently ignored - the exact "ignored parameter is worse than a rejected one" failure
+         class RejectUnknownParams exists to catch at the top level, just one layer deeper than that
+         guard's own visibility (it only ever covered items[]'s TOP-LEVEL keys, not the objects
+         inside it). Now refused BY NAME, per item (items[N]: unrecognised key(s) '<key>' ...), without
+         failing the rest of the batch - the same "counted and explained, one bad item does not take
+         the batch with it" philosophy this function already applies to a bad transform.
+      2. A non-object entry in items[] (a bare string or number instead of {x,y,z,...}) used to be
+         counted in `failed` with NOTHING in errors[] explaining why - indistinguishable from a spawn
+         that failed for some unrelated engine reason. Now explains itself by index.
+      A single PerItemKeys list (x, y, z, location, yaw, rotation, scale, label, mesh, material) is the
+      one place a future per-item field addition needs to be registered, rather than duplicated across
+      call sites.
+      tools/test_spawn_many.py grew T546-T547 (39/39 total, all pre-existing tests unaffected - every
+      existing items[] entry already used only accepted keys). Both engines rebuilt clean (5.3.2
+      against the real DDS2 project, 5.7 via make_engine_probe.py). parity_check.py clean: 363
+      endpoints, 351 MIF_BIND, no drift.
