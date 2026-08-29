@@ -1103,6 +1103,7 @@ namespace MifBridge
 
 	// Pipeline hooks
 	MIF_DECL(read_modloader_log);
+	MIF_DECL(read_engine_log);
 	MIF_DECL(trigger_cook);
 
 	// Phase 3 breadth — graph nodes

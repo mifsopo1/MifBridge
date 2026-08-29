@@ -1015,6 +1015,12 @@ def read_modloader_log(lines: int = 80, filter: str = "", path: str = "") -> dic
 
 
 @mcp.tool()
+def read_engine_log(lines: int = 200, filter: str = "") -> dict:
+    "Tail THIS editor process's own Output Log (Saved/Logs/<Project>.log) - every UE_LOG call anywhere in the engine or project, including FMessageLog warnings (they mirror here by default). Different from read_modloader_log, which tails an external UE4SS log; this always reads the current process's own log, no path override. Optional substring filter."
+    return _post("read_engine_log", lines=lines, filter=filter or None)
+
+
+@mcp.tool()
 def trigger_cook(mod: str = "", asset: str = "") -> dict:
     "PLAN ONLY: returns the verified retoc extract->patch->repack->parity->deploy command sequence with paths pinned. Executes nothing (the pipeline runs out-of-editor on live paks)."
     return _post("trigger_cook", mod=mod or None, asset=asset or None)

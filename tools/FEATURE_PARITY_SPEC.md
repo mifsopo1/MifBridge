@@ -3797,3 +3797,40 @@ cannot become one giant blocking item:
       FMessageLog("PIE") warning directly instead of triangulating the cause from list_pie_actors and
       engine source. A real, bounded, useful next endpoint if this thread continues, not built tonight
       because the root cause was reachable without it.
+- [x] **read_engine_log - a generic Output Log reader.** DONE 2026-08-29. Reopened a real, concrete
+      gap found the previous night during the PIE-family sweep: diagnosing why move_actor_to's target
+      pawn never moved required triangulating the cause from list_pie_actors and engine source, because
+      there was no way to just read the actual FMessageLog("PIE") warning
+      UAIBlueprintHelperLibrary::SimpleMoveToLocation calls directly - it would have named the real
+      cause outright. This closes that gap: tails THIS EDITOR PROCESS'S OWN Output Log
+      (Saved/Logs/<Project>.log), which every UE_LOG call anywhere in the engine or project writes to,
+      including FMessageLog entries (they mirror to the regular log by default). Different from the
+      existing read_modloader_log (same file, MifBridgePipeline.cpp): that one tails an EXTERNAL log
+      (UE4SS.log, a packaged-game runtime file that usually does not even exist in this SDK editor) with
+      a path override; this one always reads the current process's own log, no path override, because
+      there is only ever one.
+      TWO REAL BUGS, both caught by actually building and running, neither assumed fixed:
+      1. A COMPILE ERROR on the first attempt, both engines: the path was built as
+         `FPaths::ProjectLogDir() / (FApp::GetProjectName() + TEXT(".log"))` -
+         FApp::GetProjectName() returns a raw `const TCHAR*`, not an FString, so `+ TEXT(".log")` was
+         literal POINTER ARITHMETIC between two pointers (MSVC C2110, "cannot add two pointers"). Both
+         engines "completed" with exit code 0 on the failing attempt while their logs actually printed
+         `Result: Failed (OtherCompilationError)` - the same lying-exit-code trap this project's own
+         buildcheck.py exists to catch, caught again live. Fixed by wrapping it in FString() first.
+      2. A RUNTIME BUG caught by the FIRST live test run, not by reasoning: the log file is open for
+         write by THIS SAME PROCESS the whole time. FFileHelper::LoadFileToStringArray opens its read
+         handle via plain FILEREAD_Silent, which WindowsPlatformFile.cpp's OpenRead() turns into a
+         CreateFileW sharing request of FILE_SHARE_READ only - no FILE_SHARE_WRITE - a sharing violation
+         against the writer's own open handle. Confirmed by reading engine source
+         (WindowsPlatformFile.cpp, FileHelper.cpp, FileManager.h) rather than guessed: FILEREAD_AllowWrite
+         is the flag for exactly this case, but only LoadFileToString(..., ReadFlags) exposes it -
+         LoadFileToStringArray does not. Fixed by reading the whole file as one string with that flag and
+         splitting it into lines with FString::ParseIntoArrayLines(InCullEmpty=false) instead.
+      tools/test_engine_log.py: 15/15, verifying real content (not just found:true), a filter match on
+      this exact session's own real startup line even after the log grew well past the tail size (proving
+      the filter runs on the whole file before the tail cut), the lines clamp, the path refusal (path is
+      NOT accepted here, unlike read_modloader_log), and the reported path independently confirmed to be
+      a real file on disk.
+      Both engines rebuilt clean (5.3.2 against the real DDS2 project after closing the unattended,
+      headless editor instance holding the DLL locked; 5.7 via make_engine_probe.py against the
+      installed engine). parity_check.py clean: 363 endpoints, 351 MIF_BIND, no drift.

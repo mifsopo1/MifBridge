@@ -161,6 +161,7 @@ namespace MifBridge
 			MIF_BIND(recipe_argmax_over_components);
 			// Pipeline hooks
 			MIF_BIND(read_modloader_log);
+			MIF_BIND(read_engine_log);
 			MIF_BIND(trigger_cook);
 			// Phase 3 breadth — graph nodes
 			MIF_BIND(add_timeline);

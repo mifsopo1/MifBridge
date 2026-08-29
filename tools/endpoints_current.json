@@ -242,6 +242,7 @@
  "project_dependency_graph",
  "push_livelink_transform",
  "read_datatable",
+ "read_engine_log",
  "read_modloader_log",
  "recipe_add_debug_print",
  "recipe_argmax_over_components",

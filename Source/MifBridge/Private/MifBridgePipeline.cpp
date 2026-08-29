@@ -5,6 +5,7 @@
 #include "MifBridgeLog.h"
 
 #include "HAL/FileManager.h"
+#include "Misc/App.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
@@ -72,6 +73,109 @@ namespace MifBridge
 			Fail(Out, FString::Printf(TEXT("could not read log: %s"), *Path));
 			return;
 		}
+
+		TArray<FString> Kept;
+		if (Filter.IsEmpty())
+		{
+			Kept = MoveTemp(AllLines);
+		}
+		else
+		{
+			for (const FString& Line : AllLines)
+			{
+				if (Line.Contains(Filter))
+				{
+					Kept.Add(Line);
+				}
+			}
+		}
+
+		const int32 Start = FMath::Max(0, Kept.Num() - Lines);
+		TArray<TSharedPtr<FJsonValue>> Tail;
+		for (int32 Index = Start; Index < Kept.Num(); ++Index)
+		{
+			PushLine(Tail, Kept[Index]);
+		}
+
+		Out->SetBoolField(TEXT("found"), true);
+		Out->SetNumberField(TEXT("matched"), Kept.Num());
+		Out->SetNumberField(TEXT("returned"), Tail.Num());
+		Out->SetArrayField(TEXT("lines"), Tail);
+	}
+
+	// --- read_engine_log -----------------------------------------------------
+	// Tails THIS EDITOR PROCESS'S OWN Output Log (Saved/Logs/<Project>.log) - everything any
+	// UE_LOG call anywhere in the engine or project writes, including FMessageLog entries (which
+	// mirror to the regular log by default). read_modloader_log tails a DIFFERENT, external log
+	// (UE4SS, a packaged-game runtime); this one is the editor's own log, always live no matter
+	// what plugin or subsystem is doing the logging.
+	//
+	// Reopened 2026-08-28/29 after a concrete, live need: diagnosing why move_actor_to's target
+	// pawn never moved required triangulating the cause from list_pie_actors and engine source,
+	// because there was no way to just read the actual FMessageLog("PIE") warning
+	// (UAIBlueprintHelperLibrary::SimpleMoveToLocation calls it directly) that would have named the
+	// cause outright. This endpoint exists so that investigation is a single call next time.
+	//
+	// SAME file-tailing shape as read_modloader_log on purpose - one already-proven pattern, not a
+	// new one: same lines/filter contract, same size guard, same alias-rejection notes.
+	void H_read_engine_log(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("lines"), TEXT("filter") },
+			TEXT("lines (tail size, 1-5000, default 200), filter (plain substring) - always reads THIS ")
+			TEXT("editor process's own Output Log (Saved/Logs/<Project>.log); there is no path override, ")
+			TEXT("unlike read_modloader_log, because there is only ever one such log for a running process"),
+			{ { TEXT("path"), TEXT("not accepted here - this always reads the current process's own ")
+				TEXT("Output Log. Use read_modloader_log if you need to read a DIFFERENT log file by path") },
+			  { TEXT("maxLines"), TEXT("spell it lines - it is the tail size, clamped to 1-5000") },
+			  { TEXT("limit"), TEXT("spell it lines - it is the tail size, clamped to 1-5000") },
+			  { TEXT("tail"), TEXT("spell it lines - it is the tail size, clamped to 1-5000") },
+			  { TEXT("contains"), TEXT("spell it filter - a plain substring match, not a regex") },
+			  { TEXT("search"), TEXT("spell it filter - a plain substring match, not a regex") } }))
+		{
+			return;
+		}
+
+		const FString Path = FPaths::ConvertRelativePathToFull(
+			FPaths::ProjectLogDir() / (FString(FApp::GetProjectName()) + TEXT(".log")));
+		const int32 Lines = FMath::Clamp(JInt(In, TEXT("lines"), 200), 1, 5000);
+		const FString Filter = JStr(In, TEXT("filter"));
+
+		Out->SetStringField(TEXT("path"), Path);
+
+		if (!FPaths::FileExists(Path))
+		{
+			Out->SetBoolField(TEXT("found"), false);
+			Fail(Out, FString::Printf(TEXT("log file not found: %s (unusual - this process should be ")
+				TEXT("writing to it right now)"), *Path));
+			return;
+		}
+
+		// Same pathological-size guard read_modloader_log uses - this log grows for the entire
+		// editor session, so it can be much larger than a fresh modloader log.
+		const int64 FileSize = IFileManager::Get().FileSize(*Path);
+		if (FileSize > 64 * 1024 * 1024)
+		{
+			Out->SetBoolField(TEXT("truncatedRead"), true);
+		}
+
+		// The log file is OPEN FOR WRITE by THIS SAME PROCESS the whole time, which
+		// LoadFileToStringArray cannot read - live-caught, not assumed: it opens its read handle via
+		// plain FILEREAD_Silent (FileHelper.cpp), which WindowsPlatformFile.cpp's OpenRead() turns
+		// into a CreateFileW sharing request of FILE_SHARE_READ only, no FILE_SHARE_WRITE - a
+		// sharing violation against the writer's own open handle, so it failed every time on the
+		// live editor. FILEREAD_AllowWrite (FileManager.h) is the flag for exactly this case, but
+		// only LoadFileToString(..., ReadFlags) exposes it - LoadFileToStringArray does not, so this
+		// reads the whole file as one string with that flag and splits it into lines itself,
+		// InCullEmpty=false so line numbers still line up with what a human would see in the file.
+		FString FullText;
+		if (!FFileHelper::LoadFileToString(FullText, *Path, FFileHelper::EHashOptions::None, FILEREAD_AllowWrite))
+		{
+			Fail(Out, FString::Printf(TEXT("could not read log: %s"), *Path));
+			return;
+		}
+		TArray<FString> AllLines;
+		FullText.ParseIntoArrayLines(AllLines, /*InCullEmpty*/ false);
 
 		TArray<FString> Kept;
 		if (Filter.IsEmpty())
