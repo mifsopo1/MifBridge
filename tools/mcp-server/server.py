@@ -2791,6 +2791,14 @@ def set_enum_value(enum: str, index: int = None, value: str = "", new_name: str 
 
 
 @mcp.tool()
+def set_niagara_emitter(path: str, emitter: str, enabled: bool,
+                        recompile: bool = False) -> dict:
+    "Enable or disable one emitter on a NiagaraSystem. Prefer this over set_property on EmitterHandles[N].bIsEnabled: that flips the same bool but skips the compile invalidation, so ENABLING through it leaves the emitter dark with a flag saying otherwise."
+    return _post("set_niagara_emitter", path=path, emitter=emitter, enabled=enabled,
+                 recompile=recompile)
+
+
+@mcp.tool()
 def consolidate_assets(target: str, sources: list, delete_sources: bool = False,
                        confirm: bool = False) -> dict:
     "Repoint every referencer of `sources` at `target`, optionally deleting the sources - the Content Browser's asset consolidation, and the write half delete_asset dead-ends into. It CLOSES EVERY OPEN ASSET EDITOR. Run check_consolidate_assets first; requires confirm=True."

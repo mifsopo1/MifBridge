@@ -5546,7 +5546,44 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Uncooked only (graph authoring), refused by ResolveGraphField on a cooked blueprint. Worth adding a soft warning rather than a refusal when the named action/axis is not present in the project's legacy input settings — the node is still legal and will simply never fire, and telling the caller that at...
       Vetter corrected the proposal: Keep the endpoint, fix the shape. (a) Drop the "set before AllocateDefaultPins" framing for kind=key|action|touch — pins there are static. (b) For kind=axis, call UK2Node_InputAxisEvent::Initialize(AxisName) AFTER NewObject, not a bare InputAxisName assignment, or the node compiles to nothing. (c) Drop foundInProjectSettings as a headline feature — get_property on /Script/Engine.Default__InputSett...
 
-- [ ] **set_niagara_emitter { enabled } + add_niagara_emitter / remove_niagara_emitter** (day)
+- [x] **set_niagara_emitter { enabled }** (day -> hours) - add/remove SPLIT OUT below
+      DONE 2026-08-30. 13 checks in tools/test_niagara_emitter.py.
+      SCOPE NARROWED: set_property on EmitterHandles[N].bIsEnabled already reaches the flag,
+      and DISABLE works through it. Only ENABLE is broken, and it fails SILENTLY -
+      FNiagaraEmitterHandle::SetIsEnabled also calls RefreshFromExternalChanges and
+      InvalidateCompileResults (NiagaraEmitterHandle.cpp:110-124) and
+      UNiagaraSystem::PostEditChangeProperty does not compensate, so a property write leaves
+      stale compile results and an emitter that stays dark with a flag reading as enabled.
+      COOKED IS REFUSED FOR PERSISTENCE, NOT SAFETY, and the refusal says so - the engine's
+      own side-effect block self-skips on cooked content (null GetLatestSource), so a refusal
+      blaming a crash would invite someone to add a guard the engine already has.
+      UNiagaraComponent::SetEmitterEnable is NOT used and the reason is recorded: it is a
+      cooked-safe per-instance alternative on 5.6/5.7, and on 5.3 it is a STUB that logs
+      "not implemented" and returns - routing to it there would be a silent no-op reporting
+      success.
+      NOT exercised: the toggle itself. Every NiagaraSystem in this project is cooked, so the
+      cooked guard answers every call.
+
+- [ ] **add_niagara_emitter / remove_niagara_emitter** (day)
+      Split out 2026-08-30 on the vetter's advice - these need their own guards rather than
+      riding alongside a boolean, and set_niagara_emitter refuses `add`/`remove` by name.
+      RAW AddEmitterHandle HAS AN UNGUARDED NULL DEREFERENCE at NiagaraSystem.cpp:2309 -
+      GetLatestEmitterData()->RemoveParent() on a Template or Behavior emitter - which is a
+      DIFFERENT crash from the AddEmitterToSystem finding already in docs/audit.
+      And use RemoveEmitterHandle, NOT RemoveEmitterHandlesById: only the former calls
+      RemoveSystemParametersForEmitter, so the other leaves orphaned system parameters.
+      Should also refuse while any compilation is in flight.
+
+- [ ] **audit create_asset for OTHER classes that need factory initialisation** (hours)
+      Filed 2026-08-30 after a UserDefinedEnum created by create_asset TERMINATED the editor:
+      a bare NewObject left CppForm at Regular and the first operation naming an enumerator
+      hit check(CppForm == ECppForm::Namespaced). ULevelSequence had already needed the same
+      treatment (Initialize(), found 2026-08-28) - so that is TWICE, which makes it a pattern
+      rather than two accidents.
+      The check: for each class create_asset accepts, find the engine's own UFactory or
+      FooEditorUtils::CreateFoo and see what it does AFTER its NewObject. The factory is the
+      specification; NewObject alone almost never is. UNiagaraSystem is a known unknown - it
+      was NOT risked while testing set_niagara_emitter for exactly this reason.
       Enable or disable an emitter inside a NiagaraSystem, add an emitter to a system from a source emitter asset, duplicate one, and remove one. The single most common Niagara edit an agent needs is "turn this emitter off and see if the artifact goes away".
       API: FNiagaraEmitterHandle::SetIsEnabled(bool, UNiagaraSystem&, bool bRecompileIfChanged) NIAGARA_API - D:/UE532/Engine/Plugins/FX/Niagara/Source/Niagara/Classes/NiagaraEmitterHandle.h:57. UNiagaraSystem::AddEmitterHandle(UNiagaraEmitter&, FName, FGuid) NIAGARA_API - NiagaraSystem.h:300; ::DuplicateEmitterHandle :307; ::RemoveEmitterHandlesById(const TSet<FGuid>&) :313; ::GetEmitterHandles() non-const ...
       Cooked: REFUSE on a cooked package, and say why: docs/02_GOTCHAS.md 6c records a cooked UNiagaraSystem killing the editor inside FVersionedNiagaraEmitterData::PostLoad, and duplicate_asset already refuses cooked Niagara for that reason. Two guards, in order: (1) IsCookedOrContainerPackage on the system's pa...

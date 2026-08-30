@@ -215,6 +215,7 @@ set_material_parameter.parameter
 set_material_parameter.parametername
 set_material_parameter.value
 set_niagara_component_parameter.parameter
+set_niagara_emitter.system
 set_pin_default.default
 set_pin_default.guid
 set_pin_default.name

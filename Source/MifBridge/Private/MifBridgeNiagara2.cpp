@@ -402,4 +402,189 @@ namespace MifBridge
 #endif
 	}
 
+	// =======================================================================
+	// set_niagara_emitter - only the ENABLE direction was actually broken
+	// =======================================================================
+	//
+	// SCOPE, NARROWED AFTER CHECKING. set_property{propertyPath:"EmitterHandles[N].bIsEnabled"}
+	// already reaches this flag, and the DISABLE direction genuinely works: InitEmitters builds an
+	// instance per handle unconditionally and Init sets ExecutionState=Disabled from
+	// IsAllowedToExecute, so a raw property write is enough to turn an emitter off.
+	//
+	// ENABLE is the half that is broken, and it fails silently. FNiagaraEmitterHandle::SetIsEnabled
+	// does two things a property write skips (NiagaraEmitterHandle.cpp:110-124):
+	//
+	//     GetSystemSpawnScript()->GetLatestSource()->RefreshFromExternalChanges();
+	//     GetSystemSpawnScript()->InvalidateCompileResults(TEXT("Emitter enabled changed."));
+	//
+	// and UNiagaraSystem::PostEditChangeProperty does not compensate. So set_property flips the
+	// bool, the system keeps its stale compile results, and the emitter stays dark - with a flag
+	// that reads as enabled. That is a wrong answer rather than an error, which is why this is
+	// worth an endpoint at all.
+	//
+	// ADD AND REMOVE ARE DELIBERATELY NOT HERE, and that is the vetting's call rather than
+	// laziness. Raw AddEmitterHandle contains an UNGUARDED null dereference at
+	// NiagaraSystem.cpp:2309 - GetLatestEmitterData()->RemoveParent() on a Template or Behavior
+	// emitter - which is a different crash from the one already in this project's audit, and
+	// RemoveEmitterHandle vs RemoveEmitterHandlesById differ in whether system parameters are
+	// cleaned up. Both deserve their own item with their own guards rather than being smuggled in
+	// beside a boolean.
+	//
+	// COOKED IS REFUSED, but NOT because it crashes - and getting that reason right matters,
+	// because the wrong reason invites someone to "fix" it. SetIsEnabled's side-effect block
+	// self-skips on cooked content (GetLatestSource is null there), so nothing dies. It is refused
+	// because the change cannot be persisted and the system cannot be recompiled, so the emitter
+	// would come back on restart with the flag telling a different story.
+	//
+	// UNiagaraComponent::SetEmitterEnable IS NOT USED, and the reason is worth recording: it is a
+	// per-instance, cooked-safe alternative on 5.6 and 5.7 - and on 5.3 it is a STUB that logs
+	// "SetEmitterEnable: Is not implemented in Niagara" and returns (NiagaraSystemInstance.cpp:166-
+	// 177). Routing to it on 5.3 would produce a silent no-op that reports success.
+
+	void H_set_niagara_emitter(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("system"), TEXT("emitter"), TEXT("enabled"),
+			  TEXT("recompile") },
+			TEXT("path (aliases assetPath, system) - a NiagaraSystem; emitter - the handle name; ")
+			TEXT("enabled:true|false; recompile (default FALSE - compiling from an HTTP handler is ")
+			TEXT("opt-in)"),
+			{ { TEXT("add"), TEXT("adding an emitter is not offered here - raw AddEmitterHandle has "
+								  "an unguarded null dereference on Template and Behavior emitters, "
+								  "so it needs its own guards rather than riding along with a bool") },
+			  { TEXT("remove"), TEXT("same - and RemoveEmitterHandle vs RemoveEmitterHandlesById "
+									 "differ in whether system parameters are cleaned up") },
+			  { TEXT("index"), TEXT("emitters are addressed by NAME here, because an index shifts "
+									"when anything is added or removed") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("system") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - a NiagaraSystem asset. NOTHING was changed."));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: '%s'. NOTHING was changed."), *Path));
+			return;
+		}
+		UNiagaraSystem* System = Cast<UNiagaraSystem>(Asset);
+		if (!System)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, not a NiagaraSystem. NOTHING was changed."),
+				*Path, *Asset->GetClass()->GetName()));
+			return;
+		}
+
+		// COOKED: refused for persistence, not for safety - see the note above.
+		if (IsCookedOrContainerPackage(System->GetOutermost()))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' came from a COOKED package. Toggling an emitter there changes a flag that "
+					 "cannot be saved and a system that cannot be recompiled, so the emitter would "
+					 "come back on restart with the flag saying otherwise. It is refused for that "
+					 "reason rather than for safety - the engine's own side-effect block self-skips "
+					 "on cooked content. NOTHING was changed."), *System->GetPathName()));
+			return;
+		}
+
+		const FString EmitterName = JStr(In, TEXT("emitter"));
+		if (EmitterName.IsEmpty())
+		{
+			Fail(Out, TEXT("emitter is required - the handle name. list_niagara_emitters reports "
+				TEXT("them. NOTHING was changed.")));
+			return;
+		}
+		if (!In->HasField(TEXT("enabled")))
+		{
+			Fail(Out, TEXT("enabled:true|false is required - say which end state you want rather "
+				TEXT("than having this toggle. NOTHING was changed.")));
+			return;
+		}
+		const bool bWant = JBool(In, TEXT("enabled"), true);
+		const bool bRecompile = JBool(In, TEXT("recompile"), false);
+
+		int32 Found = INDEX_NONE;
+		TArray<FString> Names;
+		const TArray<FNiagaraEmitterHandle>& Handles = System->GetEmitterHandles();
+		for (int32 i = 0; i < Handles.Num(); ++i)
+		{
+			const FString Name = Handles[i].GetName().ToString();
+			Names.Add(Name);
+			if (Name == EmitterName) { Found = i; }
+		}
+		if (Found == INDEX_NONE)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no emitter named '%s' on '%s'. It has: %s. NOTHING was changed."),
+				*EmitterName, *System->GetName(),
+				Names.Num() ? *FString::Join(Names, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		Out->SetStringField(TEXT("system"), System->GetPathName());
+		Out->SetStringField(TEXT("emitter"), EmitterName);
+		Out->SetNumberField(TEXT("emitterIndex"), Found);
+
+		const bool bWas = Handles[Found].GetIsEnabled();
+		Out->SetBoolField(TEXT("wasEnabled"), bWas);
+		if (bWas == bWant)
+		{
+			Out->SetBoolField(TEXT("enabled"), bWas);
+			Out->SetBoolField(TEXT("changed"), false);
+			Out->SetStringField(TEXT("note"),
+				TEXT("that emitter is already in the state you asked for - nothing was changed, and "
+					 "nothing needed to be."));
+			return;
+		}
+
+		{
+			FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_SetNiagaraEmitter",
+											"Set Niagara Emitter Enabled"));
+			System->Modify();
+			// THE CALL set_property CANNOT MAKE. This is what invalidates the compile results and
+			// refreshes the node graph - without it the flag flips and the emitter stays dark.
+			FNiagaraEmitterHandle& Handle =
+				const_cast<FNiagaraEmitterHandle&>(System->GetEmitterHandles()[Found]);
+			Handle.SetIsEnabled(bWant, *System, bRecompile);
+		}
+
+		// READ BACK from the system's own handle list. SetIsEnabled returns a bool about whether
+		// anything changed, which is not the same claim as "the emitter is now enabled".
+		const bool bNow = System->GetEmitterHandles()[Found].GetIsEnabled();
+		if (bNow != bWant)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the emitter was set to %s and reads back as %s. NOTHING reliable was "
+					 "produced."), bWant ? TEXT("enabled") : TEXT("disabled"),
+				bNow ? TEXT("enabled") : TEXT("disabled")));
+			return;
+		}
+		System->MarkPackageDirty();
+
+		Out->SetBoolField(TEXT("enabled"), bNow);
+		Out->SetBoolField(TEXT("changed"), true);
+		Out->SetBoolField(TEXT("recompiled"), bRecompile);
+		if (!bRecompile)
+		{
+			Out->SetStringField(TEXT("recompileNote"),
+				TEXT("the system's compile results were INVALIDATED but not rebuilt, because "
+					 "compiling from an HTTP handler is opt-in - it can take a long time and holds "
+					 "the editor. The change is real and the system will recompile when the editor "
+					 "next needs it, or now with recompile:true."));
+		}
+		Out->SetStringField(TEXT("whyNotSetProperty"),
+			TEXT("set_property on EmitterHandles[N].bIsEnabled flips the same bool, and it is enough "
+				 "to DISABLE an emitter - but not to enable one, because it skips the "
+				 "RefreshFromExternalChanges and InvalidateCompileResults this call makes. That "
+				 "leaves a stale compile result and an emitter that stays dark with a flag saying "
+				 "otherwise."));
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the system is dirty and NOTHING has been saved."));
+	}
 }
