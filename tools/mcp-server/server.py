@@ -2691,6 +2691,20 @@ def get_asset_tags(path: str) -> dict:
     return _post("get_asset_tags", path=path)
 
 
+@mcp.tool()
+def check_consolidate_assets(target: str, sources: list) -> dict:
+    "Preview replacing every reference to `sources` with `target` - the whole validation ladder and the referencer set, touching NOTHING. This is the dry run of consolidate_assets, and it is not gated."
+    return _post("check_consolidate_assets", target=target, sources=sources)
+
+
+@mcp.tool()
+def consolidate_assets(target: str, sources: list, delete_sources: bool = False,
+                       confirm: bool = False) -> dict:
+    "Repoint every referencer of `sources` at `target`, optionally deleting the sources - the Content Browser's asset consolidation, and the write half delete_asset dead-ends into. It CLOSES EVERY OPEN ASSET EDITOR. Run check_consolidate_assets first; requires confirm=True."
+    return _post("consolidate_assets", target=target, sources=sources,
+                 deleteSources=delete_sources, confirm=confirm)
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:

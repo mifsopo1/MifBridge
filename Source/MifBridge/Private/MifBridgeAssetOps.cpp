@@ -5,6 +5,8 @@
 // (delete/rename) are confirm-gated, matching remove_node/remove_variable/etc. All go through the
 // headless (no-dialog) engine entry points, matching the rest of the plugin's no-popup design.
 #include "MifBridgeHandlers.h"
+#include "ObjectTools.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 #include "MifBridgeLog.h"
 
 #include "AssetRegistry/ARFilter.h"
@@ -1174,5 +1176,342 @@ namespace MifBridge
 		Out->SetArrayField(TEXT("assets"), Arr);
 		UE_LOG(LogMifBridge, Log, TEXT("audit_unused: %s -> %d scanned, %d unreferenced (%d referencer(s) excluded by %d pattern(s), %d newly unused)"),
 			*Prefix, Assets.Num(), UnusedCount, ExcludedTotal, ExcludePatterns.Num(), NewlyUnusedCount);
+	}
+
+	// =======================================================================
+	// ASSET CONSOLIDATION - the write half delete_asset already dead-ends into
+	// =======================================================================
+	//
+	// delete_asset reports blockedBy.registryReferencers and then offers no operation that can
+	// clear them. This is that operation: repoint every referencer of N source assets at one
+	// target. It is also the write half of get_referencers, and the only way to deduplicate
+	// imported meshes or swap a placeholder material across a level through the bridge.
+	//
+	// SPLIT IN TWO, by the rule this file's neighbours settled earlier today: the safety gate
+	// classifies whole ENDPOINTS, so a dryRun flag inside a gated endpoint is unreachable in the
+	// mode where you most want to ask. check_consolidate_assets runs the whole validation ladder
+	// and touches nothing; consolidate_assets acts and is gated. They share one ladder, so the
+	// preview cannot drift from what the act would do.
+	//
+	// IT CLOSES EVERY OPEN ASSET EDITOR, AND FAILS SILENTLY IF ONE REFUSES. This is the trap.
+	// ObjectTools.cpp:1443 calls CloseAllAssetEditors() unconditionally in a live editor - not just
+	// the sources' editors, ALL of them - and if any editor refuses to close it returns an EMPTY,
+	// ERROR-FREE FConsolidationResults:
+	//
+	//     if (!GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->CloseAllAssetEditors())
+	//     {
+	//         return ConsolidationResults;   // zeroed. No error. No log.
+	//     }
+	//
+	// So "aborted at the close gate" and "there were no referencers" are the same response. The
+	// open-editor list is therefore snapshotted BEFORE the call and compared after, which is the
+	// only way to tell them apart - a per-source open-editor pre-check, which is the obvious shape,
+	// would not catch it because the gate is about every OTHER editor too.
+	//
+	// THE MODALS ARE SUPPRESSIBLE, contrary to this project's own risk note. MessageDialog.cpp:172
+	// gates display on !FApp::IsUnattended() && !GIsRunningUnattendedScript for ALL message types -
+	// the Ok-exclusion at :128 only skips an extra log. bWarnAboutRootSet is still passed false, and
+	// the unattended guard still wraps the call, because two cheap belts are worth one brace here.
+	//
+	// COOKED REFERENCERS ARE REFUSED BY NAME. A reference inside a mounted pak cannot be rewritten
+	// or re-saved, so reporting success would be a lie that survives until the next restart. Note
+	// that IsCookedOrContainerPackage takes a loaded UPackage*, and GetReferencers hands back
+	// UNLOADED package FNames - so the test here is the name-based one, not that helper.
+
+	struct FMifConsolidationPlan
+	{
+		UObject* Target = nullptr;
+		TArray<UObject*> Sources;
+		TArray<TSharedPtr<FJsonValue>> Referencers;
+		TArray<TSharedPtr<FJsonValue>> CookedReferencers;
+		TArray<TSharedPtr<FJsonValue>> ClassMismatch;
+		TArray<TSharedPtr<FJsonValue>> RootedSources;
+		TArray<TSharedPtr<FJsonValue>> OpenEditors;
+		TArray<TSharedPtr<FJsonValue>> TargetDependsOn;
+		TArray<TSharedPtr<FJsonValue>> NotFound;
+		bool bBlocked = false;
+	};
+
+	/** A package name the registry knows but which has no loose file is container content. */
+	static bool MifPackageIsContainerByName(const FName& PackageName)
+	{
+		FString FileName;
+		const FString Name = PackageName.ToString();
+		if (FPackageName::DoesPackageExist(Name, &FileName)
+			&& !FileName.IsEmpty() && FPaths::FileExists(FileName))
+		{
+			return false;
+		}
+		if (const UPackage* Package = FindPackage(nullptr, *Name))
+		{
+			return Package->HasAnyPackageFlags(PKG_Cooked);
+		}
+		return true;
+	}
+
+	/** The whole ladder, shared by the preview and the act so they cannot disagree. */
+	static bool MifBuildConsolidationPlan(const TSharedRef<FJsonObject>& In,
+										  const TSharedRef<FJsonObject>& Out,
+										  FMifConsolidationPlan& Plan)
+	{
+		const FString TargetPath = JStrAny(In, { TEXT("target"), TEXT("targetPath") });
+		if (TargetPath.IsEmpty())
+		{
+			Fail(Out, TEXT("target is required - the asset every reference will point at. NOTHING "
+				TEXT("was changed.")));
+			return false;
+		}
+		Plan.Target = LoadAssetLenient(TargetPath);
+		if (!Plan.Target)
+		{
+			Fail(Out, FString::Printf(TEXT("target asset not found: '%s'. NOTHING was changed."),
+									  *TargetPath));
+			return false;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* SrcArr = nullptr;
+		if (!In->TryGetArrayField(TEXT("sources"), SrcArr) || !SrcArr || SrcArr->Num() == 0)
+		{
+			Fail(Out, TEXT("sources[] is required and must be non-empty - the assets whose "
+				TEXT("references will be repointed. NOTHING was changed.")));
+			return false;
+		}
+
+		IAssetRegistry& Reg = Registry();
+		TSet<FName> SeenRefs;
+		for (const TSharedPtr<FJsonValue>& V : *SrcArr)
+		{
+			FString Path;
+			if (!V.IsValid() || !V->TryGetString(Path) || Path.IsEmpty())
+			{
+				Fail(Out, TEXT("sources[] holds asset path strings. NOTHING was changed."));
+				return false;
+			}
+			UObject* Src = LoadAssetLenient(Path);
+			if (!Src)
+			{
+				Plan.NotFound.Add(MakeShared<FJsonValueString>(Path));
+				Plan.bBlocked = true;
+				continue;
+			}
+			if (Src == Plan.Target)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is both the target and a source. NOTHING was changed."), *Path));
+				return false;
+			}
+			// SAME CLASS. ConsolidateObjects does not require it, but repointing a reference at an
+			// object of another class produces a property that cannot hold it - and the failure
+			// surfaces far from here.
+			if (Src->GetClass() != Plan.Target->GetClass())
+			{
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetStringField(TEXT("source"), Src->GetPathName());
+				J->SetStringField(TEXT("sourceClass"), Src->GetClass()->GetName());
+				J->SetStringField(TEXT("targetClass"), Plan.Target->GetClass()->GetName());
+				Plan.ClassMismatch.Add(MakeShared<FJsonValueObject>(J));
+				Plan.bBlocked = true;
+				continue;
+			}
+			if (Src->IsRooted())
+			{
+				Plan.RootedSources.Add(MakeShared<FJsonValueString>(Src->GetPathName()));
+				Plan.bBlocked = true;
+				continue;
+			}
+			// THE TARGET MUST NOT DEPEND ON A SOURCE, or consolidation makes the target reference
+			// something that is about to be repointed at the target itself.
+			TArray<FName> TargetDeps;
+			Reg.GetDependencies(Plan.Target->GetOutermost()->GetFName(), TargetDeps);
+			if (TargetDeps.Contains(Src->GetOutermost()->GetFName()))
+			{
+				Plan.TargetDependsOn.Add(MakeShared<FJsonValueString>(Src->GetPathName()));
+				Plan.bBlocked = true;
+				continue;
+			}
+
+			Plan.Sources.Add(Src);
+
+			TArray<FName> Refs;
+			Reg.GetReferencers(Src->GetOutermost()->GetFName(), Refs);
+			for (const FName& R : Refs)
+			{
+				if (SeenRefs.Contains(R)) { continue; }
+				SeenRefs.Add(R);
+				Plan.Referencers.Add(MakeShared<FJsonValueString>(R.ToString()));
+				if (MifPackageIsContainerByName(R))
+				{
+					Plan.CookedReferencers.Add(MakeShared<FJsonValueString>(R.ToString()));
+					Plan.bBlocked = true;
+				}
+			}
+		}
+
+		if (Plan.Sources.Num() == 0 && !Plan.bBlocked)
+		{
+			Fail(Out, TEXT("no usable sources. NOTHING was changed."));
+			return false;
+		}
+
+		// SNAPSHOT EVERY OPEN ASSET EDITOR, not just the sources'. ConsolidateObjects closes them
+		// ALL and bails silently if one refuses, so this list is what makes that diagnosable.
+		if (UAssetEditorSubsystem* AES =
+				GEditor ? GEditor->GetEditorSubsystem<UAssetEditorSubsystem>() : nullptr)
+		{
+			for (UObject* Open : AES->GetAllEditedAssets())
+			{
+				if (Open) { Plan.OpenEditors.Add(MakeShared<FJsonValueString>(Open->GetPathName())); }
+			}
+		}
+		return true;
+	}
+
+	static void MifWriteConsolidationPlan(const TSharedRef<FJsonObject>& Out,
+										  const FMifConsolidationPlan& Plan)
+	{
+		Out->SetStringField(TEXT("target"), Plan.Target ? Plan.Target->GetPathName() : FString());
+		Out->SetNumberField(TEXT("sourceCount"), Plan.Sources.Num());
+		Out->SetNumberField(TEXT("referencersFound"), Plan.Referencers.Num());
+		Out->SetArrayField(TEXT("referencers"), Plan.Referencers);
+		Out->SetArrayField(TEXT("openAssetEditors"), Plan.OpenEditors);
+
+		TSharedRef<FJsonObject> Blocked = MakeShared<FJsonObject>();
+		Blocked->SetArrayField(TEXT("notFound"), Plan.NotFound);
+		Blocked->SetArrayField(TEXT("classMismatch"), Plan.ClassMismatch);
+		Blocked->SetArrayField(TEXT("rootedSources"), Plan.RootedSources);
+		Blocked->SetArrayField(TEXT("targetDependsOnSource"), Plan.TargetDependsOn);
+		Blocked->SetArrayField(TEXT("cookedReferencers"), Plan.CookedReferencers);
+		Out->SetObjectField(TEXT("blockedBy"), Blocked);
+		Out->SetBoolField(TEXT("canConsolidate"), !Plan.bBlocked && Plan.Sources.Num() > 0);
+
+		if (Plan.CookedReferencers.Num() > 0)
+		{
+			Out->SetStringField(TEXT("cookedNote"),
+				TEXT("some referencing packages are COOKED container content. A reference inside a "
+					 "mounted pak cannot be rewritten or re-saved, so consolidating would report "
+					 "success for edits that vanish on the next restart. Refused instead."));
+		}
+		if (Plan.OpenEditors.Num() > 0)
+		{
+			Out->SetStringField(TEXT("openEditorNote"), FString::Printf(
+				TEXT("consolidation closes EVERY open asset editor - all %d of these, not just the "
+					 "sources' - and if any one refuses to close it aborts and returns an empty "
+					 "result with no error at all. Close them yourself first if you care about "
+					 "what is open."), Plan.OpenEditors.Num()));
+		}
+	}
+
+	// --- check_consolidate_assets: the preview, never gated ------------------------------------
+	void H_check_consolidate_assets(const TSharedRef<FJsonObject>& In,
+									const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("target"), TEXT("targetPath"), TEXT("sources") },
+			TEXT("target - the asset every reference will point at; sources[] - the assets to "
+				 "repoint away from"),
+			{ { TEXT("confirm"), TEXT("nothing here changes anything, so there is nothing to "
+									  "confirm. consolidate_assets is the half that acts") },
+			  { TEXT("dryRun"), TEXT("this endpoint IS the dry run") },
+			  { TEXT("deleteSources"), TEXT("that is consolidate_assets' parameter - this only "
+										   "reports what would happen") } }))
+		{
+			return;
+		}
+		FMifConsolidationPlan Plan;
+		if (!MifBuildConsolidationPlan(In, Out, Plan)) { return; }
+		MifWriteConsolidationPlan(Out, Plan);
+		Out->SetStringField(TEXT("note"), Plan.bBlocked
+			? TEXT("this consolidation would be REFUSED - see blockedBy. NOTHING was changed.")
+			: TEXT("this consolidation would proceed. NOTHING was changed - consolidate_assets is "
+				   "the half that acts, and it needs confirm:true."));
+	}
+
+	// --- consolidate_assets: the act, on the gate ----------------------------------------------
+	void H_consolidate_assets(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("target"), TEXT("targetPath"), TEXT("sources"), TEXT("deleteSources"),
+			  TEXT("confirm") },
+			TEXT("target; sources[]; deleteSources (default false); confirm:true"),
+			{ { TEXT("dryRun"), TEXT("split off into check_consolidate_assets, which is not gated - "
+									 "so the preview stays available in every write mode while this "
+									 "half does not") } }))
+		{
+			return;
+		}
+		FMifConsolidationPlan Plan;
+		if (!MifBuildConsolidationPlan(In, Out, Plan)) { return; }
+		MifWriteConsolidationPlan(Out, Plan);
+
+		if (Plan.bBlocked)
+		{
+			Fail(Out, TEXT("this consolidation is refused - see blockedBy for which check failed "
+				TEXT("and on which asset. NOTHING was changed.")));
+			return;
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("this would repoint %d referencing package(s) from %d source(s) onto '%s', "
+					 "rewriting each of them, and it CLOSES EVERY OPEN ASSET EDITOR to do it. Pass "
+					 "confirm:true. NOTHING was changed."),
+				Plan.Referencers.Num(), Plan.Sources.Num(), *Plan.Target->GetPathName()));
+			return;
+		}
+
+		const bool bDelete = JBool(In, TEXT("deleteSources"), false);
+		const int32 EditorsBefore = Plan.OpenEditors.Num();
+
+		ObjectTools::FConsolidationResults Results;
+		{
+			TGuardValue<bool> Unattended(GIsRunningUnattendedScript, true);
+			TSet<UObject*> Within, NotWithin;
+			TArray<UObject*> Sources = Plan.Sources;
+			// bWarnAboutRootSet FALSE - it defaults true and opens a YesNo on a rooted object. No
+			// source is rooted by this point, but the flag costs nothing and the default is a modal.
+			Results = ObjectTools::ConsolidateObjects(Plan.Target, Sources, Within, NotWithin,
+													  bDelete, /*bWarnAboutRootSet*/ false);
+		}
+
+		// THE SILENT ABORT. An editor that refused to close makes ConsolidateObjects return a
+		// zeroed result with no error - identical to "there was nothing to do". The snapshot taken
+		// before the call is the only way to tell those apart.
+		const int32 Updated = Results.DirtiedPackages.Num();
+		if (Updated == 0 && Plan.Referencers.Num() > 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("%d referencing package(s) were found and NONE were updated. The likeliest "
+					 "cause is that consolidation aborted at its close-all-asset-editors gate - it "
+					 "closes every open editor first, and returns an EMPTY result with no error if "
+					 "one refuses. There were %d editor(s) open when this started. Close them and "
+					 "try again."), Plan.Referencers.Num(), EditorsBefore));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Dirtied;
+		for (const UPackage* Pkg : Results.DirtiedPackages)
+		{
+			if (Pkg) { Dirtied.Add(MakeShared<FJsonValueString>(Pkg->GetName())); }
+		}
+		TArray<TSharedPtr<FJsonValue>> Failed;
+		for (const UObject* Obj : Results.FailedConsolidationObjs)
+		{
+			if (Obj) { Failed.Add(MakeShared<FJsonValueString>(Obj->GetPathName())); }
+		}
+
+		Out->SetNumberField(TEXT("referencersUpdated"), Updated);
+		Out->SetArrayField(TEXT("packagesDirtied"), Dirtied);
+		Out->SetArrayField(TEXT("failedConsolidationObjects"), Failed);
+		Out->SetBoolField(TEXT("deletedSources"), bDelete);
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the dirtied packages are NOT saved. Nothing persists until you save them - which "
+				 "also means this is undoable by closing without saving."));
+		if (Failed.Num() > 0)
+		{
+			Out->SetStringField(TEXT("failedNote"),
+				TEXT("some objects could not be consolidated and are listed. The target and the "
+					 "remaining sources are unchanged for those - re-read before assuming the swap "
+					 "was complete."));
+		}
 	}
 }

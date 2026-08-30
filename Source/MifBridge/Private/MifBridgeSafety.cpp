@@ -176,6 +176,10 @@ namespace MifBridge
 			// referenced it. That is a real write to disk, and a wider one than the
 			// redirectors named - so it belongs here even though its dry run is harmless.
 			TEXT("fixup_redirectors"),
+			// Rewrites every package that referenced the sources, and CLOSES EVERY
+			// OPEN ASSET EDITOR to do it. check_consolidate_assets is the ungated
+			// preview, so the ladder stays readable in every mode.
+			TEXT("consolidate_assets"),
 			};
 			return Unsafe;
 		}

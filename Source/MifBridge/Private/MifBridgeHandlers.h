@@ -1115,6 +1115,8 @@ namespace MifBridge
 	MIF_DECL(list_redirectors);
 	MIF_DECL(fixup_redirectors);
 	MIF_DECL(get_asset_tags);
+	MIF_DECL(check_consolidate_assets);
+	MIF_DECL(consolidate_assets);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);

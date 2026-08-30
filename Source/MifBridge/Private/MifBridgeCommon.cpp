@@ -170,6 +170,8 @@ namespace MifBridge
 			MIF_BIND(list_redirectors);
 			MIF_BIND(fixup_redirectors);
 			MIF_BIND(get_asset_tags);
+			MIF_BIND(check_consolidate_assets);
+			MIF_BIND(consolidate_assets);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);

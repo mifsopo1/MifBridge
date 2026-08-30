@@ -5238,7 +5238,30 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Fully cooked-safe: the asset registry is queried, nothing is loaded. Worth one honest caveat in the response text: on a cooked project the registry was built by the cook, so EditorOnly edges have already been dropped and `includeEditorOnly` will legitimately return nothing - say that rather than let...
       Vetter corrected the proposal: Two corrections, neither fatal. 1. "Fully cooked-safe" is right about crash risk but wrong about results. FAssetRegistrySerializationOptions::bSerializeDependencies defaults to FALSE (D:/UE532/Engine/Source/Runtime/AssetRegistry/Public/AssetRegistry/AssetRegistryState.h:56; only InitForDevelopment at :99 sets it true, and AssetRegistryState.cpp:1186 skips writing depends-nodes when it is off). So ...
 
-- [ ] **consolidate_assets (replace every reference to N assets with one target)** (day)
+- [x] **check_consolidate_assets (preview) + consolidate_assets (act)** (day)
+      DONE 2026-08-30. 22 checks in tools/test_consolidate.py. This is the write half
+      delete_asset already dead-ends into - it reports blockedBy.registryReferencers and then
+      offered no operation that could clear them.
+      SPLIT IN TWO, applying the rule settled twice earlier the same day rather than
+      rediscovering it: the gate classifies whole ENDPOINTS, so a dryRun flag inside a gated
+      endpoint is unreachable in the mode where you most want to ask. One shared ladder, so the
+      preview cannot drift from the act.
+      THE TRAP IS A SILENT ABORT, and the vetter found it. ObjectTools.cpp:1443 calls
+      CloseAllAssetEditors() unconditionally in a live editor - ALL editors, not just the
+      sources' - and if any refuses to close it returns an EMPTY, ERROR-FREE
+      FConsolidationResults. So 'aborted at the close gate' and 'there were no referencers' are
+      the same response. The open-editor list is snapshotted BEFORE the call and the endpoint
+      fails loudly with that count when referencers were found and none updated. The obvious
+      shape - a per-source open-editor pre-check - would not catch it, because the gate is
+      about every OTHER editor too.
+      The vetter also corrected this project's own risk note in the proposer's favour: the
+      modals ARE suppressible, since MessageDialog.cpp:172 gates on GIsRunningUnattendedScript
+      for all message types. bWarnAboutRootSet is still passed false anyway.
+      And a third correction: IsCookedOrContainerPackage takes a loaded UPackage*, while
+      GetReferencers yields UNLOADED package FNames - so the cooked test here is name-based.
+      NOT exercised: a successful consolidation. Every material in this project is cooked, so
+      every referencer is container content and the ladder refuses before the engine is
+      reached - which is the correct outcome. An uncooked project is where the act runs.
       Repoints every referencer of one or more source assets at a single target asset, optionally deleting the sources afterwards - the Content Browser's 'Replace References' / asset consolidation. This is the missing write half of get_referencers, and delete_asset already dead-ends into it: when a delete is refused, the handler reports blockedBy.registryReferencers (MifBridgeAssetOps.cpp:163-166) and then offers the agent no operation that can clear them. Deduplicating imported meshes/textures, or swapping a placeholder material for a finished one across a level, is otherwise impossible through the bridge.
       API: ObjectTools::ConsolidateObjects(UObject* ObjectToConsolidateTo, TArray<UObject*>& ObjectsToConsolidate, TSet<UObject*>& ObjectsToConsolidateWithin, TSet<UObject*>& ObjectsToNotConsolidateWithin, bool bShouldDeleteAfterConsolidate, bool bWarnAboutRootSet = true) at D:/UE532/Engine/Source/Editor/UnrealEd/Public/ObjectTools.h:223, and the reference-only ObjectTools::ForceReplaceReferences(UObject*, T...
       Cooked: Refuse when any referencing package is cooked or container-only (MifBridgeCommon.cpp:2503 IsCookedOrContainerPackage), naming the packages: references inside a mounted pak cannot be rewritten or re-saved, so a 'success' there would be a lie that survives until the next editor restart. On a fully unc...
