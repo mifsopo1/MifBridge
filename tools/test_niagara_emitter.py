@@ -64,9 +64,15 @@ def main():
     d = M.call("list_niagara_emitters", {"path": target})
     check("T6100 list_niagara_emitters succeeds", d.get("ok") is True, json.dumps(d)[:220])
     emitters = [e.get("name") for e in (d.get("emitters") or []) if isinstance(e, dict)]
-    check("T6100 and reports each emitter's name and enabled state",
-          bool(emitters) and all("enabled" in e for e in (d.get("emitters") or [])),
-          json.dumps(d.get("emitters"))[:220])
+    # ASSERT THE VALUE, NOT THE KEY. `"enabled" in e` only says the field is present, which is
+    # how a row full of nulls passes a green check - and counting rather than all() stops it
+    # passing vacuously on an empty list.
+    rows = [e for e in (d.get("emitters") or []) if isinstance(e, dict)]
+    typed = sum(1 for e in rows if isinstance(e.get("enabled"), bool) and e.get("name"))
+    check("T6100 it returned emitter rows at all", len(rows) > 0, len(rows))
+    check("T6100 and every row carries a name and a real boolean enabled state",
+          len(rows) > 0 and typed == len(rows),
+          "%d of %d rows fully typed: %s" % (typed, len(rows), json.dumps(rows)[:180]))
     first = emitters[0] if emitters else "x"
 
     # ------------------------------------------------------------------ T6101 the cooked reason
