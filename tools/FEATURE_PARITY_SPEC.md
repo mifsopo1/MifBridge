@@ -4522,7 +4522,42 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Works identically cooked and uncooked - this is pure viewport client state, touches no asset, dirties no package, and must open no transaction (the existing camera endpoints are already documented as read-only in the transaction sense). The only real guard is the one MifBridgeViewport.cpp already ha...
       Vetter corrected the proposal: Rank stands at high (agent hits it constantly; capture_camera documents the hole in its own error text), though it sits at the low end of high - the project's own scoring is tier 1 (U4/E2/R4 and U3/E2/R5), not tier 0, and view mode has a blind partial workaround via invoke_editor_command. Five corrections to the proposal. (a) UNDER-SCOPED: the spec's version also covers gameView (SetGameView UNREA...
 
-- [ ] **map_input_key / unmap_input_key (the write half of list_input_mappings), with a legacy `settings:true` branch for UInputSettings** (day)
+- [x] **map_input_key / unmap_input_key (the write half of list_input_mappings)** (day)
+      DONE 2026-08-30. Enhanced Input half only; the legacy UInputSettings branch is split out
+      below on the vetter's advice that it should not gate this. 34 checks in
+      tools/test_input_mapping.py. Confirmed by reading both engines that this could NOT be a
+      documented edit_container recipe: 5.3's MapKey ends `Mappings.Add_GetRef`, 5.7's ends
+      `DefaultKeyMappings.Mappings.Add_GetRef` and `Mappings` is deprecated there, so a
+      reflective append silently lands where nothing - not even list_input_mappings - reads it.
+      GetMappings() is undeprecated on both and returns the right array on each.
+      Also confirmed the rebuild ordering the survey got wrong: MapKey calls
+      RequestRebuildControlMappingsUsingContext BEFORE its Add on both engines, so the endpoint
+      always issues its own afterwards - it cannot be the optional `rebuild?` the survey proposed.
+      An unknown key is refused before anything is touched, because FKey accepts any FName and a
+      typo would otherwise produce a mapping that exists and never fires. NOT exercised: the
+      cooked-package branch - the only cooked IMCs here are real project assets.
+
+- [ ] **route every suite's confirm:true through scratch_confirm.confirm_call** (hours)
+      Found 2026-08-30 while writing test_input_mapping.py, which had the same slip. The
+      standing rule is that confirm:true is only ever sent via tools/scratch_confirm.py, whose
+      check() PROVES every path in the payload lies under a scratch prefix and raises rather
+      than returns if not. mifaudit.raw_post bypasses that guard entirely, and ~10 suites call
+      it with a hand-written "confirm": True: test_sequence_keys (15 sites),
+      test_sequencer_authoring (4), test_anim_notify (4), test_pie_family (3),
+      test_uncovered_reads4, test_simplified_collision_guard, test_instance_components (2 each),
+      test_uncovered_reads7, test_uncovered_reads8 (1 each). Every one of them does appear to
+      target scratch assets it created itself, so this is a compliance gap rather than a known
+      escape - but that is exactly what the guard exists to stop being a matter of inspection.
+      Mechanical to fix; each touched suite needs re-running afterwards.
+
+- [ ] **a legacy `settings:true` branch on map_input_key/unmap_input_key for UInputSettings** (hours)
+      Split from the item above. Legacy (non-Enhanced) input has no read OR write coverage at
+      all: UInputSettings::AddActionMapping/AddAxisMapping/RemoveActionMapping and
+      SaveKeyMappings, ENGINE_API public in GameFramework/InputSettings.h. Deliberately NOT
+      bundled with the Enhanced Input half - SaveKeyMappings WRITES Config/DefaultInput.ini, so
+      unlike everything above it persists to disk and has to go on the safety gate's unsafe list
+      like any other persist-to-disk call. A read half (list_legacy_input_mappings) should come
+      with it, since there is currently no way to see what is there before changing it.
       Binds a key to an InputAction inside an InputMappingContext, and unbinds one/all. Today create_asset can make an InputMappingContext (FEATURE_PARITY_SPEC.md:4310 records that succeeding) and list_input_mappings can read one, and nothing can put a single mapping into it - so the bridge can author an empty IMC and an IA_ event node and cannot connect the two. The same parameter also covers legacy (non-Enhanced) input, which has no read OR write coverage at all.
       API: UInputMappingContext, public UFUNCTION(BlueprintCallable), read in D:/UE532/Engine/Plugins/EnhancedInput/Source/EnhancedInput/Public/InputMappingContext.h: FEnhancedActionKeyMapping& MapKey(const UInputAction* Action, FKey ToKey) [5.3:63, 5.7:225]; void UnmapKey(const UInputAction*, FKey) [5.3:69, 5.7:231]; void UnmapAllKeysFromAction(const UInputAction*) [5.3:79, 5.7:237]; void UnmapAll() [5.3:84...
       Cooked: Works cooked for the in-memory mutation - an InputMappingContext is a plain runtime UDataAsset with no MeshDescription/SourceModel-style editor-only payload, so nothing here can crash on a cooked package. PERSISTING is the cooked-only problem: check MifBridge::IsCookedOrContainerPackage(Context->Get...

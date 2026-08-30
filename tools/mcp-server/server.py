@@ -3330,6 +3330,20 @@ def list_input_mappings(path: str) -> dict:
 
 
 @mcp.tool()
+def map_input_key(context: str, action: str, key: str) -> dict:
+    "Bind a key to an Input Action inside an InputMappingContext - the write half of list_input_mappings, and the step that connects the two ends the bridge could already build separately (create_asset makes the context, add_enhanced_input_action makes the IA_ event node, and nothing could put a mapping between them). context takes the package or object path; key is an FKey NAME such as SpaceBar, LeftMouseButton or Gamepad_FaceButton_Bottom. An unknown key name is REFUSED with near matches rather than bound: FKey accepts any name, so a typo would produce a mapping that exists and never fires. Binding something already bound reports mapped:false rather than erroring or duplicating it. Prefer this over reaching into the Mappings array with edit_container - that array is deprecated on 5.7 and the live data moved to DefaultKeyMappings.Mappings, so a reflective append silently lands where nothing reads it. The context is left dirty and NOT saved."
+    return _post("map_input_key", context=context, action=action, key=key)
+
+
+@mcp.tool()
+def unmap_input_key(context: str, action: str = "", key: str = "", all: bool = False,
+                    confirm: bool = False) -> dict:
+    "Remove key bindings from an InputMappingContext. With action and key, unbinds that one pair; with action alone, unbinds EVERY key from that one action; with all=True AND confirm=True, clears the entire context. An omitted key never means 'delete everything' - clearing has to be asked for by name and confirmed, because it cannot be undone through this endpoint. `removed` is the measured change in the mapping count, not the request: UnmapKey and UnmapAllKeysFromAction both return void and report nothing about whether they matched, so unmapping something that was not bound succeeds with removed:0. The context is left dirty and NOT saved."
+    return _post("unmap_input_key", context=context, action=action, key=key, all=all,
+                 confirm=confirm)
+
+
+@mcp.tool()
 def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: int = 0) -> dict:
     "Add a UK2Node_EnhancedInputAction event node (the 'IA_Foo' node you normally get by right-clicking the graph and searching for the action asset) - the one node class the bridge could not author, which forced every Enhanced Input binding to be finished by hand. input_action is a UInputAction object path (/Game/X/IA_Foo.IA_Foo) or its package path (/Game/X/IA_Foo). Pins (Triggered/Started/Ongoing/Canceled/Completed plus a value pin typed by the action's ValueType) are generated FROM the action, so an unresolvable path is an error rather than a pin-less node."
     return _post("add_enhanced_input_action", graphId=graph_id, inputAction=input_action, x=x, y=y)

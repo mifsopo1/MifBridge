@@ -132,6 +132,8 @@ namespace MifBridge
 			MIF_BIND(add_custom_event);
 			MIF_BIND(add_enhanced_input_action);
 			MIF_BIND(list_input_mappings);
+			MIF_BIND(map_input_key);
+			MIF_BIND(unmap_input_key);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);
