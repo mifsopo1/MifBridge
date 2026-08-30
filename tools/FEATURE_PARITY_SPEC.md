@@ -4877,14 +4877,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Refuse on cooked, by name. The API itself is not editor-gated and will run, but a virtual bone is baked into every animation that uses the skeleton, and a cooked project's AnimSequences cannot be recompressed - so the bone would exist on the skeleton and evaluate to nothing in every sequence. Guard ...
       Vetter corrected the proposal: Three things in the proposal are wrong and one guard is missing. (a) THE `name?` PARAMETER CANNOT BE DONE THE WAY DESCRIBED ON 5.3. The proposal says "the engine generates the name as VB <source>_<target> unless the overload's out-param is used". The out-param overload (Skeleton.h:449) REPORTS the generated name; it does not accept one — Skeleton.cpp:1795-1808 builds the name from FVirtualBone's c...
 
-- [ ] **BLENDER CREATION: bl_create_primitive** (hours)
+- [x] **BLENDER CREATION: bl_create_primitive** (hours)
+      DONE 2026-08-30, in commit 613ee48 - the box was never flipped at the time, which is
+      how a finished item gets built twice. Verified before ticking: the op is registered in
+      ops_create.py and exercised by test_blender_creation.py. Both suites re-run headless against
+      Blender 4.4 on 2026-08-30 - 278 checks across all 7 Blender suites, 0 failed.
       The foundational gap. Every mesh in the addon today enters through import_mesh, so the bridge
       can edit geometry and cannot originate any. Cube, sphere (uv + ico), cylinder, cone, torus,
       plane, grid, circle, with the segment/size parameters each takes, a name, and a location. Must
       report the created object's vert/face counts and its name after Blender's own name collision
       handling (Blender appends .001 silently, so echoing the requested name would frequently lie).
 
-- [ ] **BLENDER MATERIALISATION: bl_create_material + bl_set_material_properties** (hours)
+- [x] **BLENDER MATERIALISATION: bl_create_material + bl_set_material_properties** (hours)
+      DONE 2026-08-30, in commit 613ee48 - the box was never flipped at the time, which is
+      how a finished item gets built twice. Verified before ticking: the op is registered in
+      ops_material.py and exercised by test_blender_material.py. Both suites re-run headless against
+      Blender 4.4 on 2026-08-30 - 278 checks across all 7 Blender suites, 0 failed.
       There is no way to create a material or set a shading value. create_material makes a material
       with a Principled BSDF and returns its name after collision handling; set_material_properties
       writes baseColor, metallic, roughness, specular, emissive, alpha and IOR onto that node by
@@ -4893,24 +4901,43 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       so the input must be resolved by trying the known aliases and REFUSED by name when none match,
       never silently skipped. That version spread is the whole difficulty of this item.
 
-- [ ] **BLENDER MATERIALISATION: bl_list_materials + bl_describe_material** (hours)
+- [x] **BLENDER MATERIALISATION: bl_list_materials + bl_describe_material** (hours)
+      DONE 2026-08-30, in commit 613ee48 - the box was never flipped at the time, which is
+      how a finished item gets built twice. Verified before ticking: the op is registered in
+      ops_material.py and exercised by test_blender_material.py. Both suites re-run headless against
+      Blender 4.4 on 2026-08-30 - 278 checks across all 7 Blender suites, 0 failed.
       The addon has no material READ op at all - object_info reports slot names and nothing about
       what is in them. describe_material should report the node tree shape (which nodes, which links
       into the BSDF), the Principled values, and any image textures with their file paths, because
       the texture paths are what an Unreal-side import has to resolve.
 
-- [ ] **BLENDER MATERIALISATION: bl_assign_material_to_faces** (hours)
+- [x] **BLENDER MATERIALISATION: bl_assign_material_to_faces** (hours)
+      DONE 2026-08-30, in commit 613ee48 - the box was never flipped at the time, which is
+      how a finished item gets built twice. Verified before ticking: the op is registered in
+      ops_material.py and exercised by test_blender_material.py. Both suites re-run headless against
+      Blender 4.4 on 2026-08-30 - 278 checks across all 7 Blender suites, 0 failed.
       set_material_slots sets the slot LIST; nothing assigns a slot to a face range. Needed for any
       multi-material mesh built in Blender rather than imported. Must be index-based against the
       polygon array and must report how many faces actually changed, since a selection that matches
       nothing is otherwise indistinguishable from success.
 
-- [ ] **BLENDER CREATION: bl_boolean_op / bl_join_objects / bl_separate_mesh** (hours)
+- [ ] **BLENDER CREATION: bl_boolean_op** (hours)
+      NARROWED 2026-08-30. bl_join_objects and bl_separate_mesh were part of this entry and
+      both landed in 613ee48 - registered in ops_create.py, exercised by
+      test_blender_creation.py, re-run green on Blender 4.4. bl_boolean_op is NOT written
+      and is what remains: it is the odd one of the three because it is a MODIFIER rather
+      than an operator - add a BOOLEAN modifier naming the second object, apply it, then
+      delete the cutter - and each of those three steps can fail independently, so the
+      postcondition is the resulting vert/face count, never the modifier_add return.
       The mesh-combining verbs, and the last item left from the 2026-08-27 gap audit. boolean_op
       wraps the boolean modifier (union/difference/intersect) and must apply it, since an unapplied
       modifier does not survive export. join/separate are the counterpart pair.
 
-- [ ] **BLENDER CREATION: bl_transform_object (place without baking)** (hours)
+- [x] **BLENDER CREATION: bl_transform_object (place without baking)** (hours)
+      DONE 2026-08-30, in commit 613ee48 - the box was never flipped at the time, which is
+      how a finished item gets built twice. Verified before ticking: the op is registered in
+      ops_create.py and exercised by test_blender_creation.py. Both suites re-run headless against
+      Blender 4.4 on 2026-08-30 - 278 checks across all 7 Blender suites, 0 failed.
       apply_transform and set_origin both BAKE the transform into the mesh data. There is no way to
       simply place an object - which the round trip currently papers over by asserting
       isIdentityTransform stays true. Needed as soon as more than one object exists in a scene.
