@@ -107,7 +107,15 @@ def main():
         print("   would be real calls to save_package, start_pie and trigger_cook.)")
         print("=" * 72)
         print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
-        return 1
+        # EXIT 2 = SKIPPED, not 1 = FAILED. This bail-out is the suite working CORRECTLY: in full
+        # mode there is no gate to test and the probes would be real destructive calls. Returning 1
+        # made every full-mode sweep record a permanent red row with FAIL 0 beside it - a correct
+        # refusal that reads as a broken suite, which is how people learn to ignore red rows.
+        # Found by the first full sweep to include this suite, 2026-08-30. The runner already
+        # understands 2 as SKIPPED and reports it separately.
+        print("SKIPPED - the gate cannot be tested from '%s' mode; nothing was verified beyond "
+              "the reads above." % mode)
+        return 2
 
     # ------------------------------------------------------------------ T632 BOTH directions
     print("")

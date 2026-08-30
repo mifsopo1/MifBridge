@@ -677,54 +677,7 @@ namespace MifBridge
 			return;
 		}
 
-		// A MASKED-OFF CHANNEL ACCEPTS KEYS AND ANIMATES NOTHING, which is the worst shape a bug can
-		// take here: the write succeeds, the keys read back, and the widget does not move.
-		// UMovieScene2DTransformSection::ImportEntityImpl builds its entity from
-		//     EnumHasAnyFlags(Channels, ...ScaleX) && Scale[0].HasAnyData()
-		// (MovieScene2DTransformSection.cpp:239-267), so a channel whose mask bit is clear is never
-		// handed to the evaluation system at all.
-		//
-		// The section constructor defaults the mask to AllTransform (:126), so a section this plugin
-		// created is always fine. One narrowed in the UMG designer is not. The mask is WIDENED rather
-		// than refused, because a caller keying a channel has said plainly that they want it
-		// animated, and leaving inert keys behind would be obeying the letter of the request while
-		// defeating it - but it is widened LOUDLY, reported in the response, because it is a change
-		// to the section beyond the keys that were asked for.
 		bool bWidenedMask = false;
-		if (UMovieScene2DTransformSection* XForm = Cast<UMovieScene2DTransformSection>(Section))
-		{
-			static const EMovieScene2DTransformChannel kBits[] = {
-				EMovieScene2DTransformChannel::TranslationX, EMovieScene2DTransformChannel::TranslationY,
-				EMovieScene2DTransformChannel::Rotation,
-				EMovieScene2DTransformChannel::ScaleX,       EMovieScene2DTransformChannel::ScaleY,
-				EMovieScene2DTransformChannel::ShearX,       EMovieScene2DTransformChannel::ShearY,
-			};
-			if (XFormIndex >= 0 && XFormIndex < UE_ARRAY_COUNT(kBits))
-			{
-				const EMovieScene2DTransformChannel Want = kBits[XFormIndex];
-				FMovieScene2DTransformMask Mask = XForm->GetMask();
-				if (!EnumHasAnyFlags((EMovieScene2DTransformChannel)Mask.GetChannels(), Want))
-				{
-					XForm->Modify();
-					XForm->SetMask(FMovieScene2DTransformMask(
-						(EMovieScene2DTransformChannel)Mask.GetChannels() | Want));
-					// VERIFIED by reading the mask back, not by trusting SetMask - the entire reason
-					// this block exists is that an unset bit is invisible in the keys themselves.
-					if (!EnumHasAnyFlags(
-							(EMovieScene2DTransformChannel)XForm->GetMask().GetChannels(), Want))
-					{
-						Fail(Out, FString::Printf(
-							TEXT("channel '%s' of %s is masked off on this section and the mask could "
-								 "not be widened, so any keys written would be accepted and would "
-								 "animate NOTHING. NOTHING was changed."),
-							*ChannelStr, PropDef->Name));
-						return;
-					}
-					bWidenedMask = true;
-				}
-			}
-		}
-
 		const TArray<TSharedPtr<FJsonValue>>* Keys = nullptr;
 		if (!JArray(In, TEXT("keys"), Keys) || !Keys)
 		{
@@ -771,6 +724,58 @@ namespace MifBridge
 			}
 			Pending.Add({ SecondsToTicks(MS, Time), Time, static_cast<float>(Value), Interp });
 		}
+		// WIDENED HERE, NOT EARLIER. This used to run before the keys array was even parsed, so
+		// the four refusal paths above - each of which promises "NOTHING was changed" - left a
+		// permanently widened mask and a dirty package behind. The preflight immediately above
+		// exists so a bad key cannot leave a half-change; the mask block was added on top of it
+		// and broke that guarantee one screen higher up. Nothing below this point can refuse.
+		// A MASKED-OFF CHANNEL ACCEPTS KEYS AND ANIMATES NOTHING, which is the worst shape a bug can
+		// take here: the write succeeds, the keys read back, and the widget does not move.
+		// UMovieScene2DTransformSection::ImportEntityImpl builds its entity from
+		//     EnumHasAnyFlags(Channels, ...ScaleX) && Scale[0].HasAnyData()
+		// (MovieScene2DTransformSection.cpp:239-267), so a channel whose mask bit is clear is never
+		// handed to the evaluation system at all.
+		//
+		// The section constructor defaults the mask to AllTransform (:126), so a section this plugin
+		// created is always fine. One narrowed in the UMG designer is not. The mask is WIDENED rather
+		// than refused, because a caller keying a channel has said plainly that they want it
+		// animated, and leaving inert keys behind would be obeying the letter of the request while
+		// defeating it - but it is widened LOUDLY, reported in the response, because it is a change
+		// to the section beyond the keys that were asked for.
+		if (UMovieScene2DTransformSection* XForm = Cast<UMovieScene2DTransformSection>(Section))
+		{
+			static const EMovieScene2DTransformChannel kBits[] = {
+				EMovieScene2DTransformChannel::TranslationX, EMovieScene2DTransformChannel::TranslationY,
+				EMovieScene2DTransformChannel::Rotation,
+				EMovieScene2DTransformChannel::ScaleX,       EMovieScene2DTransformChannel::ScaleY,
+				EMovieScene2DTransformChannel::ShearX,       EMovieScene2DTransformChannel::ShearY,
+			};
+			if (XFormIndex >= 0 && XFormIndex < UE_ARRAY_COUNT(kBits))
+			{
+				const EMovieScene2DTransformChannel Want = kBits[XFormIndex];
+				FMovieScene2DTransformMask Mask = XForm->GetMask();
+				if (!EnumHasAnyFlags((EMovieScene2DTransformChannel)Mask.GetChannels(), Want))
+				{
+					XForm->Modify();
+					XForm->SetMask(FMovieScene2DTransformMask(
+						(EMovieScene2DTransformChannel)Mask.GetChannels() | Want));
+					// VERIFIED by reading the mask back, not by trusting SetMask - the entire reason
+					// this block exists is that an unset bit is invisible in the keys themselves.
+					if (!EnumHasAnyFlags(
+							(EMovieScene2DTransformChannel)XForm->GetMask().GetChannels(), Want))
+					{
+						Fail(Out, FString::Printf(
+							TEXT("channel '%s' of %s is masked off on this section and the mask could "
+								 "not be widened, so any keys written would be accepted and would "
+								 "animate NOTHING. NOTHING was changed."),
+							*ChannelStr, PropDef->Name));
+						return;
+					}
+					bWidenedMask = true;
+				}
+			}
+		}
+
 
 		Section->Modify();
 		if (JBool(In, TEXT("replace"), true))
@@ -1053,6 +1058,66 @@ namespace MifBridge
 				TEXT("'%s' has no %s track in animation '%s'. NOTHING was removed."),
 				*WidgetName, PropDef->Name, *AnimName));
 			return;
+		}
+
+		// THE FOUR TRANSFORM FAMILIES SHARE ONE TRACK, so removing "the Scale track" removes
+		// Translation, Angle and Shear with it. That became true on 2026-08-30 when Scale, Angle and
+		// Shear were added: before then only Translation mapped to UMovieScene2DTransformTrack and
+		// removal was unambiguous. RemoveTrack would have destroyed three families of keys while the
+		// response named one - silent data loss, introduced by the feature that made them share.
+		//
+		// Refused rather than warned, because keys cannot be recovered afterwards and no read
+		// endpoint would have shown what went missing. Removing a track that carries only the named
+		// family still works, and so does removing an empty one.
+		if (PropDef->XFormBase != INDEX_NONE)
+		{
+			if (UMovieScene2DTransformSection* XForm =
+					Cast<UMovieScene2DTransformSection>(
+						FindPropertySection(Anim, Guid, TrackClassFor(*PropDef))))
+			{
+				static const TCHAR* kFamily[] = { TEXT("RenderTransform.Translation"),
+												  TEXT("RenderTransform.Translation"),
+												  TEXT("RenderTransform.Angle"),
+												  TEXT("RenderTransform.Scale"),
+												  TEXT("RenderTransform.Scale"),
+												  TEXT("RenderTransform.Shear"),
+												  TEXT("RenderTransform.Shear") };
+				TArray<FString> Casualties;
+				int32 CasualtyKeys = 0;
+				for (int32 i = 0; i < 7; ++i)
+				{
+					if (kFamily[i] == FString(PropDef->Name)) { continue; }
+					if (FMovieSceneFloatChannel* Ch = XFormChannelAt(XForm, i))
+					{
+						const int32 N = Ch->GetNumKeys();
+						if (N > 0)
+						{
+							CasualtyKeys += N;
+							Casualties.AddUnique(FString(kFamily[i]));
+						}
+					}
+				}
+				if (Casualties.Num() > 0)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("'%s' is one of FOUR channel families sharing a single "
+							 "UMovieScene2DTransformTrack, and removing the track would also destroy "
+							 "%d key(s) belonging to %s. That is unrecoverable and nothing would show "
+							 "what went missing, so it is refused. Clear this family's channels with "
+							 "set_widget_animation_keys and an empty keys array instead, or remove "
+							 "the other families' keys first if you really want the track gone. "
+							 "NOTHING was removed."),
+						PropDef->Name, CasualtyKeys, *FString::Join(Casualties, TEXT(", "))));
+					Out->SetNumberField(TEXT("wouldDestroyKeys"), CasualtyKeys);
+					TArray<TSharedPtr<FJsonValue>> Arr;
+					for (const FString& C : Casualties)
+					{
+						Arr.Add(MakeShared<FJsonValueString>(C));
+					}
+					Out->SetArrayField(TEXT("wouldDestroyFamilies"), Arr);
+					return;
+				}
+			}
 		}
 
 		UMovieScene* MS = Anim->GetMovieScene();

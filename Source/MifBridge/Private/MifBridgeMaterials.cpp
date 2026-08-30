@@ -2084,6 +2084,9 @@ namespace MifBridge
 		// HAZARD 1. Ask the engine's own predicate rather than discovering it inside a stall.
 		const bool bComplete = Resource->IsGameThreadShaderMapComplete();
 		const bool bCompile = JBool(In, TEXT("compile"), false);
+		// Reported again AFTER any wait, below - this early write only survives on the refusal path
+		// where nothing is compiled, and echoing the pre-compile value as the final answer made a
+		// successful compile:true always claim shaderMapComplete:false.
 		Out->SetBoolField(TEXT("shaderMapComplete"), bComplete);
 		if (!bComplete && !bCompile)
 		{
@@ -2098,6 +2101,32 @@ namespace MifBridge
 		}
 
 		const FMaterialStatistics Stats = UMaterialEditingLibrary::GetStatistics(MatIface);
+
+		// JUDGE BY THE POSTCONDITION, NOT BY THE CALL RETURNING. GetStatistics has no failure
+		// return: when the compile it just waited for did not succeed, the shader map is still
+		// incomplete and the resource hands back the same all-zero struct that HAZARD 2 above
+		// exists to reject - plus a samplers value of -1, which is not a plausible statistic at
+		// all. The guard was written for the null-resource case and then walked straight past for
+		// the case it was most needed in: the one where a stall was accepted and produced nothing.
+		//
+		// Re-read the completeness AFTER the wait. It is also the honest value to report: the
+		// original code echoed the pre-compile flag, so a successful compile:true always claimed
+		// shaderMapComplete:false while returning real numbers beside it.
+		const bool bCompleteNow = Resource->IsGameThreadShaderMapComplete();
+		Out->SetBoolField(TEXT("shaderMapComplete"), bCompleteNow);
+		if (!bCompleteNow || Stats.NumSamplers < 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the shader compile for '%s' was waited on and did NOT produce a usable shader "
+					 "map%s, so there are no statistics to report. They are refused rather than "
+					 "returned, because a failed compile yields a row of zeros that reads exactly "
+					 "like a free material - the wrong answer to give an optimisation pass. Check "
+					 "the material compiles at all before measuring it. NOTHING was measured."),
+				*Path,
+				Stats.NumSamplers < 0 ? TEXT(" (the sampler count came back negative)") : TEXT("")));
+			Out->SetBoolField(TEXT("compileFailed"), true);
+			return;
+		}
 
 		Out->SetNumberField(TEXT("vertexShaderInstructions"), Stats.NumVertexShaderInstructions);
 		Out->SetNumberField(TEXT("pixelShaderInstructions"), Stats.NumPixelShaderInstructions);

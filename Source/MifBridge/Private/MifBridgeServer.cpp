@@ -210,7 +210,24 @@ bool FMifBridgeServer::Start()
 					{
 						// A whole word is worth more than an incidental substring: 'actor' in
 						// 'delete_level_actor' beats 'actor' inside 'actorClass'.
-						Score += (Name.EndsWith(Part) || Name.StartsWith(Part) || Name.Contains(Part + TEXT("_"))) ? 3 : 1;
+						//
+					// AND A TRAILING WORD BEATS AN INTERIOR ONE, which earns its own tier because
+					// these names are verb_noun: the LAST token is the thing the caller wants.
+					// Found 2026-08-30 by the first full sweep ever to include
+					// test_unknown_endpoint. "destroy_actor" scores only on "actor" - nothing here
+					// contains "destroy" - so delete_level_actor tied at 3 with
+					// add_actor_to_data_layer, add_spawn_actor and attach_actor, lost the
+					// alphabetical tiebreak to all three, and came FOURTH. Someone typing
+					// destroy_actor got three irrelevant add_/attach_ suggestions ahead of the
+					// answer.
+					//
+					// THE MARGIN IS THIN and saying so is the point: this lands it THIRD, not
+					// first. Enough new *_actor endpoints would push it out again, because
+					// "destroy" contributes nothing at all. A verb-synonym table would fix that
+					// properly; it is not worth one yet.
+					const bool bTrailing  = Name.EndsWith(Part);
+					const bool bWholeWord = Name.StartsWith(Part) || Name.Contains(Part + TEXT("_"));
+					Score += bTrailing ? 4 : (bWholeWord ? 3 : 1);
 					}
 				}
 				if (Name.Contains(Wanted) || Wanted.Contains(Name))

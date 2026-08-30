@@ -636,7 +636,7 @@ def add_widget_animation_track(blueprint_id: str, animation_name: str, widget_na
 
 @mcp.tool()
 def set_widget_animation_keys(blueprint_id: str, animation_name: str, widget_name: str,
-                              channel: str = "Y", keys: list = None,
+                              channel: str = "", keys: list = None,
                               replace: bool = True,
                               property: str = "RenderTransform.Translation") -> dict:
     """Key one channel of a widget's animation track.
@@ -644,6 +644,11 @@ def set_widget_animation_keys(blueprint_id: str, animation_name: str, widget_nam
     channel: X/Y for Translation, Scale and Shear; omit for Angle and RenderOpacity; R/G/B/A
     for ColorAndOpacity. Scale.X and Translation.X are DIFFERENT curves on the same section,
     so property is what says which one you mean.
+
+    It defaults to EMPTY, not "Y". A hard "Y" default was always forwarded, which made the
+    "omit for Angle" above impossible to follow through MCP - Angle is a single curve and refuses
+    an axis. Empty lets the endpoint apply the right default per property (Y for Translation,
+    the single curve for Angle and RenderOpacity).
     """
     return _post("set_widget_animation_keys", blueprintId=blueprint_id,
                  animationName=animation_name, widgetName=widget_name, channel=channel,
