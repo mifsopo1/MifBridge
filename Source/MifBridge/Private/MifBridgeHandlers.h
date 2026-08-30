@@ -1094,6 +1094,9 @@ namespace MifBridge
 	MIF_DECL(add_virtual_bone);
 	MIF_DECL(remove_virtual_bone);
 	MIF_DECL(rename_virtual_bone);
+	MIF_DECL(add_anim_curve);
+	MIF_DECL(set_anim_curve_keys);
+	MIF_DECL(remove_anim_curve);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);

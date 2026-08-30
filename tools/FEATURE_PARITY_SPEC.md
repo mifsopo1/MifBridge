@@ -4922,7 +4922,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       to bake into, and an image target - and because a bake with no UV layer or no target silently
       produces nothing, which needs guarding the way every other silent-success case here does.
 
-- [ ] **add_anim_curve / set_anim_curve_keys / remove_anim_curve** (day)
+- [x] **add_anim_curve / set_anim_curve_keys / remove_anim_curve** (day)
+      DONE 2026-08-30. 16 checks in tools/test_anim_curve.py, plus describe_animation's
+      curves[] upgraded from bare names to {name, type, keyCount}.
+      THE ENDPOINTS ARE MOSTLY GUARD, because GetController() calls ValidateModel() which is
+      a checkf - process termination, not an error - and a cooked AnimSequence has no data
+      model by construction (ShouldDataModelBeValid() is !HasAnyPackageFlags(PKG_Cooked)).
+      AND THE OBVIOUS PROBE IS THE CRASH. IsDataModelValid() short-circuits safely on a COOKED
+      asset but calls ValidateModel on an uncooked one, so it cannot answer "is this safe to
+      touch" without risking the termination it is asked about. Uses
+      GetDataModelInterface() != nullptr, the same probe run_retarget settled on.
+      VECTOR CURVES REFUSED BY NAME per the vetter: FRawCurveTracks::VectorCurves is
+      UPROPERTY(transient) and not serialized, so the engine accepts one and discards it.
+      SetCurveKeys, not AddFloatCurveKeys - the library only ever APPENDS, so a "replace"
+      built on it would silently accumulate. And the CONTROLLER path rather than the library,
+      because every AnimationBlueprintLibrary curve function takes UAnimSequence* and would
+      have silently missed the montages describe_animation already reports curves for.
+      Transform curves check the bone name against the skeleton first - AddCurve only logs a
+      warning and returns otherwise, so it would have reported created:true having done nothing.
+      NOT EXERCISED: the success path. All 514 AnimSequences here are cooked and create_asset
+      cannot make a usable uncooked one, so creating a curve is unreachable on DDS2 by
+      construction - Curfew is where that half runs. The guard IS exercised against real
+      cooked content, which is the test that mattered.
       Author float, vector and transform curves on an AnimSequence - the per-frame scalar tracks that drive material parameters, IK alpha, morph target weights and curve-driven gameplay. Includes setting keys, not just declaring the curve.
       API: UAnimationBlueprintLibrary::AddCurve / RemoveCurve / RemoveAllCurveData / AddFloatCurveKey / AddFloatCurveKeys / AddVectorCurveKey(s) / AddTransformationCurveKey(s) / GetFloatKeys - Editor/AnimationBlueprintLibrary/Public/AnimationBlueprintLibrary.h:316,320,324,328,332,336,340,344,348,369 (class-level ANIMATIONBLUEPRINTLIBRARY_API at :64). Underneath, IAnimationDataController::AddCurve(:299) / Rem...
       Cooked: UNCOOKED ONLY, and this one WILL kill the editor if unguarded. UAnimSequenceBase::GetController() calls ValidateModel() which is checkf(DataModelInterface != nullptr, ...) - AnimSequenceBase.cpp:1462-1465 and 1381-1390 - and a checkf is a process termination, not an error return. A cooked AnimSequen...

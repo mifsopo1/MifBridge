@@ -166,67 +166,109 @@ def _material_json(mat, deep=False):
 def op_create_material(params):
     """Create a material with a Principled BSDF, and report the name Blender gave it.
 
-    THE NAME IS ECHOED FROM THE MATERIAL, NOT FROM THE REQUEST. bpy.data.materials.new()
-    silently appends .001 on a collision, so a caller who asked for "Wood" can end up with
-    "Wood.003" and never know. Reporting the requested name back would be wrong roughly as
-    often as a scene has a name clash in it, which is often.
+    THE NAME IS ECHOED FROM THE MATERIAL, NOT FROM THE REQUEST. bpy.data.materials.new() silently
+    appends .001 on a collision, so a caller who asked for "Wood" can end up with "Wood.003" and
+    never know. Reporting the requested name back would be wrong roughly as often as a scene has a
+    name clash in it, which is often.
 
-    Pass `reuse` to get the existing material instead of a numbered copy when the name is
-    already taken - which is usually what a pipeline wants, and never what new() does.
+    `reuse` RETURNS THE EXISTING MATERIAL rather than a numbered copy - the idempotent-create shape
+    a pipeline uses by default. It APPLIES the inline values too. An earlier version returned early
+    on that path, silently discarding baseColor/metallic/roughness while attaching a note claiming
+    "the end state you asked for is already in place" - which was false precisely when a shading
+    value had been passed, on the most common call shape there is.
+
+    REUSE ALSO REPAIRS use_nodes. bpy.data.materials.new() leaves nodes OFF on 3.6, 4.2 and 4.4 and
+    ON only on 5.0, and set_material_slots creates bare materials with no node tree at all - so a
+    reused material may have no Principled BSDF, contradicting this op's whole contract. It is
+    switched on and the BSDF verified, rather than handing back something set_material_properties
+    would then refuse.
+
+    NOTHING IS CREATED UNTIL EVERY VALUE VALIDATES. The material used to be created first, so a
+    refusal left a new datablock behind while the message said "NOTHING was changed".
     """
     reject_unknown(params, ("name", "reuse", "baseColor", "metallic", "roughness"),
                    "create_material")
     name = take(params, "name", required=True, kind=str)
     reuse = take_bool(params, "reuse", default=False)
+    inline = {p: params[p] for p in ("baseColor", "metallic", "roughness")
+              if p in params and params[p] is not None}
 
     existing = bpy.data.materials.get(name)
+    mat = None
+    created = False
     if existing is not None and reuse:
-        out = _material_json(existing)
-        out["created"] = False
-        out["note"] = ("a material with that name already existed and reuse was requested, so "
-                       "nothing was created. created:false here means the end state you asked "
-                       "for is already in place.")
-        return out
+        mat = existing
+        if not mat.use_nodes or mat.node_tree is None:
+            mat.use_nodes = True
+    else:
+        # DEFERRED until the values are known-good: see the docstring.
+        pass
 
-    mat = bpy.data.materials.new(name=name)
-    mat.use_nodes = True
+    if mat is None:
+        # Validate what we can before creating anything. The socket check needs a BSDF, so the
+        # remaining validation happens against the new material and is rolled back on failure.
+        mat = bpy.data.materials.new(name=name)
+        mat.use_nodes = True
+        created = True
+
     bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
     if bsdf is None:
+        if created:
+            bpy.data.materials.remove(mat)
         raise MifOpError(
-            "the new material has no Principled BSDF, which should not happen with "
-            "use_nodes=True on any supported Blender. NOTHING usable was produced.")
+            "material '%s' has no Principled BSDF node%s. NOTHING usable was produced."
+            % (name, " even with use_nodes on, which should not happen on any supported Blender"
+               if created else " - it was created without one, and this op cannot add it"))
 
-    # The three most-set values are accepted inline so the common case is one call.
     applied = {}
-    for prop in ("baseColor", "metallic", "roughness"):
-        if prop in params or prop.lower() in params:
-            val = take(params, prop)
-            if val is None:
-                continue
+    try:
+        # RESOLVE AND COERCE EVERYTHING FIRST, then write. A bad value must not leave a
+        # half-configured material, and must not leave a new one behind at all.
+        staged = []
+        for prop, val in inline.items():
             sock = _resolve_input(bsdf, prop)
             if sock is None:
                 raise MifOpError(
-                    "this Blender's Principled BSDF has no input for '%s' (tried: %s). "
-                    "Available inputs: %s. NOTHING was changed." %
-                    (prop, ", ".join(PRINCIPLED_ALIASES[prop]),
-                     ", ".join(i.name for i in bsdf.inputs)))
-            _write_socket(sock, prop, val)
+                    "this Blender's Principled BSDF has no input for '%s' (tried: %s). Available "
+                    "inputs: %s. NOTHING was changed."
+                    % (prop, ", ".join(PRINCIPLED_ALIASES[prop]) or "(none)",
+                       ", ".join(i.name for i in bsdf.inputs)))
+            _check_unlinked(sock, prop)
+            staged.append((prop, sock, _coerce_socket(sock, prop, val)))
+        for prop, sock, value in staged:
+            sock.default_value = value
             applied[prop] = sock.name
+    except MifOpError:
+        if created:
+            bpy.data.materials.remove(mat)
+        raise
 
     out = _material_json(mat)
-    out["created"] = True
+    out["created"] = created
     out["requestedName"] = name
-    if mat.name != name:
-        out["nameNote"] = ("Blender renamed this to '%s' because '%s' was already taken - "
-                           "new() never overwrites and never fails, it appends a number. Pass "
-                           "reuse:true to get the existing material instead." % (mat.name, name))
     if applied:
         out["resolvedInputs"] = applied
+        out["applied"] = sorted(applied)
+    if not created:
+        out["note"] = (
+            "a material with that name already existed and reuse was requested, so it was NOT "
+            "recreated." + (" The values you passed were applied to it - see applied[]."
+                            if applied else " No shading values were passed, so nothing about it "
+                                            "changed."))
+    elif mat.name != name:
+        out["nameNote"] = ("Blender renamed this to '%s' because '%s' was already taken - new() "
+                           "never overwrites and never fails, it appends a number. Pass reuse:true "
+                           "to get the existing material instead." % (mat.name, name))
     return out
 
 
-def _write_socket(sock, prop, val):
-    """Write a value into a node socket, widening a colour to RGBA when needed."""
+def _coerce_socket(sock, prop, val):
+    """Validate a value for a socket and return what would be written. Writes NOTHING.
+
+    SPLIT OUT FROM THE WRITE so every value in a call can be checked before any is applied. An
+    earlier version validated inside the write loop, so a bad value on the fifth property left the
+    first four already written - while the docstring promised the opposite.
+    """
     if prop in COLOR_PROPS or hasattr(sock.default_value, "__len__"):
         if not hasattr(val, "__len__") or isinstance(val, str):
             raise MifOpError("'%s' takes a colour as [r,g,b] or [r,g,b,a], got %r" % (prop, val))
@@ -237,9 +279,26 @@ def _write_socket(sock, prop, val):
         if len(vals) != want:
             raise MifOpError("'%s' expects %d components on this Blender, got %d"
                              % (prop, want, len(vals)))
-        sock.default_value = vals
-    else:
-        sock.default_value = float(val)
+        return vals
+    return float(val)
+
+
+def _check_unlinked(sock, prop):
+    """A LINKED socket ignores default_value entirely, so writing one changes nothing that renders.
+
+    Blender evaluates the incoming link and never reads default_value on a connected input. Writing
+    it anyway succeeds at the Python level and shows up when read back, so the op would report the
+    new value while the material rendered and exported exactly as before - a silent no-op that
+    confirms itself. Refused instead, naming what is driving the socket.
+    """
+    if sock.is_linked:
+        src = sock.links[0].from_node if sock.links else None
+        raise MifOpError(
+            "'%s' is LINKED to %s, and a connected input ignores its default value completely - "
+            "Blender evaluates the link instead. Writing it would change nothing that renders or "
+            "exports while still reading back as the new value. Disconnect the link first, or edit "
+            "the node driving it. NOTHING was changed."
+            % (prop, ("node '%s'" % src.name) if src else "another node"))
 
 
 def op_set_material_properties(params):
@@ -290,8 +349,15 @@ def op_set_material_properties(params):
                          for p in sorted(unresolved)),
                ", ".join(i.name for i in bsdf.inputs)))
 
+    # EVERY VALUE COERCED AND EVERY SOCKET LINK-CHECKED BEFORE THE FIRST WRITE. The names were
+    # already resolved above; doing the values in the same pass is what makes "nothing was written"
+    # true on a refusal rather than merely claimed.
+    staged = {}
     for prop, sock in resolved.items():
-        _write_socket(sock, prop, wanted[prop])
+        _check_unlinked(sock, prop)
+        staged[prop] = _coerce_socket(sock, prop, wanted[prop])
+    for prop, sock in resolved.items():
+        sock.default_value = staged[prop]
 
     out = _material_json(mat)
     out["applied"] = sorted(wanted)
@@ -383,12 +449,22 @@ def op_assign_material_to_faces(params):
             % (slot, obj.name, len(obj.material_slots), len(obj.material_slots) - 1))
 
     total = len(mesh.polygons)
+    if total == 0:
+        raise MifOpError(
+            "'%s' has NO polygons, so there is nothing to assign a material to. Without this check "
+            "the loop below would simply not run and the op would report changed:0 with no error - "
+            "the exact indistinguishable-from-success case it exists to prevent. NOTHING was "
+            "changed." % obj.name)
     faces = params.get("faces")
     if faces is None:
         targets = range(total)
     else:
         if not hasattr(faces, "__len__") or isinstance(faces, str):
             raise MifOpError("faces must be a list of polygon indices, or omitted for all")
+        if len(faces) == 0:
+            raise MifOpError(
+                "faces:[] is empty - that assigns nothing and would report changed:0 as though it "
+                "had worked. Omit `faces` to assign every polygon. NOTHING was changed.")
         bad = [f for f in faces if not isinstance(f, int) or f < 0 or f >= total]
         if bad:
             raise MifOpError(

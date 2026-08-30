@@ -3059,6 +3059,27 @@ def rename_virtual_bone(skeleton: str, name: str, new_name: str) -> dict:
     return _post("rename_virtual_bone", skeleton=skeleton, name=name, newName=new_name)
 
 
+@mcp.tool()
+def add_anim_curve(asset_path: str, name: str, type: str = "float") -> dict:
+    "Declare a curve on an AnimSequence or AnimMontage - the per-frame scalar tracks that drive material parameters, IK alpha, morph weights and curve-driven gameplay. type is 'float' or 'transform'. UNCOOKED ONLY, and this is the guard that matters: UAnimSequenceBase::GetController() calls ValidateModel(), which is a checkf - it TERMINATES the editor rather than returning an error - and a cooked sequence has no data model by construction. The check is made with a plain pointer read before the controller is ever touched, because IsDataModelValid() is itself unsafe on an uncooked asset. type 'vector' is REFUSED with its reason: FRawCurveTracks::VectorCurves is UPROPERTY(transient) and not serialized, so authoring one would report success and vanish on save. A TRANSFORM curve must be named after a bone that exists on the skeleton - AnimationBlueprintLibrary::AddCurve only logs a warning and returns otherwise, so it is checked here. The new curve has NO KEYS and evaluates to nothing until set_anim_curve_keys writes some."
+    return _post("add_anim_curve", assetPath=asset_path, name=name, type=type)
+
+
+@mcp.tool()
+def set_anim_curve_keys(asset_path: str, name: str, keys: list, append: bool = False,
+                        type: str = "float") -> dict:
+    "Write keys onto an existing float curve. keys is [{time, value, interp?}] where interp is linear (default), constant or cubic. REPLACES the curve's keys by default; pass append=True to add to what is there. It goes through IAnimationDataController::SetCurveKeys rather than AnimationBlueprintLibrary::AddFloatCurveKeys, because the library only ever APPENDS - there is no clear in it at all - so a 'replace' built on it would silently accumulate. Every key is parsed BEFORE any is written, so a malformed one at index 40 cannot leave the curve holding the first 39, and keyCount is measured off the curve afterwards rather than counted from the request. Uncooked only, same checkf guard as add_anim_curve. type defaults to float and is the only writable kind here - transform keys are nine sub-curves and need their own shape, so type='transform' is refused by name rather than silently ignored."
+    return _post("set_anim_curve_keys", assetPath=asset_path, name=name, keys=keys,
+                 append=append, type=type)
+
+
+@mcp.tool()
+def remove_anim_curve(asset_path: str, name: str, type: str = "float",
+                      confirm: bool = False) -> dict:
+    "Remove a curve and its keys from an AnimSequence or AnimMontage. Requires confirm=True, and the refusal states how many keys would be destroyed. Uncooked only, same checkf guard as add_anim_curve."
+    return _post("remove_anim_curve", assetPath=asset_path, name=name, type=type, confirm=confirm)
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:

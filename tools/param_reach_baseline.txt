@@ -3,6 +3,7 @@
 # Regenerate deliberately with: python tools/param_reach.py --update-baseline
 add_actor_to_data_layer.datalayer
 add_actor_to_data_layer.layer
+add_anim_curve.animation
 add_blackboard_key.blackboard
 add_blackboard_key.key
 add_cast.castto
@@ -159,6 +160,7 @@ redo_transactions.steps
 redo_transactions.to_index
 remove_actor_from_data_layer.datalayer
 remove_actor_from_data_layer.layer
+remove_anim_curve.animation
 remove_enum_value.displayname
 remove_enum_value.name
 remove_ik_goal.rig
@@ -186,6 +188,7 @@ run_console.cmd
 save_dirty_packages.dry_run
 sculpt_landscape.actorpath
 self_audit.compact
+set_anim_curve_keys.animation
 set_blendspace_samples.blendspace
 set_collision.component
 set_current_sublevel.level

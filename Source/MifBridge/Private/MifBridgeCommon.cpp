@@ -155,6 +155,9 @@ namespace MifBridge
 			MIF_BIND(add_virtual_bone);
 			MIF_BIND(remove_virtual_bone);
 			MIF_BIND(rename_virtual_bone);
+			MIF_BIND(add_anim_curve);
+			MIF_BIND(set_anim_curve_keys);
+			MIF_BIND(remove_anim_curve);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);

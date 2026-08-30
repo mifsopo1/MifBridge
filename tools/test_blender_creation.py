@@ -87,6 +87,36 @@ def main():
         check("T4000 size and radius together are refused - they set the same dimension",
               both.get("ok") is False, (both.get("error") or "")[:180])
 
+        # ------------------------------------------------------------------ T4007 sizing
+        print("\n=== T4007: size and radius are DIFFERENT dimensions, never swapped ===")
+        # An adversarial review of this module found the first version remapping size onto radius
+        # for every kind outside cube/plane/grid/monkey - a factor-of-two error on four kinds, and
+        # a TypeError on cone and torus, which accept neither.
+        wrong = B.call("create_primitive", {"kind": "cube", "radius": 1, "name": "MifT_Wrong"})
+        check("T4007 a cube given `radius` is refused, not silently reinterpreted",
+              wrong.get("ok") is False and "DIFFERENT dimensions" in (wrong.get("error") or ""),
+              (wrong.get("error") or "")[:200])
+        tor = B.call("create_primitive", {"kind": "torus", "size": 1, "name": "MifT_Tor"})
+        check("T4007 a torus given `size` is refused - it takes neither size nor radius",
+              tor.get("ok") is False and "majorRadius" in (tor.get("error") or ""),
+              (tor.get("error") or "")[:200])
+        realtor = B.call("create_primitive", {"kind": "torus", "majorRadius": 2,
+                                              "name": "MifT_Torus"})
+        check("T4007 and its real sizing parameters work",
+              realtor.get("ok") is True and (realtor.get("verts") or 0) > 100,
+              json.dumps(realtor)[:200])
+        if realtor.get("ok"):
+            made.append(realtor["name"])
+        cone = B.call("create_primitive", {"kind": "cone", "radius1": 1, "radius2": 0,
+                                           "name": "MifT_Cone"})
+        check("T4007 a cone takes radius1/radius2, which no other kind accepts",
+              cone.get("ok") is True and (cone.get("verts") or 0) > 10, json.dumps(cone)[:200])
+        if cone.get("ok"):
+            made.append(cone["name"])
+        conebad = B.call("create_primitive", {"kind": "cube", "radius1": 1})
+        check("T4007 and radius1 on a cube is refused", conebad.get("ok") is False,
+              (conebad.get("error") or "")[:180])
+
         # ------------------------------------------------------------------ T4001 the name
         print("\n=== T4001: Blender renames on collision and never says so ===")
         first = B.call("create_primitive", {"kind": "cube", "name": "MifT_Clash"})
@@ -135,6 +165,37 @@ def main():
         check("T4003 relative:true ADDS to the current transform rather than replacing it",
               (rel.get("after") or {}).get("location") == [4, 5, 6],
               (rel.get("after") or {}).get("location"))
+
+        # ------------------------------------------------------------------ T4008 rotation mode
+        print("\n=== T4008: rotation must reach the field the object actually uses ===")
+        # THE ONE THE REVIEW CAUGHT. Blender evaluates rotation_euler ONLY for Euler rotation
+        # modes. Writing it on a QUATERNION object - what glTF import produces for every node -
+        # is inert, and reading the same field back reports the requested value as fact. A silent
+        # no-op that confirms itself.
+        qc = B.call("create_primitive", {"kind": "cube", "name": "MifT_Quat"})
+        if qc.get("ok"):
+            made.append(qc["name"])
+            B.call("run_python", {"code": "import bpy; bpy.data.objects[%r].rotation_mode="
+                                          "'QUATERNION'" % qc["name"]})
+            qr = B.call("transform_object", {"object": qc["name"],
+                                             "rotation": [0, 0, 1.5707963]})
+            check("T4008 rotating a QUATERNION object succeeds", qr.get("ok") is True,
+                  json.dumps(qr)[:220])
+            # THE assertion: the real quaternion moved. Reading rotation_euler would pass even
+            # when nothing happened, which is exactly how the bug hid.
+            q = B.call("run_python", {"code": "import bpy; print(list(bpy.data.objects[%r]."
+                                              "rotation_quaternion))" % qc["name"]})
+            vals = q.get("stdout", "").strip().strip("[]")
+            nums = [float(x) for x in vals.split(",")] if vals else []
+            check("T4008 and the object's REAL rotation_quaternion moved off identity",
+                  len(nums) == 4 and abs(nums[0] - 1.0) > 0.01, q.get("stdout", "").strip())
+            check("T4008 `after` is read from matrix_world, so it cannot confirm itself",
+                  abs(((qr.get("after") or {}).get("rotationEuler") or [0, 0, 0])[2]
+                      - 1.570796) < 0.01,
+                  json.dumps((qr.get("after") or {}).get("rotationEuler")))
+            check("T4008 and the response says the euler was converted, not written raw",
+                  "CONVERTED" in (qr.get("rotationModeNote") or ""),
+                  qr.get("rotationModeNote"))
 
         # ------------------------------------------------------------------ T4004 join
         print("\n=== T4004: join merges material slots and remaps every face ===")

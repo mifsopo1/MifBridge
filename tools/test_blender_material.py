@@ -136,6 +136,52 @@ def main():
               abs((after.get("roughness") or 0) - (before.get("roughness") or 0)) < 1e-6,
               "roughness %s -> %s" % (before.get("roughness"), after.get("roughness")))
 
+        # ------------------------------------------------------------------ T4104 review fixes
+        print("\n=== T4104: three silent no-ops an adversarial review found ===")
+        # 1. reuse used to return BEFORE applying inline values, while attaching a note claiming
+        #    "the end state you asked for is already in place" - false exactly when a value was
+        #    passed, on the idempotent-create shape a pipeline uses by default.
+        B.call("set_material_properties", {"material": made_name, "baseColor": [0.1, 0.1, 0.1]})
+        ru = B.call("create_material", {"name": made_name, "reuse": True,
+                                        "baseColor": [1.0, 0.0, 0.0]})
+        check("T4104 reuse with inline values succeeds", ru.get("ok") is True,
+              json.dumps(ru)[:220])
+        check("T4104 and it APPLIES them rather than discarding them",
+              abs(((ru.get("principled") or {}).get("baseColor") or [0])[0] - 1.0) < 1e-4,
+              json.dumps((ru.get("principled") or {}).get("baseColor")))
+        check("T4104 and no longer claims the end state was already in place",
+              "already in place" not in (ru.get("note") or ""), ru.get("note"))
+
+        # 2. a LINKED socket ignores default_value entirely, so writing one changes nothing that
+        #    renders while still reading back as the new value.
+        B.call("run_python", {"code":
+            "import bpy\n"
+            "m = bpy.data.materials[%r]\n"
+            "t = m.node_tree\n"
+            "n = t.nodes.new('ShaderNodeRGB')\n"
+            "b = next(x for x in t.nodes if x.type == 'BSDF_PRINCIPLED')\n"
+            "t.links.new(n.outputs[0], b.inputs['Base Color'])\n" % made_name})
+        linked = B.call("set_material_properties", {"material": made_name,
+                                                    "baseColor": [0, 1, 0]})
+        check("T4104 writing a LINKED socket is refused, not silently ignored",
+              linked.get("ok") is False and "LINKED" in (linked.get("error") or ""),
+              (linked.get("error") or "")[:220])
+        check("T4104 and the refusal explains that a connected input ignores its default",
+              "ignores its default" in (linked.get("error") or ""),
+              (linked.get("error") or "")[:200])
+
+        # 3. a mesh with no polygons made assign_material_to_faces return changed:0 and no error.
+        empty = B.call("create_primitive", {"kind": "circle", "name": "MifT_Empty",
+                                            "fillType": "NOTHING"})
+        if empty.get("ok"):
+            objs.append(empty["name"])
+            B.call("set_material_slots", {"object": empty["name"], "slots": [made_name],
+                                          "allowResize": True})
+            z = B.call("assign_material_to_faces", {"object": empty["name"], "slot": 0})
+            check("T4104 a mesh with NO polygons is refused rather than reporting changed:0",
+                  z.get("ok") is False and "NO polygons" in (z.get("error") or ""),
+                  (z.get("error") or "")[:200])
+
         # ------------------------------------------------------------------ T4103 faces
         print("\n=== T4103: a face stores a slot INDEX, so a bad one renders as another slot ===")
         cube = B.call("create_primitive", {"kind": "cube", "name": "MifT_FaceCube"})

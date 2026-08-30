@@ -9,6 +9,9 @@
 // Everything here reads UAnimSequence/UAnimMontage/UBlendSpace, which live in the Engine module —
 // no extra build dependency. Read-only: registered in IsReadOnlyEndpoint, no transaction.
 #include "MifBridgeHandlers.h"
+#include "Animation/AnimData/IAnimationDataController.h"
+#include "Animation/AnimData/CurveIdentifier.h"
+#include "Animation/AnimSequence.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "ScopedTransaction.h"
 
@@ -463,13 +466,39 @@ namespace MifBridge
 			Out->SetArrayField(TEXT("notifies"), Notifies);
 			Out->SetNumberField(TEXT("notifyCount"), Notifies.Num());
 
-			// Float/vector curves driving material params, IK weights, etc.
+			// Float/transform curves driving material params, IK weights, morph weights.
+			//
+			// UPGRADED FROM BARE NAMES so the read and write halves describe the same object. A
+			// name alone cannot tell you whether a curve has any keys, and a curve with none
+			// evaluates to nothing while still being listed - which looks identical to a working
+			// one. keyCount is the field that separates them.
 			TArray<TSharedPtr<FJsonValue>> Curves;
 			for (const FFloatCurve& Curve : SeqBase->GetCurveData().FloatCurves)
 			{
-				Curves.Add(MakeShared<FJsonValueString>(Curve.GetName().ToString()));
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetStringField(TEXT("name"), Curve.GetName().ToString());
+				J->SetStringField(TEXT("type"), TEXT("float"));
+				J->SetNumberField(TEXT("keyCount"), Curve.FloatCurve.GetNumKeys());
+				Curves.Add(MakeShared<FJsonValueObject>(J));
+			}
+			for (const FTransformCurve& Curve : SeqBase->GetCurveData().TransformCurves)
+			{
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetStringField(TEXT("name"), Curve.GetName().ToString());
+				J->SetStringField(TEXT("type"), TEXT("transform"));
+				// A transform curve is nine float sub-curves; the translation X count is the
+				// representative one and is what the editor's key count shows.
+				J->SetNumberField(TEXT("keyCount"),
+					Curve.TranslationCurve.FloatCurves[0].GetNumKeys());
+				Curves.Add(MakeShared<FJsonValueObject>(J));
 			}
 			Out->SetArrayField(TEXT("curves"), Curves);
+			Out->SetNumberField(TEXT("curveCount"), Curves.Num());
+			// VECTOR CURVES ARE NOT REPORTED and that is deliberate. FRawCurveTracks::VectorCurves
+			// is UPROPERTY(transient) with the engine's own note that they "are not evaluated or
+			// used for anything else but transient data for modifying bone track" and are not
+			// serialized (AnimCurveTypes.h:1024-1030). Listing them would advertise something that
+			// does not survive a save.
 		}
 
 		// --- UAnimSequence: sampling detail + sync markers -----------------------------------
@@ -2134,5 +2163,464 @@ namespace MifBridge
 		Out->SetStringField(TEXT("assetNote"),
 			TEXT("the owning asset is dirty and NOTHING has been saved."));
 #endif
+	}
+
+	// =======================================================================
+	// ANIM CURVE AUTHORING - float and transform, and the checkf in the doorway
+	// =======================================================================
+	//
+	// THE GUARD IS THE ENDPOINT. UAnimSequenceBase::GetController() calls ValidateModel(), and
+	// ValidateModel is checkf(DataModelInterface != nullptr, ...) - AnimSequenceBase.cpp:1462-1465.
+	// A checkf is process termination, not an error return, so reaching for the controller on an
+	// asset with no data model does not fail: it takes the editor down. And a COOKED AnimSequence
+	// has no data model BY CONSTRUCTION, because ShouldDataModelBeValid() is literally
+	// !GetOutermost()->HasAnyPackageFlags(PKG_Cooked).
+	//
+	// AND THE OBVIOUS PROBE IS ITSELF THE CRASH, which is the part worth remembering.
+	// IsDataModelValid() looks like the safe check and is only half safe:
+	//
+	//     bool IsDataModelValid() const
+	//     {
+	//         if (ShouldDataModelBeValid()) { ValidateModel(); return DataModelInterface != nullptr; }
+	//         return false;
+	//     }
+	//
+	// On a COOKED asset it short-circuits and is safe. On an UNCOOKED one it calls ValidateModel -
+	// the checkf. So it cannot distinguish "uncooked and fine" from "uncooked and broken" without
+	// risking the very termination it is being asked about. This file uses
+	// GetDataModelInterface() != nullptr instead, a plain pointer read that is safe on every asset,
+	// which is the same probe run_retarget settled on for the same reason.
+	//
+	// VECTOR CURVES ARE REFUSED BY NAME, not quietly unsupported. The engine accepts them and then
+	// throws them away: FRawCurveTracks::VectorCurves is UPROPERTY(transient) and the header says
+	// they "are not evaluated or used for anything else but transient data for modifying bone
+	// track" (AnimCurveTypes.h:1024-1030). Authoring one would report success and vanish on save.
+	//
+	// TRANSFORM CURVES HAVE A SKELETON PRECONDITION THE LIBRARY ONLY WHISPERS ABOUT.
+	// AnimationBlueprintLibrary::AddCurve warns and returns when a transform curve name is not
+	// already on the skeleton (AnimationBlueprintLibrary.cpp:1294-1296) - an HTTP caller would get
+	// created:true having created nothing. Checked here against the skeleton first.
+
+	static UAnimSequenceBase* ResolveAnimForCurves(const TSharedRef<FJsonObject>& In,
+												   const TSharedRef<FJsonObject>& Out)
+	{
+		const FString Path = JStrAny(In, { TEXT("assetPath"), TEXT("path"), TEXT("animation") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("assetPath is required (aliases: path, animation) - an AnimSequence or ")
+				TEXT("AnimMontage. NOTHING was changed."));
+			return nullptr;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: %s. NOTHING was changed."), *Path));
+			return nullptr;
+		}
+		UAnimSequenceBase* Seq = Cast<UAnimSequenceBase>(Asset);
+		if (!Seq)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s - curves live on an AnimSequence or AnimMontage. NOTHING was ")
+				TEXT("changed."), *Path, *Asset->GetClass()->GetName()));
+			return nullptr;
+		}
+		// THE GUARD. A plain pointer read, never IsDataModelValid() and never GetController(),
+		// because both of those reach ValidateModel()'s checkf on an asset without a model.
+		if (Seq->GetDataModelInterface() == nullptr)
+		{
+			const UPackage* Pkg = Seq->GetOutermost();
+			const bool bCooked = Pkg && Pkg->HasAnyPackageFlags(PKG_Cooked);
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has NO animation data model, so curve authoring is impossible here%s. ")
+				TEXT("Reaching for the controller on this asset would call ValidateModel(), which is ")
+				TEXT("a checkf - it would TERMINATE the editor rather than return an error, which is ")
+				TEXT("why this is checked first. NOTHING was changed."),
+				*Seq->GetPathName(),
+				bCooked ? TEXT(" - it came from a COOKED package, and a cooked sequence has no data "
+							   "model by construction") : TEXT("")));
+			return nullptr;
+		}
+		return Seq;
+	}
+
+	/** float | transform. Vector is accepted only so it can be refused with the real reason. */
+	static bool ParseCurveType(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out,
+							   bool& bOutTransform)
+	{
+		const FString Type = JStr(In, TEXT("type"), TEXT("float")).ToLower();
+		if (Type == TEXT("float")) { bOutTransform = false; return true; }
+		if (Type == TEXT("transform")) { bOutTransform = true; return true; }
+		if (Type == TEXT("vector"))
+		{
+			Fail(Out, TEXT("vector curves are not supported, and the engine would let you make one. "
+				TEXT("FRawCurveTracks::VectorCurves is UPROPERTY(transient) and the engine's own "
+					 "note says they are \"not evaluated or used for anything else but transient "
+					 "data for modifying bone track\" and are not serialized - so the curve would "
+					 "report success and vanish on save. Use type:\"float\" or \"transform\". "
+					 "NOTHING was changed.")));
+			return false;
+		}
+		Fail(Out, FString::Printf(
+			TEXT("unknown curve type '%s' - accepted: float, transform. NOTHING was changed."),
+			*Type));
+		return false;
+	}
+
+	static const FFloatCurve* FindFloatCurve(const UAnimSequenceBase* Seq, const FName Name)
+	{
+		for (const FFloatCurve& C : Seq->GetCurveData().FloatCurves)
+		{
+			if (C.GetName() == Name) { return &C; }
+		}
+		return nullptr;
+	}
+
+	static const FTransformCurve* FindTransformCurve(const UAnimSequenceBase* Seq, const FName Name)
+	{
+		for (const FTransformCurve& C : Seq->GetCurveData().TransformCurves)
+		{
+			if (C.GetName() == Name) { return &C; }
+		}
+		return nullptr;
+	}
+
+	static FAnimationCurveIdentifier CurveIdFor(const FName Name, bool bTransform)
+	{
+		return FAnimationCurveIdentifier(Name, bTransform ? ERawCurveTrackTypes::RCT_Transform
+														  : ERawCurveTrackTypes::RCT_Float);
+	}
+
+	// --- add_anim_curve -----------------------------------------------------
+	void H_add_anim_curve(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("animation"), TEXT("name"), TEXT("type") },
+			TEXT("assetPath (aliases: path, animation); name - the curve name; type (float|transform, ")
+			TEXT("default float)"),
+			{ { TEXT("keys"), TEXT("this DECLARES the curve; set_anim_curve_keys puts keys in it") },
+			  { TEXT("value"), TEXT("same - a curve is a track, not a single value") } }))
+		{
+			return;
+		}
+		UAnimSequenceBase* Seq = ResolveAnimForCurves(In, Out);
+		if (!Seq) { return; }
+		bool bTransform = false;
+		if (!ParseCurveType(In, Out, bTransform)) { return; }
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required - the curve name. NOTHING was changed."));
+			return;
+		}
+		const FName CurveName(*Name);
+
+		if (bTransform ? (FindTransformCurve(Seq, CurveName) != nullptr)
+					   : (FindFloatCurve(Seq, CurveName) != nullptr))
+		{
+			Out->SetStringField(TEXT("assetPath"), Seq->GetPathName());
+			Out->SetStringField(TEXT("curve"), Name);
+			Out->SetStringField(TEXT("type"), bTransform ? TEXT("transform") : TEXT("float"));
+			Out->SetBoolField(TEXT("created"), false);
+			Out->SetStringField(TEXT("note"),
+				TEXT("a curve of that name and type already exists - nothing was added, and nothing "
+					 "needed to be. created:false here means the end state you asked for is in "
+					 "place. set_anim_curve_keys writes into it."));
+			return;
+		}
+
+		// THE PRECONDITION THE LIBRARY ONLY LOGS. A transform curve whose name is not already on
+		// the skeleton is silently dropped, and the caller is told nothing.
+		if (bTransform)
+		{
+			const USkeleton* Skeleton = Seq->GetSkeleton();
+			if (!Skeleton)
+			{
+				Fail(Out, TEXT("this animation has no Skeleton, and a transform curve's name must ")
+					TEXT("exist on one. NOTHING was changed."));
+				return;
+			}
+			if (Skeleton->GetReferenceSkeleton().FindBoneIndex(CurveName) == INDEX_NONE)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("a TRANSFORM curve must be named after a bone that exists on the skeleton, ")
+					TEXT("and '%s' is not on '%s' (%d bones). AnimationBlueprintLibrary::AddCurve ")
+					TEXT("only logs a warning here and returns, so this would otherwise report ")
+					TEXT("success having created nothing. list_bones lists them. NOTHING was ")
+					TEXT("changed."), *Name, *Skeleton->GetName(),
+					Skeleton->GetReferenceSkeleton().GetNum()));
+				return;
+			}
+		}
+
+		const int32 Before = Seq->GetCurveData().FloatCurves.Num()
+						   + Seq->GetCurveData().TransformCurves.Num();
+		{
+			// THE CONTROLLER, NOT THE LIBRARY. Every AnimationBlueprintLibrary curve function takes
+			// UAnimSequence*, so montages and composites - which describe_animation DOES report
+			// curves for - would be silently uncovered. UAnimSequenceBase's constructor creates a
+			// model for every non-CDO instance, so the controller path covers the same asset set
+			// the read half describes.
+			IAnimationDataController& Controller = Seq->GetController();
+			IAnimationDataController::FScopedBracket Bracket(
+				Controller, NSLOCTEXT("MifBridge", "MifBridge_AddAnimCurve", "Add Anim Curve"));
+			Controller.AddCurve(CurveIdFor(CurveName, bTransform));
+		}
+
+		// READ BACK. AddCurve returns a bool, but the authoritative answer is whether the curve
+		// data now holds it.
+		const bool bMade = bTransform ? (FindTransformCurve(Seq, CurveName) != nullptr)
+									  : (FindFloatCurve(Seq, CurveName) != nullptr);
+		if (!bMade)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the curve was requested and '%s' does not list it on read-back. NOTHING ")
+				TEXT("usable was produced."), *Seq->GetName()));
+			return;
+		}
+		Seq->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("assetPath"), Seq->GetPathName());
+		Out->SetStringField(TEXT("curve"), Name);
+		Out->SetStringField(TEXT("type"), bTransform ? TEXT("transform") : TEXT("float"));
+		Out->SetBoolField(TEXT("created"), true);
+		Out->SetNumberField(TEXT("curveCountBefore"), Before);
+		Out->SetNumberField(TEXT("curveCount"), Seq->GetCurveData().FloatCurves.Num()
+											  + Seq->GetCurveData().TransformCurves.Num());
+		Out->SetStringField(TEXT("note"),
+			TEXT("the curve exists and has NO KEYS, so it evaluates to nothing - a keyless curve is "
+				 "indistinguishable from a working one in a name-only listing. "
+				 "set_anim_curve_keys is what makes it do something."));
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the animation is dirty and NOTHING has been saved."));
+	}
+
+	// --- set_anim_curve_keys ------------------------------------------------
+	void H_set_anim_curve_keys(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("animation"), TEXT("name"), TEXT("type"),
+			  TEXT("keys"), TEXT("append") },
+			TEXT("assetPath (aliases: path, animation); name; type (float, default); ")
+			TEXT("keys:[{time, value, interp?}] - REPLACES the curve's keys unless append:true"),
+			{ { TEXT("clear"), TEXT("inverted and renamed: this REPLACES by default, so pass "
+									"append:true to add to what is there instead") },
+			  { TEXT("times"), TEXT("pass keys:[{time,value}] - parallel arrays get out of step and "
+									"there is no way to notice") } }))
+		{
+			return;
+		}
+		UAnimSequenceBase* Seq = ResolveAnimForCurves(In, Out);
+		if (!Seq) { return; }
+		bool bTransform = false;
+		if (!ParseCurveType(In, Out, bTransform)) { return; }
+		if (bTransform)
+		{
+			Fail(Out, TEXT("transform curve keys are not supported by this endpoint yet - a "
+				TEXT("transform key is nine sub-curves and needs its own shape. add_anim_curve "
+					 "creates the curve; set_property reaches its sub-curves. NOTHING was changed.")));
+			return;
+		}
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required. NOTHING was changed."));
+			return;
+		}
+		const FName CurveName(*Name);
+		const FFloatCurve* Existing = FindFloatCurve(Seq, CurveName);
+		if (!Existing)
+		{
+			TArray<FString> Have;
+			for (const FFloatCurve& C : Seq->GetCurveData().FloatCurves)
+			{
+				Have.Add(C.GetName().ToString());
+			}
+			Fail(Out, FString::Printf(
+				TEXT("no float curve named '%s' on this animation. It has: %s. add_anim_curve ")
+				TEXT("creates one. NOTHING was changed."), *Name,
+				Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* KeyArr = nullptr;
+		if (!In->TryGetArrayField(TEXT("keys"), KeyArr) || !KeyArr)
+		{
+			Fail(Out, TEXT("keys is required - an array of {time, value}. NOTHING was changed."));
+			return;
+		}
+
+		const bool bAppend = JBool(In, TEXT("append"), false);
+		TArray<FRichCurveKey> NewKeys;
+		if (bAppend)
+		{
+			for (const FRichCurveKey& K : Existing->FloatCurve.GetConstRefOfKeys())
+			{
+				NewKeys.Add(K);
+			}
+		}
+		// EVERY KEY IS PARSED BEFORE ANY IS WRITTEN, so a malformed one at index 40 cannot leave
+		// the curve holding the first 39.
+		int32 Index = 0;
+		for (const TSharedPtr<FJsonValue>& V : *KeyArr)
+		{
+			const TSharedPtr<FJsonObject>* Obj = nullptr;
+			if (!V.IsValid() || !V->TryGetObject(Obj) || !Obj || !Obj->IsValid())
+			{
+				Fail(Out, FString::Printf(
+					TEXT("keys[%d] is not an object - each key is {time, value}. NOTHING was ")
+					TEXT("changed."), Index));
+				return;
+			}
+			double Time = 0.0, Value = 0.0;
+			if (!(*Obj)->TryGetNumberField(TEXT("time"), Time)
+				|| !(*Obj)->TryGetNumberField(TEXT("value"), Value))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("keys[%d] needs both a numeric 'time' and 'value'. NOTHING was changed."),
+					Index));
+				return;
+			}
+			FRichCurveKey Key(static_cast<float>(Time), static_cast<float>(Value));
+			FString Interp;
+			if ((*Obj)->TryGetStringField(TEXT("interp"), Interp))
+			{
+				const FString L = Interp.ToLower();
+				if (L == TEXT("linear"))       { Key.InterpMode = RCIM_Linear; }
+				else if (L == TEXT("constant")) { Key.InterpMode = RCIM_Constant; }
+				else if (L == TEXT("cubic"))    { Key.InterpMode = RCIM_Cubic; }
+				else
+				{
+					Fail(Out, FString::Printf(
+						TEXT("keys[%d].interp '%s' is not one of linear, constant, cubic. NOTHING ")
+						TEXT("was changed."), Index, *Interp));
+					return;
+				}
+			}
+			else
+			{
+				Key.InterpMode = RCIM_Linear;
+			}
+			NewKeys.Add(Key);
+			++Index;
+		}
+
+		const int32 Before = Existing->FloatCurve.GetNumKeys();
+		{
+			// SetCurveKeys REPLACES. AddFloatCurveKeys only ever appends - there is no clear in the
+			// library at all - so a "replace" built on it would silently accumulate.
+			IAnimationDataController& Controller = Seq->GetController();
+			IAnimationDataController::FScopedBracket Bracket(
+				Controller, NSLOCTEXT("MifBridge", "MifBridge_SetAnimCurveKeys", "Set Anim Curve Keys"));
+			Controller.SetCurveKeys(CurveIdFor(CurveName, false), NewKeys);
+		}
+
+		const FFloatCurve* After = FindFloatCurve(Seq, CurveName);
+		const int32 Now = After ? After->FloatCurve.GetNumKeys() : 0;
+		if (Now != NewKeys.Num())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("%d key(s) were written and the curve reports %d on read-back. NOTHING ")
+				TEXT("reliable was produced."), NewKeys.Num(), Now));
+			return;
+		}
+		Seq->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("assetPath"), Seq->GetPathName());
+		Out->SetStringField(TEXT("curve"), Name);
+		Out->SetStringField(TEXT("type"), TEXT("float"));
+		Out->SetBoolField(TEXT("append"), bAppend);
+		Out->SetNumberField(TEXT("keyCountBefore"), Before);
+		// MEASURED off the curve, not counted from the request.
+		Out->SetNumberField(TEXT("keyCount"), Now);
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the animation is dirty and NOTHING has been saved."));
+	}
+
+	// --- remove_anim_curve --------------------------------------------------
+	void H_remove_anim_curve(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("animation"), TEXT("name"), TEXT("type"),
+			  TEXT("confirm") },
+			TEXT("assetPath (aliases: path, animation); name; type (float|transform, default ")
+			TEXT("float); confirm:true - the curve's keys go with it"),
+			{ { TEXT("all"), TEXT("not supported - name the curve. Removing every curve at once is "
+								  "not something this should make easy") } }))
+		{
+			return;
+		}
+		UAnimSequenceBase* Seq = ResolveAnimForCurves(In, Out);
+		if (!Seq) { return; }
+		bool bTransform = false;
+		if (!ParseCurveType(In, Out, bTransform)) { return; }
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required. NOTHING was changed."));
+			return;
+		}
+		const FName CurveName(*Name);
+		const FFloatCurve* Float = bTransform ? nullptr : FindFloatCurve(Seq, CurveName);
+		const FTransformCurve* Xform = bTransform ? FindTransformCurve(Seq, CurveName) : nullptr;
+		if (!Float && !Xform)
+		{
+			TArray<FString> Have;
+			for (const FFloatCurve& C : Seq->GetCurveData().FloatCurves)
+			{
+				Have.Add(C.GetName().ToString());
+			}
+			for (const FTransformCurve& C : Seq->GetCurveData().TransformCurves)
+			{
+				Have.Add(C.GetName().ToString());
+			}
+			Fail(Out, FString::Printf(
+				TEXT("no %s curve named '%s'. This animation has: %s. NOTHING was changed."),
+				bTransform ? TEXT("transform") : TEXT("float"), *Name,
+				Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+		const int32 Keys = Float ? Float->FloatCurve.GetNumKeys()
+								 : (Xform ? Xform->TranslationCurve.FloatCurves[0].GetNumKeys() : 0);
+
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("removing '%s' destroys its %d key(s) and this endpoint cannot put them back. ")
+				TEXT("Pass confirm:true. NOTHING was changed."), *Name, Keys));
+			return;
+		}
+
+		const int32 Before = Seq->GetCurveData().FloatCurves.Num()
+						   + Seq->GetCurveData().TransformCurves.Num();
+		{
+			IAnimationDataController& Controller = Seq->GetController();
+			IAnimationDataController::FScopedBracket Bracket(
+				Controller, NSLOCTEXT("MifBridge", "MifBridge_RemoveAnimCurve", "Remove Anim Curve"));
+			Controller.RemoveCurve(CurveIdFor(CurveName, bTransform));
+		}
+		const int32 After = Seq->GetCurveData().FloatCurves.Num()
+						  + Seq->GetCurveData().TransformCurves.Num();
+		if (After >= Before)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("RemoveCurve ran and the animation still holds %d curve(s). NOTHING was ")
+				TEXT("removed."), After));
+			return;
+		}
+		Seq->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("assetPath"), Seq->GetPathName());
+		Out->SetStringField(TEXT("curve"), Name);
+		Out->SetStringField(TEXT("type"), bTransform ? TEXT("transform") : TEXT("float"));
+		Out->SetBoolField(TEXT("removed"), true);
+		Out->SetNumberField(TEXT("keysDestroyed"), Keys);
+		Out->SetNumberField(TEXT("curveCountBefore"), Before);
+		Out->SetNumberField(TEXT("curveCount"), After);
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the animation is dirty and NOTHING has been saved."));
 	}
 }
