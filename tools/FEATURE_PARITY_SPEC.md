@@ -1530,14 +1530,31 @@ contradicts this file, the analysis wins — it read the code and this file matc
       extrude_skirt, and its refusal hardcoded "bevel_edges" for all three - so calling extrude_skirt
       wrong sent you to read the wrong op's docs. Fixed, and audit_message_endpoints now checks that
       shape as a third surface beside UE endpoint text and MCP docstrings.
-      REMAINING GAPS, audited and not yet judged:
-        decimate/LOD    the edit a game pipeline wants most; analyze_skeletal_split's triangle
-                        counts currently have nowhere to go
-        uv operations   bl_object_info REPORTS uvLayers; nothing can create or repair one
-        transform ops   the roundtrip asserts isIdentityTransform stays TRUE, so there is no
-                        way to deliberately move anything
-        modifier stack  bevel and skirt are hardcoded; a modifier stack is the general form
-        boolean/join    the obvious next mesh edit after bevel and extrude
+      REMAINING GAPS, audited 2026-08-27 - RE-CHECKED 2026-08-30 against the live addon:
+        decimate/LOD    CLOSED - decimate_mesh exists
+        uv operations   CLOSED - uv_unwrap and uv_info exist
+        transform ops   PARTLY - apply_transform and set_origin exist, but they BAKE; there is
+                        still no way to place an object at a location without baking it
+        modifier stack  CLOSED - add_modifier / remove_modifier / apply_modifier are the general form
+        boolean/join    STILL OPEN, and now folded into the creation items below
+
+      ============================================================================
+      SEQUENCING SUPERSEDED BY ANDRE, 2026-08-30, mid-session:
+        "for blender i want more than round trip, i want full creation and materialisation support"
+      ============================================================================
+      The 2026-08-26 direction below - "UE parity first, Blender second... do not start this while
+      UE items remain open" - no longer holds. Blender work now proceeds alongside the UE backlog,
+      on Andre's explicit instruction. The note is kept rather than deleted so the change of
+      direction is visible; it is not the current rule.
+
+      WHAT "FULL CREATION AND MATERIALISATION" MEANS, read off the addon rather than guessed.
+      The addon is 33 ops today and its shape is IMPORT-EDIT-EXPORT: every mesh enters through
+      import_mesh, and the only material verb is set_material_slots, which assigns NAMES to slots
+      and deliberately does not touch material content ("a material's content is Unreal's business",
+      its own docstring). So two whole halves are absent:
+        CREATION       nothing can produce geometry that did not come from a file
+        MATERIALISATION nothing can create a material, set a shading parameter, wire a texture,
+                       or read back what a material holds - there is no material READ op at all
   Andre's direction, 2026-08-26: "one improvement we will also do for mifbridge is the mifblender,
   after we get comfortable with our position move to blender mifbridge side". Sequencing is explicit -
   UE parity first, Blender second. This is NOT greenfield: parity_check.py already tracks 17 addon ops
@@ -4859,6 +4876,51 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       API: USkeleton::AddNewVirtualBone(FName Source, FName Target) and its FName& out-param overload, ::RemoveVirtualBones(const TArray<FName>&), ::RenameVirtualBone(FName, FName) - all ENGINE_API and all OUTSIDE any #if WITH_EDITOR block - D:/UE532/Engine/Source/Runtime/Engine/Classes/Animation/Skeleton.h:447,449,451,453, with HandleVirtualBoneChanges at :455 and RegenerateVirtualBoneGuid at :1049.
       Cooked: Refuse on cooked, by name. The API itself is not editor-gated and will run, but a virtual bone is baked into every animation that uses the skeleton, and a cooked project's AnimSequences cannot be recompressed - so the bone would exist on the skeleton and evaluate to nothing in every sequence. Guard ...
       Vetter corrected the proposal: Three things in the proposal are wrong and one guard is missing. (a) THE `name?` PARAMETER CANNOT BE DONE THE WAY DESCRIBED ON 5.3. The proposal says "the engine generates the name as VB <source>_<target> unless the overload's out-param is used". The out-param overload (Skeleton.h:449) REPORTS the generated name; it does not accept one — Skeleton.cpp:1795-1808 builds the name from FVirtualBone's c...
+
+- [ ] **BLENDER CREATION: bl_create_primitive** (hours)
+      The foundational gap. Every mesh in the addon today enters through import_mesh, so the bridge
+      can edit geometry and cannot originate any. Cube, sphere (uv + ico), cylinder, cone, torus,
+      plane, grid, circle, with the segment/size parameters each takes, a name, and a location. Must
+      report the created object's vert/face counts and its name after Blender's own name collision
+      handling (Blender appends .001 silently, so echoing the requested name would frequently lie).
+
+- [ ] **BLENDER MATERIALISATION: bl_create_material + bl_set_material_properties** (hours)
+      There is no way to create a material or set a shading value. create_material makes a material
+      with a Principled BSDF and returns its name after collision handling; set_material_properties
+      writes baseColor, metallic, roughness, specular, emissive, alpha and IOR onto that node by
+      INPUT NAME. Blender renames BSDF inputs between versions ("Specular" became "Specular IOR
+      Level" in 4.0, "Emission" became "Emission Color"), and the addon supports 3.6 through 5.0 -
+      so the input must be resolved by trying the known aliases and REFUSED by name when none match,
+      never silently skipped. That version spread is the whole difficulty of this item.
+
+- [ ] **BLENDER MATERIALISATION: bl_list_materials + bl_describe_material** (hours)
+      The addon has no material READ op at all - object_info reports slot names and nothing about
+      what is in them. describe_material should report the node tree shape (which nodes, which links
+      into the BSDF), the Principled values, and any image textures with their file paths, because
+      the texture paths are what an Unreal-side import has to resolve.
+
+- [ ] **BLENDER MATERIALISATION: bl_assign_material_to_faces** (hours)
+      set_material_slots sets the slot LIST; nothing assigns a slot to a face range. Needed for any
+      multi-material mesh built in Blender rather than imported. Must be index-based against the
+      polygon array and must report how many faces actually changed, since a selection that matches
+      nothing is otherwise indistinguishable from success.
+
+- [ ] **BLENDER CREATION: bl_boolean_op / bl_join_objects / bl_separate_mesh** (hours)
+      The mesh-combining verbs, and the last item left from the 2026-08-27 gap audit. boolean_op
+      wraps the boolean modifier (union/difference/intersect) and must apply it, since an unapplied
+      modifier does not survive export. join/separate are the counterpart pair.
+
+- [ ] **BLENDER CREATION: bl_transform_object (place without baking)** (hours)
+      apply_transform and set_origin both BAKE the transform into the mesh data. There is no way to
+      simply place an object - which the round trip currently papers over by asserting
+      isIdentityTransform stays true. Needed as soon as more than one object exists in a scene.
+
+- [ ] **BLENDER MATERIALISATION: bl_bake_texture** (day)
+      The other sense of materialisation: baking AO, normal, diffuse or combined maps to an image
+      and saving it. This is how a high-poly detail becomes a texture an Unreal material can use.
+      Day-ranked rather than hours because it needs a render engine configured (Cycles), a UV layer
+      to bake into, and an image target - and because a bake with no UV layer or no target silently
+      produces nothing, which needs guarding the way every other silent-success case here does.
 
 - [ ] **add_anim_curve / set_anim_curve_keys / remove_anim_curve** (day)
       Author float, vector and transform curves on an AnimSequence - the per-frame scalar tracks that drive material parameters, IK alpha, morph target weights and curve-driven gameplay. Includes setting keys, not just declaring the curve.
