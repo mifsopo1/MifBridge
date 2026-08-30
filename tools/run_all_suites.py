@@ -25,6 +25,7 @@ import glob
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -46,14 +47,24 @@ def main():
     # DERIVED, NOT HARDCODED. A suite that mentions start_pie starts PIE. A hand-kept list is one
     # forgotten entry away from hanging the sweep again - the same drift that left five finished
     # items sitting in the backlog and a factory table 44% incomplete on the same day.
+    # An INVOCATION, not a mention. A plain "start_pie" substring matched five suites when only
+    # three start PIE: test_safety_gate CALLS it deliberately but its own harness blocks the call -
+    # that is what the suite is for - and test_uncovered_reads5 only names it in comments. Skipping
+    # those two traded a hang for a silent coverage hole, which is no better.
+    pie_call = re.compile(r"(?:raw_post|confirm_call|\bcall)\s*\(\s*[\"']start_pie[\"']")
     pie_suites = []
     for name in suites:
         try:
             with io.open(os.path.join(here, name), "r", encoding="utf-8", errors="ignore") as fh:
-                if "start_pie" in fh.read():
-                    pie_suites.append(name)
+                body = fh.read()
         except OSError:
-            pass
+            continue
+        if not pie_call.search(body):
+            continue
+        # A suite whose harness blocks the call never actually enters PIE.
+        if "HARNESS_BLOCKED" in body and "start_pie" in body.split("HARNESS_BLOCKED")[1][:200]:
+            continue
+        pie_suites.append(name)
     if pie_suites and "--with-pie" not in sys.argv:
         suites = [n for n in suites if n not in pie_suites]
         print("SKIPPING %d PIE suite(s): %s" % (len(pie_suites), ", ".join(pie_suites)))
