@@ -5746,12 +5746,36 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       blueprintType=WidgetBlueprint answered ok:true and produced a plain UBlueprint with no
       WidgetTree that every widget endpoint then refused. The neighbouring UAnimInstance guard
       exists for exactly that near-miss and had no widget counterpart. T7300 covers it.
-- [ ] **typed read + write of a NiagaraSystem's user parameters - extend list_niagara_user_parameters and add set_niagara_user_parameter (NEW EVIDENCE against a declined item)** (day)
-      Report each User.* parameter of a NiagaraSystem with its real TYPE NAME and correctly-decoded value, and set a user parameter's default on the SYSTEM ASSET (as opposed to on one placed component). Today the read guesses and sometimes withholds, and the write does not exist.
-      API: UNiagaraSystem::GetExposedParameters() - both const and NON-CONST overloads, D:/UE532/Engine/Plugins/FX/Niagara/Source/Niagara/Classes/NiagaraSystem.h:336-337. FNiagaraParameterStore::ReadParameterVariables() returning TArrayView<const FNiagaraVariableWithOffset> - Plugins/FX/Niagara/Source/Niagara/Public/NiagaraParameterStore.h:186 - each entry carrying a real FNiagaraTypeDefinition, which is the...
-      Cooked: The typed READ is safe cooked - ExposedParameters is runtime data that survives cook, and the read touches no PostLoad path (the 6c crash was in duplication, not enumeration). Keep the existing string-class-name recognition as a fallback so the read still answers on a Niagara-less build. The WRITE m...
-      Vetter corrected the proposal: Three corrections, none fatal. (1) The proposer UNDERSOLD the new evidence. MIF_WITH_NIAGARA is used by four things, not three: describe_niagara_system, list_niagara_emitters, set_niagara_component_parameter, AND create_asset (MifBridgeUserTypes.cpp:773), which calls UNiagaraSystemFactoryNew::InitializeSystem - a NiagaraEditor symbol. So it is not merely that the Niagara module COULD be linked; Ni...
+- [x] **typed READ of a NiagaraSystem's user parameters** (hours of the day)
+      DONE 2026-08-30. 15 checks in tools/test_niagara_user_params.py. The WRITE half is split
+      out below rather than left implied by a ticked box.
+      WHAT IT USED TO RETURN, measured rather than described:
+        {"name":"User.BoatSize","typeIndex":86,"sizeBytes":4,
+         "asFloat":1,"asInt32":1065353216,"asBool":true,"rawBytes":[0,0,128,63]}
+      Three readings of the same four bytes, because the reflection path knew the SIZE and not
+      the TYPE, and typeIndex 86 means nothing outside the engine. Now: type "NiagaraFloat",
+      value 1, valueKind "float" - and LinearColor and Vector3f come back named, with one
+      decoded value each.
+      THE TYPE WAS ALWAYS AVAILABLE. ReadParameterVariables() returns FNiagaraVariableWithOffset
+      carrying a real FNiagaraTypeDefinition. It was inferred only because this file avoided
+      linking Niagara - and its own comment said so. That rationale was already out of date:
+      MIF_WITH_NIAGARA is used by four other things including create_asset, so the dependency
+      was paid for whether this file used it or not. The vetter's correction was the finding.
+      THE REFLECTION PATH IS KEPT as the fallback for a build without the Niagara plugin.
+      Deleting a working degraded path to make the good one look tidier trades real coverage
+      for appearance, so `typed` is reported and a caller can tell which answered.
 
+- [ ] **set_niagara_user_parameter - the WRITE half** (hours)
+      Split from the read 2026-08-30, which is done. Setting a user parameter's default on the
+      SYSTEM ASSET, as opposed to on one placed component (set_niagara_component_parameter
+      already does that).
+      API: FNiagaraUserRedirectionParameterStore is reachable via the NON-const
+      GetExposedParameters() (NiagaraSystem.h:337), with SetParameterValue<T> at
+      NiagaraParameterStore.h:525 and SetPositionParameterValue at :520.
+      Two things to get right, neither optional: the write must be REFUSED on cooked content -
+      the change cannot be saved and the system cannot be recompiled, so it would come back on
+      restart with the value saying otherwise - and it must be judged by reading the parameter
+      back through the typed read rather than by SetParameterValue's return.
 - [x] **material_statistics** (hours)
       DONE 2026-08-30. Its own endpoint rather than a statistics:true parameter on
       recompile_material, because recompile REBUILDS and this only MEASURES - folding a read

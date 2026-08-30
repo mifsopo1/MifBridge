@@ -59,6 +59,15 @@
 //
 // Read-only: no Modify, no transaction, nothing dirtied.
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"
+#if MIF_WITH_NIAGARA
+	// The typed read below needs these. They are guarded because this endpoint still answers on a
+	// build without the Niagara plugin - via the reflection fallback, which knows sizes but not
+	// types.
+	#include "NiagaraSystem.h"
+	#include "NiagaraTypes.h"
+	#include "NiagaraParameterStore.h"
+#endif
 #include "MifBridgeLog.h"
 
 #include "UObject/UnrealType.h"      // FArrayProperty / FStructProperty / FScriptArrayHelper
@@ -187,6 +196,130 @@ namespace MifBridge
 					 "emitter does not."), *Path, *Asset->GetClass()->GetName()));
 			return;
 		}
+
+		// TYPED PATH, when the Niagara module is linked. The parameter store carries a real
+		// FNiagaraTypeDefinition for every entry, so the type never has to be inferred - and
+		// inferring it is what made this endpoint report asFloat, asInt32 AND asBool for the same
+		// four bytes, leaving the caller to pick. User.BoatSize came back as 1, 1065353216 and true
+		// simultaneously.
+		//
+		// The reflection path below is kept as the fallback for a build without the Niagara plugin.
+		// It still works; it just cannot know a type.
+#if MIF_WITH_NIAGARA
+		if (UNiagaraSystem* NiagaraSys = Cast<UNiagaraSystem>(Asset))
+		{
+			const FNiagaraUserRedirectionParameterStore& Store = NiagaraSys->GetExposedParameters();
+			const FString Filter = JStr(In, TEXT("nameContains"));
+			TArray<TSharedPtr<FJsonValue>> Params;
+
+			for (const FNiagaraVariableWithOffset& Var : Store.ReadParameterVariables())
+			{
+				const FString Name = Var.GetName().ToString();
+				if (!Filter.IsEmpty() && !Name.Contains(Filter)) { continue; }
+
+				TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+				P->SetStringField(TEXT("name"), Name);
+				const FNiagaraTypeDefinition& Type = Var.GetType();
+				// The REAL type name - "float", "Vector", "LinearColor" - not an internal index.
+				P->SetStringField(TEXT("type"), Type.GetName());
+				P->SetNumberField(TEXT("sizeBytes"), Type.GetSize());
+
+				// A data interface or UObject parameter has no POD payload to decode; saying so is
+				// the honest answer rather than dumping the pointer bytes.
+				if (Type.IsDataInterface() || Type.IsUObject())
+				{
+					P->SetStringField(TEXT("valueKind"),
+						Type.IsDataInterface() ? TEXT("dataInterface") : TEXT("object"));
+					P->SetStringField(TEXT("note"),
+						TEXT("this parameter holds an object rather than a value, so there is no "
+							 "number to report. describe_niagara_system lists what is bound."));
+					Params.Add(MakeShared<FJsonValueObject>(P));
+					continue;
+				}
+
+				const uint8* Data = Store.GetParameterData(Var.Offset);
+				if (!Data)
+				{
+					P->SetStringField(TEXT("valueKind"), TEXT("unavailable"));
+					P->SetStringField(TEXT("note"),
+						TEXT("the store reported no data at this parameter's offset. Reported as "
+							 "unavailable rather than decoded from whatever happened to be there."));
+					Params.Add(MakeShared<FJsonValueObject>(P));
+					continue;
+				}
+
+				// ONE decoding, chosen by the type the engine recorded. Every branch below writes
+				// exactly one "value", so there is nothing left for a caller to disambiguate.
+				auto Floats = [&P, Data](int32 Count)
+				{
+					TArray<TSharedPtr<FJsonValue>> Arr;
+					for (int32 i = 0; i < Count; ++i)
+					{
+						float F = 0.0f;
+						FMemory::Memcpy(&F, Data + i * sizeof(float), sizeof(float));
+						Arr.Add(MakeShared<FJsonValueNumber>(F));
+					}
+					P->SetArrayField(TEXT("value"), Arr);
+				};
+
+				if (Type == FNiagaraTypeDefinition::GetFloatDef())
+				{
+					float F = 0.0f; FMemory::Memcpy(&F, Data, sizeof(float));
+					P->SetNumberField(TEXT("value"), F);
+					P->SetStringField(TEXT("valueKind"), TEXT("float"));
+				}
+				else if (Type == FNiagaraTypeDefinition::GetIntDef())
+				{
+					int32 I = 0; FMemory::Memcpy(&I, Data, sizeof(int32));
+					P->SetNumberField(TEXT("value"), I);
+					P->SetStringField(TEXT("valueKind"), TEXT("int"));
+				}
+				else if (Type == FNiagaraTypeDefinition::GetBoolDef())
+				{
+					// FNiagaraBool is an int32 where 0 is false and anything else is true - NOT a
+					// C++ bool, so reading one byte would be wrong on a non-zero high byte.
+					int32 I = 0; FMemory::Memcpy(&I, Data, sizeof(int32));
+					P->SetBoolField(TEXT("value"), I != 0);
+					P->SetStringField(TEXT("valueKind"), TEXT("bool"));
+				}
+				else if (Type == FNiagaraTypeDefinition::GetVec2Def())      { Floats(2); P->SetStringField(TEXT("valueKind"), TEXT("vec2")); }
+				else if (Type == FNiagaraTypeDefinition::GetVec3Def())      { Floats(3); P->SetStringField(TEXT("valueKind"), TEXT("vec3")); }
+				else if (Type == FNiagaraTypeDefinition::GetPositionDef())  { Floats(3); P->SetStringField(TEXT("valueKind"), TEXT("position")); }
+				else if (Type == FNiagaraTypeDefinition::GetVec4Def())      { Floats(4); P->SetStringField(TEXT("valueKind"), TEXT("vec4")); }
+				else if (Type == FNiagaraTypeDefinition::GetQuatDef())      { Floats(4); P->SetStringField(TEXT("valueKind"), TEXT("quat")); }
+				else if (Type == FNiagaraTypeDefinition::GetColorDef())     { Floats(4); P->SetStringField(TEXT("valueKind"), TEXT("linearColor")); }
+				else
+				{
+					// A struct this endpoint does not decode. The BYTES are still offered, but the
+					// type is NAMED - which is the whole difference from the old behaviour, where an
+					// unknown type and a float looked the same.
+					TArray<TSharedPtr<FJsonValue>> Raw;
+					for (int32 i = 0; i < Type.GetSize(); ++i)
+					{
+						Raw.Add(MakeShared<FJsonValueNumber>(Data[i]));
+					}
+					P->SetArrayField(TEXT("rawBytes"), Raw);
+					P->SetStringField(TEXT("valueKind"), TEXT("raw"));
+					P->SetStringField(TEXT("note"), FString::Printf(
+						TEXT("'%s' is a struct this endpoint does not decode, so the bytes are given "
+							 "as-is. The TYPE is reported, which is what tells you how to read them."),
+						*Type.GetName()));
+				}
+				Params.Add(MakeShared<FJsonValueObject>(P));
+			}
+
+			Out->SetStringField(TEXT("system"), NiagaraSys->GetPathName());
+			Out->SetNumberField(TEXT("count"), Params.Num());
+			Out->SetArrayField(TEXT("parameters"), Params);
+			Out->SetBoolField(TEXT("typed"), true);
+			Out->SetStringField(TEXT("source"),
+				TEXT("read through the Niagara parameter store, so every entry carries the type the "
+					 "engine recorded and exactly one decoded value. The older reflection path could "
+					 "only report the byte SIZE, which is why it used to return asFloat, asInt32 and "
+					 "asBool for the same four bytes and leave you to choose."));
+			return;
+		}
+#endif
 
 		// Both halves come through the normal path walker, so this endpoint inherits its error
 		// reporting and cannot drift from what get_property would resolve.
