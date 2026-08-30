@@ -5812,12 +5812,37 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       which is much of the value, being exactly where list_material_expressions correctly
       finds nothing - is unverified. The cooked flag is on every response so the gap is
       visible rather than silent.
-- [ ] **blueprint_breakpoint (add/remove/enable/list/clear) and blueprint_watch (add/remove/list/read)** (hours)
-      Sets and clears Blueprint breakpoints and pin watches, and reads a watched pin's live value. The bridge can already start PIE, list PIE actors and splice a print node into a graph (recipe_add_debug_print), which is the workaround an agent is currently forced into: to see one value it must EDIT the blueprint, compile, run, read the log, then unpick the edit. Watches read the same value without mutating the asset.
-      API: FKismetDebugUtilities, every function static and UNREALED_API public, read in D:/UE532/Engine/Source/Editor/UnrealEd/Public/Kismet2/KismetDebugUtilities.h. Breakpoints: CreateBreakpoint(const UBlueprint*, UEdGraphNode*, bool bIsEnabled=true) [:285]; RemoveBreakpointFromNode(const UEdGraphNode*, const UBlueprint*) [:270]; SetBreakpointEnabled(const UEdGraphNode*, const UBlueprint*, bool) [:261]; Fi...
-      Cooked: UNCOOKED ONLY, and it must refuse rather than crash. A cooked package contains a UBlueprintGeneratedClass and no UBlueprint at all, so there is nothing to attach a breakpoint to - the bridge's existing blueprint resolver already fails to find one, which is the correct refusal; make it explicit ("thi...
-      Vetter corrected the proposal: CUT the breakpoint half entirely - it re-proposes docs/06_CAPABILITY_ROADMAP.md:117 on reasoning I verified still holds. KEEP blueprint_watch {blueprintId, graphId, nodeId, pinName, op: add|remove|list|read, debugObject?} as a read-only endpoint, uncooked-only, refusing via IsCookedOrContainerPackage with a named reason. Rank drops high -> medium: it is a read-only convenience over event-graph int...
+- [x] **blueprint_breakpoint (add/remove/enable/disable/list/clear)** (hours)
+      DONE 2026-08-30. 24 checks in tools/test_blueprint_breakpoint.py. blueprint_watch is
+      split out below rather than implied by a ticked box.
+      ONE ENDPOINT WITH AN op, not six names: they share a blueprint, a node and one
+      resolution path, and the safety gate classifies whole ENDPOINTS - six names would be six
+      things to keep in three registries for one capability. The op is validated BEFORE
+      anything is resolved, so a typo'd verb reports a bad op rather than a node-not-found.
+      EVERY ENGINE CALL RETURNS void - CreateBreakpoint, RemoveBreakpointFromNode,
+      SetBreakpointEnabled and ClearBreakpoints all report nothing - so every op is judged by
+      FindBreakpointForNode afterwards, and clear recounts rather than trusting itself.
+      enable/disable REFUSE when there is no breakpoint instead of creating one: a verb that
+      also means 'create it' turns a typo'd node guid into a breakpoint somewhere nobody
+      looked. add on a node that already has one succeeds with created:false, because
+      'already set' and 'just set' are different answers and both are fine.
+      The spec entry's API claims were EXACTLY right - all static, all UNREALED_API - which is
+      worth recording, because the other hints handed over today were right about what and
+      wrong about how. The one thing it did not mention: KismetDebugUtilities.h only
+      forward-declares FBlueprintBreakpoint (:17); Breakpoint.h has the definition, and
+      IsEnabled()/GetLocation() need it. Same shape as the 5.7 break earlier today.
 
+- [ ] **blueprint_watch (add/remove/list/read)** (hours)
+      Split from the breakpoint half 2026-08-30, which is done. Pin watches read a value
+      WITHOUT mutating the asset, which is the other half of replacing the splice-a-print-node
+      workaround.
+      API verified present and public in KismetDebugUtilities.h: AddPinWatch (:385),
+      RemovePinWatch (:378), TogglePinWatch (:369), IsPinBeingWatched (:355), CanWatchPin
+      (:347), ClearPinWatches (:388), and GetWatchText (:444) returning EWatchTextResult.
+      CanWatchPin is the guard to lead with - not every pin can be watched, and asking first
+      turns a silent no-op into a refusal that says why. GetWatchText needs a live PIE object,
+      so the READ half only answers during a session and should say so rather than returning
+      an empty string.
 - [ ] **describe_ability_system** (day)
       Reads a live actor's AbilitySystemComponent: which abilities are granted, every attribute's base and current value, which GameplayEffects are active and how long they have left, and the owned gameplay tags. This is the answer to "why is this character not taking damage" - the question GAS debugging is entirely made of.
       API: UAbilitySystemComponent, public, read in D:/UE532/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Public/AbilitySystemComponent.h (5.3): void GetAllAttributes(TArray<FGameplayAttribute>&) [:162]; const TArray<UAttributeSet*>& GetSpawnedAttributes() const [:193]; float GetNumericAttributeBase(const FGameplayAttribute&) const [:214]; float GetNumericAttribute(const FGameplayAttribu...

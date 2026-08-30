@@ -1,5 +1,10 @@
 // MifBridge — node creation, pin wiring, and batch endpoints (the graph-edit core).
 #include "MifBridgeHandlers.h"
+#include "Kismet2/KismetDebugUtilities.h"
+// KismetDebugUtilities.h only FORWARD-DECLARES FBlueprintBreakpoint (:17); the definition is in
+// Breakpoint.h. Calling IsEnabled() or GetLocation() on it needs the complete type - the same
+// shape as the 5.7 break earlier today, where a header carried a declaration and not a body.
+#include "Kismet2/Breakpoint.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "MifBridgeLog.h"
@@ -2714,5 +2719,212 @@ namespace MifBridge
 			}
 			Out->SetArrayField(TEXT("compile"), Compiles);
 		}
+	}
+
+	// =======================================================================
+	// blueprint_breakpoint - set, clear and list Blueprint breakpoints
+	// =======================================================================
+	//
+	// THE WORKAROUND THIS REPLACES is four mutations of an asset to answer a read-only question: to
+	// see one value today an agent must splice in a print node, compile, run PIE, read the log, then
+	// unpick the edit - and anything left behind is a change to someone's blueprint.
+	//
+	// ONE ENDPOINT WITH AN op RATHER THAN SIX NAMES. They share a blueprint, a node and one
+	// resolution path, and the safety gate classifies whole ENDPOINTS - six names would be six
+	// things to keep in three registries for a single capability. The op is validated before
+	// anything is resolved, so a typo cannot half-run.
+	//
+	// EVERY ENGINE CALL HERE RETURNS void. CreateBreakpoint, RemoveBreakpointFromNode,
+	// SetBreakpointEnabled and ClearBreakpoints all report nothing, so each op is judged by asking
+	// FindBreakpointForNode afterwards - the state of the blueprint, not the fact a call returned.
+
+	void H_blueprint_breakpoint(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("op"), TEXT("graphId"), TEXT("blueprintId"), TEXT("path"), TEXT("nodeGuid"),
+			  TEXT("nodeId") },
+			TEXT("op: add | remove | enable | disable | list | clear. add/remove/enable/disable need "
+				 "nodeGuid (alias nodeId) and its graphId; list and clear take the blueprint "
+				 "(blueprintId, alias path) or any graphId in it"),
+			{ { TEXT("line"), TEXT("Blueprint breakpoints sit on a NODE, not a line - pass the "
+								   "node's guid, which list_nodes reports") },
+			  { TEXT("condition"), TEXT("conditional breakpoints are not part of the Blueprint "
+										"debugger's model; there is nothing to attach a condition "
+										"to") },
+			  { TEXT("enabled"), TEXT("use op:enable or op:disable - a boolean that silently means "
+									  "'create it too' is how a typo becomes a new breakpoint") } }))
+		{
+			return;
+		}
+
+		// VALIDATE THE OP FIRST, before anything is resolved. A typo'd verb that got as far as
+		// resolving a node would report a node-not-found error for what is really a bad op.
+		const FString Op = JStr(In, TEXT("op")).ToLower();
+		static const TCHAR* kOps[] = { TEXT("add"), TEXT("remove"), TEXT("enable"),
+									   TEXT("disable"), TEXT("list"), TEXT("clear") };
+		bool bKnownOp = false;
+		for (const TCHAR* Known : kOps) { if (Op == Known) { bKnownOp = true; break; } }
+		if (!bKnownOp)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("op '%s' is not one of add, remove, enable, disable, list, clear. NOTHING was "
+					 "changed."), *Op));
+			return;
+		}
+
+		const bool bNeedsNode = (Op != TEXT("list") && Op != TEXT("clear"));
+
+		UBlueprint* BP = nullptr;
+		UEdGraphNode* Node = nullptr;
+		if (bNeedsNode)
+		{
+			UEdGraph* Graph = ResolveGraphField(In, Out, BP);
+			if (!Graph || !BP) { return; }
+			Node = ResolveNodeField(In, TEXT("nodeGuid"), Out);
+			if (!Node) { return; }
+		}
+		else
+		{
+			// list/clear are blueprint-scoped. Accept a graphId too, because a caller holding one
+			// should not have to work out which blueprint it belongs to.
+			UEdGraph* Graph = ResolveGraphField(In, Out, BP);
+			if (!BP)
+			{
+				const FString Path = JStrAny(In, { TEXT("blueprintId"), TEXT("path") });
+				if (Path.IsEmpty())
+				{
+					Fail(Out, TEXT("list and clear need a blueprint - pass blueprintId (alias path) "
+								   "or any graphId inside it. NOTHING was changed."));
+					return;
+				}
+				return;   // ResolveGraphField already reported why it could not resolve
+			}
+			(void)Graph;
+		}
+
+		Out->SetStringField(TEXT("op"), Op);
+		Out->SetStringField(TEXT("blueprint"), BP->GetPathName());
+
+		if (Op == TEXT("list"))
+		{
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			FKismetDebugUtilities::ForeachBreakpoint(BP,
+				[&Arr](FBlueprintBreakpoint& Bp)
+				{
+					TSharedRef<FJsonObject> B = MakeShared<FJsonObject>();
+					if (const UEdGraphNode* N = Bp.GetLocation())
+					{
+						B->SetStringField(TEXT("nodeGuid"), N->NodeGuid.ToString());
+						B->SetStringField(TEXT("nodeTitle"),
+							N->GetNodeTitle(ENodeTitleType::ListView).ToString());
+						if (const UEdGraph* G = N->GetGraph())
+						{
+							B->SetStringField(TEXT("graph"), G->GetName());
+						}
+					}
+					B->SetBoolField(TEXT("enabled"), Bp.IsEnabled());
+					Arr.Add(MakeShared<FJsonValueObject>(B));
+				});
+			Out->SetNumberField(TEXT("count"), Arr.Num());
+			Out->SetArrayField(TEXT("breakpoints"), Arr);
+			Out->SetStringField(TEXT("note"),
+				TEXT("breakpoints are EDITOR-ONLY state on the loaded UBlueprint. They are not "
+					 "saved with the asset and do not survive an editor restart, which is expected "
+					 "rather than a defect."));
+			return;
+		}
+
+		if (Op == TEXT("clear"))
+		{
+			int32 Before = 0;
+			FKismetDebugUtilities::ForeachBreakpoint(BP, [&Before](FBlueprintBreakpoint&) { ++Before; });
+			FKismetDebugUtilities::ClearBreakpoints(BP);
+			// ClearBreakpoints returns void, so count them again rather than trusting it.
+			int32 After = 0;
+			FKismetDebugUtilities::ForeachBreakpoint(BP, [&After](FBlueprintBreakpoint&) { ++After; });
+			if (After != 0)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("cleared the breakpoints and %d are still there. NOTHING reliable was "
+						 "produced."), After));
+				return;
+			}
+			Out->SetNumberField(TEXT("removed"), Before);
+			Out->SetNumberField(TEXT("count"), 0);
+			return;
+		}
+
+		// ---------------------------------------------------------------- node-scoped ops
+		Out->SetStringField(TEXT("nodeGuid"), Node->NodeGuid.ToString());
+		Out->SetStringField(TEXT("nodeTitle"),
+			Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
+
+		FBlueprintBreakpoint* Existing =
+			FKismetDebugUtilities::FindBreakpointForNode(Node, BP, /*bCheckSubLocations*/ false);
+
+		if (Op == TEXT("add"))
+		{
+			if (Existing)
+			{
+				// Not an error - but say so, or a caller cannot tell "already set" from "just set".
+				Out->SetBoolField(TEXT("created"), false);
+				Out->SetBoolField(TEXT("enabled"), Existing->IsEnabled());
+				Out->SetStringField(TEXT("note"),
+					TEXT("that node already had a breakpoint - nothing was created, and nothing "
+						 "needed to be. Use op:enable or op:disable to change its state."));
+				return;
+			}
+			FKismetDebugUtilities::CreateBreakpoint(BP, Node, /*bIsEnabled*/ true);
+		}
+		else if (Op == TEXT("remove"))
+		{
+			if (!Existing)
+			{
+				Fail(Out, TEXT("that node has no breakpoint to remove. NOTHING was changed."));
+				return;
+			}
+			FKismetDebugUtilities::RemoveBreakpointFromNode(Node, BP);
+		}
+		else   // enable / disable
+		{
+			if (!Existing)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("that node has no breakpoint to %s - add one first with op:add. Creating "
+						 "one here would turn a typo into a new breakpoint. NOTHING was changed."),
+					*Op));
+				return;
+			}
+			FKismetDebugUtilities::SetBreakpointEnabled(Node, BP, Op == TEXT("enable"));
+		}
+
+		// POSTCONDITION. Every call above returns void, so the only evidence is what the blueprint
+		// holds now.
+		FBlueprintBreakpoint* After =
+			FKismetDebugUtilities::FindBreakpointForNode(Node, BP, /*bCheckSubLocations*/ false);
+		const bool bWantPresent = (Op != TEXT("remove"));
+		if ((After != nullptr) != bWantPresent)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("op '%s' did not take: the node %s a breakpoint afterwards. NOTHING reliable "
+					 "was produced."), *Op, After ? TEXT("still has") : TEXT("has no")));
+			return;
+		}
+		if (After)
+		{
+			const bool bEnabled = After->IsEnabled();
+			Out->SetBoolField(TEXT("enabled"), bEnabled);
+			if ((Op == TEXT("enable") && !bEnabled) || (Op == TEXT("disable") && bEnabled))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("op '%s' left the breakpoint %s. NOTHING reliable was produced."),
+					*Op, bEnabled ? TEXT("enabled") : TEXT("disabled")));
+				return;
+			}
+		}
+		Out->SetBoolField(TEXT("created"), Op == TEXT("add"));
+		Out->SetStringField(TEXT("note"),
+			TEXT("breakpoints are EDITOR-ONLY state on the loaded UBlueprint - not saved with the "
+				 "asset, and gone after an editor restart. Nothing was written to disk."));
 	}
 }

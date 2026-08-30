@@ -839,6 +839,24 @@ def remove_node(node_guid: str, confirm: bool = False, graph_id: str = None) -> 
 
 
 @mcp.tool()
+def blueprint_breakpoint(op: str, graph_id: str = "", blueprint_id: str = "",
+                         node_guid: str = "") -> dict:
+    """Set, clear and list Blueprint breakpoints without editing the asset.
+
+    op: add | remove | enable | disable | list | clear. add/remove/enable/disable need node_guid and
+    its graph_id; list and clear take the blueprint or any graph in it.
+
+    Replaces the splice-a-print-node workaround, which mutates somebody's blueprint four times to
+    answer a read-only question. enable/disable REFUSE when there is no breakpoint rather than
+    creating one, so a typo'd guid cannot leave a breakpoint somewhere you never looked.
+
+    Breakpoints are editor-only state: not saved with the asset, gone after a restart.
+    """
+    return _post("blueprint_breakpoint", op=op, graphId=graph_id or None,
+                 blueprintId=blueprint_id or None, nodeGuid=node_guid or None)
+
+
+@mcp.tool()
 def refresh_node(node_guid: str, graph_id: str = None) -> dict:
     "Reconstruct a node (ReconstructNode) — re-reads its function/variable/pins. graph_id is optional and only matters if the SAME node guid exists in more than one loaded copy of a Blueprint (e.g."
     return _post("refresh_node", nodeGuid=node_guid, graphId=graph_id)

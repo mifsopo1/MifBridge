@@ -1066,6 +1066,7 @@ namespace MifBridge
 	MIF_DECL(move_node);
 	MIF_DECL(remove_node);
 	MIF_DECL(refresh_node);
+	MIF_DECL(blueprint_breakpoint);
 
 	// Pins / wiring
 	MIF_DECL(connect_pins);
