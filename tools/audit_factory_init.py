@@ -62,6 +62,68 @@ INTERESTING = re.compile(
     r"PostEditChange|SetFlags|AddSection|SetRowStruct|SetStructure|SetupDefault)")
 NEWOBJ = re.compile(r"NewObject\s*<\s*([A-Z][A-Za-z0-9_]*)")
 
+# Factories whose ONLY post-construct work sits behind a condition create_asset cannot
+# satisfy. Kept and reported rather than silently dropped: "we looked and it does not
+# apply" is a different statement from "we did not look".
+CONDITIONAL_ONLY = []
+
+
+# The UFactory configuration convention. A factory's caller sets these members before calling
+# FactoryCreateNew; create_asset does not call the factory at all, so anything guarded by one is
+# unreachable on our path. This - not brace depth - is what separates a real warning from a false
+# one, and getting it wrong in the other direction dropped UMaterialInstanceConstant's
+# InitResources, which sits inside a plain `if (MIC)` null check and always runs.
+FACTORY_CONFIG = re.compile(r"\bInitial[A-Z]\w*|\bRootWidgetClass\b|\bParentClass\b")
+IF_LINE = re.compile(r"^\s*(?:\}\s*)?else\s+if\s*\((.*)|^\s*if\s*\((.*)")
+
+
+def unconditional_calls(body):
+    """(reachable, unreachable) INTERESTING calls, split by whether create_asset can get to them.
+
+    A call is UNREACHABLE for us when an enclosing condition tests a UFactory configuration member,
+    because create_asset never calls the factory and so never sets one. A self null-check like
+    `if (MIC)` is not such a condition, and calls under it ARE reported - that distinction is why
+    brace depth alone was the wrong test, and dropping it lost UMaterialInstanceConstant's
+    InitResources.
+
+    THE GATE BINDS WHEN THE BRACE OPENS, not when the condition is read. Engine style puts `{` on
+    its own line, so on the `if` line the depth has not moved yet; an earlier version registered
+    the gate against the depth it expected and then pruned it at the end of that same line for
+    being deeper than the current depth. Every gate died instantly and UMaterial kept warning.
+    """
+    reachable, blocked = [], []
+    depth = 0
+    gated = {}          # depth -> True when the condition opened there is one we cannot satisfy
+    pending = None      # a condition seen whose brace has not opened yet
+
+    for line in body.splitlines():
+        m = IF_LINE.match(line)
+        cond = (m.group(1) or m.group(2)) if m else None
+        if cond is not None:
+            pending = bool(FACTORY_CONFIG.search(cond))
+
+        opened = line.count("{")
+        closed = line.count("}")
+
+        # A brace opening on this line binds the pending condition to the depth it creates.
+        if opened and pending is not None:
+            gated[depth + 1] = pending
+            pending = None
+
+        # Classify this line's calls against every gate at or above it, INCLUDING a same-line
+        # brace-less body such as `if (InitialFoo) Bar->Init();`.
+        active = any(gated.get(d) for d in range(1, depth + 1)) or bool(pending)
+        for hit in INTERESTING.findall(line):
+            (blocked if active else reachable).append(hit)
+
+        depth += opened - closed
+        if closed and pending is not None and not opened:
+            pending = None
+        for d in [k for k in gated if k > depth]:
+            del gated[d]
+
+    return sorted(set(reachable)), sorted(set(blocked))
+
 
 def factory_bodies(text):
     """Yield (start_line, body) for each FactoryCreateNew in a file."""
@@ -112,8 +174,12 @@ def scan(only_class=None):
                     cls = made[0]
                     if only_class and only_class.lstrip("U") != cls.lstrip("U"):
                         continue
-                    calls = sorted(set(INTERESTING.findall(body)))
+                    calls, conditional = unconditional_calls(body)
                     if not calls:
+                        # Nothing runs unconditionally. Reported at the end as a separate,
+                        # explicitly weaker class rather than warned about - see the docstring.
+                        if conditional:
+                            CONDITIONAL_ONLY.append((cls, factory, path, line, conditional))
                         continue
                     rows.append((cls, factory, path, line, calls, body))
     return rows
@@ -167,8 +233,10 @@ def scan_utils(only_class=None):
                     cls = made[0]
                     if only_class and only_class.lstrip("U") != cls.lstrip("U"):
                         continue
-                    calls = sorted(set(INTERESTING.findall(body)))
+                    calls, conditional = unconditional_calls(body)
                     if not calls:
+                        if conditional:
+                            CONDITIONAL_ONLY.append((cls, fn, path, line, conditional))
                         continue
                     rows.append((cls, fn, path, line, calls, body))
     return rows

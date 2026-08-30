@@ -112,6 +112,60 @@ def main():
         check("T6202 - the editor is still alive", M.call("self_audit", {}).get("ok") is True,
               "an uninitialised UserDefinedEnum terminates the editor on the first enumerator named")
 
+        # -------------------------------------------------- T6203 what the review found
+        print("\n=== T6203: the three defects an adversarial review found in this table ===")
+        # (a) THE FALSE ALARM. UMaterialFactoryNew's only post-construct call is PostEditChange()
+        # inside `if (InitialTexture != nullptr)` (EditorFactories.cpp:498-525) - a UFactory member
+        # create_asset never sets, so the default path is byte-identical to this endpoint's own.
+        # Material is among the most commonly created classes, so warning on it fired constantly
+        # and trained callers to ignore the warning entirely.
+        mat = M.raw_post("create_asset", {"path": "/Game/_MifFact/M_T%d" % st, "class": "Material"})
+        if mat.get("assetPath"):
+            made.append(mat["assetPath"])
+        check("T6203 Material does NOT warn - its factory's only extra work is behind a condition "
+              "create_asset can never satisfy",
+              mat.get("ok") is True and mat.get("factoryInitIncomplete") is None,
+              json.dumps(mat)[:230])
+
+        # (b) THE ONE THAT MUST SURVIVE THE PRUNING. UMaterialInstanceConstant's InitResources()
+        # sits inside a plain `if (MIC)` null check and DOES always run - the counter-example that
+        # proved brace depth alone was the wrong test for (a).
+        mic = M.raw_post("create_asset", {"path": "/Game/_MifFact/MIC_T%d" % st,
+                                          "class": "MaterialInstanceConstant"})
+        if mic.get("assetPath"):
+            made.append(mic["assetPath"])
+        check("T6203 MaterialInstanceConstant STILL warns - InitResources runs unconditionally, so "
+              "pruning the false alarms must not have taken this with it",
+              mic.get("factoryInitIncomplete") is True, json.dumps(mic)[:230])
+
+        # (c) SUBCLASSES. An exact name compare meant no subclass could ever warn, though it
+        # inherits the very gap its parent is listed for.
+        sub = M.raw_post("create_asset", {"path": "/Game/_MifFact/TLP_T%d" % st,
+                                          "class": "TextureLightProfile"})
+        if sub.get("assetPath"):
+            made.append(sub["assetPath"])
+        check("T6203 a SUBCLASS of a listed class warns too",
+              sub.get("factoryInitIncomplete") is True, json.dumps(sub)[:230])
+        check("T6203 and says which ancestor it matched, so the note is not confusing",
+              sub.get("factoryInitVia") == "Texture2D", sub.get("factoryInitVia"))
+
+        # (d) THE SUBCLASS HOLE IN THE STRUCT BRANCH. `Class ==` exact equality let a concrete
+        # engine subclass of UUserDefinedStruct fall to the bare NewObject and reproduce the exact
+        # EditorData-less asset this handler was changed to prevent.
+        sc = M.raw_post("create_asset", {"path": "/Game/_MifFact/AIS_T%d" % st,
+                                         "class": "AISenseBlueprintListener"})
+        check("T6203 a UUserDefinedStruct SUBCLASS is created", sc.get("ok") is True,
+              json.dumps(sc)[:220])
+        if sc.get("assetPath"):
+            made.append(sc["assetPath"])
+            # The proof, same as T6210: readable members means EditorData exists, because
+            # GetVarDesc CastChecks it.
+            check("T6203 and it went through the engine's creator - its members are readable, "
+                  "which a bare NewObject would make impossible",
+                  M.raw_post("list_struct_members",
+                             {"struct": sc["assetPath"]}).get("ok") is True,
+                  json.dumps(sc)[:230])
+
         seq = M.raw_post("create_asset", {"path": "/Game/_MifFact/LS_Test%d" % st,
                                           "class": "LevelSequence"})
         if seq.get("ok"):

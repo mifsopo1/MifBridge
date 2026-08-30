@@ -821,7 +821,12 @@ namespace MifBridge
 		// the same way. So before this, create_asset{class:"UserDefinedStruct"} produced an asset
 		// that every struct endpoint rejected while blaming the wrong cause.
 		UObject* Asset = nullptr;
-		if (Class == UUserDefinedStruct::StaticClass())
+		// IsChildOf, NOT exact equality. The two sibling blocks below use Cast<> and match
+		// subclasses; this used `Class ==` and did not, so UAISenseBlueprintListener - a
+		// concrete engine subclass of UUserDefinedStruct that clears every gate above - fell to
+		// the bare NewObject and got the EditorData-less asset this branch exists to prevent.
+		// For a construction step to RUN, over-matching is the safe direction.
+		if (Class->IsChildOf(UUserDefinedStruct::StaticClass()))
 		{
 			Asset = FStructureEditorUtils::CreateUserDefinedStruct(
 				Package, FName(*AssetName), RF_Public | RF_Standalone | RF_Transactional);
@@ -899,25 +904,56 @@ namespace MifBridge
 		// the report still looks complete. The render targets are the clearest illustration of why
 		// this matters: UTextureRenderTargetFactoryNew calls InitAutoFormat(256, 256), so a bare
 		// NewObject leaves a 0x0 render target with no resource behind it.
+		//
+		// REGENERATE WITH: python tools/audit_factory_init.py
+		// Corrected 2026-08-30 after an adversarial review found SIX of the previous 36 entries
+		// warning about work that never happens on this endpoint's path. The audit had scanned whole
+		// factory bodies ignoring conditionals, so it flagged calls that only run behind
+		// `if (InitialFoo != nullptr)` - a UFactory member create_asset never sets, because
+		// create_asset does not call the factory at all.
+		//
+		// UMaterial was the one that mattered: UMaterialFactoryNew's only post-construct statement
+		// is PostEditChange() inside `if (InitialTexture != nullptr)` (EditorFactories.cpp:498-525),
+		// so the default path is byte-identical to what this endpoint already does - and Material is
+		// among the most commonly created classes in the engine, so the false alarm fired constantly.
+		// That is exactly what the note below warns about, walked into by the code that wrote it.
+		//
+		// The audit now distinguishes reachable from gated work, and its counter-example is worth
+		// keeping: UMaterialInstanceConstant's InitResources() sits inside a plain `if (MIC)` null
+		// check and DOES always run, so brace depth alone was the wrong test and would have dropped
+		// a real warning.
 		static const TCHAR* FactoryInitClasses[] = {
 			TEXT("AimOffsetBlendSpace"), TEXT("AimOffsetBlendSpace1D"), TEXT("AnimComposite"),
 			TEXT("AnimMontage"), TEXT("AnimNextGraph"), TEXT("AnimNextParameterBlock"),
 			TEXT("AnimSequence"), TEXT("AnimStreamable"), TEXT("BlendSpace"), TEXT("BlendSpace1D"),
 			TEXT("CanvasRenderTarget2D"), TEXT("ChaosClothAsset"), TEXT("DataprepAssetInstance"),
-			TEXT("EndpointSubmix"), TEXT("GroomAsset"), TEXT("HLODLayer"), TEXT("Material"),
-			TEXT("MaterialFunctionInstance"), TEXT("MaterialFunctionMaterialLayerBlendInstance"),
-			TEXT("MaterialFunctionMaterialLayerInstance"), TEXT("MaterialInstanceConstant"),
-			TEXT("NiagaraParameterCollectionInstance"), TEXT("PaperSprite"), TEXT("PaperTileSet"),
+			TEXT("DisplayClusterConfigurationClusterNode"), TEXT("DisplayClusterConfigurationViewport"),
+			TEXT("EndpointSubmix"), TEXT("GroomAsset"), TEXT("HLODLayer"),
+			TEXT("MaterialInstanceConstant"), TEXT("PaperSprite"), TEXT("PaperTileSet"),
 			TEXT("PoseAsset"), TEXT("Skeleton"), TEXT("SoundClass"), TEXT("SoundSubmix"),
-			TEXT("SoundfieldEndpointSubmix"), TEXT("SoundfieldSubmix"), TEXT("SubUVAnimation"),
-			TEXT("Texture2D"), TEXT("TextureRenderTarget2D"), TEXT("TextureRenderTarget2DArray"),
+			TEXT("SoundfieldEndpointSubmix"), TEXT("SoundfieldSubmix"), TEXT("Texture2D"),
+			TEXT("TextureRenderTarget2D"), TEXT("TextureRenderTarget2DArray"),
 			TEXT("TextureRenderTargetCube"), TEXT("TextureRenderTargetVolume"),
 		};
 		{
+			// WALK THE SUPER CHAIN, because an exact name compare means no subclass can ever warn -
+			// and subclasses inherit the very initialisation gap the parent is listed for.
+			// ULandscapeMaterialInstanceConstant skips the same InitResources as
+			// UMaterialInstanceConstant; UTextureLightProfile and UCurveLinearColorAtlas skip the
+			// same Init2DWithMipChain as UTexture2D. For a WARNING, under-matching is the unsafe
+			// direction - the opposite of the construction step above, and for the opposite reason.
 			const FString CreatedClass = Class->GetName();
-			for (const TCHAR* Known : FactoryInitClasses)
+			FString MatchedVia;
+			for (UClass* Walk = Class; Walk && MatchedVia.IsEmpty(); Walk = Walk->GetSuperClass())
 			{
-				if (CreatedClass == Known)
+				const FString WalkName = Walk->GetName();
+				for (const TCHAR* Known : FactoryInitClasses)
+				{
+					if (WalkName == Known) { MatchedVia = WalkName; break; }
+				}
+			}
+			{
+				if (!MatchedVia.IsEmpty())
 				{
 					Out->SetBoolField(TEXT("factoryInitIncomplete"), true);
 					Out->SetStringField(TEXT("factoryNote"), FString::Printf(
@@ -929,8 +965,11 @@ namespace MifBridge
 							 "before relying on it, and prefer the editor's own creation flow when "
 							 "the asset needs a source. tools/audit_factory_init.py --class U%s "
 							 "shows exactly what that factory does."),
-						*CreatedClass, *CreatedClass));
-					break;
+						*CreatedClass, *MatchedVia));
+					if (MatchedVia != CreatedClass)
+					{
+						Out->SetStringField(TEXT("factoryInitVia"), MatchedVia);
+					}
 				}
 			}
 		}
