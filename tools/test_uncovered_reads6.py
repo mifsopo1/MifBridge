@@ -117,10 +117,18 @@ def main():
               _c.get("ok") is True, _c.get("error"))
     # ------------------------------------------------------------------ T924 run_console_captured
     print("\n=== T924: run_console_captured - a display toggle, called twice so it reverts itself ===")
-    c1 = M.call("run_console_captured", {"command": "stat unit"})
-    check("T924 succeeds", c1.get("ok") is True, json.dumps(c1)[:200])
-    c2 = M.call("run_console_captured", {"command": "stat unit"})
-    check("T924 toggling back off also succeeds", c2.get("ok") is True, json.dumps(c2)[:200])
+    # SECTION guard, not a suite skip - the other 29 assertions in this file are real coverage and
+    # throwing them away to avoid two false failures would be the wrong trade. run_console_captured
+    # is on the gate's unsafe list (it reaches UEngine::Exec), so in scratch or read mode it is
+    # refused in the dispatcher and these two checks would fail for a reason that is the gate
+    # working correctly.
+    if M.gated_in_this_mode("run_console_captured", "T924"):
+        pass
+    else:
+        c1 = M.call("run_console_captured", {"command": "stat unit"})
+        check("T924 succeeds", c1.get("ok") is True, json.dumps(c1)[:200])
+        c2 = M.call("run_console_captured", {"command": "stat unit"})
+        check("T924 toggling back off also succeeds", c2.get("ok") is True, json.dumps(c2)[:200])
 
     # ------------------------------------------------------------------ T925 reparent_blueprint
     print("\n=== T925: reparent_blueprint ===")

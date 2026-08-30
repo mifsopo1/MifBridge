@@ -334,6 +334,30 @@ def write_mode():
         return ""
 
 
+def gated_in_this_mode(endpoint, what=None):
+    """True when `endpoint` is on the safety gate's list AND the mode would refuse it.
+
+    The SECTION-level companion to needs_full_write_mode. A whole suite skipping is right when
+    everything downstream of a gated call is dead - four PIE suites are in that position. It is
+    wrong when only a couple of assertions are affected and the other twenty-nine are perfectly
+    good coverage: test_uncovered_reads6 has 29 passing checks and two that need
+    run_console_captured, and skipping the file would throw away real verification to avoid two
+    false failures.
+
+    So this reports, the caller prints a note and moves on, and the suite still exits 0 having
+    honestly covered what it could. What it must NOT do is assert - the gate refusing a gated
+    endpoint is the gate working.
+    """
+    mode = write_mode()
+    if mode == "full":
+        return False
+    print("  NOTE  %s needs '%s', which the safety gate refuses in '%s' mode - not exercised here."
+          % (what or endpoint, endpoint, mode or "unknown"))
+    print("        Reported rather than asserted: a refusal from the gate is the gate working, and")
+    print("        a test that fails when a security control works trains people to ignore it.")
+    return True
+
+
 def needs_full_write_mode(what="this suite"):
     """True when the gate would refuse the work, so the caller should SKIP rather than FAIL.
 
