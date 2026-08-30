@@ -50,6 +50,7 @@ medium:add_override_event
 medium:add_parent_call
 medium:add_self
 medium:add_sequence
+medium:add_socket
 medium:add_spawn_actor
 medium:add_switch_enum
 medium:add_switch_int

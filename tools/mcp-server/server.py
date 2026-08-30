@@ -2816,6 +2816,14 @@ def list_sockets(path: str) -> dict:
 
     Note for skeletal meshes: a USkeleton carries its OWN socket list separately, and a socket defined
     on the skeleton will not appear here. The response says so.
+
+    Each socket also reports `index` - its position in ITS OWN list, since the mesh's Sockets
+    array and the skeleton's are separate objects - plus `owner` for skeleton sockets and
+    `objectPath`. Those three are what make the write half reachable without new endpoints:
+    set_property {objectPath: <owner>, propertyPath: "Sockets[N].RelativeLocation"} MOVES a
+    socket and edit_container {propertyPath: "Sockets", operation: "remove", index: N}
+    DELETES one. That is why there is no set_socket_transform or remove_socket tool; add_socket
+    is the only socket verb that needed building.
     """
     return _post("list_sockets", path=path)
 
@@ -3009,6 +3017,14 @@ def set_physics_primitive_collision(asset_path: str, primitive_type: str, primit
                  primitiveType=primitive_type, primitiveIndex=primitive_index,
                  collisionEnabled=collision_enabled, boneName=bone_name or None,
                  index=None if bone_name else index)
+
+
+@mcp.tool()
+def add_socket(path: str, name: str, bone: str, location: dict = None, rotation: dict = None,
+               scale: dict = None, target: str = "") -> dict:
+    "Create a socket on a SkeletalMesh or Skeleton - the attach point a weapon, prop, VFX emitter or camera boom hangs off, and the one socket verb that had no equivalent. path takes either asset; target is 'mesh', 'skeleton' or 'both' and DEFAULTS to the skeleton whenever the mesh has one, because that is where real content keeps sockets - a project with a shared rig typically has zero mesh-side sockets, so defaulting to the mesh would put every new socket where nothing looks for it. location/rotation/scale are {x,y,z} and optional. An unknown bone, a duplicate name, and a blank or whitespace-only name are all REFUSED: USkeletalMesh::AddSocket returns void and silently does nothing in exactly those three cases, logging where no HTTP caller can see it, so they are checked first and the socket is confirmed by searching for it afterwards. To MOVE or DELETE a socket you need no other endpoint - see list_sockets."
+    return _post("add_socket", path=path, name=name, bone=bone, location=location,
+                 rotation=rotation, scale=scale, target=target or None)
 
 
 

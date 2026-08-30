@@ -9,6 +9,8 @@
 // Everything here reads UAnimSequence/UAnimMontage/UBlendSpace, which live in the Engine module —
 // no extra build dependency. Read-only: registered in IsReadOnlyEndpoint, no transaction.
 #include "MifBridgeHandlers.h"
+#include "Engine/SkeletalMeshSocket.h"
+#include "ScopedTransaction.h"
 
 // Sockets, behavior trees and blackboards - all READ-ONLY. See H_list_sockets below for why these
 // live here rather than in a new file: this is already the animation-and-skeleton module.
@@ -157,6 +159,13 @@ namespace MifBridge
 					TSharedRef<FJsonObject> J = SocketJson(S->SocketName, S->BoneName,
 						S->RelativeLocation, S->RelativeRotation, S->RelativeScale);
 					J->SetStringField(TEXT("source"), TEXT("mesh"));
+					// INDEX AND objectPath, WITHOUT WHICH THE WRITE HALF IS UNREACHABLE. Moving or
+					// deleting a socket needs no new endpoint - set_property on
+					// "Sockets[N].RelativeLocation" and edit_container {propertyPath:"Sockets",
+					// operation:"remove", index:N} both work today. What was missing was N. Emitting
+					// it here is the whole reason those two verbs did not need building.
+					J->SetNumberField(TEXT("index"), MeshCount);
+					J->SetStringField(TEXT("objectPath"), S->GetPathName());
 					Arr.Add(MakeShared<FJsonValueObject>(J));
 					++MeshCount;
 				}
@@ -174,6 +183,11 @@ namespace MifBridge
 						// Which list a socket came from decides where you would EDIT it, so it is
 						// reported per socket rather than only in a summary.
 						J->SetStringField(TEXT("source"), TEXT("skeleton"));
+						// The index is into the SKELETON's Sockets array, and `owner` says which
+						// object to address - a skeleton socket's index means nothing on the mesh.
+						J->SetNumberField(TEXT("index"), SkeletonCount);
+						J->SetStringField(TEXT("owner"), Skeleton->GetPathName());
+						J->SetStringField(TEXT("objectPath"), S->GetPathName());
 						Arr.Add(MakeShared<FJsonValueObject>(J));
 						++SkeletonCount;
 					}
@@ -1847,5 +1861,278 @@ namespace MifBridge
 			TEXT("boundGraphId is this state's OWN animation graph - pass it to add_anim_node to put "
 				 "a SequencePlayer or blend space in it. To make a transition, connect_pins between "
 				 "two states: the state machine schema creates the transition node itself."));
+	}
+
+	// =======================================================================
+	// add_socket - the ONE socket verb that needed building
+	// =======================================================================
+	//
+	// SCOPE, CUT DOWN AFTER CHECKING. The survey asked for three endpoints: add, remove and
+	// set_socket_transform. Two of them already exist by another name:
+	//
+	//   move    set_property {objectPath: <mesh or skeleton>, propertyPath: "Sockets[3].RelativeLocation"}
+	//   delete  edit_container {propertyPath: "Sockets", operation: "remove", index: 3}
+	//
+	// The property walker crosses object boundaries, so both reach a socket today. What they needed
+	// was the INDEX, which list_sockets did not emit - so this commit adds `index` and `objectPath`
+	// there rather than adding two endpoints that would duplicate existing verbs. Only CREATION was
+	// genuinely impossible: nothing in the plugin can NewObject a USkeletalMeshSocket outered to the
+	// right owner.
+	//
+	// AddSocket CANNOT REPORT FAILURE. It is void, and it silently does nothing when the outer is
+	// wrong, when the name is already taken, or when the bone is not in the reference skeleton
+	// (SkeletalMesh.cpp:3699-3714) - it only UE_LOGs. So every one of those conditions is checked
+	// here first, and the result is verified by finding the socket afterwards.
+	//
+	// THE OUTER IS NOT OPTIONAL. AddSocket's first act is `if (InSocket->GetOuter() == this)`, so a
+	// socket constructed with any other outer is dropped on the floor with no error whatsoever.
+	//
+	// USkeleton HAS NO AddSocket AT ALL. The skeleton path is therefore hand-rolled - Modify, then
+	// NewObject outered to the skeleton, then Sockets.Add - which is exactly what
+	// USkeletalMesh::AddSocket does internally for its bAddToSkeleton branch.
+	//
+	// WHAT THIS DELIBERATELY DOES NOT DO: call RebuildSocketMap(). USkeletalMesh::SocketMap is a
+	// PostLoad-built cache, and it is tempting to think an add leaves it stale. In an EDITOR build it
+	// cannot: every read of that map (FindSocketAndIndex at SkeletalMesh.cpp:3799, and :3846) sits
+	// inside `#if !WITH_EDITOR`, the editor paths linear-scan the Sockets array instead, and
+	// RebuildSocketMap's entire body is `#if !WITH_EDITOR` too - so calling it here would compile to
+	// nothing. Left out on purpose, and said out loud, because a call that looks like a safety
+	// measure and does nothing is worse than no call: the next reader would believe it was handled.
+
+	void H_add_socket(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("mesh"), TEXT("name"), TEXT("bone"),
+			  TEXT("boneName"), TEXT("location"), TEXT("rotation"), TEXT("scale"),
+			  TEXT("target") },
+			TEXT("path (aliases: assetPath, mesh) - a SkeletalMesh or Skeleton; name; bone (alias ")
+			TEXT("boneName); location/rotation/scale {x,y,z}; target (mesh|skeleton|both)"),
+			{ { TEXT("index"), TEXT("that is an OUTPUT - list_sockets reports each socket's index, "
+									"and set_property/edit_container use it to move or delete one") },
+			  { TEXT("parent"), TEXT("spell it `bone` - a socket attaches to a BONE, not to another "
+									 "socket") } }))
+		{
+			return;
+		}
+#if !WITH_EDITOR
+		Fail(Out, TEXT("add_socket needs an editor build - USkeletalMesh::AddSocket is WITH_EDITOR "
+			TEXT("only.")));
+#else
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("mesh") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - a SkeletalMesh or Skeleton asset. NOTHING was changed."));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: %s. NOTHING was changed."), *Path));
+			return;
+		}
+		USkeletalMesh* Mesh = Cast<USkeletalMesh>(Asset);
+		USkeleton* Skeleton = Cast<USkeleton>(Asset);
+		if (!Mesh && !Skeleton)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s - sockets live on a SkeletalMesh or a Skeleton. NOTHING was ")
+				TEXT("changed."), *Path, *Asset->GetClass()->GetName()));
+			return;
+		}
+
+		const FString Name = JStr(In, TEXT("name")).TrimStartAndEnd();
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required, and cannot be blank or whitespace - AddSocket trims ")
+				TEXT("the name and silently drops a socket whose trimmed name is empty. NOTHING was ")
+				TEXT("changed."));
+			return;
+		}
+		const FString Bone = JStrAny(In, { TEXT("bone"), TEXT("boneName") });
+		if (Bone.IsEmpty())
+		{
+			Fail(Out, TEXT("bone is required - the bone the socket attaches to. list_bones reports ")
+				TEXT("them. NOTHING was changed."));
+			return;
+		}
+
+		// Where does it go? Default to the skeleton when there is one, because that is where real
+		// content keeps sockets: every sampled DDS2 skeletal mesh has ZERO mesh sockets and shares
+		// one rig - see list_sockets' own comment.
+		USkeleton* TargetSkeleton = Skeleton ? Skeleton : (Mesh ? Mesh->GetSkeleton() : nullptr);
+		FString Target = JStr(In, TEXT("target")).ToLower();
+		if (Target.IsEmpty()) { Target = TargetSkeleton ? TEXT("skeleton") : TEXT("mesh"); }
+		if (Target != TEXT("mesh") && Target != TEXT("skeleton") && Target != TEXT("both"))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("target must be \"mesh\", \"skeleton\" or \"both\" - got '%s'. NOTHING was ")
+				TEXT("changed."), *Target));
+			return;
+		}
+		if (Skeleton && Target != TEXT("skeleton"))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("path names a Skeleton, so target '%s' has no meaning here - pass a SkeletalMesh ")
+				TEXT("to reach the mesh-side list. NOTHING was changed."), *Target));
+			return;
+		}
+		if (Target != TEXT("mesh") && !TargetSkeleton)
+		{
+			Fail(Out, TEXT("this mesh has no USkeleton, so a socket cannot be added to one. Pass ")
+				TEXT("target:\"mesh\". NOTHING was changed."));
+			return;
+		}
+
+		// THE BONE MUST EXIST, checked against the reference skeleton of whichever object will own
+		// the socket. AddSocket makes the same check and then does NOTHING when it fails.
+		const FReferenceSkeleton& RefSkel = (Target == TEXT("mesh") && Mesh)
+			? Mesh->GetRefSkeleton() : TargetSkeleton->GetReferenceSkeleton();
+		if (RefSkel.FindBoneIndex(FName(*Bone)) == INDEX_NONE)
+		{
+			TArray<FString> Near;
+			for (int32 i = 0; i < RefSkel.GetNum() && Near.Num() < 8; ++i)
+			{
+				const FString BoneName = RefSkel.GetBoneName(i).ToString();
+				if (BoneName.Contains(Bone) || Bone.Contains(BoneName)) { Near.Add(BoneName); }
+			}
+			Fail(Out, FString::Printf(
+				TEXT("no bone '%s' in the reference skeleton (%d bones). AddSocket makes this same ")
+				TEXT("check and then silently does nothing, so it is made here where it can be ")
+				TEXT("reported. %s list_bones lists them all. NOTHING was changed."),
+				*Bone, RefSkel.GetNum(),
+				Near.Num() ? *FString::Printf(TEXT("Did you mean: %s?"),
+											  *FString::Join(Near, TEXT(", ")))
+						   : TEXT("")));
+			return;
+		}
+
+		// Already taken? AddSocket refuses a duplicate name silently too.
+		auto NameTaken = [&Name](const TArray<TObjectPtr<USkeletalMeshSocket>>& List)
+		{
+			for (const USkeletalMeshSocket* S : List)
+			{
+				if (S && S->SocketName == FName(*Name)) { return true; }
+			}
+			return false;
+		};
+		if (TargetSkeleton && Target != TEXT("mesh") && NameTaken(TargetSkeleton->Sockets))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the skeleton '%s' already has a socket named '%s'. Socket names must be unique ")
+				TEXT("or attach-by-name is ambiguous. NOTHING was changed."),
+				*TargetSkeleton->GetName(), *Name));
+			return;
+		}
+		if (Mesh && Target != TEXT("skeleton") && NameTaken(Mesh->GetMeshOnlySocketList()))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the mesh already has a socket named '%s'. NOTHING was changed."), *Name));
+			return;
+		}
+
+		// The house helpers, not a hand-rolled parse: ReadRotatorField accepts {pitch,yaw,roll} as
+		// well as {x,y,z} and ReadScaleField accepts a bare number as a uniform scale, which is the
+		// convention every other transform-taking endpoint here already documents. A malformed
+		// component is REFUSED rather than silently defaulted - a socket quietly placed at the
+		// origin is exactly the kind of wrong-but-plausible result that costs an hour to spot.
+		FVector Loc(0.0), Scale(1.0);
+		FRotator Rot(0.0);
+		FString VecErr;
+		if (ReadVectorField(In, TEXT("location"), Loc, VecErr) == EJsonRead::Invalid
+			|| ReadRotatorField(In, TEXT("rotation"), Rot, VecErr) == EJsonRead::Invalid
+			|| ReadScaleField(In, TEXT("scale"), Scale, VecErr) == EJsonRead::Invalid)
+		{
+			Fail(Out, VecErr + TEXT(" NOTHING was changed."));
+			return;
+		}
+
+		FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_AddSocket", "Add Socket"));
+		FString Source;
+		if (Target == TEXT("mesh") || Target == TEXT("both"))
+		{
+			// THE OUTER MUST BE THE MESH. AddSocket's first act is GetOuter() == this, and a socket
+			// with any other outer is dropped with no error at all.
+			Mesh->Modify();
+			USkeletalMeshSocket* S = NewObject<USkeletalMeshSocket>(Mesh);
+			S->SocketName = FName(*Name);
+			S->BoneName = FName(*Bone);
+			S->RelativeLocation = Loc;
+			S->RelativeRotation = Rot;
+			S->RelativeScale = Scale;
+			Mesh->AddSocket(S, /*bAddToSkeleton*/ Target == TEXT("both"));
+			Source = Target;
+		}
+		else
+		{
+			// USkeleton has NO AddSocket, so this is what USkeletalMesh::AddSocket does internally
+			// for its own skeleton branch.
+			TargetSkeleton->Modify();
+			USkeletalMeshSocket* S = NewObject<USkeletalMeshSocket>(TargetSkeleton);
+			S->SocketName = FName(*Name);
+			S->BoneName = FName(*Bone);
+			S->RelativeLocation = Loc;
+			S->RelativeRotation = Rot;
+			S->RelativeScale = Scale;
+			TargetSkeleton->Sockets.Add(S);
+			Source = TEXT("skeleton");
+		}
+
+		// VERIFIED BY SEARCHING FOR IT, because AddSocket is void and its three refusal paths are
+		// UE_LOG-only. Nothing above this line proves a socket exists.
+		const USkeletalMeshSocket* Found = nullptr;
+		int32 FoundIndex = INDEX_NONE;
+		if (Target == TEXT("mesh") || Target == TEXT("both"))
+		{
+			const TArray<USkeletalMeshSocket*> MeshList = Mesh->GetMeshOnlySocketList();
+			for (int32 i = 0; i < MeshList.Num(); ++i)
+			{
+				if (MeshList[i] && MeshList[i]->SocketName == FName(*Name))
+				{
+					Found = MeshList[i]; FoundIndex = i; break;
+				}
+			}
+		}
+		else
+		{
+			for (int32 i = 0; i < TargetSkeleton->Sockets.Num(); ++i)
+			{
+				if (TargetSkeleton->Sockets[i]
+					&& TargetSkeleton->Sockets[i]->SocketName == FName(*Name))
+				{
+					Found = TargetSkeleton->Sockets[i]; FoundIndex = i; break;
+				}
+			}
+		}
+		if (!Found)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the socket was created and '%s' does not list it on read-back. AddSocket is ")
+				TEXT("void and only UE_LOGs its refusals, so this is the only way to know. NOTHING ")
+				TEXT("usable was produced."), *Name));
+			return;
+		}
+		(Target == TEXT("mesh") || Target == TEXT("both") ? Cast<UObject>(Mesh)
+														  : Cast<UObject>(TargetSkeleton))
+			->MarkPackageDirty();
+
+		TSharedRef<FJsonObject> J = SocketJson(Found->SocketName, Found->BoneName,
+			Found->RelativeLocation, Found->RelativeRotation, Found->RelativeScale);
+		J->SetStringField(TEXT("source"), Source);
+		J->SetNumberField(TEXT("index"), FoundIndex);
+		J->SetStringField(TEXT("objectPath"), Found->GetPathName());
+		Out->SetObjectField(TEXT("socket"), J);
+		Out->SetStringField(TEXT("path"), Asset->GetPathName());
+		Out->SetBoolField(TEXT("created"), true);
+		Out->SetStringField(TEXT("owner"),
+			(Target == TEXT("mesh") || Target == TEXT("both")) ? Mesh->GetPathName()
+															   : TargetSkeleton->GetPathName());
+		Out->SetStringField(TEXT("editNote"),
+			TEXT("to MOVE this socket use set_property {objectPath: <owner>, propertyPath: "
+				 "\"Sockets[<index>].RelativeLocation\"}, and to DELETE it use edit_container "
+				 "{propertyPath: \"Sockets\", operation: \"remove\", index: <index>}. Both work "
+				 "today, which is why there is no set_socket_transform or remove_socket endpoint."));
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the owning asset is dirty and NOTHING has been saved."));
+#endif
 	}
 }

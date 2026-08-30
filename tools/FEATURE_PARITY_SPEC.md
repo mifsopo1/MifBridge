@@ -4764,7 +4764,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       BodyIndex itself since that one is a hard check() rather than an ensure. Worth doing -
       per-primitive collision is how you stop one capsule on a body colliding while the rest
       do not - but it is a guard against a wrong engine check and deserves its own cycle.
-- [ ] **add_socket / remove_socket / set_socket_transform** (hours)
+- [x] **add_socket** (hours) - the other two were NOT needed, and that is checked, not assumed
+      DONE 2026-08-30. 28 checks in tools/test_socket_authoring.py.
+      SCOPE CUT FROM THREE ENDPOINTS TO ONE, on the vetter's correction. The property walker
+      crosses object boundaries, so moving and deleting a socket already worked:
+        move    set_property {objectPath:<owner>, propertyPath:"Sockets[3].RelativeLocation"}
+        delete  edit_container {propertyPath:"Sockets", operation:"remove", index:3}
+      What they lacked was the INDEX, which list_sockets did not emit. So this adds `index`,
+      `owner` and `objectPath` there instead of building two endpoints that would duplicate
+      existing verbs. T3103 PROVES it rather than asserting it - it takes an index straight
+      from list_sockets, moves the socket, deletes it, and reads both back. If that test ever
+      fails, the two endpoints are needed after all.
+      AddSocket CANNOT REPORT FAILURE: void return, and it silently does nothing when the
+      outer is not the mesh (SkeletalMesh.cpp:3703), the name is taken (:3708), or the bone is
+      not in the reference skeleton (:3714). All three are checked here first and the socket is
+      confirmed by searching for it afterwards. USkeleton has NO AddSocket at all, so the
+      skeleton path is hand-rolled the way USkeletalMesh::AddSocket does it internally.
+      DEFAULTS TO THE SKELETON when the mesh has one, because that is where real content keeps
+      sockets - every sampled mesh here has ZERO mesh sockets and shares one rig.
+      RebuildSocketMap IS DELIBERATELY NOT CALLED, correcting the survey's third claim. Every
+      read of SocketMap (FindSocketAndIndex, SkeletalMesh.cpp:3799 and :3846) sits inside
+      `#if !WITH_EDITOR`, the editor paths linear-scan the array, and RebuildSocketMap's whole
+      body is `#if !WITH_EDITOR` too - so the call would compile to nothing. A call that looks
+      like a safety measure and does nothing is worse than no call.
+      audit_postconditions flags add_socket medium; judged a false positive of its own stated
+      over-report, since the handler verifies by searching the list after the add. Baselined.
       Create, delete and move sockets on a SkeletalMesh or its USkeleton. Attaching anything to a character - a weapon, a prop, a VFX emitter, a camera boom - needs a socket, and this is the single most common physical-attachment operation an agent performs on a rigged asset.
       API: USkeletalMesh::AddSocket(USkeletalMeshSocket* InSocket, bool bAddToSkeleton=false) - ENGINE_API, Runtime/Engine/Classes/Engine/SkeletalMesh.h:2421; USkeletalMesh::FindSocket (:2428), FindSocketAndIndex (:2436), GetMeshOnlySocketList (:2480/:2487), Sockets (:2236). Skeleton-side: USkeleton::Sockets (Animation/Skeleton.h:371), USkeleton::FindSocketAndIndex (:1043), FindSocket (:1044). The socket obj...
       Cooked: Cooked-SAFE. Sockets are runtime data - they must be, or nothing could attach at runtime - and USkeletalMeshSocket carries no editor-only members that AddSocket touches. Both Sockets arrays are populated on a cooked-loaded mesh, which is exactly why list_sockets works today on DDS2. The endpoint sho...

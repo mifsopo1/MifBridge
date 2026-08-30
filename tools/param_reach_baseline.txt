@@ -45,6 +45,7 @@ add_sequence_section.binding
 add_sequence_section.sequence
 add_sequence_track.binding
 add_sequence_track.sequence
+add_socket.mesh
 add_sublevel.level
 analyze_skeletal_split.mesh
 analyze_skeletal_split.skeletalmesh
