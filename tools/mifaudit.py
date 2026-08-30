@@ -173,9 +173,18 @@ def bridge_liveness(timeout=8):
     except Timeout:
         return "busy"
     except Dead:
-        # Distinguish "connection refused" from a listener that accepted and went quiet. Only the
-        # former means the process is gone.
-        return "dead" if not _port_is_listening() else "busy"
+        # A refused connection means the PORT is silent. That is not the same as the process being
+        # gone, and conflating them is worse than the bug this function was written to fix: an
+        # editor that is still starting has no listener yet, and launch_editor now kills survivors
+        # before relaunching - so calling that "dead" would kill a healthy starting editor and do
+        # it again on the next slow start. Observed live: a fresh editor read busy, busy, busy,
+        # dead, dead, dead while its log was progressing normally (DDC maintenance alone took two
+        # minutes).
+        #
+        # The process list settles it, and this module already had the call.
+        if _port_is_listening():
+            return "busy"
+        return "busy" if _surviving_editor_pids() else "dead"
     except Exception:
         return "alive"       # any JSON answer, including "unknown endpoint", means it is alive
 
