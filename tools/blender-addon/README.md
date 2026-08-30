@@ -39,14 +39,14 @@ so both can run at once.)
 
 | version | imports | registers | 29 ops | FBX kwargs | mesh | ops | rig | gen | authoring |
 |---|---|---|---|---|---|---|---|---|---|
-| 3.6.23 | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** | **21/21** | **20/20** | **39/39** |
-| 4.2.17 LTS | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** | **21/21** | **20/20** | **39/39** |
-| 4.4.0 | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** | **21/21** | **20/20** | **39/39** |
-| **5.0.1** | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** | **21/21** | **20/20** | **39/39** |
+| 3.6.23 | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** | **21/21** | **20/20** | **48/48** |
+| 4.2.17 LTS | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** | **21/21** | **20/20** | **48/48** |
+| 4.4.0 | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** | **21/21** | **20/20** | **48/48** |
+| **5.0.1** | ✅ | ✅ | ✅ | all present | **78/78** | **12/12** | **21/21** | **20/20** | **48/48** |
 
 Every cell measured by `tools/run_blender_suites.py`, which starts a FRESH headless Blender per
 SUITE (not per version) and waits for a real framed PING before running anything. Last full
-matrix: **20 runs across 4 Blenders, 0 failed, 0 skipped** — 170 assertions per version.
+matrix: **20 runs across 4 Blenders, 0 failed, 0 skipped** — 179 assertions per version.
 
 **3.6.23 note, resolved 2026-08-28** - this briefly showed 73/77 (see git history / FEATURE_PARITY_SPEC.md
 for that date if you want the full story). Root cause was never a general "LIGHTMAP is broken on

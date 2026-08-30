@@ -253,6 +253,107 @@ def main():
     check("A502 an unknown mapping is refused and lists the accepted ones",
           bad_map.get("ok") is False, json.dumps(bad_map)[:250])
 
+    # ================================================================= skeletal export
+    print("\n=== A600-A607: export_mesh objectTypes - the pose-baking trap ===")
+
+    import tempfile
+    out_dir = tempfile.mkdtemp(prefix="mifbl_auth_")
+
+    bad_types = call("export_mesh", object=cube, file=os.path.join(out_dir, "a.fbx"),
+                     objectTypes=["ARMATURE"])
+    check("A600 objectTypes without MESH is refused - this is export_mesh",
+          bad_types.get("ok") is False, json.dumps(bad_types)[:250])
+    check("A600 and the refusal says NOTHING was written",
+          "NOTHING was written" in (bad_types.get("error") or ""), bad_types.get("error"))
+
+    unknown_type = call("export_mesh", object=cube, file=os.path.join(out_dir, "b.fbx"),
+                        objectTypes=["MESH", "SPACESHIP"])
+    check("A601 an unknown objectType is refused and the accepted set is listed",
+          unknown_type.get("ok") is False and "ARMATURE" in (unknown_type.get("error") or ""),
+          json.dumps(unknown_type)[:250])
+
+    empty_types = call("export_mesh", object=cube, file=os.path.join(out_dir, "c.fbx"),
+                       objectTypes=[])
+    check("A602 an empty objectTypes is refused", empty_types.get("ok") is False,
+          json.dumps(empty_types)[:220])
+
+    plain = call("export_mesh", object=cube, file=os.path.join(out_dir, "plain.fbx"))
+    check("A603 a default export still works and is unchanged", plain.get("ok") is True,
+          json.dumps(plain)[:250])
+    check("A603 it reports objectTypesWritten as MESH only",
+          plain.get("objectTypesWritten") == ["MESH"], json.dumps(plain)[:250])
+    check("A603 isSkeletal is false and bonesWritten is 0 - an unrigged cube",
+          plain.get("isSkeletal") is False and plain.get("bonesWritten") == 0,
+          json.dumps(plain)[:250])
+
+    # THE DEFAULT THAT DELIBERATELY DISAGREES WITH BLENDER. add_leaf_bones is True upstream; a leaf
+    # bone imports into Unreal as a real extra <parent>_end bone. Asserted because a silent revert
+    # to the operator default would be invisible until someone counted bones in Unreal.
+    check("A604 addLeafBones defaults to FALSE, not Blender's True",
+          plain.get("leafBonesAdded") is False
+          and (plain.get("fbxArgs") or {}).get("add_leaf_bones") is False,
+          json.dumps(plain.get("fbxArgs"))[:250])
+    check("A604 and the pinned bone axes are Y/X",
+          (plain.get("fbxArgs") or {}).get("primary_bone_axis") == "Y"
+          and (plain.get("fbxArgs") or {}).get("secondary_bone_axis") == "X",
+          json.dumps(plain.get("fbxArgs"))[:250])
+
+    # A real skinned fixture needs an armature, and there is no create_armature op. run_python is
+    # the documented escape hatch and defaults to ON - but it is a PREFERENCE, so this asks rather
+    # than assumes, and says so loudly when it is off instead of reporting a pass over nothing.
+    scene = call("scene_info")
+    if not scene.get("runPythonAllowed"):
+        print("  SKIP  A605-A607 - run_python is disabled in this Blender's addon preferences, and")
+        print("        there is no create_armature op to build a skinned fixture without it. The")
+        print("        pose-baking warning and the ARMATURE export path are NOT exercised here.")
+    else:
+        rig = call("run_python", code=(
+            "import bpy\n"
+            "bpy.ops.object.armature_add(location=(0,0,0))\n"
+            "arm = bpy.context.object\n"
+            "arm.name = 'MifTestArm'\n"
+            "m = bpy.data.objects['%s']\n"
+            "mod = m.modifiers.new('Armature', 'ARMATURE')\n"
+            "mod.object = arm\n"
+            "result = {'arm': arm.name, 'bones': len(arm.data.bones)}\n" % cube))
+        check("A605 (setup) an armature exists and deforms the cube", rig.get("ok") is True,
+              json.dumps(rig)[:250])
+
+        # THE BUG THIS WHOLE BLOCK EXISTS FOR. A mesh with an armature modifier, exported without
+        # ARMATURE in objectTypes, is written DEFORMED INTO ITS CURRENT POSE as a static mesh -
+        # silently, with a perfectly valid file. It must now warn.
+        posed = call("export_mesh", object=cube, file=os.path.join(out_dir, "posed.fbx"))
+        check("A606 exporting a rigged mesh WITHOUT ARMATURE still succeeds",
+              posed.get("ok") is True, json.dumps(posed)[:250])
+        check("A606 but it WARNS that the deformer was not written and the pose is baked",
+              bool(posed.get("deformerNotExportedWarning")), json.dumps(posed)[:400])
+        check("A606 and the warning names the armature",
+              "MifTestArm" in (posed.get("deformerNotExportedWarning") or ""),
+              posed.get("deformerNotExportedWarning"))
+
+        skel = call("export_mesh", object=cube, file=os.path.join(out_dir, "skel.fbx"),
+                    objectTypes=["MESH", "ARMATURE"])
+        check("A607 exporting WITH ARMATURE succeeds", skel.get("ok") is True,
+              json.dumps(skel)[:250])
+        check("A607 it reports the armature it exported",
+              skel.get("armaturesExported") == ["MifTestArm"], json.dumps(skel)[:250])
+        check("A607 isSkeletal is true and bones were written - measured, not ok:true",
+              skel.get("isSkeletal") is True and (skel.get("bonesWritten") or 0) > 0,
+              json.dumps(skel)[:250])
+        check("A607 and no pose-baking warning this time",
+              not skel.get("deformerNotExportedWarning"), json.dumps(skel)[:300])
+
+        # THE ONE THAT PROVES THE SELECTION FIX. Naming ARMATURE in objectTypes is not enough - the
+        # exporter gathers context objects from the SELECTION, so the armature has to be added to
+        # it. A skeletal file is meaningfully larger than the posed static one; if the armature had
+        # been filtered in but never selected, the two would match.
+        import os as _os
+        posed_size = posed.get("fileSizeBytes") or 0
+        skel_size = skel.get("fileSizeBytes") or 0
+        check("A607 the skeletal file really differs from the static one - the armature reached "
+              "the exporter, not just the filter",
+              skel_size != posed_size, "posed=%d skeletal=%d" % (posed_size, skel_size))
+
     # WHAT THIS SUITE DOES NOT COVER, declared rather than left to be discovered - the same
     # discipline test_blender_mesh.py applies to the five gen_* ops.
     print("\n  NOT COVERED, and said out loud: the SUCCESS paths of normalize_weights and")

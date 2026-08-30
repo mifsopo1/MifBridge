@@ -100,6 +100,15 @@ FBX_EXPORT_ARGS = {
     "use_space_transform": True,
     "bake_space_transform": False,           # flagged experimental upstream; leave OFF
     "object_types": {"MESH"},                # default drags in EMPTY/CAMERA/LIGHT/ARMATURE
+    # add_leaf_bones DELIBERATELY DISAGREES WITH BLENDER, whose default is True. A leaf bone is a
+    # synthetic tip Blender appends to every chain end so the FBX records bone LENGTH; Unreal has no
+    # concept of it and imports each one as a real extra bone named <parent>_end. On a hand that is
+    # five junk bones, and they then appear in every retarget chain and every anim asset built from
+    # that skeleton. Off unless the caller asks.
+    "add_leaf_bones": False,
+    "use_armature_deform_only": False,
+    "primary_bone_axis": "Y",
+    "secondary_bone_axis": "X",
     "use_mesh_modifiers": True,
     "mesh_smooth_type": "FACE",              # see the NOT VERIFIED note above
     "use_tspace": False,
@@ -220,13 +229,20 @@ _EXPORT_OVERRIDES = {
     "useTriangles": ("use_triangles", bool),
     "useMeshModifiers": ("use_mesh_modifiers", bool),
     "useTspace": ("use_tspace", bool),
+    # SKELETAL EXPORT, added 2026-08-30. See op_export_mesh's own note for why the defaults are
+    # what they are - two of them deliberately disagree with Blender's.
+    "addLeafBones": ("add_leaf_bones", bool),
+    "armatureDeformOnly": ("use_armature_deform_only", bool),
+    "primaryBoneAxis": ("primary_bone_axis", str),
+    "secondaryBoneAxis": ("secondary_bone_axis", str),
+    "bakeAnim": ("bake_anim", bool),
 }
 
 
 def op_export_mesh(params):
     reject_unknown(params, set(_EXPORT_OVERRIDES) | {
         "object", "name", "objects", "file", "filepath", "path",
-        "overwrite", "replaceExisting"}, "export_mesh")
+        "overwrite", "replaceExisting", "objectTypes"}, "export_mesh")
 
     raw = take(params, "file", "filepath", "path", required=True, kind=str)
     path = _resolve_out_path(raw)
@@ -260,9 +276,54 @@ def op_export_mesh(params):
                 value = take_bool(params, key)
             args[arg] = value
 
+    # ------------------------- SKELETAL EXPORT -------------------------
+    # WHAT WAS WRONG BEFORE THIS, and it was worse than "the skeleton is missing". object_types was
+    # pinned to {"MESH"}, and io_scene_fbx only backs up and restores the REST POSE when ARMATURE is
+    # in that set (export_fbx_bin.py). With it absent, an Armature modifier is evaluated like any
+    # other modifier, so the mesh was written DEFORMED INTO WHATEVER POSE THE RIG HAPPENED TO BE IN.
+    # A character posed mid-animation exported as a static mesh frozen in that pose, with no
+    # skeleton, and the file was perfectly valid - nothing failed, nothing warned. The Unreal side
+    # needs no work at all: UFbxFactory auto-detects skeletal versus static from the file.
+    types = take(params, "objectTypes")
+    if types is not None:
+        if not isinstance(types, (list, tuple)) or not types:
+            raise MifOpError("objectTypes must be a non-empty array, e.g. [\"MESH\", \"ARMATURE\"]. "
+                             "NOTHING was written.")
+        valid = {"EMPTY", "CAMERA", "LIGHT", "ARMATURE", "MESH", "OTHER"}
+        types = [str(t).upper() for t in types]
+        bad = [t for t in types if t not in valid]
+        if bad:
+            raise MifOpError("unknown objectTypes %s. Accepted: %s. NOTHING was written."
+                             % (", ".join("'%s'" % b for b in bad), ", ".join(sorted(valid))))
+        if "MESH" not in types:
+            raise MifOpError("objectTypes must include MESH - this is export_mesh, and a file with "
+                             "no mesh in it is not something any caller here wants. NOTHING was "
+                             "written.")
+        args["object_types"] = set(types)
+
+    # THE ARMATURE MUST BE IN THE SELECTION, not merely allowed by object_types. The exporter
+    # gathers its context objects from the selection when use_selection is on, so naming ARMATURE in
+    # object_types without selecting the armature produces exactly the same silently-posed static
+    # mesh as before - the filter would have let it through and nothing offered it. Found by reading
+    # export_fbx_bin.py rather than by exporting and wondering.
+    export_set = list(targets)
+    armatures = []
+    unexported_deformers = []
+    for obj in targets:
+        for mod in getattr(obj, "modifiers", []):
+            if mod.type == "ARMATURE" and getattr(mod, "object", None) is not None:
+                arm = mod.object
+                if "ARMATURE" in args["object_types"]:
+                    if arm not in export_set:
+                        export_set.append(arm)
+                    if arm.name not in armatures:
+                        armatures.append(arm.name)
+                elif arm.name not in unexported_deformers:
+                    unexported_deformers.append(arm.name)
+
     snapshot = selection_snapshot()
     try:
-        select_only(targets)
+        select_only(export_set)
         bpy.ops.export_scene.fbx(filepath=path, use_selection=True, **args)
     finally:
         selection_restore(snapshot)
@@ -279,17 +340,49 @@ def op_export_mesh(params):
             "console for the exporter's own error, and that the path is writable."
             % (path, exists, size))
 
-    return {
+    bones_written = 0
+    for name in armatures:
+        arm = bpy.data.objects.get(name)
+        if arm is not None and getattr(arm, "data", None) is not None:
+            bones_written += len(arm.data.bones)
+
+    out = {
         "file": path,
         "fileExists": True,
         "fileSizeBytes": size,
         "exportedCount": len(targets),
         "exported": [object_info(o) for o in targets],
+        "objectTypesWritten": sorted(args["object_types"]),
+        "armaturesExported": armatures,
+        "bonesWritten": bones_written,
+        "leafBonesAdded": bool(args.get("add_leaf_bones")),
+        "isSkeletal": bool(armatures),
         "axis": {"up": "Z", "front": "-Y", "handedness": "right", "unit": "cm",
                  "unrealUnitsPerBlenderUnit": UU_PER_BU},
         "fbxArgs": {k: (sorted(v) if isinstance(v, set) else v)
                     for k, v in args.items()},
     }
+
+    # THE WARNING THAT MATTERS. Silent pose-baking is what this whole block exists to stop, so a
+    # mesh whose deforming armature was left out of the file is named, not left for the caller to
+    # discover on import.
+    if unexported_deformers:
+        out["deformerNotExportedWarning"] = (
+            "%s deform%s a mesh in this export and %s NOT written to the file, because objectTypes "
+            "is %s. The exporter only preserves the REST POSE when ARMATURE is included, so the "
+            "mesh has been written deformed into its CURRENT POSE, as a static mesh. If that was "
+            "not intended, re-export with objectTypes:[\"MESH\",\"ARMATURE\"]."
+            % (", ".join("'%s'" % a for a in unexported_deformers),
+               "s" if len(unexported_deformers) == 1 else "",
+               "was" if len(unexported_deformers) == 1 else "were",
+               sorted(args["object_types"])))
+    if armatures and args.get("add_leaf_bones"):
+        out["leafBoneWarning"] = (
+            "addLeafBones is on. Blender appends a synthetic tip bone to every chain end so the FBX "
+            "can record bone length; Unreal has no concept of one and imports each as a REAL extra "
+            "bone named <parent>_end, which then appears in every retarget chain and anim asset "
+            "built on this skeleton. It is off by default here for that reason.")
+    return out
 
 
 # ---------------------------------------------------------------------------
