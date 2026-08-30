@@ -461,6 +461,7 @@ namespace MifBridge
 			MIF_BIND(list_niagara_user_parameters);
 			MIF_BIND(layout_material_expressions);
 			MIF_BIND(recompile_material);
+			MIF_BIND(material_statistics);
 			MIF_BIND(shader_compile_status);
 			// Level streaming control (Batch I) — editor sublevels + PIE level instances
 			MIF_BIND(list_sublevels);

@@ -3142,6 +3142,17 @@ def layout_material_expressions(path: str) -> dict:
 
 
 @mcp.tool()
+def material_statistics(path: str, compile: bool = False) -> dict:
+    """A material's shader cost: instruction counts, samplers, texture samples.
+
+    compile defaults False. When the shader map is not already built this REFUSES with
+    wouldBlock:true rather than stalling the editor - GetStatistics waits synchronously for a
+    compile, which on a complex material is minutes. Pass compile=True to accept that wait.
+    """
+    return _post("material_statistics", path=path, compile=compile)
+
+
+@mcp.tool()
 def recompile_material(path: str) -> dict:
     "Apply graph/parameter edits to the renderer - REQUIRED after add/connect/delete for the changes to reach pixels."
     return _post("recompile_material", path=path)

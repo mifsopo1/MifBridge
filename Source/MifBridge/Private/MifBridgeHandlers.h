@@ -1608,6 +1608,7 @@ namespace MifBridge
 	MIF_DECL(list_niagara_user_parameters);
 	MIF_DECL(layout_material_expressions);
 	MIF_DECL(recompile_material);
+	MIF_DECL(material_statistics);
 	MIF_DECL(shader_compile_status);
 
 	// LEVEL STREAMING control (MifBridgeStreaming.cpp) — sublevel composition in the editor, and

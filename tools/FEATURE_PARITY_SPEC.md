@@ -5674,12 +5674,30 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: The typed READ is safe cooked - ExposedParameters is runtime data that survives cook, and the read touches no PostLoad path (the 6c crash was in duplication, not enumeration). Keep the existing string-class-name recognition as a fallback so the read still answers on a Niagara-less build. The WRITE m...
       Vetter corrected the proposal: Three corrections, none fatal. (1) The proposer UNDERSOLD the new evidence. MIF_WITH_NIAGARA is used by four things, not three: describe_niagara_system, list_niagara_emitters, set_niagara_component_parameter, AND create_asset (MifBridgeUserTypes.cpp:773), which calls UNiagaraSystemFactoryNew::InitializeSystem - a NiagaraEditor symbol. So it is not merely that the Niagara module COULD be linked; Ni...
 
-- [ ] **material_statistics (or a statistics:true parameter on recompile_material)** (hours)
-      Report a material's shader cost: vertex and pixel instruction counts, sampler count, vertex/pixel texture samples, virtual texture samples. The number a material optimisation pass is actually judged by, and the one thing the material editor shows that the bridge cannot.
-      API: UMaterialEditingLibrary::GetStatistics(UMaterialInterface*) returning FMaterialStatistics - D:/UE532/Engine/Source/Editor/MaterialEditor/Public/MaterialEditingLibrary.h:392, struct at :18 (NumVertexShaderInstructions, NumPixelShaderInstructions, NumSamplers, NumVertexTextureSamples, NumPixelTextureSamples, NumVirtualTextureSamples). Implementation read at Editor/MaterialEditor/Private/MaterialEdit...
-      Cooked: Works COOKED, which is much of the value - a cooked material has shader maps even though its expression graph is stripped, so this answers where list_material_expressions correctly returns nothing (the same argument list_material_parameters makes for survivesCook:true). One hazard that must be guard...
-      Vetter corrected the proposal: Rank CONFIRMED at medium, not raised. It is a read-only leaf an agent hits occasionally, and it is not "a whole subsystem half missing" - the material read half is otherwise well built (list_material_expressions, list_material_parameters, describe_* family). It is a strong medium because it is the missing verify step for three already-shipped endpoints, not because the subsystem is half absent. Fo...
-
+- [x] **material_statistics** (hours)
+      DONE 2026-08-30. Its own endpoint rather than a statistics:true parameter on
+      recompile_material, because recompile REBUILDS and this only MEASURES - folding a read
+      into a write would have made the cheap thing cost a recompile. 24 checks in
+      tools/test_material_statistics.py.
+      THE HAZARD THE PROPOSAL FLAGGED AND DID NOT FINISH NAMING, read from the engine:
+      GetStatistics calls FinishCompilation (MaterialEditingLibrary.cpp:1358-1362), a
+      SYNCHRONOUS stall on the game thread with no progress and no cancel. From an HTTP
+      handler on a material with no cached shader map that is an unbounded editor freeze
+      dressed up as a read. The endpoint asks the engine's own public predicate first
+      (IsGameThreadShaderMapComplete, MaterialShared.h:2183) and REFUSES with wouldBlock:true
+      unless the caller passes compile:true. Not hypothetical - /Paper2D's sprite material
+      instances ship with no built shader map here, so the suite exercises the real refusal
+      and the real opt-in rather than a simulated one.
+      THE SECOND HAZARD, quieter: every field of FMaterialStatistics is `= 0` initialised and
+      GetStatistics returns the struct untouched when GetMaterialResource is null, so a
+      material with no resource reports ZERO pixel instructions - indistinguishable from a
+      genuinely trivial material and exactly the wrong answer for an optimisation pass. The
+      resource is resolved here first and its absence refuses.
+      NOT PROVEN BY THE SUITE and recorded as such: cooked:true. Every material this asset
+      registry returns is uncooked engine or plugin content, so the survives-cook claim -
+      which is much of the value, being exactly where list_material_expressions correctly
+      finds nothing - is unverified. The cooked flag is on every response so the gap is
+      visible rather than silent.
 - [ ] **blueprint_breakpoint (add/remove/enable/list/clear) and blueprint_watch (add/remove/list/read)** (hours)
       Sets and clears Blueprint breakpoints and pin watches, and reads a watched pin's live value. The bridge can already start PIE, list PIE actors and splice a print node into a graph (recipe_add_debug_print), which is the workaround an agent is currently forced into: to see one value it must EDIT the blueprint, compile, run, read the log, then unpick the edit. Watches read the same value without mutating the asset.
       API: FKismetDebugUtilities, every function static and UNREALED_API public, read in D:/UE532/Engine/Source/Editor/UnrealEd/Public/Kismet2/KismetDebugUtilities.h. Breakpoints: CreateBreakpoint(const UBlueprint*, UEdGraphNode*, bool bIsEnabled=true) [:285]; RemoveBreakpointFromNode(const UEdGraphNode*, const UBlueprint*) [:270]; SetBreakpointEnabled(const UEdGraphNode*, const UBlueprint*, bool) [:261]; Fi...

@@ -1981,4 +1981,144 @@ namespace MifBridge
 		}
 		WriteShaderCompileFields(Out);
 	}
+
+	// =======================================================================
+	// material_statistics - the number a material optimisation is judged by
+	// =======================================================================
+	//
+	// Vertex and pixel instruction counts, sampler count, texture samples and interpolator scalars:
+	// what the material editor's Stats panel shows, and the one thing about a material this bridge
+	// could not report. It is the missing VERIFY step for three endpoints that already ship -
+	// set_material_property, set_material_instance_parameter and recompile_material can all change a
+	// material's cost and none of them could tell you whether they had.
+	//
+	// IT WORKS ON COOKED CONTENT, which is much of the value here. A cooked material keeps its shader
+	// maps even though its expression graph is stripped, so this answers precisely where
+	// list_material_expressions correctly returns nothing.
+	//
+	// TWO HAZARDS, both of which turn a read into a wrong answer if left alone.
+	//
+	// (1) IT CAN BLOCK THE EDITOR FOR MINUTES. UMaterialEditingLibrary::GetStatistics does
+	//     (MaterialEditingLibrary.cpp:1358-1362):
+	//
+	//         if (!Resource->IsGameThreadShaderMapComplete())
+	//             Resource->SubmitCompileJobs_GameThread(EShaderCompileJobPriority::High);
+	//         Resource->FinishCompilation();
+	//
+	//     FinishCompilation is a synchronous stall on the game thread. Called from an HTTP handler on
+	//     a material with no cached shader map, that is a hang with no progress and no way to cancel -
+	//     an unbounded editor freeze dressed up as a read. So the completeness is checked FIRST, with
+	//     the engine's own public predicate (MaterialShared.h:2183), and an incomplete shader map is
+	//     REPORTED rather than waited on unless the caller opts in with compile:true. That mirrors
+	//     set_niagara_emitter's recompile parameter, which defaults off for the same reason.
+	//
+	// (2) A NULL RESOURCE RETURNS ZEROS THAT LOOK LIKE REAL STATISTICS. Every field of
+	//     FMaterialStatistics is `= 0` initialised (MaterialEditingLibrary.h:22-52) and GetStatistics
+	//     returns the struct untouched when GetMaterialResource gives null (:1356). So a material with
+	//     no resource for this feature level reports 0 pixel instructions - indistinguishable from a
+	//     genuinely trivial material, and exactly the wrong answer to hand an optimisation pass. The
+	//     resource is resolved here first and its absence is a REFUSAL, not a row of zeros.
+	//
+	// This is a READ: it never dirties the package and never writes. compile:true does real work -
+	// it compiles shaders - but it changes no asset, which is why it is not on the safety gate's
+	// unsafe list alongside things that persist to disk.
+
+	void H_material_statistics(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("material"), TEXT("compile") },
+			TEXT("path (aliases assetPath, material) - a UMaterial or UMaterialInstance; "
+				 "compile (default FALSE - when the shader map is not already built, opting in "
+				 "STALLS the editor until it compiles, which can take minutes)"),
+			{ { TEXT("featureLevel"), TEXT("statistics come from GMaxRHIFeatureLevel, the level this "
+											"editor is running - a per-level query is not offered "
+											"because the other levels have no shader map here") },
+			  { TEXT("quality"), TEXT("same - the quality level is the editor's own") },
+			  { TEXT("recompile"), TEXT("the parameter is 'compile', and it WAITS for a compile "
+										 "rather than forcing a fresh one - recompile_material is "
+										 "the endpoint that rebuilds") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("material") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - a UMaterial or UMaterialInstance."));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: '%s'."), *Path));
+			return;
+		}
+		UMaterialInterface* MatIface = Cast<UMaterialInterface>(Asset);
+		if (!MatIface)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, not a UMaterial or UMaterialInstance. A material FUNCTION has no "
+					 "shader map of its own and no statistics - it is compiled into the materials that "
+					 "use it."),
+				*Path, *Asset->GetClass()->GetName()));
+			return;
+		}
+
+		// HAZARD 2, checked before anything reads a number. GetStatistics answers a null resource with
+		// a struct of zeros, and zeros are a plausible-looking answer.
+		FMaterialResource* Resource = MatIface->GetMaterialResource(GMaxRHIFeatureLevel);
+		if (!Resource)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no material resource for this editor's feature level, so there are no "
+					 "statistics to report. This is refused rather than answered with zeros, which is "
+					 "what the engine's own GetStatistics would return and which reads exactly like a "
+					 "free material. NOTHING was measured."), *Path));
+			return;
+		}
+
+		Out->SetStringField(TEXT("material"), MatIface->GetPathName());
+		Out->SetStringField(TEXT("class"), MatIface->GetClass()->GetName());
+		Out->SetBoolField(TEXT("cooked"), IsCookedOrContainerPackage(MatIface->GetOutermost()));
+
+		// HAZARD 1. Ask the engine's own predicate rather than discovering it inside a stall.
+		const bool bComplete = Resource->IsGameThreadShaderMapComplete();
+		const bool bCompile = JBool(In, TEXT("compile"), false);
+		Out->SetBoolField(TEXT("shaderMapComplete"), bComplete);
+		if (!bComplete && !bCompile)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no completed shader map for this feature level yet, and reading its "
+					 "statistics would STALL the editor until one compiles - GetStatistics calls "
+					 "FinishCompilation, a synchronous wait with no progress and no cancel, which on a "
+					 "complex material is minutes. Pass compile:true to accept that wait. NOTHING was "
+					 "measured."), *Path));
+			Out->SetBoolField(TEXT("wouldBlock"), true);
+			return;
+		}
+
+		const FMaterialStatistics Stats = UMaterialEditingLibrary::GetStatistics(MatIface);
+
+		Out->SetNumberField(TEXT("vertexShaderInstructions"), Stats.NumVertexShaderInstructions);
+		Out->SetNumberField(TEXT("pixelShaderInstructions"), Stats.NumPixelShaderInstructions);
+		Out->SetNumberField(TEXT("samplers"), Stats.NumSamplers);
+		Out->SetNumberField(TEXT("vertexTextureSamples"), Stats.NumVertexTextureSamples);
+		Out->SetNumberField(TEXT("pixelTextureSamples"), Stats.NumPixelTextureSamples);
+		Out->SetNumberField(TEXT("virtualTextureSamples"), Stats.NumVirtualTextureSamples);
+		Out->SetNumberField(TEXT("uvScalars"), Stats.NumUVScalars);
+		Out->SetNumberField(TEXT("interpolatorScalars"), Stats.NumInterpolatorScalars);
+		Out->SetBoolField(TEXT("waitedForCompile"), !bComplete);
+
+		// WHAT THE NUMBERS ARE NOT. Instruction counts are the editor's own REPRESENTATIVE-shader
+		// figures, not a per-permutation total, and they are the MAX across representative shaders
+		// (MaterialEditingLibrary.cpp:1366-1377) - the same figure the Stats panel shows, and the
+		// right one to compare BEFORE and AFTER a change to the same material. Comparing two
+		// different materials' absolute counts is a much weaker claim than it looks.
+		Out->SetStringField(TEXT("note"),
+			TEXT("these are the editor's representative-shader figures for this editor's feature "
+				 "level - the same numbers the material editor's Stats panel shows, taken as the MAX "
+				 "across representative shaders rather than a sum over permutations. They are meant "
+				 "for comparing one material against ITSELF before and after a change; comparing the "
+				 "absolute counts of two different materials says much less than it appears to."));
+	}
 }
