@@ -150,9 +150,26 @@ def main():
         noconf = M.raw_post("consolidate_assets", {"target": mats[0], "sources": [mats[1]]})
         check("T5102 acting without confirm is refused", noconf.get("ok") is False,
               (noconf.get("error") or "")[:220])
-        check("T5102 and the refusal warns it CLOSES EVERY OPEN ASSET EDITOR",
-              "CLOSES EVERY OPEN ASSET EDITOR" in (noconf.get("error") or ""),
-              (noconf.get("error") or "")[:250])
+        # WHICH GATE FIRED MATTERS, and asserting the confirm wording unconditionally made this
+        # test ORDER-DEPENDENT. consolidate_assets refuses on the most fundamental failure first,
+        # so when find_assets happens to hand back /Engine materials - where the source is ROOTED
+        # and can never be consolidated at all - the ladder stops there and never reaches the
+        # missing-confirm check. That is correct behaviour being reported as a test failure.
+        blocked = noconf.get("blockedBy") or {}
+        earlier = {k: v for k, v in blocked.items() if v}
+        if earlier:
+            print("  NOTE  the ladder stopped at an EARLIER gate than confirm (%s), which is"
+                  % ", ".join(sorted(earlier)))
+            print("        correct - the most fundamental refusal wins. Asserting that instead.")
+            check("T5102 the earlier refusal names which check failed and on which asset, so it "
+                  "is actionable rather than just negative",
+                  all(isinstance(v, list) and v for v in earlier.values())
+                  and noconf.get("canConsolidate") is False,
+                  json.dumps(blocked)[:250])
+        else:
+            check("T5102 and the refusal warns it CLOSES EVERY OPEN ASSET EDITOR",
+                  "CLOSES EVERY OPEN ASSET EDITOR" in (noconf.get("error") or ""),
+                  (noconf.get("error") or "")[:250])
 
     # The open-editor snapshot is what makes the silent abort diagnosable, so it must be present
     # even when nothing is open.

@@ -422,13 +422,45 @@ namespace MifBridge
 	// that reads as enabled. That is a wrong answer rather than an error, which is why this is
 	// worth an endpoint at all.
 	//
-	// ADD AND REMOVE ARE DELIBERATELY NOT HERE, and that is the vetting's call rather than
-	// laziness. Raw AddEmitterHandle contains an UNGUARDED null dereference at
+	// ADD AND REMOVE ARE DELIBERATELY NOT HERE. The reason below REPLACES a wrong one this file
+	// shipped until 2026-08-30, and the correction is worth keeping because the wrong reason was
+	// the kind that gets someone hurt: it named a defect that does not exist, so anyone who went
+	// looking would find nothing, conclude the refusal was baseless, and build `add` unguarded -
+	// walking straight into the real hazard.
+	//
+	// WHAT WAS CLAIMED: "raw AddEmitterHandle contains an unguarded null dereference at
 	// NiagaraSystem.cpp:2309 - GetLatestEmitterData()->RemoveParent() on a Template or Behavior
-	// emitter - which is a different crash from the one already in this project's audit, and
-	// RemoveEmitterHandle vs RemoveEmitterHandlesById differ in whether system parameters are
-	// cleaned up. Both deserve their own item with their own guards rather than being smuggled in
-	// beside a boolean.
+	// emitter". That pointer is NON-NULL on every path that reaches :2309. Line 2306 calls
+	// DisableVersioning, which calls CheckVersionDataAvailable UNCONDITIONALLY and FIRST
+	// (NiagaraEmitter.cpp:2708, :2734-2741) - that appends a default entry whenever VersionData is
+	// empty, so Num() >= 1 always holds afterwards - and leaves bVersioningEnabled false on both
+	// exit paths. GetLatestEmitterData (:2383-2396) therefore takes its `if (!bVersioningEnabled)
+	// return &VersionData[0];` branch. It cannot be null there.
+	//
+	// And even if it could, :2309 is DOMINATED by the identical deref at NiagaraEmitter.cpp:1108-
+	// 1109 inside CreateWithParentAndOwner, which AddEmitterHandle calls at :2302 - unconditionally,
+	// for every emitter, template or not. :2309 could never be the first crash.
+	//
+	// THE REAL HAZARD IS A COOKED SOURCE EMITTER, and it is the same failure family as the cooked
+	// NiagaraSystem crash already recorded at the top of this file. CreateWithParentAndOwner
+	// dereferences EmitterData->ParentScratchPads (:1119) and EmitterData->GraphSource (:1120)
+	// unguarded. Both are declared inside `#if WITH_EDITORONLY_DATA` (NiagaraEmitter.h:451-457) and
+	// are null on an emitter that came from a cook - which is EVERY emitter shipped in a cooked
+	// project. So the precondition an `add` endpoint needs is "the source emitter's
+	// GetLatestEmitterData() has a non-null GraphSource and ParentScratchPads", not anything about
+	// TemplateSpecification.
+	//
+	// AND THE BRANCH CONDITION IS NOT PORTABLE. 5.3 tests
+	// `InEmitter.TemplateSpecification == ENiagaraScriptTemplateSpecification::Template|Behavior`
+	// (NiagaraSystem.cpp:2304). 5.6 (:2823) and 5.7 (:2828) test `InEmitter.bIsInheritable == false`
+	// instead; the old field is TemplateSpecification_DEPRECATED and PostLoad migrates it. Any
+	// MifBridge code naming TemplateSpecification will not compile on 5.6 or 5.7, so an `add`
+	// endpoint needs a MIF_ENGINE_AT_LEAST(5, 6) guard.
+	//
+	// Remove has its own reason, unchanged and still correct: RemoveEmitterHandle calls
+	// RemoveSystemParametersForEmitter and RemoveEmitterHandlesById does not, while only the latter
+	// calls InitEmitterCompiledData - they are asymmetric in BOTH directions, so picking one
+	// silently leaves either orphaned system parameters or stale compiled data.
 	//
 	// COOKED IS REFUSED, but NOT because it crashes - and getting that reason right matters,
 	// because the wrong reason invites someone to "fix" it. SetIsEnabled's side-effect block
@@ -449,9 +481,12 @@ namespace MifBridge
 			TEXT("path (aliases assetPath, system) - a NiagaraSystem; emitter - the handle name; ")
 			TEXT("enabled:true|false; recompile (default FALSE - compiling from an HTTP handler is ")
 			TEXT("opt-in)"),
-			{ { TEXT("add"), TEXT("adding an emitter is not offered here - raw AddEmitterHandle has "
-								  "an unguarded null dereference on Template and Behavior emitters, "
-								  "so it needs its own guards rather than riding along with a bool") },
+			{ { TEXT("add"), TEXT("adding an emitter is not offered here. AddEmitterHandle reaches "
+								  "UNGUARDED dereferences of GraphSource and ParentScratchPads "
+								  "(NiagaraEmitter.cpp:1119-1120), both editor-only fields that are "
+								  "NULL on any emitter from a cooked project - so it needs a "
+								  "source-emitter precondition of its own, plus a version guard, "
+								  "because 5.6 and 5.7 renamed the branch field this depends on") },
 			  { TEXT("remove"), TEXT("same - and RemoveEmitterHandle vs RemoveEmitterHandlesById "
 									 "differ in whether system parameters are cleaned up") },
 			  { TEXT("index"), TEXT("emitters are addressed by NAME here, because an index shifts "

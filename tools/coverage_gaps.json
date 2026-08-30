@@ -18,6 +18,7 @@
   "kr_verify_fidelity",
   "pcg_cleanup",
   "pcg_generate",
+  "pie_status",
   "save_dirty_packages",
   "save_level_as"
  ],
@@ -26,9 +27,12 @@
    "test_data_layer_writes.py"
   ],
   "add_anim_node": [
-   "test_anim_nodes.py"
+   "test_anim_nodes.py",
+   "test_anim_state.py"
   ],
   "add_bind_dispatcher": [
+   "test_create_event.py",
+   "test_dispatcher_ops.py",
    "test_macro_dispatch.py"
   ],
   "add_blackboard_key": [
@@ -45,7 +49,8 @@
    "test_node_spawns.py"
   ],
   "add_call_dispatcher": [
-   "test_components_dispatchers.py"
+   "test_components_dispatchers.py",
+   "test_dispatcher_ops.py"
   ],
   "add_cast": [
    "test_node_spawns.py",
@@ -63,6 +68,7 @@
    "test_confirm_gated.py",
    "test_idempotence.py",
    "test_inherited_components.py",
+   "test_instance_components.py",
    "test_node_spawns.py",
    "test_uncovered_reads8.py",
    "test_undo_integrity.py"
@@ -86,20 +92,26 @@
   ],
   "add_enum_value": [
    "test_confirm_gated.py",
-   "test_enums.py"
+   "test_enum_edit.py",
+   "test_enums.py",
+   "test_factory_init.py"
   ],
   "add_event_dispatcher": [
    "test_components_dispatchers.py",
+   "test_create_event.py",
+   "test_dispatcher_ops.py",
    "test_idempotence.py",
    "test_macro_dispatch.py"
   ],
   "add_foliage_instances": [
-   "test_foliage_modes.py"
+   "test_foliage_modes.py",
+   "test_foliage_removal.py"
   ],
   "add_format_text": [
    "test_node_spawns.py"
   ],
   "add_function_call": [
+   "test_add_k2_node.py",
    "test_array_wildcard_durability.py",
    "test_find_and_move.py",
    "test_graph_patch.py",
@@ -183,10 +195,12 @@
    "test_reroute.py"
   ],
   "add_sequence_possessable": [
+   "test_sequence_keys.py",
    "test_sequencer_authoring.py",
    "test_uncovered_reads8.py"
   ],
   "add_sequence_track": [
+   "test_sequence_keys.py",
    "test_sequencer_authoring.py"
   ],
   "add_simplified_collision": [
@@ -196,6 +210,7 @@
    "test_uncovered_reads7.py"
   ],
   "add_struct_member": [
+   "test_create_struct_init.py",
    "test_node_spawns.py",
    "test_structs.py",
    "test_unchecked_returns.py"
@@ -226,6 +241,7 @@
    "test_widget_anim_recreate.py",
    "test_widget_animation_props.py",
    "test_widget_animation_track.py",
+   "test_widget_transform_channels.py",
    "test_widget_tree.py"
   ],
   "add_variable": [
@@ -266,13 +282,15 @@
    "test_widget_anim_recreate.py",
    "test_widget_animation.py",
    "test_widget_animation_props.py",
-   "test_widget_animation_track.py"
+   "test_widget_animation_track.py",
+   "test_widget_transform_channels.py"
   ],
   "add_widget_animation_track": [
    "test_rename_widget.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation_props.py",
-   "test_widget_animation_track.py"
+   "test_widget_animation_track.py",
+   "test_widget_transform_channels.py"
   ],
   "add_widget_binding": [
    "test_node_spawns.py",
@@ -330,10 +348,14 @@
    "test_uncovered_reads5.py"
   ],
   "compile": [
+   "test_add_k2_node.py",
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
+   "test_create_event.py",
+   "test_create_macro.py",
+   "test_dispatcher_ops.py",
    "test_edit_container.py",
    "test_find_and_move.py",
    "test_function_flags.py",
@@ -342,6 +364,7 @@
    "test_inherited_components.py",
    "test_interfaces.py",
    "test_macro_dispatch.py",
+   "test_material_statistics.py",
    "test_modal_hazards.py",
    "test_mvvm.py",
    "test_node_spawns.py",
@@ -373,6 +396,7 @@
   ],
   "connect_pins": [
    "test_anim_nodes.py",
+   "test_anim_state.py",
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_graph_patch.py",
@@ -386,22 +410,36 @@
   ],
   "create_asset": [
    "test_create_asset.py",
+   "test_create_struct_init.py",
+   "test_enum_edit.py",
+   "test_factory_init.py",
+   "test_foliage_removal.py",
    "test_ik_authoring.py",
    "test_ik_goals_solvers.py",
    "test_ik_rig.py",
+   "test_input_mapping.py",
    "test_node_spawns.py",
+   "test_pcg_authoring.py",
+   "test_physics_asset.py",
+   "test_run_retarget.py",
+   "test_sequence_keys.py",
    "test_sequencer_authoring.py",
    "test_textures.py",
    "test_uncovered_reads8.py"
   ],
   "create_blueprint": [
+   "test_add_k2_node.py",
    "test_anim_nodes.py",
+   "test_anim_state.py",
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_collision.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
    "test_cooked_class_trap.py",
+   "test_create_event.py",
+   "test_create_macro.py",
+   "test_dispatcher_ops.py",
    "test_duplicate_cooked_guard.py",
    "test_edit_container.py",
    "test_find_and_move.py",
@@ -435,6 +473,7 @@
    "test_widget_animation.py",
    "test_widget_animation_props.py",
    "test_widget_animation_track.py",
+   "test_widget_transform_channels.py",
    "test_widget_tree.py"
   ],
   "create_data_layer": [
@@ -453,6 +492,8 @@
   ],
   "create_function": [
    "test_confirm_gated.py",
+   "test_create_event.py",
+   "test_create_macro.py",
    "test_find_and_move.py",
    "test_function_flags.py",
    "test_idempotence.py",
@@ -471,6 +512,7 @@
    "test_levelsnapshots.py"
   ],
   "create_material": [
+   "test_blender_material.py",
    "test_material_graph.py"
   ],
   "create_material_function": [
@@ -491,6 +533,7 @@
    "test_mesh_boolean.py"
   ],
   "create_struct": [
+   "test_create_struct_init.py",
    "test_node_spawns.py",
    "test_set_struct_member.py",
    "test_structs.py",
@@ -505,17 +548,28 @@
    "test_water_zone.py"
   ],
   "delete_asset": [
+   "test_add_k2_node.py",
+   "test_anim_state.py",
    "test_array_wildcard_durability.py",
    "test_collision.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
+   "test_create_event.py",
+   "test_create_macro.py",
+   "test_create_struct_init.py",
+   "test_dispatcher_ops.py",
    "test_duplicate_cooked_guard.py",
+   "test_enum_edit.py",
    "test_enums.py",
+   "test_factory_init.py",
    "test_find_and_move.py",
+   "test_foliage_removal.py",
    "test_function_flags.py",
+   "test_generate_lods.py",
    "test_geometryscript.py",
    "test_graph_patch.py",
    "test_inherited_components.py",
+   "test_input_mapping.py",
    "test_interfaces.py",
    "test_levelsnapshots.py",
    "test_macro_dispatch.py",
@@ -525,15 +579,21 @@
    "test_modal_guard.py",
    "test_modal_hazards.py",
    "test_node_spawns.py",
+   "test_pcg_authoring.py",
+   "test_physics_asset.py",
+   "test_physics_primitive_collision.py",
    "test_pinlifetime.py",
    "test_pins.py",
    "test_recipes.py",
    "test_rename_widget.py",
    "test_reroute.py",
    "test_rollback_real.py",
+   "test_run_retarget.py",
    "test_selfpin.py",
+   "test_sequence_keys.py",
    "test_sequencer_authoring.py",
    "test_set_struct_member.py",
+   "test_socket_authoring.py",
    "test_textures.py",
    "test_thumbnails.py",
    "test_uncovered_reads5.py",
@@ -541,10 +601,12 @@
    "test_uncovered_reads7.py",
    "test_uncovered_reads8.py",
    "test_v3_apply.py",
+   "test_virtual_bone_authoring.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation.py",
    "test_widget_animation_props.py",
-   "test_widget_animation_track.py"
+   "test_widget_animation_track.py",
+   "test_widget_transform_channels.py"
   ],
   "delete_datatable_rows": [
    "test_confirm_gated.py",
@@ -559,6 +621,8 @@
    "test_material_graph.py"
   ],
   "describe_animation": [
+   "test_anim_curve.py",
+   "test_anim_notify.py",
    "test_uncovered_reads4.py"
   ],
   "describe_behavior_tree": [
@@ -575,12 +639,14 @@
    "test_graph_patch.py",
    "test_node_spawns.py",
    "test_safety_gate.py",
+   "test_staticmesh_write_guard.py",
    "test_unknown_endpoint.py"
   ],
   "describe_game_feature_plugin": [
    "test_game_features.py"
   ],
   "describe_gameplay_tag": [
+   "test_gameplay_tag_authoring.py",
    "test_uncovered_reads.py"
   ],
   "describe_level_sequence": [
@@ -611,6 +677,7 @@
    "test_modal_guard.py"
   ],
   "describe_pcg_graph": [
+   "test_pcg_authoring.py",
    "test_uncovered_reads.py"
   ],
   "describe_property": [
@@ -643,14 +710,19 @@
   "duplicate_asset": [
    "test_duplicate_cooked_guard.py",
    "test_fuzz_detector.py",
+   "test_generate_lods.py",
    "test_material_write.py",
-   "test_modal_guard.py"
+   "test_modal_guard.py",
+   "test_physics_primitive_collision.py",
+   "test_socket_authoring.py",
+   "test_virtual_bone_authoring.py"
   ],
   "duplicate_tree_widget": [
    "test_widget_tree.py"
   ],
   "edit_container": [
-   "test_edit_container.py"
+   "test_edit_container.py",
+   "test_socket_authoring.py"
   ],
   "exec_console": [
    "test_safety_gate.py"
@@ -659,27 +731,50 @@
    "test_safety_gate.py"
   ],
   "find_assets": [
+   "test_add_k2_node.py",
+   "test_anim_curve.py",
    "test_anim_nodes.py",
+   "test_anim_notify.py",
+   "test_anim_state.py",
+   "test_asset_tags.py",
    "test_audio_nav.py",
+   "test_collections.py",
+   "test_consolidate.py",
    "test_cooked_class_trap.py",
    "test_create_asset.py",
+   "test_create_event.py",
+   "test_create_macro.py",
+   "test_create_struct_init.py",
    "test_datatables.py",
+   "test_dependency_edges.py",
+   "test_dispatcher_ops.py",
    "test_duplicate_cooked_guard.py",
+   "test_enum_edit.py",
    "test_foliage_modes.py",
+   "test_generate_lods.py",
    "test_geometryscript.py",
    "test_ik_rig.py",
+   "test_input_mapping.py",
    "test_list_bones.py",
    "test_material_graph.py",
    "test_material_params.py",
+   "test_material_statistics.py",
    "test_material_write.py",
    "test_metasound.py",
    "test_niagara.py",
+   "test_niagara_emitter.py",
    "test_niagara_params.py",
    "test_node_spawns.py",
+   "test_physics_asset.py",
+   "test_physics_primitive_collision.py",
    "test_ported_anim.py",
+   "test_run_retarget.py",
    "test_set_struct_member.py",
    "test_simplified_collision_guard.py",
+   "test_socket_authoring.py",
    "test_sockets_ai.py",
+   "test_source_control.py",
+   "test_staticmesh_write_guard.py",
    "test_structs.py",
    "test_textures.py",
    "test_thumbnails.py",
@@ -689,7 +784,8 @@
    "test_uncovered_reads4.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
-   "test_uncovered_reads8.py"
+   "test_uncovered_reads8.py",
+   "test_virtual_bone_authoring.py"
   ],
   "find_nodes": [
    "test_anim_nodes.py",
@@ -711,12 +807,14 @@
    "test_datatables.py"
   ],
   "get_dependencies": [
+   "test_dependency_edges.py",
    "test_uncovered_reads2.py"
   ],
   "get_inherited_component": [
    "test_inherited_components.py"
   ],
   "get_level_actor": [
+   "test_attach_actor.py",
    "test_snap_ground.py"
   ],
   "get_node": [
@@ -747,17 +845,23 @@
    "test_components_dispatchers.py",
    "test_landscape_info.py",
    "test_niagara_params.py",
+   "test_pcg_authoring.py",
+   "test_physics_asset.py",
+   "test_settings_config.py",
+   "test_staticmesh_write_guard.py",
    "test_timeline.py",
    "test_uncovered_reads5.py"
   ],
   "get_referencers": [
+   "test_dependency_edges.py",
    "test_fuzz_detector.py"
   ],
   "get_spline_points": [
    "test_unknown_endpoint.py"
   ],
   "get_viewport_camera": [
-   "test_capture_viewport.py"
+   "test_capture_viewport.py",
+   "test_viewport_view_mode.py"
   ],
   "implement_interface_function": [
    "test_interfaces.py"
@@ -799,7 +903,8 @@
    "test_ik_authoring.py",
    "test_ik_goals_solvers.py",
    "test_list_bones.py",
-   "test_ported_anim.py"
+   "test_ported_anim.py",
+   "test_virtual_bone_authoring.py"
   ],
   "list_collision_profiles": [
    "test_collision.py"
@@ -809,6 +914,7 @@
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
    "test_idempotence.py",
+   "test_instance_components.py",
    "test_undo_integrity.py"
   ],
   "list_data_layers": [
@@ -828,6 +934,7 @@
    "test_idempotence.py"
   ],
   "list_editor_commands": [
+   "test_lighting_status.py",
    "test_uncovered_reads2.py"
   ],
   "list_enum_values": [
@@ -835,6 +942,7 @@
    "test_enums.py"
   ],
   "list_foliage_instances": [
+   "test_foliage_removal.py",
    "test_uncovered_reads4.py"
   ],
   "list_functions": [
@@ -848,14 +956,20 @@
    "test_uncovered_reads.py"
   ],
   "list_graphs": [
+   "test_add_k2_node.py",
    "test_anim_nodes.py",
+   "test_anim_state.py",
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
+   "test_create_event.py",
+   "test_create_macro.py",
+   "test_dispatcher_ops.py",
    "test_find_and_move.py",
    "test_idempotence.py",
    "test_interfaces.py",
+   "test_level_blueprint.py",
    "test_modal_hazards.py",
    "test_node_spawns.py",
    "test_pins.py",
@@ -874,6 +988,7 @@
    "test_ik_goals_solvers.py"
   ],
   "list_input_mappings": [
+   "test_input_mapping.py",
    "test_uncovered_reads.py"
   ],
   "list_interfaces": [
@@ -881,10 +996,13 @@
    "test_undo_integrity.py"
   ],
   "list_level_actors": [
+   "test_confirm_gated.py",
    "test_data_layer_writes.py",
    "test_foliage_modes.py",
    "test_landscape_info.py",
+   "test_level_instances.py",
    "test_levelsnapshots.py",
+   "test_partition_actors.py",
    "test_perf_stats.py",
    "test_safety_gate.py",
    "test_snap_ground.py",
@@ -915,14 +1033,18 @@
    "test_uncovered_reads3.py"
   ],
   "list_niagara_emitters": [
-   "test_niagara.py"
+   "test_niagara.py",
+   "test_niagara_emitter.py"
   ],
   "list_niagara_user_parameters": [
    "test_niagara_params.py"
   ],
   "list_nodes": [
+   "test_anim_state.py",
    "test_confirm_gated.py",
+   "test_create_macro.py",
    "test_graph_patch.py",
+   "test_level_blueprint.py",
    "test_node_spawns.py",
    "test_pinlifetime.py",
    "test_recipes.py",
@@ -933,12 +1055,14 @@
   ],
   "list_object_properties": [
    "test_game_framework.py",
+   "test_settings_config.py",
    "test_uncovered_reads5.py"
   ],
   "list_pcg_components": [
    "test_uncovered_reads.py"
   ],
   "list_pcg_graphs": [
+   "test_pcg_authoring.py",
    "test_uncovered_reads.py"
   ],
   "list_pie_actors": [
@@ -953,17 +1077,21 @@
   ],
   "list_sockets": [
    "test_list_bones.py",
+   "test_socket_authoring.py",
    "test_sockets_ai.py"
   ],
   "list_state_trees": [
    "test_uncovered_reads.py"
   ],
   "list_struct_members": [
+   "test_create_struct_init.py",
    "test_set_struct_member.py",
    "test_structs.py",
    "test_unchecked_returns.py"
   ],
   "list_sublevels": [
+   "test_level_instances.py",
+   "test_move_actors_to_level.py",
    "test_pie_family.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads7.py"
@@ -978,6 +1106,7 @@
   "list_tree_widgets": [
    "test_rename_widget.py",
    "test_uncovered_reads5.py",
+   "test_widget_transform_channels.py",
    "test_widget_tree.py"
   ],
   "list_variables": [
@@ -990,7 +1119,8 @@
    "test_unknown_endpoint.py"
   ],
   "list_virtual_bones": [
-   "test_list_bones.py"
+   "test_list_bones.py",
+   "test_virtual_bone_authoring.py"
   ],
   "list_water_bodies": [
    "test_uncovered_reads.py",
@@ -1049,11 +1179,6 @@
    "test_uncovered_reads4.py"
   ],
   "pie_load_level_instance": [
-   "test_pie_family.py"
-  ],
-  "pie_status": [
-   "test_game_framework.py",
-   "test_livelink.py",
    "test_pie_family.py"
   ],
   "pie_unload_level_instance": [
@@ -1125,7 +1250,8 @@
   ],
   "remove_component": [
    "test_components_dispatchers.py",
-   "test_confirm_gated.py"
+   "test_confirm_gated.py",
+   "test_instance_components.py"
   ],
   "remove_enum_value": [
    "test_confirm_gated.py",
@@ -1253,22 +1379,42 @@
    "test_uncovered_reads5.py"
   ],
   "self_audit": [
+   "test_add_k2_node.py",
+   "test_anim_curve.py",
+   "test_anim_state.py",
+   "test_asset_tags.py",
+   "test_consolidate.py",
+   "test_create_struct_init.py",
    "test_duplicate_cooked_guard.py",
+   "test_enum_edit.py",
+   "test_factory_init.py",
+   "test_gameplay_tag_authoring.py",
    "test_geometryscript.py",
    "test_graph_patch.py",
+   "test_level_instances.py",
    "test_load_level_guard.py",
    "test_macro_dispatch.py",
+   "test_material_statistics.py",
    "test_mcp_post_errors.py",
    "test_modal_hazards.py",
+   "test_move_actors_to_level.py",
+   "test_niagara_emitter.py",
+   "test_physics_asset.py",
+   "test_physics_primitive_collision.py",
    "test_pinlifetime.py",
+   "test_redirectors.py",
    "test_rollback_real.py",
+   "test_run_retarget.py",
    "test_safety_gate.py",
    "test_self_audit_modes.py",
    "test_selfpin.py",
    "test_set_struct_member.py",
    "test_simplified_collision_guard.py",
+   "test_staticmesh_write_guard.py",
    "test_unknown_endpoint.py",
-   "test_v3_apply.py"
+   "test_v3_apply.py",
+   "test_viewport_view_mode.py",
+   "test_widget_transform_channels.py"
   ],
   "send_editor_key": [
    "test_safety_gate.py"
@@ -1349,16 +1495,23 @@
    "test_pins.py"
   ],
   "set_property": [
+   "test_attach_actor.py",
    "test_collision.py",
+   "test_foliage_removal.py",
    "test_ik_rig.py",
    "test_inherited_components.py",
+   "test_run_retarget.py",
+   "test_settings_config.py",
+   "test_socket_authoring.py",
+   "test_staticmesh_write_guard.py",
    "test_uncovered_reads5.py"
   ],
   "set_retarget_chain_mapping": [
    "test_ik_authoring.py"
   ],
   "set_retarget_rigs": [
-   "test_ik_authoring.py"
+   "test_ik_authoring.py",
+   "test_run_retarget.py"
   ],
   "set_spline_points": [
    "test_report_intake.py"
@@ -1392,7 +1545,8 @@
    "test_undo_integrity.py"
   ],
   "set_viewport_camera": [
-   "test_capture_viewport.py"
+   "test_capture_viewport.py",
+   "test_viewport_view_mode.py"
   ],
   "set_water_body_spline": [
    "test_uncovered_reads7.py"
@@ -1401,7 +1555,8 @@
    "test_rename_widget.py",
    "test_widget_anim_recreate.py",
    "test_widget_animation_props.py",
-   "test_widget_animation_track.py"
+   "test_widget_animation_track.py",
+   "test_widget_transform_channels.py"
   ],
   "set_widget_animation_range": [
    "test_widget_anim_recreate.py"
@@ -1418,9 +1573,14 @@
    "test_snap_ground.py"
   ],
   "spawn_actor_in_level": [
+   "test_attach_actor.py",
    "test_audit_fixes.py",
+   "test_confirm_gated.py",
+   "test_instance_components.py",
    "test_levelsnapshots.py",
+   "test_move_actors_to_level.py",
    "test_perf_stats.py",
+   "test_sequence_keys.py",
    "test_sequencer_authoring.py",
    "test_snap_ground.py",
    "test_uncovered_reads5.py",

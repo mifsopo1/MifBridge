@@ -174,7 +174,65 @@ def sdk_editor_pid():
         return None
 
 
+def _surviving_editor_pids():
+    """PIDs of any UnrealEditor.exe still running.
+
+    tasklist rather than psutil: this module is imported by every suite and must not need a
+    third-party package to do its job.
+    """
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq UnrealEditor.exe", "/NH", "/FO", "CSV"],
+                             capture_output=True, text=True, timeout=30).stdout
+    except Exception:
+        return []
+    pids = []
+    for line in out.splitlines():
+        parts = [c.strip('" ') for c in line.split('","')]
+        if len(parts) >= 2 and parts[0].lower().startswith("unrealeditor"):
+            try:
+                pids.append(int(parts[1]))
+            except ValueError:
+                pass
+    return pids
+
+
 def launch_editor(write_mode=None):
+    # LEAVE EXACTLY ONE EDITOR BEHIND. This function is the recovery path, called when
+    # wait_for_bridge has already failed, and it used to assume that meant the editor was dead -
+    # true when a suite CRASHES it, which is the case it was written for.
+    #
+    # It is false in the case seen on 2026-08-30: the bridge listener stopped answering on 8791
+    # while the editor process stayed alive and responsive, with no stop message anywhere in its
+    # log. launch_editor then started a SECOND editor, the two raced for the port, and the sweep
+    # hung on the next suite for six minutes. Two editors on one project is also a way to lose
+    # work - both hold the same packages open.
+    #
+    # So a survivor is killed rather than joined, and LOUDLY: an unresponsive editor being
+    # terminated is exactly the kind of thing that must not happen quietly in an unattended run.
+    survivors = _surviving_editor_pids()
+    if survivors:
+        print("!! launch_editor: %d editor(s) still running (%s) but the bridge did not answer."
+              % (len(survivors), ", ".join(str(x) for x in survivors)))
+        print("!! Killing them before relaunching - a second editor on the same project races for")
+        print("!! port %d and holds the same packages open. Seen hanging a sweep on 2026-08-30."
+              % PORT)
+        try:
+            subprocess.run(["taskkill", "/IM", "UnrealEditor.exe", "/F"],
+                           capture_output=True, timeout=60)
+        except Exception as exc:
+            print("!! taskkill failed (%s) - launching anyway, but expect a port race." % exc)
+        deadline = time.time() + 30.0
+        while time.time() < deadline and _surviving_editor_pids():
+            time.sleep(1.0)
+        still = _surviving_editor_pids()
+        if still:
+            print("!! %d editor(s) SURVIVED the kill (%s). Not launching another - that would make "
+                  "the problem worse rather than recover from it."
+                  % (len(still), ", ".join(str(x) for x in still)))
+            return False
+        # A closing editor keeps a file handle briefly after the process list clears.
+        time.sleep(5.0)
+
     # Clear the "Restore Packages" prompt FIRST, when it is safe to. An unattended run leaves unsaved
     # scratch packages behind, and after a kill the next launch opens a modal offering to restore them
     # - which goes up BEFORE the bridge starts serving, so the relaunch this function exists to perform
