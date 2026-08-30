@@ -5768,12 +5768,30 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Cooked-SAFE for both. CompositeSections, SlotAnimTracks and AuthoredSyncMarkers are all runtime data present in a cooked package (they must be - the runtime montage and sync-group systems read them), and RefreshNextPrevSections / RefreshSyncMarkerDataFromAuthored touch only those runtime arrays. The...
       Vetter corrected the proposal: Rank medium → low. Scope cut roughly in half: the montage-section half (add_montage_section / remove_montage_section / set_montage_section_link) is refuted and should be dropped — set_property with the Member=Value array accessor already does the link operation in one call, and the "section never plays" rationale rests on a function that is on the wrong class and private plus two member names that...
 
-- [ ] **add_select (UK2Node_Select)** (hours)
-      Places the Select node — pick one of N wildcard values by an index, bool or enum. It is the standard pure alternative to a Branch/Switch ladder and is one of the most-used nodes in real Blueprints.
-      API: UK2Node_Select — D:/UE532/Engine/Source/Editor/BlueprintGraph/Classes/K2Node_Select.h:32. Public configuration surface: SetEnum(UEnum*, bool bForceRegenerate) (line ~139), BLUEPRINTGRAPH_API GetIndexPin/GetReturnValuePin/GetOptionPins (lines 109-113), ChangePinType/CanChangePinType (lines 120-127), and it implements IK2Node_AddPinInterface (CanAddPin/AddInputPin, lines 105-107) so pin growth is al...
-      Cooked: Graph authoring, so uncooked only, refused earlier in the chain by ResolveGraphField on a cooked blueprint. One real caution to build in: Select resolves its wildcard pin types from its CONNECTIONS (the exact hazard MifBridgeGraphPatch.cpp:122 documents), so the response must report the pin types as...
-      Vetter corrected the proposal: 1. THE NAMED API IS WRONG. `SetEnum(UEnum*, bool)` is NOT part of a public configuration surface. K2Node_Select.h:31 is `UCLASS(MinimalAPI)` and line 139 is a bare `virtual void SetEnum(...)` with no BLUEPRINTGRAPH_API — identical in 5.3.2, 5.6 and 5.7. It does not link from MifBridge. The project already knows this: docs/audit/work/C_blueprints_graphs.md:859 records it as negative result #3, verb...
-
+- [~] **add_select (UK2Node_Select)** (hours)
+      DECLINED 2026-08-30: already reachable, proven live rather than argued. The fifth item
+      declined on this ground, and the only one where the ENUM half also turned out to work.
+      The whole node, including the enum variant, is authorable today with endpoints that
+      already ship. Exact sequence, run against a scratch Actor blueprint:
+        add_k2_node {class:"K2Node_Select"}   -> a real Select: Option 0, Option 1, Index,
+                                                  ReturnValue, correct title and position
+        add_node_pin {nodeId}                  -> grows it: added Option 2, read back on the
+                                                  node afterwards, not just claimed
+        connect_pins {dstPin:"Index"}          -> links an enum-typed getter to the index
+        refresh_node {nodeId}                  -> AND THIS IS THE STEP THAT MATTERS: the
+                                                  options became NewEnumerator0/1/2, three
+                                                  pins for a three-value enum
+      THE REFRESH IS THE NON-OBVIOUS PART and is why this looked unreachable at first.
+      Connecting the enum alone leaves the pins as Option 0/1 - the reconfiguration happens on
+      node RECONSTRUCTION, and until refresh_node was tried the honest reading of the evidence
+      was that the enum form did not work. Recorded in docs/02_GOTCHAS.md so the next person
+      does not re-derive it.
+      The vetter was right that SetEnum does not link - K2Node_Select.h is UCLASS(MinimalAPI)
+      and SetEnum carries no BLUEPRINTGRAPH_API, identical on 5.3.2, 5.6 and 5.7. It simply
+      turns out not to be needed: the engine calls it itself during reconstruction.
+      A dedicated add_select would be a thin alias over add_k2_node that could not do anything
+      the sequence above cannot, and would add a fourth registry entry to keep in parity for
+      no capability.
 - [ ] **rename_bones** (hours)
       Renames armature bones through a supplied map (and optionally the matching vertex groups and shape keys in one transaction), so a Blender rig's bone names line up with the Unreal skeleton it has to retarget onto.
       API: bpy.types.Bone.name — a plain RNA write on obj.data.bones[...] (already read by ops_rig._bone_dict at ops_rig.py:37-53). Vertex groups: bpy.types.VertexGroup.name on obj.vertex_groups (already read by op_list_vertex_groups, ops_rig.py:121-155). Both are string RNA sets with no operator, no context and no mode change, so they are headless by construction. NOTE TO VERIFY BEFORE BUILDING, do not assu...

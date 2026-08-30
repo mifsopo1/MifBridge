@@ -1835,3 +1835,30 @@ range-checks against *that* array, and sets the field directly. Same result, no 
 either defect, correct on both engines. `tools/test_physics_primitive_collision.py` T3001 exercises
 the exact call that passes the engine's ensure and asserts the primitive 5.3 would have modified is
 untouched.
+
+## A wildcard node that resolves its pins from connections needs `refresh_node` before you read it
+
+Found 2026-08-30 while checking whether `add_select` needed building. It did not - but the reason
+it looked like it did is worth keeping, because the same shape applies to every K2 node that
+resolves pin types or pin COUNT from what is attached to it.
+
+A `K2Node_Select` placed with `add_k2_node` comes up with generic wildcard options:
+
+    Option 0, Option 1, Index, ReturnValue
+
+Connect an enum-typed pin to `Index` and read the node back, and it still says `Option 0, Option 1`.
+The obvious conclusion - that the enum form of Select is not reachable over the bridge - is WRONG.
+The reconfiguration happens during node RECONSTRUCTION, not during the connection, so:
+
+    connect_pins { graphId, srcNode, srcPin, dstNode, dstPin: "Index" }
+    refresh_node { graphId, nodeId }          <-- without this the node is stale
+    list_nodes   { graphId }
+
+and the options become one pin per enumerator - `NewEnumerator0/1/2` for a three-value enum. The
+engine calls `UK2Node_Select::SetEnum` itself while reconstructing, which is why it does not matter
+that `SetEnum` is not exported (`K2Node_Select.h` is `UCLASS(MinimalAPI)`, no `BLUEPRINTGRAPH_API`,
+identical on 5.3.2, 5.6 and 5.7).
+
+THE GENERAL RULE: after connecting anything to a wildcard or type-resolving pin, `refresh_node`
+before you read the node back or judge the result. Reading first and concluding "it did not work"
+is a false negative, and it is a convincing one - the pins really are still generic at that moment.
