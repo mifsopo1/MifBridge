@@ -27,7 +27,12 @@ is refused BY NAME rather than skipped, because a key silently not written leave
 looks authored and animates nothing. T2303 covers that refusal shape through the unknown-channel
 path, which is the same failure a caller actually hits.
 
-CLEANS UP: the scratch sequence and actor are removed at the end.
+T2305/T2306 cover the other two SCOPES of add_sequence_track, added the same day: root:true puts a
+track on the SEQUENCE itself (Audio, Fade, LevelVisibility, Subsequence) with no binding at all, and
+cameraCut:true adds the camera cut without which a LevelSequence drives no camera and no cutscene
+can be authored. The response reports which scope it took, so the three shapes stay distinguishable.
+
+CLEANS UP: the scratch sequence, actor and camera are removed at the end.
 """
 import json
 import sys
@@ -178,6 +183,72 @@ def main():
             "startTime": 0, "endTime": 1, "confirm": True})
         check("T2303 a track class this binding does not have is refused, with its real track count",
               notrack.get("ok") is False, json.dumps(notrack)[:250])
+        # ------------------------------------------------------------------ T2305 root tracks
+        print("\n=== T2305: a SEQUENCE-level track, with no binding at all ===")
+        root = M.raw_post("add_sequence_track", {
+            "path": seq, "trackClass": "/Script/MovieSceneTracks.MovieSceneFadeTrack",
+            "root": True, "confirm": True})
+        check("T2305 root:true adds a track with no guid", root.get("ok") is True,
+              json.dumps(root)[:250])
+        check("T2305 and says which scope it took, so the three shapes of this endpoint are "
+              "distinguishable in the response",
+              root.get("scope") == "root", json.dumps(root)[:250])
+        check("T2305 the sequence really lists it - read back, not trusted from AddTrack's pointer",
+              (root.get("rootTrackCount") or 0) > (root.get("rootTracksBefore") or 0),
+              json.dumps(root)[:250])
+        noclass = M.raw_post("add_sequence_track", {"path": seq, "root": True, "confirm": True})
+        check("T2305 root:true without a trackClass is refused", noclass.get("ok") is False,
+              json.dumps(noclass)[:250])
+
+        # ------------------------------------------------------------------ T2306 camera cuts
+        print("\n=== T2306: the camera cut - without one a sequence drives no camera ===")
+        cq = M.call("spawn_actor_in_level", {
+            "class": "/Script/Engine.CameraActor",
+            "location": {"x": 1960000 + st, "y": 1960000 + st, "z": 50000},
+            "label": "MifSeqCam%d" % st})
+        camera = ((cq.get("actor") or {}).get("actorPath")) or cq.get("actorPath")
+        check("T2306 (setup) a camera actor exists to point at", bool(camera), json.dumps(cq)[:200])
+        if camera:
+            cb = M.raw_post("add_sequence_possessable", {"path": seq, "actorPath": camera,
+                                                         "confirm": True})
+            cam_guid = cb.get("guid")
+            check("T2306 (setup) the camera is bound into the sequence", bool(cam_guid), cam_guid)
+
+            cut = M.raw_post("add_sequence_track", {"path": seq, "guid": cam_guid,
+                                                    "cameraCut": True, "time": 0,
+                                                    "confirm": True})
+            check("T2306 cameraCut:true succeeds", cut.get("ok") is True, json.dumps(cut)[:280])
+            check("T2306 it reports scope cameraCut and a real cut count, measured from the track",
+                  cut.get("scope") == "cameraCut" and (cut.get("cutCount") or 0) > 0,
+                  json.dumps(cut)[:250])
+
+            unbound = M.raw_post("add_sequence_track", {
+                "path": seq, "guid": "00000000000000000000000000000000",
+                "cameraCut": True, "time": 0, "confirm": True})
+            check("T2306 a camera cut pointing at a guid that is not bound is refused - a cut has "
+                  "to point at a camera IN the sequence",
+                  unbound.get("ok") is False, json.dumps(unbound)[:250])
+
+            M.cleanup_level_actor(camera, "scratch sequence camera")
+
+        # NOT EXERCISED, and named rather than left to be discovered. add_sequence_track
+        # {cameraCut:true} guards an ASSERT-CRASH: AddNewCameraCut reaches
+        # DiscreteExclusiveUpper(GetPlaybackRange()), which opens with
+        # `check(!InUpperBound.IsOpen())` (MovieSceneTimeHelpers.h:64) - so a sequence whose
+        # playback range is unbounded takes the editor down rather than returning an error. The
+        # guard refuses that before the engine is touched.
+        #
+        # It cannot be reached from here: create_asset makes a sequence with a BOUNDED 0-0 range,
+        # and all four LevelSequences in this project are bounded too (checked live). Making one
+        # unbounded would mean writing TRange bounds through set_property, which is the very state
+        # the guard exists to keep away from the engine. So the refuse branch is unverified and this
+        # says so - what IS verified is that the guard does not fire on a normal sequence, which
+        # T2306 covers.
+        print("\n  NOT EXERCISED: the camera-cut crash guard's REFUSE branch. It needs a sequence")
+        print("  with an UNBOUNDED playback range and none exists here - create_asset produces a")
+        print("  bounded 0-0 range and all four project LevelSequences are bounded. describe_level_")
+        print("  sequence is what detects that state if you ever meet one.")
+
     finally:
         if actor:
             c = M.cleanup_level_actor(actor, "scratch sequence actor")

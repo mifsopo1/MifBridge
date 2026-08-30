@@ -37,6 +37,9 @@
 #include "MovieSceneSpawnable.h"
 #include "MovieSceneTrack.h"
 #include "MovieSceneSection.h"
+#include "Tracks/MovieSceneCameraCutTrack.h"
+#include "MovieSceneObjectBindingID.h"
+#include "MovieSceneSequenceID.h"
 #include "Channels/MovieSceneChannelProxy.h"
 #include "Channels/MovieSceneDoubleChannel.h"
 #include "Channels/MovieSceneFloatChannel.h"
@@ -267,11 +270,15 @@ namespace MifBridge
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("path"), TEXT("assetPath"), TEXT("sequence"), TEXT("guid"), TEXT("binding"),
-			  TEXT("trackClass"), TEXT("confirm") },
-			TEXT("path (the LevelSequence); guid (alias: binding) from list_sequence_bindings; "
-				 "trackClass - a UMovieSceneTrack class path such as "
-				 "/Script/MovieSceneTracks.MovieScene3DTransformTrack; confirm:true"),
-			{ { TEXT("actorPath"), TEXT("bind the actor first with add_sequence_possessable, then pass its guid here") } }))
+			  TEXT("trackClass"), TEXT("confirm"), TEXT("root"), TEXT("cameraCut"), TEXT("time") },
+			TEXT("path (the LevelSequence); trackClass - a UMovieSceneTrack class path such as ")
+			TEXT("/Script/MovieSceneTracks.MovieScene3DTransformTrack; confirm:true. THREE SCOPES: ")
+			TEXT("by default the track hangs off an object binding and needs guid (alias: binding) ")
+			TEXT("from list_sequence_bindings; root:true adds a track to the SEQUENCE itself (Audio, ")
+			TEXT("Fade, LevelVisibility, Subsequence) and takes no guid; cameraCut:true adds a camera ")
+			TEXT("cut pointing at the camera bound to guid, at time (seconds)"),
+			{ { TEXT("actorPath"), TEXT("bind the actor first with add_sequence_possessable, then pass its guid here") },
+			  { TEXT("master"), TEXT("spell it root - AddMasterTrack was deprecated in 5.2 and is gone entirely from 5.7; AddTrack is the replacement") } }))
 		{
 			return;
 		}
@@ -283,12 +290,146 @@ namespace MifBridge
 		ULevelSequence* Seq = SeqResolve(In, Out, TEXT("add_sequence_track"));
 		if (!Seq) { return; }
 
+		UMovieScene* SceneEarly = Seq->GetMovieScene();
+		if (!SceneEarly) { Fail(Out, TEXT("this sequence has no MovieScene.")); return; }
+
+		// ---------------------------------------------------------------- root (sequence-level)
+		//
+		// A track that hangs off the SEQUENCE rather than off an object binding: Audio, Fade,
+		// LevelVisibility, Subsequence. UMovieScene::AddTrack has a no-guid overload for exactly
+		// this. NOT AddMasterTrack - that was UE_DEPRECATED(5.2) on 5.3 and is GONE ENTIRELY from
+		// 5.7, so writing the older spelling would build here and fail to compile there.
+		if (JBool(In, TEXT("root"), false))
+		{
+			const FString RootClassPath = JStr(In, TEXT("trackClass"));
+			UClass* RootClass = RootClassPath.IsEmpty() ? nullptr
+				: LoadClass<UMovieSceneTrack>(nullptr, *RootClassPath, nullptr,
+											  LOAD_NoWarn | LOAD_Quiet, nullptr);
+			if (!RootClass)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("trackClass is required for root:true and must be a UMovieSceneTrack - ")
+					TEXT("'%s' did not resolve. NOTHING was changed."), *RootClassPath));
+				return;
+			}
+			const int32 RootBefore = SceneEarly->GetTracks().Num();
+			FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_AddRootTrack", "Add Root Track"));
+			SceneEarly->Modify();
+			UMovieSceneTrack* RootTrack = SceneEarly->AddTrack(RootClass);
+			if (!RootTrack || !SceneEarly->GetTracks().Contains(RootTrack))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("AddTrack returned nothing usable for '%s' - some track types are only ")
+					TEXT("valid on a binding, not on the sequence itself. NOTHING was changed."),
+					*RootClass->GetName()));
+				return;
+			}
+			if (UPackage* Pkg = Seq->GetOutermost()) { Pkg->MarkPackageDirty(); }
+			Out->SetStringField(TEXT("scope"), TEXT("root"));
+			Out->SetStringField(TEXT("trackClass"), RootClass->GetName());
+			Out->SetNumberField(TEXT("rootTracksBefore"), RootBefore);
+			Out->SetNumberField(TEXT("rootTrackCount"), SceneEarly->GetTracks().Num());
+			Out->SetStringField(TEXT("note"),
+				TEXT("a SEQUENCE-level track, not bound to any object. It is EMPTY - add a section "
+					 "with add_sequence_section (pass trackIndex, since it has no binding guid) "
+					 "before it does anything. Nothing was saved."));
+			return;
+		}
+
 		const FString GuidStr = JStrAny(In, { TEXT("guid"), TEXT("binding") });
 		FGuid Guid;
 		if (GuidStr.IsEmpty() || !FGuid::Parse(GuidStr, Guid))
 		{
 			Fail(Out, TEXT("guid is required and must be a binding guid from list_sequence_bindings. "
 						   "NOTHING was changed."));
+			return;
+		}
+
+		// ---------------------------------------------------------------- camera cut
+		//
+		// WITHOUT A CAMERA CUT A LEVELSEQUENCE DRIVES NO CAMERA, so an agent cannot author a
+		// cutscene at all - which is why this belongs here rather than in a later pass.
+		//
+		// AND IT CAN ASSERT-CRASH THE EDITOR, guarded before the engine is touched.
+		// AddNewCameraCut calls FindEndTimeForCameraCut, whose FIRST act is
+		//     DiscreteExclusiveUpper(OwnerScene->GetPlaybackRange())
+		// and that inline opens with `check(!InUpperBound.IsOpen())`
+		// (MovieSceneTimeHelpers.h:64). A LevelSequence whose playback range is unbounded on the
+		// upper end therefore fails a check() inside the engine - a dead editor, not an error
+		// return. This is not hypothetical here: describe_level_sequence already DETECTS and
+		// reports that exact state ("the playback range is unbounded on at least one end, so it has
+		// no duration"), so the bridge has been able to see it and would have walked straight into
+		// it. Refused by name instead.
+		if (JBool(In, TEXT("cameraCut"), false))
+		{
+			const TRange<FFrameNumber> Playback = SceneEarly->GetPlaybackRange();
+			if (Playback.GetUpperBound().IsOpen() || Playback.GetLowerBound().IsOpen())
+			{
+				Fail(Out, TEXT("this sequence's PLAYBACK RANGE IS UNBOUNDED, and adding a camera cut ")
+					TEXT("to it would CRASH the editor: AddNewCameraCut reaches ")
+					TEXT("DiscreteExclusiveUpper(GetPlaybackRange()), which opens with ")
+					TEXT("check(!InUpperBound.IsOpen()) - a failed check is fatal, not an error. ")
+					TEXT("describe_level_sequence reports this same state. Give the sequence a ")
+					TEXT("playback range first. NOTHING was changed."));
+				return;
+			}
+
+			bool bFound = false;
+			for (const FMovieSceneBinding& B : const_cast<const UMovieScene*>(SceneEarly)->GetBindings())
+			{
+				if (B.GetObjectGuid() == Guid) { bFound = true; break; }
+			}
+			if (!bFound)
+			{
+				Fail(Out, TEXT("no binding with that guid - a camera cut has to point at a CAMERA ")
+					TEXT("that is bound into this sequence. Bind it with add_sequence_possessable ")
+					TEXT("first. NOTHING was changed."));
+				return;
+			}
+
+			const double CutSec = JNum(In, TEXT("time"), 0.0);
+			const FFrameRate CutTick = SceneEarly->GetTickResolution();
+			const FFrameNumber CutFrame = (CutSec * CutTick).RoundToFrame();
+
+			FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_AddCameraCut", "Add Camera Cut"));
+			SceneEarly->Modify();
+			UMovieSceneTrack* CutTrackBase = SceneEarly->GetCameraCutTrack();
+			if (!CutTrackBase)
+			{
+				CutTrackBase = SceneEarly->AddCameraCutTrack(UMovieSceneCameraCutTrack::StaticClass());
+			}
+			UMovieSceneCameraCutTrack* CutTrack = Cast<UMovieSceneCameraCutTrack>(CutTrackBase);
+			if (!CutTrack)
+			{
+				Fail(Out, TEXT("could not get or create the camera cut track. NOTHING was changed."));
+				return;
+			}
+			const int32 CutsBefore = CutTrack->GetAllSections().Num();
+			const FMovieSceneObjectBindingID BindingID(
+				UE::MovieScene::FFixedObjectBindingID(Guid, MovieSceneSequenceID::Root));
+			CutTrack->AddNewCameraCut(BindingID, CutFrame);
+
+			// READ BACK - AddNewCameraCut returns a section pointer on some versions and the count
+			// is the honest measure either way.
+			const int32 CutsNow = CutTrack->GetAllSections().Num();
+			if (CutsNow <= CutsBefore)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("AddNewCameraCut ran and the cut count is still %d. NOTHING usable was ")
+					TEXT("produced."), CutsNow));
+				return;
+			}
+			if (UPackage* Pkg = Seq->GetOutermost()) { Pkg->MarkPackageDirty(); }
+			Out->SetStringField(TEXT("scope"), TEXT("cameraCut"));
+			Out->SetStringField(TEXT("guid"), Guid.ToString());
+			Out->SetNumberField(TEXT("cutsBefore"), CutsBefore);
+			Out->SetNumberField(TEXT("cutCount"), CutsNow);
+			Out->SetNumberField(TEXT("timeTick"), CutFrame.Value);
+			Out->SetNumberField(TEXT("time"), CutSec);
+			Out->SetStringField(TEXT("note"),
+				TEXT("the sequence now drives this camera from that time. A camera cut is what makes "
+					 "a LevelSequence control the view at all - without one it animates objects and "
+					 "nothing looks through a camera. Nothing was saved."));
 			return;
 		}
 
@@ -347,6 +488,7 @@ namespace MifBridge
 			if (B.GetObjectGuid() == Guid) { TrackCount = B.GetTracks().Num(); break; }
 		}
 
+		Out->SetStringField(TEXT("scope"), TEXT("binding"));
 		Out->SetStringField(TEXT("guid"), Guid.ToString());
 		Out->SetStringField(TEXT("trackClass"), TrackClass->GetName());
 		Out->SetNumberField(TEXT("trackCount"), TrackCount);

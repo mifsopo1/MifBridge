@@ -2841,10 +2841,10 @@ def add_sequence_possessable(path: str, actor_path: str, confirm: bool = False) 
 
 
 @mcp.tool()
-def add_sequence_track(path: str, guid: str, track_class: str, confirm: bool = False) -> dict:
-    "Add a track to a binding. guid comes from list_sequence_bindings; track_class is a UMovieSceneTrack class PATH such as /Script/MovieSceneTracks.MovieScene3DTransformTrack. Requires confirm=True. The guid is checked against real bindings first: AddTrack does not validate it, so a stray guid would leave a track in the asset attached to nothing. The new track is EMPTY - it has no sections and animates nothing yet. Nothing is saved."
+def add_sequence_track(path: str, guid: str, track_class: str, confirm: bool = False, root: bool = False, camera_cut: bool = False, time: float = 0.0) -> dict:
+    "Add a track to a binding. guid comes from list_sequence_bindings; track_class is a UMovieSceneTrack class PATH such as /Script/MovieSceneTracks.MovieScene3DTransformTrack. Requires confirm=True. The guid is checked against real bindings first: AddTrack does not validate it, so a stray guid would leave a track in the asset attached to nothing. The new track is EMPTY - it has no sections and animates nothing yet. Nothing is saved. THREE SCOPES, and the response says which one it took. By DEFAULT the track hangs off an object binding and needs guid. root=True puts the track on the SEQUENCE itself - Audio, Fade, LevelVisibility, Subsequence - and takes no guid at all (it calls UMovieScene::AddTrack's no-guid overload, NOT the AddMasterTrack that was deprecated in 5.2 and is gone entirely from 5.7). camera_cut=True adds a camera cut at `time` seconds pointing at the camera bound to guid, creating the camera cut track if the sequence has none - and WITHOUT A CAMERA CUT A LEVELSEQUENCE DRIVES NO CAMERA, so no cutscene can be authored at all. The camera_cut path REFUSES a sequence whose playback range is unbounded, and that refusal prevents a crash rather than an error: AddNewCameraCut reaches DiscreteExclusiveUpper(GetPlaybackRange()), which opens with check(!InUpperBound.IsOpen()), and a failed check takes the editor down. describe_level_sequence reports that same state. A guid that is not bound into the sequence is refused too - a cut has to point at a camera that is actually in it."
     return _post("add_sequence_track", path=path, guid=guid, trackClass=track_class,
-                 confirm=confirm)
+                 confirm=confirm, root=root, cameraCut=camera_cut, time=time)
 
 
 @mcp.tool()
