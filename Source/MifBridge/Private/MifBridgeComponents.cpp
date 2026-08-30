@@ -1,5 +1,10 @@
 // MifBridge — Phase 3 breadth: components via the SimpleConstructionScript (SCS) tree.
 #include "MifBridgeHandlers.h"
+#include "Kismet2/ComponentEditorUtils.h"   // CanDeleteComponent / IsComponentNameAvailable
+#include "Subsystems/EditorActorSubsystem.h"
+#include "Components/SceneComponent.h"
+#include "GameFramework/Actor.h"
+#include "ScopedTransaction.h"
 #include "MifBridgeLog.h"
 
 #include "Components/ActorComponent.h"
@@ -275,10 +280,464 @@ namespace MifBridge
 
 	// --- add_component ------------------------------------------------------
 
+
+	// =======================================================================
+	// INSTANCE COMPONENTS - the same four verbs aimed at a PLACED ACTOR
+	// =======================================================================
+	//
+	// "PUT A POINT LIGHT ON THIS ONE LAMP POST." Until now that meant editing the shared
+	// BP_LampPost asset, which changes all ninety of them. Everything in this file above addresses a
+	// Blueprint's SCS - the template every instance is built from - and there was no way to touch
+	// ONE placed actor.
+	//
+	// AND IT IS THE COMPONENT ROUTE A COOKED PROJECT HAS. The SCS route needs a UBlueprint, which
+	// cooking strips - this file's own header says so. Instance components are pure runtime object
+	// graph: no SCS, no MeshDescription, no source data. So on a cooked project this is not a
+	// second-best path, it is the only one.
+	//
+	// ROUTED, NOT REWRITTEN. Each of the four handlers gains an early branch when actorPath is
+	// present and is otherwise untouched, because the Blueprint paths above are cooked-aware in ways
+	// that took a while to get right and nothing here should disturb them. actorPath and blueprintId
+	// are mutually exclusive and passing both is refused rather than silently preferring one.
+
+	AActor* MifInstResolveActor(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		UEditorActorSubsystem* Sub = GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+		if (!Sub)
+		{
+			Fail(Out, TEXT("no EditorActorSubsystem - this is not a running editor."));
+			return nullptr;
+		}
+		// ResolveActor, never GetActorReference: the latter does not resolve the paths
+		// list_level_actors emits, and this repo has now written that resolver three times learning
+		// it. See MifBridgeStreaming.cpp's note.
+		TSharedRef<FJsonObject> One = MakeShared<FJsonObject>();
+		One->SetStringField(TEXT("actorPath"), JStrAny(In, { TEXT("actorPath"), TEXT("actor") }));
+		return ResolveActor(Sub, One, Out);
+	}
+
+	/** Where a component came from, which decides what may be done to it. */
+	const TCHAR* MifComponentOrigin(const AActor* Actor, const UActorComponent* Comp)
+	{
+		if (Actor->GetInstanceComponents().Contains(const_cast<UActorComponent*>(Comp)))
+		{
+			return TEXT("instance");
+		}
+		if (Comp->CreationMethod == EComponentCreationMethod::SimpleConstructionScript
+			|| Comp->CreationMethod == EComponentCreationMethod::UserConstructionScript)
+		{
+			return TEXT("blueprintCreated");
+		}
+		return TEXT("native");
+	}
+
+	UActorComponent* MifFindComponentOn(AActor* Actor, const FString& Name)
+	{
+		TArray<UActorComponent*> All;
+		Actor->GetComponents(All);
+		for (UActorComponent* C : All)
+		{
+			if (C && (C->GetName() == Name || C->GetFName().ToString() == Name))
+			{
+				return C;
+			}
+		}
+		return nullptr;
+	}
+
+	TSharedRef<FJsonObject> MifSerializeInstanceComponent(AActor* Actor, UActorComponent* Comp)
+	{
+		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+		J->SetStringField(TEXT("name"), Comp->GetName());
+		J->SetStringField(TEXT("class"), Comp->GetClass()->GetPathName());
+		// componentPath is directly usable as set_property's objectPath, which is the whole reason a
+		// caller wants this list.
+		J->SetStringField(TEXT("componentPath"), Comp->GetPathName());
+		J->SetStringField(TEXT("origin"), MifComponentOrigin(Actor, Comp));
+		J->SetBoolField(TEXT("registered"), Comp->IsRegistered());
+		if (const USceneComponent* Scene = Cast<USceneComponent>(Comp))
+		{
+			if (const USceneComponent* AttachParent = Scene->GetAttachParent())
+			{
+				J->SetStringField(TEXT("attachParent"), AttachParent->GetName());
+			}
+			J->SetBoolField(TEXT("isRoot"), Actor->GetRootComponent() == Scene);
+			auto Vec = [](const FVector& V)
+			{
+				TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+				O->SetNumberField(TEXT("x"), V.X); O->SetNumberField(TEXT("y"), V.Y);
+				O->SetNumberField(TEXT("z"), V.Z);
+				return O;
+			};
+			const FRotator R = Scene->GetRelativeRotation();
+			TSharedRef<FJsonObject> Rot = MakeShared<FJsonObject>();
+			Rot->SetNumberField(TEXT("pitch"), R.Pitch); Rot->SetNumberField(TEXT("yaw"), R.Yaw);
+			Rot->SetNumberField(TEXT("roll"), R.Roll);
+			J->SetObjectField(TEXT("relativeLocation"), Vec(Scene->GetRelativeLocation()));
+			J->SetObjectField(TEXT("relativeRotation"), Rot);
+			J->SetObjectField(TEXT("relativeScale"), Vec(Scene->GetRelativeScale3D()));
+		}
+		return J;
+	}
+
+	void MifInstListComponents(AActor* Actor, const TSharedRef<FJsonObject>& In,
+							   const TSharedRef<FJsonObject>& Out)
+	{
+		TArray<UActorComponent*> All;
+		Actor->GetComponents(All);
+		const FString Only = JStrAny(In, { TEXT("component"), TEXT("componentName") });
+		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 500), 1, 5000);
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		int32 Instances = 0;
+		for (UActorComponent* C : All)
+		{
+			if (!C) { continue; }
+			if (FString(MifComponentOrigin(Actor, C)) == TEXT("instance")) { ++Instances; }
+			if (!Only.IsEmpty() && C->GetName() != Only) { continue; }
+			if (Rows.Num() >= Limit) { continue; }
+			Rows.Add(MakeShared<FJsonValueObject>(MifSerializeInstanceComponent(Actor, C)));
+		}
+		Out->SetStringField(TEXT("targetKind"), TEXT("levelActor"));
+		Out->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		Out->SetStringField(TEXT("actorLabel"), Actor->GetActorLabel());
+		Out->SetNumberField(TEXT("count"), All.Num());
+		Out->SetNumberField(TEXT("instanceComponents"), Instances);
+		Out->SetArrayField(TEXT("components"), Rows);
+		if (!Only.IsEmpty() && Rows.Num() == 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no component named '%s'. It has %d. NOTHING was changed."),
+				*Actor->GetActorLabel(), *Only, All.Num()));
+		}
+	}
+
+	void MifInstAddComponent(AActor* Actor, const TSharedRef<FJsonObject>& In,
+							 const TSharedRef<FJsonObject>& Out)
+	{
+		const FString ClassName = JStrAny(In, { TEXT("componentClass"), TEXT("class") });
+		FString ClassError;
+		UClass* CompClass = ResolveClassStrict(ClassName, nullptr, TEXT("componentClass"), ClassError);
+		if (!CompClass)
+		{
+			Fail(Out, ClassError.IsEmpty()
+				? FString::Printf(TEXT("component class not found: '%s'. NOTHING was created."), *ClassName)
+				: ClassError);
+			return;
+		}
+		if (!CompClass->IsChildOf(UActorComponent::StaticClass()))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is not an ActorComponent. NOTHING was created."), *CompClass->GetName()));
+			return;
+		}
+		if (CompClass->HasAnyClassFlags(CLASS_Abstract))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is ABSTRACT and cannot be instantiated - pick a concrete subclass. ")
+				TEXT("NOTHING was created."), *CompClass->GetName()));
+			return;
+		}
+
+		// NAMING THROUGH THE ENGINE'S OWN VALIDATOR, so a name that collides is refused rather than
+		// silently uniquified into something the caller did not ask for - the add_component defect
+		// this file already fixed once on the SCS side.
+		FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Name = FComponentEditorUtils::GenerateValidVariableName(CompClass, Actor);
+		}
+		else if (!FComponentEditorUtils::IsComponentNameAvailable(Name, Actor))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' already has something named '%s'. Component names must be unique on an ")
+				TEXT("actor, and silently renaming yours would leave you addressing a component that ")
+				TEXT("does not exist. NOTHING was created."), *Actor->GetActorLabel(), *Name));
+			return;
+		}
+
+		// THE PARENT DECISION, made explicitly rather than left to chance. A Blueprint- or
+		// construction-script-created component is DESTROYED and rebuilt whenever the construction
+		// script reruns (ActorConstruction.cpp detaches instance children first and leaves
+		// re-attachment to FComponentInstanceDataCache), so parenting to one is a promise this
+		// endpoint cannot keep. Native and instance parents are stable; those are allowed and the
+		// rest is refused by name.
+		USceneComponent* AttachTo = nullptr;
+		const FString ParentName = JStrAny(In, { TEXT("parentName"), TEXT("parent") });
+		if (!ParentName.IsEmpty())
+		{
+			UActorComponent* ParentComp = MifFindComponentOn(Actor, ParentName);
+			if (!ParentComp)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' has no component named '%s' to attach to. NOTHING was created."),
+					*Actor->GetActorLabel(), *ParentName));
+				return;
+			}
+			AttachTo = Cast<USceneComponent>(ParentComp);
+			if (!AttachTo)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is not a SceneComponent, so nothing can be attached to it. NOTHING ")
+					TEXT("was created."), *ParentName));
+				return;
+			}
+			const FString Origin = MifComponentOrigin(Actor, ParentComp);
+			if (Origin == TEXT("blueprintCreated"))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' was created by this actor's construction script, and every rerun of ")
+					TEXT("that script DESTROYS and rebuilds it - your component would be detached and ")
+					TEXT("its re-attachment left to the instance-data cache. Attach to a NATIVE ")
+					TEXT("component or to the root instead, or add this to the Blueprint's SCS with ")
+					TEXT("blueprintId so it is rebuilt with everything else. NOTHING was created."),
+					*ParentName));
+				return;
+			}
+		}
+		else
+		{
+			AttachTo = Actor->GetRootComponent();
+		}
+
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_AddInstanceComponent",
+												 "Add Instance Component"));
+		Actor->Modify();
+
+		UActorComponent* Comp = NewObject<UActorComponent>(Actor, CompClass, FName(*Name),
+														   RF_Transactional);
+		if (!Comp)
+		{
+			Fail(Out, FString::Printf(TEXT("failed to construct '%s'. NOTHING was created."),
+				*CompClass->GetName()));
+			return;
+		}
+		Actor->AddInstanceComponent(Comp);
+		if (USceneComponent* AsScene = Cast<USceneComponent>(Comp))
+		{
+			if (AttachTo)
+			{
+				AsScene->AttachToComponent(AttachTo, FAttachmentTransformRules::KeepRelativeTransform);
+			}
+			else if (!Actor->GetRootComponent())
+			{
+				// An actor with no root at all - give it one rather than leaving a scene component
+				// floating unattached, which renders nowhere and reports a transform nobody set.
+				Actor->SetRootComponent(AsScene);
+			}
+		}
+		// REGISTER BEFORE READING ANYTHING BACK. An unregistered component has no world transform
+		// and does not render; reporting its transform before this would be a number that is not yet
+		// true.
+		Comp->RegisterComponent();
+
+		// READ BACK from the actor rather than from the pointer we just made.
+		UActorComponent* Found = MifFindComponentOn(Actor, Comp->GetName());
+		if (!Found)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the component was constructed and '%s' does not report it on read-back. ")
+				TEXT("NOTHING usable was produced."), *Actor->GetActorLabel()));
+			return;
+		}
+		Actor->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("targetKind"), TEXT("levelActor"));
+		Out->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		Out->SetObjectField(TEXT("component"), MifSerializeInstanceComponent(Actor, Found));
+		Out->SetStringField(TEXT("nameRequested"), JStr(In, TEXT("name")));
+		Out->SetBoolField(TEXT("created"), true);
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("this is an INSTANCE component - it exists on this one actor and not on the "
+				 "Blueprint, so no other placed copy is affected. The level is dirty and NOTHING has "
+				 "been saved."));
+	}
+
+	void MifInstRemoveComponent(AActor* Actor, const TSharedRef<FJsonObject>& In,
+								const TSharedRef<FJsonObject>& Out)
+	{
+		const FString Name = JStrAny(In, { TEXT("component"), TEXT("componentName"), TEXT("name") });
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("component (aliases: componentName, name) is required. NOTHING was changed."));
+			return;
+		}
+		UActorComponent* Comp = MifFindComponentOn(Actor, Name);
+		if (!Comp)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no component named '%s'. NOTHING was changed."),
+				*Actor->GetActorLabel(), *Name));
+			return;
+		}
+
+		// REFUSE ANYTHING THAT IS NOT AN INSTANCE COMPONENT, by name. RemoveInstanceComponent only
+		// touches the InstanceComponents array, so on a native or SCS-created component it is a
+		// SILENT NO-OP - the endpoint would report success having removed nothing, on exactly the
+		// components an agent reaches for first. FComponentEditorUtils::CanDeleteComponent is the
+		// engine's own test and is consulted too.
+		const FString Origin = MifComponentOrigin(Actor, Comp);
+		if (Origin != TEXT("instance"))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s component, not an instance one, and cannot be removed from a ")
+				TEXT("single actor - RemoveInstanceComponent would silently do nothing. A %s ")
+				TEXT("component belongs to the class: remove it with remove_component ")
+				TEXT("blueprintId=<the Blueprint>, which changes every placed copy. NOTHING was ")
+				TEXT("changed."), *Name, *Origin, *Origin));
+			return;
+		}
+		if (!FComponentEditorUtils::CanDeleteComponent(Comp))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the editor refuses to delete '%s' - FComponentEditorUtils::CanDeleteComponent ")
+				TEXT("says no. NOTHING was changed."), *Name));
+			return;
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("removing '%s' from '%s' destroys it and anything attached below it. Pass ")
+				TEXT("confirm:true. NOTHING was changed."), *Name, *Actor->GetActorLabel()));
+			return;
+		}
+
+		TArray<UActorComponent*> Before;
+		Actor->GetComponents(Before);
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_RemoveInstanceComponent",
+												 "Remove Instance Component"));
+		Actor->Modify();
+		Actor->RemoveInstanceComponent(Comp);
+		Comp->DestroyComponent();
+
+		// READ BACK - both calls are void.
+		if (MifFindComponentOn(Actor, Name))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is still present on read-back after being removed and destroyed."), *Name));
+			return;
+		}
+		TArray<UActorComponent*> After;
+		Actor->GetComponents(After);
+		Actor->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("targetKind"), TEXT("levelActor"));
+		Out->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		Out->SetStringField(TEXT("component"), Name);
+		Out->SetBoolField(TEXT("removed"), true);
+		Out->SetNumberField(TEXT("componentsBefore"), Before.Num());
+		Out->SetNumberField(TEXT("remaining"), After.Num());
+
+		// MORE THAN ONE COMPONENT CAN GO. Found live 2026-08-30: adding a PointLightComponent also
+		// creates the editor BILLBOARD sprite that visualises it, and destroying the light takes the
+		// billboard with it - so componentsBefore 3 became remaining 1 for a single named removal.
+		// That is correct engine behaviour and it is NOT obvious from two counts; a caller diffing
+		// them would think something else had been destroyed. DestroyComponent also takes anything
+		// attached BELOW the removed component, which is the other way this happens.
+		const int32 Went = Before.Num() - After.Num();
+		Out->SetNumberField(TEXT("componentsRemoved"), Went);
+		if (Went > 1)
+		{
+			TArray<TSharedPtr<FJsonValue>> Extra;
+			for (UActorComponent* B : Before)
+			{
+				if (B && !After.Contains(B) && B->GetName() != Name)
+				{
+					Extra.Add(MakeShared<FJsonValueString>(B->GetName()));
+				}
+			}
+			Out->SetArrayField(TEXT("alsoRemoved"), Extra);
+			Out->SetStringField(TEXT("alsoRemovedNote"),
+				TEXT("removing this component took others with it - named above rather than left as "
+					 "a gap between two counts. Usually an editor visualiser the engine created "
+					 "alongside it (a light's billboard sprite, for instance), or something that was "
+					 "attached BELOW it."));
+		}
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("the level is dirty and NOTHING has been saved."));
+	}
+
+	void MifInstSetComponentTransform(AActor* Actor, const TSharedRef<FJsonObject>& In,
+									  const TSharedRef<FJsonObject>& Out)
+	{
+		const FString Name = JStrAny(In, { TEXT("component"), TEXT("componentName"), TEXT("name") });
+		UActorComponent* Comp = Name.IsEmpty() ? nullptr : MifFindComponentOn(Actor, Name);
+		if (!Comp)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no component named '%s'. NOTHING was changed."),
+				*Actor->GetActorLabel(), *Name));
+			return;
+		}
+		USceneComponent* Scene = Cast<USceneComponent>(Comp);
+		if (!Scene)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, which has no transform - only SceneComponents do. NOTHING was ")
+				TEXT("changed."), *Name, *Comp->GetClass()->GetName()));
+			return;
+		}
+
+		FVector Loc = Scene->GetRelativeLocation();
+		FRotator Rot = Scene->GetRelativeRotation();
+		FVector Scale = Scene->GetRelativeScale3D();
+		// The shared readers return Absent / Read / Invalid rather than a bool, which matters: a
+		// component the caller SUPPLIED but got wrong must fail, not be quietly ignored. That
+		// distinction is the whole reason those four hand-rolled vector readers were replaced.
+		FString ReadError;
+		const EJsonRead GotLoc = ReadVectorField(In, TEXT("location"), Loc, ReadError);
+		if (GotLoc == EJsonRead::Invalid) { Fail(Out, ReadError + TEXT(" NOTHING was changed.")); return; }
+		const EJsonRead GotRot = ReadRotatorField(In, TEXT("rotation"), Rot, ReadError);
+		if (GotRot == EJsonRead::Invalid) { Fail(Out, ReadError + TEXT(" NOTHING was changed.")); return; }
+		const EJsonRead GotScale = ReadScaleField(In, TEXT("scale"), Scale, ReadError);
+		if (GotScale == EJsonRead::Invalid) { Fail(Out, ReadError + TEXT(" NOTHING was changed.")); return; }
+
+		if (GotLoc != EJsonRead::Read && GotRot != EJsonRead::Read && GotScale != EJsonRead::Read)
+		{
+			Fail(Out, TEXT("name at least one of location, rotation or scale. NOTHING was changed."));
+			return;
+		}
+
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_SetInstanceCompTransform",
+												 "Set Component Transform"));
+		Scene->Modify();
+		Scene->SetRelativeLocation(Loc);
+		Scene->SetRelativeRotation(Rot);
+		Scene->SetRelativeScale3D(Scale);
+		Actor->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("targetKind"), TEXT("levelActor"));
+		Out->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		// The read-back is the whole response, not an echo of the request: a component attached to a
+		// parent with non-uniform scale does not necessarily keep what it was handed.
+		Out->SetObjectField(TEXT("component"), MifSerializeInstanceComponent(Actor, Comp));
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("the level is dirty and NOTHING has been saved."));
+	}
+
+	/** Shared entry: is this call aimed at a placed actor? Refuses both spellings together. */
+	bool MifInstWantsActor(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out,
+						   bool& bOutRefused)
+	{
+		bOutRefused = false;
+		const bool bActor = !JStrAny(In, { TEXT("actorPath"), TEXT("actor") }).IsEmpty();
+		const bool bBlueprint = !JStrAny(In, { TEXT("blueprintId"), TEXT("path") }).IsEmpty();
+		if (bActor && bBlueprint)
+		{
+			Fail(Out, TEXT("actorPath and blueprintId are ALTERNATIVES and mean different things: ")
+				TEXT("blueprintId edits the class and changes every placed copy, actorPath edits ")
+				TEXT("this one actor only. Passing both would make this endpoint choose for you. ")
+				TEXT("NOTHING was changed."));
+			bOutRefused = true;
+			return false;
+		}
+		return bActor;
+	}
+
 	void H_add_component(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("blueprintId"), TEXT("path"), TEXT("componentClass"), TEXT("class"), TEXT("name"),
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("blueprintId"), TEXT("path"), TEXT("componentClass"), TEXT("class"), TEXT("name"),
 			  TEXT("parentName"), TEXT("location"), TEXT("rotation"), TEXT("scale") },
 			TEXT("blueprintId (alias: path), componentClass (alias: class), name (optional - the new component's variable name), parentName (an EXISTING component to attach under), location, rotation, scale"),
 			{ { TEXT("componentName"), TEXT("spell it name - it is the NEW component's variable name") },
@@ -287,6 +746,22 @@ namespace MifBridge
 			  { TEXT("transform"), TEXT("pass location / rotation / scale as separate keys; there is no combined transform key") } }))
 		{
 			return;
+		}
+
+		// INSTANCE-COMPONENT BRANCH. actorPath aims this at ONE placed actor instead of the class;
+		// see the block above H_add_component for why the two are mutually exclusive and why the
+		// Blueprint path below is left untouched rather than merged.
+		{
+			bool bRefused = false;
+			if (MifInstWantsActor(In, Out, bRefused))
+			{
+				if (AActor* Actor = MifInstResolveActor(In, Out))
+				{
+					MifInstAddComponent(Actor, In, Out);
+				}
+				return;
+			}
+			if (bRefused) { return; }
 		}
 
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
@@ -536,11 +1011,30 @@ namespace MifBridge
 	void H_list_components(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("blueprintId"), TEXT("path"), TEXT("component"), TEXT("componentName"),
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("blueprintId"), TEXT("path"), TEXT("component"), TEXT("componentName"),
 			  TEXT("includeInherited"), TEXT("includeNative"), TEXT("limit") },
-			TEXT("blueprintId (alias: path), component (alias: componentName; optional - omit for the whole list), includeInherited (default true), includeNative (default true), limit (default 500)")))
+			TEXT("EITHER blueprintId (alias: path) for a Blueprint's SCS, OR actorPath (alias: actor) for the ")
+			TEXT("components a PLACED actor actually has - including instance components that exist on that ")
+			TEXT("one actor only. component (alias: componentName; optional - omit for the whole list), ")
+			TEXT("includeInherited (default true), includeNative (default true), limit (default 500)")))
 		{
 			return;
+		}
+
+		// INSTANCE-COMPONENT BRANCH. actorPath aims this at ONE placed actor instead of the class;
+		// see the block above H_add_component for why the two are mutually exclusive and why the
+		// Blueprint path below is left untouched rather than merged.
+		{
+			bool bRefused = false;
+			if (MifInstWantsActor(In, Out, bRefused))
+			{
+				if (AActor* Actor = MifInstResolveActor(In, Out))
+				{
+					MifInstListComponents(Actor, In, Out);
+				}
+				return;
+			}
+			if (bRefused) { return; }
 		}
 
 		// ResolveBlueprint rather than ResolveBlueprintField: the field form writes its failure into
@@ -1017,12 +1511,30 @@ namespace MifBridge
 	void H_remove_component(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("confirm") },
-			TEXT("blueprintId (alias: path), name (the component's variable name), confirm (required true)"),
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("confirm") },
+			TEXT("EITHER blueprintId (alias: path) to remove from the CLASS - which changes every placed copy ")
+			TEXT("- OR actorPath (alias: actor) to remove an INSTANCE component from one placed actor. ")
+			TEXT("name (the component's name), confirm (required true)"),
 			{ { TEXT("component"), TEXT("spell it name here - list_components takes 'component', remove_component takes 'name'") },
 			  { TEXT("componentName"), TEXT("spell it name") } }))
 		{
 			return;
+		}
+
+		// INSTANCE-COMPONENT BRANCH. actorPath aims this at ONE placed actor instead of the class;
+		// see the block above H_add_component for why the two are mutually exclusive and why the
+		// Blueprint path below is left untouched rather than merged.
+		{
+			bool bRefused = false;
+			if (MifInstWantsActor(In, Out, bRefused))
+			{
+				if (AActor* Actor = MifInstResolveActor(In, Out))
+				{
+					MifInstRemoveComponent(Actor, In, Out);
+				}
+				return;
+			}
+			if (bRefused) { return; }
 		}
 
 		if (!JBool(In, TEXT("confirm"), false))
@@ -1096,7 +1608,7 @@ namespace MifBridge
 	void H_set_component_transform(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("location"), TEXT("rotation"), TEXT("scale") },
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("name"), TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("location"), TEXT("rotation"), TEXT("scale") },
 			TEXT("blueprintId (alias: path), name (the component's variable name), location, rotation, scale - each {x,y,z} or [x,y,z]"),
 			{ { TEXT("component"), TEXT("spell it name here - list_components takes 'component', set_component_transform takes 'name'") },
 			  { TEXT("componentName"), TEXT("spell it name") },
@@ -1104,6 +1616,22 @@ namespace MifBridge
 			  { TEXT("transform"), TEXT("pass location / rotation / scale as separate keys; there is no combined transform key") } }))
 		{
 			return;
+		}
+
+		// INSTANCE-COMPONENT BRANCH. actorPath aims this at ONE placed actor instead of the class;
+		// see the block above H_add_component for why the two are mutually exclusive and why the
+		// Blueprint path below is left untouched rather than merged.
+		{
+			bool bRefused = false;
+			if (MifInstWantsActor(In, Out, bRefused))
+			{
+				if (AActor* Actor = MifInstResolveActor(In, Out))
+				{
+					MifInstSetComponentTransform(Actor, In, Out);
+				}
+				return;
+			}
+			if (bRefused) { return; }
 		}
 
 		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
