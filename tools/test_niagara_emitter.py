@@ -10,10 +10,19 @@ system spawn script's source, and InvalidateCompileResults. UNiagaraSystem::Post
 does not compensate. So set_property flips the bool, the system keeps stale compile results, and the
 emitter stays dark with a flag that reads as enabled - a wrong answer rather than an error.
 
-ADD AND REMOVE ARE DELIBERATELY ABSENT and are refused by name. Raw AddEmitterHandle contains an
-UNGUARDED null dereference at NiagaraSystem.cpp:2309 - GetLatestEmitterData()->RemoveParent() on a
-Template or Behavior emitter - and RemoveEmitterHandle vs RemoveEmitterHandlesById differ in whether
-system parameters are cleaned up. Those need their own guards, not a ride alongside a boolean.
+ADD AND REMOVE ARE DELIBERATELY ABSENT and are refused by name - but the REASON given was wrong
+until 2026-08-30, and T6102 now guards against it coming back. The refusal used to claim an
+unguarded null dereference at NiagaraSystem.cpp:2309. That pointer cannot be null there: :2306 calls
+DisableVersioning, which calls CheckVersionDataAvailable unconditionally and first
+(NiagaraEmitter.cpp:2708), so VersionData.Num() >= 1 always holds afterwards and
+GetLatestEmitterData returns &VersionData[0]. And :2309 is dominated anyway by the identical deref
+at NiagaraEmitter.cpp:1108-1109, which runs for every emitter.
+
+The real hazard is a COOKED source emitter: CreateWithParentAndOwner dereferences ParentScratchPads
+(:1119) and GraphSource (:1120) unguarded, both WITH_EDITORONLY_DATA and null after a cook. Plus
+5.6/5.7 renamed the branch field from TemplateSpecification to bIsInheritable, so the obvious
+implementation will not compile there. Remove is separate and unchanged: RemoveEmitterHandle and
+RemoveEmitterHandlesById are asymmetric in BOTH directions over system parameters and compiled data.
 
 COOKED IS REFUSED FOR THE RIGHT REASON, which matters because a wrong reason invites someone to
 "fix" it. SetIsEnabled's side-effect block self-skips on cooked content (GetLatestSource is null
@@ -125,9 +134,22 @@ def main():
               (bad.get("error") or "")[:180])
     addr = M.raw_post("set_niagara_emitter", {"path": target, "emitter": first,
                                               "enabled": True, "add": True})
-    # The refusal has to say WHY, or the next person just builds it unguarded.
-    check("T6102 and the add refusal names the unguarded null dereference",
-          "null dereference" in (addr.get("error") or ""), (addr.get("error") or "")[:220])
+    # The refusal has to say WHY, or the next person just builds it unguarded - and it has to say
+    # something TRUE, which this one did not until 2026-08-30. It asserted an unguarded null
+    # dereference at NiagaraSystem.cpp:2309 that does not exist; the real hazard is a COOKED source
+    # emitter, whose GraphSource and ParentScratchPads are editor-only and null. A refusal naming a
+    # defect nobody can find is worse than none, because the reader concludes the refusal is
+    # baseless and builds it anyway.
+    err = addr.get("error") or ""
+    check("T6102 and the add refusal names the REAL hazard - the editor-only fields that are null "
+          "on cooked content",
+          "GraphSource" in err and "ParentScratchPads" in err, err[:260])
+    check("T6102 and it no longer repeats the false :2309 null-dereference claim",
+          "null dereference" not in err, err[:260])
+    # The version trap is the other thing whoever builds this needs, and it is a compile error
+    # rather than a runtime one, so it is cheap to state and expensive to discover.
+    check("T6102 and it warns that the branch field was renamed in 5.6/5.7",
+          "5.6" in err or "5.7" in err, err[:260])
 
     notsys = M.raw_post("set_niagara_emitter", {
         "path": "/Engine/EditorResources/S_Actor.S_Actor", "emitter": "x", "enabled": True})
