@@ -5574,7 +5574,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       RemoveSystemParametersForEmitter, so the other leaves orphaned system parameters.
       Should also refuse while any compilation is in flight.
 
-- [ ] **audit create_asset for OTHER classes that need factory initialisation** (hours)
+- [x] **audit create_asset for other classes that need factory initialisation** (hours)
+      DONE 2026-08-30. tools/audit_factory_init.py, plus a warning in create_asset and 11
+      checks in tools/test_factory_init.py.
+      FOUND: 22 engine factories whose FactoryCreateNew calls something on the object AFTER
+      constructing it - 21 classes create_asset does not handle. The tool reads the engine's
+      own factory sources, so the third case gets found by running a script rather than by an
+      editor dying, which is how the first two were found.
+      IT WARNS RATHER THAN REFUSING, because reading those factories shows the calls are NOT
+      all equal: USkeleton's REQUIRES a target skeletal mesh and opens a dialog without one,
+      so a bare skeleton is genuinely malformed - while USoundClass's InitSoundClasses is a
+      global audio-device refresh that says nothing about the asset. Refusing all 21 would
+      block legitimate creations to catch a few; creating them silently is what produced the
+      two bugs. So they are NAMED with what the factory does and the caller decides.
+      KNOWN LIMITATION, stated rather than hidden: the scanner only finds UFactory
+      FactoryCreateNew bodies. UUserDefinedEnum - the fatal one - is created by
+      FEnumEditorUtils::CreateUserDefinedEnum, NOT a factory, so this tool would NOT have
+      found it. Editor-utils creation paths are a second sweep, filed below.
+      A class that gains proper handling must come OFF the list, or the warning outlives the
+      problem and trains people to ignore it - T6202 asserts the two handled classes are
+      silent.
+
+- [ ] **sweep FooEditorUtils::CreateFoo paths for the same initialisation gap** (hours)
+      Filed 2026-08-30 as a known limitation of audit_factory_init.py, which only reads
+      UFactory::FactoryCreateNew. The one FATAL case found so far -
+      FEnumEditorUtils::CreateUserDefinedEnum - is NOT a factory and would have been missed by
+      it entirely, so the sweep is incomplete in a known direction. Same method: for each
+      class create_asset can instantiate, find the editor-utils creator and see what it does
+      after NewObject.
       Filed 2026-08-30 after a UserDefinedEnum created by create_asset TERMINATED the editor:
       a bare NewObject left CppForm at Regular and the first operation naming an enumerator
       hit check(CppForm == ECppForm::Namespaced). ULevelSequence had already needed the same

@@ -807,6 +807,57 @@ namespace MifBridge
 			NewSequence->Initialize();
 		}
 
+		// ---------------------------------------------------------------------------------------
+		// CLASSES WHOSE ENGINE FACTORY DOES MORE THAN NewObject
+		// ---------------------------------------------------------------------------------------
+		//
+		// Found by tools/audit_factory_init.py, which reads the engine's own UFactory sources and
+		// reports every FactoryCreateNew that calls something on the object after constructing it.
+		// It was written because this had already bitten twice - ULevelSequence malformed on
+		// 2026-08-28, UUserDefinedEnum fatal on 2026-08-30 - and twice is a pattern rather than two
+		// accidents.
+		//
+		// THIS WARNS RATHER THAN REFUSING, and the distinction is the honest part. The audit found
+		// 22 factories, and reading them shows the calls are not all equal: USkeleton's factory
+		// REQUIRES a target skeletal mesh and opens a dialog without one, so a bare skeleton is
+		// genuinely malformed - while USoundClass's InitSoundClasses is a global audio-device
+		// refresh that says nothing about the asset. Refusing all of them would block legitimate
+		// creations to catch a few; silently creating them all is what produced the two bugs above.
+		// So the ones this plugin does NOT replicate are named, with what the factory does, and the
+		// caller decides.
+		//
+		// A class that gets proper handling here should be REMOVED from this list rather than left
+		// warning about a problem that no longer exists.
+		static const TCHAR* FactoryInitClasses[] = {
+			TEXT("AnimComposite"), TEXT("AnimMontage"), TEXT("AnimSequence"), TEXT("AnimStreamable"),
+			TEXT("PoseAsset"), TEXT("Skeleton"), TEXT("GroomAsset"), TEXT("ChaosClothAsset"),
+			TEXT("HLODLayer"), TEXT("PaperSprite"), TEXT("PaperTileSet"),
+			TEXT("NiagaraParameterCollectionInstance"), TEXT("SoundClass"), TEXT("SoundSubmix"),
+			TEXT("EndpointSubmix"), TEXT("SoundfieldSubmix"), TEXT("SoundfieldEndpointSubmix"),
+			TEXT("AnimNextGraph"), TEXT("AnimNextParameterBlock"),
+		};
+		{
+			const FString CreatedClass = Class->GetName();
+			for (const TCHAR* Known : FactoryInitClasses)
+			{
+				if (CreatedClass == Known)
+				{
+					Out->SetBoolField(TEXT("factoryInitIncomplete"), true);
+					Out->SetStringField(TEXT("factoryNote"), FString::Printf(
+						TEXT("the engine creates a %s through a UFactory that does MORE than "
+							 "NewObject - it calls further setup this endpoint does not replicate, "
+							 "and several of those factories need input create_asset has no "
+							 "parameter for (a USkeleton's factory requires a target skeletal mesh, "
+							 "for instance). The asset exists and may well be usable, but VERIFY it "
+							 "before relying on it, and prefer the editor's own creation flow when "
+							 "the asset needs a source. tools/audit_factory_init.py --class U%s "
+							 "shows exactly what that factory does."),
+						*CreatedClass, *CreatedClass));
+					break;
+				}
+			}
+		}
+
 		// AND A BARE NewObject<UUserDefinedEnum> IS A CRASH BOMB - the same shape as the sequence
 		// above, one step worse. Found live 2026-08-30: create_asset made one, add_enum_value was
 		// called on it, and the editor died on
