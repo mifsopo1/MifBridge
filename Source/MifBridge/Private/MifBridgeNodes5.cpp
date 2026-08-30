@@ -34,6 +34,7 @@
 // build happened to put Nodes5 and Nodes6 in the same translation unit, which is not a guarantee.
 // Do NOT copy either function into another file: see the C2084 note in MifBridgeHandlers.h.
 #include "MifBridgeHandlers.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/DeveloperSettings.h"   // list_settings, and set_property{saveConfig}
 #include "MifBridgeVersion.h"
 // FStringOutputDevice MOVED between the two engines this plugin targets:
@@ -1091,6 +1092,62 @@ namespace MifBridge
 		}
 	}
 
+
+	// =======================================================================
+	// THE STATIC MESH REBUILD ASSERT - reachable from ANY set_property write
+	// =======================================================================
+	//
+	// UStaticMesh::PostEditChangeProperty calls Build() UNCONDITIONALLY (StaticMesh.cpp:4052), and
+	// the build path contains:
+	//
+	//     checkf(Owner->IsMeshDescriptionValid(0), TEXT("Bad MeshDescription on %s"))
+	//                                                          -- StaticMesh.cpp:3086
+	//
+	// Cook strips the editable MeshDescription bulk data - the runtime reads baked render data
+	// instead - so a cooked StaticMesh has source models and no MeshDescription. That is a hard
+	// assertion, not an error return: it takes the whole editor down.
+	//
+	// duplicate_asset has guarded this since it was hit live on DDS2's S_Volcano_02
+	// (MifBridgeAssetOps.cpp:450-470). set_property never did - and it reaches the same Build()
+	// through PostEditChangeChainProperty, on ANY property of the mesh. Setting a bool nobody
+	// thinks of as dangerous was an editor-crash path with no MifBridge frame at the top of the
+	// stack, which is the worst way for this to be found.
+	//
+	// THE TEST IS THE ONE THE ASSERT MAKES, not "is it cooked". UStaticMesh::Build early-outs via
+	// CanBuild() only when GetNumSourceModels() <= 0 (StaticMeshBuild.cpp:87-91), so a cooked mesh
+	// with zero source models is actually safe, and an UNCOOKED one whose description failed to
+	// load is not. So this tests the literal condition - source models present AND no
+	// MeshDescription(0) - exactly as MifBridgeCollision.cpp:426 already does for
+	// add_simplified_collision.
+	static bool MifStaticMeshWouldAssertOnBuild(UObject* Object, FString& OutReason)
+	{
+		UStaticMesh* Mesh = Cast<UStaticMesh>(Object);
+		if (!Mesh) { return false; }
+		if (Mesh->GetNumSourceModels() <= 0)
+		{
+			// No source models: Build() early-outs before ever reaching the assert.
+			return false;
+		}
+		if (Mesh->GetMeshDescription(0) != nullptr)
+		{
+			return false;
+		}
+		const UPackage* Pkg = Mesh->GetOutermost();
+		OutReason = FString::Printf(
+			TEXT("'%s' is a StaticMesh with %d source model(s) and NO editable MeshDescription%s. "
+				 "Writing any property on it calls UStaticMesh::PostEditChangeProperty, which calls "
+				 "Build() unconditionally, and the build path asserts "
+				 "checkf(IsMeshDescriptionValid(0)) - that TERMINATES the editor rather than "
+				 "returning an error. READING this mesh is fine (get_property, bounds, LOD counts, "
+				 "materials); writing to it is not. NOTHING was changed."),
+			*Mesh->GetPathName(), Mesh->GetNumSourceModels(),
+			(Pkg && Pkg->HasAnyPackageFlags(PKG_Cooked))
+				? TEXT(", because it came from a COOKED package and cook strips that data")
+				: TEXT(""));
+		return true;
+	}
+
+
 	void H_set_property(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		// An IGNORED parameter is worse than a rejected one - the caller gets ok:true and then debugs
@@ -1488,6 +1545,18 @@ namespace MifBridge
 					// MemberProperty (ActorEditor.cpp:134-135) - so member-keyed handlers never fired for
 					// a dotted path like "Settings.BloomIntensity".
 					if (bChainBuilt) { Evt.SetActiveMemberProperty(PropertyChainSegments[0]); }
+
+					// THE ASSERT GUARD. Checked here rather than at the top of the handler because
+					// LeafOwner is what actually receives the notification - a component's owner, or
+					// the asset itself - and that is the object whose Build() would run.
+					{
+						FString AssertReason;
+						if (MifStaticMeshWouldAssertOnBuild(LeafOwner, AssertReason))
+						{
+							Fail(Out, AssertReason);
+							return;
+						}
+					}
 					if (bChainBuilt)
 					{
 						FPropertyChangedChainEvent ChainEvt(EditChain, Evt);

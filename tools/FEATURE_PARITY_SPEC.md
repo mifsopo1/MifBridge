@@ -5267,7 +5267,56 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Refuse when any referencing package is cooked or container-only (MifBridgeCommon.cpp:2503 IsCookedOrContainerPackage), naming the packages: references inside a mounted pak cannot be rewritten or re-saved, so a 'success' there would be a lie that survives until the next editor restart. On a fully unc...
       Vetter corrected the proposal: Three corrections. (1) In the proposer's favour: the modals are NOT unsuppressable — MessageDialog.cpp:172 gates display on `!FApp::IsUnattended() && !GIsRunningUnattendedScript` for all message types; the Ok-exclusion at :128 only skips an extra log and stack dump. 03_GAPS_AND_RISKS row 7 overstates the residual risk. (2) Against: ObjectTools.cpp:1443 calls CloseAllAssetEditors() unconditionally ...
 
-- [ ] **set_mesh_build_settings / generate_lods (StaticMesh LOD, build and Nanite settings, with a real rebuild) - and a cooked crash guard on set_property for UStaticMesh** (day)
+- [~] **set_mesh_build_settings / generate_lods** (day) - MOSTLY DECLINED, one real gap left
+      2026-08-30. Three of the four proposed capabilities are ALREADY REACHABLE through
+      set_property, which the vetter established and I confirmed by reading:
+        - lodGroup: UStaticMesh::LODGroup is a public UPROPERTY(EditAnywhere), and
+          PostEditChangeProperty SPECIAL-CASES it (StaticMesh.cpp:3984-3991) by calling
+          SetLODGroup, which resizes the source models to the group default and rewrites
+          per-LOD reduction settings, then builds. So set_property already adds, removes AND
+          retunes LODs - directly contradicting the survey's "cannot add, remove or retune
+          any of them".
+        - nanite{}: already reachable, as the survey itself conceded.
+        - per-LOD buildSettings / reductionSettings: reachable, because ResolvePropertyPathEx
+          applies no CPF_Edit or deprecation filter and set_property's Build() runs the
+          reducer. "Reduction is code, not data" is misleading.
+      Building a dedicated setter for any of those would be a second way to do something the
+      plugin already does, which this spec has declined before.
+      STILL OPEN, and genuinely unreachable: the arbitrary LOD COUNT write -
+      SetLodsWithNotification / RemoveLods on UStaticMeshEditorSubsystem. That needs a new
+      StaticMeshEditor module dependency. Filed as its own small item rather than smuggled in
+      under a name that implies the other three.
+
+- [ ] **generate_lods (the LOD COUNT write only)** (hours)
+      Split out 2026-08-30 from the row above, which was mostly already reachable. Only
+      SetLodsWithNotification / RemoveLods (UStaticMeshEditorSubsystem.h:45/:160) have no
+      reflective equivalent - everything else about LODs is set_property today. Needs
+      "StaticMeshEditor" in PrivateDependencyModuleNames; the module ships in every build.
+      Note MifBridgeCollision.cpp:592-599 deliberately avoided taking that dependency for
+      three integers it could read off BodySetup - that reasoning does NOT extend here, since
+      no write function above has a one-dereference equivalent.
+      The same StaticMesh build-assert guard applies: any LOD write triggers Build().
+
+- [x] **guard set_property against the StaticMesh build assert** (hours)
+      DONE 2026-08-30, found as a side finding while scoping the LOD row - and it is the more
+      valuable half. 9 checks in tools/test_staticmesh_write_guard.py.
+      UStaticMesh::PostEditChangeProperty calls Build() UNCONDITIONALLY (StaticMesh.cpp:4052)
+      and the build path asserts checkf(Owner->IsMeshDescriptionValid(0)) (:3086). Cook strips
+      that description, so a cooked mesh with source models terminates the editor on ANY
+      property write - with no MifBridge frame at the top of the stack. duplicate_asset has
+      guarded this since it was hit live on S_Volcano_02; set_property never did, and it
+      reaches the same Build() through PostEditChangeChainProperty.
+      THE TEST IS THE ASSERT'S OWN CONDITION, not "is it cooked": Build early-outs via
+      CanBuild() when GetNumSourceModels() <= 0, so a cooked mesh with no source models is
+      safe and an uncooked one with a failed description is not.
+      HONEST LIMIT: the refusal branch is UNEXERCISED. Twenty-five container-origin meshes
+      were probed and every one has a valid MeshDescription(0), so the crash state could not
+      be constructed on this project. The suite proves the guard does not false-positive -
+      twenty writes applied and were reverted, editor alive - and does NOT prove the refusal.
+      Claiming a fixed crash that was never reproduced would be overstating it.
+      Not in conflict with duplicate_asset's class+cooked guard refusing S_Volcano_02:
+      duplication rebuilds a COPY whose description was never populated, a different object
+      from the original whose description is fine.
       Sets LOD count and auto-reduction (percent triangles, screen sizes), per-LOD build settings (lightmap UV generation, lightmap coordinate index, recompute normals/tangents), the LOD group, and Nanite settings, then rebuilds the mesh. Generating LODs specifically has no reflective equivalent at all: SetLodsWithNotification drives the mesh reduction interface, which is code, not data. Today an agent that imports a mesh through import_asset gets whatever LODs the FBX carried and cannot add, remove or retune any of them.
       API: UStaticMeshEditorSubsystem, D:/UE532/Engine/Source/Editor/StaticMeshEditor/Public/StaticMeshEditorSubsystem.h - SetLodsWithNotification(UStaticMesh*, const FStaticMeshReductionOptions&, bool) :45, GetLodBuildSettings :81 / SetLodBuildSettings :90, GetLodReductionSettings :63 / SetLodReductionSettings :72, GetLODGroup :98 / SetLODGroup :108, GetLodCount :152, RemoveLods :160, GetLodScreenSizes :168...
       Cooked: Refuse on cooked, and this is the sharp end. UStaticMesh::PostEditChangeProperty calls Build(BuildParameters) UNCONDITIONALLY at Runtime/Engine/Private/StaticMesh.cpp:4052 (5.3.2), and the build path contains checkf(Owner->IsMeshDescriptionValid(0), TEXT("Bad MeshDescription on %s")) at StaticMesh.c...
