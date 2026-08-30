@@ -5658,18 +5658,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Both rounds of the 5.7 fixes are now verified HERE rather than by the peer - the tooling
       to do it (make_engine_probe.py) was already in this repo while I was telling them it was
       their job to run.
-- [ ] **verify and tick add_niagara_emitter / remove_niagara_emitter - they are BUILT** (hours)
-      Found 2026-08-30 by parity_check, which reported both as having a MIF_BIND and no MCP
-      wrapper - HTTP-reachable and MCP-invisible. They are real handlers
-      (MifBridgeNiagara2.cpp:656 and :844), built at some point without the wrappers being
-      added or this entry being ticked, so the backlog has been listing built work as open.
-      The MCP wrappers are now in and parity is clean again. What is NOT done is verifying
-      them: no suite exercises either, and this repo's rule is that a box is ticked when the
-      work is BUILT, TESTED and COMMITTED. Ticking on the strength of a handler existing is
-      exactly the claim the rule exists to stop.
-      When verified, note that every NiagaraSystem in this project is cooked, so the success
-      path needs a scratch system - create_asset makes a usable one (confirmed 2026-08-30) and
-      six NiagaraEmitter source assets exist here to add from.
+- [x] **add_niagara_emitter / remove_niagara_emitter** (day)
+      VERIFIED AND TICKED 2026-08-30. 21 checks in tools/test_niagara_add_remove.py,
+      repeat-safe across consecutive runs.
+      THEY WERE ALREADY BUILT, which is how this entry came to exist. parity_check found both
+      had a MIF_BIND and no MCP wrapper - HTTP-reachable and MCP-invisible - so they had been
+      written without being exposed, tested or ticked, and the backlog was listing built work
+      as open. The wrappers went in at once; the tick waited for a suite, because a box ticked
+      because a handler exists is the claim the built-tested-committed rule exists to stop.
+      THE SUCCESS PATH NEEDED A SCRATCH SYSTEM and that is why it could not have been tested
+      earlier: every NiagaraSystem shipped here is cooked and the cooked guard answers first.
+      create_asset makes a usable one (it calls InitializeSystem), and four NiagaraEmitter
+      source assets exist to add from.
+      Judged by the emitter LIST, never by the calls: AddEmitterHandle returns a handle by
+      value and RemoveEmitterHandle returns void, so neither says anything about what the
+      system now contains. Refusals covered: an unknown emitter name (and the refusal lists
+      what IS there), a NiagaraSystem passed where an emitter is wanted, a missing path, and
+      an index - refused by name because it shifts whenever anything is added or removed.
+      T8102 pins the asymmetry that made remove its own item: RemoveEmitterHandle clears the
+      system parameters and RemoveEmitterHandlesById does not, while only the latter rebuilds
+      compiled data. The response names which path ran, so a caller knows what was cleaned
+      rather than guessing.
 - [x] **audit create_asset for other classes that need factory initialisation** (hours)
       DONE 2026-08-30. tools/audit_factory_init.py, plus a warning in create_asset and 11
       checks in tools/test_factory_init.py.
