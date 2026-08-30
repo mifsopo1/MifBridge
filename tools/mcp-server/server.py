@@ -2750,6 +2750,12 @@ def destroy_collection(name: str, share_type: str = "local", confirm: bool = Fal
 
 
 @mcp.tool()
+def get_level_blueprint(level: str = "", create: bool = False) -> dict:
+    "Get the blueprintId of a level's Level Blueprint, so every blueprint endpoint can act on level-wide logic. Nothing else emits that path. create defaults to FALSE because minting one dirties the map."
+    return _post("get_level_blueprint", level=level, create=create)
+
+
+@mcp.tool()
 def consolidate_assets(target: str, sources: list, delete_sources: bool = False,
                        confirm: bool = False) -> dict:
     "Repoint every referencer of `sources` at `target`, optionally deleting the sources - the Content Browser's asset consolidation, and the write half delete_asset dead-ends into. It CLOSES EVERY OPEN ASSET EDITOR. Run check_consolidate_assets first; requires confirm=True."

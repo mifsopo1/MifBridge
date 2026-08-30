@@ -107,6 +107,7 @@
 #include "LevelInstance/LevelInstanceSubsystem.h"   // ALevelInstance, the placed prefab
 #include "LevelInstance/LevelInstanceInterface.h"
 #include "EngineUtils.h"                            // TActorIterator
+#include "Engine/LevelScriptBlueprint.h"           // ULevelScriptBlueprint IS-A UBlueprint
 #include "LevelUtils.h"
 #include "Selection.h"
 #include "MifBridgeLog.h"
@@ -3633,5 +3634,147 @@ namespace MifBridge
 		Out->SetStringField(TEXT("assetNote"),
 			TEXT("the level is dirty and NOTHING has been saved."));
 #endif
+	}
+
+	// =======================================================================
+	// get_level_blueprint - a front door, not a new subsystem
+	// =======================================================================
+	//
+	// THE SURVEY'S PREMISE WAS FALSE, and checking it shrank this from a resolution change across
+	// every blueprint endpoint to a single read. A Level Blueprint IS already loadable:
+	// StaticLoadObject resolves SUBOBJECT_DELIMITER paths through ResolveName, and
+	// ULevelScriptBlueprint IS-A UBlueprint - so ResolveBlueprint already accepts
+	// "/Game/Maps/M_Town.M_Town:PersistentLevel.M_Town" on an uncooked map that has one, and the
+	// whole graph surface (list_graphs, add_function_call, connect_pins, compile, the recipes)
+	// works on it unchanged. save_blueprint is already .umap-aware too.
+	//
+	// So teaching every endpoint a "level:" prefix would have been a second addressing scheme for
+	// something already addressable. What is genuinely missing is smaller and duller:
+	//
+	//   1. NOTHING EMITS THAT PATH, so no agent will ever guess it. That alone is the gap - a
+	//      capability nobody can discover is not a capability.
+	//   2. A map that has never had a Level Blueprint has none to load, and only
+	//      GetLevelScriptBlueprint(bDontCreate=false) can mint one. Every map from new_level is in
+	//      that state.
+	//   3. Cooked maps need a named refusal rather than a null dereference.
+	//
+	// bDontCreate DEFAULTS TO TRUE HERE, inverted from the engine's own default. A read that mints
+	// a Level Blueprint as a side effect would dirty the map just for asking whether one exists -
+	// and on a map opened to look at, that is a change nobody asked for. Minting is behind
+	// create:true.
+
+	void H_get_level_blueprint(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("level"), TEXT("sublevel"), TEXT("create") },
+			TEXT("level (a sublevel package path, or \"persistent\" / omitted for the persistent ")
+			TEXT("level); create (default FALSE - minting a Level Blueprint dirties the map)"),
+			{ { TEXT("blueprintId"), TEXT("that is the OUTPUT - this endpoint exists to tell you "
+										  "what it is, because nothing else emits it") },
+			  { TEXT("graph"), TEXT("use the returned blueprintId with list_graphs; every blueprint "
+									"endpoint already works on a Level Blueprint unchanged") } }))
+		{
+			return;
+		}
+
+		UWorld* World = ActiveWorld();
+		if (!World) { Fail(Out, TEXT("no active world.")); return; }
+
+		// --- pick the level -------------------------------------------------------------------
+		const FString Want = JStrAny(In, { TEXT("level"), TEXT("sublevel") });
+		ULevel* Level = nullptr;
+		if (Want.IsEmpty() || Want.Equals(TEXT("persistent"), ESearchCase::IgnoreCase))
+		{
+			Level = World->PersistentLevel;
+		}
+		else
+		{
+			for (ULevelStreaming* Streaming : World->GetStreamingLevels())
+			{
+				if (!Streaming) { continue; }
+				const FString Pkg = Streaming->GetWorldAssetPackageName();
+				if (Pkg == Want || FPaths::GetBaseFilename(Pkg) == Want)
+				{
+					Level = Streaming->GetLoadedLevel();
+					if (!Level)
+					{
+						Fail(Out, FString::Printf(
+							TEXT("sublevel '%s' is not LOADED, so it has no ULevel and therefore no "
+								 "Level Blueprint to reach. set_sublevel_streaming can load it."),
+							*Want));
+						return;
+					}
+					break;
+				}
+			}
+			if (!Level)
+			{
+				TArray<FString> Have;
+				for (const ULevelStreaming* S : World->GetStreamingLevels())
+				{
+					if (S) { Have.Add(FPaths::GetBaseFilename(S->GetWorldAssetPackageName())); }
+				}
+				Fail(Out, FString::Printf(
+					TEXT("no sublevel '%s' in this world. It has: %s (plus \"persistent\")."),
+					*Want, Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(no sublevels)")));
+				return;
+			}
+		}
+
+		const UPackage* Pkg = Level->GetOutermost();
+		const bool bCooked = Pkg && Pkg->HasAnyPackageFlags(PKG_Cooked);
+		Out->SetStringField(TEXT("level"), Pkg ? Pkg->GetName() : FString());
+		Out->SetBoolField(TEXT("isPersistentLevel"), Level == World->PersistentLevel);
+		Out->SetBoolField(TEXT("cookedMap"), bCooked);
+
+		const bool bCreate = JBool(In, TEXT("create"), false);
+		if (bCooked && bCreate)
+		{
+			// NEVER MINT INTO A COOKED PACKAGE. GetLevelScriptBlueprint(false) would author into
+			// something that cannot be saved, and the result would look real until restart.
+			Fail(Out, TEXT("this map is COOKED, so a Level Blueprint cannot be created in it - the "
+				TEXT("package cannot be resaved and the result would vanish on restart. NOTHING "
+					 "was changed.")));
+			return;
+		}
+
+		// bDontCreate is the INVERSE of create, and defaults to not creating.
+		ULevelScriptBlueprint* LSB = Level->GetLevelScriptBlueprint(/*bDontCreate*/ !bCreate);
+		if (!LSB)
+		{
+			if (bCooked)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is a COOKED map and its Level Blueprint was stripped at cook - "
+						 "ULevel::LevelScriptBlueprint is editor-only data, and only the compiled "
+						 "ALevelScriptActor survives. There is nothing here to address, on this map "
+						 "or through any other endpoint."), *Pkg->GetName()));
+				return;
+			}
+			Out->SetBoolField(TEXT("exists"), false);
+			Out->SetStringField(TEXT("note"),
+				TEXT("this level has no Level Blueprint yet - a map that has never had one carries "
+					 "none, which is normal for a level from new_level. Nothing was created, "
+					 "because minting one dirties the map. Pass create:true to make it."));
+			return;
+		}
+
+		// THE POINT OF THE ENDPOINT: the id every other blueprint endpoint already accepts.
+		const FString Id = LSB->GetPathName();
+		Out->SetBoolField(TEXT("exists"), true);
+		Out->SetBoolField(TEXT("created"), bCreate);
+		Out->SetStringField(TEXT("blueprintId"), Id);
+		Out->SetStringField(TEXT("blueprintPath"), Id);
+		Out->SetStringField(TEXT("class"), LSB->GetClass()->GetName());
+		Out->SetStringField(TEXT("usage"),
+			TEXT("pass blueprintId to any blueprint endpoint - list_graphs, find_nodes, "
+				 "add_function_call, connect_pins, compile - they all work on a Level Blueprint "
+				 "unchanged, because ULevelScriptBlueprint IS-A UBlueprint. This endpoint exists "
+				 "because nothing else emits that path, not because the path was unusable."));
+		if (bCreate)
+		{
+			Out->SetStringField(TEXT("assetNote"),
+				TEXT("creating a Level Blueprint DIRTIES the map. Nothing has been saved."));
+		}
 	}
 }

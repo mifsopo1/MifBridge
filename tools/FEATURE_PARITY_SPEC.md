@@ -5368,7 +5368,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Cooked-safe and useful there. Collections are editor-side files under Content/Collections (Local/Private) or the shared source-control path; they store FSoftObjectPaths and never load the assets, so a collection can happily contain cooked, container-only assets that duplicate_asset would refuse to t...
       Vetter corrected the proposal: The proposer MISSED a live workaround: the WRITE half is already reachable today. `FCollectionManagerModule::StartupModule` unconditionally constructs `FCollectionManagerConsoleCommands` (D:/UE532/Engine/Source/Developer/CollectionManager/Private/CollectionManagerModule.cpp:13, byte-identical in 5.7), registering four `FAutoConsoleCommand`s in CollectionManagerConsoleCommands.h:26-40: CollectionMa...
 
-- [ ] **extend blueprintId/path resolution to accept the Level Blueprint (e.g. blueprintId:"level:/Game/Maps/M_Town" or levelBlueprint:true)** (hours)
+- [x] **get_level_blueprint** (hours) - scope cut from "extend resolution everywhere"
+      DONE 2026-08-30. 16 checks in tools/test_level_blueprint.py.
+      THE PREMISE WAS FALSE and checking it shrank the work from a resolution change across
+      every blueprint endpoint to one read. A Level Blueprint was ALWAYS addressable:
+      StaticLoadObject resolves SUBOBJECT_DELIMITER paths and ULevelScriptBlueprint IS-A
+      UBlueprint, so ResolveBlueprint already accepted
+      '/Game/Maps/M.M:PersistentLevel.M' and the whole graph surface worked on it.
+      Teaching every endpoint a "level:" prefix would have been a SECOND addressing scheme
+      for something already addressable.
+      What was genuinely missing: nothing EMITTED that path, so no agent would guess it; a map
+      that never had a Level Blueprint has none, and only GetLevelScriptBlueprint(false) mints
+      one - which is every map from new_level; and cooked maps needed a named refusal.
+      bDontCreate is INVERTED from the engine default: a read that minted one would dirty a
+      map opened only to look at. Minting is behind create:true.
+      The suite proves the point rather than the plumbing: the returned id goes straight into
+      list_graphs and list_nodes and they answer.
+      A test bug fixed on the way, worth the note: list_nodes takes a graphId, not a
+      blueprintId - and its own refusal said exactly that. Check the suite before the handler.
       Makes the persistent level's (and a sublevel's) Level Blueprint addressable as a UBlueprint, which instantly lights up the ENTIRE existing blueprint surface on it: list_graphs, list_nodes, find_nodes, add_function_call, add_variable, connect_pins, splice_into_exec, add_custom_event, compile, apply_graph_patch, the recipes. Level-wide logic (BeginPlay wiring, trigger-volume handling, sequence kick-off, sublevel streaming logic) is the single most common thing a level-building agent needs and today there is no path to it at all.
       API: ULevel::GetLevelScriptBlueprint(bool bDontCreate=false) — ENGINE_API, D:/UE532/Engine/Source/Runtime/Engine/Classes/Engine/Level.h:1242 (same signature at UE_5.7/.../Level.h:1398). Returns ULevelScriptBlueprint, which IS-A UBlueprint (D:/UE532/Engine/Source/Runtime/Engine/Classes/Engine/LevelScriptBlueprint.h:24), so every existing handler works on it unchanged. Reach the ULevel via UWorld::Persis...
       Cooked: Does not work cooked. ULevel::LevelScriptBlueprint is WITH_EDITORONLY_DATA and cooking strips it (only the compiled ALevelScriptActor class survives), exactly like a cooked UBlueprint. The cooked path must call GetLevelScriptBlueprint(bDontCreate=true), get null, and refuse with a named reason in th...

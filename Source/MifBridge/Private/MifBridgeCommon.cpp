@@ -180,6 +180,7 @@ namespace MifBridge
 			MIF_BIND(add_to_collection);
 			MIF_BIND(remove_from_collection);
 			MIF_BIND(destroy_collection);
+			MIF_BIND(get_level_blueprint);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);
