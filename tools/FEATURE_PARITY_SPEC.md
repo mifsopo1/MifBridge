@@ -4982,7 +4982,30 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Runs on a cooked map but the RESULT CANNOT PERSIST — lightmaps and captures land in the level's UMapBuildDataRegistry, and a cooked map is unsaveable (docs/audit/03_GAPS_AND_RISKS.md row 'Cooked WP maps' already states this). Correct behaviour is therefore not to refuse but to BUILD and flag it: rep...
       Vetter corrected the proposal: SCOPE CUT: 3 of the 4 proposed pieces are ALREADY REACHABLE. Only `lighting_build_status` (the read/poll half) survives. Rank drops high -> medium. Also: this is not a new discovery — it is already an open, CORRECTED row in the project's own audit backlog (docs/audit/work/index/D_materials_rendering.rows.json, rows "build_lighting" and "build_reflection_captures"; hazard notes at docs/audit/03_GAP...
 
-- [ ] **move_actors_to_level (move placed actors into a sublevel)** (day)
+- [x] **move_actors_to_level (move placed actors into a sublevel)** (day)
+      DONE 2026-08-30. 13 checks in tools/test_move_actors_to_level.py.
+      THE SURVEY'S RATIONALE WAS WRONG and the vetter corrected it: the move IS reachable
+      today as set_current_sublevel + select_level_actors + run_console{"ACTOR MOVETOCURRENT"}
+      (UnrealEdSrv.cpp:2847). It is worth an endpoint anyway - but because that route runs the
+      engine call with BOTH modal flags TRUE and returns nothing structured, and moving an
+      actor CHANGES ITS PATH, so an unstructured result means losing track of what moved.
+      FOUR HAZARDS, all read out of EditorLevelUtils.cpp:
+        - check(Actor->CopyPasteId == INDEX_NONE) at :161 is a HARD ASSERT, not an ensure. A
+          stale CopyPasteId from an interrupted copy/paste terminates the editor.
+        - bWarnAboutReferences and bWarnAboutRenaming both default TRUE and open REAL modals,
+          not slow-task windows. Both passed false; a modal deadlocks the bridge.
+        - :153 calls SelectNone, wiping the caller's selection. Snapshotted and restored.
+        - a LOCKED source level is skipped silently, with the count just coming back lower.
+      Cooked WARNS rather than refusing, per the vetter: the in-memory move is legitimate and
+      only the save is impossible.
+      allOrFail defaults TRUE because the paths change - a half-finished batch leaves no
+      reliable record of what went where.
+      NOT exercised: a successful move, and with it the assert guard, the locked-level skip
+      and the selection restore. They need a destination SUBLEVEL, and add_sublevel requires
+      an existing loose .umap - creating one means saving to disk. This project's scratch
+      world is World Partition besides, so it has no classic sublevels at all.
+      Merge note: docs/audit already tracks this as `move_actors_to_sublevel`
+      (F_world_level.md, 03_GAPS_AND_RISKS.md:149) - same work, different name.
       Move a set of already-placed actors from the persistent level into a sublevel (or between sublevels). The sublevel family can create, remove, show, hide, stream and set-current a sublevel — and then the only way to get an actor INTO one is to set_current_sublevel and spawn it there. Anything already built has to be deleted and rebuilt.
       API: UEditorLevelUtils::MoveActorsToLevel(const TArray<AActor*>& ActorsToMove, ULevel* DestLevel, bool bWarnAboutReferences, bool bWarnAboutRenaming, bool bMoveAllOrFail, TArray<AActor*>* OutActors) — D:/UE532/Engine/Source/Editor/UnrealEd/Public/EditorLevelUtils.h:100; the ULevelStreaming* overload is at :65 and CopyOrMoveActorsToLevel at :229. Destination resolution reuses this file's own FLevelUtils...
       Cooked: UNCOOKED ONLY in practice — the move renames the actor into another package, so both the source and destination levels must be saveable, which a cooked base-game map is not. Refuse by name on a cooked target: 'the destination sublevel's package is cooked and cannot be resaved, so the move would be l...

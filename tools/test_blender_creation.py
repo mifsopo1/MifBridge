@@ -43,6 +43,19 @@ def check(name, cond, detail=""):
         print("  FAIL  %s\n        %s" % (name, str(detail)[:400]))
 
 
+
+def run_python_available():
+    """True when the addon will execute run_python for us.
+
+    IT IS OFF BY DEFAULT, and a --factory-startup headless Blender - which is exactly what
+    run_blender_suites.py starts - can never have it on, because it is an addon PREFERENCE. A GUI
+    Blender with it enabled runs these checks; the cross-version sweep cannot. Detected rather than
+    assumed, so the checks that need it are SKIPPED with a reason instead of failing on four
+    versions and looking like an endpoint defect.
+    """
+    r = B.call("run_python", {"code": "pass"})
+    return bool(r.get("ok"))
+
 def names():
     return {o["name"] for o in (B.call("list_objects").get("objects") or [])}
 
@@ -175,6 +188,17 @@ def main():
         qc = B.call("create_primitive", {"kind": "cube", "name": "MifT_Quat"})
         if qc.get("ok"):
             made.append(qc["name"])
+        # SETTING rotation_mode NEEDS run_python, which is an addon preference and is OFF by
+        # default - so a --factory-startup headless Blender, which is what the cross-version sweep
+        # starts, can never have it. Detected rather than assumed: these two checks used to FAIL on
+        # all four versions and read exactly like an endpoint defect.
+        if qc.get("ok") and not run_python_available():
+            print("  NOT EXERCISED: the QUATERNION rotation path. Setting rotation_mode needs")
+            print("  run_python, which is an addon preference that is off by default and cannot be")
+            print("  on under --factory-startup. Run this against a GUI Blender with 'Allow")
+            print("  run_python' enabled to cover it - the endpoint handles QUATERNION and")
+            print("  AXIS_ANGLE, and that is what these two checks prove.")
+        elif qc.get("ok"):
             B.call("run_python", {"code": "import bpy; bpy.data.objects[%r].rotation_mode="
                                           "'QUATERNION'" % qc["name"]})
             qr = B.call("transform_object", {"object": qc["name"],

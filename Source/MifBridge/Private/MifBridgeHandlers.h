@@ -1098,6 +1098,7 @@ namespace MifBridge
 	MIF_DECL(set_anim_curve_keys);
 	MIF_DECL(remove_anim_curve);
 	MIF_DECL(lighting_build_status);
+	MIF_DECL(move_actors_to_level);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);

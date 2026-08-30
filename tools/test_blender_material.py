@@ -42,6 +42,19 @@ def check(name, cond, detail=""):
         print("  FAIL  %s\n        %s" % (name, str(detail)[:400]))
 
 
+
+def run_python_available():
+    """True when the addon will execute run_python for us.
+
+    IT IS OFF BY DEFAULT, and a --factory-startup headless Blender - which is exactly what
+    run_blender_suites.py starts - can never have it on, because it is an addon PREFERENCE. A GUI
+    Blender with it enabled runs these checks; the cross-version sweep cannot. Detected rather than
+    assumed, so the checks that need it are SKIPPED with a reason instead of failing on four
+    versions and looking like an endpoint defect.
+    """
+    r = B.call("run_python", {"code": "pass"})
+    return bool(r.get("ok"))
+
 def main():
     ping = B.call("ping")
     if not ping.get("ok"):
@@ -154,21 +167,31 @@ def main():
 
         # 2. a LINKED socket ignores default_value entirely, so writing one changes nothing that
         #    renders while still reading back as the new value.
-        B.call("run_python", {"code":
-            "import bpy\n"
-            "m = bpy.data.materials[%r]\n"
-            "t = m.node_tree\n"
-            "n = t.nodes.new('ShaderNodeRGB')\n"
-            "b = next(x for x in t.nodes if x.type == 'BSDF_PRINCIPLED')\n"
-            "t.links.new(n.outputs[0], b.inputs['Base Color'])\n" % made_name})
-        linked = B.call("set_material_properties", {"material": made_name,
-                                                    "baseColor": [0, 1, 0]})
-        check("T4104 writing a LINKED socket is refused, not silently ignored",
-              linked.get("ok") is False and "LINKED" in (linked.get("error") or ""),
-              (linked.get("error") or "")[:220])
-        check("T4104 and the refusal explains that a connected input ignores its default",
-              "ignores its default" in (linked.get("error") or ""),
-              (linked.get("error") or "")[:200])
+        #
+        # BUILDING THE LINK NEEDS run_python, an addon preference that is off by default and cannot
+        # be on under --factory-startup - which is what the cross-version sweep uses. Detected, so
+        # these checks skip with a reason rather than failing on four versions and reading like a
+        # defect in the endpoint.
+        if not run_python_available():
+            print("  NOT EXERCISED: the LINKED-socket refusal. Creating a node link needs")
+            print("  run_python, which is off by default and unavailable under --factory-startup.")
+            print("  Run against a GUI Blender with 'Allow run_python' enabled to cover it.")
+        else:
+            B.call("run_python", {"code":
+                "import bpy\n"
+                "m = bpy.data.materials[%r]\n"
+                "t = m.node_tree\n"
+                "n = t.nodes.new('ShaderNodeRGB')\n"
+                "b = next(x for x in t.nodes if x.type == 'BSDF_PRINCIPLED')\n"
+                "t.links.new(n.outputs[0], b.inputs['Base Color'])\n" % made_name})
+            linked = B.call("set_material_properties", {"material": made_name,
+                                                        "baseColor": [0, 1, 0]})
+            check("T4104 writing a LINKED socket is refused, not silently ignored",
+                  linked.get("ok") is False and "LINKED" in (linked.get("error") or ""),
+                  (linked.get("error") or "")[:220])
+            check("T4104 and the refusal explains that a connected input ignores its default",
+                  "ignores its default" in (linked.get("error") or ""),
+                  (linked.get("error") or "")[:200])
 
         # 3. a mesh with no polygons made assign_material_to_faces return changed:0 and no error.
         empty = B.call("create_primitive", {"kind": "circle", "name": "MifT_Empty",

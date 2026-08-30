@@ -103,6 +103,9 @@
 // deferred verb returns an `opId` and records its outcome into a small ring that `list_sublevels`
 // reports as `ops[]`. Poll until the entry for your opId has completed:true, then read its ok/error.
 #include "MifBridgeHandlers.h"
+#include "EditorLevelUtils.h"
+#include "LevelUtils.h"
+#include "Selection.h"
 #include "MifBridgeLog.h"
 
 #include "Editor.h"                                  // GEditor
@@ -2885,5 +2888,302 @@ namespace MifBridge
 					 "genuinely has no external actors yet; if this map came from a cook, the "
 					 "descriptors were stripped and this endpoint cannot see anything."));
 		}
+	}
+
+	// =======================================================================
+	// move_actors_to_level - and the four things MoveActorsToLevel does quietly
+	// =======================================================================
+	//
+	// WHY THIS EXISTS, stated accurately rather than as the survey had it. The move is ALREADY
+	// reachable: set_current_sublevel, then select_level_actors, then
+	// run_console{"ACTOR MOVETOCURRENT"} (UnrealEdSrv.cpp:2847). So this is not a missing
+	// capability. It is worth an endpoint because that route runs the engine call with BOTH modal
+	// flags TRUE and hands back nothing structured - and the actor paths CHANGE when an actor moves
+	// package, so "nothing structured" means the caller has lost track of every actor it just moved.
+	//
+	// FOUR HAZARDS, all read out of EditorLevelUtils.cpp rather than assumed:
+	//
+	// 1. A HARD ASSERT. Line 161 is `check(Actor->CopyPasteId == INDEX_NONE)` - not an ensure. An
+	//    actor carrying a stale CopyPasteId from an interrupted copy/paste TERMINATES the editor
+	//    rather than being skipped. Every actor is checked here before the engine is touched.
+	//
+	// 2. TWO MODALS, ON BY DEFAULT. bWarnAboutReferences and bWarnAboutRenaming both default TRUE
+	//    (EditorLevelUtils.h:100) and both open real dialogs - not slow-task windows. A modal
+	//    deadlocks the bridge outright, because handlers run inline on the ticker that would have
+	//    to service it. Both are passed FALSE.
+	//
+	// 3. IT WIPES THE SELECTION. Line 153 calls GEditor->SelectNone before building its own
+	//    selection, so whatever the caller had selected is gone. Snapshotted and restored here,
+	//    because the selection is shared state a caller did not ask to have changed.
+	//
+	// 4. A LOCKED SOURCE LEVEL IS SILENTLY SKIPPED. FLevelUtils::IsLevelLocked gates entry into
+	//    FinalMoveList (:120-130) with no report, so an actor in a locked level is simply not moved
+	//    and the return count is quietly lower. Checked and reported per actor instead.
+	//
+	// COOKED WARNS RATHER THAN REFUSING. The in-memory move works fine; it is the SAVE that cannot
+	// happen, because the actor is renamed into a package that cannot be resaved. Refusing would
+	// block a legitimate in-session operation, so this reports it and lets the caller decide.
+
+	void H_move_actors_to_level(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPaths"), TEXT("actors"), TEXT("level"), TEXT("sublevel"),
+			  TEXT("allOrFail"), TEXT("confirm") },
+			TEXT("actorPaths[] (alias actors) - the actors to move; level (alias sublevel) - the ")
+			TEXT("destination sublevel package path, or \"persistent\"; allOrFail (default true); ")
+			TEXT("confirm:true - moving an actor CHANGES ITS PATH"),
+			{ { TEXT("folder"), TEXT("not a selector here - list_level_actors filters, and its "
+									 "actorPath values are what this takes") },
+			  { TEXT("copy"), TEXT("this MOVES. CopyOrMoveActorsToLevel's copy half is a separate "
+								   "verb and is not offered yet") } }))
+		{
+			return;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if ((!In->TryGetArrayField(TEXT("actorPaths"), Arr)
+			 && !In->TryGetArrayField(TEXT("actors"), Arr)) || !Arr || Arr->Num() == 0)
+		{
+			Fail(Out, TEXT("actorPaths[] is required and must be non-empty. list_level_actors "
+				TEXT("reports them. NOTHING was moved.")));
+			return;
+		}
+
+		UWorld* World = ActiveWorld();
+		if (!World)
+		{
+			Fail(Out, TEXT("no active world. NOTHING was moved."));
+			return;
+		}
+
+		// --- destination ------------------------------------------------------------------------
+		const FString LevelName = JStrAny(In, { TEXT("level"), TEXT("sublevel") });
+		if (LevelName.IsEmpty())
+		{
+			Fail(Out, TEXT("level is required - a sublevel package path, or \"persistent\" for the "
+				TEXT("persistent level. list_sublevels reports them. NOTHING was moved.")));
+			return;
+		}
+		ULevel* Dest = nullptr;
+		if (LevelName.Equals(TEXT("persistent"), ESearchCase::IgnoreCase))
+		{
+			Dest = World->PersistentLevel;
+		}
+		else
+		{
+			for (ULevelStreaming* Streaming : World->GetStreamingLevels())
+			{
+				if (!Streaming) { continue; }
+				const FString Pkg = Streaming->GetWorldAssetPackageName();
+				if (Pkg == LevelName || FPaths::GetBaseFilename(Pkg) == LevelName)
+				{
+					Dest = Streaming->GetLoadedLevel();
+					if (!Dest)
+					{
+						Fail(Out, FString::Printf(
+							TEXT("sublevel '%s' is not LOADED, so it has no ULevel to move actors ")
+							TEXT("into. set_sublevel_streaming can load it. NOTHING was moved."),
+							*LevelName));
+						return;
+					}
+					break;
+				}
+			}
+		}
+		if (!Dest)
+		{
+			TArray<FString> Have;
+			for (const ULevelStreaming* S : World->GetStreamingLevels())
+			{
+				if (S) { Have.Add(FPaths::GetBaseFilename(S->GetWorldAssetPackageName())); }
+			}
+			Fail(Out, FString::Printf(
+				TEXT("no sublevel '%s' in this world. It has: %s (plus \"persistent\"). NOTHING ")
+				TEXT("was moved."), *LevelName,
+				Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(no sublevels)")));
+			return;
+		}
+
+		// --- resolve and vet every actor BEFORE touching the engine ------------------------------
+		UEditorActorSubsystem* ActorSub =
+			GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+		if (!ActorSub)
+		{
+			Fail(Out, TEXT("no EditorActorSubsystem - this is not a running editor. NOTHING was "
+				TEXT("moved.")));
+			return;
+		}
+
+		TArray<AActor*> ToMove;
+		TArray<TSharedPtr<FJsonValue>> Refused;
+		TArray<TSharedPtr<FJsonValue>> NotFound;
+		auto Refuse = [&Refused](const FString& Path, const FString& Reason)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("actor"), Path);
+			J->SetStringField(TEXT("reason"), Reason);
+			Refused.Add(MakeShared<FJsonValueObject>(J));
+		};
+
+		for (const TSharedPtr<FJsonValue>& V : *Arr)
+		{
+			FString Path;
+			if (!V.IsValid() || !V->TryGetString(Path) || Path.IsEmpty())
+			{
+				Refuse(TEXT("(non-string entry)"), TEXT("actorPaths[] holds actor path strings"));
+				continue;
+			}
+			// THE SHARED RESOLVER, via the one-key wrapper MifBridgeComponents.cpp:303 established.
+			// ResolveActor takes the path out of a JSON object, and GetActorReference does NOT
+			// resolve the paths list_level_actors emits - this repo has written that resolver three
+			// times learning it, so this makes no attempt at a fourth.
+			TSharedRef<FJsonObject> One = MakeShared<FJsonObject>();
+			One->SetStringField(TEXT("actorPath"), Path);
+			AActor* Actor = ActorSub ? ResolveActor(ActorSub, One, Out) : nullptr;
+			if (!Actor)
+			{
+				NotFound.Add(MakeShared<FJsonValueString>(Path));
+				continue;
+			}
+			if (Actor->GetLevel() == Dest)
+			{
+				Refuse(Path, TEXT("already in the destination level - nothing to do"));
+				continue;
+			}
+			// THE HARD ASSERT. EditorLevelUtils.cpp:161 is check(), not ensure: a stale CopyPasteId
+			// terminates the editor rather than skipping the actor.
+			if (Actor->CopyPasteId != INDEX_NONE)
+			{
+				Refuse(Path, TEXT("this actor carries a stale CopyPasteId, left over from an "
+								  "interrupted copy/paste. MoveActorsToLevel asserts on that with a "
+								  "check(), which would TERMINATE the editor rather than skip it."));
+				continue;
+			}
+			// A locked SOURCE level is dropped silently by the engine, with the return count just
+			// being lower.
+			if (FLevelUtils::IsLevelLocked(Actor))
+			{
+				Refuse(Path, TEXT("its source level is LOCKED. The engine skips locked-level actors "
+								  "silently and simply returns a smaller count, so this is reported "
+								  "instead."));
+				continue;
+			}
+			ToMove.Add(Actor);
+		}
+
+		const bool bAllOrFail = JBool(In, TEXT("allOrFail"), true);
+		if (ToMove.Num() == 0)
+		{
+			Out->SetArrayField(TEXT("refused"), Refused);
+			Out->SetArrayField(TEXT("notFound"), NotFound);
+			Out->SetNumberField(TEXT("requested"), Arr->Num());
+			Fail(Out, TEXT("none of the requested actors can be moved - see refused[] and "
+				TEXT("notFound[]. NOTHING was moved.")));
+			return;
+		}
+		if (bAllOrFail && (Refused.Num() > 0 || NotFound.Num() > 0))
+		{
+			Out->SetArrayField(TEXT("refused"), Refused);
+			Out->SetArrayField(TEXT("notFound"), NotFound);
+			Fail(Out, FString::Printf(
+				TEXT("%d of %d actor(s) cannot be moved, and allOrFail is on - so NOTHING was "
+					 "moved. A partial move is worse than none here: the actor paths CHANGE, so a "
+					 "half-finished batch leaves you without a reliable list of what went where. "
+					 "Pass allOrFail:false to move the %d that can."),
+				Refused.Num() + NotFound.Num(), Arr->Num(), ToMove.Num()));
+			return;
+		}
+
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Out->SetArrayField(TEXT("refused"), Refused);
+			Out->SetArrayField(TEXT("notFound"), NotFound);
+			Fail(Out, FString::Printf(
+				TEXT("moving %d actor(s) into '%s' RENAMES them into that level's package, so every "
+					 "actorPath you are holding becomes wrong. The response returns the new paths. "
+					 "Pass confirm:true. NOTHING was moved."),
+				ToMove.Num(), *LevelName));
+			return;
+		}
+
+		// Paths captured BEFORE the move - they are about to change, which is the whole point.
+		TArray<FString> FromPaths;
+		for (const AActor* A : ToMove) { FromPaths.Add(A->GetPathName()); }
+
+		const UPackage* DestPkg = Dest->GetOutermost();
+		const bool bCookedDest = DestPkg && DestPkg->HasAnyPackageFlags(PKG_Cooked);
+
+		// THE SELECTION IS WIPED BY THE ENGINE (EditorLevelUtils.cpp:153 calls SelectNone before
+		// building its own), so it is snapshotted and put back - a caller did not ask for their
+		// selection to be destroyed.
+		TArray<AActor*> PriorSelection;
+		if (GEditor)
+		{
+			for (FSelectionIterator It(GEditor->GetSelectedActorIterator()); It; ++It)
+			{
+				if (AActor* A = Cast<AActor>(*It)) { PriorSelection.Add(A); }
+			}
+		}
+
+		TArray<AActor*> Moved;
+		// BOTH MODAL FLAGS FALSE. They default TRUE and open real dialogs, and a modal deadlocks
+		// the bridge because handlers run inline on the ticker that would service it.
+		const int32 Count = UEditorLevelUtils::MoveActorsToLevel(
+			ToMove, Dest, /*bWarnAboutReferences*/ false, /*bWarnAboutRenaming*/ false,
+			/*bMoveAllOrFail*/ bAllOrFail, &Moved);
+
+		if (GEditor)
+		{
+			GEditor->SelectNone(false, true, false);
+			for (AActor* A : PriorSelection)
+			{
+				if (IsValid(A)) { GEditor->SelectActor(A, true, false); }
+			}
+			GEditor->NoteSelectionChange();
+		}
+
+		TArray<TSharedPtr<FJsonValue>> MovedRows;
+		for (int32 i = 0; i < Moved.Num(); ++i)
+		{
+			if (!Moved[i]) { continue; }
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			// THE PATHS CHANGED, and echoing both is the reason this endpoint exists rather than
+			// the console route: without the new path a caller cannot address what it just moved.
+			J->SetStringField(TEXT("from"), FromPaths.IsValidIndex(i) ? FromPaths[i] : FString());
+			J->SetStringField(TEXT("to"), Moved[i]->GetPathName());
+			J->SetStringField(TEXT("label"), Moved[i]->GetActorNameOrLabel());
+			MovedRows.Add(MakeShared<FJsonValueObject>(J));
+		}
+
+		Out->SetStringField(TEXT("destinationLevel"), Dest->GetOutermost()->GetName());
+		Out->SetNumberField(TEXT("requested"), Arr->Num());
+		// MEASURED from the engine's own out-array, not from the request.
+		Out->SetNumberField(TEXT("moved"), Count);
+		Out->SetArrayField(TEXT("movedActors"), MovedRows);
+		Out->SetArrayField(TEXT("refused"), Refused);
+		Out->SetArrayField(TEXT("notFound"), NotFound);
+		Out->SetBoolField(TEXT("selectionRestored"), true);
+		Out->SetStringField(TEXT("pathNote"),
+			TEXT("every moved actor's path CHANGED - movedActors[] maps old to new. Any actorPath "
+				 "held from before this call is now stale."));
+		if (bCookedDest)
+		{
+			Out->SetBoolField(TEXT("cookedDestination"), true);
+			Out->SetStringField(TEXT("cookedNote"),
+				TEXT("the destination level came from a COOKED package. The move HAS happened in "
+					 "memory and works for this session, but that package cannot be resaved - so "
+					 "the move is lost on restart and the source level would come back holding the "
+					 "actors again. Warned rather than refused, because the in-session move is "
+					 "legitimate; only persisting it is impossible."));
+		}
+		if (Count != ToMove.Num())
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("%d actor(s) were eligible and the engine moved %d. MoveActorsToLevel reports "
+					 "only a count, so movedActors[] - built from its own out-array - is the "
+					 "authoritative list of what actually moved."), ToMove.Num(), Count));
+		}
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("both levels are dirty and NOTHING has been saved."));
 	}
 }

@@ -3086,6 +3086,14 @@ def lighting_build_status() -> dict:
     return _post("lighting_build_status")
 
 
+@mcp.tool()
+def move_actors_to_level(actor_paths: list, level: str, all_or_fail: bool = True,
+                         confirm: bool = False) -> dict:
+    "Move already-placed actors from one level into another - persistent to sublevel, or between sublevels. `level` is a sublevel package path or 'persistent'. THE ACTOR PATHS CHANGE: a move renames the actor into the destination's package, so every actorPath you hold becomes stale, and movedActors[] maps old to new. That is the main reason to use this rather than the console route (set_current_sublevel + select_level_actors + run_console 'ACTOR MOVETOCURRENT'), which works but returns nothing structured and runs the engine call with both modal warnings ON - a modal deadlocks the bridge. Requires confirm=True. all_or_fail defaults to TRUE because a half-finished batch is worse than none here: you would be left without a reliable list of what went where. Actors are vetted before the engine is touched - an actor with a stale CopyPasteId is refused because UEditorLevelUtils::MoveActorsToLevel asserts on it with a check() that would terminate the editor, and an actor in a LOCKED source level is refused because the engine skips those silently and just returns a smaller count. The selection is snapshotted and restored, since the engine wipes it. A cooked destination WARNS rather than refusing: the in-memory move is fine, only saving it is impossible."
+    return _post("move_actors_to_level", actorPaths=actor_paths, level=level,
+                 allOrFail=all_or_fail, confirm=confirm)
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:
