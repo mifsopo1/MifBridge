@@ -5463,7 +5463,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Identical to the two endpoints that already exist — graph edits on an uncooked blueprint; a cooked blueprint has no graph and ResolveGraphField refuses before any engine call. No new cooked hazard.
       Vetter corrected the proposal: Two corrections. (1) VERSIONS: the proposer says SetFromProperty is "unchanged BLUEPRINTGRAPH_API across 5.3.2/5.6/5.7". It is not — UE 5.7 dropped the export macro (5.7 K2Node_BaseMCDelegate.h:46 is a bare inline `void SetFromProperty(...)`). The conclusion is unaffected because the function is header-inline, but the stated evidence is inaccurate and should not be repeated in the spec. (2) RANK: ...
 
-- [ ] **add_create_event (UK2Node_CreateDelegate)** (day)
+- [x] **add_create_event (UK2Node_CreateDelegate)** (day)
+      DONE 2026-08-30. 17 checks in tools/test_create_event.py.
+      FOUR CORRECTIONS FROM THE VETTING, and the second would have shipped a broken endpoint.
+        1. IsValid is NOT callable from a plugin - declared without BLUEPRINTGRAPH_API on a
+           MinimalAPI class and defined out-of-line, so it will not link.
+           docs/audit/03_GAPS_AND_RISKS.md:37 already recorded this. Validation goes through
+           the exported GetDelegateSignature() plus a read-back of GetFunctionName().
+        2. THE OBVIOUS CALL ORDER ERASES THE FUNCTION IT JUST SET.
+           HandleAnyChangeWithoutNotifying clears SelectedFunctionName when the signature
+           cannot resolve and the delegate pin has no links - and on a freshly placed node it
+           can NEVER resolve, because it comes from the connection. So place-SetFunction-
+           HandleAnyChange silently produces a node with no function that looks fine. The
+           endpoint therefore TAKES THE DESTINATION and connects first; the suite asserts the
+           function reads back, which is the only evidence the ordering worked.
+        3. scopeClass has no setter and is REFUSED rather than accepted - GetScopeClass
+           derives the scope entirely from the Self pin, so the argument would be silently
+           ignored, which is what RejectUnknownParams exists to prevent.
+        4. The gap is NARROWER than claimed: every event node carries an OutputDelegate pin,
+           so inherited and override events are already bindable with add_override_event +
+           connect_pins. The two real cases are ordinary functions, and binding from inside a
+           function or macro graph where no event node can exist.
+      Also refuses pure, latent and deprecated functions via FunctionCanBeUsedInDelegate, and
+      names the ClearDelegate case - an unbindAll node has no Delegate pin to bind into.
       Places the Create Event node, which turns a named function or custom event into a delegate value. It is the ONLY way to fill the Event pin of a bind node from anything other than a custom event authored in the same ubergraph — i.e. the only way to bind an existing function, an inherited event, or to bind at all from inside a function or macro graph.
       API: UK2Node_CreateDelegate — D:/UE532/Engine/Source/Editor/BlueprintGraph/Classes/K2Node_CreateDelegate.h:28. BLUEPRINTGRAPH_API SetFunction(FName) (line 62), GetDelegateSignature(), GetScopeClass(), GetFunctionName(), GetDelegateOutPin(), GetObjectInPin(), HandleAnyChange(bool) (lines 63-71) — everything needed to configure and validate one, plus IsValid(FString* OutMsg) at line 59 for a pre-flight t...
       Cooked: Uncooked only, refused earlier by ResolveGraphField. Guard before reporting success: after SetFunction, call IsValid(&Msg) and HandleAnyChange, and if the node is not valid, refuse naming the mismatch (wrong signature / function not found on the scope class) and remove the node — the same append-the...

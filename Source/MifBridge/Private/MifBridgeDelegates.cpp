@@ -8,6 +8,8 @@
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
 #include "K2Node_AddDelegate.h"
+#include "K2Node_CreateDelegate.h"
+#include "EdGraphSchema_K2.h"
 #include "K2Node_ClearDelegate.h"
 #include "K2Node_RemoveDelegate.h"
 #include "K2Node_CallDelegate.h"
@@ -322,5 +324,221 @@ namespace MifBridge
 		}
 		Out->SetNumberField(TEXT("count"), Arr.Num());
 		Out->SetArrayField(TEXT("dispatchers"), Arr);
+	}
+
+	// =======================================================================
+	// add_create_event - and an ordering that erases what you just set
+	// =======================================================================
+	//
+	// WHAT IS ACTUALLY MISSING, stated narrowly because the survey overstated it. "The only way to
+	// bind an inherited event" is false: UK2Node_Event::AllocateDefaultPins creates the
+	// PC_Delegate OutputDelegate pin on EVERY event node (K2Node_Event.cpp:104-106), not just
+	// custom ones, and add_override_event already spawns UK2Node_Event - so inherited and override
+	// events in the ubergraph are bindable today with add_override_event + connect_pins. The two
+	// cases genuinely uncovered are binding an ordinary existing FUNCTION (a Blueprint function
+	// graph or a native UFUNCTION), and binding from inside a function or macro graph where no
+	// event node can exist at all.
+	//
+	// THE ORDERING IS THE WHOLE DIFFICULTY, and the obvious sequence is wrong in a way that leaves
+	// no trace. UK2Node_CreateDelegate::HandleAnyChangeWithoutNotifying ends with
+	// (K2Node_CreateDelegate.cpp:236-243):
+	//
+	//     if (DelegatePin->LinkedTo.Num() == 0) { SelectedFunctionName = NAME_None; }
+	//     SelectedFunctionGuid.Invalidate();
+	//
+	// and it reaches that branch whenever IsValid() fails. On a freshly placed, UNCONNECTED node
+	// IsValid() ALWAYS fails, because GetDelegateSignature returns nullptr unless the delegate pin
+	// is linked - its own message is "Unable to determine expected signature - is the delegate pin
+	// connected?". So "place, SetFunction, HandleAnyChange" silently ERASES the function it just
+	// set. The node must be CONNECTED first, which is why this endpoint takes the destination and
+	// makes the connection itself rather than leaving it to a later connect_pins call.
+	//
+	// IsValid IS NOT CALLABLE FROM A PLUGIN. K2Node_CreateDelegate.h:59 declares it with NO
+	// BLUEPRINTGRAPH_API on a MinimalAPI class and defines it out-of-line, so it will not link -
+	// docs/audit/03_GAPS_AND_RISKS.md:37 already records this. Validation goes through the exported
+	// GetDelegateSignature() != nullptr instead, plus a read-back of GetFunctionName() which is what
+	// actually proves the erase above did not happen.
+	//
+	// THERE IS NO scopeClass PARAMETER, and that is not an omission. GetScopeClass derives the scope
+	// ENTIRELY from what is linked to the Self pin (:357-400) - there is no setter and no UPROPERTY
+	// behind it. Accepting a scopeClass string would be silently ignored, which is the exact
+	// failure mode RejectUnknownParams exists to prevent. To bind a function on another class, wire
+	// an object pin of that type into the Self pin afterwards.
+
+	void H_add_create_event(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("function"), TEXT("bindNode"), TEXT("bindPin"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("graphId; function - the function or custom event to wrap; bindNode - the guid of ")
+			TEXT("the bind node whose Delegate pin this feeds; bindPin (default \"Delegate\"); x, y"),
+			{ { TEXT("scopeClass"), TEXT("there is no setter for the scope - GetScopeClass derives "
+										 "it entirely from what is wired into the Self pin, so a "
+										 "scopeClass parameter would be silently ignored. Wire an "
+										 "object of that type into Self instead") },
+			  { TEXT("event"), TEXT("spell it function - this wraps a function OR a custom event by "
+									"name, and the parameter covers both") },
+			  { TEXT("delegate"), TEXT("the dispatcher is named on the BIND node; this endpoint only "
+									   "needs that node's guid") } }))
+		{
+			return;
+		}
+
+		UBlueprint* Blueprint = nullptr;
+		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
+		if (!Graph || !Blueprint) { return; }
+
+		const FString FunctionName = JStr(In, TEXT("function"));
+		if (FunctionName.IsEmpty())
+		{
+			Fail(Out, TEXT("function is required - the function or custom event to wrap. NOTHING "
+				TEXT("was added.")));
+			return;
+		}
+
+		// --- the destination, resolved BEFORE anything is placed -------------------------------
+		UEdGraphNode* BindNode = ResolveNodeField(In, TEXT("bindNode"), Out);
+		if (!BindNode) { return; }
+		if (BindNode->GetGraph() != Graph)
+		{
+			Fail(Out, TEXT("bindNode is in a different graph. A delegate pin can only be wired "
+				TEXT("within one graph. NOTHING was added.")));
+			return;
+		}
+		const FString BindPinName = JStr(In, TEXT("bindPin"), TEXT("Delegate"));
+		UEdGraphPin* BindPin = FindPin(BindNode, BindPinName, EGPD_Input, /*bRequireDir*/ false);
+		if (!BindPin)
+		{
+			TArray<FString> Have;
+			for (const UEdGraphPin* Pin : BindNode->Pins)
+			{
+				if (Pin) { Have.Add(Pin->PinName.ToString()); }
+			}
+			Fail(Out, FString::Printf(
+				TEXT("no pin '%s' on that node. It has: %s. Note a ClearDelegate (unbindAll) node "
+					 "has NO Delegate pin at all - there is nothing to wire an event into, because "
+					 "it clears every binding. NOTHING was added."),
+				*BindPinName, *FString::Join(Have, TEXT(", "))));
+			return;
+		}
+
+		// --- the function must be usable as a delegate ------------------------------------------
+		UClass* Scope = Blueprint->GeneratedClass ? Blueprint->GeneratedClass
+												  : Blueprint->SkeletonGeneratedClass;
+		UFunction* Target = Scope ? Scope->FindFunctionByName(FName(*FunctionName)) : nullptr;
+		if (!Target)
+		{
+			TArray<FString> Some;
+			if (Scope)
+			{
+				for (TFieldIterator<UFunction> It(Scope); It && Some.Num() < 12; ++It)
+				{
+					Some.Add(It->GetName());
+				}
+			}
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no function or event named '%s'. Some it does have: %s. NOTHING was "
+					 "added."), *Blueprint->GetName(), *FunctionName,
+				Some.Num() ? *FString::Join(Some, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+		if (const UEdGraphSchema_K2* K2 = Cast<UEdGraphSchema_K2>(Graph->GetSchema()))
+		{
+			if (!K2->FunctionCanBeUsedInDelegate(Target))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' cannot be used as a delegate - pure, latent and deprecated functions "
+						 "are excluded by UEdGraphSchema_K2::FunctionCanBeUsedInDelegate. NOTHING "
+						 "was added."), *FunctionName));
+				return;
+			}
+		}
+
+		const int32 X = JInt(In, TEXT("x"), 0);
+		const int32 Y = JInt(In, TEXT("y"), 0);
+
+		UK2Node_CreateDelegate* Node = NewObject<UK2Node_CreateDelegate>(Graph);
+		PlaceAndInit(Graph, Node, X, Y);
+		if (!Graph->Nodes.Contains(Node))
+		{
+			Fail(Out, TEXT("the CreateDelegate node was constructed and the graph does not list it. "
+				TEXT("NOTHING usable was produced.")));
+			return;
+		}
+
+		// --- CONNECT FIRST. This is the whole point of the endpoint's shape --------------------
+		UEdGraphPin* OutPin = Node->GetDelegateOutPin();
+		if (!OutPin)
+		{
+			Graph->RemoveNode(Node);
+			Fail(Out, TEXT("the CreateDelegate node has no delegate output pin. NOTHING was added."));
+			return;
+		}
+		if (!Graph->GetSchema()->TryCreateConnection(OutPin, BindPin))
+		{
+			Graph->RemoveNode(Node);
+			Fail(Out, FString::Printf(
+				TEXT("could not connect the event to '%s' on the bind node - the pin types do not "
+					 "match. The node was removed rather than left dangling. NOTHING was added."),
+				*BindPinName));
+			return;
+		}
+
+		// THE LINK, READ BACK. TryCreateConnection returning true is the engine's own report; the
+		// postcondition is that the pins are actually linked - and everything downstream depends on
+		// it, because the function survives only while the delegate pin has links.
+		if (!OutPin->LinkedTo.Contains(BindPin))
+		{
+			Graph->RemoveNode(Node);
+			Fail(Out, TEXT("the connection reported success and the pins are not linked on "
+				TEXT("read-back. The node was removed. NOTHING usable was produced.")));
+			return;
+		}
+
+		// --- ONLY NOW is the function safe to set ------------------------------------------------
+		Node->SetFunction(FName(*FunctionName));
+		Node->HandleAnyChange(/*bForceModify*/ true);
+
+		// THE READ-BACK THAT PROVES THE ERASE DID NOT HAPPEN. HandleAnyChange clears
+		// SelectedFunctionName when the delegate pin is unlinked and the signature cannot be
+		// resolved, so GetFunctionName coming back as the one we asked for is the only evidence
+		// the ordering above actually worked.
+		const FName Now = Node->GetFunctionName();
+		UFunction* Signature = Node->GetDelegateSignature();
+		if (Now != FName(*FunctionName))
+		{
+			Graph->RemoveNode(Node);
+			Fail(Out, FString::Printf(
+				TEXT("the function was set to '%s' and reads back as '%s' - HandleAnyChange cleared "
+					 "it, which happens when the delegate signature cannot be resolved from what the "
+					 "node is connected to. Check that '%s' matches the dispatcher's signature. The "
+					 "node was removed. NOTHING usable was produced."),
+				*FunctionName, *Now.ToString(), *FunctionName));
+			return;
+		}
+
+		MarkStructural(Blueprint);
+		EmitNode(Out, Node);
+		Out->SetStringField(TEXT("function"), Now.ToString());
+		Out->SetBoolField(TEXT("connected"), true);
+		Out->SetStringField(TEXT("boundTo"), FString::Printf(TEXT("%s.%s"),
+			*BindNode->NodeGuid.ToString(EGuidFormats::Digits), *BindPinName));
+		Out->SetBoolField(TEXT("signatureResolved"), Signature != nullptr);
+		if (!Signature)
+		{
+			// Not fatal - the function survived, so the node is usable - but the signature not
+			// resolving is worth surfacing rather than leaving to compile time.
+			Out->SetStringField(TEXT("signatureNote"),
+				TEXT("the function stuck, but the delegate signature could not be resolved from the "
+					 "connection. That usually means the wrapped function's parameters do not match "
+					 "the dispatcher's. compile will say so precisely."));
+		}
+		Out->SetStringField(TEXT("scopeNote"),
+			TEXT("the scope is derived from the Self pin, which is unconnected - so this wraps a "
+				 "function on THIS blueprint. To wrap one on another class, wire an object of that "
+				 "type into Self; there is no scopeClass parameter because the engine has no "
+				 "setter for it."));
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the Blueprint is dirty and NOT compiled."));
 	}
 }

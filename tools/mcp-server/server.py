@@ -2775,6 +2775,14 @@ def add_k2_node(graph_id: str, node_class: str, x: int = 0, y: int = 0,
 
 
 @mcp.tool()
+def add_create_event(graph_id: str, function: str, bind_node: str,
+                     bind_pin: str = "Delegate", x: int = 0, y: int = 0) -> dict:
+    "Wrap an existing function or custom event as a delegate and CONNECT it to a bind node's Delegate pin in one call. The connection is not optional: setting the function on an unconnected node silently erases it."
+    return _post("add_create_event", graphId=graph_id, function=function, bindNode=bind_node,
+                 bindPin=bind_pin, x=x, y=y)
+
+
+@mcp.tool()
 def consolidate_assets(target: str, sources: list, delete_sources: bool = False,
                        confirm: bool = False) -> dict:
     "Repoint every referencer of `sources` at `target`, optionally deleting the sources - the Content Browser's asset consolidation, and the write half delete_asset dead-ends into. It CLOSES EVERY OPEN ASSET EDITOR. Run check_consolidate_assets first; requires confirm=True."
