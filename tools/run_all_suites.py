@@ -22,6 +22,7 @@ The editor is relaunched if a suite kills it, and that is RECORDED, because a su
 editor down is the headline of the report rather than a footnote.
 """
 import glob
+import io
 import json
 import os
 import subprocess
@@ -36,6 +37,29 @@ TIMEOUT = 900
 def main():
     here = os.path.dirname(__file__) or "."
     suites = sorted(os.path.basename(p) for p in glob.glob(os.path.join(here, "test_*.py")))
+
+    # PIE SUITES ARE SKIPPED UNLESS ASKED FOR. Starting PIE makes the bridge stop answering while
+    # the editor stays alive (seen twice on 2026-08-30, with LogPlayLevel in the editor log and
+    # connection refused on 8791 immediately after), so an unattended sweep never gets past one.
+    # That is why 42 of 144 suites had never been in a full sweep: the sweep did not finish.
+    #
+    # DERIVED, NOT HARDCODED. A suite that mentions start_pie starts PIE. A hand-kept list is one
+    # forgotten entry away from hanging the sweep again - the same drift that left five finished
+    # items sitting in the backlog and a factory table 44% incomplete on the same day.
+    pie_suites = []
+    for name in suites:
+        try:
+            with io.open(os.path.join(here, name), "r", encoding="utf-8", errors="ignore") as fh:
+                if "start_pie" in fh.read():
+                    pie_suites.append(name)
+        except OSError:
+            pass
+    if pie_suites and "--with-pie" not in sys.argv:
+        suites = [n for n in suites if n not in pie_suites]
+        print("SKIPPING %d PIE suite(s): %s" % (len(pie_suites), ", ".join(pie_suites)))
+        print("  Starting PIE stops the bridge answering while the editor stays alive, which hangs")
+        print("  an unattended sweep. Run them attended with --with-pie. NOT verified by this run.")
+        print("")
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     passes = 1 if "--once" in sys.argv else 2
     if args:

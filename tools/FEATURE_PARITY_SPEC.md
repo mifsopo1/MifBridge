@@ -5592,6 +5592,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       NOT exercised: the toggle itself. Every NiagaraSystem in this project is cooked, so the
       cooked guard answers every call.
 
+- [ ] **the bridge stops answering while PIE is running** (day) - FOUND 2026-08-30, blocks the full sweep
+      Starting PIE makes MifBridge stop answering on 8791 while the editor process stays alive
+      and responsive. Seen twice on 2026-08-30: the editor log shows LogPlayLevel followed by
+      connection refused on the next call, and the sweep's own recovery then made it worse by
+      launching a second editor (fixed separately).
+      WHY IT MATTERS MORE THAN IT LOOKS: it is why 42 of 144 suites had never been in a full
+      sweep. The sweep did not finish, because it always stalled on the first PIE suite. Those
+      42 are the newest surface, so the least-tested code was also the least swept.
+      Worked around, not fixed: run_all_suites now skips PIE suites by default (derived from
+      the sources - a suite mentioning start_pie starts PIE - and named loudly in the output so
+      a green sweep cannot imply it covered them). --with-pie runs them attended.
+      NOT YET DIAGNOSED. What is known: the editor process survives and stays responsive, and
+      the failure is connection REFUSED rather than a timeout, which points at the listener
+      rather than at a busy game thread. The obvious suspect - something calling
+      FHttpServerModule::StopAllListeners - was checked and ruled out: the only occurrences in
+      the editor logs are ordinary shutdown, with MifBridge unloading immediately before
+      HTTPServer. Next step is to run a PIE session attended and watch the port and the log
+      together, which is exactly the kind of thing not to do unattended.
+      This is a GENERAL UE5 problem, not a DDS2 one: any user driving the bridge through a PIE
+      session hits it.
+
 - [ ] **add_niagara_emitter / remove_niagara_emitter** (day)
       Split out 2026-08-30 on the vetter's advice - these need their own guards rather than riding
       alongside a boolean, and set_niagara_emitter refuses `add`/`remove` by name.
