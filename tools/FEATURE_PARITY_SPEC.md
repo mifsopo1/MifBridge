@@ -5603,13 +5603,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Worked around, not fixed: run_all_suites now skips PIE suites by default (derived from
       the sources - a suite mentioning start_pie starts PIE - and named loudly in the output so
       a green sweep cannot imply it covered them). --with-pie runs them attended.
-      NOT YET DIAGNOSED. What is known: the editor process survives and stays responsive, and
-      the failure is connection REFUSED rather than a timeout, which points at the listener
-      rather than at a busy game thread. The obvious suspect - something calling
-      FHttpServerModule::StopAllListeners - was checked and ruled out: the only occurrences in
-      the editor logs are ordinary shutdown, with MifBridge unloading immediately before
-      HTTPServer. Next step is to run a PIE session attended and watch the port and the log
-      together, which is exactly the kind of thing not to do unattended.
+      NOT YET DIAGNOSED, and the first attempt at a diagnosis was WRONG in a way worth recording.
+      This entry originally said the failure was connection REFUSED rather than a timeout, and
+      concluded that pointed at the listener rather than a busy game thread. Re-reading the
+      evidence: the self_audit call made during the PIE hang exited 124 - a TIMEOUT. The refusal
+      being remembered came from earlier the same day, when the editor was being killed and
+      relaunched, which is a different situation. Corrected 2026-08-30; it is the same class of
+      confident-but-wrong claim this file criticises in the set_niagara_emitter entry.
+      WHAT THE EVIDENCE ACTUALLY SUPPORTS, and the engine source now agrees with it rather than
+      contradicting it: FHttpServerModule::Tick ticks its listeners only while
+      bHttpListenersEnabled, and the ONLY caller of FHttpListener::StopListening is
+      StopAllListeners (HttpServerModule.cpp:62), which logs on entry and appears in the editor
+      logs ONLY at shutdown. So the listen socket stays open. A connection then completes at TCP
+      level into the OS backlog and is never serviced - which presents as a hang, which is what was
+      seen. The suspect is therefore the game thread or the ticker during PIE, NOT a closed
+      listener.
+      Next step is an attended PIE session watching the port state and the log together - whether
+      the socket is still LISTENING while calls hang is the single observation that would settle
+      it, and it is exactly the kind of thing not to do unattended.
       This is a GENERAL UE5 problem, not a DDS2 one: any user driving the bridge through a PIE
       session hits it.
 
