@@ -150,6 +150,43 @@ def main():
         check("T393 %s reports ok:false" % label, r.get("ok") is False, json.dumps(r)[:150])
         check("T393 %s says something usable" % label, len(r.get("error") or "") > 15,
               (r.get("error") or "")[:150])
+        # Every transport failure is worth retrying - none of them means the request was rejected
+        # on its merits.
+        check("T393 %s is marked retryable" % label, r.get("retryable") is True,
+              json.dumps(r)[:170])
+
+    print("")
+    print("=== T394: a caller can tell a BUSY editor from a DOWN one, without parsing English ===")
+    # THE DIFFERENCE IS THE ASSERTION. Reporting one value for both states would pass any check
+    # that only looked for the key, and would be exactly as useless as the single "bridge failed"
+    # string this replaced - which is what made this repo's own sweep runner relaunch the editor
+    # beside a working one until the two raced for port 8791.
+    states = {}
+    for label, exc in (("read timeout", server.requests.exceptions.ReadTimeout),
+                       ("connection refused", server.requests.exceptions.ConnectionError),
+                       ("connect timeout", server.requests.exceptions.ConnectTimeout)):
+        def raiser(*a, **k):
+            raise exc("simulated")
+        server.requests.post = raiser
+        states[label] = server._post("self_audit").get("editorState")
+
+    check("T394 a READ timeout says the editor is BUSY - it accepted the connection, so it is alive",
+          states["read timeout"] == "busy", json.dumps(states))
+    check("T394 a refused connection says DOWN - nothing is listening",
+          states["connection refused"] == "down", json.dumps(states))
+    check("T394 and the two are DIFFERENT, which is the whole point",
+          states["read timeout"] != states["connection refused"], json.dumps(states))
+    check("T394 a connect timeout is reported as unreachable rather than guessing either way",
+          states["connect timeout"] == "unreachable", json.dumps(states))
+
+    # The busy message must not tell someone to restart - that is the failure mode being prevented.
+    server.requests.post = lambda *a, **k: (_ for _ in ()).throw(
+        server.requests.exceptions.ReadTimeout("simulated"))
+    busy = server._post("self_audit")
+    check("T394 the busy message explicitly says NOT to restart the editor",
+          "do not restart" in (busy.get("error") or "").lower(), (busy.get("error") or "")[:200])
+    check("T394 and explains WHY it is busy - every endpoint runs on the game thread",
+          "game thread" in (busy.get("error") or ""), (busy.get("error") or "")[:200])
 
     print("")
     print("=" * 72)

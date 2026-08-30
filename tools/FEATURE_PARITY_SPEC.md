@@ -5626,14 +5626,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       PIE suites remain excluded from unattended sweeps, because a suite that saturates the game
       thread for minutes is indistinguishable from a hang to anything watching from outside.
 
-- [ ] **let a caller distinguish "busy" from "down" over the bridge itself** (hours)
-      Filed 2026-08-30, falling out of the diagnosis above. An external caller sees a timeout and
-      cannot tell whether the editor died or is compiling shaders - the same ambiguity that made
-      run_all_suites launch a second editor. The tooling in this repo can now tell the difference by
-      probing the port, but every OTHER consumer of the bridge is still guessing.
-      Cheapest useful shape: document the distinction in the MCP layer and in docs, so a client
-      retries rather than concluding the editor is gone. A heartbeat endpoint would NOT help - it
-      would be queued behind the same busy game thread as everything else, which is the point.
+- [x] **let a caller distinguish "busy" from "down" over the bridge itself** (hours)
+      DONE 2026-08-30. The MCP layer's transport failures now carry machine-readable
+      editorState (busy | down | unreachable) and retryable, plus messages that say what to
+      do. 9 new checks in test_mcp_post_errors.py, 25/25.
+      THE DISTINCTION WAS ALREADY IN THE EXCEPTION TYPES and was being thrown away. A
+      ReadTimeout means the editor ACCEPTED the connection and did not answer - it is alive
+      with a busy game thread, which is where every endpoint runs. A ConnectionError means
+      nothing is listening. Collapsing both into one "bridge failed" string is what made
+      this repo's own sweep runner relaunch the editor beside a working one until the two
+      raced for port 8791 and hung a 288-run sweep.
+      T394 asserts the DIFFERENCE, not the presence of a field: reporting one value for both
+      states would satisfy any check that only looked for the key and would be exactly as
+      useless as the string it replaced. It also asserts the busy message says NOT to restart
+      the editor, because restarting is the failure this exists to prevent.
+      A HEARTBEAT ENDPOINT WAS CONSIDERED AND REJECTED: it would queue behind the same busy
+      game thread as everything else, so it would time out exactly when it was needed. The
+      transport-level signal is the only one that survives a stalled game thread.
 - [ ] **add_niagara_emitter / remove_niagara_emitter** (day)
       Split out 2026-08-30 on the vetter's advice - these need their own guards rather than riding
       alongside a boolean, and set_niagara_emitter refuses `add`/`remove` by name.

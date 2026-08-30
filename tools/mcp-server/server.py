@@ -185,12 +185,33 @@ def _post(endpoint: str, **payload) -> dict:
             headers=headers,
             timeout=TIMEOUT,
         )
+    # BUSY IS NOT DOWN, and the difference is worth reporting rather than flattening into one
+    # "bridge failed" string. Every endpoint runs on the editor's GAME THREAD, so anything that
+    # occupies it - compiling, cooking, starting PIE, an asset registry scan - stalls the bridge
+    # while the editor is perfectly healthy. Treating that as death is what made this repo's own
+    # sweep runner launch a second editor beside a working one until the two raced for the port.
+    #
+    # editorState and retryable are machine-readable on purpose: a client should branch on them
+    # rather than parse English.
     except requests.exceptions.ConnectTimeout:
-        return {"ok": False, "error": f"bridge connect timeout after {TIMEOUT}s at {url}"}
+        return {"ok": False, "retryable": True, "editorState": "unreachable",
+                "error": f"bridge connect timeout after {TIMEOUT}s at {url}. The connection did not "
+                         f"complete - the editor may be starting (a cold start can take minutes "
+                         f"before MifBridge binds the port) or may be down. Retry before concluding "
+                         f"it crashed."}
     except requests.exceptions.ReadTimeout:
-        return {"ok": False, "error": f"bridge read timeout after {TIMEOUT}s (editor busy compiling?)"}
+        return {"ok": False, "retryable": True, "editorState": "busy",
+                "error": f"bridge read timeout after {TIMEOUT}s. The editor ACCEPTED the connection "
+                         f"and did not answer in time, so it is alive and its game thread is "
+                         f"occupied - compiling, cooking, starting PIE, or scanning the asset "
+                         f"registry. Every endpoint runs on that thread. This is normal and "
+                         f"temporary: retry, do not restart the editor."}
     except requests.exceptions.ConnectionError as exc:
-        return {"ok": False, "error": f"bridge unreachable at {url} — is the editor open with MifBridge started? ({exc})"}
+        return {"ok": False, "retryable": True, "editorState": "down",
+                "error": f"nothing is listening at {url} — the editor is closed, or has not bound "
+                         f"the port yet. A fresh editor can take minutes to get there, so retry "
+                         f"before assuming it crashed. If it stays down, open the project and check "
+                         f"MifBridge started. ({exc})"}
     except requests.exceptions.RequestException as exc:
         return {"ok": False, "error": f"request failed: {exc}"}
 
