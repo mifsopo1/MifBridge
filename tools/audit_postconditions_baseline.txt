@@ -96,6 +96,7 @@ medium:set_blendspace_samples
 medium:set_collision
 medium:set_component_transform
 medium:set_material_parameter
+medium:set_physics_body_collision
 medium:set_spline_points
 medium:set_widget_animation_range
 medium:set_widget_is_variable

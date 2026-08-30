@@ -4696,12 +4696,48 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
 ### MEDIUM - a real gap with a workaround
 
-- [ ] **describe_physics_asset + add_physics_body / remove_physics_body / add_physics_constraint / remove_physics_constraint / set_physics_body_collision** (day)
-      Read and author PhysicsAssets: the per-bone bodies (with their sphere/capsule/box/convex primitives), the constraints between them, and the body-pair collision-disable matrix. This is ragdolls, hit detection volumes, and cloth/physics-driven bones. The whole subsystem is absent - not half-reachable, entirely absent.
-      API: Read: UPhysicsAsset::SkeletalBodySetups (Runtime/Engine/Classes/PhysicsEngine/PhysicsAsset.h:197), ::ConstraintSetup (:204), ::FindConstraintIndex (:282-283), ::IsCollisionEnabled (:323), ::GetPrimitiveCollision (:329). Write: FPhysicsAssetUtils::CreateNewBody(UPhysicsAsset*, FName, const FPhysAssetCreateParams&) at Developer/PhysicsUtilities/Public/PhysicsAssetUtils.h:209, ::DestroyBody :217, ::C...
-      Cooked: Reading is fully cooked-safe: SkeletalBodySetups, ConstraintSetup and FKAggregateGeom are all runtime data that survives cooking (DDS2 ships 163 PhysicsAssets per the G3 audit's own class census). CreateNewBody/CreateNewConstraint/Destroy* only touch those runtime arrays, so they are cooked-safe too...
-      Vetter corrected the proposal: RANK: high -> medium. It is not "a whole subsystem half missing". The read half exists reflectively, and the proposer already concedes per-body tuning stays with set_property. What is actually missing is a create/destroy verb set plus one non-UPROPERTY table. Ragdoll authoring is also not something an agent hits constantly. Medium. SCOPE CORRECTION: describe_physics_asset must be justified on the ...
+- [x] **describe_physics_asset + add/remove_physics_body + add/remove_physics_constraint +
+      set_physics_body_collision** (day)
+      DONE 2026-08-30. 36 checks in tools/test_physics_asset.py.
+      SCOPED DOWN on the vetter's correction, and it was right. This is NOT a whole subsystem
+      missing - SkeletalBodySetups, ConstraintSetup and every FKAggregateGeom are ordinary
+      UPROPERTYs and property paths cross object pointers, so get_property walks the lot
+      today. A full reader would have been the parallel-system mistake this spec already
+      declined at :2686. describe_physics_asset therefore earns its place on exactly two
+      things reflection CANNOT give: disabledPairs (CollisionDisableTable, PhysicsAsset.h:245,
+      is a bare TMap with NO UPROPERTY - 105 of them on the project's Alisha asset, invisible
+      to every other endpoint) and the index numbering the write verbs consume. It returns
+      primitive COUNTS rather than contents and points at get_property for the rest.
+      TWO UNGUARDED ENGINE CALLS, both verified by reading. DestroyConstraint
+      (PhysicsAssetUtils.cpp:1189) is check(PhysAsset) then a bare
+      ConstraintSetup.RemoveAt(ConstraintIndex) - the check validates the ASSET POINTER, never
+      the index. DestroyBody (:1229) ends in the same bare RemoveAt. An out-of-range index is
+      an editor crash, not an error, so both are bounds-checked in the handler. T2902 passes
+      99 to each and then asks self_audit whether the editor is still answering.
+      DELIBERATELY NOT OFFERED: the per-PRIMITIVE collision variant.
+      UPhysicsAsset::SetPrimitiveCollision (PhysicsAsset.cpp:305) has a hard check() on the
+      body index AND an ensure() comparing a per-TYPE PrimitiveIndex against GetElementCount(),
+      the TOTAL across all four element arrays - so Box/index 3 on a body with 5 elements and
+      1 box passes the ensure and indexes BoxElems[3] out of range. That engine check is simply
+      wrong. Guarding it means validating against the per-type array the engine failed to
+      check; filed below rather than half-done. The body-PAIR table has no such defect.
+      add_physics_body says out loud that CreateNewBody fits NO geometry, so the new body has
+      no primitives and collides with nothing - the difference between a caller thinking they
+      have a ragdoll and knowing they do not. add_physics_constraint wires both bone names,
+      because CreateNewConstraint makes an EMPTY template that joins nothing on its own.
+      audit_postconditions flags set_physics_body_collision as medium; judged a false positive
+      of its stated over-report - the handler verifies by reading IsCollisionEnabled back and
+      comparing it to the request, which is exactly a postcondition check. Baselined.
 
+- [ ] **set_physics_primitive_collision, guarding the engine's own broken ensure** (hours)
+      Split out 2026-08-30. UPhysicsAsset::SetPrimitiveCollision and GetPrimitiveCollision
+      (PhysicsAsset.cpp:305, :314) both ensure(PrimitiveIndex < AggGeom->GetElementCount())
+      while PrimitiveIndex is per-TYPE and GetElementCount() is the total across SphereElems,
+      BoxElems, SphylElems and ConvexElems. The guard must therefore validate against the
+      specific array the PrimitiveType names, not the total, and must also range-check
+      BodyIndex itself since that one is a hard check() rather than an ensure. Worth doing -
+      per-primitive collision is how you stop one capsule on a body colliding while the rest
+      do not - but it is a guard against a wrong engine check and deserves its own cycle.
 - [ ] **add_socket / remove_socket / set_socket_transform** (hours)
       Create, delete and move sockets on a SkeletalMesh or its USkeleton. Attaching anything to a character - a weapon, a prop, a VFX emitter, a camera boom - needs a socket, and this is the single most common physical-attachment operation an agent performs on a rigged asset.
       API: USkeletalMesh::AddSocket(USkeletalMeshSocket* InSocket, bool bAddToSkeleton=false) - ENGINE_API, Runtime/Engine/Classes/Engine/SkeletalMesh.h:2421; USkeletalMesh::FindSocket (:2428), FindSocketAndIndex (:2436), GetMeshOnlySocketList (:2480/:2487), Sockets (:2236). Skeleton-side: USkeleton::Sockets (Animation/Skeleton.h:371), USkeleton::FindSocketAndIndex (:1043), FindSocket (:1044). The socket obj...

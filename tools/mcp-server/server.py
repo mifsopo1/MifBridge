@@ -2949,6 +2949,57 @@ def remove_pcg_node(graph: str, node: str, confirm: bool = False) -> dict:
     return _post("remove_pcg_node", graph=graph, node=node, confirm=confirm)
 
 
+@mcp.tool()
+def describe_physics_asset(asset_path: str) -> dict:
+    "Read a PhysicsAsset's bodies, constraints and - the reason this endpoint exists - its body-pair collision-disable table. Almost everything else about a PhysicsAsset is already reachable through get_property, because SkeletalBodySetups and ConstraintSetup are ordinary UPROPERTYs and property paths cross object pointers; use get_property {propertyPath: 'SkeletalBodySetups'} for primitive transforms, radii and per-body tuning. What reflection CANNOT give you is disabledPairs - CollisionDisableTable has no UPROPERTY at all, so no property read reaches it, and it is the single most confusing part of a ragdoll - plus the stable body and constraint INDEX numbering that the write verbs consume and that SHIFTS on every removal."
+    return _post("describe_physics_asset", assetPath=asset_path)
+
+
+@mcp.tool()
+def add_physics_body(asset_path: str, bone_name: str, geom_type: str = "sphyl",
+                     min_bone_size: float = 20.0) -> dict:
+    "Create a physics body for one bone in a PhysicsAsset. geom_type is sphyl (alias capsule), sphere, box or taperedCapsule; the convex and level-set types are not offered because they need render geometry this call does not fit against. IMPORTANT: CreateNewBody creates the SETUP and fits no geometry, so the new body has NO collision primitives and collides with nothing until you add some - the response says so rather than letting you believe you have a working ragdoll. Add primitives with edit_container on the body's AggGeom.SphylElems / SphereElems / BoxElems. A second body on a bone that already has one is refused."
+    return _post("add_physics_body", assetPath=asset_path, boneName=bone_name, geomType=geom_type,
+                 minBoneSize=min_bone_size)
+
+
+@mcp.tool()
+def remove_physics_body(asset_path: str, bone_name: str = "", index: int = -1,
+                        confirm: bool = False) -> dict:
+    "Remove a physics body, by bone_name (preferred) or index. Requires confirm=True: removal RENUMBERS every body after it, so any index you are holding becomes wrong, and it drops that body's collision-disable pairs. An out-of-range index is refused rather than passed on - FPhysicsAssetUtils::DestroyBody ends in an unguarded RemoveAt, so a bad index would crash the editor rather than return an error. Prefer bone_name for exactly that reason: indices go stale, names do not."
+    return _post("remove_physics_body", assetPath=asset_path, confirm=confirm,
+                 boneName=bone_name or None, index=None if bone_name else index)
+
+
+@mcp.tool()
+def add_physics_constraint(asset_path: str, bone1: str, bone2: str, name: str = "") -> dict:
+    "Create a constraint joining two physics bodies in a PhysicsAsset - the joints that make a ragdoll hang together rather than fall apart. Both bones must already HAVE bodies (add_physics_body first); a constraint onto a bone with no body is refused rather than created joining nothing. The constraint is created with the engine's default limits (free swing and twist) and wired to both bones; tune the limits with set_property on its DefaultInstance.ProfileInstance, which are ordinary UPROPERTYs this endpoint deliberately does not duplicate."
+    return _post("add_physics_constraint", assetPath=asset_path, bone1=bone1, bone2=bone2,
+                 name=name or None)
+
+
+@mcp.tool()
+def remove_physics_constraint(asset_path: str, index: int = -1, joint_name: str = "",
+                              confirm: bool = False) -> dict:
+    "Remove a constraint from a PhysicsAsset, by joint_name (preferred) or index. Requires confirm=True, since removal renumbers every constraint after it. An out-of-range index is refused rather than passed on: FPhysicsAssetUtils::DestroyConstraint is check(PhysAsset) followed by a bare ConstraintSetup.RemoveAt - the check validates the ASSET pointer, never the index, so a bad one crashes the editor."
+    # Explicit, not a **payload dict - see set_physics_body_collision for why.
+    return _post("remove_physics_constraint", assetPath=asset_path, confirm=confirm,
+                 jointName=joint_name or None, index=None if joint_name else index)
+
+
+@mcp.tool()
+def set_physics_body_collision(asset_path: str, enabled: bool, bone_a: str = "", bone_b: str = "",
+                               index_a: int = -1, index_b: int = -1) -> dict:
+    "Enable or disable collision between two bodies in a PhysicsAsset - the table that stops a ragdoll's neighbouring limbs from fighting each other. Address the pair by bone_a/bone_b (preferred) or index_a/index_b. `enabled` is required rather than being a toggle, so the call states the end state it wants. The response reports `changed` measured against the state before, so a no-op is visible - which matters because add_physics_body disables collisions with existing bodies by default. Reads back through describe_physics_asset's disabledPairs. Note this is the body-PAIR table; the per-PRIMITIVE variant is deliberately not exposed, because UPhysicsAsset::SetPrimitiveCollision's own ensure compares a per-type index against the TOTAL element count and so cannot catch an out-of-range primitive."
+    # Passed explicitly rather than through a **payload dict so param_reach can SEE them - a
+    # dict-built call is invisible to the static check, which would report these as unreachable
+    # and hide a real gap behind a baseline entry. The handler prefers a bone name whenever one
+    # is given, so sending the unused index alongside is harmless.
+    return _post("set_physics_body_collision", assetPath=asset_path, enabled=enabled,
+                 boneA=bone_a or None, boneB=bone_b or None,
+                 indexA=None if bone_a else index_a, indexB=None if bone_b else index_b)
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:

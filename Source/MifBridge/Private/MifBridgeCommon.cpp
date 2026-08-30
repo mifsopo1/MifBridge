@@ -143,6 +143,12 @@ namespace MifBridge
 			MIF_BIND(remove_pcg_node);
 			MIF_BIND(connect_pcg_nodes);
 			MIF_BIND(disconnect_pcg_nodes);
+			MIF_BIND(describe_physics_asset);
+			MIF_BIND(add_physics_body);
+			MIF_BIND(remove_physics_body);
+			MIF_BIND(add_physics_constraint);
+			MIF_BIND(remove_physics_constraint);
+			MIF_BIND(set_physics_body_collision);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);
