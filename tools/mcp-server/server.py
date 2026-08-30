@@ -1778,6 +1778,23 @@ def sculpt_landscape(center: dict, radius: float, mode: str = "flatten", amount:
 
 
 @mcp.tool()
+def apply_spline_to_landscape(spline_actor: str, landscape: str = "", component: str = "",
+                              start_width: float = 200.0, end_width: float = 200.0,
+                              start_side_falloff: float = 200.0, end_side_falloff: float = 200.0,
+                              start_roll: float = 0.0, end_roll: float = 0.0,
+                              subdivisions: int = 20, raise_heights: bool = True,
+                              lower_heights: bool = True, paint_layer: str = "",
+                              edit_layer: str = "") -> dict:
+    "Carve and paint a landscape along a spline - the road / riverbed / path operation, in one call. sculpt_landscape and paint_landscape are CIRCULAR BRUSHES, so a 400 m road means dozens to hundreds of round trips whose overlapping circles never produce a clean corridor with consistent width, falloff or banking. READ verticesChanged IN THE RESPONSE, always: EditorApplySpline returns void, so heights are sampled through FLandscapeEditDataInterface before and after and the count is measured, not assumed - 'it ran' and 'it changed the terrain' are different claims. KNOWN LIMITATION, measured rather than inferred: on a landscape with NO EDIT LAYERS this could not be made to change a single vertex on 5.3.2 - widths 800-2000, falloffs to 800, subdivisions to 40, spline Z at and below the terrain, overlap confirmed, always zero, while sculpt_landscape moved 736 vertices through the same interface in the same session. UE 5.7 turned that same path into an unconditional refusal, which suggests the non-layered case was never supported and only ever silent. So: enable edit layers on the landscape and pass edit_layer - and note create_landscape deliberately turns them OFF. On 5.7 a landscape whose edit_layer does not resolve is REFUSED outright rather than silently doing nothing. A cooked landscape is refused too, and that guard is mandatory rather than polite: EditorApplySpline dereferences GetLandscapeInfo() with no null check, so calling it there CRASHES the editor. paint_layer is validated against the landscape's own layer infos before anything is written, because the engine's own note says a mismatched one 'will do nothing'."
+    return _post("apply_spline_to_landscape", splineActor=spline_actor, landscape=landscape,
+                 component=component, startWidth=start_width, endWidth=end_width,
+                 startSideFalloff=start_side_falloff, endSideFalloff=end_side_falloff,
+                 startRoll=start_roll, endRoll=end_roll, subdivisions=subdivisions,
+                 raiseHeights=raise_heights, lowerHeights=lower_heights,
+                 paintLayer=paint_layer, editLayer=edit_layer)
+
+
+@mcp.tool()
 def paint_landscape(layer_info: str, center: dict, radius: float, weight: float = 1.0,
                     falloff: float = 0.5, landscape: str = None) -> dict:
     "Paint a landscape weight layer in WORLD units - this is what makes a road corridor read as dirt while the verge stays grass. layer_info is a LandscapeLayerInfoObject asset path and must be one of the layers the landscape's material declares - that requirement is now ENFORCED (it was only ever promised in the error text). Painting an unregistered layer does not no-op: it allocates a stray weightmap channel, the weight normalisation dims the layers you WERE using, and a later fixup deletes the allocation - so the paint appeared, damaged the real layers, and then vanished, all under ok:true. landscape_info lists the legal layers. Weights normalise across layers, so painting one up pushes the others down (which is why there is no erase mode)."

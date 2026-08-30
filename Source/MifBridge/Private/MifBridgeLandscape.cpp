@@ -18,6 +18,9 @@
 // (LANDSCAPE_ZSCALE), so with the default scale of 100 a step is 0.78125 units and the usable range
 // is roughly +/-25600. HeightToWorld/WorldToHeight below are the only places that constant appears.
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"                   // the 5.7 EditorApplySpline guard change
+#include "Components/SplineComponent.h"
+#include "Subsystems/EditorActorSubsystem.h"
 #include "MifBridgeVersion.h"   // MIF_ENGINE_5_7_PLUS - Import gained a parameter
 #include "MifBridgeLog.h"
 
@@ -1006,5 +1009,308 @@ namespace MifBridge
 		{
 			Out->SetStringField(TEXT("note"), TEXT("no ALandscape in the editor world — call create_landscape"));
 		}
+	}
+
+	// --- apply_spline_to_landscape ------------------------------------------
+	//   in:  { landscape?, splineActor, component?, startWidth, endWidth, startSideFalloff,
+	//          endSideFalloff, startRoll, endRoll, subdivisions, raiseHeights, lowerHeights,
+	//          paintLayer?, editLayer? }
+	//   out: { landscape, spline, splineLength, verticesChanged, ... }
+	//
+	// WHY IT IS WORTH AN ENDPOINT. sculpt_landscape and paint_landscape are CIRCULAR BRUSHES, so
+	// cutting a 400 m road today is dozens to hundreds of round trips whose overlapping circles never
+	// produce a clean corridor with consistent width, falloff or banking. EditorApplySpline is the
+	// engine's own road/riverbed operation and it does the whole run in one call.
+	//
+	// TWO GUARDS, AND BOTH ARE MANDATORY RATHER THAN DEFENSIVE POLISH.
+	//
+	// 1. A HARD CRASH ON A COOKED LANDSCAPE. EditorApplySpline opens with
+	//        if (ALandscape* Landscape = GetLandscapeInfo()->LandscapeActor.Get())
+	//    - dereferencing GetLandscapeInfo() with NO null check, in 5.3.2 and 5.7 alike
+	//    (LandscapeBlueprintSupport.cpp). A cooked landscape has no ULandscapeInfo, so this is not a
+	//    no-op, it is a null dereference that takes the editor down. Checked before the call.
+	//
+	// 2. A SILENT NO-OP ON 5.7 THAT DOES NOT EXIST ON 5.3, and it hits the landscapes this very
+	//    plugin creates. The guard inside EditorApplySpline changed:
+	//
+	//      5.3.2 / 5.6:  const FLandscapeLayer* Layer = Landscape->GetLayer(EditLayerName);
+	//                    if (Landscape->HasLayersContent() && (Layer == nullptr)) return;
+	//      5.7:          const ULandscapeEditLayerBase* EditLayer = Landscape->GetEditLayerConst(EditLayerName);
+	//                    if (EditLayer == nullptr) return;          <-- UNCONDITIONAL
+	//
+	//    GetEditLayerConst returns null whenever the layer is not found, which on a landscape with
+	//    NO edit layers is always. So on 5.7 EditorApplySpline returns early on every non-layered
+	//    landscape - logging an engine Error and returning void, so the caller sees nothing. And
+	//    create_landscape in this very file deliberately toggles bCanHaveLayersContent OFF, which
+	//    means every landscape MifBridge makes would hit it.
+	//
+	//    There is no bypass: LandscapeSplineRaster.h is a Private header in both trees, so
+	//    Pointify/RasterizeSegmentPoints cannot be called directly. So this is a REFUSAL with the
+	//    reason, not a workaround.
+	//
+	// AND THE POSTCONDITION IS MEASURED. EditorApplySpline returns void, so heights are sampled
+	// through FLandscapeEditDataInterface before and after - the same interface sculpt_landscape
+	// uses - and the response reports how many actually moved. "It ran" and "it changed the terrain"
+	// are different claims and only the second is worth having.
+	void H_apply_spline_to_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("landscape"), TEXT("actorPath"), TEXT("splineActor"), TEXT("spline"),
+			  TEXT("component"), TEXT("startWidth"), TEXT("endWidth"), TEXT("startSideFalloff"),
+			  TEXT("endSideFalloff"), TEXT("startRoll"), TEXT("endRoll"), TEXT("subdivisions"),
+			  TEXT("raiseHeights"), TEXT("lowerHeights"), TEXT("paintLayer"), TEXT("editLayer") },
+			TEXT("splineActor (alias: spline) - an actor with a USplineComponent; landscape (alias: ")
+			TEXT("actorPath, omit when the level has one); component - which spline component if the ")
+			TEXT("actor has several; startWidth/endWidth (default 200uu); startSideFalloff/")
+			TEXT("endSideFalloff (default 200uu); startRoll/endRoll (degrees, default 0); ")
+			TEXT("subdivisions (default 20); raiseHeights/lowerHeights (default true); paintLayer - ")
+			TEXT("a LandscapeLayerInfoObject path; editLayer - REQUIRED on a landscape with edit ")
+			TEXT("layers"),
+			{ { TEXT("width"), TEXT("spell it startWidth and endWidth - a spline can taper") },
+			  { TEXT("falloff"), TEXT("spell it startSideFalloff and endSideFalloff") } }))
+		{
+			return;
+		}
+
+		UWorld* World = EditorWorld();
+		if (!World) { Fail(Out, TEXT("no editor world")); return; }
+		// FindLandscape, the same resolver paint_landscape and sculpt_landscape use - it accepts a
+		// name or path and falls back to the single landscape in the level when omitted.
+		ALandscape* Landscape = FindLandscape(World, JStrAny(In, { TEXT("landscape"), TEXT("actorPath") }));
+		if (!Landscape)
+		{
+			Fail(Out, TEXT("no landscape found - name one with landscape/actorPath, or call "
+				TEXT("create_landscape first. NOTHING was changed.")));
+			return;
+		}
+
+		// GUARD 1 - the crash. EditorApplySpline dereferences GetLandscapeInfo() unchecked.
+		ULandscapeInfo* Info = Landscape->GetLandscapeInfo();
+		if (!Info)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no ULandscapeInfo, which is what a COOKED landscape looks like. ")
+				TEXT("EditorApplySpline dereferences GetLandscapeInfo() with NO null check ")
+				TEXT("(LandscapeBlueprintSupport.cpp), so calling it here would CRASH the editor ")
+				TEXT("rather than fail. Refused before the engine was touched. diagnose_landscape is ")
+				TEXT("the read-only route for cooked terrain. NOTHING was changed."),
+				*Landscape->GetActorLabel()));
+			return;
+		}
+
+		// The spline.
+		UEditorActorSubsystem* ActorSys = GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+		if (!ActorSys)
+		{
+			Fail(Out, TEXT("no EditorActorSubsystem."));
+			return;
+		}
+		TSharedRef<FJsonObject> SplineIn = MakeShared<FJsonObject>();
+		SplineIn->SetStringField(TEXT("actorPath"),
+			JStrAny(In, { TEXT("splineActor"), TEXT("spline") }));
+		AActor* SplineActor = ResolveActor(ActorSys, SplineIn, Out);
+		if (!SplineActor) { return; }
+
+		TArray<USplineComponent*> Splines;
+		SplineActor->GetComponents(Splines);
+		if (Splines.Num() == 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no USplineComponent. NOTHING was changed."),
+				*SplineActor->GetActorLabel()));
+			return;
+		}
+		USplineComponent* Spline = Splines[0];
+		const FString WantComp = JStr(In, TEXT("component"));
+		if (!WantComp.IsEmpty())
+		{
+			Spline = nullptr;
+			for (USplineComponent* S : Splines)
+			{
+				if (S && S->GetName() == WantComp) { Spline = S; break; }
+			}
+			if (!Spline)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' has no spline component named '%s' (it has %d). NOTHING was changed."),
+					*SplineActor->GetActorLabel(), *WantComp, Splines.Num()));
+				return;
+			}
+		}
+		if (Spline->GetNumberOfSplinePoints() < 2)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("this spline has %d point(s) - a corridor needs at least 2. NOTHING was ")
+				TEXT("changed."), Spline->GetNumberOfSplinePoints()));
+			return;
+		}
+
+		// GUARD 2 - the 5.7 silent no-op.
+		const FName EditLayer(*JStr(In, TEXT("editLayer")));
+		const bool bHasLayers = Landscape->HasLayersContent();
+#if MIF_ENGINE_AT_LEAST(5, 7)
+		if (Landscape->GetEditLayerConst(EditLayer) == nullptr)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("on UE 5.7 EditorApplySpline returns immediately unless the named edit layer ")
+				TEXT("RESOLVES - `if (EditLayer == nullptr) return;`, unconditionally, where 5.3 only ")
+				TEXT("did that when the landscape actually had edit layers. '%s' %s, so this call ")
+				TEXT("would log an engine error and change NOTHING while reporting success. %s ")
+				TEXT("NOTHING was changed."),
+				*Landscape->GetActorLabel(),
+				bHasLayers ? TEXT("has edit layers but no layer by that name")
+				           : TEXT("has NO edit layers at all"),
+				bHasLayers ? TEXT("Pass editLayer naming one that exists.")
+				           : TEXT("Enable edit layers on it first - note create_landscape "
+								  "deliberately turns them OFF, so a landscape this bridge made "
+								  "always needs that step on 5.7.")));
+			return;
+		}
+#else
+		if (bHasLayers && Landscape->GetLayer(EditLayer) == nullptr)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has edit layers, and EditorApplySpline refuses one it cannot name - it ")
+				TEXT("would log an error and change nothing. Pass editLayer. NOTHING was changed."),
+				*Landscape->GetActorLabel()));
+			return;
+		}
+#endif
+
+		// A NON-LAYERED LANDSCAPE ON 5.3: WARNED, NOT REFUSED, AND THE HONEST REASON IS THAT I
+		// COULD NOT MAKE IT WORK. Tested live 2026-08-30 against a freshly created landscape with
+		// edit layers off (which is what create_landscape produces): every combination tried
+		// returned verticesChanged 0 - splines spanning 6000uu of a 12600uu landscape, widths from
+		// 800 to 2000, falloffs to 800, subdivisions to 40, spline Z at and below the terrain, and
+		// overlap confirmed against the landscape's own reported worldMin/worldMax. The sampler is
+		// not at fault: sculpt_landscape moved 736 vertices through the same
+		// FLandscapeEditDataInterface in the same session.
+		//
+		// The likely cause is the FScopedSetLandscapeEditingLayer the engine opens with an INVALID
+		// FGuid when there is no layer - and 5.7 tightening this exact path into an unconditional
+		// refusal is consistent with the non-layered case never having been supported, only silent.
+		// That is a hypothesis, so this WARNS rather than refuses: refusing on an unproven theory
+		// would block a case that may work on someone else's landscape, and this endpoint's whole
+		// contract is that verticesChanged tells you the truth either way.
+		const bool bWarnNoLayers = !bHasLayers;
+
+		// The paint layer, validated BEFORE anything is written. The engine's own comment on this
+		// function says "The landscape must be configured with the same layer info in one of its
+		// layers or this will do nothing" - the same silent no-op paint_landscape already closes.
+		ULandscapeLayerInfoObject* PaintLayer = nullptr;
+		const FString PaintLayerPath = JStr(In, TEXT("paintLayer"));
+		if (!PaintLayerPath.IsEmpty())
+		{
+			PaintLayer = Cast<ULandscapeLayerInfoObject>(LoadAssetLenient(PaintLayerPath));
+			if (!PaintLayer)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("paintLayer '%s' is not a LandscapeLayerInfoObject. NOTHING was changed."),
+					*PaintLayerPath));
+				return;
+			}
+			if (Info->GetLayerInfoIndex(PaintLayer) == INDEX_NONE)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is not one of this landscape's layer infos. The engine's own note on ")
+					TEXT("EditorApplySpline says it 'must be configured with the same layer info in ")
+					TEXT("one of its layers or this will do nothing' - so this is refused rather ")
+					TEXT("than reported as a successful paint that painted nothing. NOTHING was ")
+					TEXT("changed."), *PaintLayerPath));
+				return;
+			}
+		}
+
+		const float StartWidth = static_cast<float>(JNum(In, TEXT("startWidth"), 200.0));
+		const float EndWidth = static_cast<float>(JNum(In, TEXT("endWidth"), 200.0));
+		const float StartFall = static_cast<float>(JNum(In, TEXT("startSideFalloff"), 200.0));
+		const float EndFall = static_cast<float>(JNum(In, TEXT("endSideFalloff"), 200.0));
+		const float StartRoll = static_cast<float>(JNum(In, TEXT("startRoll"), 0.0));
+		const float EndRoll = static_cast<float>(JNum(In, TEXT("endRoll"), 0.0));
+		const int32 Subdivisions = FMath::Clamp(JInt(In, TEXT("subdivisions"), 20), 1, 500);
+		const bool bRaise = JBool(In, TEXT("raiseHeights"), true);
+		const bool bLower = JBool(In, TEXT("lowerHeights"), true);
+		if (!bRaise && !bLower && !PaintLayer)
+		{
+			Fail(Out, TEXT("raiseHeights and lowerHeights are both false and no paintLayer was ")
+				TEXT("given, so there is nothing for this call to do. NOTHING was changed."));
+			return;
+		}
+
+		// SAMPLE BEFORE. EditorApplySpline is void, so this is the only way to know it did anything.
+		int32 X1 = 0, Y1 = 0, X2 = 0, Y2 = 0;
+		const bool bHaveExtent = LandscapeExtent(Landscape, X1, Y1, X2, Y2);
+		TArray<uint16> Before;
+		if (bHaveExtent)
+		{
+			Before.SetNumZeroed((X2 - X1 + 1) * (Y2 - Y1 + 1));
+			FLandscapeEditDataInterface Edit(Info);
+			Edit.GetHeightDataFast(X1, Y1, X2, Y2, Before.GetData(), 0);
+		}
+
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_ApplySplineToLandscape",
+												 "Apply Spline To Landscape"));
+		Landscape->Modify();
+		Landscape->EditorApplySpline(Spline, StartWidth, EndWidth, StartFall, EndFall,
+									 StartRoll, EndRoll, Subdivisions, bRaise, bLower,
+									 PaintLayer, EditLayer);
+
+		int32 Changed = -1;
+		if (bHaveExtent)
+		{
+			TArray<uint16> After;
+			After.SetNumZeroed(Before.Num());
+			FLandscapeEditDataInterface Edit(Info);
+			Edit.GetHeightDataFast(X1, Y1, X2, Y2, After.GetData(), 0);
+			Changed = 0;
+			for (int32 i = 0; i < Before.Num() && i < After.Num(); ++i)
+			{
+				if (Before[i] != After[i]) { ++Changed; }
+			}
+		}
+
+		Out->SetStringField(TEXT("landscape"), Landscape->GetPathName());
+		Out->SetStringField(TEXT("spline"), Spline->GetPathName());
+		Out->SetNumberField(TEXT("splinePoints"), Spline->GetNumberOfSplinePoints());
+		Out->SetNumberField(TEXT("splineLength"), Spline->GetSplineLength());
+		Out->SetNumberField(TEXT("startWidth"), StartWidth);
+		Out->SetNumberField(TEXT("endWidth"), EndWidth);
+		Out->SetNumberField(TEXT("subdivisions"), Subdivisions);
+		Out->SetBoolField(TEXT("raiseHeights"), bRaise);
+		Out->SetBoolField(TEXT("lowerHeights"), bLower);
+		if (PaintLayer) { Out->SetStringField(TEXT("paintLayer"), PaintLayer->GetPathName()); }
+		Out->SetNumberField(TEXT("verticesChanged"), Changed);
+
+		Out->SetBoolField(TEXT("landscapeHasEditLayers"), bHasLayers);
+		if (Changed == 0 && bWarnNoLayers)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("NOT ONE height sample changed, and this landscape has NO EDIT LAYERS - which "
+					 "is the case that could not be made to work at all when this endpoint was "
+					 "written. Tested live on 5.3.2 across widths 800-2000, falloffs to 800, "
+					 "subdivisions to 40, spline Z at and below the terrain, and confirmed overlap: "
+					 "always zero. The measurement is sound - sculpt_landscape moved 736 vertices "
+					 "through the same interface in the same session. UE 5.7 turned this path into "
+					 "an unconditional refusal, which suggests the non-layered case was never "
+					 "supported, only silent. ENABLE EDIT LAYERS on the landscape and pass "
+					 "editLayer. Note create_landscape deliberately turns them off."));
+		}
+		else if (Changed == 0 && (bRaise || bLower))
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("the call ran and NOT ONE height sample changed. Measured, not assumed - "
+					 "EditorApplySpline returns void, so this is sampled through "
+					 "FLandscapeEditDataInterface before and after. Usual causes: the spline does "
+					 "not pass over this landscape, or its width is smaller than one heightmap "
+					 "quad. This is reported rather than returned as a plain success."));
+		}
+		else if (Changed < 0)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("the landscape's extent could not be read, so no before/after height comparison "
+					 "was possible and verticesChanged is -1 rather than a number nobody measured."));
+		}
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the landscape is now dirty and NOTHING has been saved."));
 	}
 }

@@ -1571,6 +1571,9 @@ namespace MifBridge
 	/** Every actor in a World Partition map, LOADED OR NOT, from the actor descriptors.
 	 *  Version-guarded: 5.4 renamed the iterator AND left the old name compiling with an
 	 *  EMPTY BODY, so the 5.3 spelling silently reports zero actors on 5.7. */
+	/** Carve/paint a landscape along a spline - the road/riverbed op. Guards a CRASH (the
+	 *  engine derefs GetLandscapeInfo() unchecked) and a 5.7-only SILENT NO-OP. */
+	MIF_DECL(apply_spline_to_landscape);
 	MIF_DECL(list_partition_actors);
 	MIF_DECL(list_layers);
 	MIF_DECL(modify_actor_layers);
