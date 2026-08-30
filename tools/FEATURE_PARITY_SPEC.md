@@ -5491,7 +5491,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Uncooked only, refused earlier by ResolveGraphField. Guard before reporting success: after SetFunction, call IsValid(&Msg) and HandleAnyChange, and if the node is not valid, refuse naming the mismatch (wrong signature / function not found on the scope class) and remove the node — the same append-the...
       Vetter corrected the proposal: Four corrections; the third is the one that would have shipped a broken endpoint. 1. IsValid is NOT callable from a plugin. K2Node_CreateDelegate.h:59 (5.3.2) / :60 (5.6, 5.7) declares `bool IsValid(FString* OutMsg = nullptr, bool bDontUseSkeletalClassForSelf = false) const` with NO BLUEPRINTGRAPH_API macro, on a UCLASS(MinimalAPI) class, and it is defined out-of-line in K2Node_CreateDelegate.cpp:...
 
-- [ ] **set_enum_value (rename an existing entry, reorder, and toggle bitflags)** (hours)
+- [x] **set_enum_value, and a CRASH BOMB create_asset was shipping** (hours)
+      DONE 2026-08-30. 24 checks in tools/test_enum_edit.py.
+      THE CRASH IS THE HEADLINE AND IT WAS NOT IN THE NEW CODE. Writing this endpoint killed
+      the editor: create_asset made a UserDefinedEnum with a bare NewObject, add_enum_value
+      was called on it, and the process died on
+        Assertion failed: CppForm == ECppForm::Namespaced [UserDefinedEnum.cpp:49]
+      FEnumEditorUtils::CreateUserDefinedEnum does the same NewObject and then TWO more things
+      (EnumEditorUtils.cpp:46-52): SetEnums(empty, ECppForm::Namespaced) and
+      SetMetaData("BlueprintType"). Without the first, the FIRST operation naming an
+      enumerator asserts - and the asset looks perfectly fine until something touches it.
+      This is the SAME SHAPE already recorded in create_asset for ULevelSequence ("a bare
+      NewObject IS malformed"), one step worse: malformed there, fatal here. Fixed beside it,
+      and LoadUserEnum now refuses an enum already on disk in that state rather than crashing.
+      A SECOND SHIPPED HOLE CLOSED IN THE SAME PLACE: no enum endpoint checked for a cooked
+      package, and DisplayNameMap SURVIVES the cook - so a user-defined enum from a .pak
+      loaded fine and every write reported success and evaporated on restart. That affected
+      add_enum_value and remove_enum_value too; the fix is in the shared loader.
+      SCOPE NARROWED per the vetter: renaming was already reachable through set_property
+      (DisplayNameMap is a plain UPROPERTY TMap), so rename here is a HARDENING that adds the
+      duplicate check. Reordering and bitflags are the genuinely unreachable parts.
+      bitflags is enum-scoped and index/value entry-scoped; a call carrying both is refused
+      rather than served in an arbitrary order.
       Changes a user-defined enum entry's display name in place, moves an entry to a new index, and marks an enum as a bitflags type. Renaming in place is the important one: today the only way to correct an entry's name is remove + re-add, which appends it at a new index and silently breaks every Switch on Enum, enum literal and saved enum property that referenced the old ordinal.
       API: FEnumEditorUtils::SetEnumeratorDisplayName(UUserDefinedEnum*, int32 EnumeratorIndex, FText) — UNREALED_API, D:/UE532/Engine/Source/Editor/UnrealEd/Public/Kismet2/EnumEditorUtils.h:95, with IsEnumeratorDisplayNameValid at :96; FEnumEditorUtils::MoveEnumeratorInUserDefinedEnum(UUserDefinedEnum*, int32 InitialIndex, int32 TargetIndex) — UNREALED_API, same header :69; FEnumEditorUtils::SetEnumeratorBi...
       Cooked: Uncooked only, and the existing LoadUserStruct/LoadUserEnum path already produces a named refusal for anything that is not a UUserDefinedEnum (a cooked enum is a plain UEnum with no editor data). No new hazard, but the same read-back discipline H_add_enum_value already applies is mandatory: SetEnume...

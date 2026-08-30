@@ -202,6 +202,7 @@ set_data_layer_loaded_in_editor.datalayer
 set_data_layer_loaded_in_editor.layer
 set_data_layer_visibility.datalayer
 set_data_layer_visibility.layer
+set_enum_value.displayname
 set_function_flags.name
 set_ik_goal_bone.rig
 set_ik_goal_solver_connection.rig

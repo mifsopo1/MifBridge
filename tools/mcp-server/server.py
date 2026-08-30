@@ -2783,6 +2783,14 @@ def add_create_event(graph_id: str, function: str, bind_node: str,
 
 
 @mcp.tool()
+def set_enum_value(enum: str, index: int = None, value: str = "", new_name: str = "",
+                   move_to: int = None, bitflags: bool = None) -> dict:
+    "Change an existing user-defined enum: rename an entry, reorder one, or toggle the enum's bitflags state. Address the entry by index or by its current display name. bitflags is enum-scoped and cannot be combined with an entry."
+    return _post("set_enum_value", enum=enum, index=index, value=value, newName=new_name,
+                 moveTo=move_to, bitflags=bitflags)
+
+
+@mcp.tool()
 def consolidate_assets(target: str, sources: list, delete_sources: bool = False,
                        confirm: bool = False) -> dict:
     "Repoint every referencer of `sources` at `target`, optionally deleting the sources - the Content Browser's asset consolidation, and the write half delete_asset dead-ends into. It CLOSES EVERY OPEN ASSET EDITOR. Run check_consolidate_assets first; requires confirm=True."

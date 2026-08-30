@@ -1129,6 +1129,7 @@ namespace MifBridge
 	MIF_DECL(create_macro);
 	MIF_DECL(add_k2_node);
 	MIF_DECL(add_create_event);
+	MIF_DECL(set_enum_value);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);

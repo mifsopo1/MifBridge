@@ -133,6 +133,43 @@ namespace MifBridge
 				const FString Full = P + TEXT(".") + FPackageName::GetShortName(P);
 				Obj = StaticLoadObject(UUserDefinedEnum::StaticClass(), nullptr, *Full, nullptr, LOAD_NoWarn | LOAD_Quiet);
 			}
+			// AN ENUM CREATED WITHOUT SetEnums(..., Namespaced) IS A CRASH BOMB, and one may
+			// already exist on disk from before create_asset was fixed. GenerateFullEnumName
+			// asserts check(CppForm == ECppForm::Namespaced), so the first operation naming an
+			// enumerator would take the editor down. Refuse it by name instead.
+			if (UUserDefinedEnum* Malformed = Cast<UUserDefinedEnum>(Obj))
+			{
+				if (Malformed->GetCppForm() != UEnum::ECppForm::Namespaced)
+				{
+					OutError = FString::Printf(
+						TEXT("'%s' is a malformed user-defined enum - its CppForm is not Namespaced, "
+							 "which means it was created without SetEnums(..., Namespaced). Any "
+							 "operation that names an enumerator would hit "
+							 "check(CppForm == ECppForm::Namespaced) and TERMINATE the editor. "
+							 "Delete it and create a new one. NOTHING was changed."),
+						*Malformed->GetPathName());
+					return nullptr;
+				}
+			}
+
+			// THE COOKED HOLE, closed here rather than in each caller. DisplayNameMap SURVIVES the
+			// cook and nothing in this loader checked the package, so a UUserDefinedEnum mounted
+			// from a .pak loaded fine and every write against it - add_enum_value,
+			// remove_enum_value, a rename - reported success and evaporated on restart. That is a
+			// wrong answer rather than an error, which is the worse kind. Every enum endpoint goes
+			// through this function, so one check covers all of them.
+			if (UUserDefinedEnum* Cooked = Cast<UUserDefinedEnum>(Obj))
+			{
+				if (IsCookedOrContainerPackage(Cooked->GetOutermost()))
+				{
+					OutError = FString::Printf(
+						TEXT("'%s' came from a COOKED package. A user-defined enum's entries can be "
+							 "changed in memory there, and the change CANNOT be saved - it would "
+							 "report success and vanish on restart. Reading it is fine; writing to "
+							 "it is not. NOTHING was changed."), *Cooked->GetPathName());
+					return nullptr;
+				}
+			}
 			UUserDefinedEnum* Enum = Cast<UUserDefinedEnum>(Obj);
 			if (!Enum)
 			{
@@ -770,6 +807,43 @@ namespace MifBridge
 			NewSequence->Initialize();
 		}
 
+		// AND A BARE NewObject<UUserDefinedEnum> IS A CRASH BOMB - the same shape as the sequence
+		// above, one step worse. Found live 2026-08-30: create_asset made one, add_enum_value was
+		// called on it, and the editor died on
+		//
+		//     Assertion failed: CppForm == ECppForm::Namespaced
+		//     [UserDefinedEnum.cpp:49, in GenerateFullEnumName]
+		//
+		// FEnumEditorUtils::CreateUserDefinedEnum - the stock "Add Enumeration" action - does this
+		// same NewObject and then TWO more things (EnumEditorUtils.cpp:46-52):
+		//
+		//     Enum->SetEnums(EmptyNames, UEnum::ECppForm::Namespaced);
+		//     Enum->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
+		//
+		// Without the first, CppForm stays Regular and the FIRST operation that names an
+		// enumerator asserts. The asset looked perfectly fine in the content browser until
+		// something touched it, which is the worst way for this to be found. Without the second it
+		// is invisible to Blueprint variable types.
+		//
+		// By exact type, not by name-string, for the reason the sequence comment above gives: this
+		// is a construction step to RUN, and a wrong match would silently skip real initialisation.
+		if (UUserDefinedEnum* NewEnum = Cast<UUserDefinedEnum>(Asset))
+		{
+			TArray<TPair<FName, int64>> EmptyNames;
+			NewEnum->SetEnums(EmptyNames, UEnum::ECppForm::Namespaced);
+			NewEnum->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
+			// VERIFIED, because this is precisely the state whose absence is fatal. SetEnums
+			// returns void, and shipping an enum that asserts on first use is what this block
+			// exists to stop - so it refuses to hand one back rather than trusting the call.
+			if (NewEnum->GetCppForm() != UEnum::ECppForm::Namespaced)
+			{
+				Fail(Out, TEXT("the new enum's CppForm is not Namespaced after initialisation. "
+					TEXT("Handing it back would produce an asset that TERMINATES the editor on the "
+						 "first operation naming an enumerator. NOTHING usable was produced.")));
+				return;
+			}
+		}
+
 #if MIF_WITH_NIAGARA
 		// A BARE NewObject<UNiagaraSystem> CRASHES THE EDITOR - found live 2026-08-29, not assumed.
 		// The stock "New Niagara System" factory (UNiagaraSystemFactoryNew::FactoryCreateNew,
@@ -1258,5 +1332,219 @@ namespace MifBridge
 			Out->SetStringField(TEXT("warning"),
 				TEXT("values after the removed one shifted down by one index — refresh any switch-on-enum nodes and re-check stored defaults"));
 		}
+	}
+
+	// =======================================================================
+	// set_enum_value - reorder, bitflags, and a hardened rename
+	// =======================================================================
+	//
+	// SCOPE, NARROWED AFTER CHECKING. Renaming an entry is ALREADY reachable: DisplayNameMap is a
+	// plain UPROPERTY TMap<FName,FText> (UserDefinedEnum.h:41), set_property accepts any asset by
+	// objectPath, and the {Key} map accessor exists. So rename here is a HARDENING - it adds
+	// IsEnumeratorDisplayNameValid's duplicate check and the BroadcastChanges that a raw property
+	// write skips - not a new capability, and the spec says so.
+	//
+	// What is genuinely unreachable is reordering and bitflags. UEnum::Names is a protected
+	// non-UPROPERTY (Class.h:2517) so no reflective path touches it, and the bitflags state is
+	// UObject metadata rather than a property.
+	//
+	// SCOPES ARE NOT MIXED. bitflags is a property of the ENUM; index/value address an ENTRY.
+	// A call carrying both is refused rather than served in some arbitrary order, because either
+	// order would surprise half the callers.
+
+	void H_set_enum_value(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("enum"), TEXT("enumPath"), TEXT("path"), TEXT("index"), TEXT("value"),
+			  TEXT("displayName"), TEXT("newName"), TEXT("moveTo"), TEXT("bitflags") },
+			TEXT("enum (aliases enumPath, path); then EITHER bitflags (enum-scoped) OR an entry ")
+			TEXT("addressed by index or value (alias displayName) plus newName and/or moveTo"),
+			{ { TEXT("add"), TEXT("add_enum_value creates an entry; this changes an existing one") },
+			  { TEXT("remove"), TEXT("remove_enum_value deletes one") },
+			  { TEXT("order"), TEXT("spell it moveTo - the target INDEX, not an ordering") } }))
+		{
+			return;
+		}
+
+		FString Error;
+		UUserDefinedEnum* Enum = LoadUserEnum(
+			JStrAny(In, { TEXT("enum"), TEXT("enumPath"), TEXT("path") }), Error);
+		if (!Enum) { Fail(Out, Error); return; }
+
+		const bool bHasBitflags = In->HasField(TEXT("bitflags"));
+		const bool bHasEntry = In->HasField(TEXT("index")) || In->HasField(TEXT("value"))
+							|| In->HasField(TEXT("displayName"));
+		if (bHasBitflags && bHasEntry)
+		{
+			Fail(Out, TEXT("bitflags is a property of the whole ENUM and index/value address one "
+				TEXT("ENTRY - a call carrying both would have to pick an order, and either choice "
+					 "surprises half the callers. Make two calls. NOTHING was changed.")));
+			return;
+		}
+		if (!bHasBitflags && !bHasEntry)
+		{
+			Fail(Out, TEXT("nothing to change - pass bitflags, or address an entry with index or "
+				TEXT("value. NOTHING was changed.")));
+			return;
+		}
+
+		// The user-facing entry count excludes the hidden _MAX the engine appends.
+		const int32 Count = FMath::Max(0, Enum->NumEnums() - 1);
+		Out->SetStringField(TEXT("enum"), Enum->GetPathName());
+		Out->SetNumberField(TEXT("entryCount"), Count);
+
+		// --- enum-scoped: bitflags ---------------------------------------------------------------
+		if (bHasBitflags)
+		{
+			const bool bWant = JBool(In, TEXT("bitflags"), false);
+			const bool bWas = FEnumEditorUtils::IsEnumeratorBitflagsType(Enum);
+			if (bWas == bWant)
+			{
+				Out->SetBoolField(TEXT("bitflags"), bWas);
+				Out->SetBoolField(TEXT("changed"), false);
+				Out->SetStringField(TEXT("note"),
+					TEXT("the enum is already in that state - nothing was changed, and nothing "
+						 "needed to be."));
+				return;
+			}
+			FEnumEditorUtils::SetEnumeratorBitflagsTypeState(Enum, bWant);
+			// READ BACK: the setter returns void.
+			const bool bNow = FEnumEditorUtils::IsEnumeratorBitflagsType(Enum);
+			if (bNow != bWant)
+			{
+				Fail(Out, TEXT("the bitflags state was set and reads back unchanged. NOTHING "
+					TEXT("usable was produced.")));
+				return;
+			}
+			Enum->MarkPackageDirty();
+			Out->SetBoolField(TEXT("bitflags"), bNow);
+			Out->SetBoolField(TEXT("changed"), true);
+			Out->SetStringField(TEXT("bitflagsNote"),
+				TEXT("bitflags is enum METADATA, not a property - which is why nothing reflective "
+					 "could reach it. Turning it on does NOT renumber existing entries, so values "
+					 "that were 0,1,2 are still 0,1,2 rather than 1,2,4."));
+			Out->SetStringField(TEXT("assetNote"),
+				TEXT("the enum is dirty and NOTHING has been saved."));
+			return;
+		}
+
+		// --- entry-scoped: address it ------------------------------------------------------------
+		int32 Index = INDEX_NONE;
+		if (In->HasField(TEXT("index")))
+		{
+			Index = JInt(In, TEXT("index"), -1);
+		}
+		else
+		{
+			const FString Want = JStrAny(In, { TEXT("value"), TEXT("displayName") });
+			for (int32 i = 0; i < Count; ++i)
+			{
+				if (Enum->GetDisplayNameTextByIndex(i).ToString() == Want)
+				{
+					Index = i;
+					break;
+				}
+			}
+			if (Index == INDEX_NONE)
+			{
+				TArray<FString> Have;
+				for (int32 i = 0; i < Count; ++i)
+				{
+					Have.Add(Enum->GetDisplayNameTextByIndex(i).ToString());
+				}
+				Fail(Out, FString::Printf(
+					TEXT("no entry displayed as '%s'. This enum has: %s. NOTHING was changed."),
+					*Want, *FString::Join(Have, TEXT(", "))));
+				return;
+			}
+		}
+		if (Index < 0 || Index >= Count)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("index %d is out of range - this enum has %d entr%s, so valid indices are "
+					 "0..%d. NOTHING was changed."),
+				Index, Count, Count == 1 ? TEXT("y") : TEXT("ies"), Count - 1));
+			return;
+		}
+		Out->SetNumberField(TEXT("index"), Index);
+		Out->SetStringField(TEXT("wasNamed"), Enum->GetDisplayNameTextByIndex(Index).ToString());
+
+		// --- rename ------------------------------------------------------------------------------
+		const FString NewName = JStr(In, TEXT("newName"));
+		if (!NewName.IsEmpty())
+		{
+			// THE CHECK A RAW set_property WRITE SKIPS. Two entries with the same display name
+			// compile, and then a Blueprint switch on the enum has two indistinguishable pins.
+			if (!FEnumEditorUtils::IsEnumeratorDisplayNameValid(Enum, Index, FText::FromString(NewName)))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is not a valid display name here - the usual cause is that another "
+						 "entry already uses it, which compiles and then gives you two "
+						 "indistinguishable pins on every switch. NOTHING was changed."), *NewName));
+				return;
+			}
+			FEnumEditorUtils::SetEnumeratorDisplayName(Enum, Index, FText::FromString(NewName));
+			const FString Now = Enum->GetDisplayNameTextByIndex(Index).ToString();
+			if (Now != NewName)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("the rename was applied and entry %d reads back as '%s'. NOTHING reliable "
+						 "was produced."), Index, *Now));
+				return;
+			}
+			Out->SetStringField(TEXT("newName"), Now);
+		}
+
+		// --- reorder -----------------------------------------------------------------------------
+		if (In->HasField(TEXT("moveTo")))
+		{
+			const int32 To = JInt(In, TEXT("moveTo"), -1);
+			if (To < 0 || To >= Count)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("moveTo %d is out of range - valid targets are 0..%d.%s"), To, Count - 1,
+					NewName.IsEmpty() ? TEXT(" NOTHING was changed.")
+									  : TEXT(" The RENAME above was already applied.")));
+				return;
+			}
+			if (To != Index)
+			{
+				const FString Moving = Enum->GetDisplayNameTextByIndex(Index).ToString();
+				FEnumEditorUtils::MoveEnumeratorInUserDefinedEnum(Enum, Index, To);
+				// READ BACK from the enum, because the move returns void and reordering is
+				// exactly the operation where an off-by-one is invisible.
+				const FString Landed = Enum->GetDisplayNameTextByIndex(To).ToString();
+				if (Landed != Moving)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("entry '%s' was moved to index %d and that slot now reads '%s'. "
+							 "NOTHING reliable was produced."), *Moving, To, *Landed));
+					return;
+				}
+				Out->SetNumberField(TEXT("movedTo"), To);
+				Out->SetStringField(TEXT("reorderNote"),
+					TEXT("reordering changes each entry's INDEX, not its stored value - anything "
+						 "that saved an index rather than a name now points somewhere else. "
+						 "Blueprints referencing entries by name are unaffected."));
+			}
+			else
+			{
+				Out->SetNumberField(TEXT("movedTo"), To);
+				Out->SetStringField(TEXT("note"),
+					TEXT("moveTo names the index it already occupies, so nothing moved and nothing "
+						 "needed to."));
+			}
+		}
+
+		// The whole order, so a caller can see the result rather than infer it.
+		TArray<TSharedPtr<FJsonValue>> Order;
+		for (int32 i = 0; i < FMath::Max(0, Enum->NumEnums() - 1); ++i)
+		{
+			Order.Add(MakeShared<FJsonValueString>(Enum->GetDisplayNameTextByIndex(i).ToString()));
+		}
+		Out->SetArrayField(TEXT("entries"), Order);
+		Enum->MarkPackageDirty();
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the enum is dirty and NOTHING has been saved."));
 	}
 }

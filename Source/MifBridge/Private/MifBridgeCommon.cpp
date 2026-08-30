@@ -184,6 +184,7 @@ namespace MifBridge
 			MIF_BIND(create_macro);
 			MIF_BIND(add_k2_node);
 			MIF_BIND(add_create_event);
+			MIF_BIND(set_enum_value);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);
