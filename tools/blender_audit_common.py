@@ -19,6 +19,37 @@ except ValueError:
 TOKEN = os.environ.get("MIF_BLENDER_TOKEN", os.environ.get("MIF_BRIDGE_TOKEN", "dev"))
 
 
+def reachable(timeout=1.5):
+    """True if something is listening on the addon port.
+
+    Every Blender suite needs this before its first call, because call() raises rather than
+    returning an error dict when nothing is there - so `if not call("ping").get("ok")` never runs
+    and the suite dies with a traceback and exit 1 instead of skipping with exit 2. It lived as a
+    private copy inside test_blender_ops.py, which is precisely why the two suites written later
+    did not have it. Shared here so the next one cannot miss it.
+    """
+    s = socket.socket()
+    s.settimeout(timeout)
+    try:
+        s.connect((HOST, PORT))
+        return True
+    except Exception:
+        return False
+    finally:
+        s.close()
+
+
+def skip_banner(name):
+    """The loud skip every Blender suite should print. A skip that looks like a pass is how an
+    untested thing gets believed, so it names what was NOT verified and why."""
+    print("")
+    print("SKIPPED - nothing was verified.")
+    print("  Blender is not listening on %s:%d, so no %s op was exercised." % (HOST, PORT, name))
+    print("  Start one with tools/run_blender_suites.py, or run Blender with the MifBlender addon.")
+    print("  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose.")
+    return 2
+
+
 def call(op, params=None, timeout=30.0):
     s = socket.create_connection((HOST, PORT), timeout=timeout)
     try:

@@ -56,10 +56,10 @@ def run_python_available():
     return bool(r.get("ok"))
 
 def main():
-    ping = B.call("ping")
-    if not ping.get("ok"):
-        print("no Blender on %s:%s - start one with tools/run_blender_suites.py" % (B.HOST, B.PORT))
-        return 2
+    # See test_blender_creation.py: probing with B.call raises rather than returning, so this
+    # suite failed instead of skipping in every sweep run without Blender.
+    if not B.reachable():
+        return B.skip_banner("material")
 
     objs = []
     try:
