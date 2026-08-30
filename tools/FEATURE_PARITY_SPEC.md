@@ -5643,6 +5643,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       A HEARTBEAT ENDPOINT WAS CONSIDERED AND REJECTED: it would queue behind the same busy
       game thread as everything else, so it would time out exactly when it was needed. The
       transport-level signal is the only one that survives a stalled game thread.
+- [ ] **make a 5.7 compile part of the release gate** (hours) - FOUND 2026-08-30 by a peer session
+      0.7.0 SHIPPED WITHOUT COMPILING ON 5.7. A peer pulled it into another project on
+      launcher 5.7.4 and got 45x C2027 and no DLL: USkeletalBodySetup and ICollectionContainer
+      are both complete on 5.3 and incomplete on 5.6+. Fixed, but the point is that nothing
+      caught it before the release went out.
+      WHY THE EXISTING CLAIM WAS TRUE AND USELESS: the README says 5.7 was verified on
+      2026-08-27 at 330 of 421 endpoints. Both offending features - PhysicsAsset authoring and
+      collections - landed AFTER that probe. A dated verification does not cover code written
+      later, and a release gate that reads it as if it did is worse than no claim.
+      make_release.py already refuses to package on a stale README badge. It should refuse
+      just as hard when the tree has not been COMPILED against the newest engine it claims to
+      support. A full 5.7 editor build is not needed - a compile-only pass over the module
+      would have caught both of these, since they are missing includes rather than behaviour.
+      Note the trap found while fixing it: MifBridgePhysicsAsset.cpp did not include
+      MifBridgeVersion.h, so MIF_ENGINE_AT_LEAST would have evaluated to 0 and the guard would
+      have silently taken the wrong branch. Any gate should also check that every file using
+      MIF_ENGINE_AT_LEAST includes the header that defines it - an undefined macro in #if is
+      not an error, it is a zero.
+
 - [ ] **add_niagara_emitter / remove_niagara_emitter** (day)
       Split out 2026-08-30 on the vetter's advice - these need their own guards rather than riding
       alongside a boolean, and set_niagara_emitter refuses `add`/`remove` by name.
