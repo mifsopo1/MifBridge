@@ -113,6 +113,9 @@
 #include "Engine/LevelStreamingAlwaysLoaded.h"
 #include "Engine/LevelStreamingDynamic.h"
 #include "Engine/World.h"
+#include "Layers/LayersSubsystem.h"                 // the CLASSIC layers, not Data Layers
+#include "Layers/Layer.h"
+#include "Subsystems/EditorActorSubsystem.h"        // resolving actorPaths for modify_actor_layers
 #include "WorldPartition/DataLayer/DataLayerInstance.h"
 #include "WorldPartition/DataLayer/DataLayerManager.h"
 #include "GameFramework/Actor.h"                     // AActor must be COMPLETE for IsValid()'s UObject* conversion
@@ -2137,4 +2140,515 @@ namespace MifBridge
 			*Name, bEditorType ? TEXT("editor") : TEXT("runtime"), Count);
 	}
 
+	// =======================================================================
+	// THE CLASSIC LAYERS SYSTEM - list_layers / modify_actor_layers / set_layer_visibility
+	// =======================================================================
+	//
+	// NOT World Partition Data Layers, which live above this in the same file. The two are
+	// unrelated systems with confusingly similar names, and both are worth having: Data Layers
+	// control what STREAMS at runtime, classic Layers are an editor-time organisation and
+	// visibility tool - "hide all the vegetation while I work on the buildings". Many existing UE
+	// projects organise their levels entirely this way, and an agent opening one could not see that
+	// structure at all.
+	//
+	// THEY WORK ON COOKED MAPS, and the first draft of this had it exactly backwards. It is worth
+	// writing down because the intuition is wrong in a believable way: UWorld's layer collection IS
+	// editor-only, so "a cooked map has no layers" sounds right. But AActor::Layers is NOT -
+	// Actor.h:911 is a plain UPROPERTY(EditAnywhere, AdvancedDisplay) and the comment above it says
+	// exactly why: "This is outside of the editoronly data to allow hiding of LD-specified layers at
+	// runtime for profiling." The membership survives the cook on every actor, and
+	// UEditorEngine::Map_Load rebuilds the whole collection from it on every map open -
+	// EditorServer.cpp:2890 calls CreateLayer for each unseen name found on an actor, then :2896
+	// InitializeNewActorLayers. So a cooked map opens with fully working, fully populated layers,
+	// and an endpoint reporting "stripped at cook time" would be actively lying about content the
+	// caller can see in the Outliner.
+	//
+	// Verified by reading both, not inferred from one.
+
+	/** Is the editor's current level World-Partitioned?
+	 *
+	 *  THE FACT THAT DECIDES WHETHER THIS WHOLE FAMILY CAN DO ANYTHING, and it is not obvious:
+	 *  classic Layers and World Partition are MUTUALLY EXCLUSIVE. AActor::SupportsLayers
+	 *  (ActorEditor.cpp:978) returns false when GetLevel()->bIsPartitioned, so on a partitioned map
+	 *  NO actor can ever be placed in a classic layer - ULayersSubsystem::IsActorValidForLayer
+	 *  refuses every one of them. World Partition's answer to the same problem is Data Layers,
+	 *  which this file already exposes above.
+	 *
+	 *  Found live 2026-08-30: modify_actor_layers{add} refused every actor on the scratch level with
+	 *  "not valid for a layer", and the reason was neither of the two the first message guessed at
+	 *  (a builder brush, a transient actor). Without naming it, the endpoint would report a refusal
+	 *  the caller cannot act on and would never guess. */
+	bool MifCurrentLevelIsPartitioned()
+	{
+		const UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		const ULevel* Level = World ? World->PersistentLevel : nullptr;
+		return Level && Level->bIsPartitioned;
+	}
+
+	ULayersSubsystem* MifLayers(const TSharedRef<FJsonObject>& Out)
+	{
+		ULayersSubsystem* Layers = GEditor ? GEditor->GetEditorSubsystem<ULayersSubsystem>() : nullptr;
+		if (!Layers)
+		{
+			Fail(Out, TEXT("no LayersSubsystem on this editor. NOTHING was changed."));
+		}
+		return Layers;
+	}
+
+	// --- list_layers --------------------------------------------------------
+	//   in:  { includeActors?, limit? }
+	//   out: { count, layers:[{ name, visible, actorCount, actors? }] }
+	void H_list_layers(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("includeActors"), TEXT("limit") },
+			TEXT("includeActors (default false - list each layer's member actorPaths, which is the ")
+			TEXT("expensive part), limit (max layers reported, default 200)"),
+			{ { TEXT("withActors"), TEXT("spell it includeActors") },
+			  { TEXT("dataLayers"), TEXT("different system - use list_data_layers for World ")
+			                       TEXT("Partition Data Layers") } }))
+		{
+			return;
+		}
+
+		ULayersSubsystem* Layers = MifLayers(Out);
+		if (!Layers) { return; }
+
+		TArray<FName> Names;
+		Layers->AddAllLayerNamesTo(Names);
+		Names.Sort(FNameLexicalLess());
+
+		const bool bIncludeActors = JBool(In, TEXT("includeActors"), false);
+		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 200), 1, 5000);
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		for (const FName& Name : Names)
+		{
+			if (Rows.Num() >= Limit) { break; }
+			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+			Row->SetStringField(TEXT("name"), Name.ToString());
+
+			if (const ULayer* Layer = Layers->GetLayer(Name))
+			{
+				Row->SetBoolField(TEXT("visible"), Layer->IsVisible());
+			}
+
+			// Returns the array; it does NOT take an out-param. Same on 5.3.2 (:455) and 5.7.
+			const TArray<AActor*> InLayer = Layers->GetActorsFromLayer(Name);
+			Row->SetNumberField(TEXT("actorCount"), InLayer.Num());
+			if (bIncludeActors)
+			{
+				TArray<TSharedPtr<FJsonValue>> Paths;
+				for (const AActor* A : InLayer)
+				{
+					if (A) { Paths.Add(MakeShared<FJsonValueString>(A->GetPathName())); }
+				}
+				Row->SetArrayField(TEXT("actors"), Paths);
+			}
+			Rows.Add(MakeShared<FJsonValueObject>(Row));
+		}
+
+		Out->SetNumberField(TEXT("count"), Names.Num());
+		Out->SetArrayField(TEXT("layers"), Rows);
+		if (Names.Num() > Rows.Num())
+		{
+			Out->SetBoolField(TEXT("truncated"), true);
+			Out->SetNumberField(TEXT("reported"), Rows.Num());
+		}
+		const bool bPartitioned = MifCurrentLevelIsPartitioned();
+		Out->SetBoolField(TEXT("levelIsPartitioned"), bPartitioned);
+		if (bPartitioned)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("this level is WORLD PARTITIONED, and classic Layers do not work on one at all - "
+					 "AActor::SupportsLayers returns false for every actor in a partitioned level "
+					 "(ActorEditor.cpp), so nothing can be added to a layer here however the call is "
+					 "spelled. This is not a limitation of this endpoint; it is how the two systems "
+					 "relate. World Partition's equivalent is DATA LAYERS - use list_data_layers, "
+					 "create_data_layer and add_actor_to_data_layer instead."));
+		}
+		else if (Names.Num() == 0)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("this map has no classic Layers. That is a real answer, not a cooked-content ")
+				TEXT("limitation - layer membership lives on the ACTORS (AActor::Layers is not ")
+				TEXT("editor-only) and the editor rebuilds the collection from them on map open, so ")
+				TEXT("a cooked map with layers would report them here. If you were looking for World ")
+				TEXT("Partition Data Layers, those are a different system - use list_data_layers."));
+		}
+	}
+
+	// --- set_layer_visibility -----------------------------------------------
+	void H_set_layer_visibility(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("layer"), TEXT("layers"), TEXT("visible") },
+			TEXT("layer (one name) or layers (array of names); visible (bool, required)"),
+			{ { TEXT("hidden"), TEXT("spell it visible, inverted - visible:false hides the layer") },
+			  { TEXT("name"), TEXT("spell it layer") } }))
+		{
+			return;
+		}
+
+		ULayersSubsystem* Layers = MifLayers(Out);
+		if (!Layers) { return; }
+
+		if (!In->HasField(TEXT("visible")))
+		{
+			Fail(Out, TEXT("visible is required (bool). NOTHING was changed."));
+			return;
+		}
+		const bool bVisible = JBool(In, TEXT("visible"), true);
+
+		TArray<FName> Wanted;
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if (In->TryGetArrayField(TEXT("layers"), Arr) && Arr)
+		{
+			for (const TSharedPtr<FJsonValue>& V : *Arr)
+			{
+				if (V.IsValid()) { Wanted.Add(FName(*V->AsString())); }
+			}
+		}
+		else if (!JStr(In, TEXT("layer")).IsEmpty())
+		{
+			Wanted.Add(FName(*JStr(In, TEXT("layer"))));
+		}
+		if (Wanted.Num() == 0)
+		{
+			Fail(Out, TEXT("name a layer (layer) or several (layers). NOTHING was changed."));
+			return;
+		}
+
+		// EXISTENCE FIRST. SetLayerVisibility on an unknown name is a silent no-op, so without this
+		// a typo reports success and hides nothing - the exact silent-success shape this project
+		// keeps finding.
+		TArray<FName> Missing;
+		for (const FName& N : Wanted)
+		{
+			if (!Layers->GetLayer(N)) { Missing.Add(N); }
+		}
+		if (Missing.Num() > 0)
+		{
+			TArray<FName> All;
+			Layers->AddAllLayerNamesTo(All);
+			FString Known;
+			for (int32 i = 0; i < All.Num() && i < 12; ++i)
+			{
+				Known += (i ? TEXT(", ") : TEXT("")) + All[i].ToString();
+			}
+			Fail(Out, FString::Printf(
+				TEXT("no layer named %s. SetLayerVisibility on an unknown name silently does ")
+				TEXT("nothing, so this is refused rather than reported as success. This map has %d ")
+				TEXT("layer(s)%s%s. NOTHING was changed."),
+				*Missing[0].ToString(), All.Num(),
+				All.Num() ? TEXT(": ") : TEXT(""), *Known));
+			return;
+		}
+
+		int32 Affected = 0;
+		for (const FName& N : Wanted)
+		{
+			Affected += Layers->GetActorsFromLayer(N).Num();
+		}
+
+		Layers->SetLayersVisibility(Wanted, bVisible);
+
+		// READ BACK - SetLayersVisibility returns void.
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		bool bAllMatched = true;
+		for (const FName& N : Wanted)
+		{
+			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+			Row->SetStringField(TEXT("name"), N.ToString());
+			const ULayer* L = Layers->GetLayer(N);
+			const bool bNow = L ? L->IsVisible() : !bVisible;
+			Row->SetBoolField(TEXT("visible"), bNow);
+			if (bNow != bVisible) { bAllMatched = false; }
+			Rows.Add(MakeShared<FJsonValueObject>(Row));
+		}
+		Out->SetArrayField(TEXT("layers"), Rows);
+		Out->SetBoolField(TEXT("visible"), bVisible);
+		Out->SetNumberField(TEXT("actorsAffected"), Affected);
+		if (!bAllMatched)
+		{
+			Fail(Out, TEXT("the visibility change did not stick on every layer - read back after ")
+				TEXT("setting it. Reported rather than passed off as success."));
+			return;
+		}
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("visibility is an editor-time property of the level and NOTHING has been saved."));
+	}
+
+	// --- modify_actor_layers ------------------------------------------------
+	//   in:  { actorPaths, layer|layers, operation, confirm? }
+	void H_modify_actor_layers(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPaths"), TEXT("actors"), TEXT("layer"), TEXT("layers"),
+			  TEXT("operation"), TEXT("confirm") },
+			TEXT("operation: add | remove | create | delete | select. add/remove/select need ")
+			TEXT("actorPaths (aliases: actors); create/delete need only the layer name; delete needs ")
+			TEXT("confirm:true. layer (one) or layers (array)"),
+			{ { TEXT("op"), TEXT("spell it operation") },
+			  { TEXT("actorPath"), TEXT("spell it actorPaths - this endpoint takes an array") } }))
+		{
+			return;
+		}
+
+		ULayersSubsystem* Layers = MifLayers(Out);
+		if (!Layers) { return; }
+
+		const FString Op = JStr(In, TEXT("operation")).ToLower();
+		static const TCHAR* Verbs = TEXT("add, remove, create, delete, select");
+		if (Op.IsEmpty())
+		{
+			Fail(Out, FString::Printf(TEXT("operation is required (%s). NOTHING was changed."), Verbs));
+			return;
+		}
+		if (Op != TEXT("add") && Op != TEXT("remove") && Op != TEXT("create")
+			&& Op != TEXT("delete") && Op != TEXT("select"))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("unknown operation '%s'. Accepted: %s. NOTHING was changed."), *Op, Verbs));
+			return;
+		}
+
+		TArray<FName> LayerNames;
+		const TArray<TSharedPtr<FJsonValue>>* LArr = nullptr;
+		if (In->TryGetArrayField(TEXT("layers"), LArr) && LArr)
+		{
+			for (const TSharedPtr<FJsonValue>& V : *LArr)
+			{
+				if (V.IsValid()) { LayerNames.Add(FName(*V->AsString())); }
+			}
+		}
+		else if (!JStr(In, TEXT("layer")).IsEmpty())
+		{
+			LayerNames.Add(FName(*JStr(In, TEXT("layer"))));
+		}
+		if (LayerNames.Num() == 0)
+		{
+			Fail(Out, TEXT("name a layer (layer) or several (layers). NOTHING was changed."));
+			return;
+		}
+
+		Out->SetStringField(TEXT("operation"), Op);
+
+		// ---------------- create / delete: no actors involved
+		if (Op == TEXT("create"))
+		{
+			TArray<TSharedPtr<FJsonValue>> Made;
+			int32 Existed = 0;
+			for (const FName& N : LayerNames)
+			{
+				if (Layers->GetLayer(N)) { ++Existed; continue; }
+				Layers->CreateLayer(N);
+				if (Layers->GetLayer(N)) { Made.Add(MakeShared<FJsonValueString>(N.ToString())); }
+			}
+			Out->SetArrayField(TEXT("created"), Made);
+			Out->SetNumberField(TEXT("alreadyExisted"), Existed);
+			if (Made.Num() == 0 && Existed > 0)
+			{
+				Out->SetStringField(TEXT("note"),
+					TEXT("every named layer already existed - nothing was created, and nothing "
+						 "needed to be."));
+			}
+			else if (Made.Num() == 0)
+			{
+				Fail(Out, TEXT("CreateLayer returned and none of the named layers exists on ")
+					TEXT("read-back. NOTHING usable was produced."));
+				return;
+			}
+			return;
+		}
+
+		if (Op == TEXT("delete"))
+		{
+			if (!JBool(In, TEXT("confirm"), false))
+			{
+				Fail(Out, TEXT("deleting a layer removes it from every actor that was in it, and ")
+					TEXT("that membership cannot be recovered from this endpoint. Pass confirm:true. ")
+					TEXT("NOTHING was changed."));
+				return;
+			}
+			TArray<FName> Present;
+			int32 MemberTotal = 0;
+			for (const FName& N : LayerNames)
+			{
+				if (Layers->GetLayer(N))
+				{
+					Present.Add(N);
+					MemberTotal += Layers->GetActorsFromLayer(N).Num();
+				}
+			}
+			if (Present.Num() == 0)
+			{
+				Fail(Out, TEXT("none of the named layers exists, so there is nothing to delete. ")
+					TEXT("NOTHING was changed."));
+				return;
+			}
+			Layers->DeleteLayers(Present);
+			TArray<TSharedPtr<FJsonValue>> Gone;
+			for (const FName& N : Present)
+			{
+				if (!Layers->GetLayer(N)) { Gone.Add(MakeShared<FJsonValueString>(N.ToString())); }
+			}
+			Out->SetArrayField(TEXT("deleted"), Gone);
+			Out->SetNumberField(TEXT("actorsUnassigned"), MemberTotal);
+			if (Gone.Num() != Present.Num())
+			{
+				Fail(Out, TEXT("DeleteLayers ran and at least one layer still exists on read-back."));
+				return;
+			}
+			return;
+		}
+
+		// ---------------- add / remove / select: resolve the actors
+		UEditorActorSubsystem* ActorSys = GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+		if (!ActorSys)
+		{
+			Fail(Out, TEXT("no EditorActorSubsystem. NOTHING was changed."));
+			return;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* AArr = nullptr;
+		if (!In->TryGetArrayField(TEXT("actorPaths"), AArr))
+		{
+			In->TryGetArrayField(TEXT("actors"), AArr);
+		}
+		if (!AArr || AArr->Num() == 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' needs actorPaths (an array, from list_level_actors). NOTHING was ")
+				TEXT("changed."), *Op));
+			return;
+		}
+
+		TArray<AActor*> Actors;
+		TArray<TSharedPtr<FJsonValue>> NotFound;
+		TArray<TSharedPtr<FJsonValue>> Invalid;
+		for (const TSharedPtr<FJsonValue>& V : *AArr)
+		{
+			if (!V.IsValid()) { continue; }
+			const FString Path = V->AsString();
+
+			// THROUGH ResolveActor, NOT GetActorReference. I wrote GetActorReference here first and
+			// every path from list_level_actors came back "not found" - which is exactly what the
+			// comment ~700 lines above this in the same file already says, having been learned once
+			// for the Data Layer family: "UEditorActorSubsystem::GetActorReference does NOT resolve
+			// the paths list_level_actors reports... Writing a second resolver lost that knowledge;
+			// there is now one." I then wrote a third. ResolveActor falls back to a scan over
+			// GetPathName/label/name and that fallback is the whole point of it.
+			//
+			// A scratch In/Out pair per path because ResolveActor takes the request object and
+			// writes its own Fail into the response - here a miss is a row in notFound, not the end
+			// of the call.
+			TSharedRef<FJsonObject> One = MakeShared<FJsonObject>();
+			One->SetStringField(TEXT("actorPath"), Path);
+			TSharedRef<FJsonObject> Ignored = MakeShared<FJsonObject>();
+			AActor* A = ResolveActor(ActorSys, One, Ignored);
+			if (!A)
+			{
+				NotFound.Add(MakeShared<FJsonValueString>(Path));
+				continue;
+			}
+			// IsActorValidForLayer FIRST - the subsystem silently ignores an actor it will not
+			// place (a builder brush, a transient actor), and counting it as affected would be a
+			// number that is not true.
+			if (Op != TEXT("select") && !Layers->IsActorValidForLayer(A))
+			{
+				Invalid.Add(MakeShared<FJsonValueString>(Path));
+				continue;
+			}
+			Actors.Add(A);
+		}
+
+		if (Actors.Num() == 0)
+		{
+			// NAME THE WORLD PARTITION CASE. It is by far the most likely reason for
+			// "not valid for a layer" on a modern map, and a caller told only that its actors are
+			// invalid has nothing to act on - the actors are perfectly fine, the SYSTEM does not
+			// apply. Pointing at Data Layers is the actually useful answer.
+			if (Invalid.Num() > 0 && MifCurrentLevelIsPartitioned())
+			{
+				Fail(Out, FString::Printf(
+					TEXT("this level is WORLD PARTITIONED, so classic Layers cannot hold any actor in ")
+					TEXT("it - AActor::SupportsLayers returns false for every actor in a partitioned ")
+					TEXT("level, and IsActorValidForLayer refused all %d. Nothing about these actors ")
+					TEXT("is wrong; the two systems are mutually exclusive. Use the DATA LAYER family ")
+					TEXT("instead - create_data_layer / add_actor_to_data_layer / ")
+					TEXT("set_data_layer_visibility. NOTHING was changed."), Invalid.Num()));
+				return;
+			}
+			Fail(Out, FString::Printf(
+				TEXT("none of the %d actorPath(s) resolved to an actor this operation can use ")
+				TEXT("(%d not found, %d not valid for a layer). NOTHING was changed."),
+				AArr->Num(), NotFound.Num(), Invalid.Num()));
+			return;
+		}
+
+		int32 Changed = 0;
+		if (Op == TEXT("select"))
+		{
+			for (const FName& N : LayerNames)
+			{
+				Layers->SelectActorsInLayer(N, /*bSelect*/ true, /*bNotify*/ true);
+			}
+			Out->SetNumberField(TEXT("layersSelected"), LayerNames.Num());
+		}
+		else
+		{
+			const bool bAdd = (Op == TEXT("add"));
+			for (const FName& N : LayerNames)
+			{
+				if (bAdd && !Layers->GetLayer(N))
+				{
+					// Creating implicitly is what the Outliner does when you drag onto a new layer
+					// name, and it is reported rather than done quietly.
+					Layers->CreateLayer(N);
+					Out->SetBoolField(TEXT("layerCreated"), true);
+				}
+				for (AActor* A : Actors)
+				{
+					const bool bOk = bAdd ? Layers->AddActorToLayer(A, N)
+					                      : Layers->RemoveActorFromLayer(A, N);
+					// The engine's own bool, CHECKED - both return whether they actually changed
+					// anything, and discarding it is how "affected: 12" becomes a number nobody
+					// verified.
+					if (bOk) { ++Changed; }
+				}
+			}
+			Out->SetNumberField(TEXT("membershipsChanged"), Changed);
+			if (Changed == 0)
+			{
+				Out->SetStringField(TEXT("note"), bAdd
+					? TEXT("every actor was already in every named layer - nothing changed, and "
+						   "nothing needed to. membershipsChanged:0 is the engine's own answer, not "
+						   "an assumption.")
+					: TEXT("none of these actors was in any of the named layers - nothing changed. "
+						   "membershipsChanged:0 is the engine's own answer, not an assumption."));
+			}
+		}
+
+		Out->SetNumberField(TEXT("actorsResolved"), Actors.Num());
+		if (NotFound.Num()) { Out->SetArrayField(TEXT("notFound"), NotFound); }
+		if (Invalid.Num())
+		{
+			Out->SetArrayField(TEXT("notValidForLayer"), Invalid);
+			Out->SetStringField(TEXT("notValidNote"), MifCurrentLevelIsPartitioned()
+				? TEXT("these resolved to real actors, but this level is WORLD PARTITIONED and "
+					   "classic Layers cannot hold any actor in one. Use the Data Layer family.")
+				: TEXT("these resolved to real actors that the Layers subsystem will not place - a "
+					   "builder brush, a hidden-in-editor class, or an actor inside a Level "
+					   "Instance. Named rather than counted as affected."));
+		}
+		TArray<FName> Now;
+		Layers->AddAllLayerNamesTo(Now);
+		TArray<TSharedPtr<FJsonValue>> NowJson;
+		for (const FName& N : Now) { NowJson.Add(MakeShared<FJsonValueString>(N.ToString())); }
+		Out->SetArrayField(TEXT("layersNow"), NowJson);
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("layer membership is stored on the ACTORS and the level is now dirty. NOTHING has ")
+			TEXT("been saved."));
+	}
 }

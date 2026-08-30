@@ -1555,6 +1555,12 @@ namespace MifBridge
 	// so list_sublevels is also the poll endpoint — for the editor world AND the PIE world.
 	MIF_DECL(list_sublevels);
 	MIF_DECL(list_data_layers);
+	/** The CLASSIC Layers system - editor-time organisation and visibility. NOT World
+	 *  Partition Data Layers above; the two are unrelated despite the names. Works on cooked
+	 *  maps: AActor::Layers is not editor-only and Map_Load rebuilds the collection from it. */
+	MIF_DECL(list_layers);
+	MIF_DECL(modify_actor_layers);
+	MIF_DECL(set_layer_visibility);
 
 	// SEQUENCER (MifBridgeSequencer.cpp). LevelSequence is an ENGINE module, so unlike IK Rig or
 	// Niagara these need no MIF_WITH_* guard - it ships with every build and cannot be disabled.

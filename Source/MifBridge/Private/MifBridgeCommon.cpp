@@ -404,6 +404,9 @@ namespace MifBridge
 			// Level streaming control (Batch I) — editor sublevels + PIE level instances
 			MIF_BIND(list_sublevels);
 			MIF_BIND(list_data_layers);
+			MIF_BIND(list_layers);
+			MIF_BIND(modify_actor_layers);
+			MIF_BIND(set_layer_visibility);
 			MIF_BIND(list_level_sequences);
 			MIF_BIND(describe_level_sequence);
 			MIF_BIND(describe_niagara_system);

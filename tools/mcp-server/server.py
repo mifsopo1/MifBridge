@@ -3496,6 +3496,26 @@ def list_data_layers() -> dict:
 
 
 @mcp.tool()
+def list_layers(include_actors: bool = False, limit: int = 200) -> dict:
+    "The CLASSIC Layers system - editor-time organisation and visibility, NOT World Partition Data Layers (list_data_layers is those; the two are unrelated systems with confusingly similar names). Many existing UE projects organise their levels entirely this way and an agent opening one could not see that structure at all. READ THIS RESPONSE'S levelIsPartitioned FIELD FIRST: classic Layers and World Partition are MUTUALLY EXCLUSIVE - AActor::SupportsLayers returns false for every actor in a partitioned level, so on such a map nothing can ever be added to a layer however the call is spelled, and the note says so and points you at the Data Layer family. On a non-partitioned map this reports each layer's name, visibility and actorCount, plus member actorPaths when include_actors is set (that is the expensive part, so it is off by default). Layers WORK ON COOKED MAPS, which is the opposite of the intuition: AActor::Layers is deliberately NOT editor-only (Actor.h - 'outside of the editoronly data to allow hiding of LD-specified layers at runtime for profiling'), and the editor rebuilds the whole collection from actor membership on every map open, so a cooked map with layers reports them here normally."
+    return _post("list_layers", includeActors=include_actors, limit=limit)
+
+
+@mcp.tool()
+def modify_actor_layers(operation: str, layer: str = "", layers: list = None,
+                        actor_paths: list = None, confirm: bool = False) -> dict:
+    "Create, delete, populate or select a classic Layer. operation is add | remove | create | delete | select. add/remove/select take actor_paths (from list_level_actors); create/delete need only the layer name, and delete needs confirm=True because it strips that layer from every actor in it and this endpoint cannot put the membership back. CHECK list_layers FIRST on an unfamiliar map: if levelIsPartitioned is true this cannot do anything at all - World Partition and classic Layers are mutually exclusive by engine design, and the refusal will say so and point at add_actor_to_data_layer. Adding to a layer that does not exist CREATES it, the way dragging onto a new name in the Outliner does, and reports layerCreated so it is not a silent side effect. membershipsChanged is the ENGINE's own return value counted, not an assumption - 0 with an explanatory note means every actor was already in (or already out of) the named layers, which is different from a failure. Actors that resolve but that the subsystem will not place - a builder brush, a hidden-in-editor class, an actor inside a Level Instance - are named in notValidForLayer rather than counted as affected."
+    return _post("modify_actor_layers", operation=operation, layer=layer, layers=layers,
+                 actorPaths=actor_paths, confirm=confirm)
+
+
+@mcp.tool()
+def set_layer_visibility(visible: bool, layer: str = "", layers: list = None) -> dict:
+    "Hide or show a whole classic Layer - the 'hide all the vegetation while I work on the buildings' operation. Takes one name (layer) or several (layers). AN UNKNOWN LAYER NAME IS REFUSED rather than reported as success: ULayersSubsystem::SetLayerVisibility on a name that does not exist is a silent no-op, so a typo would otherwise hide nothing and say ok - the refusal lists the layers the map actually has. The result is read back after setting it, because SetLayersVisibility returns void. Visibility is editor-time state and nothing is saved. On a WORLD PARTITIONED level this family does nothing useful at all - see list_layers' levelIsPartitioned field and use the Data Layer equivalents."
+    return _post("set_layer_visibility", layer=layer, layers=layers, visible=visible)
+
+
+@mcp.tool()
 def list_sublevels(world: str = "editor", net_mode: str = "server") -> dict:
     "List the sublevels of a world: persistent{}, sublevels[{packagePath, objectPath, streamingClass, loaded, visible, editorVisible, pending, ...}], count/loadedCount/visibleCount/pendingCount, currentLevel, isPartitioned, ready, and ops[] (the deferred add/remove/streaming jobs and their state). world = editor|pie - during PIE there are TWO worlds and the editor verbs see the editor one; net_mode picks which PIE world when running multi-client and is only meaningful with world='pie'. THIS IS THE POLL ENDPOINT for add_sublevel / remove_sublevel / set_sublevel_streaming / set_sublevel_visibility / pie_load_level_instance / pie_unload_level_instance."
     return _post("list_sublevels", world=world, netMode=net_mode)
