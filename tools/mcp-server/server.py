@@ -2211,6 +2211,21 @@ def get_level_actor(actor_path: str) -> dict:
 
 
 @mcp.tool()
+def attach_actor(child: str, parent: str, socket: str = "",
+                 keep_world_transform: bool = True) -> dict:
+    "Parent one placed actor to another - what dragging in the World Outliner does, addressed by path. Without it an agent could spawn a door, a handle and a sign and place all three, but not make them one movable object: moving the parent left the children behind. The READ half landed with it - every actor response (get_level_actor, list_level_actors and four others, all sharing one serializer) now carries attachParent, attachSocket and attachedChildren, so an attachment made here or by hand in the Outliner is visible over the bridge. THE SOCKET is optional and VALIDATED: attaching to a socket that does not exist silently falls back to the component origin and looks like it worked, so a wrong name is refused instead. keep_world_transform (default true) means the child stays where it is on screen; false snaps it onto the parent - and those are two DIFFERENT engine calls, because GEditor->ParentActors hardcodes KeepWorldTransform internally and cannot express the snap. Refuses a self-parent, refuses a cycle naming the actor that closes the loop, and surfaces CanParentActors' own ReasonText - which matters because ParentActors calls it internally and then silently NO-OPS, so without this the refusal would be invisible. There was a workaround (select_level_actors + invoke_editor_command AttachSelectedActors) and it is worth knowing why it is not enough: it cannot name a socket, it takes the parent implicitly from the last element of the selection, and it reports nothing either way. The level is dirtied and nothing is saved; on a cooked base-game map it cannot be resaved at all, so the attachment lives until the editor closes."
+    return _post("attach_actor", child=child, parent=parent, socket=socket,
+                 keepWorldTransform=keep_world_transform)
+
+
+@mcp.tool()
+def detach_actor(actor_path: str, keep_world_transform: bool = True) -> dict:
+    "Detach a placed actor from whatever it is attached to. Takes only the CHILD - it detaches from whatever parent it currently has, which you can read from attachParent on any actor response. keep_world_transform (default true) leaves it where it is on screen rather than snapping back to its relative offset. An actor that was not attached to anything is NOT an error: you get detached:false with wasAttached:false, so 'it is detached' stays distinguishable from 'I detached it' - the same shape add_gameplay_tag uses for an already-existing tag. The postcondition is read back rather than assumed, because DetachFromActor returns void. The level is dirtied and nothing is saved."
+    return _post("detach_actor", actorPath=actor_path,
+                 keepWorldTransform=keep_world_transform)
+
+
+@mcp.tool()
 def list_level_actors(class_filter: str = "", name_contains: str = "", folder: str = "",
                       selected_only: bool = False, limit: int = 200) -> dict:
     "List actors placed in the CURRENT level with actorPath, name, label, class, folder and transform. class_filter matches any class in the ancestry by substring, so 'StaticMeshActor' finds subclasses. Returns matched (the true total) alongside count, and truncated=true if limit was hit. actorPath is the handle every other level endpoint takes - and set_property accepts it as objectPath to edit per-instance properties."
