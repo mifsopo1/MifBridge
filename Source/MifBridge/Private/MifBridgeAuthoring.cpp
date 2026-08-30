@@ -1485,6 +1485,29 @@ namespace MifBridge
 			J->SetNumberField(TEXT("instanceCount"), Count);
 			TotalInstances += Count;
 
+			// COOKED FOLIAGE READS AS ZERO, AND THAT WAS A LIE THIS ENDPOINT USED TO TELL.
+			// FFoliageInfo::Instances is inside WITH_EDITORONLY_DATA and is serialized only when
+			// !Ar.ArIsFilterEditorOnly (InstancedFoliage.cpp:503-514), so a .pak-mounted level loads
+			// its FoliageInfos map with an EMPTY Instances array. The trees are still THERE - the
+			// HISM component carries them - so an agent asking "how much foliage is here" got 0 for
+			// a forest it can see in the viewport, which is worse than an error.
+			//
+			// The component's own count is the honest number, and the difference between the two is
+			// exactly the signal that this data is stripped.
+			const int32 ComponentCount = Info.GetComponent()
+				? Info.GetComponent()->GetInstanceCount() : 0;
+			if (ComponentCount > 0 && Count == 0)
+			{
+				J->SetNumberField(TEXT("renderedInstanceCount"), ComponentCount);
+				J->SetBoolField(TEXT("editorDataStripped"), true);
+				J->SetStringField(TEXT("strippedNote"), FString::Printf(
+					TEXT("this foliage type renders %d instance(s) but carries NO editor instance "
+						 "data - instanceCount is 0 because FFoliageInfo::Instances is editor-only "
+						 "and was stripped when this level was cooked. The foliage is real and "
+						 "visible; it just cannot be enumerated or removed from here. Only foliage "
+						 "painted in this editor session can be."), ComponentCount));
+			}
+
 			if (bIncludeInstances)
 			{
 				TArray<TSharedPtr<FJsonValue>> Arr;
@@ -1552,4 +1575,291 @@ namespace MifBridge
 			Types.Num(), TotalInstances);
 	}
 
+	// =======================================================================
+	// remove_foliage_instances - the erase half, and four ways to get it wrong
+	// =======================================================================
+	//
+	// add_foliage_instances writes them, list_foliage_instances reads them, and nothing took one
+	// back out. That is the plain gap. The interesting part is that three of the four mechanics the
+	// survey proposed were wrong, and one of them would have cost an editor.
+	//
+	// 1. THE HARD ASSERT. FFoliageInfo::RemoveInstancesImpl opens with check(IsInitialized())
+	//    (InstancedFoliage.cpp:2413) - a check, not an ensure. IsInitialized() is
+	//    Implementation.IsValid() && Implementation->IsInitialized() (:2157-2160), so a FFoliageInfo
+	//    whose Implementation never came up TERMINATES the editor instead of erroring. Guarded
+	//    before the call.
+	//
+	// 2. AND THE INDEX IS UNCHECKED. Line 2432 does `Instances[InstanceIndex]` with no bounds test
+	//    of its own, so a caller-supplied index past the end is a crash rather than an error. Every
+	//    index is range-checked here first.
+	//
+	// 3. "SORT DESCENDING" IS WRONG ADVICE, and worth writing down because it is the intuitive
+	//    thing to do. RemoveInstances takes the WHOLE set in one call and remaps internally: it uses
+	//    RemoveAtSwap (:2445) and explicitly re-points the removal list when the tail element it
+	//    swapped in was itself scheduled for removal (:2468-2476). So ordering buys nothing, and the
+	//    N-separate-calls pattern that advice implies is broken in ANY order, because RemoveAtSwap
+	//    moves the tail into the freed slot rather than shifting everything down. One deduped,
+	//    bounds-checked array, one call, one RebuildFoliageTree.
+	//
+	// 4. COOKED FOLIAGE IS NOT MISSING, IT IS STRIPPED, and that distinction is the whole cooked
+	//    story here. FFoliageInfo::Instances is editor-only and serialized only when
+	//    !Ar.ArIsFilterEditorOnly (:503-514), while the FoliageInfos map itself survives cooking. So
+	//    on a .pak-mounted level the FFoliageInfo EXISTS with an empty Instances array - which means
+	//    the obvious guard ("refuse when the type has no FFoliageInfo") never fires, and a naive
+	//    implementation reports removed:0 / remaining:0 for trees the user is looking at. Detected
+	//    by comparing the component's instance count against Instances.Num(), and refused by name.
+
+	static bool MifFoliageStripped(const FFoliageInfo& Info)
+	{
+		const int32 Rendered = Info.GetComponent() ? Info.GetComponent()->GetInstanceCount() : 0;
+		return Rendered > 0 && Info.Instances.Num() == 0;
+	}
+
+	void H_remove_foliage_instances(const TSharedRef<FJsonObject>& In,
+									const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("foliageType"), TEXT("type"), TEXT("indices"), TEXT("sphere"), TEXT("box"),
+			  TEXT("all"), TEXT("confirm") },
+			TEXT("foliageType (alias type) - the EXACT foliage type path, not a substring; then ")
+			TEXT("exactly one of indices:[int], sphere:{center:{x,y,z},radius}, ")
+			TEXT("box:{min:{x,y,z},max:{x,y,z}} or all:true; confirm:true"),
+			{ { TEXT("mesh"), TEXT("foliage is keyed by TYPE, not by mesh - list_foliage_instances "
+								   "reports the type path to pass here") },
+			  { TEXT("actorPath"), TEXT("instances are not actors. If you placed a standalone HISM "
+										"holder with add_foliage_instances{mesh}, that is an ACTOR "
+										"and delete_actor removes it - this endpoint is for painted "
+										"foliage in the level's InstancedFoliageActor") } }))
+		{
+			return;
+		}
+#if !WITH_EDITORONLY_DATA
+		Fail(Out, TEXT("foliage instance data is editor-only."));
+#else
+		UWorld* World = EditorWorld();
+		if (!World) { Fail(Out, TEXT("no editor world is open. NOTHING was removed.")); return; }
+
+		const FString WantType = JStrAny(In, { TEXT("foliageType"), TEXT("type") });
+		if (WantType.IsEmpty())
+		{
+			Fail(Out, TEXT("foliageType is required, and it is matched EXACTLY here - unlike "
+				TEXT("list_foliage_instances, which substring-matches. A substring that happened to "
+					 "hit two types would delete from the wrong one. NOTHING was removed.")));
+			return;
+		}
+
+		// EXACTLY ONE SELECTOR. Two would be ambiguous and none would be a request to delete
+		// nothing, which is more likely a mistake than an intention.
+		const TSharedPtr<FJsonObject>* SphereObj = nullptr;
+		const TSharedPtr<FJsonObject>* BoxObj = nullptr;
+		const TArray<TSharedPtr<FJsonValue>>* IdxArr = nullptr;
+		const bool bHasIndices = In->TryGetArrayField(TEXT("indices"), IdxArr) && IdxArr;
+		const bool bHasSphere  = In->TryGetObjectField(TEXT("sphere"), SphereObj) && SphereObj;
+		const bool bHasBox     = In->TryGetObjectField(TEXT("box"), BoxObj) && BoxObj;
+		const bool bAll        = JBool(In, TEXT("all"), false);
+		const int32 Selectors  = (bHasIndices ? 1 : 0) + (bHasSphere ? 1 : 0)
+							   + (bHasBox ? 1 : 0) + (bAll ? 1 : 0);
+		if (Selectors != 1)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("pass EXACTLY one of indices, sphere, box or all:true - got %d. NOTHING was "
+					 "removed."), Selectors));
+			return;
+		}
+
+		// bCreateIfNone FALSE. Creating the actor that answers "there is no foliage" as a side
+		// effect of a REMOVAL would be absurd, and it would dirty the level.
+		AInstancedFoliageActor* IFA =
+			AInstancedFoliageActor::GetInstancedFoliageActorForCurrentLevel(World, false);
+		if (!IFA)
+		{
+			Fail(Out, TEXT("this level has no InstancedFoliageActor, so it has no painted foliage "
+				TEXT("to remove. NOTHING was removed.")));
+			return;
+		}
+
+		UFoliageType* Found = nullptr;
+		FFoliageInfo* Info = nullptr;
+		TArray<FString> Available;
+		IFA->ForEachFoliageInfo([&](UFoliageType* Type, FFoliageInfo& I) -> bool
+		{
+			if (!Type) { return true; }
+			const FString Path = Type->GetPathName();
+			Available.Add(Path);
+			if (Path == WantType) { Found = Type; Info = &I; }
+			return true;
+		});
+		if (!Found || !Info)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no foliage type '%s' in this level. It has: %s. The path must match EXACTLY - "
+					 "list_foliage_instances reports it. NOTHING was removed."),
+				*WantType, Available.Num() ? *FString::Join(Available, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		// THE COOKED CASE, and the reason the obvious guard is not enough: the FFoliageInfo exists,
+		// so "no info" never fires - but its Instances array was stripped at cook time while the
+		// component kept rendering them.
+		if (MifFoliageStripped(*Info))
+		{
+			const int32 Rendered = Info->GetComponent()->GetInstanceCount();
+			Fail(Out, FString::Printf(
+				TEXT("'%s' renders %d instance(s) but carries NO editor instance data, so there is "
+					 "nothing here to remove. FFoliageInfo::Instances is editor-only and is stripped "
+					 "when a level is cooked, while the FoliageInfos map itself survives - which is "
+					 "why this is a refusal rather than removed:0, a number that would have looked "
+					 "like success for foliage you can see. Only foliage painted in THIS editor "
+					 "session can be removed. NOTHING was removed."),
+				*WantType, Rendered));
+			return;
+		}
+
+		// THE CRASH GUARD. RemoveInstancesImpl opens with check(IsInitialized()) - a hard assert,
+		// so an uninitialised Implementation takes the editor down rather than returning an error.
+		if (!Info->IsInitialized())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no initialised foliage implementation. RemoveInstances asserts on "
+					 "that with a check(), which would TERMINATE the editor rather than fail, which "
+					 "is why it is tested first. NOTHING was removed."), *WantType));
+			return;
+		}
+
+		const int32 Before = Info->Instances.Num();
+		TSet<int32> Wanted;
+
+		if (bAll)
+		{
+			for (int32 i = 0; i < Before; ++i) { Wanted.Add(i); }
+		}
+		else if (bHasIndices)
+		{
+			TArray<int32> OutOfRange;
+			for (const TSharedPtr<FJsonValue>& V : *IdxArr)
+			{
+				double D = 0.0;
+				if (!V.IsValid() || !V->TryGetNumber(D))
+				{
+					Fail(Out, TEXT("indices[] holds integers. NOTHING was removed."));
+					return;
+				}
+				const int32 I = static_cast<int32>(D);
+				// EVERY INDEX BOUNDS-CHECKED. The engine indexes Instances[InstanceIndex] with no
+				// test of its own, so one bad number here is a crash, not an error.
+				if (I < 0 || I >= Before) { OutOfRange.Add(I); }
+				else { Wanted.Add(I); }
+			}
+			if (OutOfRange.Num() > 0)
+			{
+				TArray<FString> Bad;
+				for (int32 I : OutOfRange) { Bad.Add(FString::FromInt(I)); }
+				Fail(Out, FString::Printf(
+					TEXT("index/indices out of range: %s. '%s' has %d instance(s), so valid indices "
+						 "are 0..%d. The engine indexes its array without a bounds test, so an "
+						 "out-of-range index here would CRASH rather than error - which is why the "
+						 "whole call is refused rather than the bad ones skipped. NOTHING was "
+						 "removed."),
+					*FString::Join(Bad, TEXT(", ")), *WantType, Before, Before - 1));
+				return;
+			}
+		}
+		else if (bHasSphere)
+		{
+			const TSharedPtr<FJsonObject>* C = nullptr;
+			double Radius = 0.0;
+			if (!(*SphereObj)->TryGetObjectField(TEXT("center"), C) || !C
+				|| !(*SphereObj)->TryGetNumberField(TEXT("radius"), Radius) || Radius <= 0.0)
+			{
+				Fail(Out, TEXT("sphere needs {center:{x,y,z}, radius} with a positive radius. "
+					TEXT("NOTHING was removed.")));
+				return;
+			}
+			const FVector Centre(JNum((*C).ToSharedRef(), TEXT("x"), 0.0), JNum((*C).ToSharedRef(), TEXT("y"), 0.0),
+								 JNum((*C).ToSharedRef(), TEXT("z"), 0.0));
+			TArray<int32> Hits;
+			Info->GetInstancesInsideSphere(FSphere(Centre, Radius), Hits);
+			for (int32 I : Hits) { Wanted.Add(I); }
+		}
+		else
+		{
+			const TSharedPtr<FJsonObject>* MinO = nullptr;
+			const TSharedPtr<FJsonObject>* MaxO = nullptr;
+			if (!(*BoxObj)->TryGetObjectField(TEXT("min"), MinO) || !MinO
+				|| !(*BoxObj)->TryGetObjectField(TEXT("max"), MaxO) || !MaxO)
+			{
+				Fail(Out, TEXT("box needs {min:{x,y,z}, max:{x,y,z}}. NOTHING was removed."));
+				return;
+			}
+			const FVector Min(JNum((*MinO).ToSharedRef(), TEXT("x"), 0.0), JNum((*MinO).ToSharedRef(), TEXT("y"), 0.0),
+							  JNum((*MinO).ToSharedRef(), TEXT("z"), 0.0));
+			const FVector Max(JNum((*MaxO).ToSharedRef(), TEXT("x"), 0.0), JNum((*MaxO).ToSharedRef(), TEXT("y"), 0.0),
+							  JNum((*MaxO).ToSharedRef(), TEXT("z"), 0.0));
+			if (Min.X > Max.X || Min.Y > Max.Y || Min.Z > Max.Z)
+			{
+				Fail(Out, TEXT("box min must be componentwise <= max - as given it encloses nothing, "
+					TEXT("which would silently remove nothing. NOTHING was removed.")));
+				return;
+			}
+			TArray<int32> Hits;
+			Info->GetInstancesInsideBounds(FBox(Min, Max), Hits);
+			for (int32 I : Hits) { Wanted.Add(I); }
+		}
+
+		if (Wanted.Num() == 0)
+		{
+			Out->SetStringField(TEXT("foliageType"), WantType);
+			Out->SetNumberField(TEXT("removed"), 0);
+			Out->SetNumberField(TEXT("remaining"), Before);
+			Out->SetStringField(TEXT("note"),
+				TEXT("the selector matched no instances, so nothing was removed and nothing needed "
+					 "to be. This is a measured zero from the engine's own selection helper, not a "
+					 "failure - list_foliage_instances with the same sphere or box shows you what "
+					 "it can see."));
+			return;
+		}
+
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("this would remove %d of '%s's %d instance(s), and painted foliage cannot be "
+					 "put back by this endpoint. Pass confirm:true. NOTHING was removed."),
+				Wanted.Num(), *WantType, Before));
+			return;
+		}
+
+		// ONE CALL WITH THE WHOLE SET. RemoveInstances remaps internally around its own
+		// RemoveAtSwap, so neither ordering nor N separate calls is correct.
+		TArray<int32> Doomed = Wanted.Array();
+		{
+			FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_RemoveFoliage",
+											"Remove Foliage Instances"));
+			IFA->Modify();
+			Info->RemoveInstances(Doomed, /*RebuildFoliageTree*/ true);
+		}
+
+		// MEASURED AFTER THE FACT, from the engine's own count rather than Before - Doomed.Num().
+		const int32 After = Info->GetPlacedInstanceCount();
+		IFA->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("foliageType"), WantType);
+		Out->SetStringField(TEXT("selector"), bAll ? TEXT("all")
+									 : bHasIndices ? TEXT("indices")
+									 : bHasSphere  ? TEXT("sphere") : TEXT("box"));
+		Out->SetNumberField(TEXT("requested"), Doomed.Num());
+		Out->SetNumberField(TEXT("instanceCountBefore"), Before);
+		Out->SetNumberField(TEXT("remaining"), After);
+		Out->SetNumberField(TEXT("removed"), Before - After);
+		if (Before - After != Doomed.Num())
+		{
+			Out->SetStringField(TEXT("countNote"), FString::Printf(
+				TEXT("%d instance(s) were selected and the count fell by %d. RemoveInstances "
+					 "returns void, so `removed` is the measured difference in the engine's own "
+					 "placed-instance count rather than the size of the request."),
+				Doomed.Num(), Before - After));
+		}
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the level is dirty and NOTHING has been saved."));
+#endif
+	}
 }

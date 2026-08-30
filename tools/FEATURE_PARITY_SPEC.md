@@ -5096,7 +5096,36 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: MIXED, and each verb must say which it is. Reading (list, bounds, contained actors) and load/unload work wherever the ALevelInstance actor exists. Edit/commit/break are WITH_EDITOR and need saveable packages — on a cooked map CanEditLevelInstance/CanCommitLevelInstance return false WITH an FText rea...
       Vetter corrected the proposal: Rank CONFIRMED at medium — not raised, not lowered. Arguments for high: the subsystem has literally zero references in the plugin, and on any modern uncooked project (Curfew, 5.7) the Level Instance IS the reusable-content unit, so this is a whole subsystem absent. Arguments holding it at medium: the READ half has a real partial workaround today (list_level_actors classFilter + get_property on Wor...
 
-- [ ] **remove_foliage_instances (and a bounds/sphere selector on list_foliage_instances)** (day)
+- [x] **remove_foliage_instances (and a bounds/sphere selector, plus a cooked fix on the read half)** (day)
+      DONE 2026-08-30. 25 checks in tools/test_foliage_removal.py, exercising the REAL removal
+      path rather than refusals alone - the suite paints six instances into the scratch level
+      and takes them out by index, sphere, box and all.
+      THREE OF THE FOUR PROPOSED MECHANICS WERE WRONG, per the vetter, and all three were
+      checked against the engine source rather than taken on trust:
+        - an out-of-range index would CRASH: RemoveInstances does Instances[InstanceIndex] with
+          no bounds test (InstancedFoliage.cpp:2432). Whole call refused, not bad entries
+          skipped - a partially-honoured foliage delete cannot be reasoned about afterwards.
+        - "sort indices descending" buys nothing. RemoveInstances takes the whole set in ONE
+          call and remaps around its own RemoveAtSwap (:2445, :2468-2476); the N-calls pattern
+          that advice implies is broken in any order.
+        - the cooked model was wrong, and it also affected the EXISTING read endpoint.
+      THE COOKED FIX IS THE VALUABLE PART. FFoliageInfo::Instances is editor-only and
+      serialized only when !Ar.ArIsFilterEditorOnly (:503-514) while the FoliageInfos map
+      survives cooking - so a .pak level holds the info with an EMPTY array while the HISM
+      still renders the trees. list_foliage_instances had been reporting instanceCount 0 for
+      foliage visible in the viewport, which is worse than an error because it looks like an
+      answer. It now compares the component count against Instances.Num() and reports
+      editorDataStripped with a renderedInstanceCount; the remove endpoint refuses that case
+      by name rather than returning removed:0.
+      A second hard assert is guarded and honestly unexercised: RemoveInstancesImpl opens with
+      check(IsInitialized()) (:2413), which cannot be reached through a live
+      InstancedFoliageActor.
+      Two SUITE defects fixed while writing it, both of which would have failed for reasons
+      unrelated to the endpoint: a fixed asset name that collided with its own leftovers on
+      re-run (delete_asset unregisters while the UObject stays resident, docs/06 #28), and a
+      cleanup that asserted the foliage TYPE was deleted - which the engine will not do while
+      the level's InstancedFoliageActor references it. It now asserts the postcondition this
+      endpoint owns, that the instances are gone.
       Delete painted foliage instances — by index, or by a world-space box/sphere ('clear the trees where the road goes'). add_foliage_instances writes them and list_foliage_instances reads them; there is no way to take one back out short of hand-editing the level.
       API: FFoliageInfo::RemoveInstances(TArrayView<const int32> InInstancesToRemove, bool RebuildFoliageTree) — D:/UE532/Engine/Source/Runtime/Foliage/Public/InstancedFoliage.h:338, FOLIAGE_API. Selection helpers on the same struct, all FOLIAGE_API: GetInstancesInsideBounds(const FBox&, TArray<int32>&) :347, GetInstancesInsideSphere(const FSphere&, TArray<int32>&) :348, GetInstancesOverlappingBox(const FBox...
       Cooked: Same envelope as the two endpoints it completes — it operates through the same AInstancedFoliageActor and FFoliageInfo that list_foliage_instances already reaches, so wherever the list returns instances the remove can act on them. Guard: bCreateIfNone=false on the actor lookup (never create an actor...

@@ -2649,6 +2649,15 @@ def break_level_instance(actor_path: str, levels: int = 1, confirm: bool = False
     return _post("break_level_instance", actorPath=actor_path, levels=levels, confirm=confirm)
 
 
+@mcp.tool()
+def remove_foliage_instances(foliage_type: str, indices: list = None, sphere: dict = None,
+                             box: dict = None, all: bool = False,
+                             confirm: bool = False) -> dict:
+    "Delete painted foliage instances - by index, or by a world-space sphere or box ('clear the trees where the road goes'). The erase half of add_foliage_instances. Pass EXACTLY one selector, plus confirm=True."
+    return _post("remove_foliage_instances", foliageType=foliage_type, indices=indices,
+                 sphere=sphere, box=box, all=all, confirm=confirm)
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:

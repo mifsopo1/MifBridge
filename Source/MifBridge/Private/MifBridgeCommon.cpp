@@ -164,6 +164,7 @@ namespace MifBridge
 			MIF_BIND(set_level_instance_loaded);
 			MIF_BIND(edit_level_instance);
 			MIF_BIND(break_level_instance);
+			MIF_BIND(remove_foliage_instances);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);
