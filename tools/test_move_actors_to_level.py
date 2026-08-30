@@ -92,6 +92,14 @@ def main():
         # persistent" stops being a no-op and becomes a real move that succeeds. That is what made
         # this suite pass on run 1 and fail on run 2. The actorPath says where it is, so ask.
         in_persistent = ":PersistentLevel." in (actor or "")
+        # PRINTED UNCONDITIONALLY so a sweep failure records what it was actually looking at. The
+        # first theory here - that the probe lands outside the persistent level - was wrong, and
+        # three standalone runs at 13/13 could not show that because standalone is not the sweep
+        # condition. Facts beat a fourth theory.
+        print("  DIAG  probe=%s" % (actor or "<none>"))
+        print("  DIAG  inPersistent=%s currentLevel=%s"
+              % (in_persistent,
+                 (M.call("list_sublevels", {}) or {}).get("worldName")))
         if not in_persistent:
             print("  NOTE  the probe landed in %s, not the persistent level, so the"
                   % (actor or "").split(":")[-1].split(".")[0])
@@ -99,6 +107,7 @@ def main():
             print("        is a genuine move here. Reported rather than asserted against.")
         same = M.raw_post("move_actors_to_level", {"actorPaths": [actor], "level": "persistent",
                                                    "confirm": True})
+        print("  DIAG  move->persistent response: %s" % json.dumps(same)[:400])
         if in_persistent:
             check("T4401 an actor already in the destination is refused per-actor, not counted as "
                   "moved",

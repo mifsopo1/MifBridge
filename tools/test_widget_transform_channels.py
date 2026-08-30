@@ -180,6 +180,42 @@ def main():
         check("T7303 an axis on the single-curve Angle is refused rather than guessed",
               axis.get("ok") is False, json.dumps(axis)[:220])
 
+        # -------------------------------------------------- T7304 the shared-track removal guard
+        print("\n=== T7304: removing one family must not destroy the other three ===")
+        # At this point Scale.X, Translation.X, Angle and Shear.Y all hold keys on the SAME section.
+        rem = M.raw_post("remove_widget_animation_track",
+                         {"blueprintId": bp, "animationName": "Pop", "widgetName": "Btn",
+                          "property": "RenderTransform.Scale"})
+        check("T7304 removing the Scale track is REFUSED while other families hold keys",
+              rem.get("ok") is False, json.dumps(rem)[:250])
+        # A refusal that does not say what would be lost is not actionable - the keys cannot be
+        # recovered and no read endpoint would show what went missing.
+        check("T7304 and it says how many keys would have been destroyed",
+              (rem.get("wouldDestroyKeys") or 0) > 0, json.dumps(rem)[:250])
+        fams = rem.get("wouldDestroyFamilies") or []
+        check("T7304 and names the families, not just a count",
+              any("Translation" in f for f in fams) and any("Angle" in f for f in fams),
+              json.dumps(fams)[:200])
+        check("T7304 the Scale keys are still there afterwards - NOTHING was removed",
+              M.raw_post("set_widget_animation_keys",
+                         {"blueprintId": bp, "animationName": "Pop", "widgetName": "Btn",
+                          "property": "RenderTransform.Scale", "channel": "X",
+                          "replace": False, "keys": []}).get("keysBefore") == 2,
+              "the refusal should have left the track and its keys untouched")
+
+        # THE OTHER DIRECTION. A guard that always refuses is as useless as one that never does, so
+        # clear the other families and confirm removal then works.
+        for prop, chan in (("RenderTransform.Translation", "X"), ("RenderTransform.Angle", ""),
+                           ("RenderTransform.Shear", "Y")):
+            M.raw_post("set_widget_animation_keys",
+                       {"blueprintId": bp, "animationName": "Pop", "widgetName": "Btn",
+                        "property": prop, "channel": chan, "replace": True, "keys": []})
+        ok = M.raw_post("remove_widget_animation_track",
+                        {"blueprintId": bp, "animationName": "Pop", "widgetName": "Btn",
+                         "property": "RenderTransform.Scale"})
+        check("T7304 once the other families are empty, the track CAN be removed",
+              ok.get("ok") is True, json.dumps(ok)[:250])
+
         print("\n  NOT EXERCISED: the mask-widening path. A section this plugin creates gets the")
         print("  engine's default AllTransform mask (MovieScene2DTransformSection.cpp:126), so no")
         print("  bit is ever clear here. It matters for a section narrowed in the UMG designer,")
