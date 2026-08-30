@@ -5643,25 +5643,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       A HEARTBEAT ENDPOINT WAS CONSIDERED AND REJECTED: it would queue behind the same busy
       game thread as everything else, so it would time out exactly when it was needed. The
       transport-level signal is the only one that survives a stalled game thread.
-- [ ] **make a 5.7 compile part of the release gate** (hours) - FOUND 2026-08-30 by a peer session
-      0.7.0 SHIPPED WITHOUT COMPILING ON 5.7. A peer pulled it into another project on
-      launcher 5.7.4 and got 45x C2027 and no DLL: USkeletalBodySetup and ICollectionContainer
-      are both complete on 5.3 and incomplete on 5.6+. Fixed, but the point is that nothing
-      caught it before the release went out.
-      WHY THE EXISTING CLAIM WAS TRUE AND USELESS: the README says 5.7 was verified on
-      2026-08-27 at 330 of 421 endpoints. Both offending features - PhysicsAsset authoring and
-      collections - landed AFTER that probe. A dated verification does not cover code written
-      later, and a release gate that reads it as if it did is worse than no claim.
-      make_release.py already refuses to package on a stale README badge. It should refuse
-      just as hard when the tree has not been COMPILED against the newest engine it claims to
-      support. A full 5.7 editor build is not needed - a compile-only pass over the module
-      would have caught both of these, since they are missing includes rather than behaviour.
-      Note the trap found while fixing it: MifBridgePhysicsAsset.cpp did not include
-      MifBridgeVersion.h, so MIF_ENGINE_AT_LEAST would have evaluated to 0 and the guard would
-      have silently taken the wrong branch. Any gate should also check that every file using
-      MIF_ENGINE_AT_LEAST includes the header that defines it - an undefined macro in #if is
-      not an error, it is a zero.
-
+- [x] **make a 5.7 compile part of the release gate** (hours)
+      DONE 2026-08-30. make_release refuses to package unless a recorded 5.7 probe covers the
+      CURRENT Source commit, and make_engine_probe records its verdict.
+      KEYED TO THE CODE, NOT THE CALENDAR, which is the whole point. 0.7.0 shipped unable to
+      compile on 5.7 while its README truthfully said "5.7 verified 2026-08-27 at 330 of 421
+      endpoints" - both features that broke it were written after that probe. So the gate does
+      not ask whether a probe happened or whether it was recent; it compares the probe's
+      sourceCommit against Source's current one and refuses with the diff.
+      INCONCLUSIVE IS NOT FAILURE. Live Coding holds the toolchain whenever an editor is open,
+      so the build never reaches the compiler; recording that as a compile failure would block
+      releases for an environmental reason and train everyone to --force past the gate. It is
+      recorded as a missing verdict instead, and that path fired for real twice.
+      Both rounds of the 5.7 fixes are now verified HERE rather than by the peer - the tooling
+      to do it (make_engine_probe.py) was already in this repo while I was telling them it was
+      their job to run.
 - [ ] **verify and tick add_niagara_emitter / remove_niagara_emitter - they are BUILT** (hours)
       Found 2026-08-30 by parity_check, which reported both as having a MIF_BIND and no MCP
       wrapper - HTTP-reachable and MCP-invisible. They are real handlers

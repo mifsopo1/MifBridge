@@ -222,12 +222,8 @@ def sdk_editor_pid():
         return None
 
 
-def _surviving_editor_pids():
-    """PIDs of any UnrealEditor.exe still running.
-
-    tasklist rather than psutil: this module is imported by every suite and must not need a
-    third-party package to do its job.
-    """
+def _all_editor_pids():
+    """Every UnrealEditor.exe pid, whatever project it belongs to."""
     try:
         out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq UnrealEditor.exe", "/NH", "/FO", "CSV"],
                              capture_output=True, text=True, timeout=30).stdout
@@ -242,6 +238,42 @@ def _surviving_editor_pids():
             except ValueError:
                 pass
     return pids
+
+
+def _editor_cmdline(pid):
+    """The command line of one pid, or '' - used to tell WHOSE editor this is."""
+    try:
+        return subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_Process -Filter 'ProcessId=%d').CommandLine" % pid],
+            capture_output=True, text=True, timeout=30).stdout.strip()
+    except Exception:
+        return ""
+
+
+def _surviving_editor_pids():
+    """PIDs of UnrealEditor.exe running THIS project. Never anyone else's.
+
+    THIS FILTER IS THE WHOLE POINT. It used to list every UnrealEditor on the machine, and the
+    recovery below then ran `taskkill /IM UnrealEditor.exe /F` - a blanket kill. Another session
+    runs a Curfew editor on this machine, so that was silently killing someone else's work; it is
+    why an editor appeared to keep "coming back up" during a probe run, when in fact the peer was
+    relaunching the one just killed out from under them.
+
+    PROJECT_MARKER was already used at the responsiveness check to confirm a pid belongs here. The
+    kill path simply did not ask.
+
+    tasklist rather than psutil: this module is imported by every suite and must not need a
+    third-party package to do its job.
+    """
+    mine = []
+    for pid in _all_editor_pids():
+        cmd = _editor_cmdline(pid)
+        # No command line readable (permissions, a race) means NOT PROVEN MINE, so leave it alone.
+        # Guessing wrong in this direction kills another project's editor.
+        if cmd and PROJECT_MARKER in cmd:
+            mine.append(pid)
+    return mine
 
 
 def launch_editor(write_mode=None):
@@ -259,16 +291,26 @@ def launch_editor(write_mode=None):
     # terminated is exactly the kind of thing that must not happen quietly in an unattended run.
     survivors = _surviving_editor_pids()
     if survivors:
-        print("!! launch_editor: %d editor(s) still running (%s) but the bridge did not answer."
-              % (len(survivors), ", ".join(str(x) for x in survivors)))
+        others = [p for p in _all_editor_pids() if p not in survivors]
+        if others:
+            # Reported, never touched. If one of these holds the port that is a conflict to
+            # SURFACE, not to resolve by killing another session's editor.
+            print("!! launch_editor: %d editor(s) from OTHER projects are running (%s). They are "
+                  "left alone." % (len(others), ", ".join(str(x) for x in others)))
+        print("!! launch_editor: %d editor(s) for THIS project still running (%s) but the bridge "
+              "did not answer." % (len(survivors), ", ".join(str(x) for x in survivors)))
         print("!! Killing them before relaunching - a second editor on the same project races for")
         print("!! port %d and holds the same packages open. Seen hanging a sweep on 2026-08-30."
               % BRIDGE_PORT)
-        try:
-            subprocess.run(["taskkill", "/IM", "UnrealEditor.exe", "/F"],
-                           capture_output=True, timeout=60)
-        except Exception as exc:
-            print("!! taskkill failed (%s) - launching anyway, but expect a port race." % exc)
+        # PER-PID, never by image name. `taskkill /IM UnrealEditor.exe /F` takes down every editor
+        # on the machine - including the Curfew session's, which is not ours to close.
+        for pid in survivors:
+            try:
+                subprocess.run(["taskkill", "/PID", str(pid), "/F"],
+                               capture_output=True, timeout=60)
+            except Exception as exc:
+                print("!! taskkill on pid %d failed (%s) - launching anyway, but expect a port "
+                      "race." % (pid, exc))
         deadline = time.time() + 30.0
         while time.time() < deadline and _surviving_editor_pids():
             time.sleep(1.0)
