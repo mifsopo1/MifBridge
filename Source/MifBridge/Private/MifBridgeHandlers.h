@@ -1317,6 +1317,8 @@ namespace MifBridge
 	// which must not sit inside RunEndpoint's blanket transaction.
 	MIF_DECL(create_landscape);
 	MIF_DECL(sculpt_landscape);
+	MIF_DECL(import_landscape_heightmap);
+	MIF_DECL(export_landscape_heightmap);
 	MIF_DECL(paint_landscape);
 	MIF_DECL(bind_landscape_rvt);
 	MIF_DECL(landscape_info);

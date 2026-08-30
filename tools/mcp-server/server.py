@@ -1711,6 +1711,48 @@ def create_landscape(location: dict = None, scale: dict = None, components_x: in
 
 
 @mcp.tool()
+def import_landscape_heightmap(path: str = "", file: str = "", data: str = "",
+                               width: int = 0, height: int = 0,
+                               x0: int = 0, y0: int = 0,
+                               min_z: float = 0.0, max_z: float = 0.0) -> dict:
+    """Write a whole heightmap in ONE call - seconds, not hours.
+
+    sculpt_landscape costs ~435ms per CALL regardless of brush size, so a coastline is ~23,000
+    calls and hours; this writes 4M samples in under 2s. It also draws shapes a disc cannot: a
+    brush leaves vertical walls and scalloped crescents along any boundary.
+
+    Pass file (16-bit greyscale PNG or raw .r16) OR data (base64 little-endian uint16, with width
+    and height). Omit min_z/max_z for a straight copy - the native storage is already uint16, so a
+    round-trip is exact. Give BOTH to map 0..65535 onto a world Z range.
+    """
+    # EXPLICIT KEYWORDS, not a splatted dict. _post already drops None, and a **payload call is
+    # invisible to tools/param_reach.py - which scans these call sites statically to find endpoint
+    # parameters no MCP tool can send. The first version built minZ/maxZ into a dict and splatted
+    # it, and param_reach immediately reported both as unreachable. The repo already documents this
+    # at set_widget_animation_range; I did it anyway.
+    return _post("import_landscape_heightmap", landscape=path or None, file=file or None,
+                 data=data or None, width=width or None, height=height or None,
+                 x0=x0 or None, y0=y0 or None,
+                 minZ=(min_z if (min_z or max_z) else None),
+                 maxZ=(max_z if (min_z or max_z) else None))
+
+
+@mcp.tool()
+def export_landscape_heightmap(path: str = "", file: str = "", as_data: bool = False,
+                               x0: int = 0, y0: int = 0,
+                               width: int = 0, height: int = 0) -> dict:
+    """Read a landscape's heightmap out as a .png or .r16, or as base64 with as_data.
+
+    This is the READ-BACK for import_landscape_heightmap: verifying terrain by line trace is one
+    point per call, and this is the whole surface in one. Re-importing an exported file with no
+    min_z/max_z reproduces the terrain exactly, because nothing is normalised in either direction.
+    """
+    return _post("export_landscape_heightmap", landscape=path or None, file=file or None,
+                 asData=as_data, x0=x0 or None, y0=y0 or None,
+                 width=width or None, height=height or None)
+
+
+@mcp.tool()
 def sculpt_landscape(center: dict, radius: float, mode: str = "flatten", amount: float = 0.0,
                      falloff: float = 0.5, target_z: float = None, landscape: str = None) -> dict:
     "Sculpt terrain in WORLD units. mode: raise|lower|flatten|smooth. center/radius/amount/target_z are all world units - the vertex-space conversion happens inside."
@@ -2824,6 +2866,28 @@ def set_enum_value(enum: str, index: int = None, value: str = "", new_name: str 
     "Change an existing user-defined enum: rename an entry, reorder one, or toggle the enum's bitflags state. Address the entry by index or by its current display name. bitflags is enum-scoped and cannot be combined with an entry."
     return _post("set_enum_value", enum=enum, index=index, value=value, newName=new_name,
                  moveTo=move_to, bitflags=bitflags)
+
+
+@mcp.tool()
+def add_niagara_emitter(path: str, emitter: str, name: str = "", enabled: bool = True) -> dict:
+    """Add a copy of a source UNiagaraEmitter asset to a NiagaraSystem, by name.
+
+    emitter is the SOURCE emitter ASSET to copy in; name is the handle name on the system and
+    defaults to the source's. Handles are addressed by name everywhere, because an index shifts
+    the moment anything is added or removed.
+    """
+    return _post("add_niagara_emitter", path=path, emitter=emitter,
+                 name=name or None, enabled=enabled)
+
+
+@mcp.tool()
+def remove_niagara_emitter(path: str, emitter: str) -> dict:
+    """Remove an emitter handle from a NiagaraSystem by handle NAME.
+
+    list_niagara_emitters reports the names. This is an undoable asset edit rather than a deletion,
+    so it needs no confirm.
+    """
+    return _post("remove_niagara_emitter", path=path, emitter=emitter)
 
 
 @mcp.tool()

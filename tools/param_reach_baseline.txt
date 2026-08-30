@@ -23,6 +23,7 @@ add_interface.class
 add_macro_instance.name
 add_material_expression.material
 add_material_expression.props
+add_niagara_emitter.system
 add_node_pin.guid
 add_override_event.addparentcall
 add_override_event.class
@@ -98,6 +99,7 @@ export_asset.objectpath
 export_asset.outpath
 export_asset.replaceexisting
 export_asset.type
+export_landscape_heightmap.actorpath
 find_assets.type
 focus_viewport.all
 generate_lods.mesh
@@ -111,6 +113,7 @@ get_inherited_component.name
 get_property.actorpath
 import_asset.overwrite
 import_asset.sourcepath
+import_landscape_heightmap.actorpath
 import_texture.assetpath
 import_texture.bytes
 import_texture.data
@@ -174,6 +177,7 @@ remove_ik_retarget_chain.rig
 remove_ik_solver.rig
 remove_interface.class
 remove_lods.mesh
+remove_niagara_emitter.system
 remove_pcg_node.assetpath
 remove_pin.name
 remove_sublevel.level

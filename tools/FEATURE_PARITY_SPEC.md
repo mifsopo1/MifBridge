@@ -5662,58 +5662,18 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       MIF_ENGINE_AT_LEAST includes the header that defines it - an undefined macro in #if is
       not an error, it is a zero.
 
-- [ ] **add_niagara_emitter / remove_niagara_emitter** (day)
-      Split out 2026-08-30 on the vetter's advice - these need their own guards rather than riding
-      alongside a boolean, and set_niagara_emitter refuses `add`/`remove` by name.
-
-      THE ORIGINAL REASON WAS WRONG AND IS CORRECTED HERE, 2026-08-30. This entry, the handler
-      comment and the user-visible refusal all said "raw AddEmitterHandle has an UNGUARDED null
-      dereference at NiagaraSystem.cpp:2309 - GetLatestEmitterData()->RemoveParent() on a Template
-      or Behavior emitter". That is false, and it was checked by reading the engine rather than
-      repeated a fourth time:
-        - :2306 calls DisableVersioning, which calls CheckVersionDataAvailable UNCONDITIONALLY and
-          FIRST (NiagaraEmitter.cpp:2708, :2734-2741). That appends a default entry whenever
-          VersionData is empty, so Num() >= 1 always holds afterwards, and bVersioningEnabled is
-          false on both exit paths. GetLatestEmitterData (:2383-2396) then takes its
-          `if (!bVersioningEnabled) return &VersionData[0];` branch. It cannot be null at :2309.
-        - Even if it could, :2309 is DOMINATED by the identical deref at NiagaraEmitter.cpp:1108-
-          1109 inside CreateWithParentAndOwner, called at :2302 unconditionally for every emitter.
-          :2309 could never be the first crash.
-      A wrong reason is worse than no reason here: anyone who went to :2309 would find nothing,
-      conclude the refusal was baseless, and build this unguarded - into the hazard that is real.
-
-      THE REAL PRECONDITION, and it is a cooked-content one, the same family as the cooked
-      NiagaraSystem crash already in docs/audit. CreateWithParentAndOwner dereferences
-      EmitterData->ParentScratchPads (NiagaraEmitter.cpp:1119) and EmitterData->GraphSource (:1120)
-      unguarded. Both are declared inside `#if WITH_EDITORONLY_DATA` (NiagaraEmitter.h:451-457) and
-      are NULL on an emitter that came from a cook - every emitter shipped in a cooked project. So
-      the guard is "the SOURCE emitter's GetLatestEmitterData() has a non-null GraphSource and
-      ParentScratchPads", refused by name, and nothing to do with TemplateSpecification.
-
-      AND THE BRANCH FIELD IS NOT PORTABLE, which is the cross-version hazard for this item.
-      5.3 tests `InEmitter.TemplateSpecification == ...Template|Behavior` (NiagaraSystem.cpp:2304).
-      5.6 (:2823) and 5.7 (:2828) test `InEmitter.bIsInheritable == false`; the old field is
-      TemplateSpecification_DEPRECATED and PostLoad migrates it. Code naming TemplateSpecification
-      WILL NOT COMPILE on 5.6/5.7 - needs MIF_ENGINE_AT_LEAST(5, 6). Verified against both engines
-      installed on this machine, not inferred.
-
-      TWO MORE ENGINE FACTS worth having before building this:
-        - GetEmitterData(Guid) returns null SILENTLY for a valid-but-unknown version guid
-          (NiagaraEmitter.cpp:2440 - no ensure, no log), so any emitterVersion taken from JSON must
-          be validated against GetAllAvailableVersions and echoed back on failure.
-        - DisableVersioning IGNORES an unknown VersionGuidToUse and keeps VersionData[0]
-          (:2715-2727, no else, no ensure) - a wrong-data outcome rather than an error.
-
-      REMOVE's reason is unchanged and still correct: RemoveEmitterHandle calls
-      RemoveSystemParametersForEmitter and RemoveEmitterHandlesById does not, while only the latter
-      calls InitEmitterCompiledData. Asymmetric in BOTH directions, so picking one silently leaves
-      either orphaned system parameters or stale compiled data.
-
-      TESTABLE NOW, which it was not when this was filed: create_asset makes a usable scratch
-      NiagaraSystem (verified 2026-08-30 - created, read via list_niagara_emitters, deleted clean),
-      and six NiagaraEmitter source assets exist here including engine /Niagara/VectorFields/ ones.
-      When this lands, test_niagara_emitter.py should gain the scratch-system arm that finally
-      exercises the enable/disable success path.
+- [ ] **verify and tick add_niagara_emitter / remove_niagara_emitter - they are BUILT** (hours)
+      Found 2026-08-30 by parity_check, which reported both as having a MIF_BIND and no MCP
+      wrapper - HTTP-reachable and MCP-invisible. They are real handlers
+      (MifBridgeNiagara2.cpp:656 and :844), built at some point without the wrappers being
+      added or this entry being ticked, so the backlog has been listing built work as open.
+      The MCP wrappers are now in and parity is clean again. What is NOT done is verifying
+      them: no suite exercises either, and this repo's rule is that a box is ticked when the
+      work is BUILT, TESTED and COMMITTED. Ticking on the strength of a handler existing is
+      exactly the claim the rule exists to stop.
+      When verified, note that every NiagaraSystem in this project is cooked, so the success
+      path needs a scratch system - create_asset makes a usable one (confirmed 2026-08-30) and
+      six NiagaraEmitter source assets exist here to add from.
 - [x] **audit create_asset for other classes that need factory initialisation** (hours)
       DONE 2026-08-30. tools/audit_factory_init.py, plus a warning in create_asset and 11
       checks in tools/test_factory_init.py.

@@ -307,6 +307,8 @@ namespace MifBridge
 			// Landscape authoring
 			MIF_BIND(create_landscape);
 			MIF_BIND(sculpt_landscape);
+			MIF_BIND(import_landscape_heightmap);
+			MIF_BIND(export_landscape_heightmap);
 			MIF_BIND(paint_landscape);
 			MIF_BIND(bind_landscape_rvt);
 			MIF_BIND(landscape_info);
