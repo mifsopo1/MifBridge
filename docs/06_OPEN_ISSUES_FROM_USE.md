@@ -1954,3 +1954,68 @@ it reports eight things and five are noise, which is how a check gets ignored. T
   save_maps)"` is documentation, not a suggestion.
 
 With those, five hits and five were real.
+
+## 27. Auditing 139 commits found 22 real defects — six fixed, thirteen still open (2026-08-30)
+
+A separate session landed 139 commits on 2026-08-28/29: +18388/-691, endpoints 320 → 351, suites
+75 → 100, 31 new endpoints. All five of this repo's audits passed on it, and that is exactly the
+point worth recording: **those audits check structure, not truth.** `parity_check` proves every
+endpoint is reachable; nothing in the toolchain asks whether a commit message's claim is true, or
+whether a new handler reports success for work it did not do. That gap is what this pass covered.
+
+Method: eight lenses read the range independently — silent success in the new endpoints, crash-guard
+completeness, 5.3-vs-5.7 correctness, test quality, commit claims vs code, gate coverage, the
+uncommitted work, and regressions in the 691 deletions. Every finding then went to a skeptic
+instructed to refute by default. **34 raised, 22 survived, 12 refuted** — the refutation pass killed
+a third of them, including two where the finder had the mechanism backwards. A finder alone would
+have produced a list a third of which was wrong, which is how a report gets ignored.
+
+Six are fixed in 3ffc095 (gate, IK Rig, water, GAS, both log readers, and the panel ODR violation);
+see that commit for each mechanism. The rest are recorded here rather than lost.
+
+### Still open
+
+* **`add_mvvm_binding` creates bindings that cannot compile.** It validates that the source property
+  EXISTS on the viewmodel and stops. Every binding mode it offers except `oneTimeToDestination`
+  requires the source field to be registered FieldNotify, so the MVVM compiler rejects the rest at
+  compile time — after the endpoint has already reported success. `set_variable_flags` gained a
+  `fieldNotify` flag in this same range (c924450), so the bridge can already set what this endpoint
+  cannot check.
+* **`add_simplified_collision`'s cooked guard over-refuses.** It refuses all eight shapes when
+  `GetMeshDescription(0)` is null, but only box/sphere/capsule reach MeshDescription. The k-DOP
+  shapes fit their hull from RENDER data, which every cooked mesh has, so they cannot crash and are
+  being refused anyway. c7aa495's "every shape shares the failure mode" is false on both engines.
+* **Two MVVM version guards are bounded one minor too high.** `MifBridgeMVVM.cpp:191` and `:330` use
+  `>= 5.7` for a `UMVVMEditorSubsystem` API that changed in **5.6**. Also, four new sites in this
+  range hand-write `ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= N` instead of
+  `MIF_ENGINE_AT_LEAST`, which `MifBridgeVersion.h` exists to prevent and docs/02 §14 names.
+* **`add_gameplay_tag` was declined on a false premise.** 7e3e32d concluded "no public runtime API";
+  `IGameplayTagsEditorModule` exposes two on both 5.3 and 5.7. The accurate statement is that
+  `UGameplayTagsManager`'s mutating API is private in the *runtime* module — the *editor* module is
+  the supported route. A wrong decline permanently closes a buildable feature, which is why this one
+  matters more than its size.
+* **Two incomplete fixes, both the house shape** — a fix applied at one call site of a pattern that
+  exists at many. `945f1f0`'s `wait_for_pie_state` timeout enforcement reached 1 of 4 copies of that
+  helper; `958213a`'s editor-world actor-leak cleanup reached 1 of 8 spawn sites, one of them 30
+  lines above the fix in the same file. An uncleaned actor spawns into the persistent editor world
+  and survives every later PIE session.
+* **Four test-quality gaps.** `958213a` describes "stopped trusting the volume-count proxy" for
+  T1606; what it did was delete `move_actor_to`'s only postcondition and replace it with a check
+  that cannot fail. `test_simplified_collision_guard.py` T932 cannot distinguish a working
+  `remove_collision` from a no-op, and on a second run its crash-survival check goes vacuous too.
+  `test_duplicate_cooked_guard.py` T942 is named "the new asset really exists" and reads that from
+  the writer's own response rather than the registry — the endpoint asserting its own success.
+  `test_mvvm.py`'s docstring describes a negative compile case (T1506) that does not exist in the
+  file.
+
+### The lesson worth keeping
+
+Two of the six fixed defects were **already documented and then reintroduced**. The dead 64 MB size
+guard was found on 2026-07-26 (`docs/audit/work/J_dds2_project.md:342`, which even prescribed the
+tail-read) and was afterwards copied verbatim into a brand-new endpoint. And the gate's own comment
+said *"a comment saying 'all three' is exactly what was true before someone added a fourth"* — and a
+fourth was added, in a range where `git diff -- MifBridgeSafety.cpp` is empty. Writing a defect down
+does not prevent it. A CHECK prevents it. `test_safety_gate` T636 already derives the Exec-caller
+list from source rather than trusting the comment; the same should exist for key injection, so an
+endpoint that reaches `UGameViewportClient::InputKey` or `FSlateApplication::Process*Event` cannot be
+added outside the gate silently.
