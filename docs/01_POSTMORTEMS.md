@@ -1785,3 +1785,72 @@ independently-verified fixes in two separate handler files. Superficial reasonin
 path looks different" (BodySetup vs. render data) was wrong for one of the two functions in the same
 source file and right for the other - the only way to know which was true for each was to read that
 SPECIFIC function's own body, not to reason by analogy from the file or class it lives in.
+
+## The full regression sweep had never once finished, and six suites were wrong about the product (2026-08-30)
+
+**Symptom.** `suite_results.json` showed 204 runs over 102 distinct suites, 0 failures - and there
+were 144 suites on disk. Forty-two had never appeared in a sweep at all. Nobody had noticed, because
+the summary line reports what ran, not what did not.
+
+**First root cause: the sweep could not finish.** `run_all_suites.py` always stalled on the first
+PIE suite. Starting PIE saturates the game thread, the bridge stops answering, and the runner's own
+recovery - `M.launch_editor()` after `wait_for_bridge` fails - assumed a failed probe meant a dead
+editor. That is true when a suite CRASHES the editor, which is the case it was written for, and
+false here: the editor was alive and responsive the whole time. So it launched a SECOND editor, both
+raced for port 8791, and the run sat there until it was killed by hand. Two editors on one project
+is also a way to lose work, since both hold the same packages.
+
+Because it never finished, the 42 newest suites - the least-tested code in the repo - were also the
+least swept. The worst way round.
+
+**Fixes.** `launch_editor` now kills a survivor before relaunching, says so loudly, and REFUSES to
+launch if the kill did not take, because making the problem worse is not recovering from it. PIE
+suites are skipped by default, named in the output with a line stating they were not verified, and
+`--with-pie` runs them attended. The skip list is DERIVED from the sources - a suite that invokes
+`start_pie` starts PIE - because a hand-kept list is one forgotten entry from hanging the sweep
+again.
+
+**Second root cause, and the more interesting one: the suites were wrong, not the product.** With the
+sweep finishing, six suites failed. NOT ONE was a defect in a handler:
+
+| Suite | What was actually wrong |
+| --- | --- |
+| `test_partition_actors` | asserted `loadedInEditor == list_level_actors`, comparing two different sets |
+| `test_source_control` | asserted per-action refusal wording on a project with no revision control provider, where the endpoint correctly refuses earlier |
+| `test_create_struct_init`, `test_set_struct_member` | took the first non-scratch asset `find_assets` returned and called it cooked, without testing cookedness |
+| `test_move_actors_to_level` | assumed a spawned probe lands in the persistent level; `spawn_actor_in_level` uses the CURRENT one |
+| `test_safety_gate` | returned 1 (FAILED) for a deliberate, correct bail-out that meant 2 (SKIPPED) |
+| `test_unknown_endpoint` | a real, pre-existing suggestion-ranking weakness - the only product finding |
+| `test_blender_creation`, `test_blender_material` | probed with a call that RAISES when Blender is absent, so they reported FAILED where they meant SKIPPED |
+
+**The pattern, which matters more than any of the fixes.** Four of them are one shape: *asserting a
+specific outcome without establishing the precondition that makes it the expected one.* Endpoints in
+this repo deliberately refuse on the most fundamental failure first, so a test naming a late refusal
+has to confirm execution reaches it. `test_partition_actors` assumed a pristine map;
+`test_source_control` assumed a provider; the struct suites assumed cookedness;
+`test_move_actors_to_level` assumed a current level.
+
+Every fix was the same move: **check the property instead of assuming it, and print the input chosen**
+so a future failure reports its own conditions. `test_consolidate` was fixed this way in the morning
+and the diagnosis written into its comment - and the same bug was then written three more times the
+same day, twice in brand-new suites. Writing the warning down demonstrably does not prevent the
+mistake. Only a test does.
+
+**Two process notes worth as much as the fixes.**
+
+*The data was already there.* An hour went into planning tooling to capture which checks failed.
+`run_all_suites.py` already records a 25-line tail per failure into `suite_results.json`. One read
+gave every failing check name AND the numbers that settled `test_partition_actors` outright -
+descriptors constant at 74, `list_level_actors` climbing 80 to 169 as other suites spawned actors.
+Read what exists before building.
+
+*"NOT REPEAT-SAFE" is not always contamination.* The runner flags a suite that passes on run 1 and
+fails on run 2, and the obvious reading is state surviving between runs. An hour went into hunting
+that for the struct suites. There was none: `find_assets` ordering is simply not stable, so the two
+runs picked different assets. The flag says the runs differ, not why.
+
+**Prevention.** `tools/audit_undefined_names.py` was added the same day for a related reason - a
+`NameError` in `launch_editor`'s recovery path (`PORT` where the module says `BRIDGE_PORT`) killed a
+288-run sweep at run 90, and nothing could have caught it: `py_compile` cannot see a runtime name
+error, and that code only executes when the bridge is already down. Error branches and recovery
+paths are where this class of bug lives, because a green test run never reaches them.
