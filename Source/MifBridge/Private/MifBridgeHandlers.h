@@ -1568,6 +1568,10 @@ namespace MifBridge
 	/** The CLASSIC Layers system - editor-time organisation and visibility. NOT World
 	 *  Partition Data Layers above; the two are unrelated despite the names. Works on cooked
 	 *  maps: AActor::Layers is not editor-only and Map_Load rebuilds the collection from it. */
+	/** Every actor in a World Partition map, LOADED OR NOT, from the actor descriptors.
+	 *  Version-guarded: 5.4 renamed the iterator AND left the old name compiling with an
+	 *  EMPTY BODY, so the 5.3 spelling silently reports zero actors on 5.7. */
+	MIF_DECL(list_partition_actors);
 	MIF_DECL(list_layers);
 	MIF_DECL(modify_actor_layers);
 	MIF_DECL(set_layer_visibility);

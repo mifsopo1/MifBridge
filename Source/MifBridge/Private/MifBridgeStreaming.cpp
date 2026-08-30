@@ -113,7 +113,11 @@
 #include "Engine/LevelStreamingAlwaysLoaded.h"
 #include "Engine/LevelStreamingDynamic.h"
 #include "Engine/World.h"
+#include "MifBridgeVersion.h"                      // MIF_ENGINE_AT_LEAST - the 5.4 descriptor rename
 #include "Layers/LayersSubsystem.h"                 // the CLASSIC layers, not Data Layers
+#include "WorldPartition/WorldPartition.h"
+#include "WorldPartition/WorldPartitionHelpers.h"
+#include "WorldPartition/WorldPartitionActorDesc.h"
 #include "Layers/Layer.h"
 #include "Subsystems/EditorActorSubsystem.h"        // resolving actorPaths for modify_actor_layers
 #include "WorldPartition/DataLayer/DataLayerInstance.h"
@@ -2650,5 +2654,236 @@ namespace MifBridge
 		Out->SetStringField(TEXT("levelNote"),
 			TEXT("layer membership is stored on the ACTORS and the level is now dirty. NOTHING has ")
 			TEXT("been saved."));
+	}
+
+	// =======================================================================
+	// list_partition_actors - every actor in a World Partition map, loaded or not
+	// =======================================================================
+	//
+	// THE FAILURE THIS FIXES IS SILENT UNDER-REPORTING. On a World Partition map with editor
+	// streaming on, list_level_actors sees only whatever region happens to be loaded - so an agent
+	// asked to find the lighthouse enumerates the level, does not see it, and concludes it does not
+	// exist. The actor DESCRIPTORS know about every actor in the map whether or not it is loaded,
+	// and nothing could read them.
+	//
+	// A 5.4 DEPRECATION THAT COMPILES AND DOES NOTHING - the trap that makes this endpoint dangerous
+	// to write from memory, and a NEW direction of engine-version drift for docs/02 section 14.
+	// FWorldPartitionHelpers::ForEachActorDesc was the 5.3 spelling. On 5.4+ the descriptor type
+	// changed to FWorldPartitionActorDescInstance and the iterator was renamed to
+	// ForEachActorDescInstance - but the old name was kept, and its body is EMPTY:
+	//
+	//     UE_DEPRECATED(5.4, "Use ForEachActorDescInstance")
+	//     static void ForEachActorDesc(UWorldPartition*, TSubclassOf<AActor>,
+	//                                  TFunctionRef<bool(const FWorldPartitionActorDesc*)> Func) {}
+	//
+	// (UE_5.7/.../WorldPartitionHelpers.h:105-106, verified by reading it.) So the 5.3 call COMPILES
+	// against 5.7, iterates nothing, and this endpoint would answer count:0 with ok:true on a map
+	// full of actors. Not a build error, not a runtime error - a confident wrong answer. Every other
+	// version guard in this plugin protects against code that would fail to compile; this one
+	// protects against code that compiles perfectly and lies.
+	//
+	// The two descriptor types expose the SAME accessor names - Instance delegates to Desc - so only
+	// the type and the iterator name need switching.
+#if MIF_ENGINE_AT_LEAST(5, 4)
+	using FMifActorDescPtr = const FWorldPartitionActorDescInstance*;
+#else
+	using FMifActorDescPtr = const FWorldPartitionActorDesc*;
+#endif
+
+	TSharedRef<FJsonObject> MifSerializeActorDesc(FMifActorDescPtr Desc)
+	{
+		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+		J->SetStringField(TEXT("guid"), Desc->GetGuid().ToString(EGuidFormats::Digits));
+		J->SetStringField(TEXT("label"), Desc->GetActorLabelOrName().ToString());
+		J->SetStringField(TEXT("name"), Desc->GetActorName().ToString());
+		if (const UClass* Cls = Desc->GetActorNativeClass())
+		{
+			J->SetStringField(TEXT("class"), Cls->GetPathName());
+		}
+		J->SetStringField(TEXT("actorPackage"), Desc->GetActorPackage().ToString());
+		// actorSoftPath is the handle every OTHER endpoint takes, so a caller can go straight from a
+		// descriptor to get_level_actor / set_actor_transform once it is loaded.
+		J->SetStringField(TEXT("actorSoftPath"), Desc->GetActorSoftPath().ToString());
+
+		const FBox Bounds = Desc->GetEditorBounds();
+		if (Bounds.IsValid)
+		{
+			auto Vec = [](const FVector& V)
+			{
+				TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+				O->SetNumberField(TEXT("x"), V.X); O->SetNumberField(TEXT("y"), V.Y);
+				O->SetNumberField(TEXT("z"), V.Z);
+				return O;
+			};
+			TSharedRef<FJsonObject> B = MakeShared<FJsonObject>();
+			B->SetObjectField(TEXT("min"), Vec(Bounds.Min));
+			B->SetObjectField(TEXT("max"), Vec(Bounds.Max));
+			B->SetObjectField(TEXT("origin"), Vec(Bounds.GetCenter()));
+			B->SetObjectField(TEXT("extent"), Vec(Bounds.GetExtent()));
+			J->SetObjectField(TEXT("bounds"), B);
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Layers;
+		for (const FName& L : Desc->GetDataLayers())
+		{
+			Layers.Add(MakeShared<FJsonValueString>(L.ToString()));
+		}
+		if (Layers.Num()) { J->SetArrayField(TEXT("dataLayers"), Layers); }
+
+		// THE FIELD THAT MAKES THIS ENDPOINT WORTH HAVING BESIDE list_level_actors: whether this
+		// actor is currently in memory. An unloaded actor is exactly what list_level_actors cannot
+		// see, and the caller needs to know which of these it can act on right now.
+		J->SetBoolField(TEXT("loaded"), Desc->IsLoaded());
+		return J;
+	}
+
+	void H_list_partition_actors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("classFilter"), TEXT("class"), TEXT("nameContains"), TEXT("dataLayer"),
+			  TEXT("loadedOnly"), TEXT("limit") },
+			TEXT("classFilter (alias: class) - a native actor class path; nameContains - substring "
+				 "match on label or name; dataLayer - only actors in this Data Layer; loadedOnly "
+				 "(default false) - only actors currently in memory; limit (default 200)"),
+			{ { TEXT("bounds"), TEXT("spatial filtering is not built yet - see the spec item. Use "
+									 "nameContains or classFilter, or filter the bounds this "
+									 "endpoint already reports on each row") },
+			  { TEXT("pathPrefix"), TEXT("descriptors are addressed by class/name/data layer, not "
+										 "by content path - use classFilter or nameContains") } }))
+		{
+			return;
+		}
+
+		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		if (!World)
+		{
+			Fail(Out, TEXT("no editor world."));
+			return;
+		}
+
+		Out->SetStringField(TEXT("world"), World->GetName());
+		const bool bPartitioned = World->IsPartitionedWorld();
+		Out->SetBoolField(TEXT("partitioned"), bPartitioned);
+		if (!bPartitioned)
+		{
+			Out->SetNumberField(TEXT("scanned"), 0);
+			Out->SetNumberField(TEXT("matched"), 0);
+			Out->SetArrayField(TEXT("actors"), {});
+			Out->SetStringField(TEXT("note"),
+				TEXT("this level is NOT World Partitioned, so it has no actor descriptors - every "
+					 "actor in it is already loaded and list_level_actors sees all of them. This "
+					 "endpoint exists for partitioned maps, where list_level_actors sees only the "
+					 "streamed-in region."));
+			return;
+		}
+
+		UWorldPartition* Partition = World->GetWorldPartition();
+		if (!Partition)
+		{
+			// The cooked case, answered by name rather than by returning an empty list. A cooked WP
+			// map has been flattened into runtime streaming cells and carries no editor descriptors.
+			Fail(Out, TEXT("this world is partitioned but has no UWorldPartition, which is what a ")
+				TEXT("COOKED World Partition map looks like: its actors were baked into runtime ")
+				TEXT("streaming cells at cook time and no editor actor descriptors exist. ")
+				TEXT("list_level_actors reports what is loaded, and that is all this map can offer."));
+			return;
+		}
+		Out->SetBoolField(TEXT("streamingEnabled"), Partition->IsStreamingEnabled());
+
+		UClass* Filter = AActor::StaticClass();
+		const FString ClassName = JStrAny(In, { TEXT("classFilter"), TEXT("class") });
+		if (!ClassName.IsEmpty())
+		{
+			FString ClassError;
+			Filter = ResolveClassStrict(ClassName, nullptr, TEXT("classFilter"), ClassError);
+			if (!Filter)
+			{
+				Fail(Out, ClassError.IsEmpty()
+					? FString::Printf(TEXT("class not found: '%s'."), *ClassName) : ClassError);
+				return;
+			}
+		}
+		const FString NameContains = JStr(In, TEXT("nameContains"));
+		const FString WantLayer = JStr(In, TEXT("dataLayer"));
+		const bool bLoadedOnly = JBool(In, TEXT("loadedOnly"), false);
+		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 200), 1, 5000);
+
+		int32 Total = 0;
+		int32 Matched = 0;
+		int32 LoadedCount = 0;
+		TArray<TSharedPtr<FJsonValue>> Rows;
+
+		auto Visit = [&](FMifActorDescPtr Desc) -> bool
+		{
+			if (!Desc) { return true; }
+			++Total;
+			const bool bLoaded = Desc->IsLoaded();
+			if (bLoaded) { ++LoadedCount; }
+			if (bLoadedOnly && !bLoaded) { return true; }
+			if (!NameContains.IsEmpty())
+			{
+				const FString Label = Desc->GetActorLabelOrName().ToString();
+				if (!Label.Contains(NameContains)) { return true; }
+			}
+			if (!WantLayer.IsEmpty())
+			{
+				bool bHas = false;
+				for (const FName& L : Desc->GetDataLayers())
+				{
+					if (L.ToString() == WantLayer) { bHas = true; break; }
+				}
+				if (!bHas) { return true; }
+			}
+			++Matched;
+			if (Rows.Num() < Limit)
+			{
+				Rows.Add(MakeShared<FJsonValueObject>(MifSerializeActorDesc(Desc)));
+			}
+			return true;
+		};
+
+#if MIF_ENGINE_AT_LEAST(5, 4)
+		FWorldPartitionHelpers::ForEachActorDescInstance(Partition, Filter, Visit);
+#else
+		FWorldPartitionHelpers::ForEachActorDesc(Partition, Filter, Visit);
+#endif
+
+		// "scanned", NOT "count" - live-corrected 2026-08-30. classFilter is applied by the ENGINE
+		// iterator, not by this loop, so with one set the total reflects descriptors YIELDED rather
+		// than actors in the map: classFilter=StaticMeshActor reported "1 of 1" on a 123-actor map.
+		// A field called count that silently means something different depending on another
+		// parameter is the kind of number someone builds a wrong conclusion on.
+		Out->SetNumberField(TEXT("scanned"), Total);
+		Out->SetNumberField(TEXT("matched"), Matched);
+		if (!ClassName.IsEmpty())
+		{
+			Out->SetStringField(TEXT("scannedNote"),
+				TEXT("scanned counts descriptors the ENGINE iterator yielded, and classFilter is "
+					 "applied by it - so this is the number of actors OF THAT CLASS in the map, not "
+					 "the map's total. Call without classFilter for the total."));
+		}
+		Out->SetNumberField(TEXT("loadedInEditor"), LoadedCount);
+		Out->SetNumberField(TEXT("reported"), Rows.Num());
+		Out->SetArrayField(TEXT("actors"), Rows);
+		if (Matched > Rows.Num())
+		{
+			Out->SetBoolField(TEXT("truncated"), true);
+		}
+		if (Total > LoadedCount)
+		{
+			Out->SetStringField(TEXT("unloadedNote"), FString::Printf(
+				TEXT("%d of %d actors scanned are NOT currently loaded in the editor. "
+					 "list_level_actors cannot see those at all - that is the whole reason this "
+					 "endpoint exists. An unloaded actor's actorSoftPath will not resolve through "
+					 "get_level_actor until the region holding it is streamed in."),
+				Total - LoadedCount, Total));
+		}
+		if (Total == 0)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("the descriptor container is empty. On an uncooked map that means the world "
+					 "genuinely has no external actors yet; if this map came from a cook, the "
+					 "descriptors were stripped and this endpoint cannot see anything."));
+		}
 	}
 }

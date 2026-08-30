@@ -1770,3 +1770,26 @@ blueprint registered under both spellings is still correctly reported as uncooke
 
 `tools/test_cooked_class_trap.py` covers all three endpoints, 37 checks — including one that asserts
 the flag's VALUE per family, not just its presence.
+
+### A SEVENTH DIRECTION: a deprecated API that still compiles and does NOTHING
+
+Found 2026-08-30 building list_partition_actors, and it is worse than every drift already listed
+here because none of the existing six describes it. All of those are caught by a compiler - a
+renamed type, a changed signature, a member that moved. This one is not.
+
+UE 5.4 renamed FWorldPartitionHelpers::ForEachActorDesc to ForEachActorDescInstance and changed the
+descriptor type. It kept the old name, and gave it an EMPTY BODY:
+
+    UE_DEPRECATED(5.4, "Use ForEachActorDescInstance")
+    static void ForEachActorDesc(UWorldPartition*, TSubclassOf<AActor>,
+                                 TFunctionRef<bool(const FWorldPartitionActorDesc*)> Func) {}
+
+UE_5.7/Engine/Source/Runtime/Engine/Public/WorldPartition/WorldPartitionHelpers.h:105-106.
+
+So code written for 5.3 COMPILES against 5.7, iterates nothing, and returns a confident empty
+answer. No build error. No runtime error. No warning at the call site beyond the deprecation notice
+that a large codebase drowns in anyway.
+
+THE RULE: when an engine API is deprecated rather than removed, READ ITS BODY before relying on the
+old spelling still working. An empty brace pair is a legal implementation. buildcheck.py cannot help here and
+neither can make_engine_probe.py - only reading the newer header does.

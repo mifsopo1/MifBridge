@@ -4480,7 +4480,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Works cooked. AttachToActor/DetachFromActor are plain runtime ENGINE_API with no editor-only data. GEditor->ParentActors is editor-side but only touches the level's actor graph, not source data. The level is dirtied and (on a cooked base-game map) cannot be resaved — same standing caveat spawn_actor...
       Vetter corrected the proposal: Keep attach_actor / detach_actor and the serializer fields, with four fixes to the proposal: (1) drop "set_property cannot reach it" — AttachParent/AttachSocketName/AttachChildren are UPROPERTYs (SceneComponent.h:113-122) and MifBridge's ResolvePropertyPathEx crosses object boundaries (MifBridgeCommon.cpp:~2786), so get_property "RootComponent.AttachParent" already reads it and set_property will s...
 
-- [ ] **list_partition_actors + load_partition_actors (World Partition actor descriptors)** (day)
+- [x] **list_partition_actors + load_partition_actors (World Partition actor descriptors)** (day)  **READ HALF BUILT AND TESTED 2026-08-30** (list_partition_actors, 14/14 live). Proven on the live map: 123 actors scanned, 74 loaded - 49 that list_level_actors cannot see at all. The write half (load_partition_actors / PinActors) is NOT built and stays open below.
       Enumerate EVERY actor in a World Partition map — including the ones not currently loaded into the editor — from the actor descriptors, and then pin/load a chosen set or a spatial region so the existing endpoints can operate on them. On a WP map with editor streaming on, list_level_actors sees only whatever region happens to be loaded, so an agent asked to 'find the lighthouse' concludes it does not exist.
       API: Read: FWorldPartitionHelpers::ForEachActorDesc(UWorldPartition*, TSubclassOf<AActor>, TFunctionRef<bool(const FWorldPartitionActorDesc*)>) — D:/UE532/Engine/Source/Runtime/Engine/Public/WorldPartition/WorldPartitionHelpers.h:90, and ForEachIntersectingActorDesc(..., const FBox&, ...) at :89. Descriptor getters at D:/UE532/Engine/Source/Runtime/Engine/Public/WorldPartition/WorldPartitionActorDesc.h...
       Cooked: UNCOOKED ONLY, and that is fine — say so. Actor descriptors are built from loose external actor packages and are WITH_EDITOR-only; a COOKED WP map has been flattened into runtime streaming cells with no descriptors at all (docs/audit/work/F_world_level.md negative #8 already records the flattening)....
@@ -4827,3 +4827,15 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 - [rendering-fx] viewport bookmarks: list_viewport_bookmarks / set_viewport_bookmark / jump_to_viewport_bookmark: Store the current viewport camera into one of the level's numbered bookmark slots, jump back to one, and lis
 - [gameplay-systems] list_automation_tests: Enumerates the automation tests registered in this editor - engine tests, project tests, and Functional Test maps - with their names, flags and source. An agent that wants to ver
 - [blender] extend import_mesh with glTF/GLB support (format param): Lets import_mesh accept .glb/.gltf, not only .fbx — the format every AI mesh generator and most asset marketplaces actually emit.
+
+- [ ] **load_partition_actors** (the write half of list_partition_actors) (day)
+      UWorldPartition::PinActors(const TArray<FGuid>&) and LoadLastLoadedRegions(const TArray<FBox>&)
+      - WorldPartition.h:346/:350 on 5.3, :460/:464 on 5.7, unrenamed across versions unlike the
+      descriptor iterators. Split out of the read half deliberately on 2026-08-30: the read is the
+      high-value part (it closes a SILENT under-reporting failure), and the write needs read-back
+      verification because PinActors cannot fail loudly. Shape: { guids:[...] } or { bounds:{min,max} }
+      -> { requested, pinned, nowLoaded:[actorPath], notFound:[guid] } so the caller gets back the
+      actorPaths every other endpoint takes.
+      ALSO STILL OPEN, from the same item: spatial filtering on the READ half via
+      ForEachIntersectingActorDescInstance - list_partition_actors currently refuses a `bounds`
+      parameter by name and points at nameContains/classFilter instead.
