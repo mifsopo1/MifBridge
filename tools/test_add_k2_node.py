@@ -122,6 +122,31 @@ def main():
               r.get("ok") is True and sel.get("ok") is True,
               "async=%s select=%s" % (r.get("ok"), sel.get("ok")))
 
+        # ------------------------------------------------------------------ T5705 legacy input
+        print("\n=== T5705: the legacy input nodes, which needed no endpoint of their own ===")
+        # add_input_event was a separate backlog item (K2Node_InputKey / InputAction /
+        # InputAxisEvent / InputTouch). All four are configured ENTIRELY through UPROPERTYs, which
+        # is exactly what this endpoint's `properties` map applies before pin allocation - so the
+        # item was DECLINED and these checks are the evidence, kept here so nobody proposes it
+        # again without first seeing it already works.
+        inputs = [
+            ("K2Node_InputKey", {"InputKey": "SpaceBar"}, "Space Bar"),
+            ("K2Node_InputAction", {"InputActionName": "Jump"}, "InputAction Jump"),
+            ("K2Node_InputAxisEvent", {"InputAxisName": "MoveForward"}, "InputAxis MoveForward"),
+            ("K2Node_InputTouch", None, "InputTouch"),
+        ]
+        for cls, props, expect_title in inputs:
+            payload = {"graphId": event, "nodeClass": cls}
+            if props:
+                payload["properties"] = props
+            n = M.raw_post("add_k2_node", payload)
+            check("T5705 %s places" % cls, n.get("ok") is True, json.dumps(n)[:200])
+            # The TITLE is the proof the property actually configured the node - an InputKey with
+            # no key set titles itself differently from one bound to Space Bar.
+            check("T5705 and titles itself '%s', so the property took" % expect_title,
+                  n.get("title") == expect_title, n.get("title"))
+            check("T5705 with real pins", (n.get("pinCount") or 0) >= 3, n.get("pinCount"))
+
         # ------------------------------------------------------------------ T5702 the guards
         print("\n=== T5702: refusing before the node exists ===")
         wrong = M.raw_post("add_k2_node", {

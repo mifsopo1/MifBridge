@@ -5518,7 +5518,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Uncooked only, and the existing LoadUserStruct/LoadUserEnum path already produces a named refusal for anything that is not a UUserDefinedEnum (a cooked enum is a plain UEnum with no editor data). No new hazard, but the same read-back discipline H_add_enum_value already applies is mandatory: SetEnume...
       Vetter corrected the proposal: Three corrections. (1) The set_property premise is false: DisplayNameMap is a plain UPROPERTY TMap<FName,FText> (UserDefinedEnum.h:41), objectPath accepts any asset (MifBridgeCommon.cpp:3079), the `{Key}` map accessor exists (MifBridgeCommon.cpp:2348), and set_property has no editability gate — so renaming an entry IS reachable today, just without IsEnumeratorDisplayNameValid's duplicate check or ...
 
-- [ ] **add_input_event (legacy K2Node_InputKey / InputAction / InputAxisEvent / InputTouch)** (day)
+- [~] **add_input_event (legacy K2Node_InputKey / InputAction / InputAxisEvent / InputTouch)**
+      DECLINED 2026-08-30 - ALREADY REACHABLE, and verified rather than assumed.
+      All four classes are configured ENTIRELY through UPROPERTYs (InputKey, InputActionName,
+      InputAxisName, plus the bConsumeInput/bExecuteWhenPaused/bOverrideParentBinding bits),
+      which is exactly what add_k2_node's `properties` map applies BEFORE pin allocation -
+      the case it was built for one item earlier the same day.
+      Checked live, not reasoned about. Each places, configures and titles correctly:
+        add_k2_node{nodeClass:"K2Node_InputKey", properties:{InputKey:"SpaceBar"}}
+          -> title "Space Bar", 3 pins
+        add_k2_node{nodeClass:"K2Node_InputAction", properties:{InputActionName:"Jump"}}
+          -> title "InputAction Jump"
+        add_k2_node{nodeClass:"K2Node_InputAxisEvent",
+                    properties:{InputAxisName:"MoveForward"}} -> "InputAxis MoveForward"
+        add_k2_node{nodeClass:"K2Node_InputTouch"} -> "InputTouch", 5 pins
+      and the Blueprint compiles with all four in it. The TITLE is the proof the property
+      took - an unconfigured InputKey titles itself differently from one bound to Space Bar.
+      Those four checks now live in tools/test_add_k2_node.py (T5705) so the coverage is
+      VERIFIED rather than claimed, and so this is not re-proposed without first seeing it
+      already work. A dedicated endpoint would be a second way to do something the plugin
+      already does - the exact parallel-system mistake add_k2_node refuses for classes that
+      have purpose-built endpoints.
+      NOTE these are the LEGACY (pre-Enhanced) input nodes. Enhanced Input has its own
+      add_enhanced_input_action, and map_input_key/unmap_input_key cover the mapping context.
       Places classic (pre-Enhanced-Input) input event nodes: a raw key event, a named legacy Action Mapping event, a named Axis Mapping event, and touch events. This is the input system UE4-era projects and most 5.3 projects still ship, including anything ported forward.
       API: UK2Node_InputKey (FKey InputKey, bConsumeInput, bExecuteWhenPaused, bOverrideParentBinding, plus the four modifier flags) — D:/UE532/Engine/Source/Editor/BlueprintGraph/Classes/K2Node_InputKey.h:38-66; UK2Node_InputAction (FName InputActionName + the same three flags) — K2Node_InputAction.h:36-49; UK2Node_InputAxisEvent (FName InputAxisName) — K2Node_InputAxisEvent.h:30-43; UK2Node_InputTouch — K2...
       Cooked: Uncooked only (graph authoring), refused by ResolveGraphField on a cooked blueprint. Worth adding a soft warning rather than a refusal when the named action/axis is not present in the project's legacy input settings — the node is still legal and will simply never fire, and telling the caller that at...
