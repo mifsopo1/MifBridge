@@ -24,6 +24,8 @@
 //    InputCore and ImageWrapper notes in MifBridge.Build.cs describe.
 
 #include "MifBridgeHandlers.h"
+#include "NiagaraCommon.h"
+#include "NiagaraEditorUtilities.h"
 #include "MifBridgeLog.h"   // LogMifBridge - reached transitively on 5.3, not on 5.7
 
 #if MIF_WITH_NIAGARA
@@ -619,6 +621,312 @@ namespace MifBridge
 				 "RefreshFromExternalChanges and InvalidateCompileResults this call makes. That "
 				 "leaves a stale compile result and an emitter that stays dark with a flag saying "
 				 "otherwise."));
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the system is dirty and NOTHING has been saved."));
+	}
+
+	// =======================================================================
+	// add_niagara_emitter / remove_niagara_emitter
+	// =======================================================================
+	//
+	// SPLIT OUT OF set_niagara_emitter, and the REASON RECORDED THERE WAS WRONG until 2026-08-30.
+	// It said raw AddEmitterHandle has an unguarded null dereference at NiagaraSystem.cpp:2309 -
+	// GetLatestEmitterData()->RemoveParent() on a Template or Behavior emitter. It does not:
+	// :2306 calls DisableVersioning, which calls CheckVersionDataAvailable unconditionally and FIRST
+	// (NiagaraEmitter.cpp:2708, :2734-2741), so VersionData.Num() >= 1 always holds afterwards and
+	// bVersioningEnabled is false on both exit paths - GetLatestEmitterData then returns
+	// &VersionData[0]. And :2309 is dominated anyway by the identical deref at
+	// NiagaraEmitter.cpp:1108-1109 inside CreateWithParentAndOwner, which runs unconditionally for
+	// every emitter. A refusal naming a defect nobody can find is worse than none, because the next
+	// reader concludes it was baseless and builds this unguarded.
+	//
+	// THE REAL HAZARD IS A COOKED SOURCE EMITTER, and it is the same family as the cooked
+	// NiagaraSystem crash already recorded at the top of this file. CreateWithParentAndOwner
+	// dereferences EmitterData->ParentScratchPads (NiagaraEmitter.cpp:1119) and
+	// EmitterData->GraphSource (:1120) with no null check. Both are declared inside
+	// `#if WITH_EDITORONLY_DATA` (NiagaraEmitter.h:451-457) and are NULL on any emitter that came
+	// from a cook - which is EVERY emitter shipped in a cooked project. So the precondition is the
+	// SOURCE emitter's editor data, and it is checked by name below.
+	//
+	// NO ENGINE-VERSION GUARD IS NEEDED HERE, which is worth stating because the research suggested
+	// one. 5.3 branches on TemplateSpecification and 5.6/5.7 on bIsInheritable - but that branch is
+	// INSIDE the engine's AddEmitterHandle. This code never names either field, so it compiles
+	// unchanged on all three.
+
+	void H_add_niagara_emitter(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("system"), TEXT("emitter"), TEXT("name"),
+			  TEXT("enabled") },
+			TEXT("path (aliases assetPath, system) - the NiagaraSystem to add to; emitter - the "
+				 "SOURCE UNiagaraEmitter asset to add a copy of; name (optional) - the handle name, "
+				 "defaults to the source's name; enabled (default true)"),
+			{ { TEXT("index"), TEXT("a new emitter is appended; handles are addressed by NAME") },
+			  { TEXT("version"), TEXT("the source's exposed version is used - GetEmitterData returns "
+									  "null SILENTLY for an unknown version guid, so accepting one "
+									  "would mean accepting a wrong-data outcome") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("system") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - the NiagaraSystem to add to. NOTHING was changed."));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		UNiagaraSystem* System = Cast<UNiagaraSystem>(Asset);
+		if (!System)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is %s, not a NiagaraSystem. NOTHING was changed."), *Path,
+				Asset ? *FString::Printf(TEXT("a %s"), *Asset->GetClass()->GetName())
+					  : TEXT("not an asset that could be loaded")));
+			return;
+		}
+		if (IsCookedOrContainerPackage(System->GetOutermost()))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' came from a COOKED package. An emitter added there cannot be saved and "
+					 "the system cannot be recompiled, so it would vanish on restart. NOTHING was "
+					 "changed."), *System->GetPathName()));
+			return;
+		}
+
+		const FString SourcePath = JStr(In, TEXT("emitter"));
+		if (SourcePath.IsEmpty())
+		{
+			Fail(Out, TEXT("emitter is required - the SOURCE UNiagaraEmitter asset to add a copy "
+						   "of. find_assets {class:\"NiagaraEmitter\"} lists them. NOTHING was "
+						   "changed."));
+			return;
+		}
+		UObject* SourceAsset = LoadAssetLenient(SourcePath);
+		UNiagaraEmitter* Source = Cast<UNiagaraEmitter>(SourceAsset);
+		if (!Source)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is %s, not a NiagaraEmitter. NOTHING was changed."), *SourcePath,
+				SourceAsset ? *FString::Printf(TEXT("a %s"), *SourceAsset->GetClass()->GetName())
+							: TEXT("not an asset that could be loaded")));
+			return;
+		}
+
+		// THE PRECONDITION THAT ACTUALLY MATTERS. CreateWithParentAndOwner dereferences these two
+		// without checking, and they are editor-only fields that a cook strips. Checked here, by
+		// name, rather than left to fault inside the engine.
+		FVersionedNiagaraEmitterData* SourceData = Source->GetLatestEmitterData();
+		if (!SourceData || !SourceData->GraphSource || !SourceData->ParentScratchPads)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the source emitter '%s' has no editor data - %s is null. Those fields live "
+					 "inside WITH_EDITORONLY_DATA and are stripped on cook, and the engine's own "
+					 "CreateWithParentAndOwner dereferences them WITHOUT a null check "
+					 "(NiagaraEmitter.cpp:1119-1120), so adding it would take the editor down. Use "
+					 "an emitter authored in this editor, not one from a cooked package. NOTHING "
+					 "was changed."),
+				*Source->GetPathName(),
+				!SourceData ? TEXT("its versioned emitter data")
+							: (!SourceData->GraphSource ? TEXT("GraphSource")
+													   : TEXT("ParentScratchPads"))));
+			return;
+		}
+
+		// NO COMPILE GUARD HERE, deliberately, and the first version had one that was wrong twice
+		// over. FNiagaraEditorUtilities::AddEmitterToSystem - the function the Niagara editor
+		// itself calls - has none. And HasOutstandingCompilationRequests is the wrong predicate
+		// regardless: it returns true when bNeedsRequestCompile is set (NiagaraSystem.cpp:1510),
+		// which means the system NEEDS a compile, not that one is RUNNING. A freshly created
+		// system has that flag set and nothing clears it, so the guard refused every call on
+		// exactly the systems that are safe to use.
+		//
+		// The real precondition the engine DOES enforce is killing live system instances first, and
+		// AddEmitterToSystem does that itself - which is the main reason to call it rather than
+		// AddEmitterHandle directly.
+
+		FString HandleName = JStr(In, TEXT("name"));
+		if (HandleName.IsEmpty()) { HandleName = Source->GetName(); }
+		TSet<FString> Existing;
+		for (const FNiagaraEmitterHandle& H : System->GetEmitterHandles())
+		{
+			Existing.Add(H.GetName().ToString());
+			if (H.GetName().ToString() == HandleName)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' already has an emitter named '%s'. Pass a different name - handles "
+						 "are addressed by name, so two the same would be ambiguous. NOTHING was "
+						 "changed."), *System->GetName(), *HandleName));
+				return;
+			}
+		}
+
+		const int32 Before = System->GetEmitterHandles().Num();
+		{
+			FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_AddNiagaraEmitter",
+											"Add Niagara Emitter"));
+			System->Modify();
+			// THE ENGINE'S OWN FUNCTION, not AddEmitterHandle. AddEmitterToSystem
+			// (NiagaraEditorUtilities.cpp:2098) kills live system instances first - its comment
+			// says "to prevent accessing deleted data" - uniquifies the handle name, and then
+			// rebuilds the emitter nodes and synchronises the system overview graph. A raw
+			// AddEmitterHandle does none of that, so the handle would exist while the graphs still
+			// described the old set. That is the same malformed-asset shape as a LevelSequence with
+			// no MovieScene, and this repo has now walked into it three times.
+			FNiagaraEditorUtilities::AddEmitterToSystem(
+				*System, *Source, Source->GetExposedVersion().VersionGuid, /*bCreateCopy=*/true);
+		}
+
+		// READ BACK from the system's own array. AddEmitterHandle returns a handle by value, which
+		// says nothing about whether the system kept it.
+		// FOUND BY DIFFERENCE, not by the name asked for. AddEmitterToSystem passes the name
+		// through FNiagaraUtilities::GetUniqueName, so a collision produces "Name_0001" rather than
+		// an error - looking for the requested name would report a successful add as a failure.
+		const TArray<FNiagaraEmitterHandle>& After = System->GetEmitterHandles();
+		int32 Found = INDEX_NONE;
+		for (int32 i = 0; i < After.Num(); ++i)
+		{
+			if (!Existing.Contains(After[i].GetName().ToString())) { Found = i; }
+		}
+		if (Found != INDEX_NONE) { HandleName = After[Found].GetName().ToString(); }
+		if (Found == INDEX_NONE || After.Num() != Before + 1)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the emitter was added and the system reports %d handle(s) where %d was "
+					 "expected, with '%s' %s. NOTHING reliable was produced."),
+				After.Num(), Before + 1, *HandleName,
+				Found == INDEX_NONE ? TEXT("absent") : TEXT("present")));
+			return;
+		}
+
+		const bool bWantEnabled = JBool(In, TEXT("enabled"), true);
+		if (After[Found].GetIsEnabled() != bWantEnabled)
+		{
+			const_cast<FNiagaraEmitterHandle&>(After[Found]).SetIsEnabled(bWantEnabled, *System, false);
+		}
+		System->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("system"), System->GetPathName());
+		Out->SetStringField(TEXT("emitter"), HandleName);
+		Out->SetStringField(TEXT("source"), Source->GetPathName());
+		Out->SetNumberField(TEXT("emitterIndex"), Found);
+		Out->SetNumberField(TEXT("emitterCount"), After.Num());
+		Out->SetBoolField(TEXT("enabled"), After[Found].GetIsEnabled());
+		Out->SetStringField(TEXT("compileNote"),
+			TEXT("the system's compile results were invalidated but NOT rebuilt - compiling from an "
+				 "HTTP handler can take a long time and holds the editor. It recompiles when the "
+				 "editor next needs it."));
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the system is dirty and NOTHING has been saved."));
+	}
+
+	void H_remove_niagara_emitter(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("system"), TEXT("emitter") },
+			TEXT("path (aliases assetPath, system) - the NiagaraSystem; emitter - the handle NAME "
+				 "to remove (list_niagara_emitters reports them)"),
+			{ { TEXT("index"), TEXT("an index shifts when anything is added or removed; remove by "
+									"NAME") },
+			  { TEXT("confirm"), TEXT("this is an undoable asset edit, not a deletion - it needs no "
+									  "confirm, and nothing is saved") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("system") });
+		UObject* Asset = Path.IsEmpty() ? nullptr : LoadAssetLenient(Path);
+		UNiagaraSystem* System = Cast<UNiagaraSystem>(Asset);
+		if (!System)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("path is required and must name a NiagaraSystem ('%s' %s). NOTHING was "
+					 "changed."), *Path,
+				Asset ? *FString::Printf(TEXT("is a %s"), *Asset->GetClass()->GetName())
+					  : TEXT("could not be loaded")));
+			return;
+		}
+		if (IsCookedOrContainerPackage(System->GetOutermost()))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' came from a COOKED package - the removal could not be saved and the "
+					 "system could not be recompiled, so the emitter would come back on restart. "
+					 "NOTHING was changed."), *System->GetPathName()));
+			return;
+		}
+		// No compile guard here either - see the note in H_add_niagara_emitter. What DOES matter is
+		// resetting live system instances before the handle array is mutated, which the add path
+		// gets for free from AddEmitterToSystem and this one has to arrange itself.
+		//
+		// NOT FNiagaraEditorUtilities::KillSystemInstances, which is what the editor uses: it is
+		// declared WITHOUT NIAGARAEDITOR_API (NiagaraEditorUtilities.h:271, one line below
+		// AddEmitterToSystem which IS exported) and does not link from another module. Found by the
+		// linker, after reading the export on :266 and assuming it covered the neighbourhood -
+		// exactly the not-actually-exported trap this project keeps a list of.
+		//
+		// FNiagaraSystemUpdateContext is the public equivalent: constructed with bReInit it
+		// deactivates every component referencing this system and reinitialises them when it goes
+		// out of scope, which is the same "do not let anything read the handle array while it
+		// changes" guarantee.
+		FNiagaraSystemUpdateContext ResetLiveInstances(System, /*bReInit=*/true);
+
+		const FString Name = JStr(In, TEXT("emitter"));
+		int32 Found = INDEX_NONE;
+		TArray<FString> Names;
+		for (int32 i = 0; i < System->GetEmitterHandles().Num(); ++i)
+		{
+			const FString N = System->GetEmitterHandles()[i].GetName().ToString();
+			Names.Add(N);
+			if (N == Name) { Found = i; }
+		}
+		if (Name.IsEmpty() || Found == INDEX_NONE)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no emitter named '%s' on '%s'. It has: %s. NOTHING was changed."),
+				*Name, *System->GetName(),
+				Names.Num() ? *FString::Join(Names, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		const int32 Before = System->GetEmitterHandles().Num();
+		{
+			FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_RemoveNiagaraEmitter",
+											"Remove Niagara Emitter"));
+			System->Modify();
+			// RemoveEmitterHandle, NOT RemoveEmitterHandlesById. They are asymmetric in BOTH
+			// directions (NiagaraSystem.cpp:2335 and :2343): only this one calls
+			// RemoveSystemParametersForEmitter, and only the other calls InitEmitterCompiledData.
+			// Leaving orphaned system parameters behind is the worse of the two, because they are
+			// invisible - a stale compiled-data cache is rebuilt on the next compile.
+			//
+			// COPIED BY VALUE on purpose. RemoveEmitterHandle takes a const reference and then
+			// RemoveAll's the array that reference points INTO, so passing the element directly is
+			// a dangling read the moment the array reallocates.
+			const FNiagaraEmitterHandle Doomed = System->GetEmitterHandles()[Found];
+			System->RemoveEmitterHandle(Doomed);
+		}
+
+		const TArray<FNiagaraEmitterHandle>& After = System->GetEmitterHandles();
+		for (const FNiagaraEmitterHandle& H : After)
+		{
+			if (H.GetName().ToString() == Name)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is still on the system after the removal. NOTHING reliable was "
+						 "produced."), *Name));
+				return;
+			}
+		}
+		System->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("system"), System->GetPathName());
+		Out->SetStringField(TEXT("removed"), Name);
+		Out->SetNumberField(TEXT("emitterCountBefore"), Before);
+		Out->SetNumberField(TEXT("emitterCount"), After.Num());
+		Out->SetStringField(TEXT("cleanupNote"),
+			TEXT("removed with RemoveEmitterHandle, which also clears the system parameters that "
+				 "belonged to this emitter. RemoveEmitterHandlesById does not, and would leave them "
+				 "behind invisibly."));
 		Out->SetStringField(TEXT("assetNote"),
 			TEXT("the system is dirty and NOTHING has been saved."));
 	}

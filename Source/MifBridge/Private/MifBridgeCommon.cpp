@@ -186,6 +186,8 @@ namespace MifBridge
 			MIF_BIND(add_create_event);
 			MIF_BIND(set_enum_value);
 			MIF_BIND(set_niagara_emitter);
+			MIF_BIND(add_niagara_emitter);
+			MIF_BIND(remove_niagara_emitter);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);

@@ -46,10 +46,19 @@
 //    table (DisableCollision/EnableCollision) has no such defect and is offered.
 
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"   // MIF_ENGINE_AT_LEAST - without it the guard below silently
+                                // evaluates to 0 and takes the wrong branch on 5.6+
 #include "MifBridgeLog.h"
 
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "PhysicsEngine/BodySetup.h"
+#if MIF_ENGINE_AT_LEAST(5, 6)
+	// USkeletalBodySetup is DEFINED in PhysicsAsset.h on 5.3 (:421) and only FORWARD-DECLARED
+	// there on 5.6 (:20) and 5.7 (:21) - the definition moved to its own header. Including
+	// PhysicsAsset.h is therefore enough before 5.6 and not enough after, which is why this
+	// file compiled here and produced 28x C2027 on launcher 5.7.4.
+	#include "PhysicsEngine/SkeletalBodySetup.h"
+#endif
 // USkeletalBodySetup is declared inside PhysicsAsset.h itself (:421), not in a header of its own.
 #include "PhysicsEngine/PhysicsConstraintTemplate.h"
 #include "PhysicsAssetUtils.h"

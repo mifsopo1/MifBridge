@@ -13,6 +13,13 @@
 #include "CollectionManagerModule.h"
 #include "ICollectionManager.h"
 #include "CollectionManagerTypes.h"
+#if MIF_ENGINE_AT_LEAST(5, 6)
+	// The type MIF_COLLECTIONS() yields on 5.6+, and call sites take it by `auto&` - so it has
+	// to be COMPLETE, not merely declared. It does not exist at all before 5.6, hence the
+	// guard: including it unconditionally would trade a 5.7 break for a 5.3 one.
+	// 0.7.0 failed to compile on launcher 5.7.4 for exactly this, 17x C2027.
+	#include "ICollectionContainer.h"
+#endif
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
 #include "UObject/ObjectRedirector.h"
