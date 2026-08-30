@@ -579,10 +579,211 @@ namespace MifBridge
 	//        entry of referencers[] is a PACKAGE path too — the registry's dependency graph is
 	//        package-to-package, so there is no objectPath to give. Feed these straight back into
 	//        get_referencers / audit_unused.excludeReferencers / describe_package.
+
+	// =======================================================================
+	// DEPENDENCY EDGE METADATA - hard vs soft, and the empty result that lies
+	// =======================================================================
+	//
+	// A HARD dependency must load before its source does: it is what gets dragged into a cook and
+	// what breaks a mod when it is absent. A SOFT one is loaded on demand, and a missing target is
+	// survivable. Both endpoints used to answer with one undifferentiated list, so an agent asking
+	// "is this safe to delete" or "why is my _P pak 400MB" could not tell them apart.
+	//
+	// THE MORE IMPORTANT HALF OF THIS CHANGE IS THE EMPTY RESULT, and it is a safety fix rather
+	// than a feature. FAssetRegistrySerializationOptions::bSerializeDependencies defaults to FALSE
+	// (AssetRegistryState.h:56 - only InitForDevelopment turns it on), and AssetRegistryState.cpp
+	// skips writing depends-nodes when it is off. So on a cooked project the runtime registry
+	// typically carries NO package dependency edges AT ALL for container packages.
+	//
+	// That meant get_referencers on any base-game asset returned count:0 with packageExists:true -
+	// and count:0 is the standard justification for deleting something. "The graph was never
+	// serialized" and "nothing points at this" were indistinguishable. The existing existsNote
+	// block was written to stop exactly that confusion for a MISTYPED path; a container package has
+	// the same shape and had no such guard. dependencyDataAvailable:false now says which case it is.
+
+	/** Why a package has no dependency edges on disk, if it has none.
+	 *
+	 *  THREE STATES, NOT TWO, and conflating them produces a confidently wrong message. A loose
+	 *  package has a real file and a real graph. A CONTAINER package (.pak/.utoc) is known to the
+	 *  registry but its graph was probably never serialized. And an IN-MEMORY package - /Temp/,
+	 *  or an asset created this session and not yet saved - has no file either, but calling that
+	 *  "cooked" would be simply untrue. The first version of this said "lives in a COOKED
+	 *  container" for a /Temp/ package, which is the kind of confident wrongness this note exists
+	 *  to prevent. */
+	enum class EMifDepSource : uint8 { Loose, Container, InMemory };
+
+	static EMifDepSource MifDepSourceFor(const FString& PackageName)
+	{
+		FString FileName;
+		if (FPackageName::DoesPackageExist(PackageName, &FileName)
+			&& !FileName.IsEmpty() && FPaths::FileExists(FileName))
+		{
+			return EMifDepSource::Loose;
+		}
+		// No file. A loaded package with PKG_Cooked is genuinely cooked container content; anything
+		// else with no file is transient or unsaved.
+		if (const UPackage* Package = FindPackage(nullptr, *PackageName))
+		{
+			return Package->HasAnyPackageFlags(PKG_Cooked) ? EMifDepSource::Container
+														   : EMifDepSource::InMemory;
+		}
+		// Not loaded and no file, but the registry knows it - that is container content.
+		return EMifDepSource::Container;
+	}
+
+	/** package | manage | searchableName | all. Returns false and fails Out on an unknown name. */
+	static bool MifParseDepCategory(const TSharedRef<FJsonObject>& In,
+									const TSharedRef<FJsonObject>& Out,
+									UE::AssetRegistry::EDependencyCategory& OutCat)
+	{
+		using namespace UE::AssetRegistry;
+		const FString C = JStr(In, TEXT("category"), TEXT("package")).ToLower();
+		if (C == TEXT("package"))        { OutCat = EDependencyCategory::Package;        return true; }
+		if (C == TEXT("manage"))         { OutCat = EDependencyCategory::Manage;         return true; }
+		if (C == TEXT("searchablename")) { OutCat = EDependencyCategory::SearchableName; return true; }
+		if (C == TEXT("all"))            { OutCat = EDependencyCategory::All;            return true; }
+		Fail(Out, FString::Printf(
+			TEXT("unknown category '%s' - accepted: package (the default, and what you almost always "
+				 "want), manage, searchableName, all."), *C));
+		return false;
+	}
+
+	/** Build the flags query from `hard` and `includeEditorOnly`. */
+	static UE::AssetRegistry::FDependencyQuery MifDepQuery(const TSharedRef<FJsonObject>& In,
+														   bool& bOutFiltered)
+	{
+		using namespace UE::AssetRegistry;
+		FDependencyQuery Query;
+		bOutFiltered = false;
+		if (In->HasField(TEXT("hard")))
+		{
+			bOutFiltered = true;
+			if (JBool(In, TEXT("hard"), true)) { Query.Required |= EDependencyProperty::Hard; }
+			else                               { Query.Excluded |= EDependencyProperty::Hard; }
+		}
+		if (In->HasField(TEXT("includeEditorOnly")) && !JBool(In, TEXT("includeEditorOnly"), true))
+		{
+			// An editor-only edge is one that is NOT Game. Excluding non-Game edges is spelled as
+			// requiring Game, which is the engine's own encoding rather than a separate flag.
+			bOutFiltered = true;
+			Query.Required |= EDependencyProperty::Game;
+		}
+		return Query;
+	}
+
+	/** Shared by both endpoints - they differ only in direction and field name. */
+	static void MifWriteDependencyEdges(const TSharedRef<FJsonObject>& In,
+										const TSharedRef<FJsonObject>& Out,
+										const FString& Pkg, bool bReferencers)
+	{
+		using namespace UE::AssetRegistry;
+		EDependencyCategory Category;
+		if (!MifParseDepCategory(In, Out, Category)) { return; }
+		bool bFiltered = false;
+		const FDependencyQuery Query = MifDepQuery(In, bFiltered);
+		const TCHAR* ListField = bReferencers ? TEXT("referencers") : TEXT("dependencies");
+
+		// THE FLAT ARRAY IS ALWAYS EMITTED, unchanged, because every existing caller reads it.
+		TArray<FName> Flat;
+		if (bReferencers) { Registry().GetReferencers(FName(*Pkg), Flat, Category, Query); }
+		else              { Registry().GetDependencies(FName(*Pkg), Flat, Category, Query); }
+
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		for (const FName& N : Flat) { Arr.Add(MakeShared<FJsonValueString>(N.ToString())); }
+		Out->SetStringField(TEXT("package"), Pkg);
+		Out->SetStringField(TEXT("packageName"), Pkg);   // same value, plugin-wide spelling
+		Out->SetNumberField(TEXT("count"), Flat.Num());
+		Out->SetArrayField(ListField, Arr);
+		Out->SetStringField(TEXT("category"),
+			JStr(In, TEXT("category"), TEXT("package")).ToLower());
+
+		// PER-EDGE DETAIL, and the counts that make "is this safe to delete" answerable. Only built
+		// on request, because the FAssetDependency overload does more work than the FName one.
+		if (JBool(In, TEXT("includeProperties"), false) || bFiltered)
+		{
+			TArray<FAssetDependency> Edges;
+			if (bReferencers) { Registry().GetReferencers(FName(*Pkg), Edges, Category, Query); }
+			else              { Registry().GetDependencies(FName(*Pkg), Edges, Category, Query); }
+
+			int32 Hard = 0, EditorOnly = 0;
+			TArray<TSharedPtr<FJsonValue>> Rows;
+			for (const FAssetDependency& E : Edges)
+			{
+				const bool bHard = !!(E.Properties & EDependencyProperty::Hard);
+				const bool bGame = !!(E.Properties & EDependencyProperty::Game);
+				if (bHard) { ++Hard; }
+				if (!bGame) { ++EditorOnly; }
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetStringField(TEXT("package"), E.AssetId.PackageName.ToString());
+				J->SetBoolField(TEXT("hard"), bHard);
+				J->SetBoolField(TEXT("game"), bGame);
+				J->SetBoolField(TEXT("build"), !!(E.Properties & EDependencyProperty::Build));
+				// EditorOnly is the ABSENCE of Game, not a flag of its own - spelled out because
+				// reading it as a flag is the obvious mistake.
+				J->SetBoolField(TEXT("editorOnly"), !bGame);
+				Rows.Add(MakeShared<FJsonValueObject>(J));
+			}
+			Out->SetArrayField(TEXT("edges"), Rows);
+			Out->SetNumberField(TEXT("hardCount"), Hard);
+			Out->SetNumberField(TEXT("softCount"), Edges.Num() - Hard);
+			Out->SetNumberField(TEXT("editorOnlyCount"), EditorOnly);
+		}
+
+		// DOES THE PACKAGE EVEN EXIST? The registry answers an unknown package with an empty list,
+		// not an error, so count:0 reads identically for "nothing points at this" and "there is no
+		// such asset". Those lead to opposite actions.
+		const bool bKnown = PackageIsKnown(Pkg);
+		Out->SetBoolField(TEXT("packageExists"), bKnown);
+		if (!bKnown)
+		{
+			Out->SetStringField(TEXT("existsNote"), FString::Printf(
+				TEXT("no package '%s' is known to the asset registry, so count:0 means THE PATH DID "
+					 "NOT RESOLVE - not that the asset is unreferenced. Do not treat this as "
+					 "permission to delete anything. Check the path with find_assets."), *Pkg));
+			return;
+		}
+
+		// AND THE SAME TRAP ONE STEP FURTHER IN. A container package is KNOWN to the registry, so
+		// the check above passes - but a cooked registry usually carries no dependency edges at
+		// all, because bSerializeDependencies defaults false. count:0 there means "never
+		// recorded", and reading it as "unreferenced" is how something gets deleted.
+		const EMifDepSource Source = MifDepSourceFor(Pkg);
+		Out->SetStringField(TEXT("packageSource"),
+			Source == EMifDepSource::Loose     ? TEXT("loose")
+		  : Source == EMifDepSource::Container ? TEXT("container") : TEXT("inMemory"));
+		const bool bSuspect = (Source != EMifDepSource::Loose) && Flat.Num() == 0;
+		Out->SetBoolField(TEXT("dependencyDataAvailable"), !bSuspect);
+		if (bSuspect)
+		{
+			Out->SetStringField(TEXT("dependencyDataNote"), Source == EMifDepSource::Container
+				? FString::Printf(
+					TEXT("'%s' lives in a COOKED container, and a cooked asset registry usually "
+						 "carries NO package dependency edges at all - "
+						 "FAssetRegistrySerializationOptions::bSerializeDependencies defaults to "
+						 "false, so the graph was never written. count:0 here means THE DATA WAS "
+						 "NOT RECORDED, not that nothing references this. Treating it as "
+						 "'unreferenced' is how something in use gets deleted. Loose packages "
+						 "saved by this editor do carry edges."), *Pkg)
+				: FString::Printf(
+					TEXT("'%s' is an IN-MEMORY package - transient, or created this session and "
+						 "never saved - so it has no serialized dependency graph. count:0 means "
+						 "there is nothing recorded yet, not that nothing references it. Save it "
+						 "and ask again if you need real edges."), *Pkg));
+		}
+	}
+
 	// Who points AT this asset.
 	void H_get_referencers(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		if (RejectUnknownParams(In, Out, { TEXT("path") }, TEXT("path")))
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("category"), TEXT("hard"), TEXT("includeEditorOnly"),
+			  TEXT("includeProperties") },
+			TEXT("path; category (package|manage|searchableName|all, default package); hard (true = ")
+			TEXT("hard only, false = SOFT only, omit for both); includeEditorOnly (default true); ")
+			TEXT("includeProperties (per-edge hard/game/build detail)"),
+			{ { TEXT("soft"), TEXT("spell it hard:false - one parameter with two states, rather than "
+								   "two that can disagree") },
+			  { TEXT("recursive"), TEXT("this is one hop. project_dependency_graph walks the graph") } }))
 		{
 			return;
 		}
@@ -592,32 +793,7 @@ namespace MifBridge
 			Fail(Out, TEXT("path is required"));
 			return;
 		}
-		TArray<FName> Refs;
-		Registry().GetReferencers(FName(*Pkg), Refs);
-
-		TArray<TSharedPtr<FJsonValue>> Arr;
-		for (const FName& R : Refs)
-		{
-			Arr.Add(MakeShared<FJsonValueString>(R.ToString()));
-		}
-		Out->SetStringField(TEXT("package"), Pkg);
-		Out->SetStringField(TEXT("packageName"), Pkg);   // same value, plugin-wide spelling
-		Out->SetNumberField(TEXT("count"), Refs.Num());
-		Out->SetArrayField(TEXT("referencers"), Arr);
-
-		// DOES THE PACKAGE EVEN EXIST? The registry answers an unknown package with an empty list, not
-		// an error, so count:0 reads identically for "nothing points at this" and "there is no such
-		// asset". Those lead to opposite actions: the first is the standard justification for deleting
-		// something. A mistyped or stale path must not be able to look like a clean bill of health.
-		Out->SetBoolField(TEXT("packageExists"), PackageIsKnown(Pkg));
-		if (!PackageIsKnown(Pkg))
-		{
-			Out->SetStringField(TEXT("existsNote"), FString::Printf(
-				TEXT("no package '%s' is known to the asset registry, so count:0 means THE PATH DID NOT "
-					 "RESOLVE - not that the asset is unreferenced. Do not treat this as permission to "
-					 "delete anything. Check the path with find_assets."),
-				*Pkg));
-		}
+		MifWriteDependencyEdges(In, Out, Pkg, /*bReferencers*/ true);
 	}
 
 	//   in:  { path: "/Game/..." }   (an object path is accepted and reduced to its package)
@@ -627,7 +803,15 @@ namespace MifBridge
 	// What this asset points at.
 	void H_get_dependencies(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		if (RejectUnknownParams(In, Out, { TEXT("path") }, TEXT("path")))
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("category"), TEXT("hard"), TEXT("includeEditorOnly"),
+			  TEXT("includeProperties") },
+			TEXT("path; category (package|manage|searchableName|all, default package); hard (true = ")
+			TEXT("hard only, false = SOFT only, omit for both); includeEditorOnly (default true); ")
+			TEXT("includeProperties (per-edge hard/game/build detail)"),
+			{ { TEXT("soft"), TEXT("spell it hard:false - one parameter with two states, rather than "
+								   "two that can disagree") },
+			  { TEXT("recursive"), TEXT("this is one hop. project_dependency_graph walks the graph") } }))
 		{
 			return;
 		}
@@ -637,29 +821,7 @@ namespace MifBridge
 			Fail(Out, TEXT("path is required"));
 			return;
 		}
-		TArray<FName> Deps;
-		Registry().GetDependencies(FName(*Pkg), Deps);
-
-		TArray<TSharedPtr<FJsonValue>> Arr;
-		for (const FName& D : Deps)
-		{
-			Arr.Add(MakeShared<FJsonValueString>(D.ToString()));
-		}
-		Out->SetStringField(TEXT("package"), Pkg);
-		Out->SetStringField(TEXT("packageName"), Pkg);   // same value, plugin-wide spelling
-		Out->SetNumberField(TEXT("count"), Deps.Num());
-		Out->SetArrayField(TEXT("dependencies"), Arr);
-
-		// See get_referencers: an unknown package yields an empty list rather than an error, so
-		// count:0 has two very different meanings and the caller cannot tell them apart.
-		Out->SetBoolField(TEXT("packageExists"), PackageIsKnown(Pkg));
-		if (!PackageIsKnown(Pkg))
-		{
-			Out->SetStringField(TEXT("existsNote"), FString::Printf(
-				TEXT("no package '%s' is known to the asset registry, so count:0 means THE PATH DID NOT "
-					 "RESOLVE - not that this asset has no dependencies. Check the path with find_assets."),
-				*Pkg));
-		}
+		MifWriteDependencyEdges(In, Out, Pkg, /*bReferencers*/ false);
 	}
 
 	// ---------------------------------------------------------------- excludeReferencers (GAP 4)

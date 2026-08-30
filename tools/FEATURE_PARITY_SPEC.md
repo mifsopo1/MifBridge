@@ -5213,7 +5213,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: This is the most cooked-friendly thing in the domain and should be advertised as such: it loads nothing, so none of the cooked crash families (MeshDescription, Niagara PostLoad, FSkeletalMeshModel) can be reached. Worth noting in the response that on a cooked project a Blueprint's tags live on the B...
       Vetter corrected the proposal: Rank drops high -> medium. Three factual corrections to the proposal itself. (1) FARFilter::TagsAndValues entries are OR'd, not AND'd - AssetRegistryState.cpp:752-779 appends every filter tag's matches into one shared array; the proposed multi-key shape does not mean "both". (2) Matching is exact string equality (ContainsKeyValue, :770), so the flagship example "every Texture2D wider than 2048" is...
 
-- [ ] **extend get_referencers and get_dependencies with `category` and `hard`/`softOnly`/`includeEditorOnly` parameters (and the same on project_dependency_graph)** (hours)
+- [x] **extend get_referencers and get_dependencies with category / hard / includeEditorOnly** (hours)
+      DONE 2026-08-30. 27 checks in tools/test_dependency_edges.py.
+      THE SAFETY FIX MATTERS MORE THAN THE FILTERING, and the vetter found it.
+      FAssetRegistrySerializationOptions::bSerializeDependencies defaults to FALSE
+      (AssetRegistryState.h:56 - only InitForDevelopment turns it on), so a cooked project's
+      registry typically carries NO package dependency edges AT ALL. get_referencers on
+      base-game content returned count:0 with packageExists:true - and count:0 is the standard
+      justification for deleting something. "The graph was never serialized" and "nothing
+      points at this" were indistinguishable. The existing existsNote guard covers a MISTYPED
+      path; a container package is KNOWN to the registry, so it slipped through.
+      THREE STATES, NOT TWO, and the first version of this fix got it wrong: a package with no
+      file is not necessarily cooked - a /Temp/ package, or one created this session and never
+      saved, also has none. Calling that "a COOKED container" is the confident wrongness the
+      note exists to prevent. packageSource now distinguishes loose, container and inMemory
+      with different text for each.
+      hard:true / hard:false PARTITION the edge set, which the suite asserts by summing them
+      against the unfiltered total - a property the implementation cannot satisfy by accident.
+      editorOnly is derived as the absence of the Game flag, because the engine has no
+      editor-only flag of its own and reading one is the obvious mistake.
+      The flat array is untouched, so every existing caller is unaffected.
       Distinguishes HARD package dependencies (target must load before source - these are what get dragged into a cook and what break a mod when absent) from SOFT ones (loaded on demand - a missing target is survivable), and from EditorOnly ones (present in the editor, absent from the cooked game). Right now both endpoints answer with one undifferentiated list, so an agent deciding whether an asset is safe to delete, or why a _P pak is 400MB, cannot tell a hard reference from a soft one.
       API: IAssetRegistry::GetReferencers(FName PackageName, TArray<FName>&, UE::AssetRegistry::EDependencyCategory Category = EDependencyCategory::Package, const UE::AssetRegistry::FDependencyQuery& Flags = {}) at D:/UE532/Engine/Source/Runtime/AssetRegistry/Public/AssetRegistry/IAssetRegistry.h:395, and GetDependencies at :364 - the two parameters the current calls (MifBridgeAssetOps.cpp:596 and :639) leav...
       Cooked: Fully cooked-safe: the asset registry is queried, nothing is loaded. Worth one honest caveat in the response text: on a cooked project the registry was built by the cook, so EditorOnly edges have already been dropped and `includeEditorOnly` will legitimately return nothing - say that rather than let...

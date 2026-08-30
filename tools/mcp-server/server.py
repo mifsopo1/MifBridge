@@ -2839,15 +2839,15 @@ def add_simplified_collision(path: str, shape: str) -> dict:
 
 
 @mcp.tool()
-def get_referencers(path: str) -> dict:
+def get_referencers(path: str, category: str = "package", hard: bool = None, include_editor_only: bool = True, include_properties: bool = False) -> dict:
     "Which packages reference this asset. Authoritative - reads the asset registry's dependency graph, so it is immune to the FName trap where a trailing _<digits> is stored as a separate number and a literal name search misses real references."
-    return _post("get_referencers", path=path)
+    return _post("get_referencers", path=path, category=category, hard=hard, includeEditorOnly=include_editor_only, includeProperties=include_properties)
 
 
 @mcp.tool()
-def get_dependencies(path: str) -> dict:
+def get_dependencies(path: str, category: str = "package", hard: bool = None, include_editor_only: bool = True, include_properties: bool = False) -> dict:
     "Which packages this asset references (the inverse of get_referencers). Same shape: package == packageName, and every dependencies[] entry is a PACKAGE path."
-    return _post("get_dependencies", path=path)
+    return _post("get_dependencies", path=path, category=category, hard=hard, includeEditorOnly=include_editor_only, includeProperties=include_properties)
 
 
 @mcp.tool()
