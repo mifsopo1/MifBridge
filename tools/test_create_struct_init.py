@@ -114,12 +114,25 @@ def main():
 
         # -------------------------------------------------- T6212 the diagnosis must stay right
         print("\n=== T6212: a COOKED struct is still diagnosed as cooked ===")
-        cooked = [x["path"] for x in
-                  (M.call("find_assets", {"class": "UserDefinedStruct",
-                                          "limit": 8}).get("assets") or [])
-                  if not x["path"].startswith("/Game/_Mif")]
-        if cooked:
-            c = M.raw_post("list_struct_members", {"struct": cooked[0]})
+        # SELECT FOR THE PROPERTY, DO NOT ASSUME IT. This used to take the first non-scratch
+        # struct find_assets returned and call it cooked - but that filter only excludes scratch
+        # paths, and plenty of project structs have intact EditorData. find_assets' ordering is not
+        # stable, so the suite passed or failed depending on which asset the registry enumerated
+        # first: 14/14 on one run, two failures on the next, reported as NOT REPEAT-SAFE.
+        #
+        # Exactly the order-dependent selection fixed in test_consolidate the same day, written
+        # again here. Probing for the actual refusal costs one call per candidate and cannot drift.
+        c, chosen = None, None
+        for cand in [x["path"] for x in
+                     (M.call("find_assets", {"class": "UserDefinedStruct",
+                                             "limit": 25}).get("assets") or [])
+                     if not x["path"].startswith("/Game/_Mif")]:
+            probe = M.raw_post("list_struct_members", {"struct": cand})
+            if probe.get("ok") is False and "COOKED" in (probe.get("error") or ""):
+                c, chosen = probe, cand
+                break
+        if c is not None:
+            print("  (using %s)" % chosen)
             check("T6212 a cooked struct is refused", c.get("ok") is False, json.dumps(c)[:200])
             # The regression that matters: splitting the diagnosis must not have broken the arm
             # that was already correct.
@@ -129,7 +142,9 @@ def main():
                   "cause, and naming both would be no better than naming the wrong one",
                   "NewObject" not in (c.get("error") or ""), (c.get("error") or "")[:250])
         else:
-            print("  NOTE  no cooked struct in this project, so T6212 is unexercised here.")
+            print("  NOTE  no struct in this project is refused as COOKED, so T6212 is unexercised")
+            print("        here. That is reported rather than passed silently - the previous")
+            print("        version would have asserted against whatever asset came back first.")
 
         print("\n  NOT EXERCISED: the 'not cooked and no EditorData' arm. create_asset can no")
         print("  longer produce that state, which was the point of the fix, so it is unreachable")

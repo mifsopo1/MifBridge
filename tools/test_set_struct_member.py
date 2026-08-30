@@ -93,14 +93,28 @@ def main():
     # in-memory struct handle, so one can genuinely be sitting there) is not cooked and would make this
     # guard test something else entirely: an ordinary "unknown member" refusal instead of the fatal-
     # cast guard this test exists to prove.
+    # SELECT FOR COOKEDNESS, DO NOT ASSUME IT. This used to take the first non-scratch struct
+    # find_assets returned. That filter only skips scratch paths - nothing in it tests cookedness,
+    # and plenty of project structs (BCE_DeveloperStruct, for one) have intact EditorData and load
+    # perfectly well. find_assets' ordering is not stable, so the suite passed on one run and failed
+    # on the next, which is how the double-pass sweep caught it as NOT REPEAT-SAFE.
+    #
+    # Probing costs one read per candidate and cannot drift. The crash guard being tested is
+    # unaffected; only the choice of input was wrong.
     cooked = None
     for a in (M.call("find_assets", {"class": "UserDefinedStruct", "pathPrefix": "/Game/",
-                                     "limit": 20}).get("assets") or []):
+                                     "limit": 25}).get("assets") or []):
         p = a.get("path") or ""
-        if not p.startswith(SC.SCRATCH_PREFIXES):
+        if p.startswith(SC.SCRATCH_PREFIXES):
+            continue
+        probe = M.raw_post("list_struct_members", {"struct": p})
+        if probe.get("ok") is False and "COOKED" in (probe.get("error") or ""):
             cooked = p
             break
-    check("T153 found a base-game struct to try", bool(cooked), cooked)
+    check("T153 found a genuinely COOKED base-game struct to try", bool(cooked),
+          "no struct under /Game/ is refused as cooked - this arm cannot run here")
+    if cooked:
+        print("  (using %s)" % cooked)
     if cooked:
         q = M.call("set_struct_member", {"struct": cooked, "member": "x", "newName": "y"})
         check("T153 refused", q.get("ok") is False, json.dumps(q)[:170])
