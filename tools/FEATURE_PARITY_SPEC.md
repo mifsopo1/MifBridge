@@ -5017,6 +5017,30 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Works cooked, in memory, and degrades honestly. UWorld::Layers is WITH_EDITORONLY_DATA, so a cooked package ships no layers — the correct answer on such a map is count:0 with a note ('this map is cooked; its layer definitions were stripped at cook time'), NOT an error. Creating and populating layers...
       Vetter corrected the proposal: Three factual errors in the proposal, none fatal to the gap. 1. THE COOKED STORY IS BACKWARDS AND MUST NOT BE BUILT AS WRITTEN. The proposer says a cooked package ships no layers and prescribes returning count:0 with "its layer definitions were stripped at cook time". That is false. AActor::Layers is UPROPERTY(EditAnywhere, AdvancedDisplay) at Actor.h:911-912 and the comment at :910 states it is d...
 
+- [ ] **cut the MCP tool surface's per-turn token cost - ANDRE'S CALL, not autopilot's** (day)
+      MEASURED 2026-08-30, after Andre asked why the FAB competitor lists ~1450 tools to our ~400
+      and whether a split would help token usage. The endpoint count is not the problem; the
+      DOCSTRINGS are. 450 @mcp.tool wrappers carry 289,944 characters of docstring - roughly 72,000
+      tokens injected into every turn's context whether a tool is used or not. 50 of them are over
+      1200 characters; set_property alone is 4,512.
+      CONSOLIDATION IS THE WRONG ANSWER and should be recorded as rejected rather than re-proposed:
+      merging tools makes each remaining docstring bigger AND introduces mode parameters, where half
+      a signature goes dead depending on a flag - the exact shape audit_mode_params.py exists to
+      catch, and the reason a settings:true branch and a saveConfig:true endpoint were both refused
+      the same day.
+      THE FIX IS MOSTLY DELETION, because the on-demand layer already exists. describe_endpoint
+      already returns acceptedParams, aliasGroups, commonMistakes and guard for any endpoint -
+      2,753 chars for set_property, fetched live. The long docstrings DUPLICATE it. Capping them at
+      roughly 200 chars and letting describe_endpoint carry the traps saves on the order of 50,000
+      tokens per turn with no capability loss.
+      THE BIGGER WIN IS DEFERRED LOADING: expose ~30-40 core tools plus a search/load pair, and
+      fetch the rest on demand - which is exactly what Claude Code does to its own agent via
+      ToolSearch. 40 x 644 chars is about 6,500 tokens against the current 72,000.
+      NOT STARTED, and deliberately not started by autopilot: this touches every tool in server.py
+      and changes how the whole surface presents to an agent. Andre should decide before it moves.
+      Suggested order if he says yes: agree a docstring budget, move deep detail into
+      describe_endpoint where it is not already there, then add the deferred-loading layer.
+
 - [ ] **list_level_instances / set_level_instance_loaded / edit_level_instance / break_level_instance** (day)
       Work with Level Instance actors — UE5's prefab: see which are placed and what level asset each points at, load/unload one in the editor, enter and commit an edit session so changes propagate to every placement, and break one back into loose actors. The bridge can stream a level into PIE (pie_load_level_instance) and compose sublevels, but on any modern uncooked project the reusable-content unit is the Level Instance and it is entirely invisible: list_level_actors shows the ALevelInstance actor and nothing about what it contains.
       API: ULevelInstanceSubsystem (UWorld::GetSubsystem<ULevelInstanceSubsystem>()) — D:/UE532/Engine/Source/Runtime/Engine/Public/LevelInstance/LevelInstanceSubsystem.h. RequestLoadLevelInstance(ILevelInstanceInterface*, bool) :55; RequestUnloadLevelInstance :56; IsLoaded/IsLoading :57-58; GetLevelInstanceLevel :62; ForEachActorInLevelInstance :61; CanEditLevelInstance(..., FText* OutReason) :77; CanCommit...
