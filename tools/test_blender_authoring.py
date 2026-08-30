@@ -354,6 +354,134 @@ def main():
               "the exporter, not just the filter",
               skel_size != posed_size, "posed=%d skeletal=%d" % (posed_size, skel_size))
 
+    # ================================================================= modifiers
+    print("\n=== A700-A709: the modifier write half, and counts that prove it ===")
+
+    stack0 = call("list_modifiers", object=cube)
+    check("A700 (setup) list_modifiers reads the stack", stack0.get("ok") is True,
+          json.dumps(stack0)[:220])
+    base_count = len(stack0.get("modifiers") or [])
+
+    bad_type = call("add_modifier", object=cube, type="TELEKINESIS")
+    check("A701 an unknown modifier type is refused", bad_type.get("ok") is False,
+          json.dumps(bad_type)[:250])
+    check("A701 and the refusal says NOTHING was changed",
+          "NOTHING was changed" in (bad_type.get("error") or ""), bad_type.get("error"))
+
+    added = call("add_modifier", object=cube, type="SUBSURF", modifier="MifSubsurf",
+                 settings={"levels": 2, "renderLevels": 3})
+    check("A702 add_modifier succeeds", added.get("ok") is True, json.dumps(added)[:280])
+    check("A702 it reports which settings it applied",
+          sorted(added.get("settingsApplied") or []) == ["levels", "renderLevels"],
+          json.dumps(added.get("settingsApplied")))
+
+    # THE assertion: read the settings BACK through list_modifiers' own describer, so a value that
+    # did not take is visible rather than assumed from ok:true.
+    rb = (added.get("readBack") or {}).get("settings") or {}
+    check("A702 and the settings really landed - read back, not assumed",
+          rb.get("levels") == 2 and rb.get("renderLevels") == 3, json.dumps(rb))
+    check("A702 the stack really grew by one",
+          len(added.get("stackAfter") or []) == len(added.get("stackBefore") or []) + 1,
+          json.dumps({"before": added.get("stackBefore"), "after": added.get("stackAfter")}))
+
+    dup = call("add_modifier", object=cube, type="SUBSURF", modifier="MifSubsurf")
+    check("A703 a duplicate modifier name is refused", dup.get("ok") is False, json.dumps(dup)[:250])
+
+    bad_setting = call("add_modifier", object=cube, type="SOLIDIFY", modifier="MifSolid",
+                       settings={"notASetting": 1})
+    check("A704 an unknown setting is refused and the accepted ones are listed",
+          bad_setting.get("ok") is False and "thickness" in (bad_setting.get("error") or ""),
+          json.dumps(bad_setting)[:280])
+    # AND the cleanup-on-failure path: a half-configured modifier must not be left behind after a
+    # refusal that said NOTHING was changed. decimate_mesh established this discipline; assert it.
+    after_fail = call("list_modifiers", object=cube)
+    names_after_fail = [m.get("name") for m in (after_fail.get("modifiers") or [])]
+    check("A704 and no half-configured modifier was left on the stack",
+          "MifSolid" not in names_after_fail, json.dumps(names_after_fail))
+
+    dry = call("apply_modifier", object=cube, modifier="MifSubsurf", dryRun=True)
+    check("A705 apply_modifier dryRun changes nothing and reports what it would do",
+          dry.get("ok") is True and dry.get("applied") is False and bool(dry.get("wouldApply")),
+          json.dumps(dry)[:280])
+
+    # THE assertion for apply: SUBSURF level 2 on a cube quadruples faces twice over. The operator
+    # returns FINISHED whether or not it changed anything, so the COUNTS are the proof.
+    applied = call("apply_modifier", object=cube, modifier="MifSubsurf")
+    check("A706 apply_modifier succeeds", applied.get("ok") is True, json.dumps(applied)[:280])
+    cb = applied.get("countsBefore") or {}
+    ca = applied.get("countsAfter") or {}
+    check("A706 and the geometry really changed - measured, not ok:true",
+          applied.get("changedGeometry") is True and (ca.get("faces") or 0) > (cb.get("faces") or 0),
+          json.dumps({"before": cb, "after": ca}))
+    check("A706 the modifier is off the stack afterwards",
+          "MifSubsurf" not in (applied.get("stackAfter") or []), json.dumps(applied)[:250])
+
+    missing_mod = call("apply_modifier", object=cube, modifier="NoSuchModifier")
+    check("A707 applying an unknown modifier is refused, and lists what IS on the stack",
+          missing_mod.get("ok") is False, json.dumps(missing_mod)[:250])
+
+    tri_mod = call("add_modifier", object=cube, type="TRIANGULATE", modifier="MifTri")
+    check("A708 (setup) a second modifier is added", tri_mod.get("ok") is True,
+          json.dumps(tri_mod)[:220])
+    removed = call("remove_modifier", object=cube, modifier="MifTri")
+    check("A708 remove_modifier succeeds and does NOT touch the mesh",
+          removed.get("ok") is True and removed.get("meshUnchanged") is True,
+          json.dumps(removed)[:280])
+    check("A708 and it is really off the stack - read back",
+          "MifTri" not in (removed.get("stackAfter") or []), json.dumps(removed)[:250])
+
+    missing_rm = call("remove_modifier", object=cube, modifier="NoSuchModifier")
+    check("A709 removing an unknown modifier is refused", missing_rm.get("ok") is False,
+          json.dumps(missing_rm)[:220])
+
+    # ================================================================= uv_info
+    print("\n=== A800-A806: uv_info - the verification half of uv_unwrap ===")
+
+    uv0 = call("uv_info", object=cube)
+    check("A800 uv_info succeeds", uv0.get("ok") is True, json.dumps(uv0)[:280])
+    check("A800 it reports a layer count and an active layer",
+          isinstance(uv0.get("layerCount"), int), json.dumps(uv0)[:280])
+
+    layers = uv0.get("layers") or []
+    if uv0.get("layerCount"):
+        first = layers[0] if layers else {}
+        check("A801 each layer reports its positional index - what Unreal's Lightmap "
+              "Coordinate Index points at", first.get("index") == 0, json.dumps(first)[:280])
+        check("A801 and exact face counts, not estimates",
+              isinstance(first.get("facesTotal"), int)
+              and isinstance(first.get("facesOutside01"), int), json.dumps(first)[:280])
+        check("A801 island count is a real number",
+              isinstance(first.get("islandCount"), int) and first.get("islandCount") >= 1,
+              json.dumps(first)[:280])
+        check("A802 lightmapReady is a judgement with a reason when false",
+              isinstance(first.get("lightmapReady"), bool)
+              and (first.get("lightmapReady") or bool(first.get("lightmapReadyReason"))),
+              json.dumps(first)[:320])
+    else:
+        print("  NOTE  A801-A802 - this mesh has no UV layers, so the per-layer assertions are")
+        print("        not exercised. uv_info correctly reported layerCount 0 with a named note.")
+
+    # Unwrap, then verify through uv_info - the two halves working together, which is the whole
+    # point of adding the read half.
+    made = call("uv_unwrap", object=cube, uvLayer="MifLightmap", method="LIGHTMAP")
+    check("A803 (setup) uv_unwrap creates a lightmap channel", made.get("ok") is True,
+          json.dumps(made)[:280])
+
+    uv1 = call("uv_info", object=cube, layer="MifLightmap")
+    check("A804 uv_info finds the layer uv_unwrap just made", uv1.get("ok") is True
+          and len(uv1.get("layers") or []) == 1, json.dumps(uv1)[:300])
+    lm = (uv1.get("layers") or [{}])[0]
+    # THE assertion that makes this pair worth having: a LIGHTMAP unwrap packs into 0-1, so a
+    # lightmap channel produced by uv_unwrap must come back with nothing outside it.
+    check("A805 a LIGHTMAP unwrap really packed inside 0-1 - the check uv_unwrap could not do",
+          lm.get("facesOutside01") == 0, json.dumps(lm)[:320])
+    check("A805 and it is reported lightmapReady", lm.get("lightmapReady") is True,
+          json.dumps(lm)[:320])
+
+    bad_layer = call("uv_info", object=cube, layer="NoSuchLayer")
+    check("A806 an unknown layer is refused and the real ones are listed",
+          bad_layer.get("ok") is False, json.dumps(bad_layer)[:250])
+
     # WHAT THIS SUITE DOES NOT COVER, declared rather than left to be discovered - the same
     # discipline test_blender_mesh.py applies to the five gen_* ops.
     print("\n  NOT COVERED, and said out loud: the SUCCESS paths of normalize_weights and")

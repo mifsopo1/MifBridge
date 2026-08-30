@@ -124,7 +124,57 @@ solid.show_render = False
 """
 
 
+def check_modifier_tables():
+    """The read and write modifier tables must describe the same TYPES.
+
+    ops_rig has two: _MODIFIER_FIELDS (getter lambdas, used by list_modifiers) and
+    _MODIFIER_WRITES (setters + coercion, used by add_modifier). They are separate on purpose - a
+    write table needs setters and type coercion that a getter table cannot express, so folding them
+    into one description makes both halves worse. What must NOT drift is which types each knows
+    about: a type added to the read side and forgotten on the write side is an asymmetry nobody
+    notices until someone tries to set a field that reads back fine.
+
+    This runs in-process against the addon source rather than over the socket, because it is a
+    property of the CODE, not of a running Blender.
+    """
+    import os as _os
+    import re as _re
+    src = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                        "blender-addon", "MifBlender", "ops_rig.py")
+    try:
+        text = io_open(src)
+    except Exception as exc:  # noqa: BLE001
+        check("R900 (setup) ops_rig.py is readable for the table-sync check", False, str(exc))
+        return
+
+    def keys_of(table_name):
+        m = _re.search(table_name + r"\s*=\s*\{(.*?)\n\}", text, _re.S)
+        if not m:
+            return None
+        return set(_re.findall(r'"([A-Z_]+)"\s*:', m.group(1)))
+
+    read_keys = keys_of("_MODIFIER_FIELDS")
+    write_keys = keys_of("_MODIFIER_WRITES")
+    check("R900 both modifier tables are found in ops_rig.py",
+          bool(read_keys) and bool(write_keys),
+          "read=%s write=%s" % (read_keys, write_keys))
+    if not read_keys or not write_keys:
+        return
+    check("R901 the read and write modifier tables describe the SAME types - a type on one side "
+          "and not the other is a silent asymmetry",
+          read_keys == write_keys,
+          "read-only: %s   write-only: %s" % (sorted(read_keys - write_keys),
+                                              sorted(write_keys - read_keys)))
+
+
+def io_open(path):
+    with open(path, "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
 def main():
+    check_modifier_tables()
+
     print("MifBlender rig ops (ops_rig.py) - %s:%d" % (HOST, PORT))
     if not reachable():
         print("")

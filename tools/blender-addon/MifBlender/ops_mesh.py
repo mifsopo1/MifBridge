@@ -2109,6 +2109,199 @@ def op_clean_mesh(params):
     return out
 
 
+def op_uv_info(params):
+    """Read a mesh's UVs per layer - the verification half of the unwrap this addon can already do.
+
+    uv_unwrap can create a layer; object_info reports only that layers EXIST. So
+    "did the unwrap actually produce something Unreal can bake a lightmap into"
+    had no answer short of opening Blender and looking. This answers it.
+
+    WHAT UNREAL ACTUALLY REQUIRES, which is why these particular numbers:
+      inside 0-1     a lightmap UV must lie within the unit square. Unreal's
+                     lightmass packs charts into it; anything outside is clamped
+                     and bakes as garbage. facesOutside01 is therefore the first
+                     thing to check on a lightmap channel and means nothing on a
+                     texture channel, where tiling outside 0-1 is the point.
+      non-overlapping  two islands sharing UV space share lightmap texels, so one
+                     surface's light bleeds onto another. Overlap is legal and
+                     normal on a texture channel and fatal on a lightmap one.
+      the channel INDEX is what Unreal's Lightmap Coordinate Index points at, and
+                     it is positional - the order layers appear here is the order
+                     FBX writes them.
+
+    So `lightmapReady` is reported PER LAYER with a named reason, and it is a
+    judgement about that layer used AS a lightmap - a texture layer failing it is
+    not a defect and the reason says which test it failed.
+
+    OVERLAP IS MEASURED IN BMESH, NOT VIA bpy.ops.uv.select_overlap, which needs a
+    UV editor area and cannot run under `blender -b` at all - the same constraint
+    that pushed bevel_edges onto bmesh.ops. Islands are found by walking shared UV
+    coordinates, then tested pairwise by AABB. AABB overlap is a CONSERVATIVE test:
+    it reports every real overlap plus some pairs whose bounding boxes touch while
+    the islands themselves do not. That is stated in the response rather than
+    presented as exact, because a false "your lightmap is broken" that sends someone
+    re-unwrapping a fine mesh is worse than a number with a stated bound.
+
+    A PURE READ. Nothing here writes, so it cannot damage a mesh it is diagnosing.
+    """
+    reject_unknown(params, ("object", "name", "layer", "maxReportedIslands"), "uv_info")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+    want_layer = take(params, "layer", default=None)
+    max_islands = take_int(params, "maxReportedIslands", default=64)
+
+    me = obj.data
+    if not me.uv_layers:
+        return {
+            "object": obj.name,
+            "layerCount": 0,
+            "layers": [],
+            "note": ("this mesh has NO UV layers at all. Texturing and lightmap baking both fail "
+                     "until it is unwrapped - call uv_unwrap."),
+        }
+
+    names = [l.name for l in me.uv_layers]
+    if want_layer is not None and want_layer not in names:
+        raise MifOpError("no UV layer named '%s' on '%s'. It has %d: %s."
+                         % (want_layer, obj.name, len(names), ", ".join(names)))
+
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.faces.ensure_lookup_table()
+
+    layers_out = []
+    for index, name in enumerate(names):
+        if want_layer is not None and name != want_layer:
+            continue
+        uv_layer = bm.loops.layers.uv.get(name)
+        if uv_layer is None:
+            continue
+
+        umin = [float("inf"), float("inf")]
+        umax = [float("-inf"), float("-inf")]
+        outside = 0
+        zero_area = 0
+        densities = []
+
+        # Islands by shared UV coordinate, walked over face adjacency. Quantised to 1e-5 so two
+        # loops that are the same corner but differ in the last float bit are one point.
+        face_island = {}
+        islands = []
+        for face in bm.faces:
+            if face.index in face_island:
+                continue
+            stack = [face]
+            island = []
+            face_island[face.index] = len(islands)
+            while stack:
+                f = stack.pop()
+                island.append(f)
+                keys = {(round(l[uv_layer].uv.x, 5), round(l[uv_layer].uv.y, 5)) for l in f.loops}
+                for edge in f.edges:
+                    for nf in edge.link_faces:
+                        if nf.index in face_island:
+                            continue
+                        nkeys = {(round(l[uv_layer].uv.x, 5), round(l[uv_layer].uv.y, 5))
+                                 for l in nf.loops}
+                        if keys & nkeys:
+                            face_island[nf.index] = len(islands)
+                            stack.append(nf)
+            islands.append(island)
+
+        island_boxes = []
+        for island in islands:
+            imin = [float("inf"), float("inf")]
+            imax = [float("-inf"), float("-inf")]
+            for f in island:
+                for l in f.loops:
+                    uv = l[uv_layer].uv
+                    for a, v in enumerate((uv.x, uv.y)):
+                        imin[a] = min(imin[a], v)
+                        imax[a] = max(imax[a], v)
+                        umin[a] = min(umin[a], v)
+                        umax[a] = max(umax[a], v)
+            island_boxes.append((imin, imax))
+
+        for face in bm.faces:
+            uvs = [l[uv_layer].uv for l in face.loops]
+            if any(uv.x < -1e-6 or uv.x > 1.0 + 1e-6 or uv.y < -1e-6 or uv.y > 1.0 + 1e-6
+                   for uv in uvs):
+                outside += 1
+            # UV-space area by the shoelace formula, against 3D area, for texel density.
+            a2 = 0.0
+            for i in range(len(uvs)):
+                x1, y1 = uvs[i].x, uvs[i].y
+                x2, y2 = uvs[(i + 1) % len(uvs)].x, uvs[(i + 1) % len(uvs)].y
+                a2 += x1 * y2 - x2 * y1
+            uv_area = abs(a2) * 0.5
+            if uv_area <= 1e-12:
+                zero_area += 1
+                continue
+            face_area = face.calc_area()
+            if face_area > 1e-12:
+                densities.append((uv_area / face_area) ** 0.5)
+
+        overlaps = 0
+        for i in range(len(island_boxes)):
+            amin, amax = island_boxes[i]
+            for j in range(i + 1, len(island_boxes)):
+                bmin, bmax = island_boxes[j]
+                if (amin[0] < bmax[0] and bmin[0] < amax[0]
+                        and amin[1] < bmax[1] and bmin[1] < amax[1]):
+                    overlaps += 1
+
+        densities.sort()
+        face_total = len(bm.faces)
+        row = {
+            "name": name,
+            "index": index,
+            "islandCount": len(islands),
+            "boundsMin": rnd(umin) if face_total else None,
+            "boundsMax": rnd(umax) if face_total else None,
+            "facesTotal": face_total,
+            "facesOutside01": outside,
+            "zeroAreaFaces": zero_area,
+            "overlappingIslandPairs": overlaps,
+            "texelDensityMin": round(densities[0], 6) if densities else None,
+            "texelDensityMax": round(densities[-1], 6) if densities else None,
+            "texelDensityMedian": round(densities[len(densities) // 2], 6) if densities else None,
+        }
+        if len(islands) > max_islands:
+            row["islandsTruncatedNote"] = (
+                "%d islands, more than maxReportedIslands (%d). The COUNTS above are exact - only "
+                "per-island detail would have been truncated, and none is reported at this size."
+                % (len(islands), max_islands))
+
+        reasons = []
+        if outside:
+            reasons.append("%d of %d faces lie outside 0-1" % (outside, face_total))
+        if overlaps:
+            reasons.append("%d island pair(s) overlap by bounding box" % overlaps)
+        if zero_area:
+            reasons.append("%d face(s) have zero UV area" % zero_area)
+        row["lightmapReady"] = not reasons
+        if reasons:
+            row["lightmapReadyReason"] = (
+                "not usable as a LIGHTMAP channel: " + "; ".join(reasons) +
+                ". None of this is a defect on a TEXTURE channel - tiling outside 0-1 and "
+                "overlapping islands are both normal and often deliberate there.")
+        if overlaps:
+            row["overlapNote"] = (
+                "measured by island BOUNDING BOX, which is conservative: every real overlap is "
+                "counted, plus pairs whose boxes touch while the islands do not. Exact per-triangle "
+                "overlap needs a UV editor area and cannot run headless.")
+        layers_out.append(row)
+
+    bm.free()
+    return {
+        "object": obj.name,
+        "layerCount": len(names),
+        "activeLayer": me.uv_layers.active.name if me.uv_layers.active else None,
+        "layers": layers_out,
+        "indexNote": ("index is positional and is what FBX writes and what Unreal's Lightmap "
+                      "Coordinate Index points at."),
+    }
+
+
 OPS = {
     "import_mesh": op_import_mesh,
     "decimate_mesh": op_decimate_mesh,
@@ -2121,4 +2314,5 @@ OPS = {
     "apply_transform": op_apply_transform,
     "set_origin": op_set_origin,
     "clean_mesh": op_clean_mesh,
+    "uv_info": op_uv_info,
 }

@@ -35,6 +35,7 @@ import bpy
 from .ops_common import (
     MifOpError,
     get_object,
+    mesh_counts,
     reject_unknown,
     rnd,
     select_only,
@@ -430,6 +431,282 @@ def op_transfer_weights(params):
     return out
 
 
+# The WRITE side of _MODIFIER_FIELDS. Two tables, not one, and that is deliberate rather than
+# duplication left unresolved: the read table is getter lambdas, and a write table needs setters,
+# type coercion and a per-version presence check, so "share one description" is not achievable
+# without making both halves worse. What IS enforced is that the two describe the same TYPES -
+# test_blender_rig asserts the key sets match, so a type added to one and forgotten in the other
+# is a failing test rather than a silent asymmetry.
+#
+# Each entry: param name -> (attribute, coercion). Coercion is applied before assignment so a JSON
+# number arriving as a float for an int property is a clean error rather than a Blender exception
+# surfacing as a stack trace.
+def _idx_setter(i):
+    def setter(mod, value):
+        axes = list(mod.use_axis)
+        axes[i] = bool(value)
+        mod.use_axis = axes
+    return setter
+
+
+_MODIFIER_WRITES = {
+    "ARMATURE": {
+        "object": ("object", "object"),
+    },
+    "MIRROR": {
+        "axisX": (_idx_setter(0), bool),
+        "axisY": (_idx_setter(1), bool),
+        "axisZ": (_idx_setter(2), bool),
+        "mergeThreshold": ("merge_threshold", float),
+    },
+    "SOLIDIFY": {"thickness": ("thickness", float)},
+    "BEVEL": {"width": ("width", float), "segments": ("segments", int)},
+    "SUBSURF": {"levels": ("levels", int), "renderLevels": ("render_levels", int)},
+    "DECIMATE": {"decimateType": ("decimate_type", str), "ratio": ("ratio", float)},
+    "TRIANGULATE": {"quadMethod": ("quad_method", str)},
+}
+
+
+def _apply_modifier_settings(mod, settings, mod_type):
+    """Assign a settings dict onto a modifier. Returns the names actually applied."""
+    table = _MODIFIER_WRITES.get(mod_type, {})
+    if not isinstance(settings, dict):
+        raise MifOpError("settings must be an object of {name: value}. NOTHING was changed.")
+    unknown = [k for k in settings if k not in table]
+    if unknown:
+        raise MifOpError(
+            "%s has no writable setting named %s here. This addon curates a handful of settings per "
+            "type - the ones that decide what an export produces - rather than exposing every "
+            "property Blender has. Accepted for %s: %s. NOTHING was changed."
+            % (mod_type, ", ".join("'%s'" % u for u in unknown), mod_type,
+               ", ".join(sorted(table)) or "(none yet)"))
+
+    applied = []
+    for key, value in settings.items():
+        target, coerce = table[key]
+        try:
+            if coerce == "object":
+                obj = bpy.data.objects.get(str(value))
+                if obj is None:
+                    raise MifOpError("no object named '%s' for setting '%s'. NOTHING was changed."
+                                     % (value, key))
+                setattr(mod, target, obj)
+            else:
+                cast = coerce(value)
+                if callable(target):
+                    target(mod, cast)
+                else:
+                    setattr(mod, target, cast)
+        except MifOpError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise MifOpError("could not set '%s' on the %s modifier: %s. NOTHING was changed."
+                             % (key, mod_type, exc))
+        applied.append(key)
+    return sorted(applied)
+
+
+def op_add_modifier(params):
+    """Add a modifier to a mesh object's stack - the write half of list_modifiers.
+
+    THE GENERAL FORM of the edits this addon otherwise hardcodes one at a time.
+    decimate_mesh already builds, configures and applies a DECIMATE modifier
+    internally; this exposes the same mechanism for the other types, so mirror,
+    solidify, subsurf, weighted-normal and the rest stop each needing their own op.
+
+    IT DOES NOT APPLY. Adding and applying are separate on purpose: a modifier left
+    in the stack still changes what export_mesh writes (use_mesh_modifiers is on),
+    so the caller may well want it live and unapplied. apply_modifier is the
+    separate, destructive step, and list_modifiers is how you check what is stacked
+    before spending an export finding out.
+
+    SETTINGS ARE CURATED, NOT EXHAUSTIVE, and the refusal says so with the list for
+    that type. Blender ships 100+ modifier types and describing every property of
+    each would be effort spent on the wrong problem; what is here is the handful
+    that decide what an export produces, mirroring _MODIFIER_FIELDS on the read side.
+    """
+    reject_unknown(params, ("object", "name", "type", "modifier", "settings", "index"),
+                   "add_modifier")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+    mod_type = str(take(params, "type", required=True, kind=str)).upper()
+
+    valid = {t.identifier for t in
+             bpy.types.Modifier.bl_rna.properties["type"].enum_items}
+    if mod_type not in valid:
+        raise MifOpError(
+            "unknown modifier type '%s' for this Blender. NOTHING was changed. Types this addon can "
+            "also configure: %s - any other type can be added but will carry Blender's defaults."
+            % (mod_type, ", ".join(sorted(_MODIFIER_WRITES))))
+
+    mod_name = take(params, "modifier", default=None) or mod_type.title()
+    if mod_name in obj.modifiers:
+        raise MifOpError("'%s' already has a modifier named '%s'. Names must be unique on an "
+                         "object. NOTHING was changed." % (obj.name, mod_name))
+
+    before = [m.name for m in obj.modifiers]
+    mod = obj.modifiers.new(name=mod_name, type=mod_type)
+    if mod is None:
+        raise MifOpError("Blender refused to create a %s modifier on '%s'. NOTHING was changed."
+                         % (mod_type, obj.name))
+
+    applied = []
+    try:
+        settings = take(params, "settings", default=None)
+        if settings:
+            applied = _apply_modifier_settings(mod, settings, mod_type)
+
+        index = take_int(params, "index", default=None)
+        if index is not None:
+            if index < 0 or index >= len(obj.modifiers):
+                raise MifOpError("index %d is outside the stack (0-%d). NOTHING was changed."
+                                 % (index, len(obj.modifiers) - 1))
+            snap = selection_snapshot()
+            try:
+                select_only([obj])
+                bpy.ops.object.modifier_move_to_index(modifier=mod.name, index=index)
+            finally:
+                selection_restore(snap)
+    except Exception:
+        # CLEAN UP ON FAILURE, the same discipline decimate_mesh uses: a half-configured modifier
+        # left in the stack silently changes every later export, and the caller was told NOTHING
+        # was changed.
+        try:
+            obj.modifiers.remove(mod)
+        except Exception:  # noqa: BLE001
+            pass
+        raise
+
+    # READ BACK through the same describer list_modifiers uses, so add and read speak one
+    # vocabulary and a settings value that did not take is visible rather than assumed.
+    row = _modifier_dict(obj.modifiers[mod.name])
+    return {
+        "object": obj.name,
+        "modifier": mod.name,
+        "type": mod_type,
+        "settingsApplied": applied,
+        "stackBefore": before,
+        "stackAfter": [m.name for m in obj.modifiers],
+        "index": list(obj.modifiers).index(obj.modifiers[mod.name]),
+        "readBack": row,
+        "note": ("added to the stack, NOT applied - it will still affect what export_mesh writes "
+                 "unless useMeshModifiers is off. Call apply_modifier to bake it into the mesh."),
+    }
+
+
+def op_remove_modifier(params):
+    """Remove a modifier from the stack WITHOUT applying it - the geometry is untouched."""
+    reject_unknown(params, ("object", "name", "modifier"), "remove_modifier")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+    mod_name = take(params, "modifier", required=True, kind=str)
+
+    mod = obj.modifiers.get(mod_name)
+    if mod is None:
+        raise MifOpError(
+            "'%s' has no modifier named '%s'. It has %d: %s. NOTHING was changed."
+            % (obj.name, mod_name, len(obj.modifiers),
+               ", ".join(m.name for m in obj.modifiers) or "(none)"))
+
+    before = [m.name for m in obj.modifiers]
+    counts_before = mesh_counts(obj)
+    obj.modifiers.remove(mod)
+    after = [m.name for m in obj.modifiers]
+
+    # POSTCONDITION, read back rather than assumed - modifiers.remove returns nothing.
+    if mod_name in after:
+        raise MifOpError("Blender reported no error but '%s' is still on the stack." % mod_name)
+
+    return {
+        "object": obj.name,
+        "modifier": mod_name,
+        "removed": True,
+        "stackBefore": before,
+        "stackAfter": after,
+        "meshUnchanged": mesh_counts(obj) == counts_before,
+        "note": ("removed WITHOUT applying - the mesh data is untouched, and whatever this modifier "
+                 "was contributing to the viewport and to export_mesh is gone."),
+    }
+
+
+def op_apply_modifier(params):
+    """Bake a modifier into the mesh data. Destructive, and it says what it cost.
+
+    THE COUNTS ARE THE POINT. modifier_apply reports {'FINISHED'} whether it changed
+    the mesh or not, so this reads vertex and face counts before and after and
+    reports both. A Mirror that doubled the mesh and a disabled modifier that did
+    nothing are indistinguishable from the operator's return value alone.
+
+    IT REFUSES ON MULTI-USER DATA, for the same reason apply_transform does:
+    applying would rewrite a mesh other objects share, and Blender's own operator
+    fails there anyway - refusing first with the sharing count is a better error
+    than the operator's.
+
+    dryRun reports what is on the stack and what applying would touch, and changes
+    nothing.
+    """
+    reject_unknown(params, ("object", "name", "modifier", "dryRun"), "apply_modifier")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+    mod_name = take(params, "modifier", required=True, kind=str)
+
+    mod = obj.modifiers.get(mod_name)
+    if mod is None:
+        raise MifOpError(
+            "'%s' has no modifier named '%s'. It has %d: %s. NOTHING was changed."
+            % (obj.name, mod_name, len(obj.modifiers),
+               ", ".join(m.name for m in obj.modifiers) or "(none)"))
+
+    counts_before = mesh_counts(obj)
+    row = _modifier_dict(mod)
+
+    if take_bool(params, "dryRun", default=False):
+        return {
+            "object": obj.name,
+            "modifier": mod_name,
+            "dryRun": True,
+            "applied": False,
+            "wouldApply": row,
+            "counts": counts_before,
+            "meshDataUsers": obj.data.users,
+        }
+
+    if obj.data.users > 1:
+        raise MifOpError(
+            "'%s' shares its mesh data with %d other object(s), and applying a modifier rewrites "
+            "that data for every one of them. Make it single-user in Blender first. NOTHING was "
+            "changed." % (obj.name, obj.data.users - 1))
+
+    snap = selection_snapshot()
+    try:
+        select_only([obj])
+        bpy.ops.object.modifier_apply(modifier=mod_name)
+    finally:
+        selection_restore(snap)
+
+    still_there = mod_name in obj.modifiers
+    counts_after = mesh_counts(obj)
+    if still_there:
+        raise MifOpError(
+            "modifier_apply reported no error but '%s' is still on '%s'. The mesh may or may not "
+            "have been changed - counts before %s, after %s." % (mod_name, obj.name,
+                                                                 counts_before, counts_after))
+
+    out = {
+        "object": obj.name,
+        "modifier": mod_name,
+        "applied": True,
+        "wasApplied": row,
+        "countsBefore": counts_before,
+        "countsAfter": counts_after,
+        "changedGeometry": counts_before != counts_after,
+        "stackAfter": [m.name for m in obj.modifiers],
+    }
+    if not out["changedGeometry"]:
+        out["note"] = (
+            "the modifier applied cleanly and the vertex/face counts are identical - it was either "
+            "disabled, or its settings amounted to a no-op on this mesh. Said in words rather than "
+            "returned as a bare ok, because the operator reports FINISHED either way.")
+    return out
+
+
 OPS = {
     "list_bones": op_list_bones,
     "list_shape_keys": op_list_shape_keys,
@@ -437,4 +714,7 @@ OPS = {
     "list_modifiers": op_list_modifiers,
     "normalize_weights": op_normalize_weights,
     "transfer_weights": op_transfer_weights,
+    "add_modifier": op_add_modifier,
+    "remove_modifier": op_remove_modifier,
+    "apply_modifier": op_apply_modifier,
 }
