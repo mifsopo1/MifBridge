@@ -215,7 +215,7 @@ def launch_editor(write_mode=None):
               % (len(survivors), ", ".join(str(x) for x in survivors)))
         print("!! Killing them before relaunching - a second editor on the same project races for")
         print("!! port %d and holds the same packages open. Seen hanging a sweep on 2026-08-30."
-              % PORT)
+              % BRIDGE_PORT)
         try:
             subprocess.run(["taskkill", "/IM", "UnrealEditor.exe", "/F"],
                            capture_output=True, timeout=60)
