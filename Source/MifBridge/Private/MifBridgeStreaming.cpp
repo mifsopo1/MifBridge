@@ -104,6 +104,9 @@
 // reports as `ops[]`. Poll until the entry for your opId has completed:true, then read its ok/error.
 #include "MifBridgeHandlers.h"
 #include "EditorLevelUtils.h"
+#include "LevelInstance/LevelInstanceSubsystem.h"   // ALevelInstance, the placed prefab
+#include "LevelInstance/LevelInstanceInterface.h"
+#include "EngineUtils.h"                            // TActorIterator
 #include "LevelUtils.h"
 #include "Selection.h"
 #include "MifBridgeLog.h"
@@ -3185,5 +3188,450 @@ namespace MifBridge
 		}
 		Out->SetStringField(TEXT("assetNote"),
 			TEXT("both levels are dirty and NOTHING has been saved."));
+	}
+
+	// =======================================================================
+	// LEVEL INSTANCES - UE5's prefab, and the write-with-no-follow-through
+	// =======================================================================
+	//
+	// THE ASYMMETRY THAT JUSTIFIES THIS. The bridge could already CREATE a level instance placement
+	// - spawn_actor_in_level with ALevelInstance, then set_property on WorldAsset - and could then
+	// do NOTHING with it: not see whether it loaded, not open it for editing, not break it apart.
+	// That is a write half with no follow-through, which is the mirror of the read-with-no-write
+	// asymmetry this project normally funds first. ULevelInstanceSubsystem had literally zero
+	// references in the plugin before this.
+	//
+	// NOT THE SAME THING AS pie_load_level_instance, a few hundred lines above. That one wraps
+	// ULevelStreamingDynamic::LoadLevelInstance, which streams a level into a RUNNING world by
+	// package name. This is ALevelInstance, the placed prefab actor, and a different subsystem
+	// entirely - the names collide and the concepts do not.
+	//
+	// THE GUARDS ARE FREE AND MUST STILL BE USED. CanEditLevelInstance and CanCommitLevelInstance
+	// both take an FText* OutReason and fill it in (LevelInstanceSubsystem.h:77-78), so the engine
+	// hands over a caller-ready explanation for every refusal. EditLevelInstance itself returns
+	// void and would simply do nothing. So the Can* call always happens first and its reason is
+	// quoted verbatim rather than paraphrased.
+	//
+	// COOKED IS MIXED, and each verb says which it is. Listing, bounds and load/unload work wherever
+	// the actor exists. Edit, commit and break need saveable packages, and on a cooked map the Can*
+	// calls already return false with a reason - so the cooked case costs no extra code, it just
+	// arrives as a refusal quoting the engine.
+	//
+	// 5.7 ADDS A TRAILING PARAMETER to BreakLevelInstance (ELevelInstanceBreakFlags, defaulted) and
+	// a CanBreakLevelInstance that 5.3 does not have. The three-argument call below compiles
+	// unchanged on both, which is why there is no version guard here - but the ASYMMETRY is real:
+	// on 5.3 there is no can-break precheck to make, so the break is attempted and its bool result
+	// is the only signal.
+
+	static ULevelInstanceSubsystem* GetLevelInstanceSubsystem(const TSharedRef<FJsonObject>& Out)
+	{
+		UWorld* World = ActiveWorld();
+		if (!World)
+		{
+			Fail(Out, TEXT("no active world."));
+			return nullptr;
+		}
+		ULevelInstanceSubsystem* Sys = World->GetSubsystem<ULevelInstanceSubsystem>();
+		if (!Sys)
+		{
+			Fail(Out, TEXT("this world has no ULevelInstanceSubsystem. Level instances are a World "
+				TEXT("Partition-era feature; a world without the subsystem cannot hold them.")));
+			return nullptr;
+		}
+		return Sys;
+	}
+
+	/** Resolve an actorPath to a level instance, refusing anything that is not one. */
+	static ILevelInstanceInterface* ResolveLevelInstance(const TSharedRef<FJsonObject>& In,
+														 const TSharedRef<FJsonObject>& Out,
+														 AActor** OutActor)
+	{
+		UEditorActorSubsystem* Sub =
+			GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+		if (!Sub)
+		{
+			Fail(Out, TEXT("no EditorActorSubsystem - this is not a running editor."));
+			return nullptr;
+		}
+		const FString Path = JStrAny(In, { TEXT("actorPath"), TEXT("actor"), TEXT("path") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("actorPath is required - a placed Level Instance actor. "
+				TEXT("list_level_instances reports them. NOTHING was changed.")));
+			return nullptr;
+		}
+		// The shared resolver via the one-key wrapper - GetActorReference does not resolve the
+		// paths list_level_actors emits, and this repo has written that resolver three times.
+		TSharedRef<FJsonObject> One = MakeShared<FJsonObject>();
+		One->SetStringField(TEXT("actorPath"), Path);
+		AActor* Actor = ResolveActor(Sub, One, Out);
+		if (!Actor) { return nullptr; }
+		ILevelInstanceInterface* LI = Cast<ILevelInstanceInterface>(Actor);
+		if (!LI)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, not a Level Instance. list_level_instances reports the ones in "
+					 "this world. NOTHING was changed."),
+				*Path, *Actor->GetClass()->GetName()));
+			return nullptr;
+		}
+		if (OutActor) { *OutActor = Actor; }
+		return LI;
+	}
+
+	static void WriteLevelInstanceRow(ULevelInstanceSubsystem* Sys, AActor* Actor,
+									  ILevelInstanceInterface* LI,
+									  const TSharedRef<FJsonObject>& J, bool bIncludeActors)
+	{
+		J->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		J->SetStringField(TEXT("label"), Actor->GetActorNameOrLabel());
+		// The level asset this placement points at - the field that makes a placement mean
+		// something, and the one list_level_actors cannot show.
+		J->SetStringField(TEXT("worldAsset"), LI->GetWorldAssetPackage());
+		J->SetBoolField(TEXT("worldAssetValid"), LI->IsWorldAssetValid());
+		J->SetBoolField(TEXT("loaded"), Sys->IsLoaded(LI));
+#if WITH_EDITOR
+		J->SetBoolField(TEXT("editing"), Sys->IsEditingLevelInstance(LI));
+		J->SetBoolField(TEXT("dirty"), Sys->IsEditingLevelInstanceDirty(LI));
+#endif
+		FBox Bounds(ForceInit);
+		if (Sys->GetLevelInstanceBounds(LI, Bounds) && Bounds.IsValid)
+		{
+			TSharedRef<FJsonObject> B = MakeShared<FJsonObject>();
+			B->SetObjectField(TEXT("min"), Vec3(Bounds.Min));
+			B->SetObjectField(TEXT("max"), Vec3(Bounds.Max));
+			J->SetObjectField(TEXT("bounds"), B);
+		}
+		// COUNTED ONLY WHEN LOADED, and said so - an unloaded instance has no actors to walk, and
+		// reporting 0 for it would be indistinguishable from an empty level.
+		if (Sys->IsLoaded(LI))
+		{
+			int32 Count = 0;
+			TArray<TSharedPtr<FJsonValue>> Actors;
+			Sys->ForEachActorInLevelInstance(LI, [&](AActor* Inner)
+			{
+				++Count;
+				if (bIncludeActors && Inner)
+				{
+					Actors.Add(MakeShared<FJsonValueString>(Inner->GetPathName()));
+				}
+				return true;
+			});
+			J->SetNumberField(TEXT("actorCount"), Count);
+			if (bIncludeActors) { J->SetArrayField(TEXT("actors"), Actors); }
+		}
+		else
+		{
+			J->SetStringField(TEXT("actorCountNote"),
+				TEXT("not loaded, so its actors cannot be walked - this is absent rather than 0, "
+					 "because 0 would be indistinguishable from an empty level."));
+		}
+	}
+
+	// --- list_level_instances -----------------------------------------------
+	void H_list_level_instances(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("includeActors"), TEXT("limit") },
+			TEXT("includeActors (list each loaded instance's contained actor paths), limit"),
+			{ { TEXT("worldAsset"), TEXT("that is an OUTPUT - every row reports which level asset "
+										 "the placement points at") } }))
+		{
+			return;
+		}
+		ULevelInstanceSubsystem* Sys = GetLevelInstanceSubsystem(Out);
+		if (!Sys) { return; }
+		UWorld* World = ActiveWorld();
+
+		const bool bIncludeActors = JBool(In, TEXT("includeActors"), false);
+		const int32 Limit = FMath::Clamp(static_cast<int32>(JNum(In, TEXT("limit"), 500.0)),
+										 1, 5000);
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		int32 Matched = 0;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			AActor* Actor = *It;
+			ILevelInstanceInterface* LI = Cast<ILevelInstanceInterface>(Actor);
+			if (!LI) { continue; }
+			++Matched;
+			if (Rows.Num() >= Limit) { continue; }
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			WriteLevelInstanceRow(Sys, Actor, LI, J, bIncludeActors);
+			Rows.Add(MakeShared<FJsonValueObject>(J));
+		}
+
+		Out->SetArrayField(TEXT("instances"), Rows);
+		Out->SetNumberField(TEXT("count"), Rows.Num());
+		Out->SetNumberField(TEXT("matched"), Matched);
+		Out->SetBoolField(TEXT("truncated"), Matched > Rows.Num());
+		if (Matched == 0)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("this world has no Level Instance actors. That is normal for a level composed "
+					 "with classic sublevels, or for one built before Level Instances existed - "
+					 "list_sublevels reads that other composition model."));
+		}
+	}
+
+	// --- set_level_instance_loaded ------------------------------------------
+	void H_set_level_instance_loaded(const TSharedRef<FJsonObject>& In,
+									 const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("path"), TEXT("loaded") },
+			TEXT("actorPath - a placed Level Instance; loaded:true|false"),
+			{ { TEXT("visible"), TEXT("loading is not visibility - an unloaded instance has no "
+									  "actors at all. set_property on the actor for visibility") } }))
+		{
+			return;
+		}
+		ULevelInstanceSubsystem* Sys = GetLevelInstanceSubsystem(Out);
+		if (!Sys) { return; }
+		AActor* Actor = nullptr;
+		ILevelInstanceInterface* LI = ResolveLevelInstance(In, Out, &Actor);
+		if (!LI) { return; }
+
+		if (!In->HasField(TEXT("loaded")))
+		{
+			Fail(Out, TEXT("loaded:true|false is required - say which end state you want rather "
+				TEXT("than having this toggle. NOTHING was changed.")));
+			return;
+		}
+		const bool bWant = JBool(In, TEXT("loaded"), true);
+		const bool bWas = Sys->IsLoaded(LI);
+		if (bWant && !LI->IsWorldAssetValid())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no valid world asset (WorldAsset is '%s'), so there is nothing to "
+					 "load. Set it with set_property on WorldAsset first. NOTHING was changed."),
+				*Actor->GetActorNameOrLabel(), *LI->GetWorldAssetPackage()));
+			return;
+		}
+
+		if (bWant) { Sys->RequestLoadLevelInstance(LI, /*bUpdate*/ true); }
+		else       { Sys->RequestUnloadLevelInstance(LI); }
+
+		// REQUESTED, NOT DONE. Both calls are void and queue the work - the name says Request, and
+		// the state genuinely does not change within this call. Reporting `loaded` as the requested
+		// value would be a claim this endpoint cannot support.
+		const bool bNow = Sys->IsLoaded(LI);
+		Out->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		Out->SetStringField(TEXT("worldAsset"), LI->GetWorldAssetPackage());
+		Out->SetBoolField(TEXT("requested"), bWant);
+		Out->SetBoolField(TEXT("loadedBefore"), bWas);
+		Out->SetBoolField(TEXT("loaded"), bNow);
+		if (bNow != bWant)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("RequestLoadLevelInstance and RequestUnloadLevelInstance are QUEUED - both are "
+					 "void and named Request for that reason, so the state usually has not changed "
+					 "by the time this returns. `loaded` above is measured right now, not assumed; "
+					 "poll list_level_instances to see it settle."));
+		}
+	}
+
+	// --- edit_level_instance ------------------------------------------------
+	void H_edit_level_instance(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("path"), TEXT("action"),
+			  TEXT("discardEdits") },
+			TEXT("actorPath; action (edit|commit|discard); discardEdits - only with commit"),
+			{ { TEXT("save"), TEXT("committing already writes the level instance's package. There "
+								   "is no separate save here, and this endpoint will not add one") } }))
+		{
+			return;
+		}
+#if !WITH_EDITOR
+		Fail(Out, TEXT("editing a level instance is an editor-only operation."));
+#else
+		ULevelInstanceSubsystem* Sys = GetLevelInstanceSubsystem(Out);
+		if (!Sys) { return; }
+		AActor* Actor = nullptr;
+		ILevelInstanceInterface* LI = ResolveLevelInstance(In, Out, &Actor);
+		if (!LI) { return; }
+
+		const FString Action = JStr(In, TEXT("action")).ToLower();
+		if (Action != TEXT("edit") && Action != TEXT("commit") && Action != TEXT("discard"))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("action must be \"edit\", \"commit\" or \"discard\" - got '%s'. NOTHING was "
+					 "changed."), *Action));
+			return;
+		}
+
+		Out->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		Out->SetStringField(TEXT("worldAsset"), LI->GetWorldAssetPackage());
+
+		if (Action == TEXT("edit"))
+		{
+			if (Sys->IsEditingLevelInstance(LI))
+			{
+				Out->SetBoolField(TEXT("editing"), true);
+				Out->SetBoolField(TEXT("changed"), false);
+				Out->SetStringField(TEXT("note"),
+					TEXT("already in an edit session - nothing was opened, and nothing needed to "
+						 "be. Commit or discard it when done."));
+				return;
+			}
+			// THE ENGINE WRITES THE REFUSAL FOR US. CanEditLevelInstance fills an FText reason, and
+			// EditLevelInstance is void - calling it blind would simply do nothing.
+			FText Reason;
+			if (!Sys->CanEditLevelInstance(LI, &Reason))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("this level instance cannot be edited: %s. That reason is the engine's own "
+						 "(CanEditLevelInstance's OutReason), quoted rather than paraphrased. "
+						 "NOTHING was changed."),
+					*Reason.ToString()));
+				return;
+			}
+			Sys->EditLevelInstance(LI);
+			const bool bNow = Sys->IsEditingLevelInstance(LI);
+			if (!bNow)
+			{
+				Fail(Out, TEXT("EditLevelInstance ran and the instance does not report itself as "
+					TEXT("editing on read-back. It returns void, so this read-back is the only "
+						 "signal there is. NOTHING usable was produced.")));
+				return;
+			}
+			Out->SetBoolField(TEXT("editing"), true);
+			Out->SetBoolField(TEXT("changed"), true);
+			Out->SetStringField(TEXT("note"),
+				TEXT("the level instance is open for editing. Changes made now affect EVERY "
+					 "placement of this level asset, not just this one - that is what a level "
+					 "instance is. Commit or discard when done; leaving it open blocks other edits."));
+			return;
+		}
+
+		// commit / discard
+		if (!Sys->IsEditingLevelInstance(LI))
+		{
+			Fail(Out, TEXT("this level instance is not in an edit session, so there is nothing to "
+				TEXT("commit or discard. NOTHING was changed.")));
+			return;
+		}
+		const bool bDiscard = (Action == TEXT("discard"))
+							|| JBool(In, TEXT("discardEdits"), false);
+		const bool bDirty = Sys->IsEditingLevelInstanceDirty(LI);
+		FText Reason;
+		if (!Sys->CanCommitLevelInstance(LI, bDiscard, &Reason))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("this edit session cannot be %s: %s. The reason is the engine's own "
+					 "(CanCommitLevelInstance's OutReason). NOTHING was changed."),
+				bDiscard ? TEXT("discarded") : TEXT("committed"), *Reason.ToString()));
+			return;
+		}
+
+		TSet<FName> DirtyPackages;
+		const bool bOk = Sys->CommitLevelInstance(LI, bDiscard, &DirtyPackages);
+		TArray<TSharedPtr<FJsonValue>> Dirty;
+		for (const FName& N : DirtyPackages) { Dirty.Add(MakeShared<FJsonValueString>(N.ToString())); }
+
+		Out->SetStringField(TEXT("action"), bDiscard ? TEXT("discard") : TEXT("commit"));
+		Out->SetBoolField(TEXT("wasDirty"), bDirty);
+		Out->SetBoolField(TEXT("editing"), Sys->IsEditingLevelInstance(LI));
+		Out->SetArrayField(TEXT("dirtyPackages"), Dirty);
+		if (!bOk)
+		{
+			Fail(Out, TEXT("CommitLevelInstance returned false. dirtyPackages lists what it was "
+				TEXT("holding; the edit session may still be open - check `editing`.")));
+			return;
+		}
+		if (!bDiscard)
+		{
+			Out->SetStringField(TEXT("persistNote"),
+				TEXT("a COMMIT writes the level instance's own package. Unlike every other write in "
+					 "this plugin, that is a real save - it is what committing means, and it is why "
+					 "action:\"discard\" exists for a session you did not mean to keep."));
+		}
+#endif
+	}
+
+	// --- break_level_instance -----------------------------------------------
+	void H_break_level_instance(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("path"), TEXT("levels"), TEXT("confirm") },
+			TEXT("actorPath; levels (how many nesting levels to break, default 1); confirm:true"),
+			{ { TEXT("keep"), TEXT("breaking always consumes the level instance actor - there is no "
+								   "variant that keeps it") } }))
+		{
+			return;
+		}
+#if !WITH_EDITOR
+		Fail(Out, TEXT("breaking a level instance is an editor-only operation."));
+#else
+		ULevelInstanceSubsystem* Sys = GetLevelInstanceSubsystem(Out);
+		if (!Sys) { return; }
+		AActor* Actor = nullptr;
+		ILevelInstanceInterface* LI = ResolveLevelInstance(In, Out, &Actor);
+		if (!LI) { return; }
+
+		const int32 Levels = FMath::Clamp(static_cast<int32>(JNum(In, TEXT("levels"), 1.0)), 1, 16);
+		if (Sys->IsEditingLevelInstance(LI))
+		{
+			Fail(Out, TEXT("this level instance is open for EDITING. Commit or discard that session "
+				TEXT("first - breaking it mid-edit would strand the session. NOTHING was changed.")));
+			return;
+		}
+
+		int32 Contained = 0;
+		if (Sys->IsLoaded(LI))
+		{
+			Sys->ForEachActorInLevelInstance(LI, [&Contained](AActor*) { ++Contained; return true; });
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("breaking '%s' DESTROYS the level instance actor and replaces it with %s loose "
+					 "actor(s) in this level - and the link to '%s' is gone, so later changes to "
+					 "that level asset will no longer reach these actors. That is the whole point "
+					 "of a level instance, and it cannot be undone by re-creating one. Pass "
+					 "confirm:true. NOTHING was changed."),
+				*Actor->GetActorNameOrLabel(),
+				Sys->IsLoaded(LI) ? *FString::FromInt(Contained) : TEXT("its"),
+				*LI->GetWorldAssetPackage()));
+			return;
+		}
+
+		const FString WasPath = Actor->GetPathName();
+		const FString WasAsset = LI->GetWorldAssetPackage();
+		TArray<AActor*> MovedActors;
+		// THREE ARGUMENTS ON PURPOSE. 5.7 adds a trailing ELevelInstanceBreakFlags with a default
+		// and a CanBreakLevelInstance precheck that 5.3 does not have, so this call compiles
+		// unchanged on both - but there is no can-break check to make on 5.3, which is why the
+		// bool result below is treated as the only signal rather than a formality.
+		const bool bOk = Sys->BreakLevelInstance(LI, static_cast<uint32>(Levels), &MovedActors);
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		for (const AActor* A : MovedActors)
+		{
+			if (A) { Rows.Add(MakeShared<FJsonValueString>(A->GetPathName())); }
+		}
+		Out->SetStringField(TEXT("actorPath"), WasPath);
+		Out->SetStringField(TEXT("worldAsset"), WasAsset);
+		Out->SetNumberField(TEXT("levels"), Levels);
+		Out->SetBoolField(TEXT("broken"), bOk);
+		// MEASURED from the engine's own out-array. BreakLevelInstance returns a bool and nothing
+		// else about scale, so this list is the only record of what now exists.
+		Out->SetArrayField(TEXT("movedActors"), Rows);
+		Out->SetNumberField(TEXT("movedCount"), Rows.Num());
+		if (!bOk)
+		{
+			Fail(Out, TEXT("BreakLevelInstance returned false - nothing was broken. On 5.3 there is "
+				TEXT("no CanBreakLevelInstance to ask first, so this bool is the only signal the "
+					 "engine gives.")));
+			return;
+		}
+		Out->SetStringField(TEXT("linkNote"),
+			TEXT("the level instance actor is gone and its contents are loose actors in this level. "
+				 "The link to the level asset is BROKEN - later changes to that asset will not "
+				 "reach these actors, and re-creating a placement will not re-adopt them."));
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the level is dirty and NOTHING has been saved."));
+#endif
 	}
 }

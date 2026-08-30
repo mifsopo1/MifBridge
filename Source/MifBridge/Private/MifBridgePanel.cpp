@@ -394,6 +394,12 @@ public:
 							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
 							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 6))
 					]
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						MifTabButton(LOCTEXT("TabSetup", "SETUP"), 7,
+							TAttribute<int32>::CreateSP(this, &SMifBridgePanel::GetActiveTab),
+							FSimpleDelegate::CreateSP(this, &SMifBridgePanel::SetTab, 7))
+					]
 					+ SHorizontalBox::Slot().FillWidth(1.f)
 					[
 						SNew(SSpacer)
@@ -471,6 +477,14 @@ public:
 								.Text(LOCTEXT("SplitLazy", "finding skeletal meshes..."))
 								.ColorAndOpacity(FSlateColor(MifPanel::TextDim))
 						]
+					]
+					+ SWidgetSwitcher::Slot()
+					[
+						// NOT lazy, unlike every tab above it. This one is static text and costs
+						// nothing to build - and it is the tab somebody opens when the bridge is
+						// NOT working, which is exactly when a lazy loader would show a spinner
+						// that never resolves.
+						MifBridge::MakeSetupWidget()
 					]
 				]
 			]

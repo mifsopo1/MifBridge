@@ -160,6 +160,10 @@ namespace MifBridge
 			MIF_BIND(remove_anim_curve);
 			MIF_BIND(lighting_build_status);
 			MIF_BIND(move_actors_to_level);
+			MIF_BIND(list_level_instances);
+			MIF_BIND(set_level_instance_loaded);
+			MIF_BIND(edit_level_instance);
+			MIF_BIND(break_level_instance);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);

@@ -5017,7 +5017,42 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Works cooked, in memory, and degrades honestly. UWorld::Layers is WITH_EDITORONLY_DATA, so a cooked package ships no layers — the correct answer on such a map is count:0 with a note ('this map is cooked; its layer definitions were stripped at cook time'), NOT an error. Creating and populating layers...
       Vetter corrected the proposal: Three factual errors in the proposal, none fatal to the gap. 1. THE COOKED STORY IS BACKWARDS AND MUST NOT BE BUILT AS WRITTEN. The proposer says a cooked package ships no layers and prescribes returning count:0 with "its layer definitions were stripped at cook time". That is false. AActor::Layers is UPROPERTY(EditAnywhere, AdvancedDisplay) at Actor.h:911-912 and the comment at :910 states it is d...
 
-- [ ] **cut the MCP tool surface's per-turn token cost - ANDRE'S CALL, not autopilot's** (day)
+- [x] **cut the MCP tool surface's per-turn token cost** (day)
+      DONE 2026-08-30 on Andre's go-ahead. 450 tool descriptions carried 289,944 chars
+      (~72,486 tokens) into EVERY turn. Now 70,293 chars (~17,573) - about 54,900 tokens saved
+      per turn, a 76% cut, with no capability loss.
+      HOW: the lead sentence stays inline; the traps, engine citations and failure modes moved
+      to tools/mcp-server/tool_help.json and come back through a new mif_help tool. The
+      extraction stored the FULL original text and asserted the surviving lead still matched it
+      before writing anything - and that check EARNED ITS PLACE, catching that
+      ast.get_docstring CLEANS a multi-line docstring, so reading node.value raw and validating
+      against the cleaned form disagreed. 346 shortened, 350 sidecar entries, no orphans.
+      The retrieval route is stated ONCE in the FastMCP server instructions rather than 450
+      times in the tools - a per-tool pointer would have cost about 4,500 tokens by itself.
+      CONSOLIDATION WAS REJECTED and stays rejected: merging tools makes each remaining
+      description bigger AND introduces mode parameters, the shape audit_mode_params exists to
+      catch, and the reason a settings:true branch and a saveConfig endpoint were both refused
+      the same day.
+      STILL OPEN as the bigger win if it is ever wanted: DEFERRED LOADING - expose ~40 core
+      tools plus a search/load pair and fetch the rest on demand, which would take this to
+      roughly 6,500 tokens. Not done: it changes how the surface presents to an agent, which is
+      a much larger behavioural change than moving text around.
+
+- [x] **an in-editor SETUP tab, with guidance on keeping an LLM current** (hours)
+      DONE 2026-08-30, asked for directly: "add things to mention to users how to properly use
+      and keep claude or llm updated". Source/MifBridge/Private/MifBridgeSetupView.cpp, tab 7.
+      Every other tab answers "what is happening now"; none answered "I just installed this,
+      what do I do". It carries four rules that save a bad afternoon (pick a write mode first,
+      nothing is saved unless you save it, cooked content edits but does not persist, read the
+      errors), two COPYABLE prompts - one to start a session, one to refresh an agent after an
+      update - and a card pointing at self_audit, list_endpoints, describe_endpoint and
+      mif_help as the four places the truth actually lives.
+      The refresh prompt is the point: an LLM knows nothing about this plugin except what it is
+      told, its training data does not contain this build, and a model working from memory will
+      confidently call endpoints that were renamed or never existed.
+      NOT lazy-built, unlike every other tab: it is static text that costs nothing, and it is
+      the tab somebody opens when the bridge is NOT working - exactly when a lazy loader would
+      show a spinner that never resolves.
       MEASURED 2026-08-30, after Andre asked why the FAB competitor lists ~1450 tools to our ~400
       and whether a split would help token usage. The endpoint count is not the problem; the
       DOCSTRINGS are. 450 @mcp.tool wrappers carry 289,944 characters of docstring - roughly 72,000
@@ -5041,7 +5076,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Suggested order if he says yes: agree a docstring budget, move deep detail into
       describe_endpoint where it is not already there, then add the deferred-loading layer.
 
-- [ ] **list_level_instances / set_level_instance_loaded / edit_level_instance / break_level_instance** (day)
+- [x] **list_level_instances / set_level_instance_loaded / edit_level_instance / break_level_instance** (day)
+      DONE 2026-08-30. 17 checks in tools/test_level_instances.py.
+      THE ASYMMETRY, which the vetter said the proposer had buried: the bridge could already
+      CREATE a level instance placement (spawn_actor_in_level + set_property on WorldAsset) and
+      could then do NOTHING with it. A write with no follow-through, which is the mirror of the
+      read-with-no-write asymmetry this project normally funds first. ULevelInstanceSubsystem
+      had zero references in the plugin before this.
+      The Can* calls each fill an FText reason and EditLevelInstance returns void, so the
+      precheck always runs first and its reason is quoted verbatim - calling blind would simply
+      do nothing. A commit is a REAL save, unlike every other write here, which is why discard
+      exists. 5.7 adds a trailing ELevelInstanceBreakFlags and a CanBreakLevelInstance that 5.3
+      lacks; the 3-arg call compiles on both, and on 5.3 the bool result is the only signal.
+      NOT exercised: everything needing a real placed instance. This world has none, and
+      creating one means saving a level asset to disk. list_level_instances says so in its own
+      response rather than returning a bare empty list.
       Work with Level Instance actors — UE5's prefab: see which are placed and what level asset each points at, load/unload one in the editor, enter and commit an edit session so changes propagate to every placement, and break one back into loose actors. The bridge can stream a level into PIE (pie_load_level_instance) and compose sublevels, but on any modern uncooked project the reusable-content unit is the Level Instance and it is entirely invisible: list_level_actors shows the ALevelInstance actor and nothing about what it contains.
       API: ULevelInstanceSubsystem (UWorld::GetSubsystem<ULevelInstanceSubsystem>()) — D:/UE532/Engine/Source/Runtime/Engine/Public/LevelInstance/LevelInstanceSubsystem.h. RequestLoadLevelInstance(ILevelInstanceInterface*, bool) :55; RequestUnloadLevelInstance :56; IsLoaded/IsLoading :57-58; GetLevelInstanceLevel :62; ForEachActorInLevelInstance :61; CanEditLevelInstance(..., FText* OutReason) :77; CanCommit...
       Cooked: MIXED, and each verb must say which it is. Reading (list, bounds, contained actors) and load/unload work wherever the ALevelInstance actor exists. Edit/commit/break are WITH_EDITOR and need saveable packages — on a cooked map CanEditLevelInstance/CanCommitLevelInstance return false WITH an FText rea...

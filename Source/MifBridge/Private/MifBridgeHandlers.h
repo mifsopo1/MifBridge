@@ -172,6 +172,12 @@ namespace MifBridge
 	/** The performance view. Read MifBridgePerfView.cpp's header first: this is a CENSUS of
 	 *  static content cost, NOT frame time and NOT a profiler. */
 	TSharedRef<SWidget> MakePerfWidget();
+
+	/** The SETUP tab: how to drive the bridge, and how to keep an LLM's knowledge of it
+	 *  current. Static by design - a setup tab that queried the bridge would be empty exactly
+	 *  when it is most needed, which is when the bridge is not running and somebody is trying
+	 *  to work out why. */
+	TSharedRef<SWidget> MakeSetupWidget();
 	/** ONE definition of what a component's triangle count means, shared by the endpoint and the
 	 *  panel - two counters that disagree would be worse than one that is imperfect. */
 	int32 PerfTrianglesFor(class UPrimitiveComponent* Comp);
@@ -1099,6 +1105,10 @@ namespace MifBridge
 	MIF_DECL(remove_anim_curve);
 	MIF_DECL(lighting_build_status);
 	MIF_DECL(move_actors_to_level);
+	MIF_DECL(list_level_instances);
+	MIF_DECL(set_level_instance_loaded);
+	MIF_DECL(edit_level_instance);
+	MIF_DECL(break_level_instance);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);
