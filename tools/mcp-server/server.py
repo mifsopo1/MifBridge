@@ -3000,6 +3000,17 @@ def set_physics_body_collision(asset_path: str, enabled: bool, bone_a: str = "",
                  indexA=None if bone_a else index_a, indexB=None if bone_b else index_b)
 
 
+@mcp.tool()
+def set_physics_primitive_collision(asset_path: str, primitive_type: str, primitive_index: int,
+                                    collision_enabled: str, bone_name: str = "",
+                                    index: int = -1) -> dict:
+    "Set collision on ONE collision primitive of one physics body - how you stop a single capsule on a body colliding while the rest still do. primitive_type is sphere, box, capsule (alias sphyl) or convex; primitive_index is the index WITHIN that type's array, which is what describe_physics_asset's per-body primitives[] reports (indices restart per type, they are not global offsets). collision_enabled is four-valued: NoCollision, QueryOnly, PhysicsOnly or QueryAndPhysics - not a bool; the boolean body-PAIR table is set_physics_body_collision. An out-of-range primitive index is refused against the PER-TYPE array, which the engine itself does not do: UPhysicsAsset::SetPrimitiveCollision compares against the TOTAL element count across all types, so asking for sphere[0] on a body with no spheres and one capsule passes its check and then, on UE 5.3, silently modifies the CAPSULE (FKAggregateGeom::GetElement's switch cases have no break and fall through to the next array) or, on 5.7, dereferences nullptr and crashes the editor."
+    return _post("set_physics_primitive_collision", assetPath=asset_path,
+                 primitiveType=primitive_type, primitiveIndex=primitive_index,
+                 collisionEnabled=collision_enabled, boneName=bone_name or None,
+                 index=None if bone_name else index)
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:

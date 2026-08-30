@@ -157,6 +157,121 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("disabledPairCount"), Pairs.Num());
 	}
 
+	// =======================================================================
+	// PER-PRIMITIVE COLLISION - and why it does not call the engine function
+	// =======================================================================
+	//
+	// UPhysicsAsset::SetPrimitiveCollision is TWO defects stacked, and this endpoint routes around
+	// both rather than guarding one and hoping about the other.
+	//
+	// DEFECT 1 - the wrong bound. Both engines:
+	//     check(SkeletalBodySetups.IsValidIndex(BodyIndex));       // hard check - a crash
+	//     ensure(PrimitiveIndex < AggGeom->GetElementCount());     // and this is the wrong number
+	// GetElementCount() is the TOTAL across SphereElems, BoxElems, SphylElems, ConvexElems and the
+	// level-set arrays, while PrimitiveIndex is per-TYPE. PrimitiveType=Box with PrimitiveIndex=3, on
+	// a body holding 5 elements of which 1 is a box, sails through that ensure.
+	//
+	// DEFECT 2 - and it is ENGINE-VERSION DEPENDENT, which is the part worth remembering.
+	// FKAggregateGeom::GetElement is a switch whose cases, ON 5.3, HAVE NO `break`:
+	//
+	//     case EAggCollisionShape::Sphere:
+	//         if (ensure(SphereElems.IsValidIndex(Index))) { return &SphereElems[Index]; }
+	//     case EAggCollisionShape::Box:                       // <- falls through when the ensure fails
+	//         if (ensure(BoxElems.IsValidIndex(Index))) { return &BoxElems[Index]; }
+	//
+	// So when the per-type index IS out of range, 5.3 does not stop - it tries the NEXT array, and
+	// the next, and returns whichever one happens to accept the index. GetElement(Sphere, 3) on a
+	// body with 1 sphere and 5 boxes returns &BoxElems[3]: the caller asked about a sphere and
+	// silently changed a BOX.
+	//
+	// 5.7 (AggregateGeom.h:159) HAS the breaks, so it falls out of the switch and returns nullptr -
+	// and SetPrimitiveCollision dereferences the result with no null check, so the same call CRASHES
+	// there instead. Silent wrong data on one engine, a dead editor on the other, from identical
+	// input. That is the eighth direction of engine drift in 02_GOTCHAS.md #14.
+	//
+	// THE FIX IS NOT TO GUARD THE CALL, IT IS NOT TO MAKE IT. SetPrimitiveCollision's entire body is
+	//     AggGeom->GetElement(PrimitiveType, PrimitiveIndex)->SetCollisionEnabled(CollisionEnabled);
+	// and SetCollisionEnabled is a one-line inline setter on FKShapeElem (ShapeElem.h:105). So this
+	// resolves the per-type array itself, range-checks against THAT array, and sets the field
+	// directly. Identical result, no reachable path into either defect, and the same code is correct
+	// on both engines. Reads go the same way rather than through GetPrimitiveCollision, which carries
+	// both defects too.
+
+	struct FMifPrimArray
+	{
+		const TCHAR* Name;
+		EAggCollisionShape::Type Type;
+	};
+
+	static const FMifPrimArray MifPrimTypes[] = {
+		{ TEXT("sphere"),  EAggCollisionShape::Sphere },
+		{ TEXT("box"),     EAggCollisionShape::Box    },
+		{ TEXT("capsule"), EAggCollisionShape::Sphyl  },
+		{ TEXT("sphyl"),   EAggCollisionShape::Sphyl  },
+		{ TEXT("convex"),  EAggCollisionShape::Convex },
+	};
+
+	/** The per-type count. NOT GetElementCount(), which is the total and is the engine's own bug. */
+	static int32 MifPrimCount(const FKAggregateGeom& Geom, EAggCollisionShape::Type Type)
+	{
+		switch (Type)
+		{
+		case EAggCollisionShape::Sphere: return Geom.SphereElems.Num();
+		case EAggCollisionShape::Box:    return Geom.BoxElems.Num();
+		case EAggCollisionShape::Sphyl:  return Geom.SphylElems.Num();
+		case EAggCollisionShape::Convex: return Geom.ConvexElems.Num();
+		default: return 0;
+		}
+	}
+
+	/** Resolves to the element in ITS OWN array. Returns null rather than falling through. */
+	static FKShapeElem* MifPrimElem(FKAggregateGeom& Geom, EAggCollisionShape::Type Type, int32 Index)
+	{
+		switch (Type)
+		{
+		case EAggCollisionShape::Sphere:
+			return Geom.SphereElems.IsValidIndex(Index) ? &Geom.SphereElems[Index] : nullptr;
+		case EAggCollisionShape::Box:
+			return Geom.BoxElems.IsValidIndex(Index) ? &Geom.BoxElems[Index] : nullptr;
+		case EAggCollisionShape::Sphyl:
+			return Geom.SphylElems.IsValidIndex(Index) ? &Geom.SphylElems[Index] : nullptr;
+		case EAggCollisionShape::Convex:
+			return Geom.ConvexElems.IsValidIndex(Index) ? &Geom.ConvexElems[Index] : nullptr;
+		default:
+			return nullptr;
+		}
+	}
+
+	static FString MifCollisionEnabledName(ECollisionEnabled::Type V)
+	{
+		switch (V)
+		{
+		case ECollisionEnabled::NoCollision:      return TEXT("NoCollision");
+		case ECollisionEnabled::QueryOnly:        return TEXT("QueryOnly");
+		case ECollisionEnabled::PhysicsOnly:      return TEXT("PhysicsOnly");
+		case ECollisionEnabled::QueryAndPhysics:  return TEXT("QueryAndPhysics");
+		default:                                  return TEXT("Unknown");
+		}
+	}
+
+	static bool MifParseCollisionEnabled(const FString& In, ECollisionEnabled::Type& Out)
+	{
+		if (In.Equals(TEXT("NoCollision"), ESearchCase::IgnoreCase))     { Out = ECollisionEnabled::NoCollision;     return true; }
+		if (In.Equals(TEXT("QueryOnly"), ESearchCase::IgnoreCase))       { Out = ECollisionEnabled::QueryOnly;       return true; }
+		if (In.Equals(TEXT("PhysicsOnly"), ESearchCase::IgnoreCase))     { Out = ECollisionEnabled::PhysicsOnly;     return true; }
+		if (In.Equals(TEXT("QueryAndPhysics"), ESearchCase::IgnoreCase)) { Out = ECollisionEnabled::QueryAndPhysics; return true; }
+		return false;
+	}
+
+	static bool MifParsePrimType(const FString& In, EAggCollisionShape::Type& Out)
+	{
+		for (const FMifPrimArray& E : MifPrimTypes)
+		{
+			if (In.Equals(E.Name, ESearchCase::IgnoreCase)) { Out = E.Type; return true; }
+		}
+		return false;
+	}
+
 	// --- describe_physics_asset ---------------------------------------------
 	void H_describe_physics_asset(const TSharedRef<FJsonObject>& In,
 								  const TSharedRef<FJsonObject>& Out)
@@ -190,6 +305,29 @@ namespace MifBridge
 			R->SetNumberField(TEXT("capsuleCount"), B->AggGeom.SphylElems.Num());
 			R->SetNumberField(TEXT("convexCount"), B->AggGeom.ConvexElems.Num());
 			R->SetNumberField(TEXT("primitiveCount"), B->AggGeom.GetElementCount());
+			// PER-PRIMITIVE COLLISION, read straight from each type's own array. Deliberately NOT
+			// through UPhysicsAsset::GetPrimitiveCollision, which carries the same two defects as
+			// its setter - see the block comment on set_physics_primitive_collision - so touching it
+			// even for a read would be a crash on 5.7 and wrong data on 5.3.
+			TArray<TSharedPtr<FJsonValue>> Prims;
+			auto AddPrims = [&Prims](const TCHAR* TypeName, const auto& Elems)
+			{
+				for (int32 k = 0; k < Elems.Num(); ++k)
+				{
+					TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+					P->SetStringField(TEXT("type"), TypeName);
+					// The index WITHIN this type's array, which is what the setter takes.
+					P->SetNumberField(TEXT("index"), k);
+					P->SetStringField(TEXT("collisionEnabled"),
+						MifCollisionEnabledName(Elems[k].GetCollisionEnabled()));
+					Prims.Add(MakeShared<FJsonValueObject>(P));
+				}
+			};
+			AddPrims(TEXT("sphere"),  B->AggGeom.SphereElems);
+			AddPrims(TEXT("box"),     B->AggGeom.BoxElems);
+			AddPrims(TEXT("capsule"), B->AggGeom.SphylElems);
+			AddPrims(TEXT("convex"),  B->AggGeom.ConvexElems);
+			R->SetArrayField(TEXT("primitives"), Prims);
 			Bodies.Add(MakeShared<FJsonValueObject>(R));
 		}
 
@@ -659,6 +797,116 @@ namespace MifBridge
 		Out->SetBoolField(TEXT("enabled"), bNow);
 		Out->SetBoolField(TEXT("changed"), bWas != bNow);
 		WriteBodyPairTable(Asset, Out);
+		Out->SetStringField(TEXT("assetNote"), TEXT("the asset is dirty and NOTHING has been saved."));
+	}
+
+	// --- set_physics_primitive_collision ------------------------------------
+	void H_set_physics_primitive_collision(const TSharedRef<FJsonObject>& In,
+										   const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("asset"), TEXT("boneName"), TEXT("index"),
+			  TEXT("primitiveType"), TEXT("primitiveIndex"), TEXT("collisionEnabled") },
+			TEXT("assetPath (aliases: path, asset); boneName or index - which body; primitiveType ")
+			TEXT("(sphere|box|capsule|convex); primitiveIndex - the index WITHIN that type's array; ")
+			TEXT("collisionEnabled (NoCollision|QueryOnly|PhysicsOnly|QueryAndPhysics)"),
+			{ { TEXT("enabled"), TEXT("collision here is four-valued, not a bool - pass "
+									  "collisionEnabled:\"NoCollision\" or \"QueryAndPhysics\". The "
+									  "boolean body-PAIR table is set_physics_body_collision") } }))
+		{
+			return;
+		}
+		UPhysicsAsset* Asset = ResolvePhysicsAsset(In, Out);
+		if (!Asset) { return; }
+		int32 BodyIndex = INDEX_NONE;
+		if (!ResolveBodyIndex(Asset, In, BodyIndex, Out)) { return; }
+
+		EAggCollisionShape::Type PrimType = EAggCollisionShape::Sphere;
+		const FString TypeStr = JStr(In, TEXT("primitiveType"));
+		if (!MifParsePrimType(TypeStr, PrimType))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("unknown primitiveType '%s' - accepted: sphere, box, capsule (alias sphyl), ")
+				TEXT("convex. NOTHING was changed."), *TypeStr));
+			return;
+		}
+		ECollisionEnabled::Type Wanted = ECollisionEnabled::QueryAndPhysics;
+		const FString WantStr = JStr(In, TEXT("collisionEnabled"));
+		if (!MifParseCollisionEnabled(WantStr, Wanted))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("collisionEnabled must be NoCollision, QueryOnly, PhysicsOnly or ")
+				TEXT("QueryAndPhysics - got '%s'. NOTHING was changed."), *WantStr));
+			return;
+		}
+		if (!In->HasField(TEXT("primitiveIndex")))
+		{
+			Fail(Out, TEXT("primitiveIndex is required - the index WITHIN that primitive type's ")
+				TEXT("array, not across all of them. describe_physics_asset reports each type's "
+					 "count per body. NOTHING was changed."));
+			return;
+		}
+		const int32 PrimIndex = static_cast<int32>(JNum(In, TEXT("primitiveIndex"), -1.0));
+
+		USkeletalBodySetup* Body = Asset->SkeletalBodySetups[BodyIndex];
+		if (!Body)
+		{
+			Fail(Out, TEXT("that body slot is null. NOTHING was changed."));
+			return;
+		}
+		// THE CHECK THE ENGINE GETS WRONG: against the PER-TYPE array, never the total.
+		const int32 TypeCount = MifPrimCount(Body->AggGeom, PrimType);
+		if (PrimIndex < 0 || PrimIndex >= TypeCount)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("primitiveIndex %d is out of range for type '%s' on body '%s': it has %d of ")
+				TEXT("that type (total primitives across all types: %d). This is checked against the ")
+				TEXT("PER-TYPE array on purpose - UPhysicsAsset::SetPrimitiveCollision's own ensure ")
+				TEXT("compares against the TOTAL, so this call would pass it and then, on 5.3, ")
+				TEXT("silently modify a primitive of a DIFFERENT type (FKAggregateGeom::GetElement's ")
+				TEXT("switch cases have no break and fall through to the next array), or, on 5.7, ")
+				TEXT("dereference nullptr and take the editor down. NOTHING was changed."),
+				PrimIndex, *TypeStr, *Body->BoneName.ToString(), TypeCount,
+				Body->AggGeom.GetElementCount()));
+			return;
+		}
+
+		FKShapeElem* Elem = MifPrimElem(Body->AggGeom, PrimType, PrimIndex);
+		if (!Elem)
+		{
+			Fail(Out, TEXT("the primitive could not be resolved after range-checking, which should ")
+				TEXT("not happen. NOTHING was changed."));
+			return;
+		}
+		const ECollisionEnabled::Type Was = Elem->GetCollisionEnabled();
+
+		FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_SetPrimCollision",
+										"Set Primitive Collision"));
+		Asset->Modify();
+		Body->Modify();
+		// The engine function's entire body, done against the right array. See the block comment.
+		Elem->SetCollisionEnabled(Wanted);
+
+		// Verified by re-resolving and reading back, not from the setter (which returns void).
+		const FKShapeElem* Check = MifPrimElem(Body->AggGeom, PrimType, PrimIndex);
+		const ECollisionEnabled::Type Now = Check ? Check->GetCollisionEnabled() : Was;
+		if (Now != Wanted)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the primitive still reports '%s' after asking for '%s'. NOTHING usable was ")
+				TEXT("produced."), *MifCollisionEnabledName(Now), *MifCollisionEnabledName(Wanted)));
+			return;
+		}
+		Asset->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("assetPath"), Asset->GetPathName());
+		Out->SetStringField(TEXT("boneName"), Body->BoneName.ToString());
+		Out->SetNumberField(TEXT("bodyIndex"), BodyIndex);
+		Out->SetStringField(TEXT("primitiveType"), TypeStr.ToLower());
+		Out->SetNumberField(TEXT("primitiveIndex"), PrimIndex);
+		Out->SetStringField(TEXT("collisionEnabled"), MifCollisionEnabledName(Now));
+		Out->SetStringField(TEXT("collisionEnabledBefore"), MifCollisionEnabledName(Was));
+		Out->SetBoolField(TEXT("changed"), Was != Now);
 		Out->SetStringField(TEXT("assetNote"), TEXT("the asset is dirty and NOTHING has been saved."));
 	}
 }

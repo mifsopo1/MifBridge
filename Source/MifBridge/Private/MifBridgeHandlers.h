@@ -1088,6 +1088,7 @@ namespace MifBridge
 	MIF_DECL(add_physics_constraint);
 	MIF_DECL(remove_physics_constraint);
 	MIF_DECL(set_physics_body_collision);
+	MIF_DECL(set_physics_primitive_collision);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);

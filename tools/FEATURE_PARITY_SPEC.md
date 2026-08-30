@@ -4729,7 +4729,33 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       of its stated over-report - the handler verifies by reading IsCollisionEnabled back and
       comparing it to the request, which is exactly a postcondition check. Baselined.
 
-- [ ] **set_physics_primitive_collision, guarding the engine's own broken ensure** (hours)
+- [x] **set_physics_primitive_collision, guarding the engine's own broken ensure** (hours)
+      DONE 2026-08-30. 19 checks in tools/test_physics_primitive_collision.py.
+      IT IS TWO DEFECTS, NOT ONE, and the second is worse. Beyond the wrong-bound ensure this
+      item was filed for, FKAggregateGeom::GetElement on 5.3 is a switch whose cases have NO
+      break: when the per-type ensure fails it does not return, it FALLS THROUGH and tries the
+      next array, returning whichever type happens to accept the index. GetElement(Sphere, 3)
+      on a body with 1 sphere and 5 boxes returns &BoxElems[3] - the caller asked about a
+      sphere and silently modified a box. 5.7 (AggregateGeom.h:159) HAS the breaks, returns
+      nullptr, and SetPrimitiveCollision derefs it with no null check: the same input crashes
+      there. Silent corruption on one engine, a dead editor on the other.
+      Written up as the EIGHTH drift direction in docs/02_GOTCHAS.md - a bug fixed between
+      engines, where the dangerous half is the OLDER one because the newer at least fails
+      loudly.
+      THE FIX IS NOT TO GUARD THE CALL, IT IS NOT TO MAKE IT. SetPrimitiveCollision's entire
+      body is one GetElement()->SetCollisionEnabled(), and SetCollisionEnabled is an inline
+      setter (ShapeElem.h:105) - so the endpoint resolves the per-type array itself,
+      range-checks against THAT array, and sets the field directly. Identical result, no
+      reachable path into either defect, correct on both engines. describe_physics_asset's new
+      per-body primitives[] reads the same way rather than through GetPrimitiveCollision,
+      which carries both defects too.
+      T3001 exercises the exact call that passes the engine's ensure - sphere[0] on a body
+      with 0 spheres and 1 capsule, where 0 < GetElementCount() is true - and asserts the
+      primitive 5.3 would have modified is untouched afterwards.
+      Found while re-running: test_physics_asset took find_assets[0] as 'a real PhysicsAsset',
+      and scratch leftovers sort first, so a probe asset with no disabled pairs failed a real
+      assertion. It now excludes /Game/_Mif paths, as test_physics_primitive_collision already
+      did.
       Split out 2026-08-30. UPhysicsAsset::SetPrimitiveCollision and GetPrimitiveCollision
       (PhysicsAsset.cpp:305, :314) both ensure(PrimitiveIndex < AggGeom->GetElementCount())
       while PrimitiveIndex is per-TYPE and GetElementCount() is the total across SphereElems,

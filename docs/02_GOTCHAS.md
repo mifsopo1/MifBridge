@@ -1793,3 +1793,45 @@ that a large codebase drowns in anyway.
 THE RULE: when an engine API is deprecated rather than removed, READ ITS BODY before relying on the
 old spelling still working. An empty brace pair is a legal implementation. buildcheck.py cannot help here and
 neither can make_engine_probe.py - only reading the newer header does.
+
+### AN EIGHTH DIRECTION: a bug FIXED between engines, where the older one is silently wrong
+
+Found 2026-08-30 building `set_physics_primitive_collision`. The seventh direction was an API that
+compiles everywhere and does nothing on the newer engine. This is its mirror: identical code, both
+engines compile it, both run it — and the *older* one silently corrupts data while the newer one
+crashes.
+
+`FKAggregateGeom::GetElement` is a switch over primitive types. On **5.3** its cases have **no
+`break`**:
+
+    case EAggCollisionShape::Sphere:
+        if (ensure(SphereElems.IsValidIndex(Index))) { return &SphereElems[Index]; }
+    case EAggCollisionShape::Box:                       // <- reached when the ensure above FAILS
+        if (ensure(BoxElems.IsValidIndex(Index))) { return &BoxElems[Index]; }
+
+When the per-type index is out of range the `ensure` fires, does **not** return, and falls through to
+the next array — returning whichever later type happens to accept the index. `GetElement(Sphere, 3)`
+on a body with 1 sphere and 5 boxes returns `&BoxElems[3]`: you asked about a sphere and modified a
+box.
+
+**5.7 has the `break`s** (`AggregateGeom.h:159`), so it falls out of the switch and returns `nullptr`
+— and `UPhysicsAsset::SetPrimitiveCollision` dereferences the result with no null check. The same
+input that quietly edits the wrong primitive on 5.3 takes the editor down on 5.7.
+
+Both engines share the outer defect that lets the call get that far:
+`ensure(PrimitiveIndex < AggGeom->GetElementCount())` compares a **per-type** index against the
+**total** across all element arrays, so `sphere[0]` on a body with 0 spheres and 1 capsule passes it.
+
+**THE RULE:** an engine bug being fixed in a later version is a drift direction of its own, and the
+dangerous half is the *older* engine — the newer one at least fails loudly. When a guard is needed
+because of an engine defect, check whether the defect is still there on every engine you target: the
+failure MODE can differ even when the wrong input is identical, and a test written against one
+engine's symptom will not recognise the other's.
+
+The endpoint's answer was not to guard the call but to **not make it**: `SetPrimitiveCollision`'s
+entire body is one `GetElement()->SetCollisionEnabled()`, and `SetCollisionEnabled` is an inline
+setter (`ShapeElem.h:105`), so `MifBridgePhysicsAsset.cpp` resolves the per-type array itself,
+range-checks against *that* array, and sets the field directly. Same result, no reachable path into
+either defect, correct on both engines. `tools/test_physics_primitive_collision.py` T3001 exercises
+the exact call that passes the engine's ensure and asserts the primitive 5.3 would have modified is
+untouched.

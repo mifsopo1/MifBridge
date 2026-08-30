@@ -72,7 +72,13 @@ def main():
     try:
         # ------------------------------------------------------------------ T2900 the read half
         print("=== T2900: the one thing reflection cannot reach - the disable table ===")
-        real = M.call("find_assets", {"class": "PhysicsAsset", "limit": 5}).get("assets") or []
+        # SCRATCH ASSETS ARE EXCLUDED, and skipping this cost a false failure once. find_assets
+        # returns /Game/_Mif* leftovers alongside real content and sorts them first, so taking [0]
+        # picked up a two-body probe asset with no disabled pairs and failed an assertion about
+        # real ragdolls. The asset this reads must be one the PROJECT authored.
+        real = [a for a in (M.call("find_assets", {"class": "PhysicsAsset", "limit": 25})
+                            .get("assets") or [])
+                if not a["path"].startswith("/Game/_Mif")]
         check("T2900 (setup) the project has a real PhysicsAsset to read", len(real) > 0, len(real))
         if real:
             d = M.call("describe_physics_asset", {"assetPath": real[0]["path"]})
