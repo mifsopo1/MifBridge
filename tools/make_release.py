@@ -240,6 +240,75 @@ def check_badge(update=False):
     return True, "badge updated: %s" % summary
 
 
+# THE 5.7 GATE, keyed to the CODE rather than the calendar.
+#
+# 0.7.0 shipped unable to compile on UE 5.7 in any project but this one. The README said "5.7
+# verified 2026-08-27 at 330 of 421 endpoints" and that was TRUE - and useless, because both
+# features that broke it (PhysicsAsset authoring, collections) were written afterwards. A dated
+# verification says nothing about code added later, so the gate does not ask whether a probe
+# happened or whether it was recent. It asks whether the probe is NEWER THAN THE SOURCE.
+#
+# Running the probe build here was considered and rejected: it needs the editor closed (Live Coding
+# holds the toolchain), takes about a minute, and would make packaging fail for reasons unrelated to
+# packaging. Recording the verdict and checking its age gives the same guarantee without the
+# coupling - and catches the case that actually shipped, which is a real probe that no longer covers
+# the tree.
+
+PROBE_RESULT = os.path.join(HERE, "engine_probe_result.json")
+
+
+def _git(*args):
+    try:
+        return subprocess.run(["git"] + list(args), capture_output=True, text=True,
+                              cwd=ROOT, timeout=30).stdout.strip()
+    except Exception:
+        return ""
+
+
+def check_engine_probe():
+    """(ok, message) - is there a passing 5.7 probe covering the current Source/?"""
+    if not os.path.isfile(PROBE_RESULT):
+        return False, ("no 5.7 compile has ever been recorded. 0.7.0 shipped unable to build on 5.7 "
+                       "in any project but this one, which is what this gate exists to stop.\n"
+                       "  Run:  python tools/make_engine_probe.py --engine "
+                       "\"C:/Program Files/Epic Games/UE_5.7\" --out D:/MifProbe57gate --build")
+    try:
+        with io.open(PROBE_RESULT, "r", encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except Exception as exc:
+        return False, "could not read %s: %s" % (PROBE_RESULT, exc)
+
+    # INCONCLUSIVE IS NOT FAILURE, and conflating them is how a gate teaches people to --force.
+    # A probe that never reached the compiler - Live Coding holding the toolchain is the usual
+    # cause, and it only takes an open editor - is no evidence either way.
+    if rec.get("inconclusive"):
+        return False, ("the last 5.7 probe produced NO VERDICT: %s\n"
+                       "  That is not a compile failure - it is a missing answer, and a release "
+                       "cannot claim an engine on one."
+                       % (rec.get("why") or "reason not recorded"))
+    if not rec.get("succeeded"):
+        return False, ("the last recorded 5.7 probe FAILED to compile (engine %s). Packaging a "
+                       "release that is known not to build on a claimed engine is the exact thing "
+                       "0.7.0 did." % rec.get("engine"))
+
+    probed = rec.get("sourceCommit") or ""
+    current = _git("log", "-1", "--format=%H", "--", "Source")
+    if not current:
+        return True, "probe passed; could not read the current Source commit to compare against"
+    if probed != current:
+        # Is the difference actually source, or just this file moving?
+        changed = _git("diff", "--name-only", probed, current, "--", "Source") if probed else "?"
+        return False, ("the recorded 5.7 probe covers Source commit %s and Source is now at %s.\n"
+                       "  A dated verification says NOTHING about code written after it - that is\n"
+                       "  precisely how 0.7.0 shipped broken with a truthful README.\n"
+                       "  Changed since the probe: %s\n"
+                       "  Re-run: python tools/make_engine_probe.py --engine "
+                       "\"C:/Program Files/Epic Games/UE_5.7\" --out D:/MifProbe57gate --build"
+                       % (probed[:12] or "(none)", current[:12],
+                          ", ".join((changed or "").split()[:6]) or "(unknown)"))
+    return True, "5.7 probe passed and covers the current Source commit %s" % current[:12]
+
+
 def tracked_files():
     """Ship exactly what git tracks, minus the two categories above.
 
@@ -398,6 +467,14 @@ def main():
         if not args.force:
             return 1
         print("  --force given: packaging anyway, with a badge that is wrong.")
+
+    # A release claiming two engines has to have compiled against both.
+    ok57, msg57 = check_engine_probe()
+    print(("5.7 gate: " + msg57) if ok57 else ("REFUSING TO PACKAGE - " + msg57))
+    if not ok57 and not args.force:
+        return 1
+    if not ok57:
+        print("  --force given: packaging anyway, without a 5.7 compile covering this Source.")
 
     name, _ = plugin_version()
     out = args.out or os.path.join(HERE, "dist", "MifBridge-%s.zip" % name)

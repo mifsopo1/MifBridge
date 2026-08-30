@@ -219,6 +219,44 @@ def refuse_source_engine(engine, force):
     ]))
 
 
+PROBE_RESULT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine_probe_result.json")
+
+
+def record_result(engine, module, ok, inconclusive=False, why=""):
+    """Write what was proved, against WHICH SOURCE, so a later reader can tell if it still holds.
+
+    The git HEAD alone is not enough - a probe from three commits ago may still cover the current
+    Source/ if those commits were docs. So the SOURCE commit is recorded too, and make_release
+    compares against that rather than against a date. 0.7.0 shipped broken on 5.7 with a truthful
+    "verified 2026-08-27" in its README, because the code that broke it was written afterwards.
+    """
+    import json
+    import subprocess
+    def git(*a):
+        try:
+            return subprocess.run(["git"] + list(a), capture_output=True, text=True,
+                                  cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                  timeout=30).stdout.strip()
+        except Exception:
+            return ""
+    payload = {
+        "engine": engine,
+        "module": module,
+        "succeeded": bool(ok),
+        # A run that never reached the compiler is not evidence either way. Recorded explicitly so
+        # the gate can say "no usable verdict" rather than "it failed".
+        "inconclusive": bool(inconclusive),
+        "why": why,
+        "head": git("rev-parse", "HEAD"),
+        "sourceCommit": git("log", "-1", "--format=%H", "--", "Source"),
+        "sourceCommitDate": git("log", "-1", "--format=%cI", "--", "Source"),
+    }
+    with io.open(PROBE_RESULT, "w", encoding="utf-8", newline="") as fh:
+        fh.write(json.dumps(payload, indent=1))
+    print("recorded   %s (succeeded=%s, source commit %s)"
+          % (PROBE_RESULT, payload["succeeded"], (payload["sourceCommit"] or "?")[:12]))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", required=True,
@@ -246,7 +284,26 @@ def main():
            "-Project=" + os.path.join(root, a.module + ".uproject"), "-WaitMutex"]
     print("build      " + subprocess.list2cmdline(cmd))
     if a.build:
-        sys.exit(subprocess.run(cmd).returncode)
+        # CAPTURE the output, because "could not build" and "does not compile" are different
+        # answers and a gate that conflates them is useless. Live Coding holding the toolchain is
+        # the common one here: the editor need only be open. Recording that as a compile FAILURE
+        # would block a release for an environmental reason and teach everyone to --force past it.
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
+        out = (proc.stdout or "") + (proc.stderr or "")
+        print(out)
+        rc = proc.returncode
+        if rc != 0 and "Live Coding is active" in out:
+            record_result(a.engine, a.module, False, inconclusive=True,
+                          why="Live Coding held the toolchain - an editor was open. This is NOT a "
+                              "compile failure; close the editor and re-run.")
+            raise SystemExit("INCONCLUSIVE: Live Coding was active, so nothing was compiled. "
+                             "Close the editor and run this again.")
+        # Record BEFORE exiting, and record FAILURES too - "the last probe failed" is exactly as
+        # important to a release gate as "the last probe passed". A gate that only sees successes
+        # cannot tell a broken build from a build nobody ran.
+        record_result(a.engine, a.module, rc == 0)
+        sys.exit(rc)
 
 
 if __name__ == "__main__":
