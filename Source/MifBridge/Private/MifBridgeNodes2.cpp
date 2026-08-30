@@ -1,6 +1,7 @@
 // MifBridge — phase-3 node endpoints: custom event, make/break struct, self, object literal,
 // function creation, and the resolve_struct introspection helper.
 #include "MifBridgeHandlers.h"
+#include "K2Node_Tunnel.h"
 #include "Animation/Skeleton.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimBlueprintGeneratedClass.h"
@@ -1818,5 +1819,210 @@ namespace MifBridge
 		}
 		UE_LOG(LogMifBridge, Log, TEXT("reparent_blueprint: %s (%s -> %s)"), *Blueprint->GetPathName(),
 			OldParentClass ? *OldParentClass->GetName() : TEXT("None"), *NewParentClass->GetName());
+	}
+
+	// =======================================================================
+	// create_macro - filling a container this plugin already shipped empty
+	// =======================================================================
+	//
+	// THIS ONE IS A DEAD END WE MADE. create_blueprint accepts blueprintType:"MacroLibrary" and
+	// produces a Blueprint Macro Library, and nothing in the plugin could then put a macro in it -
+	// so an agent could create a container it had no way to fill. Meanwhile add_macro_instance,
+	// list_graphs and ResolveMacroGraph all CONSUME macros. Read half and consumer half both
+	// present, author half absent.
+	//
+	// create_function is a real workaround for most reusable logic, which is why this is medium
+	// rather than high - but a macro is not a function: it inlines, it can carry multiple exec
+	// paths in and out, and a Macro Library is the only place to share one across Blueprints.
+	//
+	// TWO IMPLEMENTATION CORRECTIONS FROM THE VETTING, both checked against the engine source:
+	//
+	// 1. DO NOT CALL CreateMacroGraphTerminators. FBlueprintEditorUtils::AddMacroGraph already does
+	//    it (BlueprintEditorUtils.cpp:2310), and calling it again would add a second pair of tunnel
+	//    nodes to the same graph - which compiles into nonsense rather than failing loudly.
+	//
+	// 2. THE TWO TUNNELS ARE TOLD APART BY THEIR FLAGS, not by order or by name. A macro's entry
+	//    and exit are both UK2Node_Tunnel; the entry has bCanHaveOutputs (it feeds the graph) and
+	//    the exit has bCanHaveInputs (it collects from it). So an INPUT to the macro is created as
+	//    EGPD_Output on the entry tunnel, and an OUTPUT as EGPD_Input on the exit - the same
+	//    inversion create_function has on its entry node, and the same one that reads as a bug
+	//    every time until you say it out loud.
+	//
+	// PIN NAMES ARE ECHOED FROM THE ENGINE. CreateUserDefinedPin is called with bUseUniqueName
+	// true, so it RENAMES on a collision and returns the pin it actually made. create_function
+	// learned that the hard way - a caller who names a parameter after an existing pin gets a
+	// different name and no way to find out, then fails later wiring the name they asked for.
+
+	void H_create_macro(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		TArray<TSharedPtr<FJsonValue>> ActualInputNames;
+		TArray<TSharedPtr<FJsonValue>> ActualOutputNames;
+		TArray<FString> RenamedPins;
+
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("name"), TEXT("inputs"), TEXT("outputs") },
+			TEXT("blueprintId (alias: path) - a Blueprint or a Blueprint Macro Library; name; ")
+			TEXT("inputs?[{name,type,...}]; outputs?"),
+			{ { TEXT("pure"), TEXT("macros have no pure/impure distinction - that is create_function. "
+								   "A macro inlines wherever it is used") },
+			  { TEXT("category"), TEXT("not set here; set_property on the graph's metadata after "
+									   "creation if you need one") },
+			  { TEXT("override"), TEXT("a macro cannot override anything - use add_override_event "
+									   "for a parent event, or create_function") } }))
+		{
+			return;
+		}
+
+		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
+		if (!Blueprint) { return; }
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required - the macro's name. NOTHING was created."));
+			return;
+		}
+
+		// A NAME ALREADY IN USE would produce a second graph the editor shows twice, so it is
+		// refused rather than uniquified: unlike a pin, a graph name is what the caller will
+		// address it by afterwards.
+		for (const UEdGraph* G : Blueprint->MacroGraphs)
+		{
+			if (G && G->GetFName() == FName(*Name))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' already has a macro named '%s'. Graph names are how you address a "
+						 "macro afterwards, so this is refused rather than renamed. NOTHING was "
+						 "created."), *Blueprint->GetName(), *Name));
+				return;
+			}
+		}
+		for (const UEdGraph* G : Blueprint->FunctionGraphs)
+		{
+			if (G && G->GetFName() == FName(*Name))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' already has a FUNCTION named '%s'. A macro and a function cannot "
+						 "share a name in one Blueprint. NOTHING was created."),
+					*Blueprint->GetName(), *Name));
+				return;
+			}
+		}
+
+		TArray<TPair<FName, FEdGraphPinType>> Inputs;
+		TArray<TPair<FName, FEdGraphPinType>> Outputs;
+		FString ParseError;
+		if (!ParsePinSpecs(In, TEXT("inputs"), Inputs, ParseError)
+			|| !ParsePinSpecs(In, TEXT("outputs"), Outputs, ParseError))
+		{
+			Fail(Out, ParseError);
+			return;
+		}
+
+		UEdGraph* Graph = nullptr;
+		{
+			FScopedTransaction Transaction(
+				NSLOCTEXT("MifBridge", "CreateMacro", "Mif Bridge: create_macro"));
+
+			Graph = FBlueprintEditorUtils::CreateNewGraph(
+				Blueprint, FName(*Name), UEdGraph::StaticClass(),
+				UEdGraphSchema_K2::StaticClass());
+			if (!Graph)
+			{
+				Fail(Out, TEXT("CreateNewGraph returned null. NOTHING was created."));
+				return;
+			}
+			// AddMacroGraph CALLS CreateMacroGraphTerminators ITSELF - calling it again here would
+			// give the graph a second pair of tunnels.
+			FBlueprintEditorUtils::AddMacroGraph(Blueprint, Graph, /*bIsUserCreated*/ true,
+												 /*SignatureFromClass*/ nullptr);
+
+			// THE TWO TUNNELS, told apart by their flags rather than by order. Both are
+			// UK2Node_Tunnel; only the flags say which end each one is.
+			UK2Node_Tunnel* EntryTunnel = nullptr;
+			UK2Node_Tunnel* ExitTunnel = nullptr;
+			TArray<UK2Node_Tunnel*> Tunnels;
+			Graph->GetNodesOfClass(Tunnels);
+			for (UK2Node_Tunnel* T : Tunnels)
+			{
+				if (!T) { continue; }
+				if (T->bCanHaveOutputs && !EntryTunnel) { EntryTunnel = T; }
+				else if (T->bCanHaveInputs && !ExitTunnel) { ExitTunnel = T; }
+			}
+			if (!EntryTunnel || !ExitTunnel)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("the new macro graph has %d tunnel node(s) and this needs an entry and an "
+						 "exit. NOTHING usable was produced."), Tunnels.Num()));
+				return;
+			}
+
+			// AN INPUT TO THE MACRO IS AN OUTPUT ON THE ENTRY TUNNEL. The entry feeds the graph, so
+			// the direction is inverted from the caller's point of view - the same inversion
+			// create_function has, and it reads as a bug every time until it is said out loud.
+			EntryTunnel->Modify();
+			for (const TPair<FName, FEdGraphPinType>& Pin : Inputs)
+			{
+				if (UEdGraphPin* Made = EntryTunnel->CreateUserDefinedPin(
+						Pin.Key, Pin.Value, EGPD_Output, /*bUseUniqueName*/ true))
+				{
+					ActualInputNames.Add(MakeShared<FJsonValueString>(Made->PinName.ToString()));
+					if (Made->PinName != Pin.Key)
+					{
+						RenamedPins.Add(FString::Printf(TEXT("%s -> %s"),
+							*Pin.Key.ToString(), *Made->PinName.ToString()));
+					}
+				}
+			}
+			ExitTunnel->Modify();
+			for (const TPair<FName, FEdGraphPinType>& Pin : Outputs)
+			{
+				if (UEdGraphPin* Made = ExitTunnel->CreateUserDefinedPin(
+						Pin.Key, Pin.Value, EGPD_Input, /*bUseUniqueName*/ true))
+				{
+					ActualOutputNames.Add(MakeShared<FJsonValueString>(Made->PinName.ToString()));
+					if (Made->PinName != Pin.Key)
+					{
+						RenamedPins.Add(FString::Printf(TEXT("%s -> %s"),
+							*Pin.Key.ToString(), *Made->PinName.ToString()));
+					}
+				}
+			}
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		}
+
+		// READ BACK from the blueprint's own macro list, not from the pointer we were handed.
+		bool bListed = false;
+		for (const UEdGraph* G : Blueprint->MacroGraphs)
+		{
+			if (G == Graph) { bListed = true; break; }
+		}
+		if (!bListed)
+		{
+			Fail(Out, TEXT("the macro graph was created and the Blueprint does not list it on "
+				TEXT("read-back. NOTHING usable was produced.")));
+			return;
+		}
+
+		Out->SetStringField(TEXT("blueprint"), Blueprint->GetPathName());
+		Out->SetStringField(TEXT("macro"), Graph->GetName());
+		// The same graphId form list_graphs emits, so the caller can go straight to add_node.
+		Out->SetStringField(TEXT("graphId"), GraphIdOf(Blueprint, Graph));
+		Out->SetArrayField(TEXT("inputs"), ActualInputNames);
+		Out->SetArrayField(TEXT("outputs"), ActualOutputNames);
+		Out->SetNumberField(TEXT("macroCount"), Blueprint->MacroGraphs.Num());
+		if (RenamedPins.Num() > 0)
+		{
+			// bUseUniqueName is TRUE, so the engine renames rather than failing - and a caller who
+			// never learns the new name fails later wiring the one they asked for.
+			Out->SetStringField(TEXT("renamedPins"), FString::Join(RenamedPins, TEXT(", ")));
+			Out->SetStringField(TEXT("renameNote"),
+				TEXT("the engine renamed these pins because the names collided with pins the tunnel "
+					 "already had. The names above are the ones that exist - wire those, not the "
+					 "ones you asked for."));
+		}
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the Blueprint is dirty and NOT compiled or saved. Call compile when the macro's "
+				 "body is built - an empty macro compiles fine, it simply does nothing."));
 	}
 }

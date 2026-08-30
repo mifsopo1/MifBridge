@@ -2756,6 +2756,14 @@ def get_level_blueprint(level: str = "", create: bool = False) -> dict:
 
 
 @mcp.tool()
+def create_macro(blueprint_id: str, name: str, inputs: list = None,
+                 outputs: list = None) -> dict:
+    "Create a macro graph on a Blueprint or Blueprint Macro Library, declaring its input and output pins. The author half of macros - add_macro_instance and list_graphs already consumed them, and create_blueprint's MacroLibrary type shipped a container nothing could fill."
+    return _post("create_macro", blueprintId=blueprint_id, name=name, inputs=inputs,
+                 outputs=outputs)
+
+
+@mcp.tool()
 def consolidate_assets(target: str, sources: list, delete_sources: bool = False,
                        confirm: bool = False) -> dict:
     "Repoint every referencer of `sources` at `target`, optionally deleting the sources - the Content Browser's asset consolidation, and the write half delete_asset dead-ends into. It CLOSES EVERY OPEN ASSET EDITOR. Run check_consolidate_assets first; requires confirm=True."

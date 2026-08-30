@@ -5391,7 +5391,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Does not work cooked. ULevel::LevelScriptBlueprint is WITH_EDITORONLY_DATA and cooking strips it (only the compiled ALevelScriptActor class survives), exactly like a cooked UBlueprint. The cooked path must call GetLevelScriptBlueprint(bDontCreate=true), get null, and refuse with a named reason in th...
       Vetter corrected the proposal: Premise "a Level Blueprint ... is not loadable that way" is false: StaticLoadObject resolves SUBOBJECT_DELIMITER paths via ResolveName (UObjectGlobals.cpp:1122-1133, 1311/1328), and ULevelScriptBlueprint IS-A UBlueprint, so ResolveBlueprint already accepts "/Game/Maps/M_Town.M_Town:PersistentLevel.M_Town" on an uncooked map that has an LSB — the whole graph surface is already reachable that way, a...
 
-- [ ] **create_macro (+ let add_pin target a macro's UK2Node_Tunnel entry/result)** (day)
+- [x] **create_macro** (day)
+      DONE 2026-08-30. 20 checks in tools/test_create_macro.py.
+      THIS GAP WAS PARTLY OUR OWN MAKING: create_blueprint accepts blueprintType
+      "MacroLibrary" and produces a container nothing in the plugin could fill, while
+      add_macro_instance, list_graphs and ResolveMacroGraph all CONSUME macros.
+      TWO IMPLEMENTATION CORRECTIONS FROM THE VETTING, both checked against engine source:
+        - FBlueprintEditorUtils::AddMacroGraph ALREADY calls CreateMacroGraphTerminators
+          (BlueprintEditorUtils.cpp:2310). Calling it again - the obvious move, since a macro
+          obviously needs terminators - would give the graph a SECOND pair of tunnels, which
+          compiles into nonsense rather than failing. The suite asserts a fresh macro has
+          exactly 2 nodes, which is what catches that.
+        - the two tunnels are told apart by bCanHaveOutputs / bCanHaveInputs, not by order or
+          name, and an INPUT to the macro is created as EGPD_Output on the ENTRY tunnel
+          because the entry feeds the graph. Same inversion create_function has.
+      A duplicate macro name is REFUSED rather than uniquified - a graph name is how you
+      address the macro afterwards - and a name already used by a function is refused too,
+      since they share a namespace. Pin names ARE uniquified by the engine, so renamedPins
+      reports them; create_function learned that the hard way.
       Creates a macro graph on a Blueprint or a Blueprint Macro Library and lets its input/output pins be declared, so macros can actually be authored rather than only consumed.
       API: FBlueprintEditorUtils::CreateNewGraph(...) — UNREALED_API, D:/UE532/Engine/Source/Editor/UnrealEd/Public/Kismet2/BlueprintEditorUtils.h:329; FBlueprintEditorUtils::AddMacroGraph(UBlueprint*, UEdGraph*, bool bIsUserCreated, UClass* SignatureFromClass) — UNREALED_API, same header line 421; UEdGraphSchema_K2::CreateMacroGraphTerminators(UEdGraph&, UClass*) — D:/UE532/Engine/Source/Editor/BlueprintGra...
       Cooked: Uncooked only, and the existing refusal already exists to copy: MifBridgeNodes.cpp:893-910 already explains that cooking strips MacroGraphs so a cooked macro library has none. create_macro should reuse that wording and refuse before touching the engine when ResolveBlueprint yields a cooked asset (wh...
