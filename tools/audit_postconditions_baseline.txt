@@ -89,6 +89,7 @@ medium:remove_widget_animation_track
 medium:remove_widget_binding
 medium:rename_asset
 medium:rename_function
+medium:rename_virtual_bone
 medium:reparent_blueprint
 medium:revert_inherited_component
 medium:save_dirty_packages

@@ -4832,7 +4832,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: UNCOOKED ONLY, and it should say so by name. DuplicateAndRetarget duplicates each source asset and then writes new bone tracks into the duplicate, which on UAnimSequence goes through the editor-only data model - the same checkf path documented on the curve gap below. On a cooked source sequence the ...
       Vetter corrected the proposal: Four corrections; none kills it, but they change the rank and the shape. 1. RANK: high -> medium. The stated justification is partly FALSE. "the only way to find out which you have is to run it - which is the one thing you cannot do" is not true. H_list_retarget_chain_mapping (MifBridgeIKRig.cpp:1671-1850) already constructs FIKRetargetProcessor (5.6+) or UIKRetargetProcessor (5.3) at :1783-1796, ...
 
-- [ ] **add_virtual_bone / remove_virtual_bone / rename_virtual_bone** (day)
+- [x] **add_virtual_bone / remove_virtual_bone / rename_virtual_bone** (day)
+      DONE 2026-08-30. 31 checks in tools/test_virtual_bone_authoring.py.
+      THE ENGINE WILL HAPPILY MAKE A BONE THAT DOES NOTHING. AddNewVirtualBone rejects only a
+      duplicate source/target PAIR (Skeleton.cpp:1795-1806) and never checks that either bone
+      exists; RebuildRefSkeleton then silently skips the entry (ReferenceSkeleton.cpp:487-488).
+      A typo therefore returns true, sits in VirtualBones forever, is reported by
+      list_virtual_bones, and drives no animation. Both names are validated first.
+      REMOVAL REPARENTS OTHER BONES - RemoveVirtualBones rewires every virtual bone whose
+      source was a removed one to that bone's own source (Skeleton.cpp:1836-1841). The refusal
+      without confirm PREDICTS which bones and to what, and T3302 asserts the prediction
+      MATCHES THE OUTCOME rather than merely being present - a warning that is wrong is worse
+      than none.
+      RENAME IS A VOID SILENT NO-OP when nothing matches, so the original is verified first;
+      renaming onto a REAL bone's name is also refused, which the engine does not check.
+      NAMING IS VERSION-SPLIT, correcting the survey's "no guard needed": AddNewNamedVirtualBone
+      exists only on 5.6+ and is ABSENT from 5.3 (grep count 0), so 5.3 adds-then-renames. The
+      response always echoes the name the skeleton HOLDS, since the engine names it itself.
+      Cooked skeletons refused by name - virtual bones are baked into animation data at cook
+      time, so it would exist and evaluate to nothing everywhere. Proven against the project's
+      real shared rig, which is also why the suite works on a duplicate.
+      audit_postconditions flags rename_virtual_bone medium; judged a false positive of its
+      stated over-report - the handler verifies by re-finding the bone under its new name.
+      Baselined.
       Create, delete and rename virtual bones on a USkeleton - the synthetic bones (hand-relative-to-hip, foot-relative-to-root) that IK and retargeting chains are typically built against.
       API: USkeleton::AddNewVirtualBone(FName Source, FName Target) and its FName& out-param overload, ::RemoveVirtualBones(const TArray<FName>&), ::RenameVirtualBone(FName, FName) - all ENGINE_API and all OUTSIDE any #if WITH_EDITOR block - D:/UE532/Engine/Source/Runtime/Engine/Classes/Animation/Skeleton.h:447,449,451,453, with HandleVirtualBoneChanges at :455 and RegenerateVirtualBoneGuid at :1049.
       Cooked: Refuse on cooked, by name. The API itself is not editor-gated and will run, but a virtual bone is baked into every animation that uses the skeleton, and a cooked project's AnimSequences cannot be recompressed - so the bone would exist on the skeleton and evaluate to nothing in every sequence. Guard ...

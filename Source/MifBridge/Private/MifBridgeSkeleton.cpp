@@ -20,6 +20,7 @@
 //
 // Read-only: nothing is loaded for writing, nothing is dirtied.
 #include "MifBridgeHandlers.h"
+#include "ScopedTransaction.h"
 #include "MifBridgeLog.h"
 #include "UObject/Package.h"   // PKG_Cooked - tested BEFORE any editor-only accessor
 #if WITH_EDITORONLY_DATA
@@ -667,4 +668,426 @@ namespace MifBridge
 				Sections.Num(), Separable.Num(), Ref.GetNum()));
 	}
 
+	// =======================================================================
+	// VIRTUAL BONE AUTHORING - and the phantom bone the engine will happily make
+	// =======================================================================
+	//
+	// THE GUARD THAT MATTERS MOST: AddNewVirtualBone DOES NOT CHECK THAT THE BONES EXIST.
+	// Skeleton.cpp:1795-1806 rejects exactly one thing - a duplicate source/target PAIR - and then
+	// adds the entry. Nothing anywhere asks whether either bone is in the reference skeleton.
+	//
+	// What a typo produces is therefore not an error. RebuildRefSkeleton silently skips the entry,
+	// gated on `ParentIndex != INDEX_NONE && TargetIndex != INDEX_NONE`
+	// (ReferenceSkeleton.cpp:487-488), so:
+	//
+	//     AddNewVirtualBone returns TRUE
+	//     the entry sits in VirtualBones forever
+	//     list_virtual_bones reports it, because it is really there
+	//     and it exists in NO reference skeleton and drives NO animation
+	//
+	// A bone that is present in every listing and does nothing at all is far worse than a refusal:
+	// there is nothing to notice. So both names are checked against GetReferenceSkeleton() here and
+	// a bad one is refused before the engine is touched.
+	//
+	// NAMING IS VERSION-SPLIT, which the survey said it was not. The engine builds the name itself
+	// as "VB <source>_<target>" (the prefix is Skeleton.cpp:112) and the out-param overload REPORTS
+	// that name rather than accepting one. The overload that takes a name is AddNewNamedVirtualBone,
+	// and it exists only on 5.6 (Skeleton.h:460) and 5.7 (:473) - it is ABSENT from 5.3 entirely.
+	// So `name` uses the named overload where there is one and add-then-rename where there is not,
+	// and either way the response echoes the name the skeleton actually holds.
+	//
+	// REMOVAL REPARENTS OTHER BONES. RemoveVirtualBones rewires every virtual bone whose source was
+	// the one being removed to point at the removed bone's own source (Skeleton.cpp:1836-1841). So
+	// deleting one bone silently edits others, and the response says which - that is not something a
+	// caller can be expected to know.
+	//
+	// RENAME IS A VOID SILENT NO-OP. RenameVirtualBone (Skeleton.cpp:1868-1885) sets bModified only
+	// when something matched and tells the caller nothing either way, so the original is verified to
+	// exist first and the result is confirmed by reading the list back.
+
+	static USkeleton* ResolveSkeletonForWrite(const TSharedRef<FJsonObject>& In,
+											  const TSharedRef<FJsonObject>& Out)
+	{
+		const FString Path = JStrAny(In, { TEXT("skeleton"), TEXT("path"), TEXT("assetPath") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("skeleton is required (aliases: path, assetPath) - a Skeleton asset, or a ")
+				TEXT("SkeletalMesh whose Skeleton will be used. NOTHING was changed."));
+			return nullptr;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: %s. NOTHING was changed."), *Path));
+			return nullptr;
+		}
+		USkeleton* Skeleton = Cast<USkeleton>(Asset);
+		if (!Skeleton)
+		{
+			// NOT const: GetSkeleton() is const-qualified on a const mesh and would hand back a
+			// const USkeleton*, which cannot be written through.
+			if (USkeletalMesh* Mesh = Cast<USkeletalMesh>(Asset))
+			{
+				Skeleton = Mesh->GetSkeleton();
+			}
+		}
+		if (!Skeleton)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("%s is a %s - virtual bones live on a Skeleton (or a SkeletalMesh's assigned ")
+				TEXT("one). NOTHING was changed."), *Path, *Asset->GetClass()->GetName()));
+			return nullptr;
+		}
+		// COOKED IS REFUSED. The API is not editor-gated and would run, but a virtual bone is baked
+		// into animation data at cook time and a cooked project's sequences cannot be rebuilt - so
+		// the bone would exist on the skeleton and evaluate to nothing in every sequence using it.
+		const UPackage* Pkg = Skeleton->GetPackage();
+		if (Pkg && Pkg->HasAnyPackageFlags(PKG_Cooked))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a COOKED skeleton. Virtual bones are baked into animation data at cook ")
+				TEXT("time and the sequences on this skeleton cannot be rebuilt, so the bone would ")
+				TEXT("exist here and evaluate to nothing in every animation that uses it. NOTHING ")
+				TEXT("was changed."), *Skeleton->GetPathName()));
+			return nullptr;
+		}
+		return Skeleton;
+	}
+
+	/** The list_virtual_bones row shape, reused so the read and write halves cannot drift apart. */
+	static TSharedRef<FJsonObject> VirtualBoneJson(const FVirtualBone& VB)
+	{
+		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+		J->SetStringField(TEXT("name"), VB.VirtualBoneName.ToString());
+		J->SetStringField(TEXT("source"), VB.SourceBoneName.ToString());
+		J->SetStringField(TEXT("target"), VB.TargetBoneName.ToString());
+		return J;
+	}
+
+	static const FVirtualBone* FindVirtualBone(const USkeleton* Skeleton, const FName Name)
+	{
+		for (const FVirtualBone& VB : Skeleton->GetVirtualBones())
+		{
+			if (VB.VirtualBoneName == Name) { return &VB; }
+		}
+		return nullptr;
+	}
+
+	/** Refuses a bone name the reference skeleton does not hold, with near matches. */
+	static bool RequireRealBone(const USkeleton* Skeleton, const FString& Bone, const TCHAR* Which,
+								const TSharedRef<FJsonObject>& Out)
+	{
+		const FReferenceSkeleton& Ref = Skeleton->GetReferenceSkeleton();
+		if (Ref.FindBoneIndex(FName(*Bone)) != INDEX_NONE) { return true; }
+		TArray<FString> Near;
+		for (int32 i = 0; i < Ref.GetNum() && Near.Num() < 8; ++i)
+		{
+			const FString N = Ref.GetBoneName(i).ToString();
+			if (N.Contains(Bone) || Bone.Contains(N)) { Near.Add(N); }
+		}
+		Fail(Out, FString::Printf(
+			TEXT("no bone '%s' in this skeleton's reference skeleton (%d bones), so '%s' would be a ")
+			TEXT("PHANTOM virtual bone: AddNewVirtualBone does not check bone existence, ")
+			TEXT("RebuildRefSkeleton silently skips entries whose bones do not resolve, and the ")
+			TEXT("result is a bone that list_virtual_bones reports and that drives no animation at ")
+			TEXT("all. %s list_bones lists them. NOTHING was changed."),
+			*Bone, Ref.GetNum(), Which,
+			Near.Num() ? *FString::Printf(TEXT("Did you mean: %s?"), *FString::Join(Near, TEXT(", ")))
+					   : TEXT("")));
+		return false;
+	}
+
+	// --- add_virtual_bone ---------------------------------------------------
+	void H_add_virtual_bone(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("skeleton"), TEXT("path"), TEXT("assetPath"), TEXT("source"), TEXT("sourceBone"),
+			  TEXT("target"), TEXT("targetBone"), TEXT("name") },
+			TEXT("skeleton (aliases: path, assetPath); source (alias sourceBone); target (alias ")
+			TEXT("targetBone); name - optional, the engine names it \"VB <source>_<target>\" otherwise"),
+			{ { TEXT("parent"), TEXT("spell it `source` - a virtual bone is defined by the bone it is "
+									 "measured FROM and the bone it is measured TO") } }))
+		{
+			return;
+		}
+		USkeleton* Skeleton = ResolveSkeletonForWrite(In, Out);
+		if (!Skeleton) { return; }
+
+		const FString Source = JStrAny(In, { TEXT("source"), TEXT("sourceBone") });
+		const FString Target = JStrAny(In, { TEXT("target"), TEXT("targetBone") });
+		if (Source.IsEmpty() || Target.IsEmpty())
+		{
+			Fail(Out, TEXT("source and target are both required - a virtual bone measures one bone ")
+				TEXT("relative to another. NOTHING was changed."));
+			return;
+		}
+		if (Source == Target)
+		{
+			Fail(Out, TEXT("source and target are the same bone, so the virtual bone would always be ")
+				TEXT("the identity transform. NOTHING was changed."));
+			return;
+		}
+		// THE PHANTOM GUARD. Both, before anything is touched.
+		if (!RequireRealBone(Skeleton, Source, TEXT("source"), Out)) { return; }
+		if (!RequireRealBone(Skeleton, Target, TEXT("target"), Out)) { return; }
+
+		// A duplicate PAIR is the one thing the engine does reject - it returns false and changes
+		// nothing, which would otherwise look like an unexplained failure.
+		for (const FVirtualBone& VB : Skeleton->GetVirtualBones())
+		{
+			if (VB.SourceBoneName == FName(*Source) && VB.TargetBoneName == FName(*Target))
+			{
+				Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+				Out->SetObjectField(TEXT("virtualBone"), VirtualBoneJson(VB));
+				Out->SetBoolField(TEXT("created"), false);
+				Out->SetStringField(TEXT("note"),
+					TEXT("a virtual bone for that exact source/target pair already exists - nothing "
+						 "was added, and nothing needed to be. created:false here means the end "
+						 "state you asked for is already in place."));
+				return;
+			}
+		}
+
+		const FString WantName = JStr(In, TEXT("name"));
+		const int32 Before = Skeleton->GetVirtualBones().Num();
+		FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_AddVirtualBone", "Add Virtual Bone"));
+		Skeleton->Modify();
+
+		FName MadeName = NAME_None;
+#if MIF_ENGINE_AT_LEAST(5, 6)
+		// 5.6+ can name it directly.
+		if (!WantName.IsEmpty())
+		{
+			Skeleton->AddNewNamedVirtualBone(FName(*Source), FName(*Target), FName(*WantName));
+			MadeName = FName(*WantName);
+		}
+		else
+		{
+			Skeleton->AddNewVirtualBone(FName(*Source), FName(*Target), MadeName);
+		}
+#else
+		// 5.3 has NO named overload, so it is add-then-rename. The out-param reports the generated
+		// name; it does not accept one.
+		Skeleton->AddNewVirtualBone(FName(*Source), FName(*Target), MadeName);
+		if (!WantName.IsEmpty() && MadeName != NAME_None)
+		{
+			Skeleton->RenameVirtualBone(MadeName, FName(*WantName));
+			MadeName = FName(*WantName);
+		}
+#endif
+
+		// READ BACK. The engine's bool says only that a duplicate pair was not found.
+		const FVirtualBone* Made = FindVirtualBone(Skeleton, MadeName);
+		if (!Made || Skeleton->GetVirtualBones().Num() <= Before)
+		{
+			Fail(Out, TEXT("the virtual bone was requested and the skeleton does not list it on ")
+				TEXT("read-back. NOTHING usable was produced."));
+			return;
+		}
+		Skeleton->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+		// ECHOED FROM THE SKELETON, never from the request: the engine names it unless asked
+		// otherwise, so reporting what was asked for would frequently be wrong.
+		Out->SetObjectField(TEXT("virtualBone"), VirtualBoneJson(*Made));
+		Out->SetBoolField(TEXT("created"), true);
+		Out->SetNumberField(TEXT("countBefore"), Before);
+		Out->SetNumberField(TEXT("count"), Skeleton->GetVirtualBones().Num());
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the skeleton is dirty and NOTHING has been saved."));
+	}
+
+	// --- remove_virtual_bone ------------------------------------------------
+	void H_remove_virtual_bone(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("skeleton"), TEXT("path"), TEXT("assetPath"), TEXT("name"), TEXT("names"),
+			  TEXT("confirm") },
+			TEXT("skeleton (aliases: path, assetPath); name or names[]; confirm:true - removing a ")
+			TEXT("virtual bone REPARENTS any virtual bone that used it as a source"),
+			{ { TEXT("all"), TEXT("not supported - name them. Removing every virtual bone would "
+								  "silently rewire the whole set through the reparenting rule") } }))
+		{
+			return;
+		}
+		USkeleton* Skeleton = ResolveSkeletonForWrite(In, Out);
+		if (!Skeleton) { return; }
+
+		TArray<FName> Names;
+		const FString One = JStr(In, TEXT("name"));
+		if (!One.IsEmpty()) { Names.Add(FName(*One)); }
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if (In->TryGetArrayField(TEXT("names"), Arr) && Arr)
+		{
+			for (const TSharedPtr<FJsonValue>& V : *Arr)
+			{
+				FString N;
+				if (V.IsValid() && V->TryGetString(N) && !N.IsEmpty()) { Names.Add(FName(*N)); }
+			}
+		}
+		if (Names.Num() == 0)
+		{
+			Fail(Out, TEXT("name or names[] is required. list_virtual_bones reports what exists. ")
+				TEXT("NOTHING was changed."));
+			return;
+		}
+		for (const FName& N : Names)
+		{
+			if (!FindVirtualBone(Skeleton, N))
+			{
+				TArray<FString> Have;
+				for (const FVirtualBone& VB : Skeleton->GetVirtualBones())
+				{
+					Have.Add(VB.VirtualBoneName.ToString());
+				}
+				Fail(Out, FString::Printf(
+					TEXT("no virtual bone named '%s'. This skeleton has: %s. NOTHING was changed."),
+					*N.ToString(),
+					Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+				return;
+			}
+		}
+
+		// WORK OUT WHAT ELSE WILL CHANGE, before asking. RemoveVirtualBones rewires every virtual
+		// bone whose SOURCE is one of these to point at that bone's own source - so removing one
+		// silently edits others, and a caller cannot be expected to know that.
+		TArray<TSharedPtr<FJsonValue>> WillReparent;
+		for (const FVirtualBone& VB : Skeleton->GetVirtualBones())
+		{
+			if (Names.Contains(VB.SourceBoneName) && !Names.Contains(VB.VirtualBoneName))
+			{
+				const FVirtualBone* Removed = FindVirtualBone(Skeleton, VB.SourceBoneName);
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+				J->SetStringField(TEXT("name"), VB.VirtualBoneName.ToString());
+				J->SetStringField(TEXT("sourceWas"), VB.SourceBoneName.ToString());
+				J->SetStringField(TEXT("sourceBecomes"),
+					Removed ? Removed->SourceBoneName.ToString() : FString());
+				WillReparent.Add(MakeShared<FJsonValueObject>(J));
+			}
+		}
+
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Out->SetArrayField(TEXT("wouldReparent"), WillReparent);
+			Fail(Out, FString::Printf(
+				TEXT("removing %d virtual bone(s) also REPARENTS %d other(s) - RemoveVirtualBones ")
+				TEXT("rewires any virtual bone whose source was one of these to point at that bone's ")
+				TEXT("own source. See wouldReparent[]. Pass confirm:true. NOTHING was changed."),
+				Names.Num(), WillReparent.Num()));
+			return;
+		}
+
+		const int32 Before = Skeleton->GetVirtualBones().Num();
+		FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_RemoveVirtualBone",
+										"Remove Virtual Bone"));
+		Skeleton->Modify();
+		Skeleton->RemoveVirtualBones(Names);
+		const int32 After = Skeleton->GetVirtualBones().Num();
+		if (After >= Before)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("RemoveVirtualBones ran and the skeleton still holds %d. NOTHING was removed."),
+				After));
+			return;
+		}
+		Skeleton->MarkPackageDirty();
+
+		TArray<TSharedPtr<FJsonValue>> Removed;
+		for (const FName& N : Names) { Removed.Add(MakeShared<FJsonValueString>(N.ToString())); }
+		Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+		Out->SetArrayField(TEXT("removed"), Removed);
+		Out->SetNumberField(TEXT("removedCount"), Before - After);
+		Out->SetArrayField(TEXT("reparented"), WillReparent);
+		Out->SetNumberField(TEXT("countBefore"), Before);
+		Out->SetNumberField(TEXT("count"), After);
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the skeleton is dirty and NOTHING has been saved."));
+	}
+
+	// --- rename_virtual_bone ------------------------------------------------
+	void H_rename_virtual_bone(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("skeleton"), TEXT("path"), TEXT("assetPath"), TEXT("name"), TEXT("newName") },
+			TEXT("skeleton (aliases: path, assetPath); name - the existing virtual bone; newName"),
+			{}))
+		{
+			return;
+		}
+		USkeleton* Skeleton = ResolveSkeletonForWrite(In, Out);
+		if (!Skeleton) { return; }
+
+		const FString Name = JStr(In, TEXT("name"));
+		const FString NewName = JStr(In, TEXT("newName"));
+		if (Name.IsEmpty() || NewName.IsEmpty())
+		{
+			Fail(Out, TEXT("name and newName are both required. NOTHING was changed."));
+			return;
+		}
+		if (Name == NewName)
+		{
+			Fail(Out, TEXT("name and newName are the same. NOTHING was changed."));
+			return;
+		}
+		// RenameVirtualBone IS A VOID SILENT NO-OP when nothing matches, so the original is
+		// verified here or a typo would return success having done nothing.
+		if (!FindVirtualBone(Skeleton, FName(*Name)))
+		{
+			TArray<FString> Have;
+			for (const FVirtualBone& VB : Skeleton->GetVirtualBones())
+			{
+				Have.Add(VB.VirtualBoneName.ToString());
+			}
+			Fail(Out, FString::Printf(
+				TEXT("no virtual bone named '%s' - RenameVirtualBone is void and does nothing quietly ")
+				TEXT("when the name matches nothing, so this is checked here. This skeleton has: %s. ")
+				TEXT("NOTHING was changed."), *Name,
+				Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+		if (FindVirtualBone(Skeleton, FName(*NewName)))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("a virtual bone named '%s' already exists. NOTHING was changed."), *NewName));
+			return;
+		}
+		// The engine checks neither this nor the "VB " prefix, and a virtual bone sharing a REAL
+		// bone's name makes every by-name lookup ambiguous.
+		if (Skeleton->GetReferenceSkeleton().FindBoneIndex(FName(*NewName)) != INDEX_NONE)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is the name of a REAL bone in this skeleton. RenameVirtualBone does not ")
+				TEXT("check that, and the collision would make every lookup by that name ambiguous. ")
+				TEXT("NOTHING was changed."), *NewName));
+			return;
+		}
+
+		FScopedTransaction Tx(NSLOCTEXT("MifBridge", "MifBridge_RenameVirtualBone",
+										"Rename Virtual Bone"));
+		Skeleton->Modify();
+		Skeleton->RenameVirtualBone(FName(*Name), FName(*NewName));
+
+		const FVirtualBone* Now = FindVirtualBone(Skeleton, FName(*NewName));
+		if (!Now)
+		{
+			Fail(Out, TEXT("RenameVirtualBone ran and the new name is not present on read-back. It ")
+				TEXT("returns void, so this read-back is the only signal there is. NOTHING usable ")
+				TEXT("was produced."));
+			return;
+		}
+		Skeleton->MarkPackageDirty();
+
+		Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+		Out->SetStringField(TEXT("name"), Name);
+		Out->SetStringField(TEXT("newName"), NewName);
+		Out->SetBoolField(TEXT("renamed"), true);
+		Out->SetObjectField(TEXT("virtualBone"), VirtualBoneJson(*Now));
+		// The rename also rewires any virtual bone that used the old name as its SOURCE
+		// (Skeleton.cpp:1886-1895), which is the counterpart of removal's reparenting.
+		Out->SetStringField(TEXT("note"),
+			TEXT("any virtual bone that used the old name as its SOURCE was rewired to the new name "
+				 "as well - RenameVirtualBone updates both fields."));
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the skeleton is dirty and NOTHING has been saved."));
+	}
 }

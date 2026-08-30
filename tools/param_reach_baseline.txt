@@ -47,6 +47,7 @@ add_sequence_track.binding
 add_sequence_track.sequence
 add_socket.mesh
 add_sublevel.level
+add_virtual_bone.assetpath
 analyze_skeletal_split.mesh
 analyze_skeletal_split.skeletalmesh
 apply_graph_patch.ops
@@ -167,11 +168,13 @@ remove_interface.class
 remove_pcg_node.assetpath
 remove_pin.name
 remove_sublevel.level
+remove_virtual_bone.assetpath
 rename_event.to
 rename_event_dispatcher.dispatcher
 rename_event_dispatcher.to
 rename_function.function
 rename_function.to
+rename_virtual_bone.assetpath
 reset_property_to_default.actorpath
 reset_property_to_default.alloweditconst
 reset_property_to_default.blueprintid

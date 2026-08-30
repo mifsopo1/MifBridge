@@ -3038,6 +3038,27 @@ def run_retarget(retargeter: str, animations: list, source_mesh: str = "", targe
                  confirm=confirm)
 
 
+@mcp.tool()
+def add_virtual_bone(skeleton: str, source: str, target: str, name: str = "") -> dict:
+    "Create a virtual bone on a USkeleton - the synthetic bones (hand-relative-to-hip, foot-relative-to-root) that IK and retargeting chains are usually built against. BOTH BONE NAMES ARE VALIDATED FIRST, which is the point: USkeleton::AddNewVirtualBone rejects only a duplicate source/target PAIR and never checks that the bones exist, so a typo returns true, sits in VirtualBones forever, is reported by list_virtual_bones, and drives no animation at all because RebuildRefSkeleton silently skips entries whose bones do not resolve. A bone that shows up in every listing and does nothing is worse than a refusal. `name` is optional and the response echoes what the skeleton ACTUALLY holds, not what was asked: the engine names it \"VB <source>_<target>\" itself, and the overload that accepts a name only exists on UE 5.6+, so on 5.3 this adds then renames. A duplicate pair reports created:false rather than erroring. Refused on cooked skeletons - virtual bones are baked into animation data at cook time, so it would exist and evaluate to nothing everywhere."
+    return _post("add_virtual_bone", skeleton=skeleton, source=source, target=target,
+                 name=name or None)
+
+
+@mcp.tool()
+def remove_virtual_bone(skeleton: str, name: str = "", names: list = None,
+                        confirm: bool = False) -> dict:
+    "Remove one or more virtual bones from a USkeleton. Requires confirm=True because removal REPARENTS other bones: USkeleton::RemoveVirtualBones rewires every virtual bone whose source was a removed one to point at that bone's own source, so deleting one silently edits others. The refusal without confirm returns wouldReparent[] naming each affected bone and what its source will become, and the success response returns the same list as reparented[]. Refused on cooked skeletons."
+    return _post("remove_virtual_bone", skeleton=skeleton, name=name or None,
+                 names=names, confirm=confirm)
+
+
+@mcp.tool()
+def rename_virtual_bone(skeleton: str, name: str, new_name: str) -> dict:
+    "Rename a virtual bone on a USkeleton. The original is verified to exist first because USkeleton::RenameVirtualBone returns VOID and does nothing quietly when the name matches nothing - a typo would otherwise look like success. Renaming onto the name of a REAL bone is refused too, which the engine does not check: the collision would make every by-name lookup ambiguous. Note that any virtual bone using the old name as its SOURCE is rewired to the new name as well. Refused on cooked skeletons."
+    return _post("rename_virtual_bone", skeleton=skeleton, name=name, newName=new_name)
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:
