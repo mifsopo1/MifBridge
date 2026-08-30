@@ -4584,7 +4584,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       suite, test_uncovered_reads4 (2) and test_uncovered_reads7 (1) carry no usable path.
       Each is documented in its own suite. That is the floor, not a backlog.
 
-- [ ] **a legacy `settings:true` branch on map_input_key/unmap_input_key for UInputSettings** (hours)
+- [x] **legacy UInputSettings input: list/map/unmap_legacy_input + save_input_settings** (hours)
+      DONE 2026-08-30. Built as SEPARATE endpoints, not the settings:true branch this item
+      proposed, and that is a deliberate change of shape. Legacy input has no context, its
+      `name` is a bare FName rather than an InputAction asset, and it adds shift/ctrl/alt/cmd
+      for actions and scale for axes. A settings:true flag would make `context` meaningless,
+      change what `action` even is, and switch four more parameters on - half a signature going
+      dead depending on a boolean is exactly what audit_mode_params.py exists to find.
+      Persistence is its own gated endpoint for the same kind of reason. SaveKeyMappings writes
+      Config/DefaultInput.ini, a real file in the project, and RefuseIfGated classifies per
+      ENDPOINT NAME - so the same write behind a save:true parameter could not have been gated
+      at all. save_input_settings is on UnsafeEndpoints() beside save_package, and the suite
+      asserts the gate's refusal rather than ever writing the file.
+      24 checks in tools/test_legacy_input.py. The suite edits PROJECT-WIDE settings, not a
+      scratch asset, so it verifies the project has no legacy mappings before it starts and
+      skips if it does - it will not edit someone's real bindings - and restores what it added.
+      Verified on both engines that all four UInputSettings functions are ENGINE_API public
+      with identical signatures.
       Split from the item above. Legacy (non-Enhanced) input has no read OR write coverage at
       all: UInputSettings::AddActionMapping/AddAxisMapping/RemoveActionMapping and
       SaveKeyMappings, ENGINE_API public in GameFramework/InputSettings.h. Deliberately NOT

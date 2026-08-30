@@ -1073,6 +1073,10 @@ namespace MifBridge
 	MIF_DECL(list_input_mappings);
 	MIF_DECL(map_input_key);
 	MIF_DECL(unmap_input_key);
+	MIF_DECL(list_legacy_input_mappings);
+	MIF_DECL(map_legacy_input);
+	MIF_DECL(unmap_legacy_input);
+	MIF_DECL(save_input_settings);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);

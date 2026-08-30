@@ -3344,6 +3344,36 @@ def unmap_input_key(context: str, action: str = "", key: str = "", all: bool = F
 
 
 @mcp.tool()
+def list_legacy_input_mappings(name: str = "") -> dict:
+    "Read the project's LEGACY (pre-Enhanced) input bindings from UInputSettings - action mappings and axis mappings, which are separate families with different fields. This is a different system from list_input_mappings: legacy input has no contexts, its bindings are addressed by a bare name rather than an InputAction asset, and a project mid-migration has BOTH live at once. Action rows always report shift/ctrl/alt/cmd, because those are part of a binding's identity - Ctrl+S and S are two different mappings. Axis rows report scale. Pass name to see only one action's or axis's bindings; the unfiltered totals still come back as actionCountTotal/axisCountTotal. An empty result usually just means the project uses Enhanced Input."
+    return _post("list_legacy_input_mappings", name=name)
+
+
+@mcp.tool()
+def map_legacy_input(name: str, key: str, axis: bool = False, scale: float = 1.0,
+                     shift: bool = False, ctrl: bool = False, alt: bool = False,
+                     cmd: bool = False) -> dict:
+    "Add a LEGACY (pre-Enhanced) input binding to UInputSettings. name is a bare action or axis name, not an asset path; key is an FKey name such as SpaceBar. axis=True makes an axis mapping (which uses scale and REFUSES the modifier flags, because FInputAxisKeyMapping has no such fields and would drop them silently); otherwise it is an action mapping (which uses the modifiers and REFUSES scale). Modifiers are part of a binding's identity - mapping SpaceBar and Ctrl+SpaceBar creates two mappings, not one. An exact duplicate reports mapped:false rather than erroring. This edits the IN-MEMORY settings only and reverts on editor restart; writing Config/DefaultInput.ini is the separate save_input_settings endpoint, which is on the safety gate's unsafe list because it reaches disk. For Enhanced Input use map_input_key instead."
+    return _post("map_legacy_input", name=name, key=key, axis=axis, scale=scale, shift=shift,
+                 ctrl=ctrl, alt=alt, cmd=cmd)
+
+
+@mcp.tool()
+def unmap_legacy_input(name: str, key: str, axis: bool = False, scale: float = 1.0,
+                       shift: bool = False, ctrl: bool = False, alt: bool = False,
+                       cmd: bool = False) -> dict:
+    "Remove a LEGACY input binding from UInputSettings. A legacy mapping matches on name, key AND every modifier, so removing Ctrl+S needs ctrl=True - without it you are asking to remove a different binding and nothing will match. `removed` is the measured change in the mapping count, not the request: RemoveActionMapping and RemoveAxisMapping both return void and report nothing about whether they matched, so an unmatched removal succeeds with removed:0 and a note explaining why. In-memory only, like map_legacy_input."
+    return _post("unmap_legacy_input", name=name, key=key, axis=axis, scale=scale, shift=shift,
+                 ctrl=ctrl, alt=alt, cmd=cmd)
+
+
+@mcp.tool()
+def save_input_settings(confirm: bool = False) -> dict:
+    "Persist the legacy input mappings to Config/DefaultInput.ini via UInputSettings::SaveKeyMappings. THIS WRITES A REAL FILE in the project - it is not an in-memory edit that reverts on restart, which is why it is a separate endpoint rather than a save flag on map_legacy_input: the safety gate classifies per endpoint name, so a parameter could not have been gated at all. Refused outright in scratch and read write-modes, and requires confirm=True even in full mode. Everything map_legacy_input and unmap_legacy_input do is in memory until this is called."
+    return _post("save_input_settings", confirm=confirm)
+
+
+@mcp.tool()
 def add_enhanced_input_action(graph_id: str, input_action: str, x: int = 0, y: int = 0) -> dict:
     "Add a UK2Node_EnhancedInputAction event node (the 'IA_Foo' node you normally get by right-clicking the graph and searching for the action asset) - the one node class the bridge could not author, which forced every Enhanced Input binding to be finished by hand. input_action is a UInputAction object path (/Game/X/IA_Foo.IA_Foo) or its package path (/Game/X/IA_Foo). Pins (Triggered/Started/Ongoing/Canceled/Completed plus a value pin typed by the action's ValueType) are generated FROM the action, so an unresolvable path is an error rather than a pin-less node."
     return _post("add_enhanced_input_action", graphId=graph_id, inputAction=input_action, x=x, y=y)

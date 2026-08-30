@@ -9,6 +9,8 @@
 // runs. PlaceAndInit is what calls AllocateDefaultPins, so the assignment goes above it — exactly the same
 // constraint as UK2Node_CustomEvent::CustomFunctionName in MifBridgeNodes2.cpp.
 #include "MifBridgeHandlers.h"
+#include "GameFramework/InputSettings.h"
+#include "GameFramework/PlayerInput.h"   // FInputActionKeyMapping / FInputAxisKeyMapping
 #include "EnhancedInputModule.h"
 #include "EnhancedInputLibrary.h"
 #include "InputCoreTypes.h"
@@ -492,5 +494,402 @@ namespace MifBridge
 		MifNoteCookedContext(Context, Out);
 		Out->SetStringField(TEXT("assetNote"),
 			TEXT("the context is dirty and NOTHING has been saved."));
+	}
+
+	// =======================================================================
+	// LEGACY (pre-Enhanced) INPUT - UInputSettings action and axis mappings
+	// =======================================================================
+	//
+	// THE ONE INPUT SYSTEM WITH NO COVERAGE AT ALL, read or write. Enhanced Input has had a read half
+	// since list_input_mappings and a write half since map_input_key; legacy input had neither, and
+	// it is still what a large amount of existing UE content and every UE4-era tutorial uses. A
+	// project being migrated has both systems live at once, and an agent could see only one of them.
+	//
+	// THESE ARE SEPARATE ENDPOINTS, NOT A settings:true BRANCH ON map_input_key, which is what the
+	// survey proposed. The two systems only look alike from a distance:
+	//
+	//     Enhanced   context (an IMC asset) + action (an InputAction ASSET) + key
+	//     Legacy     no context at all      + a bare FName                 + key
+	//                                       + bShift/bCtrl/bAlt/bCmd for actions
+	//                                       + scale for axes
+	//
+	// A settings:true flag would make `context` meaningless, change what `action` even is, and switch
+	// four more parameters on. Half a signature going dead depending on a boolean is precisely the
+	// shape audit_mode_params.py exists to find, and building one deliberately to save an endpoint
+	// name would be the wrong trade.
+	//
+	// PERSISTENCE IS A SEPARATE, GATED ENDPOINT for the same reason save_package is. These two only
+	// ever mutate the in-memory UInputSettings CDO, which reverts on editor restart like every other
+	// write this bridge makes. Writing Config/DefaultInput.ini is UInputSettings::SaveKeyMappings,
+	// and that reaches DISK in the user's project - so it lives in save_input_settings, which is on
+	// the safety gate's unsafe list. Putting it behind a save:true parameter here would have hidden a
+	// disk write inside an endpoint whose whole contract is that it does not make one, and the gate
+	// classifies per ENDPOINT, so a parameter could not have been gated at all.
+
+	UInputSettings* MifInputSettings(const TSharedRef<FJsonObject>& Out)
+	{
+		UInputSettings* Settings = UInputSettings::GetInputSettings();
+		if (!Settings)
+		{
+			Fail(Out, TEXT("UInputSettings::GetInputSettings() returned null, which should not happen "
+				TEXT("in a running editor. NOTHING was changed.")));
+		}
+		return Settings;
+	}
+
+	void MifWriteLegacyMappings(UInputSettings* Settings, const TSharedRef<FJsonObject>& Out)
+	{
+		TArray<TSharedPtr<FJsonValue>> Actions;
+		for (const FInputActionKeyMapping& M : Settings->GetActionMappings())
+		{
+			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
+			R->SetStringField(TEXT("name"), M.ActionName.ToString());
+			R->SetStringField(TEXT("key"), M.Key.ToString());
+			R->SetStringField(TEXT("keyDisplay"), M.Key.GetDisplayName().ToString());
+			// The modifiers are what make two mappings with the same name and key different things -
+			// Ctrl+S and S are separate bindings - so they are always reported, not only when set.
+			R->SetBoolField(TEXT("shift"), M.bShift != 0);
+			R->SetBoolField(TEXT("ctrl"), M.bCtrl != 0);
+			R->SetBoolField(TEXT("alt"), M.bAlt != 0);
+			R->SetBoolField(TEXT("cmd"), M.bCmd != 0);
+			Actions.Add(MakeShared<FJsonValueObject>(R));
+		}
+		TArray<TSharedPtr<FJsonValue>> Axes;
+		for (const FInputAxisKeyMapping& M : Settings->GetAxisMappings())
+		{
+			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
+			R->SetStringField(TEXT("name"), M.AxisName.ToString());
+			R->SetStringField(TEXT("key"), M.Key.ToString());
+			R->SetStringField(TEXT("keyDisplay"), M.Key.GetDisplayName().ToString());
+			R->SetNumberField(TEXT("scale"), M.Scale);
+			Axes.Add(MakeShared<FJsonValueObject>(R));
+		}
+		Out->SetArrayField(TEXT("actionMappings"), Actions);
+		Out->SetArrayField(TEXT("axisMappings"), Axes);
+		Out->SetNumberField(TEXT("actionCount"), Actions.Num());
+		Out->SetNumberField(TEXT("axisCount"), Axes.Num());
+	}
+
+	/** Shared key validation. See map_input_key for why a bad FKey name must never reach a mapping. */
+	bool MifResolveInputKey(const FString& KeyName, FKey& OutKey, const TSharedRef<FJsonObject>& Out)
+	{
+		if (KeyName.IsEmpty())
+		{
+			Fail(Out, TEXT("key is required - an FKey name such as SpaceBar or LeftMouseButton. ")
+				TEXT("NOTHING was changed."));
+			return false;
+		}
+		OutKey = FKey(*KeyName);
+		if (!OutKey.IsValid() || !EKeys::GetKeyDetails(OutKey).IsValid())
+		{
+			TArray<FKey> All;
+			EKeys::GetAllKeys(All);
+			TArray<FString> Near;
+			for (const FKey& K : All)
+			{
+				const FString KStr = K.ToString();
+				if (KStr.Contains(KeyName) || (KStr.Len() >= 4 && KeyName.Contains(KStr)))
+				{
+					Near.Add(KStr);
+					if (Near.Num() >= 8) { break; }
+				}
+			}
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is not a key this engine knows. FKey accepts any name, so a typo builds ")
+				TEXT("fine and then binds to nothing. %s NOTHING was changed."),
+				*KeyName,
+				Near.Num() ? *FString::Printf(TEXT("Did you mean: %s?"),
+											  *FString::Join(Near, TEXT(", ")))
+						   : TEXT("EKeys has no similar name.")));
+			return false;
+		}
+		return true;
+	}
+
+	// --- list_legacy_input_mappings -----------------------------------------
+	void H_list_legacy_input_mappings(const TSharedRef<FJsonObject>& In,
+									  const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out, { TEXT("name") },
+			TEXT("name - optional, report only mappings with this action or axis name"),
+			{ { TEXT("context"), TEXT("legacy input has no contexts - that is Enhanced Input. Use ")
+								 TEXT("list_input_mappings for an InputMappingContext.") } }))
+		{
+			return;
+		}
+		UInputSettings* Settings = MifInputSettings(Out);
+		if (!Settings) { return; }
+
+		MifWriteLegacyMappings(Settings, Out);
+
+		const FString Filter = JStr(In, TEXT("name"));
+		if (!Filter.IsEmpty())
+		{
+			// Filter after building, so the unfiltered counts stay available as context.
+			auto Keep = [&Filter](const TArray<TSharedPtr<FJsonValue>>& In2)
+			{
+				TArray<TSharedPtr<FJsonValue>> Kept;
+				for (const TSharedPtr<FJsonValue>& V : In2)
+				{
+					const TSharedPtr<FJsonObject>* O = nullptr;
+					if (V->TryGetObject(O) && (*O)->GetStringField(TEXT("name")).Equals(
+							Filter, ESearchCase::IgnoreCase))
+					{
+						Kept.Add(V);
+					}
+				}
+				return Kept;
+			};
+			const TArray<TSharedPtr<FJsonValue>> A = Keep(Out->GetArrayField(TEXT("actionMappings")));
+			const TArray<TSharedPtr<FJsonValue>> X = Keep(Out->GetArrayField(TEXT("axisMappings")));
+			Out->SetNumberField(TEXT("actionCountTotal"), Out->GetNumberField(TEXT("actionCount")));
+			Out->SetNumberField(TEXT("axisCountTotal"), Out->GetNumberField(TEXT("axisCount")));
+			Out->SetArrayField(TEXT("actionMappings"), A);
+			Out->SetArrayField(TEXT("axisMappings"), X);
+			Out->SetNumberField(TEXT("actionCount"), A.Num());
+			Out->SetNumberField(TEXT("axisCount"), X.Num());
+			Out->SetStringField(TEXT("filteredBy"), Filter);
+		}
+
+		if (Out->GetNumberField(TEXT("actionCount")) == 0
+			&& Out->GetNumberField(TEXT("axisCount")) == 0)
+		{
+			Out->SetStringField(TEXT("note"),
+				Filter.IsEmpty()
+					? TEXT("this project defines no legacy input mappings at all. That is normal for "
+						   "anything authored against Enhanced Input - list_input_mappings reads that "
+						   "system, and the two are independent.")
+					: TEXT("no legacy mapping has that name. actionCountTotal and axisCountTotal say "
+						   "how many exist in total; call without `name` to see them."));
+		}
+	}
+
+	// --- map_legacy_input ---------------------------------------------------
+	void H_map_legacy_input(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("key"), TEXT("axis"), TEXT("scale"), TEXT("shift"), TEXT("ctrl"),
+			  TEXT("alt"), TEXT("cmd") },
+			TEXT("name - the action or axis name; key - an FKey name; axis:true for an axis mapping ")
+			TEXT("(then scale, default 1.0); shift/ctrl/alt/cmd for an action mapping's modifiers"),
+			{ { TEXT("context"), TEXT("legacy input has no contexts - use map_input_key for Enhanced ")
+								 TEXT("Input") },
+			  { TEXT("action"), TEXT("spell it `name`, and it is a bare name here, not an asset path") },
+			  { TEXT("save"), TEXT("this only edits memory. Persisting to Config/DefaultInput.ini is ")
+							  TEXT("save_input_settings, which is separate because it writes to disk") } }))
+		{
+			return;
+		}
+		UInputSettings* Settings = MifInputSettings(Out);
+		if (!Settings) { return; }
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required - the action or axis name, e.g. \"Jump\" or ")
+				TEXT("\"MoveForward\". NOTHING was changed."));
+			return;
+		}
+		FKey Key;
+		if (!MifResolveInputKey(JStr(In, TEXT("key")), Key, Out)) { return; }
+
+		const bool bAxis = JBool(In, TEXT("axis"), false);
+		if (!bAxis)
+		{
+			for (const TCHAR* Bad : { TEXT("scale") })
+			{
+				if (In->HasField(Bad))
+				{
+					Fail(Out, TEXT("scale only applies to an axis mapping - pass axis:true, or drop ")
+						TEXT("scale. NOTHING was changed."));
+					return;
+				}
+			}
+		}
+		else
+		{
+			for (const TCHAR* Bad : { TEXT("shift"), TEXT("ctrl"), TEXT("alt"), TEXT("cmd") })
+			{
+				if (In->HasField(Bad))
+				{
+					// Refused rather than ignored. An axis mapping has no modifier fields at all, so
+					// accepting shift:true would silently drop it and report success.
+					Fail(Out, FString::Printf(
+						TEXT("'%s' is an ACTION mapping modifier and FInputAxisKeyMapping has no such ")
+						TEXT("field - it would be silently dropped. Drop it, or remove axis:true. ")
+						TEXT("NOTHING was changed."), Bad));
+					return;
+				}
+			}
+		}
+
+		const int32 ABefore = Settings->GetActionMappings().Num();
+		const int32 XBefore = Settings->GetAxisMappings().Num();
+
+		if (bAxis)
+		{
+			FInputAxisKeyMapping M;
+			M.AxisName = FName(*Name);
+			M.Key = Key;
+			M.Scale = static_cast<float>(JNum(In, TEXT("scale"), 1.0));
+			for (const FInputAxisKeyMapping& E : Settings->GetAxisMappings())
+			{
+				if (E.AxisName == M.AxisName && E.Key == M.Key
+					&& FMath::IsNearlyEqual(E.Scale, M.Scale))
+				{
+					Out->SetBoolField(TEXT("mapped"), false);
+					Out->SetStringField(TEXT("note"),
+						TEXT("that axis is already bound to that key with that scale - nothing was "
+							 "added, and nothing needed to be."));
+					MifWriteLegacyMappings(Settings, Out);
+					return;
+				}
+			}
+			Settings->AddAxisMapping(M);
+		}
+		else
+		{
+			FInputActionKeyMapping M;
+			M.ActionName = FName(*Name);
+			M.Key = Key;
+			M.bShift = JBool(In, TEXT("shift"), false);
+			M.bCtrl = JBool(In, TEXT("ctrl"), false);
+			M.bAlt = JBool(In, TEXT("alt"), false);
+			M.bCmd = JBool(In, TEXT("cmd"), false);
+			for (const FInputActionKeyMapping& E : Settings->GetActionMappings())
+			{
+				if (E.ActionName == M.ActionName && E.Key == M.Key && E.bShift == M.bShift
+					&& E.bCtrl == M.bCtrl && E.bAlt == M.bAlt && E.bCmd == M.bCmd)
+				{
+					Out->SetBoolField(TEXT("mapped"), false);
+					Out->SetStringField(TEXT("note"),
+						TEXT("that action is already bound to that key with those modifiers - nothing "
+							 "was added, and nothing needed to be."));
+					MifWriteLegacyMappings(Settings, Out);
+					return;
+				}
+			}
+			Settings->AddActionMapping(M);
+		}
+
+		// READ BACK from the settings object, not from the struct that was handed in.
+		const int32 AAfter = Settings->GetActionMappings().Num();
+		const int32 XAfter = Settings->GetAxisMappings().Num();
+		if ((bAxis && XAfter <= XBefore) || (!bAxis && AAfter <= ABefore))
+		{
+			Fail(Out, TEXT("the mapping was added and the settings do not list it on read-back. ")
+				TEXT("NOTHING usable was produced."));
+			return;
+		}
+
+		Out->SetStringField(TEXT("name"), Name);
+		Out->SetStringField(TEXT("key"), Key.ToString());
+		Out->SetBoolField(TEXT("axis"), bAxis);
+		Out->SetBoolField(TEXT("mapped"), true);
+		MifWriteLegacyMappings(Settings, Out);
+		Out->SetStringField(TEXT("persistNote"),
+			TEXT("this changed the in-memory input settings ONLY and reverts on editor restart. "
+				 "Config/DefaultInput.ini is untouched - save_input_settings writes it, and it is on "
+				 "the safety gate's unsafe list because it reaches disk."));
+	}
+
+	// --- unmap_legacy_input -------------------------------------------------
+	void H_unmap_legacy_input(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("key"), TEXT("axis"), TEXT("scale"), TEXT("shift"), TEXT("ctrl"),
+			  TEXT("alt"), TEXT("cmd") },
+			TEXT("name - the action or axis name; key - the FKey name to unbind; axis:true for an ")
+			TEXT("axis mapping. Modifiers must match the mapping being removed."),
+			{ { TEXT("all"), TEXT("not supported - legacy mappings are project-wide settings, not a ")
+							 TEXT("scratch container, so there is no bulk clear here on purpose") } }))
+		{
+			return;
+		}
+		UInputSettings* Settings = MifInputSettings(Out);
+		if (!Settings) { return; }
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required. NOTHING was changed."));
+			return;
+		}
+		FKey Key;
+		if (!MifResolveInputKey(JStr(In, TEXT("key")), Key, Out)) { return; }
+
+		const bool bAxis = JBool(In, TEXT("axis"), false);
+		const int32 Before = bAxis ? Settings->GetAxisMappings().Num()
+								   : Settings->GetActionMappings().Num();
+
+		if (bAxis)
+		{
+			FInputAxisKeyMapping M;
+			M.AxisName = FName(*Name);
+			M.Key = Key;
+			M.Scale = static_cast<float>(JNum(In, TEXT("scale"), 1.0));
+			Settings->RemoveAxisMapping(M);
+		}
+		else
+		{
+			FInputActionKeyMapping M;
+			M.ActionName = FName(*Name);
+			M.Key = Key;
+			M.bShift = JBool(In, TEXT("shift"), false);
+			M.bCtrl = JBool(In, TEXT("ctrl"), false);
+			M.bAlt = JBool(In, TEXT("alt"), false);
+			M.bCmd = JBool(In, TEXT("cmd"), false);
+			Settings->RemoveActionMapping(M);
+		}
+
+		const int32 After = bAxis ? Settings->GetAxisMappings().Num()
+								  : Settings->GetActionMappings().Num();
+		Out->SetStringField(TEXT("name"), Name);
+		Out->SetStringField(TEXT("key"), Key.ToString());
+		Out->SetBoolField(TEXT("axis"), bAxis);
+		// Measured, never assumed - RemoveActionMapping and RemoveAxisMapping both return void.
+		Out->SetNumberField(TEXT("removed"), Before - After);
+		MifWriteLegacyMappings(Settings, Out);
+		if (Before == After)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("nothing matched, so nothing was removed - removed:0 is the measured difference "
+					 "in the mapping count, since RemoveActionMapping returns void and reports "
+					 "nothing. A legacy mapping matches on name, key AND every modifier: removing "
+					 "Ctrl+S needs ctrl:true, and without it you are asking to remove a different "
+					 "binding. list_legacy_input_mappings {name} shows what is really there."));
+		}
+		Out->SetStringField(TEXT("persistNote"),
+			TEXT("in-memory only - reverts on editor restart, and Config/DefaultInput.ini is "
+				 "untouched."));
+	}
+
+	// --- save_input_settings ------------------------------------------------
+	void H_save_input_settings(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		// ITS OWN ENDPOINT SO THE SAFETY GATE CAN SEE IT. RefuseIfGated runs in the dispatcher and
+		// classifies per endpoint name, so a save:true PARAMETER on map_legacy_input could not have
+		// been gated at all - it would have been a disk write hiding inside an endpoint whose
+		// contract says it makes none. This is on UnsafeEndpoints() alongside save_package.
+		if (RejectUnknownParams(In, Out, { TEXT("confirm") },
+			TEXT("confirm:true - this WRITES Config/DefaultInput.ini in the project"),
+			{ { TEXT("path"), TEXT("not selectable - SaveKeyMappings writes the project's own "
+								   "DefaultInput.ini and takes no path") } }))
+		{
+			return;
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("save_input_settings WRITES Config/DefaultInput.ini in the project - a "
+				TEXT("real file on disk, not an in-memory edit that reverts on restart. Pass ")
+				TEXT("confirm:true. NOTHING was written.")));
+			return;
+		}
+		UInputSettings* Settings = MifInputSettings(Out);
+		if (!Settings) { return; }
+		Settings->SaveKeyMappings();
+		Out->SetBoolField(TEXT("saved"), true);
+		Out->SetStringField(TEXT("file"), TEXT("Config/DefaultInput.ini"));
+		MifWriteLegacyMappings(Settings, Out);
 	}
 }

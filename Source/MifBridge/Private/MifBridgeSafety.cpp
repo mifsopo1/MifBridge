@@ -79,6 +79,11 @@ namespace MifBridge
 				// before this, nothing enforced it.
 				TEXT("save_package"), TEXT("save_blueprint"), TEXT("save_dirty_packages"),
 				TEXT("save_level_as"), TEXT("save_all"),
+				// SaveKeyMappings writes Config/DefaultInput.ini in the PROJECT. It is its own
+				// endpoint precisely so it can appear here - the gate classifies per endpoint name,
+				// so the same write behind a save:true parameter on map_legacy_input could not have
+				// been gated at all.
+				TEXT("save_input_settings"),
 				// Take the editor loop. PM-011 is about a modal deadlocking the bridge; PIE is the
 				// same hazard with a longer fuse.
 				TEXT("start_pie"), TEXT("stop_pie"),
