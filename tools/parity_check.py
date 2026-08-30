@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import os
 import re
 import sys
@@ -52,14 +53,38 @@ ROOT = os.path.dirname(HERE)
 
 MCP_SERVER = os.path.join(HERE, "mcp-server", "server.py")
 ADDON_DIR = os.path.join(HERE, "blender-addon", "MifBlender")
-# EVERY module that contributes to the addon's op table must be listed here. A
-# module missing from this tuple is INVISIBLE to check 1: its ops read as
-# "registered nowhere", and — worse — a tool that legitimately calls one gets
-# reported as dead. That happened on 2026-08-15, when ops_gen.py (the ComfyUI
-# generation chain) was added to the addon and this tuple was not updated, so the
-# checker blamed five correct wrappers instead of itself. Cross-check against
-# server.py's `table.update(...)` calls, which are the real registry.
-ADDON_OP_MODULES = ("ops_scene.py", "ops_mesh.py", "ops_gen.py", "ops_rig.py")
+# DERIVED FROM server.py, NOT HAND-MAINTAINED — and the comment this replaces explains why.
+#
+# This used to be a hardcoded tuple, with a note saying: "A module missing from this tuple is
+# INVISIBLE to check 1: its ops read as 'registered nowhere', and — worse — a tool that
+# legitimately calls one gets reported as dead. That happened on 2026-08-15, when ops_gen.py (the
+# ComfyUI generation chain) was added to the addon and this tuple was not updated, so the checker
+# blamed five correct wrappers instead of itself. Cross-check against server.py's `table.update(...)`
+# calls, which are the real registry."
+#
+# It happened a SECOND time on 2026-08-30, when ops_create.py and ops_material.py were added: nine
+# correct new wrappers were reported dead, by a checker whose own comment already described the
+# failure. A note telling a human to cross-check against the real registry is a worse mechanism than
+# reading the real registry, so this now parses server.py's _op_table() for `table.update(ops_X.OPS)`
+# and takes that list. A module added to the addon and wired into server.py is now visible here with
+# no second edit, and a module NOT wired in cannot silently pass either.
+def _addon_op_modules():
+    src = os.path.join(ADDON_DIR, "server.py")
+    try:
+        text = io.open(src, encoding="utf-8").read()
+    except OSError:
+        return ()
+    names = re.findall(r"table\.update\(\s*(ops_[A-Za-z0-9_]+)\.OPS\s*\)", text)
+    # Order-preserving dedupe, so the report reads in registration order.
+    seen, out = set(), []
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            out.append(n + ".py")
+    return tuple(out)
+
+
+ADDON_OP_MODULES = _addon_op_modules()
 
 UE_BIND_FILE = os.path.join(ROOT, "Source", "MifBridge", "Private", "MifBridgeCommon.cpp")
 

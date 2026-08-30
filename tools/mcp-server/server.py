@@ -4805,6 +4805,80 @@ def bl_set_material_slots(object: str, slots: list, allow_resize: bool = False) 
 
 
 @mcp.tool()
+def bl_create_primitive(kind: str, name: str = "", size: float = None, radius: float = None,
+                        location: list = None, rotation: list = None, segments: int = None,
+                        ring_count: int = None, subdivisions: int = None, vertices: int = None,
+                        depth: float = None, x_subdivisions: int = None,
+                        y_subdivisions: int = None) -> dict:
+    "Create a primitive mesh object in Blender: cube, sphere (alias uvsphere), icosphere, cylinder, cone, torus, plane, grid, circle or monkey. THE FOUNDATIONAL CREATION OP - before this every mesh had to enter through bl_import_mesh, so the bridge could edit assets authored elsewhere and could not originate a single vertex. An unknown kind is REFUSED with the full list rather than defaulting to a cube, because a silently substituted shape survives all the way to an Unreal import. Per-kind parameters (segments/ring_count on a sphere, vertices/depth on a cylinder, subdivisions on an icosphere, x/y_subdivisions on a grid) are refused when passed to a kind that has no such parameter, rather than raising a TypeError from deep inside Blender. The reported `name` is the one the object ACTUALLY has: Blender never fails and never overwrites on a collision, it appends .001, so a request for 'Crate' can yield 'Crate.003' and every later op addressing 'Crate' would hit the wrong object. Geometry facts are nested under `object`, matching bl_object_info."
+    return _blender("create_primitive", kind=kind, name=name or None, size=size, radius=radius,
+                    location=location, rotation=rotation, segments=segments,
+                    ringCount=ring_count, subdivisions=subdivisions, vertices=vertices,
+                    depth=depth, xSubdivisions=x_subdivisions, ySubdivisions=y_subdivisions)
+
+
+@mcp.tool()
+def bl_transform_object(object: str, location: list = None, rotation: list = None,
+                        scale: list = None, relative: bool = False) -> dict:
+    "Move, rotate or scale a Blender object WITHOUT baking the transform into its mesh data. bl_apply_transform and bl_set_origin both BAKE - they write the transform into the vertices and leave the object at identity, which is what an export pipeline wants and is NOT how you place a second object beside a first. relative=True adds to the current transform instead of replacing it. The response reports the transform before AND after, because 'it moved' and 'it is where I asked' are different claims and only the second is worth making. Note this leaves isIdentityTransform false - bl_apply_transform is what bakes it in, and an FBX export writes the object transform unless you do."
+    return _blender("transform_object", object=object, location=location, rotation=rotation,
+                    scale=scale, relative=relative)
+
+
+@mcp.tool()
+def bl_join_objects(target: str, objects: list) -> dict:
+    "Join Blender mesh objects into one. DESTRUCTIVE AND ASYMMETRIC: the sources are DELETED and everything lands in target. WATCH THE MATERIAL SLOTS - join MERGES the slot lists and remaps every face's material_index, so the result's slot ORDER is neither input's order, and slot order is exactly what decides which Unreal material lands on which face. The response reports the slot list before and after for that reason. `consumed` is measured from which objects actually disappeared, since join silently ignores one it cannot merge."
+    return _blender("join_objects", target=target, objects=objects)
+
+
+@mcp.tool()
+def bl_separate_mesh(object: str, mode: str = "loose") -> dict:
+    "Split a Blender mesh into separate objects - mode 'loose' (each disconnected island becomes its own object) or 'material' (one object per material slot in use). The counterpart to bl_join_objects. New objects are NAMED BY BLENDER as <source>.001, .002, so the response lists what actually appeared rather than predicting names. Separating a mesh with nothing to split on succeeds with createdCount 0 and says the zero is a measured result, not a failure."
+    return _blender("separate_mesh", object=object, mode=mode)
+
+
+@mcp.tool()
+def bl_create_material(name: str, reuse: bool = False, base_color: list = None,
+                       metallic: float = None, roughness: float = None) -> dict:
+    "Create a Blender material with a Principled BSDF. Before this the addon could assign material slot NAMES and could not create a material or set a single shading value. The reported name is echoed from the material, not the request: bpy.data.materials.new appends .001 on a collision and never says so. reuse=True returns the EXISTING material instead of a numbered copy when the name is taken, which is usually what a pipeline wants and never what new() does. base_color, metallic and roughness can be set inline so the common case is one call."
+    return _blender("create_material", name=name, reuse=reuse, baseColor=base_color,
+                    metallic=metallic, roughness=roughness)
+
+
+@mcp.tool()
+def bl_set_material_properties(material: str, base_color: list = None, metallic: float = None,
+                               roughness: float = None, specular: float = None,
+                               ior: float = None, alpha: float = None, emissive: list = None,
+                               emissive_strength: float = None, transmission: float = None,
+                               sheen: float = None, clearcoat: float = None,
+                               anisotropic: float = None) -> dict:
+    "Write Principled BSDF values on a Blender material. THE VERSION SPREAD IS THE WHOLE DIFFICULTY: Blender RENAMED these inputs between 3.6 and 4.0 - 'Specular' became 'Specular IOR Level', 'Emission' became 'Emission Color', 'Transmission' became 'Transmission Weight' - and this addon supports 3.6 through 5.0. Writing to a name that does not exist on the running version does not raise; the value lands NOWHERE and the material is subtly wrong with nothing to read back. So each property resolves through an alias list, one that resolves on NO alias is REFUSED by name with the inputs that do exist, and the response reports `resolvedInputs` naming the real socket each property landed on. Every name is resolved BEFORE any is written, so a bad one cannot leave the material half-applied."
+    return _blender("set_material_properties", material=material, baseColor=base_color,
+                    metallic=metallic, roughness=roughness, specular=specular, ior=ior,
+                    alpha=alpha, emissive=emissive, emissiveStrength=emissive_strength,
+                    transmission=transmission, sheen=sheen, clearcoat=clearcoat,
+                    anisotropic=anisotropic)
+
+
+@mcp.tool()
+def bl_list_materials(name_contains: str = "", used_only: bool = False) -> dict:
+    "List every material in the Blender file with its user count. Reports `unused` - materials with zero users - because a material with no users is NOT written to an FBX at all, so one created and never assigned silently does not arrive in Unreal."
+    return _blender("list_materials", nameContains=name_contains or None, usedOnly=used_only)
+
+
+@mcp.tool()
+def bl_describe_material(material: str, links: bool = False) -> dict:
+    "Read one Blender material in full: its Principled BSDF values, the node tree shape, and every image texture with its FILE PATH. The texture paths are the point for a pipeline - they are what an Unreal-side import has to resolve, and nothing in the addon reported them before. `resolvedInputs` names the socket spelling this Blender version uses. links=True also returns every node connection."
+    return _blender("describe_material", material=material, links=links)
+
+
+@mcp.tool()
+def bl_assign_material_to_faces(object: str, slot: int, faces: list = None) -> dict:
+    "Point a range of polygons at one of a Blender object's material SLOTS. bl_set_material_slots decides which materials a mesh has and in what order; this decides which faces use which, and only the first existed. ADDRESSED BY SLOT INDEX, not material name, because the index is what a polygon actually stores and what Unreal's material array lines up against on import. Omit faces to assign every polygon. An out-of-range slot or face index is REFUSED rather than ignored - a face storing an index past the end renders as another slot with no error at all. `changed` is the MEASURED number of polygons that actually moved, so re-assigning faces to the slot they already had reports 0 rather than echoing the request."
+    return _blender("assign_material_to_faces", object=object, slot=slot, faces=faces)
+
+
+@mcp.tool()
 def bl_export_mesh(object_name: str, file: str, object_types: list = None,
                    add_leaf_bones: bool = None, armature_deform_only: bool = None,
                    primary_bone_axis: str = None, secondary_bone_axis: str = None,
