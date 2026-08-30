@@ -2019,3 +2019,34 @@ does not prevent it. A CHECK prevents it. `test_safety_gate` T636 already derive
 list from source rather than trusting the comment; the same should exist for key injection, so an
 endpoint that reaches `UGameViewportClient::InputKey` or `FSlateApplication::Process*Event` cannot be
 added outside the gate silently.
+
+### Resolution, 2026-08-30 — twelve of thirteen closed
+
+All but one of the open items above are fixed, across four commits. Not listed as "done" without
+saying which, because a closed item nobody can trace is how the stale entries corrected earlier in
+this same file got that way:
+
+* `10b786a` — the MVVM version guards (a real **build break on 5.6**, not a style issue: both APIs
+  are already in their 5.7 form on 5.6, so the `#else` branch called a 3-arg overload that does not
+  exist there), all four hand-written guards converted to `MIF_ENGINE_AT_LEAST`,
+  `add_simplified_collision`'s over-refusal narrowed to the three shapes that actually need
+  MeshDescription, and both incomplete fixes closed by moving the duplicated helper into `mifaudit`
+  — `wait_for_pie_state` and `cleanup_level_actor`. Deduplicating is the only version of those two
+  fixes that stays fixed.
+* `70a8108` — `add_mvvm_binding` now reports `sourceIsFieldNotify` and warns when the mode needs
+  notification the source cannot provide. Reported rather than refused: a false negative would block
+  a legitimate binding, and the silence was the defect, not the permissiveness.
+* `925112e` — the four test-quality gaps.
+
+**Still open: `add_gameplay_tag`.** The decline rests on a false premise and the feature is
+buildable; it needs specifying properly rather than a one-line reversal, which is why it is not in
+the batch above.
+
+One thing this pass produced that is worth more than any single fix: rewriting
+`test_simplified_collision_guard.py` was necessary because **my own** guard change invalidated it,
+and its docstring turned out to contain the same error the guard did — it said every shape "needs
+the same real geometry ... confirmed by re-running all four shape families and getting a clean
+refusal every time". That confirmed the *guard's* behaviour, read back as though it were the
+*engine's*. A refusal-only test can only ever see what the guard did, never what the engine would
+have done, so it cannot tell a correct guard from a blanket one. The suite now proves the guard is
+narrow — that the shapes which should work, do.
