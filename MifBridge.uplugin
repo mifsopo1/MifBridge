@@ -1,107 +1,112 @@
 {
-    "FileVersion": 3,
-    "Version": 7,
-    "VersionName": "0.6.0",
-    "FriendlyName": "Mif Bridge",
-    "Description": "Localhost HTTP bridge that lets an AI agent drive the Unreal Editor: Blueprint graphs, components, properties, materials, levels and assets over JSON (Claude/MCP). Ships alongside a shared MCP server that also fronts a Blender backend, so an agent can round-trip a mesh out of Unreal, edit it in Blender and reimport it.",
-    "Category": "Editor",
-    "CreatedBy": "Mif",
-    "CreatedByURL": "https://github.com/mifsopo1/MifBridge",
-    "DocsURL": "https://github.com/mifsopo1/MifBridge#readme",
-    "SupportURL": "https://github.com/mifsopo1/MifBridge/issues",
-    "CanContainContent": false,
-    "IsBetaVersion": true,
-    "Installed": false,
-    "EnabledByDefault": true,
-    "Modules": [
-        {
-            "Name": "MifBridge",
-            "Type": "Editor",
-            "LoadingPhase": "PostEngineInit",
-            "PlatformAllowList": [
-                "Win64"
-            ]
-        }
-    ],
-    "Plugins": [
-        {
-            "Name": "EnhancedInput",
-            "Enabled": true
-        },
-        {
-            "Name": "IKRig",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "Niagara",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "GameplayAbilities",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "GeometryScripting",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "GameFeatures",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "ModularGameplay",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "ModelViewViewModel",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "Water",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "MassEntity",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "LiveLink",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "LevelSnapshots",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "Metasound",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "MetaHumanCharacter",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "PCG",
-            "Enabled": true,
-            "Optional": true
-        },
-        {
-            "Name": "StateTree",
-            "Enabled": true,
-            "Optional": true
-        }
-    ]
+ "FileVersion": 3,
+ "Version": 7,
+ "VersionName": "0.6.0",
+ "FriendlyName": "Mif Bridge",
+ "Description": "Localhost HTTP bridge that lets an AI agent drive the Unreal Editor: Blueprint graphs, components, properties, materials, levels and assets over JSON (Claude/MCP). Ships alongside a shared MCP server that also fronts a Blender backend, so an agent can round-trip a mesh out of Unreal, edit it in Blender and reimport it.",
+ "Category": "Editor",
+ "CreatedBy": "Mif",
+ "CreatedByURL": "https://github.com/mifsopo1/MifBridge",
+ "DocsURL": "https://github.com/mifsopo1/MifBridge#readme",
+ "SupportURL": "https://github.com/mifsopo1/MifBridge/issues",
+ "CanContainContent": false,
+ "IsBetaVersion": true,
+ "Installed": false,
+ "EnabledByDefault": true,
+ "Modules": [
+  {
+   "Name": "MifBridge",
+   "Type": "Editor",
+   "LoadingPhase": "PostEngineInit",
+   "PlatformAllowList": [
+    "Win64"
+   ]
+  }
+ ],
+ "Plugins": [
+  {
+   "Name": "EnhancedInput",
+   "Enabled": true
+  },
+  {
+   "Name": "IKRig",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "Niagara",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "GameplayAbilities",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "GeometryScripting",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "GameFeatures",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "ModularGameplay",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "ModelViewViewModel",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "Water",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "MassEntity",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "LiveLink",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "LevelSnapshots",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "Metasound",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "MetaHumanCharacter",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "PCG",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "StateTree",
+   "Enabled": true,
+   "Optional": true
+  },
+  {
+   "Name": "GameplayTagsEditor",
+   "Enabled": true,
+   "Optional": true
+  }
+ ]
 }

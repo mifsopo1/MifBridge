@@ -5586,7 +5586,8 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       blaming a crash would invite someone to add a guard the engine already has.
       UNiagaraComponent::SetEmitterEnable is NOT used and the reason is recorded: it is a
       cooked-safe per-instance alternative on 5.6/5.7, and on 5.3 it is a STUB that logs
-      "not implemented" and returns - routing to it there would be a silent no-op reporting
+      "not implemented" and returns - history, quoted from the engine log, not this endpoint's
+      status - so routing to it there would be a silent no-op reporting
       success.
       NOT exercised: the toggle itself. Every NiagaraSystem in this project is cooked, so the
       cooked guard answers every call.
