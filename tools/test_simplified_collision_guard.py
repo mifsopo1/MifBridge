@@ -1,4 +1,4 @@
-"""add_simplified_collision must REFUSE a cooked StaticMesh, not attempt it - EVERY shape crashes.
+"""add_simplified_collision on a cooked StaticMesh: refuse the three shapes that would crash, RUN the five that cannot.
 
 Found live 2026-08-28, the SAME day and the SAME investigation thread as duplicate_asset's cooked-
 StaticMesh crash (docs/01_POSTMORTEMS.md), but a genuinely different bug in a genuinely different
@@ -8,10 +8,23 @@ reading address 0x50, inside UnrealEditor-MeshDescription.dll. Reading the ENGIN
 (GeomFitUtils.cpp) rather than guessing found the exact line: `GenerateBoxAsSimpleCollision` calls
 `StaticMesh->GetMeshDescription(0)->ComputeBoundingBox()` with NO NULL CHECK. On a cooked mesh,
 GetMeshDescription(0) returns null (the editor-only bulk data is stripped), and the arrow-dereference
-crashes immediately. Every OTHER shape (sphere, capsule, the k-DOP family) needs the same real
-geometry to fit a shape against, and gets it the same way - confirmed by re-running all four shape
-families against the SAME crashing mesh after the fix and getting a clean refusal every time, not by
-reading only the one function that happened to crash first.
+crashes immediately. Sphere and capsule hand the same possibly-null pointer into CalcBoundingSphere,
+which dereferences it on its first line, so those three shapes share one failure mode.
+
+CORRECTED 2026-08-30. The sentence that used to sit here said EVERY other shape "needs the same real
+geometry to fit a shape against, and gets it the same way", and claimed that re-running all four shape
+families and seeing a clean refusal each time had confirmed it. What that actually confirmed was that
+the GUARD refused them - it was reading the guard's behaviour back as though it were the engine's.
+The k-DOP family does NOT use MeshDescription:
+
+    GenerateBoxAsSimpleCollision   GetMeshDescription(0)->ComputeBoundingBox()
+    GenerateKDopAsSimpleCollision  StaticMesh->GetRenderData()->LODResources[0]   (GeomFitUtils.cpp:24)
+
+Render data is what a mesh is DRAWN from, so every cooked mesh has it. The five k-DOP shapes could
+never have crashed, and refusing them took simplified collision away from cooked projects entirely -
+they are also the more useful shapes on a real prop than a bounding box is. This suite now asserts the
+guard is NARROW: the three that would crash are refused, and the k-DOP ones actually run and produce a
+primitive. A test that only ever asserts a refusal cannot tell a correct guard from a blanket one.
 
 Fixed in MifBridgeCollision.cpp by checking `Mesh->GetMeshDescription(0)` directly, BEFORE any
 generator runs - checked against the literal condition that is about to be dereferenced, not inferred
@@ -33,9 +46,12 @@ reason this whole file exists). Removing simple collision is reversible in exact
 other real-content touch this session already relies on: unsaved, gone on restart, not a lasting
 change to anything Andre would see persist.
 
-T930: every shape refuses cleanly on a cooked mesh, and the editor survives each one - the assertion
-that matters, same discipline as test_duplicate_cooked_guard.py and test_set_struct_member.py's T153.
-T931: the refusal names the real reason, not a generic failure.
+T930: the three MeshDescription shapes refuse cleanly on a cooked mesh, and the editor survives each
+one - the assertion that matters, same discipline as test_duplicate_cooked_guard.py and
+test_set_struct_member.py's T153.
+T931: the refusal names the real reason, and points at the k-DOP shapes as the way forward.
+T933: a k-DOP shape actually SUCCEEDS on that same cooked mesh and really adds a primitive
+(added == 1, measured, not merely ok:true), then restores the mesh to exactly the state it was in.
 T932: remove_collision's refusal (no confirm), then a real removal, verifying self_audit survives it.
 """
 import json
@@ -63,17 +79,53 @@ def main():
     real_mesh = next((a.get("path") for a in meshes if "_Mif" not in (a.get("path") or "")), None)
     check("T930 (setup) a real StaticMesh exists to try", bool(real_mesh), real_mesh)
     if real_mesh:
-        for shape in ("box", "sphere", "capsule", "10dop-x", "18dop", "26dop"):
+        # The three that fit against MeshDescription, which cooking strips. These must refuse.
+        for shape in ("box", "sphere", "capsule"):
             r = M.call("add_simplified_collision", {"path": real_mesh, "shape": shape})
             check("T930 shape=%s is refused, not attempted" % shape, r.get("ok") is False,
                   json.dumps(r)[:200])
             check("T931 shape=%s explains the real reason (no MeshDescription)" % shape,
                   "MeshDescription" in (r.get("error") or ""), r.get("error"))
+            check("T931 shape=%s points at the k-DOP shapes as the way forward" % shape,
+                  "k-DOP" in (r.get("error") or "") or "dop" in (r.get("error") or "").lower(),
+                  r.get("error"))
             # THE assertion. A failed guard here is a fatal engine access violation, not an error
             # return, so the editor answering at all afterward is the real proof it held.
             alive = M.call("self_audit", {})
             check("T930 shape=%s - the editor is still alive afterward" % shape, alive.get("ok") is True,
                   "a failed guard here is a fatal access violation, not an error return")
+
+    # ------------------------------------------------------------------ T933 the k-DOP shapes RUN
+    # The half a refusal-only suite could never catch. k-DOP fits from RenderData, which every cooked
+    # mesh has, so these must actually WORK - and the assertion is the measured primitive count, not
+    # ok:true, because ok:true is exactly what a guard that silently did nothing would also return.
+    print("\n=== T933: a k-DOP shape SUCCEEDS on the same cooked mesh, and is then undone ===")
+    if real_mesh:
+        probe = M.call("add_simplified_collision", {"path": real_mesh, "shape": "10dop-x"})
+        check("T933 10dop-x is NOT refused for the MeshDescription reason",
+              "MeshDescription" not in (probe.get("error") or ""), probe.get("error"))
+        check("T933 10dop-x succeeds on a cooked mesh", probe.get("ok") is True, json.dumps(probe)[:250])
+        check("T933 and really added one primitive, measured",
+              probe.get("added") == 1,
+              "before=%s after=%s added=%s" % (probe.get("primitivesBefore"),
+                                               probe.get("primitivesAfter"), probe.get("added")))
+        alive = M.call("self_audit", {})
+        check("T933 the editor is still alive after a real k-DOP fit", alive.get("ok") is True,
+              "GenerateKDopAsSimpleCollision reads RenderData, which a cooked mesh keeps")
+
+        # RESTORE. Only safe when the mesh had no collision of its own - remove_collision clears ALL
+        # of it, so on a mesh that already had some we would be destroying content to tidy up a test.
+        # Nothing is saved either way, but leaving a real mesh altered is how one suite silently
+        # breaks another's precondition (see mifaudit.cleanup_level_actor for when that already
+        # happened here).
+        if probe.get("ok") is True and probe.get("primitivesBefore") == 0:
+            undo = M.raw_post("remove_collision", {"path": real_mesh, "confirm": True})
+            check("T933 (cleanup) the primitive this test added is removed again",
+                  undo.get("ok") is True and undo.get("removedPrimitives") == 1,
+                  json.dumps(undo)[:200])
+        else:
+            print("   note: mesh already had %s primitive(s) - left alone rather than cleared"
+                  % probe.get("primitivesBefore"))
 
     # ------------------------------------------------------------------ T932 remove_collision
     print("\n=== T932: remove_collision - the refusal, then a real removal, editor survives ===")

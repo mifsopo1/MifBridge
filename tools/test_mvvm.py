@@ -41,12 +41,22 @@ live before assuming it would) with a named TextBlock.
 T1503-T1504: add_mvvm_viewmodel and add_mvvm_binding both succeed and describe_mvvm_view reads back
 exactly what was created - not just ok:true.
 
-T1505: THE REAL CORRECTNESS TEST. add_mvvm_binding reporting ok:true only means the BINDING RECORD was
-created - it does not mean the binding is valid. Compiling the Widget Blueprint is the actual proof:
-binding a String-typed viewmodel property to a TextBlock's Text (FText) property compiles with a real,
-specific engine error ("does not match the type of the destination property... conversion function is
-required") - correct, expected MVVM compiler behavior, not a bug in this endpoint. T1506 proves the
-positive case: a Text-typed source bound to a Text-typed destination compiles with ZERO errors.
+T1505/T1506: THE REAL CORRECTNESS TEST. add_mvvm_binding reporting ok:true only means the BINDING
+RECORD was created - it does not mean the binding is valid. Compiling the Widget Blueprint is the
+actual proof.
+T1505 is the POSITIVE case: a Text-typed source bound to a Text-typed destination compiles with ZERO
+errors.
+T1506 is the NEGATIVE case: a String-typed viewmodel property bound to a TextBlock's Text (FText)
+property must FAIL to compile, with a real, specific engine error about the type mismatch - correct,
+expected MVVM compiler behaviour, not a bug in this endpoint. It then removes that binding and
+re-compiles clean, so the refusal tests below start where they always did.
+
+CORRECTED 2026-08-30: this paragraph used to describe T1506 as the positive case and T1505 as the
+negative one, and the negative one HAD NEVER BEEN WRITTEN - there was a single check in the file,
+labelled T1505, asserting the positive case. A docstring is the record a later session reads instead
+of re-deriving, so one describing a test that does not exist is worse than no docstring. The missing
+half is the load-bearing one: a positive-only compile check cannot tell "the binding is valid" from
+"the compiler never looked".
 
 T1507-T1512: refusals checked for the specific reason - an unregistered viewmodel name, an unknown
 source property, an unknown destination widget, an unknown destination property, an invalid
@@ -150,6 +160,40 @@ def main():
     real_compile = M.call("compile", {"blueprintId": wbp_path})
     check("T1505 a type-matched (Text -> Text) binding compiles with ZERO errors",
           real_compile.get("ok") is True and real_compile.get("numErrors") == 0, real_compile)
+
+    # T1506 WAS DESCRIBED IN THE DOCSTRING AND NEVER WRITTEN - added 2026-08-30. The module docstring
+    # claimed a negative compile case existed and attributed the POSITIVE one above to the wrong id.
+    # The negative case is the more valuable half: a positive-only compile check cannot distinguish
+    # "the binding is valid" from "the compiler did not look", so without this one T1505 proves less
+    # than it appears to.
+    sv = M.call("add_variable", {"blueprintId": vm_id, "name": "RawString", "type": "String"})
+    check("T1506 (setup) a String-typed viewmodel variable is added", sv.get("ok") is True, json.dumps(sv)[:200])
+    M.call("set_variable_flags", {"blueprintId": vm_id, "name": "RawString", "fieldNotify": True})
+    M.call("compile", {"blueprintId": vm_id})
+
+    bad_bind = M.call("add_mvvm_binding", {
+        "widgetBlueprintPath": wbp_path, "sourceViewModelName": vm_instance_name,
+        "sourcePropertyName": "RawString", "destinationWidgetName": "NameText",
+        "destinationPropertyName": "Text"})
+    check("T1506 (setup) the type-MISMATCHED binding record is created - the endpoint does not "
+          "type-check, and is not supposed to", bad_bind.get("ok") is True, json.dumps(bad_bind)[:200])
+
+    bad_compile = M.call("compile", {"blueprintId": wbp_path})
+    check("T1506 a String -> Text binding FAILS to compile - the mismatch is caught by the compiler, "
+          "not by ok:true", (bad_compile.get("numErrors") or 0) > 0, json.dumps(bad_compile)[:300])
+    check("T1506 and the error names the type mismatch, not something generic",
+          "type" in json.dumps(bad_compile).lower() or "conversion" in json.dumps(bad_compile).lower(),
+          json.dumps(bad_compile)[:300])
+
+    # Remove it again so the refusal tests below start from a compiling blueprint, exactly as they
+    # did before this case existed.
+    for b in (M.call("describe_mvvm_view", {"widgetBlueprintPath": wbp_path}).get("bindings") or []):
+        if b.get("sourceFieldPath") == ["RawString"]:
+            M.call("remove_mvvm_binding", {"widgetBlueprintPath": wbp_path,
+                                           "bindingId": b.get("bindingId")})
+    restored = M.call("compile", {"blueprintId": wbp_path})
+    check("T1506 (cleanup) removing the bad binding restores a clean compile",
+          restored.get("numErrors") == 0, json.dumps(restored)[:200])
 
     # ------------------------------------------------------------------ T1507-T1512 refusals, exact reason
     print("\n=== T1507-T1512: refusals checked for the specific reason ===")

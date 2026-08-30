@@ -87,7 +87,17 @@ def main():
         r = M.call("duplicate_asset", {"path": src, "newPath": dst})
         check("T942 the duplicate succeeds - the guard did not widen to refuse everything",
               r.get("ok") is True, json.dumps(r)[:200])
-        check("T942 and the new asset really exists", bool(r.get("duplicated")), json.dumps(r)[:200])
+        # NOT r.get("duplicated") - that is duplicate_asset asserting its own success, the exact
+        # "verify through a path that cannot observe the thing" shape this project has already
+        # shipped a real bug behind (create_asset checked the global UObject hash its own NewObject
+        # had just written to, under a comment claiming it checked the registry). Ask the ASSET
+        # REGISTRY instead: a ghost asset - present in memory, invisible to find_assets, gone on
+        # restart - passes the old check and fails this one, which is the entire point.
+        found = M.call("find_assets", {"pathPrefix": dst, "limit": 5}).get("assets") or []
+        check("T942 and the new asset really exists - confirmed against the asset registry, not "
+              "against duplicate_asset's own response",
+              any((a.get("path") or "").startswith(dst) for a in found),
+              json.dumps({"looked_for": dst, "registry_returned": [a.get("path") for a in found]})[:250])
         SC.confirm_call("delete_asset", {"path": src})
         SC.confirm_call("delete_asset", {"path": dst})
 

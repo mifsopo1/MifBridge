@@ -214,9 +214,28 @@ def main():
         # dedicated navmesh-build step this suite does not perform (out of scope - PIE-family is about
         # exercising the endpoints, not authoring a level's navigation), so the honest thing is to
         # report what happened, not guess whether it SHOULD have.
+        # WHAT IS ASSERTED HERE, corrected 2026-08-30. The branch below used to read
+        #     check("T1606 the pawn's location genuinely changed ...", True, ...)
+        # - a literal True as the condition, so it could not fail, while the else branch asserted
+        # nothing at all. Between them move_actor_to had no failing postcondition in either
+        # direction, and the unfailable one still counted as a PASS, which inflates the suite's own
+        # score with a check that verifies nothing. That is precisely the shape audit_vacuous_checks
+        # exists to find, written by hand.
+        #
+        # The reasoning that produced it was sound - this world's navigation state is genuinely
+        # unknown, so FAILING on "did not move" would be a false negative. The fix is not to assert
+        # movement; it is to stop pretending an observation is an assertion. Both outcomes are now
+        # reported as notes, and what IS deterministic gets a real check: the location read-back
+        # itself, which would break silently if list_pie_actors ever stopped reporting location.
+        check("T1606 the pawn's location is readable both before and after the move - the "
+              "instrumentation this whole check depends on actually works",
+              isinstance(loc_before.get("x"), (int, float)) and isinstance(loc_after.get("x"), (int, float)),
+              "before=%s after=%s" % (loc_before, loc_after))
         if (dx + dy) > 5.0:
-            check("T1606 the pawn's location genuinely changed after move_actor_to - independently "
-                  "verified, not just moving:true", True, "before=%s after=%s" % (loc_before, loc_after))
+            print("  NOTE  T1606 pawn location changed by %.1f units after move_actor_to - pathing "
+                  "worked in this world. Reported, not asserted: the opposite outcome is equally "
+                  "legitimate here (see below) and a check that passes either way is not a check."
+                  % (dx + dy))
         else:
             print("  NOTE  T1606 pawn location did not change after move_actor_to - this world's "
                   "navigation state (a built NavMesh actually covering this location) is not something "
