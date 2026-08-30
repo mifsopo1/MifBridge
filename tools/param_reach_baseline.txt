@@ -98,6 +98,7 @@ export_asset.replaceexisting
 export_asset.type
 find_assets.type
 focus_viewport.all
+generate_lods.mesh
 get_collision.mesh
 get_collision.staticmesh
 get_datatable_row.op
@@ -168,6 +169,7 @@ remove_ik_goal.rig
 remove_ik_retarget_chain.rig
 remove_ik_solver.rig
 remove_interface.class
+remove_lods.mesh
 remove_pcg_node.assetpath
 remove_pin.name
 remove_sublevel.level

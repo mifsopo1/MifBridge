@@ -5287,7 +5287,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       StaticMeshEditor module dependency. Filed as its own small item rather than smuggled in
       under a name that implies the other three.
 
-- [ ] **generate_lods (the LOD COUNT write only)** (hours)
+- [x] **generate_lods + remove_lods (the LOD COUNT write only)** (hours)
+      DONE 2026-08-30. 21 checks in tools/test_generate_lods.py, exercising the REAL generation
+      path on a scratch duplicate: 1 LOD to 3 with explicit reduction, then back to 1.
+      THE UNIT IS THE TRAP. FStaticMeshReductionSettings::PercentTriangles is named like a
+      percentage and is a FRACTION - its own comment says "Ranges from 0.0 to 1.0: 1.0 = no
+      reduction". Passing 50 meaning half asks for fifty times the triangles and is silently
+      clamped, which looks exactly like the reduction not working. Refused above 1 by name.
+      lodGroup, nanite and buildSettings are refused as parameters with a pointer to
+      set_property, since all three already work there - the row above records why.
+      A TYPE DEFECT CAUGHT BY ITS OWN SUITE: remove_lods first reported `removed` as a count on
+      the success path and a BOOLEAN on the nothing-to-do path. A field whose type changes with
+      the branch is worse than a wrong value, because a caller doing removed > 0 gets a silent
+      surprise rather than an error. It is a number on both paths now.
+      Counts are read back FROM THE MESH: SetLodsWithNotification returns an index, not a
+      count, and RemoveLods returns whether it ran rather than what resulted.
+      Both refuse a mesh with no editable MeshDescription, same build-assert guard as
+      set_property.
       Split out 2026-08-30 from the row above, which was mostly already reachable. Only
       SetLodsWithNotification / RemoveLods (UStaticMeshEditorSubsystem.h:45/:160) have no
       reflective equivalent - everything else about LODs is set_property today. Needs

@@ -31,6 +31,8 @@
 // the editor: Remove Collision, then Add Box Simplified Collision.
 
 #include "MifBridgeHandlers.h"
+#include "StaticMeshEditorSubsystem.h"
+#include "StaticMeshEditorSubsystemHelpers.h"
 
 // list_collision_profiles / set_collision. UCollisionProfile is the ONLY authority on what a profile
 // name means in this project - DDS2 defines its own in DefaultEngine.ini, and a name that is not in
@@ -692,4 +694,290 @@ namespace MifBridge
 		}
 	}
 
+	// =======================================================================
+	// generate_lods / remove_lods - the ONE LOD capability that was missing
+	// =======================================================================
+	//
+	// SCOPE, CUT AFTER CHECKING. The survey asked for LOD count, per-LOD build settings, per-LOD
+	// reduction settings, the LOD group and Nanite settings. Three of those five already work
+	// through set_property, and the reason is worth writing down because it is not obvious:
+	// UStaticMesh::LODGroup is a public UPROPERTY(EditAnywhere), and PostEditChangeProperty
+	// SPECIAL-CASES it (StaticMesh.cpp:3984-3991) by calling SetLODGroup, which resizes the source
+	// models to the group default and rewrites every per-LOD reduction setting before building. So
+	// set_property already adds, removes and retunes LODs through a group, and ResolvePropertyPathEx
+	// reaches the per-LOD structs directly besides.
+	//
+	// What has NO reflective equivalent is setting an ARBITRARY LOD count with explicit reduction
+	// percentages - SetLodsWithNotification drives the mesh reduction interface, which is code
+	// rather than data. That is this endpoint, and nothing more.
+	//
+	// THE BUILD ASSERT APPLIES HERE TOO, and harder. Every one of these calls rebuilds the mesh,
+	// and the build path asserts checkf(Owner->IsMeshDescriptionValid(0)) (StaticMesh.cpp:3086) -
+	// process termination, not an error. The same condition set_property was guarded against on
+	// 2026-08-30 is checked here before the subsystem is touched.
+	//
+	// PERCENTTRIANGLES IS A FRACTION, NOT A PERCENTAGE, whatever its name says: the struct's own
+	// comment is "Ranges from 0.0 to 1.0: 1.0 = no reduction". Passing 50 meaning "50%" would ask
+	// for fifty times the triangles and silently get clamped. Values above 1 are refused by name.
+
+	static bool MifLodMeshWouldAssert(UStaticMesh* Mesh, FString& OutReason)
+	{
+		if (!Mesh) { return false; }
+		if (Mesh->GetNumSourceModels() <= 0) { return false; }
+		if (Mesh->GetMeshDescription(0) != nullptr) { return false; }
+		const UPackage* Pkg = Mesh->GetOutermost();
+		OutReason = FString::Printf(
+			TEXT("'%s' has %d source model(s) and NO editable MeshDescription%s. Every LOD operation "
+				 "rebuilds the mesh, and the build path asserts "
+				 "checkf(IsMeshDescriptionValid(0)) - that TERMINATES the editor rather than "
+				 "returning an error. NOTHING was changed."),
+			*Mesh->GetPathName(), Mesh->GetNumSourceModels(),
+			(Pkg && Pkg->HasAnyPackageFlags(PKG_Cooked))
+				? TEXT(", because it came from a COOKED package and cook strips that data")
+				: TEXT(""));
+		return true;
+	}
+
+	static UStaticMesh* MifResolveLodMesh(const TSharedRef<FJsonObject>& In,
+										  const TSharedRef<FJsonObject>& Out)
+	{
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("mesh") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - a StaticMesh asset. NOTHING was changed."));
+			return nullptr;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: '%s'. NOTHING was changed."), *Path));
+			return nullptr;
+		}
+		UStaticMesh* Mesh = Cast<UStaticMesh>(Asset);
+		if (!Mesh)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, not a StaticMesh. NOTHING was changed."),
+				*Path, *Asset->GetClass()->GetName()));
+			return nullptr;
+		}
+		FString Reason;
+		if (MifLodMeshWouldAssert(Mesh, Reason)) { Fail(Out, Reason); return nullptr; }
+		return Mesh;
+	}
+
+	static UStaticMeshEditorSubsystem* MifStaticMeshSubsystem(const TSharedRef<FJsonObject>& Out)
+	{
+		UStaticMeshEditorSubsystem* Sub =
+			GEditor ? GEditor->GetEditorSubsystem<UStaticMeshEditorSubsystem>() : nullptr;
+		if (!Sub)
+		{
+			Fail(Out, TEXT("no StaticMeshEditorSubsystem - this is not a running editor."));
+		}
+		return Sub;
+	}
+
+	void H_generate_lods(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("mesh"), TEXT("lodCount"),
+			  TEXT("reductionPercentages"), TEXT("screenSizes"), TEXT("autoScreenSize"),
+			  TEXT("confirm") },
+			TEXT("path (aliases assetPath, mesh); lodCount (total LODs including LOD0); ")
+			TEXT("reductionPercentages[] - FRACTIONS 0..1, one per LOD, 1.0 = no reduction; ")
+			TEXT("screenSizes[] (only with autoScreenSize:false); autoScreenSize (default true); ")
+			TEXT("confirm:true"),
+			{ { TEXT("lodGroup"), TEXT("already reachable - set_property on LODGroup, which the "
+									   "engine special-cases to resize and retune every LOD") },
+			  { TEXT("buildSettings"), TEXT("already reachable through set_property on the per-LOD "
+											"SourceModels structs") },
+			  { TEXT("nanite"), TEXT("already reachable - set_property on NaniteSettings") } }))
+		{
+			return;
+		}
+		UStaticMeshEditorSubsystem* Sub = MifStaticMeshSubsystem(Out);
+		if (!Sub) { return; }
+		UStaticMesh* Mesh = MifResolveLodMesh(In, Out);
+		if (!Mesh) { return; }
+
+		const int32 Before = Sub->GetLodCount(Mesh);
+		const int32 Want = JInt(In, TEXT("lodCount"), 0);
+		if (Want < 1 || Want > MAX_STATIC_MESH_LODS)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("lodCount must be between 1 and %d (it counts LOD0), got %d. NOTHING was "
+					 "changed."), (int32)MAX_STATIC_MESH_LODS, Want));
+			return;
+		}
+
+		// PERCENTTRIANGLES IS A FRACTION. The field's own comment says 0..1 with 1.0 meaning no
+		// reduction, so a caller thinking in percent would ask for 50x the triangles and be
+		// silently clamped - which looks like the reduction simply not working.
+		TArray<float> Percents;
+		const TArray<TSharedPtr<FJsonValue>>* PctArr = nullptr;
+		if (In->TryGetArrayField(TEXT("reductionPercentages"), PctArr) && PctArr)
+		{
+			for (const TSharedPtr<FJsonValue>& V : *PctArr)
+			{
+				double D = 0.0;
+				if (!V.IsValid() || !V->TryGetNumber(D))
+				{
+					Fail(Out, TEXT("reductionPercentages[] holds numbers. NOTHING was changed."));
+					return;
+				}
+				if (D <= 0.0 || D > 1.0)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("reductionPercentages[] values are FRACTIONS from 0 to 1, where 1.0 "
+							 "means no reduction - got %g. The engine's own field comment says so, "
+							 "and a value meant as a percentage would be clamped and look like the "
+							 "reduction silently not working. Use 0.5 for half. NOTHING was "
+							 "changed."), D));
+					return;
+				}
+				Percents.Add(static_cast<float>(D));
+			}
+			if (Percents.Num() != Want)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("reductionPercentages[] has %d entries but lodCount is %d - one per LOD is "
+						 "required, including LOD0. NOTHING was changed."), Percents.Num(), Want));
+				return;
+			}
+		}
+
+		const bool bAuto = JBool(In, TEXT("autoScreenSize"), true);
+		TArray<float> Screens;
+		const TArray<TSharedPtr<FJsonValue>>* ScrArr = nullptr;
+		if (In->TryGetArrayField(TEXT("screenSizes"), ScrArr) && ScrArr)
+		{
+			if (bAuto)
+			{
+				Fail(Out, TEXT("screenSizes[] was given but autoScreenSize is true, so the engine "
+					TEXT("would compute them and discard yours. Pass autoScreenSize:false to use "
+						 "them. NOTHING was changed.")));
+				return;
+			}
+			for (const TSharedPtr<FJsonValue>& V : *ScrArr)
+			{
+				double D = 0.0;
+				if (V.IsValid() && V->TryGetNumber(D)) { Screens.Add(static_cast<float>(D)); }
+			}
+			if (Screens.Num() != Want)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("screenSizes[] has %d entries but lodCount is %d. NOTHING was changed."),
+					Screens.Num(), Want));
+				return;
+			}
+		}
+
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("this REPLACES '%s's LOD chain - %d LOD(s) become %d - and rebuilds the mesh. "
+					 "Existing per-LOD build settings are regenerated, not preserved. Pass "
+					 "confirm:true. NOTHING was changed."),
+				*Mesh->GetPathName(), Before, Want));
+			return;
+		}
+
+		FStaticMeshReductionOptions Options;
+		Options.bAutoComputeLODScreenSize = bAuto;
+		for (int32 i = 0; i < Want; ++i)
+		{
+			FStaticMeshReductionSettings S;
+			S.PercentTriangles = Percents.IsValidIndex(i) ? Percents[i]
+														  : (i == 0 ? 1.0f : 1.0f / (i + 1));
+			S.ScreenSize = Screens.IsValidIndex(i) ? Screens[i] : (1.0f / (i + 1));
+			Options.ReductionSettings.Add(S);
+		}
+
+		const int32 Result = Sub->SetLodsWithNotification(Mesh, Options, /*bApplyChanges*/ true);
+		// MEASURED FROM THE MESH, not from the return value. SetLodsWithNotification returns the
+		// index it reached, which is not the same claim as "the mesh now has N LODs".
+		const int32 After = Sub->GetLodCount(Mesh);
+
+		Out->SetStringField(TEXT("path"), Mesh->GetPathName());
+		Out->SetNumberField(TEXT("lodCountBefore"), Before);
+		Out->SetNumberField(TEXT("lodCount"), After);
+		Out->SetNumberField(TEXT("requested"), Want);
+		Out->SetBoolField(TEXT("autoScreenSize"), bAuto);
+		Out->SetNumberField(TEXT("subsystemResult"), Result);
+
+		TArray<TSharedPtr<FJsonValue>> Sizes;
+		for (float F : Sub->GetLodScreenSizes(Mesh)) { Sizes.Add(MakeShared<FJsonValueNumber>(F)); }
+		Out->SetArrayField(TEXT("screenSizes"), Sizes);
+
+		if (After != Want)
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("%d LOD(s) were requested and the mesh now reports %d. The count is read back "
+					 "from the mesh rather than taken from the call, which returns an index rather "
+					 "than a count. A shortfall usually means the reducer could not hit the "
+					 "requested triangle budget."), Want, After));
+		}
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the mesh is dirty and NOTHING has been saved."));
+	}
+
+	void H_remove_lods(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("mesh"), TEXT("confirm") },
+			TEXT("path (aliases assetPath, mesh); confirm:true - this strips every LOD but LOD0"),
+			{ { TEXT("lod"), TEXT("there is no remove-one-LOD operation in the engine - "
+								  "RemoveLods strips all of them. generate_lods rebuilds a chain "
+								  "of the size you want") } }))
+		{
+			return;
+		}
+		UStaticMeshEditorSubsystem* Sub = MifStaticMeshSubsystem(Out);
+		if (!Sub) { return; }
+		UStaticMesh* Mesh = MifResolveLodMesh(In, Out);
+		if (!Mesh) { return; }
+
+		const int32 Before = Sub->GetLodCount(Mesh);
+		if (Before <= 1)
+		{
+			Out->SetStringField(TEXT("path"), Mesh->GetPathName());
+			Out->SetNumberField(TEXT("lodCountBefore"), Before);
+			Out->SetNumberField(TEXT("lodCount"), Before);
+			// A NUMBER, not a bool. The success path reports removed as a count, and a field whose
+			// TYPE changes with the branch is worse than a wrong value - a caller doing
+			// removed > 0 gets a silent surprise on the idempotent path.
+			Out->SetNumberField(TEXT("removed"), 0);
+			Out->SetStringField(TEXT("note"),
+				TEXT("this mesh has only LOD0, so there is nothing to remove and nothing needed "
+					 "removing. removed:0 here means the end state you asked for already holds."));
+			return;
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("this strips %d LOD(s) from '%s', leaving only LOD0, and rebuilds the mesh. "
+					 "Their reduction settings go with them. Pass confirm:true. NOTHING was "
+					 "changed."), Before - 1, *Mesh->GetPathName()));
+			return;
+		}
+
+		const bool bOk = Sub->RemoveLods(Mesh);
+		const int32 After = Sub->GetLodCount(Mesh);
+		Out->SetStringField(TEXT("path"), Mesh->GetPathName());
+		Out->SetNumberField(TEXT("lodCountBefore"), Before);
+		Out->SetNumberField(TEXT("lodCount"), After);
+		// MEASURED, not taken from the bool - RemoveLods reports whether it ran, not what resulted.
+		Out->SetNumberField(TEXT("removed"), Before - After);
+		Out->SetBoolField(TEXT("succeeded"), bOk);
+		if (!bOk || After != 1)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("RemoveLods returned %s and the mesh now reports %d LOD(s) rather than 1. The "
+					 "count is read back from the mesh rather than assumed."),
+				bOk ? TEXT("true") : TEXT("false"), After));
+			return;
+		}
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the mesh is dirty and NOTHING has been saved."));
+	}
 }

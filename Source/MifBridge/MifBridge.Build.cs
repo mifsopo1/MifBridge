@@ -38,6 +38,11 @@ public class MifBridge : ModuleRules
 			"AnimationBlueprintLibrary",
 			"InputBlueprintNodes", // UK2Node_EnhancedInputAction (add_enhanced_input_action)
 			"EnhancedInput",       // UInputAction / UInputMappingContext runtime types
+			"StaticMeshEditor",    // UStaticMeshEditorSubsystem - the LOD COUNT write. Note
+			                       // MifBridgeCollision.cpp:592-599 deliberately avoided this
+			                       // dependency for three integers it could read off BodySetup;
+			                       // that reasoning does not extend here, because none of the
+			                       // LOD write functions has a one-dereference equivalent.
 			"SourceControl",       // USourceControlHelpers - an engine Developer module that ships
 			                       // in every build, so no MIF_WITH_ gating is needed
 			"DeveloperSettings",   // UDeveloperSettings - list_settings, and set_property{saveConfig}

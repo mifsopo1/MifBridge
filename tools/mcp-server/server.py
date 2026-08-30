@@ -2698,6 +2698,22 @@ def check_consolidate_assets(target: str, sources: list) -> dict:
 
 
 @mcp.tool()
+def generate_lods(path: str, lod_count: int, reduction_percentages: list = None,
+                  screen_sizes: list = None, auto_screen_size: bool = True,
+                  confirm: bool = False) -> dict:
+    "Rebuild a StaticMesh's LOD chain to an arbitrary count with explicit reduction. reduction_percentages are FRACTIONS 0..1 where 1.0 means no reduction - not percentages. This REPLACES the existing chain and rebuilds the mesh; requires confirm=True."
+    return _post("generate_lods", path=path, lodCount=lod_count,
+                 reductionPercentages=reduction_percentages, screenSizes=screen_sizes,
+                 autoScreenSize=auto_screen_size, confirm=confirm)
+
+
+@mcp.tool()
+def remove_lods(path: str, confirm: bool = False) -> dict:
+    "Strip every LOD from a StaticMesh except LOD0 and rebuild it. The engine has no remove-one-LOD operation; use generate_lods to rebuild a chain of the size you want. Requires confirm=True."
+    return _post("remove_lods", path=path, confirm=confirm)
+
+
+@mcp.tool()
 def consolidate_assets(target: str, sources: list, delete_sources: bool = False,
                        confirm: bool = False) -> dict:
     "Repoint every referencer of `sources` at `target`, optionally deleting the sources - the Content Browser's asset consolidation, and the write half delete_asset dead-ends into. It CLOSES EVERY OPEN ASSET EDITOR. Run check_consolidate_assets first; requires confirm=True."
