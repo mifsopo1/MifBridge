@@ -95,7 +95,7 @@ Three things, all of which make parity cheaper than the headline number suggests
 
 **1. Their unit is not our unit.** Their own trace screenshot shows `edit_component_property` invoked
 four times as four separate tool calls; that is one endpoint here. If their granularity is 3–5× finer,
-1,450 tools is on the order of 300–500 endpoints of actual surface — and we are at 277.
+1,450 tools is on the order of 300–500 endpoints of actual surface — and we are at 421 built-in (433 counting the 12 external `kr_*` routes), as of 2026-08-30. When this section was first written we were at 277, which is why it read as a gap to close; on the corrected figures the surfaces are comparable and the interesting question is COVERAGE per endpoint rather than count.
 
 **2. A third of their modules are product, not capability.** 13 of 42 are their app: memory, voice,
 crew, GDD, scanners, and their own MCP bridge. Nothing to match there unless we decide to build an app,

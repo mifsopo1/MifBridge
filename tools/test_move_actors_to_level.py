@@ -91,20 +91,24 @@ def main():
         # sweep that has created or switched levels leaves something else current - so "move it to
         # persistent" stops being a no-op and becomes a real move that succeeds. That is what made
         # this suite pass on run 1 and fail on run 2. The actorPath says where it is, so ask.
-        in_persistent = ":PersistentLevel." in (actor or "")
+        # COMPARE AGAINST THE DESTINATION'S WORLD, not against the string ":PersistentLevel." -
+        # every map has one, so that test was true even when the probe sat in a completely
+        # different world. The captured sweep data made it plain: the probe was in
+        # /Game/Maps/MifWeaponTest while the destination was /Temp/Untitled_1, because an earlier
+        # suite had opened that map and spawn_actor_in_level uses whatever level is CURRENT.
+        dest_pkg = ((M.call("list_sublevels", {}) or {}).get("persistent") or {}).get("packageName")
+        in_persistent = bool(dest_pkg) and (actor or "").startswith(dest_pkg + ".")
         # PRINTED UNCONDITIONALLY so a sweep failure records what it was actually looking at. The
         # first theory here - that the probe lands outside the persistent level - was wrong, and
         # three standalone runs at 13/13 could not show that because standalone is not the sweep
         # condition. Facts beat a fourth theory.
         print("  DIAG  probe=%s" % (actor or "<none>"))
-        print("  DIAG  inPersistent=%s currentLevel=%s"
-              % (in_persistent,
-                 (M.call("list_sublevels", {}) or {}).get("worldName")))
+        print("  DIAG  destinationPackage=%s inDestination=%s" % (dest_pkg, in_persistent))
         if not in_persistent:
-            print("  NOTE  the probe landed in %s, not the persistent level, so the"
-                  % (actor or "").split(":")[-1].split(".")[0])
-            print("        already-in-destination arm cannot be exercised - moving it to persistent")
-            print("        is a genuine move here. Reported rather than asserted against.")
+            print("  NOTE  the probe is in a different WORLD from the destination (%s vs %s), so"
+                  % ((actor or "").split(":")[0], dest_pkg))
+            print("        moving it is a genuine move and the already-in-destination arm cannot")
+            print("        be exercised. An earlier suite left another map current; spawn uses it.")
         same = M.raw_post("move_actors_to_level", {"actorPaths": [actor], "level": "persistent",
                                                    "confirm": True})
         print("  DIAG  move->persistent response: %s" % json.dumps(same)[:400])
@@ -139,6 +143,9 @@ def main():
             "level": "persistent", "confirm": True})
         check("T4402 a mixed batch is refused whole by default", mixed.get("ok") is False,
               json.dumps(mixed)[:250])
+        # When the probe was moved for real above, its original path no longer resolves - so it
+        # lands in notFound[] rather than refused[]. Both lists still have to be populated; which
+        # one holds the probe depends on whether the move happened.
         check("T4402 and both problems are reported, not just the first",
               len(mixed.get("refused") or []) == 1 and len(mixed.get("notFound") or []) == 1,
               json.dumps({"refused": mixed.get("refused"),

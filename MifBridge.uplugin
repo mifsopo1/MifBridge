@@ -1,7 +1,7 @@
 {
  "FileVersion": 3,
- "Version": 7,
- "VersionName": "0.6.0",
+ "Version": 8,
+ "VersionName": "0.7.0",
  "FriendlyName": "Mif Bridge",
  "Description": "Localhost HTTP bridge that lets an AI agent drive the Unreal Editor: Blueprint graphs, components, properties, materials, levels and assets over JSON (Claude/MCP). Ships alongside a shared MCP server that also fronts a Blender backend, so an agent can round-trip a mesh out of Unreal, edit it in Blender and reimport it.",
  "Category": "Editor",

@@ -5,7 +5,7 @@
 ### **Let an AI edit your Unreal Blueprints — and read the compiler errors back.**
 
 <!-- MIFBRIDGE-VERSION-LINE -->
-`v0.6.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **421 endpoints** &nbsp;·&nbsp; 🧰 **478 MCP tools** &nbsp;·&nbsp; 🧪 **144 test suites**
+`v0.7.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **421 endpoints** &nbsp;·&nbsp; 🧰 **478 MCP tools** &nbsp;·&nbsp; 🧪 **144 test suites**
 
 </div>
 

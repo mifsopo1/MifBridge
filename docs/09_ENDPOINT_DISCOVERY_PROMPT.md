@@ -10,7 +10,7 @@ engine-source citations for every claim.
 
 You are auditing an Unreal Engine 5.3.2 editor plugin called **MifBridge** to find **every endpoint it
 could expose but currently does not**. MifBridge is a localhost HTTP bridge that lets an AI agent
-drive the Unreal Editor programmatically. It currently has ~156 endpoints. The working hypothesis is
+drive the Unreal Editor programmatically. It has several hundred endpoints; call `self_audit` for the exact list on the build you are auditing. No count is written here on purpose - nothing checks this file, and a stale figure in an AGENT-FACING prompt is worse than none, because it sets the baseline the audit measures against. This line said "~156" while the real number was 421. The working hypothesis is
 that this covers a small fraction of what the editor can actually do, and your job is to prove or
 disprove that with a **ranked, verified, implementable catalogue**.
 
