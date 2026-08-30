@@ -2382,6 +2382,13 @@ def add_anim_node(graph_id: str, node_class: str, x: int = 0, y: int = 0) -> dic
 
 
 @mcp.tool()
+def add_anim_state(blueprint_id: str, graph_id: str, name: str,
+                   x: int = 0, y: int = 0) -> dict:
+    "Add a STATE to an Animation Blueprint's state machine - the one missing constructor call that was blocking all of it. list_graphs and list_nodes could already READ state machines and add_anim_node could place the UAnimGraphNode_StateMachine container, but nothing could put a state inside it, and with no state there is nothing for a transition to join - so no locomotion Anim Blueprint could be authored end to end. graph_id must be the state machine's INNER graph (list_graphs shows it nested under the AnimGraph), not the AnimGraph itself. THE RESPONSE'S boundGraphId IS THE POINT: it is the state's own animation graph in list_graphs' format, so you can pass it straight back to add_anim_node to drop a SequencePlayer or blend space in. THERE IS NO add_anim_transition, deliberately - connect_pins from one state's 'Out' pin to another's 'In' creates the AnimStateTransitionNode AND its rule graph itself, because the state machine schema's connection response is a conversion node. NAMING IS NOT COSMETIC: a state's name IS its bound graph's name (GetStateName returns BoundGraph->GetName), there is no separate field and nothing here can rename it later - so the response reports stateName (what landed, after RenameGraph sanitised and de-duplicated) beside stateNameRequested. Aiming this at the wrong graph is REFUSED before anything is constructed: a state's outer is CastChecked to UAnimationStateMachineGraph and a failed CastChecked terminates the editor rather than returning an error. Uncooked only - a cooked Blueprint has no graphs at all."
+    return _post("add_anim_state", blueprintId=blueprint_id, graphId=graph_id, name=name, x=x, y=y)
+
+
+@mcp.tool()
 def list_animations(filter: str = "", skeleton: str = "", limit: int = 200) -> dict:
     "List animation assets (sequences, montages, blend spaces, composites) from the asset registry WITHOUT loading them. Optional substring filter on path and skeleton. Returns truncated=true if the limit was hit."
     return _post("list_animations", filter=filter or None, skeleton=skeleton or None, limit=limit)

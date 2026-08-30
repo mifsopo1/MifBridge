@@ -49,6 +49,10 @@
 #include "Animation/BlendSpace.h"
 #include "Animation/AnimTypes.h"          // FAnimNotifyEvent, FAnimSyncMarker
 #include "AnimationBlueprintLibrary.h"   // the PUBLIC notify-authoring API (Editor module)
+#include "AnimStateNode.h"              // add_anim_state
+#include "AnimStateNodeBase.h"
+#include "AnimationStateMachineGraph.h" // the CLASS the node's outer is CastChecked to
+#include "Kismet2/BlueprintEditorUtils.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "Animation/Skeleton.h"
@@ -1682,5 +1686,166 @@ namespace MifBridge
 		MifNoteTrackState(Seq, Out);
 		Out->SetStringField(TEXT("assetNote"),
 			TEXT("the asset is now dirty and NOTHING has been saved."));
+	}
+
+	// --- add_anim_state -----------------------------------------------------
+	//   in:  { blueprintId, graphId, name, x?, y?, stateType? }
+	//   out: { node, stateName, boundGraphId, ... }
+	//
+	// ONE MISSING CONSTRUCTOR CALL WAS BLOCKING ALL OF IT. list_graphs and list_nodes already READ
+	// state machines, states and transition rule graphs - GatherGraphsRecursive walks SubGraphs - and
+	// add_anim_node can already place the UAnimGraphNode_StateMachine container. What could not be
+	// done was put a single STATE inside it, and with no state there is nothing for a transition to
+	// join, so no locomotion Anim Blueprint could be authored end to end. Anim BPs are a top-tier
+	// asset type and an agent hits this immediately.
+	//
+	// ONE ENDPOINT, NOT TWO. add_anim_transition was scoped out deliberately: connect_pins already
+	// creates the transition node, because UAnimationStateMachineSchema's own connection response is
+	// a MAKE_WITH_CONVERSION_NODE that spawns a UAnimStateTransitionNode when you join two states.
+	// Adding a second name for the same operation is exactly what this codebase prefers not to do.
+	// What is missing after a connect_pins is the new transition's ruleGraphId, and that belongs as
+	// an optional block on connect_pins' own response - filed, not built here.
+	//
+	// THE GUARD IS ON THE GRAPH CLASS, NOT THE SCHEMA, and that distinction is the whole reason this
+	// is a separate function rather than a relaxed branch of add_anim_node. FAnimStateNodeNameValidator
+	// does:
+	//
+	//     UAnimationStateMachineGraph* StateMachine =
+	//         CastChecked<UAnimationStateMachineGraph>(InStateNode->GetOuter());
+	//
+	// (AnimStateNodeBase.cpp:27) - a CastChecked on the node's OUTER, which is fatal, not an error.
+	// So the target graph must BE a UAnimationStateMachineGraph and must be the node's Outer. A
+	// schema-only test would let a fatal case through: a graph can carry the state-machine schema
+	// without being that class. This is the same PM-013 shape add_anim_node already learned once -
+	// the check has to be on the thing the engine actually casts.
+	//
+	// NAMING IS NOT COSMETIC. UAnimStateNode::GetStateName() returns BoundGraph->GetName()
+	// (AnimStateNode.cpp:68), so a state's name IS its bound graph's name - there is no separate
+	// field and no rename_graph endpoint. The name has to be right at creation, which is why it is
+	// applied to the bound graph immediately after PostPlacedNewNode creates it.
+	void H_add_anim_state(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("graphId"), TEXT("graph"), TEXT("name"),
+			  TEXT("x"), TEXT("y") },
+			TEXT("blueprintId (the Animation Blueprint); graphId - the STATE MACHINE's inner graph, ")
+			TEXT("from list_graphs; name (the state's name, which is also its bound graph's name); ")
+			TEXT("x, y (graph position)"),
+			{ { TEXT("stateName"), TEXT("spell it name") },
+			  { TEXT("nodeClass"), TEXT("not accepted - this endpoint makes a UAnimStateNode. Use ")
+			                       TEXT("connect_pins between two states to make a transition; the ")
+			                       TEXT("state machine schema creates the transition node itself") },
+			  { TEXT("fromState"), TEXT("transitions are made by connect_pins between two states, ")
+			                       TEXT("not here") } }))
+		{
+			return;
+		}
+
+		UBlueprint* Blueprint = ResolveBlueprintField(In, Out);
+		if (!Blueprint) { return; }
+		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
+		if (!Graph) { return; }
+
+		if (!Blueprint->IsA<UAnimBlueprint>())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is not an Animation Blueprint, so it has no state machine to add a state ")
+				TEXT("to. NOTHING was created."), *Blueprint->GetName()));
+			return;
+		}
+
+		// THE FATAL-CAST GUARD. See the note above: this must test the graph CLASS.
+		if (!Graph->IsA<UAnimationStateMachineGraph>())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("graph '%s' is a %s, not a state machine graph. A state's OUTER is CastChecked ")
+				TEXT("to UAnimationStateMachineGraph (AnimStateNodeBase.cpp) and a failed CastChecked ")
+				TEXT("TERMINATES the editor rather than returning an error, so this is refused before ")
+				TEXT("anything is constructed. Add a state machine to the AnimGraph first ")
+				TEXT("(add_anim_node nodeClass=AnimGraphNode_StateMachine), then pass ITS inner ")
+				TEXT("graph - list_graphs shows it nested under the AnimGraph. NOTHING was created."),
+				*Graph->GetName(), *Graph->GetClass()->GetName()));
+			return;
+		}
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required. A state's name IS its bound graph's name ")
+				TEXT("(GetStateName returns BoundGraph->GetName), there is no separate field for it, ")
+				TEXT("and nothing here can rename it afterwards - so it has to be right now. ")
+				TEXT("NOTHING was created."));
+			return;
+		}
+		for (UEdGraphNode* Existing : Graph->Nodes)
+		{
+			if (const UAnimStateNodeBase* AsState = Cast<UAnimStateNodeBase>(Existing))
+			{
+				if (AsState->GetStateName() == Name)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("this state machine already has a state named '%s'. State names are ")
+						TEXT("graph names and must be unique within the machine. NOTHING was ")
+						TEXT("created."), *Name));
+					return;
+				}
+			}
+		}
+
+		UAnimStateNode* Node = NewObject<UAnimStateNode>(Graph, UAnimStateNode::StaticClass(),
+														NAME_None, RF_Transactional);
+		if (!Node)
+		{
+			Fail(Out, TEXT("failed to construct the state node. NOTHING was created."));
+			return;
+		}
+
+		PlaceAndInit(Graph, Node, JInt(In, TEXT("x"), 0), JInt(In, TEXT("y"), 0));
+
+		// PostPlacedNewNode (inside PlaceAndInit) is what creates the BoundGraph, so the name can
+		// only be applied after it - and it must be applied, because that graph's name is the state's
+		// name and it defaults to something generic.
+		if (!Node->BoundGraph)
+		{
+			Fail(Out, TEXT("the state node was placed but has no bound graph, which should not ")
+				TEXT("happen - PostPlacedNewNode creates it. Reported rather than returning a state ")
+				TEXT("that cannot hold animation."));
+			return;
+		}
+		FBlueprintEditorUtils::RenameGraph(Node->BoundGraph, *Name);
+		MarkStructural(Blueprint);
+
+		// READ BACK through the engine's own accessor rather than echoing the request - RenameGraph
+		// sanitises and de-duplicates, so the name that landed can legitimately differ from the one
+		// asked for, and saying so is the difference between a report and a claim.
+		const FString Actual = Node->GetStateName();
+		EmitNode(Out, Node);
+		Out->SetStringField(TEXT("stateName"), Actual);
+		Out->SetStringField(TEXT("stateNameRequested"), Name);
+		// GraphIdOf, NOT GetPathName. Live-caught 2026-08-30: a raw object path is not what the
+		// graph endpoints accept - they want list_graphs' "<blueprintPath>::<graphName>" form,
+		// and add_anim_node refused this field outright. A boundGraphId nothing can consume is
+		// worse than none at all, because the whole point of returning it is that the caller can
+		// immediately fill the state with a SequencePlayer.
+		Out->SetStringField(TEXT("boundGraphId"), GraphIdOf(Blueprint, Node->BoundGraph));
+		Out->SetNumberField(TEXT("statesInMachine"), [Graph]()
+		{
+			int32 N = 0;
+			for (const UEdGraphNode* E : Graph->Nodes)
+			{
+				if (E && E->IsA<UAnimStateNodeBase>()) { ++N; }
+			}
+			return N;
+		}());
+		if (Actual != Name)
+		{
+			Out->SetStringField(TEXT("nameNote"), FString::Printf(
+				TEXT("the state is called '%s', not '%s' - RenameGraph sanitises and de-duplicates "
+					 "graph names, and a state's name is its graph's name."), *Actual, *Name));
+		}
+		Out->SetStringField(TEXT("nextStep"),
+			TEXT("boundGraphId is this state's OWN animation graph - pass it to add_anim_node to put "
+				 "a SequencePlayer or blend space in it. To make a transition, connect_pins between "
+				 "two states: the state machine schema creates the transition node itself."));
 	}
 }
