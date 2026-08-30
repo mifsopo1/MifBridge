@@ -39,6 +39,15 @@ like an asset path (starts with a mount point such as /Game/) must start with a 
 payload containing NO path at all is refused rather than allowed: "no evidence of danger" is not
 "evidence of safety", and an endpoint addressed purely by guid could be pointing anywhere.
 
+ONE EXCEPTION, added 2026-08-30: a value under a class-naming key (see CLASS_KEYS) is not a target.
+"trackClass": "/Script/MovieSceneTracks.MovieScene3DTransformTrack" says what KIND of thing to make;
+the thing being written is whatever `path` names. Without this, check() refused payloads whose target
+WAS scratch, and the suites routed around the module rather than through it - a guard that refuses
+correct calls stops being used and then guards nothing. The exemption is keyed on the PARAMETER NAME,
+never on the "/Script/" prefix: /Script/Engine.Default__PointLight is a CDO, writing to it changes
+every instance of that class, and it is reachable via set_property{path:...} - so a /Script/ value
+sitting in `path` is refused exactly as it always was.
+
 This module is opt-in per call. It does not modify mifaudit's own guard, so anything that does not
 deliberately reach for `confirm_call` keeps the strict behaviour.
 """
@@ -61,16 +70,37 @@ class NotScratch(Exception):
     """Raised rather than returned, so a caller cannot ignore it by forgetting to check."""
 
 
-def _paths_in(value, found):
+# Parameter names whose value NAMES A CLASS rather than a target. A class reference is code, not
+# content: "/Script/MovieSceneTracks.MovieScene3DTransformTrack" says what KIND of track to add, and
+# the thing being written is whatever `path` points at.
+#
+# WHY THIS EXISTS, found 2026-08-30 by asking why so many suites route AROUND this module. They were
+# not being sloppy - check() was refusing them wrongly. A payload like
+#     {"path": "/Game/_MifSeqKeys/LS_1", "guid": "...", "trackClass": "/Script/MovieSceneTracks..."}
+# has a scratch target and was refused anyway, because the CLASS path is pathlike and is not under
+# /Game/_Mif. A guard that refuses correct calls does not get used; it gets bypassed, and then it
+# guards nothing. Fixing the false positive is what makes those call sites reachable.
+#
+# KEYED ON THE PARAMETER NAME, NEVER ON THE "/Script/" PREFIX. A blanket "/Script/ is safe" rule
+# would be wrong and dangerous: /Script/Engine.Default__PointLight is a CDO, writing to it changes
+# every instance of that class in the project, and it is reachable through set_property{path:...}.
+# So a /Script/ value sitting in `path` is still refused, exactly as before. Only these keys are
+# exempt, and only because their value can never be the thing that gets modified.
+CLASS_KEYS = ("class", "assetclass", "classname", "trackclass", "componentclass", "sectionclass",
+              "nodeclass", "actorclass", "parentclass", "structclass", "type")
+
+
+def _paths_in(value, found, key=None):
     if isinstance(value, str):
-        if PATHLIKE.match(value):
+        if PATHLIKE.match(value) and (key or "").lower() not in CLASS_KEYS:
             found.append(value)
     elif isinstance(value, dict):
-        for v in value.values():
-            _paths_in(v, found)
+        for k, v in value.items():
+            _paths_in(v, found, k)
     elif isinstance(value, (list, tuple)):
         for v in value:
-            _paths_in(v, found)
+            # A list inherits its key: {"classes": ["/Script/..."]} is still naming classes.
+            _paths_in(v, found, key)
 
 
 def paths_in(payload):

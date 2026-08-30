@@ -1,5 +1,15 @@
 """Notify authoring: add/remove_anim_notify, add/remove_anim_notify_track.
 
+THIS SUITE WRITES TO A REAL PROJECT ANIMATION, which was not stated here until 2026-08-30 and should
+have been. There is no scratch alternative: create_asset cannot produce a usable AnimSequence (it
+needs a skeleton and sampled bone tracks), so the suite finds a real one via find_assets and authors
+against it. That is why its confirm:true calls go through M.raw_post rather than
+scratch_confirm.confirm_call - check() would refuse a /Game/... path that is not under /Game/_Mif,
+and it would be RIGHT to refuse it. The bypass is deliberate, and the safety argument is the same one
+test_simplified_collision_guard makes: every edit is in memory, nothing is saved, the suite removes
+what it added, and an editor restart discards the rest. It is still a real asset being touched, so it
+is named here rather than left for someone to discover in the diff.
+
 THE READ HALF WAS ALREADY HERE. describe_animation has always emitted every notify in full through
 SerializeNotify, and nothing could create one - the textbook read-with-no-write. Notify authoring is
 the single most common animation-asset edit: footstep sounds, hit windows, VFX spawns and montage

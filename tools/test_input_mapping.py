@@ -46,9 +46,14 @@ import scratch_confirm as SC
 PASS = []
 FAIL = []
 
-IMC = "/Game/_MifInput/IMC_MifTest"
-IA = "/Game/_MifInput/IA_MifTest"
-IA2 = "/Game/_MifInput/IA_MifTest2"
+# Suffixed per run. delete_asset unregisters an asset while the UObject stays resident, so
+# create_asset at the same path afterwards refuses with "already exists" while delete_asset says
+# "no asset found" and find_assets reports it gone - an unrecoverable dead end for the rest of the
+# editor session. See docs/06_OPEN_ISSUES_FROM_USE.md #28. This is the house pattern anyway.
+_ST = M.run_stamp() if hasattr(M, "run_stamp") else int(__import__("time").time()) % 100000
+IMC = "/Game/_MifInput/IMC_MifTest%d" % _ST
+IA = "/Game/_MifInput/IA_MifTest%d" % _ST
+IA2 = "/Game/_MifInput/IA_MifTest2_%d" % _ST
 
 
 def check(name, cond, detail=""):

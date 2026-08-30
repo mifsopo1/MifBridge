@@ -2050,3 +2050,49 @@ refusal every time". That confirmed the *guard's* behaviour, read back as though
 *engine's*. A refusal-only test can only ever see what the guard did, never what the engine would
 have done, so it cannot tell a correct guard from a blanket one. The suite now proves the guard is
 narrow — that the shapes which should work, do.
+
+## 28. delete_asset then create_asset at the same path is an unrecoverable dead end (2026-08-30)
+
+Found by running `test_input_mapping.py` a second time in the same editor session. Its cleanup had
+already passed - `find_assets {pathPrefix:"/Game/_MifInput"}` returned count 0 - and the next run
+still could not create the assets back.
+
+The three endpoints disagree, and two of the errors point at each other:
+
+```
+find_assets  {pathPrefix:"/Game/_MifInput"}          -> ok, count 0
+create_asset {path:".../IA_MifTest2"}                -> "an asset already exists ... delete it first"
+delete_asset {path:".../IA_MifTest2", confirm:true}  -> "no asset found at package '...'"
+```
+
+So an agent told to delete it first is then told there is nothing to delete, and the path stays
+unusable for the rest of the editor session. There is no way out from the bridge: the loop is closed.
+Restarting the editor clears it, which is exactly the kind of remedy an agent driving the editor
+cannot discover from the responses.
+
+### Why it happens
+
+`delete_asset` unregisters the asset and the registry stops reporting it, but the UObject is still
+resident - deletion marks it garbage and it survives until a GC pass. `create_asset`'s existence
+check finds that resident object and refuses. `delete_asset`'s own lookup goes through the registry,
+which has already forgotten it. Each endpoint is individually consistent with the source it consults,
+and the pair is incoherent.
+
+This bites hardest on never-saved scratch assets, which is to say the ones every suite creates, so
+any suite that runs twice without an editor restart can hit it. It is also the shape most likely to
+be hit by an agent iterating - create, test, delete, adjust, create again.
+
+### Not yet fixed, and what the fix probably is
+
+`create_asset` should treat a garbage or pending-kill object as absent rather than as a collision -
+that is the smallest change and it makes the three endpoints agree. `delete_asset` renaming the
+doomed object out of the way (to the transient package) would also work and is what the editor's own
+delete does. Both need checking against 5.3 and 5.7; neither has been attempted yet.
+
+Filed rather than fixed on the spot because it is a separate defect from the work that surfaced it,
+and it deserves its own build-test-commit cycle rather than being smuggled into an unrelated commit.
+
+### Workaround in the meantime
+
+Suites should suffix scratch asset names per run, which is already the house pattern elsewhere
+(`test_sequence_keys.py` uses `LS_%d % st`). `test_input_mapping.py` did not and now does.

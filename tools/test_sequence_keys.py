@@ -85,16 +85,15 @@ def main():
         guid = b.get("guid")
         check("T2301 and returns a binding guid the rest of the chain takes", bool(guid), guid)
 
-        t = M.raw_post("add_sequence_track", {
+        t = SC.confirm_call("add_sequence_track", {
             "path": seq, "guid": guid,
-            "trackClass": "/Script/MovieSceneTracks.MovieScene3DTransformTrack",
-            "confirm": True})
+            "trackClass": "/Script/MovieSceneTracks.MovieScene3DTransformTrack"})
         check("T2301 add_sequence_track adds a transform track",
               t.get("ok") is True and (t.get("trackCount") or 0) >= 1, json.dumps(t)[:250])
 
-        sec = M.raw_post("add_sequence_section", {
+        sec = SC.confirm_call("add_sequence_section", {
             "path": seq, "guid": guid, "trackClass": "MovieScene3DTransformTrack",
-            "startTime": 0, "endTime": 5, "confirm": True})
+            "startTime": 0, "endTime": 5})
         check("T2301 add_sequence_section succeeds", sec.get("ok") is True, json.dumps(sec)[:300])
         check("T2301 the section is index 0 and the track really lists it - read back, because "
               "AddSection is void and some tracks refuse an overlap silently",
@@ -109,12 +108,11 @@ def main():
         check("T2301 the section reports its channels BY EDITOR NAME, which is what "
               "set_sequence_keys takes", "Location.Z" in chans, chans[:10])
 
-        k = M.raw_post("set_sequence_keys", {
+        k = SC.confirm_call("set_sequence_keys", {
             "path": seq, "guid": guid, "trackClass": "MovieScene3DTransformTrack",
             "sectionIndex": 0, "channel": "Location.Z",
             "keys": [{"time": 0, "value": 0}, {"time": 2.5, "value": 500},
-                     {"time": 5, "value": 0}],
-            "confirm": True})
+                     {"time": 5, "value": 0}]})
         check("T2301 set_sequence_keys succeeds", k.get("ok") is True, json.dumps(k)[:300])
         # THE assertion the whole chain exists for.
         check("T2301 and the channel really holds three keys now - keysAfter is read from the "
@@ -125,11 +123,10 @@ def main():
 
         # ------------------------------------------------------------------ T2302 replace semantics
         print("\n=== T2302: UpdateOrAddKey replaces - so the count must be measured ===")
-        again = M.raw_post("set_sequence_keys", {
+        again = SC.confirm_call("set_sequence_keys", {
             "path": seq, "guid": guid, "trackClass": "MovieScene3DTransformTrack",
             "sectionIndex": 0, "channel": "Location.Z",
-            "keys": [{"time": 0, "value": 111}, {"time": 2.5, "value": 222}],
-            "confirm": True})
+            "keys": [{"time": 0, "value": 111}, {"time": 2.5, "value": 222}]})
         check("T2302 writing over existing times succeeds", again.get("ok") is True,
               json.dumps(again)[:250])
         # Cubic keys go through AddCubicKey, which appends; bool/integer go through UpdateOrAddKey,
@@ -141,29 +138,29 @@ def main():
               json.dumps({k2: again.get(k2) for k2 in ("keysRequested", "keysWritten",
                                                        "keysBefore", "keysAfter")}))
 
-        rep = M.raw_post("set_sequence_keys", {
+        rep = SC.confirm_call("set_sequence_keys", {
             "path": seq, "guid": guid, "trackClass": "MovieScene3DTransformTrack",
             "sectionIndex": 0, "channel": "Location.Z",
-            "keys": [{"time": 1, "value": 10}], "replace": True, "confirm": True})
+            "keys": [{"time": 1, "value": 10}], "replace": True})
         check("T2302 replace:true clears the channel first - one key in, one key left",
               rep.get("ok") is True and rep.get("keysAfter") == 1, json.dumps(rep)[:250])
 
         # ------------------------------------------------------------------ T2303 refusals
         print("\n=== T2303: refusals, each naming what to do instead ===")
-        bad = M.raw_post("set_sequence_keys", {
+        bad = SC.confirm_call("set_sequence_keys", {
             "path": seq, "guid": guid, "trackClass": "MovieScene3DTransformTrack",
             "sectionIndex": 0, "channel": "NoSuchChannel",
-            "keys": [{"time": 0, "value": 1}], "confirm": True})
+            "keys": [{"time": 0, "value": 1}]})
         check("T2303 an unknown channel is refused", bad.get("ok") is False, json.dumps(bad)[:250])
         # A bare failure would leave the caller guessing at the name, which is the likeliest mistake.
         check("T2303 and the response LISTS the channels that do exist",
               len(bad.get("channelsAvailable") or []) > 0,
               json.dumps(bad.get("channelsAvailable"))[:200])
 
-        oob = M.raw_post("set_sequence_keys", {
+        oob = SC.confirm_call("set_sequence_keys", {
             "path": seq, "guid": guid, "trackClass": "MovieScene3DTransformTrack",
             "sectionIndex": 99, "channel": "Location.Z",
-            "keys": [{"time": 0, "value": 1}], "confirm": True})
+            "keys": [{"time": 0, "value": 1}]})
         check("T2303 a sectionIndex past the end is refused, with the real count",
               oob.get("ok") is False, json.dumps(oob)[:250])
 
@@ -172,22 +169,22 @@ def main():
             "sectionIndex": 0, "channel": "Location.Z", "keys": [{"time": 0, "value": 1}]})
         check("T2303 no confirm is refused", nc.get("ok") is False, json.dumps(nc)[:250])
 
-        rev = M.raw_post("add_sequence_section", {
+        rev = SC.confirm_call("add_sequence_section", {
             "path": seq, "guid": guid, "trackClass": "MovieScene3DTransformTrack",
-            "startTime": 5, "endTime": 2, "confirm": True})
+            "startTime": 5, "endTime": 2})
         check("T2303 endTime before startTime is refused - a section with no duration animates "
               "nothing", rev.get("ok") is False, json.dumps(rev)[:250])
 
-        notrack = M.raw_post("add_sequence_section", {
+        notrack = SC.confirm_call("add_sequence_section", {
             "path": seq, "guid": guid, "trackClass": "MovieSceneNoSuchTrack",
-            "startTime": 0, "endTime": 1, "confirm": True})
+            "startTime": 0, "endTime": 1})
         check("T2303 a track class this binding does not have is refused, with its real track count",
               notrack.get("ok") is False, json.dumps(notrack)[:250])
         # ------------------------------------------------------------------ T2305 root tracks
         print("\n=== T2305: a SEQUENCE-level track, with no binding at all ===")
-        root = M.raw_post("add_sequence_track", {
+        root = SC.confirm_call("add_sequence_track", {
             "path": seq, "trackClass": "/Script/MovieSceneTracks.MovieSceneFadeTrack",
-            "root": True, "confirm": True})
+            "root": True})
         check("T2305 root:true adds a track with no guid", root.get("ok") is True,
               json.dumps(root)[:250])
         check("T2305 and says which scope it took, so the three shapes of this endpoint are "
@@ -196,7 +193,7 @@ def main():
         check("T2305 the sequence really lists it - read back, not trusted from AddTrack's pointer",
               (root.get("rootTrackCount") or 0) > (root.get("rootTracksBefore") or 0),
               json.dumps(root)[:250])
-        noclass = M.raw_post("add_sequence_track", {"path": seq, "root": True, "confirm": True})
+        noclass = SC.confirm_call("add_sequence_track", {"path": seq, "root": True})
         check("T2305 root:true without a trackClass is refused", noclass.get("ok") is False,
               json.dumps(noclass)[:250])
 
@@ -214,17 +211,16 @@ def main():
             cam_guid = cb.get("guid")
             check("T2306 (setup) the camera is bound into the sequence", bool(cam_guid), cam_guid)
 
-            cut = M.raw_post("add_sequence_track", {"path": seq, "guid": cam_guid,
-                                                    "cameraCut": True, "time": 0,
-                                                    "confirm": True})
+            cut = SC.confirm_call("add_sequence_track", {"path": seq, "guid": cam_guid,
+                                                    "cameraCut": True, "time": 0})
             check("T2306 cameraCut:true succeeds", cut.get("ok") is True, json.dumps(cut)[:280])
             check("T2306 it reports scope cameraCut and a real cut count, measured from the track",
                   cut.get("scope") == "cameraCut" and (cut.get("cutCount") or 0) > 0,
                   json.dumps(cut)[:250])
 
-            unbound = M.raw_post("add_sequence_track", {
+            unbound = SC.confirm_call("add_sequence_track", {
                 "path": seq, "guid": "00000000000000000000000000000000",
-                "cameraCut": True, "time": 0, "confirm": True})
+                "cameraCut": True, "time": 0})
             check("T2306 a camera cut pointing at a guid that is not bound is refused - a cut has "
                   "to point at a camera IN the sequence",
                   unbound.get("ok") is False, json.dumps(unbound)[:250])

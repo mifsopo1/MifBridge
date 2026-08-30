@@ -84,15 +84,15 @@ def main():
     # ------------------------------------------------------------------ T972 add_sequence_track
     print("\n=== T972: add_sequence_track - a real track against the real guid ===")
     if guid:
-        r = M.raw_post("add_sequence_track", {
+        r = SC.confirm_call("add_sequence_track", {
             "path": lspath, "guid": guid,
-            "trackClass": "/Script/MovieSceneTracks.MovieScene3DTransformTrack", "confirm": True})
+            "trackClass": "/Script/MovieSceneTracks.MovieScene3DTransformTrack"})
         check("T972 succeeds", r.get("ok") is True, json.dumps(r)[:300])
         check("T972 reports a real trackCount", (r.get("trackCount") or 0) > 0, r.get("trackCount"))
 
-        bad = M.raw_post("add_sequence_track", {
+        bad = SC.confirm_call("add_sequence_track", {
             "path": lspath, "guid": "DEADBEEF00004444DEADBEEF00004444",
-            "trackClass": "/Script/MovieSceneTracks.MovieScene3DTransformTrack", "confirm": True})
+            "trackClass": "/Script/MovieSceneTracks.MovieScene3DTransformTrack"})
         check("T972 an unknown guid is refused", bad.get("ok") is False, json.dumps(bad)[:200])
 
     # ------------------------------------------------------------------ T973 list_sequence_bindings

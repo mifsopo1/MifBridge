@@ -4537,18 +4537,39 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       typo would otherwise produce a mapping that exists and never fires. NOT exercised: the
       cooked-package branch - the only cooked IMCs here are real project assets.
 
-- [ ] **route every suite's confirm:true through scratch_confirm.confirm_call** (hours)
-      Found 2026-08-30 while writing test_input_mapping.py, which had the same slip. The
-      standing rule is that confirm:true is only ever sent via tools/scratch_confirm.py, whose
-      check() PROVES every path in the payload lies under a scratch prefix and raises rather
-      than returns if not. mifaudit.raw_post bypasses that guard entirely, and ~10 suites call
-      it with a hand-written "confirm": True: test_sequence_keys (15 sites),
-      test_sequencer_authoring (4), test_anim_notify (4), test_pie_family (3),
-      test_uncovered_reads4, test_simplified_collision_guard, test_instance_components (2 each),
-      test_uncovered_reads7, test_uncovered_reads8 (1 each). Every one of them does appear to
-      target scratch assets it created itself, so this is a compliance gap rather than a known
-      escape - but that is exactly what the guard exists to stop being a matter of inspection.
-      Mechanical to fix; each touched suite needs re-running afterwards.
+- [x] **route every suite's confirm:true through scratch_confirm.confirm_call** (hours)
+      DONE 2026-08-30, and THE DIAGNOSIS I FILED THE DAY BEFORE WAS WRONG. I recorded ~34 sites
+      across 10 suites as a compliance slip. Reading all 34 by hand, most are deliberate and
+      were already documented in their own suites; the real fault was in the CHECKER, not the
+      callers.
+      scratch_confirm.check() collected every pathlike string in a payload and demanded all of
+      them be scratch - including trackClass:"/Script/MovieSceneTracks.MovieScene3DTransformTrack".
+      So a call whose write target WAS scratch got refused because of a CLASS reference, and the
+      suites routed around the module rather than through it. A guard that refuses correct calls
+      does not get used; it gets bypassed, and then it guards nothing.
+      Fixed by exempting values under class-naming keys (CLASS_KEYS), keyed on the PARAMETER
+      NAME and never on the "/Script/" prefix - /Script/Engine.Default__PointLight is a CDO,
+      writing to it changes every instance of that class, and set_property{path:...} can reach
+      it, so a /Script/ value in `path` is refused exactly as before. Verified against five
+      cases including that one.
+      15 calls converted (13 in test_sequence_keys, 2 in test_sequencer_authoring); both suites
+      re-run green, 32 and 12 checks. The other 19 stay bypassed because the prefix check
+      STRUCTURALLY cannot apply: a level actor lives in a transient package and can never match
+      /Game/_Mif (test_instance_components, test_pie_family, test_uncovered_reads7/8, and the
+      actorPath halves of the two above), live_coding_compile carries no path at all
+      (test_uncovered_reads4), and two suites deliberately author against REAL content because
+      no scratch equivalent can be built - test_simplified_collision_guard, which already said
+      so, and test_anim_notify, which did not and now does.
+
+- [ ] **teach scratch_confirm about level-actor paths** (hours)
+      The remaining 19 bypasses are nearly all one shape: the target is a level actor, whose
+      path is in the open level's transient package and can never carry a /Game/_Mif prefix, so
+      the guard cannot speak about it at all. Every one of those call sites is currently a
+      hand-written confirm:true with a comment explaining why. A second predicate - is this
+      actor one the suite itself spawned in this run - would let the module cover them, which is
+      the only way that comment stops being load-bearing. Needs care: "I spawned it" has to be
+      PROVEN, not asserted by the caller, or the exemption is just the honour system with extra
+      steps.
 
 - [ ] **a legacy `settings:true` branch on map_input_key/unmap_input_key for UInputSettings** (hours)
       Split from the item above. Legacy (non-Enhanced) input has no read OR write coverage at
