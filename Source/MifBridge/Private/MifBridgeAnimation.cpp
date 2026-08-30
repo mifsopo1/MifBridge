@@ -14,7 +14,8 @@
 // live here rather than in a new file: this is already the animation-and-skeleton module.
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
-#include "Animation/Skeleton.h"        // USkeleton::Sockets - where DDS2 actually keeps them
+#include "Animation/Skeleton.h"
+#include "ScopedTransaction.h"        // USkeleton::Sockets - where DDS2 actually keeps them
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshSocket.h"
 #include "BehaviorTree/BehaviorTree.h"
@@ -47,9 +48,11 @@
 #include "Animation/AnimCompositeBase.h"  // FAnimSegment (montage slot tracks)
 #include "Animation/BlendSpace.h"
 #include "Animation/AnimTypes.h"          // FAnimNotifyEvent, FAnimSyncMarker
+#include "AnimationBlueprintLibrary.h"   // the PUBLIC notify-authoring API (Editor module)
 #include "Animation/AnimNotifies/AnimNotify.h"
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "Animation/Skeleton.h"
+#include "ScopedTransaction.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Misc/PackageName.h"
@@ -1220,4 +1223,464 @@ namespace MifBridge
 			*BB->GetName(), *KeyName, *TypeClass->GetName());
 	}
 
+	// =======================================================================
+	// NOTIFY AUTHORING - add_anim_notify / remove_anim_notify /
+	//                   add_anim_notify_track / remove_anim_notify_track
+	// =======================================================================
+	//
+	// THE READ HALF HAS BEEN HERE ALL ALONG. describe_animation emits every notify in full through
+	// SerializeNotify above, and nothing could create one - the textbook read-with-no-write. Notify
+	// authoring is the single most common animation-asset edit: footstep sounds, hit windows, VFX
+	// spawns, montage branching points are all notifies.
+	//
+	// THERE IS A WORKAROUND FOR ONE OF THE THREE CASES AND IT IS WORTH NAMING. UAnimSequenceBase::
+	// Notifies is a plain UPROPERTY() TArray with no EditFixedSize, and edit_container only gates on
+	// CPF_EditFixedSize - so edit_container{propertyPath:"Notifies", operation:"add"} really does
+	// append a default FAnimNotifyEvent today, and NotifyName / TrackIndex / Duration and the
+	// FAnimLinkableElement time fields are all writable through set_property. A name-only "skeleton
+	// notify" is therefore hand-buildable in about seven calls. It will not appear in the notify
+	// panel until a save-and-reload, because nothing calls RefreshCacheData. The CLASS-BACKED
+	// AnimNotify and AnimNotifyState cases - the common ones - stay genuinely unreachable that way,
+	// which is why these endpoints exist.
+	//
+	// COOKED ASSETS: THE TRACK ARRAY IS EDITOR-ONLY AND THE NOTIFIES ARE NOT. UAnimSequenceBase::
+	// Notifies and UAnimSequence::AuthoredSyncMarkers are plain UPROPERTYs and survive the cook;
+	// AnimNotifyTracks is WITH_EDITORONLY_DATA and does not. So a cooked-loaded sequence opens with
+	// notifies whose TrackIndex points into an EMPTY track array, and the first call that triggers
+	// RefreshCacheData runs its busted-index repair: it synthesises tracks and REWRITES TrackIndex on
+	// every existing notify (AnimSequenceBase.cpp), and pops a Message Log tab for any notify failing
+	// CanBePlaced. Not a crash, but a mutation nobody asked for, so it is detected up front and
+	// reported as tracksSynthesized / trackIndexRewritten rather than happening silently.
+
+	// --- the crash guard ----------------------------------------------------
+	//
+	// A HARD EDITOR CRASH, verified in the engine source, not inferred. UAnimSequence::
+	// RefreshCacheData (AnimSequence.cpp:3421-3435) walks AuthoredSyncMarkers and, for a marker whose
+	// TrackIndex is out of range, takes this else branch:
+	//
+	//     ensureMsgf(0, TEXT("AnimNotifyTrack: Wrong indices found"));
+	//     AnimNotifyTracks[0].SyncMarkers.Add(&SyncMarker);
+	//
+	// AnimNotifyTracks[0] with NO bounds check. If that array is empty and AuthoredSyncMarkers is
+	// not, it is TArray::operator[] on an empty array - a check() failure, which takes the editor out
+	// with it. RemoveAnimationNotifyTrack removes the track and THEN calls RefreshCacheData, so
+	// deleting the last remaining track on a sequence that still holds sync markers reaches it.
+	//
+	// Guarded before the engine is touched, which is the house rule for anything that can crash.
+	bool MifNotifyTrackRemovalIsSafe(UAnimSequenceBase* Seq, int32 TracksNow, FString& OutWhy)
+	{
+		if (TracksNow > 1)
+		{
+			return true;
+		}
+		const UAnimSequence* AsSeq = Cast<UAnimSequence>(Seq);
+		const int32 Markers = AsSeq ? AsSeq->AuthoredSyncMarkers.Num() : 0;
+		if (Markers == 0)
+		{
+			return true;
+		}
+		OutWhy = FString::Printf(
+			TEXT("removing this track would leave the sequence with ZERO notify tracks while it "
+				 "still has %d authored sync marker(s), and that CRASHES the editor - "
+				 "UAnimSequence::RefreshCacheData reaches `AnimNotifyTracks[0].SyncMarkers.Add(...)` "
+				 "with no bounds check for a marker whose TrackIndex is out of range "
+				 "(AnimSequence.cpp:3431), which is TArray::operator[] on an empty array. Refused "
+				 "before the engine was touched. Remove the sync markers first, or keep at least one "
+				 "track"), Markers);
+		return false;
+	}
+
+	UAnimSequenceBase* MifResolveAnimSeq(const TSharedRef<FJsonObject>& In,
+										 const TSharedRef<FJsonObject>& Out, const TCHAR* Endpoint)
+	{
+		const FString Path = JStrAny(In, { TEXT("assetPath"), TEXT("path"), TEXT("asset") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("%s needs assetPath (aliases: path, asset) - an AnimSequence, AnimMontage or "
+					 "AnimComposite. NOTHING was changed."), Endpoint));
+			return nullptr;
+		}
+		UObject* Obj = LoadAssetLenient(Path);
+		UAnimSequenceBase* Seq = Cast<UAnimSequenceBase>(Obj);
+		if (!Seq)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is not an AnimSequence / AnimMontage / AnimComposite%s. NOTHING was "
+					 "changed."), *Path,
+				Obj ? *FString::Printf(TEXT(" (it is a %s)"), *Obj->GetClass()->GetName()) : TEXT("")));
+			return nullptr;
+		}
+		return Seq;
+	}
+
+	/** Report the cooked-asset track situation into Out, and say whether RefreshCacheData is about
+	 *  to rewrite things the caller did not ask about. */
+	void MifNoteTrackState(UAnimSequenceBase* Seq, const TSharedRef<FJsonObject>& Out)
+	{
+		const int32 Tracks = Seq->AnimNotifyTracks.Num();
+		Out->SetNumberField(TEXT("notifyTracks"), Tracks);
+		if (Tracks == 0 && Seq->Notifies.Num() > 0)
+		{
+			Out->SetBoolField(TEXT("tracksSynthesized"), true);
+			Out->SetBoolField(TEXT("trackIndexRewritten"), true);
+			Out->SetStringField(TEXT("cookedTrackNote"), FString::Printf(
+				TEXT("this sequence has %d notif(y/ies) and ZERO notify tracks, which is what a "
+					 "COOKED asset looks like: Notifies is a plain UPROPERTY and survives the cook, "
+					 "AnimNotifyTracks is editor-only and does not. RefreshCacheData has therefore "
+					 "synthesised tracks and REWRITTEN TrackIndex on every existing notify - a "
+					 "change you did not ask for, reported rather than left to be discovered. It "
+					 "may also have opened a Message Log tab for any notify that failed "
+					 "CanBePlaced."), Seq->Notifies.Num()));
+		}
+	}
+
+	// --- add_anim_notify_track ----------------------------------------------
+	void H_add_anim_notify_track(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("asset"), TEXT("track") },
+			TEXT("assetPath (aliases: path, asset); track - the NAME of the track to create"),
+			{ { TEXT("trackName"), TEXT("spell it track") },
+			  { TEXT("index"), TEXT("tracks are addressed by NAME here, not index") } }))
+		{
+			return;
+		}
+		UAnimSequenceBase* Seq = MifResolveAnimSeq(In, Out, TEXT("add_anim_notify_track"));
+		if (!Seq) { return; }
+
+		const FString Track = JStr(In, TEXT("track"));
+		if (Track.IsEmpty())
+		{
+			Fail(Out, TEXT("track is required - the name of the track to create. NOTHING was changed."));
+			return;
+		}
+		const FName TrackName(*Track);
+		if (UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(Seq, TrackName))
+		{
+			Out->SetStringField(TEXT("assetPath"), Seq->GetPathName());
+			Out->SetStringField(TEXT("track"), Track);
+			Out->SetBoolField(TEXT("created"), false);
+			Out->SetNumberField(TEXT("notifyTracks"), Seq->AnimNotifyTracks.Num());
+			Out->SetStringField(TEXT("note"),
+				TEXT("a track with that name already exists - nothing was created, and nothing "
+					 "needed to be. created:false is not a failure."));
+			return;
+		}
+
+		const int32 Before = Seq->AnimNotifyTracks.Num();
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_AddNotifyTrack", "Add Anim Notify Track"));
+		Seq->Modify();
+		UAnimationBlueprintLibrary::AddAnimationNotifyTrack(Seq, TrackName);
+
+		// READ BACK - AddAnimationNotifyTrack is void.
+		if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(Seq, TrackName))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("AddAnimationNotifyTrack reported nothing and '%s' still does not exist on "
+					 "read-back. NOTHING usable was produced."), *Track));
+			return;
+		}
+		Out->SetStringField(TEXT("assetPath"), Seq->GetPathName());
+		Out->SetStringField(TEXT("track"), Track);
+		Out->SetBoolField(TEXT("created"), true);
+		Out->SetNumberField(TEXT("tracksBefore"), Before);
+		MifNoteTrackState(Seq, Out);
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the asset is now dirty and NOTHING has been saved."));
+	}
+
+	// --- remove_anim_notify_track -------------------------------------------
+	void H_remove_anim_notify_track(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("asset"), TEXT("track"), TEXT("confirm") },
+			TEXT("assetPath (aliases: path, asset); track - the NAME of the track to remove; "
+				 "confirm:true, because removing a track removes every notify on it"),
+			{ { TEXT("trackName"), TEXT("spell it track") } }))
+		{
+			return;
+		}
+		UAnimSequenceBase* Seq = MifResolveAnimSeq(In, Out, TEXT("remove_anim_notify_track"));
+		if (!Seq) { return; }
+
+		const FString Track = JStr(In, TEXT("track"));
+		const FName TrackName(*Track);
+		if (Track.IsEmpty() || !UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(Seq, TrackName))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no notify track named '%s' on this sequence (it has %d). NOTHING was changed."),
+				*Track, Seq->AnimNotifyTracks.Num()));
+			return;
+		}
+
+		// THE CRASH GUARD, before anything is touched.
+		FString Why;
+		if (!MifNotifyTrackRemovalIsSafe(Seq, Seq->AnimNotifyTracks.Num(), Why))
+		{
+			Fail(Out, Why + TEXT(". NOTHING was changed."));
+			return;
+		}
+
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			int32 OnTrack = 0;
+			for (const FAnimNotifyEvent& E : Seq->Notifies)
+			{
+				if (Seq->AnimNotifyTracks.IsValidIndex(E.TrackIndex)
+					&& Seq->AnimNotifyTracks[E.TrackIndex].TrackName == TrackName)
+				{
+					++OnTrack;
+				}
+			}
+			Fail(Out, FString::Printf(
+				TEXT("removing track '%s' also removes the %d notif(y/ies) on it, and this endpoint "
+					 "cannot put them back. Pass confirm:true. NOTHING was changed."), *Track, OnTrack));
+			return;
+		}
+
+		const int32 NotifiesBefore = Seq->Notifies.Num();
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_RemoveNotifyTrack", "Remove Anim Notify Track"));
+		Seq->Modify();
+		UAnimationBlueprintLibrary::RemoveAnimationNotifyTrack(Seq, TrackName);
+
+		if (UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(Seq, TrackName))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("RemoveAnimationNotifyTrack ran and '%s' still exists on read-back."), *Track));
+			return;
+		}
+		Out->SetStringField(TEXT("assetPath"), Seq->GetPathName());
+		Out->SetStringField(TEXT("track"), Track);
+		Out->SetBoolField(TEXT("removed"), true);
+		Out->SetNumberField(TEXT("notifiesRemoved"), NotifiesBefore - Seq->Notifies.Num());
+		Out->SetNumberField(TEXT("notifyTracks"), Seq->AnimNotifyTracks.Num());
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the asset is now dirty and NOTHING has been saved."));
+	}
+
+	// --- add_anim_notify ----------------------------------------------------
+	void H_add_anim_notify(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("asset"), TEXT("track"), TEXT("time"),
+			  TEXT("notifyClass"), TEXT("notifyStateClass"), TEXT("duration"), TEXT("name") },
+			TEXT("assetPath (aliases: path, asset); time (seconds into the sequence); track (name, "
+				 "default the first existing track); ONE of notifyClass / notifyStateClass / name - "
+				 "name alone makes a skeleton notify (the AnimNotify_<Name> event kind); duration "
+				 "(states only, seconds)"),
+			{ { TEXT("triggerTime"), TEXT("spell it time") },
+			  { TEXT("class"), TEXT("spell it notifyClass, or notifyStateClass for a state") } }))
+		{
+			return;
+		}
+		UAnimSequenceBase* Seq = MifResolveAnimSeq(In, Out, TEXT("add_anim_notify"));
+		if (!Seq) { return; }
+
+		if (!In->HasField(TEXT("time")))
+		{
+			Fail(Out, TEXT("time is required (seconds into the sequence). NOTHING was changed."));
+			return;
+		}
+		const float Time = static_cast<float>(JNum(In, TEXT("time"), 0.0));
+		const float Length = Seq->GetPlayLength();
+		if (Time < 0.f || Time > Length)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("time %.4f is outside this sequence, which is %.4f seconds long. A notify "
+					 "placed outside the sequence never fires. NOTHING was changed."), Time, Length));
+			return;
+		}
+
+		const FString NotifyClassPath = JStr(In, TEXT("notifyClass"));
+		const FString StateClassPath = JStr(In, TEXT("notifyStateClass"));
+		const FString Name = JStr(In, TEXT("name"));
+		const int32 Given = (NotifyClassPath.IsEmpty() ? 0 : 1) + (StateClassPath.IsEmpty() ? 0 : 1)
+			+ (Name.IsEmpty() ? 0 : 1);
+		if (Given == 0)
+		{
+			Fail(Out, TEXT("name one of notifyClass, notifyStateClass or name. NOTHING was changed."));
+			return;
+		}
+		if (!NotifyClassPath.IsEmpty() && !StateClassPath.IsEmpty())
+		{
+			Fail(Out, TEXT("notifyClass and notifyStateClass are alternatives - a notify is one or "
+				TEXT("the other, never both. NOTHING was changed.")));
+			return;
+		}
+
+		// The track. Default to the first existing one rather than inventing a name, and refuse
+		// clearly when there are none, because AddAnimationNotifyEvent with an unknown track name
+		// warns and returns without adding - a silent no-op.
+		FString Track = JStr(In, TEXT("track"));
+		if (Track.IsEmpty())
+		{
+			if (Seq->AnimNotifyTracks.Num() == 0)
+			{
+				Fail(Out, TEXT("this sequence has no notify tracks to place a notify on. Call "
+					TEXT("add_anim_notify_track first. NOTHING was changed.")));
+				return;
+			}
+			Track = Seq->AnimNotifyTracks[0].TrackName.ToString();
+		}
+		const FName TrackName(*Track);
+		if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(Seq, TrackName))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no notify track named '%s'. AddAnimationNotifyEvent warns and adds NOTHING for "
+					 "an unknown track, so this is refused rather than reported as success. Call "
+					 "add_anim_notify_track first. NOTHING was changed."), *Track));
+			return;
+		}
+
+		UClass* NotifyClass = nullptr;
+		if (!NotifyClassPath.IsEmpty() || !StateClassPath.IsEmpty())
+		{
+			const FString Wanted = NotifyClassPath.IsEmpty() ? StateClassPath : NotifyClassPath;
+			// ResolveClassSTRICT, per MifBridgeHandlers.h's own note: plain ResolveClass treats an
+			// empty name as "self", which for a notify class would silently target the wrong thing.
+			FString ClassError;
+			NotifyClass = ResolveClassStrict(Wanted, nullptr,
+				StateClassPath.IsEmpty() ? TEXT("notifyClass") : TEXT("notifyStateClass"), ClassError);
+			if (!NotifyClass)
+			{
+				Fail(Out, FString::Printf(TEXT("%s NOTHING was changed."),
+					ClassError.IsEmpty() ? *FString::Printf(TEXT("class not found: '%s'."), *Wanted)
+					                     : *ClassError));
+				return;
+			}
+			UClass* Base = StateClassPath.IsEmpty() ? UAnimNotify::StaticClass()
+													: UAnimNotifyState::StaticClass();
+			if (!NotifyClass->IsChildOf(Base))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is not a %s. A notify and a notify STATE are different base classes "
+						 "and are not interchangeable. NOTHING was changed."),
+					*NotifyClass->GetName(), *Base->GetName()));
+				return;
+			}
+		}
+
+		const int32 Before = Seq->Notifies.Num();
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_AddNotify", "Add Anim Notify"));
+		Seq->Modify();
+
+		if (NotifyClass && StateClassPath.IsEmpty())
+		{
+			UAnimationBlueprintLibrary::AddAnimationNotifyEvent(Seq, TrackName, Time, NotifyClass);
+		}
+		else if (NotifyClass)
+		{
+			const float Duration = static_cast<float>(JNum(In, TEXT("duration"), 0.1));
+			UAnimationBlueprintLibrary::AddAnimationNotifyStateEvent(Seq, TrackName, Time, Duration,
+																	 NotifyClass);
+		}
+		else
+		{
+			UAnimationBlueprintLibrary::AddAnimationNotifyEvent(Seq, TrackName, Time, nullptr);
+			// A skeleton notify carries only its NAME, and the library's class-less overload leaves
+			// it empty - set it on the event that was just appended.
+			if (Seq->Notifies.Num() > Before)
+			{
+				Seq->Notifies.Last().NotifyName = FName(*Name);
+			}
+		}
+
+		// READ BACK. Every one of these library calls is void and warns-and-returns on failure, so
+		// the count is the only evidence anything happened.
+		const int32 Added = Seq->Notifies.Num() - Before;
+		if (Added <= 0)
+		{
+			Fail(Out, TEXT("the notify was not added - the engine's own call warns and returns "
+				TEXT("without adding rather than reporting an error. NOTHING was changed.")));
+			return;
+		}
+
+		Out->SetStringField(TEXT("assetPath"), Seq->GetPathName());
+		Out->SetStringField(TEXT("track"), Track);
+		Out->SetNumberField(TEXT("added"), Added);
+		Out->SetNumberField(TEXT("notifyIndex"), Seq->Notifies.Num() - 1);
+		Out->SetNumberField(TEXT("notifyCount"), Seq->Notifies.Num());
+		// Through SerializeNotify, so add and describe_animation speak one vocabulary.
+		Out->SetObjectField(TEXT("notify"), SerializeNotify(Seq->Notifies.Last()));
+		MifNoteTrackState(Seq, Out);
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the asset is now dirty and NOTHING has been saved."));
+	}
+
+	// --- remove_anim_notify -------------------------------------------------
+	void H_remove_anim_notify(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("asset"), TEXT("name"), TEXT("track"),
+			  TEXT("confirm") },
+			TEXT("assetPath (aliases: path, asset); name (remove every notify with this name) OR "
+				 "track (remove every notify on this track); confirm:true"),
+			{ { TEXT("notifyName"), TEXT("spell it name") } }))
+		{
+			return;
+		}
+		UAnimSequenceBase* Seq = MifResolveAnimSeq(In, Out, TEXT("remove_anim_notify"));
+		if (!Seq) { return; }
+
+		const FString Name = JStr(In, TEXT("name"));
+		const FString Track = JStr(In, TEXT("track"));
+		if (Name.IsEmpty() == Track.IsEmpty())
+		{
+			Fail(Out, TEXT("name exactly one of name or track - they are alternatives, and passing "
+				TEXT("neither would mean removing everything. NOTHING was changed.")));
+			return;
+		}
+		if (!Track.IsEmpty() && !UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(Seq, FName(*Track)))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no notify track named '%s' on this sequence. NOTHING was changed."), *Track));
+			return;
+		}
+
+		const int32 Before = Seq->Notifies.Num();
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			int32 Would = 0;
+			for (const FAnimNotifyEvent& E : Seq->Notifies)
+			{
+				const bool bMatch = Name.IsEmpty()
+					? (Seq->AnimNotifyTracks.IsValidIndex(E.TrackIndex)
+					   && Seq->AnimNotifyTracks[E.TrackIndex].TrackName.ToString() == Track)
+					: (E.NotifyName.ToString() == Name);
+				if (bMatch) { ++Would; }
+			}
+			Fail(Out, FString::Printf(
+				TEXT("this would remove %d of %d notif(y/ies) and cannot be undone through this "
+					 "endpoint. Pass confirm:true. NOTHING was changed."), Would, Before));
+			return;
+		}
+
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_RemoveNotify", "Remove Anim Notify"));
+		Seq->Modify();
+		if (Name.IsEmpty())
+		{
+			UAnimationBlueprintLibrary::RemoveAnimationNotifyEventsByTrack(Seq, FName(*Track));
+		}
+		else
+		{
+			UAnimationBlueprintLibrary::RemoveAnimationNotifyEventsByName(Seq, FName(*Name));
+		}
+
+		const int32 Removed = Before - Seq->Notifies.Num();
+		Out->SetStringField(TEXT("assetPath"), Seq->GetPathName());
+		Out->SetNumberField(TEXT("removed"), Removed);
+		Out->SetNumberField(TEXT("notifyCount"), Seq->Notifies.Num());
+		if (Removed == 0)
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("nothing matched %s '%s', so nothing was removed. removed:0 is the measured "
+					 "difference in the notify count, not an assumption."),
+				Name.IsEmpty() ? TEXT("track") : TEXT("name"),
+				Name.IsEmpty() ? *Track : *Name));
+		}
+		MifNoteTrackState(Seq, Out);
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the asset is now dirty and NOTHING has been saved."));
+	}
 }

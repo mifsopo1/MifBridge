@@ -2944,6 +2944,35 @@ def describe_animation(asset_path: str) -> dict:
     return _post("describe_animation", assetPath=asset_path)
 
 
+@mcp.tool()
+def add_anim_notify(asset_path: str, time: float, track: str = "", name: str = "",
+                    notify_class: str = "", notify_state_class: str = "",
+                    duration: float = 0.1) -> dict:
+    "Place a notify on an AnimSequence, AnimMontage or AnimComposite - the write half of what describe_animation has always been able to READ. Notifies are how animation drives everything else: footstep sounds, hit windows, VFX spawns, montage branching points. Give exactly ONE of notify_class (a UAnimNotify subclass), notify_state_class (a UAnimNotifyState subclass, which also takes duration), or name alone - name alone makes a skeleton notify, the AnimNotify_<Name> event kind that a Blueprint catches by name with no class behind it. The two class kinds are DIFFERENT base classes and are not interchangeable; passing both is refused. track defaults to the sequence's first existing track and an unknown track name is REFUSED, because UAnimationBlueprintLibrary::AddAnimationNotifyEvent warns and adds NOTHING for one - an unchecked call would report success having done nothing. A time outside the sequence is refused too: a notify placed past the end never fires. The response reports added (the measured change in the notify count, not ok:true) and the new notify in describe_animation's own shape, so authoring and reading speak one vocabulary. Nothing is saved."
+    return _post("add_anim_notify", assetPath=asset_path, time=time, track=track, name=name,
+                 notifyClass=notify_class, notifyStateClass=notify_state_class, duration=duration)
+
+
+@mcp.tool()
+def remove_anim_notify(asset_path: str, name: str = "", track: str = "",
+                       confirm: bool = False) -> dict:
+    "Remove notifies from an animation, either every one with a given name or every one on a given track. Exactly one of name or track - passing neither would mean removing everything, so it is refused rather than guessed at. confirm=True required, and the refusal tells you how many it would take first. removed is the measured difference in the notify count, so removed:0 with a note means nothing matched - that is a real answer, not a failure."
+    return _post("remove_anim_notify", assetPath=asset_path, name=name, track=track,
+                 confirm=confirm)
+
+
+@mcp.tool()
+def add_anim_notify_track(asset_path: str, track: str) -> dict:
+    "Create a named notify track on an animation - the row notifies sit on in the notify panel. Adding a track that already exists is created:false with a note rather than an error. IF THE RESPONSE CARRIES tracksSynthesized, read it: a COOKED animation loads with its notifies intact but its track array EMPTY (UAnimSequenceBase::Notifies is a plain UPROPERTY and survives the cook; AnimNotifyTracks is editor-only and does not), so the first call that triggers RefreshCacheData rebuilds the tracks and REWRITES TrackIndex on every existing notify. That is a change you did not ask for, and it is reported rather than left to be discovered."
+    return _post("add_anim_notify_track", assetPath=asset_path, track=track)
+
+
+@mcp.tool()
+def remove_anim_notify_track(asset_path: str, track: str, confirm: bool = False) -> dict:
+    "Remove a notify track, and every notify on it - hence confirm=True, with the refusal naming the count first. THIS ENDPOINT GUARDS A HARD EDITOR CRASH and will refuse in one specific case: removing the LAST remaining notify track from a sequence that still has authored sync markers. UAnimSequence::RefreshCacheData reaches `AnimNotifyTracks[0].SyncMarkers.Add(...)` with no bounds check for a marker whose TrackIndex is out of range (AnimSequence.cpp:3431), which on an empty track array is TArray::operator[] and takes the editor down. RemoveAnimationNotifyTrack removes the track and THEN calls RefreshCacheData, so the engine reaches it unaided. The refusal happens before anything is touched; remove the sync markers first, or keep one track."
+    return _post("remove_anim_notify_track", assetPath=asset_path, track=track, confirm=confirm)
+
+
 # --------------------------------------------------------------------------
 # Asset lifecycle (/Game/ only, headless)
 # --------------------------------------------------------------------------

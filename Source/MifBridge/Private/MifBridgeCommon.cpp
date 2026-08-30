@@ -309,6 +309,10 @@ namespace MifBridge
 			MIF_BIND(remove_enum_value);
 			// Animation assets (read-only)
 			MIF_BIND(describe_animation);
+			MIF_BIND(add_anim_notify);
+			MIF_BIND(remove_anim_notify);
+			MIF_BIND(add_anim_notify_track);
+			MIF_BIND(remove_anim_notify_track);
 			MIF_BIND(list_sockets);
 			MIF_BIND(list_bones);
 			MIF_BIND(list_virtual_bones);

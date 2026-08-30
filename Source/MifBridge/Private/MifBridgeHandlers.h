@@ -1344,6 +1344,13 @@ namespace MifBridge
 	// Animation BLUEPRINTS go through the normal graph endpoints; GatherGraphs recurses into
 	// nested graphs, so state machines / states / transition rules are reachable there.
 	MIF_DECL(describe_animation);
+	/** Notify AUTHORING - the write half of describe_animation's notify reporting.
+	 *  remove_anim_notify_track guards a HARD CRASH: RefreshCacheData indexes
+	 *  AnimNotifyTracks[0] unchecked when a sync marker's TrackIndex is out of range. */
+	MIF_DECL(add_anim_notify);
+	MIF_DECL(remove_anim_notify);
+	MIF_DECL(add_anim_notify_track);
+	MIF_DECL(remove_anim_notify_track);
 	/** Sockets on a SkeletalMesh or StaticMesh asset - there was no way to see what a mod could
 	 *  attach to. */
 	MIF_DECL(list_sockets);

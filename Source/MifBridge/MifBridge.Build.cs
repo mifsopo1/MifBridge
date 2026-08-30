@@ -31,6 +31,11 @@ public class MifBridge : ModuleRules
 			                     // Anticipated by docs/audit/work/I_diagnostics.md (get_perf_stats).
 			"BlueprintGraph",
 			"AnimGraph",         // UAnimGraphNode_* (derives from UK2Node) for add_anim_node
+			// The PUBLIC notify-authoring API - AddAnimationNotifyEvent and friends, which is what
+			// makes add_anim_notify possible at all. An EDITOR module under Source/Editor, not a
+			// plugin, so AddPluginModules does not apply. Present in 5.3.2, 5.6 and 5.7 - all three
+			// checked by path before adding.
+			"AnimationBlueprintLibrary",
 			"InputBlueprintNodes", // UK2Node_EnhancedInputAction (add_enhanced_input_action)
 			"EnhancedInput",       // UInputAction / UInputMappingContext runtime types
     // UK2Node_* classes
