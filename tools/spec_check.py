@@ -12,9 +12,18 @@ time I closed it by hand, noticed the pattern, and closed the next one by hand a
 So this checks it instead. Two rules, and both are advisory - it never edits the spec, because "this
 looks done" is a judgement and a tool that ticks items on a name match would quietly hide real work.
 
-  1. AN OPEN ITEM WHOSE ENDPOINTS EXIST. Matches an open `- [ ]` line against MIF_DECL names in the
-     header. Deliberately conservative: it needs a full endpoint name to appear in the item text, so
-     a vague item is not flagged on a coincidence.
+  1. AN OPEN ITEM WHOSE ENDPOINTS EXIST. Matches an open `- [ ]` item's TITLE against MIF_DECL names
+     in the header. Deliberately conservative: it needs a full endpoint name, so a vague item is not
+     flagged on a coincidence.
+     TITLE, NOT BODY, since 2026-08-30 - and the change is a narrowing, made after filing 56 surveyed
+     gaps at once produced three false positives in a row. The bug this rule exists for is an item
+     that says BUILD X while X exists, and X is named in the title; a body naturally names related
+     endpoints as context ("...unlike find_assets, which...") without asking for any of them. Two
+     further exemptions for the same reason: an item whose title starts with an extend/expand verb
+     legitimately names the endpoint it extends - this codebase deliberately prefers a parameter on
+     an existing endpoint over a new name, so "extend add_sequence_track with root:true" is open work
+     whose title MUST mention add_sequence_track - and an item whose body is marked **BUILT is
+     recording its own closure.
   2. TWO ITEMS WITH THE SAME BOLD TITLE. `- [ ] **PCG**` twice is the exact failure above. Reported
      whatever their checkbox state, since a `- [x]` and a `- [ ]` for one title is precisely the mess.
   3. A TICKED ITEM WHOSE OWN BODY SAYS IT IS NOT DONE. Rules 1 and 2 only ever look at the checkbox,
@@ -113,11 +122,56 @@ def main():
     problems = []
 
     # 1. open, but the endpoints it names already exist
+    #
+    # THE FALSE-POSITIVE CLASS, found 2026-08-30 by filing 56 surveyed gaps at once. This codebase
+    # deliberately prefers "add a parameter to an existing endpoint" over "add a new endpoint name",
+    # so a perfectly good OPEN item routinely NAMES an endpoint that exists - that is the whole
+    # point of it. "extend add_sequence_track with root:true" is open work whose title must mention
+    # add_sequence_track, and flagging it as already-built is exactly backwards.
+    #
+    # The rule still has to fire on the case it was built for: an item that says "build X" where X
+    # now exists. So the exemption is narrow - an item whose title opens with an extend/expand verb,
+    # or that is explicitly marked BUILT with a date. Anything else naming a live endpoint is still
+    # reported.
     for lineno, box, title, body in all_items:
         if box != " ":
             continue
-        named = [e for e in built if e in body and len(e) > 8]
-        if named:
+        if "**BUILT" in body:
+            continue
+
+        # Every endpoint-SHAPED token in the title: lowercase, snake_case, long enough that a
+        # coincidence is implausible. Deliberately not every word - `saveConfig` and `root:true`
+        # are parameter names, not endpoints, and matching them would flag on punctuation.
+        tokens = set(re.findall(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)+", title))
+        tokens = {t for t in tokens if len(t) > 8}
+        named = sorted(tokens & set(built))
+        missing = tokens - set(built)
+
+        # FLAG ONLY WHEN NOTHING IN THE TITLE IS STILL MISSING. Narrowed 2026-08-30 after filing 56
+        # surveyed gaps at once, which produced five false positives in a row and one earlier
+        # attempt at a phrase-marker exemption that kept needing another phrase.
+        #
+        # The bug this rule exists for is an open item asking to BUILD something that already
+        # exists - `- [ ] **create_water_zone**` when create_water_zone is bound. In that case every
+        # endpoint the title names exists, and there is nothing left to do.
+        #
+        # But this codebase deliberately prefers extending an existing endpoint over adding a new
+        # name, so a great many legitimate open items name BOTH: the new thing and the endpoint it
+        # attaches to. "add_sequence_section + set_sequence_keys (plus sections reported back by
+        # list_sequence_bindings)" names one built endpoint and two that do not exist - the open
+        # work is real and the item must not be flagged. If ANY named endpoint is still missing, the
+        # item has work left, whatever else it mentions.
+        # AND it must not be an EXTEND item. The two conditions catch different halves of the same
+        # preference: this codebase would rather add a parameter to an existing endpoint than add a
+        # new name, so an open item routinely names endpoints that exist. Where it names a new one
+        # too, `missing` covers it; where the whole item IS an extension ("extend
+        # get_viewport_camera with viewMode"), every name in the title necessarily exists and only
+        # the leading verb distinguishes it from a stale build-X item.
+        low = title.strip().lower()
+        if any(low.startswith(v) for v in ("extend ", "expand ", "extending ")):
+            continue
+
+        if named and not missing:
             problems.append(
                 "L%-5d OPEN but built: %s\n           names %s, which exist in MifBridgeHandlers.h"
                 % (lineno, title[:58], ", ".join(sorted(named)[:3])))
