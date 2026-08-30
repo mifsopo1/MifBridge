@@ -1596,6 +1596,21 @@ namespace MifBridge
 					*ParentClass->GetName()));
 				return;
 			}
+			// THE SAME NEAR-MISS, one class family over, and it was missing until 2026-08-30. A plain
+			// Blueprint parented to UUserWidget looks exactly like a Widget Blueprint and is not one:
+			// UWidgetBlueprint is a distinct blueprint class with a WidgetTree, and without it every
+			// widget endpoint refuses the asset ("not a Widget Blueprint"). It was found by calling
+			// create_blueprint{parentClass:"UserWidget"} while trying to test something else - it
+			// answered ok:true and handed back an asset nothing could use, with no warning at all.
+			// The AnimInstance guard above exists for precisely this failure and simply had no
+			// widget counterpart.
+			if (ParentClass && ParentClass->IsChildOf(UUserWidget::StaticClass()))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is a UUserWidget, so this would create a plain Blueprint with an EventGraph and NO WidgetTree - every widget endpoint would refuse it with \"not a Widget Blueprint\". Pass blueprintType=WidgetBlueprint (parentClass is optional there and defaults to UserWidget). NOTHING was created."),
+					*ParentClass->GetName()));
+				return;
+			}
 		}
 		if (!ParentClass)
 		{

@@ -5643,12 +5643,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       a bare NewObject leaves a 0x0 render target with no resource. A filename filter that
       quietly drops the main file is worse than no filter, because the report still looks
       complete - which is exactly how the first version of this table passed review.
-- [ ] **extend add_widget_animation_track / set_widget_animation_keys with RenderTransform.Scale, .Angle and .Shear** (hours)
-      Animate a UMG widget's render scale, rotation angle and shear, not just its translation. Scale is the single most common UI animation there is (pop-in, button press, pulse) and it is the one channel family the bridge cannot reach.
-      API: UMovieScene2DTransformSection's channels are all already on the section the bridge creates: FMovieSceneFloatChannel Translation[2] at Runtime/UMG/Public/Animation/MovieScene2DTransformSection.h:139, Rotation at :143, Scale[2] at :147, Shear[2] at :151. Same UMovieScene2DTransformTrack, same section, same FMovieSceneFloatChannel key path the existing code already drives via FMovieSceneFloatChannel ...
-      Cooked: Unchanged from the existing endpoints, which is the point of extending rather than adding: ResolveWidgetBlueprintField requires a UWidgetBlueprint, and a cooked project has only UWidgetBlueprintGeneratedClass, so the existing resolver already fails with a named error before any channel is touched. N...
-      Vetter corrected the proposal: Two fixes to the proposal, neither fatal. (1) The claim "set_property cannot key a channel" is wrong: ResolvePropertyPathEx handles fixed-size C-array UPROPERTYs (MifBridgeCommon.cpp:2571-2595) and Times/Values are UPROPERTY TArrays (MovieSceneFloatChannel.h:316-320), so "Scale[0].Times" does resolve. It is unusable in practice — no endpoint exposes a section's objectPath, and a two-call Times/Val...
-
+- [x] **extend add_widget_animation_track / set_widget_animation_keys with RenderTransform.Scale, .Angle and .Shear** (hours)
+      DONE 2026-08-30. 23 checks in tools/test_widget_transform_channels.py; the five existing
+      widget suites re-run green (153 checks) because this changed a resolver they all use.
+      THE FOUR FAMILIES ARE ONE TRACK, which is the fact the whole design turns on.
+      UMovieScene2DTransformSection carries all seven channels and they all bind to the single
+      RenderTransform property, so adding Scale to a widget that already has Translation finds
+      the SAME section and reports createdTrack:false - correct, and now explained by a
+      trackNote so it does not read as a failure.
+      THE REAL DEFECT THIS EXPOSED: the channel resolver took only the SECTION and the channel
+      string. That was right while Translation was the only transform family and becomes a
+      SILENT WRONG-CURVE WRITE the moment Scale exists - "X" would have keyed Translation[0]
+      for a caller asking for Scale. The resolver now takes the property too. T7302 proves the
+      curves are distinct the only way that cannot be faked: it keys Scale.X twice, then keys
+      Translation.X and asserts that call sees keysBefore == 0. A shared curve would report 2.
+      THE MASK IS THE OTHER TRAP, and it fails silently the other way.
+      ImportEntityImpl builds its entity from EnumHasAnyFlags(Channels, ScaleX) &&
+      Scale[0].HasAnyData() (MovieScene2DTransformSection.cpp:239-267), so a channel whose
+      TransformMask bit is clear is never handed to the evaluator: keys are stored, read back
+      perfectly, and animate nothing. The handler widens the mask and reports maskWidened
+      rather than leaving inert keys. Sections this plugin creates default to AllTransform
+      (:126) so that path is not exercised by the suite, which says so.
+      FOUND ALONG THE WAY and fixed here: create_blueprint{parentClass:"UserWidget"} without
+      blueprintType=WidgetBlueprint answered ok:true and produced a plain UBlueprint with no
+      WidgetTree that every widget endpoint then refused. The neighbouring UAnimInstance guard
+      exists for exactly that near-miss and had no widget counterpart. T7300 covers it.
 - [ ] **typed read + write of a NiagaraSystem's user parameters - extend list_niagara_user_parameters and add set_niagara_user_parameter (NEW EVIDENCE against a declined item)** (day)
       Report each User.* parameter of a NiagaraSystem with its real TYPE NAME and correctly-decoded value, and set a user parameter's default on the SYSTEM ASSET (as opposed to on one placed component). Today the read guesses and sometimes withholds, and the write does not exist.
       API: UNiagaraSystem::GetExposedParameters() - both const and NON-CONST overloads, D:/UE532/Engine/Plugins/FX/Niagara/Source/Niagara/Classes/NiagaraSystem.h:336-337. FNiagaraParameterStore::ReadParameterVariables() returning TArrayView<const FNiagaraVariableWithOffset> - Plugins/FX/Niagara/Source/Niagara/Public/NiagaraParameterStore.h:186 - each entry carrying a real FNiagaraTypeDefinition, which is the...

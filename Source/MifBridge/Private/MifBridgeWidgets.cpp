@@ -180,13 +180,31 @@ namespace MifBridge
 			const TCHAR* PropertyPath;  // what the MovieScene property track binds to
 			const TCHAR* Channels;      // comma-separated, in engine order
 			bool bBool;                 // a BOOL channel, so stepped: no interpolation, no tangents
+			// WHICH SLOT OF UMovieScene2DTransformSection this property owns, or INDEX_NONE for the
+			// properties that are not a 2D transform at all. The four transform families all live on
+			// ONE section, so the channel a caller names ("X") is ambiguous without this - see the
+			// resolver below, where getting it wrong means silently keying the wrong curve.
+			int32 XFormBase;
 		};
 
+		// THE FOUR RenderTransform FAMILIES ARE ONE TRACK, NOT FOUR. UMovieScene2DTransformSection
+		// carries all seven channels - Translation[2], Rotation, Scale[2], Shear[2]
+		// (MovieScene2DTransformSection.h:136-151) - and they all bind to the single "RenderTransform"
+		// property. So asking for Scale on a widget that already has a Translation track finds the
+		// SAME section and reports createdTrack:false. That is correct rather than a failure, and the
+		// endpoint says so explicitly instead of leaving it looking like nothing happened.
+		//
+		// The engine's own names for these channels are Translation.X/.Y, Angle, Scale.X/.Y and
+		// Shear.X/.Y (MovieScene2DTransformSection.cpp:34-67), which is why the rotation family is
+		// spelled Angle here and not Rotation.
 		const FAnimProperty kAnimProperties[] = {
-			{ TEXT("RenderTransform.Translation"), TEXT("RenderTransform"),  TEXT("X,Y"),     false },
-			{ TEXT("RenderOpacity"),               TEXT("RenderOpacity"),    TEXT("value"),   false },
-			{ TEXT("ColorAndOpacity"),             TEXT("ColorAndOpacity"),  TEXT("R,G,B,A"), false },
-			{ TEXT("Visibility"),                  TEXT("Visibility"),       TEXT("value"),   true  },
+			{ TEXT("RenderTransform.Translation"), TEXT("RenderTransform"),  TEXT("X,Y"),     false, 0 },
+			{ TEXT("RenderTransform.Angle"),       TEXT("RenderTransform"),  TEXT("value"),   false, 2 },
+			{ TEXT("RenderTransform.Scale"),       TEXT("RenderTransform"),  TEXT("X,Y"),     false, 3 },
+			{ TEXT("RenderTransform.Shear"),       TEXT("RenderTransform"),  TEXT("X,Y"),     false, 5 },
+			{ TEXT("RenderOpacity"),               TEXT("RenderOpacity"),    TEXT("value"),   false, INDEX_NONE },
+			{ TEXT("ColorAndOpacity"),             TEXT("ColorAndOpacity"),  TEXT("R,G,B,A"), false, INDEX_NONE },
+			{ TEXT("Visibility"),                  TEXT("Visibility"),       TEXT("value"),   true,  INDEX_NONE },
 		};
 
 		const FAnimProperty* FindAnimProperty(const FString& Name)
@@ -208,7 +226,9 @@ namespace MifBridge
 		UClass* TrackClassFor(const FAnimProperty& P)
 		{
 			const FString Name(P.Name);
-			if (Name == TEXT("RenderTransform.Translation")) { return UMovieScene2DTransformTrack::StaticClass(); }
+			// All four transform families share this one track class, which is exactly why
+			// FindPropertySection returns the same section for each of them.
+			if (P.XFormBase != INDEX_NONE)                   { return UMovieScene2DTransformTrack::StaticClass(); }
 			if (Name == TEXT("RenderOpacity"))               { return UMovieSceneFloatTrack::StaticClass(); }
 			if (Name == TEXT("ColorAndOpacity"))             { return UMovieSceneColorTrack::StaticClass(); }
 			if (Name == TEXT("Visibility"))                  { return UMovieSceneVisibilityTrack::StaticClass(); }
@@ -231,13 +251,53 @@ namespace MifBridge
 			return nullptr;
 		}
 
-		FMovieSceneFloatChannel* ResolveChannel(UMovieSceneSection* Section, const FString& Channel)
+		// The seven float channels of a 2D transform section, in the engine's own order. Indexed by
+		// FAnimProperty::XFormBase plus the axis, and matching ImportEntityImpl's FloatChannel[0..6]
+		// exactly (MovieScene2DTransformSection.cpp:261-267) so the mask bit checked below lines up
+		// with the channel written.
+		FMovieSceneFloatChannel* XFormChannelAt(UMovieScene2DTransformSection* T, int32 Index)
 		{
+			switch (Index)
+			{
+				case 0:  return &T->Translation[0];
+				case 1:  return &T->Translation[1];
+				case 2:  return &T->Rotation;
+				case 3:  return &T->Scale[0];
+				case 4:  return &T->Scale[1];
+				case 5:  return &T->Shear[0];
+				case 6:  return &T->Shear[1];
+				default: return nullptr;
+			}
+		}
+
+		// TAKES THE PROPERTY, NOT JUST THE SECTION, and that is the whole point of the change. All
+		// four RenderTransform families live on one section, so "X" means Translation[0] for one
+		// caller and Scale[0] for another. Resolving from the section alone - which is what this did
+		// before Scale, Angle and Shear existed - would have silently keyed translation whenever
+		// somebody asked for scale. That is the wrong-curve failure this function's own comment
+		// warned about, and adding three properties is what made it reachable.
+		FMovieSceneFloatChannel* ResolveChannel(UMovieSceneSection* Section, const FAnimProperty& P,
+											   const FString& Channel, int32& OutIndex)
+		{
+			OutIndex = INDEX_NONE;
 			if (UMovieScene2DTransformSection* T = Cast<UMovieScene2DTransformSection>(Section))
 			{
-				if (Channel.Equals(TEXT("X"), ESearchCase::IgnoreCase)) { return &T->Translation[0]; }
-				if (Channel.Equals(TEXT("Y"), ESearchCase::IgnoreCase)) { return &T->Translation[1]; }
-				return nullptr;
+				if (P.XFormBase == INDEX_NONE) { return nullptr; }
+				// Angle is a single curve, so it takes the same empty-or-"value" spelling every other
+				// single-channel property here uses rather than inventing a third convention.
+				if (FCString::Strcmp(P.Channels, TEXT("value")) == 0)
+				{
+					if (Channel.IsEmpty() || Channel.Equals(TEXT("value"), ESearchCase::IgnoreCase))
+					{
+						OutIndex = P.XFormBase;
+						return XFormChannelAt(T, OutIndex);
+					}
+					return nullptr;
+				}
+				if (Channel.Equals(TEXT("X"), ESearchCase::IgnoreCase)) { OutIndex = P.XFormBase + 0; }
+				else if (Channel.Equals(TEXT("Y"), ESearchCase::IgnoreCase)) { OutIndex = P.XFormBase + 1; }
+				else { return nullptr; }
+				return XFormChannelAt(T, OutIndex);
 			}
 			if (UMovieSceneFloatSection* F = Cast<UMovieSceneFloatSection>(Section))
 			{
@@ -309,8 +369,11 @@ namespace MifBridge
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("blueprintId"), TEXT("path"), TEXT("animationName"), TEXT("widgetName"), TEXT("property") },
 			TEXT("blueprintId (alias: path), animationName, widgetName, property "
-				 "(RenderTransform.Translation | RenderOpacity | ColorAndOpacity; "
-				 "default RenderTransform.Translation)"),
+				 "(RenderTransform.Translation | RenderTransform.Scale | RenderTransform.Angle | "
+				 "RenderTransform.Shear | RenderOpacity | ColorAndOpacity; default "
+				 "RenderTransform.Translation). The four RenderTransform families share ONE track, "
+				 "so asking for a second of them on the same widget reports createdTrack:false - "
+				 "the track is already there and carries all seven channels"),
 			{ { TEXT("propertyPath"), TEXT("the parameter is 'property'") },
 			  { TEXT("channel"), TEXT("a track carries BOTH translation channels; pick X or Y when you key it, in set_widget_animation_keys") },
 			  { TEXT("widgetGuid"), TEXT("widgets are addressed by name here — list_tree_widgets shows them") } }))
@@ -432,6 +495,16 @@ namespace MifBridge
 		Out->SetStringField(TEXT("widgetName"), WidgetName);
 		Out->SetBoolField(TEXT("createdBinding"), bNewBinding);
 		Out->SetBoolField(TEXT("createdTrack"), bCreatedTrack);
+		if (!bCreatedTrack && PropDef->XFormBase != INDEX_NONE)
+		{
+			// Without this a caller asking for Scale on a widget that already has Translation sees
+			// createdTrack:false and reasonably concludes nothing happened.
+			Out->SetStringField(TEXT("trackNote"),
+				TEXT("no new track was needed: the four RenderTransform families - Translation, "
+					 "Angle, Scale and Shear - are all channels of ONE UMovieScene2DTransformTrack, "
+					 "and this widget already had it. The binding is ready to key with "
+					 "set_widget_animation_keys."));
+		}
 		Out->SetStringField(TEXT("property"), PropDef->Name);
 		Out->SetStringField(TEXT("channels"), PropDef->Channels);
 		Out->SetStringField(TEXT("trackClass"), TrackClass->GetName());
@@ -447,9 +520,12 @@ namespace MifBridge
 			{ TEXT("blueprintId"), TEXT("path"), TEXT("animationName"), TEXT("widgetName"),
 			  TEXT("property"), TEXT("channel"), TEXT("keys"), TEXT("replace") },
 			TEXT("blueprintId (alias: path), animationName, widgetName, property "
-				 "(default RenderTransform.Translation), channel (X/Y for translation, R/G/B/A for "
-				 "ColorAndOpacity, omit for RenderOpacity), keys:[{time (SECONDS), value, "
-				 "interp: cubic|linear|constant}], replace (bool, default true — clears first)"),
+				 "(default RenderTransform.Translation), channel (X/Y for translation, scale and "
+				 "shear; omit or 'value' for RenderTransform.Angle and RenderOpacity; R/G/B/A for "
+				 "ColorAndOpacity), keys:[{time (SECONDS), value, interp: cubic|linear|constant}], "
+				 "replace (bool, default true — clears first). NOTE that X on RenderTransform.Scale "
+				 "and X on RenderTransform.Translation are different curves on the same section, so "
+				 "the property is what disambiguates them"),
 			{ { TEXT("time"), TEXT("times go inside keys[], one per key, in seconds") },
 			  { TEXT("tangent"), TEXT("interp:\"cubic\" uses the engine's Auto tangent, which is what the UMG designer produces") },
 			  { TEXT("frame"), TEXT("keys are given in SECONDS and converted to tick space for you; list_widget_animations reports both") } }))
@@ -591,13 +667,62 @@ namespace MifBridge
 			return;
 		}
 
-		FMovieSceneFloatChannel* ChannelPtr = ResolveChannel(Section, ChannelStr);
+		int32 XFormIndex = INDEX_NONE;
+		FMovieSceneFloatChannel* ChannelPtr = ResolveChannel(Section, *PropDef, ChannelStr, XFormIndex);
 		if (!ChannelPtr)
 		{
 			Fail(Out, FString::Printf(
 				TEXT("channel '%s' is not one of this property's channels (%s = %s). NOTHING was "
 					 "changed."), *ChannelStr, PropDef->Name, PropDef->Channels));
 			return;
+		}
+
+		// A MASKED-OFF CHANNEL ACCEPTS KEYS AND ANIMATES NOTHING, which is the worst shape a bug can
+		// take here: the write succeeds, the keys read back, and the widget does not move.
+		// UMovieScene2DTransformSection::ImportEntityImpl builds its entity from
+		//     EnumHasAnyFlags(Channels, ...ScaleX) && Scale[0].HasAnyData()
+		// (MovieScene2DTransformSection.cpp:239-267), so a channel whose mask bit is clear is never
+		// handed to the evaluation system at all.
+		//
+		// The section constructor defaults the mask to AllTransform (:126), so a section this plugin
+		// created is always fine. One narrowed in the UMG designer is not. The mask is WIDENED rather
+		// than refused, because a caller keying a channel has said plainly that they want it
+		// animated, and leaving inert keys behind would be obeying the letter of the request while
+		// defeating it - but it is widened LOUDLY, reported in the response, because it is a change
+		// to the section beyond the keys that were asked for.
+		bool bWidenedMask = false;
+		if (UMovieScene2DTransformSection* XForm = Cast<UMovieScene2DTransformSection>(Section))
+		{
+			static const EMovieScene2DTransformChannel kBits[] = {
+				EMovieScene2DTransformChannel::TranslationX, EMovieScene2DTransformChannel::TranslationY,
+				EMovieScene2DTransformChannel::Rotation,
+				EMovieScene2DTransformChannel::ScaleX,       EMovieScene2DTransformChannel::ScaleY,
+				EMovieScene2DTransformChannel::ShearX,       EMovieScene2DTransformChannel::ShearY,
+			};
+			if (XFormIndex >= 0 && XFormIndex < UE_ARRAY_COUNT(kBits))
+			{
+				const EMovieScene2DTransformChannel Want = kBits[XFormIndex];
+				FMovieScene2DTransformMask Mask = XForm->GetMask();
+				if (!EnumHasAnyFlags((EMovieScene2DTransformChannel)Mask.GetChannels(), Want))
+				{
+					XForm->Modify();
+					XForm->SetMask(FMovieScene2DTransformMask(
+						(EMovieScene2DTransformChannel)Mask.GetChannels() | Want));
+					// VERIFIED by reading the mask back, not by trusting SetMask - the entire reason
+					// this block exists is that an unset bit is invisible in the keys themselves.
+					if (!EnumHasAnyFlags(
+							(EMovieScene2DTransformChannel)XForm->GetMask().GetChannels(), Want))
+					{
+						Fail(Out, FString::Printf(
+							TEXT("channel '%s' of %s is masked off on this section and the mask could "
+								 "not be widened, so any keys written would be accepted and would "
+								 "animate NOTHING. NOTHING was changed."),
+							*ChannelStr, PropDef->Name));
+						return;
+					}
+					bWidenedMask = true;
+				}
+			}
 		}
 
 		const TArray<TSharedPtr<FJsonValue>>* Keys = nullptr;
@@ -676,6 +801,16 @@ namespace MifBridge
 		}
 		Out->SetStringField(TEXT("property"), PropDef->Name);
 		Out->SetStringField(TEXT("channel"), ChannelStr.IsEmpty() ? TEXT("value") : *ChannelStr);
+		if (bWidenedMask)
+		{
+			Out->SetBoolField(TEXT("maskWidened"), true);
+			Out->SetStringField(TEXT("maskNote"),
+				TEXT("this section's transform MASK had that channel switched off, so the keys would "
+					 "have been stored and would have animated nothing - the engine only hands a "
+					 "channel to the evaluator when its mask bit is set. The bit was turned on. That "
+					 "is a change to the section beyond the keys you asked for, which is why it is "
+					 "reported rather than done quietly."));
+		}
 		Out->SetNumberField(TEXT("keysBefore"), Before);
 		Out->SetNumberField(TEXT("keysAfter"), Channel.GetNumKeys());
 		Out->SetArrayField(TEXT("keys"), Written);

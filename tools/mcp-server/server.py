@@ -624,7 +624,12 @@ def list_widget_animations(blueprint_id: str) -> dict:
 @mcp.tool()
 def add_widget_animation_track(blueprint_id: str, animation_name: str, widget_name: str,
                                property: str = "RenderTransform.Translation") -> dict:
-    "Bind a widget into a UMG animation and give it a property track."
+    """Bind a widget into a UMG animation and give it a property track.
+
+    property: RenderTransform.Translation | .Scale | .Angle | .Shear | RenderOpacity |
+    ColorAndOpacity. The four RenderTransform families are channels of ONE track, so asking
+    for a second of them reports createdTrack:false - that is not a failure.
+    """
     return _post("add_widget_animation_track", blueprintId=blueprint_id,
                  animationName=animation_name, widgetName=widget_name, property=property)
 
@@ -634,7 +639,12 @@ def set_widget_animation_keys(blueprint_id: str, animation_name: str, widget_nam
                               channel: str = "Y", keys: list = None,
                               replace: bool = True,
                               property: str = "RenderTransform.Translation") -> dict:
-    "Key one channel of a widget's animation track."
+    """Key one channel of a widget's animation track.
+
+    channel: X/Y for Translation, Scale and Shear; omit for Angle and RenderOpacity; R/G/B/A
+    for ColorAndOpacity. Scale.X and Translation.X are DIFFERENT curves on the same section,
+    so property is what says which one you mean.
+    """
     return _post("set_widget_animation_keys", blueprintId=blueprint_id,
                  animationName=animation_name, widgetName=widget_name, channel=channel,
                  keys=keys or [], replace=replace, property=property)
