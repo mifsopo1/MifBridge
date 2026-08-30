@@ -20,13 +20,23 @@ COOKED IS REFUSED FOR THE RIGHT REASON, which matters because a wrong reason inv
 there), so nothing crashes. It is refused because the change cannot be persisted and the system
 cannot be recompiled - the emitter would come back on restart with the flag saying otherwise.
 
-WHAT THIS SUITE CANNOT DO. Every NiagaraSystem in this project is cooked, so the cooked guard - which
-is checked before anything else, correctly - answers every call. The SUCCESS path is therefore
-unexercised here and this suite says so rather than implying coverage. An uncooked project is where
-the toggle itself runs. Creating a scratch NiagaraSystem was considered and rejected: create_asset's
-bare NewObject was found the same day to leave a UserDefinedEnum in a state that TERMINATES the
-editor, and whether UNiagaraSystem needs comparable factory initialisation is unknown - that is
-filed as its own audit rather than risked here.
+WHAT THIS SUITE CANNOT DO, AND WHY THAT REASON CHANGED. Every NiagaraSystem shipped in this project
+is cooked, so the cooked guard - checked before anything else, correctly - answers every call made
+against a real one. The SUCCESS path is unexercised here and this suite says so rather than
+implying coverage.
+
+The original reason for not using a scratch system NO LONGER HOLDS, and leaving it written down
+would be the stale-rationale trap this repo keeps finding elsewhere. It said a scratch system was
+rejected because create_asset's bare NewObject had just been found to leave a UserDefinedEnum in a
+state that TERMINATES the editor, and whether UNiagaraSystem needed comparable factory
+initialisation was unknown. That audit has since been done - tools/audit_factory_init.py, both
+scans - and UNiagaraSystem IS handled: create_asset calls InitializeSystem. A scratch system was
+created, read and deleted cleanly on 2026-08-30 to confirm that rather than trust it.
+
+What still blocks the toggle test is narrower than it was: a freshly created system has ZERO
+emitters, so there is nothing to toggle until one can be added. That is add_niagara_emitter's job.
+When it lands, this suite should gain a scratch-system arm that adds an emitter and then exercises
+the enable/disable path for real.
 """
 import json
 import sys
