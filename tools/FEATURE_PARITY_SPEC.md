@@ -5338,7 +5338,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Refuse on cooked, and this is the sharp end. UStaticMesh::PostEditChangeProperty calls Build(BuildParameters) UNCONDITIONALLY at Runtime/Engine/Private/StaticMesh.cpp:4052 (5.3.2), and the build path contains checkf(Owner->IsMeshDescriptionValid(0), TEXT("Bad MeshDescription on %s")) at StaticMesh.c...
       Vetter corrected the proposal: Three of the four proposed capabilities are already reachable and must be struck from the shape. (1) lodGroup: UStaticMesh::LODGroup is a PUBLIC UPROPERTY(EditAnywhere) at StaticMesh.h:656-657, and PostEditChangeProperty special-cases it at StaticMesh.cpp:3984-3991, calling SetLODGroup which does SetNumSourceModels(group default) + per-LOD ReductionSettings defaults at :4106-4135 then Build() at :...
 
-- [ ] **collections (list_collections / create_collection / add_to_collection / remove_from_collection, or one `collections {action}` endpoint), plus a `collection` filter on find_assets** (day)
+- [x] **collections: list / describe / create / add / remove / destroy** (day)
+      DONE 2026-08-30. 27 checks in tools/test_collections.py.
+      THE GAP IS THE OPPOSITE SHAPE FROM THE PROPOSAL, which the vetter caught and which
+      changed what got built. FCollectionManagerModule registers CollectionManager.Create /
+      .Destroy / .Add / .Remove as console commands, and exec_console has no allowlist - so the
+      WRITE half has been reachable all along. What is unreachable by ANY means is the READ:
+      no console command exposes GetCollections or GetAssetsInCollection, ICollectionManager is
+      a plain C++ interface rather than a UObject so get_property cannot see it, and
+      UCollectionSettings holds one bool. An agent could write a collection and never read it
+      back, which destroys the working-set argument entirely.
+      The write half was built anyway because those console delegates report only through
+      UE_LOG, never to the FOutputDevice - exec_console returns output:"" and handled:true
+      whether the call worked or the name was taken. A write you cannot verify is barely one.
+      TWO DEFECTS THE SUITE CAUGHT IN THE FIRST VERSION: ICollectionManager returns FALSE for
+      adding a member the set already has - a no-op, not a failure - and the endpoint turned
+      that into ok:false for a perfectly good call. And its OutNumAdded out-parameter did not
+      reflect reality: a live add that moved the count from 1 to 2 reported 0. Both counts are
+      now measured from the collection, and success is judged by whether every path ended up
+      in the state asked for.
+      VERSION GUARD, a real one: 5.6 introduced ICollectionContainer and marked every
+      ICollectionManager method UE_DEPRECATED(5.6), with GetProjectCollectionContainer()
+      carrying the identical set. The deprecated calls still compile but warn, and this project
+      builds warnings-clean, so a MIF_ENGINE_AT_LEAST(5,6) shim picks the container on 5.6+.
+      Cooked-friendly by nature: a collection stores soft object paths and never loads an
+      asset, so it can hold container content that most write endpoints refuse to touch.
       Reads and writes Content Browser collections - named, persisted sets of assets independent of folder structure. For an agent this is the missing working-set primitive: mark the 40 assets a task touched, hand the name to the user or to a later session, and re-query it. Today the only way to carry a set of asset paths between calls is to keep them in the conversation, which does not survive a session boundary and cannot be seen in the editor UI by the human.
       API: ICollectionManager, D:/UE532/Engine/Source/Developer/CollectionManager/Public/ICollectionManager.h - GetCollections(TArray<FCollectionNameType>&) :20, GetCollectionNames(ECollectionShareType::Type, TArray<FName>&) :26, GetAssetsInCollection(FName, ShareType, TArray<FSoftObjectPath>&, ECollectionRecursionFlags::Flags) :47, GetCollectionsContainingObject :62, CreateCollection(FName, ShareType, EColl...
       Cooked: Cooked-safe and useful there. Collections are editor-side files under Content/Collections (Local/Private) or the shared source-control path; they store FSoftObjectPaths and never load the assets, so a collection can happily contain cooked, container-only assets that duplicate_asset would refuse to t...

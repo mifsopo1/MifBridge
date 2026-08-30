@@ -9,6 +9,10 @@
 //
 // Everything here is read-only.
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"
+#include "CollectionManagerModule.h"
+#include "ICollectionManager.h"
+#include "CollectionManagerTypes.h"
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
 #include "UObject/ObjectRedirector.h"
@@ -1678,5 +1682,379 @@ namespace MifBridge
 					 "not a failure, and get_property reads the real values from the loaded asset "
 					 "if you need them."));
 		}
+	}
+
+	// =======================================================================
+	// COLLECTIONS - the working-set primitive, and an inverted gap
+	// =======================================================================
+	//
+	// THE SHAPE IS THE OPPOSITE OF WHAT THE SURVEY CLAIMED, and checking that changed what got
+	// built. FCollectionManagerModule::StartupModule unconditionally constructs
+	// FCollectionManagerConsoleCommands, registering CollectionManager.Create / .Destroy / .Add /
+	// .Remove - and exec_console has no allowlist, it forwards any string to GEngine->Exec. So the
+	// WRITE half has been reachable all along.
+	//
+	// What is unreachable by ANY means is the READ. There is no console command for GetCollections,
+	// GetCollectionNames or GetAssetsInCollection; ICollectionManager is a plain C++ interface, not
+	// a UObject, so get_property cannot see it; and UCollectionSettings holds exactly one bool. An
+	// agent could therefore write a collection and never read it back - which destroys the entire
+	// working-set argument, since the point is to hand a named set to a later session.
+	//
+	// THE WRITE HALF IS STILL BUILT, for a reason the survey also missed: those four console
+	// delegates report success or failure ONLY through UE_LOG, never to the FOutputDevice. So
+	// exec_console returns output:"" and handled:true whether the collection was created or the
+	// name was already taken. A write you cannot verify is barely a write, and these endpoints
+	// return the real result plus a read-back.
+	//
+	// VERSION GUARD, and it is a real one rather than a line-number shuffle. 5.6 introduced
+	// ICollectionContainer and marked every ICollectionManager method above UE_DEPRECATED(5.6),
+	// with GetProjectCollectionContainer() carrying the identical set. The deprecated calls still
+	// compile on 5.6/5.7 but warn, and this project builds warnings-clean - so the shim below picks
+	// the container on 5.6+ and the manager before it. One spelling at every call site.
+
+#if MIF_ENGINE_AT_LEAST(5, 6)
+	#define MIF_COLLECTIONS() (FCollectionManagerModule::GetModule().Get().GetProjectCollectionContainer().Get())
+#else
+	#define MIF_COLLECTIONS() (FCollectionManagerModule::GetModule().Get())
+#endif
+
+	static bool MifParseShareType(const FString& In, ECollectionShareType::Type& Out, FString& OutErr)
+	{
+		const FString S = In.IsEmpty() ? TEXT("local") : In.ToLower();
+		if (S == TEXT("local"))   { Out = ECollectionShareType::CST_Local;   return true; }
+		if (S == TEXT("private")) { Out = ECollectionShareType::CST_Private; return true; }
+		if (S == TEXT("shared"))  { Out = ECollectionShareType::CST_Shared;  return true; }
+		OutErr = FString::Printf(
+			TEXT("unknown shareType '%s' - accepted: local (the default; a file under "
+				 "Content/Collections that is yours alone), private, shared (goes through revision "
+				 "control, and FAILS on a project with no provider)."), *In);
+		return false;
+	}
+
+	static const TCHAR* MifShareTypeName(ECollectionShareType::Type T)
+	{
+		switch (T)
+		{
+			case ECollectionShareType::CST_Local:   return TEXT("local");
+			case ECollectionShareType::CST_Private: return TEXT("private");
+			case ECollectionShareType::CST_Shared:  return TEXT("shared");
+			default:                                return TEXT("unknown");
+		}
+	}
+
+	// --- list_collections ---------------------------------------------------
+	void H_list_collections(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out, { TEXT("shareType") },
+			TEXT("shareType (local|private|shared) - omit for all three"),
+			{ { TEXT("name"), TEXT("that is describe_collection, which lists a collection's assets") } }))
+		{
+			return;
+		}
+		auto& Collections = MIF_COLLECTIONS();
+
+		TArray<FCollectionNameType> All;
+		Collections.GetCollections(All);
+
+		FString WantShare = JStr(In, TEXT("shareType"));
+		ECollectionShareType::Type Want = ECollectionShareType::CST_Local;
+		const bool bFilter = !WantShare.IsEmpty();
+		if (bFilter)
+		{
+			FString Err;
+			if (!MifParseShareType(WantShare, Want, Err)) { Fail(Out, Err); return; }
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		for (const FCollectionNameType& C : All)
+		{
+			if (bFilter && C.Type != Want) { continue; }
+			TArray<FSoftObjectPath> Assets;
+			Collections.GetAssetsInCollection(C.Name, C.Type, Assets);
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("name"), C.Name.ToString());
+			J->SetStringField(TEXT("shareType"), MifShareTypeName(C.Type));
+			J->SetNumberField(TEXT("assetCount"), Assets.Num());
+			Rows.Add(MakeShared<FJsonValueObject>(J));
+		}
+		Out->SetArrayField(TEXT("collections"), Rows);
+		Out->SetNumberField(TEXT("count"), Rows.Num());
+		if (Rows.Num() == 0)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("this project has no collections. That is a normal empty state - a collection "
+					 "is a named set of assets you create, not something the engine populates."));
+		}
+	}
+
+	// --- describe_collection ------------------------------------------------
+	void H_describe_collection(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out, { TEXT("name"), TEXT("shareType") },
+			TEXT("name; shareType (local|private|shared, default local)"),
+			{ { TEXT("limit"), TEXT("a collection is a hand-made set - if one is large enough to "
+									"need paging, that is worth knowing rather than hiding") } }))
+		{
+			return;
+		}
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty()) { Fail(Out, TEXT("name is required.")); return; }
+		ECollectionShareType::Type Share;
+		FString Err;
+		if (!MifParseShareType(JStr(In, TEXT("shareType")), Share, Err)) { Fail(Out, Err); return; }
+
+		auto& Collections = MIF_COLLECTIONS();
+		TArray<FSoftObjectPath> Assets;
+		if (!Collections.GetAssetsInCollection(FName(*Name), Share, Assets))
+		{
+			TArray<FName> Names;
+			Collections.GetCollectionNames(Share, Names);
+			TArray<FString> Have;
+			for (const FName& N : Names) { Have.Add(N.ToString()); }
+			Fail(Out, FString::Printf(
+				TEXT("no %s collection named '%s'. This share type has: %s. Note the share type is "
+					 "part of the identity - the same name can exist as local AND shared."),
+				MifShareTypeName(Share), *Name,
+				Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		for (const FSoftObjectPath& P : Assets)
+		{
+			Rows.Add(MakeShared<FJsonValueString>(P.ToString()));
+		}
+		Out->SetStringField(TEXT("name"), Name);
+		Out->SetStringField(TEXT("shareType"), MifShareTypeName(Share));
+		Out->SetArrayField(TEXT("assets"), Rows);
+		Out->SetNumberField(TEXT("assetCount"), Rows.Num());
+		Out->SetStringField(TEXT("note"),
+			TEXT("a collection stores SOFT OBJECT PATHS and never loads the assets, so it can hold "
+				 "cooked container content that most write endpoints would refuse to touch - and an "
+				 "entry can outlive the asset it names."));
+	}
+
+	// --- create_collection --------------------------------------------------
+	void H_create_collection(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("shareType"), TEXT("paths"), TEXT("assets") },
+			TEXT("name; shareType (local|private|shared, default local); paths[] - optional assets "
+				 "to put in it immediately"),
+			{ { TEXT("confirm"), TEXT("creating an empty named set destroys nothing, so it is not "
+									  "gated on confirm. destroy_collection is") } }))
+		{
+			return;
+		}
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty()) { Fail(Out, TEXT("name is required. NOTHING was created.")); return; }
+		ECollectionShareType::Type Share;
+		FString Err;
+		if (!MifParseShareType(JStr(In, TEXT("shareType")), Share, Err)) { Fail(Out, Err); return; }
+
+		auto& Collections = MIF_COLLECTIONS();
+		if (!Collections.CreateCollection(FName(*Name), Share, ECollectionStorageMode::Static))
+		{
+			// THE REASON THE CONSOLE ROUTE CANNOT GIVE YOU. Those delegates report only to the log,
+			// so exec_console returns handled:true and an empty string whether this succeeded or
+			// the name was already taken.
+			Fail(Out, FString::Printf(
+				TEXT("could not create %s collection '%s': %s. The usual causes are that the name "
+					 "already exists for this share type, or - for shared - that the project has no "
+					 "revision control provider. NOTHING was created."),
+				MifShareTypeName(Share), *Name, *Collections.GetLastError().ToString()));
+			return;
+		}
+
+		Out->SetStringField(TEXT("name"), Name);
+		Out->SetStringField(TEXT("shareType"), MifShareTypeName(Share));
+		Out->SetBoolField(TEXT("created"), true);
+
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if ((In->TryGetArrayField(TEXT("paths"), Arr) || In->TryGetArrayField(TEXT("assets"), Arr))
+			&& Arr && Arr->Num() > 0)
+		{
+			TArray<FSoftObjectPath> Add;
+			for (const TSharedPtr<FJsonValue>& V : *Arr)
+			{
+				FString P;
+				if (V.IsValid() && V->TryGetString(P) && !P.IsEmpty()) { Add.Add(FSoftObjectPath(P)); }
+			}
+			int32 NumAdded = 0;
+			Collections.AddToCollection(FName(*Name), Share, Add, &NumAdded);
+			Out->SetNumberField(TEXT("assetsAdded"), NumAdded);
+		}
+
+		// READ BACK, because CreateCollection returns a bool and nothing about the result.
+		TArray<FSoftObjectPath> Now;
+		Collections.GetAssetsInCollection(FName(*Name), Share, Now);
+		Out->SetNumberField(TEXT("assetCount"), Now.Num());
+	}
+
+	// --- add_to_collection / remove_from_collection -------------------------
+	static void MifCollectionMembership(const TSharedRef<FJsonObject>& In,
+										const TSharedRef<FJsonObject>& Out, bool bAdd)
+	{
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty()) { Fail(Out, TEXT("name is required. NOTHING was changed.")); return; }
+		ECollectionShareType::Type Share;
+		FString Err;
+		if (!MifParseShareType(JStr(In, TEXT("shareType")), Share, Err)) { Fail(Out, Err); return; }
+
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if ((!In->TryGetArrayField(TEXT("paths"), Arr) && !In->TryGetArrayField(TEXT("assets"), Arr))
+			|| !Arr || Arr->Num() == 0)
+		{
+			Fail(Out, TEXT("paths[] is required and must be non-empty. NOTHING was changed."));
+			return;
+		}
+
+		auto& Collections = MIF_COLLECTIONS();
+		TArray<FSoftObjectPath> Before;
+		if (!Collections.GetAssetsInCollection(FName(*Name), Share, Before))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no %s collection named '%s'. create_collection makes one. NOTHING was "
+					 "changed."), MifShareTypeName(Share), *Name));
+			return;
+		}
+
+		TArray<FSoftObjectPath> Paths;
+		for (const TSharedPtr<FJsonValue>& V : *Arr)
+		{
+			FString P;
+			if (!V.IsValid() || !V->TryGetString(P) || P.IsEmpty())
+			{
+				Fail(Out, TEXT("paths[] holds asset path strings. NOTHING was changed."));
+				return;
+			}
+			Paths.Add(FSoftObjectPath(P));
+		}
+
+		int32 Reported = 0;
+		const bool bOk = bAdd
+			? Collections.AddToCollection(FName(*Name), Share, Paths, &Reported)
+			: Collections.RemoveFromCollection(FName(*Name), Share, Paths, &Reported);
+
+		TArray<FSoftObjectPath> After;
+		Collections.GetAssetsInCollection(FName(*Name), Share, After);
+
+		// MEASURED FROM THE COLLECTION, not from the engine's OutNumAdded. That out-parameter does
+		// not reliably reflect what happened - a live add that moved the count from 1 to 2 reported
+		// 0 through it - so the difference in the set's own size is the only number worth printing.
+		const int32 Delta = bAdd ? (After.Num() - Before.Num()) : (Before.Num() - After.Num());
+
+		// DID THE END STATE ARRIVE? A collection is a SET, so adding a member it already has is a
+		// no-op, not a failure. The engine returns false for that case, which is why the bool alone
+		// cannot decide the outcome: what matters is whether every path asked for is now in (or
+		// out of) the set.
+		const TSet<FSoftObjectPath> AfterSet(After);
+		int32 Satisfied = 0;
+		for (const FSoftObjectPath& P : Paths)
+		{
+			if (AfterSet.Contains(P) == bAdd) { ++Satisfied; }
+		}
+
+		Out->SetStringField(TEXT("name"), Name);
+		Out->SetStringField(TEXT("shareType"), MifShareTypeName(Share));
+		Out->SetNumberField(TEXT("requested"), Paths.Num());
+		Out->SetNumberField(bAdd ? TEXT("added") : TEXT("removed"), Delta);
+		Out->SetNumberField(TEXT("alreadyInDesiredState"), Paths.Num() - Delta);
+		Out->SetNumberField(TEXT("assetCountBefore"), Before.Num());
+		Out->SetNumberField(TEXT("assetCount"), After.Num());
+
+		if (Satisfied != Paths.Num())
+		{
+			// Something genuinely did not land - the end state is wrong for at least one path.
+			Fail(Out, FString::Printf(
+				TEXT("%d of %d path(s) are %s the collection afterwards. %s%s"),
+				Satisfied, Paths.Num(), bAdd ? TEXT("in") : TEXT("out of"),
+				bOk ? TEXT("") : TEXT("The engine reported failure. "),
+				*Collections.GetLastError().ToString()));
+			return;
+		}
+		if (Delta != Paths.Num())
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("%d path(s) were given and the set changed by %d. A collection is a SET, so "
+					 "adding a member it already has - or removing one it never had - changes "
+					 "nothing and is NOT a failure: every path asked for is in the state you "
+					 "asked for. Both counts are measured from the collection rather than taken "
+					 "from the engine's out-parameter, which does not reliably report what "
+					 "happened."), Paths.Num(), Delta));
+		}
+	}
+
+	void H_add_to_collection(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("shareType"), TEXT("paths"), TEXT("assets") },
+			TEXT("name; shareType (default local); paths[] (alias assets)"), {}))
+		{
+			return;
+		}
+		MifCollectionMembership(In, Out, /*bAdd*/ true);
+	}
+
+	void H_remove_from_collection(const TSharedRef<FJsonObject>& In,
+								  const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("shareType"), TEXT("paths"), TEXT("assets") },
+			TEXT("name; shareType (default local); paths[] (alias assets)"), {}))
+		{
+			return;
+		}
+		MifCollectionMembership(In, Out, /*bAdd*/ false);
+	}
+
+	// --- destroy_collection -------------------------------------------------
+	void H_destroy_collection(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("shareType"), TEXT("confirm") },
+			TEXT("name; shareType (default local); confirm:true"), {}))
+		{
+			return;
+		}
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty()) { Fail(Out, TEXT("name is required. NOTHING was destroyed.")); return; }
+		ECollectionShareType::Type Share;
+		FString Err;
+		if (!MifParseShareType(JStr(In, TEXT("shareType")), Share, Err)) { Fail(Out, Err); return; }
+
+		auto& Collections = MIF_COLLECTIONS();
+		TArray<FSoftObjectPath> Assets;
+		if (!Collections.GetAssetsInCollection(FName(*Name), Share, Assets))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no %s collection named '%s'. NOTHING was destroyed."),
+				MifShareTypeName(Share), *Name));
+			return;
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("destroying '%s' discards a named set of %d asset(s) and this endpoint cannot "
+					 "put it back. The ASSETS are untouched - only the set is lost. Pass "
+					 "confirm:true. NOTHING was destroyed."), *Name, Assets.Num()));
+			return;
+		}
+		if (!Collections.DestroyCollection(FName(*Name), Share))
+		{
+			Fail(Out, FString::Printf(TEXT("could not destroy '%s': %s"), *Name,
+									  *Collections.GetLastError().ToString()));
+			return;
+		}
+		// READ BACK: DestroyCollection returns a bool, and gone-ness is the postcondition.
+		TArray<FSoftObjectPath> Check;
+		const bool bStillThere = Collections.GetAssetsInCollection(FName(*Name), Share, Check);
+		Out->SetStringField(TEXT("name"), Name);
+		Out->SetStringField(TEXT("shareType"), MifShareTypeName(Share));
+		Out->SetBoolField(TEXT("destroyed"), !bStillThere);
+		Out->SetNumberField(TEXT("assetsInSet"), Assets.Num());
+		Out->SetStringField(TEXT("note"),
+			TEXT("the collection is gone; the assets it named are untouched. A collection is a "
+				 "label, not a container."));
 	}
 }

@@ -38,6 +38,8 @@ public class MifBridge : ModuleRules
 			"AnimationBlueprintLibrary",
 			"InputBlueprintNodes", // UK2Node_EnhancedInputAction (add_enhanced_input_action)
 			"EnhancedInput",       // UInputAction / UInputMappingContext runtime types
+			"CollectionManager",   // ICollectionManager - the READ half of Content Browser
+			                       // collections, which no console command exposes
 			"StaticMeshEditor",    // UStaticMeshEditorSubsystem - the LOD COUNT write. Note
 			                       // MifBridgeCollision.cpp:592-599 deliberately avoided this
 			                       // dependency for three integers it could read off BodySetup;

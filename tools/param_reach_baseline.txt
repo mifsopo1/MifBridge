@@ -48,6 +48,7 @@ add_sequence_track.binding
 add_sequence_track.sequence
 add_socket.mesh
 add_sublevel.level
+add_to_collection.assets
 add_virtual_bone.assetpath
 analyze_skeletal_split.mesh
 analyze_skeletal_split.skeletalmesh
@@ -65,6 +66,7 @@ capture_viewport.file
 capture_viewport.name
 connect_material_expressions.material
 connect_pcg_nodes.assetpath
+create_collection.assets
 delete_material_expression.material
 delete_material_expression.name
 describe_animation.animation
@@ -165,6 +167,7 @@ remove_actor_from_data_layer.layer
 remove_anim_curve.animation
 remove_enum_value.displayname
 remove_enum_value.name
+remove_from_collection.assets
 remove_ik_goal.rig
 remove_ik_retarget_chain.rig
 remove_ik_solver.rig

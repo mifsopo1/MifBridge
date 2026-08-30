@@ -1119,6 +1119,12 @@ namespace MifBridge
 	MIF_DECL(consolidate_assets);
 	MIF_DECL(generate_lods);
 	MIF_DECL(remove_lods);
+	MIF_DECL(list_collections);
+	MIF_DECL(describe_collection);
+	MIF_DECL(create_collection);
+	MIF_DECL(add_to_collection);
+	MIF_DECL(remove_from_collection);
+	MIF_DECL(destroy_collection);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);

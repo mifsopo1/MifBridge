@@ -174,6 +174,12 @@ namespace MifBridge
 			MIF_BIND(consolidate_assets);
 			MIF_BIND(generate_lods);
 			MIF_BIND(remove_lods);
+			MIF_BIND(list_collections);
+			MIF_BIND(describe_collection);
+			MIF_BIND(create_collection);
+			MIF_BIND(add_to_collection);
+			MIF_BIND(remove_from_collection);
+			MIF_BIND(destroy_collection);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);

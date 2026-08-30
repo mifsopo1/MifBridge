@@ -2714,6 +2714,42 @@ def remove_lods(path: str, confirm: bool = False) -> dict:
 
 
 @mcp.tool()
+def list_collections(share_type: str = "") -> dict:
+    "List the Content Browser collections - named, persisted sets of assets independent of folder structure - with each one's share type and asset count. This READ half was previously unreachable by any means."
+    return _post("list_collections", shareType=share_type)
+
+
+@mcp.tool()
+def describe_collection(name: str, share_type: str = "local") -> dict:
+    "List the assets in one collection. The share type is part of the identity: the same name can exist as local AND shared."
+    return _post("describe_collection", name=name, shareType=share_type)
+
+
+@mcp.tool()
+def create_collection(name: str, share_type: str = "local", paths: list = None) -> dict:
+    "Create a collection, optionally with contents. share_type defaults to local; 'shared' goes through revision control and FAILS on a project with no provider."
+    return _post("create_collection", name=name, shareType=share_type, paths=paths)
+
+
+@mcp.tool()
+def add_to_collection(name: str, paths: list, share_type: str = "local") -> dict:
+    "Add assets to a collection. A collection is a SET, so adding a member it already has succeeds and changes nothing - `added` is the measured change in the set's size."
+    return _post("add_to_collection", name=name, paths=paths, shareType=share_type)
+
+
+@mcp.tool()
+def remove_from_collection(name: str, paths: list, share_type: str = "local") -> dict:
+    "Remove assets from a collection. Removing something that was never in it succeeds with removed:0 - the assets themselves are never touched."
+    return _post("remove_from_collection", name=name, paths=paths, shareType=share_type)
+
+
+@mcp.tool()
+def destroy_collection(name: str, share_type: str = "local", confirm: bool = False) -> dict:
+    "Delete a collection. The ASSETS it named are untouched - a collection is a label, not a container. Requires confirm=True."
+    return _post("destroy_collection", name=name, shareType=share_type, confirm=confirm)
+
+
+@mcp.tool()
 def consolidate_assets(target: str, sources: list, delete_sources: bool = False,
                        confirm: bool = False) -> dict:
     "Repoint every referencer of `sources` at `target`, optionally deleting the sources - the Content Browser's asset consolidation, and the write half delete_asset dead-ends into. It CLOSES EVERY OPEN ASSET EDITOR. Run check_consolidate_assets first; requires confirm=True."
