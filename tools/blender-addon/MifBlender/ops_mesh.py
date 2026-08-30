@@ -80,6 +80,7 @@ import os
 
 import bmesh
 import bpy
+from mathutils import Vector
 
 from .ops_common import (
     MifOpError, axis_index, get_object, mesh_counts, object_info, reject_unknown, rnd,
@@ -1708,6 +1709,313 @@ def op_decimate_mesh(params):
     return result
 
 
+def op_apply_transform(params):
+    """Bake an object's loc/rot/scale into its MESH DATA, restoring the identity transform.
+
+    THE ONE THAT MAKES THE FIDELITY GATE SATISFIABLE. object_info reports
+    isIdentityTransform, and mif_mesh_roundtrip asserts it before and after every
+    edit, because a non-identity object transform means the pivot moved -- an FBX
+    written from an object scaled 0.01 at the OBJECT level imports into Unreal at a
+    size nobody asked for, and the mesh's own vertices still disagree with what the
+    viewport showed. Until now the addon could DETECT that state and had no way out
+    of it: nothing could apply a transform. Detecting a problem you cannot fix is
+    the same half-a-subsystem shape uv_unwrap closed for UVs.
+
+    WHICH CHANNELS, and why they are separate. `location`, `rotation` and `scale`
+    default to all three, but they are independent on purpose: baking rotation into
+    a mesh destined for a rig is usually wrong (the armature expects the object
+    rotation), while baking SCALE almost always right, because non-uniform object
+    scale is what silently breaks normals on import.
+
+    NEGATIVE SCALE IS REPORTED, NOT SILENTLY FIXED. A mirrored object carries a
+    negative scale component, and applying it inverts the winding order, so the mesh
+    renders inside-out. Blender does not warn. This does, and recalculates the
+    normals when `fixNormals` is left on -- which is the correct repair, and it is
+    named in the response rather than done invisibly.
+
+    MULTI-USER MESH DATA IS REFUSED. Applying a transform to a mesh shared by two
+    objects would move BOTH, one of them silently. Blender's own operator raises;
+    this refuses first with the sharing count in the message.
+    """
+    reject_unknown(params, ("object", "name", "location", "rotation", "scale", "fixNormals"),
+                   "apply_transform")
+    obj = get_object(take(params, "object", "name", required=True), want_mesh=True)
+
+    do_loc = take_bool(params, "location", default=True)
+    do_rot = take_bool(params, "rotation", default=True)
+    do_scale = take_bool(params, "scale", default=True)
+    if not (do_loc or do_rot or do_scale):
+        raise MifOpError(
+            "apply_transform was asked to apply nothing - location, rotation and scale are all "
+            "false. Leave them unset to apply all three, or set at least one. NOTHING was changed.")
+
+    if obj.data.users > 1:
+        raise MifOpError(
+            "'%s' shares its mesh data with %d other object(s), and applying a transform would "
+            "move every one of them - one of which you did not ask about. Make the data "
+            "single-user in Blender first. NOTHING was changed." % (obj.name, obj.data.users - 1))
+
+    before = object_info(obj)
+    had_negative_scale = any(v < 0.0 for v in obj.scale)
+
+    snap = selection_snapshot()
+    try:
+        select_only([obj])
+        bpy.ops.object.transform_apply(location=do_loc, rotation=do_rot, scale=do_scale)
+    finally:
+        selection_restore(snap)
+
+    fixed_normals = False
+    if had_negative_scale and do_scale and take_bool(params, "fixNormals", default=True):
+        me = obj.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(me)
+        bm.free()
+        me.update()
+        fixed_normals = True
+
+    after = object_info(obj)
+    out = {
+        "object": obj.name,
+        "applied": {"location": do_loc, "rotation": do_rot, "scale": do_scale},
+        "before": before,
+        "after": after,
+        "isIdentityTransform": after["isIdentityTransform"],
+        "hadNegativeScale": had_negative_scale,
+        "normalsRecalculated": fixed_normals,
+    }
+    if had_negative_scale:
+        out["negativeScaleNote"] = (
+            "this object had a NEGATIVE scale component - it was mirrored. Applying that inverts "
+            "the winding order, so the mesh would render inside-out in Unreal. Face normals were "
+            "recalculated to repair it." if fixed_normals else
+            "this object had a NEGATIVE scale component - it was mirrored. Applying that inverts "
+            "the winding order, so the mesh will render inside-out in Unreal. fixNormals was off, "
+            "so nothing was corrected - call clean_mesh{recalcNormals:true} if that was not "
+            "intended.")
+    if not after["isIdentityTransform"]:
+        out["note"] = (
+            "the transform is still not identity, because only some channels were applied. "
+            "isIdentityTransform is what mif_mesh_roundtrip gates on, so apply all three before "
+            "exporting for Unreal.")
+    return out
+
+
+def op_set_origin(params):
+    """Move an object's ORIGIN without moving its geometry in the world.
+
+    The pivot is what Unreal rotates and places the mesh around, and Blender puts
+    it wherever the object happened to be created. A prop whose origin sits in the
+    middle of its bounding box cannot be placed on a floor by setting Z; a door
+    whose origin is not on its hinge edge cannot be rotated open. Neither is fixable
+    on the Unreal side -- the origin is baked into the FBX -- so it has to be right
+    before export, and nothing here could set it.
+
+    MODES:
+      geometry (default) the median point of the mesh, Blender's ORIGIN_GEOMETRY.
+      bounds             the centre of the bounding box. Different from geometry on
+                         any mesh with uneven vertex density, which is most of them.
+      bottom             the bounding-box centre in X/Y, its MINIMUM in Z. The one a
+                         placeable prop almost always wants, because it puts the
+                         pivot on the floor.
+      cursor             the 3D cursor's current position.
+      world              the world origin, (0,0,0).
+      point              an explicit `location` in Blender units.
+
+    THE GEOMETRY DOES NOT MOVE. That is the whole point, and it is asserted: the
+    world-space bounds are measured before and after and reported together, so a
+    caller can see that only the pivot moved.
+    """
+    reject_unknown(params, ("object", "name", "mode", "location"), "set_origin")
+    obj = get_object(take(params, "object", "name", required=True), want_mesh=True)
+    mode = (take(params, "mode", default="geometry") or "geometry").lower()
+
+    valid = ("geometry", "bounds", "bottom", "cursor", "world", "point")
+    if mode not in valid:
+        raise MifOpError("unknown mode '%s' for set_origin. Accepted: %s. NOTHING was changed."
+                         % (mode, ", ".join(valid)))
+
+    def world_bounds():
+        pts = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+        return (
+            [min(p[i] for p in pts) for i in range(3)],
+            [max(p[i] for p in pts) for i in range(3)],
+        )
+
+    wmin_before, wmax_before = world_bounds()
+    before_origin = list(obj.matrix_world.translation)
+
+    snap = selection_snapshot()
+    saved_cursor = list(bpy.context.scene.cursor.location)
+    try:
+        select_only([obj])
+        if mode == "geometry":
+            bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="MEDIAN")
+        elif mode == "bounds":
+            bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="BOUNDS")
+        else:
+            if mode == "bottom":
+                target = Vector(((wmin_before[0] + wmax_before[0]) * 0.5,
+                                 (wmin_before[1] + wmax_before[1]) * 0.5,
+                                 wmin_before[2]))
+            elif mode == "world":
+                target = Vector((0.0, 0.0, 0.0))
+            elif mode == "point":
+                loc = take(params, "location", required=True)
+                if not isinstance(loc, (list, tuple)) or len(loc) != 3:
+                    raise MifOpError(
+                        "mode 'point' needs location as [x, y, z] in Blender units. "
+                        "NOTHING was changed.")
+                target = Vector([float(v) for v in loc])
+            else:  # cursor
+                target = Vector(saved_cursor)
+            bpy.context.scene.cursor.location = target
+            bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
+    finally:
+        bpy.context.scene.cursor.location = saved_cursor
+        selection_restore(snap)
+
+    wmin_after, wmax_after = world_bounds()
+    moved = max(abs(wmin_after[i] - wmin_before[i]) for i in range(3))
+    moved = max(moved, max(abs(wmax_after[i] - wmax_before[i]) for i in range(3)))
+
+    out = {
+        "object": obj.name,
+        "mode": mode,
+        "originBeforeBU": rnd(before_origin),
+        "originAfterBU": rnd(list(obj.matrix_world.translation)),
+        "worldBoundsMinBU": rnd(wmin_after),
+        "worldBoundsMaxBU": rnd(wmax_after),
+        "geometryMovedBU": round(moved, 6),
+        "geometryStayedPut": moved < 1e-4,
+    }
+    if not out["geometryStayedPut"]:
+        out["note"] = (
+            "the world-space bounds moved by %.6f BU. Setting an origin should move the PIVOT and "
+            "leave the geometry where it is, so this is reported rather than assumed harmless."
+            % moved)
+    return out
+
+
+def op_clean_mesh(params):
+    """The cleanup pass an imported or edited mesh needs before it goes back to Unreal.
+
+    FIVE INDEPENDENT STEPS, each off or on by name, run in the only order that is
+    correct: merge first (so loose/degenerate detection sees the merged topology),
+    then delete loose, then dissolve degenerates, then triangulate, then recalc
+    normals last (because every earlier step can change what a face's normal should
+    be).
+
+      mergeDistance   weld vertices closer than this. The single most useful one on
+                      an imported mesh: duplicate verts along a seam are invisible
+                      in the viewport and split the mesh's smoothing in Unreal.
+      removeLoose     delete verts and edges belonging to no face. They export, they
+                      cost nothing visible, and they make Unreal's bounds wrong.
+      dissolveDegenerate  collapse zero-area faces and zero-length edges.
+      triangulate     Unreal triangulates on import anyway; doing it here means the
+                      triangulation you SEE is the one you ship, rather than one the
+                      importer picked.
+      recalcNormals   make normals consistently outward.
+
+    IT REPORTS WHAT EACH STEP DID, not that it ran. Counts before and after per
+    step, so "cleaned" is a number rather than a claim -- a mesh that was already
+    clean returns zeroes and says so, instead of a cheerful ok that reads as work
+    performed.
+
+    CUSTOM SPLIT NORMALS. recalcNormals discards them, so it is refused with a named
+    reason when the mesh has them and `force` is not set, rather than quietly
+    throwing away data a rigger put there on purpose.
+    """
+    reject_unknown(params, ("object", "name", "mergeDistance", "removeLoose",
+                            "dissolveDegenerate", "triangulate", "recalcNormals", "force"),
+                   "clean_mesh")
+    obj = get_object(take(params, "object", "name", required=True), want_mesh=True)
+
+    merge_distance = take_float(params, "mergeDistance", default=0.0)
+    do_loose = take_bool(params, "removeLoose", default=False)
+    do_degenerate = take_bool(params, "dissolveDegenerate", default=False)
+    do_tri = take_bool(params, "triangulate", default=False)
+    do_normals = take_bool(params, "recalcNormals", default=False)
+
+    if not (merge_distance > 0.0 or do_loose or do_degenerate or do_tri or do_normals):
+        raise MifOpError(
+            "clean_mesh was asked to do nothing - every step is off. Set at least one of "
+            "mergeDistance, removeLoose, dissolveDegenerate, triangulate, recalcNormals. "
+            "NOTHING was changed.")
+
+    me = obj.data
+    has_custom_normals = bool(getattr(me, "has_custom_normals", False))
+    if do_normals and has_custom_normals and not take_bool(params, "force", default=False):
+        raise MifOpError(
+            "'%s' has CUSTOM SPLIT NORMALS, and recalcNormals would discard them - they are "
+            "usually authored deliberately (hard-surface shading, foliage cards). Pass force:true "
+            "to recalculate anyway, or leave recalcNormals off. NOTHING was changed." % obj.name)
+
+    before = mesh_counts(obj)
+    steps = {}
+
+    bm = bmesh.new()
+    bm.from_mesh(me)
+
+    if merge_distance > 0.0:
+        v0 = len(bm.verts)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=merge_distance)
+        steps["merged"] = {"vertsRemoved": v0 - len(bm.verts), "distance": merge_distance}
+
+    if do_loose:
+        loose_v = [v for v in bm.verts if not v.link_faces]
+        loose_e = [e for e in bm.edges if not e.link_faces]
+        n_e = len(loose_e)
+        if loose_e:
+            bmesh.ops.delete(bm, geom=loose_e, context="EDGES")
+        loose_v = [v for v in bm.verts if not v.link_faces]
+        n_v = len(loose_v)
+        if loose_v:
+            bmesh.ops.delete(bm, geom=loose_v, context="VERTS")
+        steps["removedLoose"] = {"verts": n_v, "edges": n_e}
+
+    if do_degenerate:
+        f0, e0 = len(bm.faces), len(bm.edges)
+        bmesh.ops.dissolve_degenerate(bm, dist=1e-6, edges=bm.edges[:])
+        steps["dissolvedDegenerate"] = {"facesRemoved": f0 - len(bm.faces),
+                                        "edgesRemoved": e0 - len(bm.edges)}
+
+    if do_tri:
+        n_before = len([f for f in bm.faces if len(f.verts) > 3])
+        if n_before:
+            bmesh.ops.triangulate(bm, faces=bm.faces[:])
+        steps["triangulated"] = {"nonTriFacesConverted": n_before}
+
+    if do_normals:
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        steps["recalcNormals"] = {"faces": len(bm.faces),
+                                  "discardedCustomSplitNormals": has_custom_normals}
+
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+
+    after = mesh_counts(obj)
+    removed_total = (before["verts"] - after["verts"]) + (before["faces"] - after["faces"])
+    out = {
+        "object": obj.name,
+        "before": before,
+        "after": after,
+        "steps": steps,
+        "changedAnything": before != after,
+    }
+    if not out["changedAnything"]:
+        out["note"] = (
+            "every requested step ran and the mesh was already clean by those measures - the "
+            "counts are identical. Said in words rather than returned as an ok that reads as work "
+            "performed.")
+    else:
+        out["netElementsRemoved"] = removed_total
+    return out
+
+
 OPS = {
     "import_mesh": op_import_mesh,
     "decimate_mesh": op_decimate_mesh,
@@ -1717,4 +2025,7 @@ OPS = {
     "bevel_edges": op_bevel_edges,
     "extrude_skirt": op_extrude_skirt,
     "set_material_slots": op_set_material_slots,
+    "apply_transform": op_apply_transform,
+    "set_origin": op_set_origin,
+    "clean_mesh": op_clean_mesh,
 }

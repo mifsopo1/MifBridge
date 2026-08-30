@@ -16,7 +16,11 @@ what UE calls morph targets, cross-referenced in both docstrings so a caller wor
 pipeline recognises the pairing instead of having to know that "shape key" and "morph target"
 are the same thing under two names.
 
-READ-ONLY, ALL THREE. Nothing here creates a bone, key or group, or changes scene data -
+READ-ONLY WHEN THIS FILE WAS WRITTEN, AND NO LONGER - normalize_weights and
+transfer_weights were added 2026-08-30 as its write half, for the reason this paragraph
+itself makes: the reads could report a problem nobody could act on. The four list_* ops
+below are still read-only. The original note, kept because the reasoning behind the reads
+still stands: nothing here creates a bone, key or group, or changes scene data -
 matching this addon's existing op_object_info / list_objects, and the read-before-you-can-fix-it
 shape UE's own list_bones/list_morph_targets already established.
 
@@ -33,7 +37,12 @@ from .ops_common import (
     get_object,
     reject_unknown,
     rnd,
+    select_only,
+    selection_restore,
+    selection_snapshot,
     take,
+    take_bool,
+    take_int,
 )
 
 
@@ -209,9 +218,223 @@ def op_list_modifiers(params):
     }
 
 
+def op_normalize_weights(params):
+    """Make every vertex's bone weights sum to 1, and cap how many bones influence one vertex.
+
+    THE WRITE HALF this file did not have. list_vertex_groups could report that a
+    mesh has 40 groups and that some vertex is influenced by 11 of them, and nothing
+    could act on it - the same detect-but-cannot-fix shape uv_unwrap closed for UVs
+    and apply_transform closed for pivots.
+
+    WHY THE LIMIT MATTERS, and it is not a Blender concern at all. Unreal's GPU skin
+    cache supports a bounded number of influences per vertex - 4 by default, 8 or 12
+    with the project setting raised - and the FBX importer DROPS the smallest weights
+    past that limit and renormalises silently. So a mesh that deforms correctly in
+    Blender can deform differently in Unreal, and nothing in either tool says why.
+    Limiting here, deliberately, means the weights you tested are the weights that
+    ship.
+
+    ORDER IS LOAD-BEARING: limit first, THEN normalise. Limiting drops the smallest
+    influences, which leaves the remaining weights summing to less than 1; normalise
+    afterwards restores the sum. Doing it the other way round renormalises and then
+    throws part of the result away, so the sum ends up wrong - which is exactly the
+    bug the importer produces and this op exists to pre-empt.
+
+    UNWEIGHTED VERTICES ARE REPORTED, NEVER INVENTED. A vertex in no group at all
+    cannot be normalised - there is nothing to scale - and guessing a bone for it
+    would be a silent wrong answer of the worst kind, because it deforms plausibly.
+    They are counted and named in the response instead.
+    """
+    reject_unknown(params, ("object", "name", "maxInfluences", "normalize", "groups"),
+                   "normalize_weights")
+    obj = get_object(take(params, "object", "name", required=True), want_mesh=True)
+
+    max_inf = take_int(params, "maxInfluences", default=0)
+    do_norm = take_bool(params, "normalize", default=True)
+    only = take(params, "groups", default=None)
+
+    if not obj.vertex_groups:
+        raise MifOpError(
+            "'%s' has no vertex groups, so there are no weights to normalise. NOTHING was changed."
+            % obj.name)
+    if max_inf and max_inf < 1:
+        raise MifOpError("maxInfluences must be at least 1 - a vertex with zero influences is not "
+                         "skinned at all. NOTHING was changed.")
+    if not do_norm and not max_inf:
+        raise MifOpError(
+            "normalize_weights was asked to do nothing - normalize is false and maxInfluences is "
+            "unset. NOTHING was changed.")
+
+    if only is not None:
+        if not isinstance(only, (list, tuple)):
+            raise MifOpError("groups must be an array of vertex group names. NOTHING was changed.")
+        missing = [g for g in only if g not in obj.vertex_groups]
+        if missing:
+            raise MifOpError(
+                "no vertex group named %s on '%s' - %d group(s) exist. NOTHING was changed."
+                % (", ".join("'%s'" % m for m in missing), obj.name, len(obj.vertex_groups)))
+    allowed = None if only is None else {obj.vertex_groups[g].index for g in only}
+
+    me = obj.data
+    unweighted = 0
+    limited = 0
+    normalised = 0
+    dropped_total = 0
+    max_seen_before = 0
+
+    for v in me.vertices:
+        elems = [g for g in v.groups if allowed is None or g.group in allowed]
+        if not elems:
+            unweighted += 1
+            continue
+        max_seen_before = max(max_seen_before, len(elems))
+
+        if max_inf and len(elems) > max_inf:
+            elems.sort(key=lambda g: g.weight, reverse=True)
+            for g in elems[max_inf:]:
+                # Zeroing rather than removing: removing while iterating a vertex's
+                # own group list is what corrupts the mesh, and a zero weight is
+                # equivalent to absent everywhere Unreal reads it.
+                dropped_total += 1
+                g.weight = 0.0
+            elems = elems[:max_inf]
+            limited += 1
+
+        if do_norm:
+            total = sum(g.weight for g in elems)
+            if total > 0.0 and abs(total - 1.0) > 1e-6:
+                for g in elems:
+                    g.weight = g.weight / total
+                normalised += 1
+
+    me.update()
+
+    out = {
+        "object": obj.name,
+        "vertices": len(me.vertices),
+        "groupsConsidered": len(obj.vertex_groups) if allowed is None else len(allowed),
+        "maxInfluencesRequested": max_inf or None,
+        "maxInfluencesSeenBefore": max_seen_before,
+        "verticesLimited": limited,
+        "influencesDropped": dropped_total,
+        "verticesNormalized": normalised,
+        "unweightedVertices": unweighted,
+        "changedAnything": bool(limited or normalised),
+    }
+    if unweighted:
+        out["unweightedNote"] = (
+            "%d vertex/vertices belong to NO vertex group and were left alone. They cannot be "
+            "normalised - there is nothing to scale - and assigning them a bone would be a guess "
+            "that deforms plausibly and wrongly. In Unreal these bind to the root bone." % unweighted)
+    if max_inf and max_seen_before <= max_inf:
+        out["limitNote"] = (
+            "no vertex exceeded %d influences (the most any had was %d), so the limit changed "
+            "nothing. Reported rather than returned as work performed." % (max_inf, max_seen_before))
+    if not out["changedAnything"]:
+        out["note"] = ("the weights were already normalised and within the influence limit - "
+                       "counts are unchanged.")
+    return out
+
+
+def op_transfer_weights(params):
+    """Copy vertex weights from one mesh onto another by proximity.
+
+    The op a retopology or LOD pass needs and this addon had no answer for: a
+    decimated or rebuilt mesh comes out of clean_mesh/decimate_mesh with its
+    topology changed and its skinning destroyed, and re-rigging by hand is the
+    expensive part. Blender's data transfer maps weights from the original by
+    nearest-surface, which is exactly the operation, and nothing exposed it.
+
+    IT REFUSES RATHER THAN GUESSES in the two cases where a plausible-looking
+    result would be wrong:
+      - the source has no vertex groups: there is nothing to transfer, and
+        producing an unskinned mesh while reporting success is the silent-success
+        shape this project keeps finding.
+      - source and destination are the same object: the operator would happily run
+        and achieve nothing.
+
+    WHAT IT DOES NOT DO: it does not normalise. Transferred weights routinely do not
+    sum to 1, because a nearest-surface mapping interpolates between source vertices
+    with different totals. Call normalize_weights afterwards - separately and
+    visibly, rather than folded in here, so the caller knows it happened. The
+    response says so when the result needs it.
+    """
+    reject_unknown(params, ("source", "from", "destination", "to", "object", "mapping"),
+                   "transfer_weights")
+    src = get_object(take(params, "source", "from", required=True), want_mesh=True)
+    dst = get_object(take(params, "destination", "to", "object", required=True), want_mesh=True)
+
+    if src.name == dst.name:
+        raise MifOpError(
+            "source and destination are the same object ('%s') - there is nothing to transfer. "
+            "NOTHING was changed." % src.name)
+    if not src.vertex_groups:
+        raise MifOpError(
+            "source '%s' has no vertex groups, so there are no weights to transfer. Producing an "
+            "unskinned result and reporting success would be worse than refusing. NOTHING was "
+            "changed." % src.name)
+
+    mapping = (take(params, "mapping", default="POLYINTERP_NEAREST") or "POLYINTERP_NEAREST").upper()
+    valid = ("NEAREST", "EDGE_NEAREST", "EDGEINTERP_NEAREST", "POLY_NEAREST",
+             "POLYINTERP_NEAREST", "POLYINTERP_VNORPROJ")
+    if mapping not in valid:
+        raise MifOpError("unknown mapping '%s' for transfer_weights. Accepted: %s. NOTHING was "
+                         "changed." % (mapping, ", ".join(valid)))
+
+    groups_before = len(dst.vertex_groups)
+    snap = selection_snapshot()
+    try:
+        select_only([src, dst])
+        bpy.context.view_layer.objects.active = dst
+        bpy.ops.object.data_transfer(
+            use_reverse_transfer=True,
+            data_type="VGROUP_WEIGHTS",
+            vert_mapping=mapping,
+            layers_select_src="ALL",
+            layers_select_dst="NAME",
+            mix_mode="REPLACE",
+        )
+    finally:
+        selection_restore(snap)
+
+    # READ BACK. data_transfer reports nothing useful, so the postcondition is
+    # measured: how many groups the destination has now, and how many of its
+    # vertices actually carry a weight.
+    weighted = sum(1 for v in dst.data.vertices if v.groups)
+    out = {
+        "source": src.name,
+        "destination": dst.name,
+        "mapping": mapping,
+        "sourceGroups": len(src.vertex_groups),
+        "destinationGroupsBefore": groups_before,
+        "destinationGroupsAfter": len(dst.vertex_groups),
+        "destinationVertices": len(dst.data.vertices),
+        "destinationVerticesWeighted": weighted,
+        "transferred": len(dst.vertex_groups) > groups_before or weighted > 0,
+    }
+    if not out["transferred"]:
+        raise MifOpError(
+            "the transfer ran and '%s' still has no weighted vertices (%d groups before, %d after). "
+            "The usual cause is the two meshes being far apart in world space - a nearest-surface "
+            "mapping needs them roughly coincident. NOTHING usable was produced."
+            % (dst.name, groups_before, len(dst.vertex_groups)))
+    if weighted < len(dst.data.vertices):
+        out["coverageNote"] = (
+            "%d of %d destination vertices carry no weight - the mapping found nothing near them. "
+            "In Unreal those bind to the root bone."
+            % (len(dst.data.vertices) - weighted, len(dst.data.vertices)))
+    out["normalizeNote"] = (
+        "transferred weights are NOT normalised - a nearest-surface mapping interpolates between "
+        "source vertices whose totals differ, so sums drift from 1. Call normalize_weights on "
+        "'%s' before exporting." % dst.name)
+    return out
+
+
 OPS = {
     "list_bones": op_list_bones,
     "list_shape_keys": op_list_shape_keys,
     "list_vertex_groups": op_list_vertex_groups,
     "list_modifiers": op_list_modifiers,
+    "normalize_weights": op_normalize_weights,
+    "transfer_weights": op_transfer_weights,
 }

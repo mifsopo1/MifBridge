@@ -32,7 +32,7 @@ bl_info = {
 # The 4.4 floor is now CONSERVATIVE rather than unverified. Measured 2026-08-27 with
 # tools/blender_probe.py and tools/test_blender_ops.py, on four real installs:
 #
-#   version     imports  registers  20 ops  FBX kwargs  op suite
+#   version     imports  registers  29 ops  FBX kwargs  op suite
 #   3.6.23        yes      yes        yes    all present   12/12
 #   4.2.17 LTS    yes      yes        yes    all present   12/12
 #   4.4.0         yes      yes        yes    all present   12/12
