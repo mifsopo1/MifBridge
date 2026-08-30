@@ -2658,6 +2658,19 @@ def remove_foliage_instances(foliage_type: str, indices: list = None, sphere: di
                  sphere=sphere, box=box, all=all, confirm=confirm)
 
 
+@mcp.tool()
+def source_control(path: str = "") -> dict:
+    "Report whether revision control is configured, and what state a file is in (checked out, checked out by someone else, added, not at head, read-only on disk). Omit path for the provider status alone. READ ONLY - source_control_checkout is the write half."
+    return _post("source_control", path=path)
+
+
+@mcp.tool()
+def source_control_checkout(path: str, action: str = "checkout",
+                            confirm: bool = False) -> dict:
+    "Check out, mark for add, or REVERT a file in revision control. action is checkout, add, checkoutOrAdd or revert; revert requires confirm=True because it discards local changes. Checking IN is deliberately not offered."
+    return _post("source_control_checkout", path=path, action=action, confirm=confirm)
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:

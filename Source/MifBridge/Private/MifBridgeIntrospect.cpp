@@ -1,5 +1,8 @@
 // MifBridge — session/assets, introspection, variables, and compile read-back endpoints.
 #include "MifBridgeHandlers.h"
+#include "SourceControlHelpers.h"
+#include "HAL/FileManager.h"
+#include "Misc/Paths.h"
 #include "MifBridgeVersion.h"
 // FStringOutputDevice MOVED between the two engines this plugin targets:
 //   5.3: declared in Containers/UnrealString.h, reached transitively through CoreMinimal
@@ -271,10 +274,28 @@ namespace MifBridge
 		FSavePackageArgs SaveArgs;
 		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
 		SaveArgs.SaveFlags = SAVE_NoError;
+		// READ-ONLY IS THE COMMONEST CAUSE, AND IT USED TO BE INVISIBLE HERE. On a Perforce- or
+		// SVN-backed project an un-checked-out .uasset is read-only on disk, SavePackage returns
+		// false, and this branch said only "save failed for <package>" - which an agent cannot tell
+		// apart from a genuine serialisation failure. save_dirty_packages has had this pre-scan
+		// since it was written (MifBridgeUndo.cpp:636-642); save_package never got it.
+		if (FPaths::FileExists(FileName) && IFileManager::Get().IsReadOnly(*FileName))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("cannot save '%s': the file on disk is READ-ONLY (%s). On a project under "
+					 "revision control that means it is not checked out. source_control{path} "
+					 "reports its state and source_control_checkout{path} checks it out. NOTHING "
+					 "was saved."),
+				*Package->GetName(), *FileName));
+			return;
+		}
+
 		const bool bSaved = UPackage::SavePackage(Package, nullptr, *FileName, SaveArgs);
 		if (!bSaved)
 		{
-			Fail(Out, FString::Printf(TEXT("save failed for %s"), *Package->GetName()));
+			Fail(Out, FString::Printf(
+				TEXT("save failed for %s. The file is writable, so this is not a checkout problem - "
+					 "check the Output Log for the engine's own reason."), *Package->GetName()));
 			return;
 		}
 		Out->SetStringField(TEXT("savedTo"), FileName);
@@ -2242,5 +2263,252 @@ namespace MifBridge
 		}
 		CompileBlueprintInto(Blueprint, Out);
 		Out->SetBoolField(TEXT("dryRun"), true);
+	}
+
+	// =======================================================================
+	// SOURCE CONTROL - split in two, because the safety gate works per endpoint
+	// =======================================================================
+	//
+	// WHY TWO ENDPOINTS AND NOT ONE WITH AN action PARAMETER. The survey proposed
+	// source_control{path, action}. The safety gate classifies whole ENDPOINTS, not actions, so a
+	// single endpoint would have to be either entirely safe - letting `revert` discard a day's work
+	// in read mode - or entirely gated, which would make a harmless status query unavailable in
+	// scratch mode. Split, the read is always allowed and the write half sits on the gate with
+	// every other persist-to-disk verb.
+	//
+	// QueryFileState IS A BLOCKING NETWORK CALL, which the survey did not flag and which is the
+	// real hazard here. SourceControlHelpers.cpp:1513-1515 builds an FUpdateStatus with
+	// SetUpdateModifiedState(true) and runs Provider->Execute SYNCHRONOUSLY - the engine's own
+	// comment says Perforce "requires this since can be a more expensive test". MifBridge dispatches
+	// on the game thread, so against a slow or half-dead server this freezes the editor for the full
+	// timeout, and bSilent does not help. Hence: IsAvailable() is checked before any query, and
+	// there is no loop-over-every-package mode at all.
+	//
+	// NOT BEING UNDER REVISION CONTROL IS A NORMAL ANSWER, never a failure. That is DDS2's situation
+	// and the common solo-developer case, so enabled:false comes back with ok and a plain statement
+	// that no checkout is needed.
+	//
+	// TWO ENGINE DETAILS THE SURVEY GOT WRONG, both checked: the state member is CheckedOutOther
+	// (an FString), not checkedOutBy; and QueryFileStates - the plural - does NOT exist in 5.3.2,
+	// only from 5.6. A batch here would have to use CheckOutFiles or loop, which is why the read
+	// half takes ONE path.
+	//
+	// The path does NOT need converting to a filename first: SourceControlHelpers.cpp:84-86
+	// documents that these helpers accept a long package name, asset path or export text path and
+	// normalise internally.
+
+
+	/** Best-effort package-name -> filename, for the no-provider branch only. The source control
+	 *  helpers normalise paths themselves (SourceControlHelpers.cpp:84-86), so this is NOT used on
+	 *  the provider path - only to answer "is the file read-only" when there is no provider to ask. */
+	static FString MifScFileNameFor(const FString& PackageOrAssetPath)
+	{
+		FString PackageName = PackageOrAssetPath;
+		int32 Dot = INDEX_NONE;
+		if (PackageName.FindChar(TEXT('.'), Dot)) { PackageName.LeftInline(Dot); }
+		FString FileName;
+		if (!FPackageName::TryConvertLongPackageNameToFilename(PackageName, FileName)) { return {}; }
+		if (FPaths::FileExists(FileName + FPackageName::GetAssetPackageExtension()))
+		{
+			return FileName + FPackageName::GetAssetPackageExtension();
+		}
+		return FileName + FPackageName::GetMapPackageExtension();
+	}
+
+	static void MifWriteScStatus(const TSharedRef<FJsonObject>& Out)
+	{
+		const bool bEnabled = USourceControlHelpers::IsEnabled();
+		Out->SetBoolField(TEXT("enabled"), bEnabled);
+		Out->SetBoolField(TEXT("available"), bEnabled && USourceControlHelpers::IsAvailable());
+		Out->SetStringField(TEXT("provider"),
+			bEnabled ? USourceControlHelpers::CurrentProvider() : TEXT("None"));
+	}
+
+	void H_source_control(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("packagePath"), TEXT("assetPath") },
+			TEXT("path (aliases packagePath, assetPath) - optional; omit it to report only whether "
+				 "revision control is configured"),
+			{ { TEXT("paths"), TEXT("one path at a time. QueryFileState blocks the game thread on a "
+									"server round-trip, and the plural QueryFileStates does not "
+									"exist before 5.6 - so a batch here would be a loop of blocking "
+									"calls, which is exactly what should not be offered") },
+			  { TEXT("checkout"), TEXT("this endpoint only READS. source_control_checkout is the "
+									   "write half") } }))
+		{
+			return;
+		}
+
+		MifWriteScStatus(Out);
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("packagePath"), TEXT("assetPath") });
+		if (Path.IsEmpty())
+		{
+			if (!USourceControlHelpers::IsEnabled())
+			{
+				Out->SetStringField(TEXT("note"),
+					TEXT("no revision control provider is configured for this project, so nothing "
+						 "needs checking out and files are writable as they are. That is a normal "
+						 "state, not a failure - it is what a solo project looks like."));
+			}
+			return;
+		}
+
+		Out->SetStringField(TEXT("path"), Path);
+		if (!USourceControlHelpers::IsEnabled())
+		{
+			// The one genuinely useful fact left when there is no provider: whether the file on
+			// disk is writable at all, which is what actually blocks a save.
+			const FString FileName = MifScFileNameFor(Path);
+			if (!FileName.IsEmpty() && FPaths::FileExists(FileName))
+			{
+				Out->SetBoolField(TEXT("readOnlyOnDisk"),
+					IFileManager::Get().IsReadOnly(*FileName));
+				Out->SetStringField(TEXT("file"), FileName);
+			}
+			Out->SetStringField(TEXT("note"),
+				TEXT("no revision control provider is configured, so there is no file state to "
+					 "report and no checkout is needed. readOnlyOnDisk, if present, is the only "
+					 "thing that would still stop a save."));
+			return;
+		}
+		// THE BLOCKING-CALL GUARD. Querying an enabled-but-unreachable provider runs a synchronous
+		// server round-trip on the game thread.
+		if (!USourceControlHelpers::IsAvailable())
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("a provider is configured but is NOT currently available - not logged in, or "
+					 "the server is unreachable. The file state was NOT queried, deliberately: "
+					 "QueryFileState runs a synchronous server round-trip on the game thread, so "
+					 "asking an unreachable server would freeze the editor until it timed out."));
+			return;
+		}
+
+		const FSourceControlState State = USourceControlHelpers::QueryFileState(Path, /*bSilent*/ true);
+		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+		J->SetStringField(TEXT("filename"), State.Filename);
+		J->SetBoolField(TEXT("isValid"), State.bIsValid);
+		J->SetBoolField(TEXT("isSourceControlled"), State.bIsSourceControlled);
+		J->SetBoolField(TEXT("isCheckedOut"), State.bIsCheckedOut);
+		J->SetBoolField(TEXT("isCheckedOutOther"), State.bIsCheckedOutOther);
+		// CheckedOutOther, not checkedOutBy - the survey had the field name wrong.
+		J->SetStringField(TEXT("checkedOutOther"), State.CheckedOutOther);
+		J->SetBoolField(TEXT("isAdded"), State.bIsAdded);
+		J->SetBoolField(TEXT("isDeleted"), State.bIsDeleted);
+		J->SetBoolField(TEXT("isCurrent"), State.bIsCurrent);
+		J->SetBoolField(TEXT("canCheckout"), State.bCanCheckOut);
+		J->SetBoolField(TEXT("isModified"), State.bIsModified);
+		if (!State.Filename.IsEmpty() && FPaths::FileExists(State.Filename))
+		{
+			J->SetBoolField(TEXT("readOnlyOnDisk"), IFileManager::Get().IsReadOnly(*State.Filename));
+		}
+		Out->SetObjectField(TEXT("state"), J);
+		if (State.bIsCheckedOutOther)
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("this file is checked out by %s, so you cannot check it out and a save will "
+					 "fail. That is a person to talk to, not an error to retry."),
+				*State.CheckedOutOther));
+		}
+	}
+
+	void H_source_control_checkout(const TSharedRef<FJsonObject>& In,
+								   const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("packagePath"), TEXT("assetPath"), TEXT("action"),
+			  TEXT("confirm") },
+			TEXT("path (aliases packagePath, assetPath); action (checkout|add|checkoutOrAdd|revert, "
+				 "default checkout); confirm:true - required for revert only"),
+			{ { TEXT("submit"), TEXT("checking in is deliberately not offered - it publishes work to "
+									 "everyone on the team, which is a person's decision") },
+			  { TEXT("paths"), TEXT("one path at a time here; a batch would be a loop of blocking "
+									"server calls on the game thread") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("packagePath"), TEXT("assetPath") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required. NOTHING was changed."));
+			return;
+		}
+		MifWriteScStatus(Out);
+		Out->SetStringField(TEXT("path"), Path);
+
+		if (!USourceControlHelpers::IsEnabled())
+		{
+			Fail(Out, TEXT("no revision control provider is configured for this project, so there "
+				TEXT("is nothing to check out - files are writable as they are. If a save is "
+					 "failing, source_control{path} reports whether the file is read-only on disk "
+					 "for some other reason. NOTHING was changed.")));
+			return;
+		}
+		if (!USourceControlHelpers::IsAvailable())
+		{
+			Fail(Out, TEXT("a provider is configured but is not currently available - not logged "
+				TEXT("in, or the server is unreachable. NOTHING was changed.")));
+			return;
+		}
+
+		const FString Action = JStr(In, TEXT("action"), TEXT("checkout")).ToLower();
+		bool bOk = false;
+		if (Action == TEXT("checkout"))
+		{
+			bOk = USourceControlHelpers::CheckOutFile(Path, /*bSilent*/ true);
+		}
+		else if (Action == TEXT("add"))
+		{
+			bOk = USourceControlHelpers::MarkFileForAdd(Path, /*bSilent*/ true);
+		}
+		else if (Action == TEXT("checkoutoradd"))
+		{
+			bOk = USourceControlHelpers::CheckOutOrAddFile(Path, /*bSilent*/ true);
+		}
+		else if (Action == TEXT("revert"))
+		{
+			// THE ONE THAT DESTROYS WORK. Revert discards every local change to the file, and
+			// nothing in this plugin can put them back.
+			if (!JBool(In, TEXT("confirm"), false))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("reverting '%s' DISCARDS every local change to that file and cannot be "
+						 "undone from here. Pass confirm:true. NOTHING was changed."), *Path));
+				return;
+			}
+			bOk = USourceControlHelpers::RevertFile(Path, /*bSilent*/ true);
+		}
+		else
+		{
+			Fail(Out, FString::Printf(
+				TEXT("unknown action '%s' - accepted: checkout, add, checkoutOrAdd, revert. "
+					 "Checking IN is deliberately not offered. NOTHING was changed."), *Action));
+			return;
+		}
+
+		Out->SetStringField(TEXT("action"), Action);
+		Out->SetBoolField(TEXT("succeeded"), bOk);
+		if (!bOk)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("%s failed for '%s'. source_control{path} reports the file's state - the usual "
+					 "causes are that it is checked out by somebody else, or not in the depot at "
+					 "all."), *Action, *Path));
+			return;
+		}
+		// READ BACK, because these helpers return a bool and nothing about the resulting state.
+		if (USourceControlHelpers::IsAvailable())
+		{
+			const FSourceControlState After =
+				USourceControlHelpers::QueryFileState(Path, /*bSilent*/ true);
+			Out->SetBoolField(TEXT("isCheckedOut"), After.bIsCheckedOut);
+			Out->SetBoolField(TEXT("isAdded"), After.bIsAdded);
+			if (!After.Filename.IsEmpty() && FPaths::FileExists(After.Filename))
+			{
+				Out->SetBoolField(TEXT("readOnlyOnDisk"),
+					IFileManager::Get().IsReadOnly(*After.Filename));
+			}
+		}
 	}
 }

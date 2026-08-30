@@ -5131,7 +5131,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Same envelope as the two endpoints it completes — it operates through the same AInstancedFoliageActor and FFoliageInfo that list_foliage_instances already reaches, so wherever the list returns instances the remove can act on them. Guard: bCreateIfNone=false on the actor lookup (never create an actor...
       Vetter corrected the proposal: Four corrections; the proposal is right about the gap and wrong about three mechanics. 1. COOKED PATH IS WRONG, and the spec already knew better. The proposer says "wherever the list returns instances the remove can act on them." The real behaviour: FFoliageInfo::Instances is serialized only when !Ar.ArIsFilterEditorOnly (InstancedFoliage.cpp:503-514) so a .pak-mounted IFA loads with an EMPTY Inst...
 
-- [ ] **source_control (new read+write endpoint), plus a `checkout` parameter on save_package / save_dirty_packages** (day)
+- [x] **source_control (read) + source_control_checkout (write), and save_package's read-only diagnosis** (day)
+      DONE 2026-08-30. 17 checks in tools/test_source_control.py.
+      SPLIT INTO TWO ENDPOINTS, against the survey's single source_control{path, action}. The
+      safety gate classifies whole ENDPOINTS, not actions, so one endpoint would have to be
+      either entirely safe - letting revert discard local changes in read mode - or entirely
+      gated, making a harmless status query unavailable in scratch mode. The suite asserts
+      exactly that asymmetry: in scratch the write half is refused and the read half answers.
+      THE VETTER'S UNFLAGGED HAZARD, and the reason for the IsAvailable() gate: QueryFileState
+      is NOT a local read. SourceControlHelpers.cpp:1513-1515 builds an FUpdateStatus with
+      SetUpdateModifiedState(true) and runs Provider->Execute SYNCHRONOUSLY - the engine's own
+      comment says Perforce "requires this since can be a more expensive test". MifBridge
+      dispatches on the game thread, so querying a configured-but-unreachable provider freezes
+      the editor for the full timeout, and bSilent does not help. No batch mode is offered for
+      the same reason.
+      Two engine details the survey had wrong, both checked: the state member is
+      CheckedOutOther (FString), not checkedOutBy; and the plural QueryFileStates does NOT
+      exist in 5.3.2, only from 5.6.
+      The premise was also half false, per the vetter: save_dirty_packages ALREADY names
+      read-only as a cause (MifBridgeUndo.cpp:636-642). save_package did not - its failure
+      branch was the bare "save failed for <package>", which an agent cannot tell apart from a
+      serialisation failure. It now names read-only and points at both endpoints, and the
+      remaining generic branch says the file IS writable so it is not a checkout problem.
+      Checking IN is deliberately not offered - a submit publishes work to the whole team.
+      NOT exercised: every provider path. No revision control is configured on either tested
+      project, which is precisely the case the endpoints answer with enabled:false and ok:true.
       Reports whether revision control is configured and what state a package's file is in (checked out, checked out by another user, not at head, marked for add, read-only on disk), and can check out / mark-for-add the files the bridge is about to write. Today save_package on a Perforce-backed project fails with the bare string `save failed for <package>` (MifBridgeIntrospect.cpp:280) because the .uasset on disk is read-only, and nothing in the response says so or offers a fix - the agent has no way to distinguish 'read-only, needs p4 edit' from 'the save genuinely failed'.
       API: USourceControlHelpers, D:/UE532/Engine/Source/Developer/SourceControl/Public/SourceControlHelpers.h - IsEnabled() :197, IsAvailable() :206, QueryFileState(const FString&, bool bSilent) :484, CheckOutFile :246 / CheckOutFiles :257, CheckOutOrAddFile :268, MarkFileForAdd :303, RevertFile :348, CheckInFiles :448. All are BlueprintCallable statics with a bSilent flag. Package path -> filename via the ...
       Cooked: Works on cooked and uncooked alike; this is about files on disk, not asset contents. On a project with no provider configured, IsEnabled() is false - report `enabled:false, provider:"None"` and say plainly that no checkout is needed because files are not under revision control. Never fail in that ca...

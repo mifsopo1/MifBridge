@@ -38,6 +38,8 @@ public class MifBridge : ModuleRules
 			"AnimationBlueprintLibrary",
 			"InputBlueprintNodes", // UK2Node_EnhancedInputAction (add_enhanced_input_action)
 			"EnhancedInput",       // UInputAction / UInputMappingContext runtime types
+			"SourceControl",       // USourceControlHelpers - an engine Developer module that ships
+			                       // in every build, so no MIF_WITH_ gating is needed
 			"DeveloperSettings",   // UDeveloperSettings - list_settings, and set_property{saveConfig}
 			"PhysicsUtilities",    // FPhysicsAssetUtils - PhysicsAsset body/constraint authoring
     // UK2Node_* classes

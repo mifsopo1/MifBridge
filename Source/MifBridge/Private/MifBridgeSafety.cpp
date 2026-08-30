@@ -167,6 +167,11 @@ namespace MifBridge
 				// reasoning as invoke_editor_tab: observing is the point of scratch mode, and capture's
 				// PNG lands under ProjectSavedDir which RefuseFileOutsideProject already permits.
 				TEXT("ui_scenario_start"), TEXT("ui_scenario_activate"),
+			// Checks out, adds or REVERTS a file on disk. Revert discards local
+			// changes and nothing here can put them back, so it belongs with the other
+			// persist-to-disk verbs. The READ half (source_control) is deliberately a
+			// separate endpoint so a status query stays available in every mode.
+			TEXT("source_control_checkout"),
 			};
 			return Unsafe;
 		}

@@ -1110,6 +1110,8 @@ namespace MifBridge
 	MIF_DECL(edit_level_instance);
 	MIF_DECL(break_level_instance);
 	MIF_DECL(remove_foliage_instances);
+	MIF_DECL(source_control);
+	MIF_DECL(source_control_checkout);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);
