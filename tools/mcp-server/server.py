@@ -2833,6 +2833,12 @@ def describe_gameplay_tag(tag: str) -> dict:
 
 
 @mcp.tool()
+def add_gameplay_tag(tag: str, comment: str = "", source: str = "", transient: bool = False) -> dict:
+    "Author a gameplay tag. TWO MODES and the difference is where the tag lives. transient=True registers it for THIS EDITOR SESSION only - writes nothing to disk, allowed in every write mode, gone on restart; that is the one you usually want while exploring. transient=False (the default) writes it into a config .ini (DefaultGameplayTags.ini unless source names another), survives a restart, and is REFUSED unless the write mode is full, because it is a persistent write to a file outside /Game. Adding a tag that already exists is not an error: you get added:false with resolved:true, so 'it is there' stays distinguishable from 'I put it there'. Always reports resolved, read back from the tag manager after the call - the engine returning true only means it did not object."
+    return _post("add_gameplay_tag", tag=tag, comment=comment, source=source, transient=transient)
+
+
+@mcp.tool()
 def live_coding_status() -> dict:
     "Whether Live Coding is running in this editor, and CRUCIALLY whether it is holding the editor's DLLs. Check blocksBuilds BEFORE running an external build: when Live Coding has started it holds the binaries, and Build.bat has been observed REPORTING SUCCESS while changing nothing - a sub-second 'success' is the tell. Also reports started, enabledForSession, canEnableForSession and compiling. available:false means the module was never loaded this session, which is normal and means nothing is holding the DLLs."
     return _post("live_coding_status")

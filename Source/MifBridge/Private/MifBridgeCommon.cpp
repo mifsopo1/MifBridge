@@ -344,6 +344,7 @@ namespace MifBridge
 			MIF_BIND(describe_state_tree);
 			MIF_BIND(list_gameplay_tags);
 			MIF_BIND(describe_gameplay_tag);
+	MIF_BIND(add_gameplay_tag);
 			MIF_BIND(live_coding_status);
 			MIF_BIND(live_coding_compile);
 			MIF_BIND(list_pcg_graphs);

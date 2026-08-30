@@ -4212,7 +4212,7 @@ cannot become one giant blocking item:
         based by design (UGameFrameworkComponentManager), not naturally queryable.
       Three candidates, checked against the engine source AND, for the one that looked buildable,
       against the actual compiler - which is where the real finding was:
-      - **GameplayTags authoring - TRIED, AND CORRECTLY IMPOSSIBLE, not merely undiscovered.**
+      - **GameplayTags authoring - BUILT 2026-08-30. The 2026-08-29 decline below was WRONG.**
         `UGameplayTagsManager::AddTagTableRow(const FGameplayTagTableRow&, FName SourceName, bool)`
         looked public from the header (`GAMEPLAYTAGS_API`, no access specifier visible in a plain
         grep) and matches PopulateTreeFromDataTable's own per-row call exactly. Written as
@@ -4224,7 +4224,40 @@ cannot become one giant blocking item:
         checked before reverting rather than stopping at the first failure). There is no public
         runtime API to add a gameplay tag to the live tree - the entire mutating surface is
         deliberately gated to the engine's own "Add New Gameplay Tag Source" editor widget and native
-        `UE_DEFINE_GAMEPLAY_TAG` compile-time registration. Reverted (handler, MIF_DECL/MIF_BIND,
+        `UE_DEFINE_GAMEPLAY_TAG` compile-time registration.
+
+        **CORRECTED 2026-08-30, and `add_gameplay_tag` now exists.** Everything in the paragraph
+        above is true, and none of it supports the conclusion it reached. It is all about the
+        RUNTIME module. `UGameplayTagsManager` lives in `Runtime/GameplayTags`, where the mutators
+        are private *by design* - tag authoring is an editor operation, so the engine keeps it out
+        of the runtime surface deliberately. The supported API is `IGameplayTagsEditorModule`, in
+        the `GameplayTagsEditor` **editor plugin**, and it is entirely public on both engines this
+        plugin targets:
+
+            AddNewGameplayTagToINI(NewTag, Comment, TagSourceName, bIsRestricted, bAllowNonRestrictedChildren)
+            AddTransientEditorGameplayTag(NewTransientTag)
+
+        `D:/UE532/.../GameplayTagsEditorModule.h:48` and `:60`; UE 5.7 the same at `:50` and `:66`.
+        Verified on both before a line was written.
+
+        THE LESSON TO KEEP, which is the *inverse* of the one recorded above. That entry drew
+        exactly the right conclusion about grep versus the compiler, and then over-generalised from
+        "this call is private" to "this cannot be done". **"The runtime API is private" is not the
+        same as "there is no API."** An editor-only capability living in an editor-only module is
+        the normal shape in this engine, not the exception - the same shape as `UnrealEd`,
+        `MVVMEditorSubsystem`, `IKRetargeterController` and half of what this bridge already calls.
+        The search that ends a decline has to be wider than the search that ends a build: a failed
+        build costs an hour, and a decline is a permanent closure that nobody re-examines.
+
+        THE SHAPE IT SHIPPED WITH, because the two modes are not interchangeable:
+        `transient:true` registers the tag for the current editor session, writes nothing, and is
+        allowed in every write mode. The default persists to a config `.ini` and is refused unless
+        the write mode is `full` - checked inside the handler rather than by putting the endpoint on
+        `UnsafeEndpoints`, because gating the *name* would take the transient mode with it, and the
+        transient mode is the one an agent exploring a project actually wants. Both paths check the
+        engine's returned bool AND read the tag back from the manager, since a `true` return only
+        means the call did not object. `tools/test_gameplay_tag_authoring.py` covers both, and
+        creates only transient tags so it never edits a project config file to test itself. Reverted (handler, MIF_DECL/MIF_BIND,
         server.py wrapper) rather than shipped broken. THE LESSON, this project's own repeatedly-
         learned one, re-learned here in real time: reading a header for a decorated declaration is not
         the same as knowing it is callable. Grep does not surface an access specifier sitting above

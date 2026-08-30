@@ -25,6 +25,10 @@
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
 
+#include "Modules/ModuleManager.h"
+#if MIF_WITH_GAMEPLAYTAGSEDITOR
+#include "GameplayTagsEditorModule.h"
+#endif
 #include "GameplayTagsManager.h"
 #include "GameplayTagContainer.h"
 
@@ -185,5 +189,150 @@ namespace MifBridge
 	// the `private:` line sitting above the match. There is no public runtime API to add a gameplay
 	// tag to the live tree; the entire mutating surface is deliberately gated to the engine's own
 	// "Add New Gameplay Tag Source" editor widget and native UE_DEFINE_GAMEPLAY_TAG registration.
-	// Filed as correctly impossible, not merely undiscovered - see FEATURE_PARITY_SPEC.md.
+	//
+	// THE CONCLUSION WAS WRONG, and add_gameplay_tag is built below - 2026-08-30. Every sentence
+	// above is TRUE of the RUNTIME module, and the investigation behind it was careful: it checked
+	// two separate private blocks before giving up. What it never did was look in a different
+	// MODULE. UGameplayTagsManager lives in Runtime/GameplayTags, where the mutators are private by
+	// design; the supported way to author a tag is IGameplayTagsEditorModule, in the
+	// GameplayTagsEditor PLUGIN, and that interface is entirely public:
+	//
+	//   AddNewGameplayTagToINI(NewTag, Comment, TagSourceName, bIsRestricted, bAllowNonRestrictedChildren)
+	//   AddTransientEditorGameplayTag(NewTransientTag)
+	//
+	// Verified on BOTH engines before writing a line - D:/UE532/Engine/Plugins/Editor/
+	// GameplayTagsEditor/.../GameplayTagsEditorModule.h:48 and :60, UE_5.7 the same at :50 and :66.
+	// The generalisable lesson is the inverse of the one recorded above: "the runtime API is
+	// private" is not the same as "there is no API", and an editor-only capability living in an
+	// editor-only module is the normal shape in this engine, not the exception. A decline is a
+	// permanent closure, so it has to survive a wider search than a build does.
+
+	// --- add_gameplay_tag ---------------------------------------------------
+	//   in:  { tag, comment?, source?, transient? }
+	//   out: { tag, transient, added, resolved, source, note? }
+	//
+	// TWO MODES, and the difference is where the tag LIVES - which is also why the safety gate has
+	// to treat them differently:
+	//   transient:false (default) writes into a config .ini on disk - DefaultGameplayTags.ini unless
+	//     `source` names another - and survives an editor restart. That is a persistent write to a
+	//     file outside /Game, so it is refused unless the write mode is Full. Checked HERE in the
+	//     handler rather than by adding the endpoint to UnsafeEndpoints, because gating the NAME
+	//     would take the transient mode away with it, and the transient mode is the one an agent
+	//     exploring a project actually wants.
+	//   transient:true registers the tag for this editor session only. Nothing is written, nothing
+	//     survives a restart, and it is safe in every mode.
+	void H_add_gameplay_tag(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("tag"), TEXT("comment"), TEXT("source"), TEXT("transient") },
+			TEXT("tag (required, e.g. 'Ability.Melee.Heavy'); comment (developer comment stored beside ")
+			TEXT("it); source (which .ini owns it - default DefaultGameplayTags.ini); transient (bool, ")
+			TEXT("default false - true registers for THIS EDITOR SESSION only and writes nothing to disk)"),
+			{ { TEXT("name"), TEXT("spell it tag - the full dotted tag name") },
+			  { TEXT("tagName"), TEXT("spell it tag - the full dotted tag name") },
+			  { TEXT("temporary"), TEXT("spell it transient - session-only, nothing written to disk") } }))
+		{
+			return;
+		}
+
+		const FString Tag = JStr(In, TEXT("tag"));
+		if (Tag.IsEmpty())
+		{
+			Fail(Out, TEXT("tag is required - the full dotted name, e.g. 'Ability.Melee.Heavy'. ")
+				TEXT("NOTHING was added."));
+			return;
+		}
+
+		UGameplayTagsManager& Manager = UGameplayTagsManager::Get();
+		if (Manager.RequestGameplayTag(FName(*Tag), /*ErrorIfNotFound*/ false).IsValid())
+		{
+			// Not a failure - the end state the caller asked for already holds. Said explicitly,
+			// with added:false, so "it is there" and "I put it there" stay distinguishable.
+			Out->SetStringField(TEXT("tag"), Tag);
+			Out->SetBoolField(TEXT("added"), false);
+			Out->SetBoolField(TEXT("resolved"), true);
+			Out->SetStringField(TEXT("note"), TEXT("this tag already exists - nothing was added, and ")
+				TEXT("nothing needed to be. added:false with resolved:true means the end state you ")
+				TEXT("asked for is in place."));
+			return;
+		}
+
+#if MIF_WITH_GAMEPLAYTAGSEDITOR
+		const bool bTransient = JBool(In, TEXT("transient"), false);
+
+		if (!bTransient && GetWriteMode() != EMifWriteMode::Full)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("adding a PERSISTENT gameplay tag writes it into a config .ini on disk, which ")
+				TEXT("outlives this session, and the write mode is '%s'. Two ways forward: pass ")
+				TEXT("transient:true to register '%s' for THIS EDITOR SESSION only (writes nothing, ")
+				TEXT("allowed in every mode, gone on restart), or set the write mode to full. ")
+				TEXT("NOTHING was added."),
+				WriteModeName(GetWriteMode()), *Tag));
+			return;
+		}
+
+		IGameplayTagsEditorModule* Editor =
+			FModuleManager::GetModulePtr<IGameplayTagsEditorModule>(TEXT("GameplayTagsEditor"));
+		if (!Editor)
+		{
+			Fail(Out, TEXT("the GameplayTagsEditor module is not loaded, so no tag can be authored. ")
+				TEXT("It ships with the engine as an editor plugin, so on an editor build it should ")
+				TEXT("be present. NOTHING was added."));
+			return;
+		}
+
+		bool bOk = false;
+		if (bTransient)
+		{
+			bOk = Editor->AddTransientEditorGameplayTag(Tag);
+		}
+		else
+		{
+			bOk = Editor->AddNewGameplayTagToINI(Tag, JStr(In, TEXT("comment")),
+				FName(*JStr(In, TEXT("source"))));
+		}
+
+		// The engine's own bool, CHECKED rather than discarded - and then a READ-BACK on top, because
+		// a true return only means the call did not object. Whether the manager now resolves the tag
+		// is the postcondition the caller actually cares about, and the two can disagree.
+		const bool bResolves = Manager.RequestGameplayTag(FName(*Tag), /*ErrorIfNotFound*/ false).IsValid();
+
+		Out->SetStringField(TEXT("tag"), Tag);
+		Out->SetBoolField(TEXT("transient"), bTransient);
+		Out->SetBoolField(TEXT("added"), bOk);
+		Out->SetBoolField(TEXT("resolved"), bResolves);
+		if (!bTransient)
+		{
+			const FString Source = JStr(In, TEXT("source"));
+			Out->SetStringField(TEXT("source"),
+				Source.IsEmpty() ? TEXT("DefaultGameplayTags.ini") : Source);
+		}
+
+		if (!bOk)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the engine refused to add '%s'. The usual causes are an invalid tag name - tags ")
+				TEXT("are dot-separated with no spaces and no leading or trailing dot - or a source ")
+				TEXT("that does not exist. NOTHING was added."), *Tag));
+			return;
+		}
+		if (!bResolves)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the engine reported adding '%s' but the tag manager still does not resolve it, ")
+				TEXT("so it is not usable. Reported rather than passed off as success."), *Tag));
+			return;
+		}
+		if (bTransient)
+		{
+			Out->SetStringField(TEXT("note"), TEXT("registered for THIS EDITOR SESSION only - nothing ")
+				TEXT("was written to disk, and this tag is gone after a restart. Pass transient:false ")
+				TEXT("in full write mode to persist it."));
+		}
+#else
+		Fail(Out, TEXT("this engine has no GameplayTagsEditor plugin, so gameplay tags cannot be ")
+			TEXT("authored from here. NOTHING was added."));
+#endif
+	}
 }

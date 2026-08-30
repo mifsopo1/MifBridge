@@ -204,6 +204,13 @@ public class MifBridge : ModuleRules
 			new string[] { "GameFeatures" });
 		AddPluginModules("MIF_WITH_MODULARGAMEPLAY", "ModularGameplay",
 			new string[] { "ModularGameplay" });
+		// GameplayTagsEditor is an engine EDITOR plugin (Engine/Plugins/Editor/GameplayTagsEditor),
+		// separate from the Runtime/GameplayTags module already linked above. It is where the
+		// PUBLIC tag-authoring API lives - the runtime manager keeps its mutators private, which
+		// is why add_gameplay_tag was once declined as impossible. Present in 5.3.2 and 5.7 alike,
+		// checked before adding.
+		AddPluginModules("MIF_WITH_GAMEPLAYTAGSEDITOR", "GameplayTagsEditor",
+			new string[] { "GameplayTagsEditor" });
 		AddPluginModules("MIF_WITH_MVVM", "ModelViewViewModel",
 			new string[] { "ModelViewViewModel", "ModelViewViewModelBlueprint", "ModelViewViewModelEditor",
 			               "FieldNotification" });

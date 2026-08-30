@@ -1405,6 +1405,9 @@ namespace MifBridge
 	MIF_DECL(describe_state_tree);
 	MIF_DECL(list_gameplay_tags);
 	MIF_DECL(describe_gameplay_tag);
+	/** Author a gameplay tag. transient:true registers it for this editor session only and
+	 *  writes nothing; the default persists it to a config .ini and needs full write mode. */
+	MIF_DECL(add_gameplay_tag);
 	MIF_DECL(live_coding_status);
 	MIF_DECL(live_coding_compile);
 	MIF_DECL(list_pcg_graphs);
