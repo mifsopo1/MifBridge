@@ -30,7 +30,7 @@ Every change goes through Unreal's own graph API (`Schema->TryCreateConnection`,
 
 | Half | State |
 |---|---|
-| 🎮 **UE plugin + MCP server** | **Mature.** 421 endpoints, 144 suites. Last recorded full pass: 204 runs across 102 suites green, 0 editor deaths — 42 of the 144 suites have not yet been in a full sweep, and those are the newest surface. |
+| 🎮 **UE plugin + MCP server** | **Mature.** 421 endpoints, 144 suites. Last full double-pass sweep: **282 runs across 141 suites, 1 failed, 16 skipped, 0 editor deaths**. The 3 suites that drive PIE are excluded from unattended sweeps and are named in the run output rather than counted as passing — starting PIE saturates the game thread, and the bridge runs every endpoint on it. |
 | 🎨 **Blender addon** | **Working, version‑tested.** 20 ops and a real mesh round trip, green on Blender 3.6.23, 4.2.17 LTS, 4.4.0 and 5.0.1 — 89 assertions per version. The five `gen_*` ops that need an external service are declared in the suite output rather than skipped silently. |
 
 ---
@@ -141,7 +141,7 @@ comm -23 /tmp/plugin.txt /tmp/mcp.txt   # endpoints with no tool
 comm -13 /tmp/plugin.txt /tmp/mcp.txt   # tools with no endpoint -> the 12 kr_* externals
 ```
 
-Measured on the current tree: **320 built-in endpoints + 12 external = 332**, against **353 tools**
+Measured on the current tree: **421 built-in endpoints + 12 external = 433**, against **478 tools**
 (320 that reach Unreal, 12 `kr_*`, 20 `bl_*`, 1 `mif_*`). Both columns of the diff are now EMPTY —
 `parity_check` reports no drift and no exempted gaps:
 
@@ -306,7 +306,7 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 
 ---
 
-## 🧠 Capabilities — 332 HTTP endpoints (320 built‑in + 12 external)
+## 🧠 Capabilities — 433 HTTP endpoints (421 built‑in + 12 external)
 
 > The authoritative list is whatever `self_audit` reports from the running editor, never this
 > section. `tools/endpoints_current.json` is a snapshot of it, and `tools/parity_check.py`

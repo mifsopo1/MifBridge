@@ -149,15 +149,54 @@ def require_sdk_bridge(force=False):
     return True, "pid %d (%s)" % (pid, PROJECT_MARKER)
 
 
-def bridge_responsive(timeout=8):
-    """Cheap liveness probe - no process spawning. Says nothing about identity."""
+def bridge_liveness(timeout=8):
+    """('alive'|'busy'|'dead') - and the middle one is the whole point of this function.
+
+    A TIMEOUT IS NOT DEATH. Every MifBridge endpoint runs on the GAME THREAD
+    (MifBridgeServer.cpp:405-411 takes the IsInGameThread() branch and executes the handler inline),
+    and FHttpServerModule is a ticker object, so accepting connections and dispatching requests both
+    happen inside FTSTicker::Tick(). Anything that blocks the game thread - PIE startup, a blueprint
+    compile, an asset registry scan - stalls both while the listen socket stays open, because
+    nothing calls StopListening. The editor is alive and will answer again shortly.
+
+    Collapsing that into a single False is what hung a 288-run sweep: run_all_suites relaunched the
+    editor because the bridge "was not responsive", the old editor was merely busy and still running,
+    and the two raced for port 8791.
+
+      dead   nothing is listening - the process is gone, relaunching is correct
+      busy   listening, not answering in time - WAIT, do not relaunch
+      alive  answered
+    """
     try:
         raw_post("ping_or_audit_probe__", {}, timeout=timeout)
-        return True
-    except (Dead, Timeout):
-        return False
+        return "alive"
+    except Timeout:
+        return "busy"
+    except Dead:
+        # Distinguish "connection refused" from a listener that accepted and went quiet. Only the
+        # former means the process is gone.
+        return "dead" if not _port_is_listening() else "busy"
     except Exception:
-        return True          # any JSON answer, including "unknown endpoint", means it is alive
+        return "alive"       # any JSON answer, including "unknown endpoint", means it is alive
+
+
+def _port_is_listening(port=None):
+    """True if anything holds the bridge port open, regardless of whether it answers."""
+    import socket as _socket
+    s = _socket.socket()
+    s.settimeout(1.5)
+    try:
+        s.connect(("127.0.0.1", port or BRIDGE_PORT))
+        return True
+    except Exception:
+        return False
+    finally:
+        s.close()
+
+
+def bridge_responsive(timeout=8):
+    """Back-compat wrapper. Prefer bridge_liveness - 'busy' and 'dead' need different responses."""
+    return bridge_liveness(timeout) == "alive"
 
 
 def sdk_editor_pid():

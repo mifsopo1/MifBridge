@@ -5592,38 +5592,48 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       NOT exercised: the toggle itself. Every NiagaraSystem in this project is cooked, so the
       cooked guard answers every call.
 
-- [ ] **the bridge stops answering while PIE is running** (day) - FOUND 2026-08-30, blocks the full sweep
-      Starting PIE makes MifBridge stop answering on 8791 while the editor process stays alive
-      and responsive. Seen twice on 2026-08-30: the editor log shows LogPlayLevel followed by
-      connection refused on the next call, and the sweep's own recovery then made it worse by
-      launching a second editor (fixed separately).
-      WHY IT MATTERS MORE THAN IT LOOKS: it is why 42 of 144 suites had never been in a full
-      sweep. The sweep did not finish, because it always stalled on the first PIE suite. Those
-      42 are the newest surface, so the least-tested code was also the least swept.
-      Worked around, not fixed: run_all_suites now skips PIE suites by default (derived from
-      the sources - a suite mentioning start_pie starts PIE - and named loudly in the output so
-      a green sweep cannot imply it covered them). --with-pie runs them attended.
-      NOT YET DIAGNOSED, and the first attempt at a diagnosis was WRONG in a way worth recording.
-      This entry originally said the failure was connection REFUSED rather than a timeout, and
-      concluded that pointed at the listener rather than a busy game thread. Re-reading the
-      evidence: the self_audit call made during the PIE hang exited 124 - a TIMEOUT. The refusal
-      being remembered came from earlier the same day, when the editor was being killed and
-      relaunched, which is a different situation. Corrected 2026-08-30; it is the same class of
-      confident-but-wrong claim this file criticises in the set_niagara_emitter entry.
-      WHAT THE EVIDENCE ACTUALLY SUPPORTS, and the engine source now agrees with it rather than
-      contradicting it: FHttpServerModule::Tick ticks its listeners only while
-      bHttpListenersEnabled, and the ONLY caller of FHttpListener::StopListening is
-      StopAllListeners (HttpServerModule.cpp:62), which logs on entry and appears in the editor
-      logs ONLY at shutdown. So the listen socket stays open. A connection then completes at TCP
-      level into the OS backlog and is never serviced - which presents as a hang, which is what was
-      seen. The suspect is therefore the game thread or the ticker during PIE, NOT a closed
-      listener.
-      Next step is an attended PIE session watching the port state and the log together - whether
-      the socket is still LISTENING while calls hang is the single observation that would settle
-      it, and it is exactly the kind of thing not to do unattended.
-      This is a GENERAL UE5 problem, not a DDS2 one: any user driving the bridge through a PIE
-      session hits it.
+- [~] **the bridge stops answering while PIE is running** (day) - DIAGNOSED 2026-08-30, not a defect
+      RECLASSIFIED after reading the code rather than inferring from symptoms. This is inherent to
+      the design, not a bug, and the thing that WAS a bug has been fixed separately.
 
+      THE MECHANISM, from MifBridgeServer.cpp:405-411. Every endpoint runs on the GAME THREAD:
+      HandleHttp takes the IsInGameThread() branch and executes the handler inline. FHttpServerModule
+      is an FTSTickerObjectBase, so ACCEPTING connections and DISPATCHING requests both happen inside
+      FTSTicker::Tick(). Anything that occupies the game thread - PIE startup, a blueprint compile,
+      an asset registry scan - stalls both, while the listen socket stays open the whole time because
+      the only caller of FHttpListener::StopListening is StopAllListeners
+      (HttpServerModule.cpp:62), which logs on entry and appears in the editor logs only at shutdown.
+
+      So the observed signature is fully explained: port 8791 LISTENING, editor alive and responsive,
+      requests timing out, and socket_send_failure in the log when a client gives up mid-response.
+      Reproduced without PIE at all, during ordinary editor startup - so this is NOT a PIE problem.
+      PIE is simply a reliable way to saturate the game thread.
+
+      IT CANNOT BE "FIXED" WITHOUT GIVING UP THE THING THAT MAKES THE BRIDGE WORK: touching UObjects
+      requires the game thread. A bridge that answered while the editor was busy would be a bridge
+      that could not read the editor. The honest statement is that the bridge is unavailable while
+      the editor is busy, and that is a property to document rather than a defect to chase.
+
+      WHAT WAS A REAL BUG, and it is fixed: the RECOVERY treated busy as dead. bridge_responsive
+      returned False for both "nothing listening" (process gone) and "listening but slow" (process
+      alive and working), and run_all_suites relaunched the editor on either - so a busy editor got a
+      SECOND editor beside it and the two raced for the port. That is what hung a 288-run sweep at
+      run 90, and the distinction was already available since raw_post raises Dead and Timeout
+      separately; it was being flattened into one bool. Now bridge_liveness returns
+      alive/busy/dead and busy means WAIT.
+
+      STILL WORTH DOING, and filed below as its own smaller item rather than left implied: the three
+      PIE suites remain excluded from unattended sweeps, because a suite that saturates the game
+      thread for minutes is indistinguishable from a hang to anything watching from outside.
+
+- [ ] **let a caller distinguish "busy" from "down" over the bridge itself** (hours)
+      Filed 2026-08-30, falling out of the diagnosis above. An external caller sees a timeout and
+      cannot tell whether the editor died or is compiling shaders - the same ambiguity that made
+      run_all_suites launch a second editor. The tooling in this repo can now tell the difference by
+      probing the port, but every OTHER consumer of the bridge is still guessing.
+      Cheapest useful shape: document the distinction in the MCP layer and in docs, so a client
+      retries rather than concluding the editor is gone. A heartbeat endpoint would NOT help - it
+      would be queued behind the same busy game thread as everything else, which is the point.
 - [ ] **add_niagara_emitter / remove_niagara_emitter** (day)
       Split out 2026-08-30 on the vetter's advice - these need their own guards rather than riding
       alongside a boolean, and set_niagara_emitter refuses `add`/`remove` by name.

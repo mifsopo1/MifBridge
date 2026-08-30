@@ -129,10 +129,18 @@ def main():
                   % (which, name, TIMEOUT), flush=True)
         dt = time.time() - t0
         line = next((l for l in out.splitlines() if l.startswith("PASS ")), "")
-        alive = M.bridge_responsive()
-        if not alive:
+        # BUSY IS NOT DEAD. A timeout here means the editor is alive and its game thread is
+        # occupied - the bridge runs every endpoint on that thread - so relaunching starts a SECOND
+        # editor beside a working one and both race for the port. That hung a 288-run sweep.
+        state = M.bridge_liveness()
+        alive = state == "alive"
+        if state == "busy":
+            print("  ... bridge busy (listening, not answering). The editor's game thread is "
+                  "occupied; waiting rather than relaunching.", flush=True)
+            alive = M.wait_for_bridge(timeout=900)
+        elif state == "dead":
             M.launch_editor()
-            M.wait_for_bridge(timeout=900)
+            alive = M.wait_for_bridge(timeout=900)
         results.append({"suite": name, "pass": which, "rc": rc, "summary": line.strip(),
                         "seconds": round(dt, 1), "editorSurvived": alive,
                         "tail": "\n".join(out.splitlines()[-25:]) if rc != 0 else ""})
