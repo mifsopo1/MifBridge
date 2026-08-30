@@ -1416,6 +1416,11 @@ namespace MifBridge
 	MIF_DECL(list_sequence_bindings);
 	MIF_DECL(add_sequence_possessable);
 	MIF_DECL(add_sequence_track);
+	/** The half that makes the four sequencer WRITE endpoints animate anything at all -
+	 *  add_sequence_track's own note says the track it makes is empty. Channels are addressed
+	 *  by editor NAME through FMovieSceneChannelProxy, so this is generic across track types. */
+	MIF_DECL(add_sequence_section);
+	MIF_DECL(set_sequence_keys);
 	MIF_DECL(list_state_trees);
 	MIF_DECL(describe_state_tree);
 	MIF_DECL(list_gameplay_tags);

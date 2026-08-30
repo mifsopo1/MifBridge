@@ -2848,6 +2848,26 @@ def add_sequence_track(path: str, guid: str, track_class: str, confirm: bool = F
 
 
 @mcp.tool()
+def add_sequence_section(path: str, guid: str, start_time: float, end_time: float,
+                         track_class: str = "", track_index: int = -1,
+                         row_index: int = 0, confirm: bool = False) -> dict:
+    "Create a SECTION on a LevelSequence track and give it a time range - the step without which the rest of the sequencer write chain animates nothing. add_sequence_track's own response says the track it makes is EMPTY; this is what fills it. Times are in SECONDS and the tick conversion is done for you from the sequence's own tick resolution, which describe_level_sequence also reports so both halves agree. Pick the track with track_class (a class NAME like MovieScene3DTransformTrack, or a full path) or track_index on that binding; a class the binding does not have is refused with its real track count. THE RESPONSE'S channels[] IS THE IMPORTANT PART: it lists every channel on the new section by the EDITOR NAME set_sequence_keys takes ('Location.X', 'Intensity'), and a caller who cannot discover those names cannot key anything. The section is read back through the track rather than trusted from the returned pointer, because AddSection is void and some track types silently refuse a section they consider overlapping. endTime must exceed startTime - a zero-length section animates nothing. Nothing is saved."
+    return _post("add_sequence_section", path=path, guid=guid, startTime=start_time,
+                 endTime=end_time, trackClass=track_class, trackIndex=track_index,
+                 rowIndex=row_index, confirm=confirm)
+
+
+@mcp.tool()
+def set_sequence_keys(path: str, guid: str, channel: str, keys: list,
+                      track_class: str = "", track_index: int = -1, section_index: int = 0,
+                      replace: bool = False, confirm: bool = False) -> dict:
+    "Write keyframes onto a section's channel - the last step, and the one that makes a LevelSequence actually animate. GENERIC BY CHANNEL NAME rather than per track type: channels are addressed through the section's FMovieSceneChannelProxy by their editor name, so this keys transform tracks, float and bool property tracks and anything a plugin registers. Get the names from add_sequence_section's channels[]; an unknown one is refused and the response LISTS what the section does have, because guessing the name is the likeliest mistake. keys is [{time (SECONDS), value, interp: cubic|linear|constant}]. replace=True clears the channel first. READ keysAfter, NOT keysWritten: keysAfter is read back from the channel while keysWritten counts the request, and they are allowed to differ - UpdateOrAddKey REPLACES a key at the same frame, so writing three keys at one time leaves one. Reporting the request back would be a number that is not true. SCOPED, and the limit is refused by name rather than skipped: this keys double, float, bool and integer channels - transforms, most property tracks, visibility. An object-path or string channel is REFUSED, because a key silently not written leaves a section that looks authored and animates nothing."
+    return _post("set_sequence_keys", path=path, guid=guid, channel=channel, keys=keys,
+                 trackClass=track_class, trackIndex=track_index, sectionIndex=section_index,
+                 replace=replace, confirm=confirm)
+
+
+@mcp.tool()
 def list_state_trees(path_prefix: str = "/Game/") -> dict:
     "List the project's StateTree assets - the modern UE5 alternative to Behavior Trees. Asset Registry only, LOADS NOTHING. Check registryStillScanning."
     return _post("list_state_trees", pathPrefix=path_prefix)

@@ -4504,7 +4504,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Uncooked only: a cooked Anim Blueprint has no UBlueprint and no graphs, so ResolveGraphField cannot produce a graphId and the endpoint never reaches the engine. The guard that matters is the one add_anim_node already learned the hard way (PM-013): check the GRAPH's schema, not the blueprint's, befor...
       Vetter corrected the proposal: NARROW IT TO ONE ENDPOINT. Build add_anim_state; drop add_anim_transition as a capability (connect_pins already creates the transition node via the schema's MAKE_WITH_CONVERSION_NODE path - proof chain in reasoning). If the returned nodeGuid/ruleGraphId are wanted, add them as an optional response block on connect_pins when the conversion path fired, per the house preference for a parameter over a...
 
-- [ ] **add_sequence_section + set_sequence_keys (plus sections/keys reported back by list_sequence_bindings)** (day)
+- [x] **add_sequence_section + set_sequence_keys (plus sections/keys reported back by list_sequence_bindings)** (day)  **BUILT AND TESTED 2026-08-30.** 23/23 live (tools/test_sequence_keys.py). The vetter framed this correctly: it is not a subsystem half missing, it is the half WITHOUT WHICH the other four sequencer write endpoints produce a non-functional result - add_sequence_track says so in its own response note. Channels are addressed by editor NAME through FMovieSceneChannelProxy, so one endpoint pair covers every track type rather than a per-class Cast ladder. Scoped as the vetter advised to double/float/bool/integer channels; object-path and string are REFUSED by name, not skipped, and are filed below.
       Create a section on a LevelSequence track, give it a time range, and write/read keyframes on its channels. Generic rather than per-track-type: address a channel by its editor name ("Location.X", "Intensity", "Rotation") through the section's channel proxy, so one endpoint pair keys transform tracks, float/colour/bool property tracks, camera-cut sections and anything a plugin registers.
       API: UMovieSceneTrack::CreateNewSection() and ::AddSection(UMovieSceneSection&) - D:/UE532/Engine/Source/Runtime/MovieScene/Public/MovieSceneTrack.h:385 and :378. UMovieSceneSection::SetRange(TRange<FFrameNumber>) - MovieSceneSection.h:322; UMovieSceneSection::GetChannelProxy() MOVIESCENE_API - MovieSceneSection.h:642. FMovieSceneChannelProxy::GetChannelByName(FName) MOVIESCENE_API and ::GetMetaData<T>...
       Cooked: MovieScene/sections/channels are RUNTIME data and survive cook, so reading sections and keys works cooked and should be allowed - that is the same argument list_material_parameters makes for itself. The channel NAMES come from FMovieSceneChannelMetaData, which is WITH_EDITOR - present in an editor b...
@@ -4839,3 +4839,11 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       ALSO STILL OPEN, from the same item: spatial filtering on the READ half via
       ForEachIntersectingActorDescInstance - list_partition_actors currently refuses a `bounds`
       parameter by name and points at nameContains/classFilter instead.
+
+- [ ] **extend set_sequence_keys with object-path and string channels** (hours)
+      Scoped out of the 2026-08-30 v1 deliberately. It keys double, float, bool and integer -
+      transforms, most property tracks, visibility. FMovieSceneObjectPathChannel and
+      FMovieSceneStringChannel each need their own JSON coercion and AddKey shape. The endpoint
+      REFUSES them by name with the type it found, rather than skipping the key, because a key
+      silently not written leaves a section that looks authored and animates nothing - so this is
+      an extension, not a latent bug.

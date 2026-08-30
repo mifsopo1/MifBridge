@@ -36,6 +36,13 @@
 #include "MovieScenePossessable.h"
 #include "MovieSceneSpawnable.h"
 #include "MovieSceneTrack.h"
+#include "MovieSceneSection.h"
+#include "Channels/MovieSceneChannelProxy.h"
+#include "Channels/MovieSceneDoubleChannel.h"
+#include "Channels/MovieSceneFloatChannel.h"
+#include "Channels/MovieSceneBoolChannel.h"
+#include "Channels/MovieSceneIntegerChannel.h"
+#include "ScopedTransaction.h"
 #include "Subsystems/EditorActorSubsystem.h"
 #include "Editor.h"
 #include "UObject/Package.h"
@@ -348,5 +355,400 @@ namespace MifBridge
 				 "Nothing was saved."));
 		UE_LOG(LogMifBridge, Log, TEXT("add_sequence_track: %s on %s"),
 			*TrackClass->GetName(), *Seq->GetName());
+	}
+
+	// =======================================================================
+	// SECTIONS AND KEYS - the half that makes the other four endpoints real
+	// =======================================================================
+	//
+	// add_sequence_track's own closing note says it: "the track exists and is EMPTY - it has no
+	// sections, so it animates nothing yet." That is true of the whole write chain.
+	// add_sequence_possessable binds an actor, add_sequence_track gives it a track, and the result
+	// animates NOTHING. Those endpoints are not half a feature, they are dead weight until a section
+	// with keys exists. This is that half.
+	//
+	// GENERIC, NOT PER-TRACK-TYPE. Channels are addressed by their EDITOR NAME - "Location.X",
+	// "Intensity" - through the section's FMovieSceneChannelProxy, so one pair of endpoints keys
+	// transform tracks, float and bool property tracks, and anything a plugin registers. The
+	// alternative, which MifBridgeWidgets.cpp uses for widget animation, is a per-section-class
+	// Cast<> ladder; it cannot be lifted here and would need a new arm per track type forever.
+	//
+	// SCOPED TO THE NUMERIC AND BOOL CHANNELS for this pass - float, double, bool, integer, byte.
+	// Those cover transforms, most property tracks and visibility, which is the great majority of
+	// what anyone keys. Object-path and string channels are declared unsupported BY NAME rather
+	// than silently ignored, and are filed as follow-up.
+	//
+	// TIME IS IN SECONDS at this boundary and ticks internally. UMovieScene::GetTickResolution is
+	// the conversion and describe_level_sequence already reports it, so both halves agree.
+
+	UMovieSceneTrack* SeqFindTrack(UMovieScene* Scene, const FGuid& Guid, const FString& ClassName,
+								   int32 TrackIndex, FString& OutError)
+	{
+		for (const FMovieSceneBinding& B : const_cast<const UMovieScene*>(Scene)->GetBindings())
+		{
+			if (B.GetObjectGuid() != Guid) { continue; }
+			const TArray<UMovieSceneTrack*>& Tracks = B.GetTracks();
+			if (TrackIndex >= 0)
+			{
+				if (!Tracks.IsValidIndex(TrackIndex))
+				{
+					OutError = FString::Printf(
+						TEXT("trackIndex %d is outside this binding's %d track(s)."),
+						TrackIndex, Tracks.Num());
+					return nullptr;
+				}
+				return Tracks[TrackIndex];
+			}
+			for (UMovieSceneTrack* T : Tracks)
+			{
+				if (T && (T->GetClass()->GetName() == ClassName
+						  || T->GetClass()->GetPathName() == ClassName))
+				{
+					return T;
+				}
+			}
+			OutError = FString::Printf(
+				TEXT("this binding has %d track(s) and none is a '%s'. Add one with "
+					 "add_sequence_track, or pass trackIndex."), Tracks.Num(), *ClassName);
+			return nullptr;
+		}
+		OutError = TEXT("no binding with that guid - list_sequence_bindings shows them.");
+		return nullptr;
+	}
+
+	/** Every channel on a section, by editor name, with its type and key count. */
+	TArray<TSharedPtr<FJsonValue>> SeqChannelRows(UMovieSceneSection* Section)
+	{
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		if (!Section) { return Rows; }
+		const FMovieSceneChannelProxy& Proxy = Section->GetChannelProxy();
+		for (const FMovieSceneChannelEntry& Entry : Proxy.GetAllEntries())
+		{
+			const TArrayView<FMovieSceneChannel* const> Channels = Entry.GetChannels();
+#if WITH_EDITOR
+			const TArrayView<const FMovieSceneChannelMetaData> Meta = Entry.GetMetaData();
+#endif
+			for (int32 i = 0; i < Channels.Num(); ++i)
+			{
+				TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+#if WITH_EDITOR
+				if (Meta.IsValidIndex(i))
+				{
+					J->SetStringField(TEXT("name"), Meta[i].Name.ToString());
+					J->SetStringField(TEXT("displayName"), Meta[i].DisplayText.ToString());
+				}
+#endif
+				J->SetStringField(TEXT("type"), Entry.GetChannelTypeName().ToString());
+				J->SetNumberField(TEXT("keyCount"), Channels[i] ? Channels[i]->GetNumKeys() : 0);
+				Rows.Add(MakeShared<FJsonValueObject>(J));
+			}
+		}
+		return Rows;
+	}
+
+	// --- add_sequence_section -----------------------------------------------
+	void H_add_sequence_section(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("sequence"), TEXT("guid"), TEXT("binding"),
+			  TEXT("trackClass"), TEXT("trackIndex"), TEXT("startTime"), TEXT("endTime"),
+			  TEXT("rowIndex"), TEXT("confirm") },
+			TEXT("path (the LevelSequence); guid (alias: binding) from list_sequence_bindings; ")
+			TEXT("trackClass OR trackIndex to pick the track on that binding; startTime and endTime ")
+			TEXT("in SECONDS; rowIndex (default 0); confirm:true"),
+			{ { TEXT("startFrame"), TEXT("times here are SECONDS - the tick conversion is done for ")
+									TEXT("you from the sequence's own tick resolution") },
+			  { TEXT("duration"), TEXT("pass startTime and endTime, not a duration") } }))
+		{
+			return;
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("add_sequence_section needs confirm:true. NOTHING was changed."));
+			return;
+		}
+		ULevelSequence* Seq = SeqResolve(In, Out, TEXT("add_sequence_section"));
+		if (!Seq) { return; }
+		UMovieScene* Scene = Seq->GetMovieScene();
+		if (!Scene) { Fail(Out, TEXT("this sequence has no MovieScene.")); return; }
+
+		FGuid Guid;
+		const FString GuidStr = JStrAny(In, { TEXT("guid"), TEXT("binding") });
+		if (GuidStr.IsEmpty() || !FGuid::Parse(GuidStr, Guid))
+		{
+			Fail(Out, TEXT("guid is required (from list_sequence_bindings). NOTHING was changed."));
+			return;
+		}
+		FString FindError;
+		UMovieSceneTrack* Track = SeqFindTrack(Scene, Guid, JStr(In, TEXT("trackClass")),
+											   JInt(In, TEXT("trackIndex"), -1), FindError);
+		if (!Track)
+		{
+			Fail(Out, FindError + TEXT(" NOTHING was changed."));
+			return;
+		}
+
+		if (!In->HasField(TEXT("startTime")) || !In->HasField(TEXT("endTime")))
+		{
+			Fail(Out, TEXT("startTime and endTime are required, in SECONDS. NOTHING was changed."));
+			return;
+		}
+		const double StartSec = JNum(In, TEXT("startTime"), 0.0);
+		const double EndSec = JNum(In, TEXT("endTime"), 0.0);
+		if (EndSec <= StartSec)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("endTime (%.4f) must be greater than startTime (%.4f) - a section with no ")
+				TEXT("duration animates nothing. NOTHING was changed."), EndSec, StartSec));
+			return;
+		}
+		const FFrameRate Tick = Scene->GetTickResolution();
+		const FFrameNumber StartFrame = (StartSec * Tick).FloorToFrame();
+		const FFrameNumber EndFrame = (EndSec * Tick).CeilToFrame();
+
+		const int32 Before = Track->GetAllSections().Num();
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_AddSequenceSection",
+												 "Add Sequence Section"));
+		Track->Modify();
+		UMovieSceneSection* Section = Track->CreateNewSection();
+		if (!Section)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' returned no section from CreateNewSection - some track types do not ")
+				TEXT("support sections at all. NOTHING was changed."), *Track->GetClass()->GetName()));
+			return;
+		}
+		Section->SetRange(TRange<FFrameNumber>(StartFrame, EndFrame));
+		Section->SetRowIndex(JInt(In, TEXT("rowIndex"), 0));
+		Track->AddSection(*Section);
+
+		// READ BACK through the track, not the pointer - AddSection is void and some tracks refuse
+		// a section they consider overlapping.
+		const TArray<UMovieSceneSection*>& Now = Track->GetAllSections();
+		const int32 Index = Now.IndexOfByKey(Section);
+		if (Index == INDEX_NONE)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the section was created and '%s' does not list it afterwards - AddSection is ")
+				TEXT("void and some track types refuse an overlapping section silently. NOTHING ")
+				TEXT("usable was produced."), *Track->GetClass()->GetName()));
+			return;
+		}
+		if (UPackage* Pkg = Seq->GetOutermost()) { Pkg->MarkPackageDirty(); }
+
+		Out->SetStringField(TEXT("guid"), Guid.ToString());
+		Out->SetStringField(TEXT("trackClass"), Track->GetClass()->GetName());
+		Out->SetNumberField(TEXT("sectionIndex"), Index);
+		Out->SetStringField(TEXT("sectionClass"), Section->GetClass()->GetName());
+		Out->SetNumberField(TEXT("sectionsBefore"), Before);
+		Out->SetNumberField(TEXT("sectionsNow"), Now.Num());
+		Out->SetNumberField(TEXT("startTick"), StartFrame.Value);
+		Out->SetNumberField(TEXT("endTick"), EndFrame.Value);
+		Out->SetNumberField(TEXT("startTime"), StartSec);
+		Out->SetNumberField(TEXT("endTime"), EndSec);
+		Out->SetNumberField(TEXT("tickResolution"), Tick.AsDecimal());
+		Out->SetArrayField(TEXT("channels"), SeqChannelRows(Section));
+		Out->SetStringField(TEXT("note"),
+			TEXT("the section exists and its channels are EMPTY - it still animates nothing until "
+				 "keys are written. channels[] above lists them by the name set_sequence_keys takes. "
+				 "Nothing was saved."));
+	}
+
+	// --- set_sequence_keys --------------------------------------------------
+	void H_set_sequence_keys(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("sequence"), TEXT("guid"), TEXT("binding"),
+			  TEXT("trackClass"), TEXT("trackIndex"), TEXT("sectionIndex"), TEXT("channel"),
+			  TEXT("keys"), TEXT("replace"), TEXT("confirm") },
+			TEXT("path; guid (alias: binding); trackClass or trackIndex; sectionIndex (from ")
+			TEXT("add_sequence_section); channel - the channel NAME from that response, e.g. ")
+			TEXT("'Location.X'; keys - [{time (SECONDS), value, interp: cubic|linear|constant}]; ")
+			TEXT("replace (default false - true clears the channel first); confirm:true"),
+			{ { TEXT("frame"), TEXT("key times are SECONDS - the tick conversion is done for you") },
+			  { TEXT("channelName"), TEXT("spell it channel") } }))
+		{
+			return;
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("set_sequence_keys needs confirm:true. NOTHING was changed."));
+			return;
+		}
+		ULevelSequence* Seq = SeqResolve(In, Out, TEXT("set_sequence_keys"));
+		if (!Seq) { return; }
+		UMovieScene* Scene = Seq->GetMovieScene();
+		if (!Scene) { Fail(Out, TEXT("this sequence has no MovieScene.")); return; }
+
+		FGuid Guid;
+		const FString GuidStr = JStrAny(In, { TEXT("guid"), TEXT("binding") });
+		if (GuidStr.IsEmpty() || !FGuid::Parse(GuidStr, Guid))
+		{
+			Fail(Out, TEXT("guid is required. NOTHING was changed."));
+			return;
+		}
+		FString FindError;
+		UMovieSceneTrack* Track = SeqFindTrack(Scene, Guid, JStr(In, TEXT("trackClass")),
+											   JInt(In, TEXT("trackIndex"), -1), FindError);
+		if (!Track) { Fail(Out, FindError + TEXT(" NOTHING was changed.")); return; }
+
+		const int32 SectionIndex = JInt(In, TEXT("sectionIndex"), 0);
+		const TArray<UMovieSceneSection*>& Sections = Track->GetAllSections();
+		if (!Sections.IsValidIndex(SectionIndex))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("sectionIndex %d is outside this track's %d section(s). Create one with ")
+				TEXT("add_sequence_section. NOTHING was changed."), SectionIndex, Sections.Num()));
+			return;
+		}
+		UMovieSceneSection* Section = Sections[SectionIndex];
+
+		const FString ChannelName = JStr(In, TEXT("channel"));
+		if (ChannelName.IsEmpty())
+		{
+			Fail(Out, TEXT("channel is required - the name from add_sequence_section's channels[]. ")
+				TEXT("NOTHING was changed."));
+			return;
+		}
+
+		// Find the channel BY NAME through the proxy, and report what IS there when it misses -
+		// a channel name that does not exist is the most likely mistake and a bare failure would
+		// leave the caller guessing.
+		const FMovieSceneChannelProxy& Proxy = Section->GetChannelProxy();
+		FMovieSceneChannel* Channel = nullptr;
+		FName ChannelType;
+		{
+			const FName Wanted(*ChannelName);
+			for (const FMovieSceneChannelEntry& Entry : Proxy.GetAllEntries())
+			{
+				const TArrayView<FMovieSceneChannel* const> Channels = Entry.GetChannels();
+#if WITH_EDITOR
+				const TArrayView<const FMovieSceneChannelMetaData> Meta = Entry.GetMetaData();
+				for (int32 i = 0; i < Channels.Num(); ++i)
+				{
+					if (Meta.IsValidIndex(i) && Meta[i].Name == Wanted)
+					{
+						Channel = Channels[i];
+						ChannelType = Entry.GetChannelTypeName();
+						break;
+					}
+				}
+#endif
+				if (Channel) { break; }
+			}
+		}
+		if (!Channel)
+		{
+			TArray<TSharedPtr<FJsonValue>> Have = SeqChannelRows(Section);
+			Out->SetArrayField(TEXT("channelsAvailable"), Have);
+			Fail(Out, FString::Printf(
+				TEXT("this section has no channel named '%s'. channelsAvailable in this response ")
+				TEXT("lists the %d it does have. NOTHING was changed."), *ChannelName, Have.Num()));
+			return;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* KeysJson = nullptr;
+		if (!In->TryGetArrayField(TEXT("keys"), KeysJson) || !KeysJson || KeysJson->Num() == 0)
+		{
+			Fail(Out, TEXT("keys must be a non-empty array of {time, value}. NOTHING was changed."));
+			return;
+		}
+
+		const FFrameRate Tick = Scene->GetTickResolution();
+		const int32 KeysBefore = Channel->GetNumKeys();
+
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_SetSequenceKeys",
+												 "Set Sequence Keys"));
+		Section->Modify();
+		if (JBool(In, TEXT("replace"), false))
+		{
+			Channel->Reset();
+		}
+
+		// TYPED DISPATCH. Every channel type has its own AddKey signature and its own JSON coercion;
+		// an unsupported one is named rather than skipped, because a key silently not written is the
+		// worst outcome here - the section looks authored and animates nothing.
+		int32 Written = 0;
+		FString TypeError;
+		for (const TSharedPtr<FJsonValue>& KV : *KeysJson)
+		{
+			const TSharedPtr<FJsonObject>* KO = nullptr;
+			if (!KV.IsValid() || !KV->TryGetObject(KO) || !KO) { continue; }
+			const TSharedRef<FJsonObject> K = KO->ToSharedRef();
+			const double TimeSec = JNum(K, TEXT("time"), 0.0);
+			const FFrameNumber Frame = (TimeSec * Tick).RoundToFrame();
+			const FString Interp = JStr(K, TEXT("interp")).ToLower();
+
+			if (ChannelType == FMovieSceneDoubleChannel::StaticStruct()->GetFName())
+			{
+				FMovieSceneDoubleChannel* C = static_cast<FMovieSceneDoubleChannel*>(Channel);
+				const double V = JNum(K, TEXT("value"), 0.0);
+				if (Interp == TEXT("linear")) { C->AddLinearKey(Frame, V); }
+				else if (Interp == TEXT("constant")) { C->AddConstantKey(Frame, V); }
+				else { C->AddCubicKey(Frame, V); }
+				++Written;
+			}
+			else if (ChannelType == FMovieSceneFloatChannel::StaticStruct()->GetFName())
+			{
+				FMovieSceneFloatChannel* C = static_cast<FMovieSceneFloatChannel*>(Channel);
+				const float V = static_cast<float>(JNum(K, TEXT("value"), 0.0));
+				if (Interp == TEXT("linear")) { C->AddLinearKey(Frame, V); }
+				else if (Interp == TEXT("constant")) { C->AddConstantKey(Frame, V); }
+				else { C->AddCubicKey(Frame, V); }
+				++Written;
+			}
+			else if (ChannelType == FMovieSceneBoolChannel::StaticStruct()->GetFName())
+			{
+				FMovieSceneBoolChannel* C = static_cast<FMovieSceneBoolChannel*>(Channel);
+				C->GetData().UpdateOrAddKey(Frame, JBool(K, TEXT("value"), false));
+				++Written;
+			}
+			else if (ChannelType == FMovieSceneIntegerChannel::StaticStruct()->GetFName())
+			{
+				FMovieSceneIntegerChannel* C = static_cast<FMovieSceneIntegerChannel*>(Channel);
+				C->GetData().UpdateOrAddKey(Frame, static_cast<int32>(JNum(K, TEXT("value"), 0.0)));
+				++Written;
+			}
+			else
+			{
+				TypeError = FString::Printf(
+					TEXT("channel '%s' is a %s, which this endpoint does not key yet - it handles ")
+					TEXT("double, float, bool and integer channels. That covers transforms, most ")
+					TEXT("property tracks and visibility. Named rather than skipped, because a key ")
+					TEXT("silently not written leaves a section that looks authored and animates ")
+					TEXT("nothing."), *ChannelName, *ChannelType.ToString());
+				break;
+			}
+		}
+		if (!TypeError.IsEmpty())
+		{
+			Fail(Out, TypeError + TEXT(" NOTHING was changed."));
+			return;
+		}
+
+		const int32 KeysAfter = Channel->GetNumKeys();
+		if (UPackage* Pkg = Seq->GetOutermost()) { Pkg->MarkPackageDirty(); }
+
+		Out->SetStringField(TEXT("guid"), Guid.ToString());
+		Out->SetStringField(TEXT("channel"), ChannelName);
+		Out->SetStringField(TEXT("channelType"), ChannelType.ToString());
+		Out->SetNumberField(TEXT("sectionIndex"), SectionIndex);
+		Out->SetNumberField(TEXT("keysRequested"), KeysJson->Num());
+		Out->SetNumberField(TEXT("keysWritten"), Written);
+		Out->SetNumberField(TEXT("keysBefore"), KeysBefore);
+		// keysAfter is read from the channel, not counted from the request - UpdateOrAddKey REPLACES
+		// a key at the same time, so writing three keys at one time leaves one, and reporting the
+		// request back would be a number that is not true.
+		Out->SetNumberField(TEXT("keysAfter"), KeysAfter);
+		Out->SetNumberField(TEXT("tickResolution"), Tick.AsDecimal());
+		if (KeysAfter == KeysBefore && !JBool(In, TEXT("replace"), false))
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("the key count did not change. UpdateOrAddKey REPLACES a key at the same frame, "
+					 "so writing over existing times is not an error - but if you expected new keys, "
+					 "check the times against what is already there."));
+		}
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the sequence is dirty and NOTHING has been saved."));
 	}
 }

@@ -40,6 +40,8 @@ add_parent_call.ownerclass
 add_parent_call.targetclass
 add_pin.pin
 add_sequence_possessable.sequence
+add_sequence_section.binding
+add_sequence_section.sequence
 add_sequence_track.binding
 add_sequence_track.sequence
 add_sublevel.level
@@ -202,6 +204,8 @@ set_pin_type.name
 set_property.editcondition
 set_property.respectclamps
 set_retarget_chain_mapping.retargeter
+set_sequence_keys.binding
+set_sequence_keys.sequence
 set_sublevel_streaming.level
 set_sublevel_visibility.level
 set_texture_settings.texturegroup
