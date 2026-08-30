@@ -133,6 +133,30 @@ namespace MifBridge
 				// cannot execute anything, so they stay available - diagnosis in scratch mode is the
 				// point of scratch mode.
 				TEXT("send_editor_key"), TEXT("invoke_editor_command"),
+				//
+				// A FOURTH road, added 2026-08-30 - and the comment above predicted it exactly: "a comment
+				// saying 'all three' is exactly what was true before someone added a fourth."
+				//
+				// ui_scenario_activate takes an arbitrary activationKey - the only validation is
+				// FKey::IsValid(), i.e. "is this a registered key name" (MifBridgeUIScenario.cpp:411-413) -
+				// and delivers it to the live PIE viewport via UGameViewportClient::InputKey. The first
+				// thing InputKey does with it is hand it to ViewportConsole (GameViewportClient.cpp:677 on
+				// 5.3), and ViewportConsole is constructed unconditionally under ALLOW_CONSOLE in an editor
+				// build (:2359). So this endpoint reaches the same console that run_console, exec_console
+				// and run_console_captured are refused for, three lines above.
+				//
+				// It is the send_editor_key shape aimed at the game viewport instead of the editor's, and
+				// it was added in the same range as 30 other endpoints without this list being revisited -
+				// `git diff e8c23ee..HEAD -- MifBridgeSafety.cpp` was empty. confirm:true is required by the
+				// endpoint, but that is caller ceremony, not the gate; send_editor_key is gated despite
+				// similar ceremony.
+				//
+				// ui_scenario_start is here too: it is the required predecessor for activate, and it
+				// mutates live gameplay state (it teleports the pawn). The read-only members of the family
+				// - ui_scenario_status and ui_scenario_capture - are deliberately NOT here, on the same
+				// reasoning as invoke_editor_tab: observing is the point of scratch mode, and capture's
+				// PNG lands under ProjectSavedDir which RefuseFileOutsideProject already permits.
+				TEXT("ui_scenario_start"), TEXT("ui_scenario_activate"),
 			};
 			return Unsafe;
 		}

@@ -143,7 +143,10 @@ namespace MifBridge
 		/** The fields every water read shares. Kept in one place so list_ and describe_ cannot drift
 		 *  into disagreeing about the same body - the house rule that a read is the verification path
 		 *  only holds if two reads of the same thing agree. */
-		void WaterBodySummary(AWaterBody* Body, const TSharedRef<FJsonObject>& J)
+		/** bAllowZoneRecompute: may this call MUTATE the level to answer? See the UpdateWaterZones
+		 *  block below. Writes pass true; reads must not, and pass false. */
+		void WaterBodySummary(AWaterBody* Body, const TSharedRef<FJsonObject>& J,
+		                      bool bAllowZoneRecompute)
 		{
 			FString TypeName, TypeDisplay;
 			WaterTypeNames(Body->GetWaterBodyType(), TypeName, TypeDisplay);
@@ -188,10 +191,25 @@ namespace MifBridge
 			// coverage count, same file): a body created moments before a covering zone can still read
 			// back with a stale zone reference matching neither the new zone nor null, because the
 			// recompute this forces is otherwise left to whatever OTHER tick happens to run it, whenever
-			// that is. This function is shared by create_water_body, describe_water_body and
-			// list_water_bodies, so a caller reading a body right after changing the zone situation
-			// around it is exactly the case this closes.
-			if (BodyComp) { BodyComp->UpdateWaterZones(); }
+			// that is.
+			//
+			// GATED ON THE CALLER 2026-08-30. That reasoning is right for the two WRITE callers, and
+			// it was being applied to the two READ callers as well, because this helper is shared by
+			// four endpoints and the call was unconditional. UpdateWaterZones is not a query - it
+			// recomputes the owning zone and marks the affected zones for rebuild - so
+			// list_water_bodies and describe_water_body, both of whose bucket comments say
+			// "Bucket: read-only", were mutating the level simply by being called. A read that
+			// changes what it is reading is the one thing a read must not do, and this one did it on
+			// every body in the level.
+			if (bAllowZoneRecompute && BodyComp) { BodyComp->UpdateWaterZones(); }
+			if (!bAllowZoneRecompute)
+			{
+				// Say which question was answered. Without the recompute this is the component's
+				// cached OwningWaterZone, which is right almost always and stale in exactly the
+				// window the write callers care about - so name it rather than let a caller assume
+				// it is freshly resolved.
+				J->SetBoolField(TEXT("waterZoneFromCache"), true);
+			}
 			if (AWaterZone* Zone = BodyComp ? BodyComp->GetWaterZone() : nullptr)
 			{
 				J->SetStringField(TEXT("waterZone"), Zone->GetPathName());
@@ -253,7 +271,7 @@ namespace MifBridge
 			if (!WantName.IsEmpty() && !Body->GetActorLabel().Contains(WantName)) { continue; }
 
 			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
-			WaterBodySummary(Body, J);
+			WaterBodySummary(Body, J, /*bAllowZoneRecompute=*/false);
 			Bodies.Add(MakeShared<FJsonValueObject>(J));
 		}
 
@@ -306,7 +324,7 @@ namespace MifBridge
 			return;
 		}
 
-		WaterBodySummary(Body, Out);
+		WaterBodySummary(Body, Out, /*bAllowZoneRecompute=*/false);
 
 		if (UWaterBodyComponent* Comp = Body->GetWaterBodyComponent())
 		{
@@ -478,7 +496,7 @@ namespace MifBridge
 			}
 		}
 
-		WaterBodySummary(Body, Out);
+		WaterBodySummary(Body, Out, /*bAllowZoneRecompute=*/true);
 		if (!LabelNote.IsEmpty()) { Out->SetStringField(TEXT("labelNote"), LabelNote); }
 		Out->SetNumberField(TEXT("splinePointsSet"), PointsSet);
 		// NOT an unconditional "it still needs a zone" claim - that was wrong often enough to remove.
@@ -737,7 +755,7 @@ namespace MifBridge
 			return;
 		}
 
-		WaterBodySummary(Body, Out);
+		WaterBodySummary(Body, Out, /*bAllowZoneRecompute=*/true);
 		Out->SetNumberField(TEXT("splinePointsSet"), PointsSet);
 		// READ BACK rather than echo. ResetSpline rebuilds the body's derived data and the engine is
 		// entitled to reject or collapse points; the house rule is that a mutation without a read-back

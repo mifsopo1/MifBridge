@@ -43,6 +43,7 @@
 // EWidgetUpdateFlags::NeedsTick and does not keep Slate awake; an active timer does.
 
 #include "MifBridgeHandlers.h"
+#include "MifBridgeStyle.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Input/SComboBox.h"
 #include "MifBridge.h"
@@ -81,50 +82,27 @@ static TAutoConsoleVariable<bool> CVarMifBridgeAutoOpen(
 namespace MifPanel
 {
 	// ---------------------------------------------------------------- palette
-	// MifBridge purple and grey. The first version tinted a white brush with a mid purple over a light
-	// background and came out washed-out lavender; these are the real values, dark-first.
-	// HEX, converted through FColor. The first version wrote these as raw FLinearColor components
-	// picked by eye from a design palette - but those numbers were sRGB values, and FLinearColor takes
-	// LINEAR ones. Slate rendered every colour roughly twice as bright as intended, which is why the
-	// deep header purple came out as washed-out lavender. FLinearColor(FColor) runs the sRGB->linear
-	// conversion, so these are the values you would type into a colour picker and get back on screen.
-	static FLinearColor Hex(const TCHAR* RGB) { return FLinearColor(FColor::FromHex(RGB)); }
-
-	static const FLinearColor Ink        = Hex(TEXT("0B0B12"));   // window background
-	static const FLinearColor Card       = Hex(TEXT("16161F"));   // message card
-	static const FLinearColor CardHi     = Hex(TEXT("221A38"));   // newest card, purple-tinted
-	static const FLinearColor HeaderTop  = Hex(TEXT("3B1E6E"));   // header
-	static const FLinearColor Purple     = Hex(TEXT("8B5CF6"));   // THE brand purple
-	static const FLinearColor PurpleSoft = Hex(TEXT("C4B5FD"));   // headings on dark
-	static const FLinearColor Steel      = Hex(TEXT("3A3F52"));   // dividers, pill chips
-	static const FLinearColor TextDim    = Hex(TEXT("7B8296"));
-	static const FLinearColor TextBody   = Hex(TEXT("E2E5EE"));
-	static const FLinearColor Read       = Hex(TEXT("4FADF5"));   // blue   - reads
-	static const FLinearColor Write      = Hex(TEXT("A855F7"));   // purple - mutations
-	static const FLinearColor Blocked    = Hex(TEXT("FBA53E"));   // amber  - gate refused
-	static const FLinearColor Failed     = Hex(TEXT("F1666D"));   // red    - handler said no
-	static const FLinearColor Live       = Hex(TEXT("4FDD8C"));   // green  - in flight
-	// Rounded brushes. Function-local statics: FSlateRoundedBoxBrush is procedural and owns no texture,
-	// so it has no resource to outlive the module — unlike a registered FSlateStyleSet, which would
-	// have to be unregistered in step with DLL unload or leave dangling brush pointers behind.
-	static const FSlateBrush* CardBrush(const FLinearColor& C, float Radius)
-	{
-		// One static per (colour, radius) pair used below. Deliberately explicit rather than a map:
-		// there are five, and a cache keyed on a float is more machinery than the problem deserves.
-		if (Radius > 7.0f)
-		{
-			static const FSlateRoundedBoxBrush B8Card (Card,      8.0f);
-			static const FSlateRoundedBoxBrush B8Hi   (CardHi,    8.0f);
-			static const FSlateRoundedBoxBrush B8Head (HeaderTop, 8.0f);
-			if (&C == &CardHi)    { return &B8Hi; }
-			if (&C == &HeaderTop) { return &B8Head; }
-			return &B8Card;
-		}
-		static const FSlateRoundedBoxBrush B4Steel(Steel, 4.0f);
-		return &B4Steel;
-	}
-
-	static const FSlateBrush* Flat() { return FAppStyle::GetBrush("WhiteBrush"); }
+	// Moved to MifBridgeStyle.h (2026-08-29) so every sibling view (Skeletal Split, Behavior, Inherit,
+	// Brainmap, Heatmap, Perf) shares these exact values instead of each inventing its own - that
+	// drift is why the non-Activity tabs read as plainer. `using` re-exports each name into MifPanel
+	// so every existing MifPanel::Whatever reference below and in the rest of this file keeps
+	// resolving unchanged.
+	using MifStyle::Ink;
+	using MifStyle::Card;
+	using MifStyle::CardHi;
+	using MifStyle::HeaderTop;
+	using MifStyle::Purple;
+	using MifStyle::PurpleSoft;
+	using MifStyle::Steel;
+	using MifStyle::TextDim;
+	using MifStyle::TextBody;
+	using MifStyle::Read;
+	using MifStyle::Write;
+	using MifStyle::Blocked;
+	using MifStyle::Failed;
+	using MifStyle::Live;
+	using MifStyle::CardBrush;
+	using MifStyle::Flat;
 
 	// ---------------------------------------------------------------- work-type colour coding
 	//
@@ -183,19 +161,11 @@ namespace MifPanel
 	}
 }
 
-// A small rounded status pill: coloured text on a dark chip.
+// A small rounded status pill: coloured text on a dark chip. Now MifBridgeStyle.h's MifStyle::Pill -
+// kept as a thin alias so this file's existing MifPill(...) call sites need no other changes.
 static TSharedRef<SWidget> MifPill(const FText& Text, const FLinearColor& Colour)
 {
-	return SNew(SBorder)
-		.BorderImage(MifPanel::CardBrush(MifPanel::Steel, 4.0f))
-		.BorderBackgroundColor(FSlateColor(FLinearColor(Colour.R, Colour.G, Colour.B, 0.16f)))
-		.Padding(FMargin(6, 1))
-		[
-			SNew(STextBlock)
-				.Text(Text)
-				.ColorAndOpacity(FSlateColor(Colour))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 7))
-		];
+	return MifStyle::Pill(Text, Colour);
 }
 
 // One labelled stat in the header strip.
@@ -782,10 +752,15 @@ private:
 										// A REAL brush, not a glyph. U+2691 (the flag character) is not in the
 										// editor's font and rendered as an empty box - the second time on
 										// this panel that an exotic code point did not survive contact with
-										// the font. Icons.Warning is core Slate style, present in both
-										// trees (StarshipCoreStyle.cpp:311 in 5.3, same name in 5.7).
+										// the font. Was Icons.Warning, which every row carries regardless of
+										// status - Andre's own first read of a screenshot (2026-08-29) was
+										// that the whole feed looked flagged, because a warning triangle on a
+										// clean READ row reads as an alarm no matter what it is actually
+										// bound to. Icons.Comment is the same "annotate this" idea without the
+										// alarm colour-coding baked into the glyph. Present in both trees,
+										// same asset path (StarshipStyle.cpp:419 in 5.3, :430 in 5.7).
 										SNew(SImage)
-											.Image(FAppStyle::GetBrush("Icons.Warning"))
+											.Image(FAppStyle::GetBrush("Icons.Comment"))
 											.ColorAndOpacity(FSlateColor(
 												FlaggedThisSession.Contains(R.Endpoint)
 													? MifPanel::Blocked : MifPanel::Steel))

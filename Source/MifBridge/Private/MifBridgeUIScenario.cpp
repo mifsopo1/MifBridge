@@ -587,12 +587,18 @@ namespace MifBridge
 			return;
 		}
 		Out->SetBoolField(TEXT("wasActive"), true);
-		Out->SetStringField(TEXT("finalState"), StateName(GScenario.State));
+		// Captured BEFORE the mutation below, and reused by the log line. The log used to format
+		// StateName(GScenario.State) after the assignment two lines down, so its "(was %s)" could
+		// only ever print STOPPED - the one value it was written to rule out. The JSON was always
+		// right; only the log lied, which is worse than it sounds because the log is what gets read
+		// when the JSON is long gone.
+		const TCHAR* const PriorState = StateName(GScenario.State);
+		Out->SetStringField(TEXT("finalState"), PriorState);
 		UnregisterTicker();
 		GScenario.bActive = false;
 		GScenario.State = EUIScenarioState::Stopped;
 		UE_LOG(LogMifBridge, Log, TEXT("ui_scenario_stop: %s (was %s)"),
-			*GScenario.ScenarioId, StateName(GScenario.State));
+			*GScenario.ScenarioId, PriorState);
 		Out->SetObjectField(TEXT("status"), StatusJson());
 	}
 }

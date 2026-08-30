@@ -195,6 +195,13 @@ namespace MifBridge
 		Info.ModifierOp = Op;
 		Info.ModifierMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(static_cast<float>(Magnitude)));
 
+		// Modify() BEFORE the mutation, not just MarkPackageDirty() after it. Two things depend on
+		// it and both were broken without it: the undo transaction has nothing to restore (so Ctrl+Z
+		// - the escape hatch this whole bridge promises - silently did nothing for this endpoint),
+		// and FMifScratchWatch listens on FCoreUObjectDelegates::OnObjectModified, which only
+		// Modify() raises. So appending a modifier to a real /Game asset was reported as
+		// scratchClean:true. MarkPackageDirty sets the dirty flag; it announces nothing.
+		Effect->Modify();
 		const int32 Index = Effect->Modifiers.Add(Info);
 		Effect->GetOutermost()->MarkPackageDirty();
 

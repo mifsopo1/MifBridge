@@ -282,14 +282,36 @@ namespace MifBridge
 			// retargeter this endpoint family created reported chainCount:0 forever on 5.6+, silently,
 			// while compiling and running clean. AddDefaultOps() is the exact call
 			// UIKRetargetFactory::FactoryCreateNew makes (IKRetargetFactory.cpp:32) and is documented
-			// idempotent ("If any of these ops are already present, they will not be re-added"), so
-			// calling it unconditionally here repairs a bare create_asset retargeter and is a genuine
-			// no-op on one already built through the factory or by a prior call to this same resolver.
+			// idempotent, so calling it unconditionally here repairs a bare create_asset retargeter
+			// and is a no-op on one already built through the factory.
+			//
+			// THAT WAS WRONG, corrected 2026-08-30 after reading the engine rather than the comment.
+			// AddDefaultOps (IKRetargeterController.cpp) is six bare AddRetargetOp calls with no
+			// presence test of its own, and the quoted sentence "If any of these ops are already
+			// present, they will not be re-added" does not appear anywhere in the IKRig source -
+			// grep over the whole plugin returns nothing. The only dedup lives one level down in
+			// AddRetargetOp, and it applies ONLY to ops whose IsSingleton() is true. The base
+			// declares `virtual bool IsSingleton() const { return false; }` and of the six defaults
+			// only FIKRetargetCurveRemapOp overrides it to true. So five of the six - PelvisMotion,
+			// FKChains, RunIKRig, IKChains and RootMotion - were appended AGAIN on every call, and
+			// AddDefaultOps also opens a transaction and calls Asset->Modify().
+			//
+			// IKResolveRetargeter is shared by four endpoints, one of which is
+			// list_retarget_chain_mapping - a READ. So merely listing a retargeter's chain mapping
+			// grew its op stack by five and dirtied the asset, every time it was called.
+			//
+			// The repair this was written for is real, but it is only ever needed on a retargeter
+			// that has no ops at all - which is exactly what create_asset produces. Guarding on that
+			// keeps the repair and removes the accumulation.
+			//
 			// On 5.3 this whole Ops concept does not exist - AddDefaultOps is not even a symbol in
 			// D:/UE532/Engine/Plugins/Animation/IKRig, confirmed by grep, not inferred - and chain
 			// mapping already worked correctly there without it, which is why this is gated rather than
 			// unconditional.
-			C->AddDefaultOps();
+			if (C->GetNumRetargetOps() == 0)
+			{
+				C->AddDefaultOps();
+			}
 #endif
 			return C;
 		}

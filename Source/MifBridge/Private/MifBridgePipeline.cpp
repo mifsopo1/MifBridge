@@ -21,6 +21,64 @@ namespace MifBridge
 		{
 			Arr.Add(MakeShared<FJsonValueString>(Line));
 		}
+
+		/** Read at most MaxBytes from the END of a file, as text.
+		 *
+		 *  WHY THIS EXISTS. Both log endpoints carried a "guard against pathological log sizes
+		 *  stalling the game thread" whose entire body was `Out->SetBoolField("truncatedRead", true)`.
+		 *  It read the whole file anyway - the size was computed, compared, and then never used
+		 *  again - so on a 2 GB log it allocated 2 GB on the game thread and reported the truncation
+		 *  it had not performed. docs/audit/work/J_dds2_project.md:342 found exactly this on
+		 *  2026-07-26 and said the revision "should make the guard real (refuse or tail-read past the
+		 *  cap), not inherit the flag-only behaviour". It was then copied verbatim into read_engine_log
+		 *  when that endpoint was added. This is the tail-read that archive asked for.
+		 *
+		 *  ReadFlags matters: read_engine_log reads a file THIS process holds open for write, which
+		 *  needs FILEREAD_AllowWrite or the open fails with a sharing violation.
+		 *
+		 *  When truncated, everything up to and including the first newline in the window is dropped,
+		 *  because seeking to a byte offset lands mid-line and half a line is worse than no line. */
+		bool LoadFileTail(const FString& Path, int64 MaxBytes, uint32 ReadFlags,
+		                  FString& OutText, bool& bOutTruncated)
+		{
+			bOutTruncated = false;
+			TUniquePtr<FArchive> Reader(IFileManager::Get().CreateFileReader(*Path, ReadFlags));
+			if (!Reader)
+			{
+				return false;
+			}
+
+			const int64 Size = Reader->TotalSize();
+			int64 Offset = 0;
+			if (Size > MaxBytes)
+			{
+				Offset = Size - MaxBytes;
+				bOutTruncated = true;
+				Reader->Seek(Offset);
+			}
+
+			const int64 Count = Size - Offset;
+			TArray<uint8> Bytes;
+			Bytes.SetNumUninitialized(static_cast<int32>(Count) + 1);
+			Reader->Serialize(Bytes.GetData(), Count);
+			Bytes[static_cast<int32>(Count)] = 0;
+			if (!Reader->Close())
+			{
+				return false;
+			}
+
+			OutText = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Bytes.GetData())));
+
+			if (bOutTruncated)
+			{
+				int32 NL = INDEX_NONE;
+				if (OutText.FindChar(TEXT('\n'), NL))
+				{
+					OutText.MidInline(NL + 1);
+				}
+			}
+			return true;
+		}
 	}
 
 	// --- read_modloader_log -------------------------------------------------
@@ -60,19 +118,24 @@ namespace MifBridge
 			return;
 		}
 
-		// Guard against pathological log sizes stalling the game thread.
-		const int64 FileSize = IFileManager::Get().FileSize(*Path);
-		if (FileSize > 64 * 1024 * 1024)
-		{
-			Out->SetBoolField(TEXT("truncatedRead"), true);
-		}
-
-		TArray<FString> AllLines;
-		if (!FFileHelper::LoadFileToStringArray(AllLines, *Path))
+		// Guard against pathological log sizes stalling the game thread. This one is REAL - it
+		// tail-reads rather than setting a flag and reading the whole file anyway. See LoadFileTail.
+		FString FullText;
+		bool bTruncated = false;
+		if (!LoadFileTail(Path, 64 * 1024 * 1024, 0, FullText, bTruncated))
 		{
 			Fail(Out, FString::Printf(TEXT("could not read log: %s"), *Path));
 			return;
 		}
+		Out->SetBoolField(TEXT("truncatedRead"), bTruncated);
+		if (bTruncated)
+		{
+			Out->SetStringField(TEXT("truncatedReadNote"),
+				TEXT("log exceeded 64 MB - only the last 64 MB was read, so the oldest entries are "
+					 "absent and line numbers do not correspond to the file's own"));
+		}
+		TArray<FString> AllLines;
+		FullText.ParseIntoArrayLines(AllLines, /*InCullEmpty*/ false);
 
 		TArray<FString> Kept;
 		if (Filter.IsEmpty())
@@ -151,13 +214,6 @@ namespace MifBridge
 			return;
 		}
 
-		// Same pathological-size guard read_modloader_log uses - this log grows for the entire
-		// editor session, so it can be much larger than a fresh modloader log.
-		const int64 FileSize = IFileManager::Get().FileSize(*Path);
-		if (FileSize > 64 * 1024 * 1024)
-		{
-			Out->SetBoolField(TEXT("truncatedRead"), true);
-		}
 
 		// The log file is OPEN FOR WRITE by THIS SAME PROCESS the whole time, which
 		// LoadFileToStringArray cannot read - live-caught, not assumed: it opens its read handle via
@@ -168,11 +224,22 @@ namespace MifBridge
 		// only LoadFileToString(..., ReadFlags) exposes it - LoadFileToStringArray does not, so this
 		// reads the whole file as one string with that flag and splits it into lines itself,
 		// InCullEmpty=false so line numbers still line up with what a human would see in the file.
+		// Same real pathological-size guard read_modloader_log uses - this log grows for the entire
+		// editor session, so it can be much larger than a fresh modloader log, which is exactly why
+		// the cap has to actually cap. FILEREAD_AllowWrite for the sharing reason described above.
 		FString FullText;
-		if (!FFileHelper::LoadFileToString(FullText, *Path, FFileHelper::EHashOptions::None, FILEREAD_AllowWrite))
+		bool bTruncated = false;
+		if (!LoadFileTail(Path, 64 * 1024 * 1024, FILEREAD_AllowWrite, FullText, bTruncated))
 		{
 			Fail(Out, FString::Printf(TEXT("could not read log: %s"), *Path));
 			return;
+		}
+		Out->SetBoolField(TEXT("truncatedRead"), bTruncated);
+		if (bTruncated)
+		{
+			Out->SetStringField(TEXT("truncatedReadNote"),
+				TEXT("log exceeded 64 MB - only the last 64 MB was read, so the oldest entries are "
+					 "absent and the line numbers below do not correspond to the file's own"));
 		}
 		TArray<FString> AllLines;
 		FullText.ParseIntoArrayLines(AllLines, /*InCullEmpty*/ false);

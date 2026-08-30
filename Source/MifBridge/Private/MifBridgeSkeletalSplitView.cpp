@@ -24,11 +24,14 @@
 // distinction analyze_skeletal_split's own `cleanlySeparableBones` field exists to draw.
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
+#include "MifBridgeStyle.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Dom/JsonObject.h"
 #include "Styling/AppStyle.h"
+#include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SSearchBox.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSplitter.h"
@@ -41,13 +44,17 @@
 
 namespace MifSkeletalSplit
 {
-	// sRGB hex through FColor::FromHex - see MifBridgeInheritView.cpp's note on why the float
-	// constructor renders everything twice as bright.
-	static const FLinearColor TextDim   = FLinearColor(FColor::FromHex(TEXT("9CA3AF")));
-	static const FLinearColor TextHi    = FLinearColor(FColor::FromHex(TEXT("E5E7EB")));
-	static const FLinearColor Green     = FLinearColor(FColor::FromHex(TEXT("34D399")));
-	static const FLinearColor Amber     = FLinearColor(FColor::FromHex(TEXT("F59E0B")));
-	static const FLinearColor Red       = FLinearColor(FColor::FromHex(TEXT("F87171")));
+	// The panel's shared palette (MifBridgeStyle.h), not this view's own - 2026-08-29, so every tab
+	// reads as one consistent product instead of Activity being the only one with a real design pass.
+	// Old local names kept as aliases so the rest of this file's colour references below need no
+	// other edits: TextHi -> TextBody, Green -> Live (separable, good), Amber -> Blocked (cooked,
+	// caution), Red -> Failed (shared across sections, the thing splitting can't do cleanly).
+	using MifStyle::TextDim;
+	using MifStyle::TextBody;
+	static const FLinearColor& TextHi = MifStyle::TextBody;
+	static const FLinearColor& Green  = MifStyle::Live;
+	static const FLinearColor& Amber  = MifStyle::Blocked;
+	static const FLinearColor& Red    = MifStyle::Failed;
 
 	/** One colour per material/section index, deterministic and stable across a call - the same index
 	 *  always renders the same colour within one response, which is what makes the bone list and the
@@ -95,12 +102,32 @@ namespace MifSkeletalSplit
 				+ SSplitter::Slot().Value(0.3f)
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight().Padding(6.f)
+					+ SVerticalBox::Slot().AutoHeight().Padding(6.f, 6.f, 6.f, 3.f)
 					[
+						// BOUND, not baked - MifBridgePanel.cpp's own age-label rule applies here too: the
+						// count has to reflect Assets AFTER filtering, which only the search box's own
+						// handler mutates, so a one-time FText::Format captured at Construct() would freeze
+						// at "188" forever regardless of what the box narrowed it to.
 						SNew(STextBlock)
-							.Text(FText::Format(LOCTEXT("Count", "{0} skeletal meshes"),
-								FText::AsNumber(Assets.Num())))
+							.Text_Lambda([this]()
+							{
+								return AssetFilter.IsEmpty()
+									? FText::Format(LOCTEXT("Count", "{0} skeletal meshes"),
+										FText::AsNumber(AllAssets.Num()))
+									: FText::Format(LOCTEXT("CountFiltered", "{0} of {1} skeletal meshes"),
+										FText::AsNumber(Assets.Num()), FText::AsNumber(AllAssets.Num()));
+							})
 							.ColorAndOpacity(FSlateColor(TextDim))
+					]
+					// 188 meshes with no way to narrow them was the single biggest usability gap Andre
+					// flagged from a screenshot (2026-08-29) - a plain scrolling list of everything with
+					// nothing to type into. Filters Assets down from AllAssets; never touches the
+					// asset-registry query itself, so RefreshAssetList() stays the one source of truth.
+					+ SVerticalBox::Slot().AutoHeight().Padding(6.f, 0.f, 6.f, 6.f)
+					[
+						SNew(SSearchBox)
+							.HintText(LOCTEXT("FilterHint", "filter by name"))
+							.OnTextChanged(this, &SSkeletalSplitView::OnAssetFilterChanged)
 					]
 					+ SVerticalBox::Slot().FillHeight(1.f)
 					[
@@ -132,6 +159,36 @@ namespace MifSkeletalSplit
 						SAssignNew(SectionStrip, SWrapBox)
 							.UseAllottedSize(true)
 					]
+					// A mesh with 161 bones and one shared "head" is 160 identical grey "unused" rows
+					// burying the one row the whole view exists to surface (2026-08-29 screenshot review).
+					// Defaults ON: the view's own purpose is "which bones could be split cleanly", a
+					// question "unused" bones cannot answer either way, so hiding them first and letting
+					// the count below say how many are hidden reads truer than showing the full skeleton
+					// by default.
+					+ SVerticalBox::Slot().AutoHeight().Padding(8.f, 0.f, 8.f, 2.f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[
+							SNew(SCheckBox)
+								.IsChecked(bHideUnusedBones ? ECheckBoxState::Checked : ECheckBoxState::Unchecked)
+								.OnCheckStateChanged(this, &SSkeletalSplitView::OnHideUnusedChanged)
+						]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4.f, 0.f, 0.f, 0.f)
+						[
+							SNew(STextBlock)
+								.Text_Lambda([this]()
+								{
+									const int32 Hidden = AllBones.Num() - Bones.Num();
+									return Hidden > 0
+										? FText::Format(LOCTEXT("HideUnusedN", "hide unused bones ({0} hidden)"),
+											FText::AsNumber(Hidden))
+										: LOCTEXT("HideUnused", "hide unused bones");
+								})
+								.ColorAndOpacity(FSlateColor(TextDim))
+								.Font(FCoreStyle::GetDefaultFontStyle("Regular", 8))
+						]
+					]
 					+ SVerticalBox::Slot().FillHeight(1.f).Padding(4.f)
 					[
 						SAssignNew(BoneList, SListView<FBonePtr>)
@@ -144,18 +201,22 @@ namespace MifSkeletalSplit
 		}
 
 	private:
-		TArray<FMeshAssetPtr> Assets;
+		TArray<FMeshAssetPtr> AllAssets;   // every SkeletalMesh in the project - the asset-registry query's own result
+		TArray<FMeshAssetPtr> Assets;      // AllAssets narrowed by AssetFilter - what AssetList actually shows
 		TArray<FSectionRow> Sections;
-		TArray<FBonePtr> Bones;
+		TArray<FBonePtr> AllBones;         // every bone the last analyze_skeletal_split call returned
+		TArray<FBonePtr> Bones;            // AllBones narrowed by bHideUnusedBones - what BoneList actually shows
 		TSharedPtr<SListView<FMeshAssetPtr>> AssetList;
 		TSharedPtr<SListView<FBonePtr>> BoneList;
 		TSharedPtr<STextBlock> Header;
 		TSharedPtr<STextBlock> Verdict;
 		TSharedPtr<SWrapBox> SectionStrip;
+		FString AssetFilter;
+		bool bHideUnusedBones = true;
 
 		void RefreshAssetList()
 		{
-			Assets.Reset();
+			AllAssets.Reset();
 			IAssetRegistry& Registry =
 				FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
 			TArray<FAssetData> Found;
@@ -169,15 +230,58 @@ namespace MifSkeletalSplit
 				FMeshAssetPtr P = MakeShared<FMeshAsset>();
 				P->Path = A.GetObjectPathString();
 				P->Display = A.AssetName.ToString();
-				Assets.Add(P);
+				AllAssets.Add(P);
 			}
-			Assets.Sort([](const FMeshAssetPtr& A, const FMeshAssetPtr& B)
+			AllAssets.Sort([](const FMeshAssetPtr& A, const FMeshAssetPtr& B)
 				{ return A->Display < B->Display; });
+			ApplyAssetFilter();
+		}
+
+		void OnAssetFilterChanged(const FText& NewText)
+		{
+			AssetFilter = NewText.ToString();
+			ApplyAssetFilter();
+		}
+
+		void ApplyAssetFilter()
+		{
+			Assets.Reset();
+			for (const FMeshAssetPtr& A : AllAssets)
+			{
+				if (AssetFilter.IsEmpty() || A->Display.Contains(AssetFilter))
+				{
+					Assets.Add(A);
+				}
+			}
+			if (AssetList.IsValid()) { AssetList->RequestListRefresh(); }
+		}
+
+		void OnHideUnusedChanged(ECheckBoxState NewState)
+		{
+			bHideUnusedBones = (NewState == ECheckBoxState::Checked);
+			ApplyBoneFilter();
+		}
+
+		void ApplyBoneFilter()
+		{
+			Bones.Reset();
+			for (const FBonePtr& B : AllBones)
+			{
+				if (!bHideUnusedBones || B->bInfluencesGeometry)
+				{
+					Bones.Add(B);
+				}
+			}
+			if (BoneList.IsValid()) { BoneList->RequestListRefresh(); }
 		}
 
 		TSharedRef<ITableRow> MakeAssetRow(FMeshAssetPtr In, const TSharedRef<STableViewBase>& Owner)
 		{
+			// The purple RowStyle replaces Slate's default blue selection highlight - see
+			// MifBridgeStyle.h's own note on why that mattered here specifically.
 			return SNew(STableRow<FMeshAssetPtr>, Owner)
+				.Style(&MifStyle::RowStyle())
+				.Padding(FMargin(6.f, 4.f))
 			[
 				SNew(STextBlock)
 					.Text(FText::FromString(In->Display))
@@ -189,7 +293,8 @@ namespace MifSkeletalSplit
 		void OnAssetPicked(FMeshAssetPtr In, ESelectInfo::Type)
 		{
 			Sections.Reset();
-			Bones.Reset();
+			AllBones.Reset();
+			ApplyBoneFilter();   // clears the visible list too, and refreshes it once rather than twice
 			if (SectionStrip.IsValid()) { SectionStrip->ClearChildren(); }
 			if (!In.IsValid()) { return; }
 
@@ -207,7 +312,6 @@ namespace MifSkeletalSplit
 			{
 				Header->SetText(FText::FromString(Err));
 				Verdict->SetText(FText::GetEmpty());
-				if (BoneList.IsValid()) { BoneList->RequestListRefresh(); }
 				return;
 			}
 
@@ -245,7 +349,7 @@ namespace MifSkeletalSplit
 			Verdict->SetColorAndOpacity(FSlateColor(bCooked ? Amber : TextDim));
 
 			RebuildSectionStrip();
-			if (BoneList.IsValid()) { BoneList->RequestListRefresh(); }
+			ApplyBoneFilter();
 		}
 
 		void BuildSections(const TArray<TSharedPtr<FJsonValue>>& Json)
@@ -286,7 +390,7 @@ namespace MifSkeletalSplit
 						if (S.IsValid() && S->TryGetNumber(Idx)) { B->Sections.Add(Idx); }
 					}
 				}
-				Bones.Add(B);
+				AllBones.Add(B);
 			}
 		}
 
@@ -355,7 +459,7 @@ namespace MifSkeletalSplit
 					SNew(SBox).WidthOverride(14.f).HeightOverride(14.f)
 					[
 						SNew(SBorder)
-						.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+						.BorderImage(MifStyle::RoundDot())
 						.BorderBackgroundColor(SectionColour(MatIdx))
 						.ToolTipText(FText::FromString(FString::Printf(TEXT("section %d"), Idx)))
 					]
@@ -365,18 +469,22 @@ namespace MifSkeletalSplit
 			const bool bSeparable = In->Sections.Num() == 1;
 			const FLinearColor StatusColour = !In->bInfluencesGeometry ? TextDim
 				: bSeparable ? Green : (In->Sections.Num() > 1 ? Red : Amber);
-			const FString StatusText = !In->bInfluencesGeometry ? TEXT("unused")
-				: bSeparable ? TEXT("separable") : FString::Printf(TEXT("shared x%d"), In->Sections.Num());
+			const FText StatusText = !In->bInfluencesGeometry ? LOCTEXT("Unused", "unused")
+				: bSeparable ? LOCTEXT("Separable", "separable")
+				: FText::Format(LOCTEXT("SharedXN", "shared x{0}"), FText::AsNumber(In->Sections.Num()));
 
+			// A real badge, matching the READ/WRITE/BLOCKED pill language Activity already established,
+			// instead of plain bold coloured text - the same status information, but reading as part of
+			// the same product rather than a debug label bolted on.
 			Row->AddSlot().FillWidth(1.f).VAlign(VAlign_Center).HAlign(HAlign_Right).Padding(8.f, 0.f, 4.f, 0.f)
 			[
-				SNew(STextBlock)
-					.Text(FText::FromString(StatusText))
-					.ColorAndOpacity(FSlateColor(StatusColour))
-					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 8))
+				MifStyle::Pill(StatusText, StatusColour, 7.f)
 			];
 
-			return SNew(STableRow<FBonePtr>, Owner)[ Row ];
+			return SNew(STableRow<FBonePtr>, Owner)
+				.Style(&MifStyle::RowStyle())
+				.Padding(FMargin(2.f, 2.f))
+				[ Row ];
 		}
 	};
 }
