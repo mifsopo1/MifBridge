@@ -112,13 +112,36 @@ def main():
         print("  Relaunch with MIF_BRIDGE_WRITE_MODE=full to reach them.")
     else:
         bad = M.raw_post("source_control_checkout", {"path": "/Game/X", "action": "submit"})
-        check("T4702 checking IN is not offered, and the refusal says so",
-              bad.get("ok") is False and "not offered" in (bad.get("error") or ""),
-              (bad.get("error") or "")[:200])
+        # WHICH REFUSAL FIRED MATTERS. source_control_checkout refuses on the most fundamental
+        # failure first, and on a project with NO revision control provider that is the provider
+        # check - execution never reaches the per-action validation whose wording is asserted
+        # below. Asserting it anyway made this fail on every run here, in both sweep passes.
+        #
+        # The same mistake as test_consolidate's T5102 and the struct suites' cooked-asset
+        # selection, all found the same day: naming a late gate's wording without establishing
+        # that anything gets that far.
+        no_provider = "no revision control provider" in (bad.get("error") or "")
         rev = M.raw_post("source_control_checkout", {"path": "/Game/X", "action": "revert"})
-        check("T4702 revert without confirm is refused - it discards local changes",
-              rev.get("ok") is False and "DISCARDS" in (rev.get("error") or ""),
-              (rev.get("error") or "")[:200])
+        if no_provider:
+            print("  NOTE  this project has no revision control provider, so the endpoint refuses")
+            print("        at the provider check and the per-action refusals below are")
+            print("        unreachable. Asserting the provider refusal instead - the per-action")
+            print("        wording is NOT verified here.")
+            check("T4702 checkin is refused, naming the missing provider rather than something "
+                  "vaguer",
+                  bad.get("ok") is False and bad.get("available") is False
+                  and bad.get("provider") == "None",
+                  json.dumps(bad)[:220])
+            check("T4702 revert is refused the same way, and reports the same provider state",
+                  rev.get("ok") is False and rev.get("available") is False,
+                  json.dumps(rev)[:220])
+        else:
+            check("T4702 checking IN is not offered, and the refusal says so",
+                  bad.get("ok") is False and "not offered" in (bad.get("error") or ""),
+                  (bad.get("error") or "")[:200])
+            check("T4702 revert without confirm is refused - it discards local changes",
+                  rev.get("ok") is False and "DISCARDS" in (rev.get("error") or ""),
+                  (rev.get("error") or "")[:200])
         nopath = M.raw_post("source_control_checkout", {"action": "checkout"})
         check("T4702 a missing path is refused", nopath.get("ok") is False,
               (nopath.get("error") or "")[:180])

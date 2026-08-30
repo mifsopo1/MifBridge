@@ -81,8 +81,25 @@ def main():
     print("        list_level_actors sees %d; descriptors report %s scanned, %s loaded"
           % (seen, scanned, loaded))
 
-    check("T2101 loadedInEditor agrees with what list_level_actors can see",
-          loaded == seen, "descriptors say %s loaded, list_level_actors returned %d" % (loaded, seen))
+    # ONE-DIRECTIONAL, because these are not the same set. Every actor the descriptors mark
+    # loadedInEditor must be visible to list_level_actors - that is the property worth asserting.
+    # The reverse does NOT hold: list_level_actors also returns actors with no partition descriptor
+    # at all, which is everything anything else has spawned into the level.
+    #
+    # The equality this used to assert only held on a pristine map. The first full sweep recorded
+    # the proof: descriptors 74 / list 80 on pass 1, descriptors 74 / list 169 on pass 2 - the
+    # descriptor count constant, the level count climbing as other suites spawned actors. This
+    # suite was among the 42 that had never been in a sweep, so nothing had ever run it after
+    # something else had added an actor.
+    check("T2101 every loaded descriptor is visible to list_level_actors (loaded <= seen)",
+          loaded <= seen,
+          "descriptors say %s loaded, list_level_actors returned only %d - a loaded actor the "
+          "level cannot see is the real defect this guards" % (loaded, seen))
+    if seen > loaded:
+        print("  NOTE  list_level_actors sees %d and the descriptors mark %d loaded. The extra %d"
+              % (seen, loaded, seen - loaded))
+        print("        have no partition descriptor - spawned actors and editor-only ones. That is")
+        print("        expected, not a discrepancy.")
 
     if scanned == loaded:
         print("  NOTE  T2101 every actor in this map is currently loaded, so there is nothing")
