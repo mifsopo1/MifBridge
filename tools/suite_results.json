@@ -3,8 +3,8 @@
   "suite": "test_anim_nodes.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 13   FAIL 0",
-  "seconds": 1.7,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 1.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -13,7 +13,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -21,8 +21,8 @@
   "suite": "test_audio_nav.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 23   FAIL 0",
-  "seconds": 1.9,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 1.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -31,52 +31,61 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
+ },
+ {
+  "suite": "test_blender_authoring.py",
+  "pass": 1,
+  "rc": 2,
+  "summary": "",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "tail": "MifBlender authoring ops - 127.0.0.1:8792\n  Nothing answered a ping on 127.0.0.1:8792, so no op was exercised.\n  SKIP (exit 2) - a suite that verified nothing must not report success."
  },
  {
   "suite": "test_blender_gen.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 20   FAIL 0",
-  "seconds": 13.1,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "MifBlender gen ops (ops_gen.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
  },
  {
   "suite": "test_blender_mesh.py",
   "pass": 1,
-  "rc": 1,
-  "summary": "PASS 77   FAIL 1",
-  "seconds": 3.3,
+  "rc": 2,
+  "summary": "",
+  "seconds": 2.1,
   "editorSurvived": true,
-  "tail": "  PASS T776 and no uvLayersAfter, because nothing happened\n\n=== T777: LIGHTMAP lands on the channel it was told to ===\n  PASS T777 setup: a fresh copy of the original cube imported\n  PASS T777 lightmap unwrap succeeded\n  PASS T777 it created the named layer\n  PASS T777 and made it the active one\n  PASS T777 the layer list GREW rather than being overwritten\n       [\"UVMap\"] -> [\"UVMap\", \"MifLightmap\"]\n\n=== T778: ANGLE without seams is warned about, not silently wrong ===\n  PASS T778 it still runs\n  PASS T778 and warns that there are no seams\n\n=== T769: clear_scene empties it ===\n  PASS T769 clear_scene succeeded\n  PASS T769 and no mesh remains\n\n======================================================================\nPASS 77   FAIL 1\n  FAILED: T761 and says it is running headless\n          False\nNOT COVERED, and deliberately: gen_status / gen_image / gen_mesh / gen_texture /\ngen_asset all call an external generation service over the network.\n======================================================================"
+  "tail": "MifBlender mesh pipeline - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Nothing answered a ping on 127.0.0.1:8792, so no op was exercised.\n  Start one with:  python tools/blender_probe.py --serve <version>\n  Reason: ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it"
  },
  {
   "suite": "test_blender_ops.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 12   FAIL 0",
-  "seconds": 0.5,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "MifBlender addon ops - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) on purpose."
  },
  {
   "suite": "test_blender_rig.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 49   FAIL 0",
+  "rc": 2,
+  "summary": "",
   "seconds": 1.6,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "  PASS R900 both modifier tables are found in ops_rig.py\n  PASS R901 the read and write modifier tables describe the SAME types - a type on one side and not the other is a silent asymmetry\nMifBlender rig ops (ops_rig.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
  },
  {
   "suite": "test_capture_viewport.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -85,7 +94,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -94,7 +103,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 1.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -103,7 +112,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -112,7 +121,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 4.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -121,7 +130,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -129,7 +138,7 @@
   "suite": "test_create_asset.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 20   FAIL 0",
+  "summary": "PASS 42   FAIL 0",
   "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
@@ -138,8 +147,8 @@
   "suite": "test_data_layer_writes.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 36   FAIL 0",
-  "seconds": 2.0,
+  "summary": "PASS 19   FAIL 0",
+  "seconds": 1.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -148,25 +157,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_duplicate_cooked_guard.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 11   FAIL 0",
-  "seconds": 2.4,
+  "rc": 1,
+  "summary": "PASS 10   FAIL 1",
+  "seconds": 1.8,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up on pid 23856 (DrugDealerSimulator2.uproject) - 364 endpoints, built Aug 30 2026 02:55:54\n\n=== T940: duplicate_asset refuses a cooked StaticMesh - the exact crash reproduction ===\n  PASS  T940 (setup) a real StaticMesh exists to try\n  PASS  T940 the duplicate is refused, not attempted\n  PASS  T940 and explains the real reason (cooked, crashes UStaticMesh::Build)\n  PASS  T940 the editor is still alive afterward\n\n=== T941: duplicate_asset refuses a cooked NiagaraSystem - the guard this one was modelled on ===\n  PASS  T941 (setup) a real NiagaraSystem exists to try\n  PASS  T941 the duplicate is refused, not attempted\n  PASS  T941 and explains the real reason (cooked, crashes Niagara's PostLoad)\n  PASS  T941 the editor is still alive afterward\n\n=== T942: a normal, NOT-cooked scratch Blueprint still duplicates successfully ===\n  PASS  T942 (setup) a scratch source blueprint is created\n  PASS  T942 the duplicate succeeds - the guard did not widen to refuse everything\n  FAIL  T942 and the new asset really exists - confirmed against the asset registry, not against duplicate_asset's own response   {\"looked_for\": \"/Game/_MifDupGuard/BP_Dst_78016\", \"registry_returned\": []}\n\n========================================================================\nPASS 10   FAIL 1\n  FAILED: T942 and the new asset really exists - confirmed against the asset registry, not against duplicate_asset's own response\n          {\"looked_for\": \"/Game/_MifDupGuard/BP_Dst_78016\", \"registry_returned\": []}\n========================================================================"
  },
  {
   "suite": "test_edit_container.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -175,7 +184,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 15   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -184,7 +193,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -193,7 +202,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -202,7 +211,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 0.1,
+  "seconds": 0.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -211,7 +220,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 3.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -220,7 +229,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -229,7 +238,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 0.1,
+  "seconds": 0.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -238,25 +247,34 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.7,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_game_framework.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 20   FAIL 0",
-  "seconds": 4.0,
+  "rc": 3,
+  "summary": "",
+  "seconds": 31.9,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up on pid 23856 (DrugDealerSimulator2.uproject) - 364 endpoints, built Aug 30 2026 02:55:54\n\n=== T1400-T1401: refuses cleanly outside PIE, before anything else is tried ===\n  PASS  T1400 add_game_framework_receiver refuses with no PIE running\n  PASS  T1400 the refusal names the real reason (no UGameInstance), not a generic error\n  PASS  T1401 add_game_framework_component_request refuses with no PIE running\n\n=== T1402-T1406: the real flow - register a receiver, request a component, verify it, remove it ===\n  FAIL  T1402 start_pie accepted   {'ok': False, 'error': \"'start_pie' is refused: the MifBridge safety gate is in 'scratch' mode. This endpoint either persists to disk, takes the editor loop, or executes outside the process, so no path check can make it safe. Restart the editor with MIF_BRIDGE_WRITE_MODE=full to permit it, and use `setx MIF_BRIDGE_WRITE_MODE full` to make that stick across launches - the variable is read from the environment ONCE at startup, so a value set only in a shell dies with that shell and the next launch is back to 'scratch'. It is deliberately NOT settable over the bridge - an agent that could unlock its own gate is not gated - but that is about the BRIDGE, not about you.\", 'refusedBy': 'safety-gate', 'writeMode': 'scratch', 'unlock': 'MIF_BRIDGE_WRITE_MODE=full (environment, read once at startup)', 'unlockPersistent': 'setx MIF_BRIDGE_WRITE_MODE full'}\n  FAIL  T1402 PIE actually reached state=running   {'ok': True, 'running': False, 'startPending': False, 'sessionActive': False, 'worldHasBegunPlay': False, 'stopPending': False, 'simulating': False, 'state': 'stopped', 'editorWorld': 'Untitled_1', 'scratchClean': True}\ncannot continue without a running PIE session"
+ },
+ {
+  "suite": "test_gameplay_tag_authoring.py",
+  "pass": 1,
+  "rc": 1,
+  "summary": "PASS 16   FAIL 1",
+  "seconds": 1.7,
+  "editorSurvived": true,
+  "tail": "  PASS  T1702 describe_gameplay_tag now finds it - confirmed through a different endpoint\n\n=== T1703: the PERSISTENT path is refused unless the write mode is full ===\n   write mode is 'scratch'\n  PASS  T1703 a persistent tag is refused in a gated write mode\n  PASS  T1703 and the refusal names transient:true as the way forward, not just 'no'\n  PASS  T1703 and says NOTHING was added, so the caller knows the state is unchanged\n  PASS  T1703 and the refused tag really does not exist - the refusal was honest\n\n=== T1704: adding a tag that already exists is not a failure ===\n  PASS  T1704 re-adding an existing tag succeeds\n  PASS  T1704 with added:false - 'it is there' is distinguishable from 'I put it there'\n  PASS  T1704 and resolved:true - the end state the caller asked for holds\n\n=== T1705-T1707: refusals, each checked for its specific reason ===\n  PASS  T1705 an empty tag is refused\n  PASS  T1705 and says tag is required\n  FAIL  T1706 a malformed tag name is refused, not silently accepted\n        {\"ok\": true, \"tag\": \"Mif Test.Has Spaces78075\", \"transient\": true, \"added\": true, \"resolved\": true, \"note\": \"registered for THIS EDITOR SESSION only - nothing was written to disk, and this tag is gone after a restart. Pass transient:false in full wri\n  PASS  T1707 an unknown parameter is refused rather than ignored\n\n========================================================================\nPASS 16   FAIL 1\n  FAILED: T1706 a malformed tag name is refused, not silently accepted\n          {\"ok\": true, \"tag\": \"Mif Test.Has Spaces78075\", \"transient\": true, \"added\": true, \"resolved\": true, \"note\": \"registered for THIS EDITOR SESSION only - nothing was written to disk, and this tag is gone after a restart. Pass transient:false in full wri"
  },
  {
   "suite": "test_geometryscript.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 41   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -265,7 +283,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 1.0,
+  "seconds": 0.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -274,7 +292,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -283,7 +301,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -292,7 +310,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 56   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -301,7 +319,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -310,7 +328,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -319,7 +337,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -328,7 +346,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -337,7 +355,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -346,34 +364,34 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 4.9,
+  "seconds": 6.5,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_livelink.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 21   FAIL 0",
-  "seconds": 4.3,
+  "rc": 1,
+  "summary": "PASS 16   FAIL 2",
+  "seconds": 33.1,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "\n=== T1304-T1307: refusals checked for the specific reason ===\n  PASS  T1304 a subject that was never pushed is refused\n  PASS  T1305 missing subjectName is refused on push\n  PASS  T1306 missing subjectName is refused on describe\n  PASS  T1307 unknown parameter is rejected\n  PASS  T1307 rejection names the unrecognised key\n\n=== T1308: the real mechanism - a subject goes invalid ~0.5s after its last push, no PIE involved ===\n  PASS  T1308 push succeeds\n  PASS  T1308 the SAME subject reads invalid ~0.7s later - staleness, not a bug\n  PASS  T1308 pushing again immediately makes it valid again\n\n=== T1309-T1312: push/read genuinely work during PIE, and staleness behaves identically there ===\n  FAIL  T1309 start_pie accepted   {'ok': False, 'error': \"'start_pie' is refused: the MifBridge safety gate is in 'scratch' mode. This endpoint either persists to disk, takes the editor loop, or executes outside the process, so no path check can make it safe. Restart the editor with MIF_BRIDGE_WRITE_MODE=full to permit it, and use `setx MIF_BRIDGE_WRITE_MODE full` to make that stick across launches - the variable is read from the environment ONCE at startup, so a value set only in a shell dies with that shell and the next launch is back to 'scratch'. It is deliberately NOT settable over the bridge - an agent that could unlock its own gate is not gated - but that is about the BRIDGE, not about you.\", 'refusedBy': 'safety-gate', 'writeMode': 'scratch', 'unlock': 'MIF_BRIDGE_WRITE_MODE=full (environment, read once at startup)', 'unlockPersistent': 'setx MIF_BRIDGE_WRITE_MODE full'}\n  FAIL  T1309 PIE actually reached state=running   {'ok': True, 'running': False, 'startPending': False, 'sessionActive': False, 'worldHasBegunPlay': False, 'stopPending': False, 'simulating': False, 'state': 'stopped', 'editorWorld': 'Untitled_1', 'scratchClean': True}\n  PASS  T1309-T1311 (skipped) PIE never reached running - cannot test the transition\n\n========================================================================\nPASS 16   FAIL 2\n  FAILED: T1309 start_pie accepted\n          {'ok': False, 'error': \"'start_pie' is refused: the MifBridge safety gate is in 'scratch' mode. This endpoint either persists to disk, takes the editor loop, or executes outside the process, so no path check can make it safe. Restart the editor with MIF_BRIDGE_WRITE_MODE=full to permit it, and use `setx MIF_BRIDGE_WRITE_MODE full` to make that stick across launches - the variable is read from the environment ONCE at startup, so a value set only in a shell dies with that shell and the next launch is back to 'scratch'. It is deliberately NOT settable over the bridge - an agent that could unlock its own gate is not gated - but that is about the BRIDGE, not about you.\", 'refusedBy': 'safety-gate', 'writeMode': 'scratch', 'unlock': 'MIF_BRIDGE_WRITE_MODE=full (environment, read once at startup)', 'unlockPersistent': 'setx MIF_BRIDGE_WRITE_MODE full'}\n  FAILED: T1309 PIE actually reached state=running\n          {'ok': True, 'running': False, 'startPending': False, 'sessionActive': False, 'worldHasBegunPlay': False, 'stopPending': False, 'simulating': False, 'state': 'stopped', 'editorWorld': 'Untitled_1', 'scratchClean': True}\n========================================================================"
  },
  {
   "suite": "test_load_level_guard.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 6   FAIL 0",
-  "seconds": 2.2,
+  "rc": 1,
+  "summary": "PASS 4   FAIL 2",
+  "seconds": 1.8,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up on pid 23856 (DrugDealerSimulator2.uproject) - 364 endpoints, built Aug 30 2026 02:55:54\n\n=== T935: load_level refuses an empty path, before any world-swap logic runs ===\n  PASS  T935 refused\n  FAIL  T935 names path as what is missing   'load_level' is refused: the MifBridge safety gate is in 'scratch' mode. This endpoint either persists to disk, takes the editor loop, or executes outside the process, so no path check can make it safe. Restart the editor with MIF_BRIDGE_WRITE_MODE=full to permit it, and use `setx MIF_BRIDGE_WRITE_MODE full` to make that stick across launches - the variable is read from the environment ONCE at startup, so a value set only in a shell dies with that shell and the next launch is back to 'scratch'. It is deliberately NOT settable over the bridge - an agent that could unlock its own gate is not gated - but that is about the BRIDGE, not about you.\n  PASS  T935 the editor is unaffected (no world swap happened)\n\n=== T936: load_level refuses a package path with no real .umap file on disk ===\n  PASS  T936 refused\n  FAIL  T936 and explains why   'load_level' is refused: the MifBridge safety gate is in 'scratch' mode. This endpoint either persists to disk, takes the editor loop, or executes outside the process, so no path check can make it safe. Restart the editor with MIF_BRIDGE_WRITE_MODE=full to permit it, and use `setx MIF_BRIDGE_WRITE_MODE full` to make that stick across launches - the variable is read from the environment ONCE at startup, so a value set only in a shell dies with that shell and the next launch is back to 'scratch'. It is deliberately NOT settable over the bridge - an agent that could unlock its own gate is not gated - but that is about the BRIDGE, not about you.\n  PASS  T936 the editor is still unaffected\n\n========================================================================\nPASS 4   FAIL 2\n  FAILED: T935 names path as what is missing\n          'load_level' is refused: the MifBridge safety gate is in 'scratch' mode. This endpoint either persists to disk, takes the editor loop, or executes outside the process, so no path check can make it safe. Restart the editor with MIF_BRIDGE_WRITE_MODE=full to permit it, and use `setx MIF_BRIDGE_WRITE_MODE full` to make that stick across launches - the variable is read from the environment ONCE at startup, so a value set only in a shell dies with that shell and the next launch is back to 'scratch'. It is deliberately NOT settable over the bridge - an agent that could unlock its own gate is not gated - but that is about the BRIDGE, not about you.\n  FAILED: T936 and explains why\n          'load_level' is refused: the MifBridge safety gate is in 'scratch' mode. This endpoint either persists to disk, takes the editor loop, or executes outside the process, so no path check can make it safe. Restart the editor with MIF_BRIDGE_WRITE_MODE=full to permit it, and use `setx MIF_BRIDGE_WRITE_MODE full` to make that stick across launches - the variable is read from the environment ONCE at startup, so a value set only in a shell dies with that shell and the next launch is back to 'scratch'. It is deliberately NOT settable over the bridge - an agent that could unlock its own gate is not gated - but that is about the BRIDGE, not about you.\n========================================================================\nCOVERAGE GAP, permanent and deliberate: load_level's SUCCESS path is not exercised here,\nand never will be by this suite. It has no confirm gate at all and discards the current\nopen level's unsaved state unconditionally - see the module docstring and\ntools/FEATURE_PARITY_SPEC.md for the full reasoning."
  },
  {
   "suite": "test_macro_dispatch.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 0.6,
+  "seconds": 1.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -382,7 +400,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -391,7 +409,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -400,7 +418,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -409,7 +427,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -427,7 +445,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -436,7 +454,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -445,7 +463,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -454,7 +472,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -462,8 +480,8 @@
   "suite": "test_mvvm.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 34   FAIL 0",
-  "seconds": 2.6,
+  "summary": "PASS 39   FAIL 0",
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -472,7 +490,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -481,7 +499,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 7.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -490,7 +508,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 101   FAIL 0",
-  "seconds": 5.4,
+  "seconds": 4.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -499,25 +517,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_pie_family.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 45   FAIL 0",
-  "seconds": 8.6,
+  "rc": 3,
+  "summary": "",
+  "seconds": 62.6,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up on pid 23856 (DrugDealerSimulator2.uproject) - 364 endpoints, built Aug 30 2026 02:55:54\n\n=== T1600: move_actor_to refuses cleanly outside PIE, before anything else is tried ===\n  PASS  T1600 move_actor_to refuses with no PIE running\n  PASS  T1600 the refusal names the real reason (AI controllers only exist at runtime)\n  FAIL  (setup) start_pie accepted   {'ok': False, 'error': \"'start_pie' is refused: the MifBridge safety gate is in 'scratch' mode. This endpoint either persists to disk, takes the editor loop, or executes outside the process, so no path check can make it safe. Restart the editor with MIF_BRIDGE_WRITE_MODE=full to permit it, and use `setx MIF_BRIDGE_WRITE_MODE full` to make that stick across launches - the variable is read from the environment ONCE at startup, so a value set only in a shell dies with that shell and the next launch is back to 'scratch'. It is deliberately NOT settable over the bridge - an agent that could unlock its own gate is not gated - but that is about the BRIDGE, not about you.\", 'refusedBy': 'safety-gate', 'writeMode': 'scratch', 'unlock': 'MIF_BRIDGE_WRITE_MODE=full (environment, read once at startup)', 'unlockPersistent': 'setx MIF_BRIDGE_WRITE_MODE full'}\n  FAIL  (setup) PIE actually reached state=running   {'ok': True, 'running': False, 'startPending': False, 'sessionActive': False, 'worldHasBegunPlay': False, 'stopPending': False, 'simulating': False, 'state': 'stopped', 'editorWorld': 'Untitled_1', 'scratchClean': True}\ncannot continue without a running PIE session"
  },
  {
   "suite": "test_pinlifetime.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 0.8,
+  "seconds": 0.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -526,7 +544,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -535,7 +553,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -543,8 +561,8 @@
   "suite": "test_project_graph.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 46   FAIL 0",
-  "seconds": 2.3,
+  "summary": "PASS 57   FAIL 0",
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -553,7 +571,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -562,7 +580,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -580,7 +598,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -589,25 +607,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 0.6,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_safety_gate.py",
   "pass": 1,
-  "rc": 1,
-  "summary": "PASS 5   FAIL 0",
-  "seconds": 2.0,
+  "rc": 0,
+  "summary": "PASS 51   FAIL 0",
+  "seconds": 2.6,
   "editorSurvived": true,
-  "tail": "bridge up on pid 28424 (DrugDealerSimulator2.uproject) - 363 endpoints, built Aug 29 2026 14:14:06\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 5   FAIL 0"
+  "tail": ""
  },
  {
   "suite": "test_self_audit_modes.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -616,7 +634,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -625,7 +643,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -634,7 +652,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -643,7 +661,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -651,8 +669,8 @@
   "suite": "test_simplified_collision_guard.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 24   FAIL 0",
-  "seconds": 2.3,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -661,7 +679,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -670,7 +688,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -679,7 +697,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -688,7 +706,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -697,7 +715,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -706,7 +724,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -715,7 +733,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -724,7 +742,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -733,7 +751,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -742,7 +760,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -750,8 +768,8 @@
   "suite": "test_uncovered_reads.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 39   FAIL 0",
-  "seconds": 2.5,
+  "summary": "PASS 40   FAIL 0",
+  "seconds": 3.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -768,8 +786,8 @@
   "suite": "test_uncovered_reads3.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 300   FAIL 0",
-  "seconds": 19.9,
+  "summary": "PASS 301   FAIL 0",
+  "seconds": 16.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -777,35 +795,35 @@
   "suite": "test_uncovered_reads4.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 39   FAIL 0",
-  "seconds": 2.3,
+  "summary": "PASS 38   FAIL 0",
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_uncovered_reads5.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 52   FAIL 0",
-  "seconds": 4.6,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.8,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up on pid 23856 (DrugDealerSimulator2.uproject) - 364 endpoints, built Aug 30 2026 02:55:54\n  SKIP  test_uncovered_reads5.py needs write mode 'full' and the bridge is in 'scratch'.\n        start_pie is on the safety gate's unsafe list and RefuseIfGated runs in the\n        dispatcher, so PIE cannot start and every assertion downstream of it would fail\n        for a reason that is the gate working correctly, not a defect.\n        Relaunch with MIF_BRIDGE_WRITE_MODE=full to exercise this."
  },
  {
   "suite": "test_uncovered_reads6.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 30   FAIL 0",
-  "seconds": 2.7,
+  "rc": 1,
+  "summary": "PASS 29   FAIL 2",
+  "seconds": 2.5,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "=== T927: retarget_variable_node - self:true, a legitimate no-op-shaped success ===\n  PASS  T927 (setup) a variable get node exists\n  PASS  T927 succeeds\n  PASS  T927 and reports the variable it touched\n\n=== T928: recipe_override_and_call_parent - ReceiveDestroyed, not pre-placed like BeginPlay/Tick ===\n  PASS  T928 succeeds\n  PASS  T928 a node guid is reported\n  PASS  T928 a parent-call node was wired too (callParent forced on)\n  PASS  T928 overriding the same event twice is refused\n  PASS  T928 the blueprint still compiles\n\n=== T929: remove_widget_binding - NOT confirm-gated, unlike its remove_* naming neighbours ===\n  PASS  T929 (setup) a scratch WidgetBlueprint is created\n  PASS  T929 (setup) a binding exists to remove\n  PASS  T929 the plain call (no confirm) succeeds directly\n  PASS  T929 and the binding count is really back to zero\n\n========================================================================\nPASS 29   FAIL 2\n  FAILED: T924 succeeds\n          {\"ok\": false, \"error\": \"'run_console_captured' is refused: the MifBridge safety gate is in 'scratch' mode. This endpoint either persists to disk, takes the editor loop, or executes outside the process\n  FAILED: T924 toggling back off also succeeds\n          {\"ok\": false, \"error\": \"'run_console_captured' is refused: the MifBridge safety gate is in 'scratch' mode. This endpoint either persists to disk, takes the editor loop, or executes outside the process\n========================================================================"
  },
  {
   "suite": "test_uncovered_reads7.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 29   FAIL 0",
-  "seconds": 4.1,
+  "summary": "PASS 32   FAIL 0",
+  "seconds": 6.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -814,7 +832,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -823,7 +841,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 5.6,
+  "seconds": 5.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -832,7 +850,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -849,8 +867,8 @@
   "suite": "test_water_zone.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 21   FAIL 0",
-  "seconds": 2.4,
+  "summary": "PASS 29   FAIL 0",
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -859,7 +877,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -868,7 +886,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -877,7 +895,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -886,7 +904,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -903,8 +921,8 @@
   "suite": "test_anim_nodes.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 13   FAIL 0",
-  "seconds": 2.2,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -913,7 +931,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -922,7 +940,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -931,45 +949,54 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 4.2,
+  "seconds": 3.8,
   "editorSurvived": true,
   "tail": ""
+ },
+ {
+  "suite": "test_blender_authoring.py",
+  "pass": 2,
+  "rc": 2,
+  "summary": "",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "tail": "MifBlender authoring ops - 127.0.0.1:8792\n  Nothing answered a ping on 127.0.0.1:8792, so no op was exercised.\n  SKIP (exit 2) - a suite that verified nothing must not report success."
  },
  {
   "suite": "test_blender_gen.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 20   FAIL 0",
-  "seconds": 13.0,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "MifBlender gen ops (ops_gen.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
  },
  {
   "suite": "test_blender_mesh.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "PASS 77   FAIL 1",
-  "seconds": 3.3,
+  "rc": 2,
+  "summary": "",
+  "seconds": 2.2,
   "editorSurvived": true,
-  "tail": "  PASS T776 and no uvLayersAfter, because nothing happened\n\n=== T777: LIGHTMAP lands on the channel it was told to ===\n  PASS T777 setup: a fresh copy of the original cube imported\n  PASS T777 lightmap unwrap succeeded\n  PASS T777 it created the named layer\n  PASS T777 and made it the active one\n  PASS T777 the layer list GREW rather than being overwritten\n       [\"UVMap\"] -> [\"UVMap\", \"MifLightmap\"]\n\n=== T778: ANGLE without seams is warned about, not silently wrong ===\n  PASS T778 it still runs\n  PASS T778 and warns that there are no seams\n\n=== T769: clear_scene empties it ===\n  PASS T769 clear_scene succeeded\n  PASS T769 and no mesh remains\n\n======================================================================\nPASS 77   FAIL 1\n  FAILED: T761 and says it is running headless\n          False\nNOT COVERED, and deliberately: gen_status / gen_image / gen_mesh / gen_texture /\ngen_asset all call an external generation service over the network.\n======================================================================"
+  "tail": "MifBlender mesh pipeline - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Nothing answered a ping on 127.0.0.1:8792, so no op was exercised.\n  Start one with:  python tools/blender_probe.py --serve <version>\n  Reason: ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it"
  },
  {
   "suite": "test_blender_ops.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 12   FAIL 0",
-  "seconds": 0.6,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "MifBlender addon ops - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) on purpose."
  },
  {
   "suite": "test_blender_rig.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 49   FAIL 0",
-  "seconds": 1.5,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "  PASS R900 both modifier tables are found in ops_rig.py\n  PASS R901 the read and write modifier tables describe the SAME types - a type on one side and not the other is a silent asymmetry\nMifBlender rig ops (ops_rig.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
  },
  {
   "suite": "test_capture_viewport.py",
@@ -985,7 +1012,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -994,7 +1021,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1003,7 +1030,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1012,7 +1039,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1029,8 +1056,8 @@
   "suite": "test_create_asset.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 20   FAIL 0",
-  "seconds": 2.1,
+  "summary": "PASS 42   FAIL 0",
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1038,8 +1065,8 @@
   "suite": "test_data_layer_writes.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 36   FAIL 0",
-  "seconds": 2.2,
+  "summary": "PASS 19   FAIL 0",
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1057,7 +1084,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1084,7 +1111,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1093,7 +1120,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1102,7 +1129,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 0.1,
+  "seconds": 0.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1120,7 +1147,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1138,25 +1165,34 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_game_framework.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 20   FAIL 0",
-  "seconds": 4.0,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.7,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up on pid 23856 (DrugDealerSimulator2.uproject) - 364 endpoints, built Aug 30 2026 02:55:54\n  SKIP  test_game_framework.py needs write mode 'full' and the bridge is in 'scratch'.\n        start_pie is on the safety gate's unsafe list and RefuseIfGated runs in the\n        dispatcher, so PIE cannot start and every assertion downstream of it would fail\n        for a reason that is the gate working correctly, not a defect.\n        Relaunch with MIF_BRIDGE_WRITE_MODE=full to exercise this."
+ },
+ {
+  "suite": "test_gameplay_tag_authoring.py",
+  "pass": 2,
+  "rc": 1,
+  "summary": "PASS 16   FAIL 1",
+  "seconds": 1.9,
+  "editorSurvived": true,
+  "tail": "  PASS  T1702 describe_gameplay_tag now finds it - confirmed through a different endpoint\n\n=== T1703: the PERSISTENT path is refused unless the write mode is full ===\n   write mode is 'scratch'\n  PASS  T1703 a persistent tag is refused in a gated write mode\n  PASS  T1703 and the refusal names transient:true as the way forward, not just 'no'\n  PASS  T1703 and says NOTHING was added, so the caller knows the state is unchanged\n  PASS  T1703 and the refused tag really does not exist - the refusal was honest\n\n=== T1704: adding a tag that already exists is not a failure ===\n  PASS  T1704 re-adding an existing tag succeeds\n  PASS  T1704 with added:false - 'it is there' is distinguishable from 'I put it there'\n  PASS  T1704 and resolved:true - the end state the caller asked for holds\n\n=== T1705-T1707: refusals, each checked for its specific reason ===\n  PASS  T1705 an empty tag is refused\n  PASS  T1705 and says tag is required\n  FAIL  T1706 a malformed tag name is refused, not silently accepted\n        {\"ok\": true, \"tag\": \"Mif Test.Has Spaces78538\", \"transient\": true, \"added\": true, \"resolved\": true, \"note\": \"registered for THIS EDITOR SESSION only - nothing was written to disk, and this tag is gone after a restart. Pass transient:false in full wri\n  PASS  T1707 an unknown parameter is refused rather than ignored\n\n========================================================================\nPASS 16   FAIL 1\n  FAILED: T1706 a malformed tag name is refused, not silently accepted\n          {\"ok\": true, \"tag\": \"Mif Test.Has Spaces78538\", \"transient\": true, \"added\": true, \"resolved\": true, \"note\": \"registered for THIS EDITOR SESSION only - nothing was written to disk, and this tag is gone after a restart. Pass transient:false in full wri"
  },
  {
   "suite": "test_geometryscript.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 41   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1174,7 +1210,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1183,7 +1219,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1201,7 +1237,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1210,7 +1246,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1219,7 +1255,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1228,7 +1264,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1237,7 +1273,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1246,25 +1282,25 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 4.9,
+  "seconds": 5.2,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_livelink.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 21   FAIL 0",
-  "seconds": 4.4,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.9,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up on pid 23856 (DrugDealerSimulator2.uproject) - 364 endpoints, built Aug 30 2026 02:55:54\n  SKIP  test_livelink.py needs write mode 'full' and the bridge is in 'scratch'.\n        start_pie is on the safety gate's unsafe list and RefuseIfGated runs in the\n        dispatcher, so PIE cannot start and every assertion downstream of it would fail\n        for a reason that is the gate working correctly, not a defect.\n        Relaunch with MIF_BRIDGE_WRITE_MODE=full to exercise this."
  },
  {
   "suite": "test_load_level_guard.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 6   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1273,7 +1309,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 0.6,
+  "seconds": 0.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1291,7 +1327,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1300,7 +1336,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1309,7 +1345,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1327,7 +1363,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1336,7 +1372,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1345,7 +1381,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1354,7 +1390,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1362,8 +1398,8 @@
   "suite": "test_mvvm.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 34   FAIL 0",
-  "seconds": 2.7,
+  "summary": "PASS 39   FAIL 0",
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1372,7 +1408,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 53   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1381,7 +1417,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1390,7 +1426,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 101   FAIL 0",
-  "seconds": 5.5,
+  "seconds": 5.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1399,25 +1435,25 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_pie_family.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "PASS 45   FAIL 1",
-  "seconds": 8.7,
+  "rc": 2,
+  "summary": "",
+  "seconds": 2.0,
   "editorSurvived": true,
-  "tail": "  PASS  T1610 ui_scenario_capture succeeds\n  PASS  T1610 it reports wroteFile:true and exists:true\n  PASS  T1610 it reports a real, non-trivial resolution\n  PASS  T1610 the PNG genuinely exists on disk with real bytes, independently of the endpoint's own exists:true claim\n  PASS  T1611 ui_scenario_stop succeeds\n  PASS  T1611 it reports wasActive:true\n  PASS  T1611 status afterward reports STOPPED / inactive\n  PASS  T1611b stopping again when nothing is active is a harmless no-op, not an error\n\n=== T1612-T1613: pie_load_level_instance / pie_unload_level_instance, verified via list_sublevels ===\n  PASS  T1612 pie_load_level_instance accepts a real sublevel\n  PASS  T1612 it reports the expected instanceName\n  PASS  T1612 independently verified via list_sublevels: the instance actually finished loading with real actors in it, not just requested:true\n  PASS  T1612 the loaded instance reports state LoadedVisible with a real actorCount\n  PASS  T1612b loading the SAME nameOverride again is refused with the colliding package named\n  PASS  T1613 pie_unload_level_instance accepts the real instance name\n  PASS  T1613 independently verified via list_sublevels: the instance is genuinely gone after teardown, not just requested:true\n  PASS  T1613b unloading an unknown instance name is refused\n  PASS  (cleanup) PIE stopped cleanly\n\n========================================================================\nPASS 45   FAIL 1\n  FAILED: T1606 the pawn's location genuinely changed after move_actor_to - independently verified, not just moving:true\n          before={'x': -200, 'y': 0, 'z': 91.71249699942751} after={'x': -200, 'y': 0, 'z': 91.71249699942751}\n========================================================================"
+  "tail": "bridge up on pid 23856 (DrugDealerSimulator2.uproject) - 364 endpoints, built Aug 30 2026 02:55:54\n  SKIP  test_pie_family.py needs write mode 'full' and the bridge is in 'scratch'.\n        start_pie is on the safety gate's unsafe list and RefuseIfGated runs in the\n        dispatcher, so PIE cannot start and every assertion downstream of it would fail\n        for a reason that is the gate working correctly, not a defect.\n        Relaunch with MIF_BRIDGE_WRITE_MODE=full to exercise this."
  },
  {
   "suite": "test_pinlifetime.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 0.8,
+  "seconds": 0.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1426,7 +1462,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1435,7 +1471,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1443,8 +1479,8 @@
   "suite": "test_project_graph.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 46   FAIL 0",
-  "seconds": 2.2,
+  "summary": "PASS 57   FAIL 0",
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1462,7 +1498,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1480,7 +1516,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1489,18 +1525,18 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 0.7,
+  "seconds": 0.6,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_safety_gate.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "PASS 5   FAIL 0",
-  "seconds": 2.0,
+  "rc": 0,
+  "summary": "PASS 51   FAIL 0",
+  "seconds": 2.7,
   "editorSurvived": true,
-  "tail": "bridge up on pid 28424 (DrugDealerSimulator2.uproject) - 363 endpoints, built Aug 29 2026 14:14:06\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 5   FAIL 0"
+  "tail": ""
  },
  {
   "suite": "test_self_audit_modes.py",
@@ -1516,7 +1552,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1534,7 +1570,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1543,7 +1579,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1551,8 +1587,8 @@
   "suite": "test_simplified_collision_guard.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 24   FAIL 0",
-  "seconds": 2.4,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1561,7 +1597,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1579,7 +1615,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1588,7 +1624,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1597,7 +1633,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1606,7 +1642,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1615,7 +1651,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1624,7 +1660,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1633,7 +1669,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1642,7 +1678,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1650,8 +1686,8 @@
   "suite": "test_uncovered_reads.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 39   FAIL 0",
-  "seconds": 2.6,
+  "summary": "PASS 40   FAIL 0",
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1669,7 +1705,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 300   FAIL 0",
-  "seconds": 20.1,
+  "seconds": 17.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1677,7 +1713,7 @@
   "suite": "test_uncovered_reads4.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 39   FAIL 0",
+  "summary": "PASS 38   FAIL 0",
   "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
@@ -1685,18 +1721,18 @@
  {
   "suite": "test_uncovered_reads5.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 52   FAIL 0",
-  "seconds": 4.7,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.8,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "bridge up on pid 23856 (DrugDealerSimulator2.uproject) - 364 endpoints, built Aug 30 2026 02:55:54\n  SKIP  test_uncovered_reads5.py needs write mode 'full' and the bridge is in 'scratch'.\n        start_pie is on the safety gate's unsafe list and RefuseIfGated runs in the\n        dispatcher, so PIE cannot start and every assertion downstream of it would fail\n        for a reason that is the gate working correctly, not a defect.\n        Relaunch with MIF_BRIDGE_WRITE_MODE=full to exercise this."
  },
  {
   "suite": "test_uncovered_reads6.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 30   FAIL 0",
-  "seconds": 2.8,
+  "summary": "PASS 29   FAIL 0",
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1704,8 +1740,8 @@
   "suite": "test_uncovered_reads7.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 29   FAIL 0",
-  "seconds": 4.1,
+  "summary": "PASS 32   FAIL 0",
+  "seconds": 4.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1714,7 +1750,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1723,7 +1759,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 5.9,
+  "seconds": 5.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1732,7 +1768,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1749,8 +1785,8 @@
   "suite": "test_water_zone.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 21   FAIL 0",
-  "seconds": 2.4,
+  "summary": "PASS 29   FAIL 0",
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1759,7 +1795,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1768,7 +1804,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1777,7 +1813,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1786,7 +1822,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1795,7 +1831,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  }

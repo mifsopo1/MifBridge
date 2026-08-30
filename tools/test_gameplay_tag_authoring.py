@@ -26,7 +26,12 @@ T1700-T1702: the transient path works and the tag really resolves afterwards.
 T1703:       the persistent path is REFUSED in a gated mode, and the refusal names transient:true as
              the way forward rather than just saying no.
 T1704:       adding a tag that already exists is added:false / resolved:true, not an error.
-T1705-T1707: refusals - empty tag, malformed tag - each checked for its specific reason.
+T1705-T1707: refusals - empty tag, and names the tag manager will not resolve - each checked for
+             its specific reason. NOTE that a tag with INTERNAL SPACES is LEGAL in Unreal
+             (InvalidTagCharacters is `"',` plus \r\n\t - space is absent), so T1706 asserts that
+             one is ACCEPTED. What it refuses are leading/trailing dots and the genuinely invalid
+             characters, and every one of those is caught by the READ-BACK rather than by the
+             IsValidGameplayTagString pre-check, which rejected nothing tested.
 
 NOTHING IS LEFT BEHIND. Every tag this suite creates is transient, so it exists only until the
 editor restarts and never touches DefaultGameplayTags.ini. That is a deliberate choice over
@@ -127,9 +132,33 @@ def main():
     check("T1705 an empty tag is refused", empty.get("ok") is False, json.dumps(empty)[:200])
     check("T1705 and says tag is required", "required" in (empty.get("error") or ""), empty.get("error"))
 
-    bad = M.call("add_gameplay_tag", {"tag": "Mif Test.Has Spaces%d" % st, "transient": True})
-    check("T1706 a malformed tag name is refused, not silently accepted",
-          bad.get("ok") is False, json.dumps(bad)[:250])
+    # A SPACE IS LEGAL, and this assertion used to claim otherwise - corrected 2026-08-30 by
+    # reading the engine instead of assuming. UGameplayTagsSettings::InvalidTagCharacters is
+    # `"',` plus \r\n\t (GameplayTagsSettings.cpp:70); SPACE is not in it, so Unreal's own
+    # validator - the one its Add New Gameplay Tag widget uses - accepts "Mif Test.Has Spaces".
+    # Refusing it here would make this bridge stricter than the engine, which breaks legitimate
+    # callers for a rule Epic did not make.
+    spaced = M.call("add_gameplay_tag", {"tag": "Mif Space.Test%d" % st, "transient": True})
+    check("T1706 a tag with INTERNAL SPACES is accepted - Unreal permits it, and this bridge must "
+          "not invent a stricter rule than the engine",
+          spaced.get("ok") is True, json.dumps(spaced)[:250])
+
+    # WHAT IS ACTUALLY REFUSED, and by WHICH layer. Probed live across leading/trailing dots,
+    # commas, quotes, tabs, newlines, a bare "." and an all-spaces string: every one is refused,
+    # and every one is caught by the READ-BACK (the tag manager does not resolve it afterwards),
+    # never by the IsValidGameplayTagString pre-check. That pre-check did not reject a single input
+    # tested. So the read-back is the real gate here, which is exactly why it is there - "a true
+    # return only means the call did not object" - and it is what these assertions target.
+    for label, tag in (("a leading dot", ".MifLead%d" % st),
+                       ("a trailing dot", "MifTrail%d." % st),
+                       ("a comma", "Mif,Comma%d" % st)):
+        bad = M.call("add_gameplay_tag", {"tag": tag, "transient": True})
+        check("T1706 %s is refused, not silently accepted" % label,
+              bad.get("ok") is False, json.dumps(bad)[:250])
+        check("T1706 %s - and the refusal says the tag is not usable rather than claiming success"
+              % label,
+              "does not resolve" in (bad.get("error") or "")
+              or "not a valid gameplay tag" in (bad.get("error") or ""), bad.get("error"))
 
     unknown = M.call("add_gameplay_tag", {"tag": "MifTest.X%d" % st, "transient": True,
                                           "notAParam": 1})

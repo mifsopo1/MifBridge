@@ -51,26 +51,57 @@ def is_scratch(name):
     return any(name.startswith(p) for p in SCRATCH_PREFIXES)
 
 
-def clear(path=MANIFEST, quiet=False):
+def clear(path=MANIFEST, quiet=False, force=False, why=None):
     """Empty the restore list if and only if every entry is scratch.
 
     Returns (cleared, count, offenders). `cleared` is False both when there was nothing to do and
     when it refused - the offenders list is what tells those apart.
+
+    FORCE, added 2026-08-30, and the reasoning is worth keeping because the default refusal is
+    right and must stay right. A regression run legitimately dirties NAMED maps: the suites use
+    /Game/Maps/MifWeaponTest deliberately (it is one of the very few LOOSE maps in this project, so
+    it is the only thing the sublevel family can be tested against). Kill that editor and the
+    manifest holds a dozen non-scratch entries, this refuses, and the next launch sits in a modal
+    the bridge cannot answer - so the recovery path is blocked by the thing meant to protect it.
+    The tool had no way to say "I looked, and these are mine".
+
+    The alternative to giving it one is worse: whoever hits this hand-edits the manifest, which is
+    the same discard with no backup and no record. An escape hatch that REPORTS beats a guard people
+    route around.
+
+    force does not weaken the check - it still lists every offender, still backs up first, and now
+    requires `why`, which is printed. The judgement it encodes is "the caller has established the
+    provenance of these entries", and the honest way to do that is the manifest's own mtime: it is
+    written when the session holding those packages dies, so a manifest younger than the session you
+    killed is yours. Nothing else here can know that, which is exactly why it is a parameter and not
+    a heuristic.
     """
     names = read_entries(path)
     if not names:
         return False, 0, []
     offenders = [n for n in names if not is_scratch(n)]
-    if offenders:
+    if offenders and not force:
         if not quiet:
             print("REFUSING to clear the restore list: %d of %d entries are NOT scratch."
                   % (len(offenders), len(names)))
             for n in sorted(set(offenders))[:10]:
                 print("    %s" % n)
-            print("  Those are real unsaved packages. Open the editor and answer the prompt by hand.")
+            print("  Those are real unsaved packages. Open the editor and answer the prompt by hand,")
+            print("  or call clear(force=True, why='...') if you have established they are yours -")
+            print("  the manifest's mtime tells you which session wrote it.")
         return False, len(names), offenders
+    if offenders and force:
+        if not why:
+            raise ValueError(
+                "clear(force=True) requires why= - a forced discard with no recorded reason is the "
+                "silent discard this guard exists to prevent")
+        if not quiet:
+            print("FORCED clear over %d non-scratch entry/entries. Reason given: %s"
+                  % (len(offenders), why))
+            for n in sorted(set(offenders)):
+                print("    discarding restore offer for  %s" % n)
 
-    bak = path + ".bak-scratch-clear"
+    bak = path + (".bak-forced-clear" if offenders else ".bak-scratch-clear")
     try:
         shutil.copy2(path, bak)
     except Exception as e:
