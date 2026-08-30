@@ -8,6 +8,8 @@
 #include "EdGraphSchema_K2.h"
 #include "Engine/Blueprint.h"
 #include "K2Node_AddDelegate.h"
+#include "K2Node_ClearDelegate.h"
+#include "K2Node_RemoveDelegate.h"
 #include "K2Node_CallDelegate.h"
 #include "K2Node_FunctionEntry.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -41,9 +43,11 @@ namespace MifBridge
 			// pattern as DoAddVariableNode (MifBridgeNodes.cpp:369). Do NOT add a second guard in
 			// either H_ function — the key list would then have two places to drift apart.
 			if (RejectUnknownParams(In, Out,
-				{ TEXT("graphId"), TEXT("dispatcher"), TEXT("targetClass"), TEXT("x"), TEXT("y") },
+				{ TEXT("graphId"), TEXT("dispatcher"), TEXT("targetClass"), TEXT("x"), TEXT("y"),
+				  TEXT("op") },
 				TEXT("graphId, dispatcher, targetClass (optional — bind/call a dispatcher declared on that ")
-				TEXT("EXTERNAL class instead of this blueprint's own), x, y"),
+				TEXT("EXTERNAL class instead of this blueprint's own), x, y, op (bind|unbind|unbindAll ")
+				TEXT("on add_bind_dispatcher; add_call_dispatcher is the call spelling)"),
 				{ { TEXT("graph"), TEXT("spell it graphId") },
 				  { TEXT("name"), TEXT("the existing dispatcher is named by 'dispatcher'; 'name' is add_event_dispatcher's key for CREATING one") },
 				  { TEXT("dispatcherName"), TEXT("spell it dispatcher") },
@@ -215,12 +219,76 @@ namespace MifBridge
 
 	void H_add_call_dispatcher(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// op is accepted by the shared guard, so it has to be answered here rather than silently
+		// ignored - a caller passing op:"unbind" to the CALL endpoint means something specific and
+		// deserves to be routed rather than handed a broadcast node.
+		const FString Op = JStr(In, TEXT("op"), TEXT("call")).ToLower();
+		if (Op != TEXT("call") && Op != TEXT("broadcast"))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("add_call_dispatcher broadcasts; op '%s' belongs to add_bind_dispatcher, which "
+					 "takes bind, unbind and unbindAll. NOTHING was added."), *Op));
+			return;
+		}
 		SpawnDelegateNode<UK2Node_CallDelegate>(In, Out);
 	}
 
+	// =======================================================================
+	// THE TEARDOWN HALF - unbind and unbindAll
+	// =======================================================================
+	//
+	// The dispatcher subsystem was not half missing: declaration (add_event_dispatcher,
+	// rename/remove, list_dispatchers), broadcast (add_call_dispatcher) and bind
+	// (add_bind_dispatcher, add_component_bound_event) all shipped. What was absent is two of the
+	// four UK2Node_BaseMCDelegate subclasses, both on the TEARDOWN path - and there was no
+	// workaround at all, because the node classes are the only way to emit those calls.
+	//
+	// A PARAMETER, NOT NEW ENDPOINT NAMES. All four subclasses take the identical single
+	// configuration call - SetFromProperty - so a new name per node kind would be four spellings
+	// of one thing. add_call_dispatcher keeps its own name because it is already in the MCP tool
+	// surface and removing it would break callers.
+	//
+	// UK2Node_ClearDelegate HAS NO DELEGATE PIN AT ALL. K2Node_MCDelegate.cpp:368-390 gives it a
+	// title and a node handler and nothing else, so op:"unbindAll" comes back with a different pin
+	// set from bind/unbind - there is no Delegate pin to wire, because clearing removes every
+	// binding rather than one named handler. EmitNode reports whatever pins exist, but a caller
+	// expecting to wire a Delegate would sit there looking for it, so the response says so.
 	void H_add_bind_dispatcher(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		SpawnDelegateNode<UK2Node_AddDelegate>(In, Out);
+		const FString Op = JStr(In, TEXT("op"), TEXT("bind")).ToLower();
+		if (Op == TEXT("bind"))
+		{
+			SpawnDelegateNode<UK2Node_AddDelegate>(In, Out);
+			return;
+		}
+		if (Op == TEXT("unbind"))
+		{
+			SpawnDelegateNode<UK2Node_RemoveDelegate>(In, Out);
+			return;
+		}
+		if (Op == TEXT("unbindall") || Op == TEXT("clear"))
+		{
+			SpawnDelegateNode<UK2Node_ClearDelegate>(In, Out);
+			if (Out->HasField(TEXT("nodeGuid")))
+			{
+				Out->SetStringField(TEXT("pinNote"),
+					TEXT("a ClearDelegate node has NO Delegate pin - clearing removes EVERY binding "
+						 "rather than one named handler, so there is nothing to wire an event into. "
+						 "That is why this node's pin set differs from op:\"bind\" and "
+						 "op:\"unbind\"; it is not a missing pin."));
+			}
+			return;
+		}
+		if (Op == TEXT("call") || Op == TEXT("broadcast"))
+		{
+			Fail(Out, TEXT("op:\"call\" belongs to add_call_dispatcher, which already exists and is "
+				TEXT("already in the tool surface. This endpoint covers bind, unbind and unbindAll. "
+					 "NOTHING was added.")));
+			return;
+		}
+		Fail(Out, FString::Printf(
+			TEXT("unknown op '%s' - accepted: bind (the default), unbind, unbindAll. Broadcasting is "
+				 "add_call_dispatcher. NOTHING was added."), *Op));
 	}
 
 	// --- list_dispatchers ---------------------------------------------------

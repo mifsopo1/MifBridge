@@ -1040,10 +1040,10 @@ def add_call_dispatcher(graph_id: str, dispatcher: str, target_class: str = "",
 
 @mcp.tool()
 def add_bind_dispatcher(graph_id: str, dispatcher: str, target_class: str = "",
-                        x: int = 0, y: int = 0) -> dict:
-    "Add a Bind (Add) node for an event dispatcher."
+                        x: int = 0, y: int = 0, op: str = "bind") -> dict:
+    "Add a Bind, Unbind or Unbind-All node for an event dispatcher. op selects which: bind (default), unbind (removes ONE named handler) or unbindAll (removes every binding). Broadcasting is add_call_dispatcher."
     return _post("add_bind_dispatcher", graphId=graph_id, dispatcher=dispatcher,
-                 targetClass=target_class or None, x=x, y=y)
+                 targetClass=target_class or None, x=x, y=y, op=op)
 
 
 @mcp.tool()

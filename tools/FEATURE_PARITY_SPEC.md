@@ -5442,7 +5442,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Works wherever any node-add works, i.e. uncooked blueprints only (a cooked BP has no graph to place into and ResolveGraphField fails first). The one real hazard is the factory function itself: validate that the named UFUNCTION is static, BlueprintCallable, and returns a UObject-derived proxy (CastFi...
       Vetter corrected the proposal: Rank drops high -> medium, for three reasons. 1. THE EXAMPLE LIST IS MOSTLY WRONG. UK2Node_AsyncAction::GetMenuActions skips any factory class carrying the HasDedicatedAsyncNode metadata (K2Node_AsyncAction.cpp:52-58), and four dedicated subclasses exist in 5.3.2: K2Node_AIMoveTo (Editor/AIGraph), K2Node_PlayMontage (Editor/AnimGraph), K2Node_LatentGameplayTaskCall (Editor/GameplayTasksEditor), K2...
 
-- [ ] **extend add_bind_dispatcher/add_call_dispatcher with op: bind | unbind | unbindAll | call** (hours)
+- [x] **add_bind_dispatcher gains op: bind | unbind | unbindAll** (hours)
+      DONE 2026-08-30. 24 checks in tools/test_dispatcher_ops.py.
+      THE SUBSYSTEM WAS NOT HALF MISSING, per the vetter, which is why this is a parameter
+      rather than new endpoints: declaration, broadcast and bind all shipped. What was absent
+      is two of the four UK2Node_BaseMCDelegate subclasses, both on the TEARDOWN path - with
+      no workaround at all, since those node classes are the only way to emit those calls.
+      All four take the identical SetFromProperty call, so separate names would have been four
+      spellings of one thing. add_call_dispatcher keeps its own name (already in the tool
+      surface) but now ANSWERS an op that is not its own instead of quietly broadcasting.
+      UK2Node_ClearDelegate HAS NO DELEGATE PIN (K2Node_MCDelegate.cpp:368-390 gives it a title
+      and a handler and nothing else), because clearing removes EVERY binding rather than one
+      named handler. So unbindAll's pin set genuinely differs, and the response says so rather
+      than leaving a caller hunting for a pin that was never going to be there.
+      Spec correction not to repeat: SetFromProperty is NOT "unchanged BLUEPRINTGRAPH_API
+      across 5.3/5.6/5.7" - 5.7 dropped the export macro and it is a bare inline. The
+      conclusion is unaffected because it is header-inline, but the evidence was wrong.
       Places Unbind Event (UK2Node_RemoveDelegate) and Unbind All Events (UK2Node_ClearDelegate) nodes. Every dispatcher an agent binds today can never be unbound, so any Blueprint that binds on activate leaks its binding on deactivate — the classic UMG/gameplay teardown bug.
       API: UK2Node_RemoveDelegate and UK2Node_ClearDelegate, both : UK2Node_BaseMCDelegate — D:/UE532/Engine/Source/Editor/BlueprintGraph/Classes/K2Node_RemoveDelegate.h:10 and K2Node_ClearDelegate.h:10. Configuration is the same single call the bridge already makes: UK2Node_BaseMCDelegate::SetFromProperty(const FProperty*, bool bSelfContext, UClass* OwnerClass) — BLUEPRINTGRAPH_API, K2Node_BaseMCDelegate.h:...
       Cooked: Identical to the two endpoints that already exist — graph edits on an uncooked blueprint; a cooked blueprint has no graph and ResolveGraphField refuses before any engine call. No new cooked hazard.
