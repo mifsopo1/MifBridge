@@ -522,9 +522,20 @@ namespace MifBridge
 	// ever mutate the in-memory UInputSettings CDO, which reverts on editor restart like every other
 	// write this bridge makes. Writing Config/DefaultInput.ini is UInputSettings::SaveKeyMappings,
 	// and that reaches DISK in the user's project - so it lives in save_input_settings, which is on
-	// the safety gate's unsafe list. Putting it behind a save:true parameter here would have hidden a
-	// disk write inside an endpoint whose whole contract is that it does not make one, and the gate
-	// classifies per ENDPOINT, so a parameter could not have been gated at all.
+	// the safety gate's unsafe list.
+	//
+	// CORRECTION, 2026-08-30, same day: this comment first said "a parameter could not have been
+	// gated at all". That was wrong and is worth leaving corrected rather than quietly deleted.
+	// RefuseIfGated does classify per ENDPOINT NAME and cannot see parameters - but a handler can
+	// gate one itself by calling GetWriteMode(), and add_gameplay_tag has done exactly that since it
+	// was written (MifBridgeGameplayTags.cpp:263, refusing a persistent tag unless transient:true or
+	// full mode). So a save:true parameter WAS possible.
+	//
+	// The separate endpoint is still the better shape here, for reasons that survive the correction:
+	// the dispatcher refuses it before the handler is entered at all, which is a stronger guarantee
+	// than a check the handler has to remember to make; it is discoverable, so an agent reading the
+	// endpoint list can see that a persist step exists; and it matches save_package's precedent
+	// rather than inventing a second convention for the same idea.
 
 	UInputSettings* MifInputSettings(const TSharedRef<FJsonObject>& Out)
 	{

@@ -34,6 +34,7 @@
 // build happened to put Nodes5 and Nodes6 in the same translation unit, which is not a guarantee.
 // Do NOT copy either function into another file: see the C2084 note in MifBridgeHandlers.h.
 #include "MifBridgeHandlers.h"
+#include "Engine/DeveloperSettings.h"   // list_settings, and set_property{saveConfig}
 #include "MifBridgeVersion.h"
 // FStringOutputDevice MOVED between the two engines this plugin targets:
 //   5.3: declared in Containers/UnrealString.h, reached transitively through CoreMinimal
@@ -973,6 +974,123 @@ namespace MifBridge
 	//     the violation by default and will coerce on request - it does not silently exceed a bound
 	//     the panel would have refused, and it does not silently clamp either, which would be the
 	//     same bug class pointing the other way.
+	// =======================================================================
+	// list_settings - making Project Settings enumerable
+	// =======================================================================
+	//
+	// THE PROBLEM IT SOLVES is guessing. set_property and get_property have always been able to reach
+	// a settings CDO - "/Script/Engine.Default__RendererSettings" resolves today - but an agent had to
+	// KNOW that string, and there was no way to ask what settings classes exist or which ini each one
+	// owns. This does for Project Settings what list_editor_commands did for the command palette.
+	//
+	// cdoPath IS THE POINT OF THE RESPONSE. It is emitted in the exact form set_property and
+	// get_property take verbatim, so the discovery step feeds the write step with no string assembly
+	// in between - assembling "Default__" onto a class name by hand is precisely the guess this
+	// removes.
+	//
+	// GetDerivedClasses, NOT ISettingsModule. The settings VIEWER (ISettingsContainer::GetCategories)
+	// knows about a superset - sections registered by hand as well as auto-discovered ones - but it
+	// is a Developer-module API with more version surface. GetDerivedClasses is simpler and the same
+	// on 5.3 and 5.7, so that is what this uses, and the response SAYS it lists auto-discovered
+	// UDeveloperSettings only rather than implying it is the whole Settings window.
+	void H_list_settings(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("container"), TEXT("category"), TEXT("nameContains"), TEXT("limit") },
+			TEXT("container (Project|Editor, default both), category, nameContains, limit"),
+			{ { TEXT("section"), TEXT("that is an OUTPUT field - filter with nameContains or category "
+									 "and read the section off each row") },
+			  { TEXT("value"), TEXT("this lists settings CLASSES; read a value with get_property "
+								   "{objectPath: <the cdoPath from a row>, propertyPath: ...}") } }))
+		{
+			return;
+		}
+
+		const FString WantContainer = JStr(In, TEXT("container"));
+		const FString WantCategory  = JStr(In, TEXT("category"));
+		const FString NameContains  = JStr(In, TEXT("nameContains"));
+		const int32   Limit         = FMath::Clamp(static_cast<int32>(JNum(In, TEXT("limit"), 500)),
+												   1, 5000);
+
+		TArray<UClass*> Classes;
+		GetDerivedClasses(UDeveloperSettings::StaticClass(), Classes, /*bRecursive*/ true);
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		int32 Matched = 0;
+		for (UClass* C : Classes)
+		{
+			if (!C || C->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists))
+			{
+				continue;
+			}
+			// The accessors are non-static virtuals, so they need the CDO - which is the same object
+			// the caller will address, so this costs nothing extra.
+			UDeveloperSettings* CDO = Cast<UDeveloperSettings>(C->GetDefaultObject(true));
+			if (!CDO) { continue; }
+
+			const FString Container = CDO->GetContainerName().ToString();
+			const FString Category  = CDO->GetCategoryName().ToString();
+			const FString Section   = CDO->GetSectionName().ToString();
+
+			if (!WantContainer.IsEmpty() && !Container.Equals(WantContainer, ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+			if (!WantCategory.IsEmpty() && !Category.Equals(WantCategory, ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+			if (!NameContains.IsEmpty()
+				&& !C->GetName().Contains(NameContains)
+				&& !Section.Contains(NameContains))
+			{
+				continue;
+			}
+			++Matched;
+			if (Rows.Num() >= Limit) { continue; }
+
+			int32 PropertyCount = 0;
+			int32 ConfigCount = 0;
+			for (TFieldIterator<FProperty> It(C); It; ++It)
+			{
+				++PropertyCount;
+				if (It->HasAnyPropertyFlags(CPF_Config)) { ++ConfigCount; }
+			}
+
+			TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
+			R->SetStringField(TEXT("class"), C->GetName());
+			// VERBATIM-USABLE, which is the whole reason this endpoint exists.
+			R->SetStringField(TEXT("cdoPath"), CDO->GetPathName());
+			R->SetStringField(TEXT("container"), Container);
+			R->SetStringField(TEXT("category"), Category);
+			R->SetStringField(TEXT("section"), Section);
+			R->SetStringField(TEXT("configFile"), C->GetConfigName());
+			R->SetStringField(TEXT("configSection"), C->GetPathName());
+			R->SetNumberField(TEXT("propertyCount"), PropertyCount);
+			// Only the CPF_Config ones can be persisted by set_property{saveConfig}, so the
+			// difference between these two numbers is the part of a settings page that is
+			// session-only no matter what.
+			R->SetNumberField(TEXT("configPropertyCount"), ConfigCount);
+			Rows.Add(MakeShared<FJsonValueObject>(R));
+		}
+
+		Out->SetArrayField(TEXT("sections"), Rows);
+		Out->SetNumberField(TEXT("count"), Rows.Num());
+		Out->SetNumberField(TEXT("matched"), Matched);
+		Out->SetBoolField(TEXT("truncated"), Matched > Rows.Num());
+		Out->SetStringField(TEXT("note"),
+			TEXT("auto-discovered UDeveloperSettings subclasses only. The Settings window can also "
+				 "show sections registered by hand through ISettingsModule, and those will not "
+				 "appear here. cdoPath is usable verbatim as get_property/set_property's objectPath; "
+				 "set_property{saveConfig:\"default\"} is what makes a change outlive the session."));
+		if (Rows.Num() == 0)
+		{
+			Out->SetStringField(TEXT("emptyNote"),
+				TEXT("nothing matched. container is \"Project\" or \"Editor\" and is matched exactly; "
+					 "call with no parameters to see every section first."));
+		}
+	}
+
 	void H_set_property(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		// An IGNORED parameter is worse than a rejected one - the caller gets ok:true and then debugs
@@ -982,11 +1100,14 @@ namespace MifBridge
 			{ TEXT("objectPath"), TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"),
 			  TEXT("propertyPath"), TEXT("value"),
 			  TEXT("overrideFlag"), TEXT("editCondition"), TEXT("override"),
-			  TEXT("enforceClamps"), TEXT("clamp"), TEXT("respectClamps") },
+			  TEXT("enforceClamps"), TEXT("clamp"), TEXT("respectClamps"),
+			  TEXT("saveConfig") },
 			TEXT("objectPath | (blueprintId or path) + widgetName, propertyPath, value, overrideFlag (set|refuse|ignore), enforceClamps. "
 				 "objectPath also reaches a blueprint's COMPONENTS: take the component's templatePath "
 				 "from list_components (the ..._GEN_VARIABLE path) and pass it as objectPath. "
-				 "propertyPath may be NESTED - 'BodyInstance.bSimulatePhysics' works."),
+				 "propertyPath may be NESTED - 'BodyInstance.bSimulatePhysics' works. "
+				 "saveConfig (none|default|user) persists a config-backed setting; the response "
+				 "always reports configBacked so a session-only write is never silent."),
 			{{ TEXT("actorPath"),
 			   TEXT("use objectPath - a placed actor's path IS an objectPath") },
 			 { TEXT("componentName"),
@@ -998,13 +1119,51 @@ namespace MifBridge
 			 { TEXT("verify"),
 			   TEXT("not optional - every write is verified by re-export, which is what makes ok:true mean written") },
 			 { TEXT("operation"),
-			   TEXT("set_property writes a VALUE; add/insert/remove/clear/swap/resize/setKey on a container are edit_container") }}))
+			   TEXT("set_property writes a VALUE; add/insert/remove/clear/swap/resize/setKey on a container are edit_container") },
+			 { TEXT("save"),
+			   TEXT("spell it saveConfig, and it takes none|default|user rather than a bool - \"default\" writes the project-wide Config/Default*.ini, \"user\" writes the per-user config, and they are different files with different blast radii") },
+			 { TEXT("configFile"),
+			   TEXT("not selectable - TryUpdateDefaultConfigFile picks the file from the class and the response reports which one it used. Letting a caller name the file would make set_property an arbitrary-file writer") }}))
 		{
 			return;
 		}
 
 		const FString PropertyPath = JStr(In, TEXT("propertyPath"));
 		if (PropertyPath.IsEmpty()) { Fail(Out, TEXT("propertyPath required (dot path, e.g. Font.Size)")); return; }
+
+		// --- saveConfig: VALIDATED AND GATED HERE, before a single byte is written ------------
+		// Same ordering rule this handler already follows for editCondition: a refusal must leave
+		// nothing behind, and order is the only mechanism (PM-007 - a cancelled transaction reverts
+		// nothing at all). Gating after the write would mean refusing a call that had already
+		// changed memory.
+		//
+		// AN IN-HANDLER GATE, NOT AN UnsafeEndpoints() ENTRY. That set is checked by ENDPOINT NAME in
+		// the dispatcher, so putting "set_property" in it would refuse every in-memory property write
+		// in scratch mode - the single most-used write endpoint in the plugin. The established
+		// pattern for gating a PARAMETER is add_gameplay_tag's (MifBridgeGameplayTags.cpp:263), which
+		// refuses a persistent tag unless transient:true or full mode. saveConfig:"none" maps onto
+		// transient:true one for one.
+		const FString SaveConfigMode = JStr(In, TEXT("saveConfig"), TEXT("none")).ToLower();
+		if (SaveConfigMode != TEXT("none") && SaveConfigMode != TEXT("default")
+			&& SaveConfigMode != TEXT("user"))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("saveConfig must be \"none\", \"default\" or \"user\" - got '%s'. \"default\" ")
+				TEXT("writes the project-wide Config/Default*.ini via TryUpdateDefaultConfigFile, ")
+				TEXT("\"user\" writes the per-user config via SaveConfig, and \"none\" (the default) ")
+				TEXT("changes memory only. NOTHING was changed."), *SaveConfigMode));
+			return;
+		}
+		if (SaveConfigMode != TEXT("none") && GetWriteMode() != EMifWriteMode::Full)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("saveConfig:\"%s\" WRITES A CONFIG FILE ON DISK, which outlives this session, ")
+				TEXT("and the write mode is '%s'. Two ways forward: drop saveConfig (or pass ")
+				TEXT("\"none\") to change the setting for THIS EDITOR SESSION only - allowed in every ")
+				TEXT("mode, gone on restart - or set the write mode to full. NOTHING was changed."),
+				*SaveConfigMode, WriteModeName(GetWriteMode())));
+			return;
+		}
 
 		// THE ATTACHMENT PROPERTIES ARE REACHABLE HERE AND MUST NOT BE WRITTEN. AttachParent,
 		// AttachSocketName and AttachChildren are ordinary UPROPERTYs on USceneComponent, and this
@@ -1629,6 +1788,83 @@ namespace MifBridge
 			FKismetEditorUtilities::CompileBlueprint(OwningWidgetBP);   // outside the transaction above
 			bRecompiled = true;
 			Out->SetBoolField(TEXT("recompiled"), bRecompiled);
+		}
+
+		// --- CONFIG BACKING: reported ALWAYS, not only when saving ---------------------------
+		// THE SILENT LIE THIS CLOSES. A config-backed setting written without saveConfig returns
+		// ok:true and reverts at the next editor restart. That is the same defect class as PM-002's
+		// silent default: the call succeeded, the caller believes the project changed, and nothing
+		// tells them otherwise until much later. So configBacked is on EVERY response - saying
+		// nothing here is exactly the failure.
+		const UClass* TargetClass = Target->GetClass();
+		const bool bLeafConfig = Leaf && Leaf->HasAnyPropertyFlags(CPF_Config);
+		const bool bClassConfig = TargetClass && TargetClass->HasAnyClassFlags(CLASS_Config);
+		const bool bConfigBacked = bLeafConfig && bClassConfig;
+		Out->SetBoolField(TEXT("configBacked"), bConfigBacked);
+		if (bConfigBacked)
+		{
+			// The section a config file keys this class under IS its class path - that is the
+			// engine's own convention, not a guess, and it is what a caller needs to find the entry
+			// by hand.
+			Out->SetStringField(TEXT("configSection"), TargetClass->GetPathName());
+			Out->SetStringField(TEXT("configFile"), TargetClass->GetConfigName());
+
+			if (SaveConfigMode == TEXT("none"))
+			{
+				Out->SetStringField(TEXT("persistNote"),
+					TEXT("this is a CONFIG-BACKED setting and nothing was written to disk - the "
+						 "change applies to this editor session and is gone at restart. Pass "
+						 "saveConfig:\"default\" to write the project-wide ini, or \"user\" for the "
+						 "per-user one."));
+			}
+		}
+
+		if (SaveConfigMode != TEXT("none"))
+		{
+			if (!bConfigBacked)
+			{
+				// Refusing to pretend. Calling TryUpdateDefaultConfigFile on a non-config property
+				// would return true having written nothing about it, and reporting saved:true there
+				// would be a worse lie than the one this feature exists to fix.
+				Out->SetBoolField(TEXT("saved"), false);
+				Out->SetStringField(TEXT("saveError"), FString::Printf(
+					TEXT("saveConfig was requested but '%s' is not config-backed (%s), so there is "
+						 "nothing for a config file to hold. The value WAS written to memory. "
+						 "describe_property lists CPF_Config in a property's flags."),
+					*PropertyPath,
+					!bClassConfig ? TEXT("its class is not CLASS_Config")
+								  : TEXT("the property has no CPF_Config flag")));
+			}
+			else if (SaveConfigMode == TEXT("default"))
+			{
+				// bWarnIfFail=false DELIBERATELY. The default is true, and on failure that path puts
+				// up a MODAL - which would deadlock the bridge, since every handler runs inline on
+				// the ticker that would have to service the dialog (02_GOTCHAS.md). The false return
+				// is surfaced as a named error instead, which is more useful anyway.
+				const bool bSaved = Target->TryUpdateDefaultConfigFile(FString(), /*bWarnIfFail*/ false);
+				Out->SetBoolField(TEXT("saved"), bSaved);
+				Out->SetStringField(TEXT("savePath"), TargetClass->GetDefaultConfigFilename());
+				if (!bSaved)
+				{
+					Out->SetStringField(TEXT("saveError"), FString::Printf(
+						TEXT("the setting changed in memory but '%s' could NOT be written - it is "
+							 "read-only, checked out elsewhere, or the directory is missing. The "
+							 "change will be lost at restart."),
+						*TargetClass->GetDefaultConfigFilename()));
+				}
+			}
+			else
+			{
+				// SaveConfig() is void - it reports nothing, so `saved` here means "we called it",
+				// and the response says exactly that rather than implying a verified write.
+				Target->SaveConfig();
+				Out->SetBoolField(TEXT("saved"), true);
+				Out->SetStringField(TEXT("savePath"), TargetClass->GetConfigName());
+				Out->SetStringField(TEXT("saveNote"),
+					TEXT("UObject::SaveConfig() returns void, so saved:true here means it was called "
+						 "without error, not that the file was verified on disk. saveConfig:\"default\" "
+						 "uses TryUpdateDefaultConfigFile, which does report success."));
+			}
 		}
 
 		UE_LOG(LogMifBridge, Log, TEXT("set_property: %s.%s = %s (form=%s, changed=%s)"),

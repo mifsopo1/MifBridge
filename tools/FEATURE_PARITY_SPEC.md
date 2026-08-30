@@ -4613,7 +4613,36 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Works cooked for the in-memory mutation - an InputMappingContext is a plain runtime UDataAsset with no MeshDescription/SourceModel-style editor-only payload, so nothing here can crash on a cooked package. PERSISTING is the cooked-only problem: check MifBridge::IsCookedOrContainerPackage(Context->Get...
       Vetter corrected the proposal: Rank stays high but it is borderline, and I want the honest version on record. It qualifies under "a whole subsystem half missing": Enhanced Input has a read half and no write half, and legacy UInputSettings input has neither half. What nearly pushed it to medium is that a partial workaround genuinely does exist on 5.3/5.6 (edit_container on the protected-but-EditAnywhere Mappings array) for the p...
 
-- [ ] **extend set_property with `saveConfig`, plus a new list_settings read half** (day)
+- [x] **extend set_property with `saveConfig`, plus a new list_settings read half** (day)
+      DONE 2026-08-30. 22 checks in tools/test_settings_config.py, and 14 suites that touch
+      set_property re-run green - it is the most heavily-parameterised handler here.
+      What was actually broken was a SILENT LIE, not a missing feature. set_property could
+      already write a settings CDO; the change was lost at restart and nothing said so, which
+      is PM-002's silent-default defect class exactly. configBacked is now on EVERY response,
+      not only when saving, because the silence WAS the bug.
+      The gate is IN-HANDLER, per the vetter's correction. Adding set_property to
+      UnsafeEndpoints() would have refused every in-memory property write in scratch mode -
+      that set is checked by endpoint NAME in the dispatcher. The pattern used instead is
+      add_gameplay_tag's (MifBridgeGameplayTags.cpp:263), and saveConfig:"none" maps onto its
+      transient:true one for one. The gate runs BEFORE resolution, so a refusal leaves nothing
+      behind (PM-007); T2703 proves it by gating a call whose objectPath does not even exist.
+      bWarnIfFail=false on TryUpdateDefaultConfigFile, deliberately: the default is true and
+      that path puts up a MODAL on failure, which would deadlock the bridge since handlers run
+      inline on the ticker that would service it. The false return is reported as a named
+      error instead.
+      list_settings found 105 sections here. cdoPath is the point of it - emitted in the form
+      get_property/set_property take verbatim, because the module is often not the one you
+      would guess: writing the suite, the obvious /Script/Engine.Default__CookerSettings was
+      WRONG (it lives in DeveloperToolSettings).
+      Dropped from the plan on the vetter's advice: ImportConsoleVariableValues /
+      ExportValuesToConsoleVariables are protected and WITH_EDITOR-only. The cvar export still
+      happens for free because set_property's write path already fires PostEditChangeProperty
+      (MifBridgeDetails.cpp:1508), which is what UDeveloperSettings calls it from. And
+      TryUpdateDefaultConfigFile's SpecificFileLocation is deliberately NOT exposed - it would
+      turn set_property into an arbitrary-file writer.
+      NOT exercised: both saveError branches (a non-config property, and a read-only ini).
+      They sit downstream of the write-mode gate, so reaching them means running in full mode
+      and writing the project's real config.
       Makes a write to a config-backed setting persist, and makes the settings objects discoverable. Project Settings, Editor Preferences and every plugin's settings page are UDeveloperSettings CDOs, so set_property can already change one in memory - and the change is lost at editor restart because nothing ever writes the ini. There is also no way to find out which settings classes exist or which ini/section each one owns.
       API: Persistence: UObject::TryUpdateDefaultConfigFile(const FString& SpecificFileLocation="", bool bWarnIfFail=true), COREUOBJECT_API public, D:/UE532/Engine/Source/Runtime/CoreUObject/Public/UObject/Object.h:1246 (5.7: same file :1338) - this is the one the engine's own settings panels call, and UpdateDefaultConfigFile at :1237 is UE_DEPRECATED(5.0), so do not use it. UObject::SaveConfig(uint64 Flags=...
       Cooked: Works on a cooked project - a UDeveloperSettings CDO is a live class default with no editor-only asset payload, so nothing here can crash on cooked data. What can fail is the FILE: a read-only or source-controlled Config/DefaultEngine.ini makes TryUpdateDefaultConfigFile return false, and that false...

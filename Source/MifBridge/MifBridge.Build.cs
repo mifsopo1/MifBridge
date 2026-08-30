@@ -38,6 +38,7 @@ public class MifBridge : ModuleRules
 			"AnimationBlueprintLibrary",
 			"InputBlueprintNodes", // UK2Node_EnhancedInputAction (add_enhanced_input_action)
 			"EnhancedInput",       // UInputAction / UInputMappingContext runtime types
+			"DeveloperSettings",   // UDeveloperSettings - list_settings, and set_property{saveConfig}
     // UK2Node_* classes
 			"GraphEditor",       // graph helpers
 			"UMGEditor",         // UK2Node_CreateWidget (private header, see PrivateIncludePaths)
