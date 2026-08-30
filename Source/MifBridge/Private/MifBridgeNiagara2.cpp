@@ -799,6 +799,27 @@ namespace MifBridge
 			return;
 		}
 
+		// HONOUR THE NAME, or stop accepting one. AddEmitterToSystem names the handle from the
+		// SOURCE emitter (FNiagaraUtilities::GetUniqueName at NiagaraEditorUtilities.cpp:2113), so
+		// nothing the caller passes reaches it - this endpoint asked for "MifProbe" and got
+		// "VectorFieldParticleEmitter" back. The collision check above made the parameter look
+		// load-bearing while the engine quietly overrode it, which is worse than an unused
+		// parameter: audit_dead_params cannot see it, because it IS read.
+		const FString Requested = JStr(In, TEXT("name"));
+		if (!Requested.IsEmpty() && HandleName != Requested)
+		{
+			const_cast<FNiagaraEmitterHandle&>(After[Found]).SetName(FName(*Requested), *System);
+			// Read back, because SetName also uniquifies - asking for a name that collides gives
+			// you a near miss, and reporting the request would hide it.
+			HandleName = System->GetEmitterHandles()[Found].GetName().ToString();
+			if (HandleName != Requested)
+			{
+				Out->SetStringField(TEXT("nameNote"), FString::Printf(
+					TEXT("asked for '%s' and the engine settled on '%s' - it uniquifies handle "
+						 "names."), *Requested, *HandleName));
+			}
+		}
+
 		const bool bWantEnabled = JBool(In, TEXT("enabled"), true);
 		if (After[Found].GetIsEnabled() != bWantEnabled)
 		{

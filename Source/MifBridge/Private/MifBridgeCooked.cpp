@@ -1721,8 +1721,17 @@ namespace MifBridge
 
 #if MIF_ENGINE_AT_LEAST(5, 6)
 	#define MIF_COLLECTIONS() (FCollectionManagerModule::GetModule().Get().GetProjectCollectionContainer().Get())
+	// AND THE ERROR CHANNEL CHANGED SHAPE WITH IT. ICollectionContainer has no GetLastError() -
+	// that is ICollectionManager's (ICollectionManager.h:426). The container takes a TRAILING
+	// FText* out-param instead: CreateCollection at ICollectionContainer.h:129-131,
+	// DestroyCollection at :170, AddToCollection at :185-187. So the error has to be threaded INTO
+	// the call, not asked for afterwards.
+	#define MIF_COLL_ERRARG(E) , &E
+	#define MIF_COLL_FETCH(E)
 #else
 	#define MIF_COLLECTIONS() (FCollectionManagerModule::GetModule().Get())
+	#define MIF_COLL_ERRARG(E)
+	#define MIF_COLL_FETCH(E) E = Collections.GetLastError();
 #endif
 
 	static bool MifParseShareType(const FString& In, ECollectionShareType::Type& Out, FString& OutErr)
@@ -1860,8 +1869,11 @@ namespace MifBridge
 		if (!MifParseShareType(JStr(In, TEXT("shareType")), Share, Err)) { Fail(Out, Err); return; }
 
 		auto& Collections = MIF_COLLECTIONS();
-		if (!Collections.CreateCollection(FName(*Name), Share, ECollectionStorageMode::Static))
+		FText CollErr;
+		if (!Collections.CreateCollection(FName(*Name), Share, ECollectionStorageMode::Static
+										  MIF_COLL_ERRARG(CollErr)))
 		{
+			MIF_COLL_FETCH(CollErr)
 			// THE REASON THE CONSOLE ROUTE CANNOT GIVE YOU. Those delegates report only to the log,
 			// so exec_console returns handled:true and an empty string whether this succeeded or
 			// the name was already taken.
@@ -1869,7 +1881,7 @@ namespace MifBridge
 				TEXT("could not create %s collection '%s': %s. The usual causes are that the name "
 					 "already exists for this share type, or - for shared - that the project has no "
 					 "revision control provider. NOTHING was created."),
-				MifShareTypeName(Share), *Name, *Collections.GetLastError().ToString()));
+				MifShareTypeName(Share), *Name, *CollErr.ToString()));
 			return;
 		}
 
@@ -1926,6 +1938,7 @@ namespace MifBridge
 			return;
 		}
 
+		FText CollErr;
 		TArray<FSoftObjectPath> Paths;
 		for (const TSharedPtr<FJsonValue>& V : *Arr)
 		{
@@ -1940,8 +1953,11 @@ namespace MifBridge
 
 		int32 Reported = 0;
 		const bool bOk = bAdd
-			? Collections.AddToCollection(FName(*Name), Share, Paths, &Reported)
-			: Collections.RemoveFromCollection(FName(*Name), Share, Paths, &Reported);
+			? Collections.AddToCollection(FName(*Name), Share, Paths, &Reported
+										  MIF_COLL_ERRARG(CollErr))
+			: Collections.RemoveFromCollection(FName(*Name), Share, Paths, &Reported
+											   MIF_COLL_ERRARG(CollErr));
+		MIF_COLL_FETCH(CollErr)
 
 		TArray<FSoftObjectPath> After;
 		Collections.GetAssetsInCollection(FName(*Name), Share, After);
@@ -1977,7 +1993,7 @@ namespace MifBridge
 				TEXT("%d of %d path(s) are %s the collection afterwards. %s%s"),
 				Satisfied, Paths.Num(), bAdd ? TEXT("in") : TEXT("out of"),
 				bOk ? TEXT("") : TEXT("The engine reported failure. "),
-				*Collections.GetLastError().ToString()));
+				*CollErr.ToString()));
 			return;
 		}
 		if (Delta != Paths.Num())
@@ -2047,10 +2063,12 @@ namespace MifBridge
 					 "confirm:true. NOTHING was destroyed."), *Name, Assets.Num()));
 			return;
 		}
-		if (!Collections.DestroyCollection(FName(*Name), Share))
+		FText CollErr;
+		if (!Collections.DestroyCollection(FName(*Name), Share MIF_COLL_ERRARG(CollErr)))
 		{
+			MIF_COLL_FETCH(CollErr)
 			Fail(Out, FString::Printf(TEXT("could not destroy '%s': %s"), *Name,
-									  *Collections.GetLastError().ToString()));
+									  *CollErr.ToString()));
 			return;
 		}
 		// READ BACK: DestroyCollection returns a bool, and gone-ness is the postcondition.

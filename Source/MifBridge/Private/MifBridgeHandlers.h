@@ -6,6 +6,16 @@
 // in MifBridgeCommon.cpp from the declarations below.
 #pragma once
 
+// MifBridgeVersion.h is included HERE, once, so every handler gets MIF_ENGINE_AT_LEAST
+// whether or not it remembers to ask. All 84 handler .cpp files include this header.
+//
+// WHY THIS IS STRUCTURAL RATHER THAN THREE FIXES: an undefined macro inside #if is not an
+// error, it is a ZERO. A file that uses MIF_ENGINE_AT_LEAST without this include compiles
+// cleanly and silently takes the pre-5.6 branch - the guard is invisible, not broken. That
+// shipped in MifBridgePhysicsAsset.cpp, MifBridgeSkeleton.cpp and MifBridgeNiagara2.cpp,
+// found one at a time by a 5.7 build failing in someone else's project. Making it
+// unreachable beats finding the next one.
+#include "MifBridgeVersion.h"
 #include "CoreMinimal.h"
 #include "Dom/JsonObject.h"
 
