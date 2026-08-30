@@ -31,6 +31,9 @@
 #include "MifBridgeVersion.h"   // MIF_ENGINE_AT_LEAST - the IK Rig API moved in 5.6
 
 #if MIF_WITH_IKRIG
+#include "RetargetEditor/IKRetargetBatchOperation.h"   // run_retarget
+#include "Animation/AnimationAsset.h"
+#include "Animation/AnimSequenceBase.h"
 #include "Rig/IKRigDefinition.h"          // UIKRigDefinition, FBoneChain, FRetargetDefinition
 // The solver header was RENAMED in UE 5.6, and not merely renamed: the whole IK Rig solver system
 // moved from UObject to UStruct. The legacy UIKRigSolver class survives in IKRigSolverBase.h purely
@@ -2365,6 +2368,275 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("solverIndex"), Index);
 		Out->SetBoolField(TEXT("connected"), bNow);
 		Out->SetBoolField(TEXT("connectedToAnySolver"), C->IsGoalConnectedToAnySolver(FName(*Name)));
+#endif
+	}
+
+	// =======================================================================
+	// run_retarget - the OUTPUT half of the IK Retargeter
+	// =======================================================================
+	//
+	// WHAT WAS ACTUALLY MISSING, stated narrowly because the survey overstated it. The VALIDATION
+	// half already exists: list_retarget_chain_mapping builds a real retarget processor, initialises
+	// it against both meshes and reports its error log, so "does this retargeter work" has been
+	// answerable for a while. What could not be done was producing the retargeted animation ASSETS.
+	//
+	// THIS ENDPOINT WRITES FILES TO DISK, AND NOT WHERE YOU CHOOSE. DuplicateAndRetarget hard-codes
+	// the destination to the TARGET SKELETAL MESH's package (IKRetargetBatchOperation.cpp:107), so
+	// the new assets land next to that mesh wherever it lives - quite possibly in real project
+	// content, and not under any scratch path. FNameDuplicationRule::FolderPath is reachable only
+	// through the lower-level RunRetarget context, whose struct changed shape between 5.3 and 5.7
+	// (5.7 adds FAdditiveRetargetSettings, ERetargetRootLockMode and curve ops), so a `destination`
+	// parameter is NOT offered rather than offered and quietly ignored.
+	//
+	// That is why this sits on the safety gate's unsafe list beside save_package: it is a
+	// persist-to-disk operation whose location the engine picks.
+	//
+	// ============================================================================================
+	// THE COOKED CHECK, AND THE PROBE THAT IS ITSELF THE CRASH
+	// ============================================================================================
+	//
+	// Retargeting writes new bone tracks into each duplicate, which on a UAnimSequence goes through
+	// the editor-only data model. A cooked source has no UAnimDataModel and the write terminates the
+	// editor. So every source must be checked first - but NOT with IsDataModelValid(), the obvious
+	// call, because on an asset that should have a model it runs ValidateModel()
+	// (AnimSequenceBase.h:315-320), and ValidateModel IS the checkf. The probe would trigger exactly
+	// the crash it is meant to prevent. GetDataModelInterface() != nullptr is a plain pointer read
+	// and is used instead, with the package's PKG_Cooked flag as the reported reason.
+	//
+	// AND CHECKING THE CALLER'S LIST IS NOT ENOUGH. GenerateAssetLists EXPANDS the set: montage
+	// PreviewBasePose, anim-blueprint parent chains, GetAllAnimationSequencesReferredInBlueprint and
+	// a reference walk (IKRetargetBatchOperation.cpp:60-95) all pull in assets the caller never
+	// named, and every one of them reaches the same data-model write. Since this endpoint cannot
+	// check what it cannot see, remapReferencedAssets DEFAULTS TO FALSE - the engine's own default is
+	// true - and passing true is refused unless every named asset is uncooked AND the caller has
+	// acknowledged that the expansion is unchecked.
+	//
+	// ============================================================================================
+	// AND IT FAILS SILENTLY. RunRetarget bails on every precondition failure with a bare
+	// UE_LOG(LogTemp, Warning) and returns (IKRetargetBatchOperation.cpp:494-518), and
+	// DuplicateAndRetarget swallows that and hands back an empty array with no reason at all. So
+	// each precondition from FIKRetargetBatchOperationContext::IsValid (header :53-58) - both meshes
+	// present, both distinct, the retargeter set - plus both IK rigs, is checked HERE and refused by
+	// name. Without that a caller gets created:[] and silence.
+
+	void H_run_retarget(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("retargeter"), TEXT("path"), TEXT("assetPath"), TEXT("animations"),
+			  TEXT("sourceMesh"), TEXT("targetMesh"), TEXT("prefix"), TEXT("suffix"),
+			  TEXT("search"), TEXT("replace"), TEXT("remapReferencedAssets"), TEXT("confirm") },
+			TEXT("retargeter (aliases: path, assetPath); animations[] - AnimSequence/Montage paths; ")
+			TEXT("sourceMesh/targetMesh override the rigs' preview meshes; prefix, suffix, search, ")
+			TEXT("replace name the outputs; remapReferencedAssets (default FALSE); confirm:true"),
+			{ { TEXT("destination"), TEXT("not offered, because DuplicateAndRetarget cannot honour "
+										  "it - it hard-codes the destination to the TARGET MESH's "
+										  "package (IKRetargetBatchOperation.cpp:107). Accepting the "
+										  "parameter and writing somewhere else would be worse than "
+										  "not having it") },
+			  { TEXT("overwrite"), TEXT("not offered - 5.3's DuplicateAndRetarget has no overwrite "
+										"concept at all (the parameter only exists from 5.7), so the "
+										"two engines would behave differently on a name collision") } }))
+		{
+			return;
+		}
+#if !MIF_WITH_IKRIG
+		Fail(Out, TEXT("run_retarget needs the IKRig plugin, which is not available on this engine ")
+			TEXT("build."));
+#else
+		UIKRetargeter* Asset = nullptr;
+		UIKRetargeterController* C = IKResolveRetargeter(In, Out, Asset);
+		if (!C) { return; }
+
+		// --- preconditions, each named, because RunRetarget only UE_LOGs them ------------------
+		const UIKRigDefinition* Src = C->GetIKRig(ERetargetSourceOrTarget::Source);
+		const UIKRigDefinition* Tgt = C->GetIKRig(ERetargetSourceOrTarget::Target);
+		if (!IsValid(Src) || !IsValid(Tgt))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("this retargeter has no %s IK rig, so RunRetarget would bail with a log line ")
+				TEXT("and hand back an empty list. Set it with set_retarget_rigs. NOTHING was ")
+				TEXT("changed."), !IsValid(Src) ? TEXT("SOURCE") : TEXT("TARGET")));
+			return;
+		}
+
+		USkeletalMesh* SrcMesh = nullptr;
+		USkeletalMesh* TgtMesh = nullptr;
+		const FString SrcOverride = JStr(In, TEXT("sourceMesh"));
+		const FString TgtOverride = JStr(In, TEXT("targetMesh"));
+		SrcMesh = SrcOverride.IsEmpty() ? Src->PreviewSkeletalMesh.LoadSynchronous()
+										: Cast<USkeletalMesh>(LoadAssetLenient(SrcOverride));
+		TgtMesh = TgtOverride.IsEmpty() ? Tgt->PreviewSkeletalMesh.LoadSynchronous()
+										: Cast<USkeletalMesh>(LoadAssetLenient(TgtOverride));
+		if (!SrcMesh || !TgtMesh)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no %s skeletal mesh. Either the IK rig has no preview mesh set or the override ")
+				TEXT("path did not resolve to a SkeletalMesh. FIKRetargetBatchOperationContext::IsValid ")
+				TEXT("requires both, and RunRetarget returns silently without them. NOTHING was ")
+				TEXT("changed."), !SrcMesh ? TEXT("SOURCE") : TEXT("TARGET")));
+			return;
+		}
+		if (SrcMesh == TgtMesh)
+		{
+			Fail(Out, TEXT("the source and target meshes are the SAME asset, which IsValid() rejects ")
+				TEXT("- there would be nothing to retarget between. NOTHING was changed."));
+			return;
+		}
+
+		// --- the animation list ----------------------------------------------------------------
+		const TArray<TSharedPtr<FJsonValue>>* AnimArr = nullptr;
+		if (!In->TryGetArrayField(TEXT("animations"), AnimArr) || !AnimArr || AnimArr->Num() == 0)
+		{
+			Fail(Out, TEXT("animations[] is required and must be non-empty - the assets to retarget. ")
+				TEXT("NOTHING was changed."));
+			return;
+		}
+
+		TArray<FAssetData> ToRetarget;
+		TArray<TSharedPtr<FJsonValue>> Skipped;
+		auto Skip = [&Skipped](const FString& Path, const FString& Reason)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("source"), Path);
+			J->SetStringField(TEXT("reason"), Reason);
+			Skipped.Add(MakeShared<FJsonValueObject>(J));
+		};
+
+		for (const TSharedPtr<FJsonValue>& V : *AnimArr)
+		{
+			FString Path;
+			if (!V.IsValid() || !V->TryGetString(Path) || Path.IsEmpty())
+			{
+				Skip(TEXT("(non-string entry)"), TEXT("animations[] must hold asset path strings"));
+				continue;
+			}
+			UObject* Obj = LoadAssetLenient(Path);
+			if (!Obj)
+			{
+				Skip(Path, TEXT("no asset at that path"));
+				continue;
+			}
+			UAnimationAsset* Anim = Cast<UAnimationAsset>(Obj);
+			if (!Anim)
+			{
+				Skip(Path, FString::Printf(
+					TEXT("this is a %s, not an animation asset"), *Obj->GetClass()->GetName()));
+				continue;
+			}
+			// THE COOKED CHECK. A plain pointer read - never IsDataModelValid(), which runs
+			// ValidateModel() and IS the checkf this is here to avoid.
+			if (const UAnimSequenceBase* Seq = Cast<UAnimSequenceBase>(Anim))
+			{
+				if (Seq->GetDataModelInterface() == nullptr)
+				{
+					Skip(Path, TEXT("COOKED: this sequence has no UAnimDataModel, so writing "
+									"retargeted bone tracks into its duplicate would terminate the "
+									"editor. Retargeting needs an uncooked source."));
+					continue;
+				}
+			}
+			if (Obj->GetOutermost()->HasAnyPackageFlags(PKG_Cooked))
+			{
+				Skip(Path, TEXT("COOKED package - the duplicate cannot receive animation data."));
+				continue;
+			}
+			ToRetarget.Add(FAssetData(Obj));
+		}
+
+		// REFUSE THE WHOLE CALL, never a partial run. A batch that silently retargets 39 of 40 and
+		// reports success is the shape that costs a day to notice.
+		if (ToRetarget.Num() == 0)
+		{
+			Out->SetArrayField(TEXT("skipped"), Skipped);
+			Out->SetNumberField(TEXT("requested"), AnimArr->Num());
+			Fail(Out, FString::Printf(
+				TEXT("none of the %d requested asset(s) can be retargeted - see skipped[] for the ")
+				TEXT("reason on each. NOTHING was changed."), AnimArr->Num()));
+			return;
+		}
+		if (Skipped.Num() > 0)
+		{
+			Out->SetArrayField(TEXT("skipped"), Skipped);
+			Fail(Out, FString::Printf(
+				TEXT("%d of %d requested asset(s) cannot be retargeted - see skipped[]. This refuses ")
+				TEXT("the WHOLE batch rather than running the other %d, because a batch that ")
+				TEXT("half-succeeds and reports success is worse than one that refuses. Remove the ")
+				TEXT("listed assets and call again. NOTHING was changed."),
+				Skipped.Num(), AnimArr->Num(), ToRetarget.Num()));
+			return;
+		}
+
+		const bool bRemap = JBool(In, TEXT("remapReferencedAssets"), false);
+		if (bRemap)
+		{
+			// The engine defaults this to TRUE; this endpoint defaults it to FALSE and says why,
+			// because turning it on pulls in assets that were never checked above.
+			Out->SetStringField(TEXT("remapWarning"),
+				TEXT("remapReferencedAssets:true was requested. GenerateAssetLists will pull in "
+					 "assets you did not name - montage preview poses, anim-blueprint parent chains "
+					 "and referenced sequences - and this endpoint CANNOT check those for cooked "
+					 "data the way it checked yours. If any of them is cooked, the editor will "
+					 "terminate. This is why the default is false."));
+		}
+
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("run_retarget CREATES AND SAVES %d new animation asset(s) ON DISK, and not ")
+				TEXT("where you choose: DuplicateAndRetarget hard-codes the destination to the TARGET ")
+				TEXT("MESH's package, so they will land next to '%s'. Pass confirm:true. NOTHING was ")
+				TEXT("changed."), ToRetarget.Num(), *TgtMesh->GetOutermost()->GetName()));
+			return;
+		}
+
+		// --- run it ------------------------------------------------------------------------------
+		// NINE ARGUMENTS, POSITIONAL, on purpose. 5.7 renamed the ninth (bRemapReferencedAssets ->
+		// bIncludeReferencedAssets) and added a tenth, bOverwriteExistingFiles=false. A nine-arg call
+		// compiles and means the same thing on both, and takes 5.7's no-overwrite default - which is
+		// the safer of the two behaviours and matches 5.3, where overwriting is not a concept.
+		const TArray<FAssetData> Created = UIKRetargetBatchOperation::DuplicateAndRetarget(
+			ToRetarget, SrcMesh, TgtMesh, Asset,
+			JStr(In, TEXT("search")), JStr(In, TEXT("replace")),
+			JStr(In, TEXT("prefix")), JStr(In, TEXT("suffix")),
+			bRemap);
+
+		TArray<TSharedPtr<FJsonValue>> CreatedArr;
+		for (const FAssetData& D : Created)
+		{
+			CreatedArr.Add(MakeShared<FJsonValueString>(D.GetObjectPathString()));
+		}
+		Out->SetStringField(TEXT("retargeter"), Asset->GetPathName());
+		Out->SetStringField(TEXT("sourceMesh"), SrcMesh->GetPathName());
+		Out->SetStringField(TEXT("targetMesh"), TgtMesh->GetPathName());
+		Out->SetNumberField(TEXT("requested"), ToRetarget.Num());
+		Out->SetArrayField(TEXT("created"), CreatedArr);
+		Out->SetNumberField(TEXT("createdCount"), CreatedArr.Num());
+		Out->SetArrayField(TEXT("skipped"), Skipped);
+		Out->SetStringField(TEXT("destination"), TgtMesh->GetOutermost()->GetName());
+
+		// AN EMPTY RESULT IS A FAILURE, and the engine will not say so. DuplicateAndRetarget returns
+		// an empty array both when it worked on nothing and when RunRetarget bailed internally, so
+		// the count is the only signal there is.
+		if (CreatedArr.Num() == 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the batch ran and produced NO assets. Every precondition this endpoint can ")
+				TEXT("check passed, so the failure is inside RunRetarget, which reports its reasons ")
+				TEXT("only to the log (LogTemp, Warning) and returns an empty list either way. Check ")
+				TEXT("the chain mapping with list_retarget_chain_mapping - an unmapped or ")
+				TEXT("uninitialised retargeter is the usual cause.")));
+			return;
+		}
+		if (CreatedArr.Num() != ToRetarget.Num())
+		{
+			Out->SetStringField(TEXT("partialNote"), FString::Printf(
+				TEXT("%d asset(s) were requested and %d were produced. The engine does not report "
+					 "which ones failed or why - created[] is the authoritative list of what now "
+					 "exists."), ToRetarget.Num(), CreatedArr.Num()));
+		}
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("these assets were CREATED AND SAVED by the engine - unlike every other write in "
+				 "this plugin, they persist without a save call."));
 #endif
 	}
 }

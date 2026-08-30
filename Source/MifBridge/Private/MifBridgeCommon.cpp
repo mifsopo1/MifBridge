@@ -151,6 +151,7 @@ namespace MifBridge
 			MIF_BIND(set_physics_body_collision);
 			MIF_BIND(set_physics_primitive_collision);
 			MIF_BIND(add_socket);
+			MIF_BIND(run_retarget);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);

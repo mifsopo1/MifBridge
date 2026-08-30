@@ -3027,6 +3027,17 @@ def add_socket(path: str, name: str, bone: str, location: dict = None, rotation:
                  rotation=rotation, scale=scale, target=target or None)
 
 
+@mcp.tool()
+def run_retarget(retargeter: str, animations: list, source_mesh: str = "", target_mesh: str = "",
+                 prefix: str = "", suffix: str = "", search: str = "", replace: str = "",
+                 remap_referenced_assets: bool = False, confirm: bool = False) -> dict:
+    "Run a configured IK Retargeter over animation assets, producing retargeted duplicates on the target skeleton. THIS CREATES AND SAVES FILES ON DISK, and not where you choose: DuplicateAndRetarget hard-codes the destination to the TARGET SKELETAL MESH's package, so the new assets land next to that mesh wherever it lives - there is no destination parameter because the engine cannot honour one. It is on the safety gate's unsafe list for that reason and needs confirm=True. UNCOOKED SOURCES ONLY: retargeting writes bone tracks through the editor-only data model, so a cooked source would terminate the editor; every named asset is checked first and the WHOLE batch is refused if any is cooked, with each one named in skipped[]. remap_referenced_assets defaults to FALSE here although the engine defaults it to true, because turning it on pulls in montage preview poses, anim-blueprint parent chains and referenced sequences that this endpoint cannot check for cooked data. Preconditions are validated and named up front - both IK rigs, both meshes, meshes distinct - because RunRetarget reports its own failures only to the log and hands back an empty list either way."
+    return _post("run_retarget", retargeter=retargeter, animations=animations,
+                 sourceMesh=source_mesh, targetMesh=target_mesh, prefix=prefix, suffix=suffix,
+                 search=search, replace=replace, remapReferencedAssets=remap_referenced_assets,
+                 confirm=confirm)
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:

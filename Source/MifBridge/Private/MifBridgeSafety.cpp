@@ -84,6 +84,11 @@ namespace MifBridge
 				// so the same write behind a save:true parameter on map_legacy_input could not have
 				// been gated at all.
 				TEXT("save_input_settings"),
+				// run_retarget CREATES AND SAVES animation assets, and not where the caller chooses:
+				// DuplicateAndRetarget hard-codes the destination to the TARGET MESH's package
+				// (IKRetargetBatchOperation.cpp:107). A persist-to-disk write whose location the
+				// engine picks cannot be made safe by any path check, which is this list's criterion.
+				TEXT("run_retarget"),
 				// Take the editor loop. PM-011 is about a modal deadlocking the bridge; PIE is the
 				// same hazard with a longer fuse.
 				TEXT("start_pie"), TEXT("stop_pie"),

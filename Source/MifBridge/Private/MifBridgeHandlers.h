@@ -1090,6 +1090,7 @@ namespace MifBridge
 	MIF_DECL(set_physics_body_collision);
 	MIF_DECL(set_physics_primitive_collision);
 	MIF_DECL(add_socket);
+	MIF_DECL(run_retarget);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);

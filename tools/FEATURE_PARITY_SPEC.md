@@ -4794,7 +4794,39 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Cooked-SAFE. Sockets are runtime data - they must be, or nothing could attach at runtime - and USkeletalMeshSocket carries no editor-only members that AddSocket touches. Both Sockets arrays are populated on a cooked-loaded mesh, which is exactly why list_sockets works today on DDS2. The endpoint sho...
       Vetter corrected the proposal: Scope collapses from three endpoints to ONE. set_socket_transform and remove_socket are already reachable - set_property "Sockets[N].RelativeLocation" (the walker crosses object boundaries, MifBridgeCommon.cpp:2789-2806, and set_property has no EditConst gate) and edit_container {propertyPath:"Sockets", operation:"remove", index:N}. Only add_socket is genuinely absent, because nothing in the plugi...
 
-- [ ] **run_retarget (batch duplicate-and-retarget)** (day)
+- [x] **run_retarget (batch duplicate-and-retarget)** (day)
+      DONE 2026-08-30. 18 checks in tools/test_run_retarget.py (full mode); the scratch-mode
+      branch asserts the gate refusal and stops, which is 1 check and correct.
+      SCOPE, narrowed per the vetter: the VALIDATION half already existed -
+      list_retarget_chain_mapping builds a real processor and reports its error log - so what
+      was missing is only the OUTPUT half. Medium, not high.
+      GATED, because it writes files where the CALLER CANNOT CHOOSE. DuplicateAndRetarget
+      hard-codes the destination to the TARGET MESH's package (IKRetargetBatchOperation.cpp:107),
+      so output lands in whatever folder that mesh lives in - real content on most projects.
+      `destination` is therefore NOT offered: FNameDuplicationRule::FolderPath is reachable
+      only via RunRetarget, whose context struct changed shape between 5.3 and 5.7. On
+      UnsafeEndpoints() beside save_package, since no path check can constrain it.
+      THE COOKED PROBE IS NOT THE OBVIOUS ONE. IsDataModelValid() looks right and is not: on
+      an asset that should have a model it runs ValidateModel() (AnimSequenceBase.h:315-320),
+      and ValidateModel IS the checkf - the probe would trigger the crash it exists to
+      prevent. Uses GetDataModelInterface() != nullptr, a plain pointer read.
+      remapReferencedAssets DEFAULTS TO FALSE, against the engine's own default of true,
+      because GenerateAssetLists expands the set beyond what the caller named (montage preview
+      poses, anim-BP parent chains, referenced sequences) and those cannot be checked here.
+      Passing true attaches a named warning saying exactly that.
+      Preconditions are validated and named because RunRetarget bails to a bare
+      UE_LOG(LogTemp, Warning) and DuplicateAndRetarget hands back an empty array either way -
+      without it a caller gets created:[] and silence. An empty result is treated as a
+      FAILURE for the same reason.
+      Nine-argument positional call on purpose: 5.7 renamed arg 9 and added a tenth
+      (bOverwriteExistingFiles=false); nine args compile on both and take the no-overwrite
+      behaviour, which matches 5.3 where overwriting is not a concept.
+      NOT EXERCISED: a successful retarget. It writes into real content, and every one of this
+      project's 514 AnimSequences is cooked, so the success path is unreachable on DDS2 by
+      construction. Curfew (uncooked 5.7) is where it would run for real. The suite never
+      sends confirm:true in any mode, and T3202 relies on the cooked check running BEFORE the
+      confirm check so it has two independent barriers rather than depending on the guard it
+      is testing.
       Actually RUN a configured IK Retargeter over a set of animation assets, producing retargeted duplicates on the target skeleton. Retargeting animation from one character to another is the entire point of the IK Retargeter asset.
       API: UIKRetargetBatchOperation::DuplicateAndRetarget(const TArray<FAssetData>& AssetsToRetarget, USkeletalMesh* SourceMesh, USkeletalMesh* TargetMesh, UIKRetargeter*, Search, Replace, Prefix, Suffix, bRemapReferencedAssets) - static, UFUNCTION(BlueprintCallable), IKRIGEDITOR_API - D:/UE532/Engine/Plugins/Animation/IKRig/Source/IKRigEditor/Public/RetargetEditor/IKRetargetBatchOperation.h:83 (declared at...
       Cooked: UNCOOKED ONLY, and it should say so by name. DuplicateAndRetarget duplicates each source asset and then writes new bone tracks into the duplicate, which on UAnimSequence goes through the editor-only data model - the same checkf path documented on the curve gap below. On a cooked source sequence the ...
