@@ -4949,7 +4949,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: UNCOOKED ONLY, and this one WILL kill the editor if unguarded. UAnimSequenceBase::GetController() calls ValidateModel() which is checkf(DataModelInterface != nullptr, ...) - AnimSequenceBase.cpp:1462-1465 and 1381-1390 - and a checkf is a process termination, not an error return. A cooked AnimSequen...
       Vetter corrected the proposal: Rank stands at medium - I considered promoting it under the house rule that a read half with no write half is the strongest kind of gap, but the read half here is a bare name list, the whole anim-authoring subsystem is read-only (there is no notify write either, so this is not an asymmetry inside a built subsystem), and it is uncooked-only. Medium is the honest call. Four corrections to the propos...
 
-- [ ] **build_lighting + lighting_build_status + build_reflection_captures (+ recaptureSky)** (day)
+- [x] **lighting_build_status** (day -> hours) - the other THREE did not need endpoints
+      DONE 2026-08-30. 19 checks in tools/test_lighting_status.py.
+      SCOPE CUT FROM FOUR PIECES TO ONE, on the vetter's correction, and CHECKED rather than
+      taken on trust. build_lighting, build_reflection_captures and the visibility-only
+      variant are all ordinary editor commands this plugin already drives:
+        invoke_editor_command {context:"LevelEditor", command:"BuildLightingOnly"}
+        invoke_editor_command {context:"LevelEditor", command:"BuildReflectionCapturesOnly"}
+        invoke_editor_command {context:"LevelEditor", command:"BuildLightingOnly_VisibilityOnly"}
+      Verified live: list_editor_commands{context:"LevelEditor"} lists all three by those
+      exact names among its 266. Wrapping them would have been a second way to do something
+      the plugin already does.
+      The vetter also noted the proposer had not checked the project's OWN audit backlog,
+      where these already sit as corrected rows - worth remembering: check the backlog before
+      treating a survey item as new.
+      WHAT WAS GENUINELY MISSING is the read half. Those commands are fire-and-forget, a
+      Lightmass build runs for minutes, and there was no way to ask whether it finished. The
+      unbuilt COUNTS are the useful part - "not running" and "built" are different claims,
+      and only the counts separate them after an interrupted build. It also explains a
+      screenshot: an unbuilt level renders with preview lighting, so a capture taken mid-build
+      looks like a rendering bug.
+      T4301 asserts the three command names EXIST in the live editor rather than trusting the
+      string the endpoint hands out - advice baked into a response rots silently, and a
+      command renamed in a future engine would otherwise leave it pointing at nothing.
+      NOT exercised: the unbuilt-and-not-running branch. NumLightingUnbuiltObjects is
+      maintained by the build system, not as actors change - spawning a static mesh and a
+      static point light does not move it, checked rather than assumed - so reaching a
+      non-zero count means running a real build. Also not exercised: the cooked-map transient
+      warning, since the open scratch level is not cooked.
       Kick a Lightmass static-lighting build for the open level, poll it to completion, recapture every reflection capture, and recapture the sky light — plus report how much of the level is currently unbuilt. Right now the bridge can place lights, spawn a SkyLight and a PostProcessVolume and set every one of their properties, and then has no way to make the result correct: the level stays lit by preview lighting and every capture_viewport screenshot the agent takes to check its own work is wrong.
       API: UEditorEngine::BuildLighting(const FLightingBuildOptions&) — D:/UE532/Engine/Source/Editor/UnrealEd/Classes/Editor/EditorEngine.h:1579. Poll: UEditorEngine::IsLightingBuildCurrentlyRunning() const, same header :1585. Reflections: UEditorEngine::BuildReflectionCaptures(UWorld* = GWorld) :2321. Unbuilt census: UWorld::NumLightingUnbuiltObjects (Runtime/Engine/Classes/Engine/World.h:1849) and UWorld:...
       Cooked: Runs on a cooked map but the RESULT CANNOT PERSIST — lightmaps and captures land in the level's UMapBuildDataRegistry, and a cooked map is unsaveable (docs/audit/03_GAPS_AND_RISKS.md row 'Cooked WP maps' already states this). Correct behaviour is therefore not to refuse but to BUILD and flag it: rep...

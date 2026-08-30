@@ -449,4 +449,106 @@ namespace MifBridge
 		Out->SetBoolField(TEXT("realtime"), Client->IsRealtime());
 		MifWriteShowFlags(Out, Client, JStr(In, TEXT("showFlags")).Equals(TEXT("all"), ESearchCase::IgnoreCase));
 	}
+
+	// =======================================================================
+	// lighting_build_status - the ONE lighting piece that needed an endpoint
+	// =======================================================================
+	//
+	// SCOPE, CUT AFTER CHECKING RATHER THAN AFTER BUILDING. The survey asked for four things:
+	// build_lighting, lighting_build_status, build_reflection_captures and a recaptureSky flag.
+	// Three of the four ALREADY WORK through invoke_editor_command, because they are ordinary
+	// editor commands and this plugin already drives those:
+	//
+	//     invoke_editor_command { context: "LevelEditor", command: "BuildLightingOnly" }
+	//     invoke_editor_command { context: "LevelEditor", command: "BuildReflectionCapturesOnly" }
+	//     invoke_editor_command { context: "LevelEditor", command: "BuildLightingOnly_VisibilityOnly" }
+	//
+	// Confirmed live: list_editor_commands{context:"LevelEditor"} lists all three by those exact
+	// names among its 266. Wrapping them in new endpoints would be a second way to do something the
+	// plugin already does, which is the mistake this spec has declined before.
+	//
+	// WHAT IS GENUINELY MISSING IS THE READ HALF. Those commands are fire-and-forget: they return
+	// nothing, a Lightmass build runs for minutes, and there was no way to ask whether it had
+	// finished or how much of the level is still unbuilt. An agent could start a build and then had
+	// to guess - and every capture_viewport it took in the meantime showed preview lighting, which
+	// looks like a rendering bug rather than an unfinished build.
+	//
+	// THE UNBUILT COUNTS ARE THE USEFUL PART, not the running flag. NumLightingUnbuiltObjects is
+	// what the editor's own "Lighting needs to be rebuilt" banner reads, so a caller can tell the
+	// difference between "the build finished" and "the build finished and the level is correct" -
+	// which are not the same thing when a build was interrupted or only partly succeeded.
+
+	void H_lighting_build_status(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out, {},
+			TEXT("(none - this reports the OPEN level's lighting build state)"),
+			{ { TEXT("build"), TEXT("this endpoint only READS. Start a build with "
+									"invoke_editor_command {context:\"LevelEditor\", "
+									"command:\"BuildLightingOnly\"} - it already exists, and a "
+									"second way to do it would be one too many") },
+			  { TEXT("wait"), TEXT("not offered - a Lightmass build takes minutes and blocking the "
+								   "bridge on it would stall every other call. Poll this instead") } }))
+		{
+			return;
+		}
+		if (!GEditor)
+		{
+			Fail(Out, TEXT("no GEditor - lighting state is an editor concept."));
+			return;
+		}
+		UWorld* World = ActiveWorld();
+		if (!World)
+		{
+			Fail(Out, TEXT("no active world, so there is no level whose lighting could be built."));
+			return;
+		}
+
+		const bool bRunning = GEditor->IsLightingBuildCurrentlyRunning();
+		Out->SetBoolField(TEXT("running"), bRunning);
+		Out->SetStringField(TEXT("level"), World->GetOutermost()->GetName());
+
+		// THE NUMBERS THE EDITOR'S OWN BANNER READS. "Not running" and "built" are different
+		// claims, and only these tell them apart.
+		Out->SetNumberField(TEXT("unbuiltObjects"), World->NumLightingUnbuiltObjects);
+		Out->SetNumberField(TEXT("unbuiltReflectionCaptures"), World->NumUnbuiltReflectionCaptures);
+		const bool bClean = World->NumLightingUnbuiltObjects == 0
+						 && World->NumUnbuiltReflectionCaptures == 0;
+		Out->SetBoolField(TEXT("built"), bClean && !bRunning);
+
+		// A COOKED MAP CANNOT KEEP THE RESULT, which is worth saying before someone waits ten
+		// minutes for a build. Lightmaps and captures land in the level's UMapBuildDataRegistry,
+		// and a cooked map cannot be resaved.
+		const UPackage* Pkg = World->GetOutermost();
+		const bool bCooked = Pkg && Pkg->HasAnyPackageFlags(PKG_Cooked);
+		Out->SetBoolField(TEXT("cookedMap"), bCooked);
+		if (bCooked)
+		{
+			Out->SetStringField(TEXT("transientNote"),
+				TEXT("this map came from a COOKED package. A lighting build will RUN and will look "
+					 "correct in the viewport, but the result lands in the level's "
+					 "UMapBuildDataRegistry and a cooked map cannot be resaved - so it is lost on "
+					 "restart. Nothing refuses the build; it simply does not persist."));
+		}
+
+		if (!bRunning && !bClean)
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("no build is running and %d object(s) and %d reflection capture(s) are still "
+					 "unbuilt - so the level is NOT correctly lit, and any capture_viewport taken "
+					 "now shows preview lighting. Start a build with invoke_editor_command "
+					 "{context:\"LevelEditor\", command:\"BuildLightingOnly\"}."),
+				World->NumLightingUnbuiltObjects, World->NumUnbuiltReflectionCaptures));
+		}
+		else if (bRunning)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("a lighting build is running now. It is asynchronous - this endpoint is how you "
+					 "poll it - and the unbuilt counts above do not drop until it completes."));
+		}
+		Out->SetStringField(TEXT("startNote"),
+			TEXT("this endpoint only reads. The three build verbs already exist as editor commands: "
+				 "BuildLightingOnly, BuildReflectionCapturesOnly and "
+				 "BuildLightingOnly_VisibilityOnly, all in the LevelEditor context via "
+				 "invoke_editor_command."));
+	}
 }

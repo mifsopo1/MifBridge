@@ -3080,6 +3080,12 @@ def remove_anim_curve(asset_path: str, name: str, type: str = "float",
     return _post("remove_anim_curve", assetPath=asset_path, name=name, type=type, confirm=confirm)
 
 
+@mcp.tool()
+def lighting_build_status() -> dict:
+    "Report the OPEN level's static-lighting state: whether a Lightmass build is running, how many objects and reflection captures are still unbuilt, and whether the level is actually built. THIS ONLY READS - the three build verbs already exist as editor commands and need no endpoint of their own: invoke_editor_command {context:'LevelEditor', command:'BuildLightingOnly'}, 'BuildReflectionCapturesOnly', or 'BuildLightingOnly_VisibilityOnly'. Those are fire-and-forget and return nothing while a build runs for minutes, which is the gap this fills. The unbuilt COUNTS are the useful part rather than the running flag: 'not running' and 'built' are different claims, and only the counts tell them apart when a build was interrupted or partly succeeded. It also matters for screenshots - an unbuilt level renders with preview lighting, so a capture_viewport taken before a build finishes looks like a rendering bug rather than an unfinished build. A cooked map is flagged: the build will run and look right, but the result lands in the level's UMapBuildDataRegistry and a cooked map cannot be resaved, so it is lost on restart."
+    return _post("lighting_build_status")
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:
