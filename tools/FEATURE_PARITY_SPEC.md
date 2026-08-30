@@ -5189,7 +5189,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Must refuse on container-only packages. A redirector inside a mounted .pak/.utoc cannot be rewritten or deleted, and the referencing packages cannot be re-saved either. MifBridgeCooked.cpp's IsContainerOnlyPackage (used by find_assets) and MifBridgeCommon.cpp:2503 IsCookedOrContainerPackage are the ...
       Vetter corrected the proposal: Three corrections. (a) Guard reasoning is half wrong: GIsRunningUnattendedScript DOES suppress the SCC "Revision Control is unresponsive" FMessageDialog (MessageDialog.cpp:172, !FApp::IsUnattended() && !GIsRunningUnattendedScript; the :128 MessageType != EAppMsgType::Ok branch is only logging), but SDiscoveringAssetsDialog is a raw Slate window, not an FMessageDialog, so the unattended guard does ...
 
-- [ ] **get_asset_tags (new) + `tags` filter parameter on find_assets** (hours)
+- [x] **get_asset_tags + a tags filter and includeTags on find_assets** (hours)
+      DONE 2026-08-30. 21 checks in tools/test_asset_tags.py.
+      THE ENGINE'S TAG FILTER OR's ITS ENTRIES, which the survey did not know and which would
+      have shipped silently wrong results. AssetRegistryState.cpp:752-779 walks every filter
+      tag and appends each one's matches into ONE shared array - so a caller passing two tags
+      and expecting both gets the UNION, and every row in it looks plausible. find_assets now
+      hands the whole set to the engine filter (an OR result is a superset, so the tag index
+      still narrows the scan) and re-checks each survivor against every tag. Measured live:
+      CompressionSettings=TC_EditorIcon is 1440, LODGroup=TEXTUREGROUP_World is 11118, and the
+      pair is 985 - against a union of up to 12558. The suite asserts the intersection cannot
+      exceed the smaller input, which a union could never satisfy.
+      MATCHING IS EXACT STRING EQUALITY, so the survey's flagship example - "every Texture2D
+      wider than 2048" - is NOT expressible as a filter. Dimensions is a formatted "1024x1024"
+      string. A numeric-looking parameter is refused by name and points at includeTags.
+      ON COOKED CONTENT the tags are what SURVIVED the cook, not what the class exposes -
+      FilterTags strips them and an allow-list project keeps only a handful. Reported, because
+      a small tag map otherwise reads as "this asset is simple".
+      Nothing is loaded to answer any of this, which is why it is safe on cooked packages at
+      all - none of the crash families can be reached without deserialising.
       Reads the asset registry's per-asset tag map (Blueprint parent class, texture dimensions and format, static mesh triangle/vertex/LOD counts, material shader counts, DataTable row struct, and every custom GetAssetRegistryTags a class exposes) WITHOUT loading the asset, and lets find_assets filter on those tags. This is the only way to answer questions like 'every Texture2D wider than 2048' or 'every BlueprintGeneratedClass whose NativeParentClass is ACharacter' on a large cooked project without loading thousands of packages.
       API: FAssetData::TagsAndValues (FAssetDataTagMapSharedView), D:/UE532/Engine/Source/Runtime/CoreUObject/Public/AssetRegistry/AssetData.h:211, with FAssetData::EnumerateTags(Func) :607 and GetTagValue(FName, ValueType&) :603 for reading; FARFilter::TagsAndValues (TMultiMap<FName, TOptional<FString>>), Runtime/CoreUObject/Public/AssetRegistry/ARFilter.h:58, for filtering - a TOptional with no value means...
       Cooked: This is the most cooked-friendly thing in the domain and should be advertised as such: it loads nothing, so none of the cooked crash families (MeshDescription, Niagara PostLoad, FSkeletalMeshModel) can be reached. Worth noting in the response that on a cooked project a Blueprint's tags live on the B...

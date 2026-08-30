@@ -1523,11 +1523,11 @@ def list_mounted_containers() -> dict:
 
 @mcp.tool()
 def find_assets(cls: str = "", path_prefix: str = "", name_contains: str = "",
-                origin: str = "any", recursive_classes: bool = True, limit: int = 100) -> dict:
+                origin: str = "any", recursive_classes: bool = True, limit: int = 100, tags: dict = None, include_tags: bool = False) -> dict:
     "Search the asset registry across loose AND cooked/mounted content. cls filters by class name, path_prefix by /Game/... prefix, name_contains by substring. origin = any|loose|cooked. Returns at most limit results."
     return _post("find_assets", **{"class": cls or None}, pathPrefix=path_prefix or None,
                  nameContains=name_contains or None, origin=origin,
-                 recursiveClasses=recursive_classes, limit=limit)
+                 recursiveClasses=recursive_classes, limit=limit, tags=tags, includeTags=include_tags)
 
 
 @mcp.tool()
@@ -2683,6 +2683,12 @@ def fixup_redirectors(path_prefix: str = "", paths: list = None, keep_redirector
     "Repoint every referencer of a redirector at the live asset and delete the redirector - the Content Browser's 'Fix Up Redirectors in Folder'. This REWRITES AND RE-SAVES every referencing package, so it needs confirm=True. Use list_redirectors first."
     return _post("fixup_redirectors", pathPrefix=path_prefix, paths=paths,
                  keepRedirectors=keep_redirectors, confirm=confirm, limit=limit)
+
+
+@mcp.tool()
+def get_asset_tags(path: str) -> dict:
+    "Read an asset's registry tags - Blueprint parent class, texture format and dimensions, mesh LOD counts, DataTable row struct, and any custom tags the class exposes - WITHOUT loading the asset. Safe and fast on cooked content, because nothing is deserialised."
+    return _post("get_asset_tags", path=path)
 
 
 

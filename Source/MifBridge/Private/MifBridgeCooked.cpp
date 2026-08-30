@@ -247,10 +247,17 @@ namespace MifBridge
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("class"), TEXT("className"), TEXT("type"), TEXT("pathPrefix"), TEXT("nameContains"),
-			  TEXT("origin"), TEXT("recursiveClasses"), TEXT("limit") },
-			TEXT("class (aliases: className, type), pathPrefix, nameContains, origin, recursiveClasses, limit"),
+			  TEXT("origin"), TEXT("recursiveClasses"), TEXT("limit"), TEXT("tags"),
+			  TEXT("includeTags") },
+			TEXT("class (aliases: className, type), pathPrefix, nameContains, origin, recursiveClasses, ")
+			TEXT("limit, tags ({\"Name\":\"value\"} exact match, or {\"Name\":null} for present-with-")
+			TEXT("any-value), includeTags (add each row's registry tags to the response)"),
 			{{ TEXT("recursive"),
-			   TEXT("not implemented - pathPrefix matching is ALWAYS recursive; recursiveClasses controls class-hierarchy matching") }}))
+			   TEXT("not implemented - pathPrefix matching is ALWAYS recursive; recursiveClasses controls class-hierarchy matching") },
+			 { TEXT("tag"),
+			   TEXT("spell it tags:{...} - a map, because filtering on one tag and reading another is the common case") },
+			 { TEXT("minWidth"),
+			   TEXT("registry tag matching is exact STRING equality, so numeric comparisons are not a filter axis. Texture2D's Dimensions tag is a formatted \"1024x1024\" string - pass includeTags:true and compare in the caller") }}))
 		{
 			return;
 		}
@@ -262,10 +269,50 @@ namespace MifBridge
 		const FString Origin = JStr(In, TEXT("origin"), TEXT("any"));
 		const bool bRecursiveClasses = JBool(In, TEXT("recursiveClasses"), true);
 		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 100), 1, 5000);
+		const bool bIncludeTags = JBool(In, TEXT("includeTags"), false);
+
+		// REGISTRY TAG FILTERING, AND THE THING THE ENGINE DOES THAT NOBODY EXPECTS.
+		// FARFilter::TagsAndValues entries are OR'd, not AND'd: AssetRegistryState.cpp:752-779
+		// walks every filter tag and appends each one's matches into a single shared array. So a
+		// caller passing two tags and expecting "both" would get a SUPERSET and have no way to
+		// notice - the results all look plausible.
+		//
+		// This endpoint gives AND, because a map of conditions reads as AND in every other API a
+		// caller has used. The engine's OR filter is still handed the whole set, because an OR
+		// result is a superset of the AND result and narrows the scan cheaply through the tag
+		// index; the surviving rows are then re-checked against every tag here. Correct, and still
+		// indexed.
+		TMap<FName, TOptional<FString>> WantTags;
+		const TSharedPtr<FJsonObject>* TagsObj = nullptr;
+		if (In->TryGetObjectField(TEXT("tags"), TagsObj) && TagsObj && TagsObj->IsValid())
+		{
+			for (const auto& Pair : (*TagsObj)->Values)
+			{
+				if (Pair.Key.IsEmpty())
+				{
+					Fail(Out, TEXT("tags has an empty key. NOTHING was searched."));
+					return;
+				}
+				FString Value;
+				if (Pair.Value.IsValid() && !Pair.Value->IsNull() && Pair.Value->TryGetString(Value))
+				{
+					WantTags.Add(FName(*Pair.Key), TOptional<FString>(Value));
+				}
+				else
+				{
+					// null means "the tag is present, whatever its value".
+					WantTags.Add(FName(*Pair.Key), TOptional<FString>());
+				}
+			}
+		}
 
 		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
 
 		FARFilter Filter;
+		for (const auto& Pair : WantTags)
+		{
+			Filter.TagsAndValues.Add(Pair.Key, Pair.Value);
+		}
 		Filter.bRecursiveClasses = bRecursiveClasses;
 		if (!ClassName.IsEmpty())
 		{
@@ -314,6 +361,25 @@ namespace MifBridge
 			if (Origin == TEXT("container") && !bContainerOnly) { continue; }
 			if (Origin == TEXT("loose") && bContainerOnly) { continue; }
 
+			// THE AND RE-CHECK. The engine's tag filter OR's its entries, so what came back is a
+			// superset - every row matching ANY requested tag. A caller passing a map of conditions
+			// means all of them, so each row is re-tested here against every one.
+			if (WantTags.Num() > 1)
+			{
+				bool bAll = true;
+				for (const auto& Want : WantTags)
+				{
+					const FAssetTagValueRef Have = Asset.TagsAndValues.FindTag(Want.Key);
+					if (!Have.IsSet()
+						|| (Want.Value.IsSet() && !Have.Equals(Want.Value.GetValue())))
+					{
+						bAll = false;
+						break;
+					}
+				}
+				if (!bAll) { continue; }
+			}
+
 			++Matched;
 			if (Arr.Num() >= Limit)
 			{
@@ -332,7 +398,30 @@ namespace MifBridge
 			Json->SetStringField(TEXT("package"), AssetPackageName);    // legacy key: == packageName
 			Json->SetStringField(TEXT("origin"), bContainerOnly ? TEXT("container") : TEXT("loose"));
 			Json->SetBoolField(TEXT("loaded"), Asset.IsAssetLoaded());
+			if (bIncludeTags)
+			{
+				TSharedRef<FJsonObject> Tags = MakeShared<FJsonObject>();
+				Asset.TagsAndValues.ForEach([&Tags](const TPair<FName, FAssetTagValueRef>& Pair)
+				{
+					Tags->SetStringField(Pair.Key.ToString(), Pair.Value.AsString());
+				});
+				Json->SetObjectField(TEXT("tags"), Tags);
+			}
 			Arr.Add(MakeShared<FJsonValueObject>(Json));
+		}
+
+		if (WantTags.Num() > 0)
+		{
+			Out->SetNumberField(TEXT("tagFilters"), WantTags.Num());
+			Out->SetStringField(TEXT("tagMatchNote"), WantTags.Num() > 1
+				? TEXT("multiple tags are AND'd here: a row had to carry EVERY one. Note that the "
+					   "engine's own FARFilter OR's them - it is used to narrow the scan through "
+					   "the tag index and the survivors are re-checked, so this result is the "
+					   "intersection rather than the union the raw filter would give.")
+				: TEXT("tag values are matched by EXACT STRING equality - there is no numeric or "
+					   "substring comparison in the registry. Formatted tags like Texture2D's "
+					   "Dimensions (\"1024x1024\") therefore cannot be range-filtered; pass "
+					   "includeTags:true and compare in the caller."));
 		}
 
 		Out->SetNumberField(TEXT("count"), Matched);
@@ -1491,5 +1580,103 @@ namespace MifBridge
 		Out->SetStringField(TEXT("assetNote"),
 			TEXT("fixing a redirector WRITES the referencing packages to disk - unlike most of this "
 				 "plugin, this one persists."));
+	}
+
+	// =======================================================================
+	// get_asset_tags - everything the registry knows, without loading anything
+	// =======================================================================
+	//
+	// THE POINT IS THAT IT LOADS NOTHING. Blueprint parent class, texture dimensions and format,
+	// static mesh triangle and LOD counts, DataTable row struct, and every custom
+	// GetAssetRegistryTags a class exposes - all of it sits in the asset registry, and reading it
+	// touches no package. On a cooked project that matters twice over: it is fast, and none of the
+	// cooked crash families (MeshDescription, Niagara PostLoad, FSkeletalMeshModel) can be reached
+	// from here at all, because nothing is deserialised.
+	//
+	// WHAT IT IS NOT is a complete picture on cooked content, and saying so matters more than the
+	// speed. FAssetRegistryState::FilterTags strips tags at cook time, and a project on the
+	// allow-list path keeps only a handful - ParentClass, GeneratedClass, GameplayCueName,
+	// AssetBundleData and the PrimaryAsset keys. So a small tag map on a cooked asset means "these
+	// survived the cook", not "this is all the asset has". The response says which case it is in.
+
+	void H_get_asset_tags(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("objectPath") },
+			TEXT("path (aliases assetPath, objectPath) - the asset to read registry tags for"),
+			{ { TEXT("load"), TEXT("nothing is loaded, deliberately - that is the whole point of "
+								   "reading the registry rather than the asset. get_property loads "
+								   "and reads real values") },
+			  { TEXT("tags"), TEXT("that is an OUTPUT here. To FILTER on tags, pass tags:{...} to "
+								   "find_assets") } }))
+		{
+			return;
+		}
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("objectPath") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required."));
+			return;
+		}
+
+		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+			TEXT("AssetRegistry")).Get();
+		FAssetData Data = Registry.GetAssetByObjectPath(FSoftObjectPath(Path));
+		if (!Data.IsValid())
+		{
+			// A package path rather than an object path is the likeliest mistake, so try it before
+			// giving up - the registry keys on object paths.
+			TArray<FAssetData> ByPackage;
+			FString PackageName = Path;
+			int32 Dot = INDEX_NONE;
+			if (PackageName.FindChar(TEXT('.'), Dot)) { PackageName.LeftInline(Dot); }
+			Registry.GetAssetsByPackageName(FName(*PackageName), ByPackage);
+			if (ByPackage.Num() > 0) { Data = ByPackage[0]; }
+		}
+		if (!Data.IsValid())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no asset in the registry at '%s'. find_assets lists what is there. Note this "
+					 "reads the REGISTRY, so an asset created in this session but never saved has "
+					 "no row here even though it exists in memory."), *Path));
+			return;
+		}
+
+		Out->SetStringField(TEXT("objectPath"), Data.GetObjectPathString());
+		Out->SetStringField(TEXT("packageName"), Data.PackageName.ToString());
+		Out->SetStringField(TEXT("class"), Data.AssetClassPath.ToString());
+
+		TSharedRef<FJsonObject> Tags = MakeShared<FJsonObject>();
+		int32 Count = 0;
+		Data.TagsAndValues.ForEach([&Tags, &Count](const TPair<FName, FAssetTagValueRef>& Pair)
+		{
+			Tags->SetStringField(Pair.Key.ToString(), Pair.Value.AsString());
+			++Count;
+		});
+		Out->SetObjectField(TEXT("tags"), Tags);
+		Out->SetNumberField(TEXT("tagCount"), Count);
+
+		const bool bContainerOnly = IsContainerOnlyPackage(Data.PackageName);
+		Out->SetStringField(TEXT("origin"), bContainerOnly ? TEXT("container") : TEXT("loose"));
+		Out->SetStringField(TEXT("loadedNote"),
+			TEXT("nothing was loaded to answer this - these values come from the asset registry, "
+				 "which is why it is safe and fast on cooked content."));
+		if (bContainerOnly)
+		{
+			Out->SetStringField(TEXT("cookedNote"),
+				TEXT("this asset came from a COOKED container, so these are the tags that SURVIVED "
+					 "the cook, not everything the class exposes. FAssetRegistryState::FilterTags "
+					 "strips them at cook time and an allow-list project keeps only a handful - "
+					 "ParentClass, GeneratedClass, GameplayCueName, AssetBundleData and the "
+					 "PrimaryAsset keys. A small map here does not mean the asset is simple."));
+		}
+		if (Count == 0)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("this asset has no registry tags at all. That is normal for classes which "
+					 "expose none, and expected on cooked content where they were stripped - it is "
+					 "not a failure, and get_property reads the real values from the loaded asset "
+					 "if you need them."));
+		}
 	}
 }
