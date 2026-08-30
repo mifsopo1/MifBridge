@@ -54,6 +54,11 @@
 #include "MVVMPropertyPath.h"
 #include "Types/MVVMBindingMode.h"
 #include "WidgetBlueprint.h"
+// FBlueprintMetadata::MD_FieldNotify (the Blueprint-variable spelling) and
+// INotifyFieldValueChanged::GetFieldNotificationDescriptor (the native one) - add_mvvm_binding needs
+// both to tell whether a source property can actually broadcast a change. See the check itself.
+#include "EdGraphSchema_K2.h"
+#include "INotifyFieldValueChanged.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Widget.h"
 #include "Editor.h"
@@ -306,6 +311,52 @@ namespace MifBridge
 				TEXT("viewmodel '%s' (class '%s') has no property named '%s'. NOTHING was added."),
 				*SourceViewModelName, ViewModelClass ? *ViewModelClass->GetName() : TEXT("?"), *SourcePropertyName));
 			return;
+		}
+
+		// IS THE SOURCE ACTUALLY FIELDNOTIFY? Added 2026-08-30. Until now this endpoint checked only
+		// that the property EXISTS and stopped there, so it happily created bindings the MVVM
+		// compiler then rejects: every mode except OneTimeToDestination needs the source to
+		// broadcast when it changes, and a plain UPROPERTY does not. The binding landed, the endpoint
+		// said ok, and the failure surfaced later as a compile error on the Widget Blueprint with no
+		// connection to the call that caused it.
+		//
+		// TWO WAYS a field is FieldNotify, and both have to be checked or the answer is wrong half
+		// the time:
+		//   BLUEPRINT viewmodels carry MD_FieldNotify metadata on the variable - the same key
+		//     list_variables reads (MifBridgeIntrospect.cpp:764) and the same one this bridge's own
+		//     set_variable_flags{fieldNotify:true} writes.
+		//   NATIVE viewmodels declare it with UE_FIELD_NOTIFICATION_DECLARE_FIELD, which registers
+		//     in the class descriptor and leaves NO metadata behind. Those are found through
+		//     INotifyFieldValueChanged::GetFieldNotificationDescriptor().GetField(Class, Name)
+		//     (IFieldNotificationClassDescriptor.h:19), present on 5.3 through 5.7 alike.
+		//
+		// REPORTED, NOT REFUSED. A false negative here would block a legitimate binding, and the
+		// cost of being wrong in that direction is worse than the cost of a warning. The caller gets
+		// sourceIsFieldNotify plus a note naming the fix, so the failure is no longer silent - which
+		// was the actual defect.
+		bool bSourceIsFieldNotify = SourceProperty->HasMetaData(FBlueprintMetadata::MD_FieldNotify);
+		if (!bSourceIsFieldNotify)
+		{
+			if (const UObject* VMDefault = ViewModelClass->GetDefaultObject())
+			{
+				if (const INotifyFieldValueChanged* Notify = Cast<INotifyFieldValueChanged>(VMDefault))
+				{
+					bSourceIsFieldNotify = Notify->GetFieldNotificationDescriptor()
+						.GetField(ViewModelClass, FName(*SourcePropertyName)).IsValid();
+				}
+			}
+		}
+		Out->SetBoolField(TEXT("sourceIsFieldNotify"), bSourceIsFieldNotify);
+		if (!bSourceIsFieldNotify && Mode != EMVVMBindingMode::OneTimeToDestination)
+		{
+			Out->SetStringField(TEXT("sourceFieldNotifyWarning"), FString::Printf(
+				TEXT("'%s' on viewmodel class '%s' is not a FieldNotify field, and this binding mode "
+					 "needs one - the source has no way to announce that it changed, so the MVVM "
+					 "compiler will reject this binding when the Widget Blueprint is compiled. The "
+					 "binding WAS created. Either call set_variable_flags{fieldNotify:true} on that "
+					 "variable (Blueprint viewmodels), or use mode 'OneTimeToDestination', which "
+					 "reads the value once and needs no notification."),
+				*SourcePropertyName, *ViewModelClass->GetName()));
 		}
 
 		UWidget* TargetWidget = WBP->WidgetTree ? WBP->WidgetTree->FindWidget(FName(*DestWidgetName)) : nullptr;

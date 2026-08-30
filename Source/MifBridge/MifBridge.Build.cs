@@ -205,7 +205,15 @@ public class MifBridge : ModuleRules
 		AddPluginModules("MIF_WITH_MODULARGAMEPLAY", "ModularGameplay",
 			new string[] { "ModularGameplay" });
 		AddPluginModules("MIF_WITH_MVVM", "ModelViewViewModel",
-			new string[] { "ModelViewViewModel", "ModelViewViewModelBlueprint", "ModelViewViewModelEditor" });
+			new string[] { "ModelViewViewModel", "ModelViewViewModelBlueprint", "ModelViewViewModelEditor",
+			               "FieldNotification" });
+			// FieldNotification added 2026-08-30 for add_mvvm_binding's source check. It is an ENGINE
+			// RUNTIME module (Engine/Source/Runtime/FieldNotification), not part of the MVVM plugin,
+			// but it is listed here rather than unconditionally because MVVM is the only thing that
+			// needs it - if the plugin is absent, so is the code that uses it. Without it,
+			// Cast<INotifyFieldValueChanged> gives LNK2019 on UNotifyFieldValueChanged::GetPrivateStaticClass;
+			// the header alone is not enough because the cast needs the UCLASS. Present in 5.3.2
+			// through 5.7, checked before adding.
 			// Grew 2026-08-28 for real View Binding authoring (add_mvvm_viewmodel/add_mvvm_binding):
 			// UMVVMEditorSubsystem lives in ModelViewViewModelEditor, UMVVMBlueprintView/
 			// FMVVMBlueprintPropertyPath/FMVVMBlueprintViewBinding in ModelViewViewModelBlueprint -
