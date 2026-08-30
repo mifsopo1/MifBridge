@@ -33,6 +33,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS = []
 FAIL = []
@@ -58,7 +59,7 @@ def main():
 
     st = int(time.time() % 100000)
     base = 1030000 + st
-    q = M.call("spawn_actor_in_level", {"class": "/Script/Engine.StaticMeshActor",
+    q = SC.spawn_tracked("spawn_actor_in_level", {"class": "/Script/Engine.StaticMeshActor",
                                         "location": {"x": base, "y": base, "z": 50000},
                                         "label": "MifInstComp%d" % st})
     actor = ((q.get("actor") or {}).get("actorPath")) or q.get("actorPath")
@@ -113,8 +114,7 @@ def main():
         native = next((c.get("name") for c in comps(actor) if c.get("origin") == "native"), None)
         check("T2202 (setup) the actor has a native component to try", bool(native), native)
         if native:
-            r = M.raw_post("remove_component", {"actorPath": actor, "name": native,
-                                                "confirm": True})
+            r = SC.confirm_call("remove_component", {"actorPath": actor, "name": native})
             check("T2202 removing a native component is REFUSED", r.get("ok") is False,
                   json.dumps(r)[:300])
             check("T2202 and the refusal explains RemoveInstanceComponent would do nothing",
@@ -131,8 +131,7 @@ def main():
               json.dumps(nc)[:250])
 
         before = len(comps(actor))
-        d = M.raw_post("remove_component", {"actorPath": actor, "name": "MifTestLight",
-                                            "confirm": True})
+        d = SC.confirm_call("remove_component", {"actorPath": actor, "name": "MifTestLight"})
         check("T2203 remove_component succeeds", d.get("ok") is True, json.dumps(d)[:300])
         check("T2203 and it is really gone - read back independently",
               "MifTestLight" not in [c.get("name") for c in comps(actor)],

@@ -61,7 +61,7 @@ def main():
 
     # ------------------------------------------------------------------ T971 add_sequence_possessable
     print("\n=== T971: add_sequence_possessable - a real actor bound for real ===")
-    spawn = M.call("spawn_actor_in_level", {
+    spawn = SC.spawn_tracked("spawn_actor_in_level", {
         "actorClass": "StaticMeshActor",
         "location": {"x": 1900000 + st, "y": 1900000 + st, "z": 500000},
         "label": "MifReads9SeqActor_%d" % st})
@@ -72,12 +72,12 @@ def main():
     if actor_path:
         # Deliberate M.raw_post, not scratch_confirm - see module docstring. actor_path is proven safe
         # by construction one call above (this test spawned it, this exact run).
-        r = M.raw_post("add_sequence_possessable", {"path": lspath, "actorPath": actor_path, "confirm": True})
+        r = SC.confirm_call("add_sequence_possessable", {"path": lspath, "actorPath": actor_path})
         check("T971 the real bind succeeds", r.get("ok") is True, json.dumps(r)[:300])
         guid = r.get("guid")
         check("T971 a real binding guid is reported", bool(guid), json.dumps(r)[:250])
 
-        dup = M.raw_post("add_sequence_possessable", {"path": lspath, "actorPath": actor_path, "confirm": True})
+        dup = SC.confirm_call("add_sequence_possessable", {"path": lspath, "actorPath": actor_path})
         check("T971 binding the SAME actor a second time does not silently duplicate",
               dup.get("ok") is False or dup.get("guid") == guid, json.dumps(dup)[:250])
 

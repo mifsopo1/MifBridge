@@ -4561,15 +4561,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       no scratch equivalent can be built - test_simplified_collision_guard, which already said
       so, and test_anim_notify, which did not and now does.
 
-- [ ] **teach scratch_confirm about level-actor paths** (hours)
-      The remaining 19 bypasses are nearly all one shape: the target is a level actor, whose
-      path is in the open level's transient package and can never carry a /Game/_Mif prefix, so
-      the guard cannot speak about it at all. Every one of those call sites is currently a
-      hand-written confirm:true with a comment explaining why. A second predicate - is this
-      actor one the suite itself spawned in this run - would let the module cover them, which is
-      the only way that comment stops being load-bearing. Needs care: "I spawned it" has to be
-      PROVEN, not asserted by the caller, or the exemption is just the honour system with extra
-      steps.
+- [x] **teach scratch_confirm about level-actor paths** (hours)
+      DONE 2026-08-30. spawn_tracked() records what THIS process watched being spawned, and
+      check() accepts those paths. The requirement filed with this item was that "I spawned it"
+      be PROVEN rather than asserted, and that is what makes it hold: there is no public way to
+      put a path into the trusted set - no track(), no trust(), nothing a caller can call. The
+      module must have observed the spawn itself, in this process, on this run, so it can never
+      bless an actor from an earlier run, one PIE created, or one that was already in the level.
+      test_confirm_gated T340b asserts the negatives first and the no-public-setter property
+      explicitly, because that property IS the control.
+      7 more calls now go through the guard (test_instance_components, test_uncovered_reads8,
+      test_sequence_keys x2, test_sequencer_authoring x2, plus mifaudit.cleanup_level_actor,
+      which now routes through confirm_call whenever the actor is tracked and falls back to the
+      old documented bypass only when it is not). All four suites re-run green.
+      FOUND WHILE WRITING THE NEGATIVE CASE, and it predates this change: is_scratch() used a
+      bare startswith, so "/Game/_MifNot/../Real.Real:PersistentLevel.A" passed the prefix test
+      while naming real content. Whether UE resolves ".." in an object path is beside the point;
+      a guard cannot rest on the engine declining to do something. Traversal is now refused.
+      10 hand-written confirm:true calls remain, and all are structural: test_anim_notify (4)
+      and test_simplified_collision_guard (2) author against REAL content because no scratch
+      equivalent can be built, test_pie_family (3) addresses actors PIE spawned rather than the
+      suite, test_uncovered_reads4 (2) and test_uncovered_reads7 (1) carry no usable path.
+      Each is documented in its own suite. That is the floor, not a backlog.
 
 - [ ] **a legacy `settings:true` branch on map_input_key/unmap_input_key for UInputSettings** (hours)
       Split from the item above. Legacy (non-Enhanced) input has no read OR write coverage at

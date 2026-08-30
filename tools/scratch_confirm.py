@@ -109,8 +109,48 @@ def paths_in(payload):
     return found
 
 
+# Level actors this PROCESS watched being spawned. See spawn_tracked.
+_SPAWNED = set()
+
+
+def spawn_tracked(endpoint, payload):
+    """Spawn a level actor and remember it, so confirm_call can later PROVE we made it.
+
+    WHY THIS EXISTS. A level actor's path is in the open level's package, not under /Game/_Mif, so
+    the prefix check can say nothing about it at all - it can only refuse. That left every level-actor
+    confirm:true as a hand-written bypass with a comment explaining why it was safe, and a comment is
+    not a control. Roughly half the remaining bypasses in this repo were that one shape.
+
+    THE DIFFERENCE BETWEEN THIS AND THE HONOUR SYSTEM is that there is no public way to put a path
+    into the trusted set. A caller cannot say "trust me, I spawned it" - the module has to have
+    watched the spawn itself, in this process, on this run. That is why there is no track() function
+    and why _SPAWNED is private: adding one would turn proof back into assertion, which is the exact
+    thing this was written to stop.
+
+    The set is per-process and dies with it, so it can never bless an actor left over from an earlier
+    run or one that was already in the level. An actor the suite did not create stays refused.
+    """
+    r = M.call(endpoint, payload)
+    path = (r.get("actor") or {}).get("actorPath") or r.get("actorPath")
+    if r.get("ok") and path:
+        _SPAWNED.add(path)
+    return r
+
+
+def spawned_here(path):
+    """True if THIS process watched that actor being spawned. Read-only by design."""
+    return path in _SPAWNED
+
+
 def is_scratch(path):
-    return any(path.startswith(p) for p in SCRATCH_PREFIXES)
+    # NO TRAVERSAL, checked before the prefix. "/Game/_MifNot/../Real.Real:PersistentLevel.A"
+    # satisfies startswith("/Game/_Mif") and names something in real content. Whether UE would
+    # actually resolve ".." in an object path is beside the point - a guard that has to be right
+    # cannot rest on the engine declining to do something. Found 2026-08-30 by writing the negative
+    # case for the spawn-tracking test; it predates that change.
+    if ".." in path:
+        return False
+    return any(path.startswith(p) for p in SCRATCH_PREFIXES) or path in _SPAWNED
 
 
 def check(payload):
@@ -134,7 +174,8 @@ def check(payload):
     if bad:
         raise NotScratch(
             "these are not scratch paths: %s. confirm is only ever sent when EVERY path in the "
-            "payload lies under %s." % (", ".join(bad), " or ".join(SCRATCH_PREFIXES)))
+            "payload lies under %s, or is a level actor THIS process watched being spawned via "
+            "spawn_tracked()." % (", ".join(bad), " or ".join(SCRATCH_PREFIXES)))
     return found
 
 

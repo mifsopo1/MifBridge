@@ -69,7 +69,7 @@ def main():
         if not made.get("ok"):
             return 1
 
-        q = M.call("spawn_actor_in_level", {
+        q = SC.spawn_tracked("spawn_actor_in_level", {
             "class": "/Script/Engine.StaticMeshActor",
             "location": {"x": 1950000 + st, "y": 1950000 + st, "z": 50000},
             "label": "MifSeqKeyActor%d" % st})
@@ -78,8 +78,7 @@ def main():
 
         # ------------------------------------------------------------------ T2301 the whole chain
         print("\n=== T2301: the write chain, end to end ===")
-        b = M.raw_post("add_sequence_possessable", {"path": seq, "actorPath": actor,
-                                                    "confirm": True})
+        b = SC.confirm_call("add_sequence_possessable", {"path": seq, "actorPath": actor})
         check("T2301 add_sequence_possessable binds the actor", b.get("ok") is True,
               json.dumps(b)[:250])
         guid = b.get("guid")
@@ -199,15 +198,14 @@ def main():
 
         # ------------------------------------------------------------------ T2306 camera cuts
         print("\n=== T2306: the camera cut - without one a sequence drives no camera ===")
-        cq = M.call("spawn_actor_in_level", {
+        cq = SC.spawn_tracked("spawn_actor_in_level", {
             "class": "/Script/Engine.CameraActor",
             "location": {"x": 1960000 + st, "y": 1960000 + st, "z": 50000},
             "label": "MifSeqCam%d" % st})
         camera = ((cq.get("actor") or {}).get("actorPath")) or cq.get("actorPath")
         check("T2306 (setup) a camera actor exists to point at", bool(camera), json.dumps(cq)[:200])
         if camera:
-            cb = M.raw_post("add_sequence_possessable", {"path": seq, "actorPath": camera,
-                                                         "confirm": True})
+            cb = SC.confirm_call("add_sequence_possessable", {"path": seq, "actorPath": camera})
             cam_guid = cb.get("guid")
             check("T2306 (setup) the camera is bound into the sequence", bool(cam_guid), cam_guid)
 

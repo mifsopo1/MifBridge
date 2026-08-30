@@ -122,7 +122,7 @@ def main():
         c = M.call("compile", {"blueprintId": nbid})
         check("T962 (setup) it compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,
               "errors=%s" % c.get("numErrors"))
-        spawn = M.call("spawn_actor_in_level", {
+        spawn = SC.spawn_tracked("spawn_actor_in_level", {
             "actorClass": npath + ".BP_Niagara_%d_C" % st,
             "location": {"x": 1600000 + st, "y": 1600000 + st, "z": 500000},
             "label": "MifReads8NiagaraActor_%d" % st})
@@ -133,9 +133,9 @@ def main():
             # Deliberate M.raw_post, not scratch_confirm - see module docstring. actor_path is proven
             # safe by construction one call above (this test spawned it, this exact run), which is a
             # stronger guarantee than scratch_confirm's prefix check could give for a /Temp/ path.
-            r = M.raw_post("set_niagara_component_parameter", {
+            r = SC.confirm_call("set_niagara_component_parameter", {
                 "actorPath": actor_path, "component": "NC", "name": "MifTestParam", "type": "float",
-                "value": 3.5, "confirm": True})
+                "value": 3.5})
             check("T962 the real set succeeds", r.get("ok") is True, json.dumps(r)[:250])
             check("T962 and confirms it targeted the component, not the shared system asset",
                   "COMPONENT" in (r.get("note") or "").upper(), r.get("note"))

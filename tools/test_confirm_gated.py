@@ -67,6 +67,48 @@ def main():
     except SC.NotScratch as e:
         check("T340 and allows a scratch-only payload", False, str(e))
 
+    # ------------------------------------------------------------------ T340b the spawn proof
+    print("\n=== T340b: the level-actor exemption must be PROOF, not the caller's word ===")
+    # A level actor's path is in the open level's package, never under /Game/_Mif, so the prefix
+    # check can only ever refuse it. spawn_tracked closes that by remembering what THIS process
+    # watched being spawned. The whole control rests on there being no way to CLAIM membership, so
+    # that is what these assert - the negative cases matter more than the positive one.
+    for label, path in (("an actor it never saw spawned",
+                         "/Game/Maps/Real.Real:PersistentLevel.SomebodyElsesActor"),
+                        ("an actor path that merely looks scratch-ish",
+                         "/Game/_MifNot/../Real.Real:PersistentLevel.A")):
+        try:
+            SC.check({"actorPath": path})
+            check("T340b refuses %s" % label, False, "IT ALLOWED IT: %s" % path)
+        except SC.NotScratch:
+            check("T340b refuses %s" % label, True)
+
+    check("T340b there is no public way to assert a path into the trusted set - proof, not honour",
+          not any(n in dir(SC) for n in ("track", "trust", "add_spawned", "mark_spawned")),
+          [n for n in dir(SC) if n in ("track", "trust", "add_spawned", "mark_spawned")])
+
+    # And the positive half: an actor this process really did spawn becomes checkable.
+    sp = SC.spawn_tracked("spawn_actor_in_level", {
+        "class": "/Script/Engine.StaticMeshActor",
+        "location": {"x": 1980000 + st, "y": 1980000 + st, "z": 60000},
+        "label": "MifGuardProbe%d" % st})
+    probe = ((sp.get("actor") or {}).get("actorPath")) or sp.get("actorPath")
+    check("T340b (setup) a probe actor was spawned", bool(probe), json.dumps(sp)[:200])
+    if probe:
+        check("T340b spawned_here reports it", SC.spawned_here(probe) is True, probe)
+        try:
+            SC.check({"actorPath": probe})
+            check("T340b and check() now accepts it - the guard can speak about level actors", True)
+        except SC.NotScratch as e:
+            check("T340b and check() now accepts it", False, str(e))
+        # The delete goes THROUGH the guard rather than around it, which is the point of all this.
+        d = M.cleanup_level_actor(probe, "guard probe")
+        check("T340b the tracked actor deletes through confirm_call", d.get("ok") is True,
+              json.dumps(d)[:200])
+        still = M.call("list_level_actors", {"nameContains": "MifGuardProbe"}).get("actors") or []
+        check("T340b and it is really gone",
+              not any(a.get("actorPath") == probe for a in still), probe)
+
     # ------------------------------------------------------------------ T341 rename_variable
     print("\n=== T341: does a renamed variable take its nodes with it? ===")
     bp = "/Game/_MifCG/BP_%d" % st

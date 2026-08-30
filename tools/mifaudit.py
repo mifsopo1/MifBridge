@@ -314,13 +314,22 @@ def cleanup_level_actor(actor_path, what="scratch actor"):
     Added to mifaudit 2026-08-30: the cleanup was written for exactly one of eight spawn sites on
     2026-08-29 (958213a), one of the others being thirty lines above it in the same file.
 
-    raw_post, not scratch_confirm: delete_level_actor addresses a live actor path, not a /Game/...
-    asset, so confirm_call's path-prefix check does not apply and would wrongly refuse it. This is
-    the same narrow, deliberate bypass used elsewhere for this shape of call.
+    GOES THROUGH THE GUARD WHEN IT CAN, updated 2026-08-30. If the actor was spawned via
+    scratch_confirm.spawn_tracked, that module watched it being created in this process and can prove
+    the path is ours, so the delete goes through confirm_call like any other guarded write. If it was
+    not - an actor spawned before tracking existed, or one PIE created - this falls back to the old
+    deliberate bypass, because the prefix check genuinely cannot speak about a live actor path and
+    would refuse it wrongly. The fallback is the exception now rather than the rule.
+
+    The import is inside the function on purpose: scratch_confirm imports this module, so importing
+    it at the top would be circular.
     """
     if not actor_path:
         return {"ok": False, "error": "no actorPath to clean up", "skipped": True}
     try:
+        import scratch_confirm as _SC
+        if _SC.spawned_here(actor_path):
+            return _SC.confirm_call("delete_level_actor", {"actorPath": actor_path})
         return raw_post("delete_level_actor", {"actorPath": actor_path, "confirm": True})
     except Timeout:
         return {"ok": False, "error": "delete_level_actor timed out cleaning up %s" % what}
