@@ -564,4 +564,270 @@ namespace MifBridge
 		UE_LOG(LogMifBridge, Log, TEXT("list_niagara_user_parameters: %d of %d on %s"),
 			Shown, Entries.Num(), *Asset->GetName());
 	}
+
+	// =======================================================================
+	// set_niagara_user_parameter - the write half of the typed read above
+	// =======================================================================
+	//
+	// TWO CRASH TRAPS, both check() rather than an error return, both guarded by dispatching only on
+	// an exact type match:
+	//
+	//   SetParameterValue<T>  check(Param.GetSizeInBytes() == sizeof(T))   ParameterStore.h:527
+	//   Position parameters   check(HasPositionData(Param.GetName()))      ParameterStore.h:531
+	//
+	// So there is no default branch that "tries" a float: a type this endpoint does not handle is
+	// refused by name. Guessing here does not produce a bad value, it ends the process.
+
+	void H_set_niagara_user_parameter(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("assetPath"), TEXT("system"), TEXT("name"), TEXT("value") },
+			TEXT("path (aliases assetPath, system) - a NiagaraSystem; name - the User. parameter "
+				 "(list_niagara_user_parameters reports them, with types); value - a number for "
+				 "float/int, true/false for bool, or an array for vec2/vec3/vec4/quat/color/position"),
+			{ { TEXT("add"), TEXT("this sets an EXISTING parameter. Adding one is not offered: a user "
+								  "parameter no emitter reads is invisible in the editor and does "
+								  "nothing, so creating one by typo is worse than being told the "
+								  "name is unknown") },
+			  { TEXT("component"), TEXT("this writes the ASSET's default. To override on one placed "
+									   "component, use set_niagara_component_parameter") },
+			  { TEXT("type"), TEXT("the type is the one the system already records for that "
+								   "parameter - it is not something a caller chooses, and writing a "
+								   "mismatched type would terminate the editor") } }))
+		{
+			return;
+		}
+
+#if !MIF_WITH_NIAGARA
+		Fail(Out, TEXT("this build has no Niagara module linked, so a user parameter cannot be "
+					   "written. NOTHING was changed."));
+		return;
+#else
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath"), TEXT("system") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - a NiagaraSystem asset. NOTHING was changed."));
+			return;
+		}
+		UObject* Asset = LoadObject<UObject>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("no asset at %s. NOTHING was changed."), *Path));
+			return;
+		}
+		UNiagaraSystem* Sys = Cast<UNiagaraSystem>(Asset);
+		if (!Sys)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, not a NiagaraSystem. Only a system carries User. parameters. "
+					 "NOTHING was changed."), *Path, *Asset->GetClass()->GetName()));
+			return;
+		}
+
+		// COOKED: refused for persistence, not for safety. Writing the store would not crash - it is
+		// runtime data - but the change cannot be saved and the system cannot be recompiled, so the
+		// old value returns on restart while this response claims the new one. A wrong answer with a
+		// delay on it is worse than a refusal.
+		if (IsCookedOrContainerPackage(Sys->GetOutermost()))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' came from a COOKED package. The parameter store is runtime data and the "
+					 "write itself would succeed, but it cannot be SAVED and the system cannot be "
+					 "recompiled - so the old value would come back on restart with this call having "
+					 "reported success. Refused for that reason rather than for safety. NOTHING was "
+					 "changed."), *Sys->GetPathName()));
+			return;
+		}
+
+		const FString Name = JStr(In, TEXT("name"));
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required - the User. parameter to set. NOTHING was changed."));
+			return;
+		}
+		if (!In->HasField(TEXT("value")))
+		{
+			Fail(Out, TEXT("value is required. NOTHING was changed."));
+			return;
+		}
+
+		// FIND THE PARAMETER AND ITS RECORDED TYPE. Everything below dispatches on this, because a
+		// mismatched T is a check() - a process kill, not a bad write.
+		FNiagaraUserRedirectionParameterStore& Store = Sys->GetExposedParameters();
+		const FNiagaraVariableWithOffset* Found = nullptr;
+		TArray<FString> Known;
+		for (const FNiagaraVariableWithOffset& Var : Store.ReadParameterVariables())
+		{
+			const FString VarName = Var.GetName().ToString();
+			Known.Add(VarName);
+			// Accept both spellings: the store keys on "User.Foo" and a caller reading the editor UI
+			// sees "Foo".
+			if (VarName == Name || VarName == (TEXT("User.") + Name)) { Found = &Var; }
+		}
+		if (!Found)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no user parameter named '%s' on '%s'. It has: %s. Adding one is deliberately "
+					 "not offered - a parameter no emitter reads does nothing. NOTHING was changed."),
+				*Name, *Sys->GetName(),
+				Known.Num() ? *FString::Join(Known, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		const FNiagaraVariable Param(Found->GetType(), Found->GetName());
+		const FNiagaraTypeDefinition& Type = Found->GetType();
+		const TSharedPtr<FJsonValue> Val = In->TryGetField(TEXT("value"));
+
+		auto NeedArray = [&](int32 Count, TArray<double>& OutNums) -> bool
+		{
+			const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+			if (!Val.IsValid() || !Val->TryGetArray(Arr) || !Arr || Arr->Num() != Count)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is a %s, so value must be an array of %d numbers. NOTHING was "
+						 "changed."), *Param.GetName().ToString(), *Type.GetName(), Count));
+				return false;
+			}
+			for (const TSharedPtr<FJsonValue>& V : *Arr)
+			{
+				double D = 0.0;
+				if (!V.IsValid() || !V->TryGetNumber(D))
+				{
+					Fail(Out, TEXT("value array holds numbers. NOTHING was changed."));
+					return false;
+				}
+				OutNums.Add(D);
+			}
+			return true;
+		};
+
+		bool bWrote = false;
+		TArray<double> Nums;
+		if (Type == FNiagaraTypeDefinition::GetFloatDef())
+		{
+			double D = 0.0;
+			if (!Val.IsValid() || !Val->TryGetNumber(D))
+			{
+				Fail(Out, TEXT("value must be a number for a float parameter. NOTHING was changed."));
+				return;
+			}
+			bWrote = Store.SetParameterValue(float(D), Param, false);
+		}
+		else if (Type == FNiagaraTypeDefinition::GetIntDef())
+		{
+			double D = 0.0;
+			if (!Val.IsValid() || !Val->TryGetNumber(D))
+			{
+				Fail(Out, TEXT("value must be a number for an int parameter. NOTHING was changed."));
+				return;
+			}
+			bWrote = Store.SetParameterValue(int32(D), Param, false);
+		}
+		else if (Type == FNiagaraTypeDefinition::GetBoolDef())
+		{
+			bool B = false;
+			if (!Val.IsValid() || !Val->TryGetBool(B))
+			{
+				Fail(Out, TEXT("value must be true or false for a bool parameter. NOTHING was "
+							   "changed."));
+				return;
+			}
+			// FNiagaraBool, not a C++ bool - the store keeps an int32 where 0 is false.
+			bWrote = Store.SetParameterValue(FNiagaraBool(B), Param, false);
+		}
+		else if (Type == FNiagaraTypeDefinition::GetVec2Def())
+		{
+			if (!NeedArray(2, Nums)) { return; }
+			bWrote = Store.SetParameterValue(FVector2f(Nums[0], Nums[1]), Param, false);
+		}
+		else if (Type == FNiagaraTypeDefinition::GetVec3Def())
+		{
+			if (!NeedArray(3, Nums)) { return; }
+			bWrote = Store.SetParameterValue(FVector3f(Nums[0], Nums[1], Nums[2]), Param, false);
+		}
+		else if (Type == FNiagaraTypeDefinition::GetVec4Def())
+		{
+			if (!NeedArray(4, Nums)) { return; }
+			bWrote = Store.SetParameterValue(FVector4f(Nums[0], Nums[1], Nums[2], Nums[3]), Param, false);
+		}
+		else if (Type == FNiagaraTypeDefinition::GetQuatDef())
+		{
+			if (!NeedArray(4, Nums)) { return; }
+			bWrote = Store.SetParameterValue(FQuat4f(Nums[0], Nums[1], Nums[2], Nums[3]), Param, false);
+		}
+		else if (Type == FNiagaraTypeDefinition::GetColorDef())
+		{
+			if (!NeedArray(4, Nums)) { return; }
+			bWrote = Store.SetParameterValue(
+				FLinearColor(Nums[0], Nums[1], Nums[2], Nums[3]), Param, false);
+		}
+		else if (Type == FNiagaraTypeDefinition::GetPositionDef())
+		{
+			if (!NeedArray(3, Nums)) { return; }
+			// SEPARATE CALL, not the template. SetParameterValue check()s HasPositionData for a
+			// Position parameter, so routing this through it would terminate the editor.
+			bWrote = Store.SetPositionParameterValue(FVector(Nums[0], Nums[1], Nums[2]),
+													 Found->GetName(), false);
+		}
+		else
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, which this endpoint does not write. It is refused rather than "
+					 "attempted, because SetParameterValue check()s the size against the type and a "
+					 "mismatch TERMINATES the editor - so guessing here does not produce a bad "
+					 "value, it ends the process. NOTHING was changed."),
+				*Param.GetName().ToString(), *Type.GetName()));
+			return;
+		}
+
+		Sys->MarkPackageDirty();
+
+		// POSTCONDITION, read back from the store. SetParameterValue's bool reports whether an
+		// offset was found, not whether the value is the one that was asked for.
+		const uint8* After = Store.GetParameterData(Store.IndexOf(Param));
+		Out->SetStringField(TEXT("system"), Sys->GetPathName());
+		Out->SetStringField(TEXT("name"), Param.GetName().ToString());
+		Out->SetStringField(TEXT("type"), Type.GetName());
+		Out->SetBoolField(TEXT("wrote"), bWrote);
+		if (!bWrote || !After)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the store did not accept a value for '%s'. NOTHING reliable was produced - "
+					 "read it back with list_niagara_user_parameters before relying on it."),
+				*Param.GetName().ToString()));
+			return;
+		}
+		// Echo what is actually there now, decoded the same way the read does it.
+		if (Type == FNiagaraTypeDefinition::GetFloatDef())
+		{
+			float F = 0.0f; FMemory::Memcpy(&F, After, sizeof(float));
+			Out->SetNumberField(TEXT("value"), F);
+		}
+		else if (Type == FNiagaraTypeDefinition::GetIntDef())
+		{
+			int32 I = 0; FMemory::Memcpy(&I, After, sizeof(int32));
+			Out->SetNumberField(TEXT("value"), I);
+		}
+		else if (Type == FNiagaraTypeDefinition::GetBoolDef())
+		{
+			int32 I = 0; FMemory::Memcpy(&I, After, sizeof(int32));
+			Out->SetBoolField(TEXT("value"), I != 0);
+		}
+		else
+		{
+			const int32 Count = Type.GetSize() / int32(sizeof(float));
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			for (int32 i = 0; i < Count; ++i)
+			{
+				float F = 0.0f;
+				FMemory::Memcpy(&F, After + i * sizeof(float), sizeof(float));
+				Arr.Add(MakeShared<FJsonValueNumber>(F));
+			}
+			Out->SetArrayField(TEXT("value"), Arr);
+		}
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("the system is dirty and NOTHING has been saved. The value reported above was read "
+				 "back out of the parameter store, not echoed from the request."));
+#endif
+	}
 }

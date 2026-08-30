@@ -3206,6 +3206,21 @@ def delete_material_expression(path: str, expression: str = "", delete_all: bool
 
 
 @mcp.tool()
+def set_niagara_user_parameter(path: str, name: str, value=None) -> dict:
+    """Set a User. parameter's default on the SYSTEM ASSET (not on a placed component).
+
+    The type is the one the system already records - list_niagara_user_parameters reports it. value
+    is a number for float/int, true/false for bool, or an array for vec2/vec3/vec4/quat/color/
+    position. A type this endpoint does not handle is REFUSED rather than attempted, because the
+    engine check()s the size against the type and a mismatch terminates the editor.
+
+    Refused on cooked content: the write would succeed but cannot be saved or recompiled, so the old
+    value would return on restart. Judged by reading the parameter back, not by the setter's return.
+    """
+    return _post("set_niagara_user_parameter", path=path, name=name, value=value)
+
+
+@mcp.tool()
 def list_niagara_user_parameters(path: str, name_contains: str = "") -> dict:
     "Read a NiagaraSystem's User. parameters, with their VALUES."
     return _post("list_niagara_user_parameters", path=path, nameContains=name_contains or None)

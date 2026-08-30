@@ -5765,17 +5765,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Deleting a working degraded path to make the good one look tidier trades real coverage
       for appearance, so `typed` is reported and a caller can tell which answered.
 
-- [ ] **set_niagara_user_parameter - the WRITE half** (hours)
-      Split from the read 2026-08-30, which is done. Setting a user parameter's default on the
-      SYSTEM ASSET, as opposed to on one placed component (set_niagara_component_parameter
-      already does that).
-      API: FNiagaraUserRedirectionParameterStore is reachable via the NON-const
-      GetExposedParameters() (NiagaraSystem.h:337), with SetParameterValue<T> at
-      NiagaraParameterStore.h:525 and SetPositionParameterValue at :520.
-      Two things to get right, neither optional: the write must be REFUSED on cooked content -
-      the change cannot be saved and the system cannot be recompiled, so it would come back on
-      restart with the value saying otherwise - and it must be judged by reading the parameter
-      back through the typed read rather than by SetParameterValue's return.
+- [x] **set_niagara_user_parameter - the WRITE half** (hours)
+      DONE 2026-08-30. 16 checks in tools/test_niagara_set_user_param.py.
+      TWO CRASH TRAPS SHAPED THE WHOLE DESIGN, both check() rather than an error return:
+        SetParameterValue<T>  check(Param.GetSizeInBytes() == sizeof(T))  ParameterStore.h:527
+        Position parameters   check(HasPositionData(ParamName))           ParameterStore.h:531
+      So every branch dispatches on the parameter's RECORDED FNiagaraTypeDefinition and there
+      is no default case that tries a plausible T - an unhandled type is refused by name,
+      because guessing here does not produce a bad value, it ends the process. Position goes
+      through SetPositionParameterValue for the same reason. A caller-supplied `type` is
+      refused too: letting one assert a type is exactly how a mismatched T reaches the check.
+      COOKED IS REFUSED FOR PERSISTENCE, NOT SAFETY, and the message says so - the write would
+      succeed, but it cannot be saved and the system cannot be recompiled, so the old value
+      would return on restart with the response claiming otherwise. A refusal blaming a crash
+      would invite someone to remove a guard the engine does not need. The READ still works on
+      the same asset, which the suite asserts.
+      Adding a parameter is deliberately not offered: one no emitter reads is invisible and
+      does nothing, so creating one by typo is worse than being told the name is unknown.
+      NOT EXERCISED HERE, and the suite says so rather than implying coverage: the write
+      itself. Every NiagaraSystem in this project is cooked, a scratch one from create_asset
+      has ZERO user parameters (verified), and duplicating a cooked Niagara asset is correctly
+      refused because it crashes the editor (MifBridgeAssetOps.cpp:430). An uncooked project -
+      Curfew - is where the success path runs. Everything else is covered: both refusal
+      reasons, the type dispatch, and the postcondition contract.
 - [x] **material_statistics** (hours)
       DONE 2026-08-30. Its own endpoint rather than a statistics:true parameter on
       recompile_material, because recompile REBUILDS and this only MEASURES - folding a read
