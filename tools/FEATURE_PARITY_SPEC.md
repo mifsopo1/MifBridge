@@ -4648,7 +4648,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Works on a cooked project - a UDeveloperSettings CDO is a live class default with no editor-only asset payload, so nothing here can crash on cooked data. What can fail is the FILE: a read-only or source-controlled Config/DefaultEngine.ini makes TryUpdateDefaultConfigFile return false, and that false...
       Vetter corrected the proposal: Rank stays high, but for a different reason than sold. It is NOT "a whole subsystem half missing": the property-READ half already works - describe_property accepts {class:"RendererSettings"}, resolves the CDO itself (MifBridgeDetails.cpp:753-780) and emits CPF_Config in each property's flag list (MifBridgeDetails.cpp:259). What is actually missing is (a) persistence and (b) enumeration. High is st...
 
-- [ ] **add_pcg_node / connect_pcg_nodes / remove_pcg_node, and edges on describe_pcg_graph** (day)
+- [x] **add_pcg_node / connect_pcg_nodes / remove_pcg_node / disconnect_pcg_nodes, and edges
+      on describe_pcg_graph** (day)
+      DONE 2026-08-30. 36 checks in tools/test_pcg_authoring.py.
+      THE ENGINE CANNOT REPORT WHETHER AN EDGE WAS MADE, which is what shaped the design.
+      UPCGGraph::AddEdge calls AddLabeledEdge, THROWS THE RESULT AWAY and returns `To`
+      unconditionally (PCGGraph.cpp:473-477) - so a wrong pin label returns a valid-looking
+      node, logs to LogPCG where no HTTP caller sees it, and wires nothing.
+      And AddLabeledEdge's own bool is AMBIGUOUS, which the survey did not catch: false for
+      invalid node, false for either bad pin, then bToPinBrokeOtherEdges on the SUCCESS path
+      (PCGGraph.cpp:521). So false means "nothing happened" OR "it worked cleanly" - opposites.
+      Resolved by making the ambiguity impossible rather than interpreting it: every failure
+      case is checked HERE first, so its false can only mean "added without displacing", and
+      the edge is then verified by reading the graph back. Displacement is a MEASURED count.
+      Displacement matters on its own: a single-capacity input pin silently BREAKS what was
+      attached. T2804 proves it both ways - PCGStaticMeshSpawnerSettings.In accepts multiple
+      and displaces 0, PCGCopyPointsSettings.Source does not and reports 1 - so
+      "replacedEdges is always 0" cannot pass by accident.
+      The read half was half-blind, and the vetter was right to rank that part low as a
+      capability but it is not low as ergonomics: describe_pcg_graph reported pin COUNTS while
+      connect addresses pins by LABEL, so the read half could not tell you the one string the
+      write half needed. Now emits edges[] (walked from the output side only, so each edge
+      appears once) plus inputPinNames/outputPinNames.
+      add_pcg_node returns settingsPath so set_property can configure the node in the next
+      call; T2801 proves that path resolves through get_property.
+      Cooked graphs are REFUSED by name rather than edited - the mutation would apply in
+      memory, never save, and never regenerate, since PCG's notification path is WITH_EDITOR
+      only. MIF_WITH_PCG already handled the 5.3 Experimental/PCG -> 5.7 PCG move; nothing
+      was added to Build.cs.
       Authors a PCG graph: adds a node of a given settings class, wires two pins, removes a node or an edge. Also fixes the read half, which reports nodes and pin COUNTS but no edges at all - so describe_pcg_graph cannot currently tell you what a graph does, only what is in it.
       API: UPCGGraph, public UFUNCTION(BlueprintCallable), read in D:/UE532/Engine/Plugins/Experimental/PCG/Source/PCG/Public/PCGGraph.h (5.3): UPCGNode* AddNodeOfType(TSubclassOf<UPCGSettings> InSettingsClass, UPCGSettings*& DefaultNodeSettings) [:170]; UPCGNode* AddNodeInstance(UPCGSettings*) [:177]; void RemoveNode(UPCGNode*) [:185]; UPCGNode* AddEdge(UPCGNode* From, const FName& FromPinLabel, UPCGNode* T...
       Cooked: Uncooked only for authoring, and say so. UPCGGraph in a cooked package still has its Nodes array (it is runtime data, not editor-only), so mutation will not crash - but the result cannot be saved, and PCG's editor notification path (ForceNotificationForEditor, WITH_EDITOR-only in PCGGraph.h) does no...

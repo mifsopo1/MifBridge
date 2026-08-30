@@ -2917,8 +2917,37 @@ def list_pcg_graphs(path_prefix: str = "/Game/") -> dict:
 
 @mcp.tool()
 def describe_pcg_graph(path: str) -> dict:
-    "Describe a PCGGraph: its nodes, each with the SETTINGS CLASS that identifies what the node actually is, plus input/output pin counts. Node identity comes from the settings class rather than the display title because GetNodeTitle's signature differs across engine versions and a title can be renamed anyway. hasInputNode is reported separately: a graph with no input node has nothing to operate on and generates nothing whatever else it contains."
+    "Describe a PCGGraph: its nodes, each with the SETTINGS CLASS that identifies what the node actually is, plus input/output pin counts. Node identity comes from the settings class rather than the display title because GetNodeTitle's signature differs across engine versions and a title can be renamed anyway. hasInputNode is reported separately: a graph with no input node has nothing to operate on and generates nothing whatever else it contains. Also reports edges[] - every connection as {fromNode, fromPin, toNode, toPin}, walked from the output side so each edge appears exactly once - and each node's inputPinNames and outputPinNames. Without those, a node list plus pin COUNTS said what was in a graph and nothing about what it does, and could not tell you the pin labels connect_pcg_nodes requires."
     return _post("describe_pcg_graph", path=path)
+
+
+@mcp.tool()
+def add_pcg_node(graph: str, settings_class: str, x: int = 0, y: int = 0) -> dict:
+    "Add a node to a PCG graph. settings_class is a UPCGSettings subclass name such as PCGSurfaceSamplerSettings or PCGStaticMeshSpawnerSettings; an unknown one is refused with near matches rather than creating anything. The response returns the new node's stable name AND its settingsPath, which is the point: settingsPath goes straight into set_property as objectPath, so the node can be configured in the very next call instead of working out how to address a node's settings object. The new node is UNWIRED - a PCG node connected to nothing contributes nothing - so connect_pcg_nodes is normally the next step. Refused on a graph from a cooked package: the edit would apply in memory but could never save and no placed PCG component would regenerate."
+    return _post("add_pcg_node", graph=graph, settingsClass=settings_class, x=x, y=y)
+
+
+@mcp.tool()
+def connect_pcg_nodes(graph: str, from_node: str, from_pin: str, to_node: str,
+                      to_pin: str) -> dict:
+    "Wire one PCG node's OUTPUT pin to another's INPUT pin. Pins are addressed by LABEL - describe_pcg_graph reports every node's inputPinNames and outputPinNames. An unknown pin label is REFUSED, which matters more than it sounds: UPCGGraph::AddEdge discards its own result and returns a valid-looking node whatever happens, so a mistyped pin would otherwise report success and wire nothing. The edge is verified by reading the graph back rather than trusting any return value. replacedEdges reports, as a MEASURED count, how many existing edges the engine BROKE to make room - a single-capacity input pin silently discards what was attached to it, and nothing else would tell you. Connecting pins that are already connected reports connected:false rather than duplicating."
+    return _post("connect_pcg_nodes", graph=graph, fromNode=from_node, fromPin=from_pin,
+                 toNode=to_node, toPin=to_pin)
+
+
+@mcp.tool()
+def disconnect_pcg_nodes(graph: str, from_node: str, from_pin: str, to_node: str,
+                         to_pin: str) -> dict:
+    "Remove one edge from a PCG graph, named by the same four values that created it. `removed` is the measured change in the pin's edge count, and is cross-checked against what UPCGGraph::RemoveEdge claimed - a disagreement between the two is reported rather than silently trusting either. Removing an edge that is not there succeeds with removed:0."
+    return _post("disconnect_pcg_nodes", graph=graph, fromNode=from_node, fromPin=from_pin,
+                 toNode=to_node, toPin=to_pin)
+
+
+@mcp.tool()
+def remove_pcg_node(graph: str, node: str, confirm: bool = False) -> dict:
+    "Remove a node from a PCG graph by its NAME (from describe_pcg_graph - a settings class is a node TYPE and a graph can hold many of one type). Requires confirm=True, because removing a node also destroys every edge attached to it and this endpoint cannot put them back; the refusal states how many edges that actually is. The graph's own input and output nodes are refused - removing one would leave the graph unable to receive or emit anything."
+    return _post("remove_pcg_node", graph=graph, node=node, confirm=confirm)
+
 
 
 @mcp.tool()

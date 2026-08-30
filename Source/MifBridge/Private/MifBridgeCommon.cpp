@@ -139,6 +139,10 @@ namespace MifBridge
 			MIF_BIND(unmap_legacy_input);
 			MIF_BIND(save_input_settings);
 			MIF_BIND(list_settings);
+			MIF_BIND(add_pcg_node);
+			MIF_BIND(remove_pcg_node);
+			MIF_BIND(connect_pcg_nodes);
+			MIF_BIND(disconnect_pcg_nodes);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);

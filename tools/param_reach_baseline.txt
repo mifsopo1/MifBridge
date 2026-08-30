@@ -38,6 +38,7 @@ add_parent_call.method
 add_parent_call.name
 add_parent_call.ownerclass
 add_parent_call.targetclass
+add_pcg_node.assetpath
 add_pin.pin
 add_sequence_possessable.sequence
 add_sequence_section.binding
@@ -60,6 +61,7 @@ capture_camera.z
 capture_viewport.file
 capture_viewport.name
 connect_material_expressions.material
+connect_pcg_nodes.assetpath
 delete_material_expression.material
 delete_material_expression.name
 describe_animation.animation
@@ -77,6 +79,7 @@ diff_properties_vs_default.actorpath
 diff_properties_vs_default.filter
 diff_properties_vs_default.includechildren
 diff_properties_vs_default.namefilter
+disconnect_pcg_nodes.assetpath
 disconnect_pin.guid
 disconnect_pin.name
 edit_container.action
@@ -160,6 +163,7 @@ remove_ik_goal.rig
 remove_ik_retarget_chain.rig
 remove_ik_solver.rig
 remove_interface.class
+remove_pcg_node.assetpath
 remove_pin.name
 remove_sublevel.level
 rename_event.to
