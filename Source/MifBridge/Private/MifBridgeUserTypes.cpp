@@ -107,11 +107,29 @@ namespace MifBridge
 			// reach GetVarDesc by different routes. Hit for real 2026-07-27 (list_struct_members).
 			if (!Struct->EditorData)
 			{
-				OutError = FString::Printf(
-					TEXT("struct '%s' is COOKED — its editor-only data was stripped, so it cannot be ")
-					TEXT("inspected or edited. This works only on structs authored in this editor. ")
-					TEXT("To read a cooked struct's field names, read_datatable one row and take the keys."),
-					*P);
+				// TWO DIFFERENT CAUSES, and saying the wrong one sends the caller after the wrong
+				// bug. Cooked is the common case - EditorData is editor-only and stripped on cook.
+				// But a struct built by a bare NewObject never had it either, and telling someone
+				// their freshly-created asset is "COOKED" is a false trail. Distinguished
+				// 2026-08-30, after create_asset was found able to produce exactly that.
+				if (IsCookedOrContainerPackage(Struct->GetOutermost()))
+				{
+					OutError = FString::Printf(
+						TEXT("struct '%s' is COOKED — its editor-only data was stripped, so it cannot be ")
+						TEXT("inspected or edited. This works only on structs authored in this editor. ")
+						TEXT("To read a cooked struct's field names, read_datatable one row and take the keys."),
+						*P);
+				}
+				else
+				{
+					OutError = FString::Printf(
+						TEXT("struct '%s' has no EditorData and its package is NOT cooked, which means ")
+						TEXT("it was constructed without the engine's own creator — a bare NewObject ")
+						TEXT("leaves it in this state. It cannot be inspected or edited and cannot be ")
+						TEXT("repaired in place. Delete it and use create_struct, which goes through ")
+						TEXT("FStructureEditorUtils::CreateUserDefinedStruct."),
+						*P);
+				}
 				return nullptr;
 			}
 
@@ -785,8 +803,50 @@ namespace MifBridge
 			Fail(Out, FString::Printf(TEXT("failed to create package '%s'"), *Path));
 			return;
 		}
-		UObject* Asset = NewObject<UObject>(
-			Package, Class, FName(*AssetName), RF_Public | RF_Standalone | RF_Transactional);
+		// A BARE NewObject<UUserDefinedStruct> CANNOT BE PATCHED UP AFTERWARDS, so this one class is
+		// constructed by the engine's own creator instead. Found 2026-08-30 by the editor-utils half
+		// of tools/audit_factory_init.py, looking for the blind spot the factory scan admitted to.
+		//
+		// FStructureEditorUtils::CreateUserDefinedStruct (StructureEditorUtils.cpp:41-63) does this
+		// same NewObject and then SEVEN more things - an EditorData sub-object, a Guid, the
+		// BlueprintType metadata, Bind(), StaticLink(true), Status, and one default member, because
+		// the engine never allows a zero-member user struct. That is far more than the two lines the
+		// enum below needs, and it is engine-internal enough to drift, so it is CALLED rather than
+		// replicated - the parallel-implementation mistake this plugin has made before.
+		//
+		// The load-bearing one is EditorData. Every FStructureEditorUtils entry point CastChecks it
+		// (GetVarDesc at StructureEditorUtils.cpp:648, AddVariable at :249), and CastChecked on null
+		// TERMINATES the editor. That crash does not reach a caller today only because LoadUserStruct
+		// already refuses a null EditorData - a guard added for COOKED structs, which happen to fail
+		// the same way. So before this, create_asset{class:"UserDefinedStruct"} produced an asset
+		// that every struct endpoint rejected while blaming the wrong cause.
+		UObject* Asset = nullptr;
+		if (Class == UUserDefinedStruct::StaticClass())
+		{
+			Asset = FStructureEditorUtils::CreateUserDefinedStruct(
+				Package, FName(*AssetName), RF_Public | RF_Standalone | RF_Transactional);
+			// VERIFIED, not trusted - this is precisely the state whose absence makes the asset
+			// useless, and the function returns null on its own disabled-feature path.
+			UUserDefinedStruct* NewStruct = Cast<UUserDefinedStruct>(Asset);
+			if (!NewStruct || !NewStruct->EditorData)
+			{
+				Fail(Out, TEXT("the new struct has no EditorData after construction. Handing it back "
+					TEXT("would produce an asset that every struct endpoint refuses. NOTHING usable "
+						 "was produced.")));
+				return;
+			}
+			Out->SetStringField(TEXT("structNote"),
+				TEXT("built through the engine's own FStructureEditorUtils::CreateUserDefinedStruct "
+					 "rather than a bare NewObject, so it has the EditorData every struct operation "
+					 "needs. It carries ONE default boolean member, because the engine does not allow "
+					 "a zero-member user struct - list_struct_members shows it, add_struct_member "
+					 "adds to it. create_struct is the direct endpoint and takes members[] up front."));
+		}
+		else
+		{
+			Asset = NewObject<UObject>(
+				Package, Class, FName(*AssetName), RF_Public | RF_Standalone | RF_Transactional);
+		}
 		if (!Asset)
 		{
 			Fail(Out, FString::Printf(TEXT("NewObject<%s> returned null"), *Class->GetName()));
@@ -828,13 +888,30 @@ namespace MifBridge
 		//
 		// A class that gets proper handling here should be REMOVED from this list rather than left
 		// warning about a problem that no longer exists.
+		//
+		// REGENERATE WITH: python tools/audit_factory_init.py
+		// The list below is that report's "NOT HANDLED" column. It grew from 19 to 36 entries on
+		// 2026-08-30 when the audit's own filename filter was found broken: it tested
+		// `"Factory" in name`, which excludes EditorFactories.cpp - the single biggest factory
+		// file in the engine. The first version of this table was therefore silently missing the
+		// entire render-target family, UMaterial, UMaterialInstanceConstant, UTexture2D and the
+		// blend spaces. A filter that quietly drops the main file is worse than no filter, because
+		// the report still looks complete. The render targets are the clearest illustration of why
+		// this matters: UTextureRenderTargetFactoryNew calls InitAutoFormat(256, 256), so a bare
+		// NewObject leaves a 0x0 render target with no resource behind it.
 		static const TCHAR* FactoryInitClasses[] = {
-			TEXT("AnimComposite"), TEXT("AnimMontage"), TEXT("AnimSequence"), TEXT("AnimStreamable"),
-			TEXT("PoseAsset"), TEXT("Skeleton"), TEXT("GroomAsset"), TEXT("ChaosClothAsset"),
-			TEXT("HLODLayer"), TEXT("PaperSprite"), TEXT("PaperTileSet"),
-			TEXT("NiagaraParameterCollectionInstance"), TEXT("SoundClass"), TEXT("SoundSubmix"),
-			TEXT("EndpointSubmix"), TEXT("SoundfieldSubmix"), TEXT("SoundfieldEndpointSubmix"),
-			TEXT("AnimNextGraph"), TEXT("AnimNextParameterBlock"),
+			TEXT("AimOffsetBlendSpace"), TEXT("AimOffsetBlendSpace1D"), TEXT("AnimComposite"),
+			TEXT("AnimMontage"), TEXT("AnimNextGraph"), TEXT("AnimNextParameterBlock"),
+			TEXT("AnimSequence"), TEXT("AnimStreamable"), TEXT("BlendSpace"), TEXT("BlendSpace1D"),
+			TEXT("CanvasRenderTarget2D"), TEXT("ChaosClothAsset"), TEXT("DataprepAssetInstance"),
+			TEXT("EndpointSubmix"), TEXT("GroomAsset"), TEXT("HLODLayer"), TEXT("Material"),
+			TEXT("MaterialFunctionInstance"), TEXT("MaterialFunctionMaterialLayerBlendInstance"),
+			TEXT("MaterialFunctionMaterialLayerInstance"), TEXT("MaterialInstanceConstant"),
+			TEXT("NiagaraParameterCollectionInstance"), TEXT("PaperSprite"), TEXT("PaperTileSet"),
+			TEXT("PoseAsset"), TEXT("Skeleton"), TEXT("SoundClass"), TEXT("SoundSubmix"),
+			TEXT("SoundfieldEndpointSubmix"), TEXT("SoundfieldSubmix"), TEXT("SubUVAnimation"),
+			TEXT("Texture2D"), TEXT("TextureRenderTarget2D"), TEXT("TextureRenderTarget2DArray"),
+			TEXT("TextureRenderTargetCube"), TEXT("TextureRenderTargetVolume"),
 		};
 		{
 			const FString CreatedClass = Class->GetName();

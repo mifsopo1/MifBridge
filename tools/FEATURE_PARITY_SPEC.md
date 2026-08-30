@@ -5622,27 +5622,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       problem and trains people to ignore it - T6202 asserts the two handled classes are
       silent.
 
-- [ ] **sweep FooEditorUtils::CreateFoo paths for the same initialisation gap** (hours)
-      Filed 2026-08-30 as a known limitation of audit_factory_init.py, which only reads
-      UFactory::FactoryCreateNew. The one FATAL case found so far -
-      FEnumEditorUtils::CreateUserDefinedEnum - is NOT a factory and would have been missed by
-      it entirely, so the sweep is incomplete in a known direction. Same method: for each
-      class create_asset can instantiate, find the editor-utils creator and see what it does
-      after NewObject.
-      Filed 2026-08-30 after a UserDefinedEnum created by create_asset TERMINATED the editor:
-      a bare NewObject left CppForm at Regular and the first operation naming an enumerator
-      hit check(CppForm == ECppForm::Namespaced). ULevelSequence had already needed the same
-      treatment (Initialize(), found 2026-08-28) - so that is TWICE, which makes it a pattern
-      rather than two accidents.
-      The check: for each class create_asset accepts, find the engine's own UFactory or
-      FooEditorUtils::CreateFoo and see what it does AFTER its NewObject. The factory is the
-      specification; NewObject alone almost never is. UNiagaraSystem is a known unknown - it
-      was NOT risked while testing set_niagara_emitter for exactly this reason.
-      Enable or disable an emitter inside a NiagaraSystem, add an emitter to a system from a source emitter asset, duplicate one, and remove one. The single most common Niagara edit an agent needs is "turn this emitter off and see if the artifact goes away".
-      API: FNiagaraEmitterHandle::SetIsEnabled(bool, UNiagaraSystem&, bool bRecompileIfChanged) NIAGARA_API - D:/UE532/Engine/Plugins/FX/Niagara/Source/Niagara/Classes/NiagaraEmitterHandle.h:57. UNiagaraSystem::AddEmitterHandle(UNiagaraEmitter&, FName, FGuid) NIAGARA_API - NiagaraSystem.h:300; ::DuplicateEmitterHandle :307; ::RemoveEmitterHandlesById(const TSet<FGuid>&) :313; ::GetEmitterHandles() non-const ...
-      Cooked: REFUSE on a cooked package, and say why: docs/02_GOTCHAS.md 6c records a cooked UNiagaraSystem killing the editor inside FVersionedNiagaraEmitterData::PostLoad, and duplicate_asset already refuses cooked Niagara for that reason. Two guards, in order: (1) IsCookedOrContainerPackage on the system's pa...
-      Vetter corrected the proposal: Rank drops high -> medium: set_property{propertyPath:"EmitterHandles[N].bIsEnabled"} already reaches the flag, and I verified the DISABLE direction actually works (InitEmitters builds an instance per handle unconditionally at NiagaraSystemInstance.cpp:2069-2098; Init sets ExecutionState=Disabled via IsAllowedToExecute at NiagaraEmitterInstance.cpp:283/217). Only ENABLE is broken, because set_prope...
-
+- [x] **sweep FooEditorUtils::CreateFoo paths for the same initialisation gap** (hours)
+      DONE 2026-08-30. audit_factory_init.py now runs TWO scans; 14 checks in
+      tools/test_create_struct_init.py.
+      FOUND, on the first run: UUserDefinedStruct, the enum's sibling. The engine's
+      FStructureEditorUtils::CreateUserDefinedStruct does SEVEN things after its NewObject,
+      and the load-bearing one is the EditorData sub-object that every FStructureEditorUtils
+      entry point CastChecks - null there TERMINATES the editor. That crash never reached a
+      caller only because LoadUserStruct already refused a null EditorData, a guard written
+      for cooked structs which happen to fail the same way. So the visible symptom was an
+      asset that looked fine and that every struct endpoint rejected while naming the wrong
+      cause. create_asset now CALLS the engine's creator rather than copying its seven lines,
+      and the diagnosis was split so cooked and badly-constructed are told apart.
+      AND THE AUDIT'S OWN FILTER WAS BROKEN, which is the bigger find. scan() tested
+      `"Factory" in name`, which excludes EditorFactories.cpp - the single biggest factory
+      file in the engine. The factory scan was silently 44% incomplete: 22 factories became
+      39 once the filter matched "Factor", and the warning table went 19 classes to 36,
+      gaining the whole render-target family, UMaterial, UMaterialInstanceConstant, UTexture2D
+      and the blend spaces. UTextureRenderTargetFactoryNew calls InitAutoFormat(256,256), so
+      a bare NewObject leaves a 0x0 render target with no resource. A filename filter that
+      quietly drops the main file is worse than no filter, because the report still looks
+      complete - which is exactly how the first version of this table passed review.
 - [ ] **extend add_widget_animation_track / set_widget_animation_keys with RenderTransform.Scale, .Angle and .Shear** (hours)
       Animate a UMG widget's render scale, rotation angle and shear, not just its translation. Scale is the single most common UI animation there is (pop-in, button press, pulse) and it is the one channel family the bridge cannot reach.
       API: UMovieScene2DTransformSection's channels are all already on the section the bridge creates: FMovieSceneFloatChannel Translation[2] at Runtime/UMG/Public/Animation/MovieScene2DTransformSection.h:139, Rotation at :143, Scale[2] at :147, Shear[2] at :151. Same UMovieScene2DTransformTrack, same section, same FMovieSceneFloatChannel key path the existing code already drives via FMovieSceneFloatChannel ...

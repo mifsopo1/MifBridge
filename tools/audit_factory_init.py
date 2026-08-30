@@ -26,9 +26,22 @@ This is a HEURISTIC and reports candidates, not defects. It cannot tell whether 
 load-bearing or cosmetic - only a human reading the factory can - so it prints the actual lines and
 leaves the judgement. What it does guarantee is that nobody has to guess WHICH classes to look at.
 
+TWO SCANS, because one of them was not enough and said so. The factory scan below reads
+UFactory::FactoryCreateNew bodies. That is where most asset creation lives, but NOT all of it - and
+the miss was not hypothetical: UUserDefinedEnum, the case that TERMINATED the editor, is created by
+FEnumEditorUtils::CreateUserDefinedEnum, which is not a factory at all. The factory scan could
+never have found the very bug that prompted writing it.
+
+So the second scan reads FooUtils::CreateBar / FooEditorUtils::CreateBar helpers on the same test:
+does it construct something and then do more to it? Added 2026-08-30. It found the enum's sibling
+on its first run - FStructureEditorUtils::CreateUserDefinedStruct, which does SEVEN things after
+its NewObject, and whose EditorData sub-object is CastChecked by every struct entry point, so null
+there terminates the editor. create_asset now calls that creator rather than NewObject.
+
 USAGE
-    python tools/audit_factory_init.py            # engine factories with post-construct work
+    python tools/audit_factory_init.py            # both scans
     python tools/audit_factory_init.py --class UNiagaraSystem
+    python tools/audit_factory_init.py --utils    # only the editor-utils scan
 """
 import argparse
 import io
@@ -76,9 +89,16 @@ def scan(only_class=None):
             continue
         for dirpath, _dirs, files in os.walk(root):
             for name in files:
-                if not name.endswith("Factory.cpp") and "Factory" not in name:
-                    continue
                 if not name.endswith(".cpp"):
+                    continue
+                # "Factor", not "Factory". The filter used to test `"Factory" in name`, which
+                # excluded EditorFactories.cpp - the single biggest factory file in the engine,
+                # holding dozens of them. Found 2026-08-30 when the editor-utils scan turned up a
+                # UTextureRenderTarget2D hit that this scan should have reported first: its factory
+                # calls InitAutoFormat(256,256), so a bare NewObject leaves a 0x0 render target
+                # with no resource. A filename filter that silently drops the main file is worse
+                # than no filter, because the report still looks complete.
+                if "Factor" not in name:
                     continue
                 path = os.path.join(dirpath, name)
                 try:
@@ -99,25 +119,84 @@ def scan(only_class=None):
     return rows
 
 
+# A creation helper rather than a factory. Restricted to types whose name ends in Utils /
+# Utilities / Library on purpose: that is where the engine puts "the canonical way to make one of
+# these", and widening it to every Create* function anywhere drowns the report in graph-node and
+# widget construction that has nothing to do with assets.
+UTILS_FUNC = re.compile(
+    r"^\s*(?:static\s+)?(\w+)\s*\*\s*(F?\w*(?:Utils|Utilities|Library))::(Create\w*)\s*\(", re.M)
+
+
+def utils_bodies(text):
+    """Yield (owner::name, start_line, body) for each FooUtils::CreateBar in a file."""
+    for m in UTILS_FUNC.finditer(text):
+        brace = text.find("{", m.end())
+        if brace < 0:
+            continue
+        depth, i = 0, brace
+        while i < len(text):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        yield ("%s::%s" % (m.group(2), m.group(3)),
+               text[:m.start()].count("\n") + 1, text[brace:i + 1])
+
+
+def scan_utils(only_class=None):
+    rows = []
+    for root in ENGINE_ROOTS:
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _dirs, files in os.walk(root):
+            for name in files:
+                if not name.endswith(".cpp"):
+                    continue
+                path = os.path.join(dirpath, name)
+                try:
+                    text = io.open(path, encoding="utf-8", errors="replace").read()
+                except OSError:
+                    continue
+                for fn, line, body in utils_bodies(text):
+                    made = NEWOBJ.findall(body)
+                    if not made:
+                        continue
+                    cls = made[0]
+                    if only_class and only_class.lstrip("U") != cls.lstrip("U"):
+                        continue
+                    calls = sorted(set(INTERESTING.findall(body)))
+                    if not calls:
+                        continue
+                    rows.append((cls, fn, path, line, calls, body))
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--class", dest="only", default=None,
                     help="report only this asset class")
     ap.add_argument("--show-body", action="store_true",
                     help="print the factory body for each hit")
+    ap.add_argument("--utils", action="store_true",
+                    help="only the editor-utils scan, skipping the factory scan")
     args = ap.parse_args()
 
-    rows = scan(args.only)
+    rows = [] if args.utils else scan(args.only)
     rows.sort(key=lambda r: r[0])
 
     # What create_asset already handles, so the report says what is LEFT rather than what exists.
-    handled = {"ULevelSequence", "UUserDefinedEnum"}
+    # A class comes OFF this list only when create_asset really does the initialisation.
+    # UUserDefinedStruct joined it 2026-08-30 when create_asset started calling
+    # FStructureEditorUtils::CreateUserDefinedStruct instead of NewObject.
+    handled = {"ULevelSequence", "UUserDefinedEnum", "UUserDefinedStruct"}
 
     print("Asset classes whose engine factory does work AFTER its NewObject")
     print("=" * 78)
-    if not rows:
+    if not rows and not args.utils:
         print("no factories matched." if args.only else "nothing found - check ENGINE_ROOTS.")
-        return 0
 
     unhandled = 0
     for cls, factory, path, line, calls, body in rows:
@@ -143,6 +222,39 @@ def main():
     print("The two already found the hard way, for calibration:")
     print("  ULevelSequence    Initialize()                     -> malformed without it")
     print("  UUserDefinedEnum  SetEnums(.., Namespaced)         -> TERMINATES the editor without it")
+
+    # SCAN 2. Kept separate in the output rather than merged, because the two answer different
+    # questions and a merged list hides which scan found what - and the factory scan's blind spot
+    # is the reason this one exists.
+    print()
+    print("Creation helpers that are NOT factories (FooUtils::CreateBar)")
+    print("=" * 78)
+    print("The factory scan above CANNOT see these. UUserDefinedEnum - the case that terminated")
+    print("the editor - lives here, not in a factory, so the first scan would have missed it.")
+    urows = scan_utils(args.only)
+    urows.sort(key=lambda r: r[0])
+    if not urows:
+        print("\nno helpers matched." if args.only else "\nnothing found - check ENGINE_ROOTS.")
+        return 0
+    uunhandled = 0
+    for cls, fn, path, line, calls, body in urows:
+        mark = "  handled" if cls in handled else "  NOT HANDLED"
+        if cls not in handled:
+            uunhandled += 1
+        print("\n%-30s %s" % (cls, mark))
+        print("    %s:%d  (%s)" % (path.replace("\\", "/"), line, fn))
+        print("    calls after construction: %s" % ", ".join(calls))
+        if args.show_body:
+            for bl in body.splitlines():
+                if INTERESTING.search(bl) or "NewObject" in bl:
+                    print("        %s" % bl.strip()[:110])
+    print("\n" + "=" * 78)
+    print("%d creation helper(s) do post-construct work; %d of those classes are NOT handled."
+          % (len(urows), uunhandled))
+    print()
+    print("Most of these construct transient conversion-context objects rather than assets, so the")
+    print("list is short on things create_asset can even be asked for. Read before acting - the")
+    print("point is that nobody has to GUESS which classes to look at.")
     return 0
 
 
