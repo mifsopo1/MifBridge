@@ -5161,7 +5161,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Works on cooked and uncooked alike; this is about files on disk, not asset contents. On a project with no provider configured, IsEnabled() is false - report `enabled:false, provider:"None"` and say plainly that no checkout is needed because files are not under revision control. Never fail in that ca...
       Vetter corrected the proposal: Five corrections, and a rank cut from high to medium. 1. THE HEADLINE PREMISE IS HALF FALSE. "Nothing in the response says so" is true only for save_package. save_dirty_packages ALREADY has a read-only pre-scan — MifBridgeUndo.cpp:636-642: `if (FPaths::FileExists(Filename) && IFileManager::Get().IsReadOnly(*Filename)) AddReasonRow(Failed, Name, "file is read-only: <path>")`, with the comment "the ...
 
-- [ ] **fixup_redirectors** (day)
+- [x] **list_redirectors (read) + fixup_redirectors (write)** (day)
+      DONE 2026-08-30. 17 checks in tools/test_redirectors.py. This project has 156 real
+      redirectors under /Game from mod work, so the read half runs against real data.
+      SPLIT IN TWO, AND THE FIRST VERSION GOT IT WRONG. It was written as a single
+      fixup_redirectors with dryRun defaulting to true, then put on the safety gate - which
+      made the harmless dry run unavailable in scratch mode, exactly the trade the
+      source_control split had been made to avoid an hour earlier the same day. The gate
+      classifies whole ENDPOINTS, not parameters. Both halves share one scan, so the dry run
+      cannot drift from what the fixup acts on.
+      THE REGISTRY PRE-CHECK IS LOAD-BEARING, per the vetter, and the reasoning is worth
+      keeping: it is tempting to assume GIsRunningUnattendedScript covers it, since this file
+      already uses that guard for rename and delete. It suppresses FMessageDialog, but
+      SDiscoveringAssetsDialog is a RAW SLATE WINDOW, so the unattended flag does nothing for
+      it - and a modal on the game thread deadlocks the bridge. IsLoadingAssets() is checked
+      first.
+      Calling IAssetTools directly also avoids two further modals that live in the Content
+      Browser's CALLER rather than in FixupReferencers - which is why this is an endpoint and
+      not an invoke_editor_command recipe, the opposite of the lighting call earlier today.
+      stillReferenced reports what survived: the engine silently trims read-only referencing
+      packages (AssetFixUpRedirectors.cpp:328) and leaves those redirectors alone, which on a
+      mod project means the referencer is in a .pak.
+      NOT exercised: the fixup itself (gated, and it re-saves real packages to disk) and the
+      registry pre-check (needs the editor caught mid-scan).
       Repoints every referencer of an ObjectRedirector at the live asset and deletes the redirector - the Content Browser's 'Fix Up Redirectors in Folder'. rename_asset is built and calls IAssetTools::RenameAssets, which deliberately leaves a redirector behind for every asset that was still referenced; there is currently no way to clean any of them up, so a session that renames assets steadily accumulates redirector packages that then get cooked into the mod.
       API: IAssetTools::FixupReferencers(const TArray<UObjectRedirector*>& Objects, bool bCheckoutDialogPrompt = true, ERedirectFixupMode FixupMode = ERedirectFixupMode::DeleteFixedUpRedirectors), D:/UE532/Engine/Source/Developer/AssetTools/Public/IAssetTools.h:538; ERedirectFixupMode at :66-72; IsFixupReferencersInProgress() at :541. Guard with IAssetRegistry::IsLoadingAssets() (IAssetRegistry.h:719) - docs...
       Cooked: Must refuse on container-only packages. A redirector inside a mounted .pak/.utoc cannot be rewritten or deleted, and the referencing packages cannot be re-saved either. MifBridgeCooked.cpp's IsContainerOnlyPackage (used by find_assets) and MifBridgeCommon.cpp:2503 IsCookedOrContainerPackage are the ...

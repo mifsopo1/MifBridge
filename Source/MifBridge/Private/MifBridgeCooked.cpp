@@ -9,6 +9,9 @@
 //
 // Everything here is read-only.
 #include "MifBridgeHandlers.h"
+#include "AssetToolsModule.h"
+#include "IAssetTools.h"
+#include "UObject/ObjectRedirector.h"
 #include "MifBridgeLog.h"
 
 #include "AssetRegistry/ARFilter.h"
@@ -1219,5 +1222,274 @@ namespace MifBridge
 			ProxyArr.Add(MakeShared<FJsonValueObject>(J));
 		}
 		Out->SetArrayField(TEXT("proxies"), ProxyArr);
+	}
+
+	// =======================================================================
+	// fixup_redirectors - the cleanup rename_asset has always left behind
+	// =======================================================================
+	//
+	// rename_asset calls IAssetTools::RenameAssets, which deliberately leaves an ObjectRedirector
+	// behind for every asset that was still referenced. Nothing could clean one up, so a session
+	// that renames assets steadily accumulates redirector packages - and those get cooked into the
+	// mod. This is the Content Browser's "Fix Up Redirectors in Folder", without the folder.
+	//
+	// THE REGISTRY PRE-CHECK IS LOAD-BEARING, NOT BELT-AND-BRACES, and that is the correction worth
+	// recording. It is tempting to think GIsRunningUnattendedScript covers it, because this file
+	// already uses that guard for rename and delete. It does suppress FMessageDialog
+	// (MessageDialog.cpp:172) - but SDiscoveringAssetsDialog is a RAW SLATE WINDOW, not an
+	// FMessageDialog, so the unattended guard does nothing for it whatsoever. Calling FixupReferencers
+	// while the asset registry is still scanning opens a modal window on the game thread and the
+	// bridge deadlocks, because handlers run inline on the ticker that would have to service it.
+	// IAssetRegistry::IsLoadingAssets() is therefore checked first and refused with a real reason.
+	//
+	// CALLING THE API DIRECTLY AVOIDS TWO MORE MODALS. FScopedSlowTask::MakeDialog() and
+	// LoadAssetsIfNeeded(bAllowedToPromptToLoadAssets=true) live in the Content Browser CALLER
+	// (AssetFolderContextMenu.cpp:165-168), not inside FixupReferencers - so going straight to
+	// IAssetTools skips both. That is a reason to prefer the API over invoke_editor_command here,
+	// and it is the opposite of the lighting case earlier today where the editor command was the
+	// right answer.
+	//
+	// TWO COOKED SHAPES, and the second is the likelier one. A redirector INSIDE a container cannot
+	// be rewritten or deleted, so it is skipped by name. But the common case on a mod project is a
+	// LOOSE redirector whose referencer lives in a .pak - and there the engine already degrades
+	// safely: DetectReadOnlyPackages (AssetFixUpRedirectors.cpp:328) trims read-only referencing
+	// packages and the redirector is then left alone. Safe, but silent, so this reports it under
+	// stillReferenced rather than counting it as fixed.
+	//
+	// dryRun IS THE DEFAULT. Fixing a redirector rewrites and re-saves every package that referenced
+	// it, which is a much wider blast radius than the one asset the caller named.
+
+	/** Scan for redirectors under the given roots. Shared by both halves, so the read half really
+	 *  is the dry run of the write half rather than a second implementation that can drift. */
+	static bool MifCollectRedirectors(const TSharedRef<FJsonObject>& In,
+									  const TSharedRef<FJsonObject>& Out,
+									  TArray<UObjectRedirector*>& OutToFix,
+									  TArray<TSharedPtr<FJsonValue>>& OutRows)
+	{
+		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+			TEXT("AssetRegistry")).Get();
+
+		// THE GUARD THE UNATTENDED FLAG DOES NOT COVER. SDiscoveringAssetsDialog is a raw Slate
+		// window, so GIsRunningUnattendedScript is irrelevant to it - and a modal on the game
+		// thread deadlocks this bridge outright.
+		if (Registry.IsLoadingAssets())
+		{
+			Fail(Out, TEXT("the asset registry is still scanning. FixupReferencers opens a blocking "
+				TEXT("'Discovering Assets' window in that state - a raw Slate window, which "
+					 "GIsRunningUnattendedScript does NOT suppress - and a modal on the game thread "
+					 "deadlocks this bridge. Wait for the scan to finish and try again. NOTHING was "
+					 "changed.")));
+			return false;
+		}
+
+		IAssetTools& Tools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(
+			TEXT("AssetTools")).Get();
+		if (Tools.IsFixupReferencersInProgress())
+		{
+			Fail(Out, TEXT("a redirector fixup is already running. NOTHING was changed."));
+			return false;
+		}
+
+		// --- collect the redirectors ------------------------------------------------------------
+		TArray<FString> Roots;
+		const TArray<TSharedPtr<FJsonValue>>* PathsArr = nullptr;
+		if (In->TryGetArrayField(TEXT("paths"), PathsArr) && PathsArr)
+		{
+			for (const TSharedPtr<FJsonValue>& V : *PathsArr)
+			{
+				FString One;
+				if (V.IsValid() && V->TryGetString(One) && !One.IsEmpty()) { Roots.Add(One); }
+			}
+		}
+		const FString Prefix = JStrAny(In, { TEXT("pathPrefix"), TEXT("path") });
+		if (!Prefix.IsEmpty()) { Roots.Add(Prefix); }
+		if (Roots.Num() == 0)
+		{
+			Fail(Out, TEXT("pathPrefix or paths[] is required. Scanning every package in the "
+				TEXT("project is deliberately not offered - the fixup rewrites every referencing "
+					 "package, so an unbounded sweep is a blast radius nobody asked for. NOTHING "
+					 "was changed.")));
+			return false;
+		}
+
+		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 500), 1, 5000);
+		FARFilter Filter;
+		Filter.bRecursivePaths = true;
+		Filter.ClassPaths.Add(UObjectRedirector::StaticClass()->GetClassPathName());
+		for (const FString& Root : Roots)
+		{
+			FString Dir = Root;
+			int32 Dot = INDEX_NONE;
+			if (Dir.FindChar(TEXT('.'), Dot)) { Dir.LeftInline(Dot); }
+			Filter.PackagePaths.Add(FName(*Dir));
+		}
+		TArray<FAssetData> Assets;
+		Registry.GetAssets(Filter, Assets);
+
+		TArray<UObjectRedirector*> ToFix;
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		TArray<TSharedPtr<FJsonValue>> SkippedCooked;
+		int32 Scanned = 0;
+
+		for (const FAssetData& Data : Assets)
+		{
+			++Scanned;
+			if (Rows.Num() >= Limit) { break; }
+			// A redirector in a container cannot be rewritten OR deleted - skip by name rather
+			// than attempting it and reporting a failure that was never possible.
+			if (IsCookedOrContainerPackage(FindPackage(nullptr, *Data.PackageName.ToString())))
+			{
+				SkippedCooked.Add(MakeShared<FJsonValueString>(Data.PackageName.ToString()));
+				continue;
+			}
+			UObjectRedirector* Redirector = Cast<UObjectRedirector>(Data.GetAsset());
+			if (!Redirector) { continue; }
+			if (IsCookedOrContainerPackage(Redirector->GetOutermost()))
+			{
+				SkippedCooked.Add(MakeShared<FJsonValueString>(Data.PackageName.ToString()));
+				continue;
+			}
+
+			TArray<FName> Referencers;
+			Registry.GetReferencers(Data.PackageName, Referencers);
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("package"), Data.PackageName.ToString());
+			J->SetStringField(TEXT("destination"),
+				Redirector->DestinationObject ? Redirector->DestinationObject->GetPathName()
+											  : TEXT("(none - a broken redirector)"));
+			J->SetNumberField(TEXT("referencerCount"), Referencers.Num());
+			Rows.Add(MakeShared<FJsonValueObject>(J));
+			ToFix.Add(Redirector);
+		}
+
+		Out->SetNumberField(TEXT("scanned"), Scanned);
+		Out->SetArrayField(TEXT("redirectors"), Rows);
+		Out->SetNumberField(TEXT("found"), Rows.Num());
+		Out->SetArrayField(TEXT("skippedCooked"), SkippedCooked);
+		OutRows = Rows;
+		return true;
+	}
+
+	// --- list_redirectors: the read half, never gated ------------------------------------------
+	void H_list_redirectors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("pathPrefix"), TEXT("path"), TEXT("paths"), TEXT("limit") },
+			TEXT("pathPrefix (alias path) or paths[]; limit"),
+			{ { TEXT("dryRun"), TEXT("this endpoint IS the dry run - it only reads. "
+									 "fixup_redirectors is the half that acts") },
+			  { TEXT("confirm"), TEXT("nothing here changes anything, so there is nothing to "
+									  "confirm") } }))
+		{
+			return;
+		}
+		TArray<UObjectRedirector*> ToFix;
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		if (!MifCollectRedirectors(In, Out, ToFix, Rows)) { return; }
+		Out->SetStringField(TEXT("note"), FString::Printf(
+			TEXT("%d redirector(s) found and NOTHING was changed. Fixing them rewrites and RE-SAVES "
+				 "every package that references them, which is a much wider change than the "
+				 "redirectors themselves - fixup_redirectors is that half, and it is gated."),
+			Rows.Num()));
+	}
+
+	// --- fixup_redirectors: the write half, on the gate ----------------------------------------
+	void H_fixup_redirectors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("pathPrefix"), TEXT("path"), TEXT("paths"), TEXT("keepRedirectors"),
+			  TEXT("confirm"), TEXT("limit") },
+			TEXT("pathPrefix (alias path) or paths[]; keepRedirectors (fix references but leave the ")
+			TEXT("redirector); confirm:true; limit"),
+			{ { TEXT("dryRun"), TEXT("split off into list_redirectors, which is not gated - so the "
+									 "dry run stays available in every write mode while this half "
+									 "does not") },
+			  { TEXT("deleteRedirectors"), TEXT("inverted and renamed: deleting fixed-up redirectors "
+											   "is the DEFAULT, so pass keepRedirectors:true to "
+											   "leave them") },
+			  { TEXT("recursive"), TEXT("pathPrefix is always recursive - it is a prefix, not a "
+										"folder listing") } }))
+		{
+			return;
+		}
+		TArray<UObjectRedirector*> ToFix;
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		if (!MifCollectRedirectors(In, Out, ToFix, Rows)) { return; }
+
+		if (Rows.Num() == 0)
+		{
+			Out->SetNumberField(TEXT("fixed"), 0);
+			Out->SetStringField(TEXT("note"),
+				TEXT("no redirectors under that path, so there was nothing to fix. A measured zero, "
+					 "not a failure."));
+			return;
+		}
+		if (!JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("fixing %d redirector(s) rewrites and RE-SAVES every package referencing them "
+					 "- a wider change than the redirectors themselves, and it writes to disk. Pass "
+					 "confirm:true. NOTHING was changed."), Rows.Num()));
+			return;
+		}
+
+		// Re-acquired here: the shared scan owns its own handles, and passing them out would tie
+		// the read half's signature to the write half's needs.
+		IAssetTools& Tools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(
+			TEXT("AssetTools")).Get();
+		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+			TEXT("AssetRegistry")).Get();
+
+		const bool bKeep = JBool(In, TEXT("keepRedirectors"), false);
+		{
+			// The same unattended guard rename_asset and delete_asset use. It does NOT cover the
+			// discovering-assets window - that is what the IsLoadingAssets() check above is for -
+			// but it does suppress the revision-control message dialog.
+			TGuardValue<bool> Unattended(GIsRunningUnattendedScript, true);
+			Tools.FixupReferencers(ToFix, /*bCheckoutDialogPrompt*/ false,
+				bKeep ? ERedirectFixupMode::LeaveFixedUpRedirectors
+					  : ERedirectFixupMode::DeleteFixedUpRedirectors);
+		}
+
+		// MEASURED AFTERWARDS. FixupReferencers returns void, so the only honest report is which
+		// redirector packages still exist - and the engine silently leaves alone any whose
+		// referencing packages were read-only (DetectReadOnlyPackages, AssetFixUpRedirectors.cpp:328),
+		// which is exactly what happens when a loose redirector is referenced from a .pak.
+		TArray<TSharedPtr<FJsonValue>> StillThere;
+		for (const TSharedPtr<FJsonValue>& V : Rows)
+		{
+			const TSharedPtr<FJsonObject>* Obj = nullptr;
+			if (!V->TryGetObject(Obj) || !Obj) { continue; }
+			const FString Pkg = (*Obj)->GetStringField(TEXT("package"));
+			TArray<FAssetData> After;
+			Registry.GetAssetsByPackageName(FName(*Pkg), After);
+			bool bLives = false;
+			for (const FAssetData& D : After)
+			{
+				if (D.AssetClassPath == UObjectRedirector::StaticClass()->GetClassPathName())
+				{
+					bLives = true;
+					break;
+				}
+			}
+			if (bLives) { StillThere.Add(MakeShared<FJsonValueString>(Pkg)); }
+		}
+
+		Out->SetBoolField(TEXT("dryRun"), false);
+		Out->SetBoolField(TEXT("keptRedirectors"), bKeep);
+		Out->SetNumberField(TEXT("fixed"), Rows.Num() - (bKeep ? 0 : StillThere.Num()));
+		Out->SetArrayField(TEXT("stillReferenced"), StillThere);
+		if (!bKeep && StillThere.Num() > 0)
+		{
+			Out->SetStringField(TEXT("stillReferencedNote"),
+				TEXT("these redirectors survived the fixup. The usual cause is that a package "
+					 "referencing them is READ-ONLY - the engine trims those and leaves the "
+					 "redirector alone rather than failing, which is silent, so it is reported "
+					 "here. On a mod project that normally means the referencer lives in a .pak "
+					 "and cannot be rewritten at all."));
+		}
+		Out->SetStringField(TEXT("assetNote"),
+			TEXT("fixing a redirector WRITES the referencing packages to disk - unlike most of this "
+				 "plugin, this one persists."));
 	}
 }

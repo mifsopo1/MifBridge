@@ -167,6 +167,8 @@ namespace MifBridge
 			MIF_BIND(remove_foliage_instances);
 			MIF_BIND(source_control);
 			MIF_BIND(source_control_checkout);
+			MIF_BIND(list_redirectors);
+			MIF_BIND(fixup_redirectors);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);

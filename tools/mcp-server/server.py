@@ -2671,6 +2671,20 @@ def source_control_checkout(path: str, action: str = "checkout",
     return _post("source_control_checkout", path=path, action=action, confirm=confirm)
 
 
+@mcp.tool()
+def list_redirectors(path_prefix: str = "", paths: list = None, limit: int = 500) -> dict:
+    "List the ObjectRedirectors under a path - the stubs rename_asset leaves behind - with what each points at and how many packages still reference it. READ ONLY; this IS the dry run of fixup_redirectors."
+    return _post("list_redirectors", pathPrefix=path_prefix, paths=paths, limit=limit)
+
+
+@mcp.tool()
+def fixup_redirectors(path_prefix: str = "", paths: list = None, keep_redirectors: bool = False,
+                      confirm: bool = False, limit: int = 500) -> dict:
+    "Repoint every referencer of a redirector at the live asset and delete the redirector - the Content Browser's 'Fix Up Redirectors in Folder'. This REWRITES AND RE-SAVES every referencing package, so it needs confirm=True. Use list_redirectors first."
+    return _post("fixup_redirectors", pathPrefix=path_prefix, paths=paths,
+                 keepRedirectors=keep_redirectors, confirm=confirm, limit=limit)
+
+
 
 @mcp.tool()
 def list_pcg_components() -> dict:

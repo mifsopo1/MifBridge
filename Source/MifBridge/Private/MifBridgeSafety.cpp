@@ -172,6 +172,10 @@ namespace MifBridge
 			// persist-to-disk verbs. The READ half (source_control) is deliberately a
 			// separate endpoint so a status query stays available in every mode.
 			TEXT("source_control_checkout"),
+			// Fixing a redirector REWRITES AND RE-SAVES every package that
+			// referenced it. That is a real write to disk, and a wider one than the
+			// redirectors named - so it belongs here even though its dry run is harmless.
+			TEXT("fixup_redirectors"),
 			};
 			return Unsafe;
 		}
