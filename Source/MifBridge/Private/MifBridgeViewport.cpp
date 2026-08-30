@@ -13,6 +13,8 @@
 // affecting nothing the user sees. These change what is on the user's screen. They are read-only in
 // the transaction sense — a camera move dirties no asset and must not push an undo entry.
 #include "MifBridgeHandlers.h"
+#include "ShowFlags.h"                 // FEngineShowFlags - and its checkNoEntry trap
+#include "Engine/EngineBaseTypes.h"    // EViewModeIndex as a UENUM, for the names
 #include "MifBridgeLog.h"
 
 #include "Editor.h"
@@ -79,12 +81,138 @@ namespace MifBridge
 	//   out: { location, rotation, perspective, fov }
 	// lookAt wins over rotation — asking for both is a caller mistake, and aiming at a point is the
 	// far more useful of the two.
+
+	// =======================================================================
+	// VIEW MODE AND SHOW FLAGS - the rendering-diagnosis surface
+	// =======================================================================
+	//
+	// THE QUESTION THIS ANSWERS is "why is it black" - because the material is broken, because
+	// nothing is lit, or because the mesh is not there. Wireframe, Unlit and LightingOnly separate
+	// those three in one call each, and an agent had no way to reach any of them. capture_viewport
+	// documents the hole in its own error text.
+	//
+	// GAME VIEW IS IN THE SAME CALL on purpose. It is the single biggest "why does my capture not
+	// match what I see" lever - editor-only sprites, billboards and grids vanish under it - and
+	// leaving it out would mean an agent could set a view mode and still not know why the picture
+	// disagreed with the screen.
+	//
+	// TWO ENGINE TRAPS, both verified by reading rather than by building and finding out:
+	//
+	// 1. GetViewModeName(EViewModeIndex) at ShowFlags.h:570 is declared WITHOUT ENGINE_API and
+	//    defined in a Private .cpp, so calling it from a plugin is an unresolved external on 5.3
+	//    and 5.7 alike. The name comes from StaticEnum<EViewModeIndex>() instead - EViewModeIndex
+	//    is a UENUM, so the reflection system has the names and no linkage is involved.
+	//
+	// 2. FEngineShowFlags::SetSingleFlag's default branch is checkNoEntry() (ShowFlags.cpp:194),
+	//    so passing an index FindIndexByName did not recognise ASSERTS - a dead editor, not an
+	//    error. Every flag name is therefore resolved and refused BEFORE anything is set, and the
+	//    whole request is validated before the first write so a typo in the fifth flag cannot leave
+	//    the first four applied.
+	//
+	// AND THE ORDER MATTERS. SetViewMode internally runs ApplyViewMode, which REWRITES show flags -
+	// so a showFlags map has to be applied AFTER the view mode or it is silently undone. That is
+	// the kind of thing that looks like the endpoint ignoring the parameter.
+
+	FString MifViewModeName(EViewModeIndex Mode)
+	{
+		if (const UEnum* E = StaticEnum<EViewModeIndex>())
+		{
+			FString Name = E->GetNameStringByValue(static_cast<int64>(Mode));
+			Name.RemoveFromStart(TEXT("VMI_"));
+			return Name.IsEmpty() ? FString::Printf(TEXT("Unknown(%d)"), (int32)Mode) : Name;
+		}
+		return FString::Printf(TEXT("Unknown(%d)"), (int32)Mode);
+	}
+
+	bool MifParseViewMode(const FString& In, EViewModeIndex& Out)
+	{
+		if (In.IsEmpty()) { return false; }
+		const UEnum* E = StaticEnum<EViewModeIndex>();
+		if (!E) { return false; }
+		for (int32 i = 0; i < E->NumEnums() - 1; ++i)
+		{
+			FString Name = E->GetNameStringByIndex(i);
+			Name.RemoveFromStart(TEXT("VMI_"));
+			if (Name.Equals(In, ESearchCase::IgnoreCase))
+			{
+				Out = static_cast<EViewModeIndex>(E->GetValueByIndex(i));
+				return true;
+			}
+		}
+		return false;
+	}
+
+	FString MifViewModeList()
+	{
+		const UEnum* E = StaticEnum<EViewModeIndex>();
+		if (!E) { return TEXT("(unavailable)"); }
+		TArray<FString> Names;
+		for (int32 i = 0; i < E->NumEnums() - 1; ++i)
+		{
+			FString Name = E->GetNameStringByIndex(i);
+			Name.RemoveFromStart(TEXT("VMI_"));
+			if (!Name.IsEmpty() && !Name.StartsWith(TEXT("Max")) && !Name.StartsWith(TEXT("Unknown")))
+			{
+				Names.Add(Name);
+			}
+		}
+		return FString::Join(Names, TEXT(", "));
+	}
+
+	/** The flags an agent actually reaches for. "all" dumps every one instead. */
+	static const TCHAR* MifCommonShowFlags[] = {
+		TEXT("StaticMeshes"), TEXT("SkeletalMeshes"), TEXT("Landscape"), TEXT("Lighting"),
+		TEXT("DirectLighting"), TEXT("Fog"), TEXT("VolumetricFog"), TEXT("Atmosphere"),
+		TEXT("Bounds"), TEXT("Collision"), TEXT("Grid"), TEXT("Particles"), TEXT("Translucency"),
+		TEXT("PostProcessing"), TEXT("Decals"), TEXT("InstancedFoliage"), TEXT("BSP"),
+		TEXT("Splines"), TEXT("BillboardSprites"), TEXT("Selection"),
+	};
+
+	void MifWriteShowFlags(const TSharedRef<FJsonObject>& Out, FLevelEditorViewportClient* Client,
+						   bool bAll)
+	{
+		TSharedRef<FJsonObject> Flags = MakeShared<FJsonObject>();
+		if (bAll)
+		{
+			// ToString gives the non-default ones; walking the known names is the only way to get a
+			// complete picture, so use the engine's own name table.
+			// SF_FirstCustom is the boundary between the engine's builtin flags and the ones a
+			// plugin registers at runtime - there is no EShowFlag_MAX. Walking to it covers every
+			// flag FindIndexByName can resolve by a fixed name, which is what a caller can pass.
+			for (int32 Index = 0; Index < static_cast<int32>(FEngineShowFlags::SF_FirstCustom); ++Index)
+			{
+				const FString Name = FEngineShowFlags::FindNameByIndex(Index);
+				if (!Name.IsEmpty())
+				{
+					Flags->SetBoolField(Name, Client->EngineShowFlags.GetSingleFlag(Index));
+				}
+			}
+		}
+		else
+		{
+			for (const TCHAR* Name : MifCommonShowFlags)
+			{
+				const int32 Index = FEngineShowFlags::FindIndexByName(Name);
+				if (Index != INDEX_NONE)
+				{
+					Flags->SetBoolField(Name, Client->EngineShowFlags.GetSingleFlag(Index));
+				}
+			}
+		}
+		Out->SetObjectField(TEXT("showFlags"), Flags);
+	}
+
 	void H_set_viewport_camera(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("location"), TEXT("rotation"), TEXT("lookAt"), TEXT("fov"),
-			  TEXT("ortho"), TEXT("orthoZoom") },
-			TEXT("location:{x,y,z}, rotation:{x,y,z} = pitch/yaw/roll, lookAt:{x,y,z} (wins over rotation), fov, ortho (top/bottom/front/back/left/right/perspective), orthoZoom"),
+			  TEXT("ortho"), TEXT("orthoZoom"), TEXT("viewMode"), TEXT("showFlags"),
+			  TEXT("gameView"), TEXT("realtime") },
+			TEXT("location:{x,y,z}, rotation:{x,y,z} = pitch/yaw/roll, lookAt:{x,y,z} (wins over ")
+			TEXT("rotation), fov, ortho (top/bottom/front/back/left/right/perspective), orthoZoom, ")
+			TEXT("viewMode (Lit, Unlit, Wireframe, LightingOnly, ShaderComplexity, ...), showFlags ")
+			TEXT("({\"Fog\": false, \"Bounds\": true}), gameView (hides editor-only sprites and ")
+			TEXT("grids), realtime"),
 			{ { TEXT("x"), TEXT("there is no top-level x/y/z here - pass location:{x,y,z}; rotation and lookAt take the same nested form. capture_camera is the endpoint that also accepts the flat form") },
 			  { TEXT("zoom"), TEXT("the key is 'orthoZoom', and it only has an effect on an orthographic view - set ortho first") },
 			  { TEXT("orthographic"), TEXT("the key is 'ortho' and it takes a STRING: top/bottom/front/back/left/right/perspective") },
@@ -94,6 +222,74 @@ namespace MifBridge
 		}
 
 		FLevelEditorViewportClient* Client = ActiveLevelViewport();
+		if (Client)
+		{
+			// VALIDATE EVERY SHOW FLAG NAME BEFORE SETTING ANY OF THEM. SetSingleFlag's default
+			// branch is checkNoEntry() (ShowFlags.cpp:194), so an index FindIndexByName did not
+			// recognise ASSERTS rather than erroring - a dead editor. And validating up front means
+			// a typo in the fifth flag cannot leave the first four applied, which would be a
+			// half-done request reported as a failure.
+			const TSharedPtr<FJsonObject>* FlagsObj = nullptr;
+			if (In->TryGetObjectField(TEXT("showFlags"), FlagsObj) && FlagsObj && FlagsObj->IsValid())
+			{
+				TArray<FString> Unknown;
+				for (const auto& Pair : (*FlagsObj)->Values)
+				{
+					if (FEngineShowFlags::FindIndexByName(*Pair.Key) == INDEX_NONE)
+					{
+						Unknown.Add(Pair.Key);
+					}
+				}
+				if (Unknown.Num() > 0)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("unknown show flag(s): %s. FEngineShowFlags::SetSingleFlag ends its ")
+						TEXT("default branch in checkNoEntry(), so passing an unrecognised one would ")
+						TEXT("ASSERT and take the editor down rather than fail - every name is ")
+						TEXT("checked before any is set. get_viewport_camera{showFlags:\"all\"} lists ")
+						TEXT("every valid name. NOTHING was changed."),
+						*FString::Join(Unknown, TEXT(", "))));
+					return;
+				}
+			}
+
+			// VIEW MODE FIRST, SHOW FLAGS AFTER. SetViewMode runs ApplyViewMode internally, which
+			// REWRITES show flags - so applying a showFlags map before it would be silently undone,
+			// and would look exactly like the endpoint ignoring the parameter.
+			const FString WantMode = JStr(In, TEXT("viewMode"));
+			if (!WantMode.IsEmpty())
+			{
+				EViewModeIndex Mode = VMI_Lit;
+				if (!MifParseViewMode(WantMode, Mode))
+				{
+					Fail(Out, FString::Printf(
+						TEXT("unknown viewMode '%s'. Accepted: %s. NOTHING was changed."),
+						*WantMode, *MifViewModeList()));
+					return;
+				}
+				Client->SetViewMode(Mode);
+			}
+			if (FlagsObj && FlagsObj->IsValid())
+			{
+				for (const auto& Pair : (*FlagsObj)->Values)
+				{
+					const int32 Index = FEngineShowFlags::FindIndexByName(*Pair.Key);
+					bool bValue = false;
+					if (Pair.Value.IsValid() && Pair.Value->TryGetBool(bValue))
+					{
+						Client->EngineShowFlags.SetSingleFlag(Index, bValue);
+					}
+				}
+			}
+			if (In->HasField(TEXT("gameView")))
+			{
+				Client->SetGameView(JBool(In, TEXT("gameView"), false));
+			}
+			if (In->HasField(TEXT("realtime")))
+			{
+				Client->SetRealtime(JBool(In, TEXT("realtime"), true));
+			}
+		}
 		if (!Client) { Fail(Out, TEXT("no level editor viewport available")); return; }
 
 		const FString Ortho = JStr(In, TEXT("ortho")).ToLower();
@@ -231,8 +427,9 @@ namespace MifBridge
 	//   out: { location, rotation, perspective, fov, viewportCount }
 	void H_get_viewport_camera(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
-		if (RejectUnknownParams(In, Out, {},
-			TEXT("(none - this endpoint takes no parameters)"),
+		if (RejectUnknownParams(In, Out, { TEXT("showFlags") },
+			TEXT("showFlags - omit for the ~20 flags an agent usually wants, or pass \"all\" for ")
+			TEXT("every one the engine knows"),
 			{ { TEXT("viewportIndex"), TEXT("not supported - this always reports the ACTIVE viewport, falling back to the first perspective one; viewportCount in the response says how many exist") } }))
 		{
 			return;
@@ -243,5 +440,13 @@ namespace MifBridge
 		WriteCamera(Out, Client);
 		Out->SetNumberField(TEXT("viewportCount"),
 			GEditor ? GEditor->GetLevelViewportClients().Num() : 0);
+
+		// The rendering state, which is what makes "why is it black" answerable.
+		const EViewModeIndex Mode = Client->GetViewMode();
+		Out->SetStringField(TEXT("viewMode"), MifViewModeName(Mode));
+		Out->SetNumberField(TEXT("viewModeIndex"), static_cast<int32>(Mode));
+		Out->SetBoolField(TEXT("gameView"), Client->IsInGameView());
+		Out->SetBoolField(TEXT("realtime"), Client->IsRealtime());
+		MifWriteShowFlags(Out, Client, JStr(In, TEXT("showFlags")).Equals(TEXT("all"), ESearchCase::IgnoreCase));
 	}
 }

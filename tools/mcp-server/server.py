@@ -1677,10 +1677,10 @@ def move_actor_to(actor_path: str, location: dict) -> dict:
 
 @mcp.tool()
 def set_viewport_camera(location: dict = None, rotation: dict = None, look_at: dict = None,
-                        fov: float = None, ortho: str = None, ortho_zoom: float = None) -> dict:
-    "Move the editor viewport camera the user is looking through. Distinct from capture_camera, which spawns a transient scene-capture and changes nothing on screen. look_at wins over rotation. ortho: top|bottom|front|back|left|right|perspective - orthographic top is the honest answer to 'show me the whole map', with no perspective falloff or far-clip surprises. rotation is x/y/z = pitch/yaw/roll like every other MifBridge transform."
+                        fov: float = None, ortho: str = None, ortho_zoom: float = None, view_mode: str = "", show_flags: dict = None, game_view: bool = None, realtime: bool = None) -> dict:
+    "Move the editor viewport camera the user is looking through. Distinct from capture_camera, which spawns a transient scene-capture and changes nothing on screen. look_at wins over rotation. ortho: top|bottom|front|back|left|right|perspective - orthographic top is the honest answer to 'show me the whole map', with no perspective falloff or far-clip surprises. rotation is x/y/z = pitch/yaw/roll like every other MifBridge transform. NOW ALSO SETS THE RENDERING STATE. view_mode takes a name (Lit, Unlit, Wireframe, LightingOnly, ShaderComplexity, DetailLighting, LightmapDensity, ReflectionOverride...) - the three that answer 'why is it black' fastest are Wireframe (is the mesh even there), Unlit (is the material broken) and LightingOnly (is anything lit). show_flags is a map like {'Fog': false, 'Bounds': true}; get_viewport_camera with show_flags='all' lists every valid name. AN UNKNOWN FLAG IS REFUSED, and that refusal prevents a CRASH rather than an error: FEngineShowFlags::SetSingleFlag ends its default branch in checkNoEntry(), so an unrecognised name would assert and take the editor down. Every name is validated before ANY is applied, so a typo in the fifth flag cannot leave the first four set. You can pass view_mode and show_flags together - the mode is applied first and the flags after, because SetViewMode internally rewrites show flags and doing it the other way round would silently discard yours. game_view hides editor-only sprites and grids."
     return _post("set_viewport_camera", location=location, rotation=rotation, lookAt=look_at,
-                 fov=fov, ortho=ortho, orthoZoom=ortho_zoom)
+                 fov=fov, ortho=ortho, orthoZoom=ortho_zoom, viewMode=view_mode, showFlags=show_flags, gameView=game_view, realtime=realtime)
 
 
 @mcp.tool()
@@ -1690,9 +1690,9 @@ def focus_viewport(actor_path: str = None, folder: str = None, instant: bool = T
 
 
 @mcp.tool()
-def get_viewport_camera() -> dict:
-    "Read the editor viewport camera: location, rotation, fov, whether it is perspective, and how many viewports exist. Read-only."
-    return _post("get_viewport_camera")
+def get_viewport_camera(show_flags: str = "") -> dict:
+    "Read the editor viewport camera: location, rotation, fov, whether it is perspective, and how many viewports exist. Read-only. NOW ALSO REPORTS THE RENDERING STATE, which is what makes 'why is it black' answerable: viewMode by NAME (Lit, Unlit, Wireframe, LightingOnly, ShaderComplexity...), viewModeIndex, gameView, realtime, and a showFlags map. By default it returns the ~20 flags an agent usually wants (StaticMeshes, Landscape, Lighting, Fog, Bounds, Collision, Grid...); pass show_flags='all' for every one the engine knows, which is also how you discover a valid name for set_viewport_camera. gameView is worth reading before any capture - editor-only sprites, billboards and grids vanish under it, and it is the single biggest reason a capture does not match the screen."
+    return _post("get_viewport_camera", showFlags=show_flags)
 
 
 # --------------------------------------------------------------------------
