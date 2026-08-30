@@ -2764,6 +2764,17 @@ def create_macro(blueprint_id: str, name: str, inputs: list = None,
 
 
 @mcp.tool()
+def add_k2_node(graph_id: str, node_class: str, x: int = 0, y: int = 0,
+                proxy_factory_function: str = "", proxy_factory_class: str = "",
+                proxy_class: str = "", properties: dict = None) -> dict:
+    "Place any UK2Node subclass that needs only construction plus a few reflective writes - the async/latent 'blue clock' family, K2Node_Select, and the long tail nobody will build one endpoint at a time. Use the purpose-built endpoint where one exists; this refuses those by name."
+    return _post("add_k2_node", graphId=graph_id, nodeClass=node_class, x=x, y=y,
+                 proxyFactoryFunction=proxy_factory_function,
+                 proxyFactoryClass=proxy_factory_class, proxyClass=proxy_class,
+                 properties=properties)
+
+
+@mcp.tool()
 def consolidate_assets(target: str, sources: list, delete_sources: bool = False,
                        confirm: bool = False) -> dict:
     "Repoint every referencer of `sources` at `target`, optionally deleting the sources - the Content Browser's asset consolidation, and the write half delete_asset dead-ends into. It CLOSES EVERY OPEN ASSET EDITOR. Run check_consolidate_assets first; requires confirm=True."

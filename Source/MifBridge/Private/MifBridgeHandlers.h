@@ -1127,6 +1127,7 @@ namespace MifBridge
 	MIF_DECL(destroy_collection);
 	MIF_DECL(get_level_blueprint);
 	MIF_DECL(create_macro);
+	MIF_DECL(add_k2_node);
 	MIF_DECL(add_make_struct);
 	MIF_DECL(add_break_struct);
 	MIF_DECL(add_self);

@@ -182,6 +182,7 @@ namespace MifBridge
 			MIF_BIND(destroy_collection);
 			MIF_BIND(get_level_blueprint);
 			MIF_BIND(create_macro);
+			MIF_BIND(add_k2_node);
 			MIF_BIND(add_make_struct);
 			MIF_BIND(add_break_struct);
 			MIF_BIND(add_self);

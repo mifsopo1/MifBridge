@@ -5414,7 +5414,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Uncooked only, and the existing refusal already exists to copy: MifBridgeNodes.cpp:893-910 already explains that cooking strips MacroGraphs so a cooked macro library has none. create_macro should reuse that wording and refuse before touching the engine when ResolveBlueprint yields a cooked asset (wh...
       Vetter corrected the proposal: Rank lowered from high to medium. It is a textbook read-half/write-half gap by the house rules - add_macro_instance, list_graphs (MifBridgeCommon.cpp:3783) and ResolveMacroGraph (:1549) all consume macros while nothing authors one, and create_blueprint blueprintType:"MacroLibrary" ships a container that can never be filled. But "high" requires a whole subsystem missing or something an agent hits c...
 
-- [ ] **add_async_action (the UK2Node_AsyncAction / UBlueprintAsyncActionBase family)** (day)
+- [x] **add_k2_node** (day) - built GENERIC instead of the add_async_action that was asked for
+      DONE 2026-08-30. 22 checks in tools/test_add_k2_node.py.
+      SHAPE CHANGED ON THE VETTER'S ADVICE. docs/06_CAPABILITY_ROADMAP.md:92 frames
+      add_async_action as one symptom of "no generic add-node-by-class", alongside
+      UK2Node_Select and GenericCreateObject - so the narrow version would have left its
+      siblings out for the same day of work. The suite proves the point by placing an async
+      node AND a K2Node_Select through the one endpoint.
+      It does NOT replace the forty-odd specific add_* endpoints and refuses a class that has
+      one, naming it and saying why it is better - that refusal is the anti-parallel-system
+      guard.
+      TWO CORRECTIONS THAT CHANGED THE GUARDS:
+        - THE CRASH JUSTIFICATION WAS FALSE and is recorded as such. 5.7 uses ensure(), not
+          check(), and 5.3 is null-tolerant - a misconfigured async node titles itself
+          "Async Task: Missing Function" rather than crashing. The factory is still validated,
+          because refusing beats a dead node, but as a QUALITY guard.
+        - UK2Node_BaseAsyncTask::IsCompatibleWithGraph allows GT_Ubergraph and GT_Macro only,
+          so a function graph is refused BEFORE the node is made rather than after the
+          compiler rejects it.
+      ProxyActivateFunctionName is deliberately not written: the constructor sets it, and a
+      subclass overriding its activate function would be silently broken.
+      The original item's EXAMPLE LIST was also wrong and is not repeated: 'AI Move To' has a
+      dedicated K2Node subclass and 'Async Load Asset' is UK2Node_LoadAsset - neither is in
+      the AsyncAction family at all.
       Places any async/latent 'blue clock' Blueprint node — Async Load Asset / Load Primary Asset, Play Sound and Wait, AI Move To, the Enhanced Input async listeners, GameplayAbility tasks, media and online callbacks, and every project-defined UBlueprintAsyncActionBase subclass. These nodes carry multiple output exec delegates, which is precisely the structure an agent cannot synthesise from ordinary call nodes.
       API: UK2Node_AsyncAction : UK2Node_BaseAsyncTask — D:/UE532/Engine/Source/Editor/BlueprintGraph/Classes/K2Node_AsyncAction.h. The node is configured from the static factory UFUNCTION by setting ProxyFactoryFunctionName, ProxyFactoryClass and ProxyClass (declared UPROPERTY in the protected section of K2Node_BaseAsyncTask.h:96-106; UHT reflection ignores C++ access, so FindPropertyByName reaches them) be...
       Cooked: Works wherever any node-add works, i.e. uncooked blueprints only (a cooked BP has no graph to place into and ResolveGraphField fails first). The one real hazard is the factory function itself: validate that the named UFUNCTION is static, BlueprintCallable, and returns a UObject-derived proxy (CastFi...

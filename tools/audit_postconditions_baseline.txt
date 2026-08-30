@@ -3,6 +3,7 @@
 low:add_cast
 low:add_enum_literal
 low:add_foliage_instances
+low:add_k2_node
 low:add_macro_instance
 low:add_nav_volume
 low:bind_landscape_rvt
