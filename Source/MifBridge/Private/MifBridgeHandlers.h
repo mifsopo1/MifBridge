@@ -1312,6 +1312,11 @@ namespace MifBridge
 	/** Read ONE actor back by path (or label/name). The plural sibling exists; this did not, so the
 	 *  only way to re-read a handle you already hold was to scan the whole level and filter. */
 	MIF_DECL(get_level_actor);
+	/** Parent one placed actor to another, optionally at a socket. The read half is on
+	 *  SerializeActor - every actor response now carries attachParent/attachSocket/
+	 *  attachedChildren. */
+	MIF_DECL(attach_actor);
+	MIF_DECL(detach_actor);
 	MIF_DECL(spawn_actor_in_level);
 	MIF_DECL(set_actor_transform);
 	MIF_DECL(set_actor_label);

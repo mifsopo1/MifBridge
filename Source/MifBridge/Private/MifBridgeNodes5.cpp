@@ -1005,6 +1005,42 @@ namespace MifBridge
 
 		const FString PropertyPath = JStr(In, TEXT("propertyPath"));
 		if (PropertyPath.IsEmpty()) { Fail(Out, TEXT("propertyPath required (dot path, e.g. Font.Size)")); return; }
+
+		// THE ATTACHMENT PROPERTIES ARE REACHABLE HERE AND MUST NOT BE WRITTEN. AttachParent,
+		// AttachSocketName and AttachChildren are ordinary UPROPERTYs on USceneComponent, and this
+		// bridge's ResolvePropertyPathEx crosses object boundaries - so
+		// set_property{propertyPath:"RootComponent.AttachParent"} resolves and assigns. It would set
+		// ONE side of a two-sided relationship: the parent's AttachChildren array is not updated,
+		// no OnAttachmentChanged fires, and the transform is not re-based. The result is a scene
+		// graph that is internally inconsistent, renders wrongly, and reports a parent that does not
+		// know about the child - and set_property would have said ok.
+		//
+		// Reading them is fine and stays allowed; get_property is how you inspect an attachment
+		// without going through the actor endpoints.
+		//
+		// Found 2026-08-30 while building attach_actor, by someone checking whether the endpoint was
+		// even needed. It was needed twice over: the capability was missing AND the reflective route
+		// to it was actively harmful.
+		{
+			const FString Leaf = PropertyPath.Contains(TEXT("."))
+				? PropertyPath.RightChop(PropertyPath.Find(TEXT("."), ESearchCase::CaseSensitive,
+					ESearchDir::FromEnd) + 1)
+				: PropertyPath;
+			if (Leaf.Equals(TEXT("AttachParent"), ESearchCase::IgnoreCase)
+				|| Leaf.Equals(TEXT("AttachSocketName"), ESearchCase::IgnoreCase)
+				|| Leaf.Equals(TEXT("AttachChildren"), ESearchCase::IgnoreCase))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is one side of a TWO-SIDED relationship and writing it here would ")
+					TEXT("corrupt the scene graph: the other actor's AttachChildren is not updated, ")
+					TEXT("OnAttachmentChanged does not fire, and the transform is not re-based - you ")
+					TEXT("would get a parent that does not know about its child. Use attach_actor / ")
+					TEXT("detach_actor, which go through the engine's own attachment path and read ")
+					TEXT("the result back. Reading these with get_property is fine. NOTHING was ")
+					TEXT("changed."), *PropertyPath));
+				return;
+			}
+		}
 		if (!In->HasField(TEXT("value")))
 		{
 			Fail(Out, TEXT("value required (UE export text as a string, or typed JSON: array / object / number / bool / null)"));

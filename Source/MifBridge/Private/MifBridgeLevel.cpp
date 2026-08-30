@@ -24,6 +24,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "Components/SceneComponent.h"   // GetAttachSocketName / DoesSocketExist for attach_actor
 #include "Subsystems/EditorActorSubsystem.h"
 #include "ScopedTransaction.h"
 #include "UObject/UObjectGlobals.h"
@@ -83,6 +84,22 @@ namespace MifBridge
 	namespace
 	{
 
+		void SerializeTransformValueInto(const TSharedRef<FJsonObject>& J, const FTransform& T)
+		{
+			const FVector Loc = T.GetLocation();
+			const FRotator Rot = T.Rotator();
+			const FVector Scale = T.GetScale3D();
+			auto Vec = [](double X, double Y, double Z)
+			{
+				TSharedRef<FJsonObject> V = MakeShared<FJsonObject>();
+				V->SetNumberField(TEXT("x"), X); V->SetNumberField(TEXT("y"), Y); V->SetNumberField(TEXT("z"), Z);
+				return V;
+			};
+			J->SetObjectField(TEXT("location"), Vec(Loc.X, Loc.Y, Loc.Z));
+			J->SetObjectField(TEXT("rotation"), Vec(Rot.Pitch, Rot.Yaw, Rot.Roll));
+			J->SetObjectField(TEXT("scale"), Vec(Scale.X, Scale.Y, Scale.Z));
+		}
+
 		void SerializeTransformInto(const TSharedRef<FJsonObject>& J, const AActor* Actor)
 		{
 			const FVector Loc = Actor->GetActorLocation();
@@ -112,6 +129,42 @@ namespace MifBridge
 				J->SetStringField(TEXT("folder"), Folder.ToString());
 			}
 			SerializeTransformInto(J, Actor);
+
+			// HIERARCHY. Added 2026-08-30 with attach_actor, and it belongs HERE rather than on one
+			// endpoint because SerializeActor is the shared body of get_level_actor,
+			// list_level_actors and four other responses - so every one of them gained the read half
+			// at once. Without it an agent could attach actors and then had no way to see that it
+			// had, which is the read/write asymmetry this project keeps finding on the other side.
+			//
+			// GetAttachParentActor walks up through components, so it answers "which ACTOR am I
+			// parented to" rather than "which component", which is the question a caller holding
+			// actorPaths is actually asking.
+			if (const AActor* Parent = Actor->GetAttachParentActor())
+			{
+				J->SetStringField(TEXT("attachParent"), Parent->GetPathName());
+				if (const USceneComponent* Root = Actor->GetRootComponent())
+				{
+					const FName Socket = Root->GetAttachSocketName();
+					if (!Socket.IsNone())
+					{
+						J->SetStringField(TEXT("attachSocket"), Socket.ToString());
+					}
+				}
+			}
+			TArray<AActor*> Children;
+			Actor->GetAttachedActors(Children);
+			if (Children.Num() > 0)
+			{
+				TArray<TSharedPtr<FJsonValue>> Kids;
+				for (const AActor* Child : Children)
+				{
+					if (Child)
+					{
+						Kids.Add(MakeShared<FJsonValueString>(Child->GetPathName()));
+					}
+				}
+				J->SetArrayField(TEXT("attachedChildren"), Kids);
+			}
 			return J;
 		}
 
@@ -643,5 +696,248 @@ namespace MifBridge
 			if (Actor) { Current.Add(MakeShared<FJsonValueString>(Actor->GetPathName())); }
 		}
 		Out->SetArrayField(TEXT("selection"), Current);
+	}
+
+	// --- attach_actor -------------------------------------------------------
+	//   in:  { child, parent, socket?, keepWorldTransform? }
+	//   out: { child, parent, socket, keptWorldTransform, transformBefore, transformAfter, ... }
+	//
+	// WHAT WAS MISSING. An agent could spawn a door, a handle and a sign and place all three, and
+	// had no way to make them one movable object - moving the parent left the children behind. The
+	// read half was missing too: SerializeActor reported transform and folder and nothing about
+	// hierarchy, so even an attachment made by hand in the Outliner was invisible over the bridge.
+	// Both halves land together here.
+	//
+	// THERE WAS A WORKAROUND AND IT IS WORTH SAYING WHY IT IS NOT ENOUGH: select_level_actors plus
+	// invoke_editor_command{command:"AttachSelectedActors"} does attach. But it cannot name a
+	// SOCKET, it takes the parent IMPLICITLY from the last element of the selection set
+	// (EditorActor.cpp), and when the engine refuses it there is nothing to report - the command
+	// returns nothing either way. This is the same operation addressed by path, with the refusal
+	// surfaced.
+	//
+	// TWO ENGINE ROUTES, and which one runs depends on keepWorldTransform - found by reading
+	// EditorEngine.cpp rather than assuming one call covers both:
+	//   keepWorldTransform:true (default) -> GEditor->ParentActors, the Outliner's own path. It
+	//     hardcodes KeepWorldTransform internally, which is exactly what is wanted here.
+	//   keepWorldTransform:false -> AActor::AttachToActor with SnapToTarget. ParentActors CANNOT
+	//     express this; asking it to would silently keep the world transform and report success.
+	//
+	// CanParentActors is called FIRST purely to surface its ReasonText. ParentActors calls it
+	// internally too and then silently NO-OPS on refusal - which is the failure mode this endpoint
+	// exists to stop being silent.
+	void H_attach_actor(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("child"), TEXT("parent"), TEXT("socket"), TEXT("keepWorldTransform") },
+			TEXT("child (actorPath of the actor to be parented), parent (actorPath to parent it TO), ")
+			TEXT("socket (optional socket or bone name on the parent), keepWorldTransform (default ")
+			TEXT("true - the child stays where it is on screen; false snaps it onto the parent)"),
+			{ { TEXT("actorPath"), TEXT("this endpoint takes TWO actors - spell them child and parent") },
+			  { TEXT("attachTo"),  TEXT("spell it parent") },
+			  { TEXT("target"),    TEXT("spell it parent") } }))
+		{
+			return;
+		}
+
+		UEditorActorSubsystem* Subsystem = GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+		if (!Subsystem)
+		{
+			Fail(Out, TEXT("no EditorActorSubsystem. NOTHING was changed."));
+			return;
+		}
+
+		const FString ChildPath = JStr(In, TEXT("child"));
+		const FString ParentPath = JStr(In, TEXT("parent"));
+		if (ChildPath.IsEmpty() || ParentPath.IsEmpty())
+		{
+			Fail(Out, TEXT("both child and parent are required, as actorPaths from list_level_actors. ")
+				TEXT("NOTHING was changed."));
+			return;
+		}
+
+		TSharedRef<FJsonObject> ChildIn = MakeShared<FJsonObject>();
+		ChildIn->SetStringField(TEXT("actorPath"), ChildPath);
+		AActor* Child = ResolveActor(Subsystem, ChildIn, Out);
+		if (!Child) { return; }
+
+		TSharedRef<FJsonObject> ParentIn = MakeShared<FJsonObject>();
+		ParentIn->SetStringField(TEXT("actorPath"), ParentPath);
+		AActor* Parent = ResolveActor(Subsystem, ParentIn, Out);
+		if (!Parent) { return; }
+
+		if (Child == Parent)
+		{
+			Fail(Out, FString::Printf(TEXT("'%s' cannot be attached to itself. NOTHING was changed."),
+				*Child->GetActorLabel()));
+			return;
+		}
+
+		// A CYCLE, checked here rather than left to the engine. CanParentActors does reject one, but
+		// walking it ourselves lets the refusal name the actor that closes the loop instead of
+		// reporting a generic reason.
+		for (const AActor* Up = Parent; Up != nullptr; Up = Up->GetAttachParentActor())
+		{
+			if (Up == Child)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("attaching '%s' to '%s' would make a cycle - '%s' is already somewhere above ")
+					TEXT("'%s' in the attachment chain. NOTHING was changed."),
+					*Child->GetActorLabel(), *Parent->GetActorLabel(),
+					*Child->GetActorLabel(), *Parent->GetActorLabel()));
+				return;
+			}
+		}
+
+		const FName Socket(*JStr(In, TEXT("socket")));
+		if (!Socket.IsNone())
+		{
+			const USceneComponent* ParentRoot = Parent->GetRootComponent();
+			if (!ParentRoot || !ParentRoot->DoesSocketExist(Socket))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' has no socket or bone named '%s' on its root component. Attaching to a ")
+					TEXT("socket that does not exist silently falls back to the component origin, ")
+					TEXT("which looks like it worked. NOTHING was changed."),
+					*Parent->GetActorLabel(), *Socket.ToString()));
+				return;
+			}
+		}
+
+		FText Reason;
+		if (GEditor && !GEditor->CanParentActors(Parent, Child, &Reason))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the editor refuses to parent '%s' to '%s': %s. NOTHING was changed."),
+				*Child->GetActorLabel(), *Parent->GetActorLabel(),
+				Reason.IsEmpty() ? TEXT("no reason given") : *Reason.ToString()));
+			return;
+		}
+
+		const bool bKeepWorld = JBool(In, TEXT("keepWorldTransform"), true);
+		const FTransform Before = Child->GetActorTransform();
+		const AActor* PriorParent = Child->GetAttachParentActor();
+
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_AttachActor", "Attach Actor"));
+		Child->Modify();
+		Parent->Modify();
+
+		if (bKeepWorld)
+		{
+			GEditor->ParentActors(Parent, Child, Socket);
+		}
+		else
+		{
+			// ParentActors hardcodes KeepWorldTransform, so this path cannot go through it.
+			Child->AttachToActor(Parent, FAttachmentTransformRules::SnapToTargetIncludingScale, Socket);
+		}
+
+		// READ BACK. Both routes return void, and ParentActors specifically no-ops in silence when
+		// the engine declines - so the postcondition is asked for rather than assumed.
+		const AActor* NowParent = Child->GetAttachParentActor();
+		if (NowParent != Parent)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the attach reported no error and '%s' is %s. NOTHING usable was produced."),
+				*Child->GetActorLabel(),
+				NowParent ? *FString::Printf(TEXT("attached to '%s' instead"), *NowParent->GetActorLabel())
+				          : TEXT("still not attached to anything")));
+			return;
+		}
+
+		const FTransform After = Child->GetActorTransform();
+		Out->SetStringField(TEXT("child"), Child->GetPathName());
+		Out->SetStringField(TEXT("parent"), Parent->GetPathName());
+		Out->SetStringField(TEXT("socket"), Socket.IsNone() ? FString() : Socket.ToString());
+		Out->SetBoolField(TEXT("keptWorldTransform"), bKeepWorld);
+		Out->SetBoolField(TEXT("attached"), true);
+		if (PriorParent)
+		{
+			Out->SetStringField(TEXT("reparentedFrom"), PriorParent->GetPathName());
+		}
+		TSharedRef<FJsonObject> BeforeJ = MakeShared<FJsonObject>();
+		TSharedRef<FJsonObject> AfterJ = MakeShared<FJsonObject>();
+		SerializeTransformValueInto(BeforeJ, Before);
+		SerializeTransformValueInto(AfterJ, After);
+		Out->SetObjectField(TEXT("transformBefore"), BeforeJ);
+		Out->SetObjectField(TEXT("transformAfter"), AfterJ);
+		if (bKeepWorld && !After.Equals(Before, 0.01f))
+		{
+			Out->SetStringField(TEXT("transformNote"),
+				TEXT("keepWorldTransform was true but the world transform still moved. That is worth ")
+				TEXT("looking at - it usually means the parent has a non-uniform scale, which cannot ")
+				TEXT("be preserved exactly through an attachment."));
+		}
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("the level is now dirty and NOTHING has been saved. On a cooked base-game map it ")
+			TEXT("cannot be resaved at all - the attachment lives until the editor closes."));
+	}
+
+	// --- detach_actor -------------------------------------------------------
+	//   in:  { actorPath, keepWorldTransform? }
+	//   out: { actorPath, detachedFrom, transformAfter }
+	void H_detach_actor(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("path"), TEXT("keepWorldTransform") },
+			TEXT("actorPath (aliases: actor, path) of the CHILD to detach; keepWorldTransform ")
+			TEXT("(default true - it stays where it is on screen rather than snapping back)"),
+			{ { TEXT("child"), TEXT("spell it actorPath - detach takes only the child") },
+			  { TEXT("parent"), TEXT("not accepted - detach_actor detaches the named actor from ")
+			                    TEXT("whatever it is attached to") } }))
+		{
+			return;
+		}
+
+		UEditorActorSubsystem* Subsystem = GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+		if (!Subsystem)
+		{
+			Fail(Out, TEXT("no EditorActorSubsystem. NOTHING was changed."));
+			return;
+		}
+		AActor* Actor = ResolveActor(Subsystem, In, Out);
+		if (!Actor) { return; }
+
+		AActor* Parent = Actor->GetAttachParentActor();
+		if (!Parent)
+		{
+			// Not a failure: the end state the caller asked for already holds. Same shape as
+			// add_gameplay_tag's already-exists path - "it is detached" and "I detached it" stay
+			// distinguishable through detached:false.
+			Out->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+			Out->SetBoolField(TEXT("detached"), false);
+			Out->SetBoolField(TEXT("wasAttached"), false);
+			Out->SetStringField(TEXT("note"),
+				TEXT("this actor was not attached to anything - nothing was done, and nothing needed ")
+				TEXT("to be. detached:false with wasAttached:false means the end state you asked for ")
+				TEXT("is already in place."));
+			return;
+		}
+
+		const bool bKeepWorld = JBool(In, TEXT("keepWorldTransform"), true);
+		const FTransform Before = Actor->GetActorTransform();
+
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifBridge_DetachActor", "Detach Actor"));
+		Actor->Modify();
+		Actor->DetachFromActor(bKeepWorld ? FDetachmentTransformRules::KeepWorldTransform
+		                                  : FDetachmentTransformRules::KeepRelativeTransform);
+
+		if (Actor->GetAttachParentActor() != nullptr)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("DetachFromActor reported no error but '%s' is still attached to '%s'."),
+				*Actor->GetActorLabel(), *Actor->GetAttachParentActor()->GetActorLabel()));
+			return;
+		}
+
+		TSharedRef<FJsonObject> AfterJ = MakeShared<FJsonObject>();
+		SerializeTransformValueInto(AfterJ, Actor->GetActorTransform());
+		Out->SetStringField(TEXT("actorPath"), Actor->GetPathName());
+		Out->SetBoolField(TEXT("detached"), true);
+		Out->SetBoolField(TEXT("wasAttached"), true);
+		Out->SetStringField(TEXT("detachedFrom"), Parent->GetPathName());
+		Out->SetBoolField(TEXT("keptWorldTransform"), bKeepWorld);
+		Out->SetObjectField(TEXT("transformAfter"), AfterJ);
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("the level is now dirty and NOTHING has been saved."));
 	}
 }

@@ -40,11 +40,31 @@ def main():
         print("bridge never came up")
         return 1
 
+    # WHICH REFUSAL ARRIVES FIRST DEPENDS ON THE WRITE MODE, and this suite used to ignore that -
+    # corrected 2026-08-30 after it failed a regression run in scratch mode. load_level is on the
+    # safety gate's unsafe list, and RefuseIfGated runs in the DISPATCHER, before the handler is
+    # entered at all. So in scratch or read mode the gate answers and the handler's own parameter
+    # validation never executes; the "path is required" and "no map file" messages are unreachable.
+    #
+    # Both refusals are correct and both are worth asserting - they are just different assertions,
+    # and a suite that only passes in full mode without saying so is a suite that reports a defect
+    # when the gate is doing its job.
+    mode = (M.call("self_audit", {}).get("writeMode") or "").lower()
+    gated = mode != "full"
+    print("\n   write mode is '%s' - %s" % (
+        mode, "the GATE answers first, so the handler's own validation is unreachable" if gated
+        else "the handler's own validation is what answers"))
+
     print("\n=== T935: load_level refuses an empty path, before any world-swap logic runs ===")
     r = M.raw_post("load_level", {})
     check("T935 refused", r.get("ok") is False, json.dumps(r)[:200])
-    check("T935 names path as what is missing", "path is required" in (r.get("error") or ""),
-          r.get("error"))
+    if gated:
+        check("T935 the safety gate is what refused, and it names the mode and how to change it",
+              "safety gate" in (r.get("error") or "") and mode in (r.get("error") or ""),
+              r.get("error"))
+    else:
+        check("T935 names path as what is missing", "path is required" in (r.get("error") or ""),
+              r.get("error"))
     alive = M.call("self_audit", {})
     check("T935 the editor is unaffected (no world swap happened)", alive.get("ok") is True,
           "the current level should be completely untouched by this refusal")
@@ -52,7 +72,11 @@ def main():
     print("\n=== T936: load_level refuses a package path with no real .umap file on disk ===")
     r2 = M.raw_post("load_level", {"path": "/Game/Maps/NoSuchMap_zz_definitely_not_real"})
     check("T936 refused", r2.get("ok") is False, json.dumps(r2)[:200])
-    check("T936 and explains why", "no map file" in (r2.get("error") or ""), r2.get("error"))
+    if gated:
+        check("T936 the gate refused it too - a bad path does not get further than a good one",
+              "safety gate" in (r2.get("error") or ""), r2.get("error"))
+    else:
+        check("T936 and explains why", "no map file" in (r2.get("error") or ""), r2.get("error"))
     alive2 = M.call("self_audit", {})
     check("T936 the editor is still unaffected", alive2.get("ok") is True,
           "the current level should still be completely untouched")

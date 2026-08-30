@@ -93,7 +93,12 @@ def main():
         # had just written to, under a comment claiming it checked the registry). Ask the ASSET
         # REGISTRY instead: a ghost asset - present in memory, invisible to find_assets, gone on
         # restart - passes the old check and fails this one, which is the entire point.
-        found = M.call("find_assets", {"pathPrefix": dst, "limit": 5}).get("assets") or []
+        # pathPrefix is a FOLDER filter, not an object path - live-corrected 2026-08-30 after this
+        # assertion failed on its first real run and the endpoint turned out to be fine. The registry
+        # returns full object paths (/Game/X/BP.BP), so query the folder and match the package path
+        # against what came back.
+        folder = dst.rsplit("/", 1)[0]
+        found = M.call("find_assets", {"pathPrefix": folder, "limit": 50}).get("assets") or []
         check("T942 and the new asset really exists - confirmed against the asset registry, not "
               "against duplicate_asset's own response",
               any((a.get("path") or "").startswith(dst) for a in found),

@@ -289,6 +289,8 @@ namespace MifBridge
 			// Level / placed-actor editing
 			MIF_BIND(list_level_actors);
 			MIF_BIND(get_level_actor);
+			MIF_BIND(attach_actor);
+			MIF_BIND(detach_actor);
 			MIF_BIND(spawn_actor_in_level);
 			MIF_BIND(set_actor_transform);
 			MIF_BIND(set_actor_label);

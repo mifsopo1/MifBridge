@@ -326,6 +326,42 @@ def cleanup_level_actor(actor_path, what="scratch actor"):
         return {"ok": False, "error": "delete_level_actor timed out cleaning up %s" % what}
 
 
+def write_mode():
+    """The bridge's current write mode, lowercased, or "" if it cannot be read."""
+    try:
+        return (call("self_audit", {}).get("writeMode") or "").lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def needs_full_write_mode(what="this suite"):
+    """True when the gate would refuse the work, so the caller should SKIP rather than FAIL.
+
+    WHY THIS EXISTS, found by running the full regression in scratch mode on 2026-08-30. Four
+    suites drive PIE, start_pie is on the safety gate's unsafe list, and RefuseIfGated runs in the
+    DISPATCHER before the handler is entered. So in scratch or read mode those suites reported
+    FAILURES - "start_pie accepted" false, "PIE actually reached state=running" false - while the
+    gate was doing exactly its job. A test that fails when a security control works is a test that
+    trains people to ignore it.
+
+    SKIP, NOT PASS, and the distinction is this project's own: run_all_suites reports exit 2
+    separately from exit 0 precisely because a suite returning success over work it never did
+    manufactures confidence. Exit 2 says "not exercised here", which is the truth.
+
+    The caller prints its own reason and returns 2; this only answers the question, so a suite that
+    has non-PIE assertions worth running can call it late and still cover them.
+    """
+    mode = write_mode()
+    if mode == "full":
+        return False
+    print("  SKIP  %s needs write mode 'full' and the bridge is in '%s'." % (what, mode or "unknown"))
+    print("        start_pie is on the safety gate's unsafe list and RefuseIfGated runs in the")
+    print("        dispatcher, so PIE cannot start and every assertion downstream of it would fail")
+    print("        for a reason that is the gate working correctly, not a defect.")
+    print("        Relaunch with MIF_BRIDGE_WRITE_MODE=full to exercise this.")
+    return True
+
+
 def wait_for_pie_state(target, timeout=60, poll_timeout=10):
     """Poll pie_status until `state` == target, or the outer budget expires.
 

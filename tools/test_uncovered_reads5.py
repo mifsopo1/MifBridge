@@ -62,6 +62,11 @@ def main():
     if not M.wait_for_bridge(timeout=900):
         print("bridge never came up")
         return 1
+
+    # PIE needs full write mode - the gate refuses start_pie in scratch/read, in the dispatcher,
+    # before the handler runs. SKIP (exit 2) rather than report failures the gate caused correctly.
+    if M.needs_full_write_mode("test_uncovered_reads5.py"):
+        return 2
     st = int(time.time() % 100000)
     bpath = "/Game/_MifReads5/BP_%d" % st
     bid = M.call("create_blueprint", {"path": bpath, "parentClass": "Actor"}).get("blueprintId")

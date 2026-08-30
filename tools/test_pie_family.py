@@ -113,6 +113,11 @@ def main():
         print("bridge never came up")
         return 1
 
+    # PIE needs full write mode - the gate refuses start_pie in scratch/read, in the dispatcher,
+    # before the handler runs. SKIP (exit 2) rather than report failures the gate caused correctly.
+    if M.needs_full_write_mode("test_pie_family.py"):
+        return 2
+
     st = int(time.time() % 100000)
 
     # ------------------------------------------------------------------ T1600 no-PIE refusal
