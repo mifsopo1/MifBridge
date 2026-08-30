@@ -839,6 +839,26 @@ def remove_node(node_guid: str, confirm: bool = False, graph_id: str = None) -> 
 
 
 @mcp.tool()
+def blueprint_watch(op: str, graph_id: str = "", blueprint_id: str = "",
+                    node_guid: str = "", pin: str = "") -> dict:
+    """Watch a Blueprint pin and read its live value, without editing the asset.
+
+    op: add | remove | list | clear | read. add/remove/read need node_guid, pin (the pin NAME) and
+    graph_id; list and clear take the blueprint or any graph in it.
+
+    A read with no value still SUCCEEDS and says which nothing it is: noDebugObject (no PIE session
+    or no instance selected), notInScope (running, but not at a point where the pin holds anything),
+    or noProperty (the pin has no backing property, so no session will ever produce one). That
+    distinction is the reason to use this rather than reading an empty string.
+
+    A pin that cannot be watched is REFUSED - AddPinWatch would accept it, produce nothing, and
+    report success. Watches are editor-only state: not saved, gone after a restart.
+    """
+    return _post("blueprint_watch", op=op, graphId=graph_id or None,
+                 blueprintId=blueprint_id or None, nodeGuid=node_guid or None, pin=pin or None)
+
+
+@mcp.tool()
 def blueprint_breakpoint(op: str, graph_id: str = "", blueprint_id: str = "",
                          node_guid: str = "") -> dict:
     """Set, clear and list Blueprint breakpoints without editing the asset.

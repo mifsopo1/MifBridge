@@ -120,6 +120,7 @@ namespace MifBridge
 			MIF_BIND(remove_node);
 			MIF_BIND(refresh_node);
 			MIF_BIND(blueprint_breakpoint);
+			MIF_BIND(blueprint_watch);
 			// Pins / wiring
 			MIF_BIND(connect_pins);
 			MIF_BIND(disconnect_pin);

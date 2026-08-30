@@ -5832,17 +5832,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       forward-declares FBlueprintBreakpoint (:17); Breakpoint.h has the definition, and
       IsEnabled()/GetLocation() need it. Same shape as the 5.7 break earlier today.
 
-- [ ] **blueprint_watch (add/remove/list/read)** (hours)
-      Split from the breakpoint half 2026-08-30, which is done. Pin watches read a value
-      WITHOUT mutating the asset, which is the other half of replacing the splice-a-print-node
-      workaround.
-      API verified present and public in KismetDebugUtilities.h: AddPinWatch (:385),
-      RemovePinWatch (:378), TogglePinWatch (:369), IsPinBeingWatched (:355), CanWatchPin
-      (:347), ClearPinWatches (:388), and GetWatchText (:444) returning EWatchTextResult.
-      CanWatchPin is the guard to lead with - not every pin can be watched, and asking first
-      turns a silent no-op into a refusal that says why. GetWatchText needs a live PIE object,
-      so the READ half only answers during a session and should say so rather than returning
-      an empty string.
+- [x] **blueprint_watch (add/remove/list/clear/read)** (hours)
+      DONE 2026-08-30. 20 checks in tools/test_blueprint_watch.py, repeat-safe.
+      THE READ IS THE POINT AND IT RETURNS AN ENUM, NOT A STRING. GetWatchText gives
+      EWTR_Valid / EWTR_NoDebugObject / EWTR_NotInScope / EWTR_NoProperty - three of the four
+      are "no value, and here is exactly why". Collapsing them into an empty string would
+      make "you are not running PIE" and "this pin can never have a value" the same answer.
+      A read with no value SUCCEEDS and names which nothing it is.
+      CanWatchPin IS THE GUARD, and it fired on the first live run: on a Select node
+      ReturnValue can be watched and Index cannot. AddPinWatch accepts either, produces
+      nothing for the second, and would have reported success with no watch created - so the
+      refusal says exactly that rather than just "cannot".
+      Add/remove are judged by IsPinBeingWatched afterwards, and clear recounts: neither
+      AddPinWatch nor RemovePinWatch reports whether the list actually changed.
+      The forward-declaration trap was pre-empted this time rather than found by the compiler:
+      KismetDebugUtilities.h declares FBlueprintWatchedPin at :18 and WatchedPin.h defines it,
+      the same shape as FBlueprintBreakpoint an hour earlier and the 5.7 break this morning.
 - [ ] **describe_ability_system** (day)
       Reads a live actor's AbilitySystemComponent: which abilities are granted, every attribute's base and current value, which GameplayEffects are active and how long they have left, and the owned gameplay tags. This is the answer to "why is this character not taking damage" - the question GAS debugging is entirely made of.
       API: UAbilitySystemComponent, public, read in D:/UE532/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Public/AbilitySystemComponent.h (5.3): void GetAllAttributes(TArray<FGameplayAttribute>&) [:162]; const TArray<UAttributeSet*>& GetSpawnedAttributes() const [:193]; float GetNumericAttributeBase(const FGameplayAttribute&) const [:214]; float GetNumericAttribute(const FGameplayAttribu...

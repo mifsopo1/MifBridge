@@ -5,6 +5,10 @@
 // Breakpoint.h. Calling IsEnabled() or GetLocation() on it needs the complete type - the same
 // shape as the 5.7 break earlier today, where a header carried a declaration and not a body.
 #include "Kismet2/Breakpoint.h"
+// Same trap one struct over: KismetDebugUtilities.h forward-declares
+// FBlueprintWatchedPin (:18) and WatchedPin.h defines it. Get() and the
+// constructors need the definition.
+#include "Kismet2/WatchedPin.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "MifBridgeLog.h"
@@ -2926,5 +2930,232 @@ namespace MifBridge
 		Out->SetStringField(TEXT("note"),
 			TEXT("breakpoints are EDITOR-ONLY state on the loaded UBlueprint - not saved with the "
 				 "asset, and gone after an editor restart. Nothing was written to disk."));
+	}
+
+	// =======================================================================
+	// blueprint_watch - read a pin's live value without editing the asset
+	// =======================================================================
+	//
+	// The other half of replacing splice-a-print-node. A breakpoint stops execution; a watch reads a
+	// value. Neither writes anything to disk.
+	//
+	// GetWatchText RETURNS AN ENUM AND THAT IS THE POINT. EWTR_Valid, EWTR_NoDebugObject,
+	// EWTR_NotInScope and EWTR_NoProperty - three of the four are "no value, and here is exactly
+	// why". Flattening them into an empty string would make "you are not running PIE" and "this pin
+	// is out of scope at the moment" indistinguishable, which is the failure this endpoint exists to
+	// avoid rather than reproduce.
+
+	void H_blueprint_watch(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("op"), TEXT("graphId"), TEXT("blueprintId"), TEXT("path"), TEXT("nodeGuid"),
+			  TEXT("nodeId"), TEXT("pin") },
+			TEXT("op: add | remove | list | clear | read. add/remove/read need nodeGuid (alias "
+				 "nodeId), pin (the pin NAME) and graphId; list and clear take the blueprint "
+				 "(blueprintId, alias path) or any graphId in it"),
+			{ { TEXT("value"), TEXT("a watch READS - it never sets. set_property writes a pin's "
+									"default") },
+			  { TEXT("pinId"), TEXT("pins are addressed by NAME here, which is what list_nodes "
+									"reports for them") } }))
+		{
+			return;
+		}
+
+		// Op first, before resolving anything - a bad verb should not surface as a pin error.
+		const FString Op = JStr(In, TEXT("op")).ToLower();
+		static const TCHAR* kOps[] = { TEXT("add"), TEXT("remove"), TEXT("list"),
+									   TEXT("clear"), TEXT("read") };
+		bool bKnownOp = false;
+		for (const TCHAR* K : kOps) { if (Op == K) { bKnownOp = true; break; } }
+		if (!bKnownOp)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("op '%s' is not one of add, remove, list, clear, read. NOTHING was changed."),
+				*Op));
+			return;
+		}
+
+		UBlueprint* BP = nullptr;
+		UEdGraph* Graph = ResolveGraphField(In, Out, BP);
+		if (!BP) { return; }
+		(void)Graph;
+
+		Out->SetStringField(TEXT("op"), Op);
+		Out->SetStringField(TEXT("blueprint"), BP->GetPathName());
+
+		if (Op == TEXT("list") || Op == TEXT("clear"))
+		{
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			int32 Count = 0;
+			FKismetDebugUtilities::ForeachPinPropertyWatch(BP,
+				[&Arr, &Count](FBlueprintWatchedPin& W)
+				{
+					++Count;
+					TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+					if (const UEdGraphPin* Pin = W.Get())
+					{
+						O->SetStringField(TEXT("pin"), Pin->PinName.ToString());
+						if (const UEdGraphNode* N = Pin->GetOwningNodeUnchecked())
+						{
+							O->SetStringField(TEXT("nodeGuid"), N->NodeGuid.ToString());
+							O->SetStringField(TEXT("nodeTitle"),
+								N->GetNodeTitle(ENodeTitleType::ListView).ToString());
+						}
+					}
+					else
+					{
+						// A watch whose pin has gone is real state worth reporting rather than
+						// skipping - it is how a stale watch survives a node deletion.
+						O->SetStringField(TEXT("pin"), TEXT("(the watched pin no longer exists)"));
+					}
+					Arr.Add(MakeShared<FJsonValueObject>(O));
+				});
+
+			if (Op == TEXT("list"))
+			{
+				Out->SetNumberField(TEXT("count"), Arr.Num());
+				Out->SetArrayField(TEXT("watches"), Arr);
+				Out->SetStringField(TEXT("note"),
+					TEXT("watches are EDITOR-ONLY state on the loaded UBlueprint - not saved with "
+						 "the asset and gone after a restart. Reading a VALUE needs a live PIE "
+						 "session; op:read says which of those is missing rather than returning "
+						 "an empty string."));
+				return;
+			}
+
+			FKismetDebugUtilities::ClearPinWatches(BP);
+			int32 After = 0;
+			FKismetDebugUtilities::ForeachPinPropertyWatch(BP, [&After](FBlueprintWatchedPin&) { ++After; });
+			if (After != 0)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("cleared the watches and %d are still there. NOTHING reliable was "
+						 "produced."), After));
+				return;
+			}
+			Out->SetNumberField(TEXT("removed"), Count);
+			Out->SetNumberField(TEXT("count"), 0);
+			return;
+		}
+
+		// ---------------------------------------------------------------- pin-scoped ops
+		UEdGraphNode* Node = ResolveNodeField(In, TEXT("nodeGuid"), Out);
+		if (!Node) { return; }
+		const FString PinName = JStr(In, TEXT("pin"));
+		if (PinName.IsEmpty())
+		{
+			Fail(Out, TEXT("pin is required - the pin NAME, which list_nodes reports. NOTHING was "
+						   "changed."));
+			return;
+		}
+		UEdGraphPin* Pin = FindPin(Node, PinName, EGPD_MAX, /*bRequireDir*/ false);
+		if (!Pin)
+		{
+			TArray<FString> Have;
+			for (UEdGraphPin* P : Node->Pins) { if (P) { Have.Add(P->PinName.ToString()); } }
+			Fail(Out, FString::Printf(
+				TEXT("no pin named '%s' on that node. It has: %s. NOTHING was changed."),
+				*PinName, Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+		Out->SetStringField(TEXT("nodeGuid"), Node->NodeGuid.ToString());
+		Out->SetStringField(TEXT("pin"), Pin->PinName.ToString());
+
+		const bool bWatched = FKismetDebugUtilities::IsPinBeingWatched(BP, Pin);
+
+		if (Op == TEXT("add"))
+		{
+			if (bWatched)
+			{
+				Out->SetBoolField(TEXT("created"), false);
+				Out->SetStringField(TEXT("note"),
+					TEXT("that pin was already being watched - nothing was created, and nothing "
+						 "needed to be."));
+				return;
+			}
+			// ASK FIRST. AddPinWatch takes any pin and simply does nothing useful for one that
+			// cannot be watched, so without this a refusal would arrive as a success with no watch.
+			if (!FKismetDebugUtilities::CanWatchPin(BP, Pin))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' cannot be watched - the Blueprint debugger does not expose a value "
+						 "for this pin. It is refused rather than added, because AddPinWatch accepts "
+						 "it and produces nothing, which would report success and leave no watch. "
+						 "NOTHING was changed."), *Pin->PinName.ToString()));
+				return;
+			}
+			FKismetDebugUtilities::AddPinWatch(BP, FBlueprintWatchedPin(Pin));
+		}
+		else if (Op == TEXT("remove"))
+		{
+			if (!bWatched)
+			{
+				Fail(Out, TEXT("that pin is not being watched. NOTHING was changed."));
+				return;
+			}
+			FKismetDebugUtilities::RemovePinWatch(BP, Pin);
+		}
+		else   // read
+		{
+			if (!bWatched)
+			{
+				Fail(Out, TEXT("that pin is not being watched - add it first with op:add. NOTHING "
+							   "was changed."));
+				return;
+			}
+			FString Text;
+			const FKismetDebugUtilities::EWatchTextResult R =
+				FKismetDebugUtilities::GetWatchText(Text, BP, BP->GetObjectBeingDebugged(), Pin);
+			Out->SetBoolField(TEXT("watched"), true);
+			switch (R)
+			{
+			case FKismetDebugUtilities::EWTR_Valid:
+				Out->SetStringField(TEXT("value"), Text);
+				Out->SetStringField(TEXT("result"), TEXT("valid"));
+				break;
+			case FKismetDebugUtilities::EWTR_NoDebugObject:
+				Out->SetStringField(TEXT("result"), TEXT("noDebugObject"));
+				Out->SetStringField(TEXT("note"),
+					TEXT("nothing is being debugged, so there is no value to read. Start PIE and "
+						 "select an instance as the debug object. This is reported as its own "
+						 "result rather than an empty value, because 'not running' and 'ran and "
+						 "was empty' are different answers."));
+				break;
+			case FKismetDebugUtilities::EWTR_NotInScope:
+				Out->SetStringField(TEXT("result"), TEXT("notInScope"));
+				Out->SetStringField(TEXT("note"),
+					TEXT("a session is running but execution is not at a point where this pin holds "
+						 "anything. The watch is set and will report once that changes."));
+				break;
+			case FKismetDebugUtilities::EWTR_NoProperty:
+				Out->SetStringField(TEXT("result"), TEXT("noProperty"));
+				Out->SetStringField(TEXT("note"),
+					TEXT("the pin has no backing property to read, so no session will ever produce "
+						 "a value for it. That is a property of the pin, not of the run."));
+				break;
+			default:
+				Out->SetStringField(TEXT("result"), TEXT("unknown"));
+				break;
+			}
+			return;
+		}
+
+		// POSTCONDITION for add/remove. AddPinWatch and RemovePinWatch do not report whether the
+		// list actually changed, so ask.
+		const bool bNow = FKismetDebugUtilities::IsPinBeingWatched(BP, Pin);
+		const bool bWant = (Op == TEXT("add"));
+		if (bNow != bWant)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("op '%s' did not take: the pin is %s watched afterwards. NOTHING reliable was "
+					 "produced."), *Op, bNow ? TEXT("still") : TEXT("no longer")));
+			return;
+		}
+		Out->SetBoolField(TEXT("watched"), bNow);
+		Out->SetBoolField(TEXT("created"), bWant);
+		Out->SetStringField(TEXT("note"),
+			TEXT("watches are EDITOR-ONLY state - not saved with the asset, gone after a restart. "
+				 "Reading a value needs a live PIE session; op:read reports which part is missing "
+				 "rather than returning an empty string."));
 	}
 }
