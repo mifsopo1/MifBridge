@@ -31,6 +31,7 @@
 // reflection pattern GAS's add_gameplay_effect_modifier already uses for FGameplayAttribute.
 
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"
 #include "MifBridgeLog.h"
 
 #if MIF_WITH_MVVM
@@ -188,7 +189,16 @@ namespace MifBridge
 		// assumed). Both engines still expose FindViewModel by either key, so resolve Context from
 		// whichever one AddViewModel actually handed back, then read name/id uniformly from Context.
 		const FMVVMBlueprintViewModelContext* Context = nullptr;
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7
+		// BOUNDARY IS 5.6, NOT 5.7 - corrected 2026-08-30 by reading both installed engines rather
+		// than assuming the change arrived with the other 5.7 MVVM work. UE_5.6's
+		// MVVMEditorSubsystem.h already declares `FGuid AddViewModel(...)` (:45) and
+		// `SetDestinationPathForBinding(..., bool bAllowEventConversion)` (:89), identical to 5.7's
+		// (:47, :91). Guarded at >= 7 these took the #else branch on 5.6, which assigns the return
+		// to an FName and calls a 3-arg overload that does not exist there - a compile error on that
+		// engine, not a behaviour difference. Written with MIF_ENGINE_AT_LEAST rather than by hand:
+		// the raw `MAJOR >= 5 && MINOR >= 7` form is also wrong on any future 6.0, where major
+		// passes and minor does not.
+#if MIF_ENGINE_AT_LEAST(5, 6)
 		const FGuid NewViewModelId = Subsystem->AddViewModel(WBP, ViewModelClass);
 		if (!NewViewModelId.IsValid())
 		{
@@ -327,7 +337,7 @@ namespace MifBridge
 		// 5.7 grew a mandatory 4th parameter (bAllowEventConversion, no default) - not present at all
 		// on 5.3.2. False matches this endpoint's scope: a plain property-to-property binding, not the
 		// newer event-conversion path 5.7's own MVVM Events/Conditions additions introduced.
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7
+#if MIF_ENGINE_AT_LEAST(5, 6)
 		Subsystem->SetDestinationPathForBinding(WBP, Binding, DestPath, /*bAllowEventConversion*/ false);
 #else
 		Subsystem->SetDestinationPathForBinding(WBP, Binding, DestPath);

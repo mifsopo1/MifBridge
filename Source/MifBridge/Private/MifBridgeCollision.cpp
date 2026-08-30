@@ -399,26 +399,52 @@ namespace MifBridge
 			return;
 		}
 
-		// EVERY shape generator in GeomFitUtils.cpp needs real triangle data to fit against, and every
-		// one of them gets it via StaticMesh->GetMeshDescription(0) - box dereferences it directly
-		// with NO null check (GenerateBoxAsSimpleCollision: "GetMeshDescription(0)->ComputeBoundingBox()"),
-		// and the sphere/capsule path hands the same possibly-null pointer straight into
-		// CalcBoundingSphere, which dereferences it on its first line. On a COOKED static mesh this
-		// bulk data is stripped and GetMeshDescription(0) returns null - found live 2026-08-28,
-		// EXCEPTION_ACCESS_VIOLATION reading address 0x50 inside UnrealEditor-MeshDescription.dll,
-		// same crash-class as the already-fixed duplicate_asset guard (MifBridgeAssetOps.cpp) but a
-		// genuinely different endpoint and a genuinely different missing-null-check, not the same bug
-		// twice. Checked directly against the actual failure condition (GetMeshDescription(0) == null)
-		// rather than inferred from PKG_Cooked, since that is the literal thing about to be
-		// dereferenced.
-		if (!Mesh->GetMeshDescription(0))
+		// THE CRASH GUARD, and which shapes it actually applies to.
+		//
+		// box/sphere/capsule fit against MeshDescription. GenerateBoxAsSimpleCollision dereferences
+		// it directly with NO null check ("GetMeshDescription(0)->ComputeBoundingBox()"), and the
+		// sphere/capsule path hands the same possibly-null pointer into CalcBoundingSphere, which
+		// dereferences it on its first line. On a COOKED static mesh that bulk data is stripped and
+		// GetMeshDescription(0) returns null - found live 2026-08-28, EXCEPTION_ACCESS_VIOLATION
+		// reading address 0x50 inside UnrealEditor-MeshDescription.dll.
+		//
+		// THE k-DOP SHAPES DO NOT. Corrected 2026-08-30: the original guard refused all eight shapes
+		// and its comment claimed "every shape generator here needs it", which is false in both
+		// engines. GenerateKDopAsSimpleCollision fits its hull from RENDER data -
+		// `StaticMesh->GetRenderData()->LODResources[0]`, then LODResources[0].GetNumVertices() and
+		// VertexBuffers.PositionVertexBuffer (GeomFitUtils.cpp:24-29 on 5.3) - which every cooked
+		// mesh has, because it is what the mesh is drawn from. So the six k-DOP shapes could never
+		// crash on a cooked mesh and were being refused anyway, which took simplified collision away
+		// from cooked projects entirely for no reason. They are the more useful shapes on real props
+		// besides.
+		//
+		// Checked against the literal thing about to be dereferenced in each path, not inferred from
+		// PKG_Cooked.
+		const bool bNeedsMeshDescription =
+			Shape == TEXT("box") || Shape == TEXT("sphere") || Shape == TEXT("capsule");
+
+		if (bNeedsMeshDescription && !Mesh->GetMeshDescription(0))
 		{
 			Fail(Out, FString::Printf(
 				TEXT("'%s' has no MeshDescription (editor-only geometry data, stripped on cook), and "
-					 "every shape generator here needs it to fit a shape against - CRASHES the editor "
-					 "with EXCEPTION_ACCESS_VIOLATION otherwise (GeomFitUtils.cpp dereferences "
+					 "the '%s' generator fits against it - CRASHES the editor with "
+					 "EXCEPTION_ACCESS_VIOLATION otherwise (GeomFitUtils.cpp dereferences "
 					 "GetMeshDescription(0) with no null check). Refused rather than attempted. "
-					 "remove_collision still works (it only touches BodySetup, not geometry)."),
+					 "The k-DOP shapes (10dop-x, 10dop-y, 10dop-z, 18dop, 26dop) DO work on this "
+					 "mesh - they fit from render data, which cooking keeps - so try one of those. "
+					 "remove_collision also still works (it only touches BodySetup, not geometry)."),
+				*JStr(In, TEXT("path")), *Shape));
+			return;
+		}
+
+		// k-DOP's own precondition. Nothing has been observed to hit this - a StaticMesh with no
+		// render data does not draw - but it is the pointer that path dereferences, so it is checked
+		// rather than assumed, for the same reason the MeshDescription one is.
+		if (!bNeedsMeshDescription && (!Mesh->GetRenderData() || Mesh->GetRenderData()->LODResources.Num() == 0))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no render data (LODResources is empty), which the k-DOP generator fits "
+					 "its hull from. NOTHING was changed."),
 				*JStr(In, TEXT("path"))));
 			return;
 		}

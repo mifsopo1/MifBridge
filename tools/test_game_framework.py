@@ -54,14 +54,11 @@ def check(name, cond, detail=""):
 
 
 def wait_for_pie_state(target, timeout=30):
-    start = time.time()
-    while time.time() - start < timeout:
-        s = M.raw_post("pie_status", {})
-        if s.get("state") == target:
-            return s
-        time.sleep(1)
-    return M.raw_post("pie_status", {})
-
+    # ONE definition now lives in mifaudit (2026-08-30). This suite had its own copy whose polls used
+    # raw_post's 60s default inside a 30s outer budget, so the budget was never enforced and an
+    # expiry raised an uncaught mifaudit.Timeout. That was fixed in test_pie_family.py on 2026-08-29
+    # and not here - the copies are the reason, so they are gone.
+    return M.wait_for_pie_state(target, timeout=timeout)
 
 def main():
     if not M.wait_for_bridge(timeout=900):

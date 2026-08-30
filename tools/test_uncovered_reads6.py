@@ -107,6 +107,14 @@ def main():
         check("T923 and explains why, not a generic failure",
               "not one of this landscape's layers" in (pt.get("error") or ""), pt.get("error"))
 
+
+    # CLEANUP. create_landscape spawns into the EDITOR world, so this is NOT torn down when PIE
+    # stops - it persists and is carried into every later PIE session. See
+    # mifaudit.cleanup_level_actor for the T1606 breakage an uncleaned one already caused.
+    if land_path:
+        _c = M.cleanup_level_actor(land_path, "scratch landscape")
+        check("T922-923 (cleanup) the scratch landscape is removed, not left in the level",
+              _c.get("ok") is True, _c.get("error"))
     # ------------------------------------------------------------------ T924 run_console_captured
     print("\n=== T924: run_console_captured - a display toggle, called twice so it reverts itself ===")
     c1 = M.call("run_console_captured", {"command": "stat unit"})

@@ -153,6 +153,13 @@ def main():
         d = M.call("describe_water_body", {"path": actor_path})
         check("T823 describe_water_body succeeds on it", d.get("ok") is True, json.dumps(d)[:220])
         check("T823 and agrees on the actor path", d.get("actorPath") == actor_path, d.get("actorPath"))
+
+        # CLEANUP. create_water_body spawns into the EDITOR world, so this is NOT torn down
+        # when PIE stops - it persists and is carried into every later PIE session. See
+        # mifaudit.cleanup_level_actor for the T1606 breakage an uncleaned one already caused.
+        _c = M.cleanup_level_actor(actor_path, "scratch water body")
+        check("T823 (cleanup) the scratch water body is removed, not left in the level",
+              _c.get("ok") is True, _c.get("error"))
         check("T823 and reports the same waterBodyType",
               d.get("waterBodyType") == made.get("waterBodyType"),
               (d.get("waterBodyType"), made.get("waterBodyType")))

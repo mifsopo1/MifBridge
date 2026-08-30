@@ -140,6 +140,14 @@ def main():
               bool(rvt.get("volumesCreated")) or bool(rvt.get("alreadyPresent")),
               json.dumps({"volumesCreated": rvt.get("volumesCreated"), "alreadyPresent": rvt.get("alreadyPresent")}))
 
+    # CLEANUP. create_landscape spawns into the EDITOR world, so this is NOT torn down when PIE
+    # stops - it persists and is carried into every later PIE session. See
+    # mifaudit.cleanup_level_actor for the T1606 breakage an uncleaned one already caused.
+    if land_path:
+        _c = M.cleanup_level_actor(land_path, "scratch landscape")
+        check("T955 (cleanup) the scratch landscape is removed, not left in the level",
+              _c.get("ok") is True, _c.get("error"))
+
     # ------------------------------------------------------------------ T956 set_water_body_spline
     print("\n=== T956: set_water_body_spline - a scratch water body, a real 4-point loop ===")
     wx, wy = 1100000 + st, 1100000 + st
@@ -153,6 +161,14 @@ def main():
         sp = M.call("set_water_body_spline", {"path": wb_path, "points": pts})
         check("T956 succeeds", sp.get("ok") is True, json.dumps(sp)[:200])
         check("T956 the spline really has the 4 points now", sp.get("splinePoints") == 4, sp.get("splinePoints"))
+
+    # CLEANUP. create_water_body spawns into the EDITOR world, so this is NOT torn down when PIE
+    # stops - it persists and is carried into every later PIE session. See
+    # mifaudit.cleanup_level_actor for the T1606 breakage an uncleaned one already caused.
+    if wb_path:
+        _c = M.cleanup_level_actor(wb_path, "scratch water body")
+        check("T956 (cleanup) the scratch water body is removed, not left in the level",
+              _c.get("ok") is True, _c.get("error"))
 
     # ------------------------------------------------------------------ T957 add_spawn_actor
     print("\n=== T957: add_spawn_actor - a SpawnActorFromClass node ===")

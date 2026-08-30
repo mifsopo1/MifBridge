@@ -38,6 +38,7 @@
 // editor restart the same way, matching this whole project's standing invariant.
 
 #include "MifBridgeHandlers.h"
+#include "MifBridgeVersion.h"
 #include "MifBridgeLog.h"
 
 #if MIF_WITH_GEOMETRYSCRIPT
@@ -360,7 +361,7 @@ namespace MifBridge
 		FGeometryScriptCopyMeshToAssetOptions CopyOptions;
 		FGeometryScriptMeshWriteLOD WriteLOD;
 		EGeometryScriptOutcomePins WriteOutcome = EGeometryScriptOutcomePins::Failure;
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 5
+#if MIF_ENGINE_AT_LEAST(5, 5)
 		// 5.5+ grew a bUseSectionMaterials parameter (MeshAssetFunctions.h); the pre-5.5 6-arg overload
 		// still compiles here but is UE_DEPRECATED(5.5, ...) - call the new one explicitly instead of
 		// letting this file start life with a fresh deprecation warning on 5.7.
@@ -628,7 +629,7 @@ namespace MifBridge
 		FGeometryScriptCopyMeshToAssetOptions CopyOptions;
 		FGeometryScriptMeshWriteLOD WriteLOD;
 		EGeometryScriptOutcomePins WriteOutcome = EGeometryScriptOutcomePins::Failure;
-#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 5
+#if MIF_ENGINE_AT_LEAST(5, 5)
 		UGeometryScriptLibrary_StaticMeshFunctions::CopyMeshToStaticMesh(
 			TargetDynMesh, TargetAsset, CopyOptions, WriteLOD, WriteOutcome, /*bUseSectionMaterials*/ true, Debug);
 #else

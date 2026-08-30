@@ -296,6 +296,70 @@ def warn_if_sweep_running():
     return True
 
 
+def cleanup_level_actor(actor_path, what="scratch actor"):
+    """Delete a level actor a suite spawned. Returns the delete_level_actor response.
+
+    WHY SUITES MUST DO THIS, and why it is here rather than copied again. Endpoints like
+    add_nav_volume, create_water_body and create_landscape spawn into the EDITOR world
+    (World->SpawnActor against ActiveWorld(), not a PIE-scoped one), so what they create is NOT torn
+    down when PIE stops. It persists in the persistent level and is carried into every later PIE
+    session, one more accumulating per run.
+
+    That is not hypothetical: an uncleaned NavMeshBoundsVolume silently broke test_pie_family.py's
+    T1606, whose precondition is "0 NavMeshBoundsVolume actors -> no navigation coverage". One
+    parked a million units away, providing no real coverage anywhere a pawn stands, still made that
+    false. A suite leaking state into another suite's preconditions is the worst kind of test bug,
+    because the failure lands somewhere else entirely.
+
+    Added to mifaudit 2026-08-30: the cleanup was written for exactly one of eight spawn sites on
+    2026-08-29 (958213a), one of the others being thirty lines above it in the same file.
+
+    raw_post, not scratch_confirm: delete_level_actor addresses a live actor path, not a /Game/...
+    asset, so confirm_call's path-prefix check does not apply and would wrongly refuse it. This is
+    the same narrow, deliberate bypass used elsewhere for this shape of call.
+    """
+    if not actor_path:
+        return {"ok": False, "error": "no actorPath to clean up", "skipped": True}
+    try:
+        return raw_post("delete_level_actor", {"actorPath": actor_path, "confirm": True})
+    except Timeout:
+        return {"ok": False, "error": "delete_level_actor timed out cleaning up %s" % what}
+
+
+def wait_for_pie_state(target, timeout=60, poll_timeout=10):
+    """Poll pie_status until `state` == target, or the outer budget expires.
+
+    ONE copy, here, since 2026-08-30. There were three - test_pie_family.py, test_game_framework.py
+    and test_livelink.py - and only the first was ever fixed, which is the whole reason this lives in
+    mifaudit now instead of being copied a fourth time.
+
+    THE BUG THE FIX WAS ABOUT, found live 2026-08-29 chasing a real editor hang during a regression
+    sweep: each poll used raw_post's 60s DEFAULT while the outer budget was 30s or 60s, so a single
+    slow poll could eat the entire budget by itself and the outer timeout was never really enforced.
+    Worse, raw_post RAISES Timeout rather than returning a dict, and none of the loops caught it - so
+    "PIE never reached the state" surfaced as an unhandled exception killing the suite instead of a
+    clean failure the caller could report. poll_timeout must therefore stay well under timeout.
+
+    Returns the last pie_status dict. On repeated timeouts returns an ok:false dict with state None,
+    so callers can assert on it exactly like any other response instead of guarding for exceptions.
+    """
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            s = raw_post("pie_status", {}, timeout=poll_timeout)
+        except Timeout:
+            time.sleep(1)
+            continue
+        if s.get("state") == target:
+            return s
+        time.sleep(1)
+    try:
+        return raw_post("pie_status", {}, timeout=poll_timeout)
+    except Timeout:
+        return {"ok": False, "error": "pie_status timed out repeatedly - the bridge may be hung",
+                "state": None}
+
+
 def wait_for_bridge(timeout=900, quiet=False):
     """Block until the SDK editor is serving. Returns True/False.
 

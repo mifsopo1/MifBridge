@@ -84,32 +84,10 @@ def check(name, cond, detail=""):
 
 
 def wait_for_pie_state(target, timeout=60):
-    # FOUND LIVE, 2026-08-29: a per-call timeout of 60s (raw_post's own default) inside a loop whose
-    # OWN outer budget is also 60s meant the outer budget was never actually enforced - a single slow
-    # or hung poll could eat the whole budget by itself, and raw_post raises mifaudit.Timeout on
-    # expiry rather than returning a dict, which this loop did not catch. Found chasing a real editor
-    # hang during a full regression sweep: start_pie returned ok:true, a "New Editor Window" PIE
-    # session spawned as a second process, and the main editor's bridge stopped answering HTTP
-    # entirely - a genuine hang, not diagnosed to root cause here (needs live debugging this pass did
-    # not have). This fix does not address that hang; it makes the polling loop itself honest about
-    # its own timeout budget regardless of what caused a slow poll, and stops an uncaught exception
-    # from turning "PIE never reached running" into an unhandled crash instead of a clean, reported
-    # failure the caller can act on.
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            s = M.raw_post("pie_status", {}, timeout=10)
-        except M.Timeout:
-            time.sleep(1)
-            continue
-        if s.get("state") == target:
-            return s
-        time.sleep(1)
-    try:
-        return M.raw_post("pie_status", {}, timeout=10)
-    except M.Timeout:
-        return {"ok": False, "error": "pie_status timed out repeatedly - the bridge may be hung", "state": None}
-
+    # Moved into mifaudit 2026-08-30 so the two other suites that had their own unfixed copies of
+    # this loop share the fix instead of each carrying the bug. The reasoning that produced it is
+    # preserved in full at mifaudit.wait_for_pie_state.
+    return M.wait_for_pie_state(target, timeout=timeout)
 
 def wait_for_sublevel(instance_name, want_present, timeout=30, want_state=None):
     def check_once():
