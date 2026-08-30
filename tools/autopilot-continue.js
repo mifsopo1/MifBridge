@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// MIFBRIDGE-DEV-ONLY: development Stop hook. Documents the kill switch and hard-codes a
+// path on the author's machine - belongs in git, not in the release zip.
 /**
  * Stop hook: keep working while the FEATURE PARITY SPEC still has open items.
  *

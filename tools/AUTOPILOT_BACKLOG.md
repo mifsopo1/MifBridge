@@ -1,3 +1,6 @@
+<!-- MIFBRIDGE-DEV-ONLY: this file documents the development Stop hook and its kill switch,
+     names a competitor product, and hard-codes a path on the author's machine. It belongs in
+     git and out of the release zip - those are different questions. -->
 # Autopilot backlog
 
 The Stop hook (`~/.claude/hooks/autopilot-continue.js`) reads this file and refuses to end the turn

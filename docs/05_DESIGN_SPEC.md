@@ -376,7 +376,7 @@ All POST, JSON in/out, localhost, `X-Mif-Token` header. Grouped:
 - `batch {ops:[...], compileAtEnd?}` → per-op results + final compile report
 
 **Pipeline hooks (optional, phase 2)**
-- `trigger_cook {mod}` → runs the verified cook/retoc/deploy chain (paths pinned; see `docs/04`)
+- `trigger_cook {mod}` → runs the verified cook/retoc/deploy chain (paths pinned; they come from the author's separate DDS2 modding notes (NOT this repo's docs/))
 - `read_modloader_log {lines}` → tails `Saved/Logs/DrugDealerSimulator2.log` for our `PrintToModLoader` output — closes the *runtime* loop too
 
 **DataTables (phase 3, overlaps the python commandlet path in `docs/12`)**
@@ -466,7 +466,7 @@ Editor must be open with MifBridge listening. A ToolMenus button ("Mif Bridge: S
 
 ## 14. Integration with the existing pipeline
 
-The bridge complements, doesn't replace, the current flow (`docs/04`, `docs/11`, `docs/12`):
+The bridge complements, doesn't replace, the current flow (documented in the author's separate DDS2 modding notes (NOT this repo's docs/) - note that this repo's own docs/11 and docs/12 are different documents entirely):
 - **Decompile-first stays.** retoc + patched KismetKompiler still tells us the game's real logic (`MainInteraction(Pawn, Component)`, channel-6 traces, etc.). The bridge applies edits; it doesn't decide them.
 - **Cook stays a deliberate step.** The bridge's value is *iterating logic to a clean compile in-editor* so each cook is worth it. `trigger_cook` (phase 2) can fire the verified `UnrealEditor-Cmd -run=Cook … → retoc to-zen UE5_3 → parity check → deploy to C:\SteamLibrary\…\LogicMods\` chain, but only on request.
 - **Runtime loop closes too:** `read_modloader_log` tails our `PrintToModLoader` DEBUG output, so after a cook Claude can read what actually happened in-game instead of asking for a screenshot of the log.
@@ -595,7 +595,7 @@ same one that builds the rest of this source tree.
   the latter; research confirmed the real DDS2 runtime sink for both Lua `print()` and Blueprint
   `PrintToModLoader` is `…\Binaries\Win64\ue4ss\UE4SS.log` on `C:\SteamLibrary`. Default path points there;
   `path` overrides it. Read-only; guards against pathological log sizes.
-- **`trigger_cook` is PLAN-ONLY — it executes nothing.** Two reasons from research: (1) neither `docs/04` nor
+- **`trigger_cook` is PLAN-ONLY — it executes nothing.** Two reasons from research: (1) neither the author's separate DDS2 modding notes (NOT this repo's docs/) nor
   `docs/11` pins a literal cook command line (cook is abstract "RunUAT … -cook via Brando's DDS2 SDK"; the
   preferred DDS2 lane *skips* cook — `retoc to-legacy` → byte-patch → `retoc to-zen`), and (2) the pipeline
   operates on the **live game paks out-of-editor**, so running it from inside the editor process would be wrong
@@ -722,4 +722,4 @@ Keep the current copy-paste workflow documented as a fallback for when the edito
 
 ---
 
-*Cross-refs: `docs/04` (build/deploy paths), `docs/11` (DDS2 mod architecture, decompile pipeline), `docs/12` (economy/datatables). Memory: `feedback_bp_node_wiring_precision`, `feedback_always_add_debug`, `dds2-modding-setup`.*
+*Cross-refs: build/deploy paths, DDS2 mod architecture and the economy datatables all live in the author's separate DDS2 modding notes (NOT this repo's docs/) - this repo's docs/11 and docs/12 are UE4 port feasibility and the autonomous report loop, which are unrelated. Memory: `feedback_bp_node_wiring_precision`, `feedback_always_add_debug`, `dds2-modding-setup`.*

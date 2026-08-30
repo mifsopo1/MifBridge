@@ -5,7 +5,7 @@
 ### **Let an AI edit your Unreal Blueprints — and read the compiler errors back.**
 
 <!-- MIFBRIDGE-VERSION-LINE -->
-`v0.6.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **320 endpoints** &nbsp;·&nbsp; 🧰 **353 MCP tools** &nbsp;·&nbsp; 🧪 **75 test suites**
+`v0.6.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **421 endpoints** &nbsp;·&nbsp; 🧰 **478 MCP tools** &nbsp;·&nbsp; 🧪 **144 test suites**
 
 </div>
 
@@ -30,7 +30,7 @@ Every change goes through Unreal's own graph API (`Schema->TryCreateConnection`,
 
 | Half | State |
 |---|---|
-| 🎮 **UE plugin + MCP server** | **Mature.** 320 endpoints, 75 suites. Last full pass: 148 runs across 74 suites green, 0 editor deaths. |
+| 🎮 **UE plugin + MCP server** | **Mature.** 421 endpoints, 144 suites. Last recorded full pass: 204 runs across 102 suites green, 0 editor deaths — 42 of the 144 suites have not yet been in a full sweep, and those are the newest surface. |
 | 🎨 **Blender addon** | **Working, version‑tested.** 20 ops and a real mesh round trip, green on Blender 3.6.23, 4.2.17 LTS, 4.4.0 and 5.0.1 — 89 assertions per version. The five `gen_*` ops that need an external service are declared in the suite output rather than skipped silently. |
 
 ---
@@ -75,7 +75,7 @@ The UE plugin answers each request on the game thread, applies it through the re
 
 | For | You need |
 |---|---|
-| 🎮 **UE plugin** | **Unreal Engine 5.3 or 5.7** — every change is compiled against *both*. Editor‑only C++, so it must be built against the engine you actually run; a marketplace prebuilt will not ABI‑match a source build. Win64. |
+| 🎮 **UE plugin** | **Unreal Engine 5.3 or 5.7** — built and tested continuously against 5.3.2; last verified against a stock 5.7 on 2026-08-27, at 330 of the current 421 endpoints. Editor‑only C++, so it must be built against the engine you actually run; a marketplace prebuilt will not ABI‑match a source build. Win64. |
 | 🐍 **MCP server** | **Python 3.10+**, with `mcp>=1.2.0` and `requests>=2.31.0`. Any OS — it only speaks loopback. |
 | 🎨 **Blender addon** | **Blender 4.4+** — the `bl_info` floor. Verified green on **3.6, 4.2, 4.4 and 5.0**; see `tools/blender-addon/README.md` for the matrix. Shipped as a zip; optional. |
 | 🤖 **Client** | Claude Code, or anything that speaks MCP over stdio. |

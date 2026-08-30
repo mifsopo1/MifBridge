@@ -144,6 +144,102 @@ def endpoint_count():
         return 0
 
 
+# THE README BADGE, AND WHY PACKAGING REFUSES OVER IT
+#
+# README.md:7 carries `<!-- MIFBRIDGE-VERSION-LINE -->` and, until 2026-08-30, NOTHING in the repo
+# read or wrote it - a marker with no reader. The line under it had drifted to "320 endpoints /
+# 353 MCP tools / 75 test suites" against a real 421 / 478 / 144. That is the first thing anyone
+# sees, it was wrong by a hundred endpoints, and no check anywhere would ever have said so.
+#
+# This does NOT rewrite the README during packaging. A build step that quietly edits tracked files
+# is how you get a commit you did not write. It REFUSES instead, and `--update-badge` is the
+# explicit way to fix it - the same shape as the parity gate below: the tool tells you what is
+# wrong and you decide.
+
+def mcp_tool_count():
+    """@mcp.tool DECORATORS in the MCP server - the number a user of the MCP layer actually sees.
+
+    Anchored to the start of a line rather than counted as a substring. A plain count of "@mcp.tool"
+    returns 479 because server.py:3170 mentions the decorator inside a COMMENT, and 478 is what
+    mcp_static_check.py finds by parsing the AST. One apart, and it would have been easy to shrug
+    at - but a badge whose whole purpose is being trustworthy cannot be off by one for a silly
+    reason. Being wrong by a hundred, which is where this line was, starts with being wrong by one.
+    """
+    try:
+        with io.open(os.path.join(HERE, "mcp-server", "server.py"), "r",
+                     encoding="utf-8", errors="replace") as fh:
+            return len(re.findall(r"(?m)^@mcp\.tool\(\)", fh.read()))
+    except OSError:
+        return 0
+
+
+def suite_count():
+    """test_*.py files under tools/. Counted, never typed - it was typed once and went 69 stale."""
+    try:
+        return len([n for n in os.listdir(HERE)
+                    if n.startswith("test_") and n.endswith(".py")])
+    except OSError:
+        return 0
+
+
+def badge_line():
+    """The line the README SHOULD carry, built from the same sources the manifest uses."""
+    version, _ = plugin_version()
+    return ("`v%s` &nbsp;\u00b7&nbsp; \U0001f3ae **UE 5.3 + 5.7** &nbsp;\u00b7&nbsp; "
+            "\U0001f3a8 **Blender 3.6\u20135.0** &nbsp;\u00b7&nbsp; \U0001f50c **%d endpoints** "
+            "&nbsp;\u00b7&nbsp; \U0001f9f0 **%d MCP tools** &nbsp;\u00b7&nbsp; "
+            "\U0001f9ea **%d test suites**"
+            % (version, endpoint_count(), mcp_tool_count(), suite_count()))
+
+
+VERSION_MARKER = "<!-- MIFBRIDGE-VERSION-LINE -->"
+
+
+def check_badge(update=False):
+    """(ok, message). With update=True, rewrite the line under the marker instead of reporting."""
+    readme = os.path.join(ROOT, "README.md")
+    try:
+        with io.open(readme, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as exc:
+        return False, "could not read README.md: %s" % exc
+
+    lines = text.split("\n")
+    idx = next((i for i, l in enumerate(lines) if VERSION_MARKER in l), -1)
+    if idx < 0 or idx + 1 >= len(lines):
+        return False, "README.md has no %s marker to anchor the badge to" % VERSION_MARKER
+
+    want = badge_line()
+    have = lines[idx + 1]
+    # Reported as plain numbers rather than by echoing the line. The badge is full of emoji and a
+    # Windows console is cp1252, so printing it raises UnicodeEncodeError and the tool dies while
+    # doing nothing but reporting - which is how --update-badge failed the first time it was run.
+    # The numbers are what you wanted to read anyway.
+    summary = ("v%s, %d endpoints, %d MCP tools, %d test suites"
+               % (plugin_version()[0], endpoint_count(), mcp_tool_count(), suite_count()))
+    if have.strip() == want.strip():
+        return True, "badge is current: %s" % summary
+    if not update:
+        # Only the bolded figures, for the same encoding reason - and because the diff you care
+        # about is 320-vs-421, not the surrounding markdown.
+        def figures(line):
+            found = re.findall(r"\*\*([^*]*\d[^*]*)\*\*", line)
+            return " / ".join(found) if found else line.strip()[:80]
+        return False, ("the README badge is STALE and it is the first thing anyone sees.\n"
+                       "  have: %s\n  want: %s\n"
+                       "  Fix it with:  python tools/make_release.py --update-badge"
+                       % (figures(have), figures(want)))
+    lines[idx + 1] = want
+    out = "\n".join(lines)
+    with io.open(readme, "w", encoding="utf-8", newline="") as fh:
+        fh.write(out)
+    with io.open(readme, "rb") as fh:
+        raw = fh.read().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+    with io.open(readme, "wb") as fh:
+        fh.write(raw)
+    return True, "badge updated: %s" % summary
+
+
 def tracked_files():
     """Ship exactly what git tracks, minus the two categories above.
 
@@ -278,10 +374,30 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", help="output zip path")
     ap.add_argument("--check", metavar="ZIP", help="verify a zip against this tree instead of building")
+    ap.add_argument("--update-badge", action="store_true",
+                    help="rewrite README.md's version line from the real counts, then exit")
+    ap.add_argument("--force", action="store_true",
+                    help="package even when the badge is stale (it will ship wrong)")
     args = ap.parse_args()
+
+    if args.update_badge:
+        ok, msg = check_badge(update=True)
+        print(msg)
+        return 0 if ok else 1
 
     if args.check:
         return check(args.check)
+
+    # THE BADGE GATE. It refuses rather than silently rewriting a tracked file during a build - a
+    # packaging step that edits the repo is how you get a commit you did not write. This is the one
+    # number every reader sees first, and it had drifted a hundred endpoints with nothing anywhere
+    # able to notice.
+    ok, msg = check_badge()
+    if not ok:
+        print("REFUSING TO PACKAGE - %s" % msg)
+        if not args.force:
+            return 1
+        print("  --force given: packaging anyway, with a badge that is wrong.")
 
     name, _ = plugin_version()
     out = args.out or os.path.join(HERE, "dist", "MifBridge-%s.zip" % name)

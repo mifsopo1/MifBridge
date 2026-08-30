@@ -15,7 +15,7 @@ that matters.
 
 ## Never guess at the surface. Ask it.
 
-There are ~307 endpoints and the names are not guessable. Two endpoints exist so you never have to:
+There are several hundred endpoints and the names are not guessable. No count is written here on purpose - nothing checks this file, so a number would drift, and a stale one is worse than none because it tells you the surface is smaller than it is. self_audit reports the real count for the build you are actually talking to. Two endpoints exist so you never have to guess:
 
 | | |
 |---|---|

@@ -13,7 +13,10 @@ namespace MifBridge
 {
 	namespace
 	{
-		// Live DDS2 install root (C:\SteamLibrary, NOT D:\Steam — see docs/04, docs/11).
+		// Live DDS2 install root (C:\SteamLibrary, NOT D:\Steam). The reference here used to be
+		// "see docs/04, docs/11"; docs/04 has never existed in this repository and docs/11 here is
+		// about UE4 port feasibility. Those notes are the author's separate DDS2 modding
+		// documentation, not anything shipped with this plugin.
 		static const TCHAR* GameRoot = TEXT("C:/SteamLibrary/steamapps/common/Drug Dealer Simulator 2/DrugDealerSimulator2");
 		static const TCHAR* RetocExe = TEXT("C:/Users/andre/.cargo/bin/retoc.exe");
 
