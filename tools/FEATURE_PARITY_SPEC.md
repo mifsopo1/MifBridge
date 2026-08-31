@@ -9336,6 +9336,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       coerces. Picking a pair with NO coercion - an object reference into an int - would separate
       them, and if it is the second explanation then this route still works.
 
+      SETTLED 2026-08-31 BY RUNNING IT, and NEITHER explanation was right. Authored int A -> int B,
+      legal and compiling, then retyped A to an Actor object reference - a pair with no coercion.
+      Still 0 errors. The reason is a third thing, and it is visible in the pins:
+
+        getter pin A  BEFORE : category int,    1 link
+        getter pins A AFTER  : category object, 0 links   <- the new pin
+                               category int,    1 link    <- the ORIGINAL, link intact
+
+      The node ends up with TWO pins named A. The link was not dropped and nothing was coerced: the
+      compiler follows the new pin, finds nothing wired to it, and reports clean. THE BROKEN HALF IS
+      INVISIBLE TO THE COMPILER RATHER THAN ABSENT, which is why no amount of picking a worse type
+      pair would ever have worked. This route cannot produce a failing compile, and the item's
+      remaining question - a fixture that reliably breaks a blueprint - has to be answered some
+      other way.
+
+      IT IS ALSO THE STALE-PIN DEFECT CAUGHT IN THE ACT, live, against the 15:37 DLL - the same one
+      the committed-and-unbuilt set_variable_type fix addresses. So the reproduction is now wired as
+      V9 in verify_pending_fixes.py, where the next rebuild will run it: the pass condition is ONE
+      pin named A, of category object. Two is the defect; one of category int would mean the retype
+      never took. That file's own build-date gate reports the divergence plainly - DLL built
+      Aug 31 15:37:47, last Source commit Aug 31 17:15:45 - and SKIPS rather than pretending.
+
       So the claim stands unrefuted and untested where it matters. What would settle it is a fixture
       that reliably breaks a blueprint - and this repo does not have one. Confirmed by grep, not
       assumed: every numErrors reference in all 163 suites is part of an assertion that it equals

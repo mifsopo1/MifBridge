@@ -25,6 +25,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import mifaudit as M  # noqa: E402
+import scratch_confirm as SC  # noqa: E402
 
 PASS, FAIL, SKIP = [], [], []
 
@@ -168,6 +169,58 @@ def main():
         check("V5 and a dry run needs no confirm and reports a number",
               r.get("ok") is not False and isinstance(r.get("found"), (int, float)),
               json.dumps(r)[:220])
+
+    # ---------------------------------------------------------------- V9 set_variable_type's stale pin
+    # THE FIX IS COMMITTED AND UNBUILT, and this is the check that says whether a rebuild picked it
+    # up. Reproduced live 2026-08-31 against the 15:37 DLL:
+    #
+    #   author int A -> int B, legal. Retype A to an Actor object reference. The getter then has TWO
+    #   pins named A - a new one, category 'object', with NO link, and the ORIGINAL 'int' one still
+    #   holding the connection. The compiler follows the new pin, sees nothing wired, and reports
+    #   0 errors. The broken half is invisible to it rather than absent.
+    #
+    # PASS CONDITION IS ONE PIN, of the new type. Two pins named A is the defect; one pin of
+    # category 'int' would mean the retype did not take at all.
+    print("\n=== V9: set_variable_type leaves ONE pin, of the new type ===")
+    st = int(time.time() % 100000)
+    vpath = "/Game/_MifVerify/BP_V%d" % st
+    vbid = M.call("create_blueprint", {"path": vpath, "parentClass": "Actor"}).get("blueprintId")
+    if not vbid:
+        skip("V9", "could not create a scratch blueprint")
+    else:
+        vg = next((x.get("graphId") for x in
+                   (M.call("list_graphs", {"blueprintId": vbid}).get("graphs") or [])
+                   if "EventGraph" in (x.get("name") or "")), None)
+        for nm in ("A", "B"):
+            M.call("add_variable", {"blueprintId": vbid, "name": nm, "type": "int"})
+        vget = M.call("add_variable_get", {"graphId": vg, "variable": "A"})
+        vset = M.call("add_variable_set", {"graphId": vg, "variable": "B"})
+        vgg = vget.get("nodeGuid") or (vget.get("node") or {}).get("nodeGuid")
+        vsg = vset.get("nodeGuid") or (vset.get("node") or {}).get("nodeGuid")
+        wired = M.call("connect_pins", {"graphId": vg, "srcNode": vgg, "srcPin": "A",
+                                        "dstNode": vsg, "dstPin": "B"})
+        check("V9 (setup) a LEGAL int -> int graph", wired.get("ok") is True,
+              json.dumps(wired)[:200])
+        rt = M.call("set_variable_type", {"blueprintId": vbid, "name": "A", "type": "Actor"})
+        check("V9 the retype succeeds", rt.get("ok") is True, json.dumps(rt)[:200])
+        # The field the fix adds. Absent means the running DLL predates it - which is the whole
+        # question this check exists to answer, so it is reported rather than asserted blindly.
+        check("V9 it REPORTS nodesReconstructed - absent means this DLL predates the fix",
+              rt.get("nodesReconstructed") is not None,
+              "nodesReconstructed=%r - rebuild has not picked the fix up"
+              % rt.get("nodesReconstructed"))
+        node = (M.call("get_node", {"graphId": vg, "nodeGuid": vgg}).get("node") or {})
+        named_a = [x for x in (node.get("pins") or []) if x.get("name") == "A"]
+        check("V9 the getter has exactly ONE pin named A, not a stale one beside the new one",
+              len(named_a) == 1,
+              "%d pins named A: %s" % (len(named_a),
+                                       [((x.get("type") or {}).get("category"),
+                                         len(x.get("linkedTo") or [])) for x in named_a]))
+        if len(named_a) == 1:
+            check("V9 and it is the NEW type, so the retype really took",
+                  (named_a[0].get("type") or {}).get("category") == "object",
+                  (named_a[0].get("type") or {}).get("category"))
+        SC.confirm_call("delete_asset", {"path": vpath, "confirm": True})
 
     print("")
     print("=" * 72)
