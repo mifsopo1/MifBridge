@@ -143,6 +143,13 @@ def main():
             alive = M.wait_for_bridge(timeout=900)
         results.append({"suite": name, "pass": which, "rc": rc, "summary": line.strip(),
                         "seconds": round(dt, 1), "editorSurvived": alive,
+                        # WHEN THIS SUITE RAN. audit_suite_reach decides whether a record still
+                        # describes the code by comparing it against the suite's source, and without
+                        # this it can only compare against suite_results.json's MTIME - which is not
+                        # a content age. Copying a backup over that file moves the mtime without
+                        # changing a single record, and hours-old results then read as current.
+                        # Wrong in the direction that gets believed rather than re-checked.
+                        "ranAt": time.time(),
                         "tail": "\n".join(out.splitlines()[-25:]) if rc != 0 else ""})
         print("  [%d] %-32s rc=%-4s %-22s %5.1fs%s"
               % (which, name, rc, line.strip(), dt, "" if alive else "   EDITOR DIED"))
