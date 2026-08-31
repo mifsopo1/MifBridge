@@ -6859,9 +6859,12 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       because the atomicity point is real and someone may want the one-call form; downgraded from
       "cannot be configured" to "takes two calls", which is a different decision.
 
-      TWO SCRATCH ASSETS were left in the unsaved /Game/_MifScratch: MifIAProbe and MifCurveProbe.
-      Neither is saved, both go away with the next editor restart, and delete_asset needs confirm:true
-      which is not mine to send. Reported rather than worked around.
+      SCRATCH CLEANED UP. MifIAProbe and MifCurveProbe were left in the unsaved /Game/_MifScratch
+      while measuring this; both are gone, deleted through tools/scratch_confirm.py, which is the
+      sanctioned route for confirm:true on a /Game/_Mif path. An earlier draft of this entry said
+      confirm was "not mine to send" - that was wrong about the scratch case specifically, and the
+      guard's own docstring says so: the point is never to destroy something that matters, and a
+      payload whose every path lies under /Game/_Mif cannot. find_assets reports count 0 there now.
 - [anim-skeleton] create_blend_profile / set_blend_profile_bone: Create a named blend profile on a USkeleton and set its per-bone blend scales - the per-bone weighting that makes an upper-body montage blend in fast on the 
 - [level-world] group_actors / ungroup_actors: Create and disband an AGroupActor so a multi-part agent-assembled prop (a market stall built from a table, an awning and six crates) is selected and moved as one unit by a hum
 - [level-world] extend paint_landscape/create_landscape with register:true (register a target layer on a landscape): Register a ULandscapeLayerInfoObject as one of a landscape's target layers, so it can then be painted. To
