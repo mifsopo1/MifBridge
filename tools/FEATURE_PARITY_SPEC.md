@@ -6327,6 +6327,33 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       output, or a small manifest) and have coverage_gaps subtract it. Until then its list needs a
       human pass every time, which is the cost of a signal nobody fully trusts.
 
+- [ ] **suites that hard-depend on a DDS2 asset should DISCOVER one instead** (hours)
+      Filed 2026-08-31, found while auditing my own new spline suite for exactly this fault - it
+      spawned an actor at the world origin, which works here only because this landscape happens to
+      straddle it. MifBridge is a GENERAL UE5 tool tested on two projects; a suite that assumes
+      DDS2's content fails on Curfew for a reason that has nothing to do with the endpoint.
+
+      THE CLEAR CASE is test_material_undo.py:59. It hardcodes
+      `parent = "/Game/Blueprints/Enviro/PoleCableMat"` and then asserts a specific parameter
+      (`Wind_Intensity`) starts at a specific default (1). It uses find_assets zero times, so on any
+      other project the setup fails and the suite returns 3 - neither a pass nor a SKIP, which means
+      it reports as an error rather than as "there was nothing here to test".
+
+      THE PATTERN THAT WORKS is already used widely: discover a candidate with find_assets, print
+      which one was chosen, and SKIP with a named reason when none exists. test_landscape_heightmap
+      and test_sync_markers both do it, and the four suites corrected on 2026-08-30 for asserting
+      outcomes without establishing preconditions are the same lesson.
+
+      NOT EVERY HIT IS A DEFECT, and the scan needs a human pass. Most /Game/ paths in the suites are
+      deliberately nonexistent (/Game/NoSuch*_zz) to exercise a refusal - those are portable, since
+      "this does not exist" is true on every project. test_confirm_gated's /Game/Characters/Alisha
+      only needs to LOOK non-scratch for the guard under test, so it is portable in effect.
+      test_uncovered_reads7 is deliberately about DDS2's loose-versus-cooked maps and is
+      project-specific by design; it should say so in its skip rather than be rewritten.
+
+      Worth doing before anyone runs the UE suites against Curfew and reads the failures as bridge
+      defects.
+
 ### Refuted, recorded so they are not re-proposed
 
 - add_retarget_pose / set_retarget_pose_bone / set_current_retarget_pose -- Refuted on the strongest and most common ground: existing endpoints already do it. I verified the reflective machinery by reading it rather than trusting it - H_set_property has no CPF_Edit gate (and MifBridgeDetails.cpp
