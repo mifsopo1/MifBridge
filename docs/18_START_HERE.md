@@ -137,7 +137,7 @@ COMMITTED"*, and a compile is not a test.
 
 | what | why it is unproven | what proves it |
 |---|---|---|
-| Three C++ fixes (2026-08-31): `layersCreated` on `modify_actor_layers`; the create-after-delete dead end at four create-guards (docs/06 issue 28); three refusals that reported a MISSING parameter as a failed lookup | the running editor loads a DLL built before them | rebuild, then `python tools/verify_pending_fixes.py` — exit 2 means SKIPPED because the loaded DLL predates the fixes, which is the honest answer rather than a failure |
+| Two C++ fixes (2026-08-31): `layersCreated` on `modify_actor_layers`; three refusals that reported a MISSING parameter as a failed lookup. **The third — issue 28's create-after-delete guard — was REVERTED**, see below | the running editor loads a DLL built before them | rebuild, then `python tools/verify_pending_fixes.py` — exit 2 means SKIPPED because the loaded DLL predates the fixes, which is the honest answer rather than a failure |
 | Seven Blender parameter additions (2026-08-31): cone/torus radii, six `bevel_edges` options, four `export_mesh` FBX overrides, `import_mesh.useCustomNormals`, `uv_unwrap.correctAspect`, `bake_texture.device`, `list_objects.pattern`/`detail` | the addon suites skip without a running Blender | start Blender with the addon, then `python tools/run_blender_suites.py` |
 | Two suite repairs: `compile_blueprint` → `compile` (three call sites), and `read_datatable`'s `limit` → `maxRows` | both need the editor to run the suites | re-run `test_ability_system`, `test_spline_landscape`, `test_datatables` |
 
@@ -149,6 +149,13 @@ The suite repairs were found by comparing call sites against `MIF_BIND` and each
 
 **The distinction worth keeping.** "It compiles" and "the name is accepted" are real evidence about a
 real failure mode, and they are not evidence that the feature works. Say which one you have.
+
+**And review the pile, not just the next change.** Sitting on unverifiable work is uncomfortable and
+the temptation is to add more of it. Reading back through this list instead is what caught issue 28's
+fix trading a dead end for a `UE_LOG(..., Fatal, ...)` in `StaticAllocateObject` — nothing failed,
+nothing could fail, because neither environment was up to fail in. The other two survived the same
+review: `layersCreated`'s `Created` array is declared outside both branches and emitted after them,
+and the refusal fixes only add an early return on a path that already ended in `Fail` and `return`.
 
 ## How to know the state is healthy
 
