@@ -275,13 +275,9 @@ bl:delete_object.name
 bl:delete_object.purge
 bl:delete_object.purgeorphans
 bl:describe_material.name
-bl:export_mesh.meshsmoothtype
 bl:export_mesh.name
 bl:export_mesh.overwrite
 bl:export_mesh.replaceexisting
-bl:export_mesh.usemeshmodifiers
-bl:export_mesh.usetriangles
-bl:export_mesh.usetspace
 bl:extrude_skirt.allownonboundary
 bl:extrude_skirt.dryrun
 bl:extrude_skirt.name

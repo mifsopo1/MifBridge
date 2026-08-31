@@ -4830,12 +4830,29 @@ def bl_assign_material_to_faces(object: str, slot: int, faces: list = None,
 def bl_export_mesh(object_name: str, file: str, object_types: list = None,
                    add_leaf_bones: bool = None, armature_deform_only: bool = None,
                    primary_bone_axis: str = None, secondary_bone_axis: str = None,
-                   bake_anim: bool = None) -> dict:
+                   bake_anim: bool = None, mesh_smooth_type: str = None,
+                   use_triangles: bool = None, use_tspace: bool = None,
+                   use_mesh_modifiers: bool = None) -> dict:
     "Export a Blender object to FBX for reimport into Unreal. The two axis arguments are the whole ballgame and are set for you: axis_up='Z', axis_forward='Y', which are NOT the operator defaults ('Y' / '-Z', the Maya convention) - the defaults"
+    # THE FOUR OVERRIDES BELOW WERE UNREACHABLE, and they are the ones that decide what UNREAL
+    # receives rather than what Blender thinks it exported. The addon has always mapped them onto
+    # the FBX exporter (_EXPORT_OVERRIDES, ops_mesh.py:227-231) and this tool sent none of them:
+    #
+    #   mesh_smooth_type    FACE / EDGE / OFF. Unreal reads smoothing groups from this; OFF is why a
+    #                       mesh can arrive faceted with no way to ask for anything else.
+    #   use_tspace          tangents and binormals in the file. Without them Unreal recomputes, and a
+    #                       normal map baked against Blender's tangents will not match.
+    #   use_triangles       triangulate on export rather than letting the importer choose.
+    #   use_mesh_modifiers  apply modifiers, or export the base cage.
+    #
+    # None means UNSET: _blender drops unset params, so the addon's defaults stand and nothing
+    # changes for an existing caller. Found 2026-08-31 by param_reach's Blender half.
     return _blender("export_mesh", object=object_name, file=file, objectTypes=object_types,
                     addLeafBones=add_leaf_bones, armatureDeformOnly=armature_deform_only,
                     primaryBoneAxis=primary_bone_axis, secondaryBoneAxis=secondary_bone_axis,
-                    bakeAnim=bake_anim)
+                    bakeAnim=bake_anim, meshSmoothType=mesh_smooth_type,
+                    useTriangles=use_triangles, useTspace=use_tspace,
+                    useMeshModifiers=use_mesh_modifiers)
 
 
 @mcp.tool()

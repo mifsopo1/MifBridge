@@ -7687,9 +7687,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       is a genuine backlog and the baseline is NOT a to-do list, so the candidates worth reading are
       named here rather than left to be rediscovered:
 
-        export_mesh   meshSmoothType, useTriangles, useTspace, useMeshModifiers - FBX export options
-                      the addon maps straight onto the exporter (ops_mesh.py:228-229). The most
-                      valuable of the lot: mesh smoothing and tangent space decide what Unreal gets.
+        export_mesh   DONE 2026-08-31, same session. meshSmoothType, useTriangles, useTspace and
+                      useMeshModifiers now reach the exporter. These were the most valuable of the
+                      lot because they decide what UNREAL receives rather than what Blender thinks
+                      it exported: mesh_smooth_type is where Unreal reads smoothing groups from, and
+                      use_tspace is tangents/binormals in the file - without them Unreal recomputes,
+                      and a normal map baked against Blender's tangents will not match. Baseline
+                      62 Blender entries now.
         import_mesh   useCustomNormals
         uv_unwrap     correctAspect
         bake_texture  device  (CPU vs GPU)
