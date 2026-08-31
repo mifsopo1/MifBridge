@@ -181,6 +181,17 @@ def main():
         print("  Reason: %s" % str(hello.get("error"))[:150])
         return 2
 
+    # T769 calls clear_scene, and this suite never asked whose Blender answered.
+    try:
+        import blender_audit_common as _BC
+        _BC.HOST, _BC.PORT = HOST, PORT          # this suite reads the address itself; keep them one
+        stop = _BC.require_headless(
+            "test_blender_mesh", lambda op, params=None: call(op, **(params or {})))
+        if stop is not None:
+            return stop
+    except ImportError:                # never let the guard's absence break the suite in silence
+        print("WARNING: blender_audit_common not importable - running WITHOUT the headless guard.")
+
     print("")
     print("=== T760: the handshake reports what it is ===")
     check("T760 ping answers", hello.get("pong") is True, json.dumps(hello)[:200])

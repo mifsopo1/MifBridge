@@ -8209,3 +8209,44 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       demand. The file was restored byte-identical and nothing was compiled, but the guard was
       written by someone who had thought about this more carefully than I did in that moment. Use
       the harness's own entry point, which checks the port first.
+
+- [x] **three Blender tools emptied whatever scene answered the port** - DONE 2026-08-31
+      The UE half of this repo refuses to plant a defect into Source/ while an editor holds the
+      project, and says outright that a short window is not a safety argument. The Blender half had
+      no equivalent. audit_blender_postconditions, test_blender_mesh and test_blender_rig all open
+      by calling clear_scene, and every one of them did that to whatever answered
+      MIF_BLENDER_PORT - with no check that a person was sitting in front of it.
+
+      NOT HYPOTHETICAL, and not caught by anything. Andre had Blender 5.0 open the same day these
+      were being worked on. It listened on 38940 and the default here is 8792, so the only thing
+      between an audit and somebody's unsaved scene was a port number. The addon has reported
+      `background` from scene_info the whole time (ops_scene.py:43 and :152); nothing read it.
+
+      FIXED in blender_audit_common - the module whose own docstring complains that a fix reaching
+      it did not reach its callers, so this one was wired into all three the same hour.
+      headless_verdict() is a PURE decision separate from the transport, and require_headless()
+      is the wiring; both fail CLOSED. That inverts this repo's usual rule that "could not check"
+      must never be reported as "is wrong", and deliberately: the cost of guessing wrong here is
+      somebody's work rather than a false line in a report. An addon too old to report the field
+      gets a refusal and a named override, MIF_BLENDER_ALLOW_INTERACTIVE, for a deliberate run.
+
+      PROVEN BOTH WAYS, tools/test_blender_headless_guard.py, 29 PASS 0 FAIL. The refusal path
+      needed a server reporting background:False, and the honest way to get one is to open a
+      windowed Blender on somebody's desktop - which is the thing the guard exists to prevent. So
+      the fake Blender speaks the real framed protocol on a real socket and the three tools run as
+      real subprocesses against it; only the Blender is not real, and the tools cannot tell.
+
+      The assertion that carries the weight is a POSTCONDITION, not an exit code: the fake records
+      every endpoint it receives, and each refused tool sent nothing but ping and scene_info. On a
+      real Blender the next call is clear_scene.
+
+      AND THE GUARD IS REACHED. The same fake flipped to background:True must let all three past,
+      and does - a guard that refuses everything looks identical to one that works until it costs
+      somebody a real run. Confirmed against a REAL headless Blender too: run_blender_suites.py
+      --only 5.0 is 9 suites, 0 failed, 0 skipped, with test_blender_mesh at 93 and test_blender_rig
+      at 50 - both now carrying the guard.
+
+      run_blender_suites.py was the fourth hit in the grep and needed nothing: it only WRITES about
+      clear_scene in a comment. Checked with harvest_param_table.blank_comments_and_strings rather
+      than by eye, which is the same scrubber parity_check needed after a comment about a guard
+      silenced the guard.

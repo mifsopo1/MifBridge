@@ -82,6 +82,12 @@ def main():
         print("ping failed: %s" % p.get("error"))
         return 2
 
+    # Everything below this line starts by emptying the scene. Ask whose scene it is first.
+    import blender_audit_common as _BC
+    stop = _BC.require_headless("audit_blender_postconditions", _call)
+    if stop is not None:
+        return stop
+
     findings = []
     print("using %s" % fbx)
 

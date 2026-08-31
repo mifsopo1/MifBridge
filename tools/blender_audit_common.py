@@ -98,6 +98,79 @@ def port_is_occupied(timeout=1.0):
         s.close()
 
 
+ALLOW_INTERACTIVE_ENV = "MIF_BLENDER_ALLOW_INTERACTIVE"
+
+
+def headless_verdict(info, allow_interactive=False):
+    """(ok, reason) - may a MUTATING tool run against the Blender that returned this scene_info?
+
+    Pure, and separate from the transport, so the refusal path can be tested against known
+    responses. The alternative was to prove it by opening a windowed Blender on somebody's desktop,
+    which is the thing this guard exists to avoid doing to them.
+
+    FAIL CLOSED WHEN THE ANSWER IS MISSING, which is the opposite of the rule the rest of this repo
+    runs on. Elsewhere "could not check" must never be reported as "is wrong" - here the cost of
+    guessing wrong is somebody's unsaved scene, not a false line in a report, so an addon too old to
+    report `background` gets a refusal and a named override rather than the benefit of the doubt.
+
+    Strict `is True`, not truthiness: bpy.app.background is a real bool and survives JSON as one, so
+    anything else - a string, a 1, a None - means this is not the field we think it is.
+    """
+    if allow_interactive:
+        return True, ("%s is set - proceeding against an interactive Blender deliberately"
+                      % ALLOW_INTERACTIVE_ENV)
+    if not isinstance(info, dict):
+        return False, "scene_info did not return an object, so this Blender cannot be identified"
+    if "background" not in info:
+        return False, ("scene_info does not report `background` - this addon predates the field, "
+                       "so whether a person is looking at this Blender cannot be determined")
+    if info.get("background") is True:
+        return True, "background mode - no window, no unsaved work to lose"
+    return False, "this Blender is INTERACTIVE - a person may have unsaved work open in it"
+
+
+def allow_interactive_requested():
+    """Is the override set? Absent, empty, 0 and false all mean no."""
+    return os.environ.get(ALLOW_INTERACTIVE_ENV, "").strip() not in ("", "0", "false", "False")
+
+
+def require_headless(name, call_fn=None):
+    """None if it is safe to MUTATE this Blender; an exit code if the caller must stop.
+
+    WHY THIS EXISTS. audit_blender_postconditions, test_blender_mesh and test_blender_rig all open
+    by emptying the scene, and every one of them ran against whatever answered the port. Nothing
+    asked whether that Blender had a person in front of it. Andre had Blender 5.0 open on
+    2026-08-31 while these were being worked on; it listened on 38940 and the default here is 8792,
+    so the only thing standing between an audit and somebody's open scene that day was a port
+    number.
+
+    The UE half of this repo already got this right - audit_detectors_fire refuses to plant into
+    Source/ while an editor holds the project, and says outright that a short window is not a safety
+    argument. Same reasoning, other backend.
+
+    Deliberately AFTER the caller's own ping: an unreachable Blender is a SKIP with a diagnosis (see
+    skip_banner), and turning that into "cannot determine background" would replace a good message
+    with a worse one.
+    """
+    fn = call_fn or call
+    try:
+        info = fn("scene_info", {})
+    except Exception as exc:                   # noqa: BLE001 - any transport failure is a refusal
+        info = {"__transportError__": str(exc)}
+    ok, why = headless_verdict(info, allow_interactive_requested())
+    if ok:
+        return None
+    print("")
+    print("REFUSED - nothing was verified, and nothing was changed.")
+    print("  %s MUTATES the scene (it opens with clear_scene), and" % name)
+    print("  %s" % why)
+    print("  The Blender answering %s:%d." % (HOST, PORT))
+    print("  Start a throwaway one instead:  python tools/run_blender_suites.py")
+    print("  Or, if you really do mean this one:  set %s=1" % ALLOW_INTERACTIVE_ENV)
+    print("  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose.")
+    return 2
+
+
 def skip_banner(name):
     """The loud skip every Blender suite should print. A skip that looks like a pass is how an
     untested thing gets believed, so it names what was NOT verified and why."""

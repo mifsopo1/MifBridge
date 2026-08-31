@@ -184,6 +184,15 @@ def main():
         print("  Start Blender with the MifBlender addon enabled and run this again.")
         return 2
 
+    # This suite REBUILDS an empty scene to self-heal, so it writes even when it looks like a read.
+    # _B is imported inside reachable() rather than at module scope, so import it again here.
+    import blender_audit_common as _BC
+    _BC.HOST, _BC.PORT = HOST, PORT
+    stop = _BC.require_headless(
+        "test_blender_rig", lambda op, params=None: call(op, **(params or {})))
+    if stop is not None:
+        return stop
+
     print("")
 
     # ------------------------------------------------------------------ T810 parameter contracts
