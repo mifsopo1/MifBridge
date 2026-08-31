@@ -7994,5 +7994,18 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       remainingNote says so instead of presenting the survivors as a failure.
 
       DebugGame compiled and LINKED; DECL 439 == BIND 439; parity_check, mcp_static_check,
-      audit_promise_flags and audit_modals all pass. NOT [x]: never run, no suite - a suite needs a
-      renamed asset with a live referencer to make a redirector worth fixing.
+      audit_promise_flags and audit_modals all pass.
+
+      SUITE WRITTEN: test_modal_guard T75, and it belongs there rather than in an assets suite
+      because its dry run reaches FURTHER than T73/T74 do. rename_asset and delete_asset stop at
+      the confirm gate and never touch the engine call that can prompt; this dryRun needs no
+      confirm and still queries the registry over a folder tree, so "the call came back" is a
+      claim about something that ran. It asserts the survey needs no confirm, says dryRun:true so
+      a caller can tell a survey from a sweep, reports found as a NUMBER even at zero, and that
+      the no-confirm refusal POINTS AT dryRun rather than only demanding confirm - an endpoint
+      that deletes packages owes the caller a way to look first.
+
+      Still does not reach FixupReferencers itself; that call site is covered statically by
+      audit_modals, stated in the suite exactly as T73/T74 state theirs.
+
+      NOT [x]: never run.

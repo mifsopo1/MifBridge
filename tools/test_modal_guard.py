@@ -107,6 +107,42 @@ def main():
     check("T73 the confirm refusal came back promptly", dt < BUDGET_S, "%.1fs" % dt)
     check("T73 it did not silently clobber the target", exists(taken), taken)
 
+    # ------------------------------------------------------------------ T75 fix_up_redirectors
+    # ITS DRY RUN REACHES FURTHER THAN T73/T74 DO, which is why it is here rather than in an assets
+    # suite. rename_asset and delete_asset stop at the confirm gate and never touch the engine call
+    # that can prompt. fix_up_redirectors' dryRun needs NO confirm and still does real work - it
+    # queries the asset registry over a whole folder tree - so "the call came back" is a claim about
+    # something that actually ran.
+    #
+    # It still does not reach IAssetTools::FixupReferencers, whose bCheckoutDialogPrompt parameter
+    # DEFAULTS TO TRUE (IAssetTools.h 5.3 :538) and would raise a source-control checkout dialog on
+    # this very thread. The endpoint passes false explicitly. That call site is covered statically by
+    # audit_modals, exactly as T73/T74's are - stated rather than left for a reader to assume.
+    print("\n=== T75: fix_up_redirectors surveys promptly, and refuses to sweep without confirm ===")
+    dt, resp = timed("fix_up_redirectors", {"path": root, "dryRun": True})
+    print("   %.2fs  %s" % (dt, json.dumps(resp)[:240]))
+    check("T75 the dry run came back at all", "__transport_error" not in resp,
+          "no answer within %.0fs: %s" % (BUDGET_S, resp))
+    check("T75 the dry run came back promptly", dt < BUDGET_S, "%.1fs" % dt)
+    check("T75 a dry run needs NO confirm - surveying is not destroying",
+          resp.get("ok") is not False, json.dumps(resp)[:240])
+    check("T75 and it says so in the response, so a caller can tell a survey from a sweep",
+          resp.get("dryRun") is True, resp.get("dryRun"))
+    # `found` must be a number even when it is zero: absent and 0 read the same to a caller who
+    # tests truthiness, and "no redirectors here" is a real answer worth stating.
+    check("T75 found is reported as a NUMBER, present even at zero",
+          isinstance(resp.get("found"), (int, float)), repr(resp.get("found")))
+
+    dt, resp = timed("fix_up_redirectors", {"path": root})
+    print("   %.2fs  %s" % (dt, json.dumps(resp)[:240]))
+    check("T75 without confirm and without dryRun it is REFUSED", resp.get("ok") is False,
+          json.dumps(resp)[:240])
+    check("T75 the refusal came back promptly", dt < BUDGET_S, "%.1fs" % dt)
+    # The refusal has to name the safe alternative. A caller told only "confirm required" learns
+    # nothing about how to look before leaping, and this endpoint deletes packages.
+    check("T75 and the refusal points at dryRun rather than only demanding confirm",
+          "dryRun" in str(resp.get("error") or ""), str(resp.get("error"))[:240])
+
     # ------------------------------------------------------------------ T74 delete refusal path
     print("\n=== T74: delete_asset answers promptly (confirm gate - does NOT reach the guard) ===")
     # Not a real delete: confirm:true is never sent by these audits. This exercises the refusal path,
