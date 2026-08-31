@@ -693,8 +693,44 @@ def raw_post(endpoint, payload, timeout=60):
         return {"ok": False, "error": "non-JSON response", "_raw": raw[:400], "_badJson": True}
 
 
+# `confirm` is stripped whatever its value, and the other forbidden keys are stripped only when they
+# would AUTHORISE something. The difference is not a nicety - for one shape of parameter the blanket
+# strip does the opposite of what this guard is for.
+#
+# THE HOLE. Three endpoints default `save` to TRUE and say so deliberately: import_texture
+# (MifBridgeImport.cpp - "Save is ON by default here, unlike create_material"), set_plugin_enabled
+# and write_thumbnail_texture. A suite author writing `M.call("import_texture", {..., "save": False})`
+# is asking NOT to touch the disk. The blanket strip removed that key, the handler applied its
+# default, and the file was written - so the guard deleted the only thing standing between the suite
+# and a disk write. Found 2026-08-31 by sweeping for default-true booleans after `clear` on
+# set_blendspace_samples turned out to be one. Latent rather than live: no suite passes save:False
+# today, which is exactly why it would have been found by somebody's lost afternoon instead.
+#
+# `confirm` stays absolute. Passing confirm:false THROUGH would change behaviour that suites already
+# rely on - override_inherited_component refuses outright on an explicit confirm:false, where a
+# stripped one succeeds - and scratch_confirm.py is the sanctioned route for the confirm-gated
+# success paths. This guard is about not authorising; it is not about arguing with a handler.
+AUTHORISING_ONLY = FORBIDDEN_KEYS - {"confirm"}
+
+
+def _authorises(value):
+    """Would this value turn the flag ON? Strings are included because JSON is not the only caller."""
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "0", "false", "no", "off")
+    return bool(value)
+
+
 def guarded_payload(payload):
-    return {k: v for k, v in (payload or {}).items() if k.lower() not in FORBIDDEN_KEYS}
+    out = {}
+    for k, v in (payload or {}).items():
+        low = k.lower()
+        if low in AUTHORISING_ONLY and not _authorises(v):
+            out[k] = v          # a false is a REFUSAL to authorise, and must reach the handler
+            continue
+        if low in FORBIDDEN_KEYS:
+            continue
+        out[k] = v
+    return out
 
 
 def call(endpoint, payload=None, timeout=60):

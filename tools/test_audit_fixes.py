@@ -171,6 +171,43 @@ def main():
     check("T45 compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,
           "errors=%s" % c.get("numErrors"))
 
+    # ------------------------------------------------------------------ T48 the guard that inverted
+    print("")
+    print("=== T48: guarded_payload must not strip a caller's REFUSAL to authorise ===")
+    # WHY THIS IS A REAL DEFECT AND NOT A STYLE POINT. FORBIDDEN_KEYS exists so a suite cannot
+    # authorise a destructive act by accident, and it stripped those keys whatever their VALUE. That
+    # is right for a default-false flag and exactly backwards for a default-TRUE one. Three endpoints
+    # default `save` to true on purpose - import_texture ("Save is ON by default here, unlike
+    # create_material"), set_plugin_enabled and write_thumbnail_texture - so a suite writing
+    # save:False to stay off the disk had that key deleted and the file written anyway. The guard
+    # removed the only thing standing between the suite and a disk write.
+    #
+    # Found by sweeping for default-true booleans after `clear` on set_blendspace_samples turned out
+    # to be one. Latent rather than live - no suite passes save:False today - which is precisely why
+    # it would otherwise have been found by somebody's lost afternoon.
+    #
+    # Pure Python, no bridge: the states are known exactly, so this proves the rule rather than
+    # sampling it.
+    for payload, want, why in [
+        ({"save": False}, {"save": False}, "save:false reaches the handler"),
+        ({"save": True}, {}, "save:true is still stripped"),
+        ({"save": "false"}, {"save": "false"}, "the STRING false counts as false"),
+        ({"force": 0}, {"force": 0}, "zero is a false"),
+        ({"overwrite": True}, {}, "overwrite:true is still stripped"),
+        ({"overwrite": False}, {"overwrite": False}, "overwrite:false reaches the handler"),
+        # confirm stays absolute in BOTH directions. override_inherited_component refuses outright on
+        # an explicit confirm:false where a stripped one succeeds, so passing it through would change
+        # behaviour suites already rely on; scratch_confirm.py is the sanctioned route for the
+        # confirm-gated success paths. This guard is about not authorising, not about arguing with a
+        # handler.
+        ({"confirm": False}, {}, "confirm:false is stripped, unlike the others"),
+        ({"confirm": True}, {}, "confirm:true is stripped"),
+        ({"path": "/Game/X", "save": True}, {"path": "/Game/X"}, "ordinary keys are untouched"),
+    ]:
+        got = M.guarded_payload(payload)
+        check("T48 %s" % why, got == want,
+              "guarded_payload(%r) = %r, want %r" % (payload, got, want))
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f in FAIL:

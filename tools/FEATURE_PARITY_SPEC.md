@@ -8499,3 +8499,46 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Printing the RAW value instead of a verdict is what settled it. Two wrong conclusions in a row
       from a checker that could not distinguish the states it was asked about - which is the same
       lesson as every vacuous-check finding in this file, arrived at from the other side.
+
+- [x] **the harness guard did the OPPOSITE of its job for one shape of parameter** - DONE 2026-08-31
+      Generalising the blendspace `clear` finding: swept every handler for optional booleans that
+      default to TRUE, since a default-true flag is the one a caller never sends and therefore never
+      thinks about. `bool bX = true;` found exactly one - the `clear` already fixed. The other
+      spelling, JBool(In, TEXT("x"), true), found 60.
+
+      Most are benign (include*, visible, enabled). Two shapes were not, and one is a real hole:
+
+      THE HOLE. mifaudit's FORBIDDEN_KEYS - confirm, force, discardUnsaved, overwrite,
+      replaceExisting, save - were stripped from every payload WHATEVER THEIR VALUE. That is right
+      for a default-false flag and exactly backwards for a default-true one. Three endpoints default
+      `save` to TRUE deliberately and say so: import_texture ("Save is ON by default here, unlike
+      create_material"), set_plugin_enabled and write_thumbnail_texture. A suite author writing
+      `M.call("import_texture", {..., "save": False})` to stay off the disk had that key deleted and
+      the file written anyway - the guard removing the only thing standing between the suite and a
+      disk write.
+
+      FIXED with the rule that makes it obvious: the strip exists to stop a payload AUTHORISING
+      something, and a false authorises nothing. Falsey values now reach the handler; truthy ones are
+      still stripped; strings are read as values, so "false" counts. `confirm` stays absolute in both
+      directions, because override_inherited_component refuses outright on an explicit confirm:false
+      where a stripped one succeeds, and changing that would move behaviour suites already rely on.
+
+      LATENT, NOT LIVE, and said plainly rather than dressed up: no suite passes save:False today, so
+      nothing was miswritten. That is exactly why it would otherwise have been found by somebody's
+      lost afternoon. Nine cases in test_audit_fixes T48, 26 -> 35, pure Python against known states
+      rather than sampled through the bridge. test_uncovered_reads5 (60) and
+      test_components_dispatchers (42) re-run green - no suite passes a falsey forbidden key today,
+      so the change moves nothing that exists.
+
+      CHECKED AND CLEARED, so the next sweep does not re-open them: the three `save` defaults are
+      each deliberate and documented at the call site; `confirm` defaulting true in
+      override_inherited_component is guarded by JHasAny, so it only applies when confirm was
+      actually sent, and the handler explains why confirm is optional there at all.
+
+- [ ] **set_widget_animation_keys `replace` defaults TRUE - the same shape as the blendspace clear**
+      (hours)
+      Found by the same sweep, not yet investigated. Two call sites, MifBridgeWidgets.cpp:643 and
+      :781. If it behaves like set_blendspace_samples' `clear`, a call that sends no keys deletes
+      every key already on the animation and the response says nothing about it. Read the handler
+      before assuming - the point of the blendspace finding was that the destructive default was
+      DOCUMENTED and the suite comment was what was wrong.
