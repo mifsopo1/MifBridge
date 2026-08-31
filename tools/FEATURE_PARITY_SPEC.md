@@ -7148,3 +7148,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Separately, the running editor is older than the fix: live_coding_compile would patch it in but
       needs confirm:true, and its own refusal says a bad patch can destabilise the process holding
       unsaved work - a decision for a human at the keyboard, not for an overnight run.
+- [x] **response counts that disagree with the array they name - checked, none** (hours)  **DONE 2026-08-31.**
+      A caller that trusts `count` and a caller that iterates `items` should get the same answer, and
+      the two are written by different lines of C++ with nothing comparing them. Called all 88
+      endpoints the bridge declares readOnly, with no arguments, and compared every count-like number
+      against the array it names.
+
+      TWO APPARENT MISMATCHES, BOTH CORRECT. find_assets reports count=43033 with 100 assets, and
+      kr_list_cooked_blueprints total=3227 with 200. Both are PAGED, and both say so in the response
+      itself - each carries `returned` (which equals the array length exactly) and `truncated:true`.
+      The checker had paired `count` with the array when `returned` is the array's partner; `count` is
+      the total matched. Verified the real invariant instead, and it holds on both:
+      returned == len(array), and truncated == (returned < total).
+
+      NO TOOL COMMITTED, and the denominator is why. Only 33 of the 88 read-only endpoints answer
+      with no arguments at all - the other 55 need parameters - so just 16 count/array pairs were
+      reachable this way. A permanent checker that compares sixteen pairs and calls it a clean bill
+      would be the vacuous-green shape this repo keeps finding in its own tools. Recorded here so the
+      next person to wonder does not re-derive it, and so the 16 is on record rather than the "OK".
+
+      Worth knowing for anything similar: self_audit already returns transactionBuckets.readOnly, the
+      whole list of 88, in ONE call. The first version of this scan made 446 describe_endpoint calls
+      to rebuild a list that was already sitting in a field it had fetched.
