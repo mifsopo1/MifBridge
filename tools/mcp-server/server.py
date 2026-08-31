@@ -1907,10 +1907,24 @@ def create_material_instance(parent: str, path: str, scalars: dict = None,
 @mcp.tool()
 def set_material_parameter(material: str, scalars: dict = None, vectors: dict = None,
                            textures: dict = None, switches: dict = None,
-                           association: str = "global", index: int = -1) -> dict:
-    "Set parameters on an existing MaterialInstanceConstant. scalars is {name: number}, vectors is {name: {r,g,b,a}} (also accepts {x,y,z,w} or [r,g,b,a])."
+                           association: str = "global", index: int = -1,
+                           parameter: str = None, value=None) -> dict:
+    "Set parameters on an existing MaterialInstanceConstant. Batch form: scalars is {name: number}, vectors is {name: {r,g,b,a}} (also accepts {x,y,z,w} or [r,g,b,a]). Single form: parameter + value, where the endpoint infers the type from the value - a number is a scalar, an object or array is a vector, a /Game/ path is a texture, a bool is a switch."
+    # THE SINGLE-PARAMETER FORM WAS UNREACHABLE OVER MCP, and it is a whole mode of the endpoint
+    # rather than a spelling. The handler reads
+    #     JStrAny(In, { TEXT("parameter"), TEXT("parameterName"), TEXT("name") })
+    # and then TryGetField(TEXT("value")), and branches into a one-parameter path when either is
+    # present - so `parameter` and `value` are the entry to it, and this tool sent neither. A caller
+    # wanting to change one scalar had to build a {name: number} dict for the batch form and could
+    # not use the form the endpoint documents first.
+    #
+    # Found 2026-08-31 by param_reach, once its UE half stopped counting alias spellings as lost
+    # capability: 252 unreachable parameters collapsed to 33, and these four (parameter,
+    # parameterName, name, value) were the largest single cluster left standing - which is exactly
+    # what the noise had been hiding.
     return _post("set_material_parameter", material=material, scalars=scalars, vectors=vectors,
-                 textures=textures, switches=switches, association=association, index=index)
+                 textures=textures, switches=switches, association=association, index=index,
+                 parameter=parameter, value=value)
 
 
 @mcp.tool()

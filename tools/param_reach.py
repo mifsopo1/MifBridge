@@ -62,6 +62,17 @@ BASELINE = os.path.join(HERE, "param_reach_baseline.txt")
 # 'path' is documented on several endpoints as back-compat-and-ignored, so it is not a capability.
 NOISE = {"in", "out", "path"}
 
+# PER-ENDPOINT exemptions, each with its reason, because a GLOBAL noise entry would excuse a key that
+# is real somewhere else. `op` is the case that forced the distinction: RejectUnknownParams tolerates
+# it centrally so a batched call can carry its own verb, so read_datatable and friends ACCEPT it
+# while reading it nowhere - but add_call_dispatcher reads `op` as a genuine mode defaulting to
+# "call", and a global exemption would have hidden that one permanently.
+NOT_A_PARAMETER = {
+    ("read_datatable", "op"): "H_batch's verb, tolerated centrally by RejectUnknownParams",
+    ("get_datatable_row", "op"): "H_batch's verb, tolerated centrally by RejectUnknownParams",
+    ("write_datatable_rows", "op"): "H_batch's verb, tolerated centrally by RejectUnknownParams",
+}
+
 HANDLER = re.compile(r"void\s+H_([A-Za-z0-9_]+)\s*\(")
 
 
@@ -181,6 +192,13 @@ CPP_SRC = os.path.join(HERE, "..", "Source", "MifBridge", "Private")
 ANY_CALL = re.compile(
     r"\bJ(?:Str|Bool|Int|Num)Any\s*\(\s*In\s*,\s*\{([^}]*)\}")
 CPP_LITERAL = re.compile(r'TEXT\("([A-Za-z_]\w*)"\)')
+# THE NESTED-DEFAULT SHAPE, which is an alias written as a fallback rather than as a list:
+#     JBool(In, TEXT("remapExisting"), JBool(In, TEXT("force"), false))
+# The inner read supplies the DEFAULT for the outer, so `force` is a second spelling of
+# `remapExisting` - the caller can say either. auto_map_retarget_chains is the one that uses it.
+NESTED_DEFAULT = re.compile(
+    r"\bJ(?:Str|Bool|Int|Num)\s*\(\s*In\s*,\s*TEXT\(\"(\w+)\"\)\s*,\s*"
+    r"J(?:Str|Bool|Int|Num)\s*\(\s*In\s*,\s*TEXT\(\"(\w+)\"\)")
 CPP_HANDLER = re.compile(r"^\s*void H_(\w+)\(const TSharedRef<FJsonObject>&", re.M)
 
 
@@ -227,19 +245,40 @@ def endpoint_alias_map():
             for m in ANY_CALL.finditer(text, lo, hi):
                 names = [n.lower() for n in CPP_LITERAL.findall(m.group(1))]
                 if len(names) >= 2:
-                    for alias in names[1:]:
-                        shared.setdefault(fn, {})[alias] = names[0]
+                    for alias in names:
+                        shared.setdefault(fn, {})[alias] = frozenset(names)
         for i, (ep, start) in enumerate(bounds):
             end = bounds[i + 1][1] if i + 1 < len(bounds) else len(text)
-            for alias, primary in shared.get(fn, {}).items():
-                out.setdefault(ep, {}).setdefault(alias, primary)
+            for alias, group in shared.get(fn, {}).items():
+                out.setdefault(ep, {}).setdefault(alias, group)
             for m in ANY_CALL.finditer(text, start, end):
                 names = [n.lower() for n in CPP_LITERAL.findall(m.group(1))]
                 if len(names) < 2:
                     continue
-                for alias in names[1:]:
-                    out.setdefault(ep, {})[alias] = names[0]
-    return out
+                for alias in names:
+                    out.setdefault(ep, {})[alias] = frozenset(names)
+            for m in NESTED_DEFAULT.finditer(text, start, end):
+                pair = frozenset((m.group(1).lower(), m.group(2).lower()))
+                for alias in pair:
+                    cur = out.setdefault(ep, {}).get(alias)
+                    out[ep][alias] = frozenset(pair | set(cur or ()))
+
+    # LAST-RESORT, CROSS-FILE FALLBACK. Some roles are resolved by a helper in a DIFFERENT file from
+    # the handler - the sublevel `level` alias, the widget blueprintId/widgetName pair, the
+    # collection `assets` alias - and a per-file scan can never see those. So every alias group found
+    # anywhere is offered to any endpoint that ACCEPTS all of its spellings but declares none of
+    # them locally.
+    #
+    # The condition is what keeps it honest: an endpoint has to accept the WHOLE group before the
+    # group is applied to it, so a group from an unrelated file cannot claim a key the endpoint does
+    # not already list beside its siblings. Over-matching here would hide real gaps, which is the
+    # one direction this tool must not fail in.
+    every = {}
+    for ep, m in out.items():
+        for alias, group in m.items():
+            if len(group) > 1:
+                every[alias] = frozenset(every.get(alias, frozenset()) | group)
+    return out, every
 
 
 # THE ENDPOINT'S OWN SUMMARY DECLARES THEM IN PROSE, and it is the most reliable source of the three
@@ -283,20 +322,25 @@ def summary_alias_map():
             continue
         for m in SUMMARY_ALIAS.finditer(summary):
             primary = m.group(1).lower()
+            group = {primary}
             for alias in re.split(r"[,\s]+", m.group(2)):
                 alias = alias.strip().strip("'\"").lower()
-                if alias and alias != primary:
-                    out.setdefault(ep, {})[alias] = primary
+                if alias:
+                    group.add(alias)
+            frozen = frozenset(group)
+            for alias in group:
+                out.setdefault(ep, {})[alias] = frozen
     return out
 
 
 def unreachable():
     """Sorted 'endpoint.key' strings for capabilities no tool call can send."""
     accepts, sends = endpoint_accepts(), tool_sends()
-    aliases = endpoint_alias_map()
+    aliases, global_groups = endpoint_alias_map()
     for ep, m in summary_alias_map().items():
-        for alias, primary in m.items():
-            aliases.setdefault(ep, {}).setdefault(alias, primary)
+        for alias, group in m.items():
+            cur = aliases.setdefault(ep, {}).get(alias)
+            aliases[ep][alias] = frozenset(set(group) | set(cur or ()))
     rows = []
     for ep, keys in accepts.items():
         if ep not in sends:
@@ -304,10 +348,22 @@ def unreachable():
         sent = sends[ep]
         alias_of = aliases.get(ep, {})
         for k in sorted((keys - sent) - NOISE):
+            if (ep, k) in NOT_A_PARAMETER:
+                continue
             # An alias whose PRIMARY spelling is already sent is not lost capability - the caller can
             # express the call, just not in that wording. Same rule as the Blender half.
-            primary = alias_of.get(k)
-            if primary and primary in sent:
+            # REACHABLE IF **ANY** SPELLING IN THE GROUP IS SENT. The first version compared
+            # only against the group's FIRST literal, and add_cast declares
+            # { targetClass, class, cls, className, castTo, to } while the tool sends castTo -
+            # the fifth - so `cls` read as lost capability for a call that was perfectly
+            # expressible. A role is reachable when the caller can say it SOMEHOW.
+            group = alias_of.get(k)
+            if not group:
+                # Cross-file fallback, gated on the endpoint accepting every spelling in the group.
+                cand = global_groups.get(k)
+                if cand and cand <= keys:
+                    group = cand
+            if group and (group & sent):
                 continue
             if not looks_like_alias(k, sent):
                 rows.append("%s.%s" % (ep, k))
@@ -409,20 +465,19 @@ def addon_alias_map():
         for m in TAKE_CALL.finditer(text, 0, first_op):
             names = [n.lower() for n in LITERAL.findall(m.group(1))]
             if len(names) >= 2:
-                for alias in names[1:]:
-                    shared.setdefault(fn, {})[alias] = names[0]
+                for alias in names:
+                    shared.setdefault(fn, {})[alias] = frozenset(names)
 
         for i, (op, start) in enumerate(bounds):
             end = bounds[i + 1][1] if i + 1 < len(bounds) else len(text)
-            for alias, primary in shared.get(fn, {}).items():
-                out.setdefault(op, {}).setdefault(alias, primary)
+            for alias, group in shared.get(fn, {}).items():
+                out.setdefault(op, {}).setdefault(alias, group)
             for m in TAKE_CALL.finditer(text, start, end):
                 names = [n.lower() for n in LITERAL.findall(m.group(1))]
                 if len(names) < 2:
                     continue
-                primary = names[0]
-                for alias in names[1:]:
-                    out.setdefault(op, {})[alias] = primary      # the op's own wording wins
+                for alias in names:
+                    out.setdefault(op, {})[alias] = frozenset(names)
     return out
 
 
@@ -440,8 +495,8 @@ def blender_unreachable():
             # An alias whose PRIMARY spelling is already sent is not lost capability - the caller can
             # express the call, just not in that particular wording. Only a key with no reachable
             # primary is a real gap.
-            primary = alias_of.get(k)
-            if primary and (primary in sent or primary in BLENDER_TRANSPORT):
+            group = alias_of.get(k)
+            if group and (group & (sent | BLENDER_TRANSPORT)):
                 continue
             if not looks_like_alias(k, sent):
                 rows.append("bl:%s.%s" % (op, k))
