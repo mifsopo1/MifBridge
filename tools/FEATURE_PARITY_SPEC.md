@@ -9525,6 +9525,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       captures PROSE, because prose is what this codebase writes across fragments and identifiers
       are what it does not.
 
+- [ ] **move nodesWithOrphanedPin / orphanedPinsRemaining into a suite once the build is green** (minutes)
+      A DEBT, filed the moment it was incurred. Both are new consequence fields on
+      set_variable_type, both are asserted by V9 in verify_pending_fixes.py including an agreement
+      check against get_node - and V9 is not a test_*.py suite, so audit_consequence_fields does not
+      count it and is RIGHT not to: a one-shot verification pass is not regression coverage.
+
+      The gate caught this immediately, on my own work, which is the argument for having added it to
+      the release gate earlier the same day. The temptation was to re-baseline 0 -> 2 and move on;
+      that would have bought silence at the price of the ratchet.
+
+      They cannot move yet because the DLL emitting them is unbuilt. When verify_pending_fixes runs
+      green, the assertions belong in test_pins.py beside T447/T448, and the two placeholder entries
+      in audit_consequence_fields' table should be DELETED rather than left to rot into permanent
+      exemptions - which is exactly how a reason table stops meaning anything.
+
 - [ ] **set_niagara_emitter's whyNotSetProperty claims an ASYMMETRY nothing tests** (hours)
       Surfaced 2026-08-31 the moment audit_cross_endpoint_claims could read multi-line literals -
       it had been invisible, along with every other claim written across more than one TEXT()

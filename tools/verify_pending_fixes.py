@@ -280,6 +280,60 @@ def main():
               json.dumps(after)[:220])
         SC.confirm_call("delete_asset", {"path": dpath, "confirm": True})
 
+    # -------------------------------------------------------------- V11 remove_pin's duplicate branch
+    # remove_pin has a branch for removing a DUPLICATE pin, and until 2026-08-31 it could not remove
+    # the case it exists for. It captured each pin as an identity and re-resolved it every
+    # iteration; ResolvePin matches on (NodeGuid, PinName, Direction) and returns the FIRST hit, so
+    # for two SAME-DIRECTION duplicates every ref resolved to the pin being kept, the skip fired
+    # every time, and it reported Kind "duplicate" having removed nothing.
+    #
+    # THE TRIGGER IS ORDINARY, which is why this was worth fixing rather than declining: retyping a
+    # wired variable leaves the node with two pins of one name and one direction - the new typed pin
+    # and the engine's orphaned copy still holding the old link. That is the fixture below.
+    print("\n=== V11: remove_pin can remove a SAME-DIRECTION duplicate ===")
+    st11 = int(time.time() % 100000)
+    dpath = "/Game/_MifVerify/BP_P%d" % st11
+    dbid = M.call("create_blueprint", {"path": dpath, "parentClass": "Actor"}).get("blueprintId")
+    if not dbid:
+        skip("V11", "could not create a scratch blueprint")
+    else:
+        dg = next((x.get("graphId") for x in
+                   (M.call("list_graphs", {"blueprintId": dbid}).get("graphs") or [])
+                   if "EventGraph" in (x.get("name") or "")), None)
+        for nm in ("A", "B"):
+            M.call("add_variable", {"blueprintId": dbid, "name": nm, "type": "int"})
+        g1 = M.call("add_variable_get", {"graphId": dg, "variable": "A"})
+        s1 = M.call("add_variable_set", {"graphId": dg, "variable": "B"})
+        gg = g1.get("nodeGuid") or (g1.get("node") or {}).get("nodeGuid")
+        sg = s1.get("nodeGuid") or (s1.get("node") or {}).get("nodeGuid")
+        M.call("connect_pins", {"graphId": dg, "srcNode": gg, "srcPin": "A",
+                                "dstNode": sg, "dstPin": "B"})
+        M.call("set_variable_type", {"blueprintId": dbid, "name": "A", "type": "Actor"})
+        before = [x for x in ((M.call("get_node", {"graphId": dg, "nodeGuid": gg}).get("node")
+                               or {}).get("pins") or []) if x.get("name") == "A"]
+        # THE FIXTURE HAS TO EXIST BEFORE THE CHECK MEANS ANYTHING. If the engine ever stops
+        # retaining the orphan, this says so instead of passing on an empty premise.
+        check("V11 (setup) the retype really left TWO pins named A, same direction",
+              len(before) == 2 and len({x.get("direction") for x in before}) == 1,
+              "%d pin(s): %s" % (len(before),
+                                 [(x.get("direction"), (x.get("type") or {}).get("category"))
+                                  for x in before]))
+        if len(before) == 2:
+            rp = M.call("remove_pin", {"graphId": dg, "nodeGuid": gg, "pin": "A"})
+            check("V11 it reports removing one", (rp.get("duplicatesRemoved") or 0) >= 1,
+                  json.dumps(rp)[:220])
+            check("V11 and duplicatesStillPresent says none is left - read back, not claimed",
+                  rp.get("duplicatesStillPresent") == 0,
+                  "duplicatesStillPresent=%r" % rp.get("duplicatesStillPresent"))
+            after = [x for x in ((M.call("get_node", {"graphId": dg, "nodeGuid": gg}).get("node")
+                                  or {}).get("pins") or []) if x.get("name") == "A"]
+            check("V11 and the GRAPH agrees - exactly one pin named A remains",
+                  len(after) == 1,
+                  "%d pin(s): %s" % (len(after),
+                                     [((x.get("type") or {}).get("category"),
+                                       len(x.get("linkedTo") or [])) for x in after]))
+        SC.confirm_call("delete_asset", {"path": dpath, "confirm": True})
+
     print("")
     print("=" * 72)
     print("PASS %d  FAIL %d  SKIP %d" % (len(PASS), len(FAIL), len(SKIP)))

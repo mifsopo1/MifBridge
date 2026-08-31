@@ -166,13 +166,29 @@ UNREACHABLE = {
                     "session producing more output than the ring buffer holds. The PIE family is "
                     "attended-only by the standing rules and never runs in an autopilot pass",
 
-    "duplicatesRemoved": "remove_pin's duplicate branch CANNOT remove a same-direction duplicate - "
-                         "the case it exists for - because ResolvePin matches on "
-                         "(NodeGuid, PinName, Direction) and returns the FIRST pin satisfying it, so "
-                         "for two genuine duplicates every captured ref is identical to the one "
-                         "being kept and Removed stays 0. Already declined in the spec as issue O; "
-                         "only a cross-direction pair can reach it, which is not a duplicate",
+    # ADDED 2026-08-31 AND NOT YET SUITE-COVERED, which is a DEBT recorded here rather than paid by
+    # re-baselining. Both are read and asserted by V9 in verify_pending_fixes.py - including an
+    # agreement check against get_node - but that file is not a test_*.py suite, so this tool does
+    # not count it, and it is right not to: a one-shot verification pass is not regression coverage.
+    #
+    # They cannot move into a suite yet because the DLL that emits them has not been built. The
+    # moment verify_pending_fixes runs green, the assertions belong in test_pins.py beside T447/T448
+    # and these two entries should be DELETED rather than left to rot into permanent exemptions.
+    "nodesWithOrphanedPin": "new field on set_variable_type, asserted by V9 pending a build - move "
+                            "to test_pins.py and delete this entry once the build is green",
+    "orphanedPinsRemaining": "new field on set_variable_type, asserted by V9 pending a build - move "
+                             "to test_pins.py and delete this entry once the build is green",
 
+    "duplicatesRemoved": "FIXED 2026-08-31 and no longer out of reach - kept here only until a "
+                         "rebuild verifies it (V11). remove_pin could not remove a SAME-DIRECTION "
+                         "duplicate, the case its branch exists for, because ResolvePin matches "
+                         "on (NodeGuid, PinName, Direction) and returns the FIRST hit, so every "
+                         "captured ref resolved to the pin being kept and Removed stayed 0 while "
+                         "the response still said Kind duplicate. The trigger turned out to be "
+                         "ordinary: retyping a wired variable leaves the node with two pins of one "
+                         "name and direction - the new one and the engine ORPHAN holding the old "
+                         "link. The loop now works on pointers, guarded by Node->Pins.Contains, "
+                         "and reports duplicatesStillPresent read back from the node afterwards",
     "failedConsolidationObjects": "consolidate_assets CLOSES EVERY OPEN ASSET EDITOR to do its work, "
                                   "which is stated in its own confirm refusal. Running it against a "
                                   "session somebody is working in is not something an unattended "

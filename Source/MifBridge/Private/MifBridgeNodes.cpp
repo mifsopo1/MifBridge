@@ -2164,30 +2164,57 @@ namespace MifBridge
 			}
 			if (!Keep) { Keep = Matches[0]; }
 
-			// bSendsNodeNotification is false here, but that only suppresses NodeConnectionListChanged -
-			// PinConnectionListChanged still runs on both ends and can RemovePin an orphan. Resolve
-			// through identities rather than trusting the snapshot.
-			const FMifPinRef KeepRef = CapturePin(Keep);
+			// THE IDENTITY CANNOT TELL TWO DUPLICATES APART, which is why this used to remove nothing.
+			//
+			// The previous version captured each pin as an FMifPinRef and re-resolved it every
+			// iteration, to survive PinConnectionListChanged removing an orphan mid-loop. But
+			// ResolvePin matches on (NodeGuid, PinName, Direction) and returns the FIRST pin
+			// satisfying it - and for a SAME-DIRECTION duplicate, which is the case this branch
+			// exists for, every captured ref resolves to the same pin as KeepRef. So the skip fired
+			// on every iteration, Removed stayed 0, and the response still said Kind "duplicate":
+			// a cleanup that reported having run and removed nothing.
+			//
+			// The state is not hypothetical. set_variable_type on a wired variable leaves the node
+			// with two pins of one name and one direction - the new typed pin and the engine's
+			// ORPHANED copy still holding the old link - so this is reachable through an ordinary
+			// retype (see the set_variable_type entry and its orphanedPinsRemaining field).
+			//
+			// So the loop works on the POINTERS and guards them the way the identity was meant to:
+			// a pin the graph has already dropped is no longer in Node->Pins, and Contains answers
+			// that without dereferencing anything. Comparing addresses of a freed pin is safe; only
+			// touching one is not, and Contains gates every touch.
 			int32 Removed = 0;
-			for (const FMifPinRef& Ref : CapturePins(Matches))
+			for (UEdGraphPin* Pin : TArray<UEdGraphPin*>(Matches))
 			{
-				UEdGraphPin* Pin = ResolvePin(Ref);
-				if (!Pin) { continue; }
-				if (Pin == ResolvePin(KeepRef)) { continue; }
+				if (!Pin || Pin == Keep) { continue; }
+				// It may already have gone: breaking links on an earlier duplicate can take an
+				// orphan with it, which is exactly what the old identity round-trip was defending
+				// against.
+				if (!Node->Pins.Contains(Pin)) { continue; }
 				K2()->BreakPinLinks(*Pin, /*bSendsNodeNotification*/ false);
 				Node->Pins.Remove(Pin);
 				Pin->MarkAsGarbage();
 				++Removed;
 			}
+			// READ THE POSTCONDITION BACK. A count of loop iterations is not a count of pins gone -
+			// that conflation is what made the old version report a successful cleanup while doing
+			// nothing, and set_variable_type made the identical mistake on the same day.
+			int32 StillNamed = 0;
+			for (UEdGraphPin* Pin : Node->Pins)
+			{
+				if (Pin && Pin->PinName == Keep->PinName && Pin->Direction == Keep->Direction)
+				{
+					++StillNamed;
+				}
+			}
+			Out->SetNumberField(TEXT("duplicatesStillPresent"), FMath::Max(0, StillNamed - 1));
 			Kind = TEXT("duplicate");
 			Out->SetNumberField(TEXT("duplicatesRemoved"), Removed);
 			Out->SetBoolField(TEXT("keptLinkedCopy"), Keep->LinkedTo.Num() > 0);
-			// THIS BRANCH CANNOT CURRENTLY REMOVE A SAME-DIRECTION DUPLICATE, which is the case it exists
-			// for. ResolvePin matches on (NodeGuid, PinName, Direction) and returns the FIRST pin
-			// satisfying it, so for two genuine duplicates every captured ref is identical to KeepRef,
-			// `Pin == ResolvePin(KeepRef)` is true on every iteration, and Removed stays 0. Only a
-			// cross-direction pair (an input and an output sharing a name, not really a duplicate) has a
-			// differing Dir and can actually be deleted.
+			// IT CAN NOW, and duplicatesStillPresent is how a caller checks rather than assumes:
+			// it is read from the node's pins AFTER the removal, so a claim that is not true cannot
+			// be made. Until 2026-08-31 this branch could not delete a same-direction duplicate at
+			// all - the case it exists for - and reported Kind "duplicate" while removing nothing.
 			//
 			// The addressing fix is NOT written here on purpose: reaching the real case needs two pins
 			// with the same name AND direction, which this bridge cannot create on demand, and pin
