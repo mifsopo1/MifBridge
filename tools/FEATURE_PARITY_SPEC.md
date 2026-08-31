@@ -8583,18 +8583,36 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                                 that "the property-path syntax does not surface a
                                                 C-array AS a C-array" and that the branch "may be
                                                 unreachable through this API entirely". Both wrong,
-                                                and the mistake is worth more than the fix:
-                                                describe_property REPORTS NO arrayDim FOR ANYTHING.
-                                                The field is emitted by reset_property_to_default
-                                                (MifBridgeDetails.cpp:1551) and list_object_properties
-                                                (:353), and by nothing else. Reading a missing field
-                                                as evidence about the DATA, without checking whether
-                                                the endpoint emits that field AT ALL, is the same
-                                                error as reading harvest()'s return shape from its
-                                                name - an absent value looks like an answer and is
-                                                not one. THE CHECK THAT WOULD HAVE CAUGHT IT: before
-                                                concluding from a field's absence, grep for the field
-                                                name in the handler you called
+                                                and the mistake is worth more than the fix.
+                                                THE API WAS ALWAYS HONEST ABOUT THIS. describe_property
+                                                reports arrayDim 8, type FLinearColor, isElement false
+                                                for the bare path and isElement true with elementIndex
+                                                2 for '[2]'. arrayDim is emitted UNCONDITIONALLY, at
+                                                MifBridgeDetails.cpp:353, in MifDetailsDescribeProperty
+                                                - the row builder SHARED by describe_property, its
+                                                class form and list_object_properties. Nothing is
+                                                missing in the source and no source change is called
+                                                for.
+                                                WHAT WENT WRONG WAS THE READ, NOT THE ENDPOINT. The
+                                                field is NESTED under 'property', and the probe asked
+                                                for it at the TOP LEVEL, got None, and read None as
+                                                "this is not a C-array" rather than as "you looked in
+                                                the wrong place". THIRD TIME THIS SESSION - the other
+                                                two were Blender's object_info and create_primitive,
+                                                which nest their counts under 'object'. The reason it
+                                                keeps landing is that the failure is SILENT AND
+                                                POSITIVE: a missing key returns None, and None
+                                                compared against an expected None PASSES, so the
+                                                mistake reports success in both a probe and a suite.
+                                                THE CHECK THAT CATCHES IT, and it is now automated:
+                                                before believing a field is absent, find where the
+                                                handler emits it and at what DEPTH. Emitting into a
+                                                sub-object (Row->Set...) and emitting into the
+                                                response (Out->Set...) look identical in a grep and
+                                                are not the same field.
+                                                See audit_nested_field_reads.py, which compares every
+                                                field a suite reads off a response against the depth
+                                                its handler writes it at, and detector 27
                           the setter route      four clamped or network properties on the CDO
                                                 (InitialLifeSpan -5, NetUpdateFrequency 0,
                                                 NetCullDistanceSquared -1, bHidden) all reset with
@@ -9195,7 +9213,30 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       They are registered rather than exempted BECAUSE the harness's own invariant caught the second
       one. Adding the first took "0 have neither" to 1, and that line is the whole reason the
       accounting exists: an untracked tool is invisible until something counts. Standing:
-      33 detectors, 26 planted, 6 not provable here, 0 with neither.
+      34 detectors, 27 planted, 6 not provable here, 0 with neither.
+
+      DETECTOR 27 - audit_nested_field_reads, and it exists because I made the mistake it catches.
+      A suite or a probe reads a field off a response that the handler only ever writes INSIDE a
+      sub-object. The missing key returns None, and a check comparing it against None PASSES, so the
+      wrong reading reports success: silent, and positive. It has now landed three times - Blender's
+      object_info and create_primitive, which nest their counts under 'object', and describe_property,
+      whose whole property row lives under 'property'. The third one put a wrong claim in this
+      document before the resolver was read.
+
+      WHAT IT COST TO MAKE IT PRECISE IS THE INTERESTING PART. The first run gave 39 findings and
+      EVERY ONE WAS FALSE, in four distinct classes, each of which is now a rule in the tool's header:
+      field names are not unique across 450 endpoints, so the question has to be per endpoint; a
+      helper's out param IS the response, so response-ness is a matter of TYPE and not of the name
+      'Out'; `nd = M.call(...).get("node")` binds the sub-object, which is the CORRECT form; and a
+      regex cannot see that `n` in `[n.get("title") for n in ...]` is a loop variable, so the suite is
+      parsed rather than grepped. A fifth class could not be fixed and is declared instead:
+      ui_scenario_status splats a helper's fields into Out under a RUNTIME key, so its shape is not
+      statically knowable, and the tool reports it as unanalysable rather than guessing.
+
+      It finds nothing today, which is the honest result - after those five, no suite in the repo
+      reads a nested field at the top level. Its value is as a regression detector, and the plant
+      proves it fires: the plant is THE REAL MISTAKE, T834's own wording asking describe_property for
+      arrayDim at the top level, and the tool names the line and MifBridgeDetails.cpp:353.
 
       Both plants are written the way the module actually writes refusals - multi-fragment literals
       across lines - rather than as single-fragment probes. That is deliberate: a single-fragment

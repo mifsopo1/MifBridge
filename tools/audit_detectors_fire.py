@@ -113,6 +113,27 @@ def plant_unreachable(text):
 
 
 
+def plant_nested_field_read(text):
+    """A suite reading describe_property's arrayDim off the TOP of the response.
+
+    THE PLANT IS THE REAL MISTAKE, not an imitation of one. On 2026-08-31 a probe asked
+    describe_property for arrayDim at the top level, got None because the field lives inside
+    'property', and concluded that LensFlareTints is not a fixed-size C-array. It is - arrayDim is 8
+    - and the wrong conclusion reached the spec before the resolver was read.
+
+    It has to look like the suite around it. A check phrased as a probe would prove only that the
+    tool spots probes: this one adopts T834's own wording and its is-None comparison, which is
+    exactly the form that makes the failure silent. None is what a missing key returns, so
+    `rc.get("arrayDim") is None` PASSES whether the property is a C-array or not.
+    """
+    anchor = '        check("T834 the property object is present", isinstance(rc.get("property"), dict), rc)'
+    if anchor not in text:
+        return None
+    return text.replace(anchor, anchor + "\n"
+                        '        check("T834 RootComponent is a single, not a fixed-size C-array",\n'
+                        '              rc.get("arrayDim") is None, rc.get("arrayDim"))', 1)
+
+
 def plant_silent_mutator(text):
     """A handler that calls a void UE API and reports ok without reading anything back.
 
@@ -597,6 +618,11 @@ PLANTS = {
     # FINDING can produce.
     "audit_vacuous_checks.py": (os.path.join(HERE, "mcp_static_check.py"), plant_unreachable,
                                 "is only reached once main() has already returned 0"),
+    # The marker names the FILE AND THE DEPTH, not just the field: "arrayDim" alone appears in the
+    # detector's own header and in the C++, so a run that merely mentioned it would prove nothing.
+    "audit_nested_field_reads.py": (os.path.join(HERE, "test_uncovered_reads2.py"),
+                                    plant_nested_field_read,
+                                    'writes "arrayDim" only into a sub-object'),
 }
 
 # Detectors that drive the RUNNING editor. A planted defect in a source file cannot prove one of
