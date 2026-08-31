@@ -5499,8 +5499,32 @@ def mif_help(tool: str = "") -> dict:
     name = tool.strip()
     if name in store:
         return {"tool": name, "help": store[name]}
+
+    # "NO SUCH TOOL" AND "REAL TOOL, NOTHING EXTRA TO SAY" ARE DIFFERENT ANSWERS, and this used to
+    # return the same `error` for both. 382 of 496 tools have an extended entry; the other 114 are
+    # tools whose one-line description was already the whole story, which is a fine thing to be. An
+    # agent that asks for help on add_branch and gets an `error` back has been told something false
+    # about add_branch - and the house rule here is that failure is the PRESENCE of error, so it
+    # reads as a failure whatever the prose says.
+    #
+    # The tool list is taken from FastMCP's registry when it exposes one, and from this module's own
+    # globals otherwise. Every @mcp.tool in this file is a module-level function and the decorator
+    # returns it unchanged, so globals() carries them all; the leading-underscore skip keeps the
+    # private helpers out.
+    known = set()
+    try:
+        known = set(getattr(mcp, "_tool_manager")._tools)          # FastMCP's registry
+    except Exception:
+        known = {k for k, v in globals().items()
+                 if callable(v) and not k.startswith("_")}
+    if name in known:
+        return {"tool": name, "help": None, "hasExtendedHelp": False,
+                "note": "%s exists and has no extended help - its one-line description is the whole "
+                        "of it. Extended help is written for the tools that guard an engine assert "
+                        "or carry a trap worth reading first; a tool without an entry is not an "
+                        "undocumented tool." % name}
+
     near = sorted(k for k in store if name.lower() in k.lower())[:12]
-    return {"error": "no extended help for %r. Either the tool name is wrong, or its description "
-                     "was already short enough to keep inline - in which case what you see in the "
-                     "tool list IS the whole of it." % name,
+    return {"error": "no tool named %r. Either the name is wrong, or it is an ENDPOINT name rather "
+                     "than an MCP tool name - describe_endpoint {name} answers for those." % name,
             "didYouMean": near}
