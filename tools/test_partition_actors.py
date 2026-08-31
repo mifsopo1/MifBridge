@@ -141,9 +141,28 @@ def main():
 
     # ------------------------------------------------------------------ T2103 refusals
     print("\n=== T2103: refusals ===")
-    bad = M.call("list_partition_actors", {"bounds": {"min": {"x": 0}}})
-    check("T2103 an unbuilt parameter is refused with what to use instead, not ignored",
-          bad.get("ok") is False and "nameContains" in (bad.get("error") or ""), bad.get("error"))
+    # `bounds` USED TO BE REFUSED AS UNBUILT, and this asserted that. It was built on 2026-08-31,
+    # so the old assertion outlived the thing it described and failed in the next full sweep -
+    # which is exactly what a sweep is for. What is checked now is the refusal that REMAINS
+    # correct: a half-specified box is not a spatial query, and "min without max" must be told
+    # apart from "no such parameter".
+    half = M.call("list_partition_actors", {"bounds": {"min": {"x": 0}}})
+    check("T2103 a half-specified bounds is refused, naming BOTH corners as required",
+          half.get("ok") is False and "min and max" in (half.get("error") or ""),
+          half.get("error"))
+    empty = M.call("list_partition_actors",
+                   {"bounds": {"min": {"x": 0, "y": 0, "z": 0},
+                               "max": {"x": 0, "y": 0, "z": 0}}})
+    # A zero-volume box matches nothing, and reporting "no actors here" for it would be a WRONG
+    # answer rather than an empty one.
+    check("T2103 a zero-volume box is refused rather than answering 'no actors here'",
+          empty.get("ok") is False and "no volume" in (empty.get("error") or ""),
+          empty.get("error"))
+    unbuilt = M.call("list_partition_actors", {"radius": 500})
+    check("T2103 a parameter that really does not exist is still refused BY NAME, and points at "
+          "the one that does",
+          unbuilt.get("ok") is False and "bounds" in (unbuilt.get("error") or ""),
+          unbuilt.get("error"))
     badclass = M.call("list_partition_actors", {"classFilter": "/Script/Engine.NoSuchClassAtAll"})
     check("T2103 an unknown classFilter is refused", badclass.get("ok") is False,
           json.dumps(badclass)[:250])

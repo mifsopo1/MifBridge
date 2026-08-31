@@ -20,19 +20,44 @@ TOKEN = os.environ.get("MIF_BLENDER_TOKEN", os.environ.get("MIF_BRIDGE_TOKEN", "
 
 
 def reachable(timeout=1.5):
-    """True if something is listening on the addon port.
+    """True if the addon ANSWERS on the port - not merely that something accepted a connection.
 
     Every Blender suite needs this before its first call, because call() raises rather than
     returning an error dict when nothing is there - so `if not call("ping").get("ok")` never runs
     and the suite dies with a traceback and exit 1 instead of skipping with exit 2. It lived as a
     private copy inside test_blender_ops.py, which is precisely why the two suites written later
     did not have it. Shared here so the next one cannot miss it.
+
+    A REAL PING, NOT A CONNECT, and that distinction cost a false failure on 2026-08-31. This used
+    to be a bare socket.connect(), which succeeded against a socket whose owner was already going
+    away; the first real call then died with "connection closed reading length header" and
+    test_blender_rename_bones reported a FAILURE on a machine that simply had no Blender running.
+
+    run_blender_suites.py had already learned exactly this and says so at the top of itself -
+    "READINESS IS A PING, NEVER A CONNECT ... A connection existing is not a server answering" - but
+    the lesson reached the runner and never reached here, so every Blender suite stayed one dying
+    socket away from the same false failure.
     """
+    body = json.dumps({"endpoint": "ping", "token": TOKEN, "params": {}}).encode("utf-8")
     s = socket.socket()
     s.settimeout(timeout)
     try:
         s.connect((HOST, PORT))
-        return True
+        s.sendall(struct.pack(">I", len(body)) + body)
+        head = b""
+        while len(head) < 4:
+            chunk = s.recv(4 - len(head))
+            if not chunk:
+                return False
+            head += chunk
+        want = struct.unpack(">I", head)[0]
+        buf = b""
+        while len(buf) < want:
+            chunk = s.recv(min(65536, want - len(buf)))
+            if not chunk:
+                return False
+            buf += chunk
+        return json.loads(buf.decode("utf-8")).get("ok") is not False
     except Exception:
         return False
     finally:
