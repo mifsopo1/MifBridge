@@ -2206,3 +2206,36 @@ TWO RULES, and the second is the one that saves you:
 2. Prefer a claim the failing path cannot satisfy. A concrete expected number, a count that could
    only be produced by the code path you mean, a field whose presence is itself the evidence.
    `snapped == 0` beats "the position did not change" precisely because a broken read cannot fake it.
+## The comment explaining a fix lands inside the scanner's reading window
+
+A scanner cannot tell a USE of a symbol from a MENTION of it. That is written up elsewhere in this
+file as the reason five source scanners were reading prose as evidence. What is not obvious until it
+happens three times in one night is that the prose which breaks a check is most often **the comment
+written by the fix for that same check**, and it breaks it in either direction.
+
+**Suppressed its own detector.** `audit_suite_payloads` skips a call whose surrounding text looks
+like a deliberate refusal test, matching words like `refus`. The comment written above the fixed line
+said *"read_datatable refuses `limit` by name"* - so reintroducing the defect no longer tripped the
+check. The explanation of a bug switched off the detector for that bug, and it was only noticed
+because the fix was mutation-tested.
+
+**Reported a bug that was already fixed.** `audit_postconditions` matched `TrySetDefaultValue`
+against raw handler text. `set_pin_default`'s only occurrence of that symbol is the comment
+explaining the defect it no longer has - the founding case in the tool's own docstring, listed there
+as FIXED. The tool got WORSE in proportion to how well each repair was documented.
+
+**Tripped a check by explaining it.** `parity_check`'s TOOL REF advisory names any `tools/<x>.py`
+that is not on disk. The line correcting a stale reference quoted the stale path while explaining
+it, and was duly flagged.
+
+### What to do about it
+
+* **Mutation-test the fix, not just the checker.** Reintroduce the defect WITH the new comment in
+  place. If the check no longer fires, the comment is the reason.
+* **Scrub before matching, and pick the right scrub.** Comments are noise when asking what code
+  DOES; strings are evidence when asking whether a flag is read. `blank_comments_and_strings` blanks
+  both - correct for five tools tonight, and wrong for `audit_promise_flags`, where `TEXT("confirm")`
+  IS the evidence and blanking it reported 63 of 65 endpoints as unguarded.
+* **When an explanation must name its own subject, say why you are not spelling it in full.** The
+  scan_pinloops line in this file omits the `tools/` prefix on purpose and states that it is
+  deliberate. A reader who does not know that will helpfully "fix" it back.
