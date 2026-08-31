@@ -157,6 +157,11 @@ UNREACHABLE = {
                            "suite at all, with or without dryRun. The field itself is emitted on "
                            "every response, so this is a harness boundary rather than an endpoint "
                            "limitation",
+    "broken": "break_level_instance needs a Level Instance ACTOR in the open level, and creating "
+              "then breaking one modifies whatever level is loaded - the same session precondition "
+              "as partialNote, and issue J's warning about actors that cannot be cleaned up applies "
+              "equally. Reachable with a scratch level open",
+
     "droppedLines": "emitted by MifBridgePIE's log Emit helper, so reaching it needs a RUNNING PIE "
                     "session producing more output than the ring buffer holds. The PIE family is "
                     "attended-only by the standing rules and never runs in an autopilot pass",

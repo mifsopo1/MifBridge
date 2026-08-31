@@ -8319,7 +8319,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **3 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **2 consequence fields still read by nothing - and both wait on the same missing fixture** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8533,9 +8533,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                    open level is scratch. A precondition on the session, not an
                                    impossibility
 
-      Real gaps: 3 - broken (break_level_instance), compileFailed (material_statistics) and
-      verifyFailure (reset_property_to_default). Out of reach with a written reason: 15. Read by a
-      suite: 46.
+      `broken` joins them: break_level_instance needs a Level Instance ACTOR in the open level, and
+      creating then breaking one modifies whatever is loaded - the same session precondition as
+      partialNote, with issue J's uncleanable-actors warning applying equally.
+
+      THE LAST TWO ARE LEFT OPEN RATHER THAN CLASSIFIED, because both wait on the same thing this
+      file already has an open item for: there is no fixture in this repo for anything that FAILS to
+      compile.
+
+        compileFailed   material_statistics refuses when the shader map is unusable, so it needs a
+                        material whose compile genuinely fails - the material half of the same
+                        missing fixture
+        verifyFailure   reset_property_to_default emits it when the reset cannot be verified, and the
+                        handler names two causes: a native setter or PostEditChangeProperty adjusting
+                        the value after the write, or a fixed-size C-array whose default text
+                        describes only element 0. Measured: a scratch Actor blueprint exposes 63
+                        properties and NONE has arrayDim > 1, so the C-array route needs a class that
+                        has one, and the setter route needs a specific engine class rather than
+                        anything the bridge can arrange
+
+      Neither is declared unreachable. "No route found" is not "cannot happen", and the C-array
+      measurement narrows the search rather than ending it.
+
+      Out of reach with a written reason: 16. Read by a suite: 46.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote
