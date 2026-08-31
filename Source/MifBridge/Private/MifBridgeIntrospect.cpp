@@ -1915,8 +1915,8 @@ namespace MifBridge
 				TEXT("ORPHANED: the old typed pin still exists and STILL HOLDS ITS LINK, because the engine ")
 				TEXT("keeps a mistyped pin that is still connected so the connection is not lost silently. ")
 				TEXT("THE GRAPH STILL COMPILES CLEAN with them there - measured, not assumed - so a clean ")
-				TEXT("compile is NOT evidence the retype was safe. Use get_node to see both pins and "
-					 "disconnect_pin to clear the one you do not want."),
+				TEXT("compile is NOT evidence the retype was safe. Use get_node to see both pins and ")
+				TEXT("disconnect_pin to clear the one you do not want."),
 				NodesReconstructed, OrphanedPinsRemaining, NodesWithOrphanedPin));
 		}
 		else
