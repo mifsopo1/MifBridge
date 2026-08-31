@@ -9363,6 +9363,33 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       assumed: every numErrors reference in all 163 suites is part of an assertion that it equals
       ZERO. Not one suite has ever seen a failing compile.
 
+      IT HAS ONE NOW, AND CLAIM 1 IS VERIFIED. 2026-08-31: bind an event to a component, then remove
+      the component out from under it. The node survives, names a component that is no longer there,
+      and the compiler can neither resolve it nor quietly route around it:
+
+        numWarnings 1, one message, severity warning, WITH a nodeGuid:
+        "On Component Hit (Mesh1)  does not have a valid matching component!"
+
+      compile and validate return IDENTICAL lists on it - same text, same severity, same nodeGuid -
+      and identical counts. That is the claim tested against something rather than against 0 == 0.
+      Asserted as T840b in test_uncovered_reads3.py, which now runs 308 checks, and the assertion
+      that the message list is NON-EMPTY comes first, because without it every comparison after it
+      is the vacuous one again.
+
+      WHY THE OTHER SIX ROUTES FAILED IS THE USEFUL PART. Removing a variable a getter reads, or a
+      dispatcher a call node uses, or a FUNCTION a call node calls - the call node survives titled
+      'Mif Doomed' and still compiles clean - an unwritten function output, a cast to an unrelated
+      class, and retyping a wired variable all leave breakage the compiler cannot see. The component
+      case is different in kind: the dangling reference is to something the COMPILER itself must
+      resolve, not to something a node has already cached.
+
+      TWO OF THOSE ATTEMPTS PROVED NOTHING AND SAID SO. The first connect_pins call used
+      fromNodeGuid/toNodeGuid, the guard refused them, and the graph was never wired - so the clean
+      compile that followed was about an empty graph. The first component attempt passed graphId to
+      add_component_bound_event, which takes blueprintId, so no event was ever bound. Both times the
+      probe reported a clean compile that was true and irrelevant. A setup step whose result is not
+      checked turns the whole probe into a measurement of nothing.
+
       AND THE REASON IS A GOOD PROPERTY, WHICH IS WHY THIS IS FILED RATHER THAN FIXED IN A HURRY. The
       four attempts above did not fail for want of trying - they failed because this bridge is hard
       to author a broken graph WITH. connect_pins refuses an incompatible connection at authoring

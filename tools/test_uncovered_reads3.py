@@ -13,8 +13,10 @@ to this batch.
 """
 import json
 import sys
+import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -46,6 +48,68 @@ def main():
     for label, payload in (("no blueprint", {}), ("an unknown parameter", {"blueprintId": "x", "save": True})):
         q = M.call("validate", payload)
         check("T840 %s refused" % label, q.get("ok") is False, q.get("error"))
+
+    # ================================================================== T840b the claim, on a
+    # blueprint that does NOT compile clean
+    print("")
+    print("=== T840b: compile and validate agree on a blueprint with real messages ===")
+    # compile's own summary claims "validate {blueprintId} is the dry-run form and returns the same
+    # messages". Until 2026-08-31 that was only ever checked on a CLEAN blueprint, where both sides
+    # report 0 errors, 0 warnings and [] - a 0 == 0 comparison that proves nothing about the claim.
+    # Confirmed by grep at the time, not assumed: every numErrors reference in all 163 suites
+    # asserted it equals ZERO. Not one suite had ever seen a compile produce a message.
+    #
+    # FIVE ROUTES TO A BROKEN BLUEPRINT WERE TRIED FIRST AND ALL COMPILED CLEAN - removing a
+    # variable a getter reads, removing a dispatcher a call node uses, an unwritten function output,
+    # a cast to an unrelated class, and retyping a wired variable to an incompatible type. That last
+    # one is the instructive one: it leaves the getter with TWO pins of the same name, a new one
+    # with no link and the original still holding the connection, so the compiler follows the new
+    # pin and finds nothing wired. The breakage is INVISIBLE to the compiler rather than absent.
+    #
+    # WHAT WORKS IS AN EVENT BOUND TO A COMPONENT THAT IS THEN REMOVED. The node survives the
+    # removal and names a component that is no longer there, which the compiler cannot resolve and
+    # cannot quietly route around.
+    st = int(time.time() % 100000)
+    cvpath = "/Game/_MifReads3/BP_CV%d" % st
+    cvbid = M.call("create_blueprint", {"path": cvpath, "parentClass": "Actor"}).get("blueprintId")
+    check("T840b (setup) a scratch blueprint", bool(cvbid), cvpath)
+    if cvbid:
+        M.call("add_component", {"blueprintId": cvbid, "componentClass": "StaticMeshComponent",
+                                 "name": "Mesh1"})
+        M.call("compile", {"blueprintId": cvbid})
+        ev = M.call("add_component_bound_event", {"blueprintId": cvbid, "component": "Mesh1",
+                                                  "event": "OnComponentHit"})
+        check("T840b (setup) an event bound to that component", ev.get("ok") is True,
+              json.dumps(ev)[:200])
+        clean = M.call("compile", {"blueprintId": cvbid})
+        check("T840b (setup) and it compiles clean while the component exists",
+              clean.get("numErrors") == 0 and clean.get("numWarnings") == 0,
+              json.dumps(clean)[:200])
+        rmc = SC.confirm_call("remove_component", {"blueprintId": cvbid, "name": "Mesh1",
+                                                   "confirm": True})
+        check("T840b (setup) the component is removed out from under the event",
+              rmc.get("ok") is True, json.dumps(rmc)[:200])
+
+        c = M.call("compile", {"blueprintId": cvbid})
+        v = M.call("validate", {"blueprintId": cvbid})
+        cm, vm = (c.get("messages") or []), (v.get("messages") or [])
+        # THE ASSERTION THAT MAKES THE REST MEAN ANYTHING. Without it every comparison below is
+        # 0 == 0 again, which is the whole reason this claim sat unverified.
+        check("T840b compile produces a REAL message - not the empty list every other suite sees",
+              len(cm) > 0 and c.get("numWarnings", 0) > 0,
+              "errors=%r warnings=%r msgs=%r" % (c.get("numErrors"), c.get("numWarnings"), cm))
+        check("T840b and it names the node, so a caller can act on it",
+              bool(cm) and bool(cm[0].get("nodeGuid")), json.dumps(cm[:1])[:220])
+        # THE CLAIM ITSELF.
+        check("T840b validate returns the SAME messages compile does - the claim its summary makes",
+              cm == vm, "compile=%s\n          validate=%s"
+              % (json.dumps(cm)[:200], json.dumps(vm)[:200]))
+        check("T840b and the same counts", c.get("numErrors") == v.get("numErrors")
+              and c.get("numWarnings") == v.get("numWarnings"),
+              "compile %r/%r vs validate %r/%r" % (c.get("numErrors"), c.get("numWarnings"),
+                                                   v.get("numErrors"), v.get("numWarnings")))
+        check("T840b validate still says dryRun", v.get("dryRun") is True, v.get("dryRun"))
+        SC.confirm_call("delete_asset", {"path": cvpath, "confirm": True})
 
     # ================================================================== T841 nav_status
     print("")
