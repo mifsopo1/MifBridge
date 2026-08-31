@@ -77,11 +77,20 @@ CONSEQUENCE = re.compile(
     r"[Ff]ailed|[Ff]ailure|[Dd]ropped|[Ss]kipped|[Rr]everted|[Dd]iscarded|[Dd]isplaced|"
     r"[Oo]rphaned|[Ll]eftBehind|[Ll]ost|[Uu]nresolved|[Uu]nchanged|[Rr]ejected|[Rr]emoved|"
     r"[Tt]runcated|[Cc]lamped|[Ss]ilentl|[Pp]artial|[Ss]tale|[Bb]roken|[Mm]issing|[Ii]nvalid|"
-    r"[Ii]ncomplete"
+    r"[Ii]ncomplete|[Rr]emaining|StillPresent"
     r")")
 
-# WHAT THIS PATTERN CANNOT SEE, said out loud rather than left as a clean-looking number. It matches
-# names that say something went WRONG. It does NOT match names that say something merely MOVED -
+# WIDENED 2026-08-31 to include REMAINS as well as WENT WRONG. "Something is still there that you
+# did not ask about" is the same class of unasked-for consequence as "something failed", and the
+# pattern could not see it: remove_pin's duplicatesStillPresent, remove_function's
+# functionGraphsRemaining, fix_up_redirectors' remainingNote and the shader helper's
+# numRemainingJobs were all invisible. Adding [Rr]emaining and StillPresent took the field count
+# 64 -> 73 and surfaced FOUR unread, of which three are pre-existing gaps nobody could have seen.
+# Measured before committing to it: the nine new matches are all real consequence fields, so the
+# widening cost no noise.
+#
+# WHAT THIS PATTERN STILL CANNOT SEE, said out loud rather than left as a clean-looking number. It
+# matches names that say something went WRONG or is STILL THERE. It does NOT match names that say something merely MOVED -
 # `axisChanged` on set_blendspace_samples is as much an unasked-for consequence as anything in the
 # list above, and no name-based rule can separate it from the dozens of `changed` fields that are the
 # honest ANSWER to "did this change anything". Adding [Cc]hanged would drown the real findings in
