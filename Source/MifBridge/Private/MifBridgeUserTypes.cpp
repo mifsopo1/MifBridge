@@ -20,7 +20,7 @@
 #include "GameFramework/Actor.h"          // create_asset refuses Actor classes
 #include "Components/ActorComponent.h"    // ... and component classes
 #include "Engine/Blueprint.h"             // ... and points Blueprint classes at create_blueprint
-#include "Animation/AnimSequenceBase.h"  // ... and refuses anim sequences outright: a bare
+#include "Animation/AnimSequence.h"      // ... and refuses anim sequences outright: a bare
                                          // NewObject leaves the sequencer data model without
                                          // its MovieScene and the next toucher asserts
 #include "MifBridgeLog.h"
@@ -814,14 +814,24 @@ namespace MifBridge
 		// The honest answer is to say so and name the alternative, the same shape as the UBlueprint
 		// refusal directly above.
 		//
-		// DELIBERATELY OVER-MATCHED to UAnimSequenceBase, which also covers UAnimStreamable,
-		// UAnimComposite and UAnimMontage. Only UAnimSequence is PROVEN to crash here; the others
-		// share UAnimSequenceBase's data-model plumbing and are equally meaningless without a
-		// skeleton. The factory-warning list further down notes that under-matching is the unsafe
-		// direction for a WARNING; for a refusal it is the other way round, and the asymmetry here
-		// is extreme - over-refusing costs an error message that names the alternative, and
-		// under-refusing costs somebody's editor.
-		if (Class->IsChildOf(UAnimSequenceBase::StaticClass()))
+		// SCOPED TO UAnimSequence, AND THE FIRST VERSION OF THIS WAS WRONG. It matched
+		// UAnimSequenceBase on the argument that over-refusing costs only an error message while
+		// under-refusing costs an editor. That asymmetry is real and it was still the wrong call:
+		// test_create_asset T145 has been creating an AnimMontage and verifying it registers, on
+		// every run, without ever taking the editor down - so the blanket refusal removed a
+		// capability this repo has direct evidence WORKS. The suite caught it within a minute of the
+		// build.
+		//
+		// UAnimMontage and UAnimComposite are UAnimCompositeBase: they reference other animations
+		// rather than owning bone tracks, and do not build the sequencer data model whose absence is
+		// fatal here. UAnimStreamable derives from UAnimSequenceBase directly and is untested either
+		// way - it stays creatable, because it was creatable before today, nothing has reported a
+		// crash from it, and removing a capability on suspicion is not a fix. It carries the
+		// factoryInitIncomplete warning like the rest of that list.
+		//
+		// The rule that survives: refuse what is PROVEN fatal, and let the warning cover the rest.
+		// "Over-matching is safe" is only true when the thing being over-matched does nothing useful.
+		if (Class->IsChildOf(UAnimSequence::StaticClass()))
 		{
 			Fail(Out, FString::Printf(
 				TEXT("'%s' CANNOT be created by this endpoint and the attempt would TERMINATE THE "

@@ -170,6 +170,38 @@ def main():
         check("T146 and reports the expected empty-system shape (0 emitters, none added yet)",
               desc.get("emitterCount") == 0, json.dumps(desc)[:220])
 
+        print("\n=== T147: AnimSequence is REFUSED, because creating one terminates the editor ===")
+    # THIS IS A CRASH REGRESSION TEST, not a contract test. On 2026-08-31 a single
+    # create_asset {class: AnimSequence} took a running editor down:
+    #
+    #     Assertion failed: MovieScene
+    #     [AnimSequencerDataModel.cpp:947] No Movie Scene found for SequencerDataModel
+    #
+    # A plain NewObject leaves the sequencer data model without its MovieScene; the engine's own flow
+    # builds it in UAnimSequenceFactory, which requires a target skeleton create_asset has no parameter
+    # for. The assert fires on whatever touches the asset NEXT - about a third of a second later, long
+    # after this endpoint has answered ok:true - which is why the refusal has to come BEFORE
+    # construction rather than being repaired after it like UUserDefinedEnum and UNiagaraSystem are.
+    r = M.call("create_asset", {"path": path + "_animseq", "class": "AnimSequence"}, timeout=90)
+    check("T147 AnimSequence is refused rather than created", r.get("ok") is False, json.dumps(r)[:220])
+    check("T147 and the refusal names the assert, so the next reader does not have to rediscover it",
+          "AnimSequencerDataModel.cpp:947" in (r.get("error") or ""), (r.get("error") or "")[:260])
+    check("T147 and says why the endpoint cannot do it - no skeleton parameter",
+          "skeleton" in (r.get("error") or "").lower(), (r.get("error") or "")[:260])
+    # THE ASSERTION THAT MATTERS MOST, and it is the cheapest one here.
+    check("T147 and the editor is still alive after the call", M.bridge_responsive() is True,
+          "the refusal did not hold - this is the crash reopening")
+
+    # AND THE OTHER DIRECTION, because the first version of this refusal was TOO WIDE. It matched
+    # UAnimSequenceBase, which swept in AnimMontage - a class T145 above proves is creatable and
+    # registers correctly. The suite caught it within a minute of the build. UAnimMontage and
+    # UAnimComposite are UAnimCompositeBase: they reference other animations rather than owning bone
+    # tracks, and do not build the data model whose absence is fatal. "Over-matching is safe" only holds
+    # when the thing being over-matched does nothing useful.
+    m = M.call("create_asset", {"path": path + "_animmontage", "class": "AnimMontage"}, timeout=90)
+    check("T147 but AnimMontage is NOT swept up by the refusal - it works and a suite proves it",
+          m.get("ok") is True, json.dumps(m)[:220])
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f2 in FAIL:

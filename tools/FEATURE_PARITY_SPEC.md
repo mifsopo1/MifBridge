@@ -8425,8 +8425,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       set_blendspace_samples - four fields on ONE endpoint, all reporting input silently discarded -
       leftBehind on add_timeline, and reverted on revert_inherited_component.
 
-- [ ] **set_blendspace_samples REWRITES the blend axis and says nothing - FIXED IN SOURCE, needs a build**
-      (hours)
+- [x] **set_blendspace_samples REWROTE the blend axis and said nothing** - BUILT, TESTED 2026-08-31
       Found 2026-08-31 while working the consequence-field backlog, by doing the thing the suite
       said could not be done. test_ported_anim's header says there is "no scratch equivalent to
       practise on" for BlendSpaces, so it stayed read-mostly. There is: create_asset makes one,
@@ -8473,8 +8472,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Next visit with the editor closed: rebuild, rerun test_ported_anim, expect 39 PASS 0 FAIL.
 
-- [ ] **set_blendspace_samples reported a MOVED sample as a DELETED one - FIXED IN SOURCE, needs a build**
-      (hours)
+- [x] **set_blendspace_samples reported a MOVED sample as a DELETED one** - BUILT, TESTED 2026-08-31
       Found 2026-08-31 by chasing a contradiction rather than dropping it. The evening before, the
       spec recorded that a probe for invalidNote had failed and that the result CONTRADICTED the
       handler's own comment, and said one failed probe is not a proof. Following that up is what
@@ -8523,8 +8521,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       check asserted the whole /Game/_MifAnim prefix was empty, so it failed on scratch it neither
       created nor owns; it now checks its own asset and REPORTS anything else.
 
-- [ ] **`set_blendspace_samples {samples: []}` is a WIPE, and a suite called it a no-op**
-      - FIXED IN SOURCE AND IN THE SUITE, source half needs a build (hours)
+- [x] **`set_blendspace_samples {samples: []}` is a WIPE, and a suite called it a no-op** - BUILT, TESTED 2026-08-31
       `clear` defaults to TRUE - the handler's own summary line says "clear (default true)" - so an
       empty samples[] DELETES every sample the blend space holds and then adds nothing. The response
       reports sampleCount 0, addedCount 0, invalidCount 0 and a cheerful note, which is exactly what
@@ -8612,8 +8609,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       from the channel - after a replace it shows exactly what was sent and looks like a complete,
       healthy channel. keysBefore is the only field that says anything was there before.
 
-- [ ] **create_asset {class: AnimSequence} TERMINATES the editor - FIXED IN SOURCE, needs a build**
-      (hours)
+- [x] **create_asset {class: AnimSequence} TERMINATED the editor** - BUILT, TESTED 2026-08-31
       2026-08-31, and it took Andre's running session with it. One call, no warning:
 
         LogMifBridge: create_asset: /Game/_MifAnim/AS4421.AS4421 (AnimSequence)
@@ -8648,8 +8644,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       unsafe direction for a WARNING; for a REFUSAL it is the other way round, and the asymmetry is
       extreme - over-refusing costs an error message, under-refusing costs an editor.
 
-      NOT BUILT - it needs the same rebuild as the three set_blendspace_samples fixes. Until then
-      create_asset {class: AnimSequence} STILL KILLS THE EDITOR: do not call it. Postmortem in
-      docs/01_POSTMORTEMS.md.
+      BUILT AND VERIFIED the same evening. create_asset {class: AnimSequence} now refuses, names
+      the assert and the missing skeleton parameter, and the editor is alive afterwards.
+      test_create_asset T147, 42 -> 47. Postmortem in docs/01_POSTMORTEMS.md.
 
-      Filed alongside: a suite for this refusal, once built, belongs with test_create_asset.
+      AND THE FIRST REFUSAL WAS TOO WIDE, caught by a suite within a minute of the build. It matched
+      UAnimSequenceBase, which swept in AnimMontage - and T145 has been creating an AnimMontage and
+      verifying it registers on every run, without ever taking an editor down. So the blanket refusal
+      removed a capability this repo has direct evidence WORKS. Narrowed to UAnimSequence; AnimMontage
+      and AnimComposite are UAnimCompositeBase and reference other animations rather than owning bone
+      tracks, so they never build the data model whose absence is fatal. UAnimStreamable is untested
+      either way and stays creatable, because it was creatable before today and removing a capability
+      on suspicion is not a fix - it carries the factoryInitIncomplete warning like the rest.
+
+      The rule that survives, written down because I argued the opposite in the first commit:
+      "over-matching is safe" holds only when the thing being over-matched does nothing useful. Refuse
+      what is PROVEN fatal and let the warning cover the rest. T147 asserts BOTH directions so the
+      next narrowing or widening has to face a test.
+
+- [x] **every detector is proven in ONE editor-closed run: 22 planted, 21 proven, 0 unexplained**
+      - DONE 2026-08-31
+      The window items 7782 and 8119 both asked for the same thing - audit_detectors_fire with the
+      editor closed, so the ten Source/ plants can run. Done, and it is the first single run in which
+      every planted detector fired:
+
+        29 detectors in tools/; 22 have a plant, 6 cannot be proven here, 0 have neither
+        21 proven, 1 skipped
+
+      The one skip is audit_absence_claims, and it is the RIGHT skip: it reads the live registry, and
+      with no editor it exits 0 saying "could not check" - which a plant would misread as ASLEEP. The
+      harness reports it as skipped-for-a-reason rather than pretending. `Source/ is byte-identical
+      to before this run` on the same pass.
