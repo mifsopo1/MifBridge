@@ -134,15 +134,37 @@ def main():
         _fail(findings, "set_material_slots", "op:%r object_info.materialSlots:%r (want %r)"
               % (r.get("ok"), oi.get("materialSlots"), want_slots))
 
+    # ---- A REFUSAL IS NOT A BROKEN POSTCONDITION -------------------------------------------------
+    #
+    # Both mesh ops below were reported for months as "the op's own ok:true was not backed by
+    # reality" when what actually happened is that they returned ok:FALSE and refused. The op never
+    # claimed anything; the fixture did not suit the selector. That is a FALSE FAILURE, and this
+    # directory's own rule - written into test_blender_rig - is that a false failure is worse than a
+    # false pass, because it teaches the reader to ignore the tool.
+    #
+    # So refusals are now separated from postcondition breaks and the op's own error is quoted. The
+    # two need different fixes: a refusal means look at the payload, a break means look at the op.
+    def _refused(findings_, name, r_, note=""):
+        _fail(findings_, name, "REFUSED (not a postcondition break): %s%s"
+              % (str(r_.get("error"))[:180], note))
+
     # ---- extrude_skirt --------------------------------------------------------------------------
     # direction defaults to "down" (extrude_skirt's own default), which extends Z-MIN downward, not
     # Z-max - checking Z-size growth instead of either bound specifically is direction-agnostic and
     # matches what the op's own response calls sizeDeltaUU.
-    z_size_before = (oi.get("boundsLocalSizeBU") or [0, 0, 0])[2]
+    # ON ITS OWN FIXTURE, not the Sphere. extrude_skirt extrudes BOUNDARY edge loops - the fix for a
+    # flat-edged tile that hovers where terrain falls away - and the imported Sphere is a CLOSED mesh
+    # with no boundary at all. boundaryOnly matched 0 edges there and the op refused, correctly, with
+    # a message naming the bounds and the selection breakdown. Testing an op against input it does
+    # not apply to measures nothing; a plane has exactly the four boundary edges this op is for.
+    skirt = "MifAuditSkirt"
+    _call("create_primitive", {"kind": "plane", "name": skirt, "size": 2.0})
+    soi = _call("object_info", {"object": skirt}).get("object") or {}
+    z_size_before = (soi.get("boundsLocalSizeBU") or [0, 0, 0])[2]
     depth = 10.0
-    r = _call("extrude_skirt", {"object": obj, "boundaryOnly": True, "depthUU": depth})
-    oi = _call("object_info", {"object": obj}).get("object") or {}
-    z_size_after = (oi.get("boundsLocalSizeBU") or [0, 0, 0])[2] if r.get("ok") else None
+    r = _call("extrude_skirt", {"object": skirt, "boundaryOnly": True, "depthUU": depth})
+    soi = _call("object_info", {"object": skirt}).get("object") or {}
+    z_size_after = (soi.get("boundsLocalSizeBU") or [0, 0, 0])[2] if r.get("ok") else None
     # depthUU is in UNREAL units; boundsLocalSizeBU is in BLENDER units - the addon's own
     # unrealUnitsPerBlenderUnit (100.0, from ping/scene_info) is the conversion, same constant
     # server.py's fidelity gate now folds object scale through rather than assuming.
@@ -151,13 +173,19 @@ def main():
             abs((z_size_after - z_size_before) - expected_growth_bu) < 1e-3:
         _ok("extrude_skirt", "object_info independently confirms Z size grew by %.4f BU (depthUU %.1f / 100)"
             % (z_size_after - z_size_before, depth))
+    elif not r.get("ok"):
+        _refused(findings, "extrude_skirt", r, " (fixture: a %s plane)" % skirt)
     else:
         _fail(findings, "extrude_skirt", "op:%r Z size before/after %r/%r (want +%.4f BU)"
               % (r.get("ok"), z_size_before, z_size_after, expected_growth_bu))
+    _call("delete_object", {"object": skirt})
+    oi = _call("object_info", {"object": obj}).get("object") or {}
 
     # ---- bevel_edges ------------------------------------------------------------------------
     edges_before = oi.get("edges")
-    r = _call("bevel_edges", {"object": obj, "boundaryOnly": True, "offsetUU": 2.0, "segments": 2})
+    # allEdges, not boundaryOnly: the Sphere is closed, so boundaryOnly selects nothing and the op
+    # refuses. allEdges selects all 792 and is what "bevel this whole mesh" means.
+    r = _call("bevel_edges", {"object": obj, "allEdges": True, "offsetUU": 2.0, "segments": 2})
     oi = _call("object_info", {"object": obj}).get("object") or {}
     edges_after = oi.get("edges") if r.get("ok") else None
     # A bevel with segments>1 always ADDS edges - it is topologically incapable of a no-op on a
@@ -165,6 +193,8 @@ def main():
     if r.get("ok") and edges_after is not None and edges_after > edges_before:
         _ok("bevel_edges", "object_info independently confirms edge count grew %d -> %d"
             % (edges_before, edges_after))
+    elif not r.get("ok"):
+        _refused(findings, "bevel_edges", r)
     else:
         _fail(findings, "bevel_edges", "op:%r edges before/after %r/%r (want strictly more)"
               % (r.get("ok"), edges_before, edges_after))
