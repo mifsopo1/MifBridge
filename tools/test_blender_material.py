@@ -247,6 +247,40 @@ def main():
               allf.get("ok") is True and allf.get("changed") == 2
               and (allf.get("facesPerSlot") or {}).get("0") == 6,
               json.dumps(allf)[:220])
+
+        # T4105: the slot-to-slot remap, added 2026-08-31. It is the operation you want after
+        # set_material_slots reorders or resizes the slot list, and without it that costs a read, a
+        # client-side filter and a write of an explicit index list.
+        print("\n=== T4105: fromSlot, and why it refuses where faces:[] would not ===")
+        B.call("assign_material_to_faces", {"object": cube["name"], "slot": 1,
+                                            "faces": [0, 1]})
+        remap = B.call("assign_material_to_faces", {"object": cube["name"], "slot": 0,
+                                                    "fromSlot": 1})
+        check("T4105 fromSlot moves every face currently on that slot",
+              remap.get("ok") is True and remap.get("changed") == 2
+              and (remap.get("facesPerSlot") or {}).get("0") == 6,
+              json.dumps(remap)[:220])
+        # THE assertion that makes it different from an empty faces list. Asking for nothing is a
+        # request; believing faces live on a slot that is empty is a wrong assumption about the
+        # mesh, and changed:0 would let it pass as success.
+        empty = B.call("assign_material_to_faces", {"object": cube["name"], "slot": 0,
+                                                    "fromSlot": 1})
+        check("T4105 a fromSlot no polygon uses is REFUSED, not reported as changed:0",
+              empty.get("ok") is False and "would move nothing" in (empty.get("error") or ""),
+              (empty.get("error") or "")[:220])
+        check("T4105 and the refusal lists the slots that ARE in use",
+              "slots in use" in (empty.get("error") or ""), (empty.get("error") or "")[:220])
+        oob = B.call("assign_material_to_faces", {"object": cube["name"], "slot": 0,
+                                                  "fromSlot": 9})
+        check("T4105 an out-of-range fromSlot is refused",
+              oob.get("ok") is False and "out of range" in (oob.get("error") or ""),
+              (oob.get("error") or "")[:200])
+        clash = B.call("assign_material_to_faces", {"object": cube["name"], "slot": 0,
+                                                    "faces": [0], "fromSlot": 0})
+        check("T4105 faces AND fromSlot together is refused - two ways of naming one selection, "
+              "and combining them would silently pick one",
+              clash.get("ok") is False and "EITHER faces OR fromSlot" in (clash.get("error") or ""),
+              (clash.get("error") or "")[:220])
     finally:
         for n in dict.fromkeys(o for o in objs if o):
             B.call("delete_object", {"object": n})

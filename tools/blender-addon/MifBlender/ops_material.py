@@ -431,8 +431,15 @@ def op_assign_material_to_faces(params):
     `faces` omitted means EVERY polygon. A face index past the end is REFUSED rather than
     ignored, and `changed` reports how many polygons actually moved - a selection that
     matches nothing is otherwise indistinguishable from success.
+
+    `fromSlot` selects every polygon CURRENTLY on that slot, which is the operation you
+    want after set_material_slots reorders or resizes the slot list. Without it that costs
+    a read, a client-side filter and a write of an explicit index list. It is REFUSED when
+    no polygon uses that slot, unlike an empty `faces` list: asking for nothing is a
+    request, but believing faces live on an empty slot is a wrong assumption about the
+    mesh, and changed:0 would let it pass as success.
     """
-    reject_unknown(params, ("object", "name", "slot", "slotIndex", "faces"),
+    reject_unknown(params, ("object", "name", "slot", "slotIndex", "faces", "fromSlot"),
                    "assign_material_to_faces")
     obj = get_object(take(params, "object", "name", required=True), want_mesh=True)
     slot = take_int(params, "slot", "slotIndex", required=True)
@@ -456,7 +463,32 @@ def op_assign_material_to_faces(params):
             "the exact indistinguishable-from-success case it exists to prevent. NOTHING was "
             "changed." % obj.name)
     faces = params.get("faces")
-    if faces is None:
+    from_slot = params.get("fromSlot")
+    if faces is not None and from_slot is not None:
+        raise MifOpError(
+            "pass EITHER faces OR fromSlot, not both - they are two ways of naming the same "
+            "selection and combining them would silently pick one. NOTHING was changed.")
+
+    if from_slot is not None:
+        # A slot-to-slot remap: every polygon CURRENTLY on from_slot moves to slot. This is the
+        # operation you want after set_material_slots reorders or resizes the list.
+        if not isinstance(from_slot, int) or isinstance(from_slot, bool) \
+                or from_slot < 0 or from_slot >= len(obj.material_slots):
+            raise MifOpError(
+                "fromSlot %r is out of range - '%s' has %d slot(s) (0..%d). NOTHING was changed."
+                % (from_slot, obj.name, len(obj.material_slots), len(obj.material_slots) - 1))
+        targets = [p.index for p in mesh.polygons if p.material_index == from_slot]
+        if not targets:
+            # DIFFERENT FROM faces:[] ON PURPOSE. An empty faces list is a caller asking for
+            # nothing; an empty fromSlot is a caller who believes faces live on a slot that is
+            # empty - a wrong assumption about the mesh, and changed:0 would let it pass.
+            raise MifOpError(
+                "no polygon on '%s' is currently using slot %d, so this would move nothing and "
+                "report changed:0 as though it had worked. The slots in use are: %s. NOTHING was "
+                "changed."
+                % (obj.name, from_slot,
+                   ", ".join("%d" % i for i in sorted({p.material_index for p in mesh.polygons}))))
+    elif faces is None:
         targets = range(total)
     else:
         if not hasattr(faces, "__len__") or isinstance(faces, str):

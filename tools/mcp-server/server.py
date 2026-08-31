@@ -4766,9 +4766,11 @@ def bl_describe_material(material: str, links: bool = False) -> dict:
 
 
 @mcp.tool()
-def bl_assign_material_to_faces(object: str, slot: int, faces: list = None) -> dict:
-    "Point a range of polygons at one of a Blender object's material SLOTS. bl_set_material_slots decides which materials a mesh has and in what order; this decides which faces use which, and only the first existed."
-    return _blender("assign_material_to_faces", object=object, slot=slot, faces=faces)
+def bl_assign_material_to_faces(object: str, slot: int, faces: list = None,
+                                from_slot: int = None) -> dict:
+    "Point a range of polygons at one of a Blender object's material SLOTS. bl_set_material_slots decides which materials a mesh has and in what order; this decides which faces use which. Omit faces to assign every polygon, or pass from_slot to move every face CURRENTLY on that slot - the operation you want after the slot list is reordered or resized. A from_slot no polygon uses is REFUSED rather than reported as changed:0, unlike an empty faces list: asking for nothing is a request, but believing faces live on an empty slot is a wrong assumption about the mesh."
+    return _blender("assign_material_to_faces", object=object, slot=slot, faces=faces,
+                    fromSlot=from_slot)
 
 
 @mcp.tool()

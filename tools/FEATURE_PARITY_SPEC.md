@@ -5992,7 +5992,33 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Cooked-safe. Two real hazards to guard rather than discover: joining objects with different material slot lists silently renumbers every polygon's material_index — the exact failure op_set_material_slots already refuses to cause (ops_mesh.py:1281-1290) — so join must report the merged slot order and...
       Vetter corrected the proposal: Four corrections. The gap is real; the proposer's evidence and shape are not. 1. THE CITATIONS ARE WEAK AND ONE IS WRONG. space_view3d.py:2773 is `layout.operator("object.join")` - a menu entry, which proves nothing about headless. rna_manual_reference.py is a doc-URL lookup table; "confirmed in rna_manual_reference.py" means only that a manual page exists. Worst, object_utils.py:142 is NOT "a hea...
 
-- [ ] **extend set_material_slots with a face-assignment parameter (assignFaces)** (day)
+- [~] **extend set_material_slots with a face-assignment parameter (assignFaces)** (day)
+      DECLINED 2026-08-31 on the strongest ground this project has: AN EXISTING ENDPOINT ALREADY
+      DOES IT. assign_material_to_faces (ops_material.py:419) takes object, slot/slotIndex and
+      faces, assigns every polygon when faces is omitted, refuses an out-of-range slot or face
+      index, and reports `changed` measured from the mesh plus a facesPerSlot tally. T4103 in
+      test_blender_material.py has covered all of it since it was written.
+
+      I FOUND THAT THE EXPENSIVE WAY and it is worth recording. I read the handler for the endpoint
+      the entry NAMED - set_material_slots - confirmed the parameter was absent, and built it there.
+      Only when I went to write the test did T4103 show the capability already existed on a
+      different endpoint. The spec's own rule says verify coverage by READING HANDLERS, and I read
+      the wrong one: the rule means grep for the CAPABILITY, not for the endpoint the proposal
+      happens to mention. The duplicate was reverted before it was committed.
+
+      ONE PART WAS GENUINELY MISSING and landed on the existing endpoint rather than as a second
+      surface: `fromSlot`, a slot-to-slot remap. "Move every face currently on slot 0 to slot 1" is
+      what you want after set_material_slots reorders or resizes the list, and it previously cost a
+      read, a client-side filter and a write of an explicit index list. It is REFUSED when no
+      polygon uses that slot, deliberately unlike an empty faces list - asking for nothing is a
+      request, but believing faces live on an empty slot is a wrong assumption about the mesh, and
+      changed:0 would let it pass as success. T4105 covers it, 35 PASS 0 FAIL.
+
+      The vetter's note about the angle criterion stands and is why nothing angle-based was built:
+      _select_edges' angle test is edge.calc_face_angle(), a DIHEDRAL angle between the two faces
+      sharing an edge, which has no meaning for a single face. Porting that grammar would have
+      invented a selector that means something different from the one it was named after.
+
       Assigns polygons to a material slot — by current slot index, by a named selection, or by angle/island — so a mesh whose faces all point at slot 0 can actually be split across the slots the endpoint just created.
       API: bpy.types.MeshPolygon.material_index — a plain int RNA write per polygon, fastest through mesh.polygons.foreach_get/foreach_set('material_index', arr). No operator, no context, no mode change. (The operator route bpy.ops.object.material_slot_assign exists — confirmed in scripts/modules/rna_manual_reference.py — but needs EDIT mode and a face selection, and the RNA route is strictly better here.) T...
       Cooked: Cooked-safe, pure Blender data. The guard: writing material_index out of range is exactly the silent-wrong-render failure set_material_slots' allowResize refusal already exists to prevent, so every index must be validated against len(obj.material_slots) BEFORE any write, and the write must be all-or...
