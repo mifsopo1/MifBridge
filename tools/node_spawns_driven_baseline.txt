@@ -1,0 +1,12 @@
+# Endpoints T330 drives from the LIVE registry - every add_* whose accepted params are
+# all in COSMETIC. A name vanishing from this set is a defect (removed endpoint, or a
+# stale describe_endpoint table), which is why it fails rather than re-baselining
+# itself. Regenerate deliberately with: python tools/test_node_spawns.py --update-baseline
+add_branch
+add_comment
+add_get_array_item
+add_make_array
+add_make_map
+add_make_set
+add_self
+add_sequence

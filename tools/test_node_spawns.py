@@ -47,7 +47,9 @@ the scratch blueprint first - a SphereComponent's OnComponentBeginOverlap), and 
 (needs its OWN scratch WidgetBlueprint with a real tree widget, since a binding lives inside that
 blueprint - a plain Actor blueprint has no widget tree to bind against).
 """
+import io
 import json
+import os
 import sys
 import time
 
@@ -110,7 +112,44 @@ def main():
     check("T330 the registry yielded endpoints to drive", len(simple) >= 5,
           "only %d found - describe_endpoint may have changed shape, and this suite is then vacuous"
           % len(simple))
-    print("   driving: %s" % ", ".join(simple))
+
+    # THE FLOOR ABOVE IS NOT ENOUGH, and this repo has the receipt. On 2026-08-31 a stale
+    # describe_endpoint table answered acceptedParams:NONE for a real endpoint; `acc` came back
+    # empty, the `if acc and ...` filter dropped it in silence, and this suite went green having
+    # driven one endpoint FEWER than the day before - 109 checks down to 106, with nothing saying
+    # so. A floor of five would not have noticed the set falling from twenty-six to six.
+    #
+    # SO THE BASELINE IS NAMES, NOT A COUNT. A count says the run shrank; the names say WHICH
+    # endpoint stopped being driven, which is the thing somebody has to act on. Additions are
+    # printed and pass - a new node endpoint arriving is the good case - but a DISAPPEARANCE fails,
+    # because there are only two ways it happens and both are defects: the endpoint was removed, or
+    # the table that describes it went stale.
+    baseline_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "node_spawns_driven_baseline.txt")
+    known = set()
+    if os.path.exists(baseline_path):
+        for line in io.open(baseline_path, encoding="utf-8"):
+            line = line.strip()
+            if line and not line.startswith("#"):
+                known.add(line)
+    if "--update-baseline" in sys.argv:
+        io.open(baseline_path, "w", encoding="utf-8", newline="\r\n").write(
+            "# Endpoints T330 drives from the LIVE registry - every add_* whose accepted params are\n"
+            "# all in COSMETIC. A name vanishing from this set is a defect (removed endpoint, or a\n"
+            "# stale describe_endpoint table), which is why it fails rather than re-baselining\n"
+            "# itself. Regenerate deliberately with: python tools/test_node_spawns.py "
+            "--update-baseline\n" + "".join(n + "\n" for n in simple))
+        print("   baseline updated: %d endpoint(s)" % len(simple))
+        known = set(simple)
+    missing = sorted(known - set(simple))
+    check("T330 no endpoint has DROPPED out of the driven set since the baseline", not missing,
+          "no longer driven: %s - either the endpoint went away, or describe_endpoint has gone "
+          "stale for it and this suite just got quietly smaller" % ", ".join(missing))
+    added = sorted(set(simple) - known)
+    if added:
+        print("   NEW since the baseline (this is fine - accept with --update-baseline): %s"
+              % ", ".join(added))
+    print("   driving %d: %s" % (len(simple), ", ".join(simple)))
     # RECORDED so coverage_gaps.py stops calling these untested. It reads suite SOURCE for
     # literal endpoint names and cannot see one produced by iterating the live registry -
     # four names were wrong on its list for exactly that reason. What is written is what
