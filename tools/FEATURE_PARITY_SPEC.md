@@ -9500,6 +9500,35 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       A refined version - a mutating call with no read-back of ANY kind in its block - would need to
       follow control flow to be worth anything, and the samples suggest it would find close to zero.
 
+- [ ] **set_niagara_emitter's whyNotSetProperty claims an ASYMMETRY nothing tests** (hours)
+      Surfaced 2026-08-31 the moment audit_cross_endpoint_claims could read multi-line literals -
+      it had been invisible, along with every other claim written across more than one TEXT()
+      fragment, which is most of them. The tool went from 546 claims to 805 and from 11
+      equivalence claims to 16; this is the one of the five new ones that asserts something
+      falsifiable about another endpoint's BEHAVIOUR:
+
+        "set_property on EmitterHandles[N].bIsEnabled flips the same bool, and it is enough to
+         DISABLE an emitter - but not to enable one, because it skips the RefreshFromExternalChanges
+         and InvalidateCompileResults this call makes. That leaves a stale compile result and an
+         emitter that stays dark with a flag saying otherwise."
+                                                        MifBridgeNiagara2.cpp:619
+
+      WHY IT IS WORTH TESTING RATHER THAN TRUSTING. It is the exact shape this repo hunts: an
+      asymmetry (one direction works, the other silently does not) ending in a state that REPORTS
+      SUCCESS while being wrong - a flag reading enabled on an emitter that stays dark. If the claim
+      is right, a caller who reaches for set_property gets a lie from their own read-back. If it is
+      wrong, an endpoint is talking somebody out of a route that works.
+
+      THE FIXTURE IS THE PROBLEM, and it is the same wall as several other Niagara items. DDS2 is
+      COOKED, cooked Niagara assets are the family whose duplication faults at 0x30, and mutating
+      real game content is out by the standing rules - so this needs a scratch Niagara System, which
+      create_asset's factory gap may not produce usefully either. Curfew (uncooked 5.7) is where
+      this is cheap, and a different session owns it.
+
+      SO THE NEXT STEP IS NOT THE TEST. It is deciding whether a scratch NiagaraSystem can be built
+      here at all; every attempt so far in this family has ended at a cooked-asset guard, and that
+      question is worth answering once for all the Niagara items rather than per item.
+
 - [ ] **three more notes promise the compile will catch something, and none is measured** (hours)
       Filed 2026-08-31 by sweeping for the pattern after fixing ONE instance of it, which is the
       rule this repo keeps relearning: remove_event_dispatcher's note promised orphaned nodes "will
