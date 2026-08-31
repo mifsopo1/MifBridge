@@ -211,7 +211,7 @@ closes it.
 ### [B — assets/registry](work/B_assets_registry.md)
 - FMigrationOptions fields (prompting behaviour?) → read PackageMigrationContext.h / the IAssetTools struct block before promising a dialog-free migrate.
 - BeginAdvancedCopyPackages — prompts? async completion shape? → read the implementation for dialogs; tier-3 candidate only.
-- USoundFactory constructor defaults (auto-cue creation flags) → read the ctor before promising SoundWave-only import.
+- USoundFactory constructor defaults — **READ 2026-08-31: SoundWave-only IS safe to promise.** `bAutoCreateCue = false` in the constructor on BOTH 5.3 (SoundFactory.cpp:158) and 5.7 (:164), with `SupportedClass = USoundWave::StaticClass()`. So an import produces a SoundWave and nothing else - no SoundCue appears beside it, which was the worry. `bIncludeAttenuationNode` is likewise false and `CueVolume` 0.75f, both inert while auto-cue is off. The flags are `UPROPERTY(EditAnywhere)` bitfields, so if cue generation is ever wanted it can be exposed reflectively rather than by linking AudioEditor - the same route MoviePipeline's settings take. Note the header lives in Editor/**AudioEditor**/Classes, not UnrealEd, which is where this entry's phrasing implies someone went looking.
 - UTextureFactory `customconstructor` contract → eyeball once at implementation (NewObject works).
 - FbxFactory `SetDetectImportTypeOnImport(false)` × `ImportUI->MeshTypeToImport` — the exact no-dialog static-vs-skeletal forcing combination → one-shot editor import test.
 
