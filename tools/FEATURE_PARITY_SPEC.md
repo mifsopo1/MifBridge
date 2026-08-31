@@ -7649,3 +7649,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the full text only for tools whose descriptions were long enough to be worth extracting from
       every turn's context - 289,944 characters at 450 tools, per the note above _TOOL_HELP_PATH -
       and mif_help's own docstring says "pass no argument to list every tool that HAS extended help".
+- [x] **a cone or torus could only be created at DEFAULT dimensions over MCP** (hours)  **DONE 2026-08-31.**
+      bl_create_primitive gained radius1, radius2, major_radius and minor_radius. The addon accepted
+      all four and NOTHING sent them, so the defining dimensions of two of the ten primitive kinds
+      were unreachable - and there was no workaround, because the op REFUSES size/radius for those
+      kinds rather than reinterpreting them: "A cone takes radius1/radius2 and a torus
+      majorRadius/minorRadius; neither takes size or radius", and an earlier version that remapped
+      one onto the other "made four kinds come out at twice the requested size with nothing in the
+      response to say so".
+
+      Validated statically, which is available even with Blender closed: parity_check compares each
+      _blender call site's keys against that op's reject_unknown set, and it passes - so the four
+      names are real. Mutation-tested: a planted bogusKey_zz is caught and named, exit 1.
+
+      NOT RUN AGAINST BLENDER. The addon suites skip without a running Blender, and this needs one to
+      prove a cone actually comes out at the requested radii.
+
+- [ ] **the param_reach question, asked of the Blender half** (day)
+      Found while fixing the above. parity_check checks server -> addon for keys the addon REFUSES
+      (the mcp_sends_unknown direction). Nothing checks the reverse: an addon op that ACCEPTS a
+      parameter no _blender call site sends, which is param_reach's question and the same cost - a
+      capability that exists and cannot be reached.
+
+      Raw measurement: 41 of 45 ops have at least one such key. That number is INFLATED and must not
+      be filed as 41 gaps - most are ALIASES the server simply does not use (create_primitive accepts
+      `type` for `kind`; several ops accept `name` beside `object`), which is exactly why param_reach
+      carries looks_like_alias and a baseline rather than a raw diff. The honest next step is to fold
+      the Blender half into param_reach so the alias logic and the ratchet are shared, then read what
+      survives. create_primitive's four were found by reading, not by the count.

@@ -4673,12 +4673,22 @@ def bl_create_primitive(kind: str, name: str = "", size: float = None, radius: f
                         location: list = None, rotation: list = None, segments: int = None,
                         ring_count: int = None, subdivisions: int = None, vertices: int = None,
                         depth: float = None, x_subdivisions: int = None,
-                        y_subdivisions: int = None) -> dict:
-    "Create a primitive mesh object in Blender: cube, sphere (alias uvsphere), icosphere, cylinder, cone, torus, plane, grid, circle or monkey."
+                        y_subdivisions: int = None, radius1: float = None, radius2: float = None,
+                        major_radius: float = None, minor_radius: float = None) -> dict:
+    "Create a primitive mesh object in Blender: cube, sphere (alias uvsphere), icosphere, cylinder, cone, torus, plane, grid, circle or monkey. A CONE takes radius1/radius2 and a TORUS takes major_radius/minor_radius - neither accepts size or radius, and passing the wrong one is refused rather than reinterpreted."
+    # radius1/radius2 and majorRadius/minorRadius were accepted by the addon and sent by nothing, so
+    # a cone or a torus could only be created at its DEFAULT dimensions over MCP. The op's own
+    # docstring is explicit - "A cone takes radius1/radius2 and a torus majorRadius/minorRadius;
+    # neither takes size or radius" - and it REFUSES size/radius for those kinds rather than
+    # reinterpreting them, so there was no workaround either. Found 2026-08-31 by diffing each addon
+    # op's reject_unknown set against the keys any _blender call site sends, which is param_reach's
+    # question asked of the Blender half.
     return _blender("create_primitive", kind=kind, name=name or None, size=size, radius=radius,
                     location=location, rotation=rotation, segments=segments,
                     ringCount=ring_count, subdivisions=subdivisions, vertices=vertices,
-                    depth=depth, xSubdivisions=x_subdivisions, ySubdivisions=y_subdivisions)
+                    depth=depth, xSubdivisions=x_subdivisions, ySubdivisions=y_subdivisions,
+                    radius1=radius1, radius2=radius2,
+                    majorRadius=major_radius, minorRadius=minor_radius)
 
 
 @mcp.tool()
