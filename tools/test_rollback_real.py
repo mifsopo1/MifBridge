@@ -165,6 +165,13 @@ check("T7-real reached APPLY not preflight", r.get("preflightErrors", 0) == 0,
 check("T7-real patch failed", r.get("ok") is False)
 check("T7-real applied>0 before rollback", r.get("rolledBack", 0) >= 1,
       "rolledBack=%s - if 0, nothing was ever applied and this test is vacuous" % r.get("rolledBack"))
+# `orig is not None` is not decoration. links() returns None when the pin cannot be read, so a bare
+# `after == orig` passes when BOTH reads failed - the None == None trap test_snap_ground's actor_z
+# docstring records, where it once turned five real assertions green. Assert the read WORKED, then
+# assert what it says.
+check("T7-real the pin was readable before and after - a comparison of two failed reads is not "
+      "evidence of anything",
+      orig is not None and after is not None, "before=%r after=%r" % (orig, after))
 check("T7-real DISPLACED LINK RESTORED", after == orig,
       "before=%s after=%s" % (orig, after))
 check_rollback_was_clean("T7-real", r)
@@ -184,6 +191,8 @@ check("T8-real reached APPLY not preflight", r.get("preflightErrors", 0) == 0,
 check("T8-real patch failed", r.get("ok") is False)
 check("T8-real applied>0 before rollback", r.get("rolledBack", 0) >= 1,
       "rolledBack=%s - if 0 this test is vacuous" % r.get("rolledBack"))
+check("T8-real the default was readable before and after", 
+      d_before is not None and d_after is not None, "before=%r after=%r" % (d_before, d_after))
 check("T8-real WIPED DEFAULT RESTORED", d_after == d_before,
       "before=%r after=%r" % (d_before, d_after))
 check("T8-real link not left behind", links(P[2], "InString") == [],

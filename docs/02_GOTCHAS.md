@@ -2178,3 +2178,31 @@ before: content identical both ways, `git add` resolves it, nothing was ever wro
 Use Python and set the newline explicitly, or `python -c` with `io.open(..., newline='\r\n')`.
 `sed -i`, `>` redirection from a shell, and anything else that rewrites a whole file will silently
 opt out of `.gitattributes` in the working tree.
+## Comparing a before/after pair proves nothing when BOTH reads failed
+
+`test_snap_ground`'s `actor_z` docstring has recorded this since the day it was written:
+
+> Its first version called that endpoint on the assumption it was there, got
+> `route_handler_not_found`, returned None, and turned five real assertions into `None == None` -
+> they only failed loudly because the expected values were concrete numbers.
+
+It keeps happening because the shape is so natural. Read a value, do a thing, read it again, assert
+they match. When the read is a bridge call that can fail, `None == None` and `{} == {}` are both
+green, and the assertion that looked like the point of the test is the one carrying no weight.
+
+Hit twice more on 2026-08-31:
+
+  * A probe of `snap_actors_to_ground`'s landscape guard compared the landscape's transform before
+    and after and printed "unmoved - the guard held". BOTH reads had returned `ok:false`, so it
+    compared `{}` to `{}` and would have printed that whatever happened. The real evidence was
+    `considered:1, skippedGround:1, snapped:0` - and `snapped:0` means `SetActorLocation` was never
+    reached, which is a claim about the code path rather than about a value that could not be read.
+  * `test_rollback_real`'s T7/T8 asserted `after == orig` over a helper that returns None when the
+    pin cannot be read. Now guarded with an explicit "the pin was readable before and after".
+
+TWO RULES, and the second is the one that saves you:
+
+1. Assert the READ SUCCEEDED, then assert what it says. `orig is not None` is not decoration.
+2. Prefer a claim the failing path cannot satisfy. A concrete expected number, a count that could
+   only be produced by the code path you mean, a field whose presence is itself the evidence.
+   `snapped == 0` beats "the position did not change" precisely because a broken read cannot fake it.
