@@ -6722,6 +6722,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       just sweep themselves.
 
 
+- [ ] **nine suites send a raw confirm:true while working on a DISCOVERED real asset** (hours)
+      Filed 2026-08-31 after fixing test_consolidate, which was the dangerous one and is done. The
+      standing rule is never to send confirm:true except through scratch_confirm, whose whole job is
+      proving the target is scratch. These bypass it on assets the project already owned:
+
+        test_anim_curve, test_anim_notify (4), test_collections (2), test_physics_asset (5),
+        test_simplified_collision_guard (2), test_uncovered_reads4 (2), test_uncovered_reads7,
+        test_virtual_bone_authoring (2)
+
+      SEVERITY IS NOT UNIFORM, and that is the first thing to establish before touching any of them.
+      test_consolidate could DELETE a real asset - one material consolidated into another, source
+      gone. The ones above look like ADD-then-REMOVE against a real asset: a notify track added to a
+      real AnimSequence and removed again in a `finally`, a virtual bone added to a real Skeleton.
+      Net effect zero if cleanup runs, and nothing is saved, so the file on disk is untouched.
+
+      TWO REAL RISKS REMAIN even so, and they are why this is filed rather than shrugged off. A suite
+      that dies between the add and the `finally` leaves a real asset dirty with test content - the
+      same shape as the current-level contamination fixed in reads7. And a dirty real asset is one
+      autosave away from being persisted, which turns an in-memory test artifact into an edit to
+      Andre's project.
+
+      NOT swept unilaterally: nine suites is a large change on my own judgment, several may be
+      deliberate (mutating a real asset is sometimes the only way to test a guard that only fires on
+      real content), and the right fix differs per suite - scratch fixture, scratch_confirm, or an
+      accepted exception with the reason written down. Worth reading test_consolidate's fix first;
+      it was ordering, not a new guard.
+
+
 ### Refuted, recorded so they are not re-proposed
 
 - add_retarget_pose / set_retarget_pose_bone / set_current_retarget_pose -- Refuted on the strongest and most common ground: existing endpoints already do it. I verified the reflective machinery by reading it rather than trusting it - H_set_property has no CPF_Edit gate (and MifBridgeDetails.cpp
