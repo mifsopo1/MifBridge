@@ -451,6 +451,46 @@ def check_ue_parity(binds, post_endpoints: set, problems: list):
             "it from the list." % (name, name)))
 
 
+def check_working_tree_eol():
+    """Tracked text files sitting as LF on disk when .gitattributes says CRLF.
+
+    ADVISORY, and the reason it has to be a detector rather than a fix is the interesting part.
+    "93 files are LF in the working tree" sat on the open list for days as though it were a commit
+    waiting to happen. IT IS NOT ONE. .gitattributes already declares `* text=auto eol=crlf` plus a
+    per-extension list, core.autocrlf is true, and git stores LF in the INDEX by design - `i/lf` is
+    correct and normal, not drift. So rewriting the bytes produces NO DIFF and nothing to commit,
+    and hunting for the commit is time spent looking for something that cannot exist.
+
+    What does happen is that a file WRITTEN by something other than a git checkout - an editor, a
+    script, an agent's file tool - keeps whatever endings it was written with until the next
+    checkout. That is a local working-tree state, it recurs whenever such a tool runs, and no
+    committed file can prevent it. The only durable thing is to notice, which is this.
+
+    The real number was 86, not 93, because some had been fixed by hand and the note went stale -
+    which is its own argument for counting rather than quoting.
+    """
+    import subprocess as _sp2
+    out = []
+    try:
+        r = _sp2.run(["git", "ls-files", "--eol"], capture_output=True, text=True,
+                     cwd=ROOT, timeout=60)
+    except Exception as e:
+        return ["could not run git ls-files --eol (%s)" % e]
+    bad = []
+    for line in (r.stdout or "").splitlines():
+        # "i/lf    w/lf    attr/text eol=crlf   path"
+        if "\tw/lf" in line.replace("    ", "\t") or " w/lf" in line:
+            if "eol=crlf" in line:
+                bad.append(line.rsplit("\t", 1)[-1].strip() or line.split()[-1])
+    if bad:
+        out.append("%d tracked file(s) are LF on disk while .gitattributes says eol=crlf: %s%s. "
+                   "This is a LOCAL working-tree state with NOTHING to commit - the index is LF by "
+                   "design. Refresh them in place, or re-checkout."
+                   % (len(bad), ", ".join(sorted(bad)[:4]),
+                      "" if len(bad) <= 4 else " and %d more" % (len(bad) - 4)))
+    return out
+
+
 def check_hook_drift():
     """The deployed Stop hooks vs the copies in this repo.
 
@@ -702,6 +742,8 @@ def main() -> int:
         print("PLUGIN IDLE: " + _p)
     for _p in check_hook_drift():
         print("HOOK DRIFT: " + _p)
+    for _p in check_working_tree_eol():
+        print("EOL DRIFT: " + _p)
 
     print("exemptions in force:")
     for op, reason in sorted(BLENDER_TOOLLESS_EXEMPTIONS.items()):
