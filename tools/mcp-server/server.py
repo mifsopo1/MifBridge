@@ -4479,9 +4479,15 @@ def bl_scene_info(detail: bool = False) -> dict:
 
 
 @mcp.tool()
-def bl_list_objects(object_type: str = "") -> dict:
-    "List objects in the Blender scene with their types. object_type filters to one Blender type ('MESH', 'EMPTY', 'ARMATURE', ...); omit it for everything. Read-only."
-    return _blender("list_objects", type=object_type or None)
+def bl_list_objects(object_type: str = "", pattern: str = None,
+                    detail: bool = False) -> dict:
+    "List objects in the Blender scene with their types. object_type filters to one Blender type ('MESH', 'EMPTY', 'ARMATURE', ...); omit it for everything. pattern filters by NAME and is echoed back in filteredBy, so a caller can tell an empty result from a filter that matched nothing. detail returns more per object. Read-only."
+    # pattern and detail were accepted by the addon and sent by nothing (ops_scene.py:66-67), so
+    # listing a busy scene meant retrieving everything and filtering client-side. The addon reports
+    # `filteredBy: {type, pattern}` precisely so a caller can tell "nothing matched" from "no filter
+    # was applied" - which is unanswerable if the filter cannot be set.
+    return _blender("list_objects", type=object_type or None, pattern=pattern,
+                    detail=detail or None)
 
 
 @mcp.tool()
@@ -4780,11 +4786,17 @@ def bl_rename_bones(object: str, renames: dict, dry_run: bool = False) -> dict:
 @mcp.tool()
 def bl_bake_texture(object: str, type: str = "AO", width: int = 512, height: int = 512,
                     image_name: str = None, filepath: str = None, uv_layer: str = None,
-                    margin: int = 4, samples: int = 16, keep_node: bool = False) -> dict:
+                    margin: int = 4, samples: int = 16, keep_node: bool = False,
+                    device: str = None) -> dict:
     "Bake AO / NORMAL / DIFFUSE / COMBINED / ROUGHNESS / EMIT / GLOSSY / SHADOW into an image on a Blender mesh - how a high-poly detail becomes a texture an Unreal material can use. Judged by the IMAGE, not the operator: bpy.ops.object.bake returns FINISHED and writes NOTHING when there is no active image-texture node, so the result is checked with is_dirty plus a before/after pixel signature and a blank bake is reported as the failure it is. Needs a UV layer. Render engine, device, samples and selection are all restored afterwards. Pass filepath to write it to disk - without one the image is in memory only. See mif_help."
+    # device is CPU or GPU for the Cycles bake (scene.cycles.device, ops_material.py:554). The
+    # docstring already promised "Render engine, device, samples and selection are all restored
+    # afterwards" - so the tool DESCRIBED a device it gave no way to choose. Unset leaves the
+    # addon's "CPU", which is the safe default on a machine with no usable GPU compute device.
     return _blender("bake_texture", object=object, type=type, width=width, height=height,
                     imageName=image_name, filepath=filepath, uvLayer=uv_layer,
-                    margin=margin, samples=samples, keepNode=keep_node or None)
+                    margin=margin, samples=samples, keepNode=keep_node or None,
+                    device=device)
 
 
 @mcp.tool()

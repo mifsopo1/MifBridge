@@ -257,7 +257,6 @@ bl:add_modifier.name
 bl:apply_modifier.name
 bl:apply_transform.name
 bl:assign_material_to_faces.name
-bl:bake_texture.device
 bl:bevel_edges.dryrun
 bl:bevel_edges.name
 bl:bevel_edges.seamband
@@ -293,8 +292,6 @@ bl:gen_texture.server
 bl:import_mesh.clear_scene
 bl:join_objects.sources
 bl:list_modifiers.name
-bl:list_objects.detail
-bl:list_objects.pattern
 bl:list_shape_keys.name
 bl:list_vertex_groups.name
 bl:normalize_weights.name
