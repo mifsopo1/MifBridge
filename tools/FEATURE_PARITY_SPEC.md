@@ -9148,8 +9148,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       That was the fifth and last hypothesis; the answer is that this route cannot break a blueprint,
       for a reason that is itself a defect.
 
-- [ ] **set_struct_member may be the second stale-pin instance - the sweep found it, the fixture did not**
-      (hours)
+- [x] **set_struct_member is NOT a second stale-pin instance - measured** - DONE 2026-08-31
       After fixing set_variable_type, swept every handler that changes a member's SHAPE - the thing a
       referencing node's pins are built from - and checked which follow it with a node fixup
       (ReconstructNode, RefreshVariableNodes, MarkBlueprintAsStructurallyModified). 13 handlers, and
@@ -9177,7 +9176,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       into parameter spelling and the third into path form, and that is the point to stop guessing
       and write down where the next attempt starts.
 
-      NEXT STEP, concretely: get add_break_struct to place a node against a scratch UserDefinedStruct
-      (try the full object path S_X.S_X, and read the handler if that fails), then run the same
-      three-step fixture the set_variable_type fix uses - place the node, note its pins, retype the
-      member, compare. Pass condition is the same: no pin of the OLD type surviving with a link.
+      SETTLED BY READING THE RESOLVER RATHER THAN GUESSING A THIRD PATH FORM. ResolveStruct
+      (MifBridgeCommon.cpp:4474) calls FindFirstObject<UScriptStruct> on the NAME - it is a name
+      lookup, not a path lookup, so a package path can never resolve and no amount of trying path
+      shapes would have worked. Passing the bare asset name places the node first time.
+
+      MEASURED, and it is clean:
+
+        BEFORE  [(S_Y, struct, 0), (MemberVar_0_<guid>, bool, 0)]
+        AFTER   [(S_Y, struct, 0), (MemberVar_0_1_<guid>, int, 0)]
+
+      One member pin, correctly retyped, no stale pin and no duplicate. The engine reconstructs
+      struct-dependent nodes on its own struct-change notification, which is exactly what the
+      set_variable_type path does NOT do.
+
+      SO set_variable_type WAS THE SOLE INSTANCE, and that is a more useful conclusion than a second
+      bug would have been: the fixup gap is specific to the variable-retype path, not a general habit
+      of this module. Six of the seven no-fixup handlers were fine by construction, and the seventh
+      is fine because the engine covers it.
+
+      Noted in passing, not chased: the member's internal pin name changes on retype
+      (MemberVar_0_ -> MemberVar_0_1_). Callers address struct members by friendlyName, which is
+      stable, so this is a curiosity rather than a break - but it is the kind of thing that would
+      matter to anything caching raw pin names.
