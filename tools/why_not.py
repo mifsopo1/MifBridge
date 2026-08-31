@@ -44,7 +44,6 @@ import harvest_param_table as H            # one parser, not two
 # the tool: a long reason is usually ONE TEXT() holding ADJACENT string literals -
 # TEXT("a " "b " "c") - not repeated TEXT() calls. Splitting on the braces and joining every quoted
 # literal in each chunk handles both, and does not care how the author wrapped the lines.
-CHUNK = re.compile(r"\{(.*?)\}", re.S)
 LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
 
@@ -52,11 +51,47 @@ def literals(chunk):
     return [m.group(1).replace('\\"', '"').replace("\\n", " ") for m in LITERAL.finditer(chunk)]
 
 
+def chunks(notes):
+    """Split the note map on braces that are NOT inside a string literal.
+
+    A regex cannot do this and the first version tried. Reason text routinely contains braces -
+    `list_blueprints {filter}`, `list_nodes {graphId}`, `bounds {min,max}` - so a non-greedy
+    \\{(.*?)\\} stops at the first `}` INSIDE a string, truncating the chunk mid-literal. The second
+    literal then never closes, the pair looks malformed, and the entry is dropped SILENTLY. That
+    lost 43 real decisions out of 867, including every one whose author had helpfully written the
+    call syntax into the explanation - which is to say, disproportionately the useful ones.
+
+    Walking the text tracking quote state is a few lines and is simply correct.
+    """
+    out, depth, start, in_str, esc = [], 0, None, False, False
+    for i, ch in enumerate(notes):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i + 1
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                out.append(notes[start:i])
+                start = None
+    return out
+
+
 def entries():
     rows, _missing, _problems, _decls = H.harvest()
     out = []
     for ep, guard, _via in rows:
-        for chunk in CHUNK.findall(guard.get("notes") or ""):
+        for chunk in chunks(guard.get("notes") or ""):
             parts = literals(chunk)
             if len(parts) >= 2:
                 key, reason = parts[0].strip(), " ".join(p.strip() for p in parts[1:]).strip()
