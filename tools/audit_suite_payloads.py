@@ -10,6 +10,15 @@ That failure is invisible to every other check in this directory. coverage_gaps 
 NAMED in a suite. audit_suite_reach sees the assertions RUN. Both are satisfied by a call that never
 reaches the endpoint's body.
 
+THE THIRD SIDE OF A TRIANGLE. Two tools already watch the parameter contract, and neither can see
+this one - mcp_sends_unknown says so itself: "the python test suites call M.call() directly with
+their own payloads rather than going through server.py".
+
+    param_reach.py         endpoint ACCEPTS a key no MCP tool sends    - costs a capability
+    mcp_sends_unknown.py   an MCP tool SENDS a key the endpoint rejects - costs the whole call
+    this file              a SUITE sends a key the endpoint rejects     - costs the whole TEST,
+                           silently, because the suite then asserts against the refusal it caused
+
 WHAT IS COMPARED. Suite call sites - M.call / M.raw_post / SC.confirm_call and the module-level
 post() helpers - against the accepted-key list in each handler's RejectUnknownParams, read from the
 SOURCE by param_reach.endpoint_accepts(). Aliases are included there, so a suite using any accepted
