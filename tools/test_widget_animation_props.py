@@ -66,6 +66,35 @@ def main():
           [x.get("timeTick") for x in (k.get("keys") or [])] == [0, 60000],
           str([x.get("timeTick") for x in (k.get("keys") or [])]))
 
+    # `replace` DEFAULTS TO TRUE, so a second call does not add - it discards everything already on
+    # the channel and writes only what was sent. The contract says so ("replace (bool, default true
+    # - clears first)") and the response reports it honestly through keysBefore/keysAfter, which is
+    # the pair a caller needs to see that eight keys became one. Nothing asserted it: keysBefore and
+    # keysAfter were checked on set_sequence_keys and never on this endpoint, so the destructive
+    # direction of the default was untested on the widget path.
+    #
+    # This is deliberately asserted as a LOSS. keys[] in the response is read back from the channel,
+    # so after a replace it shows exactly what was sent and looks like a complete, healthy channel -
+    # keysBefore is the only field that says anything was there before.
+    one = M.call("set_widget_animation_keys", dict(A, property="RenderOpacity",
+                 keys=[{"time": 0.5, "value": 0.5}]))
+    check("T91 a second call with the default replace DISCARDS the earlier keys",
+          one.get("ok") is True and one.get("keysAfter") == 1, json.dumps(one)[:240])
+    check("T91 and keysBefore reports the two that were lost",
+          one.get("keysBefore") == 2,
+          "keysBefore=%s - this is the only field that says the channel was not empty"
+          % one.get("keysBefore"))
+    check("T91 and keys[] shows only the survivor, which is why keysBefore matters",
+          [x.get("timeTick") for x in (one.get("keys") or [])] == [30000],
+          str([x.get("timeTick") for x in (one.get("keys") or [])]))
+
+    # And the other direction, so the default is proven to BE a default rather than the only path.
+    added = M.call("set_widget_animation_keys", dict(A, property="RenderOpacity",
+                   keys=[{"time": 1.0, "value": 1.0}], replace=False))
+    check("T91 replace:false ADDS instead, leaving the existing key alone",
+          added.get("ok") is True and added.get("keysBefore") == 1
+          and added.get("keysAfter") == 2, json.dumps(added)[:240])
+
     # ------------------------------------------------------------------ T92 colour
     print("\n=== T92: ColorAndOpacity — four channels ===")
     t = M.call("add_widget_animation_track", dict(A, property="ColorAndOpacity"))

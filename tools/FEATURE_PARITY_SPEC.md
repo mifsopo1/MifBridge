@@ -8535,10 +8535,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       override_inherited_component is guarded by JHasAny, so it only applies when confirm was
       actually sent, and the handler explains why confirm is optional there at all.
 
-- [ ] **set_widget_animation_keys `replace` defaults TRUE - the same shape as the blendspace clear**
-      (hours)
-      Found by the same sweep, not yet investigated. Two call sites, MifBridgeWidgets.cpp:643 and
-      :781. If it behaves like set_blendspace_samples' `clear`, a call that sends no keys deletes
-      every key already on the animation and the response says nothing about it. Read the handler
-      before assuming - the point of the blendspace finding was that the destructive default was
-      DOCUMENTED and the suite comment was what was wrong.
+- [x] **set_widget_animation_keys `replace` defaults TRUE - and unlike the blendspace, it SAYS SO**
+      - DONE 2026-08-31
+      Read the handler before assuming, which is what the filing asked for, and the assumption was
+      wrong in the useful direction. `replace` does default true and both call sites do call
+      Channel.Reset() (MifBridgeWidgets.cpp:643 for the bool channel, :781 for the float one) - but
+      this endpoint already REPORTS the loss. keysBefore and keysAfter are emitted on both branches
+      (:664/:665 and :819/:820), the contract line spells out "replace (bool, default true - clears
+      first)", and test_widget_animation_props' T92 already passes replace:false where it matters,
+      with a comment saying why. The reporting this file spent the evening adding to
+      set_blendspace_samples was here all along.
+
+      WHAT WAS ACTUALLY MISSING was one assertion. keysBefore/keysAfter were asserted on
+      set_sequence_keys and never on this endpoint, so the DESTRUCTIVE direction of the default went
+      untested on the widget path. T91 now drives it both ways: a second call with the default
+      discards two keys and reports keysBefore:2 keysAfter:1, and replace:false adds instead,
+      1 -> 2. 35 -> 39.
+
+      The assertion is deliberately written as a LOSS, because keys[] in the response is read back
+      from the channel - after a replace it shows exactly what was sent and looks like a complete,
+      healthy channel. keysBefore is the only field that says anything was there before.
