@@ -265,6 +265,26 @@ def _git(*args):
         return ""
 
 
+def check_param_table():
+    """(ok, message) - is describe_endpoint's compiled table still what the guards say?
+
+    A stale table is not cosmetic. self_audit derives paramTableCoverage from it, so shipping an old
+    one makes the plugin under-report its own parameter guards for the life of the release - and the
+    number it produces reads as a safety problem rather than as bookkeeping. Re-derived here rather
+    than trusted, for the same reason the 5.7 gate re-derives the compile.
+    """
+    script = os.path.join(HERE, "harvest_param_table.py")
+    if not os.path.isfile(script):
+        return False, "tools/harvest_param_table.py is missing - cannot verify the describe table"
+    r = subprocess.run([sys.executable, script, "--check"], capture_output=True, text=True)
+    tail = (r.stdout or "").strip().splitlines()
+    if r.returncode == 0:
+        return True, "describe_endpoint table matches the RejectUnknownParams guards"
+    return False, ("the describe_endpoint table has DRIFTED from the guards in Source - run "
+                   "tools/harvest_param_table.py and REBUILD, then package. (%s)"
+                   % (tail[-1] if tail else "no output"))
+
+
 def check_engine_probe():
     """(ok, message) - is there a passing 5.7 probe covering the current Source/?"""
     if not os.path.isfile(PROBE_RESULT):
@@ -475,6 +495,15 @@ def main():
         return 1
     if not ok57:
         print("  --force given: packaging anyway, without a 5.7 compile covering this Source.")
+
+    # The table is COMPILED IN, so a stale one ships and misreports the plugin's own guards for
+    # the whole release. Checked here because packaging is the last point at which it is cheap.
+    okpt, msgpt = check_param_table()
+    print(("param table: " + msgpt) if okpt else ("REFUSING TO PACKAGE - " + msgpt))
+    if not okpt and not args.force:
+        return 1
+    if not okpt:
+        print("  --force given: packaging a stale describe_endpoint table anyway.")
 
     name, _ = plugin_version()
     out = args.out or os.path.join(HERE, "dist", "MifBridge-%s.zip" % name)
