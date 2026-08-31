@@ -1256,7 +1256,7 @@ survives a rebuild and pins come back under the same names, so `CapturePin` befo
 call and `ResolvePin` after, handling null: a pin that genuinely did not come back must be reported,
 never dereferenced. `CapturePins` does a whole array (e.g. a `LinkedTo` snapshot).
 
-`tools/scan_pinloops.py`-style greps will not catch every instance; the rule is the thing to hold.
+A grep for the destructive calls will not catch every instance - a pin can be invalidated through a helper - so the RULE is the thing to hold, not a scan. (This line used to name a `scan_pinloops.py` under tools/ - deliberately written without the full path here, because parity_check's TOOL REF advisory scans for exactly that shape and an explanation should not trip the check it is explaining. Git has no record of that file ever existing; it was only ever illustrative, and it sent readers hunting.)
 
 #### `add_pin direction=output` on a function with no Return node
 

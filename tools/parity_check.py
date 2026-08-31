@@ -540,6 +540,44 @@ def check_plugin_declaration_drift():
             for name in missing]
 
 
+def check_tool_references():
+    """Docs and tools that name a `tools/<x>.py` which is not on disk.
+
+    A renamed tool leaves its old name behind in every doc that mentioned it, and the rename looks
+    complete because the code still runs. audit_confirm_gates became audit_promise_flags on
+    2026-08-31 and had to be chased through make_release and the runbook by hand; this is what makes
+    the next one cheap.
+
+    ADVISORY, like the idle-plugin check below it: a doc may legitimately name a tool that is
+    planned, or quote an old path while explaining a rename. Reading it is the point.
+    """
+    import glob as _glob
+    import io as _io
+    import os as _os
+    import re as _re
+
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    seen = {}
+    files = (_glob.glob(_os.path.join(root, "docs", "**", "*.md"), recursive=True)
+             + _glob.glob(_os.path.join(root, "tools", "*.py"))
+             + [_os.path.join(root, "README.md")])
+    for f in files:
+        try:
+            src = _io.open(f, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        for m in _re.finditer(r"tools/([A-Za-z0-9_\-]+\.py)", src):
+            seen.setdefault(m.group(1), set()).add(_os.path.relpath(f, root).replace("\\", "/"))
+    out = []
+    for name in sorted(seen):
+        if _os.path.isfile(_os.path.join(root, "tools", name)):
+            continue
+        out.append("tools/%s is named by %s and does not exist - a rename that was not chased, or a "
+                   "tool that never landed. %d file(s) reference it."
+                   % (name, ", ".join(sorted(seen[name]))[:90], len(seen[name])))
+    return out
+
+
 def check_linked_but_unused_plugins():
     """A plugin dependency that no source file uses: build cost, load risk, zero capability.
 
@@ -658,6 +696,8 @@ def main() -> int:
 
     for _p in check_plugin_declaration_drift():
         print("PLUGIN DRIFT: " + _p)
+    for _p in check_tool_references():
+        print("TOOL REF: " + _p)
     for _p in check_linked_but_unused_plugins():
         print("PLUGIN IDLE: " + _p)
     for _p in check_hook_drift():
