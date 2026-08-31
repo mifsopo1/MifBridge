@@ -178,10 +178,13 @@ def main():
 
     # ------------------------------------------------------------------ T293 revert
     print("\n=== T293: reverting removes it again ===")
-    # CONFIRM-GATED, so only the refusal is reachable from here: the audit harness strips `confirm`
-    # from every payload alongside `save` and `force`, and bypassing that on an unattended run would
-    # defeat the point of having it. The success path is a stated coverage gap, like the DataTable
-    # writes.
+    # THE NOTE THAT USED TO STAND HERE CALLED THE SUCCESS PATH A PERMANENT COVERAGE GAP, on the
+    # grounds that the harness strips `confirm` from every payload and bypassing that unattended
+    # would defeat the point of the guard. Both halves were true and the conclusion was not:
+    # scratch_confirm.py sends confirm ONLY for a payload whose every path is under /Game/_Mif, and
+    # this suite's fixtures are exactly that - it already imports SC for the same reason elsewhere.
+    # The gap was permanent only until something safe existed, which is the same correction
+    # test_widget_tree and test_uncovered_reads5 already carry.
     rev = M.call("revert_inherited_component", {"blueprintId": child, "component": "Body"})
     check("T293 revert refuses without confirm", rev.get("ok") is False, json.dumps(rev)[:200])
     check("T293 and says why it is gated",
@@ -193,6 +196,54 @@ def main():
           back.get("overrideExists") is True, json.dumps(back)[:180])
     c = M.call("compile", {"blueprintId": child})
     check("T293 and the child still compiles",
+          c.get("ok") is True and c.get("numErrors", 1) == 0, "errors=%s" % c.get("numErrors"))
+
+    # ---- T293b the SUCCESS path, through the sanctioned route
+    print("\n=== T293b: the real revert, and the two fields that describe what it removed ===")
+    real = SC.confirm_call("revert_inherited_component",
+                           {"blueprintId": child, "component": "Body", "confirm": True})
+    check("T293b the revert succeeds with confirm", real.get("ok") is True, json.dumps(real)[:240])
+    # reverted and removedTemplatePath are the endpoint's account of a DESTRUCTIVE act - it discards
+    # every property overridden on that component in one step - and nothing read either of them.
+    # removedTemplatePath matters more than it looks: the note on this response says the removed
+    # template is MarkAsGarbage'd and that the flag is NOT transaction-recorded, so Ctrl-Z will not
+    # bring it back. The path is the only record of what existed.
+    check("T293b and reports reverted:true rather than a bare ok",
+          real.get("reverted") is True, json.dumps(real)[:240])
+    check("T293b and NAMES the template it removed",
+          isinstance(real.get("removedTemplatePath"), str)
+          and "Body" in real.get("removedTemplatePath", ""),
+          "removedTemplatePath=%r" % real.get("removedTemplatePath"))
+    check("T293b and says how many overrides are left",
+          real.get("remainingOverrideCount") == 0,
+          "remainingOverrideCount=%r" % real.get("remainingOverrideCount"))
+    check("T293b and names the parent template it now falls back to",
+          isinstance(real.get("fallsBackTo"), str) and real.get("fallsBackTo"),
+          "fallsBackTo=%r" % real.get("fallsBackTo"))
+    # THE POSTCONDITION, read through a different endpoint. The response's own word is not evidence.
+    gone = inherited(child)
+    check("T293b and get_inherited_component agrees the override is gone",
+          gone.get("overrideExists") is False, json.dumps(gone)[:200])
+    check("T293b the claim and the read-back do not disagree",
+          (real.get("reverted") is True) == (gone.get("overrideExists") is False),
+          "reverted=%r overrideExists=%r" % (real.get("reverted"), gone.get("overrideExists")))
+
+    # ---- T293c reverting what is not there reports reverted:FALSE, not a bare failure
+    print("\n=== T293c: nothing to revert - the flag says so instead of only the error ===")
+    again = SC.confirm_call("revert_inherited_component",
+                            {"blueprintId": child, "component": "Body", "confirm": True})
+    check("T293c a second revert is refused", again.get("ok") is False, json.dumps(again)[:240])
+    # A caller that branches on the flag rather than parsing prose needs the flag to be present on
+    # BOTH outcomes. It is, and this is the only assertion of the false case anywhere.
+    check("T293c and reverted is present and FALSE, not absent",
+          again.get("reverted") is False,
+          "reverted=%r - an absent field would read as 'not false' to `is not False`"
+          % again.get("reverted"))
+    check("T293c and it still names the parent template being read from",
+          isinstance(again.get("fallsBackTo"), str) and again.get("fallsBackTo"),
+          json.dumps(again)[:220])
+    c = M.call("compile", {"blueprintId": child})
+    check("T293c and the child compiles after the revert",
           c.get("ok") is True and c.get("numErrors", 1) == 0, "errors=%s" % c.get("numErrors"))
 
     # ------------------------------------------------------------------ T294 guards

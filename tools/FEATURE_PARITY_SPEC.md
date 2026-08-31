@@ -8302,7 +8302,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **18 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **16 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8361,7 +8361,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         stays in SampleData. Left in the backlog rather than declared unreachable: one failed probe
         is not a proof, and the disagreement with the comment is itself worth resolving.
 
-      Real gaps: 18. Out of reach with a written reason: 6. Read by a suite: 40.
+      reverted and removedTemplatePath closed next - test_inherited_components T293b/T293c,
+      46 -> 57. The blocker was a STALE COMMENT, not a missing capability: T293 said the revert
+      success path was "a stated coverage gap" because the harness strips confirm, and the same file
+      already imported scratch_confirm for other work. scratch_confirm sends confirm only for a
+      payload whose every path is under /Game/_Mif, and this suite's fixtures are exactly that. The
+      gap was permanent only until something safe existed - the identical correction test_widget_tree
+      and test_uncovered_reads5 already carry.
+
+      removedTemplatePath earns its assertion more than most: this endpoint's own note says the
+      removed template is MarkAsGarbage'd and that the flag is NOT transaction-recorded, so Ctrl-Z
+      will not bring it back. The path is the only record that it existed. T293c also pins the FALSE
+      case, which nothing anywhere asserted - a caller branching on the flag needs it present on both
+      outcomes, and an absent field would read as "not false" to the `is not False` idiom this file
+      has already caught once.
+
+      Real gaps: 16. Out of reach with a written reason: 6. Read by a suite: 42.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote
