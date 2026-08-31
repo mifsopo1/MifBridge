@@ -103,11 +103,87 @@ def plant_unreachable(text):
                         '    lossy = lossy_bool_forwards()\n    if lossy:', 1)
 
 
+
+def plant_silent_mutator(text):
+    """A handler that calls a void UE API and reports ok without reading anything back.
+
+    SetActorLabel is on audit_postconditions' SILENT_APIS list because the editor may uniquify the
+    label it actually assigns, so "nothing threw" is not "the name is what you asked for". The plant
+    is a whole handler rather than an edit to a real one: it has to MUTATE and have no read-back, and
+    removing an existing verification would be a fragile deletion plant that breaks whenever that
+    handler is refactored.
+    """
+    # The (\t*) matters. These handlers live inside a namespace, so every one is tab-indented; the
+    # first version anchored at column zero, matched nothing, and reported the tool NOT proven -
+    # the third anchor mistake in this file, and the third to look exactly like tool rot.
+    m = re.search(r"\n(\t*)void\s+H_[A-Za-z0-9_]+\s*\(\s*const\s+TSharedRef<FJsonObject>&\s*In",
+                  text)
+    if not m:
+        return None
+    t = m.group(1)
+    probe = ("\n"
+             + t + "void H_mif_probe_zz(const TSharedRef<FJsonObject>& In, "
+                   "const TSharedRef<FJsonObject>& Out)\n"
+             + t + "{\n"
+             + t + "\tAActor* Probe = nullptr;\n"
+             + t + "\tProbe->SetActorLabel(TEXT(\"zz\"));\n"
+             + t + "\tOut->SetBoolField(TEXT(\"ok\"), true);\n"
+             + t + "}\n")
+    return text[:m.start() + 1] + probe.lstrip("\n") + text[m.start() + 1:]
+
+
+def plant_loop_write(text):
+    """A per-item fact written into the ONE response object from inside a loop - last wins."""
+    m = re.search(r"\n(\t+)for \([^\n]*\)\n\1\{\n", text)
+    if not m:
+        return None
+    indent = m.group(1) + "\t"
+    line = indent + 'Out->SetStringField(TEXT("probeNote_zz"), TEXT("x"));\n'
+    return text[:m.end()] + line + text[m.end():]
+
+
+def plant_refused_key(text):
+    """A suite passing a parameter its endpoint refuses by name - T44's green-for-weeks shape."""
+    needle = 'M.call("list_layers", {"limit": 400})'
+    if needle not in text:
+        return None
+    return text.replace(needle, 'M.call("list_layers", {"limit": 400, "probeKey_zz": 1})', 1)
+
+
+
+def plant_modal(text):
+    """An unguarded call to an API that can open a MODAL DIALOG.
+
+    A modal is worse than a crash here: handlers run inline on the game thread that answers HTTP, so
+    the bridge stops responding while the editor still looks alive. audit_modals reports 0 unguarded
+    today and exits 0, which is what makes "UNGUARDED" a safe marker - it cannot already be in the
+    output for some other reason.
+    """
+    m = re.search(r"\n(\t*)void\s+H_[A-Za-z0-9_]+\s*\(\s*const\s+TSharedRef<FJsonObject>&\s*In",
+                  text)
+    if not m:
+        return None
+    t = m.group(1)
+    probe = (t + "void H_mif_probe_modal_zz(const TSharedRef<FJsonObject>& In, "
+                 "const TSharedRef<FJsonObject>& Out)\n"
+             + t + "{\n"
+             + t + "\tAssetTools.DuplicateAsset(TEXT(\"zz\"), TEXT(\"/Game/zz\"), nullptr);\n"
+             + t + "}\n")
+    return text[:m.start() + 1] + probe + text[m.start() + 1:]
+
+
 # tool -> (target file, plant function, marker that must appear in the tool's output)
 PLANTS = {
     "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind, "mif_probe_zz"),
     "audit_promise_flags.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_confirm, "confirm"),
     "mcp_static_check.py": (SERVER, plant_unbound, "mif_probe_zz_unbound"),
+    "audit_postconditions.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_silent_mutator,
+                                "mif_probe_zz"),
+    "audit_loop_writes.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_loop_write,
+                             "probeNote_zz"),
+    "audit_suite_payloads.py": (os.path.join(HERE, "test_layers.py"), plant_refused_key,
+                                "probeKey_zz"),
+    "audit_modals.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_modal, "UNGUARDED"),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.

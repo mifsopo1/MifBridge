@@ -170,9 +170,13 @@ and on 2026-08-31 a check in `mcp_static_check` printed OK for hours without eve
 reported success throughout.
 
 The harness restores every planted file byte-for-byte and hashes the CONTENT of `Source/` before and
-after, refusing to report anything if the tree moved. 4 of 25 detectors are proven today; the rest
+after, refusing to report anything if the tree moved. 8 of 25 detectors are proven today; the rest
 are listed as NOT PROVEN, which is deliberate - an entry that was quietly absent would repeat the
 same bug one level up.
+
+**The release gate is covered.** Five of the six tools `make_release.check_static_audits` runs are
+proven to go red; the sixth, `test_fuzz_detector`, is itself a detector test. A release can no longer
+be waved through by a gate tool that had gone quiet.
 
 **Read the tool's contract before believing an ASLEEP verdict.** The first `parity_check` plant was
 aimed at something the compiler owns, not the tool, and produced a false ASLEEP.

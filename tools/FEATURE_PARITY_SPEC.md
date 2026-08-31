@@ -7741,11 +7741,18 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       among them, which is why it has been able to sit at exit 1. Adding it means first reading the
       9 above - gating a tool that is already red just blocks releases.
 
-- [ ] **21 of 25 audit tools have never been proven to fire** (day)
+- [ ] **17 of 25 audit tools have never been proven to fire** (day)
       tools/audit_detectors_fire.py plants a defect each tool claims to catch and requires it to go
-      red AND name the marker; 4 are proven (parity_check, audit_promise_flags, mcp_static_check,
-      audit_vacuous_checks) and the other 21 have no plant. The tool LISTS them as NOT PROVEN rather
-      than omitting them, because a silently missing entry is the same bug it exists to catch.
+      red AND name the marker. 8 are proven: audit_loop_writes, audit_modals, audit_postconditions,
+      audit_promise_flags, audit_suite_payloads, audit_vacuous_checks, mcp_static_check and
+      parity_check. The other 17 have no plant, and the tool LISTS them as NOT PROVEN rather than
+      omitting them, because a silently missing entry is the same bug it exists to catch.
+
+      THE RELEASE GATE IS NOW COVERED. make_release.check_static_audits runs six tools, and five of
+      them - audit_loop_writes, audit_postconditions, audit_modals, audit_promise_flags,
+      audit_suite_payloads - are proven to go red. The sixth, test_fuzz_detector, is itself a
+      detector test. So a release can no longer be waved through by a gate tool that had gone
+      silent, which was the specific risk worth closing first.
 
       Each remaining plant needs the target tool's contract READ first, not guessed. The first
       parity_check plant asserted a MIF_DECL with no MIF_BIND and reported the tool ASLEEP - wrongly.
