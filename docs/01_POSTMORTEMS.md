@@ -2440,6 +2440,18 @@ minutes later `UnrealEditor.exe` was still resident at ~4 GB with the bridge no 
 on 8791 - a TIMEOUT rather than a connection refusal, so the process was alive and not mid-exit
 in any way a caller could observe. The build could not start; a human had to click.
 
+**The signature, which identifies this without seeing the screen.** Four readings together, and
+no single one of them is enough:
+
+    Responding      : True          <- the message pump is alive; this is NOT a hang
+    CPU (total)     : ~24 s         <- and it is IDLE, not grinding through shutdown
+    MainWindowTitle : unchanged     <- a MODAL CHILD does not change the main window's title
+    bridge on 8791  : TIMEOUT       <- game thread no longer ticking the handler
+
+A responsive, idle process whose game thread has stopped answering is a modal. Note the bridge
+symptom is a TIMEOUT and not a connection refusal - refusal means the socket is gone and the
+module really is unloading, which is the healthy shutdown this was not.
+
 **Root cause, stated honestly as an inference rather than a reading.** Nothing here can see the
 screen, so "it is showing a save prompt" is the best explanation of the evidence and not a fact
 that was verified. What IS established: the session created and deleted scratch blueprints
