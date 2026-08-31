@@ -17,10 +17,7 @@
  ],
  "dynamicallyCovered": [
   "add_get_array_item",
-  "add_make_map",
-  "add_make_set",
-  "add_self",
-  "add_sequence"
+  "add_self"
  ],
  "covered": {
   "add_actor_to_data_layer": [
@@ -66,6 +63,7 @@
   ],
   "add_cast": [
    "test_node_spawns.py",
+   "test_pins.py",
    "test_uncovered_reads5.py"
   ],
   "add_class_cast": [
@@ -84,12 +82,14 @@
    "test_instance_components.py",
    "test_node_spawns.py",
    "test_spline_landscape.py",
+   "test_uncovered_reads3.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads8.py",
    "test_undo_integrity.py"
   ],
   "add_component_bound_event": [
-   "test_node_spawns.py"
+   "test_node_spawns.py",
+   "test_uncovered_reads3.py"
   ],
   "add_create_event": [
    "test_create_event.py"
@@ -190,6 +190,12 @@
   "add_make_array": [
    "test_pins.py"
   ],
+  "add_make_map": [
+   "test_pins.py"
+  ],
+  "add_make_set": [
+   "test_pins.py"
+  ],
   "add_make_struct": [
    "test_node_spawns.py"
   ],
@@ -232,6 +238,9 @@
   ],
   "add_reroute": [
    "test_reroute.py"
+  ],
+  "add_sequence": [
+   "test_pins.py"
   ],
   "add_sequence_possessable": [
    "test_sequence_keys.py",
@@ -454,6 +463,7 @@
    "test_selfpin.py",
    "test_spline_landscape.py",
    "test_timeline.py",
+   "test_uncovered_reads3.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
    "test_uncovered_reads8.py",
@@ -554,6 +564,7 @@
    "test_spline_landscape.py",
    "test_timeline.py",
    "test_transactions.py",
+   "test_uncovered_reads3.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
    "test_uncovered_reads7.py",
@@ -701,6 +712,7 @@
    "test_spline_landscape.py",
    "test_textures.py",
    "test_thumbnails.py",
+   "test_uncovered_reads3.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
    "test_uncovered_reads7.py",
@@ -1508,7 +1520,8 @@
   "remove_component": [
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
-   "test_instance_components.py"
+   "test_instance_components.py",
+   "test_uncovered_reads3.py"
   ],
   "remove_enum_value": [
    "test_confirm_gated.py",

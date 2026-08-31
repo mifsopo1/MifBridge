@@ -54,7 +54,23 @@ DECL = re.compile(r"^\s*MIF_DECL\((\w+)\)", re.M)
 # Only string LITERALS, and only the ones a caller actually reads back: notes, warnings and the text
 # handed to Fail(). A name inside a comment is documentation for the next maintainer, not a promise
 # to a caller, and mixing the two is how audit_blocking spent a day red on prose.
-TEXT_LIT = re.compile(r'TEXT\("((?:[^"\\]|\\.)*)"\)')
+# ADJACENT LITERALS ARE THE HOUSE STYLE, and this pattern assumed ONE fragment until
+# 2026-08-31, when audit_detectors_fire caught this tool ASLEEP against a planted claim. The
+# plant was written the way the module actually writes refusals -
+#
+#     TEXT("probeSameZz - list_blueprints returns the same set "
+#          "as this endpoint, so either will do. ")
+#
+# - and the old pattern needed the closing paren right after ONE closing quote, so a
+# two-fragment literal matched nothing at all and every multi-line claim in the module was
+# invisible. audit_editor_fatal_guards had this IDENTICAL bug, was fixed, and the fix never
+# reached here - its own header even records the lesson. The line below is copied from that
+# tool character-for-character so grepping one finds both.
+TEXT_LIT = re.compile(r'TEXT\(\s*((?:"(?:[^"\\]|\\.)*"\s*)+)\)')
+
+# The capture now holds every fragment WITH its quotes, so they are stripped and joined - the
+# same concatenation the C++ compiler performs.
+FRAGMENT = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
 # Names too short or too generic to be evidence of anything. `batch` and `compile` appear inside
 # ordinary English; `describe_endpoint` and `self_audit` are named by dozens of handlers as the
@@ -100,7 +116,7 @@ def claims(names):
                 continue
             speaker = fn[2:]
             for m in TEXT_LIT.finditer(raw, start, end):
-                body = m.group(1)
+                body = "".join(FRAGMENT.findall(m.group(1)))
                 for other in ordered:
                     if other == speaker:
                         continue

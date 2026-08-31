@@ -48,10 +48,29 @@ import harvest_param_table as H          # the one function-body walk
 # The vocabulary this codebase actually uses when it means "this would take the process down". Drawn
 # from the sites that exist rather than invented: CRASHES/TERMINATE in refusal text, plus the engine
 # failure shapes those refusals cite.
+# CASE-INSENSITIVE, AND IT COUNTS THE VERB IN EVERY TENSE THIS CODEBASE ACTUALLY WRITES.
+#
+# The first version listed exact-case alternatives - "CRASHES the editor|crashes the editor" - and
+# on 2026-08-31 audit_detectors_fire caught it ASLEEP: a planted guard saying "would CRASH the
+# editor" went unnoticed, because the pattern only knew the -ES form. That looked like a badly worded
+# plant until the corpus was counted, and the corpus settled it:
+#
+#     CRASHES the editor 5   CRASHES THE EDITOR 3   crashes the editor 2   <- matched, 10
+#     editor crash 3   EDITOR CRASH 2   would CRASH the editor 2           <- MISSED
+#     hard crash 2   crash the editor 1   CRASH the editor 1   editor CRASH 1   would CRASH THE EDITOR 1
+#
+# It was seeing ten of twenty-three - fewer than half of the real citations, including guards written
+# the same day. The plant was not wrong; it imitated the house style, which is exactly what a plant is
+# for, and imitating it is what exposed the gap.
+#
+# Deliberately GENEROUS now. This tool prints a reading list and always exits 0, so a borderline
+# extra line costs a reader ten seconds and a missed one costs an editor - the trade its own footer
+# already argues for.
 FATAL = re.compile(
-    r"(CRASHES the editor|crashes the editor|TERMINATE THE EDITOR|terminates? the editor|"
-    r"takes? the editor down|took the editor down|kills the editor|process gone|"
-    r"EXCEPTION_ACCESS_VIOLATION|Assertion failed)")
+    r"(crash(?:es|ed|ing)?\s+(?:the\s+)?editor|editor\s+(?:will\s+|would\s+|may\s+)?crash(?:es|ed)?|"
+    r"hard\s+crash|terminates?\s+the\s+editor|TERMINATE THE EDITOR|"
+    r"takes?\s+the\s+editor\s+down|took\s+the\s+editor\s+down|kills\s+the\s+editor|process gone|"
+    r"EXCEPTION_ACCESS_VIOLATION|Assertion failed)", re.IGNORECASE)
 
 # UE class names cited inside those strings. Deliberately narrow - a capitalised identifier that
 # looks like a UObject class - because the point is to group by CLASS, and a looser rule turns the
