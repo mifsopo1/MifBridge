@@ -1190,6 +1190,7 @@ namespace MifBridge
 	MIF_DECL(add_switch_enum);
 	MIF_DECL(add_switch_int);
 	MIF_DECL(add_switch_string);
+	MIF_DECL(add_switch_name);
 	MIF_DECL(add_enum_literal);
 	MIF_DECL(set_pin_type);
 

@@ -1081,6 +1081,14 @@ def add_switch_string(graph_id: str, cases: list = None, case_sensitive: bool = 
 
 
 @mcp.tool()
+def add_switch_name(graph_id: str, cases: list = None, has_default: bool = True,
+                    x: int = 0, y: int = 0) -> dict:
+    "Place a Switch on Name node - the fourth switch alongside add_switch_int, add_switch_enum and add_switch_string. FName is what UE uses for anything looked up by identity rather than read as text (a socket, a bone, a montage section), so branching on one previously meant a chain of == comparisons. cases is an array of label strings; an empty or duplicate entry is REFUSED rather than silently dropped. There is deliberately no caseSensitive parameter: FName comparison is case-insensitive by construction, so 'Head' and 'head' are the same case here and are rejected as duplicates."
+    return _post("add_switch_name", graphId=graph_id, cases=cases or [],
+                 hasDefault=has_default, x=x, y=y)
+
+
+@mcp.tool()
 def add_enum_literal(graph_id: str, enum_name: str, value: str = "", x: int = 0, y: int = 0) -> dict:
     "Add an enum literal node; value is the enumerator name (e.g. 'NewEnumerator0')."
     return _post("add_enum_literal", graphId=graph_id, enumName=enum_name, value=value or None, x=x, y=y)

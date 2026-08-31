@@ -236,6 +236,7 @@ namespace MifBridge
 			MIF_BIND(add_switch_enum);
 			MIF_BIND(add_switch_int);
 			MIF_BIND(add_switch_string);
+			MIF_BIND(add_switch_name);
 			MIF_BIND(add_enum_literal);
 			MIF_BIND(set_pin_type);
 			// Phase 3 breadth — event dispatchers

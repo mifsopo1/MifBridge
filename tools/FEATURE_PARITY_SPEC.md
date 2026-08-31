@@ -6869,7 +6869,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 - [level-world] group_actors / ungroup_actors: Create and disband an AGroupActor so a multi-part agent-assembled prop (a market stall built from a table, an awning and six crates) is selected and moved as one unit by a hum
 - [level-world] extend paint_landscape/create_landscape with register:true (register a target layer on a landscape): Register a ULandscapeLayerInfoObject as one of a landscape's target layers, so it can then be painted. To
 - [assets-content] extend rename_asset with a `renames` array (bulk rename / move in one AssetTools pass): Renames or moves many assets in a single IAssetTools::RenameAssets call. That matters beyond convenience: RenameAss
-- [blueprint-graph] add_switch_string with type:"name" - the OTHER half of this proposal. add_make_set was built 2026-08-31 (see below); the switch half is untouched.
+- [blueprint-graph] (BOTH HALVES BUILT 2026-08-31 - add_make_set and add_switch_name; see the entries below)
 - [blueprint-graph] extend an existing node endpoint (or add set_node_state) with enabled: enabled|disabled|developmentOnly and comment: Sets a node's enabled state — the editor's right-click Disable / Enable (Development 
 - [rendering-fx] material layer stack: read via list_material_parameters {layers:true}, write via set_material_layers: Enumerate a material instance's layer stack (which MaterialLayer and MaterialLayerBlend function is at 
 - [rendering-fx] viewport bookmarks: list_viewport_bookmarks / set_viewport_bookmark / jump_to_viewport_bookmark: Store the current viewport camera into one of the level's numbered bookmark slots, jump back to one, and lis
@@ -7945,3 +7945,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       DebugGame compiled and LINKED; DECL 437 == BIND 437; parity_check and mcp_static_check pass.
       NOT [x]: never run, and no suite - it needs a Blueprint graph to place a node into.
+
+- [ ] **add_switch_name - BUILT, never run** (hours)
+      The fourth switch, alongside add_switch_int, add_switch_enum and add_switch_string. FName is
+      what UE uses for anything looked up by IDENTITY rather than read as text - a socket, a bone, a
+      montage section - so a Blueprint branching on one of those had to be built from a chain of ==
+      comparisons.
+
+      Built as its own endpoint, not as type:"name" on add_switch_string, for the same reason
+      add_make_set is its own endpoint: the family is already one endpoint per switch type. `type` is
+      refused BY NAME with a note saying so.
+
+      NO caseSensitive PARAMETER, and that is a property of FName rather than an omission.
+      UK2Node_SwitchName carries no bIsCaseSensitive - only UK2Node_SwitchString does - because FName
+      comparison is case-insensitive by construction. Accepting the key and ignoring it would be the
+      silent-parameter class this bridge refuses on principle, so it is refused with the reason. The
+      duplicate-case refusal says it too: on a Switch on Name, 'Head' and 'head' are the SAME case
+      and collapse into one pin, which is a stricter trap than the string switch has.
+
+      DebugGame compiled and LINKED; DECL 438 == BIND 438; parity_check and mcp_static_check pass.
+      NOT [x]: never run, no suite - placing a node needs a Blueprint graph to place it into.

@@ -19,6 +19,7 @@
 #include "K2Node_SwitchEnum.h"
 #include "K2Node_SwitchInteger.h"
 #include "K2Node_SwitchString.h"
+#include "K2Node_SwitchName.h"
 #include "K2Node_Timeline.h"
 #include "K2Node_CallArrayFunction.h"   // set_pin_type must REFUSE on these: the node re-derives its
                                         // pin types from LinkedTo and wipes anything written directly
@@ -584,6 +585,81 @@ namespace MifBridge
 		{
 			Node->AddPinToSwitchNode(); // inherited from UK2Node_Switch (exported)
 		}
+
+		MarkStructural(Blueprint);
+		EmitNode(Out, Node);
+	}
+
+	// --- add_switch_name ----------------------------------------------------
+	// The fourth switch, alongside add_switch_int, add_switch_enum and add_switch_string. FName is the
+	// type UE uses for anything looked up by identity rather than read as text - a socket, a bone, a
+	// gameplay tag component, a montage section - so a Blueprint branching on one of those wanted a
+	// Switch on Name and had to be built with a chain of == comparisons instead.
+	//
+	// NO caseSensitive PARAMETER, and that is a property of FName rather than an omission. FName
+	// comparison is case-insensitive by construction (the name table stores a display string and
+	// compares on a case-folded id), and UK2Node_SwitchName carries no bIsCaseSensitive to set - only
+	// UK2Node_SwitchString has one. So the key is refused BY NAME with the reason, rather than accepted
+	// and ignored, which would be the silent-parameter class this bridge refuses on principle.
+	void H_add_switch_name(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("cases"), TEXT("hasDefault"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, cases? (ARRAY of non-empty, non-duplicate label strings), hasDefault? ")
+			TEXT("(default true), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("caseLabels"), TEXT("spell it cases (an array of label strings)") },
+			  { TEXT("caseSensitive"), TEXT("not settable on a Switch on Name - FName comparison is case-insensitive by construction and UK2Node_SwitchName has no bIsCaseSensitive. add_switch_string does, because FString comparison can be either.") },
+			  { TEXT("type"), TEXT("not a parameter - add_switch_int, add_switch_enum, add_switch_string and add_switch_name are separate endpoints, one per switch type") },
+			  { TEXT("selection"), TEXT("the Selection input is a pin - place the node, then set_pin_default or connect_pins") } }))
+		{
+			return;
+		}
+		UBlueprint* Blueprint = nullptr;
+		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
+		if (!Graph)
+		{
+			return;
+		}
+		Blueprint->Modify();
+		Graph->Modify();
+
+		UK2Node_SwitchName* Node = NewObject<UK2Node_SwitchName>(Graph);
+		Node->bHasDefaultPin = JBool(In, TEXT("hasDefault"), true);
+
+		// Same validation as add_switch_string, and for the same reason it was added there: a non-string
+		// or empty entry used to be dropped in SILENCE, so the switch came back with fewer case pins than
+		// the caller listed and nothing said which one was missing. A duplicate collapses into one pin,
+		// which is the same undercount one step later.
+		const TArray<TSharedPtr<FJsonValue>>* Cases = nullptr;
+		if (JArray(In, TEXT("cases"), Cases) && Cases)
+		{
+			int32 CaseOrdinal = INDEX_NONE;
+			for (const TSharedPtr<FJsonValue>& Value : *Cases)
+			{
+				++CaseOrdinal;
+				FString CaseName;
+				if (!Value.IsValid() || !Value->TryGetString(CaseName) || CaseName.IsEmpty())
+				{
+					Fail(Out, FString::Printf(
+						TEXT("cases[%d] must be a non-empty string. Nothing was kept."), CaseOrdinal));
+					return;
+				}
+				if (Node->PinNames.Contains(FName(*CaseName)))
+				{
+					// On a Switch on NAME this catches more than it does on a string switch: 'Head' and
+					// 'head' are the SAME FName, so two cases that look distinct collapse into one pin.
+					Fail(Out, FString::Printf(
+						TEXT("cases[%d] '%s' is a duplicate; a switch cannot have two identical cases. ")
+						TEXT("FName comparison is case-insensitive, so entries differing only in case are ")
+						TEXT("duplicates here. Nothing was kept."),
+						CaseOrdinal, *CaseName));
+					return;
+				}
+				Node->PinNames.Add(FName(*CaseName));
+			}
+		}
+		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
 
 		MarkStructural(Blueprint);
 		EmitNode(Out, Node);
