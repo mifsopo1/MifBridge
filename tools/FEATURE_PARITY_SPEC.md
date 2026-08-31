@@ -7194,7 +7194,12 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       finding, which is not a thing to put in a runbook people run often. The measurement is the
       deliverable, and it says the citation base is in good order - which is the answer somebody
       would otherwise spend an evening re-deriving.
-- [x] **a missing parameter reported as a failed lookup of the empty string - three endpoints** (hours)  **DONE 2026-08-31.**
+- [ ] **a missing parameter reported as a failed lookup - FIXED IN SOURCE, awaiting a reload** (hours)
+      DOWNGRADED FROM [x] on 2026-08-31, by me, against this file's own rule: "'- [x]' only when
+      BUILT, TESTED and COMMITTED". It is built and committed. It is not TESTED - the running
+      editor loads a DLL older than the change, so the new messages have never been observed.
+      What was verified live is the DEFECT, not the fix. Mark it done after the editor reloads
+      and describe_behavior_tree {} answers with the parameter name.
       Found by calling all 88 read-only endpoints with {} and asking whether the refusal names an
       accepted parameter. describe_behavior_tree answered "behavior tree not found: " with nothing
       after the colon; list_blackboard_keys the same. Both told a caller their path was wrong when
@@ -7237,3 +7242,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Found while verifying the README badge, which is correct in all three numbers: 160 test_*.py
       files against a claimed 159 suites is the 8+ assertion threshold, and the file below it is
       test_fuzz_detector.py itself. The off-by-one was the signpost.
+- [x] **no endpoint accepts an unknown parameter - all 404 comparable ones refuse** (hours)  **DONE 2026-08-31.**
+      Probed live through mifaudit: one unrecognised key and nothing else, which is fuzz's probe #1.
+      404 compared, 12 denied by the harness, 30 whose refusal carries no parseable list. ZERO
+      accepted it. That is the bug class this codebase calls its most damaging - a caller believing a
+      parameter took effect when nothing read it - and the answer is that it does not happen.
+
+      THE OTHER HALF OF THE SCAN FAILED, and the reason is worth more than the attempt. The plan was
+      to compare each endpoint's compiled describe-table row against the accepted list its guard
+      names at runtime, on the strength of describe_endpoint's own note that key-list drift "is NOT
+      detectable from inside the DLL". Two things were wrong with that:
+
+        The refusal's `accepted:` text is a human-readable SUMMARY, not a list. Parsing it yielded
+        "guard-only=a,data,short" - English words out of prose - and 342 phantom disagreements.
+
+        It was never needed. `harvest_param_table.py --check` already reports exactly this, and
+        better: "CONTRACT DRIFT: the committed table does not describe the guards in the source",
+        compared statically against the RejectUnknownParams literals rather than against prose. The
+        DLL's note says the drift is invisible from INSIDE the DLL, which is precisely why a build-
+        time tool reads the source instead. I read "not detectable from inside" as "not detectable".
+
+      Cost: three rewrites and about twenty-five minutes to re-derive a check that exists in better
+      form. No tool committed. Recorded so the next person reading that limitation note does not
+      start where I started.
