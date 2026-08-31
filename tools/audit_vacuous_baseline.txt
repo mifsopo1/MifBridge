@@ -22,3 +22,4 @@ test_pie_idle.py:83	P201 %s - and every endpoint its advice names is really regi
 test_project_paths.py:57	NO-COUNTEREXAMPLE over 'DIR_KEYS + ("projectFile",' - P100 and uses forward slashes throughout, so
 test_selfpin.py:130	PRESENCE of 'sourcesBefore' - T21 rows carry sourcesBefore/After
 test_spawn_many.py:188	T545 and each note carries its item index
+test_widget_bindings.py:117	NO-COUNTEREXAMPLE over 'need' - W912 every row carries the identity fields a

@@ -122,8 +122,40 @@ def main():
           exists.get("ok") is True and exists.get("class") == "AudioComponent",
           "path=%s ok=%s class=%s" % (component_path, exists.get("ok"), exists.get("class")))
 
+    # ------------------------------------------------------------------ T1408 the request is NAMEABLE
+    # Added 2026-08-31 with list_game_framework_component_requests. Until then add_ handed back an id
+    # for a request that stays LIVE - injecting a component into every current and future actor of a
+    # class - and nothing could enumerate them, so a lost id was a leaked request nothing could name.
+    # This is the round trip that proves the reader: after add_ it must be there, after remove_ it
+    # must be gone, and both halves matter.
+    print("\n=== T1408: the live request can be listed, and stops being listed when removed ===")
+    live = M.call("list_game_framework_component_requests", {})
+    check("T1408 list_game_framework_component_requests answers", live.get("ok") is not False, live)
+    rows = live.get("requests") or []
+    mine = [r for r in rows if r.get("requestId") == request_id]
+    check("T1408 the request we just made is in the list", len(mine) == 1,
+          "ids=%s" % [r.get("requestId") for r in rows][:8])
+    if mine:
+        row = mine[0]
+        # The two CLASSES are what make a listing usable - three unfamiliar ids and nothing else
+        # would not tell a caller which one to release.
+        check("T1408 and it reports what the request actually DOES",
+              row.get("receiverClass", "").endswith("StaticMeshActor")
+              and row.get("componentClass", "").endswith("AudioComponent"), row)
+        check("T1408 handleValid is a real bool, not absent",
+              isinstance(row.get("handleValid"), bool), row.get("handleValid"))
+    check("T1408 count agrees with the rows returned", live.get("count") == len(rows),
+          "count=%s rows=%d" % (live.get("count"), len(rows)))
+    check("T1408 it says the list is scoped to this editor session",
+          "session" in str(live.get("scopeNote") or "").lower(), live.get("scopeNote"))
+
     removed = M.call("remove_game_framework_component_request", {"requestId": request_id})
     check("T1406 remove_game_framework_component_request succeeds", removed.get("ok") is True, removed)
+
+    after = M.call("list_game_framework_component_requests", {})
+    check("T1408 and after removal it is NO LONGER listed - measured, not assumed from ok:true",
+          all(r.get("requestId") != request_id for r in (after.get("requests") or [])),
+          "ids=%s" % [r.get("requestId") for r in (after.get("requests") or [])][:8])
 
     # ------------------------------------------------------------------ T1407 the real UE lifecycle nuance
     print("\n=== T1407: a destroyed component stays resolvable-by-path until an actual GC pass runs ===")
