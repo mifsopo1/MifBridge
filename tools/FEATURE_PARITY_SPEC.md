@@ -7779,7 +7779,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       rather than done because a gate that fires on somebody's honest new assertion is a tax, and
       whether rules 1-3 are worth blocking a release over is Andre's call, not a mechanical one.
 
-- [ ] **4 of 26 audit tools have no plant, and 5 more cannot be plant-tested here** (day)
+- [ ] **every detector is accounted for: 20 planted, 6 unprovable here, 1 not ours** (hours)
       tools/audit_detectors_fire.py plants a defect each tool claims to catch and requires it to go
       red AND name the marker. 8 are proven: audit_loop_writes, audit_modals, audit_postconditions,
       audit_promise_flags, audit_suite_payloads, audit_vacuous_checks, mcp_static_check and

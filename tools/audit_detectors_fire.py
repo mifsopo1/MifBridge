@@ -355,6 +355,30 @@ def plant_prose_reader(text):
     return text.replace(needle, "            probe = line", 1)
 
 
+
+def plant_mode_param(text):
+    """A handler that branches on a MODE and declares a parameter only one branch could use.
+
+    The real defect this generalises: invoke_editor_tab declares `asset`, and UiResolveTabManager
+    returns early for manager:"global" without ever reading it, so a caller who meant an
+    asset-editor tab and forgot to set manager got a global operation under ok:true.
+    """
+    m = re.search(r"\n(\t*)void\s+H_[A-Za-z0-9_]+\s*\(\s*const\s+TSharedRef<FJsonObject>&\s*In",
+                  text)
+    if not m:
+        return None
+    t = m.group(1)
+    probe = (t + "void H_mif_probe_mode_zz(const TSharedRef<FJsonObject>& In, "
+                 "const TSharedRef<FJsonObject>& Out)\n"
+             + t + "{\n"
+             + t + "\tif (RejectUnknownParams(In, Out, { TEXT(\"mode\"), TEXT(\"probeOnly_zz\") },\n"
+             + t + "\t\tTEXT(\"mode, probeOnly_zz\"))) { return; }\n"
+             + t + "\tconst FString Mode = JStr(In, TEXT(\"mode\"));\n"
+             + t + "\tif (Mode == TEXT(\"alpha\")) { return; }\n"
+             + t + "}\n")
+    return text[:m.start() + 1] + probe + text[m.start() + 1:]
+
+
 # tool -> (target file, plant function, marker, gate)
 #
 # gate=True  - proof is a NON-ZERO exit AND the marker in the output. Both, because several of these
@@ -400,6 +424,10 @@ PLANTS = {
                                   plant_write_only_family, "add_mif_probe_zz", False),
     "audit_prose_dependence.py": (os.path.join(HERE, "audit_blocking.py"), plant_prose_reader,
                                   "audit_blocking"),
+    # gate=False: it is a review list and returns 0 whatever it finds, deliberately - deciding
+    # whether a declared parameter is genuinely ignored on a branch needs a person.
+    "audit_mode_params.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_mode_param,
+                             "probeOnly_zz", False),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.
@@ -419,6 +447,23 @@ LIVE = {
     "audit_roundtrip.py": "writes then reads back through the bridge",
     "audit_blender_postconditions.py": "needs a running Blender - exits 2 SKIPPED without one",
     "audit_blender_read_purity.py": "needs a running Blender - exits 2 SKIPPED without one",
+    "audit_value_discovery.py": "calls each endpoint and asks whether the values it demands are "
+                                "DISCOVERABLE from another endpoint - the answer lives in the "
+                                "running editor's responses, not in the source",
+}
+
+# NOT OURS TO PLANT, which is a different thing again from unproven or unprovable.
+#
+# audit_factory_init scans the ENGINE - UnrealEd's EditorFactories.cpp and friends - looking for
+# asset classes whose factory does work after its NewObject, which create_asset's bare NewObject
+# would skip. Planting for it means editing D:/UE532. That is somebody else's tree, shared by every
+# project on this machine, and a plant that failed to restore would be a very bad day.
+#
+# Recorded rather than left in the "no plant written yet" pile, because those two states call for
+# opposite actions: one is work, this is a boundary.
+NOT_OURS = {
+    "audit_factory_init.py": "its corpus is the ENGINE source, which this repo must not modify - "
+                             "not even briefly, not even with a restore",
 }
 
 # Extra argv some tools need to report everything rather than only new-against-baseline findings.
@@ -533,7 +578,8 @@ def main():
     # skipped-for-a-reason otherwise.
     covered = [t for t in DETECTORS if t in PLANTS]
     live = [t for t in DETECTORS if t not in PLANTS and t in LIVE]
-    uncovered = [t for t in DETECTORS if t not in PLANTS and t not in LIVE]
+    foreign = [t for t in DETECTORS if t not in PLANTS and t in NOT_OURS]
+    uncovered = [t for t in DETECTORS if t not in PLANTS and t not in LIVE and t not in NOT_OURS]
 
     print("%d detector(s) in tools/; %d have a plant, %d cannot be proven here, %d have neither"
           % (len(DETECTORS), len(covered), len(live), len(uncovered)))
@@ -593,6 +639,11 @@ def main():
         print("planted source defect says nothing about them; they need the thing they measure:")
         for t in live:
             print("  %-32s %s" % (t, LIVE[t]))
+    if foreign:
+        print("")
+        print("NOT OURS TO PLANT - the corpus belongs to somebody else:")
+        for t in foreign:
+            print("  %-32s %s" % (t, NOT_OURS[t]))
     if uncovered:
         print("")
         print("NOT PROVEN - no plant is defined for these, so their green means nothing here:")
