@@ -8162,7 +8162,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       session. Normal for an editor somebody is working in, and the auditor counts only NEW ones,
       which is why it can run at all against a live session.
 
-- [ ] **a new endpoint is INVISIBLE to describe_endpoint until harvest_param_table is rerun** (minutes)
+- [x] **a new endpoint is INVISIBLE to describe_endpoint until harvest_param_table is rerun** - DONE 2026-08-31
       Found 2026-08-31 the only way it could be: test_node_spawns passed 106 checks and never
       exercised add_make_set, and the suite could not say so because it drives whatever the LIVE
       REGISTRY reports as taking only cosmetic parameters. describe_endpoint answered
@@ -8175,8 +8175,37 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       and test_node_spawns went 106 to 109 with add_make_set driven, guid-checked and confirmed in
       the graph.
 
-      WHAT IS STILL OPEN. Nothing catches this. audit_describe_drift compares rows against handlers
-      and reported "0 endpoints have no row at all" earlier the same day - correctly, because it ran
-      before the endpoints existed. A check that the MIF_BIND count equals the harvested row count
-      would have caught it in seconds, and belongs either in parity_check or in the release gate.
-      Adding an endpoint has to mean regenerating the table, and right now only memory enforces that.
+      I FILED THIS WRONG, and the correction is the useful part. "Nothing catches this" was false.
+      `harvest_param_table.py --check` already compared the committed table against the
+      RejectUnknownParams literals, statically and fail-closed, and had done since it was written -
+      and this spec ALREADY records me re-deriving that same check by hand and throwing it away:
+      "Cost: three rewrites and about twenty-five minutes to re-derive a check that exists in
+      better form." I then proposed building it a third time. Reading the tool list before
+      proposing a tool is apparently a thing I have to keep being told.
+
+      THE REAL GAP WAS WHERE IT RAN, NOT WHETHER IT EXISTED. It was wired into
+      make_release.check_param_table and nowhere else, so it fired at PACKAGING. Adding an endpoint,
+      rebuilding and running four suites never consults it. That is the entire distance between a
+      check that works and a check that helps.
+
+      FIXED by delegating to it from parity_check.py as CHECK 7, blocking like checks 4-6 - the tool
+      that already runs constantly now runs the check that already worked. No new checker.
+
+      PROVEN, not asserted, and with the real defect rather than a synthetic one: `git show
+      f8223be~1` of MifBridgeDescribe.cpp IS the stale table from that morning, so it was restored
+      over the current file and both paths were run against it. Standalone --check exits 1 with
+      CONTRACT DRIFT; parity_check exits 1 and names the remedy; the file was restored and
+      sha256-compared byte-identical each time. The clean case was checked too - CHECK 7 is REACHED
+      and prints OK, which matters because checks 4-6 can each return 1 before reaching it.
+
+      AND IT STAYS PROVEN. harvest_param_table.py is now enumerated by audit_detectors_fire.py with
+      ARGS ["--check"] and a planter that deletes one generated key array - detector 21, "proven,
+      went red on the planted CONTRACT DRIFT". The ARGS entry is load-bearing and commented as such:
+      without --check the harness would run the GENERATOR against the file it is testing.
+
+      ONE THING I DID WRONG WHILE DOING THIS. I proved the new plant by calling prove() directly,
+      which bypasses the harness's editor guard - and an editor had been reopened. That guard exists
+      precisely because a plant writes a broken .cpp for about a second and Live Coding compiles on
+      demand. The file was restored byte-identical and nothing was compiled, but the guard was
+      written by someone who had thought about this more carefully than I did in that moment. Use
+      the harness's own entry point, which checks the port first.

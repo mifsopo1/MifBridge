@@ -781,6 +781,43 @@ def main() -> int:
         print("")
         print("(mcp static check unavailable: %s)" % exc)
 
+    # CHECK 7: is describe_endpoint's compiled table still DERIVED from the guards?
+    # THIS CHECK ALREADY EXISTED AND ALREADY WORKED. harvest_param_table.py --check compares the
+    # committed table against the RejectUnknownParams literals statically and fail-closed, and it
+    # reports the drift in one line. What did not exist was anything that RAN it between adding an
+    # endpoint and testing one: it was wired into make_release.check_param_table and nowhere else,
+    # so it fired at PACKAGING. On 2026-08-31 seven new endpoints reached a live editor and four
+    # green suites without it ever being consulted.
+    #
+    # The cost was not theoretical, and it was worse than a wrong number. test_node_spawns passed
+    # 106 checks WITHOUT exercising add_make_set, and could not say so. T330 drives whatever the
+    # live registry reports as taking only cosmetic parameters; describe_endpoint answered
+    # acceptedParams:NONE for an endpoint with no row, so the filter skipped it in silence and the
+    # suite went green having tested one thing FEWER than the day before. Regenerating took it
+    # 106 -> 109. A stale table does not just misinform a caller - it quietly shrinks the test run.
+    #
+    # BLOCKING, like checks 4-6 and like the packaging gate. The remedy is one command plus a
+    # rebuild, and an advisory here would be read exactly the way the packaging gate was read: at
+    # packaging, weeks later, by which point the suites have already gone green without it.
+    try:
+        import subprocess as _sp2
+        print()
+        _r2 = _sp2.run([sys.executable, os.path.join(HERE, "harvest_param_table.py"), "--check"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       stdin=_sp2.DEVNULL, timeout=300)
+        if _r2.returncode == 0:
+            print("OK  describe_endpoint's table still matches the RejectUnknownParams guards")
+        else:
+            for _l in ((_r2.stdout or "") + (_r2.stderr or "")).splitlines():
+                if _l.strip():
+                    print("DESCRIBE TABLE: " + _l)
+            print("FAIL: the describe table is stale. Run tools/harvest_param_table.py and REBUILD. "
+                  "Until you do, a new endpoint is invisible to describe_endpoint - and any suite "
+                  "that picks its targets by ASKING will skip it without ever saying so.")
+            return 1
+    except Exception as exc:
+        print("\n(describe table check unavailable: %s)" % exc)
+
     return 0
 
 

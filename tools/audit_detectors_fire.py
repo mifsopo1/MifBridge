@@ -47,8 +47,17 @@ SERVER = os.path.join(HERE, "mcp-server", "server.py")
 # unproven rather than skipped quietly.
 DETECTORS = sorted(f for f in os.listdir(HERE)
                    if f.endswith(".py") and (f.startswith("audit_") or f in (
-                       "parity_check.py", "mcp_static_check.py", "param_reach.py"))
+                       "parity_check.py", "mcp_static_check.py", "param_reach.py",
+                       # A GENERATOR, and with --check also a fail-closed detector - the same
+                       # dual role param_reach.py has. Listed because parity_check's CHECK 7 now
+                       # delegates to it, and a delegated check that nobody proves is exactly the
+                       # gap that let a stale table reach four green suites on 2026-08-31.
+                       "harvest_param_table.py"))
                    and f != "audit_report.py" and f != "audit_detectors_fire.py")
+
+
+BEGIN_HARVEST = "// >>> MIF_HARVEST_BEGIN"
+KEYS_ROW = re.compile(r"[ \t]*static const TCHAR\* const GMifDescKeys_\w+\[\] = .*\n")
 
 
 def plant_bind(text):
@@ -406,8 +415,32 @@ def plant_mode_param(text):
 #              Demanding a red exit there would call it ASLEEP no matter how well it works, so proof
 #              is that the marker is ABSENT before the plant and PRESENT after. Weaker evidence,
 #              named as such rather than dressed up as the same thing.
+def plant_missing_desc_row(text):
+    """Delete a row from describe_endpoint's generated table - the 2026-08-31 defect exactly.
+
+    Not a synthetic mangling: this is the state the file was actually in that morning, when seven
+    new endpoints had guards in the source and no rows here. The consequence was not merely a
+    caller reading a short list. test_node_spawns' T330 picks its targets by ASKING the live
+    registry which endpoints take only cosmetic parameters, describe_endpoint answered
+    acceptedParams:NONE for a row-less endpoint, and the suite skipped it in silence - passing 106
+    checks while testing one thing FEWER than the day before.
+
+    Anchored on the first generated key array rather than on a named endpoint, so renaming any one
+    endpoint reports anchor-gone (which is true and visible) instead of quietly proving nothing.
+    """
+    begin = text.find(BEGIN_HARVEST)
+    if begin < 0:
+        return None
+    m = KEYS_ROW.search(text, begin)
+    if not m:
+        return None
+    return text[:m.start()] + text[m.end():]
+
+
 PLANTS = {
     "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind, "mif_probe_zz"),
+    "harvest_param_table.py": (os.path.join(PRIV, "MifBridgeDescribe.cpp"),
+                               plant_missing_desc_row, "CONTRACT DRIFT"),
     "audit_promise_flags.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_confirm, "confirm"),
     "mcp_static_check.py": (SERVER, plant_unbound, "mif_probe_zz_unbound"),
     "audit_postconditions.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_silent_mutator,
@@ -485,7 +518,11 @@ NOT_OURS = {
 }
 
 # Extra argv some tools need to report everything rather than only new-against-baseline findings.
-ARGS = {"audit_vacuous_checks.py": ["--all"]}
+ARGS = {"audit_vacuous_checks.py": ["--all"],
+        # WITHOUT --check THIS TOOL REWRITES THE TABLE. It is a generator first; the detector is
+        # the --check mode. An empty ARGS entry here would have the harness regenerate the file it
+        # is meant to be testing, and then report the tool asleep for finding nothing.
+        "harvest_param_table.py": ["--check"]}
 
 
 

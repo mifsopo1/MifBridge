@@ -214,7 +214,9 @@ and nobody should risk compiling a deliberately broken file into somebody's open
 
 ```
 python tools/parity_check.py            # endpoint registry, params, hook drift
-python tools/harvest_param_table.py --check   # describe table vs the real guards
+python tools/harvest_param_table.py --check   # describe table vs the real guards (parity_check
+                                             #   CHECK 7 runs this too - standalone is for when you
+                                             #   want the drift without the other six checks)
 python tools/audit_undefined_names.py   # NameErrors in paths tests never reach
 python tools/audit_advice_gaps.py       # advice naming an operation that does not exist
 python tools/audit_value_discovery.py   # a parameter demanding a value nothing enumerates
