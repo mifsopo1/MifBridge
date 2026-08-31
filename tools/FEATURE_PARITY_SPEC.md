@@ -7901,7 +7901,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       something in the suite rather than in the endpoint; a test written against a build nobody has
       executed is a draft, and T435 was wrong on its first write for exactly this reason.
 
-- [ ] **19 citations in docs/audit/ resolve only on 5.3 and do not say so** (minutes)
+- [~] **19 citations in docs/audit/ resolve only on 5.3 - LEFT ALONE, deliberately** (minutes)
       Found by tools/audit_citations.py, new 2026-08-31. They are dated working records of 5.3-era
       investigation - J_dds2_project.md, Q_gap_rootcauses.md, I_diagnostics.md and friends - so the
       line numbers were right when written and are right for anyone reading them as history. Left
@@ -7910,6 +7910,10 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       read as current instructions rather than as a record.
 
       Worth revisiting only if someone starts treating docs/audit/ as reference rather than history.
+
+      MARKED DECLINED rather than open, because it is a decision and not pending work. An open list
+      padded with things somebody already decided not to do overstates how much is left, and the
+      next reader has to re-derive each one to find that out.
 
 - [ ] **list_game_framework_component_requests - BUILT, never run** (hours)
       Found 2026-08-31 by sweeping all 435 endpoints for families that can WRITE a thing and not READ
