@@ -6538,10 +6538,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       MifBridgeLiveCoding, MifBridgeLiveWidgets, MifBridgeMetaHuman, MifBridgeNodePins,
       MifBridgeStateTree, MifBridgeThumbnail, MifBridgeTrace, MifBridgeWidgetPreview.
 
-      NOT DONE ON MY OWN INITIATIVE, deliberately. Rewriting 26 files' line endings is a diff that
-      touches every line of each and moves blame on all of them, for no functional change - exactly
-      the kind of multi-file sweep to ask about first. It is a one-command fix whenever it is wanted;
-      the reason it is filed rather than done is that the cost is in the history, not the work.
+      NOT DONE ON MY OWN INITIATIVE, deliberately - it is a 26-file sweep for no functional change,
+      which is the kind of thing to ask about first.
+
+      CORRECTING MY OWN REASONING, 2026-08-31: I filed this partly on "it moves blame on all of
+      them", and that is avoidable. The standard answer is a `.git-blame-ignore-revs` file listing
+      the reformat commit, after which `git blame --ignore-revs-file=.git-blame-ignore-revs` (or
+      `git config blame.ignoreRevsFile .git-blame-ignore-revs` once, per clone) skips straight past
+      it. GitHub honours the file automatically. So the history cost is close to zero if the commit
+      is recorded there, and the decision should be made on whether the churn is wanted at all -
+      not on a downside that has a standard fix.
+
+      SHAPE, if it is wanted:
+        1. one commit that ONLY changes line endings, touching nothing else, so it is trivially
+           reviewable and safely ignorable
+        2. add its SHA to .git-blame-ignore-revs with a one-line reason
+        3. add `* text eol=crlf` to .gitattributes so it cannot drift back - which is the actual
+           fix, since a one-off pass just resets a clock
+
+      Doing 3 alone is also an option and is nearly free, but it will renormalise those files on the
+      next checkout anyway, which is the same sweep arriving quietly instead of deliberately. That is
+      the one thing I would avoid.
 
       Worth pairing with a .gitattributes `* text eol=crlf` so it cannot drift back, which would be
       the actual fix rather than a one-off pass.
