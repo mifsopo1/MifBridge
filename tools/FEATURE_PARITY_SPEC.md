@@ -7194,3 +7194,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       finding, which is not a thing to put in a runbook people run often. The measurement is the
       deliverable, and it says the citation base is in good order - which is the answer somebody
       would otherwise spend an evening re-deriving.
+- [x] **a missing parameter reported as a failed lookup of the empty string - three endpoints** (hours)  **DONE 2026-08-31.**
+      Found by calling all 88 read-only endpoints with {} and asking whether the refusal names an
+      accepted parameter. describe_behavior_tree answered "behavior tree not found: " with nothing
+      after the colon; list_blackboard_keys the same. Both told a caller their path was wrong when
+      they never gave one. The code already knew - both read
+      `Path.IsEmpty() ? nullptr : LoadAssetLenient(Path)` and spent that knowledge on a message that
+      discards the distinction. A THIRD site, set_component_transform, is a WRITE path that a
+      read-only sweep can never reach; found by grepping the pattern instead of the symptom, which is
+      the difference between fixing two endpoints and fixing the class. MifBridgeNiagara2.cpp has the
+      same ternary and was already correct. BUILD OK on 5.3 Development, linked, mtime verified.
+
+      Nine endpoints flagged, seven fine: STATE refusals legitimately name no parameter, and the
+      five kr_* carry no parameter metadata to match against. That imprecision is why the rule that
+      shipped into fuzz_endpoints is the narrow one - a message that formats in the MISSING value -
+      pinned by a --self-test of seven cases so it cannot quietly stop matching.
+
+- [x] **endpointsWithoutTableRow: 13 - one of them is OURS, and it is fine** (minutes)  **DONE 2026-08-31.**
+      Recorded because the obvious reading is wrong and someone will read it again. Twelve are the
+      foreign MifKismetReconstructor endpoints. The thirteenth, recipe_override_and_call_parent, is
+      provider=MifBridge - so "all thirteen are foreign", which is what I had assumed, is false.
+      It is still not a gap: it DELEGATES its guard rather than carrying a literal
+      RejectUnknownParams, so harvest_param_table cannot derive a static row, while the endpoint
+      itself refuses an unknown key and names all six accepted parameters. describe_endpoint answers
+      for it from `paramsSource: runtime` with `status: params_observed`. This is precisely what
+      paramTableCoverage's own completenessNote says - the number is an UPPER BOUND on endpoints that
+      accept anything silently, never a count of them - and here the bound is 13 while the count is 0.
