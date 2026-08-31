@@ -170,7 +170,7 @@ and on 2026-08-31 a check in `mcp_static_check` printed OK for hours without eve
 reported success throughout.
 
 The harness restores every planted file byte-for-byte and hashes the CONTENT of `Source/` before and
-after, refusing to report anything if the tree moved. 10 of 25 detectors are proven today; the rest
+after, refusing to report anything if the tree moved. 18 of 27 detectors are proven today; the rest
 are listed as NOT PROVEN, which is deliberate - an entry that was quietly absent would repeat the
 same bug one level up. Six are separated out as NOT PROVABLE HERE, each with its reason: four drive the
 running editor, two need a running Blender and exit 2 SKIPPED without one. "No plant written yet" and "cannot be
@@ -187,6 +187,28 @@ be waved through by a gate tool that had gone quiet.
 
 **Read the tool's contract before believing an ASLEEP verdict.** The first `parity_check` plant was
 aimed at something the compiler owns, not the tool, and produced a false ASLEEP.
+
+## What an open editor stops you doing
+
+Worth knowing before you plan an hour's work around a build.
+
+**UBT refuses outright while Live Coding holds the editor** - "Unable to build while Live Coding is
+active", and no compilation happens at all. Not a slow build, not a partial one: zero.
+
+```
+Build.bat <Project>Editor Win64 DebugGame -Project=<...>.uproject -WaitMutex
+```
+
+**DebugGame is the way through.** It compiles the same sources into different binaries, so Live
+Coding is not holding them, and it LINKS - which is the part that matters for anything crossing a
+module boundary, because a wrong `MIFBRIDGE_API` or a missing definition is LNK2019 and nothing
+earlier. It is not a substitute for a Development build; it is proof the code is correct while you
+wait for one.
+
+**The detector harness knows about this too.** It skips every plant that writes into `Source/` while
+an editor answers on 8791 - a plant restores in about a second, but Live Coding compiles ON DEMAND
+and nobody should risk compiling a deliberately broken file into somebody's open session. It exits
+2, not 0, so a skipped run cannot be mistaken for a clean one. Plants that target `tools/` still run.
 
 ## How to know the state is healthy
 
