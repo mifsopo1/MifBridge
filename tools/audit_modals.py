@@ -229,7 +229,24 @@ def check_deferrals():
 #
 # A drop means a call site lost its gate. If a refactor legitimately merges paths, update the number
 # here deliberately and say why - the same contract as every baseline in this directory.
+# HOW TO FIND MORE OF THESE, because both files were found by reading rather than by pattern:
+#
+#     grep -rniE "INVARIANT|fatal if|load-bearing|must NOT be removed" Source/MifBridge/Private
+#
+# A file that declares its own invariants is telling you exactly what to check. That grep is what
+# turned up MifBridgeImport.cpp saying "the two invariants that keep this endpoint from taking the
+# editor down" - and then, on the file already being checked, that MifBridgeExport.cpp:425 says
+# "the THREE invariants" while lines 674-678 mark FOUR lines // INVARIANT. Two of the four had been
+# enforced. The prose count and the code count disagreed, and the code was right.
 INVARIANTS = [
+    ("MifBridgeExport.cpp", r"Task->bPrompt\s*=\s*false", 1,
+     "no GWarn->YesNof overwrite dialog (UnrealExporter.cpp:339/:387) - a modal like any other, and "
+     "on the same object as the two below it"),
+    ("MifBridgeExport.cpp", r"Task->bWriteEmptyFiles\s*=\s*false", 1,
+     "NOT a modal, and the one entry here that is not: true would clobber the real FBX with an empty "
+     "buffer. Kept in this table because it is declared // INVARIANT in the same block, for the same "
+     "reason, and it is one line - a second tool holding a single row would be the worse answer. If "
+     "a third non-modal invariant appears, split them"),
     ("MifBridgeExport.cpp", r"Task->bAutomated\s*=\s*true", 1,
      "gate 1 - without it GetAutomatedExportOptionsFbx returns nullptr and the options modal opens"),
     ("MifBridgeExport.cpp", r"Task->Options\s*=", 2,
@@ -389,15 +406,14 @@ def main():
 
     print()
     print("=" * 78)
-    print("INVARIANTS - mitigations for modals this scan cannot otherwise see")
+    print("DECLARED INVARIANTS - lines the source itself marks as fatal if dropped")
     print("=" * 78)
     broken = check_invariants()
     for rel, pattern, where, why in broken:
         print("  MISSING  %s   %s" % (rel, where))
         print("           %s" % why)
     if not broken:
-        print("  all %d present in code - the FBX export and import options-modal gates"
-              % len(INVARIANTS))
+        print("  all %d present in code - the FBX export and import gates" % len(INVARIANTS))
 
     print()
     print("=" * 78)
