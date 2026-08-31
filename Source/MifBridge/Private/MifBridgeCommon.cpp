@@ -278,6 +278,7 @@ namespace MifBridge
 			MIF_BIND(set_widget_is_variable);
 			MIF_BIND(add_widget_binding);
 			MIF_BIND(remove_widget_binding);
+			MIF_BIND(list_widget_bindings);
 			MIF_BIND(add_tree_widget);
 			MIF_BIND(remove_tree_widget);
 			// Widget-tree topology

@@ -1247,6 +1247,7 @@ namespace MifBridge
 	MIF_DECL(set_widget_is_variable);
 	MIF_DECL(add_widget_binding);
 	MIF_DECL(remove_widget_binding);
+	MIF_DECL(list_widget_bindings);
 	MIF_DECL(add_tree_widget);
 	MIF_DECL(remove_tree_widget);
 	// Widget-tree TOPOLOGY (MifBridgeWidgets.cpp). add/remove could create and delete but never read

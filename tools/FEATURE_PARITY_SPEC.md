@@ -7884,12 +7884,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       build when the editor is next closed; the sources are identical, so this is a formality rather
       than a doubt, and it is still not a [x] until it happens.
 
-- [ ] **nothing LISTS widget property bindings - add and remove exist, no read** (hours)
+- [ ] **list_widget_bindings is BUILT and has a suite, and neither has ever run** (hours)
       Found 2026-08-31 while fixing a message that promised `list_widget_bindings`, an endpoint that
       was never built. add_widget_binding and remove_widget_binding write them; add_widget_binding
       reports a bindingCount and nothing returns the bindings themselves. The refusal text now says
-      so honestly instead of naming a reader that does not exist, but the read-with-no-write
-      asymmetry this project treats as a gap is still there, inverted.
+      so honestly instead of naming a reader that does not exist - and then the endpoint was
+      written, so the message says the original thing again and it is now true.
+
+      BUILT 2026-08-31: handler in MifBridgeWidgets.cpp, MIF_DECL + MIF_BIND (435 == 435), an
+      @mcp.tool wrapper, and tools/test_widget_bindings.py. DebugGame compiled and LINKED, 10
+      MifBridge translation units, 0 errors. parity_check, mcp_static_check, audit_suite_payloads
+      and audit_message_endpoints all pass on it.
+
+      NOT [x] because it has never RUN. The loaded DLL predates it, so the suite exits 2 SKIPPED -
+      which is the honest answer and is what it prints. Whoever runs it first should expect to fix
+      something in the suite rather than in the endpoint; a test written against a build nobody has
+      executed is a draft, and T435 was wrong on its first write for exactly this reason.
 
 - [ ] **19 citations in docs/audit/ resolve only on 5.3 and do not say so** (minutes)
       Found by tools/audit_citations.py, new 2026-08-31. They are dated working records of 5.3-era

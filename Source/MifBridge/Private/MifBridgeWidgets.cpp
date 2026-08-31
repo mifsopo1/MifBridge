@@ -1549,6 +1549,87 @@ namespace MifBridge
 		Out->SetBoolField(TEXT("needsCompileToApply"), true);
 	}
 
+	// --- list_widget_bindings ------------------------------------------------
+	// THE READ HALF. add_widget_binding and remove_widget_binding have existed for months and nothing
+	// could read a binding back - the read-with-no-write asymmetry this project treats as a gap,
+	// inverted. It was found on 2026-08-31 by audit_message_endpoints, which caught a refusal in
+	// remove_widget_binding advising the caller to run `list_widget_bindings` to see what the
+	// blueprint actually has. That endpoint did not exist. The message was fixed to say so; this makes
+	// the message's original promise true instead.
+	//
+	// widgetPresent IS THE POINT, not decoration. add_widget_binding refuses a widget that is not in
+	// the tree, because "binding would be dropped on compile" - SanitizeBindings removes it silently.
+	// A binding written while the widget existed and orphaned when the widget was later renamed or
+	// deleted is in Bindings, looks fine, and vanishes at the next full compile. Nothing reported that
+	// before, because nothing reported bindings at all.
+	void H_list_widget_bindings(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("blueprintId"), TEXT("path"), TEXT("widgetName"), TEXT("propertyName") },
+			TEXT("blueprintId (alias: path) - required; widgetName and propertyName narrow the list"),
+			{ { TEXT("widget"), TEXT("spell it widgetName") },
+			  { TEXT("property"), TEXT("spell it propertyName") },
+			  { TEXT("functionName"), TEXT("not a filter - a binding is identified by widgetName + propertyName; the function is what it POINTS AT and is reported per row") } }))
+		{
+			return;
+		}
+		UWidgetBlueprint* WBP = ResolveWidgetBlueprintField(In, Out);
+		if (!WBP)
+		{
+			return;
+		}
+		const FString WidgetFilter   = JStr(In, TEXT("widgetName"));
+		const FString PropertyFilter = JStr(In, TEXT("propertyName"));
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		int32 Orphaned = 0;
+		for (const FDelegateEditorBinding& B : WBP->Bindings)
+		{
+			if (!WidgetFilter.IsEmpty() && !B.ObjectName.Equals(WidgetFilter, ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+			if (!PropertyFilter.IsEmpty()
+				&& !B.PropertyName.ToString().Equals(PropertyFilter, ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+			const bool bPresent = WBP->WidgetTree
+				&& WBP->WidgetTree->FindWidget(FName(*B.ObjectName)) != nullptr;
+			if (!bPresent)
+			{
+				++Orphaned;
+			}
+			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+			Row->SetStringField(TEXT("widgetName"), B.ObjectName);
+			Row->SetStringField(TEXT("propertyName"), B.PropertyName.ToString());
+			Row->SetStringField(TEXT("functionName"), B.FunctionName.ToString());
+			Row->SetStringField(TEXT("sourceProperty"), B.SourceProperty.ToString());
+			// Kind is reported as its INDEX, not a name. EBindingKind is an engine enum and inventing a
+			// spelling for it here would be a second source of truth; add_widget_binding only ever writes
+			// Function, so anything else came from the UMG editor and the caller should look it up.
+			Row->SetNumberField(TEXT("kind"), static_cast<int32>(B.Kind));
+			Row->SetBoolField(TEXT("widgetPresent"), bPresent);
+			Row->SetBoolField(TEXT("hasMemberGuid"), B.MemberGuid.IsValid());
+			Rows.Add(MakeShared<FJsonValueObject>(Row));
+		}
+
+		Out->SetArrayField(TEXT("bindings"), Rows);
+		Out->SetNumberField(TEXT("count"), Rows.Num());
+		Out->SetNumberField(TEXT("bindingCount"), WBP->Bindings.Num());
+		Out->SetBoolField(TEXT("filtered"), !WidgetFilter.IsEmpty() || !PropertyFilter.IsEmpty());
+		Out->SetNumberField(TEXT("orphaned"), Orphaned);
+		if (Orphaned > 0)
+		{
+			Out->SetStringField(TEXT("orphanedNote"), FString::Printf(
+				TEXT("%d binding(s) name a widget that is NOT in the tree. SanitizeBindings drops those ")
+				TEXT("silently at the next full compile, so they read as live here and will not survive. ")
+				TEXT("Check widgetPresent per row; remove_widget_binding {widgetName, propertyName} ")
+				TEXT("clears one."),
+				Orphaned));
+		}
+	}
+
 	// --- remove_widget_binding ----------------------------------------------
 	// Remove by identity (ObjectName + PropertyName only — a stub with just those two set
 	// matches via operator==). Mirrors OnRemoveBinding.
@@ -1599,7 +1680,7 @@ namespace MifBridge
 			Fail(Out, FString::Printf(
 				TEXT("no binding on widget '%s' for property '%s' - nothing was removed. Bindings are "
 					 "matched on widget name and property name only, so check both spellings; "
-					 "There is no endpoint that LISTS widget property bindings. %d binding(s) "
+					 "list_widget_bindings reports what this blueprint actually has. %d binding(s) "
 					 "remain, unchanged."),
 				*WidgetName, *PropertyName, WBP->Bindings.Num()));
 			return;

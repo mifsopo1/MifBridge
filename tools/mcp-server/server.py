@@ -1571,6 +1571,17 @@ def remove_widget_binding(blueprint_id: str, widget_name: str, property_name: st
 
 
 @mcp.tool()
+def list_widget_bindings(blueprint_id: str, widget_name: str = None,
+                         property_name: str = None) -> dict:
+    "List a Widget Blueprint's property bindings - the read half of add_widget_binding and remove_widget_binding, which could write them and never read them back. Each row reports widgetName, propertyName, the functionName it points at, and widgetPresent: a binding whose widget has since been renamed or deleted is still in Bindings, still looks live, and is dropped SILENTLY by SanitizeBindings at the next full compile. orphaned counts those. widget_name and property_name narrow the list. Read-only."
+    # widgetPresent is the reason this is worth more than a dump. add_widget_binding refuses a widget
+    # that is not in the tree, because the binding "would be dropped on compile" - but nothing
+    # re-checked bindings written earlier, and nothing could even list them to look.
+    return _post("list_widget_bindings", blueprintId=blueprint_id, widgetName=widget_name,
+                 propertyName=property_name)
+
+
+@mcp.tool()
 def add_tree_widget(blueprint_id: str, widget_class: str, name: str = "", parent_name: str = "",
                     as_root: bool = False, x: float = 0, y: float = 0, auto_size: bool = True) -> dict:
     "Add a widget to a Widget Blueprint's tree, either as the root or as a child of parent_name (which must be a panel). widget_class must be a UWidget subclass; an empty value is rejected."
