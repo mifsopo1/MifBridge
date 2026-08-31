@@ -245,6 +245,22 @@ def plant_bad_advice(text):
     return text.replace(needle, "save_asset persists it", 1)
 
 
+
+def plant_absence_claim(text):
+    """A PRESENT-tense claim that a live endpoint does not exist.
+
+    Present tense on purpose. The same sentence in the past tense - "the read half WAS missing:
+    save_package could write and nothing could see it" - is correct prose about why something was
+    built, and audit_absence_claims deliberately ignores it. A plant that used the past tense would
+    report the tool ASLEEP for doing exactly the right thing.
+    """
+    needle = '"add_actor_to_data_layer":'
+    if needle not in text:
+        return None
+    probe = '"mif_probe_zz": "There is no save_package endpoint on this build.",'
+    return text.replace(needle, probe + "\n " + needle, 1)
+
+
 # tool -> (target file, plant function, marker, gate)
 #
 # gate=True  - proof is a NON-ZERO exit AND the marker in the output. Both, because several of these
@@ -275,6 +291,8 @@ PLANTS = {
                              "test_layers.py", False),
     "audit_message_endpoints.py": (os.path.join(HERE, "mcp-server", "tool_help.json"),
                                    plant_bad_advice, "save_asset"),
+    "audit_absence_claims.py": (os.path.join(HERE, "mcp-server", "tool_help.json"),
+                                plant_absence_claim, "save_package"),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.
@@ -400,6 +418,12 @@ def prove(tool):
 
 def main():
     listing = "--list" in sys.argv
+    # A LIVE tool with a plant is provable WHENEVER its live dependency is actually up. Listing it
+    # permanently as "cannot be proven here" would be true of the machine and false of the moment -
+    # audit_absence_claims reads the running editor's registry, so with a bridge answering it is as
+    # testable as any static one, and with none it exits 0 saying "could not check", which a plant
+    # would misread as ASLEEP. So it is attempted only when the bridge answers, and reported as
+    # skipped-for-a-reason otherwise.
     covered = [t for t in DETECTORS if t in PLANTS]
     live = [t for t in DETECTORS if t not in PLANTS and t in LIVE]
     uncovered = [t for t in DETECTORS if t not in PLANTS and t not in LIVE]
@@ -427,6 +451,11 @@ def main():
     before = source_digest()
     asleep, notproven, skipped = [], [], []
     for tool in covered:
+        if tool in LIVE and not busy:
+            skipped.append(tool)
+            print("  %-26s %-12s %s" % (tool, "skipped", "needs the bridge; it exits 0 saying "
+                                                         "'could not check', not ASLEEP"))
+            continue
         if busy and PLANTS[tool][0].startswith(os.path.join(ROOT, "Source")):
             skipped.append(tool)
             print("  %-26s %-12s %s" % (tool, "skipped", "editor is running - plants into Source/"))

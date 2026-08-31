@@ -53,6 +53,17 @@ TRAILING = re.compile(                     # subject PRECEDES the phrase
     r"(\bdoes not exist\b|\bis not an endpoint\b|\bwas never built\b|\bis not offered\b|"
     r"\bdoes not exist yet\b)", re.I)
 
+# PAST TENSE IS NOT A CLAIM. "the read half the collision family WAS missing: add_simplified_
+# collision and set_collision could change collision and nothing could see it" is a correct sentence
+# about history that happens to name two live endpoints - the thing it says was missing is the READ,
+# which now exists, which is why the sentence is in the past tense at all. Flagging it would ask an
+# author to stop explaining why an endpoint was built.
+#
+# Checked immediately before the phrase, because that is where the tense marker sits in every
+# instance of this shape: "was missing", "used to be missing", "had no endpoint for".
+PAST = re.compile(r"\b(was|were|used to be|had been|had|previously)\s*$", re.I)
+PAST_LOOKBACK = 24
+
 ENDPOINTISH = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+){1,4})\b")
 
 # Tokens that look like endpoints and are not.
@@ -92,6 +103,35 @@ def docs():
     return [p for p in out if os.path.isfile(p)]
 
 
+def sidecar():
+    """tool_help.json, as (label, text) pairs - one per tool entry.
+
+    WHY THIS IS SCANNED AT ALL. It is 382 entries and about 51,000 words, and until 2026-08-31 no
+    tool in this directory read a character of it. server.py keeps only each tool's lead sentence
+    inline, because 450 descriptions in every turn's context came to ~72,000 tokens, and serves the
+    FULL text from here through mif_help - whose own description tells an agent to call it BEFORE
+    using a tool it has not used before.
+
+    That makes a STALE ABSENCE CLAIM worse here than in any .md file. A doc saying "there is no
+    endpoint for X" is read by a person who can go and check. The same sentence here is read by an
+    agent that has just been told to trust it, at the moment it was about to try X - so it does not
+    try, and reports back that the bridge cannot do a thing the bridge does.
+
+    Labelled by ENTRY, not by line: the file is JSON, so a line number in it would point at nothing
+    a reader could act on.
+    """
+    path = os.path.join(HERE, "mcp-server", "tool_help.json")
+    if not os.path.isfile(path):
+        return []
+    try:
+        store = json.load(io.open(path, encoding="utf-8", errors="replace"))
+    except Exception:
+        return []
+    return [("tools/mcp-server/tool_help.json[%s]" % k, v)
+            for k, v in sorted(store.items())
+            if isinstance(v, str) and not k.startswith("__")]
+
+
 def main():
     live = live_endpoints()
     if live is None:
@@ -101,9 +141,12 @@ def main():
     print("live endpoints: %d" % len(live))
 
     hits = []
-    for path in docs():
-        text = io.open(path, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
-        spots = ([(m.group(0), text[m.end(): m.end() + WINDOW]) for m in LEADING.finditer(text)]
+    sources = [(os.path.relpath(p, ROOT).replace("\\", "/"),
+                io.open(p, encoding="utf-8", errors="replace").read().replace("\r\n", "\n"))
+               for p in docs()] + sidecar()
+    for label, text in sources:
+        spots = ([(m.group(0), text[m.end(): m.end() + WINDOW]) for m in LEADING.finditer(text)
+                  if not PAST.search(text[max(0, m.start() - PAST_LOOKBACK): m.start()])]
                  + [(m.group(0), text[max(0, m.start() - WINDOW): m.start()])
                     for m in TRAILING.finditer(text)])
         for phrase, seg in spots:
@@ -113,8 +156,7 @@ def main():
                 if tok in NOISE or tok not in live:
                     continue
                 line = text[:text.find(seg)].count("\n") + 1 if seg else 0
-                hits.append((os.path.relpath(path, ROOT).replace("\\", "/"), line,
-                             tok, phrase, " ".join(seg.split())[:150]))
+                hits.append((label, line, tok, phrase, " ".join(seg.split())[:150]))
 
     # One row per (file, endpoint): the same stale claim is often restated a few lines apart.
     seen, rows = set(), []
