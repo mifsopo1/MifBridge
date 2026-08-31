@@ -133,9 +133,64 @@ def main():
           dec.get("trisRemoved") == lost_tris,
           "reported %r, the mesh lost %r" % (dec.get("trisRemoved"), lost_tris))
 
+    # ---------------------------------------------------------------- C104 edgeIndicesTruncated
+    print("")
+    print("=== C104: edgeIndicesTruncated - the caller is reading a PARTIAL list and must know ===")
+    # The most dangerous field of the eleven, because a truncated array looks exactly like a short
+    # one. select_edges caps edgeIndices at maxReported (default 512) and reports whether it cut -
+    # so `count` and `len(edgeIndices)` are INDEPENDENT numbers, and a caller who assumes they agree
+    # is silently working from a partial answer.
+    B.call("create_primitive", {"kind": "cube", "name": "MifC_Edges", "size": 2})
+    cut = B.call("select_edges", {"object": "MifC_Edges", "allEdges": True, "maxReported": 4})
+    check("C104 select_edges succeeds with a small maxReported", cut.get("ok") is not False,
+          json.dumps(cut)[:220])
+    idx = cut.get("edgeIndices") or []
+    check("C104 the array really was capped at maxReported", len(idx) == 4, len(idx))
+    check("C104 and count reports the TRUE total, not the array length",
+          (cut.get("count") or 0) == 12,
+          "count=%r on a cube, which has 12 edges" % cut.get("count"))
+    check("C104 and edgeIndicesTruncated says the list is partial",
+          cut.get("edgeIndicesTruncated") is True, json.dumps(cut)[:240])
+    # THE INVARIANT. Truncation must be exactly the disagreement between the two numbers - if the
+    # flag and the lengths can disagree, the flag is decoration.
+    check("C104 truncated is TRUE precisely when the array is shorter than the count",
+          cut.get("edgeIndicesTruncated") == (len(idx) < (cut.get("count") or 0)),
+          "flag=%r len(edgeIndices)=%d count=%r"
+          % (cut.get("edgeIndicesTruncated"), len(idx), cut.get("count")))
+
+    whole = B.call("select_edges", {"object": "MifC_Edges", "allEdges": True, "maxReported": 100})
+    w_idx = whole.get("edgeIndices") or []
+    check("C104 and with room to spare the flag is FALSE",
+          whole.get("edgeIndicesTruncated") is False, json.dumps(whole)[:240])
+    check("C104 and then the array and the count agree",
+          len(w_idx) == (whole.get("count") or 0),
+          "len=%d count=%r" % (len(w_idx), whole.get("count")))
+
+    # ---------------------------------------------------------------- C105 removedCount
+    print("")
+    print("=== C105: removedCount must match its own list AND the scene ===")
+    for n in ("MifC_Del1", "MifC_Del2", "MifC_Keep"):
+        B.call("create_primitive", {"kind": "cube", "name": n, "size": 1})
+    gone = B.call("delete_object", {"objects": ["MifC_Del1", "MifC_Del2"]})
+    check("C105 delete_object succeeds", gone.get("ok") is not False, json.dumps(gone)[:220])
+    removed = gone.get("removed") or []
+    check("C105 removedCount matches the length of its own list",
+          gone.get("removedCount") == len(removed),
+          "removedCount=%r removed=%s" % (gone.get("removedCount"), removed))
+    check("C105 and the list NAMES what went, not just how many",
+          sorted(str(x) for x in removed) == ["MifC_Del1", "MifC_Del2"], removed)
+    # THE POSTCONDITION, through a different op. A response can report anything; the scene is what
+    # the caller will actually find.
+    survivors = [o.get("name") for o in (B.call("list_objects").get("objects") or [])]
+    check("C105 and the named objects are really gone from the scene",
+          not [n for n in ("MifC_Del1", "MifC_Del2") if n in survivors], survivors)
+    check("C105 and the one NOT named survived - a delete that took more than it reported "
+          "would look identical in the count",
+          "MifC_Keep" in survivors, survivors)
+
     # ---------------------------------------------------------------- cleanup
     print("")
-    for n in ("MifC_Merge", "MifC_Noop", "MifC_Dec"):
+    for n in ("MifC_Merge", "MifC_Noop", "MifC_Dec", "MifC_Edges", "MifC_Keep"):
         B.call("delete_object", {"object": n})
     survivors = [o.get("name") for o in (B.call("list_objects").get("objects") or [])]
     check("C199 (cleanup) no MifC_* object is left behind",

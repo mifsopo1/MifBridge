@@ -8829,9 +8829,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       11 Blender suite files, all green on 5.0, 0 failed 0 skipped.
 
-- [ ] **five more Blender consequence fields still read by nothing** (hours)
-      influencesDropped (normalize_weights), seamVertsRemoved (export_mesh), edgeIndicesTruncated
-      (bevel_edges, extrude_skirt, select_edges), removed and removedCount (clear_scene,
-      delete_object, remove_modifier). Same shape as the five closed above: assert the number against
-      an independent before/after rather than asserting it is present. edgeIndicesTruncated is the
-      most interesting - it says a LIST was cut short, so the caller is reading a partial answer.
+- [x] **edgeIndicesTruncated and removedCount closed - the two that report a PARTIAL answer**
+      - DONE 2026-08-31. test_blender_consequence 18 -> 30.
+
+      edgeIndicesTruncated was the most dangerous of the eleven, because a truncated array looks
+      exactly like a short one. select_edges caps edgeIndices at maxReported and reports whether it
+      cut, so `count` and `len(edgeIndices)` are INDEPENDENT numbers and a caller who assumes they
+      agree is silently working from a partial answer. C104 drives a cube with maxReported:4 - four
+      indices returned, count still 12 - and asserts the invariant rather than the field: truncated
+      is TRUE precisely when the array is shorter than the count. A flag that can disagree with the
+      lengths is decoration.
+
+      C105 does the same for removedCount, which must match its own list AND the scene. The check
+      with teeth is the third one: an object NOT named in `removed` has to survive. A delete that
+      took more than it reported would look identical in the count, and only the scene can say.
+
+      INCIDENTALLY PROVED THE GUARD SUITE RIGHT. The first version of C104 sent mode:"all", which
+      select_edges does not accept - and it was refused loudly, naming every key it does accept
+      (allEdges, axis, boundaryOnly, edgeIndices...). That is exactly the behaviour
+      test_blender_reject_unknown had just demonstrated for all 45 ops, arriving unprompted in a
+      different suite an hour later.
+
+- [ ] **three Blender consequence fields still read by nothing** (hours)
+      influencesDropped (normalize_weights), seamVertsRemoved (export_mesh), and the
+      edgeIndicesTruncated emitters in bevel_edges and extrude_skirt - the same field on two more ops
+      with their own selection grammar. influencesDropped needs vertex weights, which needs
+      run_python to author; the other two are straightforward.
