@@ -52,6 +52,32 @@ def check(name, cond, detail=""):
 
 
 def main():
+    """Restore the editor-wide state in a FINALLY, whatever happens to the body.
+
+    T952 changes the CURRENT LEVEL and changes it back, and that restore works - verified. But it
+    was a plain statement in the middle of the run, so a timeout or an exception before it left a
+    streaming sublevel current for every suite afterwards in the same editor. That is not a
+    tidiness problem: with a classic sublevel current inside a partitioned world,
+    AActor::SupportsLayers flips, and test_layers spent three assertions failing against an
+    endpoint that was right. It happened exactly once, to a run that timed out while the editor was
+    compositing landscape edit layers.
+
+    The ADDED sublevel is deliberately not restored - remove_sublevel needs discardUnsaved, which
+    has no scratch_confirm exemption and should not get one. Leaving a sublevel added is harmless;
+    leaving it CURRENT is not.
+    """
+    try:
+        return _run()
+    finally:
+        try:
+            M.call("set_current_sublevel", {"path": "persistent"})
+        except Exception as exc:                       # the editor may be gone or wedged
+            print("  NOTE  could not restore the current level (%s). The next suite in this editor"
+                  % type(exc).__name__)
+            print("        may be placing actors into a sublevel - restart it if results look odd.")
+
+
+def _run():
     if not M.wait_for_bridge(timeout=900):
         print("bridge never came up")
         return 1

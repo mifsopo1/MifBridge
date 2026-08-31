@@ -6547,7 +6547,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the actual fix rather than a one-off pass.
 
 
-- [ ] **a suite that DIES mid-run leaves the editor's current level changed** (hours)
+- [x] **a suite that DIES mid-run leaves the editor's current level changed** (hours)
+      DONE 2026-08-31 - test_uncovered_reads7's main() is now a wrapper whose `finally` restores
+      the current level, with _run() holding the body. Verified on the FAILURE path rather than
+      the happy one: forced a sublevel current, monkeypatched _run to raise, and confirmed the
+      level came back. The added sublevel is deliberately NOT restored - remove_sublevel needs
+      discardUnsaved, correctly ungated - because leaving one added is harmless where leaving it
+      CURRENT is not.
       Filed 2026-08-31, CORRECTED the same night - the first version of this item blamed the wrong
       thing and would have sent someone to fix working code.
 
