@@ -9284,6 +9284,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       proves it fires: the plant is THE REAL MISTAKE, T834's own wording asking describe_property for
       arrayDim at the top level, and the tool names the line and MifBridgeDetails.cpp:353.
 
+      EXTENDED TO BLENDER the same day, which is where it should have started - two of the three
+      motivating bugs were Blender ones and the first version skipped every Blender suite. The addon
+      is python, so it parses the same way: each ops_* module's OPS dict is the authoritative
+      endpoint -> function map, and server.py does out.update(result), so an op's returned keys ARE
+      the response's top level. 45 ops parsed, 5 unreadable and declared.
+
+      IT COST TWO MORE CORRECTIONS, BOTH THE SAME SHAPE AS THE BUG BEING HUNTED - a key that is
+      really there, read from the wrong place. op_create_primitive adds name and verts by SUBSCRIPT
+      after the dict literal, so a literal-only read called them nested and produced seven confident
+      findings against a correct suite. And object_info does info.update(mesh_counts(obj)) - an
+      update from a FUNCTION, which is precisely how its counts come to be nested and therefore the
+      original bug. Treating that as unreadable made object_info opaque, silently emptied
+      create_primitive's nested map, and stopped the whole Blender path from firing.
+
+      THAT SECOND ONE REPORTED CLEAN, AND CLEAN WAS WRONG. The tool went green because it had
+      stopped looking - the exact failure it exists to catch, in itself. Nothing but the mutation
+      test found it: the plant did not fire, and a plant that does not fire IS the finding. Both
+      paths are now plant-proven separately, because they are different code paths and one plant
+      cannot speak for the other.
+
       Both plants are written the way the module actually writes refusals - multi-fragment literals
       across lines - rather than as single-fragment probes. That is deliberate: a single-fragment
       plant would have been caught by the BROKEN version of audit_editor_fatal_guards' own regex, so

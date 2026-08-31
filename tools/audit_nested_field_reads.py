@@ -48,10 +48,29 @@ that motivated each is in brackets:
 
 Together those took a first run of 39 findings - every single one false - to what is reported now.
 
+BOTH HALVES ARE COVERED, and the Blender half is the one that mattered: two of the three motivating
+bugs were Blender ones, and the first version of this tool skipped every Blender suite. The addon is
+python, so it is parsed the same way - the OPS dict in each ops_* module is the authoritative
+endpoint -> function map, and the server does out.update(result), so an op's returned keys ARE the
+response's top level. Getting that right cost two more corrections, both of the same shape as the
+bug being hunted - a key that is really there, read from the wrong place:
+
+  * KEYS ADDED AFTER THE LITERAL. op_create_primitive returns {"object": ..., "created": ...,
+    "kind": ...} and then does out["name"] = obj.name and out["verts"] = ... Reading only the dict
+    literal missed three TOP-LEVEL keys and produced seven confident findings against a correct
+    suite, all saying "name is nested" when the source says the opposite two lines down and explains
+    why. Subscript assignment, .update({...}) and .setdefault() are all tracked now.
+  * .update(helper(obj)) IS FOLLOWED, NOT GIVEN UP ON. object_info does info.update(mesh_counts(obj))
+    - which is exactly how its counts come to be nested, the original bug. Treating that as
+    unreadable made object_info opaque, which silently emptied create_primitive's nested map and
+    stopped the entire Blender path from firing. It reported CLEAN, and clean was wrong.
+
+That second one is worth the space: the tool went green because it had stopped looking, which is the
+failure mode it was written to catch, in itself. Only the mutation test caught it - the plant did not
+fire, and a plant that does not fire is the finding.
+
 DELIBERATELY NOT FLAGGED: a field the endpoint writes both ways, since the depth is then a per-call
-question no static read can settle; and the Blender suites, whose responses are built by python in
-tools/blender-addon and are not in this corpus, so an apparent miss there would rest on nothing but
-a name collision.
+question no static read can settle.
 
 Usage:
     python tools/audit_nested_field_reads.py                   # findings
@@ -80,7 +99,10 @@ CALLS = re.compile(r"\b([A-Z]\w+)\s*\(")
 # A field written under a RUNTIME key - see point 5 above. Nothing static can follow it.
 DYNAMIC_SET = re.compile(r"\b(\w+)\s*->\s*SetField\s*\(\s*(?!TEXT\()")
 
-SKIP_PREFIXES = ("test_blender_", "audit_blender_")
+# A suite that talks to Blender, identified by what it IMPORTS rather than by its filename -
+# blender_audit_common is the only way to reach 127.0.0.1:8792 from here, and a name-prefix rule
+# would miss a suite that tests both halves.
+BLENDER_HELPER = "blender_audit_common"
 
 
 def read(path):
@@ -171,6 +193,157 @@ def is_opaque(funcs, name, seen=None):
                if c in funcs and c != name)
 
 
+ADDON = os.path.join(HERE, "blender-addon", "MifBlender")
+
+
+def _dict_keys(node):
+    """The string keys of a dict literal, or None when it is not one this tool can read."""
+    if not isinstance(node, ast.Dict):
+        return None
+    keys = set()
+    for k in node.keys:
+        if k is None:                      # {**other} - the other dict's keys, unknowable here
+            return None
+        if isinstance(k, ast.Constant) and isinstance(k.value, str):
+            keys.add(k.value)
+        else:
+            return None                    # a computed key: same class as the C++ splat
+    return keys
+
+
+def _returned_shape(fn, by_name, seen=None):
+    """(top-level keys, {key: helper that supplies its contents}) for one addon function.
+
+    Returns (None, None) when the shape cannot be read - a computed key, a **spread, or a dict
+    assembled somewhere this cannot follow. Opaque is an answer; a guess is not.
+    """
+    seen = seen if seen is not None else set()
+    if fn is None or id(fn) in seen:
+        return None, None
+    seen.add(id(fn))
+    top, sources = set(), {}
+    # `d = {...}` then `return d` is as common here as returning the literal, so locals that hold a
+    # dict literal are tracked. Anything else assigned to that name gives up on it.
+    #
+    # AND SO ARE KEYS ADDED AFTERWARDS. op_create_primitive builds {"object": ..., "created": ...,
+    # "kind": ...} and then does out["name"] = obj.name, out["verts"] = ..., and a conditional
+    # out["nameNote"] = ... - three TOP-LEVEL keys that a literal-only read cannot see. Missing them
+    # produced seven confident findings against a correct suite, all of the form "name is nested"
+    # when the source says the opposite two lines down and explains why ("the name is the identity
+    # every op reports, not just a geometry fact"). A computed key gives up on the function, the
+    # same way the C++ side treats a runtime SetField.
+    locals_, extra, poisoned = {}, {}, set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    locals_[tgt.id] = node.value
+                elif isinstance(tgt, ast.Subscript) and isinstance(tgt.value, ast.Name):
+                    sl = tgt.slice
+                    if isinstance(sl, ast.Constant) and isinstance(sl.value, str):
+                        extra.setdefault(tgt.value.id, set()).add(sl.value)
+                    else:
+                        poisoned.add(tgt.value.id)
+        # d.update({...}) and d.setdefault("k", ...) add keys just as surely as a subscript does.
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                and isinstance(node.func.value, ast.Name):
+            owner = node.func.value.id
+            if node.func.attr == "update" and node.args:
+                more = _dict_keys(node.args[0])
+                if more is None:
+                    # `info.update(mesh_counts(obj))` - an update from ANOTHER addon function, which
+                    # is followed rather than given up on. It is how object_info acquires its counts,
+                    # and giving up here made object_info unreadable, which silently emptied
+                    # create_primitive's nested map and stopped the whole Blender path from firing.
+                    arg = node.args[0]
+                    sub = None
+                    if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name):
+                        helper = by_name.get(arg.func.id)
+                        if helper is not None and helper is not fn:
+                            sub, _ = _returned_shape(helper, by_name, seen)
+                    if sub:
+                        extra.setdefault(owner, set()).update(sub)
+                    else:
+                        poisoned.add(owner)
+                else:
+                    extra.setdefault(owner, set()).update(more)
+            elif node.func.attr == "setdefault" and node.args:
+                a = node.args[0]
+                if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                    extra.setdefault(owner, set()).add(a.value)
+                else:
+                    poisoned.add(owner)
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Return) or node.value is None:
+            continue
+        val, added = node.value, set()
+        if isinstance(val, ast.Name):
+            if val.id in poisoned:
+                return None, None
+            added = extra.get(val.id, set())
+            val = locals_.get(val.id)
+        keys = _dict_keys(val)
+        if keys is None:
+            return None, None
+        top |= keys | added
+        # A value that is a call to another addon function, or a comprehension over one, means that
+        # function's own keys live UNDER this key. `{"object": object_info(x)}` is the shape that
+        # started all of this.
+        for k, v in zip(val.keys, val.values):
+            name = k.value if isinstance(k, ast.Constant) else None
+            if not isinstance(name, str):
+                continue
+            call = v
+            if isinstance(v, (ast.ListComp, ast.GeneratorExp)):
+                call = v.elt
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Name):
+                helper = by_name.get(call.func.id)
+                if helper is not None and helper is not fn:
+                    sub, _ = _returned_shape(helper, by_name, seen)
+                    if sub:
+                        sources[name] = (call.func.id, sub)
+    return top, sources
+
+
+def scan_addon():
+    """endpoint -> {'top': set, 'nested': {key: 'file:func'}, 'opaque': bool}"""
+    if not os.path.isdir(ADDON):
+        return {}
+    by_name, endpoints, where = {}, {}, {}
+    for fname in sorted(os.listdir(ADDON)):
+        if not fname.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(read(os.path.join(ADDON, fname)))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                by_name[node.name] = node
+                where[node.name] = fname
+            # The OPS dict is the authoritative endpoint -> function map. Guessing 'op_' + name
+            # would be close and occasionally wrong, and this file is right there.
+            elif isinstance(node, ast.Assign):
+                for tgt in node.targets:
+                    if isinstance(tgt, ast.Name) and tgt.id == "OPS" and isinstance(node.value, ast.Dict):
+                        for k, v in zip(node.value.keys, node.value.values):
+                            if (isinstance(k, ast.Constant) and isinstance(k.value, str)
+                                    and isinstance(v, ast.Name)):
+                                endpoints[k.value] = v.id
+    out = {}
+    for ep, fname in endpoints.items():
+        top, sources = _returned_shape(by_name.get(fname), by_name)
+        if top is None:
+            out[ep] = {"top": set(), "nested": {}, "opaque": True}
+            continue
+        nested = {}
+        for key, (helper, subkeys) in (sources or {}).items():
+            for sk in subkeys:
+                nested.setdefault(sk, "%s %s() under '%s'" % (where.get(helper, "?"), helper, key))
+        out[ep] = {"top": top, "nested": nested, "opaque": False}
+    return out
+
+
 def _is_bridge_call(node):
     """`M.call("ep", ...)` / `SC.confirm_call("ep", ...)` - returns the endpoint, or None."""
     if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
@@ -241,6 +414,7 @@ def or_excused(tree):
 
 def main():
     funcs = scan_cpp()
+    bl_ops = scan_addon()
 
     if "--list" in sys.argv:
         ep = sys.argv[sys.argv.index("--list") + 1]
@@ -262,15 +436,19 @@ def main():
     print("=" * 78)
     handlers = [k for k in funcs if k.startswith("H_")]
     print("%d handlers parsed from %s" % (len(handlers), os.path.relpath(CPP, ROOT)))
+    bl_opaque = sum(1 for v in bl_ops.values() if v["opaque"])
+    print("%d Blender ops parsed from the addon (%d unreadable, reported not guessed)"
+          % (len(bl_ops), bl_opaque))
 
     findings, skipped, unknown_ep, opaque = [], [], set(), set()
     for name in sorted(os.listdir(HERE)):
         if not name.endswith(".py") or name == os.path.basename(__file__):
             continue
-        if name.startswith(SKIP_PREFIXES):
+        text = read(os.path.join(HERE, name))
+        is_blender = BLENDER_HELPER in text
+        if is_blender and not bl_ops:
             skipped.append(name)
             continue
-        text = read(os.path.join(HERE, name))
         try:
             tree = ast.parse(text)
         except SyntaxError:
@@ -288,15 +466,25 @@ def main():
             ep = bound.get(var)
             if not ep:
                 continue
-            handler = "H_" + ep
-            if handler not in funcs:
-                unknown_ep.add(ep)
-                continue
-            if is_opaque(funcs, handler):
-                opaque.add(ep)
-                continue
-            top = top_fields(funcs, handler)
-            nest = nested_fields(funcs, handler)
+            if is_blender:
+                rec = bl_ops.get(ep)
+                if rec is None:
+                    unknown_ep.add(ep)
+                    continue
+                if rec["opaque"]:
+                    opaque.add(ep)
+                    continue
+                top, nest = rec["top"], rec["nested"]
+            else:
+                handler = "H_" + ep
+                if handler not in funcs:
+                    unknown_ep.add(ep)
+                    continue
+                if is_opaque(funcs, handler):
+                    opaque.add(ep)
+                    continue
+                top = top_fields(funcs, handler)
+                nest = nested_fields(funcs, handler)
             if field in nest and field not in top:
                 ln = getattr(node, "lineno", 0)
                 snippet = lines[ln - 1].strip()[:100] if 0 < ln <= len(lines) else ""
@@ -304,8 +492,7 @@ def main():
     findings.sort()
 
     if skipped:
-        print("skipped %d Blender suite(s) - the addon builds those responses in python, which "
-              "this corpus does not contain." % len(skipped))
+        print("skipped %d Blender suite(s) - the addon could not be parsed." % len(skipped))
     if opaque:
         print("%d endpoint(s) write a field under a RUNTIME key and cannot be read statically: %s"
               % (len(opaque), ", ".join(sorted(opaque))))
