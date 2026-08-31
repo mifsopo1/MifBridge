@@ -85,12 +85,48 @@ def main():
         return 1
     st = int(time.time() % 100000)
 
-    mesh = (M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/Game/", "limit": 1})
-            .get("assets") or [{}])[0].get("path")
-    check("a real static mesh was found to render", bool(mesh), "no StaticMesh in /Game/")
-    if not mesh:
+    # A MESH THAT CAN ACTUALLY SHOW A ROTATION, not whichever one find_assets returns first.
+    #
+    # Taking [0] drew /Game/UltraDynamicSky/Meshes/Rainbow on 2026-08-31 and failed both passes of
+    # the sweep with "orbitYaw ... identical to the base render". The endpoint was fine - measured
+    # side by side, that sky mesh gives yaw90 IDENTICAL / pitch60 DIFFERS / zoom1000 IDENTICAL while
+    # PH_HumanGizmoLowPoly gives DIFFERS on all three. A rotationally symmetric mesh looks the same
+    # from 90 degrees around, and orbitZoom is an absolute DISTANCE OFFSET (see the note at T401), so
+    # 1000uu against something framed from tens of thousands away moves nothing visible.
+    #
+    # pick_system() in test_niagara_params already warned about exactly this - "whichever asset
+    # find_assets happens to return first is a coin flip ... that already burned test_material_params"
+    # - and the warning had not been applied here.
+    #
+    # SELECTED BY THE PROPERTY THE TEST NEEDS: a candidate is accepted only once a yaw render is
+    # shown to differ from its base. The fixture cannot silently stop being suitable, because
+    # suitability is what chooses it.
+    candidates = [a.get("path") for a in
+                  (M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/Game/",
+                                          "limit": 40}).get("assets") or []) if a.get("path")]
+    check("a real static mesh was found to render", bool(candidates), "no StaticMesh in /Game/")
+    if not candidates:
         return 1
-    print("   using %s" % mesh)
+
+    mesh, sha_base, base = None, None, None
+    for cand in candidates[:8]:               # bounded: each probe is a real render
+        probe_base = M.call("render_thumbnail", {"asset": cand, "width": 128, "height": 128,
+                                                 "name": "t401_pick_%d" % st}, timeout=180)
+        b = sha_of(probe_base.get("pngPath"))
+        probe_yaw = M.call("render_thumbnail", {"asset": cand, "width": 128, "height": 128,
+                                                "name": "t401_picky_%d" % st, "orbitYaw": 90},
+                           timeout=180)
+        if b and sha_of(probe_yaw.get("pngPath")) not in (None, b):
+            mesh, sha_base, base = cand, b, probe_base
+            break
+    if mesh:
+        print("   using %s (yaw-sensitive, so the orbit assertions can mean something)" % mesh)
+    else:
+        mesh = candidates[0]
+        print("   NOTE  no mesh among the first 8 changes under a 90-degree yaw. Using %s, and the"
+              % mesh)
+        print("         orbit assertions below will report UNEXERCISED rather than fail - a project")
+        print("         of symmetric meshes is not a defect in render_thumbnail.")
 
     # ------------------------------------------------------------------ T400 capabilities
     print("")
@@ -114,7 +150,8 @@ def main():
         r = M.call("render_thumbnail", payload, timeout=180)
         return r, sha_of(r.get("pngPath"))
 
-    base, sha_base = render("base")
+    if base is None:                          # no yaw-sensitive candidate - render one anyway
+        base, sha_base = render("base")
     check("T401 a thumbnail renders", base.get("ok") is True, json.dumps(base)[:200])
     check("T401 and the PNG really exists on disk", base.get("pngExists") is True and sha_base,
           "pngPath=%s pngExists=%s" % (base.get("pngPath"), base.get("pngExists")))
@@ -134,9 +171,13 @@ def main():
                       ("orbitPitch", {"orbitPitch": 60}),
                       ("orbitZoom", {"orbitZoom": 1000.0})):
         r, sha = render(label, **kw)
+        if sha_base is None:
+            print("  NOTE  %s is UNEXERCISED - no yaw-sensitive fixture was found." % label)
+            continue
         check("T401 %s changes the rendered bytes" % label,
               bool(sha) and sha != sha_base,
-              "identical to the base render - the parameter was accepted and ignored")
+              "identical to the base render. The fixture was chosen for yaw sensitivity, so this "
+              "is the parameter being ignored rather than a symmetric mesh - %s" % mesh)
 
     # ------------------------------------------------------------------ T401b alpha, stated honestly
     print("")
