@@ -39,6 +39,7 @@ contract names self_audit specifically rather than this file's own static extrac
 import collections
 import glob
 import json
+import io
 import os
 import re
 import sys
@@ -75,6 +76,31 @@ def _live_decl_names():
         names |= set(re.findall(r'\bReg\(\s*TEXT\("([A-Za-z0-9_]+)"\)', provider_text))
     return names
 
+
+
+def dynamic_coverage():
+    """(endpoint -> suite, newest timestamp) for endpoints driven from the live registry.
+
+    EVIDENCE, NOT A DECLARATION. A suite that iterates endpoint_names() records what it actually
+    drove; this subtracts that from the "named nowhere" list. The record's AGE is reported rather
+    than trusted - a run that predates an endpoint being added proves nothing about it, which is the
+    same failure endpoints_current.json shouts about.
+    """
+    import json
+    path = os.path.join(HERE, "dynamic_coverage.json")
+    if not os.path.isfile(path):
+        return {}, 0
+    try:
+        with io.open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}, 0
+    owner, newest = {}, 0
+    for suite, rec in (data or {}).items():
+        newest = max(newest, int(rec.get("recordedAt") or 0))
+        for ep in rec.get("endpoints") or []:
+            owner.setdefault(ep, suite)
+    return owner, newest
 
 def main():
     snapshot = os.path.join(HERE, "endpoints_current.json")
@@ -113,7 +139,13 @@ def main():
                 mentions[ep].append(suite)
 
     covered = {e: s for e, s in mentions.items() if s}
-    uncovered = [e for e in names if e not in covered]
+    # SUBTRACT WHAT A SUITE ACTUALLY DROVE FROM THE LIVE REGISTRY. This scanner reads suite
+    # SOURCE for literal endpoint names, so an endpoint reached by iterating endpoint_names() reads
+    # as untested - four names were wrong on this list for that reason. The subtraction is shown
+    # rather than applied quietly, because a claim nobody can see is a claim nobody can check.
+    dyn, dyn_at = dynamic_coverage()
+    uncovered = [e for e in names if e not in covered and e not in dyn]
+    dyn_used = sorted(e for e in names if e not in covered and e in dyn)
 
     print("endpoints: %d   named in a suite: %d   named nowhere: %d"
           % (len(names), len(covered), len(uncovered)))
@@ -123,12 +155,27 @@ def main():
     fam = collections.defaultdict(list)
     for e in uncovered:
         fam[e.split("_")[0]].append(e)
+    if dyn_used:
+        import time as _time
+        age = ""
+        if dyn_at:
+            hours = (int(_time.time()) - dyn_at) / 3600.0
+            age = " recorded %.1fh ago" % hours
+            if hours > 72:
+                age += " - STALE, and a record older than the endpoint proves nothing about it"
+        print("")
+        print("driven dynamically by a suite, so NOT counted as uncovered%s:" % age)
+        for e in dyn_used:
+            print("  %-34s by %s" % (e, dyn.get(e)))
+        print("")
+
     print("never named in any suite, grouped by verb:")
     for k in sorted(fam, key=lambda x: -len(fam[x])):
         print("  %-14s %2d  %s" % (k, len(fam[k]), ", ".join(sorted(fam[k]))[:96]))
 
     with open(os.path.join(HERE, "coverage_gaps.json"), "w", encoding="utf-8") as f:
         json.dump({"uncovered": uncovered,
+                   "dynamicallyCovered": dyn_used,
                    "covered": {k: v for k, v in sorted(covered.items())}}, f, indent=1)
     print("\nwritten to tools/coverage_gaps.json")
     print("A NAME MATCH IS NOT COVERAGE. Read the suite before believing an endpoint is tested,")

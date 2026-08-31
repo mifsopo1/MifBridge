@@ -6291,6 +6291,42 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Vetter corrected the proposal: Over-sold at medium; it is low. Three reasons. run_python is default-ON and does this in one line - not a decline ground by this project's own precedent, but it caps the rank. The motivating workflow is already solved better on the UE side by the IK Retargeter suite, which exists so names need not match, and the alternative payoff (import against an existing Skeleton) is not reachable because impo...
 
 
+- [ ] **test coverage for the legacy Layers endpoints (list_layers, set_layer_visibility, modify_actor_layers)** (hours)
+      Filed 2026-08-31 after refreshing endpoints_current.json, which was 82 endpoints STALE and so
+      blind to most of the surface. With it current: 445 endpoints, 420 named in a suite, and these
+      three named in NONE. They are the pre-World-Partition ULayers system, distinct from Data
+      Layers (which test_data_layer_writes covers) - and a partitioned map is exactly where a caller
+      is most likely to reach for the wrong one of the two, so a suite that shows what each does is
+      worth more than the endpoint count suggests. MifBridgeStreaming.cpp:2212 / :2293 / :2395.
+
+- [ ] **test coverage for apply_spline_to_landscape** (hours)
+      Filed 2026-08-31, same sweep. Zero suites name it. It is a landscape WRITE with no coverage at
+      all, which is the shape that has produced the worst findings on this project - the heightmap
+      work found that collision is cooked separately from the render surface, so anything that
+      edits terrain and skips RecreateCollisionComponents leaves a map that renders as hills and
+      traces as flat.
+
+      CHECKED WHILE FILING THIS, so nobody re-derives it: the collision tail IS run, by the engine
+      rather than by us. apply_spline_to_landscape goes through ALandscapeProxy::EditorApplySpline,
+      which calls LandscapeSplineRaster::RasterizeSegmentPoints, which finishes by calling
+      CollisionComponent->RecreateCollision() on every modified component
+      (LandscapeSplineRaster.cpp:94). That is the distinction worth keeping: a DIRECT height write
+      through FLandscapeEditDataInterface::SetHeightData - sculpt_landscape,
+      import_landscape_heightmap - bypasses the rasteriser and must call
+      RecreateCollisionComponents itself, which is why those two do. This one must not, and does
+      not. So the gap here is genuinely TEST COVERAGE rather than a defect. The suite should still
+      assert that a trace agrees with the deformed surface, because that is the assertion which
+      would catch it if the engine path ever changes underneath us.
+
+- [ ] **coverage_gaps.py cannot see a dynamically-driven endpoint, and should say which ones** (hours)
+      Filed 2026-08-31. It reports "named nowhere" from literal strings in the suites, so an
+      endpoint exercised by iterating the live registry - test_node_spawns T330 sweeps every add_*
+      that way - reads as uncovered. Four names on tonight's list were exactly that, and the suite
+      already documents it in a comment. The fix is not to make the scanner smarter about Python;
+      it is to have the suites that sweep dynamically DECLARE what they covered (a line in their
+      output, or a small manifest) and have coverage_gaps subtract it. Until then its list needs a
+      human pass every time, which is the cost of a signal nobody fully trusts.
+
 ### Refuted, recorded so they are not re-proposed
 
 - add_retarget_pose / set_retarget_pose_bone / set_current_retarget_pose -- Refuted on the strongest and most common ground: existing endpoints already do it. I verified the reflective machinery by reading it rather than trusting it - H_set_property has no CPF_Edit gate (and MifBridgeDetails.cpp

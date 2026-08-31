@@ -22,6 +22,7 @@ SAFETY RULES BAKED IN, because this runs unattended:
   * Nothing is saved. save_* endpoints are on the deny list.
 """
 import json
+import io
 import os
 import subprocess
 import time
@@ -739,3 +740,43 @@ def load_findings():
 def endpoint_names():
     r = raw_post("self_audit", {}, timeout=120)
     return sorted(r.get("endpoints") or []) if isinstance(r, dict) else []
+
+
+DYNAMIC_COVERAGE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "dynamic_coverage.json")
+
+
+def record_dynamic_coverage(suite, endpoints):
+    """Record the endpoints a suite drove from the LIVE registry rather than by name.
+
+    coverage_gaps.py reads suite SOURCE for literal endpoint strings, so an endpoint reached by
+    iterating endpoint_names() is invisible to it and reads as untested. Four names were wrong on
+    its list for that reason on 2026-08-31.
+
+    A static declaration in the suite would fix that by LYING. test_node_spawns T330 does not sweep
+    every add_* - it sweeps every add_* whose acceptedParams contain graphId and are otherwise a
+    subset of the cosmetic set, computed live. A glob would claim endpoints the loop deliberately
+    skips, which is worse than the blind spot: coverage_gaps would go quiet about genuinely
+    untested surface.
+
+    So what is recorded here is EVIDENCE - what actually ran, stamped with when - and coverage_gaps
+    reports the record's age rather than trusting it. Merged per suite so a re-run replaces its
+    claim instead of growing a pile nobody prunes.
+    """
+    import json as _json
+    import time as _time
+    data = {}
+    try:
+        with io.open(DYNAMIC_COVERAGE_PATH, encoding="utf-8") as fh:
+            data = _json.load(fh)
+    except Exception:
+        data = {}
+    data[str(suite)] = {
+        "endpoints": sorted(set(str(e) for e in endpoints)),
+        "recordedAt": int(_time.time()),
+    }
+    tmp = DYNAMIC_COVERAGE_PATH + ".tmp"
+    with io.open(tmp, "w", encoding="utf-8", newline="\r\n") as fh:
+        fh.write(_json.dumps(data, indent=1, sort_keys=True))
+    os.replace(tmp, DYNAMIC_COVERAGE_PATH)
+    return len(data[str(suite)]["endpoints"])

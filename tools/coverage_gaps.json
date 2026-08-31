@@ -22,12 +22,25 @@
   "save_dirty_packages",
   "save_level_as"
  ],
+ "dynamicallyCovered": [],
  "covered": {
   "add_actor_to_data_layer": [
    "test_data_layer_writes.py"
   ],
+  "add_anim_curve": [
+   "test_anim_curve.py"
+  ],
   "add_anim_node": [
    "test_anim_nodes.py",
+   "test_anim_state.py"
+  ],
+  "add_anim_notify": [
+   "test_anim_notify.py"
+  ],
+  "add_anim_notify_track": [
+   "test_anim_notify.py"
+  ],
+  "add_anim_state": [
    "test_anim_state.py"
   ],
   "add_bind_dispatcher": [
@@ -63,6 +76,7 @@
    "test_undo_integrity.py"
   ],
   "add_component": [
+   "test_ability_system.py",
    "test_collision.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
@@ -70,11 +84,15 @@
    "test_inherited_components.py",
    "test_instance_components.py",
    "test_node_spawns.py",
+   "test_spline_landscape.py",
    "test_uncovered_reads8.py",
    "test_undo_integrity.py"
   ],
   "add_component_bound_event": [
    "test_node_spawns.py"
+  ],
+  "add_create_event": [
+   "test_create_event.py"
   ],
   "add_create_widget": [
    "test_node_spawns.py"
@@ -132,6 +150,9 @@
   "add_gameplay_effect_modifier": [
    "test_uncovered_reads7.py"
   ],
+  "add_gameplay_tag": [
+   "test_gameplay_tag_authoring.py"
+  ],
   "add_get_data_table_row": [
    "test_node_spawns.py"
   ],
@@ -153,6 +174,11 @@
   "add_interface": [
    "test_interfaces.py",
    "test_undo_integrity.py"
+  ],
+  "add_k2_node": [
+   "test_add_k2_node.py",
+   "test_blueprint_breakpoint.py",
+   "test_blueprint_watch.py"
   ],
   "add_literal": [
    "test_node_spawns.py"
@@ -179,6 +205,9 @@
   "add_nav_volume": [
    "test_uncovered_reads7.py"
   ],
+  "add_niagara_emitter": [
+   "test_niagara_add_remove.py"
+  ],
   "add_node_pin": [
    "test_pins.py"
   ],
@@ -187,6 +216,15 @@
   ],
   "add_parent_call": [
    "test_node_spawns.py"
+  ],
+  "add_pcg_node": [
+   "test_pcg_authoring.py"
+  ],
+  "add_physics_body": [
+   "test_physics_asset.py"
+  ],
+  "add_physics_constraint": [
+   "test_physics_asset.py"
   ],
   "add_pin": [
    "test_pinlifetime.py"
@@ -199,12 +237,18 @@
    "test_sequencer_authoring.py",
    "test_uncovered_reads8.py"
   ],
+  "add_sequence_section": [
+   "test_sequence_keys.py"
+  ],
   "add_sequence_track": [
    "test_sequence_keys.py",
    "test_sequencer_authoring.py"
   ],
   "add_simplified_collision": [
    "test_simplified_collision_guard.py"
+  ],
+  "add_socket": [
+   "test_socket_authoring.py"
   ],
   "add_spawn_actor": [
    "test_uncovered_reads7.py"
@@ -227,9 +271,15 @@
   "add_switch_string": [
    "test_node_spawns.py"
   ],
+  "add_sync_marker": [
+   "test_sync_markers.py"
+  ],
   "add_timeline": [
    "test_report_intake.py",
    "test_timeline.py"
+  ],
+  "add_to_collection": [
+   "test_collections.py"
   ],
   "add_tree_widget": [
    "test_mvvm.py",
@@ -277,6 +327,9 @@
    "test_modal_hazards.py",
    "test_node_spawns.py"
   ],
+  "add_virtual_bone": [
+   "test_virtual_bone_authoring.py"
+  ],
   "add_widget_animation": [
    "test_rename_widget.py",
    "test_widget_anim_recreate.py",
@@ -310,6 +363,12 @@
   "apply_level_snapshot": [
    "test_levelsnapshots.py"
   ],
+  "apply_spline_to_landscape": [
+   "test_spline_landscape.py"
+  ],
+  "attach_actor": [
+   "test_attach_actor.py"
+  ],
   "audit_unused": [
    "test_audit_fixes.py"
   ],
@@ -329,8 +388,17 @@
   "bind_landscape_rvt": [
    "test_uncovered_reads7.py"
   ],
+  "blueprint_breakpoint": [
+   "test_blueprint_breakpoint.py"
+  ],
   "blueprint_inheritance_tree": [
    "test_uncovered_reads3.py"
+  ],
+  "blueprint_watch": [
+   "test_blueprint_watch.py"
+  ],
+  "break_level_instance": [
+   "test_level_instances.py"
   ],
   "build_navmesh": [
    "test_safety_gate.py"
@@ -340,6 +408,9 @@
   ],
   "capture_viewport": [
    "test_capture_viewport.py"
+  ],
+  "check_consolidate_assets": [
+   "test_consolidate.py"
   ],
   "check_overlaps": [
    "test_audit_fixes.py"
@@ -394,6 +465,9 @@
   "connect_material_property": [
    "test_material_graph.py"
   ],
+  "connect_pcg_nodes": [
+   "test_pcg_authoring.py"
+  ],
   "connect_pins": [
    "test_anim_nodes.py",
    "test_anim_state.py",
@@ -407,6 +481,9 @@
    "test_selfpin.py",
    "test_undo_integrity.py",
    "test_v3_apply.py"
+  ],
+  "consolidate_assets": [
+   "test_consolidate.py"
   ],
   "create_asset": [
    "test_create_asset.py",
@@ -430,6 +507,7 @@
    "test_uncovered_reads8.py"
   ],
   "create_blueprint": [
+   "test_ability_system.py",
    "test_add_k2_node.py",
    "test_anim_nodes.py",
    "test_anim_state.py",
@@ -465,6 +543,7 @@
    "test_reroute.py",
    "test_rollback_real.py",
    "test_selfpin.py",
+   "test_spline_landscape.py",
    "test_timeline.py",
    "test_transactions.py",
    "test_uncovered_reads5.py",
@@ -479,6 +558,9 @@
    "test_widget_animation_track.py",
    "test_widget_transform_channels.py",
    "test_widget_tree.py"
+  ],
+  "create_collection": [
+   "test_collections.py"
   ],
   "create_data_layer": [
    "test_uncovered_reads5.py"
@@ -514,6 +596,9 @@
   ],
   "create_level_snapshot": [
    "test_levelsnapshots.py"
+  ],
+  "create_macro": [
+   "test_create_macro.py"
   ],
   "create_material": [
    "test_blender_material.py",
@@ -552,6 +637,7 @@
    "test_water_zone.py"
   ],
   "delete_asset": [
+   "test_ability_system.py",
    "test_add_k2_node.py",
    "test_anim_state.py",
    "test_array_wildcard_durability.py",
@@ -602,6 +688,7 @@
    "test_sequencer_authoring.py",
    "test_set_struct_member.py",
    "test_socket_authoring.py",
+   "test_spline_landscape.py",
    "test_textures.py",
    "test_thumbnails.py",
    "test_uncovered_reads5.py",
@@ -628,9 +715,13 @@
   "delete_material_expression": [
    "test_material_graph.py"
   ],
+  "describe_ability_system": [
+   "test_ability_system.py"
+  ],
   "describe_animation": [
    "test_anim_curve.py",
    "test_anim_notify.py",
+   "test_sync_markers.py",
    "test_uncovered_reads4.py"
   ],
   "describe_behavior_tree": [
@@ -638,6 +729,9 @@
   ],
   "describe_class": [
    "test_function_flags.py"
+  ],
+  "describe_collection": [
+   "test_collections.py"
   ],
   "describe_dynamic_mesh": [
    "test_geometryscript.py"
@@ -688,6 +782,10 @@
    "test_pcg_authoring.py",
    "test_uncovered_reads.py"
   ],
+  "describe_physics_asset": [
+   "test_physics_asset.py",
+   "test_physics_primitive_collision.py"
+  ],
   "describe_property": [
    "test_uncovered_reads2.py"
   ],
@@ -697,6 +795,12 @@
   "describe_water_body": [
    "test_uncovered_reads.py"
   ],
+  "destroy_collection": [
+   "test_collections.py"
+  ],
+  "detach_actor": [
+   "test_attach_actor.py"
+  ],
   "diagnose_landscape": [
    "test_landscape_info.py"
   ],
@@ -705,6 +809,9 @@
   ],
   "diff_properties_vs_default": [
    "test_uncovered_reads2.py"
+  ],
+  "disconnect_pcg_nodes": [
+   "test_pcg_authoring.py"
   ],
   "disconnect_pin": [
    "test_pins.py"
@@ -732,11 +839,18 @@
    "test_edit_container.py",
    "test_socket_authoring.py"
   ],
+  "edit_level_instance": [
+   "test_level_instances.py"
+  ],
   "exec_console": [
    "test_safety_gate.py"
   ],
   "export_asset": [
    "test_safety_gate.py"
+  ],
+  "export_landscape_heightmap": [
+   "test_landscape_heightmap.py",
+   "test_spline_landscape.py"
   ],
   "find_assets": [
    "test_add_k2_node.py",
@@ -802,11 +916,21 @@
    "test_anim_nodes.py",
    "test_find_and_move.py"
   ],
+  "fixup_redirectors": [
+   "test_redirectors.py"
+  ],
   "focus_viewport": [
    "test_uncovered_reads3.py"
   ],
+  "generate_lods": [
+   "test_generate_lods.py"
+  ],
   "get_actor_bounds": [
    "test_uncovered_reads2.py"
+  ],
+  "get_asset_tags": [
+   "test_asset_tags.py",
+   "test_staticmesh_write_guard.py"
   ],
   "get_collision": [
    "test_uncovered_reads4.py"
@@ -827,6 +951,9 @@
   "get_level_actor": [
    "test_attach_actor.py",
    "test_snap_ground.py"
+  ],
+  "get_level_blueprint": [
+   "test_level_blueprint.py"
   ],
   "get_node": [
    "test_anim_nodes.py",
@@ -852,6 +979,7 @@
    "test_perf_stats.py"
   ],
   "get_property": [
+   "test_ability_system.py",
    "test_collision.py",
    "test_components_dispatchers.py",
    "test_landscape_info.py",
@@ -880,6 +1008,10 @@
   "import_asset": [
    "test_safety_gate.py"
   ],
+  "import_landscape_heightmap": [
+   "test_landscape_heightmap.py",
+   "test_spline_landscape.py"
+  ],
   "import_texture": [
    "test_textures.py"
   ],
@@ -897,7 +1029,11 @@
   "layout_material_expressions": [
    "test_material_graph.py"
   ],
+  "lighting_build_status": [
+   "test_lighting_status.py"
+  ],
   "list_animations": [
+   "test_sync_markers.py",
    "test_uncovered_reads4.py"
   ],
   "list_blackboard_keys": [
@@ -910,6 +1046,7 @@
    "test_safety_gate.py"
   ],
   "list_bones": [
+   "test_blender_rename_bones.py",
    "test_blender_rig.py",
    "test_find_tools.py",
    "test_ik_authoring.py",
@@ -917,6 +1054,9 @@
    "test_list_bones.py",
    "test_ported_anim.py",
    "test_virtual_bone_authoring.py"
+  ],
+  "list_collections": [
+   "test_collections.py"
   ],
   "list_collision_profiles": [
    "test_collision.py"
@@ -930,7 +1070,8 @@
    "test_undo_integrity.py"
   ],
   "list_data_layers": [
-   "test_data_layer_writes.py"
+   "test_data_layer_writes.py",
+   "test_layers.py"
   ],
   "list_datatables": [
    "test_datatables.py"
@@ -962,7 +1103,8 @@
    "test_uncovered_reads5.py"
   ],
   "list_game_feature_plugins": [
-   "test_game_features.py"
+   "test_game_features.py",
+   "test_set_plugin_enabled.py"
   ],
   "list_gameplay_tags": [
    "test_uncovered_reads.py"
@@ -1007,6 +1149,12 @@
    "test_interfaces.py",
    "test_undo_integrity.py"
   ],
+  "list_layers": [
+   "test_layers.py"
+  ],
+  "list_legacy_input_mappings": [
+   "test_legacy_input.py"
+  ],
   "list_level_actors": [
    "test_confirm_gated.py",
    "test_data_layer_writes.py",
@@ -1022,6 +1170,9 @@
    "test_uncovered_reads2.py",
    "test_uncovered_reads3.py",
    "test_water_zone.py"
+  ],
+  "list_level_instances": [
+   "test_level_instances.py"
   ],
   "list_level_sequences": [
    "test_sequencer.py"
@@ -1073,6 +1224,10 @@
    "test_settings_config.py",
    "test_uncovered_reads5.py"
   ],
+  "list_partition_actors": [
+   "test_load_partition_actors.py",
+   "test_partition_actors.py"
+  ],
   "list_pcg_components": [
    "test_uncovered_reads.py"
   ],
@@ -1083,12 +1238,18 @@
   "list_pie_actors": [
    "test_pie_family.py"
   ],
+  "list_redirectors": [
+   "test_redirectors.py"
+  ],
   "list_retarget_chain_mapping": [
    "test_ik_authoring.py"
   ],
   "list_sequence_bindings": [
    "test_sequencer_authoring.py",
    "test_uncovered_reads4.py"
+  ],
+  "list_settings": [
+   "test_settings_config.py"
   ],
   "list_sockets": [
    "test_list_bones.py",
@@ -1157,8 +1318,26 @@
   "load_level": [
    "test_load_level_guard.py"
   ],
+  "load_partition_actors": [
+   "test_load_partition_actors.py"
+  ],
+  "map_input_key": [
+   "test_input_mapping.py"
+  ],
+  "map_legacy_input": [
+   "test_legacy_input.py"
+  ],
+  "material_statistics": [
+   "test_material_statistics.py"
+  ],
+  "modify_actor_layers": [
+   "test_layers.py"
+  ],
   "move_actor_to": [
    "test_pie_family.py"
+  ],
+  "move_actors_to_level": [
+   "test_move_actors_to_level.py"
   ],
   "move_node": [
    "test_find_and_move.py"
@@ -1261,6 +1440,16 @@
   "remove_actor_from_data_layer": [
    "test_data_layer_writes.py"
   ],
+  "remove_anim_curve": [
+   "test_anim_curve.py"
+  ],
+  "remove_anim_notify": [
+   "test_anim_notify.py"
+  ],
+  "remove_anim_notify_track": [
+   "test_anim_notify.py",
+   "test_sync_markers.py"
+  ],
   "remove_collision": [
    "test_simplified_collision_guard.py"
   ],
@@ -1276,6 +1465,12 @@
   "remove_event_dispatcher": [
    "test_components_dispatchers.py",
    "test_mcp_post_errors.py"
+  ],
+  "remove_foliage_instances": [
+   "test_foliage_removal.py"
+  ],
+  "remove_from_collection": [
+   "test_collections.py"
   ],
   "remove_function": [
    "test_uncovered_reads5.py"
@@ -1295,17 +1490,32 @@
   "remove_interface": [
    "test_interfaces.py"
   ],
+  "remove_lods": [
+   "test_generate_lods.py"
+  ],
   "remove_mvvm_binding": [
    "test_mvvm.py"
   ],
   "remove_mvvm_viewmodel": [
    "test_mvvm.py"
   ],
+  "remove_niagara_emitter": [
+   "test_niagara_add_remove.py"
+  ],
   "remove_node": [
    "test_confirm_gated.py",
    "test_find_and_move.py",
    "test_node_spawns.py",
    "test_recipes.py"
+  ],
+  "remove_pcg_node": [
+   "test_pcg_authoring.py"
+  ],
+  "remove_physics_body": [
+   "test_physics_asset.py"
+  ],
+  "remove_physics_constraint": [
+   "test_physics_asset.py"
   ],
   "remove_pin": [
    "test_pinlifetime.py"
@@ -1316,11 +1526,17 @@
   "remove_sublevel": [
    "test_uncovered_reads7.py"
   ],
+  "remove_sync_marker": [
+   "test_sync_markers.py"
+  ],
   "remove_tree_widget": [
    "test_widget_tree.py"
   ],
   "remove_variable": [
    "test_uncovered_reads5.py"
+  ],
+  "remove_virtual_bone": [
+   "test_virtual_bone_authoring.py"
   ],
   "remove_widget_animation": [
    "test_widget_anim_recreate.py",
@@ -1353,6 +1569,9 @@
    "test_confirm_gated.py",
    "test_modal_hazards.py"
   ],
+  "rename_virtual_bone": [
+   "test_virtual_bone_authoring.py"
+  ],
   "render_thumbnail": [
    "test_textures.py",
    "test_thumbnails.py"
@@ -1380,8 +1599,14 @@
   "run_console_captured": [
    "test_uncovered_reads6.py"
   ],
+  "run_retarget": [
+   "test_run_retarget.py"
+  ],
   "save_blueprint": [
    "test_safety_gate.py"
+  ],
+  "save_input_settings": [
+   "test_legacy_input.py"
   ],
   "save_package": [
    "test_safety_gate.py"
@@ -1396,6 +1621,7 @@
    "test_uncovered_reads5.py"
   ],
   "self_audit": [
+   "test_ability_system.py",
    "test_add_k2_node.py",
    "test_anim_curve.py",
    "test_anim_state.py",
@@ -1413,6 +1639,7 @@
    "test_landscape_heightmap.py",
    "test_level_instances.py",
    "test_load_level_guard.py",
+   "test_load_partition_actors.py",
    "test_macro_dispatch.py",
    "test_material_statistics.py",
    "test_mcp_post_errors.py",
@@ -1433,7 +1660,9 @@
    "test_selfpin.py",
    "test_set_struct_member.py",
    "test_simplified_collision_guard.py",
+   "test_spline_landscape.py",
    "test_staticmesh_write_guard.py",
+   "test_sync_markers.py",
    "test_unknown_endpoint.py",
    "test_v3_apply.py",
    "test_viewport_view_mode.py",
@@ -1448,6 +1677,9 @@
   "set_actor_transform": [
    "test_levelsnapshots.py",
    "test_snap_ground.py"
+  ],
+  "set_anim_curve_keys": [
+   "test_anim_curve.py"
   ],
   "set_asset_thumbnail": [
    "test_uncovered_reads8.py"
@@ -1479,6 +1711,9 @@
   "set_data_layer_visibility": [
    "test_data_layer_writes.py"
   ],
+  "set_enum_value": [
+   "test_enum_edit.py"
+  ],
   "set_function_flags": [
    "test_function_flags.py"
   ],
@@ -1500,12 +1735,30 @@
   "set_ik_solver": [
    "test_ik_goals_solvers.py"
   ],
+  "set_layer_visibility": [
+   "test_layers.py"
+  ],
+  "set_level_instance_loaded": [
+   "test_level_instances.py"
+  ],
   "set_material_parameter": [
    "test_material_undo.py",
    "test_material_write.py"
   ],
   "set_niagara_component_parameter": [
    "test_uncovered_reads8.py"
+  ],
+  "set_niagara_emitter": [
+   "test_niagara_emitter.py"
+  ],
+  "set_niagara_user_parameter": [
+   "test_niagara_set_user_param.py"
+  ],
+  "set_physics_body_collision": [
+   "test_physics_asset.py"
+  ],
+  "set_physics_primitive_collision": [
+   "test_physics_primitive_collision.py"
   ],
   "set_pin_default": [
    "test_enums.py",
@@ -1516,6 +1769,9 @@
   ],
   "set_pin_type": [
    "test_pins.py"
+  ],
+  "set_plugin_enabled": [
+   "test_set_plugin_enabled.py"
   ],
   "set_property": [
    "test_attach_actor.py",
@@ -1535,6 +1791,9 @@
   "set_retarget_rigs": [
    "test_ik_authoring.py",
    "test_run_retarget.py"
+  ],
+  "set_sequence_keys": [
+   "test_sequence_keys.py"
   ],
   "set_spline_points": [
    "test_report_intake.py"
@@ -1595,17 +1854,26 @@
    "test_report_intake.py",
    "test_snap_ground.py"
   ],
+  "source_control": [
+   "test_source_control.py"
+  ],
+  "source_control_checkout": [
+   "test_source_control.py"
+  ],
   "spawn_actor_in_level": [
+   "test_ability_system.py",
    "test_attach_actor.py",
    "test_audit_fixes.py",
    "test_confirm_gated.py",
    "test_instance_components.py",
+   "test_layers.py",
    "test_levelsnapshots.py",
    "test_move_actors_to_level.py",
    "test_perf_stats.py",
    "test_sequence_keys.py",
    "test_sequencer_authoring.py",
    "test_snap_ground.py",
+   "test_spline_landscape.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads8.py"
   ],
@@ -1641,7 +1909,8 @@
   ],
   "trace_ground": [
    "test_audit_fixes.py",
-   "test_landscape_heightmap.py"
+   "test_landscape_heightmap.py",
+   "test_spline_landscape.py"
   ],
   "trace_start": [
    "test_uncovered_reads5.py"
@@ -1671,6 +1940,12 @@
    "test_material_undo.py",
    "test_transactions.py",
    "test_undo_integrity.py"
+  ],
+  "unmap_input_key": [
+   "test_input_mapping.py"
+  ],
+  "unmap_legacy_input": [
+   "test_legacy_input.py"
   ],
   "validate": [
    "test_uncovered_reads3.py"

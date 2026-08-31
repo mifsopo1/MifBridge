@@ -1854,3 +1854,59 @@ runs picked different assets. The flag says the runs differ, not why.
 288-run sweep at run 90, and nothing could have caught it: `py_compile` cannot see a runtime name
 error, and that code only executes when the bridge is already down. Error branches and recovery
 paths are where this class of bug lives, because a green test run never reaches them.
+
+---
+
+## Reading a bpy datablock after the call that freed it - three instances in one night (2026-08-31)
+
+**Symptom.** `boolean_op` passed on Blender 3.6, 4.2 and 4.4 and failed on 5.0.1 with
+`UnicodeDecodeError: 'utf-8' codec can't decode byte 0xfe in position 0`, raised from inside a plain
+`modifier.name`. Hours later `bake_texture` failed its own error path with
+`ReferenceError: StructRNA of type Image has been removed`. Neither message names a lifetime
+problem, and the first one does not even look like one - it reads as a text-encoding bug.
+
+**Root cause.** Both endpoints kept using a Python handle to a datablock that an operator had already
+destroyed.
+
+* `bpy.ops.object.modifier_apply` FREES the modifier. `boolean_op` then read `modifier.name` for its
+  post-apply check, `modifier.name` again in the failure cleanup, and `modifier.solver` when building
+  the response. Every one of those is a read of released RNA memory - undefined behaviour that
+  happened to return the old string on three Blender versions and garbage bytes on the fourth. That
+  is also why the FIRST boolean in the suite survived and the second did not: freed-memory reads are
+  not deterministic, so the same code passes and fails in the same run.
+* `bake_texture` removed the image with `bpy.data.images.remove(image)` on its failure path and then
+  read `image.is_dirty` while formatting the error message.
+
+A third instance was latent rather than observed: `decimate_mesh` reads `mod.name` and passes `mod`
+to `remove()` inside an `except` that covers `modifier_apply` - so the handle may already be freed
+exactly when the handler runs. It has no multi-user guard, and applying a modifier to shared mesh
+data is precisely what makes `modifier_apply` raise, so its except path is more reachable than
+`boolean_op`'s was.
+
+**Fix.** Take what is needed as PYTHON VALUES before the destroying call, and look the object up
+again by name afterwards instead of holding the handle:
+
+```python
+mod_name = str(modifier.name)          # before
+bpy.ops.object.modifier_apply(modifier=mod_name)
+leftover = target.modifiers.get(mod_name)   # after - a fresh lookup, not the old handle
+```
+
+`apply_modifier` in `ops_rig.py` had always done this correctly; the other two now match it.
+
+**Prevention.** The rule is not "remember this API frees things" - I knew that, had just fixed it in
+`boolean_op`, and wrote it again in `bake_texture` the same night. The rule that actually holds is
+mechanical:
+
+> Anything you will need AFTER a destructive call must be copied into a plain Python value BEFORE it.
+> That includes values used only to build an error message.
+
+The error-message case is the one that slips through, because it lives on a path nobody exercises in
+the happy case. Both instances here were in failure handlers.
+
+Worth knowing for diagnosis: Blender reports this two different ways depending on how far the freed
+memory has been reused. `ReferenceError: StructRNA of type X has been removed` is the honest one. A
+`UnicodeDecodeError` out of a plain attribute read is the SAME bug wearing a disguise - the bytes
+behind a freed `FName`-like field are no longer text. If a version-specific text-decoding error
+appears where no text is being decoded, look for a lifetime problem rather than an encoding one.
+
