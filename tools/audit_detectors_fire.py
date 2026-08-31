@@ -213,7 +213,30 @@ def plant_undefined_name(text):
     return text.replace(needle, needle + "    _ = MIF_PROBE_ZZ_UNDEFINED\n", 1)
 
 
-# tool -> (target file, plant function, marker that must appear in the tool's output)
+
+def plant_unrun_assertions(text):
+    """Assertions a suite DEFINES and its last recorded run never executed.
+
+    audit_suite_reach measures ran/defined per suite, so adding definitions without a matching run
+    collapses the ratio. They go inside a function nobody calls, which keeps the file valid Python -
+    the tool only reads the source, but a suite left syntactically broken by a crashed run would be a
+    nasty thing to leave behind.
+    """
+    if "def _mif_probe_zz(" in text:
+        return None
+    body = "".join('    check("probe %d", True)\n' % i for i in range(60))
+    return text.rstrip("\n") + "\n\n\ndef _mif_probe_zz():\n" + body
+
+
+# tool -> (target file, plant function, marker, gate)
+#
+# gate=True  - proof is a NON-ZERO exit AND the marker in the output. Both, because several of these
+#              exit 1 on unrelated pre-existing findings, and a blind detector would otherwise pass
+#              on somebody else's failure.
+# gate=False - the tool is a REPORT and returns 0 whatever it finds (audit_suite_reach always does).
+#              Demanding a red exit there would call it ASLEEP no matter how well it works, so proof
+#              is that the marker is ABSENT before the plant and PRESENT after. Weaker evidence,
+#              named as such rather than dressed up as the same thing.
 PLANTS = {
     "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind, "mif_probe_zz"),
     "audit_promise_flags.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_confirm, "confirm"),
@@ -231,6 +254,8 @@ PLANTS = {
                              "probeDead_zz"),
     "audit_undefined_names.py": (os.path.join(HERE, "why_not.py"), plant_undefined_name,
                                  "MIF_PROBE_ZZ_UNDEFINED"),
+    "audit_suite_reach.py": (os.path.join(HERE, "test_layers.py"), plant_unrun_assertions,
+                             "test_layers.py", False),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.
@@ -244,10 +269,12 @@ PLANTS = {
 # category, because "no plant written yet" and "cannot be plant-tested at all" are different facts
 # and collapsing them into one NOT PROVEN list loses the one that tells you what to do next.
 LIVE = {
-    "audit_absence_claims.py",     # checks docs against the live endpoint registry
-    "audit_describe_drift.py",     # compares describe_endpoint output against the handlers
-    "audit_read_purity.py",        # calls each read endpoint and looks for a dirtied package
-    "audit_roundtrip.py",          # writes then reads back through the bridge
+    "audit_absence_claims.py": "checks docs against the LIVE endpoint registry",
+    "audit_describe_drift.py": "compares describe_endpoint output against the handlers, live",
+    "audit_read_purity.py": "calls each read endpoint and watches for a dirtied package",
+    "audit_roundtrip.py": "writes then reads back through the bridge",
+    "audit_blender_postconditions.py": "needs a running Blender - exits 2 SKIPPED without one",
+    "audit_blender_read_purity.py": "needs a running Blender - exits 2 SKIPPED without one",
 }
 
 # Extra argv some tools need to report everything rather than only new-against-baseline findings.
@@ -309,7 +336,9 @@ def run(tool):
 
 def prove(tool):
     """(status, detail). status is one of proven / ASLEEP / anchor-gone / already-red."""
-    target, planter, marker = PLANTS[tool]
+    entry = PLANTS[tool]
+    target, planter, marker = entry[0], entry[1], entry[2]
+    gate = entry[3] if len(entry) > 3 else True
     if not os.path.isfile(target):
         return "anchor-gone", "target file missing: %s" % os.path.basename(target)
 
@@ -324,7 +353,7 @@ def prove(tool):
         return "anchor-gone", ("the plant's anchor is no longer in %s - the tool was NOT proven"
                                % os.path.basename(target))
     # A marker already present before planting would make the check pass for the wrong reason.
-    if marker in before_out and before_rc != 0:
+    if marker in before_out and (before_rc != 0 or not gate):
         return "already-red", ("%s already reports %r before planting, so this run proves nothing"
                                % (tool, marker))
 
@@ -337,6 +366,11 @@ def prove(tool):
         if io.open(target, "rb").read() != original:
             return "ASLEEP", "RESTORE FAILED on %s - fix this by hand before anything else" % target
 
+    if not gate:
+        if marker in out:
+            return "proven", ("named %s after the plant and not before (report-style tool - it "
+                              "always exits 0, so the exit code proves nothing)" % marker)
+        return "ASLEEP", "never named %r with the defect planted - it is not looking" % marker
     if rc != 0 and marker in out:
         return "proven", "went red on the planted %s" % marker
     if rc == 0:
@@ -351,13 +385,13 @@ def main():
     live = [t for t in DETECTORS if t not in PLANTS and t in LIVE]
     uncovered = [t for t in DETECTORS if t not in PLANTS and t not in LIVE]
 
-    print("%d detector(s) in tools/; %d have a plant, %d need a running editor, %d have neither"
+    print("%d detector(s) in tools/; %d have a plant, %d cannot be proven here, %d have neither"
           % (len(DETECTORS), len(covered), len(live), len(uncovered)))
     if listing:
         for t in covered:
             print("  plant   %s" % t)
         for t in live:
-            print("  LIVE    %s" % t)
+            print("  LIVE    %-32s %s" % (t, LIVE[t]))
         for t in uncovered:
             print("  NONE    %s" % t)
         return 0
@@ -400,10 +434,10 @@ def main():
             print("  %s" % t)
     if live:
         print("")
-        print("NOT PROVABLE HERE - these drive the running editor, so a planted source defect says")
-        print("nothing about them. They need a bridge and a suite run, not a plant:")
+        print("NOT PROVABLE HERE - each needs a live process this harness cannot plant into. A")
+        print("planted source defect says nothing about them; they need the thing they measure:")
         for t in live:
-            print("  %s" % t)
+            print("  %-32s %s" % (t, LIVE[t]))
     if uncovered:
         print("")
         print("NOT PROVEN - no plant is defined for these, so their green means nothing here:")

@@ -170,10 +170,10 @@ and on 2026-08-31 a check in `mcp_static_check` printed OK for hours without eve
 reported success throughout.
 
 The harness restores every planted file byte-for-byte and hashes the CONTENT of `Source/` before and
-after, refusing to report anything if the tree moved. 9 of 25 detectors are proven today; the rest
+after, refusing to report anything if the tree moved. 10 of 25 detectors are proven today; the rest
 are listed as NOT PROVEN, which is deliberate - an entry that was quietly absent would repeat the
-same bug one level up. Four of them are separated out as NOT PROVABLE HERE: they drive the running
-editor, so a planted source defect says nothing about them. "No plant written yet" and "cannot be
+same bug one level up. Six are separated out as NOT PROVABLE HERE, each with its reason: four drive the
+running editor, two need a running Blender and exit 2 SKIPPED without one. "No plant written yet" and "cannot be
 plant-tested at all" are different facts, and only one of them tells you what to do next.
 
 **It will not plant while an editor is up.** A source plant restores in about a second and a running

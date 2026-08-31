@@ -7741,18 +7741,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       among them, which is why it has been able to sit at exit 1. Adding it means first reading the
       9 above - gating a tool that is already red just blocks releases.
 
-- [ ] **10 of 25 audit tools have no plant, and 4 more cannot be plant-tested at all** (day)
+- [ ] **7 of 25 audit tools have no plant, and 6 more cannot be plant-tested at all** (day)
       tools/audit_detectors_fire.py plants a defect each tool claims to catch and requires it to go
       red AND name the marker. 8 are proven: audit_loop_writes, audit_modals, audit_postconditions,
       audit_promise_flags, audit_suite_payloads, audit_vacuous_checks, mcp_static_check and
       parity_check. The other 17 have no plant, and the tool LISTS them as NOT PROVEN rather than
       omitting them, because a silently missing entry is the same bug it exists to catch.
 
-      Standing at 2026-08-31 evening: 9 PROVEN (parity_check, audit_promise_flags, mcp_static_check,
-      audit_vacuous_checks, audit_loop_writes, audit_postconditions, audit_modals,
-      audit_suite_payloads, audit_undefined_names); 2 WRITTEN BUT NOT YET EXERCISED (audit_blocking,
-      audit_dead_params - Andre opened the editor before they ran, and the guard below skipped them);
-      4 NOT PROVABLE HERE; 10 with no plant.
+      Standing at 2026-08-31 evening: 10 PROVEN (parity_check, audit_promise_flags,
+      mcp_static_check, audit_vacuous_checks, audit_loop_writes, audit_postconditions, audit_modals,
+      audit_suite_payloads, audit_undefined_names, audit_suite_reach); 2 WRITTEN BUT NOT YET
+      EXERCISED (audit_blocking, audit_dead_params - Andre opened the editor before they ran, and
+      the guard below skipped them); 6 NOT PROVABLE HERE; 7 with no plant.
+
+      TWO KINDS OF PROOF, and the harness says which it has. Most entries demand a NON-ZERO exit AND
+      the marker in the output - both, because several of these tools exit 1 on unrelated
+      pre-existing findings and a blind detector would otherwise pass on somebody else's failure.
+      But audit_suite_reach is a REPORT and returns 0 whatever it finds, so demanding red would call
+      it asleep however well it works. There, proof is the marker being absent before the plant and
+      present after. That is weaker evidence and is labelled as such rather than dressed up as the
+      same thing.
+
+      NOT PROVABLE HERE now carries a reason per entry: four drive the live editor, two need a
+      running Blender and exit 2 SKIPPED without one.
 
       THE HARNESS REFUSES TO PLANT WHILE AN EDITOR IS UP. Source plants write a deliberately broken
       file and restore it about a second later, which a running editor never notices - it does not
