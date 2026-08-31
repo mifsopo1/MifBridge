@@ -138,6 +138,10 @@ python tools/audit_advice_gaps.py       # advice naming an operation that does n
 python tools/audit_value_discovery.py   # a parameter demanding a value nothing enumerates
 python tools/coverage_gaps.py           # endpoints named in no suite
 python tools/audit_suite_reach.py       # how much of each suite actually RUNS
+python tools/audit_modals.py            # a prompter, or a declared invariant, left unguarded
+python tools/audit_loop_writes.py       # a per-item write to a single-valued response field
+python tools/audit_postconditions.py    # a mutation nothing reads back
+python tools/audit_prose_dependence.py  # a tool whose ANSWER depends on comment text
 python tools/why_not.py <term>          # has this already been decided AGAINST?
 python tools/night_heartbeat.py         # is another session working?
 python tools/mifwatch.py                # did any session die mid-call?
@@ -148,6 +152,18 @@ surface, each with the reason attached, and "reading the endpoint list says a ca
 reading the handler says whether it is absent ON PURPOSE" is a distinction that has already cost one
 wasted investigation. `set_niagara_user_parameter` refuses `add` and explains why; the endpoint list
 cannot tell you that.
+
+The three audits above `audit_prose_dependence` are the ones `make_release` now GATES on, added
+2026-08-31 after `audit_loop_writes` was found to have been failing - with a real defect among its
+findings - for an unknown length of time, because nothing depended on it. All three are
+baseline-ratcheted: they print their whole known set every run and go non-zero only for something
+NEW, so a green tree stays green.
+
+`audit_prose_dependence` is the odd one and is NOT gated: it runs ten of the other tools twice, the
+second time with every C++ comment blanked underneath them, and diffs the output. A tool whose answer
+changes is reading prose as evidence - the root cause of five separate tool bugs found in one night,
+because a grep for a symbol finds the places that USE it and the places that DISCUSS it, and this
+repo has more of the second. Two tools are listed there as deliberate prose readers with reasons.
 
 `audit_suite_reach` is the newest and the least obvious: a suite reporting PASS is not a suite that tested
 what it contains. `test_safety_gate` ran 5 of its 38 assertions here for months, because everything
