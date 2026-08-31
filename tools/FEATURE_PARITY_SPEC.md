@@ -7563,3 +7563,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       InstancedFoliageActor at all, so it has never had foliage painted or placed" - a state its own
       note distinguishes from an actor with zero instances. availableComponentsTruncated sits in a
       helper with no reachable handler boundary from the scan.
+- [x] **T44 had been green for weeks while testing its own typo** (hours)  **DONE 2026-08-31.**
+      test_audit_fixes' T44 called add_enum_literal with `enum`, and the endpoint refuses that BY
+      NAME - "spell it enumName here - list_enum_values takes either, this endpoint reads only
+      enumName". So every run failed on the parameter name, took the `if r.get("ok") is False`
+      branch, and that branch asserted literally `check("T44 bad enumerator refused outright", True)`.
+      The else-branch was no better: `"valueError" in r or "valueApplied" in r`, and valueApplied is
+      emitted on BOTH the accepted and the refused path.
+
+      Rewritten against the real behaviour, which is good and was going untested: a bad enumerator
+      gives ok:TRUE with valueError quoting the rejected value and valueApplied reporting what the
+      pin ACTUALLY holds ("ECC_WorldStatic|None|"), because a bad default is not a failed node spawn
+      and conflating them would lose the node the caller asked for. Also asserts a VALID enumerator
+      produces NO valueError - the half that proves the field tracks the outcome rather than always
+      being present. 22 -> 26.
+
+      HOW IT WAS FOUND, which is the part worth keeping. Not by scanning for the shape. A sweep for
+      `check(..., True)` guarded by an `if` with no `else` found four candidates and ALL FOUR are
+      correct: call_must_return records the timeout failure in its own except branch,
+      test_confirm_gated has an `except SC.NotScratch` doing the same, and test_niagara_emitter's
+      else sits fourteen lines further down than the lookahead window. T44 was found by CALLING the
+      endpoint to see what it returns, and discovering the call had never worked.

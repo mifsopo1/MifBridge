@@ -105,14 +105,37 @@ def main():
 
     # ------------------------------------------------------------------ T44 unchecked defaults
     print("\n=== T44: enum literal reports whether the value was actually accepted ===")
-    r = M.call("add_enum_literal", {"graphId": graph, "enum": "ECollisionChannel",
+    # THIS TEST WAS VACUOUS UNTIL 2026-08-31 and passed the whole time. It spelled the parameter
+    # `enum`, which this endpoint refuses BY NAME ("spell it enumName here - list_enum_values takes
+    # either, this endpoint reads only enumName"). So the call failed for the wrong reason, the
+    # `ok is False` branch was taken, and that branch asserted literally `check(..., True)`. A test
+    # can be green for years while exercising nothing but its own typo.
+    #
+    # The else-branch was no better: `"valueError" in r or "valueApplied" in r` passes on
+    # valueApplied alone, and valueApplied is emitted on BOTH the accepted and refused paths.
+    r = M.call("add_enum_literal", {"graphId": graph, "enumName": "ECollisionChannel",
                                     "value": "__not_an_enumerator__", "x": 100, "y": 700})
     blob = json.dumps(r)
-    if r.get("ok") is False:
-        check("T44 bad enumerator refused outright", True)
-    else:
-        check("T44 bad enumerator is reported, not silently dropped",
-              "valueError" in r or "valueApplied" in r, blob[:260])
+    check("T44 the call SUCCEEDS - a bad default is not a failed node spawn, and conflating them "
+          "would lose the node the caller asked for", r.get("ok") is True, blob[:260])
+    check("T44 valueError is present - TrySetDefaultValue is void and silently refuses a literal it "
+          "cannot parse, which is the defect set_pin_default was fixed for",
+          isinstance(r.get("valueError"), str) and r.get("valueError"), blob[:300])
+    check("T44 and it quotes the value that was refused",
+          "__not_an_enumerator__" in (r.get("valueError") or ""), (r.get("valueError") or "")[:240])
+    check("T44 valueApplied reports what the pin ACTUALLY holds, not what was asked for - that is "
+          "the difference between reporting a postcondition and echoing the request",
+          isinstance(r.get("valueApplied"), str)
+          and "__not_an_enumerator__" not in (r.get("valueApplied") or ""),
+          "valueApplied=%r" % r.get("valueApplied"))
+
+    # THE OTHER HALF: a valid enumerator must NOT produce valueError. Without this, a field hardcoded
+    # to always report an error would pass every assertion above.
+    ok_lit = M.call("add_enum_literal", {"graphId": graph, "enumName": "ECollisionChannel",
+                                         "value": "ECC_WorldStatic", "x": 100, "y": 900})
+    check("T44 a VALID enumerator reports no valueError - which is what proves the field tracks the "
+          "outcome rather than always being there",
+          ok_lit.get("ok") is True and "valueError" not in ok_lit, json.dumps(ok_lit)[:260])
 
     # ------------------------------------------------------------------ T46 mode-dependent param
     print("\n=== T46: invoke_editor_tab refuses an 'asset' it would have ignored ===")
