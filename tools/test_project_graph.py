@@ -210,6 +210,47 @@ def main():
     check("T644 the bridge is still answering", M.bridge_responsive() is True, "bridge died")
 
     print("")
+    # ------------------------------------------------------------------ T646 truncation
+    print("")
+    print("=== T646: foldersTruncated / classesTruncated TRACK the limit ===")
+    # WHY A FLAG NEEDS TESTING AT ALL. A caller who reads `folders` without noticing it was capped
+    # acts on a partial answer and has no way to know - that is the whole job of the flag, and it was
+    # asserted nowhere. Both fields were among 48 consequence-reporting response fields that no suite
+    # named, found 2026-08-31.
+    #
+    # ASSERTED IN BOTH DIRECTIONS on purpose. This project truncates at the DEFAULT limit, so
+    # "foldersTruncated is True" passes just as well against a field hardcoded to true - the
+    # deprecated-but-CONSTANT trap docs/02 records, where HasLayersContent() became `return true;` on
+    # 5.7 and every presence check still passed. A flag is only proven by watching it go false.
+    small = M.call("project_asset_distribution", {"topFolders": 1, "topClasses": 1}, timeout=150)
+    big = M.call("project_asset_distribution", {"topFolders": 5000, "topClasses": 5000}, timeout=150)
+    check("T646 both calls answer", small.get("ok") is True and big.get("ok") is True,
+          json.dumps({"small": small.get("ok"), "big": big.get("ok")}))
+
+    def rows(d, *names):
+        for n in names:
+            if isinstance(d.get(n), list):
+                return d[n]
+        return []
+
+    check("T646 a limit of 1 returns 1 folder, not 'about one'",
+          len(rows(small, "folders", "byFolder")) == 1,
+          "got %d" % len(rows(small, "folders", "byFolder")))
+    check("T646 and says so - foldersTruncated is TRUE when the cap bit",
+          small.get("foldersTruncated") is True, json.dumps(small)[:200])
+    check("T646 same for classes", small.get("classesTruncated") is True, json.dumps(small)[:200])
+
+    check("T646 raised past the real total, foldersTruncated goes FALSE - which is what proves the "
+          "flag tracks the cap rather than being a constant",
+          big.get("foldersTruncated") is False, json.dumps(big)[:200])
+    check("T646 and classesTruncated goes false too",
+          big.get("classesTruncated") is False, json.dumps(big)[:200])
+    check("T646 the uncapped answer really is bigger - otherwise the two calls proved nothing "
+          "about the cap",
+          len(rows(big, "folders", "byFolder")) > len(rows(small, "folders", "byFolder")),
+          "small=%d big=%d" % (len(rows(small, "folders", "byFolder")),
+                               len(rows(big, "folders", "byFolder"))))
+
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:

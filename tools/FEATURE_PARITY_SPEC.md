@@ -7524,3 +7524,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       and would have said "unmoved" whatever happened. The real evidence is considered:1,
       skippedGround:1, snapped:0 - snapped:0 means SetActorLocation was never reached - so the test
       asserts the counts and does not pretend to a position check it cannot make.
+- [x] **the truncation flags TRACK the cap - proven by watching them go false** (hours)  **DONE 2026-08-31.**
+      Fifth and sixth of the 48 consequence-reporting fields. T646 in test_project_graph, 57 -> 64.
+
+      foldersTruncated and classesTruncated tell a caller their answer is PARTIAL, which is the
+      whole reason to have them, and nothing asserted either. Asserted in BOTH directions on purpose:
+      this project truncates at the DEFAULT limit, so "foldersTruncated is True" would pass just as
+      well against a field hardcoded to true - the deprecated-but-CONSTANT trap docs/02 records,
+      where ALandscape::HasLayersContent() became `return true;` on 5.7 and every presence check
+      still passed. Raising the cap past the real total (52 folders, 196 classes) turns both flags
+      false, and that is the half that proves anything.
+
+      NOT DONE, and why. droppedByValidation on set_blendspace_samples is the next-highest field by
+      cost of silence - samples AddSample accepted and ValidateSampleData then deleted for sharing a
+      point - and it needs a mutating write with duplicate samples. T574 deliberately does a NO-OP
+      write against a real BlendSpace precisely to avoid touching game content, and the project's 16
+      BlendSpaces are all real DDS2 assets. A scratch fixture is possible - create_asset then
+      set_property for the skeleton, the two-call form - but it also needs an AnimSequence valid for
+      that skeleton. Filed rather than bodged.
