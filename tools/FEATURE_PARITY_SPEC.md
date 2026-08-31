@@ -8071,3 +8071,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       DebugGame compiled and LINKED first try; DECL 441 == BIND 441; parity_check, mcp_static_check,
       audit_message_endpoints and audit_family_asymmetry all pass. NOT [x]: never run, no suite.
+
+- [~] **read endpoints reporting an EMPTY RESULT as a failure - swept 2026-08-31, none found**
+      mif_help had this shape: 114 tools exist and have nothing extra to say, and asking about one
+      returned an `error`. The prose explained itself and the SHAPE still said failure, which is what
+      an agent branches on. Fixed there; swept the C++ side for the same thing and it is not present.
+
+      16 read endpoints Fail() with an empty-sounding phrase and 15 describe a WRONG SUBJECT rather
+      than an empty result - "'X' is a Y, which has no sockets", "no asset in the registry at 'X'",
+      "sublevel is not LOADED". Those are correct failures: the caller named something that cannot
+      answer the question.
+
+      The 16th is worth recording because the ambiguity is the ENGINE's. describe_livelink_subject
+      fails with "does not support the Transform role, OR has no frame data yet" - and
+      EvaluateFrame_AnyThread returns one bool for both conditions, so the handler genuinely cannot
+      tell them apart. Naming both possibilities is the honest answer available to it, not a hedge.
+
+      No tool landed: the distinction that matters is "wrong subject" versus "real thing, nothing in
+      it", and no mechanical test separates those - reading the message is the test.
