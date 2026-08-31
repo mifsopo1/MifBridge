@@ -7699,8 +7699,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                       survives the round trip is what Unreal renders.
         uv_unwrap     correctAspect - DONE 2026-08-31. Scales the unwrap by the texture aspect
                       ratio; without it a non-square texture gets a UV layout stretched against it.
-        bake_texture  device  (CPU vs GPU)
-        list_objects  pattern, detail
+        bake_texture  device - DONE 2026-08-31. CPU or GPU for the Cycles bake. The tool's own
+                      docstring already promised "Render engine, device, samples and selection
+                      are all restored afterwards", so it DESCRIBED a device it gave the caller
+                      no way to choose.
+        list_objects  pattern, detail - DONE 2026-08-31. The addon reports filteredBy:{type,
+                      pattern} exactly so a caller can tell "nothing matched" from "no filter
+                      was applied" - unanswerable while the filter cannot be set.
 
       TWO OF THAT LIST WERE ALIASES AND ARE STRUCK OUT, which is why each one is read before it is
       forwarded rather than the list being applied wholesale:
