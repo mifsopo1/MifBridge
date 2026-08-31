@@ -185,6 +185,60 @@ def main():
     check("T445 the blueprint still compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,
           "errors=%s" % c.get("numErrors"))
 
+    # ------------------------------------------------------------------ T447 the MakeContainer family
+    print("\n=== T447: numInputs really makes that many element pins ===")
+    # WHY THIS WAS MISSING, and it is a better reason than an oversight. numInputs is on
+    # test_node_spawns' COSMETIC list - the set of parameters T330 supplies a token value for because
+    # they only move a node or size a comment. It is not cosmetic. It decides how many element pins
+    # the node has, and being on that list is exactly why nothing ever checked it: T330 drives all
+    # three of these endpoints from the live registry, passes numInputs, and asserts only that a node
+    # came back. A build where numInputs was ignored entirely would pass 109 checks.
+    #
+    # THE WHOLE FAMILY, not just the one that led here. add_make_set was the endpoint that surfaced
+    # this (no suite named it - T330 reaches it only generically), but add_make_array and add_make_map
+    # share the UK2Node_MakeContainer base and the same NumInputs-before-AllocateDefaultPins ordering,
+    # so a defect in that ordering would hit all three. Testing one and trusting the family is how the
+    # cooked-AnimSequence guard ended up needing writing four times.
+    #
+    # MAP COUNTS PAIRS, NOT PINS - and that asymmetry is the reason the expectation is per endpoint
+    # rather than shared. One 'input' on a Make Map is one Key/Value ENTRY, so numInputs 3 gives SIX
+    # element pins; the handler's own summary says so ("each entry is one Key + Value pin pair").
+    WANT = 3
+    for ep, per_input in (("add_make_array", 1), ("add_make_set", 1), ("add_make_map", 2)):
+        made = M.call(ep, {"graphId": g, "numInputs": WANT})
+        check("T447 %s places a node" % ep, made.get("ok") is not False, json.dumps(made)[:200])
+        guid = made.get("nodeGuid") or (made.get("node") or {}).get("nodeGuid")
+        if not guid:
+            check("T447 %s reported a nodeGuid to read back" % ep, False, json.dumps(made)[:200])
+            continue
+        # FROM THE GRAPH'S OWN ACCOUNT, like everything else here - not from what the call said.
+        node = (M.call("get_node", {"graphId": g, "nodeGuid": guid}).get("node") or {})
+        pins = node.get("pins") or []
+        # The element pins are the INPUTS. Every one of these nodes also has a single output (Array,
+        # Set or Map), and counting that would make the map case look like it had an odd pin.
+        ins = [x for x in pins if (x.get("direction") or "") == "input"]
+        check("T447 %s with numInputs %d has %d element pin(s), not a default 1"
+              % (ep, WANT, WANT * per_input),
+              len(ins) == WANT * per_input,
+              "%d input pin(s): %s" % (len(ins), [x.get("name") for x in ins]))
+        outs = [x for x in pins if (x.get("direction") or "") == "output"]
+        check("T447 %s still has exactly one container output" % ep, len(outs) == 1,
+              [x.get("name") for x in outs])
+
+    # The clamp, which is the half a caller hits by accident. The handler does
+    # FMath::Clamp(numInputs, 1, 64), so 0 is not "no pins" and 999 is not a node with 999 pins -
+    # both are silently corrected, and a caller who is not told will read the wrong count back.
+    for asked, expect in ((0, 1), (999, 64)):
+        made = M.call("add_make_array", {"graphId": g, "numInputs": asked})
+        guid = made.get("nodeGuid") or (made.get("node") or {}).get("nodeGuid")
+        if not guid:
+            check("T447 add_make_array answered for numInputs %d" % asked, False, json.dumps(made)[:200])
+            continue
+        node = (M.call("get_node", {"graphId": g, "nodeGuid": guid}).get("node") or {})
+        ins = [x for x in (node.get("pins") or []) if (x.get("direction") or "") == "input"]
+        check("T447 numInputs %d is CLAMPED to %d rather than taken literally" % (asked, expect),
+              len(ins) == expect, "%d input pin(s)" % len(ins))
+
     SC.confirm_call("delete_asset", {"path": "/Game/_MifPin/BP_%d" % st})
     print("")
     print("=" * 72)

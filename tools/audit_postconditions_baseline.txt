@@ -41,6 +41,7 @@ medium:add_interface
 medium:add_literal
 medium:add_make_array
 medium:add_make_map
+medium:add_make_set
 medium:add_material_expression
 medium:add_override_event
 medium:add_parent_call
@@ -50,6 +51,7 @@ medium:add_socket
 medium:add_spawn_actor
 medium:add_switch_enum
 medium:add_switch_int
+medium:add_switch_name
 medium:add_switch_string
 medium:add_timeline
 medium:add_tree_widget
@@ -89,7 +91,6 @@ medium:rename_virtual_bone
 medium:reparent_blueprint
 medium:revert_inherited_component
 medium:set_actor_transform
-medium:set_blendspace_samples
 medium:set_collision
 medium:set_component_transform
 medium:set_material_parameter

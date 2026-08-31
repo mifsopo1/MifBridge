@@ -84,6 +84,7 @@
    "test_instance_components.py",
    "test_node_spawns.py",
    "test_spline_landscape.py",
+   "test_uncovered_reads5.py",
    "test_uncovered_reads8.py",
    "test_undo_integrity.py"
   ],
