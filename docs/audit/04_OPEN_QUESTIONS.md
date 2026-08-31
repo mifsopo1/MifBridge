@@ -232,7 +232,7 @@ closes it.
 - UBrainComponent pause/resume export → experiment E7.
 
 ### [G2 — sequencer/UMG/input](work/G2_sequencer_umg_input.md)
-- UMoviePipelinePrimaryConfig setting classes (output dir / resolution / image format) → read MoviePipelineOutputSetting.h (+ export macro) before implementing render_movie_request's config-building step; the queue/executor/job spine IS verified.
+- UMoviePipelinePrimaryConfig setting classes — **READ 2026-08-31, and the answer removes the linkage question entirely.** `UMoviePipelineOutputSetting` is `MOVIERENDERPIPELINECORE_API` in a **Public/** header on both 5.3 and 5.7, with the same fields: `FDirectoryPath OutputDirectory`, `FString FileNameFormat`, `FIntPoint OutputResolution`, `bUseCustomFrameRate` + `FFrameRate OutputFrameRate`. But every one is a `UPROPERTY(EditAnywhere, BlueprintReadWrite)`, so the config-building step needs NO C++ against the class at all - the bridge's existing reflective property write reaches them, the same way it reaches any other UObject. That is a smaller job than the entry assumed, and it is version-proof: a field renamed in a later engine surfaces as a property-not-found refusal instead of a link error.
 - Sequencer event tracks (UMovieSceneEventTrack + director-BP payload binding) → object-model walk; parked for phase-2 design.
 - UWidgetBlueprintGeneratedClass widget-tree ARCHETYPE accessor (name/export in 5.3.2) → header read before implementing list_widget_tree's cooked-degraded branch.
 
