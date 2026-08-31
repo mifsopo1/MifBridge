@@ -6815,6 +6815,36 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       it was ordering, not a new guard.
 
 
+- [ ] **create_asset carries 11 asset types whose validating creators were never built** (hours)
+      Filed 2026-08-31 from a full pass over docs/audit/04_OPEN_QUESTIONS.md section 1.1. That audit
+      recommended "dedicated creators OWN their types, create_asset covers the residue". Measured
+      against the live registry: create_asset exists and 3 of the 14 dedicated creators do.
+
+      MISSING: create_curve, create_curve_table, create_string_table,
+      create_material_parameter_collection, create_rvt_asset, create_level_sequence,
+      create_input_action, create_input_mapping_context, create_niagara_system, create_sound_cue,
+      create_metasound_source.
+
+      create_asset refuses abstract classes, AActor/UActorComponent subclasses and UBlueprint, and
+      nothing else - so it will happily NewObject any of the above and hand back an asset with none
+      of the setup the audit listed: curve-class choice, CurveTable rich/simple mode, string-table
+      namespace, MPC parameter seeding, the RVT enum list, frame-rate/duration on a LevelSequence,
+      the EInputActionValueType whitelist, template seeding on a Niagara system, cue-graph root
+      wiring, the MetaSound builder flow.
+
+      NOT URGENT, and the difference matters: the audit lists "the AddRichCurve check()-crash guard"
+      among the missing validations, which reads as a crash risk. It is not reachable - AddRichCurve
+      appears nowhere in MifBridge's source, so no endpoint can put a CurveTable into the state that
+      check() guards. What is actually at stake is assets that are valid UObjects and useless
+      content, which is a quality problem, not a safety one.
+
+      GENERAL-TOOL FRAMING: this is not DDS2-shaped. Anyone driving UE5 through the bridge who asks
+      for a LevelSequence gets one with no frame rate, and a Niagara system with no template. The
+      decision Andre owns is the boundary (1.1); the WORK once decided is 11 creators, or one
+      create_asset that refuses the types it cannot set up properly and names the creator to use -
+      which is the cheaper half and would close the honesty gap on its own.
+
+
 ### Refuted, recorded so they are not re-proposed
 
 - add_retarget_pose / set_retarget_pose_bone / set_current_retarget_pose -- Refuted on the strongest and most common ground: existing endpoints already do it. I verified the reflective machinery by reading it rather than trusting it - H_set_property has no CPF_Edit gate (and MifBridgeDetails.cpp
