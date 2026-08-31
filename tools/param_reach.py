@@ -119,11 +119,27 @@ def endpoint_accepts():
         src = open(delg, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
         i = src.find("void SpawnDelegateNode")
         if i >= 0:
-            j = src.find("RejectUnknownParams", i)
+            # Same call-not-word matching as above. Nothing triggers the bare find() here TODAY -
+            # no comment near SpawnDelegateNode mentions the guard by name - but that is a fact
+            # about the current text, not a property of the code, and the first instance of this
+            # bug was silent. Fixed in both places so the next comment cannot resurrect it.
+            scrubbed_delg = H.blank_comments_and_strings(src)
+            call = re.compile(r"\bRejectUnknownParams\s*\(").search(scrubbed_delg, i)
+            j = call.start() if call else -1
             if j >= 0:
                 keys = {x.lower() for x in re.findall(r'TEXT\("([^"]+)"\)', _brace_block(src, j))}
+                # THE HANDLER'S OWN BODY, not a 200-character window. The window was a magic number
+                # and it silently excluded add_call_dispatcher, whose SpawnDelegateNode call is 656
+                # characters past its `void H_` - so this block claimed in its own comment to cover
+                # both dispatchers while covering one. Bounding at the next handler is exact and
+                # cannot drift as either function grows.
                 for ep in ("add_call_dispatcher", "add_bind_dispatcher"):
-                    if re.search(r"void\s+H_%s[\s\S]{0,200}SpawnDelegateNode" % ep, src):
+                    h = re.search(r"void\s+H_%s\s*\(" % ep, src)
+                    if not h:
+                        continue
+                    nxt = HANDLER.search(src, h.end())
+                    hbody = src[h.end(): nxt.start() if nxt else len(src)]
+                    if "SpawnDelegateNode" in H.blank_comments_and_strings(hbody):
                         out.setdefault(ep, set()).update(keys)
     return out
 
