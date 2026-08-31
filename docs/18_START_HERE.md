@@ -142,6 +142,7 @@ python tools/audit_modals.py            # a prompter, or a declared invariant, l
 python tools/audit_loop_writes.py       # a per-item write to a single-valued response field
 python tools/audit_postconditions.py    # a mutation nothing reads back
 python tools/audit_prose_dependence.py  # a tool whose ANSWER depends on comment text
+python tools/audit_absence_claims.py    # a doc saying an endpoint is missing, when it ships
 python tools/why_not.py <term>          # has this already been decided AGAINST?
 python tools/night_heartbeat.py         # is another session working?
 python tools/mifwatch.py                # did any session die mid-call?
