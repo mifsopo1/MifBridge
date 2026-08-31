@@ -47,10 +47,29 @@ PRIV = os.path.realpath(os.path.join(ROOT, "Source", "MifBridge", "Private")).lo
 
 # Tools that scan the C++ sources. Not every tool in the directory - only ones that read Private/.
 CANDIDATES = [
-    "audit_advice_gaps", "audit_blocking", "audit_dead_params", "audit_loop_writes",
-    "audit_message_endpoints", "audit_modals", "audit_postconditions", "harvest_param_table",
-    "mcp_sends_unknown", "param_reach", "parity_check",
+    "audit_advice_gaps", "audit_blocking", "audit_dead_params", "audit_family_asymmetry",
+    "audit_loop_writes", "audit_message_endpoints", "audit_modals", "audit_mode_params",
+    "audit_postconditions", "audit_promise_flags", "audit_suite_payloads", "harvest_param_table",
+    "mcp_sends_unknown", "mcp_static_check", "param_reach", "parity_check", "why_not",
 ]
+
+# WHAT IS DELIBERATELY NOT DRIVEN, and why - because "not in the list" was how audit_blocking went a
+# day unexamined, and an unexplained omission is indistinguishable from an oversight.
+#
+# Every one of these reads Source/MifBridge/Private and is still excluded:
+NOT_DRIVEN = {
+    "audit_detectors_fire": "it PLANTS defects into Private/ and restores them. Running it "
+                            "in-process, inside a harness that swaps open() for a scrubbing "
+                            "reader, would have it plant into a scrubbed view and restore "
+                            "something else. Nothing here may drive it.",
+    "make_release": "a release gate that runs the other tools; driving it from here would nest "
+                    "this harness inside itself",
+    "audit_describe_drift": "reads the LIVE editor, not the source, for half its answer - a "
+                            "scrubbed source view changes one side of a comparison and the "
+                            "difference would mean nothing",
+    "coverage_gaps": "same - it asks the running registry what exists",
+    "spec_check": "reads the SPEC as its corpus; Private/ only to resolve names",
+}
 
 # STRING LITERALS ARE THE OTHER HALF, and this harness could not see them until 2026-08-31.
 #
@@ -86,6 +105,21 @@ EXPECTED_STRINGS = {
         "keys on Out->SetXField(TEXT(\"name\")) - the field name is a string literal",
     "audit_postconditions":
         "matches SILENT_APIS names, some of which appear in TEXT() as well as in code",
+    "audit_promise_flags":
+        "uses a COMMENTS-ONLY scrubber on purpose - TEXT(\"confirm\") in the accepted-key list IS "
+        "the evidence that an endpoint promised the flag, so blanking strings removes the subject",
+    "audit_suite_payloads":
+        "compares suite call literals against the accepted-key literals in RejectUnknownParams; "
+        "both sides are strings",
+    "mcp_static_check":
+        "reads JBool/JBoolAny defaults and the TEXT(\"key\") they are keyed on",
+    "audit_family_asymmetry":
+        "groups MIF_BIND(name) literals and matches them against SetXField(TEXT(\"field\")) names",
+    "audit_mode_params":
+        "reads the accepted-key literals to know which parameters a mode ignores",
+    "why_not":
+        "its entire subject is recorded decisions - the refusal reasons in TEXT() and the design "
+        "notes in comments. Blanking either removes what it exists to search.",
 }
 
 # Some of these tools WRITE when run bare. Running one in-process is not a read-only act, and this
@@ -101,6 +135,12 @@ ARGS = {
 # DELIBERATE prose readers. Each must say what it reads and why, because the alternative to this
 # list is silently accepting every future accident.
 EXPECTED = {
+    "why_not":
+        "reads comments AS ITS SUBJECT and says so in its own docstring: it answers 'was this "
+        "absence deliberate' from the refusal reasons in TEXT() and the design notes in comment "
+        "blocks. Blanking comments takes its corpus from 178 notes to 0, which is the tool "
+        "working. It is the one tool here whose ANSWER SHOULD change - anything it reports is "
+        "prose by definition, and a reader is told that at the top of every run.",
     "harvest_param_table":
         "finds the region it owns by MARKER COMMENTS - '// >>> MIF_HARVEST_BEGIN' and its END - so "
         "blanking comments makes the markers vanish and it reports them missing. That is the one "
