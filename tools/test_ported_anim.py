@@ -140,11 +140,34 @@ def main():
     if not bs:
         check("T574 (not exercised: this project ships no BlendSpace)", True)
     else:
-        # An EMPTY samples list is a no-op write: it exercises the reconcile path and the reporting
-        # without adding anything to real game content, which this suite must not do.
+        # AN EMPTY SAMPLES LIST IS NOT A NO-OP, and this comment used to say it was. `clear`
+        # defaults to TRUE - the handler's own summary line says "clear (default true)" - so
+        # {samples: []} DELETES every sample the blend space has and then adds nothing. The response
+        # reports sampleCount 0, addedCount 0 and a cheerful note, which is indistinguishable from
+        # an untouched empty asset.
+        #
+        # This suite ran that against a REAL project BlendSpace on every pass, and got away with it
+        # only because find_assets limit=1 happens to return PlayerCharacter_BlendSpaceCrouched_UE5,
+        # the one blend space in DDS2 that is already empty. The other four have samples. Verified
+        # 2026-08-31: that package is NOT dirty, so nothing was ever lost - but nothing was
+        # protecting it either, and registry order is not a safety mechanism.
+        #
+        # clear:false makes it the no-op the comment always claimed, and the sample count is read
+        # back afterwards rather than assumed.
         dirty_before = len(M.call("list_dirty_packages", {}, timeout=90).get("packages") or [])
-        r = M.call("set_blendspace_samples", {"assetPath": bs[0].get("path"), "samples": []},
-                   timeout=120)
+        before_count = (M.call("set_blendspace_samples",
+                               {"assetPath": bs[0].get("path"), "samples": [], "clear": False},
+                               timeout=120).get("sampleCount"))
+        r = M.call("set_blendspace_samples",
+                   {"assetPath": bs[0].get("path"), "samples": [], "clear": False}, timeout=120)
+        check("T574 a genuine no-op leaves the sample count where it was",
+              r.get("sampleCount") == before_count,
+              "sampleCount %s -> %s across a call that was supposed to change nothing"
+              % (before_count, r.get("sampleCount")))
+        check("T574 and it reports that it cleared NOTHING",
+              r.get("clearedCount") == 0,
+              "clearedCount=%r - with clear:false this must be 0, and if the field is missing this "
+              "build predates the fix" % r.get("clearedCount"))
         check("T574 a no-op call succeeds", r.get("ok") is True, json.dumps(r)[:200])
         rows = r.get("samples")
         check("T574 samples[] is an array", isinstance(rows, list), json.dumps(r)[:200])

@@ -893,6 +893,20 @@ namespace MifBridge
 		// rather than stacking a second copy of every sample on top of the first.
 		bool bClear = true;
 		In->TryGetBoolField(TEXT("clear"), bClear);
+		// COUNT WHAT THE CLEAR DESTROYS, because clear defaults to TRUE and nothing said so.
+		//
+		// `set_blendspace_samples {samples: []}` reads like a no-op - send nothing, change nothing -
+		// and is a full wipe. The response then reports sampleCount 0, addedCount 0, invalidCount 0
+		// and a cheerful note, which is exactly what an untouched empty blend space looks like. There
+		// was no field anywhere in it that distinguished "there was nothing here" from "there were
+		// four samples and this call deleted them".
+		//
+		// test_ported_anim's T574 called that empty-list form a "no-op write ... without adding
+		// anything to real game content", ran it against a REAL project BlendSpace, and had been
+		// getting away with it only because find_assets limit=1 happens to return the one blend space
+		// in DDS2 that is already empty. The other four have samples. Nothing was lost, and nothing
+		// was protecting it either.
+		const int32 ClearedCount = bClear ? BS->GetBlendSamples().Num() : 0;
 		if (bClear)
 		{
 			for (int32 i = BS->GetBlendSamples().Num() - 1; i >= 0; --i)
@@ -1165,6 +1179,17 @@ namespace MifBridge
 		// Reported ALWAYS, like invalidCount, so a caller can assert on a number instead of having
 		// to notice an absent field.
 		Out->SetNumberField(TEXT("movedByEngineCount"), MovedCount);
+		// Same rule, and this one reports a DESTRUCTION rather than a discrepancy.
+		Out->SetNumberField(TEXT("clearedCount"), ClearedCount);
+		if (ClearedCount > 0)
+		{
+			Out->SetStringField(TEXT("clearedNote"), FString::Printf(
+				TEXT("%d existing sample(s) were DELETED before this call added anything, because "
+					 "`clear` defaults to TRUE - a call with an empty samples[] therefore empties the "
+					 "blend space rather than doing nothing. Pass clear:false to add to what is "
+					 "already there."),
+				ClearedCount));
+		}
 		if (MovedCount > 0)
 		{
 			Out->SetStringField(TEXT("movedByEngineNote"), FString::Printf(

@@ -8466,3 +8466,36 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       path is now unique per run and that branch FAILS instead of passing. Separately, its cleanup
       check asserted the whole /Game/_MifAnim prefix was empty, so it failed on scratch it neither
       created nor owns; it now checks its own asset and REPORTS anything else.
+
+- [ ] **`set_blendspace_samples {samples: []}` is a WIPE, and a suite called it a no-op**
+      - FIXED IN SOURCE AND IN THE SUITE, source half needs a build (hours)
+      `clear` defaults to TRUE - the handler's own summary line says "clear (default true)" - so an
+      empty samples[] DELETES every sample the blend space holds and then adds nothing. The response
+      reports sampleCount 0, addedCount 0, invalidCount 0 and a cheerful note, which is exactly what
+      an untouched empty blend space looks like. Nothing in it distinguished "there was nothing
+      here" from "there were four samples and this call deleted them".
+
+      test_ported_anim T574 called that form "a no-op write ... without adding anything to real game
+      content, which this suite must not do", and ran it against a REAL project BlendSpace on every
+      pass since it was written.
+
+      NOTHING WAS LOST, AND THE REASON IS LUCK. find_assets {class: BlendSpace, limit: 1} returns
+      PlayerCharacter_BlendSpaceCrouched_UE5, which is the ONE blend space in DDS2 that is already
+      empty. The other four - Ladder, Standing, Combat, FPBody - all hold samples. Verified
+      2026-08-31: that package is not dirty, so the wipe deleted nothing and changed nothing.
+      Registry order is not a safety mechanism, and a `limit: 1` that happens to pick the harmless
+      asset is one re-cook away from picking a populated one.
+
+      FIXED IN THE SUITE, and this half is live now: T574 passes clear:false, making it the no-op
+      the comment always claimed, and reads the sample count back on both sides rather than assuming
+      it. FIXED IN SOURCE, pending a build: clearedCount is emitted ALWAYS and clearedNote when it
+      is nonzero, so a destructive call finally says what it destroyed.
+
+      HOW IT WAS FOUND, because the route matters more than the finding. Chasing the invalidNote
+      contradiction from the night before, a probe showed a sample vanishing after a call that sent
+      no samples. My first reading was "a no-op call deletes data" - wrong, it is documented
+      behaviour. The second reading, that SampleData survived, was also wrong: it came from a
+      classifier that only treated the literal `()` as empty, so an empty string read as PRESENT.
+      Printing the RAW value instead of a verdict is what settled it. Two wrong conclusions in a row
+      from a checker that could not distinguish the states it was asked about - which is the same
+      lesson as every vacuous-check finding in this file, arrived at from the other side.
