@@ -24,6 +24,7 @@ It asserts NO real modification, and checks list_dirty_packages afterwards to pr
 """
 import json
 import sys
+import time
 
 import mifaudit as M
 import scratch_confirm as SC
@@ -184,8 +185,15 @@ def main():
     # practise on", so it stayed read-mostly. There is: create_asset makes a BlendSpace, set_property
     # gives it a Skeleton, and the samples can reference real AnimSequences read-only. Nothing here
     # touches game content, and everything created is deleted at the end.
-    SCRATCH = "/Game/_MifAnim/BS_T575"
-    SCRATCH_OBJ = SCRATCH + ".BS_T575"
+    # A FRESH NAME EVERY RUN, and not for tidiness. Re-creating an asset at a path this session has
+    # already deleted is the known dead end in docs/06 issue 28 - the fix for it was REVERTED because
+    # it was worse than the bug. With a fixed name this whole section created the blend space once,
+    # failed to create it on every later run in the same editor, and took the "(not exercised)"
+    # branch - which counts as a PASS. The suite would have gone green while testing nothing, and
+    # the first run's green is what would have been remembered.
+    _bs = "BS_T575_%d" % int(time.time() % 100000)
+    SCRATCH = "/Game/_MifAnim/" + _bs
+    SCRATCH_OBJ = SCRATCH + "." + _bs
 
     def axis_params():
         """BlendParameters read INDEPENDENTLY of the endpoint's own response.
@@ -202,8 +210,10 @@ def main():
 
     made = M.call("create_asset", {"path": SCRATCH, "class": "BlendSpace"}, timeout=120)
     if made.get("ok") is not True:
-        check("T575 (not exercised: could not create a scratch BlendSpace)", True,
-              json.dumps(made)[:200])
+        # NOT a silent pass. A skip that reads as a pass is how a suite goes green having tested
+        # nothing, and this branch used to hide exactly that.
+        check("T575 a scratch BlendSpace can be created - if this fails the section below tested "
+              "NOTHING", False, json.dumps(made)[:240])
     else:
         try:
             skel = None
@@ -280,6 +290,52 @@ def main():
                       "DUPLICATE" in str(rejected[0] if rejected else ""),
                       str(rejected[0] if rejected else "<no rejection>")[:240])
 
+                # ---- T576: the engine MOVES a sample, and that is not the same as deleting it
+                # ValidateSampleData's first act is SnapSamplesToClosestGridPoint, which relocates
+                # every sample onto the nearest grid point when BOTH axes have bSnapToGrid set. The
+                # handler matched survivors by POSITION, so a snapped sample failed the match and
+                # was reported in droppedByValidation with a note saying it had been deleted, was
+                # not on the asset, and shared a point with another - while sampleCount in the same
+                # response said it was there. Every clause false, and the response contradicting
+                # itself. Measured on a 0..100 GridNum 4 axis with one sample at x=10.
+                for ax in (0, 1):
+                    M.call("set_property",
+                           {"objectPath": SCRATCH_OBJ,
+                            "propertyPath": "BlendParameters[%d].bSnapToGrid" % ax,
+                            "value": "true"}, timeout=90)
+                snapped = M.call("set_blendspace_samples",
+                                 {"assetPath": SCRATCH, "clear": True,
+                                  "samples": [{"animation": seqs[0], "x": 10, "y": 0}]}, timeout=120)
+                check("T576 the snapped sample IS on the asset - sampleCount says so",
+                      snapped.get("sampleCount") == 1, json.dumps(snapped)[:280])
+                # THE INVARIANT THE OLD BEHAVIOUR BROKE. One response cannot say the asset holds a
+                # sample and that samples[] is empty; T574 only checks sampleCount >= len(samples),
+                # which passes 1 >= 0 and misses this direction entirely.
+                check("T576 and samples[] does not contradict sampleCount",
+                      len(snapped.get("samples") or []) == snapped.get("sampleCount"),
+                      "sampleCount=%s samples[] has %d - if this build predates the fix, rebuild"
+                      % (snapped.get("sampleCount"), len(snapped.get("samples") or [])))
+                check("T576 and it is NOT reported as dropped, because it was moved not removed",
+                      not snapped.get("droppedByValidation"),
+                      "droppedByValidation=%s droppedNote=%s"
+                      % (json.dumps(snapped.get("droppedByValidation"))[:180],
+                         str(snapped.get("droppedNote"))[:160]))
+                check("T576 and the move is reported as a move",
+                      snapped.get("movedByEngineCount") == 1, json.dumps(snapped)[:280])
+                row = (snapped.get("samples") or [{}])[0]
+                check("T576 and the row carries BOTH the requested and the actual position",
+                      row.get("movedByEngine") is True and row.get("requestedX") == 10
+                      and row.get("x") != 10,
+                      json.dumps(row)[:240])
+                check("T576 and movedByEngineNote names the snapping, not a deletion",
+                      "SnapSamplesToClosestGridPoint" in str(snapped.get("movedByEngineNote") or ""),
+                      str(snapped.get("movedByEngineNote"))[:200])
+                for ax in (0, 1):
+                    M.call("set_property",
+                           {"objectPath": SCRATCH_OBJ,
+                            "propertyPath": "BlendParameters[%d].bSnapToGrid" % ax,
+                            "value": "false"}, timeout=90)
+
                 # ---- an animation that is not one
                 bad = M.call("set_blendspace_samples",
                              {"assetPath": SCRATCH, "clear": True,
@@ -297,9 +353,19 @@ def main():
             gone = SC.confirm_call("delete_asset", {"path": SCRATCH, "confirm": True}, timeout=120)
             left = M.call("find_assets", {"pathPrefix": "/Game/_MifAnim", "limit": 10},
                           timeout=120).get("assets") or []
-            check("T575 the scratch blend space was deleted", not left,
+            # ITS OWN ASSET, not the whole prefix. The first version asserted /Game/_MifAnim was
+            # EMPTY, which failed the moment somebody else's scratch was sitting there - a false
+            # failure about something this suite neither created nor is responsible for, and a false
+            # failure teaches the reader to ignore the suite. Foreign scratch is REPORTED instead,
+            # because it is still worth seeing.
+            mine = [a for a in left if (a.get("path") or "").startswith(SCRATCH)]
+            check("T575 the scratch blend space this suite made was deleted", not mine,
                   "delete said %s; still present: %s"
-                  % (json.dumps(gone)[:160], [a.get("path") for a in left]))
+                  % (json.dumps(gone)[:160], [a.get("path") for a in mine]))
+            others = [a.get("path") for a in left if a not in mine]
+            if others:
+                print("       NOTE: other scratch is sitting under /Game/_MifAnim and is not this "
+                      "suite's to remove: %s" % others)
 
     check("T573 the bridge is still answering", M.bridge_responsive() is True, "bridge died")
 

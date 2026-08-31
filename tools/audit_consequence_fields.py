@@ -98,13 +98,22 @@ UNREACHABLE = {
     # EVERY ENTRY BELOW WAS ADDED AFTER READING ITS EMITTER, not after failing to think of a test.
     # The difference matters: an unreachable list is the one place where a wrong entry silently
     # shrinks the backlog, so a reason that cannot be checked against the source does not belong.
-    "droppedByValidation": "NOT reachable through set_blendspace_samples at all. AddSample -> "
-                           "ValidateSampleValue calls IsTooCloseToExistingSamplePoint, so a "
-                           "duplicate point is refused and lands in rejected[]; it never survives "
-                           "to the ValidateSampleData dedup pass this field reports. The handler's "
-                           "own reconciliation comment says so, and a live probe confirmed it "
-                           "(2026-08-31). The deletion path is belt-and-braces for samples that "
-                           "arrived some other way",
+    # THIS ENTRY WAS WRONG FOR ONE DAY AND IS LEFT ANNOTATED RATHER THAN QUIETLY CORRECTED, because
+    # it is the exact failure this list was warned about above. The first version said the field was
+    # unreachable because a duplicate is refused by AddSample before ValidateSampleData sees it -
+    # true, and not the whole story. ValidateSampleData's FIRST act is SnapSamplesToClosestGridPoint
+    # (BlendSpace.cpp 5.3 :1168), which relocates samples when BOTH axes have bSnapToGrid set
+    # (:2196). The handler matched survivors by position, so a MOVED sample failed the match and was
+    # reported here - with a note saying it had been deleted, was not on the asset, and shared a
+    # point with another, while sampleCount in the same response said it was there. Reachable, and
+    # reachable wrongly. Fixed in source: a moved sample now matches on animation alone and is
+    # reported in samples[] with movedByEngine. AFTER that fix this field is unreachable again, for
+    # the original reason plus this one - but the entry was not entitled to be right the first time.
+    "droppedByValidation": "reaching it needs a sample that is GONE, and nothing this endpoint can "
+                           "send produces one: a duplicate point is refused by AddSample (it calls "
+                           "IsTooCloseToExistingSamplePoint), and a sample the engine relocates by "
+                           "grid-snapping is now reported as movedByEngine in samples[] rather than "
+                           "as dropped. Verified live 2026-08-31 in both directions",
     "droppedNote": "emitted beside droppedByValidation, same branch",
     "staleNote": "needs a component request whose owning manager has gone away WITH ITS WORLD - a "
                  "teardown no unattended suite performs. staleHandles, the always-emitted count "

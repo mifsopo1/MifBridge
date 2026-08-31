@@ -1047,6 +1047,11 @@ namespace MifBridge
 		const TArray<FBlendSample>& Surviving = BS->GetBlendSamples();
 		TArray<TSharedPtr<FJsonValue>> Kept, Dropped;
 		int32 InvalidCount = 0;
+		// CLAIMED, so two requested samples cannot both match the same surviving one. Without it the
+		// animation-only fallback below would happily report the same sample twice for a clip placed
+		// at several points, which is exactly the case the position match exists to handle.
+		TSet<int32> Claimed;
+		int32 MovedCount = 0;
 		for (const TSharedPtr<FJsonValue>& V : Added)
 		{
 			const TSharedPtr<FJsonObject>* Row = nullptr;
@@ -1058,8 +1063,11 @@ namespace MifBridge
 
 			bool bStillThere = false;
 			bool bValid = false;
-			for (const FBlendSample& Sample : Surviving)
+			int32 MatchedIndex = INDEX_NONE;
+			for (int32 SIdx = 0; SIdx < Surviving.Num(); ++SIdx)
 			{
+				const FBlendSample& Sample = Surviving[SIdx];
+				if (Claimed.Contains(SIdx)) { continue; }
 				// Match on animation AND position: the same clip may legitimately appear at several
 				// points, so the clip alone does not identify a sample. KINDA_SMALL_NUMBER rather than
 				// exact equality because the value made a round trip through double.
@@ -1068,16 +1076,69 @@ namespace MifBridge
 					&& FMath::IsNearlyEqual(Sample.SampleValue.Y, Y, KINDA_SMALL_NUMBER))
 				{
 					bStillThere = true;
+					MatchedIndex = SIdx;
 					// THE field that matters. A present-but-invalid sample is on the asset and does
 					// nothing, which is indistinguishable from a working one unless it is reported.
 					bValid = Sample.bIsValid != 0;
 					break;
 				}
 			}
+
+			// THE SAMPLE MAY HAVE BEEN MOVED RATHER THAN REMOVED, and reporting the first as the
+			// second is a lie in three clauses at once.
+			//
+			// ValidateSampleData's FIRST act is SnapSamplesToClosestGridPoint (BlendSpace.cpp 5.3
+			// :1168), which relocates every sample onto the nearest grid point when BOTH axes have
+			// bSnapToGrid set (:2196). The position match above then fails, and the sample - which is
+			// ON the asset - was reported in droppedByValidation with a note saying it had been
+			// deleted for sharing a point with another sample, that it was not on the asset, and that
+			// the caller should move it to a distinct position. Measured 2026-08-31 on a scratch
+			// BlendSpace with bSnapToGrid true on both axes and one sample at x=10 against a 0..100
+			// GridNum 4 axis: sampleCount 1, addedCount 0, samples[] EMPTY, droppedByValidation
+			// holding the only sample there was. Every clause of that note was false, and the
+			// response contradicted itself in the same breath - sampleCount said one, samples[] said
+			// none.
+			//
+			// So: fall back to matching on the ANIMATION alone among samples nothing has claimed. A
+			// hit means the engine relocated it, which is a different outcome from deletion and gets
+			// its own reporting rather than being folded into either bucket silently.
+			bool bMoved = false;
+			double ActualX = 0.0, ActualY = 0.0;
+			if (!bStillThere)
+			{
+				for (int32 SIdx = 0; SIdx < Surviving.Num(); ++SIdx)
+				{
+					const FBlendSample& Sample = Surviving[SIdx];
+					if (Claimed.Contains(SIdx)) { continue; }
+					if (Sample.Animation && Sample.Animation->GetPathName() == AnimPath)
+					{
+						bStillThere = true;
+						bMoved = true;
+						MatchedIndex = SIdx;
+						bValid = Sample.bIsValid != 0;
+						ActualX = Sample.SampleValue.X;
+						ActualY = Sample.SampleValue.Y;
+						break;
+					}
+				}
+			}
+
+			if (MatchedIndex != INDEX_NONE) { Claimed.Add(MatchedIndex); }
 			if (bStillThere)
 			{
 				(*Row)->SetBoolField(TEXT("valid"), bValid);
 				if (!bValid) { ++InvalidCount; }
+				if (bMoved)
+				{
+					// Both positions, because "it moved" without the numbers just moves the question
+					// along - and the REQUESTED value is what the caller will look for next time.
+					(*Row)->SetBoolField(TEXT("movedByEngine"), true);
+					(*Row)->SetNumberField(TEXT("requestedX"), X);
+					(*Row)->SetNumberField(TEXT("requestedY"), Y);
+					(*Row)->SetNumberField(TEXT("x"), ActualX);
+					(*Row)->SetNumberField(TEXT("y"), ActualY);
+					++MovedCount;
+				}
 			}
 			(bStillThere ? Kept : Dropped).Add(V);
 		}
@@ -1101,13 +1162,36 @@ namespace MifBridge
 					 "sampleCount because the engine still stores them; check `valid` on each sample."),
 				InvalidCount));
 		}
+		// Reported ALWAYS, like invalidCount, so a caller can assert on a number instead of having
+		// to notice an absent field.
+		Out->SetNumberField(TEXT("movedByEngineCount"), MovedCount);
+		if (MovedCount > 0)
+		{
+			Out->SetStringField(TEXT("movedByEngineNote"), FString::Printf(
+				TEXT("%d sample(s) are ON the asset at a DIFFERENT position from the one requested. "
+					 "ValidateSampleData begins with SnapSamplesToClosestGridPoint, which relocates "
+					 "every sample onto the nearest grid point when BOTH axes have bSnapToGrid set - "
+					 "so this is the engine doing what the asset asked for, not a failure. Each row "
+					 "in samples[] carries movedByEngine, requestedX/requestedY and the actual x/y. "
+					 "Set BlendParameters[<axis>].GridNum to place samples where you want them, or "
+					 "clear bSnapToGrid on either axis to stop the snapping."),
+				MovedCount));
+		}
 		if (Dropped.Num() > 0)
 		{
 			Out->SetArrayField(TEXT("droppedByValidation"), Dropped);
+			// THE OLD NOTE NAMED ONE CAUSE AND ASSERTED TWO FACTS, and against a snapped sample all
+			// three were wrong: it said the sample had been deleted for sharing a point with another,
+			// that it was not on the asset, and that it was not counted in samples[] - while
+			// sampleCount in the same response said it WAS there. That case now matches through the
+			// animation-only fallback above and is reported as moved, so anything still reaching this
+			// branch really is absent. The note no longer claims to know WHY.
 			Out->SetStringField(TEXT("droppedNote"), FString::Printf(
-				TEXT("%d sample(s) were accepted by AddSample and then REMOVED by ValidateSampleData, "
-					 "which deletes any sample sharing a point with another. Move them to distinct "
-					 "(x, y) positions. They are not on the asset and were not counted in samples[]."),
+				TEXT("%d sample(s) were accepted by AddSample and are NOT on the asset afterwards - "
+					 "no surviving sample uses that animation at all. ValidateSampleData removes a "
+					 "sample sharing a point with another, which is the usual cause; a sample the "
+					 "engine merely MOVED is reported in samples[] with movedByEngine instead, not "
+					 "here. sampleCount describes what the asset really holds."),
 				Dropped.Num()));
 		}
 		if (Rejected.Num() > 0)

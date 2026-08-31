@@ -8416,3 +8416,53 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the 29, not a gap.
 
       Next visit with the editor closed: rebuild, rerun test_ported_anim, expect 39 PASS 0 FAIL.
+
+- [ ] **set_blendspace_samples reported a MOVED sample as a DELETED one - FIXED IN SOURCE, needs a build**
+      (hours)
+      Found 2026-08-31 by chasing a contradiction rather than dropping it. The evening before, the
+      spec recorded that a probe for invalidNote had failed and that the result CONTRADICTED the
+      handler's own comment, and said one failed probe is not a proof. Following that up is what
+      found this.
+
+      ValidateSampleData's FIRST act is SnapSamplesToClosestGridPoint (BlendSpace.cpp 5.3 :1168),
+      which relocates every sample onto the nearest grid point when BOTH axes have bSnapToGrid set
+      (:2196). The default is false, which is why every earlier probe missed it. The handler matched
+      surviving samples by POSITION, so a snapped sample failed the match and was reported as
+      dropped. Measured on a scratch BlendSpace, 0..100 axis, GridNum 4, one sample at x=10:
+
+        sampleCount            1        <- the sample IS on the asset
+        samples[]              []       <- and the same response says it is not
+        addedCount             0
+        droppedByValidation    [it]
+        droppedNote            "REMOVED by ValidateSampleData, which deletes any sample sharing a
+                                point with another ... They are not on the asset and were not
+                                counted in samples[]."
+
+      Every clause of that note is false for this sample: it was not removed, it shares a point with
+      nothing (it was the only one), and it IS on the asset - sampleCount in the same breath says
+      so. T574's invariant does not catch it either: it asserts sampleCount >= len(samples), and
+      1 >= 0 passes.
+
+      FIXED IN SOURCE. A sample that fails the position match now falls back to matching on the
+      ANIMATION alone among survivors nothing has claimed; a hit means the engine MOVED it, which is
+      reported as movedByEngine on the row with requestedX/requestedY beside the actual x/y, plus an
+      always-emitted movedByEngineCount and a note naming SnapSamplesToClosestGridPoint. A Claimed
+      set stops two requested samples matching the same survivor, which the position match had been
+      handling implicitly. droppedNote no longer claims to know WHY a sample is absent.
+
+      AND IT CORRECTS AN UNREACHABLE ENTRY I ADDED THE SAME DAY. droppedByValidation had just been
+      moved out of the backlog as "not reachable through this endpoint at all". It was reachable,
+      and reachable WRONGLY. The entry is left in place annotated rather than quietly rewritten,
+      because the risk it demonstrates is the one the tool warns about in its own comments: the
+      unreachable list is the single place where a wrong entry silently shrinks the backlog.
+
+      NOT BUILT - the editor is open. test_ported_anim T575/T576 are committed RED: 37 PASS 8 FAIL,
+      and the failure output carries the self-contradicting response verbatim.
+
+      TWO SUITE DEFECTS FOUND WHILE DOING IT, both of the same family - a green that means nothing.
+      T575 used a FIXED scratch path, so its second run in one editor session hit the known
+      delete-then-create dead end (docs/06 issue 28, fix reverted), fell into a "(not exercised)"
+      branch that counted as a PASS, and the section tested nothing while the suite went green. The
+      path is now unique per run and that branch FAILS instead of passing. Separately, its cleanup
+      check asserted the whole /Game/_MifAnim prefix was empty, so it failed on scratch it neither
+      created nor owns; it now checks its own asset and REPORTS anything else.
