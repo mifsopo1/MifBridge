@@ -9063,6 +9063,16 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         add a dispatcher, add a call node, remove dispatcher  -> orphanedNodeCount 1, compiles clean
         create_function with an output nothing ever writes    -> compiles clean, 0 warnings even
         add_cast to an unrelated class (SoundWave)            -> compiles clean
+        connect int->int, then set_variable_type A to string  -> compiles clean
+
+      The last one was the most promising and is the most informative failure. The plan was to
+      author a VALID graph and then change the content underneath it - int getter wired into an int
+      setter, then retype the source variable - which is breakage the bridge cannot guard, because
+      the graph was legal when it was authored. It still compiles. Two explanations and both are
+      worth the next person's time: set_variable_type may drop the now-incompatible link as it
+      retypes, or UE auto-inserts a conversion node for int/string, which is one of the pairs it
+      coerces. Picking a pair with NO coercion - an object reference into an int - would separate
+      them, and if it is the second explanation then this route still works.
 
       So the claim stands unrefuted and untested where it matters. What would settle it is a fixture
       that reliably breaks a blueprint - and this repo does not have one. Confirmed by grep, not
@@ -9076,12 +9086,16 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       and the engine tolerates an unwritten return value. The guards that make the endpoints safe are
       the same guards that make a negative fixture hard to build.
 
-      WHAT WOULD PROBABLY WORK, for whoever picks this up: breakage the bridge cannot author and
-      therefore does not guard - a cast wired INTO an exec chain whose input pin then receives an
-      incompatible type through a wildcard that resolves later (the same trick test_rollback_real's
-      tripwire uses to be legal at preflight and illegal at apply), or content-level breakage such as
-      a variable typed on an asset that is then deleted. Both are a session of their own, and the
-      payoff is not just this claim: it is the first fixture in the repo for ANY error-reporting path.
+      WHAT TO TRY NEXT, narrowed by the five failures above rather than guessed: the retype route
+      with a pair UE will NOT coerce - an object reference retyped into an int, say - which separates
+      "the link was dropped" from "the engine converted it". Failing that, content-level breakage the
+      bridge cannot author at all: a variable typed on an asset that is then deleted. The payoff is
+      not just this claim - it is the first fixture in the repo for ANY error-reporting path, and
+      five endpoints' worth of error text currently has no test that has ever seen it.
+
+      STOPPED HERE DELIBERATELY. Five attempts is enough to establish the shape - every one failed
+      for a REASON, and the reasons are all safety properties working - and continuing to guess would
+      be a worse use of the time than writing the map down.
 
       CLAIM 2, found while failing at claim 1 and the more interesting of the two.
       remove_event_dispatcher's note says orphaned nodes "will fail the next compile". Measured on a
