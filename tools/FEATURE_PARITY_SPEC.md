@@ -7057,6 +7057,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       bracketed by a size+mtime digest of Source/ that aborts if anything moved.
 
 - [ ] **three plugin dependencies are linked with nothing compiling against their guard - ANDRE'S CALL** (hours)
+      A NEW ARGUMENT ARRIVED 2026-08-31 from an unrelated question. Andre asked whether the SDK would
+      work on another 5.3.2 game, which turned into a portability audit: with comments and string
+      literals scrubbed there are ZERO DDS2 references in the code, and 16 of the 17 .uplugin
+      dependencies are Optional:true, so the module loads on a project that lacks them. Only
+      EnhancedInput is non-optional.
+
+      That posture is what makes the plugin portable, and each idle dependency erodes it. Every entry
+      is one more plugin a host project is asked to have for endpoints that do not exist - the cost is
+      not just build time, it is a smaller set of projects the SDK drops into cleanly. That was not in
+      the reasoning below when this item was filed; it is the strongest argument for resolving it.
+
+      ALSO NOTED WHILE LOOKING, and deliberately NOT changed: the .uplugin has no EngineVersion. That
+      means it will try to load into any engine and fail at LINK time rather than being refused
+      politely. Pinning it would fix that and BREAK the stated goal - this is a general 5.3-to-5.7
+      tool, and a single version string refuses every other one. The honest options are to leave it
+      unset (today) or to ship per-version branches, and choosing is Andre's, not a checker's.
+
       parity_check's idle-plugin advisory reports LiveLink, MassEntity and Metasound. It reported
       only MassEntity until 2026-08-31, because the other two are named in COMMENTS explaining their
       absence and the check matched raw text. Each is a real cost: a module to compile and link, a
