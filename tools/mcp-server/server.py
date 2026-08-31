@@ -4709,6 +4709,12 @@ def set_plugin_enabled(name: str, enabled: bool, dry_run: bool = False,
 
 
 @mcp.tool()
+def bl_rename_bones(object: str, renames: dict, dry_run: bool = False) -> dict:
+    "Rename Blender armature bones through a {old: new} map. Blender already renames the matching vertex groups and updates constraint and driver references by itself - what this adds is refusing the NAME COLLISION where that sync silently fails: renaming a bone onto a name another bone holds gives you 'Hips.001' and leaves the vertex group under its old name, matching no bone, so that part of the mesh stops deforming with nothing to say so. Collisions are refused before anything is written, every rename is read back, swaps are supported, and orphaned vertex groups are reported. See mif_help."
+    return _blender("rename_bones", object=object, renames=renames, dryRun=dry_run)
+
+
+@mcp.tool()
 def bl_boolean_op(target: str, cutter: str, operation: str = "difference",
                   delete_cutter: bool = False, solver: str = None) -> dict:
     "Cut, merge or intersect one Blender mesh with another - operation 'difference' (default), 'union' or 'intersect'. APPLIES the modifier rather than leaving it stacked, and reports before/after vertex and face counts as the evidence. Says changed:false with the likely cause when the boolean legally did nothing. bl_add_modifier can create a BOOLEAN modifier but cannot point it at a cutter, so this is the only route to an actual boolean. The cutter is KEPT unless delete_cutter. See mif_help."

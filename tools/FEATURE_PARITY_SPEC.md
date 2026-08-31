@@ -6108,7 +6108,50 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       A dedicated add_select would be a thin alias over add_k2_node that could not do anything
       the sequence above cannot, and would add a fourth registry entry to keep in parity for
       no capability.
-- [ ] **rename_bones** (hours)
+- [x] **rename_bones** (hours)  **DONE 2026-08-31** - and the justification changed on contact
+      with a live Blender, so the entry below records what was measured rather than what was
+      proposed.
+
+      THE PROPOSAL'S TWO REASONS BOTH EVAPORATED. It wanted vertex groups renamed alongside bones
+      "in one transaction", and a refusal when a constraint or shape-key driver referenced the bone.
+      Measured against Blender 4.4 before writing any code - the entry's own "NOTE TO VERIFY BEFORE
+      BUILDING, do not assume" - a plain `bone.name = X` RNA write ALREADY renames the matching
+      vertex group on every skinned mesh, updates constraint subtargets, and updates driver bone
+      targets. So the proposed parameter would have done nothing and the proposed refusal would have
+      guarded a hazard that does not exist.
+
+      THE REAL HAZARD IS THE CASE WHERE THAT SYNC FAILS, which neither the proposal nor the vetter
+      named: a NAME COLLISION. Measured:
+
+          bones ['Hips','Spine']   vgroups ['Hips','Spine']
+          bones['Spine'].name = 'Hips'
+          bones ['Hips','Hips.001'] vgroups ['Hips','Spine']
+
+      The bone is silently suffixed to a name nobody asked for, AND the vertex group keeps its old
+      name - now matching no bone, so that part of the mesh stops deforming and the call reports
+      nothing. A rig that looks fine and deforms wrong, which is what the entry feared, reached by a
+      different road. Collisions are refused BEFORE anything is written, every rename is read back,
+      and orphaned vertex groups are reported afterwards whether or not this call caused them.
+
+      SWAPS WORK, via a temporary-name pass: A->B with B->A collides whichever order it runs in, and
+      a retarget map is full of left/right swaps. A target only counts as a collision when the name
+      is held by a bone the batch does NOT rename away, or a swap would be refused for no reason.
+
+      The vetter's LOW rank stands and is not disputed - run_python does this in one line, and the
+      UE IK Retargeter suite exists so names need not match. What run_python does not do is refuse
+      the collision, which is the whole of the value here.
+
+      VERIFIED: tools/test_blender_rename_bones.py, 13 PASS 0 FAIL, against a Blender started with a
+      fixture script that builds a 4-bone rig and a skinned mesh. Every branch: dryRun, unknown
+      bone, duplicate targets, empty map, non-armature, the collision refusal, a clean rename with
+      the vertex group following, the swap, and restore.
+
+      COVERAGE LIMIT, stated rather than papered over: the suite SKIPS in the headless matrix. The
+      addon deliberately cannot create an armature, and run_python - how test_blender_rig builds its
+      fixture - is an addon preference that defaults OFF as a security choice. Weakening that for a
+      test was not worth it, so the fixture was built by Blender's own startup script instead, which
+      disables nothing. Run against a GUI Blender with a rig loaded and every check executes.
+
       Renames armature bones through a supplied map (and optionally the matching vertex groups and shape keys in one transaction), so a Blender rig's bone names line up with the Unreal skeleton it has to retarget onto.
       API: bpy.types.Bone.name — a plain RNA write on obj.data.bones[...] (already read by ops_rig._bone_dict at ops_rig.py:37-53). Vertex groups: bpy.types.VertexGroup.name on obj.vertex_groups (already read by op_list_vertex_groups, ops_rig.py:121-155). Both are string RNA sets with no operator, no context and no mode change, so they are headless by construction. NOTE TO VERIFY BEFORE BUILDING, do not assu...
       Cooked: Blender-side only. Add one honest refusal: renaming a bone that a shape key driver or constraint references without updating that reference produces a rig that looks fine and deforms wrong, so the op should report constraint/driver references found and refuse (or require force) rather than leave dan...

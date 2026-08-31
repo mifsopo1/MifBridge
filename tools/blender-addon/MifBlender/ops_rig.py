@@ -707,6 +707,149 @@ def op_apply_modifier(params):
     return out
 
 
+def op_rename_bones(params):
+    """Rename armature bones through a map, refusing the collision that silently breaks skinning.
+
+    BLENDER ALREADY SYNCS THE EASY PART, verified against 4.4 rather than assumed: setting
+    bone.name renames the matching vertex group on every skinned mesh, and updates constraint
+    subtargets and driver bone targets. This op does not re-implement any of that.
+
+    WHAT IT EXISTS FOR is the case where that sync silently fails. Renaming a bone to a name another
+    bone already holds gives you 'Hips.001' - a name nobody asked for - and leaves the vertex group
+    under its OLD name, matching no bone. That part of the mesh then stops deforming, and nothing
+    says so. Measured:
+
+        bones ['Hips','Spine'] vgroups ['Hips','Spine']  ->  bones['Spine'].name = 'Hips'
+        bones ['Hips','Hips.001'] vgroups ['Hips','Spine']
+
+    So collisions are refused before anything is written, and every rename is READ BACK - a bone
+    whose name is not what was asked for means Blender suffixed it, which is the failure.
+
+    SWAPS ARE SUPPORTED because a retarget map is full of them (L/R mix-ups especially). A->B and
+    B->A cannot be done in either order directly - whichever runs first collides - so the batch goes
+    through unique temporary names first. That is invisible in the result and stated here because a
+    reader will otherwise wonder why the two-pass exists.
+    """
+    reject_unknown(params, ("object", "name", "renames", "map", "dryRun"), "rename_bones")
+    obj = get_object(take(params, "object", "name", required=True, kind=str))
+    if obj.type != "ARMATURE":
+        raise MifOpError("object '%s' is a %s, not an ARMATURE. list_objects with type:'ARMATURE' "
+                         "finds one. NOTHING was changed." % (obj.name, obj.type))
+
+    renames = take(params, "renames", "map", required=True)
+    if not isinstance(renames, dict) or not renames:
+        raise MifOpError("renames must be a non-empty object of {oldName: newName}. NOTHING was "
+                         "changed.")
+
+    bones = obj.data.bones
+    existing = [b.name for b in bones]
+    dry_run = bool(take(params, "dryRun"))
+
+    # ---- every check BEFORE any write, so a bad batch changes nothing at all ----------------
+    missing = [old for old in renames if old not in existing]
+    if missing:
+        raise MifOpError("no bone named %s on '%s'. It has %d: %s. NOTHING was changed."
+                         % (", ".join("'%s'" % m for m in sorted(missing)), obj.name,
+                            len(existing), ", ".join(existing[:24])))
+
+    bad = [(o, n) for o, n in renames.items() if not isinstance(n, str) or not n.strip()]
+    if bad:
+        raise MifOpError("every new name must be a non-empty string; %s is not. NOTHING was changed."
+                         % ", ".join("'%s' -> %r" % (o, n) for o, n in bad))
+
+    # A target is only a collision if the name is held by a bone that is NOT being renamed away in
+    # this same batch - otherwise a swap or a chain would be refused for no reason.
+    freed = set(renames.keys())
+    taken = {b for b in existing if b not in freed}
+    collisions = {o: n for o, n in renames.items() if n in taken}
+    if collisions:
+        raise MifOpError(
+            "these targets are already used by a bone this batch does NOT rename away: %s. Blender "
+            "would not fail - it would silently suffix the bone ('Hips' becomes 'Hips.001') AND "
+            "leave the vertex group under its old name, matching no bone, so that part of the mesh "
+            "stops deforming with nothing to say so. Refused before anything was written. NOTHING "
+            "was changed."
+            % ", ".join("'%s' -> '%s'" % (o, n) for o, n in sorted(collisions.items())))
+
+    dupes = [n for n in set(renames.values()) if list(renames.values()).count(n) > 1]
+    if dupes:
+        raise MifOpError("two bones are being renamed to the same name (%s), which collides with "
+                         "itself whichever order it runs in. NOTHING was changed."
+                         % ", ".join("'%s'" % d for d in sorted(dupes)))
+
+    meshes = [o for o in bpy.data.objects
+              if o.type == "MESH" and any(m.type == "ARMATURE" and m.object is obj
+                                          for m in o.modifiers)]
+    groups_before = {o.name: [g.name for g in o.vertex_groups] for o in meshes}
+
+    if dry_run:
+        return {
+            "armature": obj.name,
+            "dryRun": True,
+            "changed": False,
+            "wouldRename": dict(sorted(renames.items())),
+            "skinnedMeshes": [o.name for o in meshes],
+            "note": "DRY RUN - nothing was written. Every name checked: all sources exist, no "
+                    "target collides with a bone kept by this batch, and no two bones want the "
+                    "same name.",
+        }
+
+    # ---- TWO PASSES, so a swap is expressible ------------------------------------------------
+    # A->B with B->A collides whichever runs first. Parking every source on a name nothing else can
+    # hold makes the order irrelevant.
+    temp = {}
+    for i, old in enumerate(renames):
+        tmp = "__mif_rn_%d__" % i
+        bones[old].name = tmp
+        temp[tmp] = renames[old]
+    for tmp, new in temp.items():
+        bones[tmp].name = new
+
+    # ---- POSTCONDITION: read every name back -------------------------------------------------
+    now = [b.name for b in bones]
+    not_applied = {o: n for o, n in renames.items() if n not in now}
+    if not_applied:
+        raise MifOpError(
+            "renamed, but %s are not present afterwards - Blender suffixed at least one name, which "
+            "is the collision this op checks for and means the check missed a case. The armature is "
+            "now: %s"
+            % (", ".join("'%s'" % n for n in sorted(not_applied.values())), ", ".join(now[:24])))
+
+    # Vertex groups matching NO bone. Reported whether or not this call caused them: an orphan is
+    # the thing that makes a mesh stop deforming, and a caller renaming bones is the one person
+    # certain to care.
+    bone_names = set(now)
+    orphans = {}
+    for o in meshes:
+        stray = [g.name for g in o.vertex_groups if g.name not in bone_names]
+        if stray:
+            orphans[o.name] = stray
+
+    result = {
+        "armature": obj.name,
+        "renamed": dict(sorted(renames.items())),
+        "renamedCount": len(renames),
+        "changed": True,
+        "boneNames": now,
+        "skinnedMeshes": [o.name for o in meshes],
+        "vertexGroupsBefore": groups_before,
+        "vertexGroupsAfter": {o.name: [g.name for g in o.vertex_groups] for o in meshes},
+    }
+    if orphans:
+        result["orphanedVertexGroups"] = orphans
+        result["note"] = (
+            "these vertex groups match NO bone on '%s' and so deform nothing: %s. Blender renames a "
+            "vertex group along with its bone, so an orphan here was already orphaned before this "
+            "call - reported because a caller renaming bones is the one person certain to care."
+            % (obj.name, "; ".join("%s: %s" % (k, ", ".join(v)) for k, v in sorted(orphans.items()))))
+    else:
+        result["orphanedVertexGroups"] = {}
+        result["note"] = ("every vertex group on every skinned mesh still matches a bone. Blender "
+                          "renames groups along with their bones; this confirms it happened rather "
+                          "than assuming it.")
+    return result
+
+
 OPS = {
     "list_bones": op_list_bones,
     "list_shape_keys": op_list_shape_keys,
@@ -717,4 +860,5 @@ OPS = {
     "add_modifier": op_add_modifier,
     "remove_modifier": op_remove_modifier,
     "apply_modifier": op_apply_modifier,
+    "rename_bones": op_rename_bones,
 }
