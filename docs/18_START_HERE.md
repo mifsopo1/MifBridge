@@ -144,6 +144,7 @@ python tools/audit_postconditions.py    # a mutation nothing reads back
 python tools/audit_prose_dependence.py  # a tool whose ANSWER depends on comment text
 python tools/audit_absence_claims.py    # a doc saying an endpoint is missing, when it ships
 python tools/why_not.py <term>          # has this already been decided AGAINST?
+python tools/verify_pending_fixes.py    # did the fixes that need a RELOAD actually land?
 python tools/night_heartbeat.py         # is another session working?
 python tools/mifwatch.py                # did any session die mid-call?
 ```
@@ -165,6 +166,14 @@ second time with every C++ comment blanked underneath them, and diffs the output
 changes is reading prose as evidence - the root cause of five separate tool bugs found in one night,
 because a grep for a symbol finds the places that USE it and the places that DISCUSS it, and this
 repo has more of the second. Two tools are listed there as deliberate prose readers with reasons.
+
+`verify_pending_fixes` answers a question this project keeps producing: a C++ fix is committed and
+compile-verified, and the editor in front of you is still running the DLL from before it. It compares
+`self_audit`'s build stamp against the last commit touching `Source/` and SKIPS with exit 2 when the
+loaded build is older, rather than failing in a way that reads as a broken fix. Exit 2 means skipped
+here as it does everywhere else in this directory. Anything it reports as `- [ ]` in the spec becomes
+`- [x]` only once this passes - "'- [x]' only when BUILT, TESTED and COMMITTED" is the rule, and a
+compile is not a test.
 
 `audit_suite_reach` is the newest and the least obvious: a suite reporting PASS is not a suite that tested
 what it contains. `test_safety_gate` ran 5 of its 38 assertions here for months, because everything
