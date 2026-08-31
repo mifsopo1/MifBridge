@@ -144,7 +144,7 @@ def run_one(version, exe, quiet):
             try:
                 r = subprocess.run([sys.executable, suite], env=env, capture_output=True,
                                    text=True, timeout=900)
-                out, code = r.stdout, r.returncode
+                out, err, code = r.stdout, r.stderr, r.returncode
             except subprocess.TimeoutExpired:
                 rows.append({"version": version, "reported": reported, "suite": name,
                              "state": "TIMED OUT", "detail": "900s"})
@@ -154,8 +154,22 @@ def run_one(version, exe, quiet):
                 m = PASSFAIL.search(line) or m
             state = {0: "pass", 1: "FAIL", 2: "skipped"}.get(code, "rc=%d" % code)
             detail = ("%s pass, %s fail" % (m.group(1), m.group(2))) if m else ""
-            rows.append({"version": version, "reported": reported, "suite": name,
-                         "state": state, "detail": detail})
+            row = {"version": version, "reported": reported, "suite": name,
+                   "state": state, "detail": detail}
+            # KEEP THE OUTPUT OF A FAILING SUITE. This used to discard `out` entirely, so a failure
+            # reported a bare "FAIL" with no detail and an empty count when the suite had died
+            # before printing its summary at all - which is precisely when the output matters most.
+            # The UE runner already records a tail for the same reason.
+            if code not in (0, 2):
+                # AND ITS STDERR. capture_output splits the streams, so a suite that dies
+                # mid-run leaves its traceback in stderr while stdout ends on whatever passed
+                # last. Keeping stdout alone showed twenty-five PASS lines and no cause -
+                # which is the half of the output that cannot contain the reason.
+                row["tail"] = "\n".join(out.splitlines()[-25:])
+                if (err or "").strip():
+                    row["tail"] += ("\n--- stderr ---\n"
+                                    + "\n".join(err.splitlines()[-25:]))
+            rows.append(row)
             if not quiet:
                 print("  %-8s %-26s %-8s %s" % (version, name, state, detail))
         finally:
@@ -201,6 +215,14 @@ def main():
             print("%-8s %-12s %-26s %-8s %s"
                   % (r["version"], r.get("reported", "?"), r["suite"], r["state"], r["detail"]))
         print("")
+        # PRINT THE TAIL OF ANYTHING THAT FAILED. A bare "FAIL" with an empty detail column - which
+        # is what a suite that died before its summary produces - tells the reader nothing at all.
+        for r in bad:
+            if r.get("tail"):
+                print("  --- %s on %s, last lines ---" % (r["suite"], r["version"]))
+                for line in r["tail"].splitlines():
+                    print("    " + line[:160])
+                print("")
         skipped = [r for r in rows if r["state"] == "skipped"]
         for r in skipped:
             # Named, not counted - the same rule run_all_suites uses. A skip nobody reads is

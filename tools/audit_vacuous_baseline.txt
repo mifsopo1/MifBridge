@@ -13,7 +13,9 @@ test_list_bones.py:88	PRESENCE of 'refPose' - T221 and present when asked for
 test_material_params.py:57	PRESENCE of 'value' - T121 each carries a value
 test_niagara_params.py:108	PRESENCE of 'typeIndex' - T210 typeIndex is reported rather than a type na
 test_niagara_params.py:108	T210 typeIndex is reported rather than a type name
+test_niagara_params.py:173	NO-COUNTEREXAMPLE over 'widths.items()' - T212 one typeIndex always has one width
 test_niagara_params.py:183	T213 vector values report the right number of floats
 test_niagara_params.py:221	T216 and every object offset is a valid index into one of them
+test_niagara_user_params.py:95	NO-COUNTEREXAMPLE over 'valued' - T8200 every row with a decodable kind actual
 test_selfpin.py:130	PRESENCE of 'sourcesBefore' - T21 rows carry sourcesBefore/After
 test_spawn_many.py:188	T545 and each note carries its item index

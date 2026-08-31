@@ -61,6 +61,13 @@ LITERAL_TUPLE = re.compile(r'^\(\s*(?:"[^"]*"|\'[^\']*\')\s*(?:,\s*(?:"[^"]*"|\'
 NAME = re.compile(r'check\(\s*"([^"]*)"')
 # Rule 2: presence asserted across a COLLECTION - all("field" in row for row in rows).
 PRESENCE = re.compile(r'\ball\s*\(\s*(?:all\s*\(\s*)?"([^"]+)"\s+in\s+\w+', re.S)
+# Rule 3: `not <name>` where <name> collected counterexamples out of a FILTERED comprehension.
+# Group 1 is the bound name, group 2 the source it iterates - the thing that may be empty.
+COMP_ASSIGN = re.compile(r"^\s*(\w+)\s*=\s*[\[{]\s*[^\]}]*?\bfor\s+.+?\s+in\s+"
+                         r"(.+?)\s+if\b")
+NOT_NAME = re.compile(r"\bnot\s+(\w+)\b")
+# A source that cannot be empty: a literal, or a module-level CONSTANT.
+CONST_SOURCE = re.compile(r"^(?:[\[({\"']|[A-Z_]+$)")
 
 
 def suites():
@@ -153,6 +160,54 @@ def presence_findings():
     return out
 
 
+def counterexample_findings():
+    """Rule 3: "no counterexamples" asserted over a collection that may hold nothing.
+
+    `bad = [x for x in rows if wrong(x)]` then `check(..., not bad, ...)` is a good idiom, and eight
+    of the nine uses in this repo are right. It fails the same way all([]) does: when `rows` is
+    empty there were no counterexamples to find, and the assertion cannot tell that apart from a
+    clean pass - which is the distinction it was written to make.
+
+    Same question as Rule 1, so the same guarded() answers it: is the SOURCE asserted non-empty
+    within sight? Sources that are literals or module constants are skipped - they cannot be empty.
+    """
+    out = []
+    for fn in suites():
+        lines = io.open(os.path.join(HERE, fn), encoding="utf-8", errors="replace").read().split("\n")
+        # name -> (line index, source expression), last binding before each use wins
+        bound = {}
+        for i, ln in enumerate(lines):
+            m = COMP_ASSIGN.match(ln)
+            if m:
+                bound[m.group(1)] = (i, m.group(2).strip())
+        for i, line in enumerate(lines):
+            if "check(" not in line:
+                continue
+            call, end = call_span(lines, i)
+            for m in NOT_NAME.finditer(call):
+                name = m.group(1)
+                if name not in bound:
+                    continue
+                decl, source = bound[name]
+                if decl > i:
+                    continue                       # bound after the assertion, not this one
+                if CONST_SOURCE.match(source):
+                    continue                       # a literal or CONSTANT is never empty
+                # ASK ABOUT EVERY NAME IN THE SOURCE, not just the leading one. guarded() takes the
+                # core by splitting on the first . [ or ( which gives `dict` for dict.fromkeys(made)
+                # - so a check guarded with bool(made) read as unguarded. Generous on purpose: the
+                # thing being detected is whether a human thought about the empty case.
+                if any(guarded(lines, min(i, decl), end, nm)
+                       for nm in re.findall(r"[A-Za-z_]\w*", source)):
+                    continue
+                label = NAME.search(call)
+                out.append("%s:%d\tNO-COUNTEREXAMPLE over '%s' - %s"
+                           % (fn, i + 1, source[:26],
+                              label.group(1)[:44] if label else name))
+                break
+    return out
+
+
 def load_baseline():
     if not os.path.isfile(BASELINE):
         return set()
@@ -161,7 +216,7 @@ def load_baseline():
 
 
 def main():
-    found = findings() + presence_findings()
+    found = findings() + presence_findings() + counterexample_findings()
     if "--update-baseline" in sys.argv:
         body = ["# Accepted vacuous-check candidates. Each was READ and judged acceptable - usually a",
                 "# filtered subset that may legitimately be empty. Regenerate with --update-baseline",
@@ -174,7 +229,7 @@ def main():
     base = set() if show_all else load_baseline()
     new = [f for f in found if f not in base]
     if not new:
-        print("checks OK - %d candidate(s) across both rules, none new against the baseline"
+        print("checks OK - %d candidate(s) across all three rules, none new against the baseline"
               % len(found))
         return 0
     print("%d assertion(s) not in the baseline that may prove nothing:" % len(new))
@@ -186,6 +241,8 @@ def main():
     print("which is usually the failure it was written to catch. Guard the collection first.")
     print("RULE 2 - PRESENCE asserts a key exists and never what it holds. That is how 301 mislabelled")
     print("rows passed a green check. Assert the VALUE, or add a companion check that does.")
+    print("RULE 3 - NO-COUNTEREXAMPLE asserts an empty list of offenders. `not []` is also True")
+    print("when the source held nothing to examine, which is the case it exists to rule out.")
     print("Either is fine to accept with --update-baseline once you have read it and it is right.")
     return 1
 
