@@ -33,6 +33,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from harvest_param_table import blank_comments_and_strings   # the ONE shared scrubber
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "..", "Source", "MifBridge", "Private")
 
@@ -97,12 +100,26 @@ def main():
         if not fname.endswith(".cpp"):
             continue
         with open(os.path.join(SRC, fname), encoding="utf-8", errors="replace") as f:
-            lines = f.read().splitlines()
+            text = f.read()
+        lines = text.splitlines()
+        # MATCH AGAINST SCRUBBED TEXT, ATTRIBUTE FROM THE ORIGINAL.
+        #
+        # is_code() drops comment lines, which is not enough: MifBridgeDescribe.cpp:297 is a
+        # generated notes-table entry, and the note reads "FPhysicsAssetUtils::CreateFromSkeletalMesh
+        # puts up an FScopedSlowTask MakeDialog, and a modal deadlocks the bridge". That is prose
+        # explaining why autoFit is NOT offered - the exact opposite of a blocking call - and it kept
+        # this tool at exit 1 with one UNDECLARED finding, which is the state in which a genuinely
+        # new blocker would have been invisible.
+        #
+        # The scrubber blanks comments AND string literals while preserving line count, so `probe`
+        # lines up with `lines` and attribution still reads the real source.
+        probe_lines = blank_comments_and_strings(text).splitlines()
         for i, line in enumerate(lines):
             if not is_code(line):
                 continue
+            probe = probe_lines[i] if i < len(probe_lines) else line
             for call, why, is_bounded in BLOCKERS:
-                if call not in line:
+                if call not in probe:
                     continue
                 name, start = enclosing_handler(lines, i)
                 where = "%s:%d" % (fname, i + 1)
