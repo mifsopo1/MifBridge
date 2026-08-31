@@ -164,6 +164,52 @@ def main():
         # its AI Controller, not a general transform setter despite the name, so it belongs with the
         # PIE-dependent family this batch declines, not the safe editor-world ops.
 
+        # ---------------------------------------------------------------- T905b the C-array branch
+        print("\n=== T905b: resetting one element of a fixed-size C-array ===")
+        # reset_property_to_default carries a whole branch for fixed-size C-arrays - a bWholeCArray
+        # flag, an arrayDim report, and a comment block explaining why a TEXT compare cannot carry
+        # the invariant there ("ExportText_Direct emits ONE element ... so for a C-array UPROPERTY it
+        # puts element 0 against element 0 and returns equal no matter what elements 1..n hold").
+        # None of it had a test, and the question that produced this one was whether the branch is
+        # reachable through the API at all.
+        #
+        # IT IS, and finding the fixture took reading the ENGINE rather than sampling the project:
+        # grepping for an editable fixed-size C-array UPROPERTY gives exactly one on this surface,
+        # FPostProcessSettings::LensFlareTints, FLinearColor[8] (Engine/Scene.h:1898). A scratch
+        # Actor blueprint has 63 properties and its CDO 112, and NONE of them is a C-array.
+        #
+        # NO LEVEL INVOLVED. The component TEMPLATE is addressable as
+        # '<BP>.<Name>_C:<Comp>_GEN_VARIABLE', so this needs no spawned actor - unlike T905 above,
+        # which drives whatever level happens to be open.
+        cam = M.call("add_component", {"blueprintId": bpath, "componentClass": "CameraComponent",
+                                       "name": "MifCam"})
+        check("T905b (setup) a CameraComponent, for its PostProcessSettings", cam.get("ok") is True,
+              json.dumps(cam)[:200])
+        M.call("compile", {"blueprintId": bpath})
+        tmpl = "%s.%s_C:MifCam_GEN_VARIABLE" % (bpath, bpath.rsplit("/", 1)[-1])
+        ARR = "PostProcessSettings.LensFlareTints"
+        setc = M.call("set_property", {"objectPath": tmpl, "propertyPath": ARR + "[2]",
+                                       "value": "(R=1,G=0,B=0,A=1)"})
+        check("T905b (setup) element [2] is set away from its default", setc.get("ok") is True,
+              json.dumps(setc)[:220])
+        if setc.get("ok") is True:
+            r = M.call("reset_property_to_default", {"objectPath": tmpl, "propertyPath": ARR + "[2]"})
+            check("T905b the element resets", r.get("ok") is True and r.get("changed") is True,
+                  json.dumps(r)[:240])
+            # THE FIELD THAT PROVES WHICH BRANCH RAN. arrayDim is emitted only when Leaf->ArrayDim
+            # is greater than 1, so its presence is the C-array path saying so.
+            check("T905b and reports arrayDim 8 - proof the C-array branch is the one that ran",
+                  r.get("arrayDim") == 8, "arrayDim=%r" % r.get("arrayDim"))
+            check("T905b and the reset VERIFIES, which for a C-array is checked per element rather "
+                  "than by a text compare of element 0",
+                  r.get("verified") is True,
+                  "verified=%r verifyFailure=%r" % (r.get("verified"), r.get("verifyFailure")))
+        # And the out-of-range refusal, which names the real size rather than failing vaguely.
+        oob = M.call("reset_property_to_default", {"objectPath": tmpl, "propertyPath": ARR + "[99]"})
+        check("T905b an out-of-range index is refused and NAMES the array's real size",
+              oob.get("ok") is False and "8 elements" in (oob.get("error") or ""),
+              (oob.get("error") or "")[:220])
+
         # ------------------------------------------------------------------ T905 reset_property_to_default
         print("\n=== T905: reset_property_to_default ===")
         set_r = M.call("set_property", {"objectPath": actor_path, "propertyPath": "bHidden", "value": True})

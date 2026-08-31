@@ -8555,27 +8555,46 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                         describes only element 0. BOTH ROUTES NARROWED BY MEASUREMENT rather than
                         given up on:
 
-                          the C-array route     FOUND THE CLASS, and the route still does not open.
-                                                Grepping the engine for an editable fixed-size
-                                                C-array UPROPERTY gives exactly one on this surface:
-                                                FPostProcessSettings::LensFlareTints, FLinearColor[8]
-                                                (Engine/Scene.h:1898). It is reachable through a
-                                                CameraComponent, and the component TEMPLATE is
+                          the C-array route     THE ROUTE OPENS, THE BRANCH RUNS, AND IT IS RIGHT.
+                                                Finding the fixture took reading the ENGINE rather
+                                                than sampling the project: grepping for an editable
+                                                fixed-size C-array UPROPERTY gives exactly one on this
+                                                surface, FPostProcessSettings::LensFlareTints,
+                                                FLinearColor[8] (Engine/Scene.h:1898), reachable
+                                                through a CameraComponent whose TEMPLATE is
                                                 addressable in scratch as
-                                                '<BP>.<Name>_C:<Comp>_GEN_VARIABLE'.
-                                                describe_property on
-                                                'PostProcessSettings.LensFlareTints' RESOLVES - ok
-                                                true - but reports NO arrayDim, and the handler emits
-                                                that field only when Leaf->ArrayDim > 1. So the leaf
-                                                the path resolves to has ArrayDim 1: the bridge's
-                                                property-path syntax does not surface a C-array AS a
-                                                C-array.
-                                                WHICH RAISES A BETTER QUESTION THAN THE ONE I STARTED
-                                                WITH: reset_property_to_default carries a whole
-                                                bWholeCArray branch and an arrayDim report, and if no
-                                                path syntax can address a C-array then that branch may
-                                                be unreachable through this API entirely. Worth an
-                                                hour on its own, and filed rather than guessed at
+                                                '<BP>.<Name>_C:<Comp>_GEN_VARIABLE' - NO LEVEL.
+                                                The path syntax is '<prop>[N]', which the resolver
+                                                supports at MifBridgeCommon.cpp:2715 (SegCArrayIndex,
+                                                bSegIsElement). Setting element [2] and resetting it
+                                                gives changed:true, arrayDim:8 - and arrayDim is
+                                                emitted ONLY when Leaf->ArrayDim > 1, so its presence
+                                                is the C-array branch saying which one ran - and
+                                                verified:true. An out-of-range index is refused and
+                                                names the real size ("a fixed-size C-array of 8
+                                                elements (valid 0..7)"). Now tested: T905b in
+                                                test_uncovered_reads5.py, four checks.
+                                                SO verifyFailure IS STILL NOT REACHED HERE, but for
+                                                the opposite reason to the one first filed: not
+                                                because the branch is unreachable, but because the
+                                                per-element verify it does instead of a text compare
+                                                is CORRECT, so there is nothing for it to report.
+                                                CORRECTING WHAT THIS ENTRY SAID BEFORE, which was
+                                                that "the property-path syntax does not surface a
+                                                C-array AS a C-array" and that the branch "may be
+                                                unreachable through this API entirely". Both wrong,
+                                                and the mistake is worth more than the fix:
+                                                describe_property REPORTS NO arrayDim FOR ANYTHING.
+                                                The field is emitted by reset_property_to_default
+                                                (MifBridgeDetails.cpp:1551) and list_object_properties
+                                                (:353), and by nothing else. Reading a missing field
+                                                as evidence about the DATA, without checking whether
+                                                the endpoint emits that field AT ALL, is the same
+                                                error as reading harvest()'s return shape from its
+                                                name - an absent value looks like an answer and is
+                                                not one. THE CHECK THAT WOULD HAVE CAUGHT IT: before
+                                                concluding from a field's absence, grep for the field
+                                                name in the handler you called
                           the setter route      four clamped or network properties on the CDO
                                                 (InitialLifeSpan -5, NetUpdateFrequency 0,
                                                 NetCullDistanceSquared -1, bHidden) all reset with
@@ -8588,8 +8607,9 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                         no longer needs somebody's level. That unblocks a whole class of future
                         testing that had been avoiding the live session
 
-      Neither is declared unreachable. "No route found" is not "cannot happen", and the C-array
-      measurement narrows the search rather than ending it.
+      Neither is declared unreachable. "No route found" is not "cannot happen" - and the C-array
+      measurement is now the example of why, having reversed itself once the route was tried with the
+      indexed syntax the resolver actually supports.
 
       Out of reach with a written reason: 16. Read by a suite: 46.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
