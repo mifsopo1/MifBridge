@@ -39,6 +39,27 @@ Related: the dated re-check note in [audit/04_OPEN_QUESTIONS.md](audit/04_OPEN_Q
 four of eight OPEN entries turned out to rest on premises that had quietly stopped being true. Open
 items rot by going stale; closed items rot by being obeyed.
 
+### And a third way, found the same night: the TITLE outlives the revision
+
+Two backlog entries were revised on 2026-08-31 as evidence came in, and both kept a headline that
+the new body contradicted:
+
+- *"create_asset carries 11 asset types whose **validating creators** were never built"* - three
+  revisions later the body said there is nothing to validate, because `create_asset` accepts no
+  configuration to validate. Retitled to "can only be created UNCONFIGURED".
+- *"**nine suites** send a raw confirm:true while working on a DISCOVERED real asset"* - the body
+  established that eight of the nine were a bad grep. Retitled to name the one.
+
+Bodies get rewritten because that is where the thinking happens. Titles get written once, when the
+least is known. And the title is what a skimmer reads, what a search returns, and - here - what the
+autopilot surfaces as the next thing to work on, so the superseded claim is the version that
+travels.
+
+**After changing an entry's conclusion, re-read its title as a stranger would.** Two of the three
+entries revised that night failed that check, which makes it a habit to build rather than a slip to
+regret.
+
+
 
 ## Spawning a graph node: the OUTER and the ORDER, not the class
 
