@@ -145,13 +145,33 @@ FBX_IMPORT_ARGS = {
 # that probe came back with 24. Nothing is lost - the shape, dimensions and normals are identical -
 # but a caller comparing vertexCount across a round trip will see it, and a surprise like that reads
 # as corruption.
-_SUPPORTED = (".fbx", ".gltf", ".glb")
+# PER-VERB, and that split is not cosmetic - it is a bug this file already had for two commits.
+#
+# _check_format is called by BOTH import_mesh and export_mesh. Widening one shared _SUPPORTED tuple
+# to add glTF IMPORT silently widened export too, and export_mesh does not dispatch on extension -
+# it always calls export_scene.fbx. So `export_mesh {file: "x.glb"}` answered ok:true and wrote a
+# file beginning "Kaydara FBX Binary". Silent, plausible, and exactly the class this bridge exists
+# to refuse: a caller gets a .glb that no glTF loader will open and nothing said a word.
+#
+# Caught by asking what else touches _check_format, not by a tool. Two verbs sharing a capability
+# list is fine only while their capabilities are the same, and the moment they diverge the shared
+# list is a liability rather than a convenience.
+_IMPORT_FORMATS = (".fbx", ".gltf", ".glb")
+_EXPORT_FORMATS = (".fbx",)
 _GLTF = (".gltf", ".glb")
 
 
-def _check_format(path, verb):
+def _check_format(path, verb, allowed=None):
     ext = os.path.splitext(path)[1].lower()
-    if ext not in _SUPPORTED:
+    allowed = allowed or _IMPORT_FORMATS
+    if ext in _GLTF and allowed is _EXPORT_FORMATS:
+        raise MifOpError(
+            "export_mesh writes FBX only (got '%s'). import_mesh DOES take glTF and GLB, so the "
+            "asymmetry is deliberate rather than an oversight: the FBX export path carries the "
+            "armature and object_types handling that keeps a rigged mesh from being written frozen "
+            "in whatever pose it happened to be in, and none of that transfers to the glTF "
+            "exporter unexamined. Export .fbx, or use run_python and own the result." % ext)
+    if ext not in allowed:
         raise MifOpError(
             "%s: supported formats are FBX and glTF/GLB (got '%s'). Those two round-trip "
             "axis and unit verifiably - glTF because its spec FIXES the convention (+Y up, "
@@ -296,7 +316,7 @@ def op_export_mesh(params):
 
     raw = take(params, "file", "filepath", "path", required=True, kind=str)
     path = _resolve_out_path(raw)
-    _check_format(path, "export_mesh")
+    _check_format(path, "export_mesh", _EXPORT_FORMATS)
 
     if os.path.exists(path) and not take_bool(params, "overwrite", "replaceExisting",
                                               default=True):

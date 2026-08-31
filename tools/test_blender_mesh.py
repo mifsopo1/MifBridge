@@ -147,6 +147,25 @@ def gltf_checks(call, check, tmp_glb):
           bad.get("ok") is False and "useCustomNormals" in str(bad.get("error") or ""),
           json.dumps(bad)[:200])
 
+    # M902 THE REGRESSION THIS EXACT CHANGE CAUSED, kept as a test because it was silent.
+    # _check_format is shared by import_mesh and export_mesh. Widening one tuple to add glTF IMPORT
+    # widened export too, and export_mesh does not dispatch on extension - it always calls
+    # export_scene.fbx. So export_mesh {file:"x.glb"} answered ok:true and wrote a file starting
+    # "Kaydara FBX Binary". A .glb no glTF loader will open, and nothing said a word.
+    out_glb = tmp_glb.replace(".glb", "_export.glb")
+    exp = call("export_mesh", object="MifGlbSource", file=out_glb)
+    check("M902 export_mesh REFUSES a .glb path - it writes FBX only",
+          exp.get("ok") is False, json.dumps(exp)[:200])
+    # The refusal must explain the ASYMMETRY, because import taking glTF while export does not is
+    # exactly the kind of thing a caller reads as a bug in the refusal rather than a real boundary.
+    check("M902 and the refusal says import_mesh DOES take glTF, so the asymmetry reads as chosen",
+          "import_mesh" in str(exp.get("error") or ""), str(exp.get("error"))[:200])
+    check("M902 and nothing was written", not os.path.isfile(out_glb), out_glb)
+    try:
+        os.remove(out_glb)
+    except OSError:
+        pass
+
 
 def main():
     print("MifBlender mesh pipeline - %s:%d" % (HOST, PORT))

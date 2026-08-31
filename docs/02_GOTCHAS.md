@@ -2339,3 +2339,40 @@ rewording, which is the standing objection to prose-matching detectors here.
 `true` default without a `JHasAny` presence guard - so no explicit `False` is currently being
 swallowed. See also *`flag or None` on a bool is safe only by coincidence, and there are 30 of them*
 above: this is the check that makes that coincidence monitored instead of merely observed.
+
+
+## Two verbs sharing a capability list is fine until their capabilities differ
+
+`_check_format(path, verb)` in the Blender addon validated file extensions for BOTH `import_mesh` and
+`export_mesh` against one `_SUPPORTED` tuple. Adding glTF support to IMPORT meant widening that
+tuple, and it silently widened EXPORT at the same time - which nothing about the change looked like
+it was doing.
+
+`export_mesh` does not dispatch on extension. It always calls `bpy.ops.export_scene.fbx`. So after
+the import feature landed:
+
+```
+export_mesh {object: "Cube", file: "out.glb"}   ->  ok: true
+head -c 20 out.glb                              ->  Kaydara FBX Binary
+```
+
+A caller asks for a GLB, is told it worked, and gets a file no glTF loader will open. Silent,
+plausible, and the exact class this bridge exists to refuse.
+
+**How it was found.** Not by a tool. By asking what ELSE calls `_check_format` while looking at
+whether glTF EXPORT was worth adding next - which is to say, by continuing to think about the change
+after it was committed and green. The four-version suite run passed before and after; nothing tested
+export to a non-FBX extension, because until that commit no such extension was accepted.
+
+**The fix and the rule.** `_IMPORT_FORMATS` and `_EXPORT_FORMATS`, passed explicitly. A shared list
+is a convenience while two callers genuinely have the same capability, and a liability the moment
+one of them grows. When widening a shared constant, the question is not "is this correct for the
+thing I am changing" but "who else reads this, and is it correct for them".
+
+The refusal explains the asymmetry rather than just stating it - import taking glTF while export
+does not is exactly the shape a caller reads as a bug in the refusal. It says the FBX export path
+carries armature and object_types handling that keeps a rigged mesh from being written frozen in
+whatever pose it happened to be in, and that none of that transfers to the glTF exporter unexamined.
+
+`test_blender_mesh` M902 keeps it: export to `.glb` must be refused, the refusal must mention
+import_mesh, and no file may appear.
