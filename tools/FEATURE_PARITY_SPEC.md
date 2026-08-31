@@ -8319,7 +8319,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **12 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **11 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8456,7 +8456,19 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       other end - an object that duplicates rather than a report that repeats. Two files converging
       on one rule should reference each other rather than drift.
 
-      Real gaps: 12. Out of reach with a written reason: 7. Read by a suite: 45.
+      notifiesRemoved moved out next, and it is the FIRST project-conditional entry in that list.
+      Everywhere else "out of reach" means the standing rules forbid it. This one means the ASSETS
+      here put it out of reach: remove_anim_notify_track needs an AnimSequence with a notify track,
+      and BOTH routes to a scratch one were closed by tonight's crash guards - create_asset refuses
+      UAnimSequence, duplicate_asset refuses a COOKED one. DDS2's animations are cooked, so the only
+      remaining target is real game content, which the rules forbid dirtying.
+
+      The nuance is written into the entry because it matters for who this tool is FOR: in an
+      UNCOOKED project the duplication route opens and this becomes ordinary work. Curfew is the
+      other half of the audience, and "unreachable" that is really "unreachable in DDS2" would be a
+      wrong answer there.
+
+      Real gaps: 11. Out of reach with a written reason: 8. Read by a suite: 45.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote

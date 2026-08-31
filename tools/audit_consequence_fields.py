@@ -115,6 +115,18 @@ UNREACHABLE = {
                            "grid-snapping is now reported as movedByEngine in samples[] rather than "
                            "as dropped. Verified live 2026-08-31 in both directions",
     "droppedNote": "emitted beside droppedByValidation, same branch",
+    # PROJECT-CONDITIONAL, and the only entry here that is. Everywhere else "out of reach" means the
+    # standing rules forbid it; this one means the ASSETS in this project put it out of reach, and it
+    # would be reachable in an uncooked project - which matters, because this is a general UE5 tool
+    # and Curfew (uncooked 5.7) is the other half of who it is for.
+    "notifiesRemoved": "remove_anim_notify_track needs an AnimSequence with a notify track, and BOTH "
+                       "routes to a scratch one are closed by crash guards added 2026-08-31: "
+                       "create_asset refuses UAnimSequence (a bare NewObject leaves the sequencer "
+                       "data model without its MovieScene) and duplicate_asset refuses a COOKED one "
+                       "(access violation 0x28 in the post-duplicate load path). DDS2's animations "
+                       "are cooked, so the only remaining target is real game content, which the "
+                       "standing rules forbid dirtying. In an UNCOOKED project the duplication route "
+                       "opens and this becomes ordinary work",
     "duplicatePinsRemoved": "belt-and-braces for a root cause that is already FIXED, and the source "
                             "says so: 'the root cause is fixed in PlaceAndInit ... but this makes "
                             "create_function self-healing if any other terminator ever behaves the "
