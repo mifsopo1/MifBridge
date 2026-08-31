@@ -54,9 +54,26 @@ def main():
         return 1
     st = int(time.time() % 100000)
 
-    # A real DDS2 master material with a known scalar parameter (Wind_Intensity, default 1) -
-    # confirmed live via list_material_parameters before writing this test, not assumed.
-    parent = "/Game/Blueprints/Enviro/PoleCableMat"
+    # A MATERIAL WITH A SCALAR PARAMETER, DISCOVERED. This used to hardcode a DDS2 master material
+    # and assert Wind_Intensity started at exactly 1, so on any other project the setup failed and
+    # main() returned 3 - reported as an ERROR rather than as "nothing here to test". Nothing this
+    # suite asserts needs a particular material; it needs A material with A scalar parameter.
+    #
+    # /Engine/ content is preferred because it ships with every UE install, so this runs on a blank
+    # project. Project content is the fallback rather than the assumption.
+    parent, mparams = M.discover_material(require="scalar")
+    param = default_val = None
+    if parent:
+        scalars = M.params_of_kind(mparams, "scalar")
+        if scalars:
+            param, default_val = scalars[0].get("name"), scalars[0].get("value")
+
+    if not parent or param is None:
+        print("SKIPPED - no material with a scalar parameter in this project, so there is nothing")
+        print("  to drive set_material_parameter with. Nothing was verified.")
+        return 0
+    print("using %s, scalar parameter %r (default %r)" % (parent, param, default_val))
+
     mi_path = "/Game/_MifMaterialUndo/MI_UndoTest_%d" % st
 
     created = M.call("create_material_instance", {"parent": parent, "path": mi_path})
@@ -65,21 +82,26 @@ def main():
     if not created.get("ok"):
         return 3
 
-    before_val, before_overridden = scalar_value(mi_path, "Wind_Intensity")
-    check("(setup) Wind_Intensity starts at the parent's default (1), not overridden",
-          before_val == 1 and before_overridden is False, (before_val, before_overridden))
+    # A value that is DIFFERENT from the default, whatever the default turned out to be - writing
+    # a parameter's existing value would make the read-backs below pass without the write working.
+    test_val = 42.0 if default_val != 42.0 else 7.0
+
+    before_val, before_overridden = scalar_value(mi_path, param)
+    check("(setup) %s starts at the parent's default (%r), not overridden" % (param, default_val),
+          before_val == default_val and before_overridden is False,
+          (before_val, default_val, before_overridden))
 
     # ------------------------------------------------------------------ T1730 the write itself
     print("\n=== T1730: set_material_parameter genuinely registers a transaction ===")
     before_tx = M.call("list_transactions", {"limit": 1})
     before_index = before_tx.get("currentIndex")
 
-    written = M.call("set_material_parameter", {"material": mi_path, "scalars": {"Wind_Intensity": 42}})
+    written = M.call("set_material_parameter", {"material": mi_path, "scalars": {param: test_val}})
     check("T1730 the write succeeds", written.get("ok") is True, json.dumps(written)[:200])
     check("T1730 it reports one scalar applied", written.get("scalarsApplied") == 1, written)
 
-    after_val, after_overridden = scalar_value(mi_path, "Wind_Intensity")
-    check("T1730 the value genuinely changed on read-back", after_val == 42 and after_overridden is True,
+    after_val, after_overridden = scalar_value(mi_path, param)
+    check("T1730 the value genuinely changed on read-back", after_val == test_val and after_overridden is True,
           (after_val, after_overridden))
 
     after_tx = M.call("list_transactions", {"limit": 3})
@@ -99,17 +121,19 @@ def main():
           "set_material_parameter" in json.dumps(undone.get("titlesUndone") or []),
           undone.get("titlesUndone"))
 
-    reverted_val, reverted_overridden = scalar_value(mi_path, "Wind_Intensity")
+    reverted_val, reverted_overridden = scalar_value(mi_path, param)
     check("T1731 the parameter value genuinely reverted to the parent default - this is the whole "
           "point: the stale TODO claimed this never happens",
-          reverted_val == 1 and reverted_overridden is False, (reverted_val, reverted_overridden))
+          reverted_val == default_val and reverted_overridden is False,
+          (reverted_val, default_val, reverted_overridden))
 
     # ------------------------------------------------------------------ T1732 redo, both directions
     print("\n=== T1732: redo brings the change back - a full round trip, not just one direction ===")
     redone = M.call("redo_transactions", {"count": 1})
     check("T1732 redo succeeds", redone.get("ok") is True, json.dumps(redone)[:200])
-    redone_val, redone_overridden = scalar_value(mi_path, "Wind_Intensity")
-    check("T1732 the value is back to 42 after redo", redone_val == 42 and redone_overridden is True,
+    redone_val, redone_overridden = scalar_value(mi_path, param)
+    check("T1732 the value is back to %r after redo" % test_val,
+          redone_val == test_val and redone_overridden is True,
           (redone_val, redone_overridden))
 
     SC.confirm_call("delete_asset", {"path": mi_path})

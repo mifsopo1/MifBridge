@@ -6353,6 +6353,32 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       human pass every time, which is the cost of a signal nobody fully trusts.
 
 - [ ] **suites that hard-depend on a DDS2 asset should DISCOVER one instead** (hours)
+      PROGRESS 2026-08-31 - four done, and mifaudit.discover_material() is the shared mechanism so
+      the next one is a two-line change rather than a fourth copy of the same loop. It takes the
+      TRAIT the suite actually needs, because they differ: `require="scalar"` for material_undo,
+      `require="staticSwitch"` for material_write's permutation trap, `cooked=True` for
+      material_params. /Engine/ content is preferred so a suite runs on a blank project - inverted
+      for cooked=True, since engine content in an installed editor is never cooked.
+
+      test_material_undo, test_material_params, test_material_write no longer name
+      /Game/Blueprints/Enviro/PoleCableMat. test_landscape_heightmap now builds its own landscape
+      with create_landscape rather than borrowing the level's, which it had to anyway - the one it
+      was borrowing has edit layers and silently discarded every write.
+
+      TWO THINGS LEARNED THAT THE NEXT ONE SHOULD REUSE. Discovery must select on the trait, not
+      just the class: material_params asserts `cooked is True` and `numExpressions == 0`, so handing
+      it any material would have left it green while testing nothing it was written for. And a
+      `limit` truncates SERVER-side, so sorting the result only reorders what survived - asking for
+      120 materials and sorting /Game/ first still returned engine content on a project holding 193
+      of them. One query per root, in preference order.
+
+      REMAINING, from a scan of /Game/ literals in tools/test_*.py that are not deliberately
+      nonexistent: test_ik_authoring (SKM_Manny, SK_Mannequin, Mesh_Akita), test_ik_goals_solvers
+      (SKM_Manny), test_report_intake (/Game/MODS/QOLCrafting_P/BP_Path), test_uncovered_reads5
+      (/Game/MODS/MifCore/MifFunctionLibrary), test_uncovered_reads7 (/Game/Maps/MifWeaponTest, a
+      Brushify material). The mannequins are UE template content present in many projects but not
+      all; the MODS ones are DDS2-only. Everything else the scan flagged is a path chosen BECAUSE it
+      does not exist, which is portable - "this is not here" is true everywhere.
       Filed 2026-08-31, found while auditing my own new spline suite for exactly this fault - it
       spawned an actor at the world origin, which works here only because this landscape happens to
       straddle it. MifBridge is a GENERAL UE5 tool tested on two projects; a suite that assumes

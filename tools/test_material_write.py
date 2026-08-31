@@ -84,9 +84,16 @@ def main():
 
     # ------------------------------------------------------------------ T131 static switches
     print("\n=== T131 [the trap]: a static switch updates the PERMUTATION, not just a value ===")
-    sw_parent = "/Game/Blueprints/Enviro/PoleCableMat.PoleCableMat"
+    # A material that actually HAS a static switch, discovered - naming one DDS2 asset made this
+    # arm unrunnable on any other project. Engine content carries one, so this works on a blank
+    # project: WorldPartitionSpatialHashGridPreviewMaterial has 12 scalars, 8 vectors and a switch.
+    sw_parent, _swp = M.discover_material(require="staticSwitch")
+    if not sw_parent:
+        print("  NOTE  no material with a static switch in this project, so T131 is UNEXERCISED")
+        print("        rather than counted. The permutation trap needs a switch to trap.")
+        sw_parent = None
     mi2 = "/Game/_MifMat/MI_S_%d" % stamp
-    c = M.call("create_material_instance", {"parent": sw_parent, "path": mi2})
+    c = M.call("create_material_instance", {"parent": sw_parent, "path": mi2}) if sw_parent else {}
     if c.get("ok"):
         sw = [p["name"] for p in params_of(mi2, "staticSwitch")]
         check("T131 the instance exposes a static switch", len(sw) > 0, str(sw))

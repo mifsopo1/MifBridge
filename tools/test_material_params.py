@@ -19,8 +19,9 @@ import mifaudit as M
 
 PASS, FAIL = [], []
 
-# A real cooked DDS2 master material, and a real instance with a deep parameter set.
-COOKED_MASTER = "/Game/Blueprints/Enviro/PoleCableMat.PoleCableMat"
+# The cooked master material is DISCOVERED in main() - see the note there. This used to name one
+# DDS2 asset, which made the suite unrunnable anywhere else.
+COOKED_MASTER = None
 
 
 def check(name, cond, detail=""):
@@ -32,6 +33,20 @@ def main():
     if not M.wait_for_bridge(timeout=900):
         print("bridge never came up")
         return 1
+
+    # A COOKED MATERIAL, FOUND RATHER THAN NAMED. This suite's whole claim is that parameters
+    # resolve where list_material_expressions is blind, and "blind" means COOKED - an uncooked
+    # material has an expression graph and T120 would assert nothing. So the fixture is discovered
+    # with that requirement rather than weakened to any material, and a project with no cooked
+    # content SKIPS with a reason instead of failing its setup and returning an error.
+    global COOKED_MASTER
+    COOKED_MASTER, _found_params = M.discover_material(cooked=True, min_params=1)
+    if not COOKED_MASTER:
+        print("SKIPPED - no COOKED material in this project, so there is nothing for which")
+        print("  list_material_expressions is blind and list_material_parameters is not.")
+        print("  That is the entire premise of this suite. Nothing was verified.")
+        return 0
+    print("cooked master: %s" % COOKED_MASTER)
 
     # ------------------------------------------------------------------ T120 the whole point
     print("\n=== T120 [the point]: parameters resolve where EXPRESSIONS cannot, on cooked content ===")
@@ -128,8 +143,8 @@ def main():
     for name, payload, expect in (
         ("missing path", {}, "required"),
         ("nonexistent asset", {"path": "/Game/NoSuchMaterial_zz"}, "not found"),
-        ("not a material", {"path": COOKED_MASTER.replace("PoleCableMat.PoleCableMat",
-                                                          "PoleCableMat")}, ""),
+        # The PACKAGE path rather than the object path, derived from whatever was discovered.
+        ("not a material", {"path": COOKED_MASTER.rsplit(".", 1)[0]}, ""),
     ):
         r = M.call("list_material_parameters", payload)
         if expect:

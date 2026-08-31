@@ -780,3 +780,60 @@ def record_dynamic_coverage(suite, endpoints):
         fh.write(_json.dumps(data, indent=1, sort_keys=True))
     os.replace(tmp, DYNAMIC_COVERAGE_PATH)
     return len(data[str(suite)]["endpoints"])
+
+
+# --------------------------------------------------------------------------- fixture discovery
+def discover_material(require=None, min_params=1, limit=120, cooked=None):
+    """A material to test against, FOUND rather than named. Returns (path, params) or (None, []).
+
+    `require` is a parameter kind that must be present - "scalar", "vector", "staticSwitch",
+    "texture" - so a caller needing a static switch does not get handed a material without one.
+    `min_params` filters out the many engine materials that expose nothing at all.
+
+    `cooked=True` additionally requires a material whose expression graph is EMPTY because it was
+    cooked. That is not a nicety - test_material_params exists to prove parameters resolve where
+    list_material_expressions is blind, so handing it an uncooked material would leave the suite
+    green while testing nothing it was written for. An uncooked project has none, and the caller
+    should SKIP rather than weaken the assertion.
+
+    /Engine/ content sorts first ON PURPOSE. It ships with every UE install, so a suite built on it
+    runs against a blank project; project content is the fallback, never the assumption. Three
+    material suites used to hardcode one DDS2 master material and fail their SETUP everywhere else,
+    which reports as an error rather than as "there was nothing here to test".
+    """
+    # ONE QUERY PER ROOT, IN PREFERENCE ORDER - not one query sorted afterwards. `limit` truncates
+    # server-side, so sorting the result only reorders whatever survived: asking for 120 materials
+    # and sorting /Game/ first still returned engine content on a project holding 193 /Game/
+    # materials, because none of them were in the first 120 rows.
+    #
+    # /Engine/ is preferred normally - it ships with every install, so a suite built on it runs
+    # against a blank project. Inverted for cooked=True, because engine content in an installed
+    # editor is never cooked.
+    roots = ["/Game/", "/Engine/"] if cooked else ["/Engine/", "/Game/"]
+    rows = []
+    for root in roots:
+        rows += (call("find_assets", {"class": "Material", "pathPrefix": root,
+                                      "limit": limit}).get("assets") or [])
+    for row in rows:
+        path = row.get("path") or row.get("objectPath")
+        if not path:
+            continue
+        params = call("list_material_parameters", {"material": path}).get("parameters") or []
+        if len(params) < min_params:
+            continue
+        if require and not [x for x in params
+                            if (x.get("kind") or x.get("type")) == require]:
+            continue
+        if cooked is not None:
+            ex = call("list_material_expressions", {"path": path})
+            if (ex.get("cooked") is True) != bool(cooked):
+                continue
+            if cooked and (ex.get("numExpressions") or 0) != 0:
+                continue
+        return path, params
+    return None, []
+
+
+def params_of_kind(params, kind):
+    """The subset of a discover_material() result with one parameter kind."""
+    return [x for x in params if (x.get("kind") or x.get("type")) == kind]
