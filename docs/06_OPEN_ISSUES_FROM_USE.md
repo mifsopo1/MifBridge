@@ -41,8 +41,18 @@ waste is why the "FIXED — do not re-file" section below is kept rather than de
 
 ## Status
 
-Author's own priority ranking, "by what actually costs me time now". Status as of the
-**2026-07-29 11:21 build (220 endpoints)**, each verified by a live call, not by reading the diff.
+> **This table is a SNAPSHOT, not the current state.** It was written against the
+> **2026-07-29 11:21 build (220 endpoints)**; the surface is now 434 own endpoints. Every row in it
+> was verified by a live call at the time, so nothing here is wrong about *then* - but a table headed
+> "Status" reads as a claim about NOW, and after a month it is not one.
+>
+> **The numbered sections below are authoritative**, and several carry a later verification than this
+> table does. Two were re-checked on 2026-08-31: issue 14 is fixed AND regression-tested
+> (test_ported_anim T574), and issue 21's misleading `export_asset` comment is corrected in the
+> source with the export-path contract now asserted by test_safety_gate T632. Read the section, not
+> the row.
+
+Author's own priority ranking, "by what actually costs me time now".
 
 | rank | issue | status |
 |---|---|---|
