@@ -313,6 +313,24 @@ first is just louder about it.
 > A checker that reports "clean" has proved nothing until it has been run against a known
 > instance of what it looks for.
 
+And its mirror image, earned separately on 2026-08-31 and nearly paid for in the wrong currency:
+
+> When a checker suddenly flags something you just touched, the first hypothesis is that you
+> broke the checker's ASSUMPTIONS - not that you introduced the defect it names.
+
+`param_reach` reported three parameters on `recipe_override_and_call_parent` as accepted-but-
+unreachable, minutes after that handler gained a guard REFUSING those exact three. The tool offered
+its usual remedy, `--update-baseline`, which would have permanently recorded them as accepted. What
+had actually happened is that the tool did a bare `body.find("RejectUnknownParams")`, matched the
+phrase inside a new COMMENT, and read the next brace block - the list of refused spellings - as an
+accepted-key list.
+
+The tell was the content, not the tool: a report that three keys are *accepted* arriving in the same
+minute as a change that *rejects* them is a contradiction, and a contradiction is worth ten minutes
+before a baseline edit. Accepting it would have manufactured exactly the kind of durable false claim
+the rest of this file is about - and unlike a bad comment, a baseline entry is designed to be obeyed
+without being re-read.
+
 Testing it against the *fixed* tree would have shown clean either way; the pass would have been
 vacuous in the meta-layer, which is the same fault the suites were being corrected for all week.
 The check that counts is the before/after: restore the buggy file, confirm the scanner names it,
