@@ -7726,3 +7726,17 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         bevel_edges   dryRun, seamBand
 
       Fixing them needs a running Blender to verify, which the addon suites already require.
+
+- [ ] **audit_vacuous_checks reports 9 candidates nobody has read** (hours)
+      They are rules 1-3 findings in test_material_params (1), test_niagara_params (5), test_pie_idle
+      (2) and test_project_paths (1), and they predate the rule-4 work - the tool exits 1 today and
+      did before it too. Each is an assertion that may pass whatever the code does; the tool's own
+      guidance is roughly one real finding in four candidates, so they want READING, not a bulk
+      --update-baseline. Most need a live editor to judge, because the question is whether the
+      collection they iterate is ever legitimately empty against a real project.
+
+- [ ] **audit_vacuous_checks is not in the release gate** (minutes)
+      make_release.check_static_audits gates audit_loop_writes, audit_postconditions, audit_modals,
+      test_fuzz_detector, audit_promise_flags and audit_suite_payloads. audit_vacuous_checks is not
+      among them, which is why it has been able to sit at exit 1. Adding it means first reading the
+      9 above - gating a tool that is already red just blocks releases.

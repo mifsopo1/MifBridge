@@ -40,6 +40,20 @@ the alternative is two hundred lines nobody reads.
 Presence is sometimes genuinely the contract - "the response carries a warning field" is a real thing
 to test. Those live in the baseline.
 
+RULE 4 - A CHECKER THAT NEVER RUNS. The three rules above ask whether an assertion proves anything.
+The fourth asks it of the tools in this directory. On 2026-08-31 a check was added to
+mcp_static_check and wired in AFTER main()'s `if not findings: return 0`, so it executed only on runs
+where something else had already failed - which is never, in a healthy repo. It printed OK for hours.
+The finder was correct; the wiring was dead code, and both the diff and a direct call to the function
+looked fine.
+
+This rule scans tools/*.py for that shape and nothing else: an empty list, appended to by the
+analysis, tested for emptiness, returning 0, with more locally-defined analysis after it. The
+narrowness is the whole design - see _accumulators_before for the two wider versions that were wrong
+6 times out of 6 and then 31 times out of 31. Suites are deliberately not this rule's business; a
+suite that skips on an absent fixture is correct, and audit_suite_reach.py already measures the case
+where that skip was wrong.
+
 BASELINE. Findings are compared against audit_vacuous_baseline.txt so only NEW ones surface. Accept
 the current set with --update-baseline once you have read them.
 
@@ -48,6 +62,7 @@ Usage:
     python tools/audit_vacuous_checks.py --all            # every candidate, baseline ignored
     python tools/audit_vacuous_checks.py --update-baseline
 """
+import ast
 import io
 import os
 import re
@@ -215,8 +230,125 @@ def load_baseline():
                and not l.startswith("#"))
 
 
+# --------------------------------------------------------------------------- rule 4: unreachable
+#
+# The three rules above ask whether an ASSERTION proves anything. This one asks it of the CHECKER,
+# because on 2026-08-31 a check was added to mcp_static_check that printed OK on every run without
+# ever having executed:
+#
+#     if not findings:
+#         print("OK  every one can be called - no unbound names")
+#         return 0                       # every healthy run leaves here
+#
+#     lossy = lossy_bool_forwards()      # so this only ran when something ELSE was broken
+#
+# The finder was correct - called directly it returned the planted row. Reading the diff passed.
+# Calling the function passed. Only running the entry point against a planted defect caught it.
+#
+# WHAT IS AND IS NOT FLAGGED. Two naive versions of this rule were wrong 6/6 and then 31/31 - see
+# A `return 0` is only suspicious when the tool has ALREADY DONE its analysis and found nothing, so
+# the test has to be an EMPTINESS test (`not x`, `len(x) == 0`) on a name built in main() as a list,
+# dict, set or comprehension. That excludes every legitimate early exit in this repo:
+#
+#   * `if "--update-baseline" in sys.argv:`   - a mode flag, not a result   (3 tools)
+#   * `if live is None:`                      - "no bridge, could not check", and `live` comes from
+#                                               a function call, not a collection literal
+#   * `if not os.path.isfile(RESULTS):`       - no input to measure; not a Name at all
+#
+# All six were read by hand before this rule was written. "Already fine" was the answer for all of
+# them, and the rule is shaped so it stays the answer.
+
+def _empty_test_name(test):
+    """`not x` or `len(x) == 0` -> 'x'. Anything else -> None."""
+    if (isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not)
+            and isinstance(test.operand, ast.Name)):
+        return test.operand.id
+    if isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], ast.Eq):
+        f, c = test.left, test.comparators[0]
+        if (isinstance(f, ast.Call) and isinstance(f.func, ast.Name) and f.func.id == "len"
+                and f.args and isinstance(f.args[0], ast.Name)
+                and isinstance(c, ast.Constant) and c.value == 0):
+            return f.args[0].id
+    return None
+
+
+def _accumulators_before(stmts):
+    """Names bound to an EMPTY list and later appended to - the shape of a findings accumulator.
+
+    This is the distinction that makes the rule usable, and it took three passes to find. Testing
+    only for "assigned a collection" flagged 31 sites, every one of them correct code:
+
+      * `terms = [t.lower() for t in sys.argv[1:] ...]` then `if not terms:` - why_not.py's usage
+        banner, printed when the user passed no search terms
+      * `anims = [a["path"] for a in M.call("find_assets", ...)]` then `if not anims: return 0` -
+        a suite SKIPPING because the project holds no fixture of that type. test_anim_curve even
+        records `check("(setup) the project has AnimSequences", len(anims) > 0)` before it skips.
+
+    Both test an INPUT that legitimately comes back empty. The defect tests an OUTPUT: a list that
+    started empty and was appended to BY THE ANALYSIS, so "empty" means "found nothing wrong" - and
+    anything after that return is a second analysis nobody runs. Comprehension = derived input;
+    empty-literal-plus-append = accumulated findings. Structural, so rewording cannot game it.
+
+    The suite half of this question is not ours: audit_suite_reach.py already measures suites that
+    run a small fraction of their assertions, which is what a wrongly-taken skip looks like there.
+    """
+    empty, appended = set(), set()
+    for stmt in stmts:
+        for n in ast.walk(stmt):
+            if (isinstance(n, ast.Assign) and isinstance(n.value, ast.List)
+                    and not n.value.elts):
+                for t in n.targets:
+                    if isinstance(t, ast.Name):
+                        empty.add(t.id)
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and n.func.attr in ("append", "extend")
+                    and isinstance(n.func.value, ast.Name)):
+                appended.add(n.func.value.id)
+    return empty & appended
+
+
+def unreachable_findings():
+    """Analysis called after main() has already exited 0 on the no-findings path."""
+    rows = []
+    for fn in sorted(os.listdir(HERE)):
+        if not fn.endswith(".py"):
+            continue
+        try:
+            src = io.open(os.path.join(HERE, fn), encoding="utf-8", errors="replace").read()
+            tree = ast.parse(src, filename=fn)
+        except (SyntaxError, ValueError):
+            continue
+        local, main_fn = set(), None
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                local.add(node.name)
+                if node.name == "main":
+                    main_fn = node
+        if main_fn is None:
+            continue
+        for i, stmt in enumerate(main_fn.body):
+            if not isinstance(stmt, ast.If):
+                continue
+            name = _empty_test_name(stmt.test)
+            if not name or name not in _accumulators_before(main_fn.body[:i]):
+                continue
+            if not any(isinstance(n, ast.Return) and isinstance(n.value, ast.Constant)
+                       and n.value.value == 0 for n in ast.walk(stmt)):
+                continue
+            for later in main_fn.body[i + 1:]:
+                for n in ast.walk(later):
+                    if (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                            and n.func.id in local):
+                        rows.append("%s:%d\tRULE 4 %s() is only reached once main() has already "
+                                    "returned 0 - it never runs on a clean run"
+                                    % (fn, n.lineno, n.func.id))
+            break
+    return sorted(set(rows))
+
+
 def main():
-    found = findings() + presence_findings() + counterexample_findings()
+    found = (findings() + presence_findings() + counterexample_findings()
+             + unreachable_findings())
     if "--update-baseline" in sys.argv:
         body = ["# Accepted vacuous-check candidates. Each was READ and judged acceptable - usually a",
                 "# filtered subset that may legitimately be empty. Regenerate with --update-baseline",
@@ -229,7 +361,7 @@ def main():
     base = set() if show_all else load_baseline()
     new = [f for f in found if f not in base]
     if not new:
-        print("checks OK - %d candidate(s) across all three rules, none new against the baseline"
+        print("checks OK - %d candidate(s) across all four rules, none new against the baseline"
               % len(found))
         return 0
     print("%d assertion(s) not in the baseline that may prove nothing:" % len(new))
@@ -243,6 +375,9 @@ def main():
     print("rows passed a green check. Assert the VALUE, or add a companion check that does.")
     print("RULE 3 - NO-COUNTEREXAMPLE asserts an empty list of offenders. `not []` is also True")
     print("when the source held nothing to examine, which is the case it exists to rule out.")
+    print("RULE 4 - a CHECKER placed after main()'s `return 0` runs only when something else")
+    print("already failed. The finder can be perfect and never execute; mutation-test the entry")
+    print("point, not the function.")
     print("Either is fine to accept with --update-baseline once you have read it and it is right.")
     return 1
 

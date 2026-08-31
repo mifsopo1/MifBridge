@@ -2313,6 +2313,27 @@ entry point. A clean report is evidence only after you have watched the same com
 repo already had the rule for detectors of C++ defects; it applies just as hard to a check bolted
 onto a script that already had an early return in it.
 
+**The class is now guarded, and getting the rule precise took three tries.** It is RULE 4 in
+`audit_vacuous_checks`, whose subject was already "a green result that proves nothing". Two obvious
+formulations were useless:
+
+| rule | flagged | real |
+|---|---|---|
+| analysis called after any `return 0` in main() | 6 | 0 |
+| ... restricted to an emptiness test on a collection | 31 | 0 |
+| ... restricted to an empty list APPENDED TO by the analysis | 0 | 0, and it catches the planted original |
+
+The first caught `--update-baseline` exits and "no bridge, could not check" exits. The second also
+caught `why_not.py`'s no-arguments usage banner and every suite that skips on an absent fixture -
+`test_anim_curve` even records `check("(setup) the project has AnimSequences", len(anims) > 0)`
+before skipping, which is exemplary code being reported as a defect.
+
+The distinction that works is structural: **a comprehension is derived input, an empty list that gets
+appended to is accumulated findings.** `if not terms` and `if not anims` ask whether there was
+anything to work on; `if not findings` asks whether anything was wrong. Only the second makes the
+code after it unreachable in the sense that matters. Being structural, it also cannot be gamed by
+rewording, which is the standing objection to prose-matching detectors here.
+
 **What the now-live check actually found:** nothing, and that is now a real result. Of the 177
 `key=param or None` forwards inside bool-taking wrappers, none names a key whose C++ read has a
 `true` default without a `JHasAny` presence guard - so no explicit `False` is currently being
