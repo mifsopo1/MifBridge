@@ -8947,3 +8947,39 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       but leaves the extent alone. That is a proper afternoon, and it buys the last field of ten.
 
       Standing: 10 consequence fields, 9 read, 1 left.
+
+- [ ] **duplicate_asset on a COOKED AnimSequence crashes the editor - FIXED IN SOURCE, needs a build**
+      (hours)
+      2026-08-31, and it took Andre's editor down a second time while he was using it. Confirmed from
+      the crash dump's own callstack rather than inferred:
+
+        UnrealEditor-MifBridge -> UnrealEditor-AssetTools (DuplicateAsset) -> UnrealEd
+        -> CoreUObject -> Engine
+        EXCEPTION_ACCESS_VIOLATION reading address 0x0000000000000028
+
+      THE LOG NAMED NOTHING. There is no MifBridge line for the call at all - the crash arrived
+      before the handler could log - so the log's last entry is an unrelated create_blueprint from
+      the previous suite. Only the crash dump named the culprit, and only its callstack put a
+      MifBridge frame under AssetTools. Reading Saved/Crashes is the step that turned "the editor
+      died at some point" into a specific endpoint.
+
+      IT IS THE THIRD MEMBER OF A FAMILY THIS HANDLER ALREADY GUARDS, which is what makes the fix
+      cheap and the diagnosis certain. duplicate_asset already refuses a COOKED NiagaraSystem
+      (EXCEPTION_ACCESS_VIOLATION 0x30 in FVersionedNiagaraEmitterData::PostLoad) and a COOKED
+      StaticMesh (Assertion failed: Owner->IsMeshDescriptionValid(0)). Same shape every time: cook
+      strips editor-only data, and DUPLICATION is what re-runs the path that dereferences it.
+      Reading the asset is fine in all three cases.
+
+      Scoped to COOKED, like its two siblings, and deliberately NOT to AnimSequence in general - the
+      editor's own Content Browser duplicates an uncooked one perfectly well, and refusing that would
+      cost a capability for a crash that only happens to cooked content. That is the same correction
+      the create_asset refusal needed an hour earlier, applied before shipping it this time.
+
+      THE ASSET CLASS WAS ALREADY KNOWN TO BE FRAGILE and I walked into it anyway. create_asset had
+      been taught to refuse a UAnimSequence that same evening, for a different assert on a different
+      entry point. Two entry points, two asserts, one underlying fragility: this class does not
+      survive being handled outside the editor's own flows. The right move after the first crash was
+      to treat the whole class as hazardous, not just the one call that had bitten.
+
+      NOT BUILT - Andre is using the editor. Until it is: do not call duplicate_asset on a cooked
+      AnimSequence.

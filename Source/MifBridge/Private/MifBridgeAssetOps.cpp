@@ -598,14 +598,37 @@ namespace MifBridge
 		//
 		// READING a cooked StaticMesh is fine (get_property, bounds, LOD counts, materials). It is
 		// DUPLICATION specifically that dies, because that is what triggers the rebuild.
+		//
+		// DUPLICATING A COOKED ANIM SEQUENCE IS THE THIRD MEMBER OF THIS FAMILY, found live
+		// 2026-08-31 and confirmed from the crash dump's own callstack rather than inferred:
+		//
+		//   UnrealEditor-MifBridge -> UnrealEditor-AssetTools (DuplicateAsset) -> UnrealEd
+		//   -> CoreUObject -> Engine
+		//   EXCEPTION_ACCESS_VIOLATION reading address 0x0000000000000028
+		//
+		// Same shape as the two above: cook strips editor-only data - here the animation data model
+		// that UAnimSequence rebuilds on PostLoad - and duplication is what re-runs the path that
+		// dereferences it. The log had no MifBridge line for the call at all, because the crash
+		// arrived before the handler could log; only the crash dump named it.
+		//
+		// THE ASSET CLASS WAS ALREADY KNOWN TO BE FRAGILE. create_asset refuses to CREATE a
+		// UAnimSequence for a related reason (a bare NewObject leaves the sequencer data model
+		// without its MovieScene and the next toucher asserts, AnimSequencerDataModel.cpp:947).
+		// Two different entry points, two different asserts, one underlying fragility: this class
+		// does not survive being handled outside the editor's own flows.
+		//
+		// Scoped to COOKED, like its two siblings, and not to AnimSequence in general - the editor's
+		// own Content Browser duplicates an uncooked one perfectly well, and refusing that would cost
+		// a capability for a crash that only happens to cooked content.
 		{
 			const FString AssetClassName = Asset->GetClass()->GetName();
 			const bool bNiagara = AssetClassName == TEXT("NiagaraSystem")
 				|| AssetClassName == TEXT("NiagaraEmitter");
 			const bool bStaticMesh = AssetClassName == TEXT("StaticMesh");
+			const bool bAnimSequence = AssetClassName == TEXT("AnimSequence");
 			const UPackage* SrcPackage = Asset->GetOutermost();
 			const bool bCooked = SrcPackage && SrcPackage->HasAnyPackageFlags(PKG_Cooked);
-			if ((bNiagara || bStaticMesh) && bCooked)
+			if ((bNiagara || bStaticMesh || bAnimSequence) && bCooked)
 			{
 				Fail(Out, FString::Printf(
 					TEXT("'%s' is a COOKED %s, and duplicating one CRASHES the editor %s. Cook strips "
@@ -618,9 +641,14 @@ namespace MifBridge
 							   "in FVersionedNiagaraEmitterData::PostLoad) - get_property reaches "
 							   "ExposedParameters and add_function_call reaches the runtime surface "
 							   "instead")
-						: TEXT("inside UStaticMesh::Build (Assertion failed: "
+						: bStaticMesh
+						? TEXT("inside UStaticMesh::Build (Assertion failed: "
 							   "Owner->IsMeshDescriptionValid(0), StaticMesh.cpp:3086) - get_property, "
-							   "bounds and LOD/material reads all still work instead")));
+							   "bounds and LOD/material reads all still work instead")
+						: TEXT("inside the engine's post-duplicate load path "
+							   "(EXCEPTION_ACCESS_VIOLATION reading 0x28, through AssetTools' "
+							   "DuplicateAsset) - list_animations, describe_animation and the notify "
+							   "and curve reads all still work instead")));
 				return;
 			}
 		}
