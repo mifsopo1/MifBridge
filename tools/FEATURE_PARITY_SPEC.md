@@ -6810,82 +6810,50 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       it was ordering, not a new guard.
 
 
-- [ ] **11 asset types can only be created UNCONFIGURED - create_asset takes no settings** (hours)
-      **THE SHORT VERSION, since this entry was revised three times and the history is below:**
-      create_asset produces a VALID but DEFAULT asset for these types - an empty Niagara system, an
-      Input Action with the default value type. Nothing is malformed and nothing crashes. What is
-      missing is any way to SPECIFY the configuration, because create_asset accepts only `path` and
-      `class`. Feature completeness, not correctness. Not urgent.
+- [ ] **create_asset cannot configure at CREATION - the two-call form works** (hours)
+      RETITLED AND RE-SCOPED 2026-08-31 after measuring it against the live editor. The old title,
+      "11 asset types can only be created UNCONFIGURED", is wrong, and it was wrong in the direction
+      that makes work look necessary. This is the fourth revision of this entry; the previous three
+      are kept below because the corrections are the useful part.
 
-      Filed 2026-08-31 from a full pass over docs/audit/04_OPEN_QUESTIONS.md section 1.1. That audit
-      recommended "dedicated creators OWN their types, create_asset covers the residue". Measured
-      against the live registry: create_asset exists and 3 of the 14 dedicated creators do.
+      WHAT WAS ACTUALLY MEASURED, on a running 5.3.2 editor, scratch paths under /Game/_MifScratch:
 
-      MISSING: create_curve, create_curve_table, create_string_table,
-      create_material_parameter_collection, create_rvt_asset, create_level_sequence,
-      create_input_action, create_input_mapping_context, create_niagara_system, create_sound_cue,
-      create_metasound_source.
+        create_asset {path, class:/Script/EnhancedInput.InputAction}  -> ok
+        set_property {objectPath, propertyPath:"ValueType", value:"Axis2D"}
+             -> valueBefore Boolean, valueAfter Axis2D, changed:true, typeValidated:true
+        get_property -> Axis2D                      (read back through a DIFFERENT endpoint)
 
-      CORRECTED WITHIN THE HOUR, and the correction is the useful part. I filed this from the audit
-      table without reading create_asset's handler, which is the exact mistake this repo's rules warn
-      about - verify by READING, never from a list. create_asset is not a bare NewObject. It has
-      THREE tiers already:
+        create_asset {path, class:/Script/Engine.CurveFloat}          -> ok
+        set_property {objectPath, propertyPath:"FloatCurve.Keys",
+                      value:"((Time=0.0,Value=1.0),(Time=1.0,Value=5.0))"}
+             -> changed:true, valueAfter ((Value=1.0),(Time=1.0,Value=5.0))
 
-        CONSTRUCTION STEPS for classes a bare NewObject leaves broken beyond repair -
-          UUserDefinedStruct (via FStructureEditorUtils::CreateUserDefinedStruct), UUserDefinedEnum,
-          and ULevelSequence, which gets Initialize() exactly as ULevelSequenceFactoryNew does. So
-          "a LevelSequence with no frame rate" was WRONG: it gets its UMovieScene.
-        A WARNING LIST of 32 classes (FactoryInitClasses) whose UFactory does more than NewObject -
-          it walks the SUPER chain, sets factoryInitIncomplete:true, and names
-          tools/audit_factory_init.py --class U<X> to show what that factory does.
-        BARE NewObject for everything else.
+      A curve's keys are an array of structs reached through a nested property path, which is the
+      case most likely to be genuinely blocked, and it is not blocked. create_asset's OWN response
+      says so and always did: "created and registered but NOT saved - set its properties with
+      set_property, then save_dirty_packages or it is lost on restart". The endpoint documents the
+      two-call workflow in the note it returns, and the entry was filed without running it.
 
-      RAN THE TOOL, AND IT DEFLATES THE ITEM FURTHER. audit_factory_init.py finds 22 creation
-      helpers doing post-construct work and reports NONE of the eleven among them - and none is in
-      FactoryInitClasses either. So there is no evidence any of the eleven is MALFORMED by a bare
-      NewObject, which was the only reading that would have made this urgent.
+      WHAT THE REAL GAP IS, now that the false one is gone:
 
-      AND THE PREMISE ITSELF IS CONFUSED, which is the finding worth keeping. create_asset accepts
-      exactly two parameters: `path` and `class`. It cannot produce a WRONGLY-configured asset,
-      because it never accepts configuration. The audit's "validation the generic path lacks" -
-      the EInputActionValueType whitelist, CurveTable rich/simple mode, MPC parameter seeding - is
-      validation of PARAMETERS THE GENERIC PATH DOES NOT HAVE. There is no bad value to reject.
+        1. Configuration is not ATOMIC with creation. Two calls, and between them the asset exists in
+           a default state. That matters for an undo step and for anything watching the registry, and
+           not much otherwise.
+        2. Convenience. `create_curve {path, keys:[...]}` is one call rather than two plus an
+           ImportText string the caller has to spell correctly.
+        3. GRAPH-TYPED assets are the genuine hole: a Sound Cue and a MetaSound source are node
+           graphs, and no property write configures a graph. That is not this item - it is the
+           MetaSound/graph-authoring category, already declined on the system rather than the project
+           (see the Control Rig and MetaSound declines), and declining it there and filing it here
+           would be the same work counted twice.
 
-      So what create_asset actually produces for these types is a DEFAULT asset: an empty Niagara
-      system, an Input Action with the default value type, a CurveTable in whatever mode the CDO
-      says. Valid, constructible, and empty. The dedicated creators are not guards against a broken
-      asset - they are the endpoints that let a caller SPECIFY the configuration in the first place.
+      So what remains is ergonomics plus one already-declined category. Left open rather than closed
+      because the atomicity point is real and someone may want the one-call form; downgraded from
+      "cannot be configured" to "takes two calls", which is a different decision.
 
-      RESCOPED: this is a feature-completeness question ("can an agent create a configured X in one
-      call?"), not a correctness or safety one. Worth doing for a general UE5 tool, worth doing per
-      type as demand appears, and NOT worth an urgent sweep. Andre's 1.1 boundary call still governs
-      whether they are separate endpoints or parameters on create_asset.
-
-      NOT URGENT, and the difference matters: the audit lists "the AddRichCurve check()-crash guard"
-      among the missing validations, which reads as a crash risk. It is not reachable - AddRichCurve
-      appears nowhere in MifBridge's source, so no endpoint can put a CurveTable into the state that
-      check() guards. What is actually at stake is assets that are valid UObjects and useless
-      content, which is a quality problem, not a safety one.
-
-      GENERAL-TOOL FRAMING: this is not DDS2-shaped. Anyone driving UE5 through the bridge who asks
-      for a LevelSequence gets one with no frame rate, and a Niagara system with no template. The
-      decision Andre owns is the boundary (1.1); the WORK once decided is 11 creators, or one
-      create_asset that refuses the types it cannot set up properly and names the creator to use -
-      which is the cheaper half and would close the honesty gap on its own.
-
-
-### Refuted, recorded so they are not re-proposed
-
-- add_retarget_pose / set_retarget_pose_bone / set_current_retarget_pose -- Refuted on the strongest and most common ground: existing endpoints already do it. I verified the reflective machinery by reading it rather than trusting it - H_set_property has no CPF_Edit gate (and MifBridgeDetails.cpp
-- register_anim_slot (skeleton slot groups) — or fold as a write mode on describe_animation's slot data -- REFUTED on three independent grounds. The engine API exists exactly as quoted (D:/UE532/Engine/Source/Runtime/Engine/Classes/Animation/Skeleton.h:526-552, all ENGINE_API, none WITH_EDITOR — that part of the proposal
-- list_actor_folders + set_actor_folder (World Outliner folder CRUD) -- REFUTED — an existing endpoint already does it, and both premises the proposal rests on are false. 1) "Nothing tells a caller which folder strings are legal, so both filters are guesswork" — FALSE. `folder` is a documen
-- extend create_material_instance with reparent:true, or a parent parameter on set_material_parameter (UMaterialInstanceConstant::SetParentEditorOnly) -- REFUTED — an existing endpoint already does it, and the proposal's load-bearing premise is factually wrong about this codebase. 1) set_property ALREADY reparents a MIC,
-- extend list_niagara_emitters with renderers (the rendererCount its own doc promises but never emits) -- REFUTED on criterion 1: get_property already reaches it reflectively, and the proposer's central "nothing else reaches it" claim is factually wrong about the engine's own data layout. The proposer says: "get_property
-- add_gameplay_tag / remove_gameplay_tag / rename_gameplay_tag -- REFUTED on the strongest possible ground: an existing endpoint already does the headline capability, and the proposer's own check for it was wrong. 1. add_gameplay_tag ALREADY EXISTS. `grep -o 'MIF_BIND([a-z_0-9]*)' Sou
-- make_collision -- Refuted on redundancy and placement, not feasibility. (1) Two of the three shape types are already built on the UE side: MifBridgeCollision.cpp:376 H_add_simplified_collision takes shape=box|sphere|capsule|10dop-x|10dop-
-
-### Noted at low rank by a surveyor, not separately vetted
-
+      TWO SCRATCH ASSETS were left in the unsaved /Game/_MifScratch: MifIAProbe and MifCurveProbe.
+      Neither is saved, both go away with the next editor restart, and delete_asset needs confirm:true
+      which is not mine to send. Reported rather than worked around.
 - [anim-skeleton] create_blend_profile / set_blend_profile_bone: Create a named blend profile on a USkeleton and set its per-bone blend scales - the per-bone weighting that makes an upper-body montage blend in fast on the 
 - [level-world] group_actors / ungroup_actors: Create and disband an AGroupActor so a multi-part agent-assembled prop (a market stall built from a table, an awning and six crates) is selected and moved as one unit by a hum
 - [level-world] extend paint_landscape/create_landscape with register:true (register a target layer on a landscape): Register a ULandscapeLayerInfoObject as one of a landscape's target layers, so it can then be painted. To
