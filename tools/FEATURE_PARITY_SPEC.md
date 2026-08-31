@@ -8629,7 +8629,9 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       measurement is now the example of why, having reversed itself once the route was tried with the
       indexed syntax the resolver actually supports.
 
-      Out of reach with a written reason: 16. Read by a suite: 46.
+      Out of reach with a written reason: 18. Read by a suite: 46. NO SUITE READS: 0.
+      THE DIMENSION IS CLOSED. compileFailed and verifyFailure were the last two, and both
+      were settled by measurement rather than by giving up on them - see their rows.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote

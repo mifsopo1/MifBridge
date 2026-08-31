@@ -196,6 +196,29 @@ UNREACHABLE = {
     "staleNote": "needs a component request whose owning manager has gone away WITH ITS WORLD - a "
                  "teardown no unattended suite performs. staleHandles, the always-emitted count "
                  "beside it, IS asserted (test_game_framework T1408)",
+    "compileFailed": "material_statistics reaches it only when a shader compile was WAITED ON and "
+                     "produced no usable shader map. In a COOKED project that branch sits behind an "
+                     "earlier one that always wins: a material made by create_asset has no material "
+                     "resource for the editor's feature level, and the null-resource guard refuses "
+                     "before GetStatistics is ever called. Measured, not assumed - a scratch "
+                     "Material was created 2026-08-31 and material_statistics returned exactly that "
+                     "refusal, with compileFailed absent. Reaching it needs a material that HAS a "
+                     "resource and still fails, which is an uncooked project. Not a limitation of "
+                     "the endpoint and not irrelevant work - it is the one editor this session may "
+                     "drive",
+
+    "verifyFailure": "reset_property_to_default emits it when a reset cannot be verified, and the "
+                     "handler names two causes. BOTH MEASURED AND BOTH NARROWED. The fixed-size "
+                     "C-array cause: the route is OPEN - '<prop>[N]' resolves, LensFlareTints[2] "
+                     "resets with arrayDim 8 - and the per-element verify that branch does instead "
+                     "of a text compare is CORRECT, so it has nothing to report (T905b). The native "
+                     "setter cause: four clamped or network properties on a CDO (InitialLifeSpan "
+                     "-5, NetUpdateFrequency 0, NetCullDistanceSquared -1, bHidden) all reset with "
+                     "verified true, so whatever fights a reset is not ordinary clamping. T905b "
+                     "READS the field, but only into a check's detail string - which is a "
+                     "diagnostic, NOT an assertion, and this tool's own header says a read is not "
+                     "one. Listed here so the distinction is not quietly lost",
+
     "truncatedReadNote": "needs a log file over 64 MB, which means writing 64 MB to disk to test a "
                          "note. truncatedRead, the bool beside it, is emitted always",
     "leftBehind": "add_timeline creates the UTimelineTemplate FIRST and fails cleanly with nothing "
