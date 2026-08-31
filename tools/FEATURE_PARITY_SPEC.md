@@ -8543,7 +8543,12 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
         compileFailed   material_statistics refuses when the shader map is unusable, so it needs a
                         material whose compile genuinely fails - the material half of the same
-                        missing fixture
+                        missing fixture. One route ruled out by measurement: a Material made through
+                        create_asset (which bypasses the factory) has NO MATERIAL RESOURCE at all,
+                        and takes a different refusal - "has no material resource for this editor's
+                        feature level" - so it never reaches the compileFailed branch. That is also
+                        a datapoint about create_asset's factory gap: for Material the missing
+                        factory work is the resource itself, not a cosmetic default
         verifyFailure   reset_property_to_default emits it when the reset cannot be verified, and the
                         handler names two causes: a native setter or PostEditChangeProperty adjusting
                         the value after the write, or a fixed-size C-array whose default text
