@@ -23,6 +23,9 @@ import io
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import harvest_param_table as H          # the one comment/string scrubber, shared not reimplemented
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PRIV = os.path.join(os.path.dirname(HERE), "Source", "MifBridge", "Private")
 
@@ -163,12 +166,30 @@ def main():
         if name.lower() in readonly:
             skipped_readonly += 1
             continue
-        body = strip_response_writes(body)
-        mutates = any(h in body for h in MUTATION_HINTS)
+        # WHAT IT DOES comes from CODE. WHAT IT CLAIMS may come from prose. The two questions this
+        # tool asks are not symmetric, and matching both against the raw text conflated them.
+        #
+        # Measured before the split: five handlers were judged "mutates" on the strength of a COMMENT
+        # alone - remove_sublevel and save_dirty_packages each merely DISCUSS destroying (one of them
+        # only via the word PrivateDestroyLevel), add_simplified_collision and add_ik_retarget_chain
+        # mention ->Modify() in prose. Worse, three had a silent API attributed from prose, including
+        # set_pin_default, whose only occurrence of TrySetDefaultValue is the comment at
+        # MifBridgeNodes.cpp:2315 explaining the bug it no longer has. That is the founding case in
+        # this file's own docstring, listed there as FIXED - so the tool was re-reporting the very
+        # defect it was written to catch, and the fix had made the report WORSE by adding the comment.
+        #
+        # Verification stays on the raw text deliberately. Half of VERIFY_MARKERS are comment idioms
+        # ("READ BACK", "rather than assume") added precisely because handlers that DO verify were
+        # being re-reported. The cost of that choice is stated rather than hidden: a handler could
+        # claim in a comment to verify and not do it. Mutation is the claim worth doubting, because a
+        # false mutation flag sends a reader to a handler with nothing wrong with it.
+        prose = strip_response_writes(body)
+        code = strip_response_writes(H.blank_comments_and_strings(body))
+        mutates = any(h in code for h in MUTATION_HINTS)
         if not mutates:
             continue
-        verified = any(v in body for v in VERIFY_MARKERS)
-        silent = [(api, why) for api, why in SILENT_APIS if api in body]
+        verified = any(v in prose for v in VERIFY_MARKERS)
+        silent = [(api, why) for api, why in SILENT_APIS if api in code]
         if silent and not verified:
             sev = "high"
         elif silent:

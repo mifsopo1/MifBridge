@@ -1,7 +1,6 @@
 # Accepted postcondition findings. Regenerate deliberately with:
 #   python tools/audit_postconditions.py --update-baseline
 high:add_cast
-low:add_enum_literal
 low:add_foliage_instances
 low:add_k2_node
 low:add_macro_instance
@@ -17,10 +16,8 @@ low:import_texture
 low:recipe_add_debug_print
 low:recipe_reset_and_loop
 low:rename_event
-low:reset_property_to_default
 low:set_actor_label
 low:set_cast_purity
-low:set_pin_default
 low:set_property
 low:set_texture_settings
 low:spawn_actor_in_level
@@ -40,7 +37,6 @@ medium:add_format_text
 medium:add_function_call
 medium:add_get_array_item
 medium:add_get_subsystem
-medium:add_ik_retarget_chain
 medium:add_interface
 medium:add_literal
 medium:add_make_array
@@ -84,7 +80,6 @@ medium:remove_component
 medium:remove_function
 medium:remove_interface
 medium:remove_pin
-medium:remove_sublevel
 medium:remove_tree_widget
 medium:remove_widget_animation_track
 medium:remove_widget_binding
@@ -93,7 +88,6 @@ medium:rename_function
 medium:rename_virtual_bone
 medium:reparent_blueprint
 medium:revert_inherited_component
-medium:save_dirty_packages
 medium:set_actor_transform
 medium:set_blendspace_samples
 medium:set_collision

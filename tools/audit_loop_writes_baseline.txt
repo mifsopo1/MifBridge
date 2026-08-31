@@ -2,7 +2,5 @@
 # Regenerate with: python tools/audit_loop_writes.py --update-baseline
 MifBridgeCooked.cpp:cookedClassNote
 MifBridgeCooked.cpp:generatedClassCount
-MifBridgeDataTables.cpp:row
 MifBridgeDataTables.cpp:textNote
-MifBridgeMaterials.cpp:property
 MifBridgeNodes.cpp:ok

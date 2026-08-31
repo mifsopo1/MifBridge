@@ -51,9 +51,21 @@ NL = chr(10)
 #
 # These replacements are genuine in-loop writes that are CORRECT, which makes them stable anchors: they
 # are not going to be fixed away. MifBridgeNodes ok is an any-failure accumulator writing false
-# repeatedly (idempotent); MifBridgeDataTables row writes once and returns on the next line.
+# repeatedly (idempotent).
+#
+# The second anchor was MifBridgeDataTables row, chosen because it "writes once and returns on the
+# next line" - and on 2026-08-31 the scan learned to recognise exactly that shape, so the anchor
+# stopped being findable and the self-check refused a green result. It was right to: an anchor whose
+# whole description is the shape you just taught the scanner to ignore cannot anchor anything. Do NOT
+# pick the next one for being correct-and-detected; pick one the scanner is still MEANT to report.
+#
+# MifBridgeCooked cookedClassNote is that: a real per-iteration write inside `for (const TCHAR* Name
+# : Editor)` with no return and no break. It is safe only because the loop opens with a `continue`
+# guard that at most one of three distinct class names can pass - a fact about the DATA, invisible to
+# a brace-matching scan, which is why the scan should keep reporting it and a human should keep
+# reading it.
 KNOWN = [("MifBridgeNodes.cpp", 2583, "ok"),
-         ("MifBridgeDataTables.cpp", 489, "row")]
+         ("MifBridgeCooked.cpp", 492, "cookedClassNote")]
 
 # (?<![A-Za-z0-9_]) so OpOut->Set / RowOut->Set / SubOut->Set do not match: those are per-item objects
 # and writing to them inside a loop is exactly right.
@@ -116,9 +128,52 @@ def scan():
             #
             # loop_ranges (computed once per file, above) holds the [open, close] line span of every
             # loop BODY, matched on braces. A write is in a loop exactly when its line falls in one.
-            if any(lo < i <= hi for lo, hi in loop_ranges):
-                found.append(("%s:%s" % (name, m.group(2)), i))
+            span = [(lo, hi) for lo, hi in loop_ranges if lo < i <= hi]
+            if not span:
+                continue
+            # A SEARCH IS NOT AN ACCUMULATION. The commonest loop in this module walks a collection
+            # looking for one entry, writes the response describing it, and RETURNS - so the write
+            # runs at most once and last-wins cannot arise. Without this the scan reported 18 such
+            # sites across five files (add_enhanced_input_action's already-mapped branch, PCG's
+            # already-connected branch, add_virtual_bone's duplicate-pair branch, and so on), all of
+            # them the deliberate "the end state you asked for already holds" reply.
+            #
+            # That noise was not merely untidy: the same run held ONE real defect - layers'
+            # layerCreated, written per name with no return - and nineteen entries is exactly the
+            # length at which the real one is not read. Since this check is not in the release gate,
+            # nothing was failing and nobody was going to look.
+            if leaves_before_iterating(lines, i, min(hi for _, hi in span), len(span)):
+                continue
+            found.append(("%s:%s" % (name, m.group(2)), i))
     return sorted(found)
+
+
+
+def leaves_before_iterating(lines, i, loop_hi, nloops):
+    """Does control leave the LOOP before it can come round again?
+
+    Walked at brace depth RELATIVE to the write, so a `return` inside a further nested `if` after
+    the write does not count - that one is conditional, and a conditional return is exactly the
+    shape where the loop CAN iterate and last-wins is real. Only an unconditional return in the
+    write's own block proves the write happens at most once.
+    """
+    depth = 0
+    for k in range(i - 1, min(loop_hi, len(lines))):
+        t = lines[k].strip()
+        if t.startswith("//") or t.startswith("*"):
+            continue
+        if depth == 0 and re.match(r"return\b", t):
+            return True
+        # `break` ends the loop just as surely as `return` ends the handler - MifBridgeMaterials'
+        # property lookup walks GConnectableProperties, writes the matching name and breaks. But it
+        # is only equivalent when there is ONE enclosing loop: break leaves the INNERMOST, so a write
+        # inside nested loops still runs once per outer pass, which is last-wins after all.
+        if depth == 0 and nloops == 1 and re.match(r"break\b", t):
+            return True
+        depth += t.count(chr(123)) - t.count(chr(125))
+        if depth < 0:
+            return False
+    return False
 
 
 def self_check(found):
