@@ -9347,3 +9347,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Blender is 0 by the same measurement. Both halves now agree on what the number MEANS, which is
       the only reason comparing them is worth anything.
+
+- [x] **every endpoint MifBridge owns is now named in a suite** - DONE 2026-08-31
+      list_automation_tests was the last one, and the only genuine entry coverage_gaps had: the other
+      fourteen are twelve foreign kr_* endpoints from MifKismetReconstructor and two the harness
+      denies outright (save_dirty_packages, save_level_as). 433 of 452 named, 14 nowhere, and every
+      one of those 14 is somebody else's or deliberately out of bounds.
+
+      tools/test_automation_tests.py, 20 checks, and READ-ONLY by construction - the endpoint refuses
+      `run` by name, saying "this endpoint only LISTS - it never runs a test" - which is why it was
+      safe to run against a session Andre is working in.
+
+      WHAT IT ASSERTS IS NOT THE COUNT, because a count is the one thing that cannot be wrong in an
+      interesting way:
+
+        the flag DECODE is real - flagNames comes from the engine's own
+        EAutomationTestFlags::GetTestFlagsMap(), so the test looks for VARIATION across tests rather
+        than for presence. A hardcoded decode would give every row the same names and satisfy any
+        presence check.
+
+        matched and count are DIFFERENT numbers - asking for ONE row is what separates "how many
+        matched" from "how many you were given", and truncated is checked in BOTH directions so it is
+        proven to vary rather than to be always true.
+
+        the filter really filters - every returned row must contain the substring, because a filter
+        that quietly ignored its argument would return everything and still pass a count comparison.
+
+      That leaves the UE gap at: 0 unreachable parameters, 0 uncovered endpoints, 8 consequence
+      fields, and the editor-closed batch.

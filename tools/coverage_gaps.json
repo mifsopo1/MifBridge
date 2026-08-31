@@ -12,7 +12,6 @@
   "kr_reconstruct_request",
   "kr_reconstruct_status",
   "kr_verify_fidelity",
-  "list_automation_tests",
   "save_dirty_packages",
   "save_level_as"
  ],
@@ -1057,6 +1056,9 @@
    "test_ported_anim.py",
    "test_sync_markers.py",
    "test_uncovered_reads4.py"
+  ],
+  "list_automation_tests": [
+   "test_automation_tests.py"
   ],
   "list_blackboard_keys": [
    "test_create_asset.py",
