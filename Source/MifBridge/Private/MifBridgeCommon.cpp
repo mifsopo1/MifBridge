@@ -507,6 +507,7 @@ namespace MifBridge
 			MIF_BIND(remove_actor_from_data_layer);
 			MIF_BIND(blueprint_inheritance_tree);
 			MIF_BIND(project_dependency_graph);
+			MIF_BIND(set_plugin_enabled);
 			MIF_BIND(project_asset_distribution);
 			MIF_BIND(perf_heavy_actors);
 			MIF_BIND(trace_start);

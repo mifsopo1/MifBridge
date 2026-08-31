@@ -1734,6 +1734,7 @@ namespace MifBridge
 	 *  project where loading Blueprints is not (docs/06 issue 16). */
 	MIF_DECL(blueprint_inheritance_tree);
 	MIF_DECL(project_dependency_graph);
+	MIF_DECL(set_plugin_enabled);
 	MIF_DECL(project_asset_distribution);
 
 	// PERFORMANCE (MifBridgePerfView.cpp). A CENSUS of static content cost, not a profile - read

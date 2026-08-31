@@ -227,6 +227,7 @@ set_pin_default.guid
 set_pin_default.name
 set_pin_type.guid
 set_pin_type.name
+set_plugin_enabled.plugin
 set_property.editcondition
 set_property.respectclamps
 set_retarget_chain_mapping.retargeter

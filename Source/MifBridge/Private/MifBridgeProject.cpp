@@ -32,6 +32,13 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Misc/PackageName.h"
 #include "Blueprint/BlueprintSupport.h"   // FBlueprintTags - 5.3 :36-40, 5.7 :30-34
+#include "Interfaces/IPluginManager.h"       // IPlugin::IsEnabledByDefault - 5.3 :144
+#include "Interfaces/IProjectManager.h"      // SetPluginEnabled :209, IsCurrentProjectDirty :231
+#include "ProjectDescriptor.h"               // FProjectDescriptor::Plugins :87, bDisableEnginePluginsByDefault :105
+#include "PluginReferenceDescriptor.h"       // FPluginReferenceDescriptor::Name :29, bEnabled :32
+#include "Misc/FileHelper.h"
+#include "HAL/FileManager.h"      // IFileManager::Copy - a byte copy, not a re-encode
+#include "Misc/Paths.h"
 
 namespace MifBridge
 {
@@ -615,6 +622,308 @@ namespace MifBridge
 			Out->SetStringField(TEXT("scanNote"),
 				TEXT("the asset registry is STILL SCANNING, so this tree is incomplete. Call again "
 					 "once it settles - a partial tree is indistinguishable from a small project."));
+		}
+	}
+
+	// ============================================================================================
+	// set_plugin_enabled - the write half of an `enabled` field three endpoints already report.
+	// ============================================================================================
+	//
+	// list_game_feature_plugins and describe_game_feature_plugin both publish `enabled` and nothing
+	// could change it, so an agent that discovered a project was missing GameplayAbilities or
+	// EnhancedInput had to stop and ask a human to tick a checkbox. This does not remove the human -
+	// the bridge cannot restart the editor, and a plugin does not load until it does - but it turns
+	// "click this checkbox, then restart" into "restart".
+	//
+	// TWO TRAPS, BOTH READ OUT OF ProjectManager.cpp RATHER THAN ASSUMED, and both of which make the
+	// obvious implementation wrong:
+	//
+	// 1. SetPluginEnabled ACCEPTS ANY NAME AND RETURNS TRUE. Its loop appends
+	//    FPluginReferenceDescriptor(PluginName, bEnabled) for a name it does not find
+	//    (ProjectManager.cpp:~330), consults FindPlugin only for metadata, and the single `return
+	//    false` in the whole function is "no project loaded". So a typo does not fail - it writes a
+	//    junk plugin reference into the .uproject and reports success. FindPlugin is therefore
+	//    checked HERE, before the engine is given the chance.
+	//
+	// 2. THE OBVIOUS POSTCONDITION IS BACKWARDS. After updating the reference, the engine checks
+	//    whether the resulting state matches the default-enabled set and, if it does, REMOVES the
+	//    entry from Plugins entirely - and still marks the project dirty. So "the plugin appears in
+	//    the .uproject Plugins array" is not the check: ABSENCE is the correct end state for a
+	//    plugin left at its default. The effective state has to be computed the way the engine
+	//    computes it - explicit entry if there is one, IsEnabledByDefault otherwise - which is what
+	//    MifEffectivePluginEnabled below does. FProjectManager::GetDefaultEnabledPlugins is a member
+	//    of the concrete class and not reachable from a plugin; IPlugin::IsEnabledByDefault
+	//    (IPluginManager.h:144) is the public equivalent.
+	//
+	// AND THE RETURN VALUE IS NOT EVIDENCE, which the engine says about itself in the header:
+	// "@note Use IsCurrentProjectDirty() to tell whether the project was actually modified."
+	// SetPluginEnabled returns true having changed nothing at all when the state already matched.
+	//
+	// WHAT THIS CANNOT DO, reported rather than glossed: it changes what the NEXT launch loads. It
+	// does not load or unload anything now, and Plugin->IsEnabled() will not move until a restart.
+	// Saying "enabled" without saying that would be the most misleading answer available.
+	//
+	// Full write mode only, on the same argument add_gameplay_tag uses for a persistent tag
+	// (MifBridgeGameplayTags.cpp:263): this writes a file that outlives the session. dryRun is the
+	// analogue of that endpoint's `transient` - allowed in every mode, writes nothing, and answers
+	// the question anyway.
+
+	/** The state the .uproject will produce at NEXT LAUNCH - which is not Plugin->IsEnabled().
+	 *
+	 *  Absence from the Plugins array does not mean disabled. The engine strips an entry whose state
+	 *  matches the default, so the two cases have to be told apart the way it tells them apart. */
+	static bool MifEffectivePluginEnabled(const FProjectDescriptor* Project,
+										  const TSharedRef<IPlugin>& Plugin, bool& bOutExplicit)
+	{
+		bOutExplicit = false;
+		if (Project)
+		{
+			for (const FPluginReferenceDescriptor& Ref : Project->Plugins)
+			{
+				if (Ref.Name == Plugin->GetName())
+				{
+					bOutExplicit = true;
+					return Ref.bEnabled;
+				}
+			}
+		}
+		const bool bAllowEngineDefaults = Project ? !Project->bDisableEnginePluginsByDefault : true;
+		return Plugin->IsEnabledByDefault(bAllowEngineDefaults);
+	}
+
+	void H_set_plugin_enabled(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("name"), TEXT("plugin"), TEXT("pluginName"), TEXT("enabled"), TEXT("dryRun"),
+			  TEXT("save") },
+			TEXT("name (aliases: plugin, pluginName) - a discovered plugin name; enabled (REQUIRED, "
+				 "no default); dryRun (default false - report what would change and write nothing, "
+				 "allowed in every write mode); save (default true - persist to the .uproject)"),
+			{ { TEXT("path"), TEXT("this takes a plugin NAME like 'Water', not a path - list_game_feature_plugins enumerates them") },
+			  { TEXT("restart"), TEXT("the bridge cannot restart the editor; the response says a restart is required and you must do it") },
+			  { TEXT("load"), TEXT("enabling does not load a plugin into THIS session - nothing can, short of a restart") } }))
+		{
+			return;
+		}
+
+		const FString Name = JStrAny(In, { TEXT("name"), TEXT("plugin"), TEXT("pluginName") });
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required - a plugin name like 'Water'. "
+						   "list_game_feature_plugins enumerates the discovered plugins."));
+			return;
+		}
+
+		// REQUIRED, NOT DEFAULTED. A boolean that decides enable-versus-disable must never acquire a
+		// value the caller did not write; defaulting it to false would turn a fat-fingered call into
+		// a silent disable.
+		if (!In->HasField(TEXT("enabled")))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("enabled is required and has no default - pass enabled:true or enabled:false "
+					 "for '%s'. Defaulting it would let a call that forgot the parameter disable a "
+					 "plugin silently. NOTHING was changed."), *Name));
+			return;
+		}
+		const bool bWanted = JBool(In, TEXT("enabled"), false);
+		const bool bDryRun = JBool(In, TEXT("dryRun"), false);
+		const bool bSave   = JBool(In, TEXT("save"), true);
+
+		// TRAP 1. Checked here because SetPluginEnabled would append a reference for this name and
+		// return true, leaving a junk entry in the .uproject that nothing would report.
+		TSharedPtr<IPlugin> Found = IPluginManager::Get().FindPlugin(Name);
+		if (!Found.IsValid())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("no plugin named '%s' was discovered, so this was REFUSED rather than passed to "
+					 "the engine: SetPluginEnabled appends a plugin reference for any name it is "
+					 "given and returns true, which would have written '%s' into the .uproject as a "
+					 "reference to nothing. Plugin names are case-sensitive; "
+					 "list_game_feature_plugins enumerates them. NOTHING was changed."),
+				*Name, *Name));
+			return;
+		}
+		const TSharedRef<IPlugin> Plugin = Found.ToSharedRef();
+
+		IProjectManager& PM = IProjectManager::Get();
+		const FProjectDescriptor* Project = PM.GetCurrentProject();
+		if (!Project)
+		{
+			Fail(Out, TEXT("no project is currently loaded, so there is no .uproject to write. "
+						   "NOTHING was changed."));
+			return;
+		}
+
+		bool bExplicitBefore = false;
+		const bool bBefore = MifEffectivePluginEnabled(Project, Plugin, bExplicitBefore);
+		const bool bSessionEnabled = Plugin->IsEnabled();
+
+		Out->SetStringField(TEXT("name"), Plugin->GetName());
+		Out->SetStringField(TEXT("descriptorFile"), Plugin->GetDescriptorFileName());
+		Out->SetBoolField(TEXT("effectiveBefore"), bBefore);
+		Out->SetBoolField(TEXT("hadExplicitEntry"), bExplicitBefore);
+		Out->SetBoolField(TEXT("enabledInThisSession"), bSessionEnabled);
+		Out->SetBoolField(TEXT("wanted"), bWanted);
+		// Reported so a caller - a test suite especially - never has to guess or hardcode it.
+		Out->SetStringField(TEXT("projectFile"), FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()));
+
+		// ABSOLUTE. GetProjectFilePath returns a path relative to the engine's working
+		// directory, and reporting a backup as ../../../../DDS2SDK/Game/... is useless to the
+		// person who will be reading it in a terminal somewhere else entirely.
+		const FString ProjectFile = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
+		FString BeforeText;
+		const bool bReadBefore = FFileHelper::LoadFileToString(BeforeText, *ProjectFile);
+
+		if (bBefore == bWanted)
+		{
+			// Not a failure and not a no-op worth hiding: "already in the state you asked for" is
+			// the answer, and it is distinguishable from "changed it" by `changed`.
+			Out->SetBoolField(TEXT("changed"), false);
+			Out->SetBoolField(TEXT("restartRequired"), bSessionEnabled != bWanted);
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("'%s' is ALREADY %s for the next launch, so nothing was written. %s"),
+				*Plugin->GetName(), bWanted ? TEXT("enabled") : TEXT("disabled"),
+				(bSessionEnabled != bWanted)
+					? TEXT("It is still the other way round in THIS session, which means the "
+						   ".uproject was changed without a restart since - restart to pick it up.")
+					: TEXT("This session agrees, so there is nothing to do at all.")));
+			return;
+		}
+
+		if (bDryRun)
+		{
+			Out->SetBoolField(TEXT("changed"), false);
+			Out->SetBoolField(TEXT("dryRun"), true);
+			Out->SetBoolField(TEXT("wouldChange"), true);
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("DRY RUN - nothing was written. '%s' would go from %s to %s for the next "
+					 "launch. Re-send without dryRun to apply; that needs full write mode."),
+				*Plugin->GetName(), bBefore ? TEXT("enabled") : TEXT("disabled"),
+				bWanted ? TEXT("enabled") : TEXT("disabled")));
+			return;
+		}
+
+		// Same argument as add_gameplay_tag's persistent write: this edits a file that outlives the
+		// session, so it is full-mode only - and dryRun above answers the question in any mode.
+		if (GetWriteMode() != EMifWriteMode::Full)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("changing whether '%s' is enabled REWRITES the .uproject on disk, which "
+					 "outlives this session, and the write mode is '%s'. Two ways forward: pass "
+					 "dryRun:true to see exactly what would change (writes nothing, allowed in "
+					 "every mode), or set the write mode to full. NOTHING was changed."),
+				*Plugin->GetName(), WriteModeName(GetWriteMode())));
+			return;
+		}
+
+		// A BACKUP BEFORE A PROJECT-FILE REWRITE, the same courtesy save_blueprint pays a .uasset.
+		// A wrong plugin edit is recoverable only if the previous text still exists somewhere, and
+		// the person who needs it will be looking at an editor that no longer starts.
+		FString BackupPath;
+		if (bReadBefore && bSave)
+		{
+			BackupPath = ProjectFile + TEXT(".mifbak");
+			// A BYTE COPY, not LoadFileToString/SaveStringToFile. That round trip goes through
+			// FString and its encoding heuristics, and a backup that is a re-encoding rather than a
+			// copy is the wrong thing to hand someone whose editor will not start.
+			if (IFileManager::Get().Copy(*BackupPath, *ProjectFile, true) == COPY_OK)
+			{
+				Out->SetStringField(TEXT("backup"), BackupPath);
+			}
+			else
+			{
+				BackupPath.Reset();
+				Out->SetStringField(TEXT("backupWarning"),
+					TEXT("the .uproject could not be backed up, so this went ahead without one - "
+						 "the write itself is unaffected, but there is no local undo."));
+			}
+		}
+
+		FText FailReason;
+		if (!PM.SetPluginEnabled(Plugin->GetName(), bWanted, FailReason))
+		{
+			Fail(Out, FString::Printf(TEXT("SetPluginEnabled refused: %s"), *FailReason.ToString()));
+			return;
+		}
+
+		// The engine's own recommendation, from the header note on SetPluginEnabled: its return
+		// value says only that the descriptor could be updated, never that anything moved.
+		const bool bDirty = PM.IsCurrentProjectDirty();
+		Out->SetBoolField(TEXT("projectDirtyAfterEdit"), bDirty);
+
+		bool bSaved = false;
+		if (bSave)
+		{
+			FText SaveFail;
+			bSaved = PM.SaveCurrentProjectToDisk(SaveFail);
+			if (!bSaved)
+			{
+				Out->SetBoolField(TEXT("changed"), false);
+				Fail(Out, FString::Printf(
+					TEXT("the descriptor was updated IN MEMORY but saving the .uproject failed: %s. "
+						 "The change is live for this editor's own bookkeeping and will be lost on "
+						 "exit - it is NOT on disk."), *SaveFail.ToString()));
+				return;
+			}
+		}
+		Out->SetBoolField(TEXT("saved"), bSaved);
+
+		// POSTCONDITION, computed the way the engine computes it rather than by looking for the
+		// plugin's name in the file - an entry stripped for matching the default is the correct end
+		// state, and searching for it would report a successful default-restore as a failure.
+		bool bExplicitAfter = false;
+		const bool bAfter = MifEffectivePluginEnabled(PM.GetCurrentProject(), Plugin, bExplicitAfter);
+		Out->SetBoolField(TEXT("effectiveAfter"), bAfter);
+		Out->SetBoolField(TEXT("hasExplicitEntry"), bExplicitAfter);
+		Out->SetBoolField(TEXT("changed"), bAfter != bBefore);
+
+		if (bAfter != bWanted)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the .uproject was written but '%s' is still %s for the next launch, so the "
+					 "edit did NOT take. Read back through the same rule the engine uses, not by "
+					 "searching the file."),
+				*Plugin->GetName(), bAfter ? TEXT("enabled") : TEXT("disabled")));
+			return;
+		}
+
+		// PROOF THE FILE ITSELF MOVED, separate from the in-memory answer above. Without it, a save
+		// that silently wrote nothing would be indistinguishable from a successful one.
+		if (bSave && bReadBefore)
+		{
+			FString AfterText;
+			if (FFileHelper::LoadFileToString(AfterText, *ProjectFile))
+			{
+				Out->SetBoolField(TEXT("projectFileChangedOnDisk"), AfterText != BeforeText);
+			}
+			Out->SetBoolField(TEXT("projectDirtyAfterSave"), PM.IsCurrentProjectDirty());
+		}
+
+		Out->SetBoolField(TEXT("restartRequired"), true);
+		Out->SetStringField(TEXT("note"), FString::Printf(
+			TEXT("'%s' will be %s at the NEXT LAUNCH. Nothing changed in this session and nothing "
+				 "can: enabledInThisSession is still %s, and no plugin can be loaded or unloaded "
+				 "into a running editor. Restart to pick this up. %s"),
+			*Plugin->GetName(), bWanted ? TEXT("ENABLED") : TEXT("DISABLED"),
+			bSessionEnabled ? TEXT("true") : TEXT("false"),
+			bExplicitAfter
+				? TEXT("The .uproject now carries an explicit entry for it.")
+				: TEXT("The .uproject carries NO entry for it, which is correct rather than a "
+					   "failure - the engine strips an entry whose state matches the default.")));
+
+		// SAY THAT THE WHOLE FILE WAS REWRITTEN. Saving reserialises the descriptor from the
+		// engine's in-memory model rather than patching the text, so indentation and key order
+		// become UE's regardless of how the file was formatted before - measured here as 4280 bytes
+		// space-indented in, 3347 tab-indented out. A one-line logical change therefore lands in
+		// version control as a whole-file diff, and the person reviewing that commit should hear it
+		// from the tool rather than from the diff.
+		if (bSaved)
+		{
+			Out->SetStringField(TEXT("formattingNote"),
+				TEXT("saving REWROTE THE WHOLE .uproject - the engine reserialises the descriptor "
+					 "from memory instead of patching the text, so indentation and key order are "
+					 "now UE's own. Expect a whole-file diff in version control for what is a "
+					 "one-line logical change; the .mifbak holds the previous text verbatim."));
 		}
 	}
 

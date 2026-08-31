@@ -5883,7 +5883,64 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Fully cooked-safe, and this is the rare one where cooked is the PRIMARY case. Everything read here is live runtime state on a live component - no MeshDescription, no SourceModel, no FSkeletalMeshModel, nothing editor-only is touched, so there is no crash surface at all. It works identically on a coo...
       Vetter corrected the proposal: Rank stays medium, but for different reasons than given, and the justification must be rewritten — two of its three "unreachable" claims are false and would not survive review. STRIKE: "ActivatableAbilities ... not addressable by property path" (Items is a plain UPROPERTY TArray of a USTRUCT and this bridge's walker handles exactly that shape, including [Member=Value] finds) and "base vs current ....
 
-- [ ] **set_plugin_enabled** (hours)
+- [x] **set_plugin_enabled** (hours)  **DONE 2026-08-31.**
+      H_set_plugin_enabled in MifBridgeProject.cpp, MCP wrapper and extended help in tool_help.json,
+      tools/test_set_plugin_enabled.py. The write half of an `enabled` field that
+      list_game_feature_plugins and describe_game_feature_plugin both already reported and nothing
+      could change.
+
+      IT DOES NOT REMOVE THE HUMAN and says so in every response. A plugin does not load until the
+      editor restarts, the bridge cannot restart the editor, and nothing can load a plugin into a
+      running one - so this turns "tick this checkbox, then restart" into "restart".
+      enabledInThisSession is reported separately from effectiveAfter precisely so the two are never
+      confused. The vetter's ranking note was right and is preserved: real relief, not autonomy.
+
+      TWO TRAPS, BOTH READ OUT OF ProjectManager.cpp RATHER THAN ASSUMED:
+
+      1. SetPluginEnabled ACCEPTS ANY NAME AND RETURNS TRUE. It appends
+         FPluginReferenceDescriptor(PluginName, bEnabled) for a name it does not find, consults
+         FindPlugin only for metadata, and its single `return false` is "no project loaded". A typo
+         therefore does not fail - it writes a reference to nothing into the .uproject and reports
+         success. The name is checked before the engine is given the chance. T9000 asserts the
+         refusal AND that it explains why.
+
+      2. THE OBVIOUS POSTCONDITION IS BACKWARDS, and this is the one the spec did not record. After
+         updating a reference the engine checks whether the resulting state matches the
+         default-enabled set and REMOVES the entry entirely if it does, still marking the project
+         dirty. So "the plugin appears in the .uproject Plugins array" is not the check: for a
+         plugin left at its default, ABSENCE is correct. The effective state is computed the way the
+         engine computes it - explicit entry if present, IPlugin::IsEnabledByDefault otherwise
+         (IPluginManager.h:144; FProjectManager::GetDefaultEnabledPlugins is on the concrete class
+         and unreachable from a plugin). T9003 asserts exactly this: enabling a default-disabled
+         plugin creates an entry, disabling it again removes it - and a "find it in the file"
+         postcondition would read that correct restore as a failure.
+
+      AND THE RETURN VALUE IS NOT EVIDENCE, which the engine says in its own header: "Use
+      IsCurrentProjectDirty() to tell whether the project was actually modified." So the response
+      carries projectDirtyAfterEdit, projectDirtyAfterSave, and a before/after comparison of the
+      .uproject text on disk - a save that silently wrote nothing is distinguishable from one that
+      worked.
+
+      `enabled` is REQUIRED with no default: defaulting a boolean that decides enable-versus-disable
+      would let a call that forgot the parameter silently disable a plugin. dryRun writes nothing,
+      works in every write mode, and reports exactly what would change. The real write is full-mode
+      only on the same argument add_gameplay_tag uses for a persistent tag (it edits a file that
+      outlives the session), and copies the .uproject to .mifbak first - a byte copy via
+      IFileManager::Copy rather than a LoadFileToString/SaveStringToFile round trip, because a
+      backup that is a re-encoding is the wrong thing to hand someone whose editor will not start.
+
+      FOUND BY RUNNING THE WRITE PATH FOR REAL: saving RESERIALISES the whole descriptor from
+      memory rather than patching the text - measured at 4280 bytes space-indented in, 3347
+      tab-indented out. A one-line logical change therefore lands in version control as a
+      whole-file diff, so the response carries a formattingNote saying so before the reviewer meets
+      the diff.
+
+      The suite is the only one here that writes to a project file rather than to scratch assets, so
+      it is arranged around getting it back: a byte copy first, restore in a finally, and the
+      restore VERIFIED by comparing bytes - not delegated to the endpoint, since the round trip is
+      legitimately not byte-identical. It skips with exit 2, naming what went unverified, when no
+      disabled plugin exists to use as a subject.
+
       Enables or disables a plugin in the current .uproject and saves it. list_game_feature_plugins and describe_game_feature_plugin already report `enabled` for every discovered plugin, and nothing can change it - so an agent that discovers a project is missing GameplayAbilities, EnhancedInput or Water must stop and ask a human to click a checkbox.
       API: IProjectManager, public pure-virtual, read in D:/UE532/Engine/Source/Runtime/Projects/Public/Interfaces/IProjectManager.h: static PROJECTS_API IProjectManager& Get() [:81]; virtual bool SetPluginEnabled(const FString& PluginName, bool bEnabled, FText& OutFailReason) [:209]; virtual bool IsCurrentProjectDirty() const [:231]; virtual bool SaveCurrentProjectToDisk(FText& OutFailReason) [:239]. The ex...
       Cooked: Works the same on cooked and uncooked - the .uproject is a text file and nothing about cooked asset data is touched, so there is no crash surface. Two things must be reported rather than hidden: (1) SetPluginEnabled only marks the descriptor, so SaveCurrentProjectToDisk has to be called for it to su...

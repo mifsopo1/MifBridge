@@ -4689,6 +4689,13 @@ def bl_separate_mesh(object: str, mode: str = "loose") -> dict:
 
 
 @mcp.tool()
+def set_plugin_enabled(name: str, enabled: bool, dry_run: bool = False,
+                       save: bool = True) -> dict:
+    "Enable or disable a plugin in the current .uproject and save it - the write half of the `enabled` field list_game_feature_plugins and describe_game_feature_plugin already report. Changes what the NEXT LAUNCH loads and nothing about this session: no plugin can be loaded or unloaded into a running editor, and the response says so. `enabled` is REQUIRED and has no default. dry_run reports exactly what would change and writes nothing, in any write mode; the real write is full-mode only and backs the .uproject up first. Refuses a plugin name it cannot find, because the engine would otherwise write that name into the .uproject as a reference to nothing and report success. See mif_help."
+    return _post("set_plugin_enabled", name=name, enabled=enabled, dryRun=dry_run, save=save)
+
+
+@mcp.tool()
 def bl_boolean_op(target: str, cutter: str, operation: str = "difference",
                   delete_cutter: bool = False, solver: str = None) -> dict:
     "Cut, merge or intersect one Blender mesh with another - operation 'difference' (default), 'union' or 'intersect'. APPLIES the modifier rather than leaving it stacked, and reports before/after vertex and face counts as the evidence. Says changed:false with the likely cause when the boolean legally did nothing. bl_add_modifier can create a BOOLEAN modifier but cannot point it at a cutter, so this is the only route to an actual boolean. The cutter is KEPT unless delete_cutter. See mif_help."
