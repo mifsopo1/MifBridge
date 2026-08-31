@@ -31,11 +31,13 @@ survives is a call that MEANT to work and does not.
 """
 import glob
 import io
+import ast
 import os
 import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+PRIV = os.path.join(os.path.dirname(HERE), "Source", "MifBridge", "Private")
 sys.path.insert(0, HERE)
 import param_reach as PR
 
@@ -159,6 +161,71 @@ def unknown_endpoint_calls(bound):
     return rows
 
 
+
+# --------------------------------------------------------------- calls that CANNOT succeed
+#
+# mifaudit strips `confirm` from every payload - the guard that makes an unattended overnight run
+# safe. So a call through M.call to a confirm-gated endpoint is refused, always, by design. Most of
+# those are deliberate and good: 23 sites probe the refusal, and the stripping is precisely what
+# makes the probe honest. test_node_spawns says so at the call site - "a plain M.call never carries
+# confirm, so this proves the guard itself without touching scratch_confirm at all".
+#
+# What makes one a DEFECT is discarding the answer. audit_roundtrip's cleanup was
+#
+#     M.call("delete_asset", {"path": root})     # confirm is stripped by the harness; best effort
+#
+# accurate, and it means the line never worked. Every run left a scratch blueprint in whatever editor
+# it was pointed at, and nothing said so - a call that could only ever fail, reading as cleanup that
+# succeeded. Found by checking a live session's leftovers, not by any tool.
+#
+# BOTH conditions are needed and neither alone is worth reporting: confirm-gated alone is a false
+# positive 23 times over, and a discarded response alone is usually setup. Together it says "this
+# call cannot succeed and nobody is looking", which is exactly one bug.
+CONFIRM_GATED = re.compile(r'JBool\w*\(In, TEXT\("confirm"\)')
+
+
+def confirm_required_endpoints():
+    """Endpoints whose handler reads confirm AND says it requires it."""
+    out = set()
+    for fn in sorted(os.listdir(PRIV)):
+        if not fn.endswith(".cpp"):
+            continue
+        src = io.open(os.path.join(PRIV, fn), encoding="utf-8", errors="replace").read()
+        for m in re.finditer(r"void H_([a-z0-9_]+)\(", src):
+            nxt = src.find("void H_", m.end())
+            body = src[m.start(): nxt if nxt > 0 else len(src)]
+            if CONFIRM_GATED.search(body) and "requires confirm" in body:
+                out.add(m.group(1))
+    return out
+
+
+def cannot_succeed():
+    """(file, line, endpoint) for M.call to a confirm-gated endpoint whose result is thrown away."""
+    req = confirm_required_endpoints()
+    rows = []
+    for fn in sorted(os.listdir(HERE)):
+        if not fn.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(io.open(os.path.join(HERE, fn),
+                                     encoding="utf-8", errors="replace").read(), filename=fn)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
+                continue
+            f = node.value.func
+            if not (isinstance(f, ast.Attribute) and f.attr == "call"
+                    and isinstance(f.value, ast.Name) and f.value.id == "M"):
+                continue
+            if not node.value.args:
+                continue
+            a0 = node.value.args[0]
+            if isinstance(a0, ast.Constant) and a0.value in req:
+                rows.append((fn, node.lineno, a0.value))
+    return rows
+
+
 def main():
     accepts = PR.endpoint_accepts()
     print("endpoints with a parsed accept-list: %d" % len(accepts))
@@ -193,6 +260,17 @@ def main():
                 rows.append((os.path.basename(f), line, ep, k))
 
     print("suite calls passing a key the endpoint refuses: %d" % len(rows))
+    stuck = cannot_succeed()
+    if stuck:
+        print("")
+        print("CANNOT SUCCEED - a confirm-gated endpoint called through the stripping harness, with")
+        print("the answer thrown away. The call is refused every time and nothing looks:")
+        for sfn, sln, sep in stuck:
+            print("  %s:%d  %s" % (sfn, sln, sep))
+        print("  Route it through scratch_confirm - it refuses non-scratch paths, so the guard is")
+        print("  satisfied rather than bypassed - or check the result and say when it fails.")
+        return 1
+
     if not rows and not ghosts:
         print("")
         print("OK  every suite call names a real endpoint and only keys it accepts")
