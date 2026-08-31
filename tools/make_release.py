@@ -335,7 +335,8 @@ def check_static_audits():
     # than fuzz_endpoints --self-test keeps one home for those cases instead of two.
     failed = []
     for tool, args in (("audit_loop_writes.py", []), ("audit_postconditions.py", []),
-                       ("audit_modals.py", []), ("test_fuzz_detector.py", [])):
+                       ("audit_modals.py", []), ("test_fuzz_detector.py", []),
+                       ("audit_confirm_gates.py", [])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
