@@ -7220,3 +7220,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       for it from `paramsSource: runtime` with `status: params_observed`. This is precisely what
       paramTableCoverage's own completenessNote says - the number is an UPPER BOUND on endpoints that
       accept anything silently, never a count of them - and here the bound is 13 while the count is 0.
+- [x] **fuzz's EMPTY probe could not see a refusal that formats in the missing value** (hours)  **DONE 2026-08-31.**
+      Its BAD_ERROR test is `err in GENERIC_ERRORS or len(err) < 12`, and "behavior tree not found: "
+      is twenty-five characters and not generic, so it passed. EMPTY_INTERP catches the exact tell -
+      a message that interpolated an empty string, so it ends at a colon or carries an empty '' - and
+      nothing else. The broader rule (does the refusal NAME an accepted parameter?) was tried first
+      across all 88 read-only endpoints and rejected: nine flagged, seven of them fine, because STATE
+      refusals legitimately name no parameter and the kr_* endpoints have no parameter metadata.
+
+      Then CONSOLIDATED, because the --self-test it shipped with was a parallel system.
+      test_fuzz_detector.py already existed for exactly this - "the ghost detector's own regression
+      test. Runs offline - no editor, no bridge" - and the cases belong there. 17 PASS -> 24, and
+      make_release gates the SUITE rather than a bespoke flag. EMPTY_INTERP_CASES stays beside the
+      regex so there is one list; two lists drift, two entry points do not.
+
+      Found while verifying the README badge, which is correct in all three numbers: 160 test_*.py
+      files against a claimed 159 suites is the 8+ assertion threshold, and the file below it is
+      test_fuzz_detector.py itself. The off-by-one was the signpost.
