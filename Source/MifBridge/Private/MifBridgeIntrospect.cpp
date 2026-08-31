@@ -1848,7 +1848,25 @@ namespace MifBridge
 		// the neighbouring problem ("the only thing that actually fixes it", :1904), and it is the
 		// call that rebuilds a K2Node's pins from its current member reference - which is precisely
 		// what a retype invalidates.
+		//
+		// AND THEN READ THE PINS BACK, because reconstructing is not the same as succeeding. The
+		// first version of this counted ReconstructNode calls and reported them as if they were the
+		// outcome. Measured against the built DLL on 2026-08-31: nodesReconstructed came back 1 and
+		// the node STILL carried two pins named A - the new object one with no link, and the
+		// original int one still holding the connection.
+		//
+		// That is the engine doing its job, not failing. UE retains a pin whose type no longer fits
+		// but which still has a LINK, as an ORPHANED pin, so a human can see what broke and rewire
+		// it instead of silently losing the connection. ReconstructNode cannot remove it and is not
+		// meant to.
+		//
+		// So the honest thing is to COUNT the survivors rather than claim there are none. Breaking
+		// the link here to force a clean pin list would destroy a connection the caller never asked
+		// to lose, and would do it silently - which is a worse endpoint than one that tells the
+		// truth about what is left.
 		int32 NodesReconstructed = 0;
+		int32 NodesWithOrphanedPin = 0;
+		int32 OrphanedPinsRemaining = 0;
 		{
 			TArray<UK2Node_Variable*> VarNodes;
 			FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_Variable>(Blueprint, VarNodes);
@@ -1858,6 +1876,19 @@ namespace MifBridge
 				if (VarNode->GetVarName() != FName(*Name)) { continue; }
 				VarNode->ReconstructNode();
 				++NodesReconstructed;
+
+				int32 OrphansHere = 0;
+				for (UEdGraphPin* Pin : VarNode->Pins)
+				{
+					// bOrphanedPin is the engine's own flag for exactly this. Counting pins that
+					// merely share the name would also catch a legitimately unchanged one.
+					if (Pin && Pin->bOrphanedPin) { ++OrphansHere; }
+				}
+				if (OrphansHere > 0)
+				{
+					++NodesWithOrphanedPin;
+					OrphanedPinsRemaining += OrphansHere;
+				}
 			}
 			if (NodesReconstructed > 0)
 			{
@@ -1873,8 +1904,30 @@ namespace MifBridge
 		// Reported ALWAYS, not only when nonzero, so a caller can assert on a number rather than
 		// having to notice an absent field - the same rule invalidCount and clearedCount follow.
 		Out->SetNumberField(TEXT("nodesReconstructed"), NodesReconstructed);
-		Out->SetStringField(TEXT("note"),
-			TEXT("every Get/Set node naming this variable was RECONSTRUCTED so its pins match the new type — see nodesReconstructed. Without that a retype leaves the old typed pin in place WITH its link, and a second pin of the same name beside it, and the graph still compiles clean; check the links you care about rather than trusting a clean compile."));
+		// MEASURED, not assumed, and reported ALWAYS so a caller can assert on a number rather than
+		// having to notice an absent field.
+		Out->SetNumberField(TEXT("nodesWithOrphanedPin"), NodesWithOrphanedPin);
+		Out->SetNumberField(TEXT("orphanedPinsRemaining"), OrphanedPinsRemaining);
+		if (OrphanedPinsRemaining > 0)
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("%d node(s) naming this variable were reconstructed, and %d pin(s) on %d of them are ")
+				TEXT("ORPHANED: the old typed pin still exists and STILL HOLDS ITS LINK, because the engine ")
+				TEXT("keeps a mistyped pin that is still connected so the connection is not lost silently. ")
+				TEXT("THE GRAPH STILL COMPILES CLEAN with them there - measured, not assumed - so a clean ")
+				TEXT("compile is NOT evidence the retype was safe. Use get_node to see both pins and "
+					 "disconnect_pin to clear the one you do not want."),
+				NodesReconstructed, OrphanedPinsRemaining, NodesWithOrphanedPin));
+		}
+		else
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("%d node(s) naming this variable were reconstructed and NO orphaned pin remains - ")
+				TEXT("checked by reading each node's pins back, not inferred from the reconstruct ")
+				TEXT("succeeding. A node whose old pin had no link is rebuilt cleanly; one whose pin was ")
+				TEXT("still connected would be reported here instead."),
+				NodesReconstructed));
+		}
 	}
 
 	// --- retarget_variable_node -------------------------------------------------

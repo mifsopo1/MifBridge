@@ -170,18 +170,24 @@ def main():
               r.get("ok") is not False and isinstance(r.get("found"), (int, float)),
               json.dumps(r)[:220])
 
-    # ---------------------------------------------------------------- V9 set_variable_type's stale pin
-    # THE FIX IS COMMITTED AND UNBUILT, and this is the check that says whether a rebuild picked it
-    # up. Reproduced live 2026-08-31 against the 15:37 DLL:
+    # ---------------------------------------------------------------- V9 set_variable_type's orphan
+    # THIS CHECK HAS ALREADY BEEN WRONG ONCE, and the correction is the point of it.
     #
-    #   author int A -> int B, legal. Retype A to an Actor object reference. The getter then has TWO
-    #   pins named A - a new one, category 'object', with NO link, and the ORIGINAL 'int' one still
-    #   holding the connection. The compiler follows the new pin, sees nothing wired, and reports
-    #   0 errors. The broken half is invisible to it rather than absent.
+    # The first version demanded ONE pin named A after a retype, on the theory that a second pin of
+    # the same name was a leak. Measured against the built DLL: nodesReconstructed came back 1 and
+    # the node still carried two pins named A - a new object one with no link, and the original int
+    # one still holding the connection. The fix "worked" and the postcondition was false.
     #
-    # PASS CONDITION IS ONE PIN, of the new type. Two pins named A is the defect; one pin of
-    # category 'int' would mean the retype did not take at all.
-    print("\n=== V9: set_variable_type leaves ONE pin, of the new type ===")
+    # It is false because the premise was wrong. UE deliberately RETAINS a pin whose type no longer
+    # fits but which is still CONNECTED, flagged bOrphanedPin, so a human can see what broke and
+    # rewire it rather than losing the link silently. ReconstructNode cannot remove it and should
+    # not. Demanding one pin was demanding the engine throw the caller's connection away.
+    #
+    # So what is checked now is HONESTY, not pin count: does the endpoint MEASURE what is left and
+    # say so, or does it assert a clean result it never read back? The first version of the fix did
+    # the latter - it counted ReconstructNode calls and reported them as the outcome, which is the
+    # exact defect this whole file exists to catch, committed inside the fix for it.
+    print("\n=== V9: set_variable_type reports the orphaned pin it leaves behind ===")
     st = int(time.time() % 100000)
     vpath = "/Game/_MifVerify/BP_V%d" % st
     vbid = M.call("create_blueprint", {"path": vpath, "parentClass": "Actor"}).get("blueprintId")
@@ -203,23 +209,34 @@ def main():
               json.dumps(wired)[:200])
         rt = M.call("set_variable_type", {"blueprintId": vbid, "name": "A", "type": "Actor"})
         check("V9 the retype succeeds", rt.get("ok") is True, json.dumps(rt)[:200])
-        # The field the fix adds. Absent means the running DLL predates it - which is the whole
-        # question this check exists to answer, so it is reported rather than asserted blindly.
-        check("V9 it REPORTS nodesReconstructed - absent means this DLL predates the fix",
+        check("V9 it reports nodesReconstructed - absent means this DLL predates the fix",
               rt.get("nodesReconstructed") is not None,
-              "nodesReconstructed=%r - rebuild has not picked the fix up"
-              % rt.get("nodesReconstructed"))
+              "nodesReconstructed=%r" % rt.get("nodesReconstructed"))
+        # THE FIELDS THAT MAKE IT HONEST. Both are emitted always, so this asserts on numbers
+        # rather than on a field being present.
+        check("V9 and it MEASURED what survived, rather than claiming a clean result",
+              rt.get("orphanedPinsRemaining") is not None
+              and rt.get("nodesWithOrphanedPin") is not None,
+              "orphanedPinsRemaining=%r nodesWithOrphanedPin=%r"
+              % (rt.get("orphanedPinsRemaining"), rt.get("nodesWithOrphanedPin")))
         node = (M.call("get_node", {"graphId": vg, "nodeGuid": vgg}).get("node") or {})
         named_a = [x for x in (node.get("pins") or []) if x.get("name") == "A"]
-        check("V9 the getter has exactly ONE pin named A, not a stale one beside the new one",
-              len(named_a) == 1,
-              "%d pins named A: %s" % (len(named_a),
-                                       [((x.get("type") or {}).get("category"),
-                                         len(x.get("linkedTo") or [])) for x in named_a]))
-        if len(named_a) == 1:
-            check("V9 and it is the NEW type, so the retype really took",
-                  (named_a[0].get("type") or {}).get("category") == "object",
-                  (named_a[0].get("type") or {}).get("category"))
+        # THE AGREEMENT CHECK. A count the graph does not back up is the same failure in a new
+        # field, so the report is compared against get_node rather than trusted.
+        check("V9 the reported orphan count AGREES with what the graph actually holds",
+              (rt.get("orphanedPinsRemaining") or 0) == max(0, len(named_a) - 1),
+              "reported %r orphan(s); get_node shows %d pin(s) named A: %s"
+              % (rt.get("orphanedPinsRemaining"), len(named_a),
+                 [((x.get("type") or {}).get("category"), len(x.get("linkedTo") or []))
+                  for x in named_a]))
+        if (rt.get("orphanedPinsRemaining") or 0) > 0:
+            check("V9 and the note warns that a clean compile is NOT evidence the retype was safe",
+                  "NOT evidence" in (rt.get("note") or "")
+                  or "compiles clean" in (rt.get("note") or ""),
+                  (rt.get("note") or "")[:220])
+            after = M.call("compile", {"blueprintId": vbid})
+            check("V9 and the compile really is clean, which is why the note has to say so",
+                  after.get("numErrors") == 0, json.dumps(after)[:200])
         SC.confirm_call("delete_asset", {"path": vpath, "confirm": True})
 
     # -------------------------------------------------------------- V10 the dispatcher orphan note
