@@ -329,12 +329,13 @@ def check_static_audits():
     check that is meant to be non-zero teaches people to pass --force, and a gate people route
     around protects nothing.
     """
-    # (tool, argv). fuzz_endpoints is here for its --self-test ONLY: that runs seven fixed strings
-    # through the EMPTY_INTERP classifier and touches no bridge, so it belongs with the static
-    # checks. The sweep itself is 446 endpoints times five probes and is never run from here.
+    # (tool, argv). test_fuzz_detector is a SUITE, and the only one here, because it is the only
+    # one that runs entirely offline - "no editor, no bridge", per its own docstring. It regression-
+    # tests the fuzzer's detectors, EMPTY_INTERP among them since 2026-08-31. Gating the suite rather
+    # than fuzz_endpoints --self-test keeps one home for those cases instead of two.
     failed = []
     for tool, args in (("audit_loop_writes.py", []), ("audit_postconditions.py", []),
-                       ("audit_modals.py", []), ("fuzz_endpoints.py", ["--self-test"])):
+                       ("audit_modals.py", []), ("test_fuzz_detector.py", [])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
@@ -343,12 +344,12 @@ def check_static_audits():
         if r.returncode != 0:
             lines = [l.strip() for l in (r.stdout or "").splitlines() if l.strip()]
             head = next((l for l in lines if l.startswith(("NEW", "SELF-CHECK", "MISSING", "WRONG"))
-                         or "misclassified" in l),
+                         or "misclassified" in l or "FAILED:" in l),
                         lines[-1] if lines else "no output")
             failed.append("%s -> %s" % (tool, head[:110]))
     if not failed:
         return True, ("audit_loop_writes, audit_postconditions and audit_modals at baseline; "
-                      "fuzz's EMPTY_INTERP classifier passes its seven cases")
+                      "test_fuzz_detector's offline detector regressions pass")
     return False, ("a ratcheted source audit reports something NEW:\n    %s\n"
                    "  Read it and either fix it or accept it with that tool's --update-baseline,\n"
                    "  saying why in the commit. Do not package past it."

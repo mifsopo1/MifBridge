@@ -79,6 +79,17 @@ def main():
     check("a TRUE existence field is not an absence claim",
           absent({"ok": True, "exists": True}) is False, "exists:true must not suppress")
 
+    print("\n=== EMPTY_INTERP: a refusal that formats in the MISSING value ===")
+    # The cases live in fuzz_endpoints beside the regex, so there is ONE list rather than two that
+    # drift. Added 2026-08-31 with the classifier: describe_behavior_tree answered {} with
+    # "behavior tree not found: " - twenty-five characters, not generic, and it tells a caller their
+    # PATH was wrong when they never gave one. Long enough to pass the len() < 12 test and specific
+    # enough to pass the GENERIC_ERRORS test, so nothing caught it.
+    for text, want in fz.EMPTY_INTERP_CASES:
+        got = bool(fz.EMPTY_INTERP.search(text))
+        check(("flag:  " if want else "allow: ") + text[:64], got == want,
+              "got=%s want=%s" % (got, want))
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for x in FAIL:
