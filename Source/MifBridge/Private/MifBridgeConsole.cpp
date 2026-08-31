@@ -27,7 +27,7 @@
 #endif
 #include "MifBridgeLog.h"
 
-#include "Containers/UnrealString.h" // FStringOutputDevice (UnrealString.h:2387 - it IS an FString)
+#include "Containers/UnrealString.h" // FStringOutputDevice (UnrealString.h 5.3 :2387 - it IS an FString)
 #include "Editor.h"                 // GEditor
 #include "Engine/Engine.h"          // GEngine->Exec
 #include "Engine/World.h"

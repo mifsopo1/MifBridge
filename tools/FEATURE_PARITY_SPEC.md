@@ -5477,7 +5477,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       A test bug fixed on the way, worth the note: list_nodes takes a graphId, not a
       blueprintId - and its own refusal said exactly that. Check the suite before the handler.
       Makes the persistent level's (and a sublevel's) Level Blueprint addressable as a UBlueprint, which instantly lights up the ENTIRE existing blueprint surface on it: list_graphs, list_nodes, find_nodes, add_function_call, add_variable, connect_pins, splice_into_exec, add_custom_event, compile, apply_graph_patch, the recipes. Level-wide logic (BeginPlay wiring, trigger-volume handling, sequence kick-off, sublevel streaming logic) is the single most common thing a level-building agent needs and today there is no path to it at all.
-      API: ULevel::GetLevelScriptBlueprint(bool bDontCreate=false) — ENGINE_API, D:/UE532/Engine/Source/Runtime/Engine/Classes/Engine/Level.h:1242 (same signature at UE_5.7/.../Level.h:1398). Returns ULevelScriptBlueprint, which IS-A UBlueprint (D:/UE532/Engine/Source/Runtime/Engine/Classes/Engine/LevelScriptBlueprint.h:24), so every existing handler works on it unchanged. Reach the ULevel via UWorld::Persis...
+      API: ULevel::GetLevelScriptBlueprint(bool bDontCreate=false) — ENGINE_API, D:/UE532/Engine/Source/Runtime/Engine/Classes/Engine/Level.h:1242 (same signature at UE_5.7/.../Level.h 5.7 :1398). Returns ULevelScriptBlueprint, which IS-A UBlueprint (D:/UE532/Engine/Source/Runtime/Engine/Classes/Engine/LevelScriptBlueprint.h:24), so every existing handler works on it unchanged. Reach the ULevel via UWorld::Persis...
       Cooked: Does not work cooked. ULevel::LevelScriptBlueprint is WITH_EDITORONLY_DATA and cooking strips it (only the compiled ALevelScriptActor class survives), exactly like a cooked UBlueprint. The cooked path must call GetLevelScriptBlueprint(bDontCreate=true), get null, and refuse with a named reason in th...
       Vetter corrected the proposal: Premise "a Level Blueprint ... is not loadable that way" is false: StaticLoadObject resolves SUBOBJECT_DELIMITER paths via ResolveName (UObjectGlobals.cpp:1122-1133, 1311/1328), and ULevelScriptBlueprint IS-A UBlueprint, so ResolveBlueprint already accepts "/Game/Maps/M_Town.M_Town:PersistentLevel.M_Town" on an uncooked map that has an LSB — the whole graph surface is already reachable that way, a...
 
@@ -7890,3 +7890,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a bindingCount and nothing returns the bindings themselves. The refusal text now says
       so honestly instead of naming a reader that does not exist, but the read-with-no-write
       asymmetry this project treats as a gap is still there, inverted.
+
+- [ ] **19 citations in docs/audit/ resolve only on 5.3 and do not say so** (minutes)
+      Found by tools/audit_citations.py, new 2026-08-31. They are dated working records of 5.3-era
+      investigation - J_dds2_project.md, Q_gap_rootcauses.md, I_diagnostics.md and friends - so the
+      line numbers were right when written and are right for anyone reading them as history. Left
+      alone deliberately: qualifying them means editing an archive to say what its own date already
+      says. The five citations in LIVE source and in this file were qualified, because those are
+      read as current instructions rather than as a record.
+
+      Worth revisiting only if someone starts treating docs/audit/ as reference rather than history.

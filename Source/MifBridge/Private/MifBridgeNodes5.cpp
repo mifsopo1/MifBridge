@@ -663,7 +663,7 @@ namespace MifBridge
 				}
 				else
 				{
-					// SanitizeFloat is %f-based (String.cpp:1172) so it never emits an exponent, which
+					// SanitizeFloat is %f-based (String.cpp 5.3 :1172) so it never emits an exponent, which
 					// UE's float parser cannot read (PropertyNumeric.cpp:129 accepts only [+-.0-9] and
 					// a trailing f).
 					Raw = FString::SanitizeFloat(D, 1);

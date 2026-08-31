@@ -233,7 +233,7 @@ namespace MifBridge
 
 		// ULandscapeLayerInfoObject::LayerName is UE_DEPRECATED(5.7, "Property will be made private.
 		// Use public Getters/Setter instead.") - GetLayerName() just returns the same field
-		// (LandscapeLayerInfoObject.h:140), so this is forward-compat only, not a behaviour change
+		// (LandscapeLayerInfoObject.h 5.7 :140), so this is forward-compat only, not a behaviour change
 		// like FStaticMeshBatchRelevance::LODIndex was. No getter exists on 5.3 (confirmed by grep of
 		// D:/UE532's LandscapeLayerInfoObject.h - the field there is plain, no deprecation).
 		FName MifLayerInfoName(const ULandscapeLayerInfoObject* Info)

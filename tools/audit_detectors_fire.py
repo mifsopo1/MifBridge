@@ -261,6 +261,32 @@ def plant_absence_claim(text):
     return text.replace(needle, probe + "\n " + needle, 1)
 
 
+
+# ASSEMBLED AT RUNTIME, never written as one literal. audit_citations scans tools/*.py, so a
+# complete `File.cpp:NNNNN` string sitting in THIS file is a dead citation in the corpus - and the
+# harness reported already-red for exactly that reason on its first run, which was the tool being
+# right about its own probe. Splitting it keeps the plant invisible to the checker until planted.
+_PROBE_FILE = "MifBridgeCommon" + ".cpp"
+_PROBE_LINE = "9" * 5
+DEAD_CITATION = _PROBE_FILE + ":" + _PROBE_LINE
+
+
+def plant_dead_citation(text):
+    """A citation to a line that exists on no engine and in no repo file.
+
+    Five nines rather than a plausible-but-wrong number on purpose. The check under test is "does
+    this line exist anywhere", and a number that could accidentally be valid on some installed
+    engine would make the plant's outcome depend on which engines this machine happens to have.
+    Five digits, not six: the CITE regex is \d{2,5}, so 999999 matched nothing at all and the first
+    run of this plant reported the tool ASLEEP when the plant had never landed.
+    """
+    needle = "\n## "
+    if needle not in text:
+        return None
+    return text.replace(needle,
+                        "\n\nSee " + DEAD_CITATION + " for the probe.\n" + needle, 1)
+
+
 # tool -> (target file, plant function, marker, gate)
 #
 # gate=True  - proof is a NON-ZERO exit AND the marker in the output. Both, because several of these
@@ -293,6 +319,8 @@ PLANTS = {
                                    plant_bad_advice, "save_asset"),
     "audit_absence_claims.py": (os.path.join(HERE, "mcp-server", "tool_help.json"),
                                 plant_absence_claim, "save_package"),
+    "audit_citations.py": (os.path.join(HERE, "FEATURE_PARITY_SPEC.md"), plant_dead_citation,
+                           DEAD_CITATION),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.

@@ -1722,7 +1722,7 @@ namespace MifBridge
 #if MIF_ENGINE_AT_LEAST(5, 6)
 	#define MIF_COLLECTIONS() (FCollectionManagerModule::GetModule().Get().GetProjectCollectionContainer().Get())
 	// AND THE ERROR CHANNEL CHANGED SHAPE WITH IT. ICollectionContainer has no GetLastError() -
-	// that is ICollectionManager's (ICollectionManager.h:426). The container takes a TRAILING
+	// that is ICollectionManager's (ICollectionManager.h 5.7 :426). The container takes a TRAILING
 	// FText* out-param instead: CreateCollection at ICollectionContainer.h:129-131,
 	// DestroyCollection at :170, AddToCollection at :185-187. So the error has to be threaded INTO
 	// the call, not asked for afterwards.
