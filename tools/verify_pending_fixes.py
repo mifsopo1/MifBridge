@@ -222,6 +222,47 @@ def main():
                   (named_a[0].get("type") or {}).get("category"))
         SC.confirm_call("delete_asset", {"path": vpath, "confirm": True})
 
+    # -------------------------------------------------------------- V10 the dispatcher orphan note
+    # The old note promised orphaned nodes "will fail the next compile". Measured 2026-08-31: they
+    # do not. The node survives, get_node still resolves it, and the next compile reports 0 errors.
+    # A caller who ran the compile that note points at would see it clean and conclude the removal
+    # was safe. The note now says the compile will NOT catch it; this checks the rebuilt DLL carries
+    # that wording AND re-measures the behaviour it describes, because a corrected note that has
+    # gone stale again would be the same defect wearing better prose.
+    print("\n=== V10: remove_event_dispatcher tells the truth about orphaned nodes ===")
+    st10 = int(time.time() % 100000)
+    dpath = "/Game/_MifVerify/BP_D%d" % st10
+    dbid = M.call("create_blueprint", {"path": dpath, "parentClass": "Actor"}).get("blueprintId")
+    if not dbid:
+        skip("V10", "could not create a scratch blueprint")
+    else:
+        dg = next((x.get("graphId") for x in
+                   (M.call("list_graphs", {"blueprintId": dbid}).get("graphs") or [])
+                   if "EventGraph" in (x.get("name") or "")), None)
+        M.call("add_event_dispatcher", {"blueprintId": dbid, "name": "MifDisp"})
+        cd = M.call("add_call_dispatcher", {"graphId": dg, "dispatcher": "MifDisp"})
+        cdg = cd.get("nodeGuid") or (cd.get("node") or {}).get("nodeGuid")
+        check("V10 (setup) a call node for the dispatcher", bool(cdg), json.dumps(cd)[:200])
+        rmd = SC.confirm_call("remove_event_dispatcher",
+                              {"blueprintId": dbid, "name": "MifDisp", "confirm": True})
+        check("V10 (setup) the dispatcher is removed and one node orphaned",
+              rmd.get("ok") is True and rmd.get("orphanedNodeCount") == 1,
+              json.dumps(rmd)[:220])
+        note = rmd.get("note") or ""
+        check("V10 the note no longer promises a compile failure",
+              "will fail the next compile" not in note, note[:200])
+        check("V10 and says outright that the compile will NOT catch it",
+              "WILL NOT" in note.upper(), note[:200])
+        # RE-MEASURED, not trusted. The note is only right while the behaviour it describes holds.
+        survived = M.call("get_node", {"graphId": dg, "nodeGuid": cdg})
+        check("V10 the orphaned node really does survive the removal",
+              survived.get("ok") is True, json.dumps(survived)[:200])
+        after = M.call("compile", {"blueprintId": dbid})
+        check("V10 and the compile really is clean, which is why the old note was wrong",
+              after.get("numErrors") == 0 and not (after.get("messages") or []),
+              json.dumps(after)[:220])
+        SC.confirm_call("delete_asset", {"path": dpath, "confirm": True})
+
     print("")
     print("=" * 72)
     print("PASS %d  FAIL %d  SKIP %d" % (len(PASS), len(FAIL), len(SKIP)))

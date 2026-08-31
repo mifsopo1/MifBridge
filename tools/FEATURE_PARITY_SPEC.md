@@ -9415,8 +9415,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       node may be dropped rather than kept, and the claim may hold for other node kinds - but the
       note is currently telling callers to expect a failure that did not arrive.
 
-      Both are left OPEN rather than closed or declined, because "I could not reproduce it" is not
-      the same as "it is wrong", and the difference matters for a note a caller acts on.
+      SETTLED 2026-08-31, AND THE NOTE IS WRONG - FIXED IN SOURCE, needs a build. The item's own
+      open question was whether the orphaned node is KEPT or dropped, since a dropped node would
+      make the clean compile unsurprising. It is KEPT: after removing the dispatcher, get_node still
+      resolves the call node and it is still titled "Call MifDisp". The very next compile reports 0
+      errors, 0 warnings, no messages.
+
+      So a caller who does exactly what the note says - run the compile, look for the failure - sees
+      a clean result and concludes the removal was safe, with a dangling node sitting in the graph.
+      That is worse than no note at all.
+
+      IT IS THE SAME ROOT CAUSE AS THE OTHER TWO, which is what makes it worth stating once: an
+      orphaned dispatcher call, an orphaned call to a REMOVED FUNCTION (survives, titled 'Mif
+      Doomed', compiles clean) and set_variable_type's stale pin all leave a node that has ALREADY
+      CACHED what it refers to, so there is nothing left for the compiler to fail to resolve. The
+      one dangling reference that does fail a compile is a component-bound event whose component was
+      removed - that one the compiler must resolve itself. Three "compiles clean" results that
+      looked like three separate puzzles are one rule.
+
+      The note now says the compile will NOT catch it, and V10 in verify_pending_fixes checks the
+      rebuilt DLL carries that wording AND re-measures the behaviour, since a corrected note that
+      has gone stale again is the same defect in better prose.
+
+      Both were left OPEN rather than closed or declined, because "I could not reproduce it" is not
+      the same as "it is wrong", and the difference matters for a note a caller acts on. Running
+      them properly is what turned both into results.
 
 - [ ] **set_variable_type left a STALE PIN with its link intact, and said it had reconstructed**
       - FIXED IN SOURCE, needs a build (hours)

@@ -966,9 +966,27 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("orphanedNodeCount"), OrphanCount);
 		if (OrphanCount > 0)
 		{
+			// MEASURED, NOT ASSUMED, 2026-08-31. This note used to promise "they will fail the next
+			// compile", and they do not. On a scratch Actor blueprint: add_event_dispatcher, place a
+			// call node, remove the dispatcher with confirm. The node SURVIVES - get_node still
+			// resolves it, still titled "Call MifDisp" - and the very next compile reports 0 errors,
+			// 0 warnings and no messages at all.
+			//
+			// It is the same shape as set_variable_type's stale pin and as an orphaned call to a
+			// REMOVED FUNCTION, which also survives and also compiles clean: the node has already
+			// cached what it refers to, so there is nothing left for the compiler to fail to
+			// resolve. The one dangling reference that DOES fail a compile is a component-bound
+			// event whose component was removed, because that one the compiler must resolve itself
+			// (test_uncovered_reads3 T840b).
+			//
+			// A note promising a failure that never arrives is worse than no note: a caller runs the
+			// compile it points at, sees it clean, and concludes the removal was safe. So this says
+			// what is true and names the only tool that actually finds them.
 			Out->SetStringField(TEXT("note"), FString::Printf(
-				TEXT("%d node(s) referenced this dispatcher and are now orphaned - they will fail the next compile. ")
-				TEXT("find_nodes locates them."), OrphanCount));
+				TEXT("%d node(s) referenced this dispatcher and are now orphaned. THE COMPILE WILL NOT ")
+				TEXT("CATCH THIS - measured: the nodes survive and the next compile reports 0 errors, ")
+				TEXT("because they have already cached what they referred to. Do not treat a clean ")
+				TEXT("compile as proof the removal was clean. find_nodes locates them."), OrphanCount));
 		}
 	}
 
