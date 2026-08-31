@@ -210,7 +210,8 @@
    "test_pins.py"
   ],
   "add_override_event": [
-   "test_graph_patch.py"
+   "test_graph_patch.py",
+   "test_uncovered_reads6.py"
   ],
   "add_parent_call": [
    "test_node_spawns.py"

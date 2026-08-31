@@ -661,7 +661,15 @@ namespace MifBridge
 									  const TSharedRef<FJsonObject>& Out)
 	{
 		const FString Name = JStrAny(In, { TEXT("component"), TEXT("componentName"), TEXT("name") });
-		UActorComponent* Comp = Name.IsEmpty() ? nullptr : MifFindComponentOn(Actor, Name);
+		// An absent name is not a component that does not exist. Reported "has no component
+		// named ''" before, which reads as a wrong name rather than a missing argument.
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("component is required (aliases: componentName, name) - list_components ")
+					  TEXT("{actorPath} names every one on the actor. NOTHING was changed."));
+			return;
+		}
+		UActorComponent* Comp = MifFindComponentOn(Actor, Name);
 		if (!Comp)
 		{
 			Fail(Out, FString::Printf(

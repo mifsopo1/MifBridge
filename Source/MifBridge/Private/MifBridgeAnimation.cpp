@@ -246,7 +246,19 @@ namespace MifBridge
 			return;
 		}
 		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath") });
-		UObject* Asset = Path.IsEmpty() ? nullptr : LoadAssetLenient(Path);
+		// A MISSING parameter is not a FAILED LOOKUP. This was
+		//     UObject* Asset = Path.IsEmpty() ? nullptr : LoadAssetLenient(Path);
+		// so the code already KNEW the path could be empty, and then spent that knowledge on
+		// "behavior tree not found: " with nothing after the colon - which tells a caller their
+		// path was wrong when they never gave one. Found 2026-08-31 by calling every read-only
+		// endpoint with {} and asking whether the refusal names an accepted parameter.
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required (alias: assetPath) - the BehaviorTree asset, e.g. ")
+					  TEXT("/Game/AI/BT_Guard. Find one with find_assets {class:\"BehaviorTree\"}."));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
 		if (!Asset)
 		{
 			Fail(Out, FString::Printf(TEXT("behavior tree not found: %s"), *Path));
@@ -302,7 +314,15 @@ namespace MifBridge
 			return;
 		}
 		const FString Path = JStrAny(In, { TEXT("path"), TEXT("assetPath") });
-		UObject* Asset = Path.IsEmpty() ? nullptr : LoadAssetLenient(Path);
+		// Same distinction as describe_behavior_tree above: an absent path is not a bad path.
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required (alias: assetPath) - the BlackboardData asset, e.g. ")
+					  TEXT("/Game/AI/BB_Guard. describe_behavior_tree reports which blackboard a tree ")
+					  TEXT("uses, or find one with find_assets {class:\"BlackboardData\"}."));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
 		if (!Asset)
 		{
 			Fail(Out, FString::Printf(TEXT("blackboard not found: %s"), *Path));
