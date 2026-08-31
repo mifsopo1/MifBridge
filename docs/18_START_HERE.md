@@ -115,11 +115,18 @@ python tools/audit_advice_gaps.py       # advice naming an operation that does n
 python tools/audit_value_discovery.py   # a parameter demanding a value nothing enumerates
 python tools/coverage_gaps.py           # endpoints named in no suite
 python tools/audit_suite_reach.py       # how much of each suite actually RUNS
+python tools/why_not.py <term>          # has this already been decided AGAINST?
 python tools/night_heartbeat.py         # is another session working?
 python tools/mifwatch.py                # did any session die mid-call?
 ```
 
-The last one is the newest and the least obvious: a suite reporting PASS is not a suite that tested
+`why_not.py` is the one to reach for BEFORE filing a gap. 824 parameters are refused across this
+surface, each with the reason attached, and "reading the endpoint list says a capability is absent,
+reading the handler says whether it is absent ON PURPOSE" is a distinction that has already cost one
+wasted investigation. `set_niagara_user_parameter` refuses `add` and explains why; the endpoint list
+cannot tell you that.
+
+`audit_suite_reach` is the newest and the least obvious: a suite reporting PASS is not a suite that tested
 what it contains. `test_safety_gate` ran 5 of its 38 assertions here for months, because everything
 below its fail-safe bail-out skips whenever the write gate is off - which is the mode this editor
 runs in.
