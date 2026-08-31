@@ -6815,7 +6815,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       it was ordering, not a new guard.
 
 
-- [ ] **create_asset carries 11 asset types whose validating creators were never built** (hours)
+- [ ] **11 asset types can only be created UNCONFIGURED - create_asset takes no settings** (hours)
+      **THE SHORT VERSION, since this entry was revised three times and the history is below:**
+      create_asset produces a VALID but DEFAULT asset for these types - an empty Niagara system, an
+      Input Action with the default value type. Nothing is malformed and nothing crashes. What is
+      missing is any way to SPECIFY the configuration, because create_asset accepts only `path` and
+      `class`. Feature completeness, not correctness. Not urgent.
+
       Filed 2026-08-31 from a full pass over docs/audit/04_OPEN_QUESTIONS.md section 1.1. That audit
       recommended "dedicated creators OWN their types, create_asset covers the residue". Measured
       against the live registry: create_asset exists and 3 of the 14 dedicated creators do.
