@@ -8319,7 +8319,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **10 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **8 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8484,7 +8484,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       earlier entry deliberately stayed OPEN on the first of those. Three failed probes were not an
       answer; the formula plus a measurement for each term is.
 
-      Real gaps: 10. Out of reach with a written reason: 9. Read by a suite: 45.
+      removedIndex closed by TESTING and skippedCookedOrigin by reading, and both corrected a guess
+      that would have been wrong.
+
+      skippedCookedOrigin looked like the no-save rule. It is not: the field is emitted on EVERY
+      response including the dryRun path, so it needs no save at all. The real reason is that
+      save_dirty_packages is in mifaudit's DENY list and cannot be called from a suite with any
+      arguments - checked by calling it and reading "denied by harness". A harness boundary, not an
+      endpoint limitation, and unlike confirm there is no sanctioned bypass.
+
+      removedIndex looked unreachable too - a scratch PhysicsAsset created without its factory has
+      ZERO bodies, measured. The route that works is duplication: a real PhysicsAsset copies into
+      scratch WITH its 22 bodies and the editor survives it, which also adds PhysicsAsset to the
+      list of classes proven safe to duplicate.
+
+      AND THE TEST FOUND THE MORE INTERESTING GAP. T2905 already asserted that the response's
+      renumberNote SAYS "shifted down" - the note's presence, not its truth - and it removes the LAST
+      body, where renumbering is vacuously true because nothing follows the hole. A handler that
+      renumbered nothing would pass it. T2906 rebuilds to three bodies, removes the MIDDLE one, and
+      asserts what the note actually claims: removedIndex equals the index that body held, the
+      follower really moved down by one, and nothing below the hole moved. 36 -> 43.
+
+      Real gaps: 8. Out of reach with a written reason: 10. Read by a suite: 46.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote

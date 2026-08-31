@@ -148,6 +148,15 @@ UNREACHABLE = {
                        "are cooked, so the only remaining target is real game content, which the "
                        "standing rules forbid dirtying. In an UNCOOKED project the duplication route "
                        "opens and this becomes ordinary work",
+    # NOT the no-save rule, which was the obvious guess and was wrong. The field is emitted on
+    # EVERY response including the dryRun path, so it would be reachable without saving anything -
+    # but save_dirty_packages is in mifaudit's DENY list, so no suite can call it at all. Checked by
+    # calling it: "denied by harness". The deny is deliberate and is not scratch_confirm's kind of
+    # gate, so there is no sanctioned bypass.
+    "skippedCookedOrigin": "save_dirty_packages is in mifaudit's DENY list - not callable from a "
+                           "suite at all, with or without dryRun. The field itself is emitted on "
+                           "every response, so this is a harness boundary rather than an endpoint "
+                           "limitation",
     "duplicatePinsRemoved": "belt-and-braces for a root cause that is already FIXED, and the source "
                             "says so: 'the root cause is fixed in PlaceAndInit ... but this makes "
                             "create_function self-healing if any other terminator ever behaves the "

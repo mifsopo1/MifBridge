@@ -232,6 +232,53 @@ def main():
               M.call("describe_physics_asset", {"assetPath": PA}).get("bodyCount") == 1,
               M.call("describe_physics_asset", {"assetPath": PA}).get("bodyCount"))
 
+        # ---------------------------------------------------------------- T2906 renumbering, MEASURED
+        print("\n=== T2906: the renumbering the note promises, measured rather than quoted ===")
+        # T2905 asserts the note SAYS "shifted down"; nothing asserted that anything shifted. Worse,
+        # it removes the LAST body, where renumbering is vacuously true - no body follows the removed
+        # one, so a handler that renumbered nothing would pass. And removedIndex, which is the field
+        # telling a caller WHERE the hole was, is read by nothing at all.
+        #
+        # So: rebuild to three bodies and remove the MIDDLE one. Now the claim has something to be
+        # wrong about.
+        for bone in ("spine", "spine_02"):
+            M.raw_post("add_physics_body", {"assetPath": PA, "boneName": bone})
+        before = M.call("describe_physics_asset", {"assetPath": PA}).get("bodies") or []
+        check("T2906 (setup) three bodies to work with", len(before) >= 3,
+              [b.get("boneName") for b in before])
+        if len(before) >= 3:
+            victim = before[1]
+            follower = before[2]
+            rm = M.raw_post("remove_physics_body", {"assetPath": PA,
+                                                    "boneName": victim.get("boneName"),
+                                                    "confirm": True})
+            check("T2906 the middle body is removed", rm.get("ok") is True, json.dumps(rm)[:220])
+            # THE FIELD NOBODY READ. It names the hole, and a caller holding indices needs it to know
+            # which of theirs are still good - everything below it, nothing above.
+            check("T2906 removedIndex names the index the body actually held",
+                  rm.get("removedIndex") == victim.get("index"),
+                  "removedIndex=%r, describe_physics_asset had it at %r"
+                  % (rm.get("removedIndex"), victim.get("index")))
+            check("T2906 and bodyCountBefore/bodyCount bracket the removal",
+                  (rm.get("bodyCountBefore") or 0) == (rm.get("bodyCount") or 0) + 1,
+                  "before=%r after=%r" % (rm.get("bodyCountBefore"), rm.get("bodyCount")))
+            # THE CLAIM ITSELF. "every body after the removed one has shifted down by one" - so the
+            # body that was at victim+1 must now be at victim's old index, under the same bone name.
+            after = M.call("describe_physics_asset", {"assetPath": PA}).get("bodies") or []
+            moved = [b for b in after if b.get("boneName") == follower.get("boneName")]
+            check("T2906 the follower survived the removal", len(moved) == 1,
+                  [b.get("boneName") for b in after])
+            if moved:
+                check("T2906 and it really SHIFTED DOWN by one, which is what the note promises",
+                      moved[0].get("index") == follower.get("index") - 1,
+                      "%s was at %r and is now at %r" % (follower.get("boneName"),
+                                                         follower.get("index"),
+                                                         moved[0].get("index")))
+            check("T2906 and nothing below the hole moved",
+                  all(b.get("index") == before[i].get("index")
+                      for i, b in enumerate(after[:victim.get("index")])),
+                  [(b.get("boneName"), b.get("index")) for b in after[:3]])
+
         gone = M.raw_post("remove_physics_body", {"assetPath": PA, "boneName": "nosuchbone",
                                                   "confirm": True})
         check("T2905 an unknown bone is refused and the real ones listed",
