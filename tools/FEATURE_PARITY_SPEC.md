@@ -9451,6 +9451,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the same as "it is wrong", and the difference matters for a note a caller acts on. Running
       them properly is what turned both into results.
 
+- [~] **detector 28: suites that assert only ok:true on a mutating call** - MEASURED, NOT A GAP
+      Hypothesised 2026-08-31 and dropped the same hour, on evidence, before any tool was written.
+      The idea: audit_postconditions asks whether the HANDLER reads back, and nothing asks whether
+      the SUITE does. Applying this repo's first house rule to its own suites looked overdue.
+
+      The measurement said 80 of 212 mutating endpoints a suite calls have their response read only
+      for ok/error - or not read at all. That number is an UPPER BOUND and it is mostly noise,
+      which three samples settled: add_struct_member is followed by list_struct_members ("the new
+      member is really there afterwards, read back from the asset"), add_enum_value by
+      list_enum_values, and the node-spawn family by T330's node_exists(graph, guid). The suites
+      verify through a SEPARATE read call, which a per-response field scan cannot see - and which is
+      the correct pattern, stated in test_pins.py's own header: "every assertion here is made from
+      get_node's own account rather than from what the mutating call said about itself".
+
+      So a tool built on "which fields are read off the response" would have reported 80 findings
+      against correct suites. That is the same shape as detector 27's first run - 39 findings, all
+      false - and the cheap prevention was three greps before writing a line of it.
+
+      Recorded rather than left silent so the next person does not re-derive the 80 and believe it.
+      A refined version - a mutating call with no read-back of ANY kind in its block - would need to
+      follow control flow to be worth anything, and the samples suggest it would find close to zero.
+
 - [ ] **three more notes promise the compile will catch something, and none is measured** (hours)
       Filed 2026-08-31 by sweeping for the pattern after fixing ONE instance of it, which is the
       rule this repo keeps relearning: remove_event_dispatcher's note promised orphaned nodes "will
