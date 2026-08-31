@@ -4,6 +4,39 @@ Everything here is a trap someone actually hit. Read this before spending a prob
 
 ---
 
+## Spawning a graph node: the OUTER and the ORDER, not the class
+
+Two node families were audited on 2026-08-31 for whether they were safe to spawn generically. Both
+came back safe, and both had the same real constraint - which is not the one either question asked:
+
+- **`UK2Node_MathExpression`** (Composite-derived). `UK2Node_Composite::PostPlacedNewNode` builds its
+  inner graph with `CreateNewGraph(this, ..., GetGraph()->Schema)` then `check(BoundGraph)`. If the
+  node is not ALREADY in a graph when that runs, `GetGraph()` is null and the editor dies on a check.
+- **`UAnimStateConduitNode` / `UAnimStateAliasNode`**. `FAnimStateNodeNameValidator` does a
+  `CastChecked` on the node's OUTER (AnimStateNodeBase.cpp:27) - so the node must be CREATED into the
+  state machine's graph, not created loose and added afterwards.
+
+Neither is a "which classes are unsafe" question. Both are **where the node comes into existence and
+in what order its lifecycle hooks fire**, and both fail as a PROCESS TERMINATION rather than an error
+return - so a wrong guess does not produce a bad response, it produces no editor.
+
+`PlaceAndInit` (MifBridgeCommon.cpp) already gets this right and is the reason generic spawn is safe
+today:
+
+```cpp
+Graph->AddNode(Node, /*bFromUI*/ false, /*bSelectNewNode*/ false);   // in the graph FIRST
+Node->PostPlacedNewNode();                                            // hooks SECOND
+```
+
+with `NewObject<UK2Node>(Graph, NodeClass)` giving the correct outer at construction.
+
+**So the check for a new node family is not "is it on a denylist".** There is no denylist, and one
+would guard the wrong thing. It is: does this class's `PostPlacedNewNode`, `AllocateDefaultPins` or
+name validator dereference `GetGraph()` or `GetOuter()`? If so, `PlaceAndInit`'s ordering already
+satisfies it - and any future spawn path that reverses those two lines breaks every one of them at
+once, silently, until something crashes.
+
+
 ## Ask whether the data is UPROPERTY before asking whether the class is exported
 
 Three audit questions in one evening (2026-08-31) were phrased as export-macro problems and none of
