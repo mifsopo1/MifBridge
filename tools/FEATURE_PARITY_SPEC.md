@@ -7628,3 +7628,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       NOT VERIFIED LIVE - the SDK editor exited cleanly at 09:24 (a cook, then LogExit) and the
       bridge is down. The change is a rename to an endpoint that provably exists in MIF_BIND and in
       describe_endpoint; the suites should be re-run when the editor is back.
+- [x] **the MCP layer checked for dead knobs and orphaned help - both clean** (hours)  **DONE 2026-08-31.**
+      Three parameter-contract tools already exist (param_reach, mcp_sends_unknown,
+      audit_suite_payloads) and none of them asks whether an MCP tool's own SIGNATURE parameter ever
+      reaches the wire. A user who sets such a knob gets silence, which is the bug class fuzz's
+      docstring calls the most damaging in this codebase.
+
+      494 of 494 @mcp.tool functions parsed, ZERO with a signature parameter unreferenced in its
+      body. tool_help.json: 382 entries, none orphaned - every key is a real tool.
+
+      MY FIRST PARSE SAID 493 AND WAS WRONG, which is the part worth recording. The regex wanted
+      `def` immediately after `@mcp.tool()`, and several tools put COMMENT lines between the two -
+      set_spline_points among them, whose comment records that bare arrays instead of {x,y,z} once
+      returned ok:true/pointCount:0 having DESTROYED the existing route. So the first clean result
+      was clean over 493 of 494 functions, with the missing one unchecked. It matches the README
+      badge exactly now, and a count that agrees with an independently-maintained number is worth
+      more than a count that merely looks plausible.
+
+      112 tools have no tool_help entry, and that is BY DESIGN rather than a gap: the sidecar holds
+      the full text only for tools whose descriptions were long enough to be worth extracting from
+      every turn's context - 289,944 characters at 450 tools, per the note above _TOOL_HELP_PATH -
+      and mif_help's own docstring says "pass no argument to list every tool that HAS extended help".
