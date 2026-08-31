@@ -338,6 +338,23 @@ def plant_write_only_family(text):
                         + "\n\t\t\tMIF_BIND(remove_mif_probe_zz);", 1)
 
 
+
+def plant_prose_reader(text):
+    """Make a driven tool read prose again - the state audit_blocking was in this morning.
+
+    audit_blocking matched blocker names against the RAW line, so a name inside a TEXT(...) that
+    documents why a blocker is NOT used counted as one. Reverting it to `probe = line` recreates
+    exactly that, and audit_prose_dependence's string pass must name it.
+
+    Planted into a tools/ file rather than Source/, so it runs while an editor is open - and this is
+    the only detector whose subject IS the other tools, which is why its plant lives in one of them.
+    """
+    needle = "            probe = probe_lines[i] if i < len(probe_lines) else line"
+    if needle not in text:
+        return None
+    return text.replace(needle, "            probe = line", 1)
+
+
 # tool -> (target file, plant function, marker, gate)
 #
 # gate=True  - proof is a NON-ZERO exit AND the marker in the output. Both, because several of these
@@ -381,6 +398,8 @@ PLANTS = {
     # is a judgement call and a tool that failed the build over one would be switched off.
     "audit_family_asymmetry.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"),
                                   plant_write_only_family, "add_mif_probe_zz", False),
+    "audit_prose_dependence.py": (os.path.join(HERE, "audit_blocking.py"), plant_prose_reader,
+                                  "audit_blocking"),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.
