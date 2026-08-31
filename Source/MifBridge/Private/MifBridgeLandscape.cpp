@@ -420,11 +420,44 @@ namespace MifBridge
 		//
 		// Toggle rather than set, because that is the only mutator offered - hence the guard: calling
 		// it unconditionally would ENABLE edit layers on a landscape that already had them off.
+		//
+		// 5.6+ CANNOT DO THIS AT ALL, and the old "exists in both trees so no guard is needed" note
+		// above was a PRESENCE check that missed it. On 5.7 the pair is:
+		//
+		//     bool ALandscapeProxy::CanHaveLayersContent() { return true; }   // a CONSTANT
+		//     void ALandscape::ToggleCanHaveLayersContent() { }               // EMPTY
+		//
+		// The guard passes, the toggle does nothing, and the landscape keeps its edit layers. 5.7
+		// deprecated non-edit-layer landscapes outright - there is no such landscape to make. So
+		// this stops pretending on 5.6+ and the response reports what the landscape actually has,
+		// rather than a caller discovering it later when their direct writes vanish.
+#if !MIF_ENGINE_AT_LEAST(5, 6)
 		if (Landscape->CanHaveLayersContent())
 		{
 			Landscape->ToggleCanHaveLayersContent();
 		}
+#endif
 		Landscape->SetLandscapeGuid(FGuid::NewGuid());
+
+		// WHAT THE LANDSCAPE ACTUALLY HAS, not what was attempted. Reported unconditionally so the
+		// answer is the same shape on every engine and a caller can just read it.
+		const TArray<FString> MadeEditLayers = EditLayerNames(Landscape);
+		{
+			TArray<TSharedPtr<FJsonValue>> ELJson;
+			for (const FString& N : MadeEditLayers) { ELJson.Add(MakeShared<FJsonValueString>(N)); }
+			Out->SetArrayField(TEXT("editLayers"), ELJson);
+			if (MadeEditLayers.Num() > 0)
+			{
+				Out->SetStringField(TEXT("editLayersNote"),
+					TEXT("this landscape HAS sculpt edit layers and they could NOT be turned off - "
+						 "UE 5.6 deprecated non-edit-layer landscapes and ToggleCanHaveLayersContent "
+						 "is an empty stub there, so there is no such landscape to create. Endpoints "
+						 "that write the MERGED heightmap directly (sculpt_landscape, "
+						 "import_landscape_heightmap) may have their writes discarded by the next "
+						 "edit-layer composite - they return editLayerWarning when that applies. "
+						 "apply_spline_to_landscape writes THROUGH a layer and is unaffected."));
+			}
+		}
 
 		const FString MaterialPath = JStrAny(In, { TEXT("material"), TEXT("landscapeMaterial") });
 		if (!MaterialPath.IsEmpty())
@@ -1207,7 +1240,8 @@ namespace MifBridge
 	//    GetEditLayerConst returns null whenever the layer is not found, which on a landscape with
 	//    NO edit layers is always. So on 5.7 EditorApplySpline returns early on every non-layered
 	//    landscape - logging an engine Error and returning void, so the caller sees nothing. And
-	//    create_landscape in this very file deliberately toggles bCanHaveLayersContent OFF, which
+	//    create_landscape in this very file toggles bCanHaveLayersContent OFF ON 5.3-5.5 ONLY (on
+	//    5.6+ that toggle is an empty deprecated stub and the landscape keeps its layers), which
 	//    means every landscape MifBridge makes would hit it.
 	//
 	//    There is no bypass: LandscapeSplineRaster.h is a Private header in both trees, so

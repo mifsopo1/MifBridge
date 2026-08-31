@@ -98,6 +98,16 @@ def main():
     # and every round-trip below would fail confusingly; better to say why here.
     chosen = next((r for r in (M.call("landscape_info", {}).get("landscapes") or [])
                    if r.get("actorPath") == target), {})
+    # A SKIP, not a failure, when the ENGINE cannot provide the fixture. On UE 5.6+ there is no
+    # such thing as a non-edit-layer landscape - create_landscape says so in editLayersNote - so
+    # these endpoints have nothing they can safely write to and that is an engine fact, not a
+    # regression. Failing here would report a broken bridge on every 5.6+ project.
+    if chosen.get("editLayers"):
+        print("SKIPPED - every landscape available has sculpt EDIT LAYERS, and these endpoints")
+        print("  write the MERGED heightmap, which the next composite can discard. On UE 5.6+")
+        print("  non-edit-layer landscapes no longer exist at all, so there is no fixture to")
+        print("  build. Nothing was verified. (%s)" % json.dumps(chosen.get("editLayers"))[:120])
+        return 0
     check("T7999 (setup) the landscape under test has NO sculpt edit layers, which is the only "
           "kind these endpoints can write to without the composite discarding it",
           not chosen.get("editLayers"), json.dumps(chosen.get("editLayers"))[:200])

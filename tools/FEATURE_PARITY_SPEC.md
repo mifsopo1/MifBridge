@@ -6590,7 +6590,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       leaves behind is inherited by up to 156 others.
 
 
-- [ ] **create_landscape's "edit layers OFF" cannot hold on 5.7, and nothing has measured it** (hours)
+- [x] **create_landscape's "edit layers OFF" cannot hold on 5.7, and nothing has measured it** (hours)
+      DONE 2026-08-31 - and it did NOT need the 5.7 editor after all. The same technique that
+      caught HasLayersContent answered it: read the bodies.
+
+          void ALandscape::ToggleCanHaveLayersContent()  {  }               // EMPTY on 5.7
+          bool ALandscapeProxy::CanHaveLayersContent()   { return true; }   // CONSTANT
+
+      So on 5.6+ the guard passes, the toggle does nothing, and the landscape keeps its edit
+      layers. create_landscape has been claiming something it cannot do. It no longer calls the
+      pair at all there (#if !MIF_ENGINE_AT_LEAST(5,6)) and its response now reports editLayers
+      plus a note saying they could NOT be turned off and why - what it MADE, not what it tried.
+
+      test_landscape_heightmap SKIPS with that reason instead of failing when no non-layered
+      landscape can be obtained. On 5.6+ that is an engine fact, not a broken bridge, and
+      failing would report a regression on every 5.6+ project.
+
+      WHAT REMAINS UNMEASURED, stated so nobody thinks this closed it: whether a merged-heightmap
+      write is actually discarded on 5.6+. That IS runtime and does need a 5.7 editor. The
+      guard warns rather than refuses there for exactly that reason.
+
+      The taxonomy is now in docs/02: deleted / deprecated-but-EMPTY / deprecated-but-CONSTANT,
+      and why a PRESENCE check catches none of the last two.
       Filed 2026-08-31 from deprecation warnings in the 5.7 probe. create_landscape calls
       ALandscapeProxy::CanHaveLayersContent and ALandscape::ToggleCanHaveLayersContent, both
       UE_DEPRECATED(5.7), the second saying "Use ConvertNonEditLayerLandscape to convert non-edit

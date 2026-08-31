@@ -4,6 +4,57 @@ Everything here is a trap someone actually hit. Read this before spending a prob
 
 ---
 
+## A deprecated engine call can be EMPTY, or a CONSTANT, and neither says so
+
+Both were found in the same four lines of landscape code on 2026-08-31, by building against 5.7
+rather than reading headers.
+
+```cpp
+// UE 5.7
+bool ALandscape::HasLayersContent()            { return true; }   // a CONSTANT
+bool ALandscapeProxy::CanHaveLayersContent()   { return true; }   // a CONSTANT
+void ALandscape::ToggleCanHaveLayersContent()  {  }               // EMPTY
+void ALandscape::UpdateCachedHasLayersContent(bool) {  }          // EMPTY
+```
+
+All four compile. All four are `UE_DEPRECATED`. **The deprecation text tells you the call is going
+away. It never tells you the answer changed.** That is only in the body.
+
+The three shapes, worst last:
+
+| shape | symptom | example |
+|---|---|---|
+| deleted | compile error, you fix it | - |
+| deprecated-but-EMPTY | the thing silently does not happen | `ForEachActorDesc`, `ToggleCanHaveLayersContent` |
+| deprecated-but-CONSTANT | confident, wrong behaviour | `HasLayersContent` returning `true` |
+
+Empty is survivable - "nothing happened" tends to surface. A constant is worse, because code branches
+on it and does the opposite of what it should with total confidence. A guard reading
+`HasLayersContent()` on 5.7 refuses **every** landscape and looks like it is working.
+
+**What is not enough.** A PRESENCE check. The comment in `create_landscape` read:
+
+> The getter/toggle pair exists in BOTH trees, so no version guard is needed here
+
+Both symbols were there, same names, same signatures, in both engines. One returns a constant and
+the other does nothing. This project's own `make_engine_probe.py` docstring already says presence is
+not enough - *"reading finds symbols that were DELETED, it reliably misses symbols that CHANGED
+SHAPE"* - and this is a third case it does not cover: symbols that changed neither name nor shape,
+only behaviour.
+
+**What to do.**
+
+1. When a `UE_DEPRECATED` warning names a function you branch on, **open the body in the newer
+   engine**. It takes ten seconds and it is the only thing that catches this.
+2. Prefer a predicate you can compute yourself. `HasEditLayers()` reads the edit-layer stack -
+   `GetEditLayersConst().Num() > 0` - which is a real answer on every engine, where
+   `HasLayersContent()` is a real answer on exactly one.
+3. Do not "fix" a constant by hard-coding the same conclusion. `HasLayersContent()` being `true` on
+   5.7 means every landscape has edit layers; it does NOT establish that a merged write is discarded
+   there, and refusing on that inference would have disabled two endpoints across an engine version.
+   Warn where you have not measured.
+
+
 ## 1. Parameter names
 
 ### Node identity — all spellings accepted
