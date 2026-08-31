@@ -172,6 +172,47 @@ def plant_modal(text):
     return text[:m.start() + 1] + probe + text[m.start() + 1:]
 
 
+
+def plant_blocker(text):
+    """An unbounded wait on the game thread - audit_modals' companion failure."""
+    m = re.search(r"\n(\t*)void\s+H_[A-Za-z0-9_]+\s*\(\s*const\s+TSharedRef<FJsonObject>&\s*In",
+                  text)
+    if not m:
+        return None
+    t = m.group(1)
+    probe = (t + "void H_mif_probe_block_zz(const TSharedRef<FJsonObject>& In, "
+                 "const TSharedRef<FJsonObject>& Out)\n"
+             + t + "{\n"
+             + t + "\tFPlatformProcess::Sleep(30.0f);\n"
+             + t + "}\n")
+    return text[:m.start() + 1] + probe + text[m.start() + 1:]
+
+
+def plant_dead_param(text):
+    """A name ON the accepted list that nothing reads - the blind spot in RejectUnknownParams.
+
+    The guard refuses names it does not know, which is why this is the worse half: an accepted name
+    passes by definition, so the call succeeds, reports ok, and does nothing with what was sent.
+    """
+    needle = 'RejectUnknownParams(In, Out, { TEXT("partitioned") },'
+    if needle not in text:
+        return None
+    return text.replace(
+        needle, 'RejectUnknownParams(In, Out, { TEXT("partitioned"), TEXT("probeDead_zz") },', 1)
+
+
+def plant_undefined_name(text):
+    """A name a function loads that is bound nowhere - the PORT/BRIDGE_PORT typo shape.
+
+    py_compile cannot see this; a NameError is a runtime failure, and the function that carried the
+    real one only ran when the bridge was already down. It killed a 288-run sweep at run 90.
+    """
+    needle = "def main():\n"
+    if needle not in text:
+        return None
+    return text.replace(needle, needle + "    _ = MIF_PROBE_ZZ_UNDEFINED\n", 1)
+
+
 # tool -> (target file, plant function, marker that must appear in the tool's output)
 PLANTS = {
     "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind, "mif_probe_zz"),
@@ -184,6 +225,12 @@ PLANTS = {
     "audit_suite_payloads.py": (os.path.join(HERE, "test_layers.py"), plant_refused_key,
                                 "probeKey_zz"),
     "audit_modals.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_modal, "UNGUARDED"),
+    "audit_blocking.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_blocker,
+                          "FPlatformProcess::Sleep"),
+    "audit_dead_params.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_dead_param,
+                             "probeDead_zz"),
+    "audit_undefined_names.py": (os.path.join(HERE, "why_not.py"), plant_undefined_name,
+                                 "MIF_PROBE_ZZ_UNDEFINED"),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.
@@ -191,8 +238,46 @@ PLANTS = {
                                 "is only reached once main() has already returned 0"),
 }
 
+# Detectors that drive the RUNNING editor. A planted defect in a source file cannot prove one of
+# these, because what they examine is the live registry and the responses that come back - so with
+# the editor down they are not merely unplanted, they are unprovable HERE. Reported as their own
+# category, because "no plant written yet" and "cannot be plant-tested at all" are different facts
+# and collapsing them into one NOT PROVEN list loses the one that tells you what to do next.
+LIVE = {
+    "audit_absence_claims.py",     # checks docs against the live endpoint registry
+    "audit_describe_drift.py",     # compares describe_endpoint output against the handlers
+    "audit_read_purity.py",        # calls each read endpoint and looks for a dirtied package
+    "audit_roundtrip.py",          # writes then reads back through the bridge
+}
+
 # Extra argv some tools need to report everything rather than only new-against-baseline findings.
 ARGS = {"audit_vacuous_checks.py": ["--all"]}
+
+
+
+def editor_is_running(port=8791, timeout=0.4):
+    """Is an editor holding this project open right now?
+
+    WHY THIS GUARD EXISTS. Every plant that targets Source/ writes a deliberately broken file and
+    restores it about a second later. A running editor does not re-read .cpp at runtime, so that is
+    normally invisible to it - but Live Coding compiles ON DEMAND, and a person pressing
+    Ctrl+Alt+F11 inside that window would compile the plant. The window is short, the consequence is
+    someone else's editor, and "short window" is not a safety argument. So the source plants simply
+    do not run while an editor is up.
+
+    Checked by opening the bridge port rather than by listing processes: the port is what proves an
+    editor with THIS plugin loaded, and process listing has already been unreliable here - a
+    UnrealEditor process was visible earlier today whose path and ports this shell could not read.
+    """
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    try:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+    except OSError:
+        return False
+    finally:
+        s.close()
 
 
 def source_digest():
@@ -263,20 +348,36 @@ def prove(tool):
 def main():
     listing = "--list" in sys.argv
     covered = [t for t in DETECTORS if t in PLANTS]
-    uncovered = [t for t in DETECTORS if t not in PLANTS]
+    live = [t for t in DETECTORS if t not in PLANTS and t in LIVE]
+    uncovered = [t for t in DETECTORS if t not in PLANTS and t not in LIVE]
 
-    print("%d detector(s) in tools/; %d have a plant, %d do NOT"
-          % (len(DETECTORS), len(covered), len(uncovered)))
+    print("%d detector(s) in tools/; %d have a plant, %d need a running editor, %d have neither"
+          % (len(DETECTORS), len(covered), len(live), len(uncovered)))
     if listing:
         for t in covered:
             print("  plant   %s" % t)
+        for t in live:
+            print("  LIVE    %s" % t)
         for t in uncovered:
             print("  NONE    %s" % t)
         return 0
 
+    busy = editor_is_running()
+    if busy:
+        print("")
+        print("An editor is answering on 127.0.0.1:8791. Plants that write to Source/ are SKIPPED -")
+        print("they restore in about a second, but Live Coding compiles on demand and nobody should")
+        print("risk compiling a planted defect into somebody's open editor. Close it, or read the")
+        print("python-only results below and run the rest later.")
+        print("")
+
     before = source_digest()
-    asleep, notproven = [], []
+    asleep, notproven, skipped = [], [], []
     for tool in covered:
+        if busy and PLANTS[tool][0].startswith(os.path.join(ROOT, "Source")):
+            skipped.append(tool)
+            print("  %-26s %-12s %s" % (tool, "skipped", "editor is running - plants into Source/"))
+            continue
         status, detail = prove(tool)
         print("  %-26s %-12s %s" % (tool, status, detail))
         if status == "ASLEEP":
@@ -292,6 +393,17 @@ def main():
         return 2
 
     print("Source/ is byte-identical to before this run.")
+    if skipped:
+        print("")
+        print("SKIPPED - an editor was running, so these were not attempted:")
+        for t in skipped:
+            print("  %s" % t)
+    if live:
+        print("")
+        print("NOT PROVABLE HERE - these drive the running editor, so a planted source defect says")
+        print("nothing about them. They need a bridge and a suite run, not a plant:")
+        for t in live:
+            print("  %s" % t)
     if uncovered:
         print("")
         print("NOT PROVEN - no plant is defined for these, so their green means nothing here:")
@@ -311,7 +423,9 @@ def main():
         for t in notproven:
             print("  %s" % t)
         return 1
-    return 0
+    # exit 2, not 0: a run that skipped most of its plants is not a pass, and a caller that only
+    # looks at the exit code must not read "editor was open" as "everything is proven".
+    return 2 if skipped else 0
 
 
 if __name__ == "__main__":

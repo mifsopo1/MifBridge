@@ -7741,12 +7741,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       among them, which is why it has been able to sit at exit 1. Adding it means first reading the
       9 above - gating a tool that is already red just blocks releases.
 
-- [ ] **17 of 25 audit tools have never been proven to fire** (day)
+- [ ] **10 of 25 audit tools have no plant, and 4 more cannot be plant-tested at all** (day)
       tools/audit_detectors_fire.py plants a defect each tool claims to catch and requires it to go
       red AND name the marker. 8 are proven: audit_loop_writes, audit_modals, audit_postconditions,
       audit_promise_flags, audit_suite_payloads, audit_vacuous_checks, mcp_static_check and
       parity_check. The other 17 have no plant, and the tool LISTS them as NOT PROVEN rather than
       omitting them, because a silently missing entry is the same bug it exists to catch.
+
+      Standing at 2026-08-31 evening: 9 PROVEN (parity_check, audit_promise_flags, mcp_static_check,
+      audit_vacuous_checks, audit_loop_writes, audit_postconditions, audit_modals,
+      audit_suite_payloads, audit_undefined_names); 2 WRITTEN BUT NOT YET EXERCISED (audit_blocking,
+      audit_dead_params - Andre opened the editor before they ran, and the guard below skipped them);
+      4 NOT PROVABLE HERE; 10 with no plant.
+
+      THE HARNESS REFUSES TO PLANT WHILE AN EDITOR IS UP. Source plants write a deliberately broken
+      file and restore it about a second later, which a running editor never notices - it does not
+      re-read .cpp at runtime - but Live Coding compiles ON DEMAND, and somebody pressing
+      Ctrl+Alt+F11 inside that window would compile the plant into their own session. A short window
+      is not a safety argument. It checks by opening the bridge port rather than listing processes,
+      because process listing has already proved unreliable here, and it exits 2 rather than 0 so a
+      skipped run cannot be read as a pass. It fired correctly on its first run, minutes after being
+      written.
 
       THE RELEASE GATE IS NOW COVERED. make_release.check_static_audits runs six tools, and five of
       them - audit_loop_writes, audit_postconditions, audit_modals, audit_promise_flags,

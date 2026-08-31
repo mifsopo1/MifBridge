@@ -170,9 +170,16 @@ and on 2026-08-31 a check in `mcp_static_check` printed OK for hours without eve
 reported success throughout.
 
 The harness restores every planted file byte-for-byte and hashes the CONTENT of `Source/` before and
-after, refusing to report anything if the tree moved. 8 of 25 detectors are proven today; the rest
+after, refusing to report anything if the tree moved. 9 of 25 detectors are proven today; the rest
 are listed as NOT PROVEN, which is deliberate - an entry that was quietly absent would repeat the
-same bug one level up.
+same bug one level up. Four of them are separated out as NOT PROVABLE HERE: they drive the running
+editor, so a planted source defect says nothing about them. "No plant written yet" and "cannot be
+plant-tested at all" are different facts, and only one of them tells you what to do next.
+
+**It will not plant while an editor is up.** A source plant restores in about a second and a running
+editor never re-reads .cpp - but Live Coding compiles on demand, and nobody should risk compiling a
+planted defect into an open session. It exits 2, not 0, so a skipped run cannot be mistaken for a
+clean one.
 
 **The release gate is covered.** Five of the six tools `make_release.check_static_audits` runs are
 proven to go red; the sixth, `test_fuzz_detector`, is itself a detector test. A release can no longer
