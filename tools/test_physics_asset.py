@@ -280,9 +280,19 @@ def main():
                       "%s was at %r and is now at %r" % (follower.get("boneName"),
                                                          follower.get("index"),
                                                          moved[0].get("index")))
+            # GUARD THE COLLECTION FIRST. all([]) is True, so if the victim ever sat at index 0
+            # this slice is empty and the check below passes without examining anything - the exact
+            # shape T2905 was rewritten to stop doing. victim is before[1] on purpose, so there
+            # SHOULD be one body beneath the hole; asserting it is what makes the next line mean
+            # something rather than assuming it.
+            below = after[:victim.get("index") or 0]
+            check("T2906 (guard) there IS a body below the hole, so the next check is not vacuous",
+                  len(below) > 0,
+                  "victim index=%r, so nothing sits below it and 'nothing moved' would be trivially "
+                  "true" % victim.get("index"))
             check("T2906 and nothing below the hole moved",
-                  all(b.get("index") == before[i].get("index")
-                      for i, b in enumerate(after[:victim.get("index")])),
+                  len(below) > 0 and all(b.get("index") == before[i].get("index")
+                                         for i, b in enumerate(below)),
                   [(b.get("boneName"), b.get("index")) for b in after[:3]])
 
         gone = M.raw_post("remove_physics_body", {"assetPath": PA, "boneName": "nosuchbone",
