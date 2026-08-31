@@ -8116,7 +8116,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       test_blender_mesh M900/M901, 86 -> 90 assertions, green on all four installed Blenders.
 
-- [ ] **two live detectors produced their FIRST real result - and that is not the same as proven**
+- [ ] **three live detectors produced their FIRST real result - and that is not the same as proven**
       (hours)
       Run 2026-08-31 against the editor Andre was working in, both read-only:
 
@@ -8127,6 +8127,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                It is honest about the other 10 - describe_ability_system,
                                describe_pcg_graph and friends needed an argument the sweep could not
                                guess - and says outright that they are NOT evidence of purity.
+        audit_value_discovery  439 endpoints checked, 30 parameter roles that name an existing engine
+                               object, 15 mapped readers verified live. No parameter demands a value
+                               the caller cannot discover. This is the generalisation of a real bug:
+                               apply_spline_to_landscape once refused with "Pass editLayer naming one
+                               that exists" while NO endpoint reported a landscape's edit layer names,
+                               so the caller was told to name something unenumerable. It blocked a
+                               whole suite until landscape_info grew editLayers[].
 
       THE DISTINCTION THAT MATTERS. These are real results and they are not what
       audit_detectors_fire means by proven. A clean run says the corpus is clean IF the detector
