@@ -6379,11 +6379,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Worth doing before anyone runs the UE suites against Curfew and reads the failures as bridge
       defects.
 
-- [ ] **nothing reports a landscape's sculpt EDIT LAYER names, and two endpoints demand one** (hours)
+- [x] **nothing reports a landscape's sculpt EDIT LAYER names, and two endpoints demand one** (hours)
+      DONE 2026-08-31 - landscape_info reports editLayers[] (name, guid, visible, locked) plus an
+      editLayersNote saying which list it is, because `layers` beside it is the unrelated
+      paint/weightmap one. apply_spline_to_landscape's refusal now names the field to read.
+      test_spline_landscape feeds the reader's output straight into the writer, which is the
+      proof the names are right: a name the suite invented could match by luck, one read from
+      landscape_info either resolves in the engine or the deformation refuses. S101/S102 went
+      from UNEXERCISED to exercised, and finding three further bugs behind them.
       Found 2026-08-31 writing test_spline_landscape. apply_spline_to_landscape refuses on a
       landscape with edit layers - correctly, because EditorApplySpline would log an error and
       change nothing - and its refusal says "Pass editLayer naming one that exists".
-      import_landscape_heightmap has the same requirement. NOTHING can say what exists.
+      NOTHING can say what exists. (It is the only endpoint taking editLayer - I first wrote
+      that import_landscape_heightmap shared the requirement, which is wrong; it writes
+      heights but has no such parameter. Checked, not assumed from the resemblance.)
 
       landscape_info reports `layers`, but those are FLandscapeInfoLayerSettings - PAINT layers, the
       weightmap ones - and `materialLayers` is the material's. The sculpt edit-layer stack
@@ -6400,6 +6409,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       and report themselves UNEXERCISED. The fix is small - add the edit layer names (and which is
       active) to landscape_info, which already resolves the landscape and reports everything else
       about it.
+
+
+- [ ] **compile the 5.6+ landscape branch against a real 5.7 - it has never been through a compiler** (minutes)
+      Filed 2026-08-31. ReadEditLayers() has a MIF_ENGINE_AT_LEAST(5,6) arm using GetEditLayersConst()
+      and ULandscapeEditLayerBase, which the 5.3 build here does not compile at all. Header-verified
+      against both installed engines - the signatures, the header's presence, and the WITH_EDITOR
+      context all match code already shipping unguarded in the same file - but that is exactly the
+      reasoning make_engine_probe.py exists to replace, and its docstring says so.
+
+      The probe could not run: it needs Live Coding free and the Curfew editor (a UE 5.7 session this
+      session must not close) holds LiveCodingConsole.exe. It reported INCONCLUSIVE rather than
+      claiming a pass, and engine_probe_result.json now records that against the current source
+      instead of a stale succeeded:true from yesterday's commit. Re-run when Curfew is closed:
+      python tools/make_engine_probe.py --engine "C:/Program Files/Epic Games/UE_5.7" --out <dir> --assoc 5.7 --build --force
 
 
 ### Refuted, recorded so they are not re-proposed

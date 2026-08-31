@@ -37,6 +37,9 @@
 #include "LandscapeInfo.h"
 #include "LandscapeEdit.h"
 #include "LandscapeLayerInfoObject.h"
+#if MIF_ENGINE_AT_LEAST(5, 6)
+#include "LandscapeEditLayer.h"                 // ULandscapeEditLayerBase - 5.6+ only
+#endif
 #include "LandscapeComponent.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInterface.h"
@@ -71,6 +74,87 @@ namespace MifBridge
 		// EDITOR world and NOT the PIE-preferring ActiveWorld(): landscapes are authored in the editor
 		// world only, and PIE inherits a copy that is thrown away on stop, so editing that copy would
 		// silently discard the work.
+
+		// The sculpt EDIT LAYER names, in stack order. ONE reader for the two places that need
+		// them - landscape_info reports them, and import_landscape_heightmap names them in its
+		// refusal - so the engine-version split lives in exactly one place.
+		//
+		// 5.6 moved the per-layer data onto ULandscapeEditLayerBase and deprecated the index API.
+		// The deprecated spellings still work on 5.7 (GetLayerCount really does return
+		// LandscapeEditLayers.Num(); it is not one of the empty-bodied ones), but there is no
+		// reason to write against a deprecation that will eventually be emptied.
+		struct FMifEditLayer
+		{
+			FString Name;
+			FString Guid;
+			bool bVisible = false;
+			bool bLocked = false;
+		};
+
+		TArray<FMifEditLayer> ReadEditLayers(ALandscape* Landscape)
+		{
+			TArray<FMifEditLayer> Out;
+			if (!Landscape) { return Out; }
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			for (const ULandscapeEditLayerBase* EL : Landscape->GetEditLayersConst())
+			{
+				if (!EL) { continue; }
+				Out.Add({ EL->GetName().ToString(), EL->GetGuid().ToString(),
+						  EL->IsVisible(), EL->IsLocked() });
+			}
+#else
+			for (int32 i = 0; i < static_cast<int32>(Landscape->GetLayerCount()); ++i)
+			{
+				const FLandscapeLayer* EL = Landscape->GetLayer(i);
+				if (!EL) { continue; }
+				Out.Add({ EL->Name.ToString(), EL->Guid.ToString(), EL->bVisible, EL->bLocked });
+			}
+#endif
+			return Out;
+		}
+
+		TArray<FString> EditLayerNames(ALandscape* Landscape)
+		{
+			TArray<FString> Names;
+			for (const FMifEditLayer& L : ReadEditLayers(Landscape)) { Names.Add(L.Name); }
+			return Names;
+		}
+
+		// REFUSE A MERGED-HEIGHTMAP WRITE ON A LANDSCAPE THAT HAS EDIT LAYERS, because it cannot
+		// survive. Used by sculpt_landscape and import_landscape_heightmap - both call
+		// FLandscapeEditDataInterface::SetHeightData with no FScopedSetLandscapeEditingLayer, so
+		// they write the merged composite and the next edit-layer update regenerates that
+		// composite from the layers and throws the write away.
+		//
+		// Measured 2026-08-31 on a landscape with two edit layers, identically for both: ok:true
+		// (import also reported ZERO mismatches from its own read-back), an export immediately
+		// afterwards differed, and an export two seconds later was byte-identical to the one taken
+		// BEFORE the write. Each endpoint's postcondition is real and simply runs before the thing
+		// that undoes it, so no amount of reading back at the right moment would catch this.
+		//
+		// NOT for apply_spline_to_landscape. That one goes THROUGH the layer - the engine opens
+		// FScopedSetLandscapeEditingLayer around the rasterize - so its write persists and only its
+		// MEASUREMENT was early. It calls ForceUpdateLayersContent() before sampling instead.
+		// "landscape writer + edit layers" is not the bug; writing the merged result is.
+		//
+		// Succeeding and then silently reverting is the worst outcome available, so this refuses.
+		bool RefuseIfEditLayers(ALandscape* Landscape, const TSharedRef<FJsonObject>& Out)
+		{
+			if (!Landscape || !Landscape->HasLayersContent()) { return false; }
+			const TArray<FString> Names = EditLayerNames(Landscape);
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has sculpt EDIT LAYERS (%s), and this endpoint writes the MERGED ")
+				TEXT("heightmap directly - with no FScopedSetLandscapeEditingLayer around the edit, ")
+				TEXT("the next edit-layer update regenerates the composite from the layers and ")
+				TEXT("DISCARDS the write. Measured: ok:true, an export immediately after differs, ")
+				TEXT("and two seconds later it is byte-identical to the heightmap from BEFORE. A ")
+				TEXT("read-back cannot catch this because it runs before the composite does. Use ")
+				TEXT("apply_spline_to_landscape, which writes through the layer, or create_landscape ")
+				TEXT("(which leaves edit layers OFF) for a landscape this can edit. See ")
+				TEXT("landscape_info's editLayers[]. NOTHING was changed."),
+				*Landscape->GetActorLabel(), *FString::Join(Names, TEXT(", "))));
+			return true;
+		}
 
 		ALandscape* FindLandscape(UWorld* World, const FString& Query)
 		{
@@ -569,6 +653,10 @@ namespace MifBridge
 			}
 		}
 
+		// Nothing above this line has written anything - the samples were read and the new heights
+		// computed into a local array, so refusing here still means NOTHING was changed.
+		if (RefuseIfEditLayers(Landscape, Out)) { return; }
+
 		Edit.SetHeightData(X1, Y1, X2, Y2, Data.GetData(), 0, /*InCalcNormals*/ true);
 		Edit.Flush();
 		// Collision is cooked from the heightfield SEPARATELY. Marking render state dirty updates what
@@ -1005,6 +1093,37 @@ namespace MifBridge
 				}
 			}
 			O->SetArrayField(TEXT("layers"), Layers);
+
+			// SCULPT EDIT LAYERS - a DIFFERENT stack from `layers` above, and the confusion
+			// between them was a real hole. `layers` is FLandscapeInfoLayerSettings: PAINT
+			// layers, the weightmap ones. `materialLayers` is the material's. Neither is the
+			// Landscape Edit Layers panel, and until now NOTHING reported that panel - while
+			// apply_spline_to_landscape and import_landscape_heightmap both refuse on a
+			// landscape that has edit layers with "Pass editLayer naming one that exists".
+			// A caller was told to name something no endpoint could enumerate, so their only
+			// options were to guess or to open the editor UI. This is that missing read.
+			TArray<TSharedPtr<FJsonValue>> EditLayers;
+			for (const FMifEditLayer& EL : ReadEditLayers(L))
+			{
+				TSharedRef<FJsonObject> EO = MakeShared<FJsonObject>();
+				EO->SetStringField(TEXT("name"), EL.Name);
+				EO->SetStringField(TEXT("guid"), EL.Guid);
+				EO->SetBoolField(TEXT("visible"), EL.bVisible);
+				EO->SetBoolField(TEXT("locked"), EL.bLocked);
+				EditLayers.Add(MakeShared<FJsonValueObject>(EO));
+			}
+			O->SetArrayField(TEXT("editLayers"), EditLayers);
+			// apply_spline_to_landscape refuses when this is non-empty and no editLayer was
+			// named, so say which field to read rather than leaving the caller to infer it.
+			// It is the ONLY endpoint taking editLayer - checked, rather than assumed from the
+			// fact that import_landscape_heightmap also writes heights.
+			O->SetStringField(TEXT("editLayersNote"), EditLayers.Num() > 0
+				? TEXT("this landscape HAS sculpt edit layers, so apply_spline_to_landscape needs ")
+				  TEXT("editLayer set to one of the names in editLayers[] - these are NOT the same ")
+				  TEXT("as `layers` (paint/weightmap) or `materialLayers` (the material's)")
+				: TEXT("no sculpt edit layers - apply_spline_to_landscape works without an ")
+				  TEXT("editLayer here. `layers` above is the unrelated paint/weightmap list."));
+
 			Arr.Add(MakeShared<FJsonValueObject>(O));
 		}
 
@@ -1165,7 +1284,9 @@ namespace MifBridge
 				*Landscape->GetActorLabel(),
 				bHasLayers ? TEXT("has edit layers but no layer by that name")
 				           : TEXT("has NO edit layers at all"),
-				bHasLayers ? TEXT("Pass editLayer naming one that exists.")
+				bHasLayers ? TEXT("Pass editLayer naming one from landscape_info's editLayers[] "
+								  "for this landscape - NOT its `layers`, which are the unrelated "
+								  "paint/weightmap layers.")
 				           : TEXT("Enable edit layers on it first - note create_landscape "
 								  "deliberately turns them OFF, so a landscape this bridge made "
 								  "always needs that step on 5.7.")));
@@ -1176,7 +1297,9 @@ namespace MifBridge
 		{
 			Fail(Out, FString::Printf(
 				TEXT("'%s' has edit layers, and EditorApplySpline refuses one it cannot name - it ")
-				TEXT("would log an error and change nothing. Pass editLayer. NOTHING was changed."),
+				TEXT("would log an error and change nothing. Pass editLayer, naming one from ")
+				TEXT("landscape_info's editLayers[] for this landscape (NOT its `layers`, which ")
+				TEXT("are paint/weightmap layers). NOTHING was changed."),
 				*Landscape->GetActorLabel()));
 			return;
 		}
@@ -1259,6 +1382,30 @@ namespace MifBridge
 		Landscape->EditorApplySpline(Spline, StartWidth, EndWidth, StartFall, EndFall,
 									 StartRoll, EndRoll, Subdivisions, bRaise, bLower,
 									 PaintLayer, EditLayer);
+
+		// FLUSH THE EDIT LAYER COMPOSITE BEFORE MEASURING, or the measurement is a lie.
+		//
+		// EditorApplySpline rasterizes inside FScopedSetLandscapeEditingLayer, and that scope's
+		// destructor only REQUESTS a content update - RequestLayersContentUpdate(Update_All). On a
+		// landscape with edit layers the write lands in the layer and the composited heightmap is
+		// rebuilt on a later tick, so sampling here read the PRE-deformation heights and reported
+		// verticesChanged 0 for a deformation that had genuinely happened.
+		//
+		// Measured 2026-08-31 on a 2017x2017 partitioned landscape with two edit layers: the
+		// endpoint returned 0, and a re-export one second later differed from the one taken before.
+		// That is the worst shape of answer this endpoint can give - its whole reason for counting
+		// vertices is that EditorApplySpline returns void, and a caller checking verticesChanged > 0
+		// would conclude nothing happened while the terrain HAD moved under them.
+		//
+		// Called with NO ARGUMENT deliberately. 5.3 and 5.6 declare
+		// ForceUpdateLayersContent(bool bIntermediateRender = false); 5.7 splits it into a plain
+		// ForceUpdateLayersContent() plus a DEPRECATED (bool) overload. No-arg binds the default on
+		// the old engines and the non-deprecated overload on 5.7 - passing an explicit false would
+		// pick the deprecated one there.
+		if (Landscape->HasLayersContent())
+		{
+			Landscape->ForceUpdateLayersContent();
+		}
 
 		int32 Changed = -1;
 		if (bHaveExtent)
@@ -1446,6 +1593,7 @@ namespace MifBridge
 		ULandscapeInfo* Info = Landscape->GetLandscapeInfo();
 		if (!Info) { Fail(Out, TEXT("landscape has no ULandscapeInfo - it was not imported correctly. NOTHING was changed.")); return; }
 
+
 		int32 MinX, MinY, MaxX, MaxY;
 		if (!LandscapeExtent(Landscape, MinX, MinY, MaxX, MaxY))
 		{
@@ -1564,6 +1712,14 @@ namespace MifBridge
 				Sample = WorldToHeight(FMath::Lerp(MinZ, MaxZ, T) - ActorZ, ActorScale.Z);
 			}
 		}
+
+		// ORDER MATTERS: every PARAMETER refusal above runs first. A malformed payload must be
+		// told what is wrong with it whatever the landscape looks like - putting this check
+		// straight after the landscape resolved meant 'both file and data', 'data with no
+		// dimensions' and four other request errors all came back as the edit-layer message,
+		// which is a worse answer than the one they used to get. This is a WORLD-STATE
+		// refusal, so it belongs with the write it protects, not with the argument parsing.
+		if (RefuseIfEditLayers(Landscape, Out)) { return; }
 
 		FLandscapeEditDataInterface Edit(Info);
 		const int32 X1 = X0, Y1 = Y0, X2 = X0 + W - 1, Y2 = Y0 + H - 1;

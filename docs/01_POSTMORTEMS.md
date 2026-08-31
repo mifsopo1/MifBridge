@@ -5,6 +5,122 @@ Newest first.
 
 ---
 
+## verticesChanged reported 0 for a deformation that had actually happened
+
+**Date** 2026-08-31
+
+**Symptom.** `apply_spline_to_landscape` returned `ok:true`, `splineLength:4088`, and
+`verticesChanged:0` on a 2017x2017 World Partition landscape with two sculpt edit layers. A fresh
+`export_landscape_heightmap` immediately afterwards was byte-identical to the one taken before, so
+the two agreed and the obvious reading was that nothing had happened.
+
+An export taken **one second later** differed. The deformation had worked the whole time.
+
+**Root cause.** `ALandscapeProxy::EditorApplySpline` rasterizes inside a
+`FScopedSetLandscapeEditingLayer`, and that scope's destructor does not composite - it calls
+`RequestLayersContentUpdate(ELandscapeLayerUpdateMode::Update_All)`. On a landscape with edit
+layers the write lands **in the layer**, and the composited heightmap everything else reads is
+rebuilt on a later tick. This endpoint sampled the heightfield immediately after the call returned,
+so it read pre-deformation heights and counted zero differences.
+
+The count was not wrong about what it measured. It measured the right array at the wrong moment.
+
+**Why this is the worst possible shape of answer here.** `verticesChanged` exists *because*
+`EditorApplySpline` returns `void` - it is this endpoint's entire answer to "judge by postcondition,
+never by the engine's return value". A caller doing the correct thing, checking
+`verticesChanged > 0`, would conclude nothing happened and quite reasonably retry or report failure,
+while the terrain had already moved under them. A silent no-op is bad; a **confident false zero
+about a change that did occur** is worse, because it survives exactly the check that is supposed to
+catch it.
+
+**Fix.** Flush the composite before sampling:
+
+```cpp
+if (Landscape->HasLayersContent())
+{
+    Landscape->ForceUpdateLayersContent();
+}
+```
+
+Called with **no argument** deliberately. 5.3 and 5.6 declare
+`ForceUpdateLayersContent(bool bInIntermediateRender = false)`; 5.7 splits it into a plain
+`ForceUpdateLayersContent()` plus a `UE_DEPRECATED(5.7)` `(bool)` overload. The no-arg spelling binds
+the default argument on the old engines and the non-deprecated overload on 5.7, so one line is
+correct on all three - whereas passing an explicit `false` compiles everywhere and picks the
+deprecated overload on 5.7.
+
+**How it was found, which is the transferable part.** Not by reading the handler. The suite asserted
+`verticesChanged > 0` and it failed; the first two explanations I reached for were both wrong, and
+both were about my own fixture:
+
+1. *The spline is too short.* It was - `add_component` gives a SplineComponent UE's default two
+   points 100uu apart and the suite never set any, so a 400uu brush was carving a 100uu line across
+   a 201600uu landscape. Fixed with `set_spline_points`; still zero.
+2. *The spline is flush with the ground.* It was - `snapToGround` puts the points exactly on the
+   surface, and raising terrain to meet a spline already at terrain height is a no-op by
+   construction. Fixed with `groundOffset:600`; still zero.
+
+Only after those did the count get treated as the suspect rather than the fixture. The thing that
+settled it was **polling**: re-export at 1s, 2s, 4s, 8s and print whether the heightmap ever
+differs. It differed at one second, which converted "the endpoint does nothing" into "the endpoint
+measures too early" in a single run.
+
+**Prevention.** Two fixture defects hid an endpoint defect, and that is the normal order - an
+inadequate fixture makes a suite that cannot fail, only mislead, because its zero looks like the
+endpoint's fault. So the suite now asserts the fixture *before* trusting the result
+(`splineLength > 1000`, with failure text naming the fixture as the culprit), and the permanent
+assertion is no longer `verticesChanged > 0` but that **the count and an independent settled
+re-export agree**:
+
+> Either number alone is plausible. The contradiction between them is the defect.
+
+That formulation generalises past this endpoint: wherever a handler reports a count it measured
+itself, the assertion worth having is not that the count is non-zero but that it agrees with a
+different endpoint looking at the same world.
+
+**The audit found two more, and they are a DIFFERENT bug wearing the same symptom.**
+
+`sculpt_landscape` and `import_landscape_heightmap` both call
+`FLandscapeEditDataInterface::SetHeightData` with **no** `FScopedSetLandscapeEditingLayer`. So they
+do not write a layer at all - they write the merged composite, and the next edit-layer update
+regenerates that composite from the layers and throws the write away. Measured identically for
+both on the same landscape: `ok:true` (import also reporting **zero mismatches** from its own
+read-back), an export immediately afterwards differs, and an export two seconds later is
+byte-identical to the one taken *before*.
+
+So there are two faults here, not one, and the distinction decides the fix:
+
+| | writes through the layer? | what went wrong | fix |
+|---|---|---|---|
+| `apply_spline_to_landscape` | yes, engine opens the scope | write persisted, **measurement** ran early | `ForceUpdateLayersContent()` before sampling |
+| `sculpt_landscape` | no | write is **discarded** | refuse on a layered landscape |
+| `import_landscape_heightmap` | no | write is **discarded** | refuse on a layered landscape |
+
+"landscape writer + edit layers" is not by itself the bug. Writing the *merged result* is. Giving
+the spline endpoint the refusal would have broken a working feature, and giving the other two the
+flush would have made them flush away their own writes more promptly.
+
+`import_landscape_heightmap` had refused a `layer` **parameter** for a long time, with the words
+"without it the write silently lands on the merged result instead - a wrong answer that looks like
+a right one". That note was correct and it guarded the wrong thing: it refused the parameter while
+the *situation* - any layered landscape - had the identical fault whether or not a layer was named.
+
+**And it had been hiding a whole suite.** `test_landscape_heightmap` asserted a round-trip against
+the project's ambient landscape, which has two edit layers, so T8001/T8002 were verifying writes
+that evaporated a second later. They passed because they re-exported **immediately**, inside the
+window before the composite runs. Nothing inside the suite could have detected it. It now builds
+its own fixture with `create_landscape`, which leaves edit layers off deliberately - which also
+drops its dependency on this project's terrain, a separately-filed item.
+
+Repairing it surfaced two more fixture bugs of the same family, both invisible while there was only
+one landscape in the level: it read `landscapes[0]` rather than the landscape under test, and its
+collision probes were hardcoded world coordinates that only land on terrain centred near the origin
+at roughly this project's size. The probes also have to sit **on vertices** - a trace returns the
+interpolated surface while the heightmap sample is a vertex, so an off-vertex probe compares two
+different things and is wrong by however much the terrain slopes across one quad. That read as a
+533uu collision failure and was arithmetic.
+
+
 ## A scanner reported "no findings" because it could not see the shape of the bug
 
 **Date** 2026-08-31

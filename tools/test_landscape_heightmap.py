@@ -59,7 +59,56 @@ def main():
         print("SKIPPED - read mode")
         return 0
 
-    probe = M.raw_post("export_landscape_heightmap", {})
+    # A LANDSCAPE THESE ENDPOINTS CAN ACTUALLY WRITE TO, chosen rather than assumed.
+    #
+    # Both writers edit the MERGED heightmap with no FScopedSetLandscapeEditingLayer, so on a
+    # landscape with sculpt edit layers the next composite regenerates it from the layers and
+    # discards the write. They refuse that landscape now. Before they did, this suite ran against
+    # whatever terrain the level happened to hold - here, one with two edit layers - and its
+    # round-trip assertions passed only because they re-exported inside the window before the
+    # composite ran. Vacuous, and invisible from inside the suite.
+    #
+    # create_landscape leaves edit layers OFF deliberately, so it produces the one kind of
+    # landscape these endpoints support. Prefer an existing suitable one; build a scratch one only
+    # if the level has none.
+    made_landscape = None
+    target = None
+    for row in (M.call("landscape_info", {}).get("landscapes") or []):
+        if not row.get("editLayers"):
+            target = row.get("actorPath")
+            print("using the level's own non-layered landscape: %s" % row.get("label"))
+            break
+    if target is None:
+        st = int(time.time()) % 100000
+        mk = M.raw_post("create_landscape", {"location": {"x": 300000, "y": 300000, "z": 0},
+                                             "componentsX": 2, "componentsY": 2,
+                                             "quadsPerSection": 63, "sectionsPerComponent": 1,
+                                             "heightMode": "rolling", "amplitude": 2000,
+                                             "label": "MifHeightmapFixture%d" % st})
+        check("T7999 (setup) a scratch landscape is created, because every landscape in this "
+              "level has edit layers and these endpoints cannot write to one",
+              mk.get("ok") is True, json.dumps(mk)[:250])
+        target = mk.get("actorPath") or ((mk.get("landscape") or {}) or {}).get("actorPath")
+        made_landscape = target
+        if not target:
+            print("SKIPPED - could not build a landscape to test against.")
+            return 2
+
+    # THE PRECONDITION, ASSERTED. If this fixture ever gains edit layers the writers will refuse
+    # and every round-trip below would fail confusingly; better to say why here.
+    chosen = next((r for r in (M.call("landscape_info", {}).get("landscapes") or [])
+                   if r.get("actorPath") == target), {})
+    check("T7999 (setup) the landscape under test has NO sculpt edit layers, which is the only "
+          "kind these endpoints can write to without the composite discarding it",
+          not chosen.get("editLayers"), json.dumps(chosen.get("editLayers"))[:200])
+
+    def lcall(endpoint, payload):
+        """Every call names its landscape - there are now two in the level."""
+        body = dict(payload)
+        body.setdefault("landscape", target)
+        return M.raw_post(endpoint, body)
+
+    probe = lcall("export_landscape_heightmap", {})
     if probe.get("ok") is not True:
         print("SKIPPED - no landscape in the open level, so nothing was verified.")
         print("  (%s)" % (probe.get("error") or "")[:160])
@@ -72,7 +121,7 @@ def main():
     # ------------------------------------------------------------------ T8000 the point
     print("\n=== T8000: the whole map in one call, and fast enough to iterate ===")
     t0 = time.time()
-    e = M.raw_post("export_landscape_heightmap", {"asData": True})
+    e = lcall("export_landscape_heightmap", {"asData": True})
     dt_export = time.time() - t0
     check("T8000 export succeeds", e.get("ok") is True, json.dumps(e)[:220])
     check("T8000 it returns every sample, not a subset",
@@ -91,7 +140,7 @@ def main():
     sent = base64.b64decode(e["data"])
     check("T8001 the base64 carries two bytes per sample",
           len(sent) == W * H * 2, "%d bytes for %d samples" % (len(sent), W * H))
-    r = M.raw_post("import_landscape_heightmap", {"file": e["file"]})
+    r = lcall("import_landscape_heightmap", {"file": e["file"]})
     check("T8001 re-importing the exported file succeeds", r.get("ok") is True,
           json.dumps(r)[:250])
     # THE assertion, and it is the endpoint's own postcondition rather than the suite's opinion:
@@ -101,7 +150,7 @@ def main():
     check("T8001 with no remap, since the native storage is already uint16",
           r.get("remapped") is False, r.get("remapped"))
 
-    back = M.raw_post("export_landscape_heightmap", {"asData": True})
+    back = lcall("export_landscape_heightmap", {"asData": True})
     check("T8001 a SECOND export is byte-identical to the first - the proof the round-trip is "
           "lossless rather than merely reported as such",
           base64.b64decode(back.get("data") or "") == sent,
@@ -119,7 +168,7 @@ def main():
             struct.pack_into("<H", buf, (y * W + x) * 2,
                              int(max(0.0, min(1.0, 0.35 + 0.45 * h)) * 65535))
     t0 = time.time()
-    w = M.raw_post("import_landscape_heightmap",
+    w = lcall("import_landscape_heightmap",
                    {"data": base64.b64encode(bytes(buf)).decode(), "width": W, "height": H})
     dt_import = time.time() - t0
     check("T8002 a generated heightmap imports", w.get("ok") is True, json.dumps(w)[:250])
@@ -138,7 +187,7 @@ def main():
           dt_import < 120.0, "%.2fs" % dt_import)
 
     got = base64.b64decode(
-        (M.raw_post("export_landscape_heightmap", {"asData": True}) or {}).get("data") or "")
+        (lcall("export_landscape_heightmap", {"asData": True}) or {}).get("data") or "")
     check("T8002 and a fresh export returns exactly what was sent - independent of the endpoint's "
           "own verification",
           got == bytes(buf), "re-export differs from the data sent")
@@ -151,14 +200,33 @@ def main():
     # BOTH SIDES ARE MEASUREMENTS. The trace is compared against a FRESH EXPORT, not against the
     # buffer this suite sent: if an import silently no-oped, the sent buffer would still describe
     # the terrain the test expected, and the check would pass. Sampling the export closes that.
-    li = (M.call("landscape_info", {}).get("landscapes") or [{}])[0]
+    # THE LANDSCAPE UNDER TEST, not "the first one". This read [0] and there is now more than one
+    # in the level - it took the other landscape's bounds, mapped them onto THIS landscape's
+    # heightmap indices, and traced world points that land on the other terrain entirely. Worst
+    # delta 15707uu, which reads as a collision bug and was a fixture bug.
+    li = next((r for r in (M.call("landscape_info", {}).get("landscapes") or [])
+               if r.get("actorPath") == target), {})
     wmin, wmax = li.get("worldMin") or {}, li.get("worldMax") or {}
-    fresh = M.raw_post("export_landscape_heightmap", {"asData": True})
+    fresh = lcall("export_landscape_heightmap", {"asData": True})
     zdata = base64.b64decode(fresh.get("data") or "")
     z0 = fresh.get("worldZAtZero")
     span = (fresh.get("worldZAtMax") or 0) - (z0 or 0)
 
-    probe_pts = [(0, 0), (50000, 0), (-80000, -80000)]
+    # PROBE POINTS FROM THE LANDSCAPE'S OWN EXTENT. These were hardcoded world coordinates -
+    # (0,0), (50000,0), (-80000,-80000) - which only land on terrain centred near the world origin
+    # at roughly the size of this project's own landscape. Any other landscape, in any other
+    # project, and every probe falls outside it. Quarter/half/three-quarter across works anywhere.
+    # ON VERTICES, not at arbitrary fractions. The trace returns the INTERPOLATED surface; the
+    # heightmap sample is a vertex. A probe that lands between vertices compares two different
+    # things and is off by however much the terrain slopes across one quad - 533uu here on rolling
+    # terrain, which looks exactly like a collision bug. The old hardcoded coordinates happened to
+    # sit on vertices of this project's landscape, so the difference never showed. Deriving the
+    # world point FROM the vertex index keeps them aligned on any landscape.
+    probe_pts = []
+    if wmin and wmax and wmax.get("x") != wmin.get("x"):
+        for vi, vj in ((W // 4, H // 4), (W // 2, H // 2), (3 * W // 4, 3 * H // 4)):
+            probe_pts.append((wmin["x"] + (wmax["x"] - wmin["x"]) * vi / float(W - 1),
+                              wmin["y"] + (wmax["y"] - wmin["y"]) * vj / float(H - 1)))
     agreed, tried, worst = 0, 0, 0.0
     for wx, wy in probe_pts:
         if not wmin or wmax.get("x") == wmin.get("x"):
@@ -216,18 +284,18 @@ def main():
                                               "width": 2, "height": 2}, "must be exactly"),
     ]
     for label, payload, want in cases:
-        rr = M.raw_post("import_landscape_heightmap", payload)
+        rr = lcall("import_landscape_heightmap", payload)
         check("T8003 %s is refused, saying why" % label,
               rr.get("ok") is False and want in (rr.get("error") or ""),
               (rr.get("error") or "")[:200])
 
     # Named refusals: the two shapes a caller is most likely to reach for.
-    lay = M.raw_post("import_landscape_heightmap", {"data": "AA==", "width": 1, "height": 1,
+    lay = lcall("import_landscape_heightmap", {"data": "AA==", "width": 1, "height": 1,
                                                     "layer": "L"})
     check("T8003 an edit layer is refused BY NAME rather than silently written to the merged result",
           lay.get("ok") is False and "edit layers" in (lay.get("error") or ""),
           (lay.get("error") or "")[:220])
-    fl = M.raw_post("import_landscape_heightmap", {"heights": [1.0, 2.0]})
+    fl = lcall("import_landscape_heightmap", {"heights": [1.0, 2.0]})
     check("T8003 a float array is refused by name, with the size that makes it a bad idea",
           fl.get("ok") is False and "25 MB" in (fl.get("error") or ""),
           (fl.get("error") or "")[:220])

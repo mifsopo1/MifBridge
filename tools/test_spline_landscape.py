@@ -62,6 +62,8 @@ def main():
     st = int(time.time()) % 100000
     bp = "/Game/_MifSpline/BP_Spline%d" % st
     saved = None
+    edit_layers = []
+    payload = {}
     try:
         # ------------------------------------------------------------------ S100 the fixture
         print("\n=== S100: a spline actor, built rather than found ===")
@@ -109,26 +111,117 @@ def main():
         if not actor:
             return 1
 
+        # GIVE THE SPLINE A SHAPE. add_component makes one with UE's default two points 100 units
+        # apart, and the suite used to leave it that way - so S101 asked the endpoint to carve a
+        # 100uu line with a 400uu brush across a 12600uu landscape, got verticesChanged 0, and that
+        # zero was the endpoint being honest about a meaningless request. It went unseen because
+        # S101 was skipped entirely until landscape_info could report an editLayer name.
+        #
+        # snapToGround puts the points ON the terrain rather than at z=0 under it, which is what
+        # the engine's spline deformation expects. skipPostEditChange because the owning blueprint
+        # would otherwise re-run its construction script and rebuild the spline we just set.
+        #
+        # groundOffset IS LOad-BEARING, not decoration. apply_spline_to_landscape raises the terrain
+        # TO the spline. Points snapped exactly onto the surface ask it to move each vertex to where
+        # that vertex already is, so verticesChanged is 0 and the endpoint is right to say so - a
+        # no-op by construction, and indistinguishable from a broken endpoint if you did not know
+        # the spline was flush. Lifting it 600uu gives the deformation something to actually do.
+        pts = [{"x": sx + 2000.0, "y": sy + 2000.0, "z": 0.0},
+               {"x": sx + 4000.0, "y": sy + 2000.0, "z": 0.0},
+               {"x": sx + 6000.0, "y": sy + 2000.0, "z": 0.0}]
+        sp = M.raw_post("set_spline_points", {"actorPath": actor, "component": "Spline",
+                                              "points": pts, "space": "world",
+                                              "pointType": "linear", "snapToGround": True,
+                                              "groundOffset": 600.0,
+                                              "skipPostEditChange": True})
+        check("S100 (setup) the spline is given real points spanning the landscape",
+              sp.get("ok") is True, json.dumps(sp)[:280])
+
         # ------------------------------------------------------------------ S101 the write
         print("\n=== S101: the deformation, counted from the heightfield ===")
-        r = M.raw_post("apply_spline_to_landscape", {"splineActor": actor, "startWidth": 400,
-                                                     "endWidth": 400})
 
-        # A PRECONDITION THIS SUITE CANNOT SATISFY, reported rather than failed. A landscape with
-        # EDIT LAYERS makes the endpoint refuse without being told which layer to write - correctly,
-        # since EditorApplySpline would otherwise log an error and change nothing. The name is not
-        # discoverable: nothing in the bridge reports the sculpt edit-layer stack (landscape_info's
-        # `layers` is PAINT layers), so there is nothing to pass and guessing one is not testing.
+        # THE PRECONDITION, ESTABLISHED FROM A READ RATHER THAN GUESSED. A landscape with edit
+        # layers makes the writer refuse unless told which layer to write, correctly - the engine
+        # would log an error and change nothing. Until landscape_info reported editLayers[] there
+        # was no way to learn a valid name, and this suite skipped S101/S102 rather than guess.
+        #
+        # Feeding the reader's output straight into the writer is also the strongest proof that
+        # the new field is RIGHT: a name this suite invented could match by luck, a name read from
+        # landscape_info either resolves in the engine or the deformation refuses.
+        info = M.call("landscape_info", {})
+        lrow = next((x for x in (info.get("landscapes") or [])
+                     if x.get("actorPath") == land or x.get("label") == land), None)
+        if lrow is None:
+            lrow = (info.get("landscapes") or [{}])[0]
+        edit_layers = lrow.get("editLayers")
+        check("S101 landscape_info reports editLayers[] at all - the read that apply_spline's own "
+              "refusal tells you to make",
+              isinstance(edit_layers, list), json.dumps(lrow)[:260])
+        check("S101 and it says which list it is, because `layers` next to it is the unrelated "
+              "paint/weightmap one",
+              "editLayers[]" in (lrow.get("editLayersNote") or "")
+              or "no sculpt edit layers" in (lrow.get("editLayersNote") or ""),
+              json.dumps(lrow.get("editLayersNote"))[:260])
+
+        payload = {"splineActor": actor, "startWidth": 400, "endWidth": 400}
+        if edit_layers:
+            # Prefer one that can actually be written: a locked layer is refused by the engine.
+            usable = [e for e in edit_layers if not e.get("locked")] or edit_layers
+            picked = usable[0].get("name")
+            check("S101 every reported edit layer is NAMED - a nameless entry would be unusable "
+                  "as the parameter this exists to supply",
+                  all(e.get("name") for e in edit_layers), json.dumps(edit_layers)[:260])
+            print("  editLayers: %s -> passing %r"
+                  % ([e.get("name") for e in edit_layers], picked))
+            payload["editLayer"] = picked
+        else:
+            print("  this landscape has NO edit layers, so no editLayer is passed")
+
+        r = M.raw_post("apply_spline_to_landscape", payload)
+
+        # THE FIXTURE, ASSERTED BEFORE ITS RESULT IS TRUSTED. Without this a spline too short to
+        # move anything reports verticesChanged 0 and reads as an endpoint defect - the suite
+        # cannot fail, it can only mislead. 4000uu against a 400uu brush is comfortably enough to
+        # move vertices on any landscape whose resolution this endpoint supports.
+        check("S101 (fixture) the spline the endpoint measured is long enough for the brush to "
+              "reach any vertices at all - a 100uu default would make verticesChanged:0 mean "
+              "nothing about the endpoint",
+              (r.get("splineLength") or 0) > 1000,
+              "splineLength=%s with startWidth 400 - the FIXTURE is at fault here, not "
+              "apply_spline_to_landscape" % r.get("splineLength"))
+
         if r.get("ok") is False and "edit layers" in (r.get("error") or ""):
-            print("  NOTE  this landscape has EDIT LAYERS, so the deformation was refused for want")
-            print("        of an editLayer name - and no endpoint reports those names, so this")
-            print("        suite cannot supply one. S101 and S102 are UNEXERCISED here and said so")
-            print("        rather than counted. Filed as a read gap.")
+            # Only reachable if the name landscape_info gave does not resolve in the engine, which
+            # would mean the new read is WRONG rather than missing. Worth failing loudly for.
+            check("S101 the editLayer name taken from landscape_info RESOLVES in the writer - if "
+                  "it did not, the new read would be reporting names the engine does not have",
+                  False, json.dumps(r)[:300])
             deformed = False
         else:
             deformed = r.get("ok") is True
             check("S101 apply_spline_to_landscape succeeds", r.get("ok") is True,
                   json.dumps(r)[:280])
+        # THE COUNT AND THE WORLD MUST AGREE, and this is the assertion that caught the real bug.
+        #
+        # verticesChanged was 0 while a re-export one second later differed from the export taken
+        # beforehand. Neither number is suspicious alone - 0 is a legitimate answer for a spline
+        # that changes nothing - but the CONTRADICTION could only mean the endpoint sampled before
+        # the edit layer composite had landed, which is exactly what it was doing.
+        #
+        # Waiting first, on purpose: a settled re-read is the honest comparison, and if the endpoint
+        # ever regresses to sampling early this goes red instead of the vaguer assertions below.
+        if r.get("ok") is True:
+            time.sleep(2)
+            settled = M.raw_post("export_landscape_heightmap", {"asData": True})
+            moved = settled.get("data") != before.get("data")
+            counted = (r.get("verticesChanged") or 0) > 0
+            check("S101 verticesChanged AGREES with an independent settled re-export - a 0 beside "
+                  "a changed heightmap means the endpoint measured before the edit layer composite "
+                  "landed, and its whole purpose is that EditorApplySpline returns void",
+                  counted == moved,
+                  "verticesChanged=%s (counted=%s) but the settled heightmap moved=%s"
+                  % (r.get("verticesChanged"), counted, moved))
+
         if deformed:
             # THE postcondition. EditorApplySpline is void - the handler samples the heightfield
             # before and after because that is the only way to know anything happened.
@@ -188,10 +281,29 @@ def main():
               .get("ok") is True, "landscape edits touch collision rebuilds")
     finally:
         # PUT THE TERRAIN BACK, and say whether it worked rather than assuming.
+        #
+        # On a landscape with EDIT LAYERS it cannot be put back this way, and the endpoint now says
+        # so instead of pretending. import_landscape_heightmap writes the merged heightmap with no
+        # editing-layer scope, so the next composite regenerates it from the layers and discards the
+        # write - ok:true, zero mismatches, and byte-identical to the pre-import state two seconds
+        # later. This cleanup used to read that ok:true and report a restore that never happened.
         if saved:
             back = M.raw_post("import_landscape_heightmap", {"file": saved})
-            check("(cleanup) the landscape is restored from the export taken before",
-                  back.get("ok") is True, json.dumps(back)[:250])
+            if edit_layers:
+                check("(cleanup) restoring a LAYERED landscape by heightmap import is REFUSED "
+                      "rather than silently reverted a moment later",
+                      back.get("ok") is False, json.dumps(back)[:250])
+                check("(cleanup) and the refusal names the edit layers, so the caller is not left "
+                      "guessing which landscape state blocked it",
+                      "EDIT LAYERS" in (back.get("error") or ""), (back.get("error") or "")[:260])
+                print("  NOTE  the terrain is left deformed. The deformation went INTO the "
+                      "'%s' edit" % payload.get("editLayer"))
+                print("        layer, which persists, and the only writer that could undo it is the")
+                print("        one just refused. This is an unsaved /Temp map, so it goes away with")
+                print("        the editor. Reported rather than worked around.")
+            else:
+                check("(cleanup) the landscape is restored from the export taken before",
+                      back.get("ok") is True, json.dumps(back)[:250])
         SC.confirm_call("delete_asset", {"path": bp})
 
     print("\n" + "=" * 72)
