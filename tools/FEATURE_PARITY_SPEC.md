@@ -6526,44 +6526,39 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       cannot be written portably today.
 
 
-- [ ] **26 files are LF where the standing rule is CRLF - ANDRE'S CALL, not mine** (minutes)
-      Filed 2026-08-31, noticed when git warned on a file I had just written with LF and I fixed it.
-      The rule for this repo is CRLF everywhere; these 26 predate today and are not from one session.
+- [ ] **93 files are LF in the WORKING TREE - and it costs nothing to fix - ANDRE'S CALL** (minutes)
+      RE-MEASURED 2026-08-31 with git rather than by reading bytes, and both halves of the original
+      filing were wrong. It said 26 files and said the sweep would cost blame. It is 93, and it costs
+      nothing at all.
 
-      16 tools: audit_blender_postconditions, audit_blender_read_purity, audit_roundtrip,
-      mcp_static_check, param_reach, test_ability_system, test_blender_rename_bones, test_engine_log,
-      test_graph_patch, test_macro_dispatch, test_pinlifetime, test_reroute, test_rollback_real,
-      test_self_audit_modes, test_set_plugin_enabled, test_v3_apply.
-      11 sources: MifBridgeCompositePreview, MifBridgeHeatmap, MifBridgeInterfaces,
-      MifBridgeLiveCoding, MifBridgeLiveWidgets, MifBridgeMetaHuman, MifBridgeNodePins,
-      MifBridgeStateTree, MifBridgeThumbnail, MifBridgeTrace, MifBridgeWidgetPreview.
+      THE COUNT. The original looked only at tools/*.py and Source/**/*.cpp, so it missed every
+      docs/*.md, all four HEADERS (MifBridgeLog.h, MifBridgeServer.h, Public/MifBridge.h,
+      Public/MifBridgeEndpointRegistry.h), NOTICE.md, and the whole of docs/audit/. Zero files have
+      MIXED endings, which was the thing actually worth checking - a CRLF file with LF lines spliced
+      in is worse than either pure state, because the next save normalises everything and buries the
+      real change in a whole-file diff. The one exception is .gitignore, which git reports w/mixed.
 
-      NOT DONE ON MY OWN INITIATIVE, deliberately - it is a 26-file sweep for no functional change,
-      which is the kind of thing to ask about first.
+      THERE IS NOTHING TO COMMIT, which is the part that changes the decision. `.gitattributes`
+      already carries `* text=auto eol=crlf` plus an explicit rule per extension, and git reports
+      `i/lf` for all 424 tracked text files - the INDEX is already normalised, everywhere. eol=crlf
+      is applied at CHECKOUT, so these 93 are simply files that have not been checked out since the
+      attribute landed. `git ls-files --eol` is the whole diagnosis:
 
-      CORRECTING MY OWN REASONING, 2026-08-31: I filed this partly on "it moves blame on all of
-      them", and that is avoidable. The standard answer is a `.git-blame-ignore-revs` file listing
-      the reformat commit, after which `git blame --ignore-revs-file=.git-blame-ignore-revs` (or
-      `git config blame.ignoreRevsFile .git-blame-ignore-revs` once, per clone) skips straight past
-      it. GitHub honours the file automatically. So the history cost is close to zero if the commit
-      is recorded there, and the decision should be made on whether the churn is wanted at all -
-      not on a downside that has a standard fix.
+          i/lf w/crlf   331     correct
+          i/lf w/lf      93     stale working tree
+          i/lf w/mixed    1     .gitignore
 
-      SHAPE, if it is wanted:
-        1. one commit that ONLY changes line endings, touching nothing else, so it is trivially
-           reviewable and safely ignorable
-        2. add its SHA to .git-blame-ignore-revs with a one-line reason
-        3. add `* text eol=crlf` to .gitattributes so it cannot drift back - which is the actual
-           fix, since a one-off pass just resets a clock
+      PROVEN, not reasoned. NOTICE.md was deleted and restored with `git checkout --`: it went from
+      w/lf to w/crlf, and `git status` was EMPTY afterwards. No diff, no commit, no blame touched -
+      because the index never changes. The .git-blame-ignore-revs approach floated in the original
+      filing is not needed; there is no commit to ignore.
 
-      Doing 3 alone is also an option and is nearly free, but it will renormalise those files on the
-      next checkout anyway, which is the same sweep arriving quietly instead of deliberately. That is
-      the one thing I would avoid.
+          git rm --cached -r . >NUL && git reset --hard        # or delete + checkout the 93
 
-      Worth pairing with a .gitattributes `* text eol=crlf` so it cannot drift back, which would be
-      the actual fix rather than a one-off pass.
-
-
+      STILL FLAGGED RATHER THAN DONE. The reason for reserving it was "a 26-file sweep for no
+      functional change", and that reason is now gone - but it rewrites 93 files on disk while an
+      editor is open, and it was explicitly reserved. The correction is the deliverable: this is a
+      ten-second decision with no cost, not a judgement call about blame.
 - [x] **a suite that DIES mid-run leaves the editor's current level changed** (hours)
       DONE 2026-08-31 - test_uncovered_reads7's main() is now a wrapper whose `finally` restores
       the current level, with _run() holding the body. Verified on the FAILURE path rather than
