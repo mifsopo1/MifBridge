@@ -6989,7 +6989,11 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       REFUSES them by name with the type it found, rather than skipping the key, because a key
       silently not written leaves a section that looks authored and animates nothing - so this is
       an extension, not a latent bug.
-- [x] **modify_actor_layers reported THAT a layer was implicitly created, never WHICH** (hours)  **DONE 2026-08-31.**
+- [ ] **modify_actor_layers reported THAT a layer was created, never WHICH - FIXED IN SOURCE** (hours)
+      DOWNGRADED FROM [x] on 2026-08-31 for the same reason as the refusal entry, and this one
+      was self-contradictory besides: it claimed DONE while a separate open item below asks for
+      its behaviour verification. "Proven on UE 5.3 ... BUILD OK" is a COMPILE claim. Built and
+      committed, not tested.
       layersCreated (array, always emitted), layerCreated derived from it, layerCreatedNote naming
       the risk. Layer creation here is implicit by design, so `layers: ["Props", "Prpos"]` turns a
       typo into a real permanent layer with no error - being told which names were new is the
@@ -7265,3 +7269,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cost: three rewrites and about twenty-five minutes to re-derive a check that exists in better
       form. No tool committed. Recorded so the next person reading that limitation note does not
       start where I started.
+- [ ] **delete_asset then create_asset at the same path - FIXED IN SOURCE, awaiting a reload** (hours)
+      docs/06 issue 28, filed 2026-08-30 as an unrecoverable dead end and fixed in source 2026-08-31.
+      Reproduced live first: delete succeeds, the registry forgets it, create_asset says "an asset
+      already exists ... delete it first", delete_asset says "no asset found at package". Told to
+      delete it first and then told there is nothing to delete, with the path unusable for the rest
+      of the session. ObjectTools::DeleteAssets clears RF_Public|RF_Standalone but the UObject stays
+      resident until GC; the lookup found the corpse while delete_asset consulted the registry.
+
+      IsValid() is false for a garbage object, so wrapping the lookup in it makes the two agree - a
+      pure predicate, no lifetime touched. Four sites, not the one that reproduced:
+      MifBridgeUserTypes.cpp:73 (create_asset), MifBridgeNodes2.cpp:1637 (create_blueprint),
+      MifBridgeMetaHuman.cpp:94, MifBridgeMaterials.cpp:970 (which spelled it StaticFindObject !=
+      nullptr). Import and Thumbnail share the lookup but offer overwrite:true, so neither closes the
+      loop and both were left alone.
+
+      NOT [x] because it is not TESTED. BUILD OK on 5.3 Development with a linked DLL and verified
+      mtime; the running editor loads an older one, so what was verified live is the BUG. The issue's
+      second remedy - renaming the doomed object to the transient package, as the editor's own delete
+      does - was deliberately not attempted: it changes object lifetime rather than reading a flag,
+      and could not be tested tonight.
