@@ -122,7 +122,12 @@ def main():
 
     after_types, _ = pin_types(graph, cnode)
     still_wild = [k for k, v in after_types.items() if "wildcard" in v.lower()]
-    check("T280 the wildcard RESOLVED on connection", not still_wild,
+    # The subject has to exist AFTER the connect too. This file already refuses to draw conclusions
+    # from an unobserved wildcard; an empty after-snapshot is the same hole on the other side - no
+    # pins means no wildcard pins, and "the wildcard resolved" would pass because the node vanished.
+    check("T280 the pins are still readable after connecting", bool(after_types),
+          "pin_types returned nothing - a resolved wildcard and a lost node look identical here")
+    check("T280 the wildcard RESOLVED on connection", bool(after_types) and not still_wild,
           "still wildcard after connecting: %s" % still_wild)
     resolved = {k: v for k, v in after_types.items() if k in wildcard_pins}
     print("   resolved to: %s" % json.dumps(resolved)[:150])
@@ -136,7 +141,10 @@ def main():
     post_types, post_raw = pin_types(graph, cnode)
     post_wild = [k for k, v in post_types.items() if "wildcard" in v.lower()]
     # THE assertion the whole file exists for.
-    check("T281 the pin is STILL typed after the reconstruct", not post_wild,
+    check("T281 the pins survived the reconstruct at all", bool(post_types),
+          "pin_types returned nothing after refresh_node - nothing below this can mean anything")
+    check("T281 the pin is STILL typed after the reconstruct",
+          bool(post_types) and not post_wild,
           "reverted to wildcard: %s -- this REPRODUCES 06_OPEN_ISSUES §5" % post_wild)
     linked = [p.get("name") for p in (post_raw.get("pins") or []) if p.get("linkedTo")]
     check("T281 and the connection survived the reconstruct", "TargetArray" in linked,
