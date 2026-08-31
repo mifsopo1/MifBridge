@@ -9048,3 +9048,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       it would have proven a scanner that read a fraction of the source.
 
       What closes it: one editor-closed run of audit_detectors_fire, the same window a rebuild needs.
+
+- [ ] **two prose claims measured, and neither is settled** (hours)
+      Acting on audit_cross_endpoint_claims' shortlist - the three claims no single suite drives both
+      sides of - and both attempts ended in a partial answer worth writing down rather than a tick.
+
+      CLAIM 1: compile says "validate {blueprintId} is the dry-run form and returns the same
+      messages". Verified on a CLEAN blueprint: both report ok, 0 errors, 0 warnings, [] messages,
+      and the arrays are equal. That is 0 == 0 - the vacuous comparison this file keeps catching
+      elsewhere, and it proves nothing about the claim. The interesting case is a blueprint that
+      genuinely fails to compile, and three attempts did not produce one:
+
+        add a variable, add its getter, remove the variable   -> compiles clean, 0 messages
+        add a dispatcher, add a call node, remove dispatcher  -> orphanedNodeCount 1, compiles clean
+
+      So the claim stands unrefuted and untested where it matters. What would settle it is a
+      fixture that reliably breaks a blueprint - and this repo does not have one, which is itself
+      worth knowing: every suite here asserts that things COMPILE, and none has ever needed a
+      blueprint that does not.
+
+      CLAIM 2, found while failing at claim 1 and the more interesting of the two.
+      remove_event_dispatcher's note says orphaned nodes "will fail the next compile". Measured on a
+      scratch Actor blueprint immediately after removal: orphanedNodeCount 1, and compile reports 0
+      errors and 0 messages. One measurement on one blueprint is not enough to rewrite the note - the
+      node may be dropped rather than kept, and the claim may hold for other node kinds - but the
+      note is currently telling callers to expect a failure that did not arrive.
+
+      Both are left OPEN rather than closed or declined, because "I could not reproduce it" is not
+      the same as "it is wrong", and the difference matters for a note a caller acts on.
