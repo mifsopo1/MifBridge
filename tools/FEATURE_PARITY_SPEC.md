@@ -6641,7 +6641,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       actually produces is a runtime question.
 
 
-- [ ] **the PIE family's RUNNING paths, now that PIE is allowed** (hours)
+- [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
       The idle half needed no session and should never have been declined; the running half genuinely
       does, and PIE has been authorised since 2026-08-28.
@@ -6649,6 +6649,14 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Uncovered while a session is live: list_pie_actors, spawn_actor_in_pie, pie_load_level_instance,
       pie_unload_level_instance, describe_live_widget against a real widget instance, and the
       ui_scenario_* runner past IDLE.
+
+      THE TITLE USED TO SAY "now that PIE is allowed", which is true and reads as though this is
+      actionable in an overnight run. The two rules do not conflict once both are read: PIE was
+      authorised on 2026-08-28 for work with someone at the keyboard, and the rule block that
+      accompanies every autopilot run says plainly "Do NOT save assets, start PIE, or touch anything
+      outside the SDK editor". Autopilot IS the unattended case. So this is blocked by the operating
+      mode rather than by permission, and the title now says so - the old one was an invitation to
+      talk oneself into it at 4am.
 
       DO IT ATTENDED. The standing guidance on PIE is to use it where it is the right tool but not to
       leave it running in unattended sweeps, and a suite that starts PIE and then fails before its
@@ -7106,7 +7114,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       every `add` is refused before any layer work happens; and actor resolution runs before the
       per-name creation loop, so a call that resolves nothing creates nothing. The implicit-creation
       line is therefore unreachable on this level. Reaching it needs a classic, non-partitioned level
-      made current, which changes what is open in the editor and is not something to do unattended.
+      made current, and BOTH routes to one were checked before re-filing rather than assumed:
+      add_sublevel takes a path to an EXISTING level asset and does not create one, so it would mean
+      pulling a real project map into the open world and loading its contents; and creating a fresh
+      .umap to point it at means SAVING an asset, which the standing rules forbid outright. There is
+      no third route from here. Note the open world is /Temp/Untitled_1, an unsaved untitled scratch
+      map that is already dirty - so the level is a fine place to do this. It is getting a classic
+      level INTO it that is blocked, not the mutating.
       Separately, the running editor is older than the fix: live_coding_compile would patch it in but
       needs confirm:true, and its own refusal says a bad patch can destabilise the process holding
       unsaved work - a decision for a human at the keyboard, not for an overnight run.
