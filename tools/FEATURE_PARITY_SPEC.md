@@ -7362,3 +7362,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Not a tool. Third class tonight where the honest answer is that prose carries the meaning and a
       matcher cannot read it - after handler messages naming absent response fields, and count/array
       consistency where only sixteen pairs were reachable.
+- [x] **two confirm-gated endpoints whose only suite skips - now covered** (hours)  **DONE 2026-08-31.**
+      tools/test_editor_input_gates.py, 17 PASS 0 FAIL against the live editor. Found by asking which
+      of the 57 confirm-gated endpoints have a suite that mentions confirm anywhere near them: 54 do.
+      send_editor_key and invoke_editor_command were named only in test_safety_gate.py, which SKIPS
+      in this write mode - 8 of its 38 assertions run - so their gates were effectively untested.
+
+      These two are worth more care than most. invoke_editor_command's LevelEditor context alone
+      offers NewLevel, OpenLevel, Save and SaveAllLevels, and send_editor_key delivers a synthetic
+      keystroke to whatever has focus - "a synthetic key runs whatever is bound to it", in its own
+      refusal. The gate is the only thing between a mistyped payload and one of those.
+
+      NEVER SENDS confirm:true. Every assertion is about the refusal or about dryRun, which both
+      endpoints offer so a caller can check without firing. Pinned: the refusal names confirm AND
+      dryRun (a gate that only says no teaches people to pass confirm reflexively); dryRun answers
+      sent:false and invoked:false as FIELDS rather than as the absence of an error; dryRun still
+      validates, because a dry run that accepts a key the real call would reject proves nothing; and
+      invoke_editor_command's dryRun names the modal hazard, a modal on the game thread being the
+      thing that takes this bridge down.
+
+- [ ] **move_tree_widget's replaceRoot gate is tested by nothing** (hours)
+      The third of the three gaps above. move_tree_widget reads confirm as an ALIAS for replaceRoot -
+      JBoolAny(In, { TEXT("replaceRoot"), TEXT("confirm") }, false) - and no suite anywhere mentions
+      replaceRoot. The gate guards replacing an EXISTING root widget, which discards the current root
+      from the tree. Needs a widget-blueprint fixture with a root already present, which
+      test_widget_tree.py already builds, so this is an extension of that suite rather than a new one.
