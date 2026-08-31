@@ -9061,11 +9061,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
         add a variable, add its getter, remove the variable   -> compiles clean, 0 messages
         add a dispatcher, add a call node, remove dispatcher  -> orphanedNodeCount 1, compiles clean
+        create_function with an output nothing ever writes    -> compiles clean, 0 warnings even
+        add_cast to an unrelated class (SoundWave)            -> compiles clean
 
-      So the claim stands unrefuted and untested where it matters. What would settle it is a
-      fixture that reliably breaks a blueprint - and this repo does not have one, which is itself
-      worth knowing: every suite here asserts that things COMPILE, and none has ever needed a
-      blueprint that does not.
+      So the claim stands unrefuted and untested where it matters. What would settle it is a fixture
+      that reliably breaks a blueprint - and this repo does not have one. Confirmed by grep, not
+      assumed: every numErrors reference in all 163 suites is part of an assertion that it equals
+      ZERO. Not one suite has ever seen a failing compile.
+
+      AND THE REASON IS A GOOD PROPERTY, WHICH IS WHY THIS IS FILED RATHER THAN FIXED IN A HURRY. The
+      four attempts above did not fail for want of trying - they failed because this bridge is hard
+      to author a broken graph WITH. connect_pins refuses an incompatible connection at authoring
+      time rather than letting it compile-fail later, orphaned nodes are dropped rather than kept,
+      and the engine tolerates an unwritten return value. The guards that make the endpoints safe are
+      the same guards that make a negative fixture hard to build.
+
+      WHAT WOULD PROBABLY WORK, for whoever picks this up: breakage the bridge cannot author and
+      therefore does not guard - a cast wired INTO an exec chain whose input pin then receives an
+      incompatible type through a wildcard that resolves later (the same trick test_rollback_real's
+      tripwire uses to be legal at preflight and illegal at apply), or content-level breakage such as
+      a variable typed on an asset that is then deleted. Both are a session of their own, and the
+      payoff is not just this claim: it is the first fixture in the repo for ANY error-reporting path.
 
       CLAIM 2, found while failing at claim 1 and the more interesting of the two.
       remove_event_dispatcher's note says orphaned nodes "will fail the next compile". Measured on a
