@@ -82,12 +82,34 @@ def read_only_endpoints():
         src = open(common, encoding="utf-8", errors="replace").read()
     except OSError:
         return set()
-    i = src.find("IsReadOnlyEndpoint")
-    if i < 0:
+    # THE DEFINITION AND ITS WHOLE SET, not a window around the first mention.
+    #
+    # This was src.find("IsReadOnlyEndpoint") plus a +/-6000 character window of TEXT() literals.
+    # Two faults compounded: the bare find matched a COMMENT 25 lines above the function (the same
+    # bug fixed in param_reach the same night), so the window was centred in the wrong place - and a
+    # fixed character window cannot hold a list that grows. Measured against a live editor it saw 56
+    # of the 88 endpoints the bridge actually reports as readOnly, missing find_assets, compile,
+    # export_asset, get_dependencies and 28 more.
+    #
+    # The set is a plain `static const TSet<FString> ReadOnly = { TEXT("a"), ... };` inside the
+    # function, so it can be read exactly: locate the DEFINITION, then take the braced initialiser.
+    m = re.search(r"\bbool\s+IsReadOnlyEndpoint\s*\(", src)
+    if not m:
         return set()
-    # the literal list sits just above/below the predicate; take the nearest big TEXT("...") run
-    window = src[max(0, i - 6000): i + 6000]
-    return {m.lower() for m in re.findall(r'TEXT\("([a-z0-9_]+)"\)', window)}
+    decl = re.search(r"TSet<FString>\s+\w+\s*=\s*\{", src[m.end():])
+    if not decl:
+        return set()
+    start = m.end() + decl.end() - 1
+    depth, j = 0, start
+    while j < len(src):
+        if src[j] == "{":
+            depth += 1
+        elif src[j] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        j += 1
+    return {x.lower() for x in re.findall(r'TEXT\("([a-z0-9_]+)"\)', src[start:j])}
 
 
 def handler_bodies():
@@ -97,7 +119,27 @@ def handler_bodies():
         src = open(os.path.join(PRIV, fn), encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
         matches = list(HANDLER.finditer(src))
         for i, m in enumerate(matches):
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(src)
+            # BRACE-MATCH THE BODY, do not run to the next handler. A handler that is the LAST one
+            # in its file - or merely the last before a long run of helpers - absorbed everything
+            # after it under the old rule. H_project_paths, added to MifBridgeCommon.cpp on
+            # 2026-08-31 immediately after H_self_audit, was credited with a 154,484-character
+            # "body" and duly reported for calling TrySetDefaultValue and SetActorLabel, neither of
+            # which appears within a hundred lines of it. The finding it inherited had been filed
+            # against self_audit for the same reason, and moved the moment a new handler took that
+            # position - which is the tell that it was never about either endpoint.
+            open_brace = src.find("{", m.end())
+            if open_brace < 0:
+                continue
+            depth, j = 0, open_brace
+            while j < len(src):
+                if src[j] == "{":
+                    depth += 1
+                elif src[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            end = min(j + 1, matches[i + 1].start() if i + 1 < len(matches) else len(src))
             yield fn, m.group(1), src[m.start():end]
 
 
