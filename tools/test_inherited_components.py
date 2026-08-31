@@ -132,6 +132,50 @@ def main():
         check("T292 the child still compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,
               "errors=%s" % c.get("numErrors"))
 
+    # ------------------------------------------------------------------ T295 the batch counts
+    print("\n=== T295: a MIXED batch is refused WHOLE, and the counts say so ===")
+    # WHY THIS AND NOT JUST THE ERROR TEXT. T291 already asserts the message names the property that
+    # did not apply. What nothing asserted was the four COUNTS - propertiesRequested, Applied,
+    # Failed, Unchanged - which are how a caller with a twenty-property batch learns that NONE of it
+    # landed rather than reading a sentence and guessing. They were among 48 consequence-reporting
+    # response fields that no suite named, found 2026-08-31.
+    #
+    # The property being pinned is ATOMICITY. PreflightProperties type-checks every value against the
+    # parent archetype BEFORE any override is minted, so one bad value costs the whole batch. That is
+    # a promise worth a test: a caller who sees propertiesApplied 0 can retry the corrected batch
+    # without wondering which half already took.
+    before = inherited(child)
+    before_count = before.get("existingOverrideCount") or 0
+    mixed = M.call("override_inherited_component",
+                   {"blueprintId": child, "component": "Body",
+                    "properties": {"RelativeLocation": "(X=1.000000,Y=2.000000,Z=3.000000)",
+                                   "NoSuchProperty_zz": "irrelevant"}})
+    check("T295 a batch with one bad value is REFUSED - not partially applied",
+          mixed.get("ok") is False, json.dumps(mixed)[:240])
+    check("T295 propertiesRequested counts BOTH", mixed.get("propertiesRequested") == 2,
+          "propertiesRequested=%r" % mixed.get("propertiesRequested"))
+    check("T295 propertiesApplied is 0 - the valid one did NOT land, which is the whole point of "
+          "type-checking before minting anything",
+          mixed.get("propertiesApplied") == 0, "propertiesApplied=%r" % mixed.get("propertiesApplied"))
+    check("T295 propertiesFailed names the one that was bad", mixed.get("propertiesFailed") == 1,
+          "propertiesFailed=%r" % mixed.get("propertiesFailed"))
+    check("T295 and propertiesUnchanged is 0 - a batch that touched nothing must not report values "
+          "as 'unchanged', which would read as 'already correct'",
+          mixed.get("propertiesUnchanged") == 0,
+          "propertiesUnchanged=%r" % mixed.get("propertiesUnchanged"))
+    check("T295 nothingModified is stated as a FIELD, not left to the prose",
+          mixed.get("nothingModified") is True, json.dumps(mixed)[:220])
+    check("T295 and the outcome names the stage that rejected it",
+          "preflight" in (mixed.get("outcome") or ""), "outcome=%r" % mixed.get("outcome"))
+    rows = mixed.get("properties") or []
+    check("T295 properties[] carries a per-property reason, so a twenty-property batch does not "
+          "need the error sentence parsed",
+          any("NoSuchProperty_zz" in json.dumps(r) for r in rows), json.dumps(rows)[:240])
+    after = inherited(child)
+    check("T295 and the blueprint is exactly as it was - the override count did not move",
+          (after.get("existingOverrideCount") or 0) == before_count,
+          "before=%s after=%s" % (before_count, after.get("existingOverrideCount")))
+
     # ------------------------------------------------------------------ T293 revert
     print("\n=== T293: reverting removes it again ===")
     # CONFIRM-GATED, so only the refusal is reachable from here: the audit harness strips `confirm`

@@ -7485,3 +7485,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       The lesson is about direction, not the spelling: `is not False` is fine when an absent field
       makes the test HARDER to pass, and vacuous when it makes it easier. Three of these were the
       first, one was the second, and only reading each told them apart.
+- [x] **the batch counts on override_inherited_component - propertiesApplied and friends** (hours)  **DONE 2026-08-31.**
+      Third of the 48 consequence-reporting fields closed. T295 in test_inherited_components, nine
+      checks.
+
+      T291 already asserted the error MESSAGE names the property that did not apply. What nothing
+      asserted was the four COUNTS - propertiesRequested, propertiesApplied, propertiesFailed,
+      propertiesUnchanged - which are how a caller with a twenty-property batch learns that NONE of
+      it landed, instead of parsing a sentence and hoping.
+
+      The property pinned is ATOMICITY, and the endpoint earns it: PreflightProperties type-checks
+      every value against the parent archetype BEFORE any override is minted, so one bad value costs
+      the whole batch and requested=2 / applied=0 / failed=1 / unchanged=0 is the proof. Also pinned:
+      nothingModified as a FIELD rather than a promise in prose, an `outcome` that names the stage
+      which rejected it, per-property reasons in properties[], and the override count not moving -
+      because a count that says applied:0 while the asset changed would be the worst of both.
+
+      propertiesUnchanged == 0 is the subtle one. A batch that touched nothing must not report values
+      as "unchanged", which a caller would reasonably read as "already correct" rather than "never
+      attempted".
