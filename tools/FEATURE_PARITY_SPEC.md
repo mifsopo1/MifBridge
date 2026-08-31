@@ -8552,10 +8552,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         verifyFailure   reset_property_to_default emits it when the reset cannot be verified, and the
                         handler names two causes: a native setter or PostEditChangeProperty adjusting
                         the value after the write, or a fixed-size C-array whose default text
-                        describes only element 0. Measured: a scratch Actor blueprint exposes 63
-                        properties and NONE has arrayDim > 1, so the C-array route needs a class that
-                        has one, and the setter route needs a specific engine class rather than
-                        anything the bridge can arrange
+                        describes only element 0. BOTH ROUTES NARROWED BY MEASUREMENT rather than
+                        given up on:
+
+                          the C-array route     a scratch Actor blueprint exposes 63 properties and
+                                                its CDO 112, and NEITHER has a single arrayDim > 1.
+                                                So it needs a class that HAS one, and finding that
+                                                class is the search - not the fixture
+                          the setter route      four clamped or network properties on the CDO
+                                                (InitialLifeSpan -5, NetUpdateFrequency 0,
+                                                NetCullDistanceSquared -1, bHidden) all reset with
+                                                verified:true. Whatever fights a reset, it is not
+                                                ordinary clamping
+
+                        USEFUL BY-PRODUCT, and the reason this was worth the probes: the CDO IS
+                        addressable in scratch - '<path>.Default__<Name>_C' resolves and exposes 112
+                        properties - so property work no longer needs a spawned actor and therefore
+                        no longer needs somebody's level. That unblocks a whole class of future
+                        testing that had been avoiding the live session
 
       Neither is declared unreachable. "No route found" is not "cannot happen", and the C-array
       measurement narrows the search rather than ending it.
