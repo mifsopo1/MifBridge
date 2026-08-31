@@ -2271,3 +2271,50 @@ not help if the tool dropped the `False`.
 or None` collapses `""` to absent, which is the intent. It is wrong for a bool, where `False` is a
 value rather than an absence. One was introduced and removed the same night (`list_objects.detail`);
 the other 30 predate it and are fine today.
+
+## A checker can be right and unreachable at the same time - mutation-test the CLI, not the function
+
+`mcp_static_check` gained a lossy-bool check. It printed:
+
+```
+checked 494 @mcp.tool wrapper(s) in server.py
+OK  every one can be called - no unbound names
+exit=0
+```
+
+which reads as "checked, clean". It was neither. Planting a real defect - `deep=hide_knots or None`
+inside `list_nodes()`, where `deep` is read in C++ with a `true` default and no `JHasAny` guard -
+produced exactly the same output and exit 0.
+
+**The finder function was correct.** Called directly it returned `[('list_nodes', 'deep',
+'hide_knots')]`. Every stage was sound: 494 wrappers matched, 196 with a bool parameter, 177 lossy
+sites inside them, the key's default and guard state both read correctly out of the C++.
+
+**The wiring was dead code.** The report had been inserted *after* `main()`'s existing early return:
+
+```python
+    if not findings:
+        print("OK  every one can be called - no unbound names")
+        return 0          # <-- every clean run leaves here
+
+    lossy = lossy_bool_forwards()   # <-- never reached
+```
+
+`findings` is the unbound-names list, which is empty on every healthy run. So the new check ran on
+exactly the runs where something *else* was already broken, and never otherwise.
+
+**Why the obvious test would have missed it.** Calling `lossy_bool_forwards()` from a REPL passes.
+Reading the diff passes - the inserted block is correct in isolation. Only running the *command* the
+way CI runs it, against a planted instance, exposes it. The unit under test is the exit code and the
+stdout, not the function.
+
+**The rule.** When adding a check to an existing tool, plant a known instance and run the tool's
+entry point. A clean report is evidence only after you have watched the same command go red. This
+repo already had the rule for detectors of C++ defects; it applies just as hard to a check bolted
+onto a script that already had an early return in it.
+
+**What the now-live check actually found:** nothing, and that is now a real result. Of the 177
+`key=param or None` forwards inside bool-taking wrappers, none names a key whose C++ read has a
+`true` default without a `JHasAny` presence guard - so no explicit `False` is currently being
+swallowed. See also *`flag or None` on a bool is safe only by coincidence, and there are 30 of them*
+above: this is the check that makes that coincidence monitored instead of merely observed.

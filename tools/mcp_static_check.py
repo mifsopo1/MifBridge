@@ -43,6 +43,7 @@ import ast
 import builtins
 import io
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -181,6 +182,70 @@ def is_mcp_tool(fn):
     return False
 
 
+# --------------------------------------------------------------------------- lossy bool forwarding
+#
+# `someFlag=some_flag or None` turns an explicit False into ABSENT, because _post and _blender drop
+# only None. That is harmless exactly while the endpoint's own default is also false - and there are
+# 30 of these, every one currently safe by that coincidence. The day an endpoint default becomes
+# true, a caller who passed False gets true behaviour and a success response, which is the silent
+# class this repo calls its most damaging.
+#
+# The safe shape, from override_inherited_component, needs BOTH halves:
+#     if (JHasAny(In, { TEXT("confirm") }) && !JBool(In, TEXT("confirm"), true))
+# the JHasAny makes the `true` unreachable unless the key is PRESENT, AND its wrapper forwards
+# `confirm=confirm` rather than `confirm or None` so the False survives the trip. Either half alone
+# is not enough, which is why this check reads both files.
+
+PRIV = os.path.join(os.path.dirname(HERE), "Source", "MifBridge", "Private")
+
+LOSSY = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([a-z_][a-z0-9_]*)\s+or\s+None")
+
+
+def _endpoint_bool_defaults():
+    """key -> set of defaults seen in JBool*/JHasAny-guarded reads across the C++."""
+    out = {}
+    guarded = set()
+    try:
+        names = sorted(os.listdir(PRIV))
+    except OSError:
+        return out, guarded
+    for fn in names:
+        if not fn.endswith(".cpp"):
+            continue
+        src = io.open(os.path.join(PRIV, fn), encoding="utf-8", errors="replace").read()
+        for m in re.finditer(
+                r'JBool\w*\s*\((?:[^;]{0,300}?)TEXT\(\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\)'
+                r'(?:[^;]{0,200}?),\s*(true|false)\s*\)', src, re.S):
+            out.setdefault(m.group(1), set()).add(m.group(2))
+        for m in re.finditer(r'JHasAny\s*\([^;]{0,200}?TEXT\(\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\)',
+                             src, re.S):
+            guarded.add(m.group(1))
+    return out, guarded
+
+
+def lossy_bool_forwards():
+    """(wrapper, key, param) where an explicit False is dropped AND the endpoint defaults true."""
+    server = io.open(SERVER, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
+    defaults, guarded = _endpoint_bool_defaults()
+    fn = re.compile(r"@mcp\.tool\(\)\s*\n(?:\s*#[^\n]*\n|\s*\n)*(?:async\s+)?def\s+"
+                    r"([a-z0-9_]+)\s*\(([^)]*)\)", re.S)
+    rows = []
+    for m in fn.finditer(server):
+        name, sig = m.group(1), m.group(2)
+        bools = set(re.findall(r"([a-z_][a-z0-9_]*)\s*:\s*bool", sig))
+        if not bools:
+            continue
+        nxt = server.find("@mcp.tool()", m.end())
+        body = server[m.end(): nxt if nxt > 0 else len(server)]
+        for key, param in LOSSY.findall(body):
+            if param not in bools:
+                continue
+            d = defaults.get(key, set())
+            if "true" in d and key not in guarded:
+                rows.append((name, key, param))
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--file", default=SERVER)
@@ -206,9 +271,24 @@ def main():
 
     label = "function" if a.all else "@mcp.tool wrapper"
     print("checked %d %s(s) in %s" % (checked, label, os.path.basename(a.file)))
+    # This has to run BEFORE the no-unbound-names early return, not after it. Placed after, it was
+    # unreachable on every clean run - which is every run - so the checker printed OK while never
+    # having looked. Found by planting `deep=hide_knots or None` into list_nodes and watching it
+    # still say OK; the finder function was right the whole time, the wiring was dead code.
+    lossy = lossy_bool_forwards()
+    if lossy:
+        print("")
+        print("LOSSY BOOL FORWARD - an explicit False is DROPPED and the endpoint defaults TRUE:")
+        for fnname, key, param in lossy:
+            print("  %s() sends %s=%s or None; the endpoint reads %s with a true default and does "
+                  "not guard it with JHasAny, so False silently becomes true."
+                  % (fnname, key, param, key))
+        print("  Forward it directly - `key=param` - or guard the C++ read with JHasAny.")
+
     if not findings:
-        print("OK  every one can be called - no unbound names")
-        return 0
+        if not lossy:
+            print("OK  every one can be called - no unbound names")
+        return 1 if lossy else 0
 
     print("")
     print("UNBOUND NAMES - these raise NameError on EVERY call:")
