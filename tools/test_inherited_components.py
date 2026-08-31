@@ -304,6 +304,42 @@ def main():
           own.get("ok") is False and "set_property" in (own.get("error") or ""),
           (own.get("error") or "")[:200])
 
+    # ---- T294b the refusal that HELPS, and the promise it makes about another endpoint
+    print("\n=== T294b: availableComponents, and whether its note is telling the truth ===")
+    # A component that is neither owned nor inherited takes the branch that calls
+    # GatherAvailableComponents, so the refusal arrives with the list a caller needs to fix the call.
+    # availableComponentsTruncated is emitted ALWAYS, not only when the cap is hit, so it can be
+    # asserted rather than noticed by its absence - and nothing read it.
+    miss = M.call("override_inherited_component",
+                  {"blueprintId": child, "component": "NoSuch_zz",
+                   "properties": {"bVisible": "false"}})
+    check("T294b an unknown component is refused", miss.get("ok") is False, json.dumps(miss)[:180])
+    check("T294b and availableComponentsTruncated is present as a real bool",
+          isinstance(miss.get("availableComponentsTruncated"), bool),
+          "availableComponentsTruncated=%r" % miss.get("availableComponentsTruncated"))
+    check("T294b and this blueprint is nowhere near the cap, so it is false",
+          miss.get("availableComponentsTruncated") is False,
+          json.dumps(miss.get("availableComponents"))[:200])
+
+    # THE ASSERTION WORTH HAVING. The not-truncated note promises that "list_components on this
+    # blueprint returns the same set" - a claim about a DIFFERENT endpoint, made in prose, checked by
+    # nothing. The source comment beside it records that an earlier version of this note was WRONG in
+    # exactly that way: it pointed at a list that structurally could not contain an inherited or
+    # native row, "looked complete, said so, and was the very thing added to stop a caller guessing
+    # at what exists". A promise about another endpoint is only worth making if something compares
+    # them.
+    def _names(rows):
+        return sorted((r.get("name") if isinstance(r, dict) else r) for r in (rows or []))
+
+    avail = _names(miss.get("availableComponents"))
+    listed = _names(M.call("list_components", {"blueprintId": child}).get("components"))
+    check("T294b the note's promise holds - list_components returns the SAME set",
+          avail == listed,
+          "availableComponents=%s list_components=%s - the note says these agree" % (avail, listed))
+    # And it really does span both origins, which is what the old broken note got wrong.
+    check("T294b and the set spans inherited AND own components, not just one origin",
+          "Body" in avail and "Own" in avail, avail)
+
     SC.confirm_call("delete_asset", {"path": child_path})
     SC.confirm_call("delete_asset", {"path": parent_path})
     print("\n" + "=" * 72)

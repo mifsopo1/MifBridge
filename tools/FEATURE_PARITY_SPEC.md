@@ -8302,7 +8302,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **15 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **14 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8393,7 +8393,17 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the handler REMOVES overrideTemplatePath and renames it, because that field would otherwise
       name a MarkAsGarbage'd object.
 
-      Real gaps: 15. Out of reach with a written reason: 6. Read by a suite: 43.
+      availableComponentsTruncated closed next - test_inherited_components T294b, 71 -> 76 - and
+      the assertion worth having was not the flag. When the list is NOT truncated the note promises
+      that "list_components on this blueprint returns the same set": a claim about a DIFFERENT
+      endpoint, made in prose, checked by nothing. The source comment beside it records that an
+      earlier version of that note was WRONG in exactly this way - it pointed at a list that
+      structurally could not contain an inherited or native row, and "looked complete, said so, and
+      was the very thing added to stop a caller guessing at what exists". T294b now compares the two
+      endpoints and asserts the set spans both origins, so the promise is verified rather than
+      repeated.
+
+      Real gaps: 14. Out of reach with a written reason: 6. Read by a suite: 44.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote
