@@ -6523,6 +6523,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the actual fix rather than a one-off pass.
 
 
+- [ ] **a suite can leave the editor's CURRENT LEVEL changed, and the next suite inherits it** (hours)
+      Filed 2026-08-31, after it caused three failures in test_layers that were the endpoint being
+      right and the suite being wrong. test_uncovered_reads7 runs add_sublevel + set_current_sublevel
+      and cannot put it back: remove_sublevel needs discardUnsaved, which has no scratch_confirm
+      exemption by design and should not get one. So every suite after it in the same editor is
+      placing actors into a different level than it thinks.
+
+      This is not only a tidiness problem. It changed what was TRUE: with a classic streaming
+      sublevel current inside a partitioned world, AActor::SupportsLayers flips, and test_layers'
+      assertion that adds are refused stopped holding. That was a genuine bug in the bridge's
+      reporting (fixed - list_layers now reports currentLevelIsPartitioned) and it was only ever
+      visible because of this contamination. So the contamination is not purely harmful; what is
+      harmful is that it is SILENT.
+
+      Two candidate shapes, and the second is probably right:
+        - a mifaudit helper suites call in `finally` to restore the level they started in, which
+          only works where restoring is possible - and here it is not, for the discardUnsaved reason
+        - a PRECONDITION READ: suites that care about the level assert which one they are in and say
+          so, the same establish-the-precondition lesson four suites were corrected for on 08-30.
+          test_layers now prints both the editing and persistent level, which is the cheap version.
+
+      Worth doing properly because the sweep runs 157 suites in one editor, so anything one suite
+      leaves behind is inherited by up to 156 others.
+
+
 ### Refuted, recorded so they are not re-proposed
 
 - add_retarget_pose / set_retarget_pose_bone / set_current_retarget_pose -- Refuted on the strongest and most common ground: existing endpoints already do it. I verified the reflective machinery by reading it rather than trusting it - H_set_property has no CPF_Edit gate (and MifBridgeDetails.cpp
