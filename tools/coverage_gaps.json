@@ -418,6 +418,8 @@
    "test_ik_goals_solvers.py",
    "test_ik_rig.py",
    "test_input_mapping.py",
+   "test_niagara_add_remove.py",
+   "test_niagara_set_user_param.py",
    "test_node_spawns.py",
    "test_pcg_authoring.py",
    "test_physics_asset.py",
@@ -433,6 +435,8 @@
    "test_anim_state.py",
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
+   "test_blueprint_breakpoint.py",
+   "test_blueprint_watch.py",
    "test_collision.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
@@ -551,6 +555,8 @@
    "test_add_k2_node.py",
    "test_anim_state.py",
    "test_array_wildcard_durability.py",
+   "test_blueprint_breakpoint.py",
+   "test_blueprint_watch.py",
    "test_collision.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
@@ -578,6 +584,8 @@
    "test_mesh_boolean.py",
    "test_modal_guard.py",
    "test_modal_hazards.py",
+   "test_niagara_add_remove.py",
+   "test_niagara_set_user_param.py",
    "test_node_spawns.py",
    "test_pcg_authoring.py",
    "test_physics_asset.py",
@@ -762,8 +770,11 @@
    "test_material_write.py",
    "test_metasound.py",
    "test_niagara.py",
+   "test_niagara_add_remove.py",
    "test_niagara_emitter.py",
    "test_niagara_params.py",
+   "test_niagara_set_user_param.py",
+   "test_niagara_user_params.py",
    "test_node_spawns.py",
    "test_physics_asset.py",
    "test_physics_primitive_collision.py",
@@ -880,6 +891,7 @@
    "test_safety_gate.py"
   ],
   "landscape_info": [
+   "test_landscape_heightmap.py",
    "test_landscape_info.py"
   ],
   "layout_material_expressions": [
@@ -1034,10 +1046,13 @@
   ],
   "list_niagara_emitters": [
    "test_niagara.py",
+   "test_niagara_add_remove.py",
    "test_niagara_emitter.py"
   ],
   "list_niagara_user_parameters": [
-   "test_niagara_params.py"
+   "test_niagara_params.py",
+   "test_niagara_set_user_param.py",
+   "test_niagara_user_params.py"
   ],
   "list_nodes": [
    "test_anim_state.py",
@@ -1085,6 +1100,7 @@
   ],
   "list_struct_members": [
    "test_create_struct_init.py",
+   "test_factory_init.py",
    "test_set_struct_member.py",
    "test_structs.py",
    "test_unchecked_returns.py"
@@ -1311,7 +1327,8 @@
    "test_widget_animation_props.py"
   ],
   "remove_widget_animation_track": [
-   "test_widget_animation_props.py"
+   "test_widget_animation_props.py",
+   "test_widget_transform_channels.py"
   ],
   "remove_widget_binding": [
    "test_uncovered_reads6.py"
@@ -1383,6 +1400,8 @@
    "test_anim_curve.py",
    "test_anim_state.py",
    "test_asset_tags.py",
+   "test_blueprint_breakpoint.py",
+   "test_blueprint_watch.py",
    "test_consolidate.py",
    "test_create_struct_init.py",
    "test_duplicate_cooked_guard.py",
@@ -1391,6 +1410,7 @@
    "test_gameplay_tag_authoring.py",
    "test_geometryscript.py",
    "test_graph_patch.py",
+   "test_landscape_heightmap.py",
    "test_level_instances.py",
    "test_load_level_guard.py",
    "test_macro_dispatch.py",
@@ -1398,7 +1418,10 @@
    "test_mcp_post_errors.py",
    "test_modal_hazards.py",
    "test_move_actors_to_level.py",
+   "test_niagara_add_remove.py",
    "test_niagara_emitter.py",
+   "test_niagara_set_user_param.py",
+   "test_niagara_user_params.py",
    "test_physics_asset.py",
    "test_physics_primitive_collision.py",
    "test_pinlifetime.py",
@@ -1617,7 +1640,8 @@
    "test_trace_debug.py"
   ],
   "trace_ground": [
-   "test_audit_fixes.py"
+   "test_audit_fixes.py",
+   "test_landscape_heightmap.py"
   ],
   "trace_start": [
    "test_uncovered_reads5.py"

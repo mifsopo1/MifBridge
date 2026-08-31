@@ -5913,7 +5913,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Cooked-safe. The guard that matters is a different one and must be pre-flight, not post-hoc: applying a modifier is irreversible in a session with no undo stack, and BOOLEAN in particular can produce zero geometry or a non-manifold wreck. Require dryRun-then-apply for BOOLEAN, refuse when the operan...
       Vetter corrected the proposal: Rank medium is correct - I would not raise it (run_python is default-on and is a genuine workaround; the spec's own sequencing at FEATURE_PARITY_SPEC.md ~1545 says UE parity first, Blender second) nor lower it (read-with-no-write asymmetry on a subsystem already half-reachable, and on the project's own open list). Four corrections to the proposal itself. (a) "settings validated against a table tha...
 
-- [ ] **join_objects / separate_mesh** (day)
+- [x] **join_objects / separate_mesh** (day)  **DONE 2026-08-30 in 613ee48, ticked 2026-08-31.**
+      THE BOX WAS OPEN FOR A DAY AFTER THE WORK LANDED, which is the second time this has happened
+      here - set_transform records the same thing against itself, "the box was never flipped at the
+      time, which is how a finished item gets built twice". Noticed only because the bl_boolean_op
+      entry says in its own text that these two landed in 613ee48. An open box on finished work is
+      not a harmless lag: it is the backlog advertising work to be redone.
+
+      VERIFIED BY READING THE HANDLERS rather than trusting that note, on all five layers a Blender
+      op has to exist at: ops_create.py:447 op_join_objects and :534 op_separate_mesh, registered in
+      OPS at :590/:591; server.py:4680 bl_join_objects and :4686 bl_separate_mesh; extended help for
+      both in tool_help.json; T4004 and T4005 in test_blender_creation.py. Exercised green on
+      2026-08-31 across Blender 3.6 / 4.2.17 LTS / 4.4.0 / 5.0.1, 0 failed 0 skipped.
+
+      T4004 asserts the thing join quietly changes - it MERGES the material slot lists and remaps
+      every face index - and T4005 asserts separate's honest zero, that a single-part mesh separates
+      with createdCount 0 and says the zero was measured rather than a failure.
+
       Merges several mesh objects into one (with material slots remapped), or splits one into loose parts / by material. The op you need the moment import_mesh brings back more than one object.
       API: bpy.ops.object.join() — confirmed in this build at C:/Program Files/Blender Foundation/Blender 4.4/4.4/scripts/startup/bl_ui/space_view3d.py:2773 and called from a shipped library module at scripts/modules/bpy_extras/object_utils.py:142, which is a headless-capable code path. Separate: bpy.ops.mesh.separate(type='LOOSE'|'MATERIAL'|'SELECTED') under mode_set(EDIT), confirmed in scripts/modules/rna_...
       Cooked: Cooked-safe. Two real hazards to guard rather than discover: joining objects with different material slot lists silently renumbers every polygon's material_index — the exact failure op_set_material_slots already refuses to cause (ops_mesh.py:1281-1290) — so join must report the merged slot order and...
