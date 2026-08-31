@@ -2376,3 +2376,16 @@ whatever pose it happened to be in, and that none of that transfers to the glTF 
 
 `test_blender_mesh` M902 keeps it: export to `.glb` must be refused, the refusal must mention
 import_mesh, and no file may appear.
+
+**And the obvious follow-up was swept.** Which other addon constants are reachable from more than
+one op? Seven, once helper calls are followed - and following helpers is the whole trick, because
+`_SUPPORTED` was read by `_check_format` and not by either verb directly, so a scan that only looked
+inside `op_` functions found ONE constant and missed the actual bug. A sweep that cannot see its own
+known instance is worth nothing; this one now reports the split format tuples, which is how it was
+trusted.
+
+The other four are legitimately shared, each being one capability all its callers genuinely have:
+`DEFAULT_HOST` across the five gen ops, `PRINCIPLED_ALIASES` and `COLOR_PROPS` across the material
+ops, `_MODIFIER_FIELDS` across add/apply/list_modifiers. No tool was landed for this - a seven-row
+report where four rows are permanently correct needs a baseline to be readable, and M902 already
+guards the behaviour that actually matters.
