@@ -95,6 +95,27 @@ UNREACHABLE = {
     "discardedUnsaved": "remove_sublevel needs discardUnsaved, which mifaudit's FORBIDDEN_KEYS "
                         "strips on purpose, and needs a sublevel, which needs a SAVED .umap",
     "discardedNote": "emitted beside discardedUnsaved, same gate",
+    # EVERY ENTRY BELOW WAS ADDED AFTER READING ITS EMITTER, not after failing to think of a test.
+    # The difference matters: an unreachable list is the one place where a wrong entry silently
+    # shrinks the backlog, so a reason that cannot be checked against the source does not belong.
+    "droppedByValidation": "NOT reachable through set_blendspace_samples at all. AddSample -> "
+                           "ValidateSampleValue calls IsTooCloseToExistingSamplePoint, so a "
+                           "duplicate point is refused and lands in rejected[]; it never survives "
+                           "to the ValidateSampleData dedup pass this field reports. The handler's "
+                           "own reconciliation comment says so, and a live probe confirmed it "
+                           "(2026-08-31). The deletion path is belt-and-braces for samples that "
+                           "arrived some other way",
+    "droppedNote": "emitted beside droppedByValidation, same branch",
+    "staleNote": "needs a component request whose owning manager has gone away WITH ITS WORLD - a "
+                 "teardown no unattended suite performs. staleHandles, the always-emitted count "
+                 "beside it, IS asserted (test_game_framework T1408)",
+    "truncatedReadNote": "needs a log file over 64 MB, which means writing 64 MB to disk to test a "
+                         "note. truncatedRead, the bool beside it, is emitted always",
+    "leftBehind": "add_timeline creates the UTimelineTemplate FIRST and fails cleanly with nothing "
+                  "created when the name is taken, so the collision cannot reach this branch. What "
+                  "does is the template not being re-findable by name after PlaceAndInit despite "
+                  "having just been made - which the handler itself calls the one failure the "
+                  "preflight cannot predict",
 }
 
 FIELD_CALL = re.compile(r"Out->Set(?:String|Number|Bool|Array|Object|StringArray)Field\s*\(")

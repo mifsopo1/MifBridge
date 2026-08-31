@@ -141,6 +141,57 @@ def main():
         check("S100 (setup) the spline is given real points spanning the landscape",
               sp.get("ok") is True, json.dumps(sp)[:280])
 
+        # ---------------------------------------------------------------- S100b skippedPostEditChange
+        # THE FIELD THAT SAYS WHETHER THE ACTOR-WIDE REBUILD RAN, and until now nothing read it -
+        # including this suite, which has passed skipPostEditChange:True since it was written and
+        # never checked that the endpoint agreed.
+        #
+        # It matters because PostEditChange() re-runs the owning actor's construction script, and on
+        # every DDS2 blueprint that rebuilds its own spline - BP_CarRoadSpline, BP_SplineSidewalk,
+        # BP_QuestNPCWalkPath, BP_SegmentedPathTaskMarker - that DISCARDS the points just written.
+        # The call still reports pointCount:N and an immediate read-back returns 2. This flag is the
+        # only thing in the response that distinguishes the two cases.
+        #
+        # BOTH DIRECTIONS, because a field hardcoded to the value this suite happens to send would
+        # pass a one-sided check forever. The scratch blueprint here has no construction script that
+        # rebuilds the spline, so what is asserted is the REPORTING, not the discard - naming the
+        # blueprints above rather than pretending this reaches them.
+        check("S100b the response reports the skip that was requested",
+              sp.get("skippedPostEditChange") is True,
+              "asked skipPostEditChange:True, response says %r" % sp.get("skippedPostEditChange"))
+        check("S100b and pointCount is read back from the component, matching what was sent",
+              sp.get("pointCount") == len(pts),
+              "pointCount=%s pointsRequested=%s sent=%d"
+              % (sp.get("pointCount"), sp.get("pointsRequested"), len(pts)))
+        check("S100b and pointsRequested reports the INTENT alongside it",
+              sp.get("pointsRequested") == len(pts),
+              "pointsRequested=%s sent=%d" % (sp.get("pointsRequested"), len(pts)))
+
+        # The other direction. Safe on this actor precisely because its construction script does not
+        # rebuild the spline - on one of the blueprints named above this call is what loses the work.
+        nopec = M.raw_post("set_spline_points", {"actorPath": actor, "component": "Spline",
+                                                 "points": pts, "space": "world",
+                                                 "pointType": "linear", "snapToGround": True,
+                                                 "groundOffset": 600.0})
+        check("S100b without the flag the endpoint says it did NOT skip",
+              nopec.get("ok") is True and nopec.get("skippedPostEditChange") is False,
+              "ok=%r skippedPostEditChange=%r - a value that never changes is not a report"
+              % (nopec.get("ok"), nopec.get("skippedPostEditChange")))
+        check("S100b and the points survived here, as they must on a blueprint whose construction "
+              "script does not rebuild its spline",
+              nopec.get("pointCount") == len(pts),
+              "pointCount=%s after PostEditChange ran" % nopec.get("pointCount"))
+
+        # Put the actor back the way S101 needs it: with the skip, so nothing downstream inherits a
+        # spline that a construction script may have touched.
+        sp = M.raw_post("set_spline_points", {"actorPath": actor, "component": "Spline",
+                                              "points": pts, "space": "world",
+                                              "pointType": "linear", "snapToGround": True,
+                                              "groundOffset": 600.0,
+                                              "skipPostEditChange": True})
+        check("S100b (restore) the spline is back to the S101 precondition",
+              sp.get("ok") is True and sp.get("pointCount") == len(pts), json.dumps(sp)[:220])
+
         # ------------------------------------------------------------------ S101 the write
         print("\n=== S101: the deformation, counted from the heightfield ===")
 

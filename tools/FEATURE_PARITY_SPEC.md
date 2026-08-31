@@ -8302,7 +8302,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **25 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **19 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8320,7 +8320,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       once a handle's owning manager has gone away with its world, which needs a teardown no
       unattended suite performs.
 
-      `rejected` closed earlier the same evening via test_ported_anim T575.
+      `rejected` closed earlier the same evening via test_ported_anim T575, and skippedPostEditChange
+      after it - test_spline_landscape S100b, 22 -> 28. That one guards a real and expensive bug:
+      PostEditChange re-runs the owning actor's construction script, and on every DDS2 blueprint
+      that rebuilds its own spline (BP_CarRoadSpline, BP_SplineSidewalk, BP_QuestNPCWalkPath,
+      BP_SegmentedPathTaskMarker) that DISCARDS the points just written while the call still reports
+      pointCount:N. This flag is the only thing in the response that tells the two cases apart, and
+      the suite had been passing skipPostEditChange:True since it was written without ever checking
+      the endpoint agreed. Asserted in BOTH directions, because a field hardcoded to the value this
+      suite happens to send would pass a one-sided check forever.
+
+      AND SIX WERE MOVED OUT OF THE BACKLOG BY READING THEIR EMITTERS, which is a different act from
+      failing to think of a test and is labelled as such in the tool. droppedByValidation and
+      droppedNote cannot be reached through set_blendspace_samples at all; leftBehind cannot be
+      reached by a name collision because add_timeline creates the template first and fails cleanly;
+      staleNote needs a world teardown; truncatedReadNote needs a 64 MB log. Each carries its reason
+      in UNREACHABLE, because the unreachable list is the one place a wrong entry silently shrinks
+      the backlog - so a reason that cannot be checked against the source does not belong there.
+
+      Real gaps: 19. Out of reach with a written reason: 6. Read by a suite: 39.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote
