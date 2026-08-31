@@ -2239,3 +2239,35 @@ it, and was duly flagged.
 * **When an explanation must name its own subject, say why you are not spelling it in full.** The
   scan_pinloops line in this file omits the `tools/` prefix on purpose and states that it is
   deliberate. A reader who does not know that will helpfully "fix" it back.
+## `flag or None` on a bool is safe only by coincidence, and there are 30 of them
+
+`_post` and `_blender` both drop a parameter only when it is `None` — `{k: v for k, v in
+params.items() if v is not None}` — so `False` is normally sent and read. Writing
+`someFlag=some_flag or None` turns an explicit `False` into ABSENT, and the endpoint then applies its
+own default.
+
+That is harmless exactly while the two defaults agree. Swept 2026-08-31: **30** bool parameters are
+forwarded that way, every one of them `= False` in the tool signature, and every corresponding
+endpoint default is `false`. So all 30 currently behave identically whether the flag is dropped or
+sent — and all 30 break silently the day any one of those endpoint defaults becomes `true`, because
+the caller who passed `False` would get `true` behaviour and a success response.
+
+The one endpoint that reads a bool with a `true` default is not a counter-example and is worth
+copying. `override_inherited_component`:
+
+```cpp
+if (JHasAny(In, { TEXT("confirm") }) && !JBool(In, TEXT("confirm"), true))
+{
+    Fail(Out, TEXT("confirm=false - refusing. (confirm is optional here: minting an override is
+                    reversible with revert_inherited_component. It is honoured rather than ignored.)"));
+```
+
+The `true` is unreachable unless the key is PRESENT, so it never means "proceed unconfirmed" — and
+its tool forwards `confirm=confirm` directly rather than `confirm or None`, so a deliberate
+`confirm=False` survives the trip and is honoured. Both halves are required: the guard alone would
+not help if the tool dropped the `False`.
+
+**The rule.** `or None` is right for a STRING whose empty value means "no filter" — `type=object_type
+or None` collapses `""` to absent, which is the intent. It is wrong for a bool, where `False` is a
+value rather than an absence. One was introduced and removed the same night (`list_objects.detail`);
+the other 30 predate it and are fine today.
