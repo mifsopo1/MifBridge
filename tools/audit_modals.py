@@ -268,6 +268,22 @@ INVARIANTS = [
     ("MifBridgeImport.cpp", r"bAsync\s*=\s*false", 1,
      "forced FALSE. UAssetImportTask::GetObjects() BLOCKS on an async import "
      "(AssetImportTask.h:78), and this server runs handlers synchronously inside the HTTP ticker"),
+    # NOT modal hazards at all, and kept here for the reason given on bWriteEmptyFiles: each is one
+    # line the source marks load-bearing, and the grep that finds them is the same grep. The third
+    # non-modal entry is the point at which to split this table - see the note there.
+    ("MifBridgeImport.cpp", r"EPackageLocationFilter::Any", 1,
+     "the EXISTENCE half of MifImportIsContainerOnlyPackage, and its absence was a shipped bug. "
+     "Without it the helper asks only 'is there no loose file?', which is trivially true for a "
+     "package that does not exist - so in a cooked modkit, where /Game/ is mounted from a .pak, "
+     "import_texture refused EVERY new destPath with 'resolves to a container-only package' and "
+     "could not create a single texture. Note MifBridgeCooked.cpp:44 deliberately still carries the "
+     "original form, which is correct THERE; do not unify them"),
+    ("MifBridgeIKRig.cpp", r"const\s+auto\*\s*Solver\s*=\s*C->GetSolverAtIndex", 1,
+     "`auto` is load-bearing ACROSS ENGINES: GetSolverAtIndex returns UIKRigSolver* on 5.3 and "
+     "FIKRigSolverBase* on 5.7. Naming the type compiles on whichever engine you happen to be "
+     "building and breaks the other - the one failure shape reading cannot catch and a single-engine "
+     "compile will not either, which is why a text check earns its place beside the probe"),
+
     ("MifBridgeImport.cpp", r"Task->Factory\s*=", 1,
      "ALWAYS set explicitly, and the file calls this its most load-bearing line. Interchange is "
      "bypassed only when a factory is specified - IsInterchangeImportEnabled() && (SpecifiedFactory "
