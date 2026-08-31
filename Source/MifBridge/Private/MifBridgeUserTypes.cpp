@@ -792,6 +792,22 @@ namespace MifBridge
 			return;
 		}
 
+		// FOUR DOORS INTO ONE FRAGILE CLASS, and each was found by crashing rather than by
+		// reading. UAnimSequence is the most editor-fatal type in this plugin:
+		//
+		//   create_asset            a bare NewObject leaves the sequencer data model with no
+		//                           MovieScene (AnimSequencerDataModel.cpp:947)
+		//   duplicate_asset         duplicating a COOKED one dies in the post-duplicate load
+		//                           path (EXCEPTION_ACCESS_VIOLATION 0x28)
+		//   remove_anim_notify_track  MifNotifyTrackRemovalIsSafe - removing the last track while
+		//                           sync markers remain indexes AnimNotifyTracks[0] on an empty
+		//                           array (AnimSequence.cpp:3431)
+		//   add_sync_marker         MifSyncMarkerAddIsSafe, the mirror of the above
+		//
+		// tools/audit_editor_fatal_guards.py lists them and every other fatal guard grouped by
+		// CLASS, so the next one is found by reading rather than by taking an editor down. It was
+		// written because the first two of these were added ninety minutes apart without either
+		// knowing the other existed.
 		// A BARE NewObject<UAnimSequence> TERMINATES THE EDITOR, and it did - 2026-08-31, on the
 		// machine this was written on, taking a running session with it. This is the third member of
 		// the crash-bomb family below (UUserDefinedEnum, UNiagaraSystem) and the first that cannot be

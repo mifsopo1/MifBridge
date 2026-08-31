@@ -599,6 +599,22 @@ namespace MifBridge
 		// READING a cooked StaticMesh is fine (get_property, bounds, LOD counts, materials). It is
 		// DUPLICATION specifically that dies, because that is what triggers the rebuild.
 		//
+		// FOUR DOORS INTO ONE FRAGILE CLASS, and each was found by crashing rather than by
+		// reading. UAnimSequence is the most editor-fatal type in this plugin:
+		//
+		//   create_asset            a bare NewObject leaves the sequencer data model with no
+		//                           MovieScene (AnimSequencerDataModel.cpp:947)
+		//   duplicate_asset         duplicating a COOKED one dies in the post-duplicate load
+		//                           path (EXCEPTION_ACCESS_VIOLATION 0x28)
+		//   remove_anim_notify_track  MifNotifyTrackRemovalIsSafe - removing the last track while
+		//                           sync markers remain indexes AnimNotifyTracks[0] on an empty
+		//                           array (AnimSequence.cpp:3431)
+		//   add_sync_marker         MifSyncMarkerAddIsSafe, the mirror of the above
+		//
+		// tools/audit_editor_fatal_guards.py lists them and every other fatal guard grouped by
+		// CLASS, so the next one is found by reading rather than by taking an editor down. It was
+		// written because the first two of these were added ninety minutes apart without either
+		// knowing the other existed.
 		// DUPLICATING A COOKED ANIM SEQUENCE IS THE THIRD MEMBER OF THIS FAMILY, found live
 		// 2026-08-31 and confirmed from the crash dump's own callstack rather than inferred:
 		//

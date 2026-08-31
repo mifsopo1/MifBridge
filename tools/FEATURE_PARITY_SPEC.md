@@ -8994,3 +8994,39 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       test_create_asset 47 PASS 0 FAIL, parity_check green, scratch 0. The editor was relaunched and
       handed back with both fixes live.
+
+- [x] **AnimSequence was known editor-fatal in FOUR places, each found by crashing** - DONE 2026-08-31
+      Tonight's two crashes generalised into a tool, and the tool immediately found that the
+      knowledge already existed twice more:
+
+        create_asset              a bare NewObject leaves the sequencer data model with no MovieScene
+                                  (AnimSequencerDataModel.cpp:947)
+        duplicate_asset           duplicating a COOKED one dies in the post-duplicate load path
+                                  (EXCEPTION_ACCESS_VIOLATION 0x28)
+        remove_anim_notify_track  MifNotifyTrackRemovalIsSafe - removing the last track while sync
+                                  markers remain indexes AnimNotifyTracks[0] on an empty array
+                                  (AnimSequence.cpp:3431)
+        add_sync_marker           MifSyncMarkerAddIsSafe, the mirror of that one
+
+      Four independent guards, four separate investigations, and not one of them mentions another.
+      The first two were added NINETY MINUTES APART tonight without either knowing the other
+      existed - which is precisely why the second crash happened: after the first I went looking for
+      another way to get a scratch AnimSequence rather than treating the class as hazardous.
+
+      tools/audit_editor_fatal_guards.py collects every refusal string in the module that says an
+      operation would crash, terminate or assert the editor, and groups them BY CLASS with the
+      handlers that guard each. 16 sites across 13 handlers. A class guarded at one door and not
+      another is now visible in a listing rather than discoverable by crashing. Both new guards carry
+      a pointer to it.
+
+      IT IS A READING LIST, NOT A DEFECT LIST, and says so: it cannot know whether an unguarded
+      endpoint would actually crash on that class, only that one part of the codebase believes the
+      class is fragile and another handles it without saying so. Reading an asset is safe in every
+      case guarded here; it is creation, duplication and rebuild that die.
+
+      THE SCAN FOUND 5 SITES BEFORE IT FOUND 16, and the difference was one regex. The first version
+      required a closing paren immediately after the string body, which matches no multi-line refusal
+      - and every refusal in this module worth reading is multi-line, built from adjacent literals.
+      It therefore missed the two guards that motivated the tool. Fourth regex-too-simple bug of the
+      day: C++ string concatenation across lines is the house style here, not the exception, and a
+      scanner that does not expect it reads a fraction of the source and reports a clean number.
