@@ -7,7 +7,7 @@
 //
 // THE SECOND HALF IS THE PART PEOPLE GET WRONG. An LLM's built-in knowledge of this plugin is
 // whatever was in its training data, which is to say nothing, or worse, a guess shaped like a
-// plausible endpoint name. The bridge exposes its own truth at runtime — self_audit, list_endpoints,
+// plausible endpoint name. The bridge exposes its own truth at runtime — self_audit,
 // describe_endpoint, mif_help — and an agent that reads those is working from fact. One that works
 // from memory invents endpoints that do not exist and parameters that are silently ignored. So this
 // tab tells the USER what to tell their agent, in copyable form, rather than assuming the agent
@@ -161,8 +161,11 @@ TSharedRef<SWidget> MifBridge::MakeSetupWidget()
 	const FString StartPrompt =
 		TEXT("You are driving a live Unreal Editor through MifBridge (MCP).\n")
 		TEXT("Before you do anything else:\n")
-		TEXT("  1. call self_audit  - tells you the write mode and what will be refused\n")
-		TEXT("  2. call list_endpoints - the endpoints that ACTUALLY exist in this build\n")
+		TEXT("  1. call self_audit {summaryOnly:true} - the write mode, what will be refused,\n")
+		TEXT("     and the endpoint count. Ask for the FULL form only if you need the\n")
+		TEXT("     per-endpoint detail: it is ~24k tokens against ~370 for the compact one.\n")
+		TEXT("  2. call describe_endpoint for any endpoint you are about to use - it reads the\n")
+		TEXT("     RUNNING build, so it is the authority on what actually exists here\n")
 		TEXT("Do not guess endpoint names or parameters from memory. For any endpoint you have\n")
 		TEXT("not used before, call mif_help('<name>') for its traps and describe_endpoint('<name>')\n")
 		TEXT("for its real accepted parameters as the running editor sees them.\n")
@@ -171,8 +174,8 @@ TSharedRef<SWidget> MifBridge::MakeSetupWidget()
 
 	const FString RefreshPrompt =
 		TEXT("MifBridge has been updated. Refresh what you know about it:\n")
-		TEXT("  self_audit                 - version, write mode, endpoint count\n")
-		TEXT("  list_endpoints             - the current endpoint list\n")
+		TEXT("  self_audit                 - every endpoint this build registers, plus version and\n")
+		TEXT("                               write mode. {summaryOnly:true} for the counts alone\n")
 		TEXT("  mif_help                   - (no argument) every tool with extended help\n")
 		TEXT("Compare against what you were assuming and tell me what changed. If an endpoint you\n")
 		TEXT("relied on is gone or renamed, say so before you continue.");
@@ -318,14 +321,14 @@ TSharedRef<SWidget> MifBridge::MakeSetupWidget()
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 6)
 			[
-				Rule(LOCTEXT("T1T", "self_audit"),
+				Rule(LOCTEXT("T1T", "self_audit {summaryOnly:true}"),
 					 LOCTEXT("T1B", "Build timestamp, write mode, endpoint count, and what the "
 									"safety gate will refuse. The first call of any session."),
 					 Live)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 6)
 			[
-				Rule(LOCTEXT("T2T", "list_endpoints"),
+				Rule(LOCTEXT("T2T", "self_audit"),
 					 LOCTEXT("T2B", "Every endpoint this build actually registers. If it is not in "
 									"here, it does not exist, whatever the agent believes."),
 					 Read)

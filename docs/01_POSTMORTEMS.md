@@ -5,6 +5,66 @@ Newest first.
 
 ---
 
+## A scanner reported "no findings" because it could not see the shape of the bug
+
+**Date** 2026-08-31
+
+**Symptom.** `audit_advice_gaps.py` - written that same day to find messages advising an
+operation that does not exist - printed *"no advice naming an unknown operation - every 'use X'
+/ 'X first' in a message names something this bridge can actually do."*
+
+Minutes later, grepping the source for an unrelated reason, three live mentions of
+`list_endpoints` turned up in `MifBridgeSetupView.cpp`. `list_endpoints` is not an endpoint. The
+bridge itself refuses it: *"'list_endpoints' is not an endpoint on this build (445 are
+registered)."* The scanner built to catch exactly this had just declared the file clean.
+
+**Root cause.** The matcher required a verb adjacent to the name - `use X`, `call X`, `X first`.
+Both live sites were **menus**, which have no verb:
+
+    "  list_endpoints             - the current endpoint list\n"    <- a help block for agents
+    LOCTEXT("T2T", "list_endpoints")                                <- a UI card title
+
+A menu is a worse place for a stale name than prose, not a better one. Prose is one person's
+suggestion; a list reads as authoritative inventory. The card in question said in its own body
+*"Every endpoint this build actually registers. If it is not in here, it does not exist,
+whatever the agent believes."* The card promising to be the source of truth was itself naming a
+tool that did not exist.
+
+**Fix.** Two arms added. `MENU` matches an indented snake_case name followed by a spaced dash,
+anywhere in the bridge's `.cpp` messages. `BARE` matches a literal that is nothing but an
+endpoint-shaped name, **only on lines containing LOCTEXT**. Both sites in `MifBridgeSetupView`
+were corrected to `self_audit`, which is what actually lists endpoints (`{summaryOnly:true}` for
+the counts alone).
+
+**The tuning is the interesting part, and it happened in two wrong steps first.** Turned on
+everywhere, the new pattern produced **128 findings against the old scanner's 0**, every one a
+Blender addon docstring: `merge_threshold - distance below which ...` is a menu of a function's
+*parameters*, which is what a docstring is for. Restricted to `.cpp` it still gave **37**, all
+noise of a different kind - blocklist arrays, `StartsWith` prefixes, enum-parsing comparisons,
+comments. C++ is full of bare snake_case literals that assert nothing. Only the LOCTEXT
+restriction made the bare-name arm usable, because LOCTEXT is text shown to a person by
+definition. Final state: **1 finding on the buggy source, naming all three sites, and 0 after
+the fix.**
+
+A scanner with 128 false positives fails the same way as one reporting 0 - nobody reads it. The
+first is just louder about it.
+
+**Prevention - the rule this earns.**
+
+> A checker that reports "clean" has proved nothing until it has been run against a known
+> instance of what it looks for.
+
+Testing it against the *fixed* tree would have shown clean either way; the pass would have been
+vacuous in the meta-layer, which is the same fault the suites were being corrected for all week.
+The check that counts is the before/after: restore the buggy file, confirm the scanner names it,
+restore the fix, confirm it goes quiet. That is two commands and it is the difference between a
+tool and a comfort blanket.
+
+It also generalises past this scanner. The endpoint refusal *"Pass editLayer naming one that
+exists"* has the same defect one level down - advice naming a **parameter value** that no
+endpoint can enumerate. Filed separately.
+
+
 ## PM-012 — the harness knew what was happening and did not say it (2026-08-26)
 
 **Symptom.** A full two-pass sweep appeared to stop. `test_transactions.py` sat for 568 seconds with

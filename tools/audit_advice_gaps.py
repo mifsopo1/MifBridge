@@ -37,6 +37,35 @@ ADVICE = re.compile(
     r"|\b([a-z][a-z0-9_]{4,})\s+(?:creates?|makes?|adds?|enumerates?|finds?)\s+(?:them|one|it)\b"
     r"|\b([a-z][a-z0-9_]{4,})\s+first\b")
 
+# THE SHAPE THAT GOT PAST THE PATTERN ABOVE, and it is the one that matters most.
+#
+# ADVICE needs a verb next to the name - "call X", "X first". A MENU has no verb:
+#
+#     "  list_endpoints             - the current endpoint list\n"     <- a help block
+#     LOCTEXT("T2T", "list_endpoints")                                 <- a UI card title
+#
+# Both shipped in MifBridgeSetupView.cpp naming an endpoint that does not exist, and this
+# scanner called the file clean. A menu is WORSE than prose advice, not better: prose is one
+# person's suggestion, a list reads as authoritative inventory - and the card in question said
+# in its own body "if it is not in here, it does not exist". The inventory was the wrong one.
+#
+# Two high-signal forms, both requiring an underscore so prose cannot match:
+#   name - description   (a dash-menu entry, optionally with () or {} after the name)
+#   name                 (a literal that is NOTHING but an endpoint-shaped name)
+# A dash-menu entry. High signal on its own: prose does not indent a snake_case name and
+# follow it with a spaced dash. This is the arm that catches the RefreshPrompt help block.
+MENU = re.compile(r"^\s*([a-z][a-z0-9_]{4,})(?:\s*\([^)]*\)|\s*\{[^}]*\})?\s+[-–]\s")
+
+# A literal that is NOTHING but an endpoint-shaped name - the UI card title form.
+#
+# ONLY CHECKED ON LOCTEXT LINES, and that restriction is the whole reason this arm is usable.
+# C++ is full of bare snake_case literals that are not claims about anything: blocklist arrays
+# (MifBridgeSafety), StartsWith prefixes (MifBridgePanel), enum parsing (MifBridgeStreaming),
+# return labels (MifBridgeNodes7). Matching them all gave 37 findings, every one noise. LOCTEXT
+# is text shown to a person by definition, so a bare endpoint name inside one is being
+# presented as a thing that exists - which is exactly what the T2 card was doing.
+BARE = re.compile(r"^([a-z][a-z0-9_]{4,})(?:\s*\([^)]*\)|\s*\{[^}]*\})?\s*$")
+
 # Words that look like endpoints but are prose or engine API, not something we could provide.
 IGNORE = {
     "instead", "rather", "either", "before", "after", "please", "should", "would", "could",
@@ -80,8 +109,28 @@ def scan():
         src = io.open(path, encoding="utf-8", errors="replace").read()
         for i, line in enumerate(src.split("\n"), 1):
             # Only look inside strings - advice lives in messages, not in code.
-            for lit in re.findall(r'"([^"]{12,})"', line):
-                for m in ADVICE.finditer(lit):
+            #
+            # The floor is 6, not 12, because a bare menu title IS the whole literal and plenty
+            # of real endpoint names are shorter than twelve characters. ADVICE keeps the old
+            # floor: it needs surrounding prose to match at all, so a short literal cannot carry
+            # it, and loosening it there would only add noise.
+            for lit in re.findall(r'"([^"]{6,})"', line):
+                # INVENTORY IS FOR THE BRIDGE'S OWN MESSAGES ONLY. Turned on everywhere it
+                # produced 128 findings against the old scanner's 0, and every one of the new
+                # ones was a Blender addon docstring: "merge_threshold - distance below which
+                # ..." is a menu of a FUNCTION'S PARAMETERS, which is what a docstring is for,
+                # not a claim that an operation exists. A scanner with 128 false positives is
+                # not read, so it fails exactly the way one reporting 0 fails - just louder.
+                # In the .cpp messages a dash-menu really is an inventory of operations, which
+                # is where the bug was and where the pattern earns anything.
+                found = []
+                if base.endswith(".cpp"):
+                    found += list(MENU.finditer(lit))
+                    if "LOCTEXT" in line:
+                        found += list(BARE.finditer(lit))
+                if len(lit) >= 12:
+                    found += list(ADVICE.finditer(lit))
+                for m in found:
                     word = next(g for g in m.groups() if g)
                     if word in IGNORE or word in names:
                         continue
