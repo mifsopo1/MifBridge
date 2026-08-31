@@ -48,6 +48,13 @@ Sources: the 12 verdict-stamped axis files, [work/LIVE_PROBES.md](work/LIVE_PROB
 >   ("dedicated creators OWN their types, create_asset covers the residue") is NOT what shipped
 >   - `create_asset` is currently carrying eleven types the table says need validation it does
 >   not have. That is the decision's real cost today, and it is worth knowing before choosing.
+>   **But the cost is VALIDATION QUALITY, not a crash** - checked rather than assumed:
+>   `create_asset` refuses abstract classes, AActor/UActorComponent subclasses and UBlueprint,
+>   and would accept `UCurveTable`; however `AddRichCurve` appears NOWHERE in MifBridge's
+>   source, so the `check()`-crash the table cites as the reason for `create_curve_table` is
+>   unreachable from the bridge today. An unvalidated CurveTable created this way is a less
+>   useful asset, not a dead editor. Say that plainly when weighing 1.1, because "crash guard"
+>   reads as urgent and is not.
 > - **1.2 is MOOT: `map_check` is not registered on any build.** The question was whether its
 >   routing through `Exec("MAP CHECK DONTDISPLAYDIALOG")` violates the no-console-wrapper rule.
 >   There is no endpoint to violate it. Same shape as E6's `run_eqs_query` - a question about
