@@ -85,8 +85,15 @@ def main():
             "label": "MifLayerActor%d" % st})
         actor = ((q.get("actor") or {}).get("actorPath")) or q.get("actorPath")
         check("L102 (setup) a scratch actor exists", bool(actor), json.dumps(q)[:200])
-        partitioned = base.get("levelIsPartitioned") is True
-        print("  level is %s" % ("WORLD PARTITIONED" if partitioned else "classic (sublevels)"))
+        # THE LEVEL THE ACTOR LANDS IN, not the world. AActor::SupportsLayers reads
+        # GetLevel()->bIsPartitioned, so a classic streaming sublevel made current inside a
+        # partitioned world holds layer members fine. Branching on levelIsPartitioned (the
+        # PERSISTENT level) asserted a refusal that did not happen the moment another suite
+        # left a sublevel current - three failures, and the endpoint was right each time.
+        partitioned = base.get("currentLevelIsPartitioned") is True
+        print("  editing level is %s (persistent level partitioned=%s)"
+              % ("WORLD PARTITIONED" if partitioned else "classic",
+                 base.get("levelIsPartitioned")))
         if actor and partitioned:
             # CLASSIC LAYERS CANNOT HOLD AN ACTOR IN A PARTITIONED WORLD - AActor::SupportsLayers
             # returns false for every actor in one. The refusal IS the behaviour worth testing

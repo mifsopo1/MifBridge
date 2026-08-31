@@ -5,6 +5,70 @@ Newest first.
 
 ---
 
+## A helper named for the level it does not read, and three messages that claimed "every actor"
+
+**Date** 2026-08-31
+
+**Symptom.** `test_layers` had been 17 PASS / 0 FAIL all session. Run again after other suites, it
+was 14 / 3. The three failures were all L102, asserting that adding an actor to a classic layer on a
+World Partition map is refused. It was not refused - `modify_actor_layers` returned `ok:true` with
+`membershipsChanged: 1`, while `list_layers` in the same run still reported
+`levelIsPartitioned: true` and a note reading *"nothing can be added to a layer here however the
+call is spelled"*.
+
+**Root cause.** The engine's predicate is per-ACTOR and reads that actor's own level:
+
+```cpp
+// AActor::SupportsLayers, ActorEditor.cpp:982
+const bool bIsPartitionedActor = GetLevel()->bIsPartitioned;
+```
+
+Not the world's. An earlier suite in the same editor had run `add_sublevel` +
+`set_current_sublevel`, so new actors were being created in a **classic streaming sublevel of a
+partitioned world** - where `SupportsLayers` is true and classic Layers work exactly as they always
+did.
+
+The bridge could not see the difference because its helper was:
+
+```cpp
+bool MifCurrentLevelIsPartitioned()          // reads World->PersistentLevel
+```
+
+**The name was the bug's disguise.** Every one of its three callers reads "current" as "the level I
+am working in", and that is the one level it does not report. Two of them phrased their answer as a
+claim about *every actor*, which a single counterexample disproves - and which this codebase would
+have caught long ago in anyone else's code.
+
+**Fix.** Renamed to `MifPersistentLevelIsPartitioned`, added `MifEditingLevelIsPartitioned`
+(`World->GetCurrentLevel()`), and `list_layers` now reports **both** - `levelIsPartitioned` kept as
+it was, plus `currentLevelIsPartitioned`, which is the field that actually predicts whether an add
+will work. The mixed case gets its own note saying actors placed now *can* hold layers while ones
+already in the partitioned persistent level cannot. The refusal and `notValidNote` say "these actors
+live in a partitioned level" instead of "every actor".
+
+**What made it visible, and it was luck.** Suites are normally run one at a time against a fresh
+editor, where the persistent and current levels agree and the claim looks true. This surfaced only
+because a *different* suite - `test_uncovered_reads7`, changed an hour earlier to discover its own
+sublevel fixture - left a sublevel current. Cross-suite state contamination is usually a nuisance;
+here it was the only thing that produced the counterexample.
+
+**Prevention.**
+
+> When a helper reports a property of "the level", name which level. `Current`, `Persistent` and
+> `Editing` are three different answers and the wrong one still compiles.
+
+And the second, which is the one worth carrying further:
+
+> A message that says **every** is a claim strong enough to be disproved by one example. Prefer
+> naming the thing the engine actually tests - here `GetLevel()->bIsPartitioned` - so the message
+> stays true when the general statement stops being.
+
+**Not fixed here, filed instead.** Suites can leave the editor's current level changed, and the next
+suite inherits it. `test_uncovered_reads7` cannot restore it: `remove_sublevel` needs
+`discardUnsaved`, which has no scratch exemption by design. Worth a suite-level "restore the current
+level" convention rather than each suite defending itself.
+
+
 ## verticesChanged reported 0 for a deformation that had actually happened
 
 **Date** 2026-08-31

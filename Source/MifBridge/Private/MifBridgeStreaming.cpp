@@ -2189,10 +2189,24 @@ namespace MifBridge
 	 *  "not valid for a layer", and the reason was neither of the two the first message guessed at
 	 *  (a builder brush, a transient actor). Without naming it, the endpoint would report a refusal
 	 *  the caller cannot act on and would never guess. */
-	bool MifCurrentLevelIsPartitioned()
+	// RENAMED FROM MifCurrentLevelIsPartitioned, which read PersistentLevel. The old name was the
+	// bug's disguise: every caller reads "current" as "the level I am working in", and that is the
+	// one level this does not report. With a streaming sublevel made current, the two differ and
+	// three separate messages made a false claim about "every actor".
+	bool MifPersistentLevelIsPartitioned()
 	{
 		const UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 		const ULevel* Level = World ? World->PersistentLevel : nullptr;
+		return Level && Level->bIsPartitioned;
+	}
+
+	// The level NEW ACTORS GO INTO, which is what decides whether they can hold a classic layer.
+	// AActor::SupportsLayers reads GetLevel()->bIsPartitioned - the actor's OWN level, never the
+	// world's - so a non-partitioned sublevel of a partitioned world holds layer members fine.
+	bool MifEditingLevelIsPartitioned()
+	{
+		const UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		const ULevel* Level = World ? World->GetCurrentLevel() : nullptr;
 		return Level && Level->bIsPartitioned;
 	}
 
@@ -2266,17 +2280,32 @@ namespace MifBridge
 			Out->SetBoolField(TEXT("truncated"), true);
 			Out->SetNumberField(TEXT("reported"), Rows.Num());
 		}
-		const bool bPartitioned = MifCurrentLevelIsPartitioned();
+		const bool bPartitioned = MifPersistentLevelIsPartitioned();
+		const bool bEditingPartitioned = MifEditingLevelIsPartitioned();
 		Out->SetBoolField(TEXT("levelIsPartitioned"), bPartitioned);
-		if (bPartitioned)
+		// THE FIELD THAT ACTUALLY PREDICTS THE OUTCOME. levelIsPartitioned describes the persistent
+		// level; whether an actor can join a layer is decided by the actor's OWN level. With a
+		// classic streaming sublevel made current inside a partitioned world the two disagree, and
+		// a caller acting on the world-level answer alone concludes the opposite of the truth.
+		Out->SetBoolField(TEXT("currentLevelIsPartitioned"), bEditingPartitioned);
+		if (bPartitioned && bEditingPartitioned)
 		{
 			Out->SetStringField(TEXT("note"),
-				TEXT("this level is WORLD PARTITIONED, and classic Layers do not work on one at all - "
-					 "AActor::SupportsLayers returns false for every actor in a partitioned level "
-					 "(ActorEditor.cpp), so nothing can be added to a layer here however the call is "
-					 "spelled. This is not a limitation of this endpoint; it is how the two systems "
-					 "relate. World Partition's equivalent is DATA LAYERS - use list_data_layers, "
-					 "create_data_layer and add_actor_to_data_layer instead."));
+				TEXT("the level being edited is WORLD PARTITIONED, so classic Layers cannot hold "
+					 "actors placed into it - AActor::SupportsLayers reads GetLevel()->bIsPartitioned "
+					 "(ActorEditor.cpp), the actor's OWN level. World Partition's equivalent is DATA "
+					 "LAYERS - use list_data_layers, create_data_layer and add_actor_to_data_layer."));
+		}
+		else if (bPartitioned && !bEditingPartitioned)
+		{
+			// The case that disproved the old blanket claim, and it is reachable by ordinary means:
+			// add_sublevel + set_current_sublevel on a partitioned map.
+			Out->SetStringField(TEXT("note"),
+				TEXT("the persistent level is WORLD PARTITIONED but the level currently being edited "
+					 "is a classic streaming sublevel, so actors placed now CAN hold classic Layers - "
+					 "AActor::SupportsLayers reads the actor's OWN level, not the world's. Actors "
+					 "already in the partitioned persistent level still cannot. Mixing the two "
+					 "systems in one map works but is worth doing deliberately."));
 		}
 		else if (Names.Num() == 0)
 		{
@@ -2580,12 +2609,12 @@ namespace MifBridge
 			// "not valid for a layer" on a modern map, and a caller told only that its actors are
 			// invalid has nothing to act on - the actors are perfectly fine, the SYSTEM does not
 			// apply. Pointing at Data Layers is the actually useful answer.
-			if (Invalid.Num() > 0 && MifCurrentLevelIsPartitioned())
+			if (Invalid.Num() > 0 && MifPersistentLevelIsPartitioned())
 			{
 				Fail(Out, FString::Printf(
-					TEXT("this level is WORLD PARTITIONED, so classic Layers cannot hold any actor in ")
-					TEXT("it - AActor::SupportsLayers returns false for every actor in a partitioned ")
-					TEXT("level, and IsActorValidForLayer refused all %d. Nothing about these actors ")
+					TEXT("these actors live in a WORLD PARTITIONED level, so classic Layers cannot ")
+					TEXT("hold them - AActor::SupportsLayers reads GetLevel()->bIsPartitioned, the ")
+					TEXT("actor's OWN level, and IsActorValidForLayer refused all %d. Nothing about these actors ")
 					TEXT("is wrong; the two systems are mutually exclusive. Use the DATA LAYER family ")
 					TEXT("instead - create_data_layer / add_actor_to_data_layer / ")
 					TEXT("set_data_layer_visibility. NOTHING was changed."), Invalid.Num()));
@@ -2646,9 +2675,11 @@ namespace MifBridge
 		if (Invalid.Num())
 		{
 			Out->SetArrayField(TEXT("notValidForLayer"), Invalid);
-			Out->SetStringField(TEXT("notValidNote"), MifCurrentLevelIsPartitioned()
-				? TEXT("these resolved to real actors, but this level is WORLD PARTITIONED and "
-					   "classic Layers cannot hold any actor in one. Use the Data Layer family.")
+			Out->SetStringField(TEXT("notValidNote"), MifPersistentLevelIsPartitioned()
+				? TEXT("these resolved to real actors, but they live in a WORLD PARTITIONED level and "
+					   "classic Layers cannot hold those - AActor::SupportsLayers reads the actor's "
+					   "OWN level. An actor in a classic streaming sublevel of the same world still "
+					   "can. Use the Data Layer family for the partitioned ones.")
 				: TEXT("these resolved to real actors that the Layers subsystem will not place - a "
 					   "builder brush, a hidden-in-editor class, or an actor inside a Level "
 					   "Instance. Named rather than counted as affected."));
