@@ -58,6 +58,16 @@ PASS, FAIL = [], []
 
 # Anything in here is either cosmetic or has a usable default, so an endpoint accepting only these can
 # be driven with nothing but a graph.
+#
+# THREE OF THESE ARE NOT COSMETIC, and the name of this set is why nothing checked them for months.
+# numInputs, outputs and pure all change a node's PIN TOPOLOGY - the element pin count, the then_N
+# exec pin count, and whether a cast has exec pins at all. They belong here for T330's purpose, which
+# is only "can this endpoint be driven with nothing but a graph", but a reader takes the word at face
+# value. A build that ignored all three outright would still pass every check in this file.
+#
+# They are asserted in test_pins.py, T447 and T448, against get_node's own pin list. If you add an
+# entry here that decides SHAPE rather than appearance, put the shape assertion there too and say so
+# on this line.
 COSMETIC = {"graphId", "x", "y", "width", "height", "text", "outputs", "numInputs",
             "comment", "title", "purity", "pure"}
 

@@ -239,6 +239,67 @@ def main():
         check("T447 numInputs %d is CLAMPED to %d rather than taken literally" % (asked, expect),
               len(ins) == expect, "%d input pin(s)" % len(ins))
 
+    # ------------------------------------------------------------------ T448 the rest of the list
+    print("\n=== T448: the other COSMETIC entries that are not cosmetic ===")
+    # T447 came from ONE parameter being misfiled. Reading the whole COSMETIC set afterwards found
+    # two more that change a node's PIN TOPOLOGY rather than its appearance, and so were never
+    # checked for the same reason:
+    #
+    #   outputs   add_sequence's then_N EXEC pin count (2-64, default 2). The handler's own alias
+    #             note draws the distinction the list missed - "add_make_array/add_make_map use
+    #             numInputs; Sequence uses outputs".
+    #   pure      add_cast builds a PURE cast, which has no exec pins at all. set_cast_purity's
+    #             toggle is already asserted by pin shape (T917 in test_uncovered_reads5), but
+    #             building one pure from the start is a different path from switching one over.
+    #
+    # The genuinely cosmetic entries are left alone deliberately: x, y, width, height, comment and
+    # title move or label a node and nothing downstream reads them.
+    seq = M.call("add_sequence", {"graphId": g, "outputs": 5})
+    sguid = seq.get("nodeGuid") or (seq.get("node") or {}).get("nodeGuid")
+    check("T448 add_sequence places a node", bool(sguid), json.dumps(seq)[:200])
+    if sguid:
+        snode = (M.call("get_node", {"graphId": g, "nodeGuid": sguid}).get("node") or {})
+        # then_N ONLY. A Sequence also has an exec INPUT, and counting every exec pin would report
+        # six for a five-output node and look like an off-by-one in the handler.
+        thens = [x for x in (snode.get("pins") or [])
+                 if (x.get("direction") or "") == "output" and (x.get("name") or "").startswith("then")]
+        check("T448 outputs 5 gives five then_N exec pins, not the default two",
+              len(thens) == 5, "%d: %s" % (len(thens), [x.get("name") for x in thens]))
+    # The clamp is 2-64 here, NOT 1-64 - a Sequence with one output is not a sequence, and the
+    # difference from numInputs' lower bound is exactly the kind of thing a shared test would miss.
+    for asked, expect, edge in ((1, 2, "floor is 2 here, not numInputs' 1"), (999, 64, "ceiling is 64")):
+        r = M.call("add_sequence", {"graphId": g, "outputs": asked})
+        rg = r.get("nodeGuid") or (r.get("node") or {}).get("nodeGuid")
+        if not rg:
+            check("T448 add_sequence answered for outputs %d" % asked, False, json.dumps(r)[:200])
+            continue
+        n = (M.call("get_node", {"graphId": g, "nodeGuid": rg}).get("node") or {})
+        thens = [x for x in (n.get("pins") or [])
+                 if (x.get("direction") or "") == "output" and (x.get("name") or "").startswith("then")]
+        check("T448 outputs %d is clamped to %d - the %s" % (asked, expect, edge),
+              len(thens) == expect, "%d then pin(s)" % len(thens))
+
+    # A pure cast has NO exec pins. An impure one has exec in and exec out, so this asserts the
+    # DIFFERENCE rather than a count on its own - a build that ignored `pure` would give both nodes
+    # the same shape, and only comparing them says so.
+    shapes = {}
+    for label, payload in (("impure", {}), ("pure", {"pure": True})):
+        args = {"graphId": g, "targetClass": "Actor"}
+        args.update(payload)
+        r = M.call("add_cast", args)
+        cg = r.get("nodeGuid") or (r.get("node") or {}).get("nodeGuid")
+        check("T448 add_cast places a %s cast" % label, bool(cg), json.dumps(r)[:200])
+        if not cg:
+            continue
+        n = (M.call("get_node", {"graphId": g, "nodeGuid": cg}).get("node") or {})
+        shapes[label] = [x for x in (n.get("pins") or [])
+                         if (x.get("type") or {}).get("category") == "exec"]
+    if "pure" in shapes and "impure" in shapes:
+        check("T448 a cast built with pure:true has NO exec pins", not shapes["pure"],
+              [x.get("name") for x in shapes["pure"]])
+        check("T448 and the default impure one does - so `pure` is read, not ignored",
+              len(shapes["impure"]) > 0, [x.get("name") for x in shapes["impure"]])
+
     SC.confirm_call("delete_asset", {"path": "/Game/_MifPin/BP_%d" % st})
     print("")
     print("=" * 72)
