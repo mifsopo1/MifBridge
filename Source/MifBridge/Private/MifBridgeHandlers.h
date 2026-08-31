@@ -19,6 +19,13 @@
 #include "CoreMinimal.h"
 #include "Dom/JsonObject.h"
 
+// The parameter-handling contract now lives in Public/, because provider plugins need it and a
+// private declaration is what pushed MifKismetReconstructor into writing its own copies - one of
+// which drifted, silently ignoring every bool spelling this bridge accepts. Declared THERE and
+// nowhere else: two declarations differing only in MIFBRIDGE_API is a linkage mismatch, and the
+// point of the move is that exactly one declaration exists.
+#include "MifBridgeParams.h"
+
 class UBlueprint;
 class UEdGraph;
 class UEdGraphNode;
@@ -222,27 +229,10 @@ namespace MifBridge
 	 *  TFunction type, so this leaks no Public/ type into this private header. */
 	const FHandlerFn* FindExternalHandler(const FString& Endpoint);
 
-	// --- Result helpers -----------------------------------------------------
-	void Fail(const TSharedRef<FJsonObject>& Out, const FString& Message);
-	bool IsOk(const TSharedRef<FJsonObject>& Out);
-
-	// --- JSON field accessors (optional reads with defaults) ----------------
-	FString JStr(const TSharedRef<FJsonObject>& In, const TCHAR* Field, const FString& Default = FString());
-	double JNum(const TSharedRef<FJsonObject>& In, const TCHAR* Field, double Default = 0.0);
-	int32 JInt(const TSharedRef<FJsonObject>& In, const TCHAR* Field, int32 Default = 0);
-	bool JBool(const TSharedRef<FJsonObject>& In, const TCHAR* Field, bool Default = false);
-	/** First non-empty of several accepted spellings — lets an endpoint accept {"node"} and
-	 *  {"nodeGuid"} interchangeably instead of silently reading nothing. */
-	FString JStrAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, const FString& Default = FString());
-	/** As JBool, but tries several accepted spellings before falling back to Default. */
-	bool JBoolAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, bool Default = false);
-	/** As JInt, but tries several accepted spellings before falling back to Default. Born file-local
-	 *  in MifBridgeUndo.cpp (Batch C) with a "local until a second file needs it" note; Batch D's
-	 *  add_material_expression is that second file, so it moved here per its own eviction clause. */
-	int32 JIntAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields, int32 Default = 0);
-	/** True if ANY of the spellings is present (regardless of value) — distinguishes
-	 *  "caller explicitly passed false" from "caller omitted the field". */
-	bool JHasAny(const TSharedRef<FJsonObject>& In, std::initializer_list<const TCHAR*> Fields);
+	// Fail, IsOk, JStr, JNum, JInt, JBool, JStrAny, JBoolAny, JIntAny, JHasAny, RejectUnknownParams
+	// and MifDeferToNextTick are declared in Public/MifBridgeParams.h, included above. They moved
+	// there so provider plugins can call them instead of reimplementing them; nothing about their
+	// behaviour changed, and every existing call site still resolves through this header.
 
 	// --- Strict numeric reading (Batch L, defect 1) --------------------------
 	// LIVE EVIDENCE. set_actor_transform {actorPath:"RollbackProbe",
@@ -362,9 +352,6 @@ namespace MifBridge
 	 *  unimplemented capability rather than a typo). Born file-local in MifBridgeCooked.cpp
 	 *  (Batch B); promoted here in Batch C so every handler file shares ONE implementation
 	 *  (MifBridgeCommon.cpp) instead of drifting copies. */
-	bool RejectUnknownParams(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out,
-		std::initializer_list<const TCHAR*> AcceptedKeys, const TCHAR* AcceptedSummary,
-		std::initializer_list<TPair<const TCHAR*, const TCHAR*>> KeyNotes = {});
 
 	/** ONE writer for the asset-identity fields every asset-emitting endpoint returns, so no emitter
 	 *  can spell them differently: objectPath (/Game/X/Foo.Foo_C) vs packageName (/Game/X/Foo).
@@ -410,7 +397,6 @@ namespace MifBridge
 	//
 	// Use this instead of calling SetTimerForNextTick directly: it re-arms the guard INSIDE the lambda,
 	// where the work actually happens.
-	void MifDeferToNextTick(TFunction<void()> Work);
 
 	// --- Modal dialog suppression (the bridge's worst hang) -------------------
 	// Every handler runs INLINE on the game thread inside the HTTP ticker (MifBridgeServer.cpp), so an

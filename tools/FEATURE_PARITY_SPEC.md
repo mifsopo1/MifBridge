@@ -7859,3 +7859,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Fix the regex first and watch it report BOTH sites, then fix the four texts and watch it go to
       zero. Doing it in that order is what proves the tool rather than just the messages - and this
       one belongs in audit_detectors_fire's PLANTS afterwards, where it is not yet listed.
+
+- [ ] **MifBridge's parameter contract is now public - the KR mirrors are gone, and it needs a BUILD**
+      (hours)
+      2026-08-31. New Source/MifBridge/Public/MifBridgeParams.h exports Fail, IsOk, JStr, JNum, JInt,
+      JBool, JStrAny, JBoolAny, JIntAny, JHasAny, RejectUnknownParams and MifDeferToNextTick with
+      MIFBRIDGE_API. The private header now INCLUDES it and declares none of them, so exactly one
+      declaration exists - two differing only in MIFBRIDGE_API is a linkage mismatch.
+
+      MifKismetReconstructor's 125 mirrored call sites were switched onto it and its copies deleted in
+      the same change, because extracting a shared helper only helps once the copies are gone. Two of
+      those copies had drifted silently: KrJBool used TryGetBoolField and KrJInt used
+      TryGetNumberField, both of which succeed ONLY for that exact JSON type, so {"cookedOnly":"false"}
+      kept its true default and answered ok:true across 13 bool parameters.
+
+      COMPILED AND LINKED in DebugGame: 206/206 actions, 0 errors, MifBridge 10 translation units
+      and MifKismetReconstructor 1, and BOTH DLLs linked. The link is the part that matters - a wrong
+      MIFBRIDGE_API or a missing definition is LNK2019 at the module boundary, and 125 call sites in
+      another module now resolve across it.
+
+      NOT [x] because Development has not built. UBT refuses outright while Live Coding holds the
+      editor Andre is working in - "Unable to build while Live Coding is active" - so DebugGame was
+      used to compile the same sources without touching the Development binaries. Run the Development
+      build when the editor is next closed; the sources are identical, so this is a formality rather
+      than a doubt, and it is still not a [x] until it happens.
