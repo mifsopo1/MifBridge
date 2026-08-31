@@ -8302,7 +8302,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **19 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **18 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8338,7 +8338,30 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       in UNREACHABLE, because the unreachable list is the one place a wrong entry silently shrinks
       the backlog - so a reason that cannot be checked against the source does not belong there.
 
-      Real gaps: 19. Out of reach with a written reason: 6. Read by a suite: 39.
+      stateUnchanged closed next - test_load_partition_actors T2600, 21 -> 24. `changed` is ONE bool
+      for the whole call, so on a multi-guid request it says nothing about any individual actor, and
+      this endpoint is built to take many. stateUnchanged is the per-actor half of the same answer.
+      Driven as a pure no-op (pin an actor that is already pinned), and asserted three ways: the
+      guid is named, the arrays agree with the summary bool, and every requested guid appears in
+      exactly one of them.
+
+      TWO PROBES THAT DID NOT CLOSE ANYTHING, written down so the next attempt does not repeat them:
+
+        partialNote (spawn_many) is REACHABLE but needs a scratch LEVEL open. test_spawn_many
+        refuses to run unless the open level is Untitled*/_Mif*, because spawn_many places actors in
+        whatever level is open and issue J says they cannot be cleaned up. That is a precondition,
+        not an impossibility - run it with a scratch level open.
+
+        invalidNote (set_blendspace_samples) needs a sample PRESENT on the asset and marked
+        bIsValid:false. All three inputs to bIsValid resist: a duplicate is refused by AddSample, a
+        missing animation is refused by name, and out-of-bounds does not stick - adding a sample at
+        x=500 widens the axis to 800, and narrowing BlendParameters[0].Max back to 100 afterwards
+        DELETED the sample rather than marking it invalid (sampleCount 1 -> 0, invalidCount 0,
+        measured 2026-08-31). That contradicts the handler's comment, which says an invalid sample
+        stays in SampleData. Left in the backlog rather than declared unreachable: one failed probe
+        is not a proof, and the disagreement with the comment is itself worth resolving.
+
+      Real gaps: 18. Out of reach with a written reason: 6. Read by a suite: 40.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote

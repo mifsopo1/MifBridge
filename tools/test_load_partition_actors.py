@@ -92,6 +92,25 @@ def main():
         check("T2600 pinning it AGAIN reports changed:false rather than claiming a second success",
               again.get("ok") is True and again.get("changed") is False
               and again.get("pinnedNow") == 1, json.dumps(again)[:250])
+        # WHICH ones did not move, not just THAT nothing did. `changed` is one bool for the whole
+        # call, so on a multi-guid request it says nothing about any individual actor - and this
+        # endpoint is built to take many. stateUnchanged is the per-actor half of the same answer
+        # and nothing read it until now. The two must agree: an empty stateChanged and a guid in
+        # stateUnchanged is what changed:false MEANS, and a response where they disagree is one
+        # where a caller cannot tell which of its actors moved.
+        check("T2600 and stateUnchanged names the actor that did not move",
+              guid in (again.get("stateUnchanged") or []),
+              "stateUnchanged=%s stateChanged=%s"
+              % (again.get("stateUnchanged"), again.get("stateChanged")))
+        check("T2600 and the per-actor arrays agree with the single `changed` bool",
+              bool(again.get("stateChanged")) == again.get("changed"),
+              "changed=%r but stateChanged=%s - the summary and the detail disagree about one call"
+              % (again.get("changed"), again.get("stateChanged")))
+        check("T2600 and every requested guid is accounted for in exactly one of them",
+              sorted((again.get("stateChanged") or []) + (again.get("stateUnchanged") or []))
+              == [guid],
+              "requested [%s], got changed=%s unchanged=%s"
+              % (guid, again.get("stateChanged"), again.get("stateUnchanged")))
 
         # ------------------------------------------------------------------ T2601 reversible
         print("\n=== T2601: unpin, because a load with no release is a one-way door ===")
