@@ -43,6 +43,12 @@ ADDON = os.path.join(HERE, "blender-addon", "MifBlender")
 BASELINE_FILE = os.path.join(HERE, "blender_consequence_baseline.txt")
 
 OP_DEF = re.compile(r"^def op_(\w+)\s*\(", re.M)
+# ANY module-level def, not just op_ ones. Without this a helper sitting BETWEEN two ops has its
+# fields credited to whichever op happens to precede it in the file - which sent a reader looking for
+# seamVertsRemoved in export_mesh when it is reported by bevel_edges and extrude_skirt through
+# _seam_verdict. The UE arm already labels these "helper <name>"; this one now does too, because a
+# derived list is used as a to-do list and a wrong location wastes the reader rather than the tool.
+ANY_DEF = re.compile(r"^def (\w+)\s*\(", re.M)
 KEY = re.compile(r'''["']([A-Za-z_][A-Za-z0-9_]*)["']\s*:''')
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -64,13 +70,14 @@ def emitted():
     out = {}
     for path in sorted(glob.glob(os.path.join(ADDON, "ops_*.py"))):
         text = io.open(path, encoding="utf-8", errors="replace").read()
-        bounds = [(m.group(1), m.start()) for m in OP_DEF.finditer(text)]
-        for i, (op, start) in enumerate(bounds):
+        bounds = [(m.group(1), m.start()) for m in ANY_DEF.finditer(text)]
+        for i, (name, start) in enumerate(bounds):
             end = bounds[i + 1][1] if i + 1 < len(bounds) else len(text)
+            where = name[3:] if name.startswith("op_") else "helper " + name
             for m in KEY.finditer(text, start, end):
                 key = m.group(1)
                 if CONSEQUENCE.search(key):
-                    out.setdefault(key, set()).add(op)
+                    out.setdefault(key, set()).add(where)
     return out
 
 

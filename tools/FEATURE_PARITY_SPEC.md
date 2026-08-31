@@ -8909,6 +8909,19 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       test_blender_consequence 36 -> 44. Backlog 2 -> 1.
 
 - [ ] **one Blender consequence field left: seamVertsRemoved** (hours)
-      It belongs to the seam-integrity measurement family - "tracked seam verts the op destroyed",
-      reported per axis by the tiling/modular checks - so reaching it needs a mesh with a real seam
-      rather than a primitive, and an op that destroys verts on it.
+      LOCATED PROPERLY 2026-08-31, and the first location was wrong because the TOOL was wrong. The
+      audit said export_mesh; it is reported by bevel_edges and extrude_skirt through the shared
+      helper _seam_verdict (ops_mesh.py:683). Module-level helpers sitting BETWEEN two ops were being
+      credited to whichever op preceded them in the file, which sent me reading the wrong function. A
+      derived list gets used as a to-do list, so a wrong location wastes the reader rather than the
+      tool. Fixed - helpers now report as "helper <name>", the same label the UE arm already used.
+
+      WHY IT IS STILL OPEN, and this is a scope judgement rather than a skip. The seam machinery is a
+      GUARD first: a bevel that breaks seam planarity or moves an asserted extent is REFUSED with an
+      error naming the axis and the tolerance, not reported in a field a caller might miss. So the
+      dangerous case is already handled by the loud path, and seamVertsRemoved is the quiet
+      accounting beside it. Reaching it needs a successful bevel that destroys tracked seam verts
+      WITHOUT tripping either assertion - a fixture with a real seam and a selector that touches it
+      but leaves the extent alone. That is a proper afternoon, and it buys the last field of ten.
+
+      Standing: 10 consequence fields, 9 read, 1 left.
