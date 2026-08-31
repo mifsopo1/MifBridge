@@ -334,9 +334,19 @@ def check_static_audits():
     # tests the fuzzer's detectors, EMPTY_INTERP among them since 2026-08-31. Gating the suite rather
     # than fuzz_endpoints --self-test keeps one home for those cases instead of two.
     failed = []
+    #
+    # audit_vacuous_checks and audit_consequence_fields JOINED 2026-08-31, on Andre's call, and both
+    # need --check: without it they REPORT and exit 0, so the gate would call a red tree green.
+    # They fit the criterion above exactly - ratcheted, non-zero only for something NEW - and the
+    # standing worry was that a gate firing on somebody's honest new assertion is a tax. The ratchet
+    # is the answer to that, and the same day it earned its place: audit_vacuous_checks caught a
+    # genuinely vacuous check in test_physics_asset T2906, written to REPLACE a vacuous one, where
+    # all([]) over an empty slice would have passed without examining anything.
     for tool, args in (("audit_loop_writes.py", []), ("audit_postconditions.py", []),
                        ("audit_modals.py", []), ("test_fuzz_detector.py", []),
-                       ("audit_promise_flags.py", []), ("audit_suite_payloads.py", [])):
+                       ("audit_promise_flags.py", []), ("audit_suite_payloads.py", []),
+                       ("audit_vacuous_checks.py", ["--check"]),
+                       ("audit_consequence_fields.py", ["--check"])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
@@ -349,8 +359,9 @@ def check_static_audits():
                         lines[-1] if lines else "no output")
             failed.append("%s -> %s" % (tool, head[:110]))
     if not failed:
-        return True, ("audit_loop_writes, audit_postconditions and audit_modals at baseline; "
-                      "test_fuzz_detector's offline detector regressions pass")
+        return True, ("audit_loop_writes, audit_postconditions, audit_modals, audit_vacuous_checks "
+                      "and audit_consequence_fields at baseline; test_fuzz_detector's offline "
+                      "detector regressions pass")
     return False, ("a ratcheted source audit reports something NEW:\n    %s\n"
                    "  Read it and either fix it or accept it with that tool's --update-baseline,\n"
                    "  saying why in the commit. Do not package past it."

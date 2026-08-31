@@ -7056,7 +7056,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       to MifBridgeDescribe.cpp on its first run, so tools now get a read-only argv and every run is
       bracketed by a size+mtime digest of Source/ that aborts if anything moved.
 
-- [ ] **three plugin dependencies are linked with nothing compiling against their guard - ANDRE'S CALL** (hours)
+- [~] **three plugin dependencies are linked with nothing compiling against their guard - ANDRE'S CALL** (hours)
+      DECIDED 2026-08-31 by Andre: KEEP them, build endpoints later. The reasoning is the standing
+      one for this repo - MifBridge is a general UE5 tool, and LiveLink, MassEntity and Metasound are
+      exactly the subsystems a non-DDS2 user would want reached. The guard costs little while it
+      waits. Declined as a REMOVAL, not as work: endpoints for the three remain fair game and
+      parity_check will keep printing PLUGIN IDLE until something compiles against them, which is
+      the reminder working as intended rather than a warning to silence.
       A NEW ARGUMENT ARRIVED 2026-08-31 from an unrelated question. Andre asked whether the SDK would
       work on another 5.3.2 game, which turned into a portability audit: with comments and string
       literals scrubbed there are ZERO DDS2 references in the code, and 16 of the 17 .uplugin
@@ -7802,7 +7808,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the collection is empty. That is the shape audit_vacuous_checks documents as acceptable, and
       finding nine of them and no defects is a real result about the suites, not a shrug.
 
-- [ ] **audit_vacuous_checks could now join the release gate** (minutes)
+- [x] **audit_vacuous_checks could now join the release gate** (minutes)
       make_release.check_static_audits gates audit_loop_writes, audit_postconditions, audit_modals,
       test_fuzz_detector, audit_promise_flags and audit_suite_payloads. audit_vacuous_checks is not
       among them, which is how it sat at exit 1 unnoticed. The blocker is gone - the 9 candidates
@@ -8338,7 +8344,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       threshold that ratchets itself can move without anybody reviewing the move, including a shrink
       caused by deleting a suite. --baseline is the deliberate way to move it.
 
-- [ ] **should audit_consequence_fields join the release gate? - ANDRE'S CALL** (minutes)
+- [x] **should audit_consequence_fields join the release gate? - ANDRE'S CALL** (minutes)
       make_release.check_static_audits already gates six. This one is a weaker candidate than most
       in one way and a stronger one in another: it cannot fire on somebody's honest new assertion
       the way audit_vacuous_checks might, because it is ratcheted and only goes red when a NEW field
