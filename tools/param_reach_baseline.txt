@@ -71,6 +71,7 @@ connect_pcg_nodes.assetpath
 create_collection.assets
 delete_material_expression.material
 delete_material_expression.name
+describe_ability_system.objectpath
 describe_animation.animation
 describe_class.filter
 describe_game_feature_plugin.plugin

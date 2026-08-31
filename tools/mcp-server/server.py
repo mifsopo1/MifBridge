@@ -4716,6 +4716,12 @@ def load_partition_actors(guids: list = None, bounds: dict = None,
 
 
 @mcp.tool()
+def describe_ability_system(actor_path: str) -> dict:
+    "Read a LIVE actor's AbilitySystemComponent: every attribute's BASE and CURRENT value side by side, which abilities are granted and which are active, the spawned AttributeSets, and the owned gameplay tags. Base-versus-current is the point - a stat reading 100 while the character takes no damage is a modified current over an unchanged base, and get_property cannot show that because GetNumericAttribute is a FUNCTION, not a property. Finds the component through IAbilitySystemInterface first (a Character's ASC often lives on its PlayerState) and says which route answered. See mif_help."
+    return _post("describe_ability_system", actorPath=actor_path)
+
+
+@mcp.tool()
 def set_plugin_enabled(name: str, enabled: bool, dry_run: bool = False,
                        save: bool = True) -> dict:
     "Enable or disable a plugin in the current .uproject and save it - the write half of the `enabled` field list_game_feature_plugins and describe_game_feature_plugin already report. Changes what the NEXT LAUNCH loads and nothing about this session: no plugin can be loaded or unloaded into a running editor, and the response says so. `enabled` is REQUIRED and has no default. dry_run reports exactly what would change and writes nothing, in any write mode; the real write is full-mode only and backs the .uproject up first. Refuses a plugin name it cannot find, because the engine would otherwise write that name into the .uproject as a reference to nothing and report success. See mif_help."

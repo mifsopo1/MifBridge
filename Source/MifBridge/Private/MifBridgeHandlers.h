@@ -1875,6 +1875,7 @@ namespace MifBridge
 	MIF_DECL(spawn_metahuman_actor);
 	// GameplayEffect modifier authoring (MifBridgeGAS.cpp) — MIF_WITH_GAS.
 	MIF_DECL(add_gameplay_effect_modifier);
+	MIF_DECL(describe_ability_system);
 	// Live widget instances (MifBridgeLiveWidgets.cpp) — no MIF_WITH_* gate, core UMG only.
 	MIF_DECL(list_live_widgets);
 	MIF_DECL(describe_live_widget);

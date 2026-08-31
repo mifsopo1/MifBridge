@@ -5877,30 +5877,53 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       The forward-declaration trap was pre-empted this time rather than found by the compiler:
       KismetDebugUtilities.h declares FBlueprintWatchedPin at :18 and WatchedPin.h defines it,
       the same shape as FBlueprintBreakpoint an hour earlier and the 5.7 break this morning.
-- [ ] **describe_ability_system** (day)
-      DEFERRAL CORRECTED 2026-08-31. I had been holding this back all session on "this project has
-      zero GAS content, so it cannot be verified here". The content half is TRUE and now measured
-      properly rather than assumed: find_assets with class AttributeSet / GameplayAbility /
-      GameplayEffect / AbilitySystemComponent and recursiveClasses returns 0 of each. (My earlier
-      queries used classFilter, which this endpoint does not accept - it takes `class` - so they
-      were being REFUSED rather than returning zero, and I read the refusal as an answer.)
-
-      BUT THE CONCLUSION WAS WRONG. GameplayAbilities is ENABLED in this project, and
-      create_blueprint accepts GameplayAbility and GameplayEffect as parent classes - both verified
-      by creating and deleting one of each under /Game/_MifGAS. So the fixture can be BUILT rather
-      than found, and the ability and effect halves are testable here. I checked whether GAS assets
-      existed without checking whether I could create them, which is the same error as reading the
-      handler of the endpoint a proposal names instead of grepping for the capability.
-
-      What stays genuinely unexercisable is the ASC half: no actor in this project has an
-      AbilitySystemComponent, and one cannot be added to a cooked actor. That arm should be built
-      and REPORTED as unexercised rather than skipped, the way the sync-marker mirror guard and the
-      bounds-load path already are.
-
+- [x] **describe_ability_system** (day)  **DONE 2026-08-31.**
       Reads a live actor's AbilitySystemComponent: which abilities are granted, every attribute's base and current value, which GameplayEffects are active and how long they have left, and the owned gameplay tags. This is the answer to "why is this character not taking damage" - the question GAS debugging is entirely made of.
       API: UAbilitySystemComponent, public, read in D:/UE532/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Public/AbilitySystemComponent.h (5.3): void GetAllAttributes(TArray<FGameplayAttribute>&) [:162]; const TArray<UAttributeSet*>& GetSpawnedAttributes() const [:193]; float GetNumericAttributeBase(const FGameplayAttribute&) const [:214]; float GetNumericAttribute(const FGameplayAttribu...
       Cooked: Fully cooked-safe, and this is the rare one where cooked is the PRIMARY case. Everything read here is live runtime state on a live component - no MeshDescription, no SourceModel, no FSkeletalMeshModel, nothing editor-only is touched, so there is no crash surface at all. It works identically on a coo...
       Vetter corrected the proposal: Rank stays medium, but for different reasons than given, and the justification must be rewritten — two of its three "unreachable" claims are false and would not survive review. STRIKE: "ActivatableAbilities ... not addressable by property path" (Items is a plain UPROPERTY TArray of a USTRUCT and this bridge's walker handles exactly that shape, including [Member=Value] finds) and "base vs current ....
+      H_describe_ability_system in MifBridgeGAS.cpp beside the authoring half, MCP wrapper,
+      extended help, tools/test_ability_system.py - 15 PASS 0 FAIL against a live actor.
+
+      THE JUSTIFICATION WAS REWRITTEN FROM MEASUREMENT, as the vetter demanded - it struck two of
+      the entry's three "unreachable" claims and it was right. On a live ASC:
+
+          get_property {actorPath, "ASC.ActivatableAbilities"}   FAILS - an SCS component is not a
+                                                                 UPROPERTY on the actor by name.
+          get_property {objectPath "<actor>.ASC", "..."}         WORKS, returning EXPORT TEXT:
+                                                                 "(Items=,Owner="ASC",ArrayReplicationKey=1)"
+
+      So this is NOT about unreachable data. It is about two things reflection cannot give: typed
+      rows instead of export text, and the attribute NUMBERS - GetAllAttributes,
+      GetNumericAttributeBase and GetNumericAttribute are FUNCTION CALLS, and no property walk makes
+      a call. Base-versus-current is the whole of GAS debugging: a stat reading 100 while the
+      character takes no damage is a modified CURRENT over an unchanged BASE, and only calling both
+      shows it. T9100 asserts both halves - that reflection returns text, and that this returns
+      structure.
+
+      THE DEFERRAL THAT BLOCKED THIS FOR A SESSION WAS MY ERROR, twice over. I held it back on "zero
+      GAS content here", which is true - find_assets with `class` and recursiveClasses returns 0
+      AttributeSets, GameplayAbilities, GameplayEffects and ASCs. (My earlier queries passed
+      classFilter, which that endpoint does not accept, so they were being REFUSED and I read the
+      refusal as a count.) But the conclusion was wrong: GameplayAbilities is ENABLED, and an
+      AbilitySystemComponent can be ADDED to a scratch Actor blueprint, which spawns into a live
+      actor with a live ASC. I checked whether the fixture EXISTED without checking whether it could
+      be BUILT. Then I corrected that with "GameplayAbility blueprints can be created", which was
+      also wrong - those are ASSETS, and this reads a live COMPONENT. Verify the correction too.
+
+      Spawning needs the FULL class path (/Game/X/BP.BP_C); the bare asset path is refused.
+
+      FINDS THE COMPONENT THE WAY THE ENGINE DOES: IAbilitySystemInterface first, because a
+      Character that implements it often returns an ASC living on its PlayerState which
+      FindComponentByClass would never see. FindComponentByClass is the fallback, and foundVia says
+      which answered.
+
+      NOT EXERCISED, and reported rather than skipped: a POPULATED ASC. Attributes come from an
+      AttributeSet the owner spawns, abilities are granted at runtime, effects applied at runtime -
+      so an editor-spawned ASC answers every read and holds nothing. T9102 asserts the endpoint SAYS
+      that instead of returning bare zeroes, because rows of zeroes read as "this character has no
+      ability system", which is a different and wrong conclusion. Populated state needs PIE and a
+      game that grants abilities; DDS2 does not use GAS.
 
 - [x] **set_plugin_enabled** (hours)  **DONE 2026-08-31.**
       H_set_plugin_enabled in MifBridgeProject.cpp, MCP wrapper and extended help in tool_help.json,

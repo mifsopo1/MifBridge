@@ -38,6 +38,9 @@
 #include "GameplayEffect.h"          // UGameplayEffect, FGameplayModifierInfo
 #include "AttributeSet.h"            // FGameplayAttribute, IsSupportedProperty
 #include "ScalableFloat.h"           // FScalableFloat
+#include "AbilitySystemComponent.h"  // GetAllAttributes :162, GetNumericAttribute(Base) :214
+#include "AbilitySystemInterface.h"  // IAbilitySystemInterface - the sanctioned way to find one
+#include "GameplayTagContainer.h"
 #endif
 
 namespace MifBridge
@@ -104,6 +107,201 @@ namespace MifBridge
 	// objectPath is the SAME resolver every other property endpoint uses (ResolvePropertyTarget) - for
 	// a GameplayEffect Blueprint that means its CDO path, /Game/.../GE_Foo.Default__GE_Foo_C, exactly
 	// like reading a Blueprint default anywhere else in this bridge.
+	// ============================================================================================
+	// describe_ability_system - the runtime READ half, and the part reflection genuinely cannot do.
+	// ============================================================================================
+	//
+	// MEASURED BEFORE BUILDING, because the backlog entry's justification did not survive checking
+	// and the vetter had already struck two of its three claims. On a live actor carrying an
+	// AbilitySystemComponent:
+	//
+	//   get_property {actorPath, "ASC.ActivatableAbilities"}   FAILS - an SCS component is not a
+	//                                                          UPROPERTY on the actor by that name.
+	//   get_property {objectPath "<actor>.ASC", "ActivatableAbilities"}   WORKS, and returns
+	//                                                          "(Items=,Owner=\"ASC\",ArrayReplicationKey=1)"
+	//
+	// So the honest justification is not "unreachable". It is that reflection returns EXPORT TEXT a
+	// caller has to parse, and that the numbers people actually want are behind FUNCTIONS:
+	// GetAllAttributes, GetNumericAttributeBase and GetNumericAttribute are calls, and no property
+	// walk can make a call. Base-versus-current is the whole of GAS debugging - a stat that reads
+	// 100 while the character takes no damage is a MODIFIED current value over an unchanged base -
+	// and that comparison is exactly what a reflective read cannot produce.
+	//
+	// FOUND BY THE SANCTIONED ROUTE FIRST. IAbilitySystemInterface is how the engine's own code asks
+	// an actor for its ASC, and a Character that implements it may hand back a component living on
+	// its PlayerState rather than on itself. FindComponentByClass is the fallback, and the response
+	// says which one answered, because "found via the interface" and "found a component" are
+	// different facts about the actor.
+
+	void H_describe_ability_system(const TSharedRef<FJsonObject>& In,
+								   const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPath"), TEXT("actor"), TEXT("path"), TEXT("objectPath") },
+			TEXT("actorPath (aliases: actor, path, objectPath) - a live actor carrying an "
+				 "AbilitySystemComponent, or the component itself"),
+			{ { TEXT("blueprintId"), TEXT("this reads a LIVE component's runtime state; a Blueprint asset has none. Spawn the actor first") },
+			  { TEXT("ability"), TEXT("this reports every granted ability - there is nothing to filter by yet") } }))
+		{
+			return;
+		}
+#if !MIF_WITH_GAS
+		GASUnavailable(Out, TEXT("describe_ability_system"));
+#else
+		const FString Path = JStrAny(In, { TEXT("actorPath"), TEXT("actor"), TEXT("path"),
+										   TEXT("objectPath") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("actorPath is required - a live actor with an AbilitySystemComponent. "
+						   "list_level_actors finds actors; this reads RUNTIME state, so the actor "
+						   "has to exist in a level rather than as an asset."));
+			return;
+		}
+
+		UObject* Target = StaticFindObject(UObject::StaticClass(), nullptr, *Path);
+		if (!Target)
+		{
+			Target = StaticLoadObject(UObject::StaticClass(), nullptr, *Path);
+		}
+		if (!Target)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("nothing resolved at '%s'. This takes a LIVE object path - the kind "
+					 "list_level_actors reports - not an asset path."), *Path));
+			return;
+		}
+
+		UAbilitySystemComponent* ASC = Cast<UAbilitySystemComponent>(Target);
+		FString FoundVia = TEXT("the path names the component itself");
+		AActor* Owner = ASC ? ASC->GetOwner() : Cast<AActor>(Target);
+		if (!ASC && Owner)
+		{
+			// THE SANCTIONED ROUTE FIRST. A Character that implements this may return a component
+			// that lives on its PlayerState, which FindComponentByClass would never see.
+			if (IAbilitySystemInterface* Iface = Cast<IAbilitySystemInterface>(Owner))
+			{
+				ASC = Iface->GetAbilitySystemComponent();
+				if (ASC) { FoundVia = TEXT("IAbilitySystemInterface"); }
+			}
+			if (!ASC)
+			{
+				ASC = Owner->FindComponentByClass<UAbilitySystemComponent>();
+				if (ASC) { FoundVia = TEXT("FindComponentByClass"); }
+			}
+		}
+		if (!ASC)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' has no AbilitySystemComponent. It does not implement "
+					 "IAbilitySystemInterface and carries no such component - so it is not part of "
+					 "the ability system at all, which is a real answer rather than a failure. "
+					 "list_components shows what it does have."),
+				*(Owner ? Owner->GetName() : Path)));
+			return;
+		}
+
+		Out->SetStringField(TEXT("actor"), Owner ? Owner->GetPathName() : TEXT(""));
+		Out->SetStringField(TEXT("component"), ASC->GetName());
+		Out->SetStringField(TEXT("componentPath"), ASC->GetPathName());
+		Out->SetStringField(TEXT("foundVia"), FoundVia);
+		Out->SetStringField(TEXT("owner"), ASC->GetOwner() ? ASC->GetOwner()->GetName() : TEXT(""));
+		Out->SetStringField(TEXT("avatar"),
+			ASC->GetAvatarActor() ? ASC->GetAvatarActor()->GetName() : TEXT(""));
+
+		// ---- ATTRIBUTES: the part no reflective walk can produce ---------------------------
+		// GetNumericAttributeBase and GetNumericAttribute are FUNCTION CALLS. Base versus current
+		// is the whole of GAS debugging: a stat reading 100 while the character takes no damage is
+		// a modified CURRENT over an unchanged BASE, and only calling both shows it.
+		TArray<FGameplayAttribute> Attributes;
+		ASC->GetAllAttributes(Attributes);
+		TArray<TSharedPtr<FJsonValue>> AttrJson;
+		int32 Modified = 0;
+		for (const FGameplayAttribute& Attr : Attributes)
+		{
+			if (!Attr.IsValid()) { continue; }
+			const float Base = ASC->GetNumericAttributeBase(Attr);
+			const float Current = ASC->GetNumericAttribute(Attr);
+			TSharedRef<FJsonObject> A = MakeShared<FJsonObject>();
+			A->SetStringField(TEXT("name"), Attr.GetName());
+			A->SetStringField(TEXT("set"), Attr.GetAttributeSetClass()
+				? Attr.GetAttributeSetClass()->GetName() : TEXT(""));
+			A->SetNumberField(TEXT("base"), Base);
+			A->SetNumberField(TEXT("current"), Current);
+			const bool bModified = !FMath::IsNearlyEqual(Base, Current);
+			A->SetBoolField(TEXT("modified"), bModified);
+			if (bModified) { ++Modified; }
+			AttrJson.Add(MakeShared<FJsonValueObject>(A));
+		}
+		Out->SetArrayField(TEXT("attributes"), AttrJson);
+		Out->SetNumberField(TEXT("attributeCount"), AttrJson.Num());
+		Out->SetNumberField(TEXT("attributesModified"), Modified);
+
+		TArray<TSharedPtr<FJsonValue>> Sets;
+		for (const UAttributeSet* Set : ASC->GetSpawnedAttributes())
+		{
+			if (Set) { Sets.Add(MakeShared<FJsonValueString>(Set->GetClass()->GetName())); }
+		}
+		Out->SetArrayField(TEXT("attributeSets"), Sets);
+
+		// ---- GRANTED ABILITIES -------------------------------------------------------------
+		TArray<TSharedPtr<FJsonValue>> Abilities;
+		int32 ActiveCount = 0;
+		for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+		{
+			TSharedRef<FJsonObject> B = MakeShared<FJsonObject>();
+			B->SetStringField(TEXT("ability"), Spec.Ability ? Spec.Ability->GetClass()->GetName()
+														   : TEXT("(null)"));
+			B->SetNumberField(TEXT("level"), Spec.Level);
+			B->SetNumberField(TEXT("inputID"), Spec.InputID);
+			B->SetBoolField(TEXT("active"), Spec.IsActive());
+			// ToString(), not .Handle - the int is PRIVATE and the accessor already answers
+			// "Invalid" for a handle that is not set, which is the distinction worth keeping.
+			B->SetStringField(TEXT("handle"), Spec.Handle.ToString());
+			if (Spec.IsActive()) { ++ActiveCount; }
+			Abilities.Add(MakeShared<FJsonValueObject>(B));
+		}
+		Out->SetArrayField(TEXT("abilities"), Abilities);
+		Out->SetNumberField(TEXT("abilityCount"), Abilities.Num());
+		Out->SetNumberField(TEXT("abilitiesActive"), ActiveCount);
+
+		// ---- OWNED TAGS --------------------------------------------------------------------
+		FGameplayTagContainer Tags;
+		ASC->GetOwnedGameplayTags(Tags);
+		TArray<TSharedPtr<FJsonValue>> TagJson;
+		for (const FGameplayTag& Tag : Tags)
+		{
+			TagJson.Add(MakeShared<FJsonValueString>(Tag.ToString()));
+		}
+		Out->SetArrayField(TEXT("ownedTags"), TagJson);
+
+		// ---- WHY IT IS EMPTY, said rather than left to be guessed ---------------------------
+		// An ASC on an editor-spawned actor is real and answers every call above, and it holds
+		// nothing: abilities are granted at runtime and effects applied at runtime. Reporting a row
+		// of zeroes without saying that reads as "this character has no abilities", which is a
+		// different and wrong conclusion.
+		const bool bEmpty = AttrJson.Num() == 0 && Abilities.Num() == 0 && TagJson.Num() == 0;
+		if (bEmpty)
+		{
+			Out->SetStringField(TEXT("note"),
+				TEXT("the component is REAL and answered every read - it simply holds nothing yet. "
+					 "Attributes come from an AttributeSet the owner spawns, abilities are granted "
+					 "at runtime with GiveAbility, and effects are applied at runtime. On an actor "
+					 "sitting in the editor all three are legitimately empty; this is not 'no "
+					 "ability system', it is one that has not been initialised. Start PIE to see "
+					 "populated state."));
+		}
+		else
+		{
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("%d attribute(s), %d of them MODIFIED away from their base - that difference "
+					 "is what a reflective property read cannot show you, and it is where "
+					 "\"why is this character not taking damage\" is usually answered."),
+				AttrJson.Num(), Modified));
+		}
+#endif
+	}
+
+
 	void H_add_gameplay_effect_modifier(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
