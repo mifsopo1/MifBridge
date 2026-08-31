@@ -199,6 +199,55 @@ check("T8-real link not left behind", links(P[2], "InString") == [],
       "InString still linked: %s" % links(P[2], "InString"))
 check_rollback_was_clean("T8-real", r)
 
+print("\n=== T9-real: the operations AFTER a mid-apply failure are never attempted ===")
+# WHY THIS NEEDS THE TRIPWIRE. stopOnFirstError leaves the tail of the plan untouched, and without a
+# count results[] simply ENDS - a caller cannot tell "the rest passed" from "the rest never ran".
+# The handler reports `skipped` for exactly that, plus a skippedNote when it is nonzero, and nothing
+# read either.
+#
+# It is only reachable from here. A nonexistent pin is caught at PREFLIGHT, which refuses the whole
+# patch before anything runs, so nothing is ever "skipped" - that is the same correction T7/T8
+# carry. The tripwire is the only op in this repo that is legal at preflight and illegal by the time
+# it runs, so it is the only way to produce a failure with a tail behind it.
+TAIL_OPS = [
+    {"op": "set_pin_default", "node": P[2], "pin": "InString", "value": "NEVER_RUNS_1"},
+    {"op": "set_pin_default", "node": P[2], "pin": "InString", "value": "NEVER_RUNS_2"},
+]
+d_pre = default_of(P[2], "InString")
+r = post("apply_graph_patch", graphId=GRAPH, allowPartial=False, stopOnFirstError=True,
+         operations=[
+             {"op": "set_pin_default", "node": P[1], "pin": "InString", "value": "BEFORE_TRIP"},
+         ] + TRIP + TAIL_OPS)
+print("  resp:", json.dumps({k: v for k, v in r.items() if k != "results"})[:400])
+check("T9-real reached APPLY, not preflight - otherwise nothing could be skipped",
+      r.get("preflightErrors", 0) == 0, "preflightErrors=%s" % r.get("preflightErrors"))
+check("T9-real the patch failed", r.get("ok") is False, json.dumps(r)[:200])
+check("T9-real operations counts the WHOLE plan, not what ran",
+      r.get("operations") == 1 + len(TRIP) + len(TAIL_OPS),
+      "operations=%s plan was %d" % (r.get("operations"), 1 + len(TRIP) + len(TAIL_OPS)))
+# THE FIELD. Two trailing ops were never attempted, and `skipped` is the only thing that says so.
+check("T9-real skipped names the tail that never ran",
+      r.get("skipped") == len(TAIL_OPS),
+      "skipped=%s, expected %d - results[] just ends, so this number is the only signal"
+      % (r.get("skipped"), len(TAIL_OPS)))
+check("T9-real and skippedNote explains it rather than leaving a bare number",
+      "NOT attempted" in str(r.get("skippedNote") or ""),
+      "skippedNote=%r" % r.get("skippedNote"))
+# The arithmetic the handler does - Plan.Num() - Results.Num() - has to hold against results[].
+check("T9-real skipped agrees with the length of results[]",
+      r.get("skipped") == (r.get("operations") or 0) - len(r.get("results") or []),
+      "skipped=%s operations=%s len(results)=%d"
+      % (r.get("skipped"), r.get("operations"), len(r.get("results") or [])))
+# AND THE POSTCONDITION: a skipped op must not have taken effect. Read the pin back rather than
+# trusting the count - "never attempted" and "attempted and rolled back" look identical in a number.
+d_post = default_of(P[2], "InString")
+check("T9-real the pin was readable before and after", d_pre is not None and d_post is not None,
+      "before=%r after=%r" % (d_pre, d_post))
+check("T9-real neither skipped op left its value behind",
+      d_post not in ("NEVER_RUNS_1", "NEVER_RUNS_2"),
+      "InString is %r - an op reported as skipped had actually run" % d_post)
+check_rollback_was_clean("T9-real", r)
+
 print("\n=== T20: still compiles after both rollbacks ===")
 c = post("compile", blueprintId=BPID)
 check("T20 compiles clean", c.get("ok") is True and c.get("numErrors", 1) == 0,

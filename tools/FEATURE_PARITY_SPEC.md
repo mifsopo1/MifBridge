@@ -8302,7 +8302,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **14 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **13 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8403,7 +8403,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       endpoints and asserts the set spans both origins, so the promise is verified rather than
       repeated.
 
-      Real gaps: 14. Out of reach with a written reason: 6. Read by a suite: 44.
+      skippedNote closed next - test_rollback_real T9-real, 16 -> 26 - and it is reachable from
+      exactly one place in this repo. stopOnFirstError leaves the tail of the plan untouched, so
+      results[] simply ENDS and a caller cannot tell "the rest passed" from "the rest never ran";
+      `skipped` is the only signal. But a nonexistent pin is caught at PREFLIGHT, which refuses the
+      whole patch before anything runs and leaves nothing to skip - the same correction T7/T8 carry.
+      The wildcard tripwire in this suite is the only op that is legal at preflight and illegal by
+      the time it runs, so it is the only way to produce a failure with a tail behind it.
+
+      Proven to VARY rather than to be a constant: the same suite's two earlier patches report
+      skipped:0 with the tripwire last, and T9-real reports skipped:2 with two ops after it. Also
+      asserted against results[] (skipped == operations - len(results)) and, as a postcondition,
+      that neither skipped op left its value on the pin - "never attempted" and "attempted then
+      rolled back" look identical in a count.
+
+      Real gaps: 13. Out of reach with a written reason: 6. Read by a suite: 45.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote
