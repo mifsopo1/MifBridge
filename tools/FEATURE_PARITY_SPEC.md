@@ -7438,7 +7438,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       children by then. Probed on a clean fixture: the promotion preserves the subtree exactly. T435
       now builds its own two widgets - a test that inherits four earlier tests' mutations and asserts
       a shape none of them promised is testing its own assumptions.
-- [ ] **48 response fields report a CONSEQUENCE and no suite asserts any of them** (day)
+- [x] **48 response fields report a CONSEQUENCE and no suite asserts any of them** (day)
       Filed 2026-08-31, found by generalising what T435 turned up. move_tree_widget answers a root
       swap with displacedRoot, displacedSubtreeSize and a warning that the old subtree "will not
       render" - a displaced root does not vanish from the asset, it stops being MOUNTED, and nothing
@@ -7448,6 +7448,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       consequence the caller did not ask for and cannot see; 48 of those are named in no suite. This
       is the read-back surface an agent depends on when something goes PARTIALLY wrong, which is the
       case where a wrong answer costs most.
+
+
+      CLOSED 2026-08-31. The count reached 0 and audit_consequence_fields --check is
+      baselined at 0, so a NEW unread consequence field now fails rather than joining a
+      backlog. Final accounting: 64 consequence fields, 46 read by a suite, 18 out of reach
+      each with a written reason, 0 unread.
+
+      WITH ONE HONEST QUALIFICATION, because this tool's own header makes the distinction
+      and it would be a poor place to start ignoring it: READ BY A SUITE IS NOT ASSERTED BY
+      ONE. verifyFailure is the case that proves the difference matters - T905b reads it,
+      but into a check's DETAIL string, which is a diagnostic. Its row in the reason table
+      says so outright rather than letting the index quietly count it as covered.
+      This item and the '2 consequence fields still read by nothing' one below are the same
+      journey seen twice - 48, then 30, then 2, then 0 - and both close together.
 
       HIGHEST VALUE FIRST, by what a silent failure would cost:
         rollbackLostLinks, rollbackUnresolvedPins  GraphPatch - what a rollback could not restore.
@@ -7796,12 +7810,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       rather than done because a gate that fires on somebody's honest new assertion is a tax, and
       whether rules 1-3 are worth blocking a release over is Andre's call, not a mechanical one.
 
-- [ ] **every detector is accounted for: 20 planted, 6 unprovable here, 1 not ours** (hours)
+- [x] **every detector is accounted for: 20 planted, 6 unprovable here, 1 not ours** (hours)
       tools/audit_detectors_fire.py plants a defect each tool claims to catch and requires it to go
       red AND name the marker. 8 are proven: audit_loop_writes, audit_modals, audit_postconditions,
       audit_promise_flags, audit_suite_payloads, audit_vacuous_checks, mcp_static_check and
       parity_check. The other 17 have no plant, and the tool LISTS them as NOT PROVEN rather than
       omitting them, because a silently missing entry is the same bug it exists to catch.
+
+      CLOSED 2026-08-31. Standing: 34 detectors, 27 planted, 6 not provable here, 0 with neither.
+      The "0 with neither" line is the one that keeps paying - it is what noticed two tools
+      registered without a plant, and an untracked tool is invisible until something counts.
+
+      AND THE HARNESS CAUGHT ONE OF MINE THE SAME DAY, which is the better story. It reported
+      audit_consequence_fields ASLEEP - exit 0 with the defect planted. The tool was not asleep: its
+      gate is BASELINE-RELATIVE, and I had closed two fields without re-baselining, so a stale
+      backlog of 2 silently absorbed the planted 1. THE GENERAL TRAP: closing items under a
+      baseline-gated detector and not re-baselining leaves the gate reading a backlog that no longer
+      exists, and it will swallow a real regression the same way. Every baseline in tools/ was
+      checked against its live count afterwards; the rest were current.
 
       Standing at 2026-08-31 evening: 10 PROVEN (parity_check, audit_promise_flags,
       mcp_static_check, audit_vacuous_checks, audit_loop_writes, audit_postconditions, audit_modals,
@@ -8319,7 +8345,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **2 consequence fields still read by nothing - and both wait on the same missing fixture** (day)
+- [x] **2 consequence fields still read by nothing - and both wait on the same missing fixture** (day)
+      CLOSED 2026-08-31, and NEITHER waited on the fixture this title blames.
+
+        compileFailed   sits behind an EARLIER guard in a cooked project, not behind a missing
+                        fixture. A material from create_asset has no material resource for the
+                        editor's feature level, so the null-resource refusal fires before
+                        GetStatistics is ever called - measured live, with compileFailed absent from
+                        the response. Reaching it needs a material that HAS a resource and still
+                        fails, which is an uncooked project.
+        verifyFailure   both named causes measured and narrowed. The fixed-size C-array route is
+                        OPEN - '<prop>[N]' resolves and LensFlareTints[2] resets with arrayDim 8 -
+                        and the per-element verify that branch does instead of a text compare is
+                        CORRECT, so it has nothing to report. The native-setter route: four clamped
+                        or network CDO properties all reset verified.
+
+      The title was wrong in a way worth keeping visible: 'both wait on the same missing fixture'
+      was a guess that survived because nothing had tried the routes. One of them had no fixture
+      problem at all.
+
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
