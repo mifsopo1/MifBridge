@@ -37,6 +37,20 @@ def reachable(timeout=1.5):
     "READINESS IS A PING, NEVER A CONNECT ... A connection existing is not a server answering" - but
     the lesson reached the runner and never reached here, so every Blender suite stayed one dying
     socket away from the same false failure.
+
+    AND SHARING IT WAS NOT THE END OF IT, 2026-08-31. Three suites - test_blender_ops (the file the
+    private copy came FROM), test_blender_rig and test_blender_gen - still carried their own
+    bare-connect version months later. Creating the shared helper did not remove them, so the fix
+    reached this module and not its callers.
+
+    What that cost, observed rather than argued: test_blender_rig reported PASS 12 FAIL 4 with no
+    Blender running at all. A UE editor holds MifBlender's port 8792 on this machine (docs/06 issue
+    15), the bare connect succeeded against it, and the suite ran its whole body against a server
+    speaking a different protocol. Four FALSE FAILURES where the honest answer was SKIPPED - and a
+    false failure is worse than a false pass, because it teaches the reader to ignore the suite.
+
+    The lesson generalises past sockets: EXTRACTING a shared helper only helps once the copies are
+    deleted. Until then there are N+1 implementations and the new one is the least used.
     """
     body = json.dumps({"endpoint": "ping", "token": TOKEN, "params": {}}).encode("utf-8")
     s = socket.socket()

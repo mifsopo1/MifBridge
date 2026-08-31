@@ -82,16 +82,16 @@ def check(name, cond, detail=""):
 
 
 def reachable(host, port, timeout=1.5):
-    s = socket.socket()
-    s.settimeout(timeout)
-    try:
-        s.connect((host, port))
-        return True
-    except Exception:
-        return False
-    finally:
-        s.close()
+    """Delegates to blender_audit_common - a real framed PING, never a bare connect.
 
+    This was a private socket.connect() that returned True for anything accepting a connection. On
+    this machine a UE editor holds MifBlender's port 8792 (docs/06 issue 15), so it answered True
+    with no Blender running and the suite would run its body against the wrong protocol. A false
+    failure is worse than a false pass: it teaches the reader to ignore the suite.
+    """
+    import blender_audit_common as _B
+    _B.HOST, _B.PORT = host, port
+    return _B.reachable(timeout=timeout)
 
 def main():
     print("MifBlender gen ops (ops_gen.py) - %s:%d" % (HOST, PORT))
