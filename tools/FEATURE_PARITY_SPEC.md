@@ -9376,6 +9376,16 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       that the message list is NON-EMPTY comes first, because without it every comparison after it
       is the vacuous one again.
 
+      ONE MESSAGE FIELD IS STILL UNOBSERVED, and the reason is a compliment to the bridge. compile's
+      own summary documents messages as [{severity, text, nodeGuid, pinName}]. T840b now proves
+      severity, text and nodeGuid on a real message; pinName stays empty, because a pin-level
+      diagnostic needs a node authored into a state UE complains about pin-by-pin - and the bridge
+      REFUSES to author those. add_spawn_actor with no class is rejected outright ("an empty value
+      would silently resolve to this blueprint's own class"), which is exactly the guard you would
+      want and also the reason that error cannot be reached from here. Filed rather than chased: the
+      way in would be an endpoint that legitimately leaves a required pin unset, and it is not
+      obvious one should exist.
+
       WHY THE OTHER SIX ROUTES FAILED IS THE USEFUL PART. Removing a variable a getter reads, or a
       dispatcher a call node uses, or a FUNCTION a call node calls - the call node survives titled
       'Mif Doomed' and still compiles clean - an unwritten function output, a cast to an unrelated
