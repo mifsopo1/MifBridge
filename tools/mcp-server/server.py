@@ -3175,6 +3175,12 @@ def redo_transactions(count: int = 1, to_index: int = None) -> dict:
 
 
 @mcp.tool()
+def project_paths() -> dict:
+    "Where this project actually lives on disk - projectFile, projectDir, contentDir, savedDir, configDir, pluginsDir, intermediateDir, logDir, engineDir, all ABSOLUTE with forward slashes. Use this to resolve the project-relative paths other endpoints hand back (export_landscape_heightmap's `file`, backup_blueprint's `backup`) instead of guessing the project root. These are the RUNNING editor's paths, so they are the right ones for reading back a file it just wrote; they say nothing about where a cooked build would put anything."
+    return _post("project_paths")
+
+
+@mcp.tool()
 def list_dirty_packages(kind: str = "all") -> dict:
     "List every unsaved (dirty) package - what a crash would lose and what save_dirty_packages will touch. kind: content | world | all."
     return _post("list_dirty_packages", kind=kind)

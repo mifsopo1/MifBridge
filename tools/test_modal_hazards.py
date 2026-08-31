@@ -35,7 +35,20 @@ PASS, FAIL = [], []
 
 # The caller's own config. The fix flips a suppression flag for the duration of one engine call and
 # must put it back; Andre drives this same editor by hand and did not ask for his warnings turned off.
-INI = "D:/DDS2SDK/Game/Saved/Config/WindowsEditor/EditorPerProjectUserSettings.ini"
+# Resolved from the editor rather than hardcoded - see ini_path(). The literal it used to be
+# meant this suite silently checked nothing on any other machine: io.open would raise, the
+# leak check would report "could not read" and the suite would carry on green.
+INI = None
+
+
+def ini_path():
+    """<savedDir>/Config/WindowsEditor/EditorPerProjectUserSettings.ini, from the editor."""
+    global INI
+    if INI is None:
+        saved = M.call("project_paths", {}).get("savedDir") or ""
+        INI = os.path.join(saved, "Config", "WindowsEditor",
+                           "EditorPerProjectUserSettings.ini") if saved else ""
+    return INI
 SUPPRESS_KEY = "ChangeVariableType_Warning"
 
 
@@ -75,7 +88,7 @@ def pin_types(graph, guid):
 def suppress_key_present():
     """Is the suppression flag sitting in the user's config file?"""
     try:
-        s = io.open(INI, encoding="utf-8", errors="ignore").read()
+        s = io.open(ini_path(), encoding="utf-8", errors="ignore").read()
     except Exception:
         return None            # cannot read it; reported rather than silently passed
     return SUPPRESS_KEY in s
@@ -91,7 +104,7 @@ def main():
     print("\n=== T360: retyping a variable THAT HAS NODES must not hang the bridge ===")
     baseline = suppress_key_present()
     check("T360 the suppression flag is readable before the call", baseline is not None,
-          "could not read %s - the leak check below cannot run" % INI)
+          "could not read %s - the leak check below cannot run" % ini_path())
 
     bid = M.call("create_blueprint", {"path": "/Game/_MifModal/BP_%d" % st,
                                       "parentClass": "Actor"}).get("blueprintId")
@@ -158,7 +171,7 @@ def main():
     print("\n=== T362: the fix must not leave the user's warning turned off ===")
     after = suppress_key_present()
     if baseline is None or after is None:
-        check("T362 the config could be read to check for a leak", False, "could not read %s" % INI)
+        check("T362 the config could be read to check for a leak", False, "could not read %s" % ini_path())
     else:
         # The flag is set for the duration of one engine call and restored. Ending a call with the
         # user's "warn me before retyping a variable" preference silently flipped off is a side

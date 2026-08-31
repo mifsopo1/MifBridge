@@ -1600,6 +1600,7 @@ namespace MifBridge
 	MIF_DECL(list_transactions);
 	MIF_DECL(undo_transactions);
 	MIF_DECL(redo_transactions);
+	MIF_DECL(project_paths);
 	MIF_DECL(list_dirty_packages);
 	MIF_DECL(save_dirty_packages);
 

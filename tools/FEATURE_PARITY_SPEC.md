@@ -6471,7 +6471,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       python tools/make_engine_probe.py --engine "C:/Program Files/Epic Games/UE_5.7" --out <dir> --assoc 5.7 --build --force
 
 
-- [ ] **nothing reports the project's own directories, so tools resort to hardcoding D:/DDS2SDK/Game** (hours)
+- [x] **nothing reports the project's own directories, so tools resort to hardcoding D:/DDS2SDK/Game** (hours)
+      DONE 2026-08-31 - project_paths: projectName, projectFile and eight directories, all
+      ABSOLUTE with forward slashes. Absolute is the design decision worth keeping: FPaths
+      returns several of these relative to the PROCESS working directory, which is the
+      engine's Binaries folder, so a relative answer would have left callers exactly as stuck
+      as before. test_project_paths checks every one against the filesystem rather than for
+      shape, and P104 is the real test - it takes a project-relative path from a DIFFERENT
+      endpoint (export_landscape_heightmap's `file`), resolves it against projectDir, and
+      requires the file to be there. 12 PASS 0 FAIL.
+
+      Three hardcoded machine paths removed as a result, and one of them had been hiding a
+      dead test: test_modal_hazards read its INI from a literal D:/DDS2SDK/... path, so on any
+      other machine io.open would raise, the leak check would report "could not read" and the
+      suite would carry on GREEN. No suite names a project root now.
       Filed 2026-08-31, hit while making the suites project-independent. There is no endpoint for
       the project's Content / Saved / Config / Plugins directories or its .uproject path. Endpoints
       hand back project-RELATIVE paths - export_landscape_heightmap's `file`, backup_blueprint's

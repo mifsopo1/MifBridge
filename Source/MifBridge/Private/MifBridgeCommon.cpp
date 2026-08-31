@@ -455,6 +455,7 @@ namespace MifBridge
 			MIF_BIND(list_transactions);
 			MIF_BIND(undo_transactions);
 			MIF_BIND(redo_transactions);
+			MIF_BIND(project_paths);
 			MIF_BIND(list_dirty_packages);
 			MIF_BIND(save_dirty_packages);
 			// Material graph authoring (Batch D)
@@ -1231,6 +1232,52 @@ namespace MifBridge
 		ShapeLines.Sort();
 		Out->SetStringField(TEXT("paramSignature"), MifSignatureFold(ShapeLines));
 		Out->SetNumberField(TEXT("paramShapesObserved"), ShapeLines.Num());
+	}
+
+	// --- project_paths ------------------------------------------------------
+	//   in:  { }
+	//   out: { projectName, projectFile, projectDir, contentDir, savedDir, configDir, pluginsDir,
+	//          intermediateDir, logDir, engineDir, note }
+	//
+	// WHY THIS EXISTS. Several endpoints hand back a PROJECT-RELATIVE path and give the caller no
+	// way to resolve it - export_landscape_heightmap's `file`, backup_blueprint's `backup`,
+	// trigger_cook's command plan. Until now nothing reported the project root, so anything wanting
+	// to read back a file an endpoint had just written had to be told the root out of band. A test
+	// suite in this repo joined one against a literal "D:/DDS2SDK/Game" for exactly that reason,
+	// which is a hardcoded machine path sitting in a tool that is supposed to work on any project.
+	//
+	// Everything is returned ABSOLUTE with forward slashes. FPaths returns some of these relative to
+	// the process working directory, which is the engine's Binaries folder and not anywhere the
+	// caller can guess - a relative answer here would recreate the problem this endpoint closes.
+	void H_project_paths(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out, {}, TEXT("(none - this endpoint takes no parameters)"),
+			{ { TEXT("project"), TEXT("not supported - this reports the paths of the RUNNING editor's own project; there is no way to ask it about a different one") },
+			  { TEXT("plugin"), TEXT("not supported - pluginsDir is the project's Plugins folder; a specific plugin's own directory is not reported") } }))
+		{
+			return;
+		}
+
+		auto Abs = [](const FString& P)
+		{
+			return FPaths::ConvertRelativePathToFull(P).Replace(TEXT("\\"), TEXT("/"));
+		};
+
+		Out->SetStringField(TEXT("projectName"), FApp::GetProjectName());
+		Out->SetStringField(TEXT("projectFile"), Abs(FPaths::GetProjectFilePath()));
+		Out->SetStringField(TEXT("projectDir"), Abs(FPaths::ProjectDir()));
+		Out->SetStringField(TEXT("contentDir"), Abs(FPaths::ProjectContentDir()));
+		Out->SetStringField(TEXT("savedDir"), Abs(FPaths::ProjectSavedDir()));
+		Out->SetStringField(TEXT("configDir"), Abs(FPaths::ProjectConfigDir()));
+		Out->SetStringField(TEXT("pluginsDir"), Abs(FPaths::ProjectPluginsDir()));
+		Out->SetStringField(TEXT("intermediateDir"), Abs(FPaths::ProjectIntermediateDir()));
+		Out->SetStringField(TEXT("logDir"), Abs(FPaths::ProjectLogDir()));
+		Out->SetStringField(TEXT("engineDir"), Abs(FPaths::EngineDir()));
+		Out->SetStringField(TEXT("note"),
+			TEXT("project-relative paths returned by other endpoints - export_landscape_heightmap's ")
+			TEXT("`file`, backup_blueprint's `backup` - resolve against projectDir. These are the ")
+			TEXT("RUNNING editor's own paths, so they are the right ones for reading back a file it ")
+			TEXT("just wrote; they say nothing about where a COOKED build would put anything."));
 	}
 
 	bool IsCompileHeavyEndpoint(const FString& Endpoint)

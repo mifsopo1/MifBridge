@@ -103,7 +103,12 @@ def main():
     check("T900 a backup path is reported", bool(backup_path), json.dumps(bk)[:200])
     backup_local = None
     if backup_path:
-        backup_local = os.path.normpath(os.path.join("D:/DDS2SDK/Game", backup_path.lstrip("/")))
+        # The project root from the editor itself, not a literal. backup_blueprint returns a
+        # PROJECT-RELATIVE path and this used to join it against "D:/DDS2SDK/Game" - a
+        # hardcoded machine path inside a tool meant to run on any project. project_paths
+        # exists because of this line.
+        proj_dir = M.call("project_paths", {}).get("projectDir") or ""
+        backup_local = os.path.normpath(os.path.join(proj_dir, backup_path.lstrip("/\\")))
         check("T900 the backup file really exists on disk", os.path.isfile(backup_local), backup_local)
 
     # ------------------------------------------------------------------ T901 list_object_properties
@@ -266,7 +271,8 @@ def main():
     if trace_path:
         local = trace_path
         if local.startswith("/") or ":" not in local[:3]:
-            local = os.path.join("D:/DDS2SDK/Game", local.lstrip("/"))
+            local = os.path.join(M.call("project_paths", {}).get("projectDir") or "",
+                                 local.lstrip("/\\"))
         check("T913 the trace file really exists on disk", os.path.isfile(local), local)
 
     # ------------------------------------------------------------------ T914 create_data_layer
