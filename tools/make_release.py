@@ -329,20 +329,26 @@ def check_static_audits():
     check that is meant to be non-zero teaches people to pass --force, and a gate people route
     around protects nothing.
     """
+    # (tool, argv). fuzz_endpoints is here for its --self-test ONLY: that runs seven fixed strings
+    # through the EMPTY_INTERP classifier and touches no bridge, so it belongs with the static
+    # checks. The sweep itself is 446 endpoints times five probes and is never run from here.
     failed = []
-    for tool in ("audit_loop_writes.py", "audit_postconditions.py", "audit_modals.py"):
+    for tool, args in (("audit_loop_writes.py", []), ("audit_postconditions.py", []),
+                       ("audit_modals.py", []), ("fuzz_endpoints.py", ["--self-test"])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
             continue
-        r = subprocess.run([sys.executable, script], capture_output=True, text=True)
+        r = subprocess.run([sys.executable, script] + args, capture_output=True, text=True)
         if r.returncode != 0:
             lines = [l.strip() for l in (r.stdout or "").splitlines() if l.strip()]
-            head = next((l for l in lines if l.startswith(("NEW", "SELF-CHECK", "MISSING"))),
+            head = next((l for l in lines if l.startswith(("NEW", "SELF-CHECK", "MISSING", "WRONG"))
+                         or "misclassified" in l),
                         lines[-1] if lines else "no output")
             failed.append("%s -> %s" % (tool, head[:110]))
     if not failed:
-        return True, "audit_loop_writes, audit_postconditions and audit_modals are all at baseline"
+        return True, ("audit_loop_writes, audit_postconditions and audit_modals at baseline; "
+                      "fuzz's EMPTY_INTERP classifier passes its seven cases")
     return False, ("a ratcheted source audit reports something NEW:\n    %s\n"
                    "  Read it and either fix it or accept it with that tool's --update-baseline,\n"
                    "  saying why in the commit. Do not package past it."
