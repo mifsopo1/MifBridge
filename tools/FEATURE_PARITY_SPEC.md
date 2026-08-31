@@ -6706,6 +6706,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       case.
 
 
+- [ ] **run_all_suites should stamp each record with when that suite RAN** (minutes)
+      Filed 2026-08-31. audit_suite_reach judges whether a recorded result still describes the code
+      by comparing suite_results.json's MTIME against each suite's source. An mtime is not a content
+      age: copying a backup over that file makes every record in it look current while it describes
+      runs from hours earlier. Observed doing exactly that the same night - the tool stopped marking
+      a record it had correctly marked a minute before, and it fails in the direction that matters,
+      claiming current rather than claiming stale.
+
+      A per-record timestamp (the time that suite finished) makes staleness a per-RECORD question
+      against the source it describes, which is the honest comparison. The records already carry
+      suite/pass/rc/summary/seconds/editorSurvived/tail; one more field.
+
+      Small, and worth doing before anyone trusts audit_suite_reach's output on a tree they did not
+      just sweep themselves.
+
+
 ### Refuted, recorded so they are not re-proposed
 
 - add_retarget_pose / set_retarget_pose_bone / set_current_retarget_pose -- Refuted on the strongest and most common ground: existing endpoints already do it. I verified the reflective machinery by reading it rather than trusting it - H_set_property has no CPF_Edit gate (and MifBridgeDetails.cpp

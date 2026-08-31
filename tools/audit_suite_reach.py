@@ -24,6 +24,15 @@ failures might be an environment problem rather than a defect.
 STALE RECORDS ARE CALLED OUT, because they cost me two false leads out of five. suite_results.json
 is written by run_all_suites and can predate the source it describes; a record older than the file
 it is about says nothing about the code that is there now.
+
+KNOWN LIMITATION, AND IT FAILS IN THE DANGEROUS DIRECTION. Staleness is judged on the results FILE's
+mtime, and an mtime is not a content age. Copy a backup over suite_results.json and every record in
+it is suddenly "current" while describing runs from hours earlier - observed doing exactly that on
+2026-08-31, after which this tool stopped marking a record it had correctly marked a moment before.
+
+The real fix is for run_all_suites to stamp each record with the time that suite RAN, so staleness
+can be judged per record against the source it describes instead of per file. Until then: a row is
+only as trustworthy as your memory of when the sweep last ran, and if that is in doubt, re-run it.
 """
 import io
 import json
