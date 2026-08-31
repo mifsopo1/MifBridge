@@ -633,7 +633,15 @@ def wait_for_bridge(timeout=900, quiet=False):
                 continue
             if isinstance(r, dict) and r.get("ok"):
                 if not quiet:
-                    print("bridge up on %s - %d endpoints, built %s %s"
+                    # "compiled" not "built", and the word is doing real work. This is __DATE__ /
+                    # __TIME__ from whichever translation unit carries the banner, so an INCREMENTAL
+                    # build that did not have to recompile that file leaves the stamp UNCHANGED
+                    # while the DLL relinks. On 2026-08-31 this line read 15:37:47 for a DLL
+                    # relinked at 19:17 whose new fields were demonstrably live, and it cost real
+                    # time before anyone doubted it. For "is my build loaded", ask the DLL's mtime
+                    # or check a BEHAVIOUR - never this.
+                    print("bridge up on %s - %d endpoints, compiled %s %s (banner: __DATE__ of one "
+                          "TU, NOT the link time)"
                           % (why, r.get("endpointCount", -1), r.get("buildDate"), r.get("buildTime")))
                 return True
         time.sleep(5)
