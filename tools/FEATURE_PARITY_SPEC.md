@@ -9525,7 +9525,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       captures PROSE, because prose is what this codebase writes across fragments and identifiers
       are what it does not.
 
-- [ ] **six unread consequence fields, newly VISIBLE rather than newly broken** (hours)
+- [ ] **five unread consequence fields, newly VISIBLE rather than newly broken** (hours)
       The classifier only matched names saying something went WRONG. A name saying something
       REMAINS is the same class of unasked-for consequence and it could not see any of them.
       Widening it with [Rr]emaining and StillPresent took the field count 64 -> 73, and the nine new
@@ -9552,7 +9552,14 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         graphStructureChanged    compile - the SOURCE graphs changed across the compile, and its own
                                  structureNote says any node snapshot taken before it is stale. That
                                  is precisely the read-back an agent needs and nothing asserts it.
-                                 Cheap: T447/T448/T840b already compile scratch blueprints.
+                                 CLOSED as T840c - but WRITTEN, not yet RUN, because no editor is
+                                 up. Asserted against its own arithmetic rather than against the
+                                 fixture: the handler sets it to NodesBefore != NodesAfter ||
+                                 GuidsAdded > 0, so the flag, the three counts and structureNote are
+                                 one statement told three times, and they are checked against each
+                                 other. That holds whatever a given compile does, and it catches the
+                                 failure that matters - a flag that stops agreeing with the numbers
+                                 a caller acts on.
         membershipsChanged       modify_actor_layers - needs actors in a level, so it shares the
                                  scratch-level precondition with partialNote and broken.
 

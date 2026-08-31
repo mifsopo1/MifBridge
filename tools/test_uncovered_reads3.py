@@ -109,6 +109,36 @@ def main():
               "compile %r/%r vs validate %r/%r" % (c.get("numErrors"), c.get("numWarnings"),
                                                    v.get("numErrors"), v.get("numWarnings")))
         check("T840b validate still says dryRun", v.get("dryRun") is True, v.get("dryRun"))
+
+        # ------------------------------------------------------------ T840c graphStructureChanged
+        # compile reports that the SOURCE graphs changed underneath it, and its own structureNote
+        # warns that any node snapshot taken before the call is stale - "re-read with list_nodes".
+        # That is exactly the read-back an agent depends on, and until 2026-08-31 nothing asserted
+        # it, because the consequence classifier could not see a field named for a CHANGE.
+        #
+        # ASSERTED AGAINST ITS OWN ARITHMETIC RATHER THAN AGAINST THIS FIXTURE. The handler sets it
+        # to `NodesBefore != NodesAfter || GuidsAdded > 0` (MifBridgeIntrospect.cpp:2329), so the
+        # flag and the three counts beside it are one statement said twice. Checking them against
+        # each other holds whatever this particular compile does, which is what makes it a real
+        # check rather than a snapshot of one run - and it catches the failure that actually
+        # matters: a flag that stops agreeing with the numbers a caller would act on.
+        before, after = c.get("graphNodesBefore"), c.get("graphNodesAfter")
+        added = c.get("newNodeGuids")
+        check("T840c compile reports the three graph counts as real numbers",
+              all(isinstance(x, (int, float)) for x in (before, after, added)),
+              "before=%r after=%r newGuids=%r" % (before, after, added))
+        if all(isinstance(x, (int, float)) for x in (before, after, added)):
+            expected = (before != after) or (added > 0)
+            check("T840c and graphStructureChanged AGREES with them - it is the same statement twice",
+                  c.get("graphStructureChanged") is expected,
+                  "flag=%r but before=%r after=%r newGuids=%r implies %r"
+                  % (c.get("graphStructureChanged"), before, after, added, expected))
+            # The note is emitted on exactly the same condition, so its presence is the third telling
+            # of the same fact and must not disagree with the other two either.
+            check("T840c and structureNote is present exactly when the flag is true",
+                  bool(c.get("structureNote")) is expected,
+                  "flag=%r note=%r" % (c.get("graphStructureChanged"),
+                                       (c.get("structureNote") or "")[:80]))
         SC.confirm_call("delete_asset", {"path": cvpath, "confirm": True})
 
     # ================================================================== T841 nav_status
