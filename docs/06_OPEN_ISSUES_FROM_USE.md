@@ -2048,9 +2048,8 @@ this same file got that way:
   a legitimate binding, and the silence was the defect, not the permissiveness.
 * `925112e` — the four test-quality gaps.
 
-**Still open: `add_gameplay_tag`.** The decline rests on a false premise and the feature is
-buildable; it needs specifying properly rather than a one-line reversal, which is why it is not in
-the batch above.
+**This entry once carried `add_gameplay_tag` as unresolved** — on the grounds that the decline rested on a
+false premise and the feature was buildable, needing specification rather than a one-line reversal.
 
 > **CLOSED — and this line was stale the day it was written (corrected 2026-08-31).**
 > `add_gameplay_tag` was BUILT on 2026-08-30, the same day as this resolution note, and the note was
