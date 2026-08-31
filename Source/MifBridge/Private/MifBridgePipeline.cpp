@@ -5,6 +5,7 @@
 #include "MifBridgeLog.h"
 
 #include "HAL/FileManager.h"
+#include "HAL/PlatformMisc.h"      // GetEnvironmentVariable - MifBridge.cpp includes it for the same reason
 #include "Misc/App.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -17,8 +18,37 @@ namespace MifBridge
 		// "see docs/04, docs/11"; docs/04 has never existed in this repository and docs/11 here is
 		// about UE4 port feasibility. Those notes are the author's separate DDS2 modding
 		// documentation, not anything shipped with this plugin.
-		static const TCHAR* GameRoot = TEXT("C:/SteamLibrary/steamapps/common/Drug Dealer Simulator 2/DrugDealerSimulator2");
-		static const TCHAR* RetocExe = TEXT("C:/Users/andre/.cargo/bin/retoc.exe");
+		// NEITHER OF THESE IS A LITERAL ANY MORE, for two different reasons.
+		//
+		// The retoc path used to read C:/Users/<author>/.cargo/bin/retoc.exe, which put the
+		// author's Windows account name into every published binary and every clone of this source,
+		// and was wrong for everyone else besides. Derived from %USERPROFILE% it resolves to the
+		// same file on the machine it was written for - cargo installs there by definition - so
+		// nothing changes here and nothing personal ships.
+		//
+		// Both also take an environment override so these three endpoints are usable by someone
+		// whose game is not in this exact Steam folder. Unset, the defaults behave exactly as they
+		// did before, so this is additive rather than a workflow change.
+		FString MifGameRoot()
+		{
+			const FString Env = FPlatformMisc::GetEnvironmentVariable(TEXT("MIF_GAME_ROOT"));
+			if (!Env.IsEmpty()) { return Env.Replace(TEXT("\\"), TEXT("/")); }
+			return TEXT("C:/SteamLibrary/steamapps/common/Drug Dealer Simulator 2/DrugDealerSimulator2");
+		}
+
+		FString MifRetocExe()
+		{
+			const FString Env = FPlatformMisc::GetEnvironmentVariable(TEXT("MIF_RETOC_EXE"));
+			if (!Env.IsEmpty()) { return Env.Replace(TEXT("\\"), TEXT("/")); }
+			const FString Home = FPlatformMisc::GetEnvironmentVariable(TEXT("USERPROFILE"));
+			if (!Home.IsEmpty())
+			{
+				return Home.Replace(TEXT("\\"), TEXT("/")) / TEXT(".cargo/bin/retoc.exe");
+			}
+			// No USERPROFILE at all is a broken environment rather than a supported one; say so
+			// with a path that names the variable instead of silently pointing at nothing.
+			return TEXT("%USERPROFILE%/.cargo/bin/retoc.exe");
+		}
 
 		void PushLine(TArray<TSharedPtr<FJsonValue>>& Arr, const FString& Line)
 		{
@@ -107,7 +137,7 @@ namespace MifBridge
 		FString Path = JStr(In, TEXT("path"));
 		if (Path.IsEmpty())
 		{
-			Path = FString(GameRoot) + TEXT("/Binaries/Win64/ue4ss/UE4SS.log");
+			Path = MifGameRoot() + TEXT("/Binaries/Win64/ue4ss/UE4SS.log");
 		}
 		const int32 Lines = FMath::Clamp(JInt(In, TEXT("lines"), 80), 1, 5000);
 		const FString Filter = JStr(In, TEXT("filter"));
@@ -298,12 +328,12 @@ namespace MifBridge
 		const FString Mod = JStr(In, TEXT("mod"), TEXT("<ModName>"));
 		const FString Asset = JStr(In, TEXT("asset"), TEXT("<AssetName>"));
 
-		const FString Root(GameRoot);
+		const FString Root = MifGameRoot();
 		const FString PaksDir = Root + TEXT("/Content/Paks");
 		const FString DeployMods = Root + TEXT("/Content/Paks/Mods");
 		const FString DeployLogicMods = Root + TEXT("/Content/Paks/LogicMods/") + Mod;
 		const FString UE4SSLog = Root + TEXT("/Binaries/Win64/ue4ss/UE4SS.log");
-		const FString Retoc(RetocExe);
+		const FString Retoc = MifRetocExe();
 
 		Out->SetBoolField(TEXT("executed"), false);
 		Out->SetStringField(TEXT("note"),
