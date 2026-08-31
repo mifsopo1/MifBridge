@@ -7198,12 +7198,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       finding, which is not a thing to put in a runbook people run often. The measurement is the
       deliverable, and it says the citation base is in good order - which is the answer somebody
       would otherwise spend an evening re-deriving.
-- [ ] **a missing parameter reported as a failed lookup - FIXED IN SOURCE, awaiting a reload** (hours)
-      DOWNGRADED FROM [x] on 2026-08-31, by me, against this file's own rule: "'- [x]' only when
-      BUILT, TESTED and COMMITTED". It is built and committed. It is not TESTED - the running
-      editor loads a DLL older than the change, so the new messages have never been observed.
-      What was verified live is the DEFECT, not the fix. Mark it done after the editor reloads
-      and describe_behavior_tree {} answers with the parameter name.
+- [x] **a missing parameter reported as a failed lookup - VERIFIED LIVE 2026-08-31 evening** (hours)
+      Downgraded from [x] earlier the same day because the running editor loaded a DLL older than
+      the change. The DLL was rebuilt (buildTime 09:59:06, confirmed through self_audit on the
+      running editor), and the acceptance test this entry set for itself was run against it:
+
+          describe_behavior_tree {}
+          -> "path is required (alias: assetPath) - the BehaviorTree asset, e.g. /Game/AI/BT_Guard.
+              Find one with find_assets {class:\"BehaviorTree\"}."
+
+      instead of "behavior tree not found: " with nothing after the colon, which told a caller their
+      path was wrong when they had never given one. A pure refusal, so nothing was written to the
+      editor Andre was working in.
+
+      The Components.cpp half of the same fix - "'%s' has no component named ''" - is NOT verified.
+      Reaching it needs a resolvable actor, and this world is partitioned with nothing streamed in;
+      list_level_actors returns count 0 and list_partition_actors did not answer inside 15s. Not a
+      doubt about the fix, just an unreachable path in this session. Left as a note rather than a
+      separate open item because the code change is one edit shared with the verified half.
       Found by calling all 88 read-only endpoints with {} and asking whether the refusal names an
       accepted parameter. describe_behavior_tree answered "behavior tree not found: " with nothing
       after the colon; list_blackboard_keys the same. Both told a caller their path was wrong when
