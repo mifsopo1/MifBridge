@@ -47,10 +47,46 @@ PRIV = os.path.realpath(os.path.join(ROOT, "Source", "MifBridge", "Private")).lo
 
 # Tools that scan the C++ sources. Not every tool in the directory - only ones that read Private/.
 CANDIDATES = [
-    "audit_advice_gaps", "audit_dead_params", "audit_loop_writes", "audit_message_endpoints",
-    "audit_modals", "audit_postconditions", "harvest_param_table", "mcp_sends_unknown",
-    "param_reach", "parity_check",
+    "audit_advice_gaps", "audit_blocking", "audit_dead_params", "audit_loop_writes",
+    "audit_message_endpoints", "audit_modals", "audit_postconditions", "harvest_param_table",
+    "mcp_sends_unknown", "param_reach", "parity_check",
 ]
+
+# STRING LITERALS ARE THE OTHER HALF, and this harness could not see them until 2026-08-31.
+#
+# blank_comments says so in its own docstring: "string literals untouched". So a tool matching an API
+# name inside a TEXT("...") was invisible here - and audit_blocking was exactly that, sitting at
+# exit 1 for a day on MifBridgeDescribe.cpp:297, a generated notes entry reading "FPhysicsAssetUtils
+# ::CreateFromSkeletalMesh puts up an FScopedSlowTask MakeDialog". Prose saying a blocker is NOT
+# used, counted as a blocker. audit_blocking was also not in CANDIDATES at all, so neither half of
+# the miss had a chance.
+#
+# Three passes now: raw, comments blanked, comments AND strings blanked. A tool whose answer changes
+# between the second and third is STRING-dependent, which is a different claim from comment-
+# dependent and needs its own list of deliberate readers - several tools here read strings as their
+# entire job.
+EXPECTED_STRINGS = {
+    "audit_message_endpoints":
+        "its whole subject is the TEXT(...) a caller reads - blanking strings removes the corpus",
+    "audit_advice_gaps":
+        "collects imperative advice out of Fail()/warning STRINGS; that is the input, not noise",
+    "harvest_param_table":
+        "harvests the accepted-key TEXT(\"...\") literals themselves",
+    "audit_dead_params":
+        "reads the accepted-key literals to know what an endpoint accepts",
+    "param_reach":
+        "same - the accepted keys are string literals",
+    "parity_check":
+        "reads MIF_BIND(name) and _post(\"name\") literals",
+    "mcp_sends_unknown":
+        "compares literal key names on both sides",
+    "audit_modals":
+        "its FOUNDATIONS quote engine LINES as strings and check they still say it",
+    "audit_loop_writes":
+        "keys on Out->SetXField(TEXT(\"name\")) - the field name is a string literal",
+    "audit_postconditions":
+        "matches SILENT_APIS names, some of which appear in TEXT() as well as in code",
+}
 
 # Some of these tools WRITE when run bare. Running one in-process is not a read-only act, and this
 # harness found that out the hard way: harvest_param_table regenerates a table compiled into the DLL,
@@ -78,6 +114,9 @@ EXPECTED = {
         "comment to verify and not do it. Mutation is the claim worth doubting, because a false "
         "mutation flag sends a reader to a handler with nothing wrong with it.",
 }
+
+
+from harvest_param_table import blank_comments_and_strings   # the one shared scrubber
 
 
 def blank_comments(text):
@@ -143,8 +182,12 @@ def _patch(fn):
         if "b" not in mode and p.startswith(PRIV) and p.endswith((".cpp", ".h")):
             _state["reads"] += 1
             if _state["scrub"]:
-                return io.StringIO(blank_comments(
-                    _real_open(path, encoding="utf-8", errors="replace").read()))
+                text = _real_open(path, encoding="utf-8", errors="replace").read()
+                # "comments" blanks comment CONTENT only; "strings" blanks comments AND string
+                # literals, so a difference between the two passes isolates string dependence.
+                fn_scrub = (blank_comments_and_strings if _state["scrub"] == "strings"
+                            else blank_comments)
+                return io.StringIO(fn_scrub(text))
         return fn(path, *a, **kw)
     return opener
 
@@ -187,20 +230,34 @@ def run_tool(tool, scrub):
 
 
 def main():
-    print("Does a tool's answer change when C++ comments are blanked?")
+    print("Does a tool's answer change when C++ comments - or string literals - are blanked?")
     print("=" * 78)
     unexpected, skipped = [], []
     for tool in CANDIDATES:
         if not os.path.isfile(os.path.join(HERE, tool + ".py")):
             continue
-        plain, nreads = run_tool(tool, False)
+        plain, nreads = run_tool(tool, None)
         if nreads == 0:
             skipped.append(tool)
             print("  %-24s reads no C++ directly - not tested" % tool)
             continue
-        scrubbed, _ = run_tool(tool, True)
+        scrubbed, _ = run_tool(tool, "comments")
+        stringless, _ = run_tool(tool, "strings")
+
+        # THE STRING PASS FIRST, because it is the one that was missing and the one that caught a
+        # real defect. Reported separately from comment dependence: they are different claims.
+        if scrubbed != stringless and tool not in EXPECTED_STRINGS:
+            sdiff = [l for l in difflib.unified_diff(scrubbed.splitlines(),
+                                                     stringless.splitlines(), lineterm="", n=0)
+                     if l[:1] in "+-" and l[:3] not in ("+++", "---")]
+            unexpected.append((tool + " (strings)", sdiff))
+            print("  STRINGS %-24s %3d files, ANSWER CHANGES when string literals are blanked "
+                  "(%d lines)" % (tool, nreads, len(sdiff)))
+            for l in sdiff[:6]:
+                print("            %s" % l[:110])
+
         if plain == scrubbed:
-            print("  ok      %-24s %3d files, answer unchanged" % (tool, nreads))
+            print("  ok      %-24s %3d files, answer unchanged by comments" % (tool, nreads))
             continue
         diff = [l for l in difflib.unified_diff(plain.splitlines(), scrubbed.splitlines(),
                                                 lineterm="", n=0)
