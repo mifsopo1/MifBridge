@@ -7289,3 +7289,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       second remedy - renaming the doomed object to the transient package, as the editor's own delete
       does - was deliberately not attempted: it changes object lifetime rather than reading a flag,
       and could not be tested tonight.
+- [x] **undo correctness: transacted writes that never call Modify() - checked, none proven** (hours)  **DONE 2026-08-31.**
+      A UE transaction snapshots an object only when told to, so mutating inside one without
+      UObject::Modify() yields an undo step that restores nothing - the operation looks undoable and
+      is not. MifBridgeAuthoring records fixing exactly that once, and nothing checked the rest.
+
+      Scoped to the 314 TRANSACTED endpoints, since that is where an undo step exists to be wrong.
+      37 visibly change engine state inside their own body; 15 of those never call Modify() there.
+      None is demonstrably a defect, and the first one read explains why the checker cannot decide:
+      set_ik_rig_mesh passes bTransact=true to the IK Rig CONTROLLER, with a comment saying
+      "Deliberately true: without it the mesh swap is not undoable", and notes that 5.7 dropped the
+      parameter because the call now transacts by engine policy. Undo is handled one layer down,
+      where a body-scoped scan cannot see it. The rest are creates and spawns, where a brand-new
+      object has no prior state to snapshot.
+
+      THE MODULE-WIDE NUMBER is the useful answer: 284 Modify() calls and 45 FScopedTransaction in
+      CODE, comments and strings scrubbed. Undo is handled systematically here, not incidentally.
+
+      No tool committed - a checker that reports fifteen sites and cannot tell which of them matter
+      is a reading list, and this repo has learned twice tonight what a long reading list does to the
+      one real finding inside it. Noted for anyone re-deriving: `bTransact` scans as ZERO occurrences
+      in code, because the only place the NAME appears is the comment in `/*bTransact=*/true`.
