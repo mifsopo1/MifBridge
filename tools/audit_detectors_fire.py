@@ -180,8 +180,21 @@ def plant_blocker(text):
     if not m:
         return None
     t = m.group(1)
-    probe = (t + "void H_mif_probe_block_zz(const TSharedRef<FJsonObject>& In, "
-                 "const TSharedRef<FJsonObject>& Out)\n"
+    # THE PADDING IS THE POINT, and its absence made this report ASLEEP against a working tool.
+    # declared_near() reads 25 lines ABOVE the signature, because that is where this codebase puts
+    # its endpoint contracts. The first version inserted the probe immediately before H_new_level,
+    # whose comment block says "blocks the game thread" - so the probe inherited a declaration it
+    # never made, was classified `declared` rather than UNDECLARED, and the tool correctly exited 0.
+    # Twenty-six blank lines guarantee the lookback window is empty wherever this lands.
+    #
+    # AND THE HANDLER'S NAME MATTERS TOO, which took a second ASLEEP verdict to notice. DECLARED
+    # contains the word "block", declared_near lowercases the whole window INCLUDING the signature
+    # line, and the probe was called H_mif_probe_block_zz - so it declared itself. A plant must not
+    # accidentally satisfy the very predicate it is testing.
+    pad = "\n" * 26
+    probe = (pad
+             + t + "void H_mif_probe_zzq(const TSharedRef<FJsonObject>& In, "
+                   "const TSharedRef<FJsonObject>& Out)\n"
              + t + "{\n"
              + t + "\tFPlatformProcess::Sleep(30.0f);\n"
              + t + "}\n")
@@ -194,11 +207,16 @@ def plant_dead_param(text):
     The guard refuses names it does not know, which is why this is the worse half: an accepted name
     passes by definition, so the call succeeds, reports ok, and does nothing with what was sent.
     """
+    # camelCase, NO UNDERSCORE, because the tool filters accepted keys through
+    # IDENT = ^[A-Za-z][A-Za-z0-9]* before looking at them - real parameter names here are camelCase.
+    # The first version used probeDead_zz, which was discarded as not-a-parameter-name before any
+    # check ran, and the harness reported the tool ASLEEP when it had simply never been shown a
+    # parameter. A plant has to look like the thing it imitates.
     needle = 'RejectUnknownParams(In, Out, { TEXT("partitioned") },'
     if needle not in text:
         return None
     return text.replace(
-        needle, 'RejectUnknownParams(In, Out, { TEXT("partitioned"), TEXT("probeDead_zz") },', 1)
+        needle, 'RejectUnknownParams(In, Out, { TEXT("partitioned"), TEXT("probeDeadZz") },', 1)
 
 
 def plant_undefined_name(text):
@@ -402,7 +420,7 @@ PLANTS = {
     "audit_blocking.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_blocker,
                           "FPlatformProcess::Sleep"),
     "audit_dead_params.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_dead_param,
-                             "probeDead_zz"),
+                             "probeDeadZz"),
     "audit_undefined_names.py": (os.path.join(HERE, "why_not.py"), plant_undefined_name,
                                  "MIF_PROBE_ZZ_UNDEFINED"),
     "audit_suite_reach.py": (os.path.join(HERE, "test_layers.py"), plant_unrun_assertions,
