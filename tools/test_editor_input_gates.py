@@ -87,9 +87,14 @@ def main():
     dr = M.raw_post("invoke_editor_command",
                     {"context": "LevelEditor", "command": "BrowseLevel", "dryRun": True})
     check("E4 dryRun reports invoked:false", dr.get("invoked") is False, json.dumps(dr)[:240])
-    check("E4 and names the MODAL hazard - an invoked action is third-party code that may open a "
-          "dialog, and a modal on the game thread takes this bridge down with it",
-          "modal" in json.dumps(dr).lower(), json.dumps(dr)[:260])
+    # BY FIELD NAME, not by substring. The first version asserted "modal" appeared anywhere in the
+    # response, which a note mentioning modals elsewhere would satisfy just as well - and a scan for
+    # consequence-reporting fields that no suite names found modalHazard among them, because this
+    # test never wrote it down.
+    check("E4 and names the MODAL hazard in a field of its own - an invoked action is third-party "
+          "code that may open a dialog, and a modal on the game thread takes this bridge down",
+          isinstance(dr.get("modalHazard"), str) and "modal" in dr["modalHazard"].lower(),
+          json.dumps(dr)[:260])
 
     # ------------------------------------------------------------------ E5 parameter guards
     print("\n=== E5: unknown parameters are refused, not ignored ===")

@@ -7400,3 +7400,37 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       children by then. Probed on a clean fixture: the promotion preserves the subtree exactly. T435
       now builds its own two widgets - a test that inherits four earlier tests' mutations and asserts
       a shape none of them promised is testing its own assumptions.
+- [ ] **48 response fields report a CONSEQUENCE and no suite asserts any of them** (day)
+      Filed 2026-08-31, found by generalising what T435 turned up. move_tree_widget answers a root
+      swap with displacedRoot, displacedSubtreeSize and a warning that the old subtree "will not
+      render" - a displaced root does not vanish from the asset, it stops being MOUNTED, and nothing
+      in an ok:true would tell you. Those three were asserted by nothing until T435.
+
+      So: 2090 distinct response fields are emitted across the module; 74 exist to report a
+      consequence the caller did not ask for and cannot see; 48 of those are named in no suite. This
+      is the read-back surface an agent depends on when something goes PARTIALLY wrong, which is the
+      case where a wrong answer costs most.
+
+      HIGHEST VALUE FIRST, by what a silent failure would cost:
+        rollbackLostLinks, rollbackUnresolvedPins  GraphPatch - what a rollback could not restore.
+                          apply_graph_patch is the endpoint of PM "12/12 OK on a rewire where 8
+                          destinations kept their old source"; its rollback reporting is untested.
+        propertiesFailed  Inherited - property writes that did not take, in a batch that reports ok.
+        failedConsolidationObjects, failedNote  AssetOps - consolidate is destructive and partial.
+        droppedByValidation, droppedNote  Animation - input silently dropped before it was applied.
+        leftBehind        Nodes3 - the state a failed call did not clean up.
+        skippedGround     World - actors snap_actors_to_ground could not place.
+        reverted          Inherited, Nodes3 - a write the engine undid underneath us.
+
+      NOT ALL REACHABLE, and that is a real answer rather than an excuse. discardedUnsaved on
+      remove_sublevel needs discardUnsaved, which mifaudit's FORBIDDEN_KEYS strips from every payload
+      on purpose, and reaching remove_sublevel at all needs a sublevel, which needs a SAVED .umap.
+      Anything gated behind saving or behind discarding unsaved work is out of scope for an
+      unattended suite by the standing rules, and should be marked so rather than left looking
+      undone.
+
+      ONE WAS FIXED ON THE SPOT and is worth recording as a caution: modalHazard appeared in this
+      list even though test_editor_input_gates had asserted it an hour earlier - because that test
+      checked whether the string "modal" appeared ANYWHERE in the response, which a note mentioning
+      modals would satisfy just as well. Asserting a field means naming it. The scan was right and
+      the test was loose.
