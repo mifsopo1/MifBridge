@@ -6629,6 +6629,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       actually produces is a runtime question.
 
 
+- [ ] **the PIE family's RUNNING paths, now that PIE is allowed** (hours)
+      Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
+      The idle half needed no session and should never have been declined; the running half genuinely
+      does, and PIE has been authorised since 2026-08-28.
+
+      Uncovered while a session is live: list_pie_actors, spawn_actor_in_pie, pie_load_level_instance,
+      pie_unload_level_instance, describe_live_widget against a real widget instance, and the
+      ui_scenario_* runner past IDLE.
+
+      DO IT ATTENDED. The standing guidance on PIE is to use it where it is the right tool but not to
+      leave it running in unattended sweeps, and a suite that starts PIE and then fails before its
+      stop_pie leaves the editor in a play session for everything after it - the same shape as the
+      current-level contamination fixed in reads7, with a worse blast radius. Whatever is written
+      here starts PIE inside a try and stops it in a `finally`, and asserts pie_status is back to
+      state=="stopped" at the end rather than assuming stop_pie worked.
+
+
 ### Refuted, recorded so they are not re-proposed
 
 - add_retarget_pose / set_retarget_pose_bone / set_current_retarget_pose -- Refuted on the strongest and most common ground: existing endpoints already do it. I verified the reflective machinery by reading it rather than trusting it - H_set_property has no CPF_Edit gate (and MifBridgeDetails.cpp

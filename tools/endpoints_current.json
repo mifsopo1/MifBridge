@@ -293,6 +293,7 @@
  "preview_widget",
  "project_asset_distribution",
  "project_dependency_graph",
+ "project_paths",
  "push_livelink_transform",
  "read_datatable",
  "read_engine_log",

@@ -14,7 +14,6 @@
   "kr_verify_fidelity",
   "pcg_cleanup",
   "pcg_generate",
-  "pie_status",
   "save_dirty_packages",
   "save_level_as"
  ],
@@ -591,6 +590,7 @@
    "test_undo_integrity.py"
   ],
   "create_landscape": [
+   "test_landscape_heightmap.py",
    "test_landscape_info.py",
    "test_uncovered_reads6.py",
    "test_uncovered_reads7.py"
@@ -760,7 +760,8 @@
    "test_levelsnapshots.py"
   ],
   "describe_live_widget": [
-   "test_pie_family.py"
+   "test_pie_family.py",
+   "test_pie_idle.py"
   ],
   "describe_livelink_subject": [
    "test_livelink.py"
@@ -851,6 +852,7 @@
   ],
   "export_landscape_heightmap": [
    "test_landscape_heightmap.py",
+   "test_project_paths.py",
    "test_spline_landscape.py"
   ],
   "find_assets": [
@@ -910,6 +912,7 @@
    "test_uncovered_reads4.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
+   "test_uncovered_reads7.py",
    "test_uncovered_reads8.py",
    "test_virtual_bone_authoring.py"
   ],
@@ -1026,7 +1029,8 @@
   ],
   "landscape_info": [
    "test_landscape_heightmap.py",
-   "test_landscape_info.py"
+   "test_landscape_info.py",
+   "test_spline_landscape.py"
   ],
   "layout_material_expressions": [
    "test_material_graph.py"
@@ -1052,7 +1056,6 @@
    "test_blender_rig.py",
    "test_find_tools.py",
    "test_ik_authoring.py",
-   "test_ik_goals_solvers.py",
    "test_list_bones.py",
    "test_ported_anim.py",
    "test_virtual_bone_authoring.py"
@@ -1180,7 +1183,8 @@
    "test_sequencer.py"
   ],
   "list_live_widgets": [
-   "test_pie_family.py"
+   "test_pie_family.py",
+   "test_pie_idle.py"
   ],
   "list_material_expressions": [
    "test_material_graph.py",
@@ -1238,7 +1242,8 @@
    "test_uncovered_reads.py"
   ],
   "list_pie_actors": [
-   "test_pie_family.py"
+   "test_pie_family.py",
+   "test_pie_idle.py"
   ],
   "list_redirectors": [
    "test_redirectors.py"
@@ -1376,10 +1381,15 @@
    "test_uncovered_reads4.py"
   ],
   "pie_load_level_instance": [
-   "test_pie_family.py"
+   "test_pie_family.py",
+   "test_pie_idle.py"
+  ],
+  "pie_status": [
+   "test_pie_idle.py"
   ],
   "pie_unload_level_instance": [
-   "test_pie_family.py"
+   "test_pie_family.py",
+   "test_pie_idle.py"
   ],
   "preview_composite_widget": [
    "test_uncovered_reads8.py"
@@ -1392,6 +1402,11 @@
   ],
   "project_dependency_graph": [
    "test_project_graph.py"
+  ],
+  "project_paths": [
+   "test_modal_hazards.py",
+   "test_project_paths.py",
+   "test_uncovered_reads5.py"
   ],
   "push_livelink_transform": [
    "test_livelink.py"
@@ -1653,6 +1668,7 @@
    "test_niagara_user_params.py",
    "test_physics_asset.py",
    "test_physics_primitive_collision.py",
+   "test_pie_idle.py",
    "test_pinlifetime.py",
    "test_redirectors.py",
    "test_rollback_real.py",
@@ -1798,7 +1814,8 @@
    "test_sequence_keys.py"
   ],
   "set_spline_points": [
-   "test_report_intake.py"
+   "test_report_intake.py",
+   "test_spline_landscape.py"
   ],
   "set_struct_member": [
    "test_set_struct_member.py",
@@ -1880,7 +1897,8 @@
    "test_uncovered_reads8.py"
   ],
   "spawn_actor_in_pie": [
-   "test_game_framework.py"
+   "test_game_framework.py",
+   "test_pie_idle.py"
   ],
   "spawn_many": [
    "test_spawn_many.py"
@@ -1895,6 +1913,7 @@
    "test_game_framework.py",
    "test_livelink.py",
    "test_pie_family.py",
+   "test_pie_idle.py",
    "test_safety_gate.py"
   ],
   "stop_pie": [
@@ -1927,16 +1946,19 @@
    "test_pie_family.py"
   ],
   "ui_scenario_capture": [
-   "test_pie_family.py"
+   "test_pie_family.py",
+   "test_pie_idle.py"
   ],
   "ui_scenario_start": [
    "test_pie_family.py"
   ],
   "ui_scenario_status": [
-   "test_pie_family.py"
+   "test_pie_family.py",
+   "test_pie_idle.py"
   ],
   "ui_scenario_stop": [
-   "test_pie_family.py"
+   "test_pie_family.py",
+   "test_pie_idle.py"
   ],
   "undo_transactions": [
    "test_material_undo.py",

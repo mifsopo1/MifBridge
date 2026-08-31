@@ -33,12 +33,18 @@ inherited-variable/parent-event/Niagara-component scenario or carries enough sta
 switches the editor's open level; remove_sublevel's discardUnsaved has NO scratch_confirm exemption,
 ever) to deserve its own careful batch rather than being rushed into this one.
 
-DECLINED, not pursued at all: list_pie_actors, pie_status, pie_load_level_instance,
-pie_unload_level_instance, spawn_actor_in_pie, move_actor_to (confirmed live: "needs a running PIE
-session - AI controllers only exist at runtime"), describe_live_widget, list_live_widgets (both need a
-LIVE widget instance, which in practice means a running PIE world - no non-PIE path to one was found),
-ui_scenario_* (5 endpoints, the Phase C PIE-driven scenario runner) - all forbidden by the standing
-rule against starting PIE. save_dirty_packages, save_level_as - forbidden by the standing rule against
+DECLINED, not pursued at all: move_actor_to (confirmed live: "needs a running PIE session - AI
+controllers only exist at runtime").
+
+THE PIE DECLINE ABOVE WAS TOO BROAD, and is superseded - see tools/test_pie_idle.py (2026-08-31).
+It read "list_pie_actors, pie_status, pie_load_level_instance, pie_unload_level_instance,
+spawn_actor_in_pie, describe_live_widget, list_live_widgets, ui_scenario_* - all forbidden by the
+standing rule against starting PIE". Two things were wrong with that. The rule was lifted on
+2026-08-28. And it generalised from "needs PIE for its full function" to "cannot be tested at all",
+which is a different claim: every one of those has specified behaviour with NO PIE world, and
+pie_status is a pure read that never needed a session. The idle contract - refusals that name the
+remedy, an idempotent ui_scenario_stop, list_live_widgets falling back to the editor world - is now
+covered, 26 assertions, without starting anything. The RUNNING paths remain open and are filed. save_dirty_packages, save_level_as - forbidden by the standing rule against
 saving. pcg_generate/pcg_cleanup - already-documented structural wall, PCG has no node-authoring
 endpoints so there is no way to build real graph content to test generation against.
 """
