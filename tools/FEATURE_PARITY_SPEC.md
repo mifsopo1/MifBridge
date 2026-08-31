@@ -8111,3 +8111,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       on principle.
 
       test_blender_mesh M900/M901, 86 -> 90 assertions, green on all four installed Blenders.
+
+- [ ] **two live detectors produced their FIRST real result - and that is not the same as proven**
+      (hours)
+      Run 2026-08-31 against the editor Andre was working in, both read-only:
+
+        audit_describe_drift   433 handlers with an accept-list, 427 rows compared, 0 endpoints with
+                               no row at all. Every describe row lists everything its handler
+                               accepts.
+        audit_read_purity      107 endpoints named like reads, 97 exercised, 0 dirtied a package.
+                               It is honest about the other 10 - describe_ability_system,
+                               describe_pcg_graph and friends needed an argument the sweep could not
+                               guess - and says outright that they are NOT evidence of purity.
+
+      THE DISTINCTION THAT MATTERS. These are real results and they are not what
+      audit_detectors_fire means by proven. A clean run says the corpus is clean IF the detector
+      works; a plant says the detector works. Both are still in NOT PROVABLE HERE, because planting
+      for describe_drift means editing a handler's accept list in Source/ and the harness refuses to
+      write into Source/ while an editor holds it.
+
+      What would close it: run audit_detectors_fire with the editor CLOSED and a plant defined for
+      each. That is the same window the Development build needs, so it is one visit rather than two.
+
+      Incidental, and Andre's business rather than a finding: 77 packages were already dirty in that
+      session. Normal for an editor somebody is working in, and the auditor counts only NEW ones,
+      which is why it can run at all against a live session.
