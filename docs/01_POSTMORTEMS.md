@@ -2293,7 +2293,7 @@ code, never by the prose next to it.
 **Symptom.** Found by `audit_loop_writes`, which had been failing for an unknown length of time with
 19 findings. It is not in the release gate, so nothing blocked and nobody looked.
 
-**Root cause.** `manage_layers` writes `Out->SetBoolField(TEXT("layerCreated"), true)` INSIDE
+**Root cause.** `modify_actor_layers` writes `Out->SetBoolField(TEXT("layerCreated"), true)` INSIDE
 `for (const FName& N : LayerNames)`. Three consequences, in increasing order of how much they
 matter:
 
@@ -2304,7 +2304,7 @@ matter:
 
 **Why it matters more here than the shape suggests.** Layer creation in this endpoint is IMPLICIT
 by design - passing a name that does not exist creates it, which is what the Outliner does when you
-drag onto a new name. So `manage_layers { layers: ["Props", "Prpos"], ... }` silently turns a typo
+drag onto a new name. So `modify_actor_layers { layers: ["Props", "Prpos"], ... }` silently turns a typo
 into a real, empty, permanent layer. There is no error for that and there should not be one; the
 only defence a caller has is being TOLD which names were new, and that is exactly what the response
 withheld.
@@ -2319,6 +2319,34 @@ server, not a suite, not the docs.
 findings; the scan is 4. That is the actual prevention - not the rule, the SIGNAL-TO-NOISE. Nineteen
 entries on a check that fails outside the release gate is a check nobody reads, and the one real
 defect in it had been sitting there in plain view.
+
+**WHAT IS AND IS NOT PROVEN, added the same night rather than left implied.** The change is
+COMPILE-verified: UE 5.3 installed, Development, BUILD OK from `buildcheck.py` with a linked DLL and
+a verified mtime. It is NOT behaviour-verified, and cannot be in this environment. Two facts
+compound:
+
+  * the SDK editor's open level is WORLD PARTITIONED, and `AActor::SupportsLayers` is false for every
+    actor in one, so `modify_actor_layers` refuses every `add` here before reaching any layer work.
+  * actor resolution runs BEFORE the per-name creation loop - probed, not assumed - so a call whose
+    actors do not resolve creates nothing at all.
+
+Together those make the implicit-creation path unreachable on this level, so no test here can
+execute the line that was changed. What WAS added is `test_layers` L105, which pins the guard order
+itself: an `add` with a mistyped layer name AND a mistyped actor path must leave no layer behind.
+That is the property protecting the same hazard from the other side, it is build-independent, and it
+passes today (17 PASS -> 21).
+
+The remaining verification needs a classic, non-partitioned level current, and is filed rather than
+faked. The running editor is also ~35 minutes older than the fix; `live_coding_compile` would patch
+it in and was NOT called, because it requires `confirm:true` and its own refusal says a bad patch can
+destabilise the process holding unsaved work. That is a decision for a human at the keyboard.
+
+**A NAMING ERROR IN THIS ENTRY, corrected the same night.** It said `manage_layers` throughout. The
+endpoint is `modify_actor_layers`; there is no `manage_layers`. The wrong name reached this file, the
+spec entry and a comment in `make_release.py`, and it also caused a second wrong conclusion - a grep
+for the invented name reported the endpoint as covered by NO suite, when `test_layers.py` has
+covered it since the day it was written. One mistake, two false findings, both from trusting a name
+I had not read out of the source.
 ## The engine probe could not probe one of the two engines it exists for, and said "Latest" (2026-08-31)
 
 **Symptom.** A Development build of the 5.3 probe died in

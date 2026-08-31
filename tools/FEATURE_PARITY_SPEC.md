@@ -7015,7 +7015,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       REFUSES them by name with the type it found, rather than skipping the key, because a key
       silently not written leaves a section that looks authored and animates nothing - so this is
       an extension, not a latent bug.
-- [x] **manage_layers reported THAT a layer was implicitly created, never WHICH** (hours)  **DONE 2026-08-31.**
+- [x] **modify_actor_layers reported THAT a layer was implicitly created, never WHICH** (hours)  **DONE 2026-08-31.**
       layersCreated (array, always emitted), layerCreated derived from it, layerCreatedNote naming
       the risk. Layer creation here is implicit by design, so `layers: ["Props", "Prpos"]` turns a
       typo into a real permanent layer with no error - being told which names were new is the
@@ -7130,3 +7130,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       itself all along, that an existence test whose absence was a SHIPPED bug had no guard, and that
       IKSolverIsNull's `const auto*` is a cross-engine invariant a single-engine compile cannot catch.
       All eleven call sites mutation-tested by blanking the CODE occurrence; every one reports.
+- [x] **test_layers now pins the guard order that stops a failed call creating a layer** (hours)  **DONE 2026-08-31.**
+      L105, four checks, 17 PASS -> 21. `add` CREATES a layer name that does not exist, deliberately,
+      so the order of two guards decides whether a wholly failed call has a permanent side effect: a
+      typo in BOTH the layer name and the actor path must not leave a real empty layer with no error
+      and no undo step. Probed against the live editor before writing it - resolution really does run
+      first - so the test pins behaviour that already holds rather than asserting a hope.
+
+- [ ] **layersCreated is compile-verified but not behaviour-verified - needs a classic level** (hours)
+      The 2026-08-31 fix to modify_actor_layers cannot be exercised on this machine. The SDK editor's
+      open level is WORLD PARTITIONED and AActor::SupportsLayers is false for every actor in one, so
+      every `add` is refused before any layer work happens; and actor resolution runs before the
+      per-name creation loop, so a call that resolves nothing creates nothing. The implicit-creation
+      line is therefore unreachable on this level. Reaching it needs a classic, non-partitioned level
+      made current, which changes what is open in the editor and is not something to do unattended.
+      Separately, the running editor is older than the fix: live_coding_compile would patch it in but
+      needs confirm:true, and its own refusal says a bad patch can destabilise the process holding
+      unsaved work - a decision for a human at the keyboard, not for an overnight run.

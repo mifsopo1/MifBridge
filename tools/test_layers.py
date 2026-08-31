@@ -133,6 +133,35 @@ def main():
                   not mine2 or actor not in (mine2[0].get("actors") or []),
                   json.dumps(mine2)[:250])
 
+        # ------------------------------------------------------------------ L105 implicit create
+        print("\n=== L105: a call that changes NOTHING must not leave a layer behind ===")
+        # WHY THIS IS THE ONE WORTH PINNING. `add` CREATES a layer name that does not exist -
+        # deliberately, because that is what the Outliner does when you drag onto a new name. So the
+        # order of two guards decides whether a wholly failed call has a permanent side effect: if
+        # the per-name creation loop ran before actor resolution, then `add` with a typo in BOTH the
+        # layer name and the actor path would resolve nothing, change nothing, report a failure -
+        # and still leave a real empty layer in the level. There is no error for that and no undo
+        # step; the only defence is that resolution happens first.
+        #
+        # Probed against the live editor before it was written: the layer really is not created.
+        # This exists so it stays that way.
+        ghost = "MifGhostLayer%d" % st
+        pre = [r.get("name") for r in (M.call("list_layers", {"limit": 400}).get("layers") or [])]
+        check("L105 (setup) the layer name is not already in use", ghost not in pre, ghost)
+        dud = M.raw_post("modify_actor_layers", {
+            "operation": "add", "layer": ghost,
+            "actorPaths": ["/Game/NoSuchActor_zz.NoSuchActor_zz"]})
+        check("L105 an add whose actors do not resolve is REFUSED", dud.get("ok") is False,
+              json.dumps(dud)[:250])
+        check("L105 and the refusal says NOTHING was changed, which is a claim about the LEVEL and "
+              "not just about the actors",
+              "NOTHING was changed" in (dud.get("error") or ""), (dud.get("error") or "")[:240])
+        post = [r.get("name") for r in (M.call("list_layers", {"limit": 400}).get("layers") or [])]
+        check("L105 and no layer by that name exists afterwards - actor resolution runs BEFORE the "
+              "creation loop, so a doubly-mistyped call leaves no permanent empty layer",
+              ghost not in post,
+              "the refused call created %r anyway - %d layers now" % (ghost, len(post)))
+
         # ------------------------------------------------------------------ L103 visibility
         print("\n=== L103: visibility, measured off the layer ===")
         was = (layer_named(layer) or {}).get("visible")

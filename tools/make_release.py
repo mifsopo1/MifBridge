@@ -319,7 +319,7 @@ def check_static_audits():
 
     Gated because of what happened on 2026-08-31. audit_loop_writes had been failing, with 19
     findings, for an unknown length of time. Nothing depended on it, so nothing went red, and the
-    one real defect among the nineteen - manage_layers reporting layerCreated:true per name inside
+    one real defect among the nineteen - modify_actor_layers reporting layerCreated:true per name inside
     its loop, so it never said WHICH layer an implicit creation had invented from a typo - sat in
     plain view in a check nobody had reason to run. A ratchet outside the gate is a ratchet with
     nothing on the other end of it.
