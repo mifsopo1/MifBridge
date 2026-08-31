@@ -36,6 +36,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import harvest_param_table as H          # the one comment/string scrubber
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "..", "Source", "MifBridge", "Private")
 ENGINE = os.environ.get("MIF_ENGINE", "D:/UE532/Engine")
@@ -207,6 +210,68 @@ def check_deferrals():
     return bad
 
 
+# Modal hazards that are NOT reached through a prompter this scan can see, because the dialog is
+# opened by engine code several frames down from the call - so the only evidence at our call site is
+# that the mitigation is still there. MifBridgeExport.cpp's header says of these three: "Every one is
+# fatal if a later edit drops it." Until 2026-08-31 nothing checked that, which made the sentence a
+# hope. The FBX exporter reaches FSlateApplication::AddModalWindow via
+# FFbxExporter::FillExportOptions (FbxMainExport.cpp:218), and a modal on the game thread freezes the
+# HTTP ticker this server runs on - the bridge goes down with no agent able to click OK.
+#
+# Note what FillExportOptions actually tests to early-return: !bShowOptionDialog ||
+# GIsAutomationTesting || FApp::IsUnattended(). NOT GIsRunningUnattendedScript. So the guard the rest
+# of this file is about does not help here, and neither does its reasoning.
+# COUNTED, not merely present. "Is it in the file?" answers "at least one call site still has it",
+# and these are per-CALL-SITE invariants: Task->Options is set at two places (678 and 699), so
+# blanking either one left the check green. That was found by mutation-testing the check itself -
+# blank the CODE occurrence, confirm it is reported - which is the only way to learn that a green
+# checker is asleep. Two of the three were caught; this one was not, and the count is why it is now.
+#
+# A drop means a call site lost its gate. If a refactor legitimately merges paths, update the number
+# here deliberately and say why - the same contract as every baseline in this directory.
+INVARIANTS = [
+    ("MifBridgeExport.cpp", r"Task->bAutomated\s*=\s*true", 1,
+     "gate 1 - without it GetAutomatedExportOptionsFbx returns nullptr and the options modal opens"),
+    ("MifBridgeExport.cpp", r"Task->Options\s*=", 2,
+     "gate 2 - bAutomated alone is NOT enough; a null or wrong-typed Options falls through to the "
+     "modal branch. TWO call sites build an export task and both must set it"),
+    ("MifBridgeExport.cpp", r"Exporter->SetShowExportOption\s*\(\s*false\s*\)", 1,
+     "belt - makes FillExportOptions early-return even if the Cast to UFbxExportOption ever fails. "
+     "UExporter's constructor defaults ShowExportOption to TRUE, so omitting this is not neutral"),
+]
+
+
+def check_invariants():
+    """Each mitigation must be present in CODE. Its own file discusses all three at length.
+
+    Matched against scrubbed source, and that is the entire difficulty. MifBridgeExport.cpp's header
+    comment names every one of these three with the same spelling the code uses - so a raw `in src`
+    check passes on the prose alone and would go on passing after the code was deleted, which is the
+    one failure this check exists to prevent. Measured: each pattern matches once more in the raw
+    file than in the code.
+    """
+    missing = []
+    for rel, pattern, expected, why in INVARIANTS:
+        path = os.path.join(SRC, rel)
+        try:
+            raw = open(path, encoding="utf-8", errors="replace").read()
+        except OSError:
+            missing.append((rel, pattern, "file not found", why))
+            continue
+        code = H.blank_comments_and_strings(raw)
+        found = len(re.findall(pattern, code))
+        if found >= expected:
+            continue
+        if found == 0 and re.search(pattern, raw):
+            where = "IN A COMMENT ONLY - the code is gone and the prose still describes it"
+        elif found == 0:
+            where = "absent"
+        else:
+            where = "%d call site(s), expected %d - one lost its gate" % (found, expected)
+        missing.append((rel, pattern, where, why))
+    return missing
+
+
 def main():
     print("=" * 78)
     print("CITATIONS  (a claim about the engine that nothing re-checks is just a comment)")
@@ -305,6 +370,17 @@ def main():
 
     print()
     print("=" * 78)
+    print("INVARIANTS - mitigations for modals this scan cannot otherwise see")
+    print("=" * 78)
+    broken = check_invariants()
+    for rel, pattern, where, why in broken:
+        print("  MISSING  %s   %s" % (rel, where))
+        print("           %s" % why)
+    if not broken:
+        print("  all %d present in code - the FBX exporter's three options-modal gates" % len(INVARIANTS))
+
+    print()
+    print("=" * 78)
     print("DEFERRED WORK - the guard does not survive a deferral")
     print("=" * 78)
     raw = check_deferrals()
@@ -320,8 +396,9 @@ def main():
 
     print()
     print("=" * 78)
-    print("guarded %d   unguarded %d   citation drift %d   unguarded deferrals %d"
-          % (guarded, len(unguarded), drift, len(raw)))
+    print("guarded %d   unguarded %d   citation drift %d   unguarded deferrals %d   "
+          "broken invariants %d"
+          % (guarded, len(unguarded), drift, len(raw), len(broken)))
     if unguarded:
         print()
         print("An unguarded prompter freezes the bridge, it does not fail it.")
@@ -331,7 +408,7 @@ def main():
         print("which turns a hang into a silent refusal. Where the condition is predictable, check it")
         print("first so the caller gets a real reason instead of a generic failure.")
     print("=" * 78)
-    return 1 if (unguarded or drift or raw) else 0
+    return 1 if (unguarded or drift or raw or broken) else 0
 
 
 if __name__ == "__main__":

@@ -2091,3 +2091,36 @@ no break, safe only because a `continue` guard admits at most one of three disti
 That safety is a fact about the DATA, invisible to brace matching, so the scan should go on
 reporting it and a human should go on reading it. An anchor that survives BECAUSE the scanner cannot
 prove it safe is stable in a way a correct-and-detected one is not.
+## Mutation-test a checker, and check that the mutation hit the CODE
+
+A checker that reports nothing is indistinguishable from a codebase with nothing wrong, and the only
+way to tell them apart is to break the thing on purpose and confirm it complains. On 2026-08-31 that
+was done for `audit_modals`' new INVARIANTS section - the three FBX export gates whose own file
+header says "Every one is fatal if a later edit drops it" and which, until then, nothing enforced.
+
+The first mutation test reported this:
+
+    gate 1 (bAutomated)            -> 1 reported  IN A COMMENT ONLY
+    belt (SetShowExportOption)     -> 0 reported  NOTHING - the check is asleep
+
+The check was not asleep. The TEST was wrong, in precisely the way the check exists to prevent. It
+mutated with `raw.replace(needle, ..., 1)`, and `MifBridgeExport.cpp:42` quotes the gate verbatim
+inside the header comment - so "the first occurrence" was the PROSE, and the real call at line 650
+was never touched. A test written to prove a comment cannot stand in for code was itself fooled by a
+comment standing in for code.
+
+Locate the mutation by position in SCRUBBED text and blank that span in the original:
+
+    code = H.blank_comments_and_strings(raw)
+    m    = re.search(pattern, code)                       # a real call site, not a mention of one
+    doctored = raw[:m.start()] + " " * (m.end() - m.start()) + raw[m.end():]
+
+Then the second lesson arrived on its own: with the mutation landing correctly, `Task->Options` was
+still not reported, because it is set at TWO call sites (678 and 699) and blanking one left the
+other. A presence check answers "at least one call site still has it", which is not what a
+per-call-site invariant means. The table carries an expected COUNT now, and a drop is the finding:
+`1 call site(s), expected 2 - one lost its gate`. Every one of the four sites was then re-mutated
+and every one reported.
+
+THE RULE: a green checker is a claim, and the claim is "if this broke, I would say so". Prove it by
+breaking it. Then look at what you actually broke.
