@@ -1822,13 +1822,59 @@ namespace MifBridge
 			return;
 		}
 
+		// THE NOTE BELOW USED TO CLAIM A RECONSTRUCTION THAT DID NOT HAPPEN, and the measurement is
+		// worth keeping because the resulting state is invisible from every other angle.
+		//
+		// Measured 2026-08-31 on a scratch Actor blueprint: add_variable A (int), add_variable_get A,
+		// connect it into a Set node, then retype A to an Actor object reference. get_node afterwards
+		// reported THREE pins on the getter:
+		//
+		//     name=A   dir=output  type=object  links=0     <- the new pin nothing is wired to
+		//     name=self  dir=input   type=object  links=0
+		//     name=A   dir=output  type=int     links=1     <- the OLD pin, still connected
+		//
+		// So the old typed pin survives WITH its link, a second pin of the same name and direction
+		// appears beside it, and the graph compiles clean - 0 errors, 0 messages - because the
+		// compiler ignores the stale one. Every clause of the old note was wrong: the nodes were not
+		// reconstructed, the mismatched link was not dropped by the schema, and "compile to see
+		// which" showed nothing because there is nothing to see.
+		//
+		// Two same-name same-direction pins on one node is the exact hazard create_function keeps a
+		// self-healing pass for (MifBridgeNodes2.cpp, DuplicatePinsRemoved). A caller resolving a pin
+		// BY NAME here gets whichever comes first and cannot tell the live one from the dead one
+		// except by comparing types.
+		//
+		// So: reconstruct for real. ReconstructNode is what retarget_variable_node already calls for
+		// the neighbouring problem ("the only thing that actually fixes it", :1904), and it is the
+		// call that rebuilds a K2Node's pins from its current member reference - which is precisely
+		// what a retype invalidates.
+		int32 NodesReconstructed = 0;
+		{
+			TArray<UK2Node_Variable*> VarNodes;
+			FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_Variable>(Blueprint, VarNodes);
+			for (UK2Node_Variable* VarNode : VarNodes)
+			{
+				if (!VarNode) { continue; }
+				if (VarNode->GetVarName() != FName(*Name)) { continue; }
+				VarNode->ReconstructNode();
+				++NodesReconstructed;
+			}
+			if (NodesReconstructed > 0)
+			{
+				FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+			}
+		}
+
 		Out->SetStringField(TEXT("name"), Name);
 		Out->SetStringField(TEXT("scope"), bLocal ? TEXT("local") : TEXT("member"));
 		Out->SetObjectField(TEXT("typeBefore"), SerializePinType(BeforeType));
 		Out->SetObjectField(TEXT("typeAfter"), SerializePinType(AfterType));
 		Out->SetBoolField(TEXT("changed"), true);
+		// Reported ALWAYS, not only when nonzero, so a caller can assert on a number rather than
+		// having to notice an absent field - the same rule invalidCount and clearedCount follow.
+		Out->SetNumberField(TEXT("nodesReconstructed"), NodesReconstructed);
 		Out->SetStringField(TEXT("note"),
-			TEXT("existing Get/Set nodes were kept and reconstructed; links whose types no longer match were dropped by the schema — compile to see which"));
+			TEXT("every Get/Set node naming this variable was RECONSTRUCTED so its pins match the new type — see nodesReconstructed. Without that a retype leaves the old typed pin in place WITH its link, and a second pin of the same name beside it, and the graph still compiles clean; check the links you care about rather than trusting a clean compile."));
 	}
 
 	// --- retarget_variable_node -------------------------------------------------

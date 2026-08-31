@@ -9106,3 +9106,44 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Both are left OPEN rather than closed or declined, because "I could not reproduce it" is not
       the same as "it is wrong", and the difference matters for a note a caller acts on.
+
+- [ ] **set_variable_type left a STALE PIN with its link intact, and said it had reconstructed**
+      - FIXED IN SOURCE, needs a build (hours)
+      Found by testing the narrowed hypothesis from the failing-compile investigation rather than by
+      guessing again - an int/Actor pair UE cannot coerce, to separate "the link was dropped" from
+      "the engine converted it". Neither turned out to be true.
+
+      Measured on a scratch Actor blueprint: add_variable A (int), add_variable_get A, connect it
+      into a Set node, retype A to an Actor object reference. get_node afterwards:
+
+        name=A     dir=output  type=object  links=0    <- the new pin, wired to nothing
+        name=self  dir=input   type=object  links=0
+        name=A     dir=output  type=int     links=1    <- the OLD pin, still connected
+
+      The old typed pin survives WITH its link, a second pin of the same name and direction appears
+      beside it, and the blueprint compiles clean - 0 errors, 0 messages.
+
+      EVERY CLAUSE OF THE RESPONSE'S OWN NOTE WAS WRONG. It said "existing Get/Set nodes were kept
+      and reconstructed; links whose types no longer match were dropped by the schema - compile to
+      see which". The nodes were not reconstructed, the mismatched link was not dropped, and compile
+      shows nothing because there is nothing to see. A caller following that advice checks the
+      compile, finds it clean, and believes the retype was safe.
+
+      TWO SAME-NAME SAME-DIRECTION PINS is the exact hazard create_function keeps a self-healing pass
+      for. A caller resolving a pin BY NAME - which is how every endpoint in this bridge addresses
+      pins - gets whichever comes first and cannot tell the live one from the dead one except by
+      comparing types.
+
+      FIXED by doing what the note promised: every K2Node_Variable naming the retyped variable is
+      ReconstructNode()'d, which is the same call retarget_variable_node makes for the neighbouring
+      problem and describes as "the only thing that actually fixes it". nodesReconstructed is
+      reported ALWAYS, so a caller can assert on a number rather than notice an absent field, and the
+      note now describes what happens instead of what was hoped.
+
+      NOT BUILT - Andre is using the editor. Verify at the next window with the same three-step
+      fixture above; the pass condition is ONE pin named A on the getter, of the new type.
+
+      AND IT SETTLES THE FAILING-COMPILE INVESTIGATION as a side effect: the retype route produces no
+      compile error because the stale connection hangs off an orphaned pin the compiler ignores.
+      That was the fifth and last hypothesis; the answer is that this route cannot break a blueprint,
+      for a reason that is itself a defect.
