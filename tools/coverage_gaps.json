@@ -12,8 +12,6 @@
   "kr_reconstruct_request",
   "kr_reconstruct_status",
   "kr_verify_fidelity",
-  "pcg_cleanup",
-  "pcg_generate",
   "save_dirty_packages",
   "save_level_as"
  ],
@@ -1377,6 +1375,12 @@
   "paint_landscape": [
    "test_uncovered_reads6.py"
   ],
+  "pcg_cleanup": [
+   "test_pcg_guards.py"
+  ],
+  "pcg_generate": [
+   "test_pcg_guards.py"
+  ],
   "perf_heavy_actors": [
    "test_uncovered_reads4.py"
   ],
@@ -1666,6 +1670,7 @@
    "test_niagara_emitter.py",
    "test_niagara_set_user_param.py",
    "test_niagara_user_params.py",
+   "test_pcg_guards.py",
    "test_physics_asset.py",
    "test_physics_primitive_collision.py",
    "test_pie_idle.py",
