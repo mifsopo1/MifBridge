@@ -8009,3 +8009,41 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       audit_modals, stated in the suite exactly as T73/T74 state theirs.
 
       NOT [x]: never run.
+
+- [~] **suite calls whose response is never read - swept 2026-08-31, NOTHING wrong, no tool landed**
+      Declined as a tool after measuring it. The question was worth asking and the answer was clean,
+      so it is recorded here to stop the next person re-deriving it.
+
+      THE QUESTION. coverage_gaps counts an endpoint covered because a suite NAMES it,
+      audit_suite_reach counts the assertions that ran, and audit_suite_payloads checks the keys were
+      accepted. None asks whether anything looked at what came back. That is the T44 shape one level
+      up: T44 called add_enum_literal with a refused key, took the ok:false branch and asserted
+      `check("...refused outright", True)` - green for weeks, testing its own spelling. A call nobody
+      reads at all is that with the assertion deleted.
+
+      THE MEASUREMENT. 120 of 1765 suite calls discard their response (7%), across 37 suites. Almost
+      all are setup - compile 15, add_variable 8, add_component 7, add_widget_animation 7 - where the
+      next assertion is about the state the call produced and checking its ok would be noise.
+
+      Narrowed to the shape that would actually matter, an endpoint whose ONLY appearance anywhere is
+      a discarded call: 3 of 373. All three were fine.
+
+        add_variable_set   IS asserted - by test_node_spawns' table, which calls M.call(ep, payload)
+                           with a VARIABLE endpoint name. A literal-argument scan cannot see that,
+                           which is the same blind spot test_node_spawns already documents about
+                           coverage_gaps.
+        delete_object      Blender cleanup, and verified by audit_blender_postconditions, which
+                           confirms through scene_info that the object is gone. Verified by an
+                           AUDITOR rather than a suite, which the sweep had no way to know.
+        set_cvar           EXEMPLARY, and the best possible outcome for this check. T633 discards the
+                           response on purpose and asserts the EFFECT instead - writeMode read
+                           through self_audit before and after. Whether set_cvar answered is
+                           irrelevant; whether the gate moved is the whole question. Judging by
+                           postcondition is this repo's first rule, and a tool that flagged it would
+                           be punishing the thing it should reward.
+
+      WHY NO TOOL. 0 real findings, and the exclusions needed to reach that are the hard kind - an
+      effect asserted through a DIFFERENT endpoint nearby, an endpoint name arriving as a variable,
+      verification living in an auditor rather than a suite. A check that flagged T633 would teach
+      readers to ignore it, which audit_vacuous_checks' own header warns about: a tool that cries
+      wolf gets ignored. The knowledge is the deliverable here, not the script.
