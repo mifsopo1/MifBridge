@@ -4,6 +4,42 @@ Everything here is a trap someone actually hit. Read this before spending a prob
 
 ---
 
+## A decline's REASON outlives the decision, so the reason is the part to get right
+
+Two items were found on 2026-08-31 closed - or slated to close - on a basis this project explicitly
+disallows, and both sat in lists whose stated purpose is that nobody looks at them again:
+
+- `USelection` BSP-surface selection: *"irrelevant to this game; close by dropping it."*
+- Chaos fracture and PCG: *"game has zero destruction content"*, *"cost without a mission driver ...
+  revisit if the project adopts PCG content."*
+
+MifBridge is a GENERAL UE5 tool. DDS2 is one of two projects it is TESTED on, not the limit of who
+it is for - which is why "irrelevant to cooked modding" is written down as not a valid reason to
+decline anything. But the rule is easy to follow when PROPOSING and easy to forget when CLOSING,
+because closing feels like tidying rather than deciding.
+
+**The asymmetry that makes this matter.** An item left open gets re-read. An item marked
+*deferred-by-design*, in a section headed *"listed so nobody re-opens them by accident"*, is read
+once and obeyed forever. So a weak reason on an open item costs a second look; a weak reason on a
+closed one is permanent, and the person it misleads has no signal that anything is wrong.
+
+**What to do.** When declining, separate the reasons and keep only the durable ones:
+
+| kind of reason | survives? | example from the same list |
+|---|---|---|
+| engine fact | yes | `RemoveModuleFromStack` overloads are unexported |
+| process fact | yes | gather-text only runs as a commandlet, not in-process |
+| this project's content | **no** | "game has zero destruction content" |
+| this project's `.uproject` | weak - say it precisely | "the plugin is `EnabledByDefault:false`" is a fact about THIS project, not the engine. The honest form is "unreachable until someone enables it, and we do not enable plugins on a user's behalf" |
+
+And a tell that a deferral has stopped holding: **something shipped anyway.** PCG was deferred for
+want of a mission driver, and `pcg_generate` / `pcg_cleanup` are registered endpoints today.
+
+Related: the dated re-check note in [audit/04_OPEN_QUESTIONS.md](audit/04_OPEN_QUESTIONS.md), where
+four of eight OPEN entries turned out to rest on premises that had quietly stopped being true. Open
+items rot by going stale; closed items rot by being obeyed.
+
+
 ## Spawning a graph node: the OUTER and the ORDER, not the class
 
 Two node families were audited on 2026-08-31 for whether they were safe to spawn generically. Both
