@@ -9315,3 +9315,35 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Blender is 0. The two halves are now measured the same way, which is what makes the comparison
       mean anything.
+
+- [x] **UE parameter reach is ZERO - 252 to 0, and only two of them were real** - DONE 2026-08-31
+      The whole exercise, end to end, because the shape of the answer is the finding:
+
+        252   what param_reach reported and what I quoted to Andre
+         68   after reading JStrAny(In, { TEXT("a"), TEXT("b") }) - 302 call sites, first is the role
+         54   after reading the same calls in shared RESOLVERS below the handlers
+         33   after reading the endpoints' own SUMMARY prose, "blueprintId (alias: path)" - 288 do it
+         29   after wiring set_material_parameter's single-parameter form, a whole MODE that was
+              unreachable: `parameter` + `value`, the form the endpoint documents first
+         25   after treating aliases as GROUPS - a role is reachable when the caller can say it
+              SOMEHOW, and add_cast declares six spellings while the tool sends the fifth
+         24   after the nested-default shape, JBool(In, "remapExisting", JBool(In, "force", false))
+         21   after a PER-ENDPOINT exemption for `op`, which is H_batch's tolerated verb on the
+              DataTable endpoints and a real mode on add_call_dispatcher - a global exemption would
+              have hidden the real one permanently
+          0   after wiring the last two real gaps and recording nineteen reasoned exemptions
+
+      TWO REAL GAPS IN 252. describe_class's `filter`, a narrowing mode no caller could reach on a
+      class with hundreds of reflected members; and add_call_dispatcher's `op`, a genuine mode
+      defaulting to "call". Everything else was one role spelled several ways, or a second FORM of
+      the same role (capture_camera takes a location object OR flat x/y/z), or a parameter documented
+      as deliberately inert (focus_viewport's `all`, which audit_dead_params' header already
+      explains).
+
+      THE NINETEEN EXEMPTIONS ARE KEYED BY (endpoint, key) WITH A REASON EACH, and every row names
+      the sibling the tool actually sends - checked by reading the _post line, not inferred. They are
+      spellings resolved in a helper in ANOTHER file, which no per-file or per-handler scan can see;
+      wiring them would add a second way to say something the caller can already say.
+
+      Blender is 0 by the same measurement. Both halves now agree on what the number MEANS, which is
+      the only reason comparing them is worth anything.

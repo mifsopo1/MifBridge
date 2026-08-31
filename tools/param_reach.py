@@ -71,6 +71,41 @@ NOT_A_PARAMETER = {
     ("read_datatable", "op"): "H_batch's verb, tolerated centrally by RejectUnknownParams",
     ("get_datatable_row", "op"): "H_batch's verb, tolerated centrally by RejectUnknownParams",
     ("write_datatable_rows", "op"): "H_batch's verb, tolerated centrally by RejectUnknownParams",
+
+    # SPELLINGS OF A ROLE THE TOOL ALREADY SENDS, declared in a resolver the scanner cannot reach -
+    # a shared helper in ANOTHER file, so no per-file or per-handler pass can see the group. Each row
+    # was checked by reading the tool's own _post line, and the evidence is the sibling it sends.
+    # Wiring these would add a second way to say something the caller can already say, which is bloat
+    # rather than capability.
+    ("add_sublevel", "level"): "the tool sends `path`; level is the other spelling of it",
+    ("remove_sublevel", "level"): "the tool sends `path`",
+    ("set_sublevel_visibility", "level"): "the tool sends `path`",
+    ("set_sublevel_streaming", "level"): "the tool sends `path`",
+    ("pie_load_level_instance", "level"): "same sublevel resolver, same `path` spelling",
+    ("create_collection", "assets"): "the tool sends `paths`, and the handler reads paths OR assets",
+    ("add_to_collection", "assets"): "the tool sends `paths`",
+    ("remove_from_collection", "assets"): "the tool sends `paths`",
+    ("move_actors_to_level", "actors"): "the tool sends `actorPaths`",
+    ("edit_container", "blueprintid"): "widget targeting; the tool sends objectPath",
+    ("edit_container", "widgetname"): "widget targeting; the tool sends objectPath",
+    ("reset_property_to_default", "blueprintid"): "widget targeting; the tool sends objectPath",
+    ("reset_property_to_default", "widgetname"): "widget targeting; the tool sends objectPath",
+    ("read_datatable", "simpletext"): "the legacy BOOLEAN form of textFormat, which the tool sends - "
+                                      "JHasAny maps simpleText:true onto textFormat 'simple'",
+    ("get_datatable_row", "simpletext"): "same legacy boolean form of textFormat",
+
+    # A SECOND FORM of the same role rather than a second name. capture_camera accepts a location
+    # OBJECT or flat x/y/z (bLocXYZ = JHasAny(In, {x, y, z})), and the tool sends the object. Both
+    # express the same camera position.
+    ("capture_camera", "x"): "flat alternative to the `location` object the tool sends",
+    ("capture_camera", "y"): "flat alternative to the `location` object the tool sends",
+    ("capture_camera", "z"): "flat alternative to the `location` object the tool sends",
+
+    # ACCEPTED AND IGNORED ON PURPOSE, and audit_dead_params' header already records why: `all`
+    # names focus_viewport's DEFAULT behaviour, and the endpoint tells callers to pass it. Not a gap,
+    # and deliberately not "fixed" - a parameter documented as inert is different from one forgotten.
+    ("focus_viewport", "all"): "accepted and ignored deliberately - it names the default behaviour, "
+                               "see audit_dead_params.py's header",
 }
 
 HANDLER = re.compile(r"void\s+H_([A-Za-z0-9_]+)\s*\(")

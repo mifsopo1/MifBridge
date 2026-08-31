@@ -1,24 +1,3 @@
 # Endpoint parameters no MCP tool currently sends - see param_reach.py.
 # Accepted backlog. Only ADDITIONS to this list fail the check.
 # Regenerate deliberately with: python tools/param_reach.py --update-baseline
-add_call_dispatcher.op
-add_sublevel.level
-add_to_collection.assets
-capture_camera.x
-capture_camera.y
-capture_camera.z
-create_collection.assets
-describe_class.filter
-edit_container.blueprintid
-edit_container.widgetname
-focus_viewport.all
-get_datatable_row.simpletext
-move_actors_to_level.actors
-pie_load_level_instance.level
-read_datatable.simpletext
-remove_from_collection.assets
-remove_sublevel.level
-reset_property_to_default.blueprintid
-reset_property_to_default.widgetname
-set_sublevel_streaming.level
-set_sublevel_visibility.level

@@ -1119,10 +1119,14 @@ def add_event_dispatcher(blueprint_id: str, name: str, inputs: list = None) -> d
 
 
 @mcp.tool()
-def add_call_dispatcher(graph_id: str, dispatcher: str, target_class: str = "",
+def add_call_dispatcher(graph_id: str, dispatcher: str, op: str = None, target_class: str = "",
                         x: int = 0, y: int = 0) -> dict:
     "Add a Call node for an event dispatcher (broadcasts it). Must already exist + be compiled."
-    return _post("add_call_dispatcher", graphId=graph_id, dispatcher=dispatcher,
+    # `op` is a genuine MODE with a default of "call", not a spelling: the handler reads
+    # JStr(In, TEXT("op"), TEXT("call")), so every other verb this node can carry was unreachable.
+    # It is the one `op` in the module that is a real parameter rather than H_batch's tolerated verb,
+    # which is why param_reach exempts the DataTable ones by (endpoint, key) and not globally.
+    return _post("add_call_dispatcher", graphId=graph_id, dispatcher=dispatcher, op=op,
                  targetClass=target_class or None, x=x, y=y)
 
 
@@ -1528,9 +1532,12 @@ def edit_container(object_path: str = "", property_path: str = "", operation: st
 
 
 @mcp.tool()
-def describe_class(class_name: str) -> dict:
+def describe_class(class_name: str, filter: str = None) -> dict:
     "List a class's callable functions (with signatures), Blueprint-visible properties, and event dispatchers."
-    return _post("describe_class", className=class_name)
+    # `filter` was accepted by the handler and sent by nothing - a whole narrowing mode of the
+    # endpoint that no caller could reach. On a class with hundreds of reflected members the
+    # unfiltered answer is the one nobody can read.
+    return _post("describe_class", className=class_name, filter=filter)
 
 
 @mcp.tool()
