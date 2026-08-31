@@ -321,6 +321,23 @@ def plant_advice_gap(text):
         'raise MifOpError("pass \'code\' or \'file\', not both - call mif_probe_zz_op first")', 1)
 
 
+
+def plant_write_only_family(text):
+    """Two writers for a noun nothing reads and no response field carries.
+
+    Both halves matter. Two writers because a single-writer family is too noisy to report; a noun
+    nothing emits because the tool's whole precision comes from asking "does any response CARRY
+    this thing" rather than "is there a list_<noun>" - that check took 18 candidates to 1 on the
+    day it was written, and a plant using a real noun would be suppressed by it, correctly.
+    """
+    anchor = "\t\t\tMIF_BIND(list_game_framework_component_requests);"
+    if anchor not in text:
+        return None
+    return text.replace(anchor, anchor
+                        + "\n\t\t\tMIF_BIND(add_mif_probe_zz);"
+                        + "\n\t\t\tMIF_BIND(remove_mif_probe_zz);", 1)
+
+
 # tool -> (target file, plant function, marker, gate)
 #
 # gate=True  - proof is a NON-ZERO exit AND the marker in the output. Both, because several of these
@@ -360,6 +377,10 @@ PLANTS = {
     # build over prose would be gamed by rewording the prose, which would make the source worse".
     "audit_advice_gaps.py": (os.path.join(HERE, "blender-addon", "MifBlender", "ops_scene.py"),
                              plant_advice_gap, "mif_probe_zz_op", False),
+    # gate=False: it exits 0 either way, because deciding whether a missing half is worth building
+    # is a judgement call and a tool that failed the build over one would be switched off.
+    "audit_family_asymmetry.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"),
+                                  plant_write_only_family, "add_mif_probe_zz", False),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.
