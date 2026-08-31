@@ -25,7 +25,10 @@ SAFETY: this suite deliberately CALLS save_package and start_pie. That is safe p
 gate refuses them - which is the thing under test. If the gate were broken, these calls would do real
 damage, so T631 asserts the mode is not 'full' BEFORE any of them are attempted and bails out if it is.
 """
+import io
 import json
+import os
+import re
 import sys
 
 import mifaudit as M
@@ -96,6 +99,47 @@ def main():
               "writeMode is %r. A build WITH a gate reports this field whatever the mode is, so an "
               "absent value means an OLD BUILD with no gate at all. NOT attempting the destructive "
               "calls below." % mode)
+    # ------------------------------------------------------------------ T632 export transparency
+    #
+    # RUNS IN EVERY MODE, ON PURPOSE, and that is the whole reason it lives above the bail-out.
+    # Everything below asserts nothing when the gate is off - which is the mode this editor runs in -
+    # so the export-path contract had no coverage at all on the machine it runs on.
+    #
+    # It is also not one of the destructive probes the bail-out protects against: no save_package, no
+    # start_pie, no trigger_cook. It exports an engine sphere into the project's own Saved tree and
+    # deletes it.
+    #
+    # What it asserts is the real fix from docs/06 issue 21. A relative `file` is resolved against the
+    # export root and ConvertRelativePathToFull then COLLAPSES the `..`, so a path can leave the root
+    # it was supposedly confined to. The fix was not to forbid that - the Blender mesh round trip
+    # depends on exporting where the caller asks - it was to stop the response IMPLYING containment.
+    print("")
+    print("=== T632: export_asset says where the file really went, in any mode ===")
+    _sphere = "/Engine/EngineMeshes/Sphere.Sphere"
+    _r = M.call("export_asset", {"asset": _sphere, "file": "../MifT632Probe.fbx"}, timeout=300)
+    if _r.get("ok") is not True:
+        print("  NOTE  the export did not run (%s), so the transparency contract is UNEXERCISED"
+              % str(_r.get("error"))[:120])
+    else:
+        check("T632 the response reports the RESOLVED absolute path, with the `..` already applied - "
+              "a caller can see where the file went instead of assuming the export root",
+              bool(_r.get("resolvedPath")) and ".." not in str(_r.get("resolvedPath")),
+              json.dumps(_r.get("resolvedPath"))[:200])
+        check("T632 and states plainly that it landed OUTSIDE the export root, which is the claim "
+              "the old comment got wrong by calling that root a boundary",
+              _r.get("insideExportRoot") is False,
+              "insideExportRoot=%r resolvedPath=%r"
+              % (_r.get("insideExportRoot"), _r.get("resolvedPath")))
+        check("T632 and the file is really at the path it reported - the report is checked against "
+              "the filesystem, not taken at its word",
+              os.path.isfile(str(_r.get("resolvedPath") or "")), _r.get("resolvedPath"))
+        _landed = str(_r.get("resolvedPath") or "")
+        if _landed and os.path.isfile(_landed):
+            try:
+                os.remove(_landed)
+            except OSError as exc:
+                print("  NOTE  could not remove %s (%s) - left behind." % (_landed, exc))
+
     # FAIL-SAFE, and it is the important line in this file. The probes below deliberately call
     # save_package and start_pie, which is safe ONLY because the gate refuses them. Against an older
     # DLL with no gate, writeMode is absent and `mode` is None - and a naive `mode != "full"` test
@@ -200,7 +244,10 @@ def main():
     # is written, without anyone remembering to update a list.
     print("")
     print("=== T636: EVERY endpoint that reaches UEngine::Exec is gated ===")
-    import io, os, re
+    # `import io, os, re` used to live here, and a function-level import binds those names LOCAL to
+    # the entire function - so any use of os EARLIER in main() raised UnboundLocalError even though
+    # the module imports it at the top. T632 hit exactly that when it was added above this line.
+    # Hoisted to module scope; nothing here needs a deferred import.
     PRIV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "Source", "MifBridge", "Private")
     exec_eps = set()
@@ -258,8 +305,11 @@ def main():
     print("")
     print("=== T637: export output is confined to the project, on ALL three path shapes ===")
     mode = (M.call("self_audit", {}, timeout=180) or {}).get("writeMode")
+    SPHERE_ANY = "/Engine/EngineMeshes/Sphere.Sphere"
     if mode == "full":
-        print("  SKIP  gate is in 'full' mode - output is deliberately unconfined")
+        # Deliberately unconfined here; the transparency that replaces confinement is asserted by
+        # T632, which runs BEFORE this file's fail-safe bail-out and therefore in every mode.
+        print("  SKIP  gate is in 'full' mode - output is deliberately unconfined (see T632)")
     else:
         SPHERE = "/Engine/EngineMeshes/Sphere.Sphere"
         r = M.call("export_asset", {"asset": SPHERE, "file": "C:/Temp/mif_should_refuse.fbx"},
@@ -274,6 +324,17 @@ def main():
         f = str(r.get("file") or "")
         check("T637 and it landed under the project, not the process CWD",
               "MifBridge" in f and "Saved" in f, "file=%s" % f)
+
+        # THE THIRD SHAPE, and the one docs/06 issue 21 was actually filed about. A relative path
+        # is resolved against the export root and then ConvertRelativePathToFull COLLAPSES the `..`,
+        # so enough of them walk straight out of the project. The guard runs on the RESOLVED path
+        # for this reason; nothing asserted that it does.
+        r = M.call("export_asset", {"asset": SPHERE, "file": "../../../../../MifT637Escape.fbx"},
+                   timeout=300)
+        check("T637 a RELATIVE path whose `..` escape the project is refused, by the same rule as "
+              "an absolute one - the guard runs on the RESOLVED path, not the raw request",
+              r.get("ok") is False and r.get("refusedRule") == "file-outside-project",
+              json.dumps(r)[:220])
 
         r = M.call("export_asset", {"asset": SPHERE}, timeout=300)
         check("T637 the DEFAULT path still works (the Blender round trip uses it)",
