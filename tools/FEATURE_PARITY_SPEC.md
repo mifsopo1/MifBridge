@@ -8675,3 +8675,46 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       with no editor it exits 0 saying "could not check" - which a plant would misread as ASLEEP. The
       harness reports it as skipped-for-a-reason rather than pretending. `Source/ is byte-identical
       to before this run` on the same pass.
+
+- [x] **Blender parameter reach is now ZERO - every addon capability an MCP tool can send**
+      - DONE 2026-08-31
+      Andre asked for a Blender/UE parity update and the honest answer took three corrections to
+      arrive at. What I told him first - "46 Blender parameters unreachable, proportionally worse
+      than UE" - was 95% noise, and it was the number that got quoted.
+
+        46   the figure param_reach reported, and I repeated
+        10   after reading the addon's own take(params, "primary", "alias", ...) declarations
+         5   after also reading the ones declared in module-level helpers (ops_gen.py:77 makes
+             `server` an alias of `host` for every gen_* op)
+         0   after wiring the five that were real
+
+      looks_like_alias could never have caught them: it folds SPELLING variants, and `name` has
+      nothing in common with `object`. The addon declares every alias itself, on the line that reads
+      the value, so param_reach now derives them instead of guessing.
+
+      THE FIVE THAT WERE REAL, all now wired and tested:
+
+        create_primitive.align      WORLD/VIEW/CURSOR, validated BEFORE anything is created
+        create_primitive.fillType   NGON/TRIFAN/NOTHING - a circle defaults to no face at all
+        export_mesh.overwrite       and its replaceExisting alias
+        ping.echo                   the cheapest proof a health probe's answer is THIS call's
+
+      T4008 (creation, 50 -> 56) asserts fillType by CONTRAST - the same circle with and without it,
+      one with faces and one without - because a parameter that is accepted and ignored looks
+      identical to one that works when you only test the happy path. It also checks that a refused
+      align leaves NO object behind, which the op's own comment insists on.
+
+      T763b (mesh, 93 -> 97) had to be written twice, and the second version is the useful one. The
+      first assumed overwrite defaults FALSE and that a second export was refused; the suite said
+      otherwise within a minute. ops_mesh.py:321 reads default=True, so an existing file is CLOBBERED
+      unless the caller says not to - the parameter is a BRAKE, not an accelerator. The test now
+      asserts overwrite:false refuses AND that the existing file is byte-for-byte untouched
+      afterwards, because an implementation that truncated first and refused second would produce the
+      same error.
+
+      That last one only works because of this evening's mifaudit fix: FORBIDDEN_KEYS strips
+      `overwrite` from every payload, so overwrite:false was being deleted on the way out and the
+      file clobbered anyway. Two findings from different directions meeting on the same line.
+
+      All 9 Blender suites green on 5.0 - 0 failed, 0 skipped. param_reach baseline 262 -> 252, and
+      the whole remainder is UE-side.

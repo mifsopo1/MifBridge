@@ -101,6 +101,55 @@ def main():
         check("T4000 size and radius together are refused - they set the same dimension",
               both.get("ok") is False, (both.get("error") or "")[:180])
 
+        # ------------------------------------------------------------------ T4008 align, fillType
+        print("\n=== T4008: align and fillType - the last two keys no MCP tool could send ===")
+        # Both were reachable over the raw socket and unreachable through bl_create_primitive, which
+        # is the gap param_reach exists to find. They only became VISIBLE once that tool stopped
+        # counting alias spellings as lost capability: the Blender half read 46 unreachable
+        # parameters and meant 5, and these two were buried in the noise.
+        # faces/verts live under `object` - create_primitive duplicates only `name` and `verts` at
+        # the top level, deliberately, "so a caller that creates a primitive and then re-reads it
+        # would get different keys for identical data". Reading the nested block is reading the same
+        # place a later object_info would.
+        def _faces(resp):
+            return ((resp.get("object") or {}).get("faces"))
+
+        ali = B.call("create_primitive", {"kind": "cube", "name": "MifT_Align", "align": "CURSOR"})
+        check("T4008 align:CURSOR is accepted", ali.get("ok") is True, json.dumps(ali)[:200])
+        if ali.get("ok"):
+            made.append(ali["name"])
+        bad_align = B.call("create_primitive", {"kind": "cube", "name": "MifT_BadAlign",
+                                                "align": "SIDEWAYS"})
+        # VALIDATED BEFORE CREATION, which the op's own comment insists on - a refusal must leave
+        # nothing behind, and an earlier version checked the name only after bpy.ops had run.
+        check("T4008 a bad align is refused and names the three legal values",
+              bad_align.get("ok") is False
+              and all(v in (bad_align.get("error") or "") for v in ("WORLD", "VIEW", "CURSOR")),
+              (bad_align.get("error") or "")[:200])
+        check("T4008 and NOTHING was created by the refused call",
+              "MifT_BadAlign" not in json.dumps(B.call("scene_info", {})),
+              "the refusal left an object behind")
+
+        fil = B.call("create_primitive", {"kind": "circle", "name": "MifT_Fill",
+                                          "fillType": "TRIFAN", "vertices": 8})
+        if fil.get("ok"):
+            made.append(fil["name"])
+        check("T4008 fillType:TRIFAN on a circle produces real faces, not an empty outline",
+              fil.get("ok") is True and (_faces(fil) or 0) >= 1, json.dumps(fil)[:260])
+        plain = B.call("create_primitive", {"kind": "circle", "name": "MifT_NoFill",
+                                            "vertices": 8})
+        # THE POINT OF THE PARAMETER. A circle defaults to NOTHING - an outline with no face - so
+        # this pair is what proves fillType was actually read rather than accepted and ignored.
+        if plain.get("ok"):
+            made.append(plain["name"])
+        check("T4008 and without it the same circle has none - so the key really is read",
+              plain.get("ok") is True and (_faces(plain) or 0) == 0, json.dumps(plain)[:260])
+        wrong_fill = B.call("create_primitive", {"kind": "cube", "name": "MifT_CubeFill",
+                                                 "fillType": "NGON"})
+        check("T4008 fillType on a cube is refused BY NAME rather than ignored",
+              wrong_fill.get("ok") is False and "fillType" in (wrong_fill.get("error") or ""),
+              (wrong_fill.get("error") or "")[:200])
+
         # ------------------------------------------------------------------ T4007 sizing
         print("\n=== T4007: size and radius are DIFFERENT dimensions, never swapped ===")
         # An adversarial review of this module found the first version remapping size onto radius

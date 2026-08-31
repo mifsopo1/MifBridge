@@ -253,13 +253,3 @@ undo_transactions.to_index
 unmap_input_key.assetpath
 write_datatable_rows.op
 write_thumbnail_texture.outputpath
-bl:create_primitive.align
-bl:create_primitive.filltype
-bl:export_mesh.overwrite
-bl:export_mesh.replaceexisting
-bl:gen_asset.server
-bl:gen_image.server
-bl:gen_mesh.server
-bl:gen_status.server
-bl:gen_texture.server
-bl:ping.echo

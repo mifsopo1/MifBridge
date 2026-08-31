@@ -4518,9 +4518,13 @@ def _slot_names(rows):
 
 
 @mcp.tool()
-def bl_status() -> dict:
-    "Health probe for the Blender backend, and the FIRST thing to call before any bl_* work."
-    return _blender("ping", _timeout=BLENDER_PROBE_TIMEOUT,
+def bl_status(echo: str = None) -> dict:
+    "Health probe for the Blender backend, and the FIRST thing to call before any bl_* work. Pass echo to have the value returned verbatim - it proves the ANSWER came from this call rather than a cached or crossed one."
+    # echo is the one ping parameter no tool could send. It is not decoration: a health probe whose
+    # answer might be stale or from a different backend is worth exactly nothing, and a value handed
+    # back verbatim is the cheapest proof that the response belongs to THIS request. The Blender
+    # suites have used it directly over the socket since they were written; the MCP tool could not.
+    return _blender("ping", echo=echo, _timeout=BLENDER_PROBE_TIMEOUT,
                     _lock_timeout=BLENDER_PROBE_TIMEOUT)
 
 
@@ -4792,8 +4796,9 @@ def bl_create_primitive(kind: str, name: str = "", size: float = None, radius: f
                         ring_count: int = None, subdivisions: int = None, vertices: int = None,
                         depth: float = None, x_subdivisions: int = None,
                         y_subdivisions: int = None, radius1: float = None, radius2: float = None,
-                        major_radius: float = None, minor_radius: float = None) -> dict:
-    "Create a primitive mesh object in Blender: cube, sphere (alias uvsphere), icosphere, cylinder, cone, torus, plane, grid, circle or monkey. A CONE takes radius1/radius2 and a TORUS takes major_radius/minor_radius - neither accepts size or radius, and passing the wrong one is refused rather than reinterpreted."
+                        major_radius: float = None, minor_radius: float = None,
+                        align: str = None, fill_type: str = None) -> dict:
+    "Create a primitive mesh object in Blender: cube, sphere (alias uvsphere), icosphere, cylinder, cone, torus, plane, grid, circle or monkey. A CONE takes radius1/radius2 and a TORUS takes major_radius/minor_radius - neither accepts size or radius, and passing the wrong one is refused rather than reinterpreted. align is WORLD/VIEW/CURSOR; fill_type (NGON/TRIFAN/NOTHING) applies to a circle only and is refused by name elsewhere."
     # radius1/radius2 and majorRadius/minorRadius were accepted by the addon and sent by nothing, so
     # a cone or a torus could only be created at its DEFAULT dimensions over MCP. The op's own
     # docstring is explicit - "A cone takes radius1/radius2 and a torus majorRadius/minorRadius;
@@ -4801,12 +4806,19 @@ def bl_create_primitive(kind: str, name: str = "", size: float = None, radius: f
     # reinterpreting them, so there was no workaround either. Found 2026-08-31 by diffing each addon
     # op's reject_unknown set against the keys any _blender call site sends, which is param_reach's
     # question asked of the Blender half.
+    # align and fillType were the last two create_primitive keys nothing could send, found by the
+    # same diff a day later once param_reach stopped counting alias spellings as lost capability.
+    # align is WORLD/VIEW/CURSOR and the addon validates it BEFORE creating anything, so a bad value
+    # costs an error rather than an orphaned object. fillType applies to a circle (NGON/TRIFAN/NOTHING)
+    # and the addon refuses it by name on kinds that have no such extra - a cube says so rather than
+    # ignoring it.
     return _blender("create_primitive", kind=kind, name=name or None, size=size, radius=radius,
                     location=location, rotation=rotation, segments=segments,
                     ringCount=ring_count, subdivisions=subdivisions, vertices=vertices,
                     depth=depth, xSubdivisions=x_subdivisions, ySubdivisions=y_subdivisions,
                     radius1=radius1, radius2=radius2,
-                    majorRadius=major_radius, minorRadius=minor_radius)
+                    majorRadius=major_radius, minorRadius=minor_radius,
+                    align=align, fillType=fill_type)
 
 
 @mcp.tool()
@@ -4941,7 +4953,7 @@ def bl_export_mesh(object_name: str, file: str, object_types: list = None,
                    primary_bone_axis: str = None, secondary_bone_axis: str = None,
                    bake_anim: bool = None, mesh_smooth_type: str = None,
                    use_triangles: bool = None, use_tspace: bool = None,
-                   use_mesh_modifiers: bool = None) -> dict:
+                   use_mesh_modifiers: bool = None, overwrite: bool = None) -> dict:
     "Export a Blender object to FBX for reimport into Unreal. The two axis arguments are the whole ballgame and are set for you: axis_up='Z', axis_forward='Y', which are NOT the operator defaults ('Y' / '-Z', the Maya convention) - the defaults"
     # THE FOUR OVERRIDES BELOW WERE UNREACHABLE, and they are the ones that decide what UNREAL
     # receives rather than what Blender thinks it exported. The addon has always mapped them onto
@@ -4956,7 +4968,13 @@ def bl_export_mesh(object_name: str, file: str, object_types: list = None,
     #
     # None means UNSET: _blender drops unset params, so the addon's defaults stand and nothing
     # changes for an existing caller. Found 2026-08-31 by param_reach's Blender half.
+    # WITHOUT overwrite THIS TOOL COULD NOT REPLACE A FILE IT HAD ALREADY WRITTEN. The addon
+    # refuses an existing path unless told otherwise - "already exists and overwrite:false. Pass
+    # overwrite:true" - and nothing could pass it, so the second export of the same mesh always
+    # failed. Exposed rather than defaulted to true: overwriting is the caller's decision, and a
+    # refusal that names the fix is a better default than a silent clobber.
     return _blender("export_mesh", object=object_name, file=file, objectTypes=object_types,
+                    overwrite=overwrite,
                     addLeafBones=add_leaf_bones, armatureDeformOnly=armature_deform_only,
                     primaryBoneAxis=primary_bone_axis, secondaryBoneAxis=secondary_bone_axis,
                     bakeAnim=bake_anim, meshSmoothType=mesh_smooth_type,

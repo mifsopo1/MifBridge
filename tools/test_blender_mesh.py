@@ -247,6 +247,35 @@ def main():
           "%s is %d bytes - an FBX header alone is bigger than nothing but not a mesh" % (out, size))
     print("       wrote %d bytes" % size)
 
+    # ---- T763b the flag that made a SECOND export possible
+    print("")
+    print("=== T763b: overwrite - re-exporting to a path that already exists ===")
+    # THE DEFAULT IS TRUE, WHICH IS THE OPPOSITE OF WHAT THIS TEST FIRST ASSUMED. ops_mesh.py:321
+    # reads take_bool(params, "overwrite", "replaceExisting", default=True), so an existing path is
+    # CLOBBERED unless the caller says not to. That makes the parameter a brake, not an accelerator -
+    # and until 2026-08-31 bl_export_mesh had no overwrite argument at all, so over MCP there was no
+    # way to protect a file. Found by param_reach once it stopped counting alias spellings as lost
+    # capability, and written up backwards until the suite said so.
+    #
+    # It also depends on this evening's mifaudit fix: FORBIDDEN_KEYS strips `overwrite` from every
+    # payload, so overwrite:false used to be deleted on the way out and the file clobbered anyway.
+    # Falsey values now reach the handler, which is exactly what this asserts.
+    before_size = os.path.getsize(out) if os.path.isfile(out) else -1
+    again = call("export_mesh", object=name, file=out)
+    check("T763b re-exporting with no flag overwrites - the default is permissive",
+          again.get("ok") is not False, json.dumps(again)[:200])
+    guarded = call("export_mesh", object=name, file=out, overwrite=False)
+    check("T763b overwrite:false REFUSES rather than clobbering",
+          guarded.get("ok") is False, json.dumps(guarded)[:220])
+    check("T763b and the refusal names the flag and the alternative",
+          "overwrite" in str(guarded.get("error", "")).lower(), str(guarded.get("error"))[:220])
+    # A POSTCONDITION, not the response's word: a refused export must leave the existing file ALONE.
+    # An implementation that truncated first and refused second would report exactly the same error.
+    after_size = os.path.getsize(out) if os.path.isfile(out) else -1
+    check("T763b and the refused export left the existing file untouched",
+          after_size == before_size and after_size > 1000,
+          "%s was %d bytes, now %d" % (out, before_size, after_size))
+
     print("")
     print("=== T764: refusals name what is wrong ===")
     r = call("export_mesh", object=name, file=out.replace(".fbx", ".obj"))

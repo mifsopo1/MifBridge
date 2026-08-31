@@ -260,7 +260,7 @@ def addon_alias_map():
     A number that is 95% noise is worse than no number - it is the one that gets quoted. Measured
     2026-08-31: the Blender half of param_reach read 46 unreachable parameters and meant about 2.
     """
-    out = {}
+    out, shared = {}, {}
     if not os.path.isdir(ADDON_DIR):
         return out
     for fn in sorted(os.listdir(ADDON_DIR)):
@@ -269,15 +269,34 @@ def addon_alias_map():
         with open(os.path.join(ADDON_DIR, fn), encoding="utf-8", errors="replace") as fh:
             text = fh.read()
         bounds = [(m.group(1), m.start()) for m in OP_DEF.finditer(text)]
+        first_op = bounds[0][1] if bounds else len(text)
+
+        # MODULE-LEVEL DECLARATIONS COUNT, and missing them cost a second wrong number an hour after
+        # the first. ops_gen.py reads its backend address in a SHARED helper above the ops:
+        #
+        #     host = take(params, "host", "server", default=None)     # ops_gen.py:77
+        #
+        # so `server` is an alias of `host` for every gen_* op, and scanning only inside `def op_*`
+        # reported five of them as lost capability. An alias declared in a helper is still the addon
+        # declaring it. Applied as a FALLBACK only - an op's own body wins, so a module-level default
+        # can never overrule a local one.
+        for m in TAKE_CALL.finditer(text, 0, first_op):
+            names = [n.lower() for n in LITERAL.findall(m.group(1))]
+            if len(names) >= 2:
+                for alias in names[1:]:
+                    shared.setdefault(fn, {})[alias] = names[0]
+
         for i, (op, start) in enumerate(bounds):
             end = bounds[i + 1][1] if i + 1 < len(bounds) else len(text)
+            for alias, primary in shared.get(fn, {}).items():
+                out.setdefault(op, {}).setdefault(alias, primary)
             for m in TAKE_CALL.finditer(text, start, end):
                 names = [n.lower() for n in LITERAL.findall(m.group(1))]
                 if len(names) < 2:
                     continue
                 primary = names[0]
                 for alias in names[1:]:
-                    out.setdefault(op, {})[alias] = primary
+                    out.setdefault(op, {})[alias] = primary      # the op's own wording wins
     return out
 
 
