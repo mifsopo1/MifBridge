@@ -2124,3 +2124,35 @@ and every one reported.
 
 THE RULE: a green checker is a claim, and the claim is "if this broke, I would say so". Prove it by
 breaking it. Then look at what you actually broke.
+## A sweep you write yourself must go through `mifaudit`, not `urllib`
+
+Every sweep in `tools/` — `fuzz_endpoints`, `cooked_sweep`, `audit_read_purity` — calls
+`mifaudit.endpoint_names()` and `mifaudit.call()`, and the `DENY` set in `mifaudit.py` says why in
+its own comment: *"Every sweep here enumerates endpoint_names() and filters on this set."* The set is
+not advisory. It holds `save_dirty_packages`, `save_level_as`, `save_blueprint`, `build_lighting`,
+`build_navigation`, `cook_content`, `start_pie`, `run_console`, `new_level`, `load_level`,
+`quit_editor` — the endpoints that write to disk, discard the open map, start something long-running,
+or end the session driving the sweep. `FORBIDDEN_KEYS` strips `confirm`, `force`, `save`,
+`overwrite`, `replaceExisting` and `discardUnsaved` from every payload on the way out.
+
+On 2026-08-31 a one-off script was written to compare each endpoint's compiled describe-table row
+against the accepted list its guard names at runtime. Good check — `describe_endpoint`'s own
+`harvest.limitation` says that drift "is NOT detectable from inside the DLL", so it has to be probed
+from outside. It was written with raw `urllib` and its own endpoint list, so **none of the above
+applied**, and it was launched across all 446 endpoints in the background.
+
+Nothing was harmed. That was `RejectUnknownParams` refusing before any handler work, plus the
+alphabetical ordering not having reached far, and NOT anything the script did right. Verified rather
+than assumed after killing it: `lighting_build_status` running false and built true, `nav_status`
+building false, `shader_compile_status` zero jobs, `pie_status` stopped, no `.uasset` written under
+Content, editor still answering with 446 endpoints.
+
+**Two rules, and the second is the one that nearly cost something:**
+
+1. Use `mifaudit.call()` and `mifaudit.endpoint_names()`. A denied endpoint comes back
+   `{"ok": false, "_denied": true}` without the bridge being touched. Writing the HTTP by hand opts
+   out of every protection this repo has, silently, and the script looks fine.
+2. Run it with `python -u`. The kill produced an EMPTY output file because Python block-buffers when
+   piped, so there was no way to tell how far it had got — which is exactly what you need to know
+   when deciding whether something dangerous ran. Piping to `tail` compounds it: `tail` shows nothing
+   until EOF, so a long sweep looks identical whether it is working or wedged.
