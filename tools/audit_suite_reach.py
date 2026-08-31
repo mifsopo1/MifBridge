@@ -30,9 +30,10 @@ mtime, and an mtime is not a content age. Copy a backup over suite_results.json 
 it is suddenly "current" while describing runs from hours earlier - observed doing exactly that on
 2026-08-31, after which this tool stopped marking a record it had correctly marked a moment before.
 
-The real fix is for run_all_suites to stamp each record with the time that suite RAN, so staleness
-can be judged per record against the source it describes instead of per file. Until then: a row is
-only as trustworthy as your memory of when the sweep last ran, and if that is in doubt, re-run it.
+The fix is a per-record `ranAt` stamp so staleness is judged per RECORD against the source it
+describes. This side is done: `ranAt` is used when a record carries it. Records written before it
+existed fall back to the file mtime, and the report says how many rows rested on that weaker basis
+rather than quietly mixing the two. Once run_all_suites stamps it, the fallback stops being reached.
 """
 import io
 import json
@@ -79,13 +80,18 @@ def main():
         print("could not read %s: %s" % (RESULTS, exc))
         return 0
 
+    # PER-RECORD TIME WHEN THE RUNNER PROVIDES IT, the file's mtime only as a fallback. An mtime is
+    # not a content age: copying a backup over suite_results.json moves it without changing a single
+    # record, and this then calls hours-old results current - wrong in the direction that gets
+    # believed. run_all_suites stamps `ranAt` (epoch seconds); records written before that existed
+    # fall back to the file, and the report says which basis it used.
     results_mtime = os.path.getmtime(RESULTS)
     latest = {}
     for rec in records:                      # later entries win: the most recent run of each suite
         if isinstance(rec, dict) and rec.get("suite"):
             latest[rec["suite"]] = rec
 
-    rows, stale = [], []
+    rows, stale, used_file_mtime = [], [], set()
     for name, rec in sorted(latest.items()):
         path = os.path.join(HERE, name)
         if not os.path.isfile(path):
@@ -100,7 +106,11 @@ def main():
         # MARKED, NOT DROPPED. Excluding stale rows outright left 11 of 151 measurable, because
         # nearly every suite imports mifaudit and one edit to it invalidates the lot. A number the
         # reader is told to distrust is worth more than no number - the point is the reading list.
-        is_stale = newest_input_mtime(path, src) > results_mtime
+        ran_at = rec.get("ranAt")
+        if not isinstance(ran_at, (int, float)):
+            ran_at = results_mtime
+            used_file_mtime.add(name)
+        is_stale = newest_input_mtime(path, src) > ran_at
         if is_stale:
             stale.append(name)
         rows.append((ran / float(defined), ran, defined, name, rc, is_stale))
@@ -136,6 +146,10 @@ def main():
         print()
         print("%d of %d records predate their source or a local module they import. Re-run"
               % (len(stale), len(rows)))
+        if used_file_mtime:
+            print("(%d of them judged on the results FILE's mtime because the record carries no"
+                  % len(used_file_mtime))
+            print("ranAt - an mtime is not a content age, so those are the least trustworthy rows.)")
         print("tools/run_all_suites.py to refresh - one edit to mifaudit stales nearly all of them,")
         print("which is why they are marked rather than dropped.")
 

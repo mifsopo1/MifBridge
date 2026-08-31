@@ -4,7 +4,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 15   FAIL 0",
-  "seconds": 1.6,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -13,7 +13,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 1.6,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -22,7 +22,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 1.5,
+  "seconds": 1.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -31,7 +31,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 1.7,
+  "seconds": 1.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -40,7 +40,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 1.6,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -49,7 +49,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 1.6,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -67,7 +67,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 4.7,
+  "seconds": 4.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -76,7 +76,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 1.6,
+  "seconds": 1.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -103,36 +103,36 @@
   "pass": 1,
   "rc": 2,
   "summary": "",
-  "seconds": 5.6,
+  "seconds": 5.7,
   "editorSurvived": true,
   "tail": "MifBlender authoring ops - 127.0.0.1:8792\n  Nothing answered a ping on 127.0.0.1:8792, so no op was exercised.\n  SKIP (exit 2) - a suite that verified nothing must not report success."
  },
  {
   "suite": "test_blender_creation.py",
   "pass": 1,
-  "rc": 1,
+  "rc": 2,
   "summary": "",
-  "seconds": 11.5,
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "=== T4000: geometry that did not come from a file ===\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_creation.py\", line 74, in main\n    bad = B.call(\"create_primitive\", {\"kind\": \"dodecahedron\"})\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\blender_audit_common.py\", line 62, in call\n    raise RuntimeError(\"connection closed reading length header\")\nRuntimeError: connection closed reading length header\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_creation.py\", line 349, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_creation.py\", line 334, in main\n    survivors = set(names())\n                    ^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_creation.py\", line 60, in names\n    return {o[\"name\"] for o in (B.call(\"list_objects\").get(\"objects\") or [])}\n                                ^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\blender_audit_common.py\", line 62, in call\n    raise RuntimeError(\"connection closed reading length header\")\nRuntimeError: connection closed reading length header"
+  "tail": "\nSKIPPED - nothing was verified.\n  Something IS listening on 127.0.0.1:8792 but it is not a MifBlender - it accepted the\n  connection and never answered a framed ping. That is a PORT CONFLICT, not a\n  Blender that failed to start, and starting another one will not fix it.\n  On this machine a UE editor has held that port before - see docs/06 issue 15.\n  Find the holder with:\n    Get-NetTCPConnection -LocalPort 8792 -State Listen | %{Get-Process -Id $_.OwningProcess}\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_blender_gen.py",
   "pass": 1,
-  "rc": 1,
-  "summary": "PASS 13   FAIL 7",
-  "seconds": 84.9,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "  PASS T800 gen_asset rejects an unknown parameter\n\n=== T801: every gen_ op fails the SAME clean way when ComfyUI is unreachable ===\n  PASS T801 gen_status refuses rather than hanging or crashing\n  FAIL T801 gen_status names ComfyUI and how to start it\n       connection closed reading the header\n  PASS T801 gen_image fails cleanly rather than hanging for its 600s default timeout\n  FAIL T801 gen_image's failure names ComfyUI\n       connection closed reading the header\n  PASS T801 gen_mesh fails cleanly rather than hanging for its 1800s default timeout\n  FAIL T801 gen_mesh's failure names ComfyUI\n       connection closed reading the header\n  PASS T801 gen_texture fails cleanly rather than hanging for its 2400s default timeout\n  FAIL T801 gen_texture's failure names ComfyUI\n       connection closed reading the header\n  PASS T801 gen_asset fails cleanly rather than hanging for its 3600s default timeout\n  FAIL T801 gen_asset's failure names ComfyUI\n       connection closed reading the header\n\n========================================================================\nPASS 13   FAIL 7\n\nNOT PROVEN BY THIS SUITE (green above does not cover these):\n  - what a REAL generation actually produces (gen_status's real capability report, and gen_image/gen_mesh/gen_texture/gen_asset's real outputs) - ComfyUI is not reachable on this machine. The failure path above is proven instead, which is the state every one of these five ops is actually in on a machine without ComfyUI set up.\n========================================================================"
+  "tail": "MifBlender gen ops (ops_gen.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
  },
  {
   "suite": "test_blender_material.py",
   "pass": 1,
-  "rc": 1,
+  "rc": 2,
   "summary": "",
-  "seconds": 11.5,
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "=== T4100: creating a material, and the read half that never existed ===\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_material.py\", line 69, in main\n    m = B.call(\"create_material\", {\"name\": \"MifT_Mat\"})\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\blender_audit_common.py\", line 62, in call\n    raise RuntimeError(\"connection closed reading length header\")\nRuntimeError: connection closed reading length header\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_material.py\", line 353, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_material.py\", line 338, in main\n    left = B.call(\"list_materials\", {\"nameContains\": \"MifT_\"})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\blender_audit_common.py\", line 62, in call\n    raise RuntimeError(\"connection closed reading length header\")\nRuntimeError: connection closed reading length header"
+  "tail": "\nSKIPPED - nothing was verified.\n  Something IS listening on 127.0.0.1:8792 but it is not a MifBlender - it accepted the\n  connection and never answered a framed ping. That is a PORT CONFLICT, not a\n  Blender that failed to start, and starting another one will not fix it.\n  On this machine a UE editor has held that port before - see docs/06 issue 15.\n  Find the holder with:\n    Get-NetTCPConnection -LocalPort 8792 -State Listen | %{Get-Process -Id $_.OwningProcess}\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_blender_mesh.py",
@@ -148,34 +148,34 @@
   "pass": 1,
   "rc": 2,
   "summary": "",
-  "seconds": 11.7,
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "MifBlender addon ops - 127.0.0.1:8792\n\n\nSKIPPED - nothing was verified.\n  run_python is disabled (that is the correct default) and this scene has no mesh\n  object to adopt instead, so there is nothing to exercise set_material_slots on.\n  Reason given: connection closed reading the header"
+  "tail": "MifBlender addon ops - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) on purpose."
  },
  {
   "suite": "test_blender_rename_bones.py",
   "pass": 1,
-  "rc": 1,
+  "rc": 2,
   "summary": "",
-  "seconds": 5.9,
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "Traceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_rename_bones.py\", line 156, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_rename_bones.py\", line 58, in main\n    arm = find_armature()\n          ^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_rename_bones.py\", line 46, in find_armature\n    r = call(\"list_objects\", {\"type\": \"ARMATURE\"})\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\blender_audit_common.py\", line 62, in call\n    raise RuntimeError(\"connection closed reading length header\")\nRuntimeError: connection closed reading length header"
+  "tail": "\nSKIPPED - nothing was verified.\n  Something IS listening on 127.0.0.1:8792 but it is not a MifBlender - it accepted the\n  connection and never answered a framed ping. That is a PORT CONFLICT, not a\n  Blender that failed to start, and starting another one will not fix it.\n  On this machine a UE editor has held that port before - see docs/06 issue 15.\n  Find the holder with:\n    Get-NetTCPConnection -LocalPort 8792 -State Listen | %{Get-Process -Id $_.OwningProcess}\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_blender_rig.py",
   "pass": 1,
-  "rc": 1,
-  "summary": "PASS 12   FAIL 4",
-  "seconds": 79.6,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "  FAIL T810 list_shape_keys on a missing object refuses and lists what exists\n       connection closed reading the header\n  PASS T810 list_shape_keys rejects an unknown parameter\n  PASS T810 list_vertex_groups with no object refuses\n  FAIL T810 list_vertex_groups on a missing object refuses and lists what exists\n       connection closed reading the header\n  PASS T810 list_vertex_groups rejects an unknown parameter\n  PASS T810 list_modifiers with no object refuses\n  FAIL T810 list_modifiers on a missing object refuses and lists what exists\n       connection closed reading the header\n  PASS T810 list_modifiers rejects an unknown parameter\n\n=== T811: empty-state and object-type handling on the factory scene ===\n  PASS T811 (not exercised: the scene has no 'Cube' and run_python is disabled, so there is no safe way to restore it)\n\n=== T812: the POPULATED path - needs run_python (off by default) ===\n  PASS T812 (not exercised: run_python is disabled, the correct default - nothing here builds real rig content to adopt instead)\n\n========================================================================\nPASS 12   FAIL 4\n\nNOT PROVEN BY THIS SUITE (green above does not cover these):\n  - T811's empty-state/type-mismatch checks - the scene had no 'Cube' object (likely cleared by an earlier suite sharing this same Blender session) and run_python is disabled, so this suite could not safely rebuild the one precondition it needs.\n  - the POPULATED path for all four ops - armature-space bone positions and parent linkage, a shape key's basis/relative pairing, a vertex group's weighted vertex count, a decoded per-type modifier settings dict - and object_info's armatureModifier field, which needs a real Armature modifier to report anything but null. Needs run_python enabled (Edit > Preferences > Add-ons > MifBlender > 'Allow run_python') to build test content; this suite does not flip that preference itself.\n========================================================================"
+  "tail": "  PASS R900 both modifier tables are found in ops_rig.py\n  PASS R901 the read and write modifier tables describe the SAME types - a type on one side and not the other is a silent asymmetry\nMifBlender rig ops (ops_rig.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
  },
  {
   "suite": "test_blueprint_breakpoint.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 1.7,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -184,7 +184,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 1.6,
+  "seconds": 1.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -193,7 +193,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -238,7 +238,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -247,7 +247,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 4.8,
+  "seconds": 4.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -265,7 +265,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 42   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -274,7 +274,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -283,7 +283,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 1.7,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -301,7 +301,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 1.6,
+  "seconds": 1.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -319,7 +319,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -328,7 +328,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -337,7 +337,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -346,7 +346,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -364,7 +364,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -391,7 +391,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -409,7 +409,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 4.0,
+  "seconds": 3.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -418,7 +418,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -445,7 +445,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -472,7 +472,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 41   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -490,7 +490,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -499,7 +499,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -508,7 +508,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 56   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -535,7 +535,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -553,25 +553,34 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_landscape_heightmap.py",
   "pass": 1,
-  "rc": 1,
-  "summary": "PASS 22   FAIL 1",
-  "seconds": 8.5,
+  "rc": 0,
+  "summary": "PASS 25   FAIL 0",
+  "seconds": 2.3,
   "editorSurvived": true,
-  "tail": "  PASS  T8001 a SECOND export is byte-identical to the first - the proof the round-trip is lossless rather than merely reported as such\n\n=== T8002: the walkable surface follows the visible one ===\n  PASS  T8002 a generated heightmap imports\n  PASS  T8002 import of 4068289 samples well inside the 11.2 MINUTES the brush needed (observed 1.8-55.6s; collision rebuild dominates and varies with editor state)\n  PASS  T8002 and a fresh export returns exactly what was sent - independent of the endpoint's own verification\n  FAIL  T8002 the collision surface agrees with the heightmap at every probed point (worst delta 200.00uu) - collision was rebuilt, not left behind\n        2 of 3 points agreed, worst delta 200.00\n  PASS  T8002 and at least one probe was at a non-zero height, so the agreement is not the trivial one on flat ground\n\n=== T8003: what it refuses, and whether the reason is usable ===\n  PASS  T8003 both file and data is refused, saying why\n  PASS  T8003 neither is refused, saying why\n  PASS  T8003 data with no dimensions is refused, saying why\n  PASS  T8003 minZ without maxZ is refused, saying why\n  PASS  T8003 a region outside the landscape is refused, saying why\n  PASS  T8003 a byte count that does not match is refused, saying why\n  PASS  T8003 an edit layer is refused BY NAME rather than silently written to the merged result\n  PASS  T8003 a float array is refused by name, with the size that makes it a bad idea\n  PASS  T8003 - the editor is still alive\n\n========================================================================\nPASS 22   FAIL 1\n  FAILED: T8002 the collision surface agrees with the heightmap at every probed point (worst delta 200.00uu) - collision was rebuilt, not left behind\n          2 of 3 points agreed, worst delta 200.00"
+  "tail": ""
  },
  {
   "suite": "test_landscape_info.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_layers.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -580,7 +589,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -589,7 +598,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -598,7 +607,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -607,7 +616,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -616,7 +625,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -625,7 +634,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 7.1,
+  "seconds": 6.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -634,7 +643,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 6   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -643,7 +652,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -652,7 +661,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -661,7 +670,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -679,7 +688,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -688,7 +697,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -697,7 +706,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -715,7 +724,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -724,7 +733,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -733,7 +742,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -760,7 +769,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -768,7 +777,7 @@
   "suite": "test_niagara.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 53   FAIL 0",
+  "summary": "PASS 61   FAIL 0",
   "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
@@ -778,7 +787,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -787,25 +796,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_niagara_params.py",
   "pass": 1,
-  "rc": 3,
+  "rc": 2,
   "summary": "",
-  "seconds": 7.2,
+  "seconds": 4.1,
   "editorSurvived": true,
-  "tail": "bridge up on pid 38712 (DrugDealerSimulator2.uproject) - 445 endpoints, built Aug 31 2026 02:26:36\nno NiagaraSystem with user parameters found; nothing to test against"
+  "tail": "bridge up on pid 4952 (DrugDealerSimulator2.uproject) - 446 endpoints, built Aug 31 2026 04:20:18\nSKIPPED - nothing was verified.\n  No NiagaraSystem in this project declares a user parameter (39 systems checked),\n  and this project's Niagara content is COOKED, which set_niagara_user_parameter\n  refuses anyway - the parameter store cannot be saved or recompiled.\n  No endpoint creates a user parameter, so this suite cannot build its own fixture.\n  Needs an UNCOOKED project with authored user parameters.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_niagara_set_user_param.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -813,8 +822,8 @@
   "suite": "test_niagara_user_params.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 15   FAIL 0",
-  "seconds": 2.1,
+  "summary": "PASS 13   FAIL 0",
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -823,25 +832,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 101   FAIL 0",
-  "seconds": 5.7,
+  "seconds": 5.2,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_partition_actors.py",
   "pass": 1,
-  "rc": 1,
-  "summary": "PASS 13   FAIL 1",
-  "seconds": 2.3,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 2.1,
   "editorSurvived": true,
-  "tail": "        have no partition descriptor - spawned actors and editor-only ones. That is\n        expected, not a discrepancy.\n  PASS  T2101 the descriptors see MORE actors than the level does - the gap this endpoint exists to close\n  PASS  T2101 and the unloaded ones are actually reported, with a guid and a soft path\n  PASS  T2101 the response says plainly that some actors are invisible to list_level_actors\n\n=== T2102: filters actually filter ===\n  PASS  T2102 loadedOnly returns exactly the loaded set\n  PASS  T2102 nameContains narrows the result and never widens it\n  PASS  T2102 classFilter succeeds\n  PASS  T2102 and it SAYS that scanned counts only that class, because the engine iterator applies the filter - otherwise the number reads as the map total\n\n=== T2103: refusals ===\n  FAIL  T2103 an unbuilt parameter is refused with what to use instead, not ignored\n        bounds needs both min and max as {x,y,z}.\n  PASS  T2103 an unknown classFilter is refused\n\n=== T2104: it is a read ===\n  PASS  T2104 calling it twice gives the same answer - it changes nothing\n  PASS  T2104 and it reports scratchClean - no real package was dirtied\n\n========================================================================\nPASS 13   FAIL 1\n  FAILED: T2103 an unbuilt parameter is refused with what to use instead, not ignored\n          bounds needs both min and max as {x,y,z}."
+  "tail": ""
  },
  {
   "suite": "test_pcg_authoring.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -850,7 +859,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -859,7 +868,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -868,7 +877,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_pie_idle.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -877,7 +895,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 0.8,
+  "seconds": 0.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -886,7 +904,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -904,7 +922,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 57   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_project_paths.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -913,7 +940,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -922,7 +949,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 9.6,
+  "seconds": 8.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -931,7 +958,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -949,7 +976,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -958,7 +985,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 0.7,
+  "seconds": 0.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -967,7 +994,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -975,17 +1002,17 @@
   "suite": "test_safety_gate.py",
   "pass": 1,
   "rc": 2,
-  "summary": "PASS 5   FAIL 0",
-  "seconds": 2.0,
+  "summary": "PASS 8   FAIL 0",
+  "seconds": 1.8,
   "editorSurvived": true,
-  "tail": "bridge up on pid 38712 (DrugDealerSimulator2.uproject) - 445 endpoints, built Aug 31 2026 02:26:36\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 5   FAIL 0\nSKIPPED - the gate cannot be tested from 'full' mode; nothing was verified beyond the reads above."
+  "tail": "bridge up on pid 4952 (DrugDealerSimulator2.uproject) - 446 endpoints, built Aug 31 2026 04:20:18\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n=== T632: export_asset says where the file really went, in any mode ===\n  PASS  T632 the response reports the RESOLVED absolute path, with the `..` already applied - a caller can see where the file went instead of assuming the export root\n  PASS  T632 and states plainly that it landed OUTSIDE the export root, which is the claim the old comment got wrong by calling that root a boundary\n  PASS  T632 and the file is really at the path it reported - the report is checked against the filesystem, not taken at its word\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 8   FAIL 0\nSKIPPED - the gate cannot be tested from 'full' mode; nothing was verified beyond the reads above."
  },
  {
   "suite": "test_self_audit_modes.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -994,7 +1021,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 1.7,
+  "seconds": 1.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1003,7 +1030,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 40   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1012,7 +1039,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1021,7 +1048,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1030,7 +1057,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1039,7 +1066,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1057,7 +1084,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1066,7 +1093,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1075,7 +1102,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1084,7 +1111,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1093,7 +1120,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1102,7 +1129,16 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_spline_landscape.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 5.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1111,7 +1147,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1120,7 +1156,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1129,7 +1165,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1138,25 +1174,25 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_thumbnails.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 26   FAIL 0",
-  "seconds": 2.8,
+  "rc": 1,
+  "summary": "PASS 24   FAIL 2",
+  "seconds": 2.3,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "=== T402: write_thumbnail_texture must produce pixels, not a header ===\n  PASS  T402 the texture is created\n  PASS  T402 and it reports where it went\n  PASS  T402 the written texture has real source pixels\n  PASS  T402 and it is a Texture2D\n\n=== T403: bad requests are refused, not rendered ===\n  PASS  T403 an asset that does not exist is refused\n  PASS  T403 and says something usable\n  PASS  T403 an oversized request still renders\n  PASS  T403 clamped to the stated ceiling\n  PASS  T403 and the response echoes what was ASKED for\n  PASS  T403 and says plainly that it clamped\n  PASS  T403 an undersized request is clamped up to the floor\n  PASS  T403 and says so too\n  PASS  T403 the editor survived all of it\n  cleanup: removed 1 asset(s) from /Game/_MifThumb/\n\n========================================================================\nPASS 24   FAIL 2\n  FAILED: T401 orbitYaw changes the rendered bytes\n          identical to the base render - the parameter was accepted and ignored\n  FAILED: T401 orbitZoom changes the rendered bytes\n          identical to the base render - the parameter was accepted and ignored\n========================================================================"
  },
  {
   "suite": "test_timeline.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1165,7 +1201,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1174,7 +1210,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1183,7 +1219,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1192,7 +1228,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 40   FAIL 0",
-  "seconds": 3.6,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1201,7 +1237,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 60   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1210,7 +1246,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 301   FAIL 0",
-  "seconds": 19.4,
+  "seconds": 18.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1219,7 +1255,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 38   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1228,7 +1264,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 52   FAIL 0",
-  "seconds": 13.2,
+  "seconds": 10.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1237,7 +1273,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1246,7 +1282,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 7.0,
+  "seconds": 4.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1255,7 +1291,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 2.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1264,7 +1300,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 6.5,
+  "seconds": 6.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1273,7 +1309,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1282,7 +1318,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 0.7,
+  "seconds": 0.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1291,7 +1327,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1300,7 +1336,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1309,7 +1345,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1327,7 +1363,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1336,7 +1372,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1345,7 +1381,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1354,7 +1390,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1363,7 +1399,7 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1372,7 +1408,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 15   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1381,7 +1417,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 3.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1390,7 +1426,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1399,7 +1435,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1408,7 +1444,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1417,7 +1453,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1444,7 +1480,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1453,7 +1489,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1462,7 +1498,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 4.0,
+  "seconds": 3.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1478,29 +1514,29 @@
  {
   "suite": "test_blender_creation.py",
   "pass": 2,
-  "rc": 1,
+  "rc": 2,
   "summary": "",
-  "seconds": 11.6,
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "=== T4000: geometry that did not come from a file ===\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_creation.py\", line 74, in main\n    bad = B.call(\"create_primitive\", {\"kind\": \"dodecahedron\"})\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\blender_audit_common.py\", line 62, in call\n    raise RuntimeError(\"connection closed reading length header\")\nRuntimeError: connection closed reading length header\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_creation.py\", line 349, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_creation.py\", line 334, in main\n    survivors = set(names())\n                    ^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_creation.py\", line 60, in names\n    return {o[\"name\"] for o in (B.call(\"list_objects\").get(\"objects\") or [])}\n                                ^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\blender_audit_common.py\", line 62, in call\n    raise RuntimeError(\"connection closed reading length header\")\nRuntimeError: connection closed reading length header"
+  "tail": "\nSKIPPED - nothing was verified.\n  Something IS listening on 127.0.0.1:8792 but it is not a MifBlender - it accepted the\n  connection and never answered a framed ping. That is a PORT CONFLICT, not a\n  Blender that failed to start, and starting another one will not fix it.\n  On this machine a UE editor has held that port before - see docs/06 issue 15.\n  Find the holder with:\n    Get-NetTCPConnection -LocalPort 8792 -State Listen | %{Get-Process -Id $_.OwningProcess}\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_blender_gen.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "PASS 13   FAIL 7",
-  "seconds": 87.1,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "  PASS T800 gen_asset rejects an unknown parameter\n\n=== T801: every gen_ op fails the SAME clean way when ComfyUI is unreachable ===\n  PASS T801 gen_status refuses rather than hanging or crashing\n  FAIL T801 gen_status names ComfyUI and how to start it\n       connection closed reading the header\n  PASS T801 gen_image fails cleanly rather than hanging for its 600s default timeout\n  FAIL T801 gen_image's failure names ComfyUI\n       connection closed reading the header\n  PASS T801 gen_mesh fails cleanly rather than hanging for its 1800s default timeout\n  FAIL T801 gen_mesh's failure names ComfyUI\n       connection closed reading the header\n  PASS T801 gen_texture fails cleanly rather than hanging for its 2400s default timeout\n  FAIL T801 gen_texture's failure names ComfyUI\n       connection closed reading the header\n  PASS T801 gen_asset fails cleanly rather than hanging for its 3600s default timeout\n  FAIL T801 gen_asset's failure names ComfyUI\n       connection closed reading the header\n\n========================================================================\nPASS 13   FAIL 7\n\nNOT PROVEN BY THIS SUITE (green above does not cover these):\n  - what a REAL generation actually produces (gen_status's real capability report, and gen_image/gen_mesh/gen_texture/gen_asset's real outputs) - ComfyUI is not reachable on this machine. The failure path above is proven instead, which is the state every one of these five ops is actually in on a machine without ComfyUI set up.\n========================================================================"
+  "tail": "MifBlender gen ops (ops_gen.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
  },
  {
   "suite": "test_blender_material.py",
   "pass": 2,
-  "rc": 1,
+  "rc": 2,
   "summary": "",
-  "seconds": 11.5,
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "=== T4100: creating a material, and the read half that never existed ===\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_material.py\", line 69, in main\n    m = B.call(\"create_material\", {\"name\": \"MifT_Mat\"})\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\blender_audit_common.py\", line 62, in call\n    raise RuntimeError(\"connection closed reading length header\")\nRuntimeError: connection closed reading length header\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_material.py\", line 353, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_material.py\", line 338, in main\n    left = B.call(\"list_materials\", {\"nameContains\": \"MifT_\"})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\blender_audit_common.py\", line 62, in call\n    raise RuntimeError(\"connection closed reading length header\")\nRuntimeError: connection closed reading length header"
+  "tail": "\nSKIPPED - nothing was verified.\n  Something IS listening on 127.0.0.1:8792 but it is not a MifBlender - it accepted the\n  connection and never answered a framed ping. That is a PORT CONFLICT, not a\n  Blender that failed to start, and starting another one will not fix it.\n  On this machine a UE editor has held that port before - see docs/06 issue 15.\n  Find the holder with:\n    Get-NetTCPConnection -LocalPort 8792 -State Listen | %{Get-Process -Id $_.OwningProcess}\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_blender_mesh.py",
@@ -1516,34 +1552,34 @@
   "pass": 2,
   "rc": 2,
   "summary": "",
-  "seconds": 11.7,
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "MifBlender addon ops - 127.0.0.1:8792\n\n\nSKIPPED - nothing was verified.\n  run_python is disabled (that is the correct default) and this scene has no mesh\n  object to adopt instead, so there is nothing to exercise set_material_slots on.\n  Reason given: connection closed reading the header"
+  "tail": "MifBlender addon ops - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) on purpose."
  },
  {
   "suite": "test_blender_rename_bones.py",
   "pass": 2,
-  "rc": 1,
+  "rc": 2,
   "summary": "",
-  "seconds": 5.9,
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "Traceback (most recent call last):\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_rename_bones.py\", line 156, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_rename_bones.py\", line 58, in main\n    arm = find_armature()\n          ^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\test_blender_rename_bones.py\", line 46, in find_armature\n    r = call(\"list_objects\", {\"type\": \"ARMATURE\"})\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\DDS2SDK\\Game\\Plugins\\MifBridge\\tools\\blender_audit_common.py\", line 62, in call\n    raise RuntimeError(\"connection closed reading length header\")\nRuntimeError: connection closed reading length header"
+  "tail": "\nSKIPPED - nothing was verified.\n  Something IS listening on 127.0.0.1:8792 but it is not a MifBlender - it accepted the\n  connection and never answered a framed ping. That is a PORT CONFLICT, not a\n  Blender that failed to start, and starting another one will not fix it.\n  On this machine a UE editor has held that port before - see docs/06 issue 15.\n  Find the holder with:\n    Get-NetTCPConnection -LocalPort 8792 -State Listen | %{Get-Process -Id $_.OwningProcess}\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_blender_rig.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "PASS 12   FAIL 4",
-  "seconds": 79.6,
+  "rc": 2,
+  "summary": "",
+  "seconds": 1.6,
   "editorSurvived": true,
-  "tail": "  FAIL T810 list_shape_keys on a missing object refuses and lists what exists\n       connection closed reading the header\n  PASS T810 list_shape_keys rejects an unknown parameter\n  PASS T810 list_vertex_groups with no object refuses\n  FAIL T810 list_vertex_groups on a missing object refuses and lists what exists\n       connection closed reading the header\n  PASS T810 list_vertex_groups rejects an unknown parameter\n  PASS T810 list_modifiers with no object refuses\n  FAIL T810 list_modifiers on a missing object refuses and lists what exists\n       connection closed reading the header\n  PASS T810 list_modifiers rejects an unknown parameter\n\n=== T811: empty-state and object-type handling on the factory scene ===\n  PASS T811 (not exercised: the scene has no 'Cube' and run_python is disabled, so there is no safe way to restore it)\n\n=== T812: the POPULATED path - needs run_python (off by default) ===\n  PASS T812 (not exercised: run_python is disabled, the correct default - nothing here builds real rig content to adopt instead)\n\n========================================================================\nPASS 12   FAIL 4\n\nNOT PROVEN BY THIS SUITE (green above does not cover these):\n  - T811's empty-state/type-mismatch checks - the scene had no 'Cube' object (likely cleared by an earlier suite sharing this same Blender session) and run_python is disabled, so this suite could not safely rebuild the one precondition it needs.\n  - the POPULATED path for all four ops - armature-space bone positions and parent linkage, a shape key's basis/relative pairing, a vertex group's weighted vertex count, a decoded per-type modifier settings dict - and object_info's armatureModifier field, which needs a real Armature modifier to report anything but null. Needs run_python enabled (Edit > Preferences > Add-ons > MifBlender > 'Allow run_python') to build test content; this suite does not flip that preference itself.\n========================================================================"
+  "tail": "  PASS R900 both modifier tables are found in ops_rig.py\n  PASS R901 the read and write modifier tables describe the SAME types - a type on one side and not the other is a silent asymmetry\nMifBlender rig ops (ops_rig.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
  },
  {
   "suite": "test_blueprint_breakpoint.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1552,7 +1588,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 1.7,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1570,7 +1606,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 4.3,
+  "seconds": 4.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1579,7 +1615,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 1.7,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1588,7 +1624,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1597,7 +1633,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 41   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1606,7 +1642,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1615,7 +1651,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1624,7 +1660,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1633,7 +1669,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 42   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1642,7 +1678,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1651,7 +1687,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1678,7 +1714,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1687,7 +1723,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1696,7 +1732,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1705,7 +1741,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 11   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1714,7 +1750,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1732,7 +1768,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1741,7 +1777,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1750,7 +1786,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1777,7 +1813,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1786,7 +1822,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1795,7 +1831,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1804,7 +1840,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 0.2,
+  "seconds": 0.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1831,7 +1867,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1840,7 +1876,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 41   FAIL 0",
-  "seconds": 3.3,
+  "seconds": 3.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1858,7 +1894,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1876,7 +1912,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 56   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1885,7 +1921,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1894,7 +1930,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1912,7 +1948,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1928,18 +1964,27 @@
  {
   "suite": "test_landscape_heightmap.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "PASS 22   FAIL 1",
-  "seconds": 8.2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 2.2,
   "editorSurvived": true,
-  "tail": "  PASS  T8001 a SECOND export is byte-identical to the first - the proof the round-trip is lossless rather than merely reported as such\n\n=== T8002: the walkable surface follows the visible one ===\n  PASS  T8002 a generated heightmap imports\n  PASS  T8002 import of 4068289 samples well inside the 11.2 MINUTES the brush needed (observed 1.8-55.6s; collision rebuild dominates and varies with editor state)\n  PASS  T8002 and a fresh export returns exactly what was sent - independent of the endpoint's own verification\n  FAIL  T8002 the collision surface agrees with the heightmap at every probed point (worst delta 950.00uu) - collision was rebuilt, not left behind\n        2 of 3 points agreed, worst delta 950.00\n  PASS  T8002 and at least one probe was at a non-zero height, so the agreement is not the trivial one on flat ground\n\n=== T8003: what it refuses, and whether the reason is usable ===\n  PASS  T8003 both file and data is refused, saying why\n  PASS  T8003 neither is refused, saying why\n  PASS  T8003 data with no dimensions is refused, saying why\n  PASS  T8003 minZ without maxZ is refused, saying why\n  PASS  T8003 a region outside the landscape is refused, saying why\n  PASS  T8003 a byte count that does not match is refused, saying why\n  PASS  T8003 an edit layer is refused BY NAME rather than silently written to the merged result\n  PASS  T8003 a float array is refused by name, with the size that makes it a bad idea\n  PASS  T8003 - the editor is still alive\n\n========================================================================\nPASS 22   FAIL 1\n  FAILED: T8002 the collision surface agrees with the heightmap at every probed point (worst delta 950.00uu) - collision was rebuilt, not left behind\n          2 of 3 points agreed, worst delta 950.00"
+  "tail": ""
  },
  {
   "suite": "test_landscape_info.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_layers.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1948,7 +1993,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1957,7 +2002,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1975,7 +2020,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -1984,7 +2029,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2011,7 +2056,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2020,7 +2065,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 0.8,
+  "seconds": 0.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2038,7 +2083,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2056,7 +2101,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2065,7 +2110,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 4.1,
+  "seconds": 3.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2083,7 +2128,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 3.6,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2092,7 +2137,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2101,7 +2146,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2110,25 +2155,25 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_move_actors_to_level.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "PASS 12   FAIL 1",
+  "rc": 0,
+  "summary": "PASS 13   FAIL 0",
   "seconds": 2.2,
   "editorSurvived": true,
-  "tail": "  PASS  T4401 an unresolvable actor lands in notFound[], separate from refused[]\n  PASS  T4401 and the two lists stay distinct\n\n=== T4402: a half-finished batch is worse than none, because paths change ===\n  PASS  T4402 a mixed batch is refused whole by default\n  FAIL  T4402 and both problems are reported, not just the first\n        {\"refused\": [], \"notFound\": [\"/Game/Maps/MifWeaponTest.MifWeaponTest:PersistentLevel.StaticMeshActor_UAID_E8C8292EF2A619FD02_1304303165\", \"/Temp/Untitled_1.Untitled_1:PersistentLevel.NoSuchActor\"]}\n  PASS  T4402 requested is the number ASKED for, so the shortfall is visible\n\n=== T4403: the paths change, so it asks first ===\n  PASS  T4403 vetting answers before the confirm gate - you are told it cannot work first\n  PASS  T4403 - the editor is still alive after every refused call\n\n  NOT EXERCISED: a successful move, and with it the CopyPasteId assert guard, the\n  locked-source-level skip and the selection restore. All four need a destination\n  SUBLEVEL, and add_sublevel requires an existing loose .umap - creating one means\n  saving to disk, which the gate refuses. This world is World Partition besides, so\n  it has no classic sublevels at all. The guards are read into the handler from\n  EditorLevelUtils.cpp and are unverified here; a project with real sublevels is\n  where they get exercised.\n\n========================================================================\nPASS 12   FAIL 1\n  FAILED: T4402 and both problems are reported, not just the first\n          {\"refused\": [], \"notFound\": [\"/Game/Maps/MifWeaponTest.MifWeaponTest:PersistentLevel.StaticMeshActor_UAID_E8C8292EF2A619FD02_1304303165\", \"/Temp/Untitled_1.Untitled_1:PersistentLevel.NoSuchActor\"]}"
+  "tail": ""
  },
  {
   "suite": "test_mvvm.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2136,8 +2181,8 @@
   "suite": "test_niagara.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 53   FAIL 0",
-  "seconds": 2.1,
+  "summary": "PASS 61   FAIL 0",
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2146,7 +2191,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2162,11 +2207,11 @@
  {
   "suite": "test_niagara_params.py",
   "pass": 2,
-  "rc": 3,
+  "rc": 2,
   "summary": "",
-  "seconds": 2.6,
+  "seconds": 2.4,
   "editorSurvived": true,
-  "tail": "bridge up on pid 38712 (DrugDealerSimulator2.uproject) - 445 endpoints, built Aug 31 2026 02:26:36\nno NiagaraSystem with user parameters found; nothing to test against"
+  "tail": "bridge up on pid 4952 (DrugDealerSimulator2.uproject) - 446 endpoints, built Aug 31 2026 04:20:18\nSKIPPED - nothing was verified.\n  No NiagaraSystem in this project declares a user parameter (40 systems checked),\n  and this project's Niagara content is COOKED, which set_niagara_user_parameter\n  refuses anyway - the parameter store cannot be saved or recompiled.\n  No endpoint creates a user parameter, so this suite cannot build its own fixture.\n  Needs an UNCOOKED project with authored user parameters.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_niagara_set_user_param.py",
@@ -2181,7 +2226,7 @@
   "suite": "test_niagara_user_params.py",
   "pass": 2,
   "rc": 0,
-  "summary": "PASS 15   FAIL 0",
+  "summary": "PASS 13   FAIL 0",
   "seconds": 2.0,
   "editorSurvived": true,
   "tail": ""
@@ -2191,25 +2236,25 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 101   FAIL 0",
-  "seconds": 6.2,
+  "seconds": 5.9,
   "editorSurvived": true,
   "tail": ""
  },
  {
   "suite": "test_partition_actors.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "PASS 13   FAIL 1",
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
   "seconds": 2.1,
   "editorSurvived": true,
-  "tail": "        have no partition descriptor - spawned actors and editor-only ones. That is\n        expected, not a discrepancy.\n  PASS  T2101 the descriptors see MORE actors than the level does - the gap this endpoint exists to close\n  PASS  T2101 and the unloaded ones are actually reported, with a guid and a soft path\n  PASS  T2101 the response says plainly that some actors are invisible to list_level_actors\n\n=== T2102: filters actually filter ===\n  PASS  T2102 loadedOnly returns exactly the loaded set\n  PASS  T2102 nameContains narrows the result and never widens it\n  PASS  T2102 classFilter succeeds\n  PASS  T2102 and it SAYS that scanned counts only that class, because the engine iterator applies the filter - otherwise the number reads as the map total\n\n=== T2103: refusals ===\n  FAIL  T2103 an unbuilt parameter is refused with what to use instead, not ignored\n        bounds needs both min and max as {x,y,z}.\n  PASS  T2103 an unknown classFilter is refused\n\n=== T2104: it is a read ===\n  PASS  T2104 calling it twice gives the same answer - it changes nothing\n  PASS  T2104 and it reports scratchClean - no real package was dirtied\n\n========================================================================\nPASS 13   FAIL 1\n  FAILED: T2103 an unbuilt parameter is refused with what to use instead, not ignored\n          bounds needs both min and max as {x,y,z}."
+  "tail": ""
  },
  {
   "suite": "test_pcg_authoring.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2218,7 +2263,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2227,7 +2272,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2237,6 +2282,15 @@
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
   "seconds": 2.3,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_pie_idle.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2254,7 +2308,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 2.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2263,7 +2317,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2277,11 +2331,20 @@
   "tail": ""
  },
  {
+  "suite": "test_project_paths.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 1.9,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
   "suite": "test_recipes.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2299,7 +2362,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2343,17 +2406,17 @@
   "suite": "test_safety_gate.py",
   "pass": 2,
   "rc": 2,
-  "summary": "PASS 5   FAIL 0",
-  "seconds": 1.9,
+  "summary": "PASS 8   FAIL 0",
+  "seconds": 1.8,
   "editorSurvived": true,
-  "tail": "bridge up on pid 38712 (DrugDealerSimulator2.uproject) - 445 endpoints, built Aug 31 2026 02:26:36\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 5   FAIL 0\nSKIPPED - the gate cannot be tested from 'full' mode; nothing was verified beyond the reads above."
+  "tail": "bridge up on pid 4952 (DrugDealerSimulator2.uproject) - 446 endpoints, built Aug 31 2026 04:20:18\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n=== T632: export_asset says where the file really went, in any mode ===\n  PASS  T632 the response reports the RESOLVED absolute path, with the `..` already applied - a caller can see where the file went instead of assuming the export root\n  PASS  T632 and states plainly that it landed OUTSIDE the export root, which is the claim the old comment got wrong by calling that root a boundary\n  PASS  T632 and the file is really at the path it reported - the report is checked against the filesystem, not taken at its word\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 8   FAIL 0\nSKIPPED - the gate cannot be tested from 'full' mode; nothing was verified beyond the reads above."
  },
  {
   "suite": "test_self_audit_modes.py",
   "pass": 2,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 1.8,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2371,7 +2434,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 40   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2380,7 +2443,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2407,7 +2470,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2416,7 +2479,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2434,7 +2497,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2452,7 +2515,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 1.9,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2470,7 +2533,16 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "tail": ""
+ },
+ {
+  "suite": "test_spline_landscape.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 5.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2479,7 +2551,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 2.7,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2488,7 +2560,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2513,11 +2585,11 @@
  {
   "suite": "test_thumbnails.py",
   "pass": 2,
-  "rc": 0,
-  "summary": "PASS 26   FAIL 0",
-  "seconds": 2.7,
+  "rc": 1,
+  "summary": "PASS 24   FAIL 2",
+  "seconds": 2.4,
   "editorSurvived": true,
-  "tail": ""
+  "tail": "=== T402: write_thumbnail_texture must produce pixels, not a header ===\n  PASS  T402 the texture is created\n  PASS  T402 and it reports where it went\n  PASS  T402 the written texture has real source pixels\n  PASS  T402 and it is a Texture2D\n\n=== T403: bad requests are refused, not rendered ===\n  PASS  T403 an asset that does not exist is refused\n  PASS  T403 and says something usable\n  PASS  T403 an oversized request still renders\n  PASS  T403 clamped to the stated ceiling\n  PASS  T403 and the response echoes what was ASKED for\n  PASS  T403 and says plainly that it clamped\n  PASS  T403 an undersized request is clamped up to the floor\n  PASS  T403 and says so too\n  PASS  T403 the editor survived all of it\n  cleanup: removed 1 asset(s) from /Game/_MifThumb/\n\n========================================================================\nPASS 24   FAIL 2\n  FAILED: T401 orbitYaw changes the rendered bytes\n          identical to the base render - the parameter was accepted and ignored\n  FAILED: T401 orbitZoom changes the rendered bytes\n          identical to the base render - the parameter was accepted and ignored\n========================================================================"
  },
  {
   "suite": "test_timeline.py",
@@ -2542,7 +2614,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2560,7 +2632,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 40   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2569,7 +2641,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 60   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2587,7 +2659,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 38   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2596,7 +2668,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 52   FAIL 0",
-  "seconds": 4.8,
+  "seconds": 5.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2614,7 +2686,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 4.0,
+  "seconds": 4.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2623,7 +2695,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.0,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2632,7 +2704,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 6.3,
+  "seconds": 6.4,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2641,7 +2713,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2650,7 +2722,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 0.7,
+  "seconds": 0.6,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2659,7 +2731,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.1,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2668,7 +2740,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2704,7 +2776,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.5,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2713,7 +2785,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2722,7 +2794,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.3,
   "editorSurvived": true,
   "tail": ""
  },
@@ -2731,7 +2803,7 @@
   "pass": 2,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.4,
   "editorSurvived": true,
   "tail": ""
  }
