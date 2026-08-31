@@ -1,0 +1,14 @@
+{
+ "test_node_spawns.py": {
+  "endpoints": [
+   "add_branch",
+   "add_comment",
+   "add_get_array_item",
+   "add_make_array",
+   "add_make_map",
+   "add_self",
+   "add_sequence"
+  ],
+  "recordedAt": 1788161315
+ }
+}

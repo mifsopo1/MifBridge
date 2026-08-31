@@ -1,9 +1,5 @@
 {
  "uncovered": [
-  "add_get_array_item",
-  "add_make_map",
-  "add_self",
-  "add_sequence",
   "kr_analyze_ubergraph",
   "kr_batch_reconstruct",
   "kr_classify_drift",
@@ -22,7 +18,12 @@
   "save_dirty_packages",
   "save_level_as"
  ],
- "dynamicallyCovered": [],
+ "dynamicallyCovered": [
+  "add_get_array_item",
+  "add_make_map",
+  "add_self",
+  "add_sequence"
+ ],
  "covered": {
   "add_actor_to_data_layer": [
    "test_data_layer_writes.py"
@@ -987,6 +988,7 @@
    "test_pcg_authoring.py",
    "test_physics_asset.py",
    "test_settings_config.py",
+   "test_spline_landscape.py",
    "test_staticmesh_write_guard.py",
    "test_timeline.py",
    "test_uncovered_reads5.py"

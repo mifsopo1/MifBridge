@@ -6291,7 +6291,17 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Vetter corrected the proposal: Over-sold at medium; it is low. Three reasons. run_python is default-ON and does this in one line - not a decline ground by this project's own precedent, but it caps the rank. The motivating workflow is already solved better on the UE side by the IK Retargeter suite, which exists so names need not match, and the alternative payoff (import against an existing Skeleton) is not reachable because impo...
 
 
-- [ ] **test coverage for the legacy Layers endpoints (list_layers, set_layer_visibility, modify_actor_layers)** (hours)
+- [x] **test coverage for the legacy Layers endpoints (list_layers, set_layer_visibility, modify_actor_layers)** (hours)
+      DONE 2026-08-31 - tools/test_layers.py, 17 PASS 0 FAIL. Every write is read back through
+      list_layers rather than through the writer's own report. L102 branches on
+      levelIsPartitioned: on this World Partition map it asserts that adding an actor to a
+      classic layer is REFUSED and that the refusal names AActor::SupportsLayers, because
+      classic Layers cannot hold an actor in a partitioned world - the first version assumed
+      they could and failed on the guard doing its job. L104 asserts the refusal that
+      redirects to list_data_layers, which is the confusion this pair of systems actually
+      causes. The scratch layer is left behind knowingly: scratch_confirm cannot prove a
+      layer NAME is scratch (no asset path in the payload), and widening it to trust a name
+      prefix would weaken the one guard keeping confirm:true off real content.
       Filed 2026-08-31 after refreshing endpoints_current.json, which was 82 endpoints STALE and so
       blind to most of the surface. With it current: 445 endpoints, 420 named in a suite, and these
       three named in NONE. They are the pre-World-Partition ULayers system, distinct from Data
@@ -6299,7 +6309,14 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       is most likely to reach for the wrong one of the two, so a suite that shows what each does is
       worth more than the endpoint count suggests. MifBridgeStreaming.cpp:2212 / :2293 / :2395.
 
-- [ ] **test coverage for apply_spline_to_landscape** (hours)
+- [x] **test coverage for apply_spline_to_landscape** (hours)
+      DONE 2026-08-31 - tools/test_spline_landscape.py, 10 PASS 0 FAIL. S101/S102 report
+      themselves UNEXERCISED on this project rather than passing: the landscape has edit
+      layers, so the deformation is refused for want of an editLayer name that no endpoint
+      can enumerate (filed above as a read gap). S102 originally asserted a ground trace
+      AFTER a refused deformation - tracing undeformed terrain, so it passed no matter what.
+      It is now gated on `deformed` and says so when it does not run. An assertion that
+      cannot fail is not an assertion.
       Filed 2026-08-31, same sweep. Zero suites name it. It is a landscape WRITE with no coverage at
       all, which is the shape that has produced the worst findings on this project - the heightmap
       work found that collision is cooked separately from the render surface, so anything that
@@ -6318,7 +6335,15 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       assert that a trace agrees with the deformed surface, because that is the assertion which
       would catch it if the engine path ever changes underneath us.
 
-- [ ] **coverage_gaps.py cannot see a dynamically-driven endpoint, and should say which ones** (hours)
+- [x] **coverage_gaps.py cannot see a dynamically-driven endpoint, and should say which ones** (hours)
+      DONE 2026-08-31 - suites record what they actually drove via
+      M.record_dynamic_coverage(suite, names) into tools/dynamic_coverage.json, and
+      coverage_gaps.py subtracts it under its own heading with the record's age. Wired into
+      test_node_spawns.py, which drives its endpoints by iterating the live registry: four
+      names were on the uncovered list purely because the scanner reads suite SOURCE for
+      literal names and cannot see one produced by a loop. Named nowhere went 21 -> 17. What
+      is recorded is what ran, not a static declaration, so it cannot claim an endpoint the
+      loop skipped.
       Filed 2026-08-31. It reports "named nowhere" from literal strings in the suites, so an
       endpoint exercised by iterating the live registry - test_node_spawns T330 sweeps every add_*
       that way - reads as uncovered. Four names on tonight's list were exactly that, and the suite
@@ -6353,6 +6378,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Worth doing before anyone runs the UE suites against Curfew and reads the failures as bridge
       defects.
+
+- [ ] **nothing reports a landscape's sculpt EDIT LAYER names, and two endpoints demand one** (hours)
+      Found 2026-08-31 writing test_spline_landscape. apply_spline_to_landscape refuses on a
+      landscape with edit layers - correctly, because EditorApplySpline would log an error and
+      change nothing - and its refusal says "Pass editLayer naming one that exists".
+      import_landscape_heightmap has the same requirement. NOTHING can say what exists.
+
+      landscape_info reports `layers`, but those are FLandscapeInfoLayerSettings - PAINT layers, the
+      weightmap ones - and `materialLayers` is the material's. The sculpt edit-layer stack
+      (ALandscape::LandscapeLayers, what the Landscape Edit Layers panel shows) is not reported by
+      any endpoint. So a caller is told to name something they cannot enumerate, and their only
+      options are to guess or to open the editor UI.
+
+      THIS IS THE SAME SHAPE audit_advice_gaps.py was written for, one level down: not advice naming
+      an endpoint that does not exist, but advice naming a PARAMETER VALUE that cannot be
+      discovered. Worth teaching that scanner about, since "pass X naming one that exists" is a
+      phrasing this codebase uses in several places.
+
+      It blocked real coverage: test_spline_landscape S101/S102 cannot run on this project at all,
+      and report themselves UNEXERCISED. The fix is small - add the edit layer names (and which is
+      active) to landscape_info, which already resolves the landscape and reports everything else
+      about it.
+
 
 ### Refuted, recorded so they are not re-proposed
 

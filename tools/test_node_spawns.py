@@ -101,6 +101,11 @@ def main():
           "only %d found - describe_endpoint may have changed shape, and this suite is then vacuous"
           % len(simple))
     print("   driving: %s" % ", ".join(simple))
+    # RECORDED so coverage_gaps.py stops calling these untested. It reads suite SOURCE for
+    # literal endpoint names and cannot see one produced by iterating the live registry -
+    # four names were wrong on its list for exactly that reason. What is written is what
+    # actually ran; a static "add_*" declaration would claim endpoints this loop skips.
+    M.record_dynamic_coverage("test_node_spawns.py", simple)
 
     placed, y = [], 0
     for ep in simple:
