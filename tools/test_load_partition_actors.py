@@ -163,6 +163,55 @@ def main():
         else:
             print("  NOTE  the target descriptor has no bounds, so the bounds mode is unexercised.")
 
+        # ------------------------------------------------------------------ T2604 the read filter
+        print("\n=== T2604: the READ half's bounds filter, and the actors matching ANY box ===")
+        flat = M.call("list_partition_actors", {"limit": 400})
+        check("T2604 an unfiltered listing reports boundsFiltered:false",
+              flat.get("boundsFiltered") is False, json.dumps(flat)[:200])
+
+        tb = target.get("bounds") or {}
+        if tb.get("min") and tb.get("max"):
+            near = M.call("list_partition_actors",
+                          {"limit": 400, "bounds": {"min": tb["min"], "max": tb["max"]}})
+            check("T2604 a bounds query narrows the result and says it filtered",
+                  near.get("boundsFiltered") is True
+                  and (near.get("matched") or 0) < (flat.get("matched") or 0),
+                  "flat %s -> bounded %s" % (flat.get("matched"), near.get("matched")))
+            labels = [a.get("label") for a in (near.get("actors") or [])]
+            check("T2604 and the actor whose own bounds were used comes back in the region",
+                  target.get("label") in labels, json.dumps(labels[:6]))
+
+        far = M.call("list_partition_actors",
+                     {"limit": 400,
+                      "bounds": {"min": {"x": 9.0e7, "y": 9.0e7, "z": 9.0e7},
+                                 "max": {"x": 9.1e7, "y": 9.1e7, "z": 9.1e7}}})
+        # THE assertion that stops a correct answer being misread. A box far outside the world still
+        # returns the DirectionalLight, because the engine gives an actor with no spatial extent
+        # bounds of +/-2^42 and it genuinely intersects everything. Right, and misleading unless it
+        # is called out - someone would read it as a broken filter, or as the light being local.
+        if (far.get("matched") or 0) > 0:
+            check("T2604 a box far outside the world still matches globally-bounded actors, and "
+                  "every one of them is NAMED in matchedAnyBox rather than passed off as being "
+                  "in the region",
+                  bool(far.get("matchedAnyBox"))
+                  and far.get("matched") == len(far.get("matchedAnyBox") or []),
+                  json.dumps({"matched": far.get("matched"),
+                              "matchedAnyBox": far.get("matchedAnyBox")})[:250])
+            check("T2604 and the note explains WHY they match everything",
+                  "no meaningful spatial extent" in (far.get("boundsNote") or ""),
+                  (far.get("boundsNote") or "")[:220])
+        else:
+            print("  NOTE  no globally-bounded actor in this map, so the matchedAnyBox arm is")
+            print("        unexercised here. Reported rather than passed.")
+
+        zero = M.raw_post("list_partition_actors",
+                          {"bounds": {"min": {"x": 0, "y": 0, "z": 0},
+                                      "max": {"x": 0, "y": 0, "z": 0}}})
+        check("T2604 a zero-volume box is refused on the read half too - 'no actors here' would "
+              "be a wrong answer rather than an empty one",
+              zero.get("ok") is False and "no volume" in (zero.get("error") or ""),
+              (zero.get("error") or "")[:220])
+
         check("T2603 - the editor is still alive",
               M.call("self_audit", {"summaryOnly": True}).get("ok") is True,
               "pinning touches World Partition editor state")

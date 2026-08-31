@@ -6220,7 +6220,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       confidently about a map full of actors. It was inline at one call site and was about to be at
       six.
 
-- [ ] **spatial filtering on list_partition_actors (a `bounds` parameter)** (hours)
+- [x] **spatial filtering on list_partition_actors (a `bounds` parameter)** (hours)  **DONE 2026-08-31**,
+      hours after being split out - it was the last piece of the partition item.
+      `bounds` {min,max} routes through ForEachIntersectingActorDescInstance rather than filtering
+      after the fact, which is the point: filtering client side means paying to enumerate every
+      descriptor first. boundsFiltered is reported so a spatial query is distinguishable from a flat
+      one, and a zero-volume box is refused rather than matching nothing, since "no actors here"
+      would then be a wrong answer rather than an empty one. The stale didYouMean that said spatial
+      filtering was unbuilt is gone - a hint denying a parameter that exists is worse than no hint.
+
+      SAME TRAP, SECOND ITERATOR, and this one was READ rather than inferred: UE 5.6 and 5.7 are
+      installed locally with full source (C:/Program Files/Epic Games/UE_5.x), so
+      WorldPartitionHelpers.h:103-104 could simply be opened. ForEachIntersectingActorDesc is
+      UE_DEPRECATED(5.4) there with an EMPTY BODY, exactly like the flat iterator - so the 5.3
+      spelling compiles against 5.7 and iterates nothing, and a bounds query would answer "no actors
+      in this region" about a populated one. Guarded in one place, beside the flat one.
+
+      FOUND BY RUNNING IT: a box at 9e7 - far outside the world - still returned an actor. Not a
+      bug. A DirectionalLight has no meaningful spatial extent, so the engine gives its descriptor
+      bounds of +/-2^42 and it genuinely intersects every box. Correct, and exactly the kind of
+      right answer that gets misread as a broken filter or, worse, as the light being local to the
+      region asked about. Those rows are now listed separately in matchedAnyBox with a note saying
+      why. T2604 asserts it.
+
+      Verified: test_load_partition_actors 21 PASS 0 FAIL against a live partitioned map.
+
       Split out of load_partition_actors on 2026-08-31 when the write half landed. The read half
       currently refuses `bounds` BY NAME and points at nameContains/classFilter, which is honest but
       is the last piece of that item. ForEachIntersectingActorDescInstance is the engine call. Worth

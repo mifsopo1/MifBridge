@@ -3618,10 +3618,11 @@ def list_layers(include_actors: bool = False, limit: int = 200) -> dict:
 
 @mcp.tool()
 def list_partition_actors(class_filter: str = "", name_contains: str = "", data_layer: str = "",
-                          loaded_only: bool = False, limit: int = 200) -> dict:
-    "Every actor in a World Partition map, LOADED OR NOT, read from the actor descriptors."
+                          loaded_only: bool = False, limit: int = 200,
+                          bounds: dict = None) -> dict:
+    "Every actor in a World Partition map, LOADED OR NOT, read from the actor descriptors. `bounds` {min:{x,y,z}, max:{x,y,z}} restricts it to actors intersecting that box - a different engine iterator, not a filter applied after enumerating the whole map. Pair it with load_partition_actors to bring what you find into memory."
     return _post("list_partition_actors", classFilter=class_filter, nameContains=name_contains,
-                 dataLayer=data_layer, loadedOnly=loaded_only, limit=limit)
+                 dataLayer=data_layer, loadedOnly=loaded_only, limit=limit, bounds=bounds)
 
 
 @mcp.tool()

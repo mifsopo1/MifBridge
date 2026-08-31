@@ -840,8 +840,8 @@ namespace MifBridge
 		static const TCHAR* const GMifDescNotes_list_data_layers[] = { TEXT("world"), TEXT("this always reads the EDITOR world - stop_pie if you want its state to settle") ,  TEXT("level"), TEXT("Data Layers belong to the World Partition map, not to a sublevel - use list_sublevels for those"), nullptr };
 		static const TCHAR* const GMifDescKeys_apply_spline_to_landscape[] = { TEXT("landscape"), TEXT("actorPath"), TEXT("splineActor"), TEXT("spline"), TEXT("component"), TEXT("startWidth"), TEXT("endWidth"), TEXT("startSideFalloff"), TEXT("endSideFalloff"), TEXT("startRoll"), TEXT("endRoll"), TEXT("subdivisions"), TEXT("raiseHeights"), TEXT("lowerHeights"), TEXT("paintLayer"), TEXT("editLayer"), nullptr };
 		static const TCHAR* const GMifDescNotes_apply_spline_to_landscape[] = { TEXT("width"), TEXT("spell it startWidth and endWidth - a spline can taper") ,  TEXT("falloff"), TEXT("spell it startSideFalloff and endSideFalloff"), nullptr };
-		static const TCHAR* const GMifDescKeys_list_partition_actors[] = { TEXT("classFilter"), TEXT("class"), TEXT("nameContains"), TEXT("dataLayer"), TEXT("loadedOnly"), TEXT("limit"), nullptr };
-		static const TCHAR* const GMifDescNotes_list_partition_actors[] = { TEXT("bounds"), TEXT("spatial filtering is not built yet - see the spec item. Use " "nameContains or classFilter, or filter the bounds this " "endpoint already reports on each row") ,  TEXT("pathPrefix"), TEXT("descriptors are addressed by class/name/data layer, not " "by content path - use classFilter or nameContains"), nullptr };
+		static const TCHAR* const GMifDescKeys_list_partition_actors[] = { TEXT("classFilter"), TEXT("class"), TEXT("nameContains"), TEXT("dataLayer"), TEXT("loadedOnly"), TEXT("limit"), TEXT("bounds"), nullptr };
+		static const TCHAR* const GMifDescNotes_list_partition_actors[] = { TEXT("box"), TEXT("spell it bounds - {min:{x,y,z}, max:{x,y,z}}") ,  TEXT("radius"), TEXT("spatial filtering here is a BOX, not a sphere - pass bounds") ,  TEXT("pathPrefix"), TEXT("descriptors are addressed by class/name/data layer, not " "by content path - use classFilter or nameContains"), nullptr };
 		static const TCHAR* const GMifDescKeys_load_partition_actors[] = { TEXT("guids"), TEXT("guid"), TEXT("bounds"), TEXT("unpin"), nullptr };
 		static const TCHAR* const GMifDescNotes_load_partition_actors[] = { TEXT("actorPath"), TEXT("an unloaded actor has no path yet - that is the point. Pass the guid list_partition_actors reports") ,  TEXT("load"), TEXT("this endpoint loads by default; pass unpin:true to release") ,  TEXT("all"), TEXT("there is no load-everything switch - a partitioned map is partitioned because loading all of it does not fit. Use bounds"), nullptr };
 		static const TCHAR* const GMifDescKeys_list_layers[] = { TEXT("includeActors"), TEXT("limit"), nullptr };
@@ -1186,19 +1186,19 @@ namespace MifBridge
 			  TEXT("MifBridgeViewport.cpp"), 483, nullptr },
 			{ TEXT("move_actors_to_level"), GMifDescKeys_move_actors_to_level, GMifDescNotes_move_actors_to_level,
 			  TEXT("actorPaths[] (alias actors) - the actors to move; level (alias sublevel) - the ") TEXT("destination sublevel package path, or \"persistent\"; allOrFail (default true); ") TEXT("confirm:true - moving an actor CHANGES ITS PATH"),
-			  TEXT("MifBridgeStreaming.cpp"), 3248, nullptr },
+			  TEXT("MifBridgeStreaming.cpp"), 3345, nullptr },
 			{ TEXT("list_level_instances"), GMifDescKeys_list_level_instances, GMifDescNotes_list_level_instances,
 			  TEXT("includeActors (list each loaded instance's contained actor paths), limit"),
-			  TEXT("MifBridgeStreaming.cpp"), 3650, nullptr },
+			  TEXT("MifBridgeStreaming.cpp"), 3747, nullptr },
 			{ TEXT("set_level_instance_loaded"), GMifDescKeys_set_level_instance_loaded, GMifDescNotes_set_level_instance_loaded,
 			  TEXT("actorPath - a placed Level Instance; loaded:true|false"),
-			  TEXT("MifBridgeStreaming.cpp"), 3697, nullptr },
+			  TEXT("MifBridgeStreaming.cpp"), 3794, nullptr },
 			{ TEXT("edit_level_instance"), GMifDescKeys_edit_level_instance, GMifDescNotes_edit_level_instance,
 			  TEXT("actorPath; action (edit|commit|discard); discardEdits - only with commit"),
-			  TEXT("MifBridgeStreaming.cpp"), 3753, nullptr },
+			  TEXT("MifBridgeStreaming.cpp"), 3850, nullptr },
 			{ TEXT("break_level_instance"), GMifDescKeys_break_level_instance, GMifDescNotes_break_level_instance,
 			  TEXT("actorPath; levels (how many nesting levels to break, default 1); confirm:true"),
-			  TEXT("MifBridgeStreaming.cpp"), 3872, nullptr },
+			  TEXT("MifBridgeStreaming.cpp"), 3969, nullptr },
 			{ TEXT("remove_foliage_instances"), GMifDescKeys_remove_foliage_instances, GMifDescNotes_remove_foliage_instances,
 			  TEXT("foliageType (alias type) - the EXACT foliage type path, not a substring; then ") TEXT("exactly one of indices:[int], sphere:{center:{x,y,z},radius}, ") TEXT("box:{min:{x,y,z},max:{x,y,z}} or all:true; confirm:true"),
 			  TEXT("MifBridgeAuthoring.cpp"), 1621, nullptr },
@@ -1249,7 +1249,7 @@ namespace MifBridge
 			  TEXT("MifBridgeCooked.cpp"), 2037, nullptr },
 			{ TEXT("get_level_blueprint"), GMifDescKeys_get_level_blueprint, GMifDescNotes_get_level_blueprint,
 			  TEXT("level (a sublevel package path, or \"persistent\" / omitted for the persistent ") TEXT("level); create (default FALSE - minting a Level Blueprint dirties the map)"),
-			  TEXT("MifBridgeStreaming.cpp"), 3983, nullptr },
+			  TEXT("MifBridgeStreaming.cpp"), 4080, nullptr },
 			{ TEXT("create_macro"), GMifDescKeys_create_macro, GMifDescNotes_create_macro,
 			  TEXT("blueprintId (alias: path) - a Blueprint or a Blueprint Macro Library; name; ") TEXT("inputs?[{name,type,...}]; outputs?"),
 			  TEXT("MifBridgeNodes2.cpp"), 1877, nullptr },
@@ -2031,11 +2031,11 @@ namespace MifBridge
 			  TEXT("splineActor (alias: spline) - an actor with a USplineComponent; landscape (alias: ") TEXT("actorPath, omit when the level has one); component - which spline component if the ") TEXT("actor has several; startWidth/endWidth (default 200uu); startSideFalloff/") TEXT("endSideFalloff (default 200uu); startRoll/endRoll (degrees, default 0); ") TEXT("subdivisions (default 20); raiseHeights/lowerHeights (default true); paintLayer - ") TEXT("a LandscapeLayerInfoObject path; editLayer - REQUIRED on a landscape with edit ") TEXT("layers"),
 			  TEXT("MifBridgeLandscape.cpp"), 1062, nullptr },
 			{ TEXT("list_partition_actors"), GMifDescKeys_list_partition_actors, GMifDescNotes_list_partition_actors,
-			  TEXT("classFilter (alias: class) - a native actor class path; nameContains - substring " "match on label or name; dataLayer - only actors in this Data Layer; loadedOnly " "(default false) - only actors currently in memory; limit (default 200)"),
-			  TEXT("MifBridgeStreaming.cpp"), 3068, nullptr },
+			  TEXT("classFilter (alias: class) - a native actor class path; nameContains - substring " "match on label or name; dataLayer - only actors in this Data Layer; loadedOnly " "(default false) - only actors currently in memory; limit (default 200); " "bounds {min:{x,y,z}, max:{x,y,z}} - only actors whose editor bounds intersect " "this box"),
+			  TEXT("MifBridgeStreaming.cpp"), 3085, nullptr },
 			{ TEXT("load_partition_actors"), GMifDescKeys_load_partition_actors, GMifDescNotes_load_partition_actors,
 			  TEXT("guids (alias: guid) - actor guids from list_partition_actors; bounds {min:{x,y,z}," " max:{x,y,z}} - load every actor intersecting this box; unpin (default false) - " "release the given guids instead of pinning them"),
-			  TEXT("MifBridgeStreaming.cpp"), 2801, nullptr },
+			  TEXT("MifBridgeStreaming.cpp"), 2818, nullptr },
 			{ TEXT("list_layers"), GMifDescKeys_list_layers, GMifDescNotes_list_layers,
 			  TEXT("includeActors (default false - list each layer's member actorPaths, which is the ") TEXT("expensive part), limit (max layers reported, default 200)"),
 			  TEXT("MifBridgeStreaming.cpp"), 2214, nullptr },

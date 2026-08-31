@@ -2715,6 +2715,23 @@ namespace MifBridge
 #endif
 	}
 
+	/** The spatial iterator, guarded the same way and for the same reason.
+	 *
+	 *  ForEachIntersectingActorDesc is UE_DEPRECATED(5.4) in 5.7 with an EMPTY body
+	 *  (WorldPartitionHelpers.h:103-104), so the 5.3 spelling compiles there and iterates
+	 *  nothing - a bounds query would answer "no actors in this region" about a populated one.
+	 */
+	template <typename FuncT>
+	void MifForEachIntersectingActorDesc(UWorldPartition* Partition, const FBox& Box,
+										 TSubclassOf<AActor> Filter, FuncT Visit)
+	{
+#if MIF_ENGINE_AT_LEAST(5, 4)
+		FWorldPartitionHelpers::ForEachIntersectingActorDescInstance(Partition, Box, Filter, Visit);
+#else
+		FWorldPartitionHelpers::ForEachIntersectingActorDesc(Partition, Box, Filter, Visit);
+#endif
+	}
+
 	TSharedRef<FJsonObject> MifSerializeActorDesc(FMifActorDescPtr Desc)
 	{
 		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
@@ -3067,13 +3084,14 @@ namespace MifBridge
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("classFilter"), TEXT("class"), TEXT("nameContains"), TEXT("dataLayer"),
-			  TEXT("loadedOnly"), TEXT("limit") },
+			  TEXT("loadedOnly"), TEXT("limit"), TEXT("bounds") },
 			TEXT("classFilter (alias: class) - a native actor class path; nameContains - substring "
 				 "match on label or name; dataLayer - only actors in this Data Layer; loadedOnly "
-				 "(default false) - only actors currently in memory; limit (default 200)"),
-			{ { TEXT("bounds"), TEXT("spatial filtering is not built yet - see the spec item. Use "
-									 "nameContains or classFilter, or filter the bounds this "
-									 "endpoint already reports on each row") },
+				 "(default false) - only actors currently in memory; limit (default 200); "
+				 "bounds {min:{x,y,z}, max:{x,y,z}} - only actors whose editor bounds intersect "
+				 "this box"),
+			{ { TEXT("box"), TEXT("spell it bounds - {min:{x,y,z}, max:{x,y,z}}") },
+			  { TEXT("radius"), TEXT("spatial filtering here is a BOX, not a sphere - pass bounds") },
 			  { TEXT("pathPrefix"), TEXT("descriptors are addressed by class/name/data layer, not "
 										 "by content path - use classFilter or nameContains") } }))
 		{
@@ -3115,6 +3133,45 @@ namespace MifBridge
 			return;
 		}
 		Out->SetBoolField(TEXT("streamingEnabled"), Partition->IsStreamingEnabled());
+
+		// Parsed BEFORE anything is enumerated, so a malformed box costs nothing.
+		FBox FilterBox(ForceInit);
+		bool bHasBounds = false;
+		{
+			const TSharedPtr<FJsonObject>* BoundsJson = nullptr;
+			if (In->TryGetObjectField(TEXT("bounds"), BoundsJson) && BoundsJson)
+			{
+				auto ReadVec = [](const TSharedPtr<FJsonObject>& O, const TCHAR* Field, FVector& V)
+				{
+					const TSharedPtr<FJsonObject>* Sub = nullptr;
+					if (!O->TryGetObjectField(Field, Sub) || !Sub) { return false; }
+					V = FVector((*Sub)->GetNumberField(TEXT("x")),
+								(*Sub)->GetNumberField(TEXT("y")),
+								(*Sub)->GetNumberField(TEXT("z")));
+					return true;
+				};
+				FVector Min, Max;
+				if (!ReadVec(*BoundsJson, TEXT("min"), Min)
+					|| !ReadVec(*BoundsJson, TEXT("max"), Max))
+				{
+					Fail(Out, TEXT("bounds needs both min and max as {x,y,z}."));
+					return;
+				}
+				FilterBox = FBox(Min.ComponentMin(Max), Min.ComponentMax(Max));
+				if (!FilterBox.IsValid || FilterBox.GetVolume() <= 0.0)
+				{
+					Fail(Out, TEXT("bounds is empty - min and max describe no volume, so it would "
+								   "match nothing and 'no actors here' would be a wrong answer "
+								   "rather than an empty one."));
+					return;
+				}
+				bHasBounds = true;
+			}
+		}
+
+		// Reported so a caller can tell a spatial query from a flat one - the two use
+		// DIFFERENT engine iterators, and `scanned` means descriptors YIELDED either way.
+		Out->SetBoolField(TEXT("boundsFiltered"), bHasBounds);
 
 		UClass* Filter = AActor::StaticClass();
 		const FString ClassName = JStrAny(In, { TEXT("classFilter"), TEXT("class") });
@@ -3168,7 +3225,47 @@ namespace MifBridge
 			return true;
 		};
 
-		MifForEachActorDesc(Partition, Filter, Visit);
+		// SPATIAL OR FLAT, decided by whether a box was given. The intersecting iterator is a
+		// different engine call rather than a filter applied afterwards, which is the point:
+		// filtering client-side means paying to enumerate every descriptor in the map first.
+		// GLOBALLY-BOUNDED ACTORS MATCH EVERY BOX, and that is worth naming rather than leaving to
+		// be misread. A DirectionalLight has no meaningful spatial extent, so the engine gives its
+		// descriptor bounds of +/-2^42 and it intersects any region you ask about - correct, and
+		// exactly the kind of right answer someone reads as a broken filter or, worse, as evidence
+		// the light is local to the region they asked about. Found by querying a box far outside
+		// the world and getting one row back.
+		TArray<TSharedPtr<FJsonValue>> Global;
+		const double GlobalExtent = 1.0e9;
+
+		if (bHasBounds)
+		{
+			MifForEachIntersectingActorDesc(Partition, FilterBox, Filter,
+				[&](FMifActorDescPtr Desc)
+				{
+					const FBox B = Desc->GetEditorBounds();
+					if (B.IsValid && B.GetExtent().GetMax() >= GlobalExtent)
+					{
+						Global.Add(MakeShared<FJsonValueString>(
+							Desc->GetActorLabelOrName().ToString()));
+					}
+					return Visit(Desc);
+				});
+		}
+		else
+		{
+			MifForEachActorDesc(Partition, Filter, Visit);
+		}
+
+		if (bHasBounds && Global.Num())
+		{
+			Out->SetArrayField(TEXT("matchedAnyBox"), Global);
+			Out->SetStringField(TEXT("boundsNote"), FString::Printf(
+				TEXT("%d of these match ANY box, not this region: an actor with no meaningful "
+					 "spatial extent - a DirectionalLight, a SkyLight, an unbounded volume - is "
+					 "given effectively infinite editor bounds by the engine, so it intersects "
+					 "every query. They are listed in matchedAnyBox so they can be told apart from "
+					 "the actors that are really in this region."), Global.Num()));
+		}
 
 		// "scanned", NOT "count" - live-corrected 2026-08-30. classFilter is applied by the ENGINE
 		// iterator, not by this loop, so with one set the total reflects descriptors YIELDED rather
