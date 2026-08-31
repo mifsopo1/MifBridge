@@ -6502,6 +6502,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       cannot be written portably today.
 
 
+- [ ] **26 files are LF where the standing rule is CRLF - ANDRE'S CALL, not mine** (minutes)
+      Filed 2026-08-31, noticed when git warned on a file I had just written with LF and I fixed it.
+      The rule for this repo is CRLF everywhere; these 26 predate today and are not from one session.
+
+      16 tools: audit_blender_postconditions, audit_blender_read_purity, audit_roundtrip,
+      mcp_static_check, param_reach, test_ability_system, test_blender_rename_bones, test_engine_log,
+      test_graph_patch, test_macro_dispatch, test_pinlifetime, test_reroute, test_rollback_real,
+      test_self_audit_modes, test_set_plugin_enabled, test_v3_apply.
+      11 sources: MifBridgeCompositePreview, MifBridgeHeatmap, MifBridgeInterfaces,
+      MifBridgeLiveCoding, MifBridgeLiveWidgets, MifBridgeMetaHuman, MifBridgeNodePins,
+      MifBridgeStateTree, MifBridgeThumbnail, MifBridgeTrace, MifBridgeWidgetPreview.
+
+      NOT DONE ON MY OWN INITIATIVE, deliberately. Rewriting 26 files' line endings is a diff that
+      touches every line of each and moves blame on all of them, for no functional change - exactly
+      the kind of multi-file sweep to ask about first. It is a one-command fix whenever it is wanted;
+      the reason it is filed rather than done is that the cost is in the history, not the work.
+
+      Worth pairing with a .gitattributes `* text eol=crlf` so it cannot drift back, which would be
+      the actual fix rather than a one-off pass.
+
+
 ### Refuted, recorded so they are not re-proposed
 
 - add_retarget_pose / set_retarget_pose_bone / set_current_retarget_pose -- Refuted on the strongest and most common ground: existing endpoints already do it. I verified the reflective machinery by reading it rather than trusting it - H_set_property has no CPF_Edit gate (and MifBridgeDetails.cpp
