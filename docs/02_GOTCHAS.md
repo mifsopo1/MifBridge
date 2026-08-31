@@ -2389,3 +2389,16 @@ The other four are legitimately shared, each being one capability all its caller
 ops, `_MODIFIER_FIELDS` across add/apply/list_modifiers. No tool was landed for this - a seven-row
 report where four rows are permanently correct needs a baseline to be readable, and M902 already
 guards the behaviour that actually matters.
+
+**The C++ side does not have this shape, and the reason is worth knowing.** 67 refusing helpers are
+called by two or more handlers - `ResolveWidgetBlueprintField` by 18, `IKRigUnavailable` by 17,
+`ResolveActor`, `ResolvePhysicsAsset`, `PCGUnavailable`, `RefuseIfCookedGraph`. Every one is a
+RESOLVER or an AVAILABILITY guard, and not one names a policy list: grepping the shared names for
+allow / support / valid / format / permit / accept returns nothing.
+
+That distinction is the whole thing. "Find X or refuse" and "this subsystem is not present" mean
+exactly the same to every caller, so relaxing one for one handler is correct for all of them. A
+POLICY - which formats are allowed, which values are legal - is the opposite: it is a statement
+about one caller's capability that another caller may not share, and that is what makes it dangerous
+to put in a shared constant. Share resolvers freely; share policy only after asking who else reads
+it.
