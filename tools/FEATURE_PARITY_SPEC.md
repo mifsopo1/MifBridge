@@ -9500,6 +9500,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       A refined version - a mutating call with no read-back of ANY kind in its block - would need to
       follow control flow to be worth anything, and the samples suggest it would find close to zero.
 
+- [~] **do other tools share the single-fragment TEXT() assumption?** - SWEPT, ONLY THE TWO
+      Asked 2026-08-31 straight after it bit audit_cross_endpoint_claims, because
+      audit_editor_fatal_guards had had the IDENTICAL bug, been fixed, and the fix had not reached
+      the second file. Two instances of one mistake is the point at which you stop fixing and start
+      sweeping.
+
+      Eleven TEXT()-parsing patterns across tools/. The classification that settles each is what the
+      capture is FOR, not how the regex looks:
+
+        IDENTIFIER captures - single-token by construction, so one fragment is always right and the
+        pattern is correct as written: audit_consequence_fields (field names), audit_describe_drift
+        (keys), audit_family_asymmetry, audit_loop_writes, audit_nested_field_reads (all field
+        names), audit_mode_params (comparisons and param names), audit_dead_params (param
+        identifiers, and it masks out call spans first).
+
+        PROSE captures - these must span fragments, and both already do:
+        audit_message_endpoints pairs LITERAL with a CONTINUATION pattern for the trailing lines,
+        which its own comment explains; audit_cross_endpoint_claims and audit_editor_fatal_guards
+        now share one pattern character-for-character.
+
+      NOTHING ELSE TO FIX. A negative result recorded rather than dropped, so the sweep is not run a
+      third time - and the rule it produces is cheap to reuse: a TEXT() regex is only wrong when it
+      captures PROSE, because prose is what this codebase writes across fragments and identifiers
+      are what it does not.
+
 - [ ] **set_niagara_emitter's whyNotSetProperty claims an ASYMMETRY nothing tests** (hours)
       Surfaced 2026-08-31 the moment audit_cross_endpoint_claims could read multi-line literals -
       it had been invisible, along with every other claim written across more than one TEXT()
