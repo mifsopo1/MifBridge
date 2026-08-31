@@ -7434,3 +7434,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       checked whether the string "modal" appeared ANYWHERE in the response, which a note mentioning
       modals would satisfy just as well. Asserting a field means naming it. The scan was right and
       the test was loose.
+- [x] **the rollback residue fields, and two green checks that proved nothing** (hours)  **DONE 2026-08-31.**
+      First two of the 48 consequence-reporting fields closed, and the more useful half was what the
+      work turned up next door.
+
+      test_rollback_real.py is the only suite that reaches a REAL mid-apply rollback - its tripwire
+      is an op legal at preflight and illegal by the time it runs - and it asserted `rolledBack >= 1`
+      and the restored values, but nothing about what the rollback could NOT put back.
+      apply_graph_patch computes a clean flag from three counters and, when false, emits
+      rollbackUnresolvedPins and rollbackLostLinks, because "an INCOMPLETE rollback must never be
+      reported as a clean one". Now asserted, per rollback: rollbackComplete is TRUE (strictly - see
+      below) and the residue fields are ABSENT, since they appear only over a damaged graph. 11 -> 14.
+
+      THE PART WORTH MORE. test_graph_patch's T7 and T8 were labelled "rollback restores a link that
+      connect SILENTLY displaced" and asserted `rollbackComplete is not False` - which passes when
+      the field is ABSENT, and it IS absent, because both use a nonexistent pin and a nonexistent pin
+      is caught at PREFLIGHT. Nothing was ever applied, so nothing was displaced, so nothing was
+      restored. Three green checks over a graph that was never touched.
+
+      test_rollback_real's own docstring says exactly this and explains that it was written to
+      replace them - but it says it in ITS file, and a reader of test_graph_patch saw three passing
+      rollback assertions with no hint they were superseded. Both now assert the property they
+      actually exercise (preflight refused, applied == 0, rolledBack == 0) and point at the suite
+      that proves the restore. 26 PASS, unchanged count, three fewer lies.
+
+      `is not False` is the tell worth remembering: it is the spelling that survives a field being
+      dropped entirely, and it reads like a real assertion.
