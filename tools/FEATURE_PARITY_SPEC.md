@@ -7910,3 +7910,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       read as current instructions rather than as a record.
 
       Worth revisiting only if someone starts treating docs/audit/ as reference rather than history.
+
+- [ ] **list_game_framework_component_requests - BUILT, never run** (hours)
+      Found 2026-08-31 by sweeping all 435 endpoints for families that can WRITE a thing and not READ
+      it back - the shape widget bindings had until the same day. 18 families looked like it; 15 were
+      readable through an endpoint under a DIFFERENT noun (describe_animation reports sync markers,
+      curves and notifies; list_nodes reports pins), and of the 3 that survived, describe_physics_asset
+      emits `bodies` and describe_mvvm_view emits `viewModels`. ONE was real.
+
+      Why it mattered: add_game_framework_component_request hands back a requestId and the request
+      stays LIVE until remove_ releases it, injecting componentClass into every current AND future
+      actor of receiverClass. Nothing could enumerate them, so a lost id was a leaked request - still
+      running, still adding components, with no way to name it and nothing that would tell you it was
+      there. The map that holds them now keeps the two classes alongside the handle, because a listing
+      of unfamiliar ids and nothing else would barely improve on no listing.
+
+      DebugGame compiled and LINKED; DECL 436 == BIND 436; parity_check, mcp_static_check and
+      audit_message_endpoints pass. NOT [x]: never run, and it has no suite yet - the endpoint needs
+      a live component request to list, which means calling add_ against a real receiver class.

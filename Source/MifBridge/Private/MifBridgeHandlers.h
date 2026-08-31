@@ -1697,6 +1697,7 @@ namespace MifBridge
 	MIF_DECL(add_game_framework_receiver);
 	MIF_DECL(add_game_framework_component_request);
 	MIF_DECL(remove_game_framework_component_request);
+	MIF_DECL(list_game_framework_component_requests);
 
 	// MVVM (MifBridgeMVVM.cpp). Plugin-guarded (MIF_WITH_MVVM). The other half of the 2026-08-27
 	// FieldNotify work - View Bindings, left explicitly unexplored at the time.

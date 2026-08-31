@@ -3554,6 +3554,12 @@ def remove_game_framework_component_request(request_id: str) -> dict:
 
 
 @mcp.tool()
+def list_game_framework_component_requests() -> dict:
+    "List every LIVE Game Framework component request this editor session made - requestId, the receiverClass it watches, the componentClass it injects, and handleValid. add_game_framework_component_request hands back an id and the request stays live until it is released, injecting into every current AND future actor of receiverClass, so a lost id was a leaked request that nothing could name. Session-scoped: a request from before an editor restart is gone with its handle and cannot be listed or removed. Read-only."
+    return _post("list_game_framework_component_requests")
+
+
+@mcp.tool()
 def add_mvvm_viewmodel(widget_blueprint_path: str, view_model_class: str) -> dict:
     "Add a viewmodel instance to a Widget Blueprint's MVVM view (creating the view if it doesn't have one yet). Returns viewModelName and viewModelId - you need the NAME for add_mvvm_binding's sourceViewModelName."
     return _post("add_mvvm_viewmodel", widgetBlueprintPath=widget_blueprint_path, viewModelClass=view_model_class)

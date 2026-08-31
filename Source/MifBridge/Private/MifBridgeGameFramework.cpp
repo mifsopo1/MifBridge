@@ -68,13 +68,29 @@ namespace MifBridge
 	{
 		MifNoModularGameplay(Out);
 	}
+	void H_list_game_framework_component_requests(const TSharedRef<FJsonObject>&, const TSharedRef<FJsonObject>& Out)
+	{
+		MifNoModularGameplay(Out);
+	}
 #else
 
 	namespace
 	{
 		// Keyed by a caller-given or auto-generated requestId so remove_game_framework_component_request
 		// can find it again in a LATER, separate HTTP call - the handle itself is never serialisable.
-		TMap<FString, TSharedPtr<FComponentRequestHandle>> GMifComponentRequests;
+		//
+		// THE CLASSES ARE KEPT ALONGSIDE THE HANDLE, and that is the whole reason this is a struct.
+		// A live request injects componentClass into every current AND future actor of receiverClass
+		// and stays live until its handle is released. Storing only the handle meant a listing could
+		// report ids and nothing about what they DO, which is barely better than not listing them -
+		// a caller looking at three unfamiliar ids still cannot tell which one to release.
+		struct FMifComponentRequest
+		{
+			TSharedPtr<FComponentRequestHandle> Handle;
+			FString ReceiverClass;
+			FString ComponentClass;
+		};
+		TMap<FString, FMifComponentRequest> GMifComponentRequests;
 
 		bool EnsureGameInstance(UGameInstance*& OutInstance, FString& OutError)
 		{
@@ -201,7 +217,8 @@ namespace MifBridge
 			return;
 		}
 
-		GMifComponentRequests.Add(RequestId, Handle);
+		GMifComponentRequests.Add(RequestId,
+			FMifComponentRequest{ Handle, ReceiverClass->GetPathName(), ComponentClass->GetPathName() });
 		Out->SetStringField(TEXT("requestId"), RequestId);
 		Out->SetStringField(TEXT("receiverClass"), ReceiverClass->GetPathName());
 		Out->SetStringField(TEXT("componentClass"), ComponentClass->GetPathName());
@@ -231,13 +248,74 @@ namespace MifBridge
 		if (!GMifComponentRequests.Contains(RequestId))
 		{
 			Fail(Out, FString::Printf(TEXT("no request with id '%s' - it may already have been removed, ")
-										   TEXT("or never existed this editor session."), *RequestId));
+										   TEXT("or never existed this editor session. ")
+										   TEXT("list_game_framework_component_requests names every one that IS live."),
+									  *RequestId));
 			return;
 		}
 
 		GMifComponentRequests.Remove(RequestId);
 		Out->SetStringField(TEXT("requestId"), RequestId);
 		Out->SetBoolField(TEXT("removed"), true);
+	}
+
+	// --- list_game_framework_component_requests ---------------------------------------------------
+	//   in:  { }
+	//   out: { requests: [{ requestId, receiverClass, componentClass, handleValid }], count }
+	//
+	// WHY THIS EXISTS. add_ hands back a requestId and the request stays LIVE until remove_ releases
+	// it - injecting componentClass into every current and future actor of receiverClass. Nothing
+	// could enumerate them, so a lost id was a leaked request: still running, still adding components,
+	// with no way to name it and nothing that would even tell you it was there. Found 2026-08-31 by
+	// sweeping every endpoint family for writers with no reader; of 435 endpoints and 18 families that
+	// LOOKED like this shape, it was the only one that really was.
+	//
+	// SESSION-SCOPED, and it says so. The map lives for the editor session; a request made before a
+	// restart is gone with its handle, which is why remove_'s refusal says "never existed this editor
+	// session" rather than "never existed".
+	void H_list_game_framework_component_requests(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out, {},
+			TEXT("no parameters - it reports every live component request this editor session made"),
+			{ { TEXT("requestId"), TEXT("not a filter - the list is small by construction and a filter that returned one row would just be remove_game_framework_component_request's error message") } }))
+		{
+			return;
+		}
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		int32 Stale = 0;
+		for (const TPair<FString, FMifComponentRequest>& Pair : GMifComponentRequests)
+		{
+			// handleValid separates "this request is doing something" from "the map still has a row
+			// for it". The handle holds a weak pointer to its owning manager, so a world teardown can
+			// leave the entry behind with nothing behind it.
+			const bool bValid = Pair.Value.Handle.IsValid();
+			if (!bValid)
+			{
+				++Stale;
+			}
+			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+			Row->SetStringField(TEXT("requestId"), Pair.Key);
+			Row->SetStringField(TEXT("receiverClass"), Pair.Value.ReceiverClass);
+			Row->SetStringField(TEXT("componentClass"), Pair.Value.ComponentClass);
+			Row->SetBoolField(TEXT("handleValid"), bValid);
+			Rows.Add(MakeShared<FJsonValueObject>(Row));
+		}
+		Out->SetArrayField(TEXT("requests"), Rows);
+		Out->SetNumberField(TEXT("count"), Rows.Num());
+		Out->SetNumberField(TEXT("staleHandles"), Stale);
+		Out->SetStringField(TEXT("scopeNote"),
+			TEXT("these are the requests THIS editor session made. A request from a previous session "
+				 "is gone with its handle and is not listed - and cannot be removed, because the "
+				 "handle that would release it no longer exists."));
+		if (Stale > 0)
+		{
+			Out->SetStringField(TEXT("staleNote"), FString::Printf(
+				TEXT("%d entr(y/ies) have an invalid handle - the owning manager went away, most "
+					 "likely with its world. They inject nothing; remove_game_framework_component_request "
+					 "still clears the row."),
+				Stale));
+		}
 	}
 #endif
 }
