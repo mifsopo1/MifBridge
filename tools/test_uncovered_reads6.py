@@ -188,6 +188,22 @@ def main():
         check("T928 overriding the same event twice is refused",
               dup.get("ok") is False and "already present" in (dup.get("error") or ""), dup.get("error"))
 
+        # THE FLAG THIS RECIPE EXISTS TO FORCE IS REFUSED, not silently inverted. It used to accept
+        # callParent:false, overwrite it with true, and return ok - so a caller who explicitly asked
+        # for NO parent call got one, with the endpoint's own name promising the opposite. All three
+        # spellings are checked because add_override_event accepts the aliases, and a refusal that
+        # catches one spelling is one a caller routes around by accident.
+        for spelling in ("callParent", "addParentCall", "withParentCall"):
+            r = M.raw_post("recipe_override_and_call_parent",
+                           {"blueprintId": bid, "event": "ReceiveBeginPlay", spelling: False})
+            check("T928 %s is REFUSED here rather than overwritten - this recipe IS the forced-on "
+                  "variant, so honouring it is impossible and ignoring it is a lie" % spelling,
+                  r.get("ok") is False and spelling in (r.get("error") or ""),
+                  (r.get("error") or "")[:220])
+            check("T928 %s - and the refusal names add_override_event as the endpoint that DOES "
+                  "let you choose" % spelling,
+                  "add_override_event" in (r.get("error") or ""), (r.get("error") or "")[:220])
+
         c = M.call("compile", {"blueprintId": bid})
         check("T928 the blueprint still compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,
               "errors=%s" % c.get("numErrors"))

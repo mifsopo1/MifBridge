@@ -50,6 +50,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import harvest_param_table as H          # one comment/string scrubber, not two
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PRIV = os.path.join(ROOT, "Source", "MifBridge", "Private")
@@ -89,9 +92,21 @@ def endpoint_accepts():
         for m in HANDLER.finditer(src):
             nxt = HANDLER.search(src, m.end())
             body = src[m.end(): nxt.start() if nxt else len(src)]
-            i = body.find("RejectUnknownParams")
-            if i < 0:
+            # THE CALL, NOT THE WORD, and not one inside a comment. This was a bare
+            # body.find("RejectUnknownParams"), which matched the phrase in a COMMENT in
+            # H_recipe_override_and_call_parent ("Adding a RejectUnknownParams here would be the
+            # wrong fix") and then read the next brace block - that handler's list of REFUSED
+            # spellings - as its accepted keys. It reported three parameters as accepted-but-
+            # unreachable that the endpoint exists to reject.
+            #
+            # harvest_param_table already parses this correctly, scrubbing comments and strings
+            # before matching \bRejectUnknownParams\s*\( - so its scrubber is reused here rather
+            # than a second, weaker parser being kept alive beside it.
+            scrubbed = H.blank_comments_and_strings(body)
+            call = re.search(r"\bRejectUnknownParams\s*\(", scrubbed)
+            if not call:
                 continue
+            i = call.start()
             keys = {x.lower() for x in re.findall(r'TEXT\("([^"]+)"\)', _brace_block(body, i))}
             if keys:
                 out.setdefault(m.group(1), set()).update(keys)

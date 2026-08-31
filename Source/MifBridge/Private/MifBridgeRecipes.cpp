@@ -346,6 +346,43 @@ namespace MifBridge
 	void H_recipe_override_and_call_parent(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		// Same shape as add_override_event with the parent call forced on.
+		//
+		// REFUSE THE FLAG THIS RECIPE EXISTS TO FORCE. Delegating sets callParent:true over
+		// whatever the caller sent, so `callParent:false` used to be accepted and then silently
+		// inverted - the caller asked for no parent call and got one, with an ok:true. That is the
+		// silent-override this codebase refuses everywhere else (set_layer_visibility rejects
+		// `hidden` by name rather than quietly inverting it), and it is worse here because the
+		// endpoint's own name promises the opposite of what the parameter asked for.
+		//
+		// Checked by PRESENCE, not value: `callParent:true` is harmless but still means the caller
+		// believes they are choosing something they are not. All three spellings are refused,
+		// because add_override_event accepts addParentCall and withParentCall as aliases and a
+		// refusal that only catches one spelling is a refusal a caller routes around by accident.
+		//
+		// THIS DOES NOT CLOSE harvest_param_table's "no RejectUnknownParams" report, and it should
+		// not be made to. That report is accurate: this endpoint has no guard of its OWN, and its
+		// accepted keys are add_override_event's, reached by delegation - harvest deliberately does
+		// not follow H_ to H_ calls, because attributing one handler's key list to another is how a
+		// table row starts lying.
+		//
+		// Adding a RejectUnknownParams here to silence it would be the wrong fix twice over: it
+		// would duplicate the delegate's key list, which then drifts the first time either changes,
+		// AND the duplicate would be WRONG on day one, because this endpoint's real surface is that
+		// list MINUS the three spellings refused just below. One permanently-reported endpoint is a
+		// cheaper price than a table row that claims callParent is accepted here.
+		for (const TCHAR* Spelling : { TEXT("callParent"), TEXT("addParentCall"),
+									   TEXT("withParentCall") })
+		{
+			if (In->HasField(Spelling))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is not accepted here - this recipe IS add_override_event with the "
+						 "parent call forced on, which is the only thing that distinguishes them. "
+						 "Passing it would be overwritten rather than honoured. Use "
+						 "add_override_event if you want to choose. NOTHING was added."), Spelling));
+				return;
+			}
+		}
 		In->SetBoolField(TEXT("callParent"), true);
 		H_add_override_event(In, Out);
 	}
