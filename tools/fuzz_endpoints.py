@@ -26,12 +26,43 @@ Classification:
 Safety: /Game/_MifAudit* only, confirm never sent, nothing saved, DENY list enforced by mifaudit.
 """
 import json
+import re
 import sys
 import time
 
 import mifaudit as M
 
 FUZZ_KEY = "__mif_fuzz_key__"
+
+# A refusal that ended up printing an EMPTY interpolated value: "... not found: " with nothing after
+# the colon, or a quoted '' / "". Anchored so a colon mid-sentence does not match.
+EMPTY_INTERP = re.compile(r"(:\s*$)|(''\s*$)|(\"\"\s*$)|(:\s*[.,;)]\s*$)|(''[.,;)])|(\"\"[.,;)])")
+
+# THE CASES THAT DEFINED IT, kept so the regex cannot quietly stop matching. `--self-test` runs them
+# and nothing else; a sweep over 446 endpoints is far too expensive to be the thing that tells you a
+# classifier broke. The first three are the real defects found on 2026-08-31 by calling every
+# read-only endpoint with {}; the last four are the near misses that a looser rule would flag.
+EMPTY_INTERP_CASES = [
+    ("behavior tree not found: ", True),
+    ("blackboard not found: ", True),
+    ("'Guard' has no component named ''. NOTHING was changed.", True),
+    ("no NavMeshBoundsVolume in the level - nav would cover nothing. Call add_nav_volume first.", False),
+    ("path is required (alias: assetPath) - the BehaviorTree asset, e.g. /Game/AI/BT_Guard.", False),
+    ("tag is required - the full dotted name, e.g. 'Ability.Melee.Heavy'. NOTHING was added.", False),
+    ("no PIE world - not playing. start_pie, then poll pie_status until state=='running'.", False),
+]
+
+
+def self_test():
+    bad = 0
+    for text, want in EMPTY_INTERP_CASES:
+        got = bool(EMPTY_INTERP.search(text))
+        if got != want:
+            bad += 1
+        print("  %-5s want=%-5s %s" % ("ok" if got == want else "WRONG", want, text[:78]))
+    print("")
+    print("EMPTY_INTERP: %d case(s) misclassified" % bad)
+    return 1 if bad else 0
 
 GHOST_GUID = "DEADBEEF00004444DEADBEEF00004444"
 
@@ -257,6 +288,11 @@ def probe(endpoint, label, payload, timeout=45):
 
 
 def main():
+    if "--self-test" in sys.argv:
+        # Deliberately before any bridge contact: this answers "is the classifier still sane?",
+        # which must not need an editor.
+        return self_test()
+
     only = sys.argv[1] if len(sys.argv) > 1 else None
 
     ok, why = M.require_sdk_bridge()
@@ -332,6 +368,23 @@ def main():
                 M.record("BAD_ERROR", ep,
                          "empty payload rejected with an error that does not say what was required: %r"
                          % err, severity="medium", probe="empty")
+                counts["BAD_ERROR"] = counts.get("BAD_ERROR", 0) + 1
+            elif EMPTY_INTERP.search(err):
+                # A MESSAGE THAT FORMATS IN THE MISSING VALUE. Long enough and specific enough to
+                # pass both tests above, and still wrong: describe_behavior_tree answered {} with
+                # "behavior tree not found: " - 25 characters, not generic, and it tells a caller
+                # their PATH was bad when they never gave one. An agent believing it goes looking
+                # for a typo in an argument it did not pass.
+                #
+                # The tell is textual and exact: the message interpolated an empty string, so it
+                # ends at a colon or carries an empty '' / "". That is far more precise than asking
+                # whether the message names a parameter - trying that first flagged nine endpoints
+                # of which seven were fine, because a STATE refusal legitimately names no parameter
+                # ("no NavMeshBoundsVolume in the level - call add_nav_volume first").
+                M.record("BAD_ERROR", ep,
+                         "empty payload rejected with a message that formats in the MISSING value, "
+                         "so it reads as a bad argument rather than an absent one: %r" % err,
+                         severity="medium", probe="empty")
                 counts["BAD_ERROR"] = counts.get("BAD_ERROR", 0) + 1
 
         # ---------------------------------------------------------------- 3. WRONGTYPE
