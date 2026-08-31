@@ -7828,3 +7828,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Highest value first, by how much is trusted to them: audit_postconditions (the judge-by-
       postcondition rule itself), audit_loop_writes and audit_suite_payloads (both release-gated, so
       a silent one lets a release through), audit_modals (blocking dialogs), audit_read_purity.
+
+- [ ] **audit_message_endpoints is blind to multi-line string literals, and save_asset is advised
+      in 4 places and is not an endpoint** (hours)
+      Found 2026-08-31 evening. Two separate things, one of which hides the other.
+
+      THE PRODUCT DEFECT. Four user-facing texts tell the caller "save_asset persists it" and
+      save_asset is not an endpoint on any build - the real one is `save_package {path}`, which takes
+      any asset's /Game/ object path and writes the package that owns it. Sites:
+        Source/MifBridge/Private/MifBridgeAnimation.cpp:2893   (add_sync_marker's note)
+        Source/MifBridge/Private/MifBridgeAnimation.cpp:2982   (remove_sync_marker's note)
+        tools/mcp-server/tool_help.json:378                    (add_sync_marker help)
+        tools/mcp-server/tool_help.json:379                    (remove_sync_marker help)
+      A wrong name is worse than no advice: the caller follows the bridge's own instruction and gets
+      "not an endpoint on this build". tools/mifaudit.py:56 also lists save_asset, but that is a DENY
+      list of endpoints audits must not call, where naming a nonexistent one is harmless and would
+      become right if it were ever added. Left alone deliberately.
+
+      THE TOOL DEFECT that hid half of it. audit_message_endpoints reported ONE of the two C++ sites.
+      Not a grouping artefact - it prints up to four locations per name and printed one. Its regex is
+
+          LITERAL = re.compile(r'TEXT\("([^"]*)"\)')
+
+      which requires the closing `")` on the SAME LINE. Line 2893 is a multi-line concatenated
+      literal, so LITERAL.findall returns [] for it - verified by running the tool's own regex over
+      both lines. That is exactly backwards from where the risk lives: the LONGER and more helpful a
+      message is, the more likely it spans lines, and the more likely it names an endpoint to go to
+      next. Every long advice string in this module is currently invisible to this check.
+
+      Fix the regex first and watch it report BOTH sites, then fix the four texts and watch it go to
+      zero. Doing it in that order is what proves the tool rather than just the messages - and this
+      one belongs in audit_detectors_fire's PLANTS afterwards, where it is not yet listed.
