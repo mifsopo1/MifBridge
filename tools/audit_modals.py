@@ -238,6 +238,25 @@ INVARIANTS = [
     ("MifBridgeExport.cpp", r"Exporter->SetShowExportOption\s*\(\s*false\s*\)", 1,
      "belt - makes FillExportOptions early-return even if the Cast to UFbxExportOption ever fails. "
      "UExporter's constructor defaults ShowExportOption to TRUE, so omitting this is not neutral"),
+
+    # THE IMPORT SIDE, whose header calls two of these "the two invariants that keep this endpoint
+    # from taking the editor down" and the third "the single most load-bearing line in import_asset".
+    # Added 2026-08-31 after the export ones, having noticed that the same sentence had been written
+    # about a second file and enforced in neither. The hazard is the mirror image: interactive
+    # imports raise factory option dialogs.
+    ("MifBridgeImport.cpp", r"bAutomated\s*=\s*true", 1,
+     "forced TRUE. UAssetToolsImpl::ImportAssetsInternal wraps the import in "
+     "TGuardValue<bool>(GIsRunningUnattendedScript, ... || Params.bAutomated) at AssetTools.cpp:3045, "
+     "which is what actually suppresses factory option dialogs"),
+    ("MifBridgeImport.cpp", r"bAsync\s*=\s*false", 1,
+     "forced FALSE. UAssetImportTask::GetObjects() BLOCKS on an async import "
+     "(AssetImportTask.h:78), and this server runs handlers synchronously inside the HTTP ticker"),
+    ("MifBridgeImport.cpp", r"Task->Factory\s*=", 1,
+     "ALWAYS set explicitly, and the file calls this its most load-bearing line. Interchange is "
+     "bypassed only when a factory is specified - IsInterchangeImportEnabled() && (SpecifiedFactory "
+     "== nullptr), AssetTools.cpp:3068-3071 - so leaving it null lets a PNG or FBX route to ASYNC "
+     "Interchange and span frames. Specifying it also skips NewFactory->ConfigureProperties() "
+     "(AssetTools.cpp:3140), which is where a factory is allowed to raise UI"),
 ]
 
 
@@ -377,7 +396,8 @@ def main():
         print("  MISSING  %s   %s" % (rel, where))
         print("           %s" % why)
     if not broken:
-        print("  all %d present in code - the FBX exporter's three options-modal gates" % len(INVARIANTS))
+        print("  all %d present in code - the FBX export and import options-modal gates"
+              % len(INVARIANTS))
 
     print()
     print("=" * 78)
