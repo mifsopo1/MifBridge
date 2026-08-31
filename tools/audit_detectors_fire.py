@@ -277,7 +277,7 @@ def plant_dead_citation(text):
     Five nines rather than a plausible-but-wrong number on purpose. The check under test is "does
     this line exist anywhere", and a number that could accidentally be valid on some installed
     engine would make the plant's outcome depend on which engines this machine happens to have.
-    Five digits, not six: the CITE regex is \d{2,5}, so 999999 matched nothing at all and the first
+    Five digits, not six: the CITE regex takes two to five, so 999999 matched nothing at all and the first
     run of this plant reported the tool ASLEEP when the plant had never landed.
     """
     needle = "\n## "
