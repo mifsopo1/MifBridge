@@ -8555,10 +8555,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                         describes only element 0. BOTH ROUTES NARROWED BY MEASUREMENT rather than
                         given up on:
 
-                          the C-array route     a scratch Actor blueprint exposes 63 properties and
-                                                its CDO 112, and NEITHER has a single arrayDim > 1.
-                                                So it needs a class that HAS one, and finding that
-                                                class is the search - not the fixture
+                          the C-array route     FOUND THE CLASS, and the route still does not open.
+                                                Grepping the engine for an editable fixed-size
+                                                C-array UPROPERTY gives exactly one on this surface:
+                                                FPostProcessSettings::LensFlareTints, FLinearColor[8]
+                                                (Engine/Scene.h:1898). It is reachable through a
+                                                CameraComponent, and the component TEMPLATE is
+                                                addressable in scratch as
+                                                '<BP>.<Name>_C:<Comp>_GEN_VARIABLE'.
+                                                describe_property on
+                                                'PostProcessSettings.LensFlareTints' RESOLVES - ok
+                                                true - but reports NO arrayDim, and the handler emits
+                                                that field only when Leaf->ArrayDim > 1. So the leaf
+                                                the path resolves to has ArrayDim 1: the bridge's
+                                                property-path syntax does not surface a C-array AS a
+                                                C-array.
+                                                WHICH RAISES A BETTER QUESTION THAN THE ONE I STARTED
+                                                WITH: reset_property_to_default carries a whole
+                                                bWholeCArray branch and an arrayDim report, and if no
+                                                path syntax can address a C-array then that branch may
+                                                be unreachable through this API entirely. Worth an
+                                                hour on its own, and filed rather than guessed at
                           the setter route      four clamped or network properties on the CDO
                                                 (InitialLifeSpan -5, NetUpdateFrequency 0,
                                                 NetCullDistanceSquared -1, bHidden) all reset with
