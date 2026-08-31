@@ -318,6 +318,27 @@ closes it.
 
 ## 5. Deferred-by-design (decisions already made — listed so nobody re-opens them by accident)
 
+> **AUDITED 2026-08-31 for reasoning that this repo no longer allows.** Most of these rest on
+> engine facts and stand unchanged: `RemoveModuleFromStack` is unexported, gather-text only
+> runs as a commandlet, cooked maps cannot be saved. Those are true for every project.
+>
+> **Two lean partly on DDS2 relevance, which is not a permitted basis:** Chaos fracture cites
+> "game has zero destruction content", and PCG cites "cost without a mission driver ...
+> revisit if the project adopts PCG content". MifBridge is a GENERAL UE5 tool; DDS2 is one of
+> two projects it is TESTED on, not the limit of who it is for, and "irrelevant to this
+> project" is explicitly not a valid reason to decline.
+>
+> Both ALSO carry a real technical reason - the plugin is `EnabledByDefault:false` and not
+> enabled here - and that is worth separating, because it is a weaker reason than it looks: it
+> is a fact about THIS project's .uproject, not about the engine. Another project ships with
+> PCG on. The honest framing is "unreachable until the plugin is enabled, and we do not enable
+> plugins on a user's behalf", which is a real constraint and survives the rule - not "no
+> mission driver", which does not.
+>
+> No opinion offered on whether either is worth building. Only that if they are re-declined,
+> it must be on the technical half. Note PCG partially shipped anyway (`pcg_generate`,
+> `pcg_cleanup` are registered), which is itself evidence the deferral did not hold.
+
 | Item | Why deferred | Where recorded |
 |---|---|---|
 | Skin-weight editing pipeline | UGeometryScriptLibrary_MeshBoneWeightFunctions is exported and callable, but a correct end-to-end story needs CopyMeshToSkeletalMesh + skeleton compatibility + rebind + rebuild; high blast radius, no mission driver. Tier 3. | [E](work/E_geometry_meshes.md) negative #9 |
