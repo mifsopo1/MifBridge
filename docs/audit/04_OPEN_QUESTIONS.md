@@ -15,6 +15,24 @@ Sources: the 12 verdict-stamped axis files, [work/LIVE_PROBES.md](work/LIVE_PROB
 > reclassification) was done long ago. §1.6 (connect_pins schema fix) was genuinely still open until
 > today - found independently a different way this session, fixed, and this is the entry that shows
 > it was flagged correctly a month before anyone acted on it.
+>
+> **RE-CHECKED AGAIN 2026-08-31.** Eight entries answerable by reading source or by a read-only
+> probe were worked through; every one is marked in place with that date. The headline is not
+> the six answers, it is that **four of the eight rested on a premise that had stopped being
+> true**, and each would have misled whoever picked it up:
+>
+> - **E6** says "via the implemented `run_eqs_query`". There is no such endpoint, on any build.
+> - **E4**'s acceptance test - "byte-matches the current implementation" - cannot pass, because
+>   the only viable route uses a different serialiser.
+> - **`UK2Node_MathExpression`** was to be "taken off the denylist". No denylist exists, and the
+>   real constraint is a spawn ORDERING that the code already satisfies.
+> - **USelection BSP-surface** was to be closed as "irrelevant to this game", which is explicitly
+>   not an allowed reason here - MifBridge is a general UE5 tool.
+>
+> None of that was carelessness; each entry was true when written. The lesson for reading this
+> file is narrower and worth carrying: **an entry states the world as of its writing date, and
+> the cheapest half of any item here is confirming its premise still holds.** Two of the four
+> took under a minute to disprove.
 
 ---
 
