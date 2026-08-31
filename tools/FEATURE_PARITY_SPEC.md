@@ -8319,7 +8319,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **11 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **10 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8468,7 +8468,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       other half of the audience, and "unreachable" that is really "unreachable in DDS2" would be a
       wrong answer there.
 
-      Real gaps: 11. Out of reach with a written reason: 8. Read by a suite: 45.
+      invalidNote follows it out, and this one was settled by ELIMINATION over the engine's own
+      formula rather than by running out of ideas. bIsValid = bAnimationExists && bSampleInBounds &&
+      bSampleIsUnique (BlendSpace.cpp 5.3 :1200), and all three are closed:
+
+        bSampleIsUnique   a duplicate point is refused by AddSample before ValidateSampleData sees
+                          it - measured, and the same reason droppedByValidation is unreachable
+        bSampleInBounds   out-of-bounds does not stick - AddSample EXPANDS the axis to fit rather
+                          than refusing (0..100 -> 0..800 for one sample at x=777, measured)
+        bAnimationExists  needs the sample's UAnimSequence to become null AFTER the sample is added,
+                          which means deleting an animation - all real content, with both scratch
+                          routes closed by tonight's crash guards
+
+      This is the difference between "I could not reproduce it" and "it cannot happen here", and the
+      earlier entry deliberately stayed OPEN on the first of those. Three failed probes were not an
+      answer; the formula plus a measurement for each term is.
+
+      Real gaps: 10. Out of reach with a written reason: 9. Read by a suite: 45.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote

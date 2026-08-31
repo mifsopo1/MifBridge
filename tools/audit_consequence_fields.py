@@ -115,7 +115,28 @@ UNREACHABLE = {
                            "grid-snapping is now reported as movedByEngine in samples[] rather than "
                            "as dropped. Verified live 2026-08-31 in both directions",
     "droppedNote": "emitted beside droppedByValidation, same branch",
-    # PROJECT-CONDITIONAL, and the only entry here that is. Everywhere else "out of reach" means the
+    # PROJECT-CONDITIONAL, same as notifiesRemoved below and for the same underlying reason - no
+    # scratch AnimSequence can exist here. Reached by ELIMINATION over the engine's own formula
+    # rather than by failing to think of a test: bIsValid = bAnimationExists && bSampleInBounds &&
+    # bSampleIsUnique (BlendSpace.cpp 5.3 :1200), and every one of the three is closed.
+    #
+    #   bSampleIsUnique  a duplicate point is refused by AddSample before ValidateSampleData sees
+    #                    it - measured, and it is why droppedByValidation is unreachable too
+    #   bSampleInBounds  out-of-bounds does not stick: AddSample EXPANDS the axis to fit rather than
+    #                    refusing (0..100 -> 0..800 for one sample at x=777, measured 2026-08-31)
+    #   bAnimationExists needs the sample's UAnimSequence to become null AFTER the sample is added,
+    #                    which means deleting the animation - and the only animations here are real
+    #                    game content, with both routes to a scratch copy closed by crash guards
+    #
+    # So a sample that is ON the asset and marked invalid cannot be manufactured in THIS project. In
+    # an uncooked one, duplicate an anim to scratch, sample it, delete the copy.
+    "invalidNote": "needs a sample present on the asset with bIsValid false, and all three inputs to "
+                   "that flag are closed here - duplicates are refused by AddSample, out-of-bounds "
+                   "expands the axis instead of refusing, and a null animation would need deleting "
+                   "an AnimSequence, which are all real content with no scratch route (see "
+                   "notifiesRemoved). Reachable in an uncooked project",
+
+    # PROJECT-CONDITIONAL, like invalidNote above. Everywhere else "out of reach" means the
     # standing rules forbid it; this one means the ASSETS in this project put it out of reach, and it
     # would be reachable in an uncooked project - which matters, because this is a general UE5 tool
     # and Curfew (uncooked 5.7) is the other half of who it is for.
