@@ -38,6 +38,26 @@ Sources: the 12 verdict-stamped axis files, [work/LIVE_PROBES.md](work/LIVE_PROB
 
 ## 1. Policy decisions (need Andre's call)
 
+> **STATE CHECKED AGAINST THE LIVE REGISTRY 2026-08-31 - only 1.1 still needs a decision.**
+>
+> - **1.1 is genuinely OPEN, and here is the current data for it:** `create_asset` exists, and
+>   **3 of the 14** dedicated validating creators listed below exist. Missing: create_curve,
+>   create_curve_table, create_string_table, create_material_parameter_collection,
+>   create_rvt_asset, create_level_sequence, create_input_action, create_input_mapping_context,
+>   create_niagara_system, create_sound_cue, create_metasound_source. So the recommendation
+>   ("dedicated creators OWN their types, create_asset covers the residue") is NOT what shipped
+>   - `create_asset` is currently carrying eleven types the table says need validation it does
+>   not have. That is the decision's real cost today, and it is worth knowing before choosing.
+> - **1.2 is MOOT: `map_check` is not registered on any build.** The question was whether its
+>   routing through `Exec("MAP CHECK DONTDISPLAYDIALOG")` violates the no-console-wrapper rule.
+>   There is no endpoint to violate it. Same shape as E6's `run_eqs_query` - a question about
+>   something that was never built.
+> - **1.3 was RATIFIED BY ACTION:** `trace_start` is registered and shipping, so the rule-5
+>   refinement it asked for was accepted in practice whether or not it was ever answered in
+>   writing. Worth noting the refinement now rests on one shipped endpoint rather than on 1.2,
+>   which turned out to be about nothing.
+> - **1.4 was already marked DONE** and both endpoints are registered - confirmed, not re-asked.
+
 Each item: the question, a recommendation, and the tradeoff of taking it.
 
 ### 1.1 `create_asset` generic allowlist vs dedicated validating creators
