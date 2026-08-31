@@ -7727,19 +7727,45 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Fixing them needs a running Blender to verify, which the addon suites already require.
 
-- [ ] **audit_vacuous_checks reports 9 candidates nobody has read** (hours)
-      They are rules 1-3 findings in test_material_params (1), test_niagara_params (5), test_pie_idle
-      (2) and test_project_paths (1), and they predate the rule-4 work - the tool exits 1 today and
-      did before it too. Each is an assertion that may pass whatever the code does; the tool's own
-      guidance is roughly one real finding in four candidates, so they want READING, not a bulk
-      --update-baseline. Most need a live editor to judge, because the question is whether the
-      collection they iterate is ever legitimately empty against a real project.
+- [x] **audit_vacuous_checks' 9 unread candidates - READ, and all nine are sound** (hours)
+      Read one by one 2026-08-31. None needed the editor after all; the question "can this collection
+      legitimately be empty" was answerable from the suite source in every case. The tool now exits 0
+      with 19 baselined entries.
 
-- [ ] **audit_vacuous_checks is not in the release gate** (minutes)
+      What each turned out to be, because "we accepted them" is not a finding:
+
+        test_pie_idle.py:63     NOT vacuous, and the polarity is the reason. `disagree = [k for k in
+                                idle_flags if st.get(k) is not False]` over a literal tuple - an
+                                empty response makes every get() return None, which IS not False, so
+                                the list FILLS and the check fails. Empty input fails it rather than
+                                passing it.
+        test_pie_idle.py:83     `all(n in registry for n in named)` where named may be empty - but the
+                                check directly above asserts both words are IN the error text, so an
+                                empty `named` has already failed loudly one line up.
+        test_material_params:72 presence of 'value' - and the very next check asserts
+                                `any(p.get("value") is not None ...)`, which is False on empty. The
+                                comment between them says exactly why it is there.
+        test_project_paths:57   the collection is DIR_KEYS + ("projectFile",), a constant, so it is
+                                never empty; and an empty response fails the ok and projectName
+                                checks above it.
+        test_niagara_params:126 the suite RETURNS 2 (skipped) unless the chosen system has
+        test_niagara_params:191 parameters, and line 99 asserts count == len(params), which fails
+        test_niagara_params:201 loudly on an empty read. 191 and 201 iterate FILTERED subsets - value
+        test_niagara_params:239 parameters, 4-byte values, vectors - which the tool's own docs list as
+                                legitimately empty. 239 sits under a guard asserting
+                                len(arrays) > 0.
+
+      The pattern in all nine: the vacuous-looking assertion has a companion beside it that fails when
+      the collection is empty. That is the shape audit_vacuous_checks documents as acceptable, and
+      finding nine of them and no defects is a real result about the suites, not a shrug.
+
+- [ ] **audit_vacuous_checks could now join the release gate** (minutes)
       make_release.check_static_audits gates audit_loop_writes, audit_postconditions, audit_modals,
       test_fuzz_detector, audit_promise_flags and audit_suite_payloads. audit_vacuous_checks is not
-      among them, which is why it has been able to sit at exit 1. Adding it means first reading the
-      9 above - gating a tool that is already red just blocks releases.
+      among them, which is how it sat at exit 1 unnoticed. The blocker is gone - the 9 candidates
+      were read and baselined and it exits 0 - so adding it is now a one-line change. Left OPEN
+      rather than done because a gate that fires on somebody's honest new assertion is a tax, and
+      whether rules 1-3 are worth blocking a release over is Andre's call, not a mechanical one.
 
 - [ ] **7 of 25 audit tools have no plant, and 6 more cannot be plant-tested at all** (day)
       tools/audit_detectors_fire.py plants a defect each tool claims to catch and requires it to go
