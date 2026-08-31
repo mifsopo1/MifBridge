@@ -2052,6 +2052,25 @@ this same file got that way:
 buildable; it needs specifying properly rather than a one-line reversal, which is why it is not in
 the batch above.
 
+> **CLOSED — and this line was stale the day it was written (corrected 2026-08-31).**
+> `add_gameplay_tag` was BUILT on 2026-08-30, the same day as this resolution note, and the note was
+> never updated. Verified live rather than by reading: it is registered and bound
+> (`MifBridgeCommon.cpp:418`), it refuses an empty call with *"tag is required - the full dotted
+> name, e.g. 'Ability.Melee.Heavy'. NOTHING was added."*, and it accepts `tag`, `comment`, `source`
+> and a `transient` flag that "registers for THIS EDITOR SESSION only and writes nothing to disk".
+> Two suites cover it; `test_gameplay_tag_authoring.py` runs **19 PASS 0 FAIL** against the current
+> build, including that a tag with internal spaces is ACCEPTED because Unreal permits it — the
+> bridge declining to invent a stricter rule than the engine.
+>
+> The build also corrected the approach the earlier research assumed:
+> `UGameplayTagsManager::AddTagTableRow` is `private:` (GameplayTagsManager.h:739, friended to
+> `SAddNewGameplayTagSourceWidget` and two others), which a header read had missed and only
+> `error C2248` surfaced. That is recorded in the spec at the "GameplayTags authoring - BUILT
+> 2026-08-30" entry.
+>
+> So docs/06 now has NO open items: 27's last one was closed a day after it was filed, and 28 was
+> fixed in source on 2026-08-31.
+
 One thing this pass produced that is worth more than any single fix: rewriting
 `test_simplified_collision_guard.py` was necessary because **my own** guard change invalidated it,
 and its docstring turned out to contain the same error the guard did — it said every shape "needs
