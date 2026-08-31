@@ -8302,7 +8302,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **16 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **15 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8376,7 +8376,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       outcomes, and an absent field would read as "not false" to the `is not False` idiom this file
       has already caught once.
 
-      Real gaps: 16. Out of reach with a written reason: 6. Read by a suite: 42.
+      overrideRemovedOnFailure closed next - test_inherited_components T291, 57 -> 71 - and it is
+      the machine-readable half of PM-007 itself. Everything T291 already asserted proves the
+      BLUEPRINT is clean after a failed override; none of it proved the RESPONSE said so. PM-007's
+      symptom was ok:false followed by overrideExists:true, which is a caller unable to tell
+      "nothing was ever created" from "something was created and then undone" - and `outcome` is the
+      field that separates them:
+
+        pre-flight rejection   outcome preflight-rejected-nothing-created, and NO rollback field
+        engine-apply rejection outcome created-then-removed-on-failure, overrideRemovedOnFailure
+                               true, removedTemplatePath naming what was minted and undone
+
+      Asserted in both directions across all five of T291's shapes, including that the pre-flight
+      path does NOT claim a rollback it never performed - its presence there would mean the
+      pre-flight had minted an override, which is PM-007 reopening. Also pinned: after a rollback
+      the handler REMOVES overrideTemplatePath and renames it, because that field would otherwise
+      name a MarkAsGarbage'd object.
+
+      Real gaps: 15. Out of reach with a written reason: 6. Read by a suite: 43.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote

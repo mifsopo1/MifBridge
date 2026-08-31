@@ -113,6 +113,39 @@ def main():
             check("T291 %s names the property that did not apply" % label,
                   "did not apply" in err and list(props)[-1] in err, err[:200])
 
+        # THE MACHINE-READABLE HALF OF PM-007, asserted here for the first time. Everything above
+        # this point proves the blueprint is clean afterwards; none of it proves the RESPONSE said
+        # so. PM-007's symptom was ok:false followed by overrideExists:true - a caller who could not
+        # tell "nothing was ever created" from "something was created and then undone" - and
+        # `outcome` is the field that distinguishes them. A caller reading only ok:false gets the
+        # same answer for both, and only one of them left an object MarkAsGarbage'd behind.
+        if preflight:
+            check("T291 %s reports outcome preflight-rejected-nothing-created" % label,
+                  r.get("outcome") == "preflight-rejected-nothing-created", json.dumps(r)[:230])
+            # Absent, not false. The rollback field appears only when there was something to roll
+            # back, so its presence on this path would mean the pre-flight had minted an override.
+            check("T291 %s does not claim a rollback it never performed" % label,
+                  r.get("overrideRemovedOnFailure") is None,
+                  "overrideRemovedOnFailure=%r on the path that creates nothing"
+                  % r.get("overrideRemovedOnFailure"))
+        else:
+            check("T291 %s reports outcome created-then-removed-on-failure" % label,
+                  r.get("outcome") == "created-then-removed-on-failure", json.dumps(r)[:230])
+            check("T291 %s reports the rollback it DID perform" % label,
+                  r.get("overrideRemovedOnFailure") is True,
+                  "overrideRemovedOnFailure=%r - this path mints an override and undoes it, and "
+                  "the response is the only place that is visible" % r.get("overrideRemovedOnFailure"))
+            # The handler removes overrideTemplatePath and renames it, because that field would now
+            # point at a MarkAsGarbage'd object. Both halves of that swap are worth pinning.
+            check("T291 %s names the template it removed" % label,
+                  isinstance(r.get("removedTemplatePath"), str)
+                  and "Body" in r.get("removedTemplatePath", ""),
+                  "removedTemplatePath=%r" % r.get("removedTemplatePath"))
+            check("T291 %s no longer offers overrideTemplatePath, which would be garbage" % label,
+                  r.get("overrideTemplatePath") is None,
+                  "overrideTemplatePath=%r survived a rollback - it names a MarkAsGarbage'd object"
+                  % r.get("overrideTemplatePath"))
+
     # ------------------------------------------------------------------ T292 the success path
     print("\n=== T292: a valid override applies and is visible ===")
     good = M.call("override_inherited_component",
