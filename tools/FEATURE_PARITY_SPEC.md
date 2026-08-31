@@ -9494,7 +9494,19 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                    by construction: the endpoint refuses, so the claim is never
                                    exercised. Testable only by doing it another way and looking.
         MifBridgeDelegates.cpp:534 a signature mismatch where "compile will say so precisely".
-                                   The most checkable of the three.
+                                   ATTEMPTED 2026-08-31, BRANCH NOT REACHED. Built the mismatch on
+                                   purpose - dispatcher MifDisp taking an int, function MifWrong
+                                   taking a string, bound through add_bind_dispatcher and wrapped
+                                   with add_create_event - and the endpoint answered
+                                   signatureResolved TRUE. The note only fires when resolution
+                                   FAILS, so a parameter mismatch is not what makes it fail and the
+                                   precondition is still unknown.
+                                   COLLATERAL EVIDENCE AGAINST THE CLAIM, though: that deliberately
+                                   mismatched pairing compiled with 0 errors and no messages. So
+                                   even where a mismatch exists, this compile did not "say so
+                                   precisely" - consistent with the cached-reference rule below.
+                                   Next step is to find what actually makes the signature fail to
+                                   resolve, which is a question about the engine, not the bridge.
 
       WHAT MAKES THIS WORTH DOING rather than filing and forgetting: the one that was measured was
       wrong in the direction that costs most. A note promising a failure that never arrives sends a
