@@ -285,6 +285,31 @@ def check_param_table():
                    % (tail[-1] if tail else "no output"))
 
 
+def check_value_discovery():
+    """(ok, message) - can a caller still FIND the values every named-object parameter demands?
+
+    Gated at packaging for the same reason the param table is: this one is cheap here and expensive
+    later. A parameter naming a bone, a socket or an edit layer with nowhere to enumerate the valid
+    values ships as an endpoint a caller can only use by guessing - which is exactly what
+    apply_spline_to_landscape's editLayer was until 2026-08-31, and it cost a whole suite.
+
+    Only the STATIC half blocks. audit_value_discovery --check exits 1 for an unmapped parameter,
+    which is deterministic here, and for a mapping whose reader really does not return its field -
+    but only when a live editor answered. A packaging box with no editor must not fail for want of
+    one, because "could not check" is not "is wrong".
+    """
+    script = os.path.join(HERE, "audit_value_discovery.py")
+    if not os.path.isfile(script):
+        return False, "tools/audit_value_discovery.py is missing - cannot verify value discovery"
+    r = subprocess.run([sys.executable, script, "--check"], capture_output=True, text=True)
+    if r.returncode == 0:
+        return True, "every parameter naming an engine object has a discoverable source"
+    tail = [l for l in (r.stdout or "").strip().splitlines() if l.startswith("BLOCKING")]
+    return False, ("a parameter demands a value nothing enumerates - run "
+                   "tools/audit_value_discovery.py and map it. (%s)"
+                   % (tail[-1] if tail else "see its output"))
+
+
 def check_engine_probe():
     """(ok, message) - is there a passing 5.7 probe covering the current Source/?"""
     if not os.path.isfile(PROBE_RESULT):
@@ -504,6 +529,13 @@ def main():
         return 1
     if not okpt:
         print("  --force given: packaging a stale describe_endpoint table anyway.")
+
+    okvd, msgvd = check_value_discovery()
+    print(("value discovery: " + msgvd) if okvd else ("REFUSING TO PACKAGE - " + msgvd))
+    if not okvd and not args.force:
+        return 1
+    if not okvd:
+        print("  --force given: packaging a parameter nothing can supply a value for.")
 
     name, _ = plugin_version()
     out = args.out or os.path.join(HERE, "dist", "MifBridge-%s.zip" % name)

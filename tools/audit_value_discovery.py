@@ -160,6 +160,13 @@ def live_fields(endpoint, payload=None):
 
 
 def main():
+    # --check separates what BLOCKS from what merely reports, the same split harvest_param_table
+    # uses. UNMAPPED blocks: it is static, deterministic, and means someone added a parameter
+    # naming an engine object without saying where its values come from. BROKEN blocks only when a
+    # live check actually RAN - a packaging box with no editor must not fail for want of one, and
+    # "could not check" is not "is wrong".
+    blocking = "--check" in sys.argv
+
     rows, _missing, _problems, _decls = H.harvest()
 
     unmapped, checked, broken, skipped = [], 0, [], []
@@ -226,6 +233,16 @@ def main():
             print("    %s" % ", ".join(readers))
     if not unmapped and not broken and not checked:
         print("no live check ran and nothing is unmapped - completeness only.")
+
+    if blocking and unmapped:
+        print()
+        print("BLOCKING: %d parameter(s) name an engine object with no discovery entry."
+              % len(set(unmapped)))
+        return 1
+    if blocking and broken:
+        print()
+        print("BLOCKING: %d mapping(s) point at a field their reader does not return." % len(broken))
+        return 1
     return 0
 
 
