@@ -83,8 +83,20 @@ def main():
     # backup_blueprint correctly refuses anything with no .uasset on disk yet - confirmed live, not
     # assumed, and worth keeping as the honest reason a scratch target would have been the wrong call.
     print("\n=== T900: backup_blueprint - a real file copy on disk, not just a claimed one ===")
-    real_bp = "/Game/MODS/MifCore/MifFunctionLibrary"
-    bk = M.call("backup_blueprint", {"blueprintId": real_bp})
+    # A SAVED blueprint, FOUND rather than named. The trait that matters is "has a .uasset on
+    # disk", which is why a scratch one cannot stand in - and it is also why this does not need a
+    # PARTICULAR blueprint, only a pre-existing one. This used to name a DDS2 mod asset.
+    real_bp = None
+    for row in (M.call("find_assets", {"class": "Blueprint", "pathPrefix": "/Game/",
+                                       "limit": 60}).get("assets") or []):
+        cand = row.get("path") or row.get("objectPath")
+        if cand and "/_Mif" not in cand:          # scratch assets are never saved, by standing rule
+            real_bp = cand.rsplit(".", 1)[0]
+            break
+    if not real_bp:
+        print("  NOTE  no pre-existing saved blueprint in this project, so T900 is UNEXERCISED.")
+        print("        backup_blueprint copies a package FILE, so a scratch target cannot stand in.")
+    bk = M.call("backup_blueprint", {"blueprintId": real_bp}) if real_bp else {}
     check("T900 backup_blueprint succeeds against a real, saved blueprint", bk.get("ok") is True,
           json.dumps(bk)[:200])
     backup_path = bk.get("backup")

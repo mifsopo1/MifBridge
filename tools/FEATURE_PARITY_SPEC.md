@@ -6352,7 +6352,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       output, or a small manifest) and have coverage_gaps subtract it. Until then its list needs a
       human pass every time, which is the cost of a signal nobody fully trusts.
 
-- [ ] **suites that hard-depend on a DDS2 asset should DISCOVER one instead** (hours)
+- [x] **suites that hard-depend on a DDS2 asset should DISCOVER one instead** (hours)
       PROGRESS 2026-08-31 - four done, and mifaudit.discover_material() is the shared mechanism so
       the next one is a two-line change rather than a fourth copy of the same loop. It takes the
       TRAIT the suite actually needs, because they differ: `require="scalar"` for material_undo,
@@ -6382,16 +6382,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       spine chain - the misleading topology the chain validator exists to catch - and "some
       quadruped" is not a substitute. Its absence now skips that one arm instead of the suite.
 
-      REMAINING, from a scan of /Game/ literals in tools/test_*.py that are not deliberately
-      nonexistent: test_report_intake (/Game/MODS/QOLCrafting_P/BP_Path), test_uncovered_reads5
-      (/Game/MODS/MifCore/MifFunctionLibrary), test_uncovered_reads7 (/Game/Maps/MifWeaponTest, a
-      Brushify material). The mannequins are UE template content present in many projects but not
-      all; the MODS ones are DDS2-only. Everything else the scan flagged is a path chosen BECAUSE it
-      does not exist, which is portable - "this is not here" is true everywhere.
-      Filed 2026-08-31, found while auditing my own new spline suite for exactly this fault - it
-      spawned an actor at the world origin, which works here only because this landscape happens to
-      straddle it. MifBridge is a GENERAL UE5 tool tested on two projects; a suite that assumes
-      DDS2's content fails on Curfew for a reason that has nothing to do with the endpoint.
+      DONE 2026-08-31. Nine suites, three mechanisms, and the scan's remaining hits checked by
+      hand rather than by pattern.
+
+      test_uncovered_reads7 is the one worth copying. It needs a COOKED map to refuse and a LOOSE
+      one to accept, and it classifies the project's maps using add_sublevel's OWN refusal - which
+      is free, because the endpoint refuses a cooked map before changing anything. The endpoint is
+      the classifier. That beat the alternative, a filesystem probe, which would need the project's
+      content directory - see the gap filed just below.
+
+      test_uncovered_reads5 discovers a SAVED blueprint (backup_blueprint copies a package file, so
+      a scratch target cannot stand in - the trait is "has a .uasset", not any particular asset).
+
+      test_report_intake was a FALSE POSITIVE and stays as it is: it imports only report_intake and
+      never calls the editor, so its /Game/MODS/... string is inert data inside a fake report. The
+      scan flags text; only reading it says whether the text is a dependency.
+
+      ONE BUG WORTH REMEMBERING from this batch: the first version of the reads7 scan broke on the
+      first success, so on a project whose loose map sorts first it never probed a cooked one and
+      announced "no COOKED map in this project" for a project that is almost entirely cooked. A
+      discovery loop that stops at the first thing it wanted can still be missing the other thing
+      it wanted.
 
       THE CLEAR CASE is test_material_undo.py:59. It hardcodes
       `parent = "/Game/Blueprints/Enviro/PoleCableMat"` and then asserts a specific parameter
@@ -6458,6 +6469,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       claiming a pass, and engine_probe_result.json now records that against the current source
       instead of a stale succeeded:true from yesterday's commit. Re-run when Curfew is closed:
       python tools/make_engine_probe.py --engine "C:/Program Files/Epic Games/UE_5.7" --out <dir> --assoc 5.7 --build --force
+
+
+- [ ] **nothing reports the project's own directories, so tools resort to hardcoding D:/DDS2SDK/Game** (hours)
+      Filed 2026-08-31, hit while making the suites project-independent. There is no endpoint for
+      the project's Content / Saved / Config / Plugins directories or its .uproject path. Endpoints
+      hand back project-RELATIVE paths - export_landscape_heightmap's `file`, backup_blueprint's
+      `backup` - and give the caller no way to resolve them, so test_uncovered_reads5 joins one
+      against a literal "D:/DDS2SDK/Game" to check the file exists.
+
+      It is not only a test problem. Any agent driving this bridge that wants to read back a file an
+      endpoint just wrote has to be told the project root out of band, and any docs telling it where
+      cooked output lands are guessing. FPaths::ProjectDir/ProjectSavedDir/ProjectContentDir are one
+      line each; the work is deciding what else belongs (engine dir, .uproject, plugin dir) and
+      whether it is its own endpoint or fields on self_audit.
+
+      It also blocks the cleanest version of the reads7 fixture discovery: classifying maps by
+      whether a loose .umap exists on disk would be more direct than probing add_sublevel, and
+      cannot be written portably today.
 
 
 ### Refuted, recorded so they are not re-proposed

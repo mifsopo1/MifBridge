@@ -59,13 +59,49 @@ def main():
 
     # ------------------------------------------------------------------ T950-T954 sublevel family
     print("\n=== T950: add_sublevel refuses a cooked/nonexistent map, no loose .umap on disk ===")
-    bad = M.call("add_sublevel", {"path": "/Game/Maps/testing_iga", "streamingClass": "alwaysloaded"})
-    check("T950 refused - real DDS2 maps are cooked .pak content, not loose files",
-          bad.get("ok") is False, json.dumps(bad)[:200])
-    check("T950 and explains why", "loose map file" in (bad.get("error") or ""), bad.get("error"))
+    # THE TWO MAPS THIS FAMILY NEEDS, CLASSIFIED BY THE ENDPOINT ITSELF rather than named.
+    #
+    # A cooked map to refuse and a loose one to accept. add_sublevel refuses a cooked map BEFORE
+    # changing anything, so walking candidates is free until one is accepted - and the accepted one
+    # is the fixture the suite was about to add anyway. Its own refusal is the classifier, which
+    # beats a filesystem probe: that would need the project's content directory and nothing in the
+    # bridge reports it (filed separately).
+    cooked_map = loose_map = None
+    open_level = (M.call("list_sublevels", {}) or {}).get("persistentLevel")
+    for row in (M.call("find_assets", {"class": "World", "pathPrefix": "/Game/",
+                                       "limit": 60}).get("assets") or []):
+        pkg = (row.get("path") or row.get("objectPath") or "").rsplit(".", 1)[0]
+        if not pkg or pkg == open_level:
+            continue
+        probe = M.call("add_sublevel", {"path": pkg, "streamingClass": "alwaysloaded"})
+        if probe.get("ok") is False:
+            if cooked_map is None and "loose map file" in (probe.get("error") or ""):
+                cooked_map, bad = pkg, probe
+        elif loose_map is None:
+            loose_map, r = pkg, probe
+        elif pkg != loose_map:
+            # A SECOND map that would also be added. Stop: refusals cost nothing, but every
+            # success MUTATES the persistent level's streaming setup, and one fixture is enough.
+            # (The first version broke on the first success, so on a project whose loose map sorts
+            # first it never probed a cooked one and reported "no COOKED map in this project" for
+            # a project that is almost entirely cooked.)
+            break
+        if cooked_map and loose_map:
+            break
 
-    print("\n=== T951: add_sublevel succeeds against the one loose scratch map this project has ===")
-    r = M.call("add_sublevel", {"path": "/Game/Maps/MifWeaponTest", "streamingClass": "alwaysloaded"})
+    if cooked_map:
+        check("T950 a cooked map is refused - cooked .pak content has no loose file to stream",
+              bad.get("ok") is False, json.dumps(bad)[:200])
+        check("T950 and explains why", "loose map file" in (bad.get("error") or ""), bad.get("error"))
+    else:
+        print("  NOTE  no COOKED map in this project, so T950's refusal is UNEXERCISED. On an")
+        print("        uncooked project every map is loose and there is nothing to refuse.")
+
+    if not loose_map:
+        print("  NOTE  no LOOSE map in this project, so T951-T954 are UNEXERCISED. add_sublevel")
+        print("        needs a .umap on disk, and a cooked project may legitimately have none.")
+        return 0
+    print("\n=== T951: add_sublevel succeeds against a loose map (%s) ===" % loose_map)
     # Idempotent: if an earlier live probe this same session already added it (it did, while working
     # out this batch's shape), the response is alreadyPresent:true/changed:false rather than a fresh
     # deferred op - both are a legitimate "the sublevel is present" outcome, confirmed live rather than
@@ -76,42 +112,42 @@ def main():
     time.sleep(0.5)
     listed = M.call("list_sublevels", {})
     check("T951 and really appears in list_sublevels afterward",
-          any(s.get("packageName") == "/Game/Maps/MifWeaponTest" for s in (listed.get("sublevels") or [])),
+          any(s.get("packageName") == loose_map for s in (listed.get("sublevels") or [])),
           json.dumps(listed.get("sublevels"))[:250])
     check("T951 the currently open level really is World Partition (confirms T914's flipped finding)",
           listed.get("isPartitioned") is True, listed.get("isPartitioned"))
 
     print("\n=== T952: set_current_sublevel ===")
-    to_sub = M.call("set_current_sublevel", {"path": "/Game/Maps/MifWeaponTest"})
+    to_sub = M.call("set_current_sublevel", {"path": loose_map})
     # changed:True is not the only honest success - a full-suite regression sweep found this suite's
     # OWN earlier calls (or a prior pass of this same suite, since run_all_suites runs everything
-    # twice) can already have left MifWeaponTest as the current level by the time this line runs, and
+    # twice) can already have left the discovered loose map as the current level by then, and
     # set_current_sublevel correctly answers ok:true, changed:false, "already the current level -
     # nothing was changed" rather than pretending to switch. What actually matters is currentLevel
     # ending up right, not whether a switch was NEEDED to get there.
     check("T952 switching to the sublevel succeeds", to_sub.get("ok") is True, json.dumps(to_sub)[:200])
-    check("T952 and reports the right currentLevel", to_sub.get("currentLevel") == "/Game/Maps/MifWeaponTest",
+    check("T952 and reports the right currentLevel", to_sub.get("currentLevel") == loose_map,
           to_sub.get("currentLevel"))
     back = M.call("set_current_sublevel", {"path": "persistent"})
     check("T952 switching back to persistent succeeds", back.get("ok") is True, json.dumps(back)[:200])
 
     print("\n=== T953: set_sublevel_streaming ===")
-    ss = M.call("set_sublevel_streaming", {"path": "/Game/Maps/MifWeaponTest", "streamingClass": "dynamic"})
+    ss = M.call("set_sublevel_streaming", {"path": loose_map, "streamingClass": "dynamic"})
     check("T953 succeeds (deferred to next tick)", ss.get("ok") is True, json.dumps(ss)[:200])
     time.sleep(0.5)
 
     print("\n=== T954: set_sublevel_visibility, and remove_sublevel's real, permanent limitation ===")
-    vis_off = M.call("set_sublevel_visibility", {"path": "/Game/Maps/MifWeaponTest", "visible": False})
+    vis_off = M.call("set_sublevel_visibility", {"path": loose_map, "visible": False})
     check("T954 hiding succeeds", vis_off.get("ok") is True and vis_off.get("changed", {}).get("visible") is False,
           json.dumps(vis_off)[:200])
-    vis_on = M.call("set_sublevel_visibility", {"path": "/Game/Maps/MifWeaponTest", "visible": True})
+    vis_on = M.call("set_sublevel_visibility", {"path": loose_map, "visible": True})
     check("T954 showing it again succeeds", vis_on.get("ok") is True and vis_on.get("changed", {}).get("visible") is True,
           json.dumps(vis_on)[:200])
 
     # remove_sublevel: even the bare act of adding it above already dirtied the persistent level's
     # streaming setup, so this refusal is not a contrived edge case - it is the ONLY path reachable
     # here, and discardUnsaved can never be scratch-verified (see module docstring).
-    rm = M.call("remove_sublevel", {"path": "/Game/Maps/MifWeaponTest"})
+    rm = M.call("remove_sublevel", {"path": loose_map})
     check("T954 remove_sublevel refuses - the level has real unsaved changes", rm.get("ok") is False,
           json.dumps(rm)[:200])
     check("T954 and explains why, naming discardUnsaved", "UNSAVED" in (rm.get("error") or ""),
@@ -126,10 +162,16 @@ def main():
     land_path = land.get("actorPath")
     check("T955 (setup) a scratch landscape is created", land.get("ok") is True and bool(land_path),
           json.dumps(land)[:200])
-    if land_path:
+    # ANY RuntimeVirtualTexture will do - T955 asserts the BINDING, and binding is scene-wide and
+    # does not mutate the texture asset. This named one Brushify asset, which only DDS2 has.
+    rvt_rows = M.call("find_assets", {"class": "RuntimeVirtualTexture", "limit": 10}).get("assets") or []
+    rvt_asset = (rvt_rows[0].get("path") or rvt_rows[0].get("objectPath")) if rvt_rows else None
+    if land_path and not rvt_asset:
+        print("  NOTE  no RuntimeVirtualTexture asset in this project, so T955 is UNEXERCISED.")
+    if land_path and rvt_asset:
         rvt = M.call("bind_landscape_rvt", {
             "landscape": land_path,
-            "runtimeVirtualTextures": ["/Game/Brushify/Materials/Landscape/Functions/RVT/VirtualTextures/VT_Height_Example"]})
+            "runtimeVirtualTextures": [rvt_asset]})
         check("T955 succeeds", rvt.get("ok") is True, json.dumps(rvt)[:300])
         check("T955 and really bound the RVT", bool(rvt.get("bound")), json.dumps(rvt.get("bound")))
         # A RuntimeVirtualTextureVolume is a SCENE-WIDE contract for one RVT asset, not per-landscape -
