@@ -8872,8 +8872,43 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Standing: 10 fields, 8 read, 2 unread. test_blender_consequence 30 -> 36.
 
-- [ ] **two Blender consequence fields left** (hours)
-      influencesDropped (normalize_weights) needs authored vertex weights, which needs run_python.
-      seamVertsRemoved belongs to the seam-integrity measurement family - "tracked seam verts the op
-      destroyed" - and is reported per axis by the tiling/modular checks, so reaching it needs a mesh
-      with a real seam rather than a primitive.
+- [x] **normalize_weights reported a full round of work on a mesh it had already capped**
+      - FIXED 2026-08-31, found by the assertion I nearly did not write
+
+      C107 was meant to close influencesDropped and it closed a BUG instead. The cross-check against
+      list_vertex_groups passed; the IDEMPOTENCE check did not. Measured on a cube with 8 groups at
+      0.125 each, maxInfluences 4:
+
+        before        64 influences (summed from list_vertex_groups)
+        run 1         influencesDropped 32, verticesLimited 8, maxSeenBefore 8   -> 32 left
+        run 2         influencesDropped 32, verticesLimited 8, maxSeenBefore 8   -> 32 left
+
+      The second call changed NOTHING and reported the same work as the first. Three fields wrong at
+      once, and a caller who normalises twice is told twice that weights were thrown away with
+      nothing in the response to say otherwise.
+
+      ROOT CAUSE, and the op documents half of it two lines away. The trim ZEROES a weight rather
+      than removing the group - deliberately, because "removing while iterating a vertex's own group
+      list is what corrupts the mesh" - so after one run every vertex is still IN all its original
+      groups at weight 0. The counting then reads v.groups, which is MEMBERSHIP, so len(elems) stays
+      8 forever.
+
+      The fix is in the counting, not the zeroing: an element with weight 0.0 is not an influence.
+      That also settles a disagreement between two ops about what an influence IS - list_vertex_groups'
+      weightedVertexCount already counts only nonzero weights, so the two were describing the same
+      mesh with different numbers. The op's own comment on the trim, "a zero weight is equivalent to
+      absent everywhere Unreal reads it", is the argument for this being the right side of it.
+
+      WHY THE IDEMPOTENCE CHECK EARNED ITS PLACE. The before/after cross-check was the assertion I
+      set out to write, and it PASSED - the first run really did drop what it said. Only running the
+      same call twice exposed a count that recomputes from membership rather than from the mesh. A
+      number that agrees with reality once and repeats itself forever is the shape a single
+      measurement cannot catch.
+
+      Verified across every installed Blender: 44 runs, 4 versions, 0 failed 0 skipped.
+      test_blender_consequence 36 -> 44. Backlog 2 -> 1.
+
+- [ ] **one Blender consequence field left: seamVertsRemoved** (hours)
+      It belongs to the seam-integrity measurement family - "tracked seam verts the op destroyed",
+      reported per axis by the tiling/modular checks - so reaching it needs a mesh with a real seam
+      rather than a primitive, and an op that destroys verts on it.

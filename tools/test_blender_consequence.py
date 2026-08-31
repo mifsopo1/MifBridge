@@ -230,6 +230,73 @@ def main():
           "would look identical in the count",
           "MifC_Keep" in survivors, survivors)
 
+    # ---------------------------------------------------------------- C107 influencesDropped
+    print("")
+    print("=== C107: influencesDropped - weights Unreal would have thrown away silently ===")
+    # WHY THIS FIELD IS THE MOST CONSEQUENTIAL OF THE ELEVEN, in the op's own words: Unreal's GPU
+    # skin cache supports a bounded number of influences per vertex, and the FBX importer DROPS the
+    # smallest weights past that limit and renormalises SILENTLY. A mesh that deforms correctly in
+    # Blender deforms differently in Unreal and neither tool says why. normalize_weights is where a
+    # caller finds out first - if they read the number.
+    #
+    # The fixture needs authored vertex weights, which no addon op can create from nothing:
+    # transfer_weights needs a source that already has them and normalize_weights only edits what is
+    # there. run_python is the way, and run_blender_suites enables it by default (see serve()'s
+    # comment on the preference and the empty-prefs workaround). A refusal here is therefore a real
+    # finding about the runner rather than a reason to skip, so it FAILS rather than passing quietly.
+    setup = B.call("run_python", {"code": (
+        "import bpy\n"
+        "bpy.ops.mesh.primitive_cube_add(size=2, location=(0,0,0))\n"
+        "o = bpy.context.active_object\n"
+        "o.name = 'MifC_Weights'\n"
+        "for i in range(8):\n"
+        "    g = o.vertex_groups.new(name='B%d' % i)\n"
+        "    g.add(range(len(o.data.vertices)), 0.125, 'REPLACE')\n"
+    )})
+    check("C107 (setup) run_python authored the weights - the runner enables it by default, so a "
+          "refusal here is a finding about the runner, not a reason to skip",
+          setup.get("ok") is not False, json.dumps(setup)[:240])
+
+    if setup.get("ok") is not False:
+        def influence_total(name):
+            """Sum of weightedVertexCount across groups - the total number of influences.
+
+            Computed from list_vertex_groups, which is a DIFFERENT op that knows nothing about
+            normalize_weights' counters. That is the point: influencesDropped has to agree with a
+            number the op under test did not produce.
+            """
+            r = B.call("list_vertex_groups", {"object": name})
+            return sum((g.get("weightedVertexCount") or 0) for g in (r.get("vertexGroups") or []))
+
+        t_before = influence_total("MifC_Weights")
+        check("C107 (setup) every vertex really carries 8 influences",
+              t_before == 8 * 8, "total influences = %r, expected 64 (8 verts x 8 groups)" % t_before)
+
+        norm = B.call("normalize_weights", {"object": "MifC_Weights", "maxInfluences": 4})
+        check("C107 normalize_weights succeeds", norm.get("ok") is not False, json.dumps(norm)[:240])
+        check("C107 and it reports how many influences it dropped",
+              isinstance(norm.get("influencesDropped"), (int, float)), json.dumps(norm)[:240])
+        t_after = influence_total("MifC_Weights")
+        check("C107 influencesDropped AGREES with list_vertex_groups before/after",
+              norm.get("influencesDropped") == (t_before - t_after),
+              "reported %r, the mesh lost %r (%d -> %d influences)"
+              % (norm.get("influencesDropped"), t_before - t_after, t_before, t_after))
+        check("C107 and something really was dropped - a 0 == 0 match proves nothing",
+              (t_before - t_after) > 0, "influences did not move from %d" % t_before)
+        check("C107 and verticesLimited names how many vertices were touched",
+              (norm.get("verticesLimited") or 0) > 0, json.dumps(norm)[:240])
+
+        # IDEMPOTENCE, which is the assertion a fabricated number cannot survive. Nothing is left
+        # above the cap, so a second identical call must report dropping NOTHING - a count that
+        # simply echoes the request, or recomputes from the cap rather than from the mesh, would
+        # report the same figure twice.
+        again = B.call("normalize_weights", {"object": "MifC_Weights", "maxInfluences": 4})
+        check("C107 a second identical call drops NOTHING - the count is measured, not echoed",
+              again.get("influencesDropped") == 0,
+              "second run reported %r after the first already capped it"
+              % again.get("influencesDropped"))
+        B.call("delete_object", {"object": "MifC_Weights"})
+
     # ---------------------------------------------------------------- cleanup
     print("")
     for n in ("MifC_Merge", "MifC_Noop", "MifC_Dec", "MifC_Edges", "MifC_Keep",

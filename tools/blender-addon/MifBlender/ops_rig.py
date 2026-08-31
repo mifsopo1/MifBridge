@@ -284,7 +284,29 @@ def op_normalize_weights(params):
     max_seen_before = 0
 
     for v in me.vertices:
-        elems = [g for g in v.groups if allowed is None or g.group in allowed]
+        # A ZERO WEIGHT IS NOT AN INFLUENCE, and counting one is what made this op report a full
+        # round of work on a mesh it had already capped. v.groups is MEMBERSHIP: the trim below
+        # zeroes a weight rather than removing the group - deliberately, because "removing while
+        # iterating a vertex's own group list is what corrupts the mesh" - so after one run every
+        # vertex is still IN all its original groups at weight 0.
+        #
+        # Measured 2026-08-31 on a cube with 8 groups at 0.125 each, maxInfluences 4:
+        #
+        #     before        64 influences (list_vertex_groups)
+        #     run 1         influencesDropped 32, verticesLimited 8, maxSeenBefore 8   -> 32 left
+        #     run 2         influencesDropped 32, verticesLimited 8, maxSeenBefore 8   -> 32 left
+        #
+        # The second call changed NOTHING and reported the same work as the first. A caller who
+        # normalises twice is told twice that weights were thrown away, and there is no other field
+        # that would tell them otherwise.
+        #
+        # Filtering here also settles a disagreement between two ops about what an "influence" is:
+        # list_vertex_groups' weightedVertexCount already counts only NONZERO weights, so the two
+        # were describing the same mesh with different numbers. The op's own comment on the trim -
+        # "a zero weight is equivalent to absent everywhere Unreal reads it" - is the argument for
+        # this being the right side of that disagreement.
+        elems = [g for g in v.groups
+                 if (allowed is None or g.group in allowed) and g.weight > 0.0]
         if not elems:
             unweighted += 1
             continue
