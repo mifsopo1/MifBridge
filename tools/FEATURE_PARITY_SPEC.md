@@ -6047,7 +6047,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       FOUND AND NOT FIXED, filed below: nothing reports notify track NAMES, so a track can only be
       addressed if you are the one who created it.
 
-- [ ] **describe_animation should report notify TRACK NAMES** (hours)
+- [x] **describe_animation should report notify TRACK NAMES** (hours)  **DONE 2026-08-31**, in the
+      same session it was filed - it was blocking an assertion in the suite that found it.
+      describe_animation now emits notifyTracks[] with each track's name, index, notifyCount and
+      syncMarkerCount, plus notifyTrackCount; and syncMarkers[] now carry the trackIndex they sit
+      on, so the two lists can be correlated at all. Reported at the UAnimSequenceBase level, so
+      montages and composites get it too.
+
+      WHAT IT UNBLOCKS: remove_anim_notify_track takes a track BY NAME and its refusal reported only
+      the COUNT, so a track was addressable solely by whoever had just created it - and a cooked
+      asset whose tracks UE synthesised on the first RefreshCacheData was not addressable at all.
+      test_sync_markers T1912 had to GUESS "1". It now looks the name up, so the assertion no longer
+      rests on a naming convention nobody promised. T1914 covers the new read.
+
+      AN EMPTY LIST IS INFORMATION, NOT AN ERROR, and the response says which case it is:
+      AnimNotifyTracks is WITH_EDITORONLY_DATA and does not survive a cook while Notifies and
+      AuthoredSyncMarkers are plain UPROPERTYs and do, so zero tracks alongside notifies is the
+      signature of a cooked asset whose first refresh will synthesise tracks and REWRITE TrackIndex
+      on every existing notify.
+
+      Verified: test_sync_markers 18 PASS 0 FAIL, and the neighbouring suites re-run against the
+      changed read - test_anim_notify 21/0, test_anim_curve 16/0, test_ported_anim 27/0,
+      test_anim_nodes 26/0.
+
       Found while writing test_sync_markers.py on 2026-08-31. describe_animation reports notifies
       and sync markers, and remove_anim_notify_track addresses a track BY NAME - but no endpoint
       anywhere reports the names of the tracks a sequence has. Its own refusal says "no notify track

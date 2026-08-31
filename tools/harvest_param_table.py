@@ -344,7 +344,23 @@ def main():
         if new == src:
             print("\ntable is up to date with the guards")
             return 0
-        print("\nDRIFT: the committed table does not match the guards in the source.")
+        # CONTRACT DRIFT AND PROVENANCE DRIFT ARE NOT THE SAME FAILURE. Any edit above a guard
+        # shifts the source LINE of every guard below it in that file, so a comment change is
+        # enough to make the whole table differ - and a packaging gate that fires on comment edits
+        # is one people learn to --force past. Compare with the line numbers normalised away: what
+        # is left is the endpoint, its keys, its summary, its notes and its file, which is
+        # everything describe_endpoint promises a caller.
+        strip_lines = lambda t: re.sub(r'(TEXT\("Mif\w+\.cpp"\), )\d+', r"\g<1>0", t)
+        if strip_lines(new) == strip_lines(src):
+            moved = sum(1 for x, y in zip(new.splitlines(), src.splitlines()) if x != y)
+            print("\ntable matches the guards; %d line citation(s) have moved." % moved)
+            print("Not a release blocker - the accepted keys, summaries and notes are unchanged,")
+            print("and only the source line each row cites is out of date. Regenerate when")
+            print("convenient: tools/harvest_param_table.py")
+            return 0
+        print("\nCONTRACT DRIFT: the committed table does not describe the guards in the source.")
+        print("An endpoint's accepted keys, summary, notes or file has changed, so describe_endpoint")
+        print("is telling callers something the guard does not do.")
         print("Run tools/harvest_param_table.py to regenerate, then rebuild.")
         return 1
 

@@ -127,33 +127,47 @@ def main():
 
         # ------------------------------------------------------------------ T1912 THE branch
         print("\n=== T1912: the crash guard that had never been reachable on this project ===")
-        tracks = a.get("notifyTracks")
-        print("  the sequence has %s notify track(s)" % tracks)
-        if tracks == 1:
+        # LOOKED UP, NOT GUESSED. The first version of this hard-coded "1" - UE's default name for
+        # a track it synthesises - because nothing reported notify track NAMES, which is precisely
+        # the gap describe_animation now fills. An assertion that depends on a naming convention
+        # nobody promised is an assertion that will pass for the wrong reason one day.
+        dtracks = M.call("describe_animation", {"assetPath": target})
+        track_rows = dtracks.get("notifyTracks") or []
+        check("T1914 describe_animation reports notify track NAMES, without which "
+              "remove_anim_notify_track cannot be aimed at all",
+              bool(track_rows) and all(r.get("name") for r in track_rows),
+              json.dumps(track_rows)[:250])
+        # VALUES, not key presence - audit_vacuous_checks Rule 2 flagged the first version of this,
+        # and rightly: `"index" in r` passes for a row whose index is null. The index must equal the
+        # row's own position, which is the only thing that makes it usable for anything.
+        check("T1914 and each track's index equals its position, with real counts on it",
+              all(r.get("index") == i and isinstance(r.get("notifyCount"), int)
+                  and isinstance(r.get("syncMarkerCount"), int) and r.get("notifyCount") >= 0
+                  for i, r in enumerate(track_rows)), json.dumps(track_rows)[:250])
+        marker_rows = [m for m in (dtracks.get("syncMarkers") or []) if m.get("name") == MARKER]
+        check("T1914 and a sync marker reports the track index it sits on, so the two lists can be "
+              "correlated - a marker whose index is out of range is the crash condition itself",
+              bool(marker_rows) and "trackIndex" in marker_rows[0], json.dumps(marker_rows)[:200])
+
+        print("  the sequence has %d notify track(s): %s"
+              % (len(track_rows), [r.get("name") for r in track_rows]))
+        if len(track_rows) == 1:
             # THE assertion. With one track and one marker, removing that track would leave
             # AuthoredSyncMarkers non-empty and AnimNotifyTracks empty - the state RefreshCacheData
             # mishandles by indexing an empty array.
-            rm = M.raw_post("remove_anim_notify_track", {"assetPath": target, "track": "1",
+            only = track_rows[0].get("name")
+            rm = M.raw_post("remove_anim_notify_track", {"assetPath": target, "track": only,
                                                          "confirm": True})
-            if rm.get("ok") is False and "CRASHES" in (rm.get("error") or ""):
-                check("T1912 removing the LAST notify track is refused while a sync marker exists",
-                      True)
-                check("T1912 and the refusal cites the engine line it would have reached",
-                      "AnimNotifyTracks[0]" in (rm.get("error") or ""),
-                      (rm.get("error") or "")[:300])
-            elif rm.get("ok") is False:
-                # The track is not named "1" on this sequence. Reported, not passed: nothing
-                # discovers notify track NAMES, so the branch cannot be reached here.
-                print("  NOTE  the single track is not named '1', and no endpoint reports notify")
-                print("        track NAMES, so it cannot be addressed. The guard is UNEXERCISED")
-                print("        here and that is reported rather than passed. (%s)"
-                      % (rm.get("error") or "")[:120])
-            else:
-                check("T1912 removing the last track while a marker exists must be REFUSED - it "
-                      "crashes the editor", False,
-                      "the removal was ALLOWED: %s" % json.dumps(rm)[:250])
+            check("T1912 removing the LAST notify track ('%s') is REFUSED while a sync marker "
+                  "exists" % only,
+                  rm.get("ok") is False and "CRASHES" in (rm.get("error") or ""),
+                  json.dumps(rm)[:300])
+            check("T1912 and the refusal cites the engine line it would have reached",
+                  "AnimNotifyTracks[0]" in (rm.get("error") or ""),
+                  (rm.get("error") or "")[:300])
         else:
-            print("  NOTE  this sequence has %s tracks, so removing one leaves others and the" % tracks)
+            print("  NOTE  this sequence has %d tracks, so removing one leaves others and the"
+                  % len(track_rows))
             print("        dangerous branch is not reached. Reported rather than passed.")
 
         # ------------------------------------------------------------------ T1913 removal

@@ -466,6 +466,38 @@ namespace MifBridge
 			Out->SetArrayField(TEXT("notifies"), Notifies);
 			Out->SetNumberField(TEXT("notifyCount"), Notifies.Num());
 
+			// THE TRACK NAMES, without which remove_anim_notify_track cannot be aimed. It takes a
+			// track BY NAME and its refusal reports only the count, so before this a track was
+			// addressable solely by whoever had just created it - and a cooked asset whose tracks
+			// UE synthesised was not addressable at all.
+			TArray<TSharedPtr<FJsonValue>> Tracks;
+			for (int32 i = 0; i < SeqBase->AnimNotifyTracks.Num(); ++i)
+			{
+				const FAnimNotifyTrack& Track = SeqBase->AnimNotifyTracks[i];
+				TSharedRef<FJsonObject> T = MakeShared<FJsonObject>();
+				T->SetStringField(TEXT("name"), Track.TrackName.ToString());
+				T->SetNumberField(TEXT("index"), i);
+				T->SetNumberField(TEXT("notifyCount"), Track.Notifies.Num());
+				T->SetNumberField(TEXT("syncMarkerCount"), Track.SyncMarkers.Num());
+				Tracks.Add(MakeShared<FJsonValueObject>(T));
+			}
+			Out->SetArrayField(TEXT("notifyTracks"), Tracks);
+			Out->SetNumberField(TEXT("notifyTrackCount"), Tracks.Num());
+
+			// AN EMPTY LIST IS INFORMATION, NOT AN ERROR, and saying which case it is stops a zero
+			// being read as "this asset has no notify data". AnimNotifyTracks is
+			// WITH_EDITORONLY_DATA and does not survive a cook; Notifies and AuthoredSyncMarkers
+			// are plain UPROPERTYs and do.
+			if (Tracks.Num() == 0 && Notifies.Num() > 0)
+			{
+				Out->SetStringField(TEXT("notifyTrackNote"),
+					TEXT("ZERO notify tracks but notifies are present, which is what a COOKED asset "
+						 "looks like: the track array is editor-only and does not survive the cook. "
+						 "The first call that triggers RefreshCacheData will synthesise tracks and "
+						 "REWRITE TrackIndex on every existing notify. add_anim_notify_track and "
+						 "add_sync_marker report that as tracksSynthesized when it happens."));
+			}
+
 			// Float/transform curves driving material params, IK weights, morph weights.
 			//
 			// UPGRADED FROM BARE NAMES so the read and write halves describe the same object. A
@@ -516,6 +548,12 @@ namespace MifBridge
 				TSharedRef<FJsonObject> M = MakeShared<FJsonObject>();
 				M->SetStringField(TEXT("name"), Marker.MarkerName.ToString());
 				M->SetNumberField(TEXT("time"), Marker.Time);
+#if WITH_EDITORONLY_DATA
+				// Which track it sits on - useless without the track list above, and the pair is
+				// what lets a caller see that a marker's TrackIndex is out of range, which is the
+				// exact condition RefreshCacheData mishandles by indexing an empty array.
+				M->SetNumberField(TEXT("trackIndex"), Marker.TrackIndex);
+#endif
 				Markers.Add(MakeShared<FJsonValueObject>(M));
 			}
 			Out->SetArrayField(TEXT("syncMarkers"), Markers);
