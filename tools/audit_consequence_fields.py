@@ -77,7 +77,7 @@ CONSEQUENCE = re.compile(
     r"[Ff]ailed|[Ff]ailure|[Dd]ropped|[Ss]kipped|[Rr]everted|[Dd]iscarded|[Dd]isplaced|"
     r"[Oo]rphaned|[Ll]eftBehind|[Ll]ost|[Uu]nresolved|[Uu]nchanged|[Rr]ejected|[Rr]emoved|"
     r"[Tt]runcated|[Cc]lamped|[Ss]ilentl|[Pp]artial|[Ss]tale|[Bb]roken|[Mm]issing|[Ii]nvalid|"
-    r"[Ii]ncomplete|[Rr]emaining|StillPresent"
+    r"[Ii]ncomplete|[Rr]emaining|StillPresent|Changed"
     r")")
 
 # WIDENED 2026-08-31 to include REMAINS as well as WENT WRONG. "Something is still there that you
@@ -89,8 +89,20 @@ CONSEQUENCE = re.compile(
 # Measured before committing to it: the nine new matches are all real consequence fields, so the
 # widening cost no noise.
 #
-# WHAT THIS PATTERN STILL CANNOT SEE, said out loud rather than left as a clean-looking number. It
-# matches names that say something went WRONG or is STILL THERE. It does NOT match names that say something merely MOVED -
+# AND THE MOVED CASE IS IN TOO, 2026-08-31, which this header used to declare unreachable. It said
+# adding [Cc]hanged "would drown the real findings in them" - true of the LOWERCASE form, which is
+# the direct ANSWER to "did this change anything" on set_property and its neighbours. The camelCase
+# form is the opposite: a NOUN in front of it names something the caller did not ask about.
+#
+# The discriminator is therefore just capitalisation, and it was measured before being trusted.
+# There are exactly five <noun>Changed fields in the module and all five are genuine consequences -
+# verticesChanged, graphStructureChanged, stateChanged, membershipsChanged, axisChanged - while bare
+# `changed` never matches because it has no noun. Three of the five were ALREADY asserted by suites,
+# which is independent evidence that this is the class suites treat as worth checking. Zero noise.
+#
+# WHAT THIS PATTERN STILL CANNOT SEE, said out loud rather than left as a clean-looking number. A
+# consequence named for neither a failure, a survival nor a change - one called something like
+# `newOwner` - is still invisible, and has to be found by reading the handler. It does NOT match names that say something merely MOVED -
 # `axisChanged` on set_blendspace_samples is as much an unasked-for consequence as anything in the
 # list above, and no name-based rule can separate it from the dozens of `changed` fields that are the
 # honest ANSWER to "did this change anything". Adding [Cc]hanged would drown the real findings in

@@ -9525,7 +9525,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       captures PROSE, because prose is what this codebase writes across fragments and identifiers
       are what it does not.
 
-- [ ] **four unread consequence fields, newly VISIBLE rather than newly broken** (hours)
+- [ ] **six unread consequence fields, newly VISIBLE rather than newly broken** (hours)
       The classifier only matched names saying something went WRONG. A name saying something
       REMAINS is the same class of unasked-for consequence and it could not see any of them.
       Widening it with [Rr]emaining and StillPresent took the field count 64 -> 73, and the nine new
@@ -9541,6 +9541,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         remainingNote            fix_up_redirectors - same, and cheap.
         numRemainingJobs         a shader-compile helper. Harder: it needs a compile actually in
                                  flight, so a fixture has to catch it mid-queue.
+
+      TWO MORE ARRIVED THE SAME WAY, once the classifier learned the MOVED case. Its header had
+      declared that unreachable - adding [Cc]hanged "would drown the real findings" - and that is
+      true of the LOWERCASE form, which is the direct answer on set_property. The camelCase form is
+      the opposite: a NOUN in front of it names something the caller did not ask about. So the
+      discriminator is capitalisation, and there are exactly five such fields in the module, all
+      five genuine, three of them ALREADY suite-asserted. Zero noise, measured before trusting it.
+
+        graphStructureChanged    compile - the SOURCE graphs changed across the compile, and its own
+                                 structureNote says any node snapshot taken before it is stale. That
+                                 is precisely the read-back an agent needs and nothing asserts it.
+                                 Cheap: T447/T448/T840b already compile scratch blueprints.
+        membershipsChanged       modify_actor_layers - needs actors in a level, so it shares the
+                                 scratch-level precondition with partialNote and broken.
 
       THE FIRST THREE ARE ORDINARY WORK once an editor is up. The fourth is the only one that may
       end up with a written reason instead of a test.
