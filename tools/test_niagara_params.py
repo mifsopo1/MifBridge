@@ -66,8 +66,26 @@ def main():
 
     path, n = pick_system()
     if not path or n <= 0:
-        print("no NiagaraSystem with user parameters found; nothing to test against")
-        return 3
+        # SKIPPED (2), not a setup ERROR (3). Returning 3 reported this as something broken when
+        # the honest answer is "this project has nothing to test against", and the two read very
+        # differently in a sweep summary.
+        #
+        # TWO independent reasons here, either enough on its own, and neither is fixable from the
+        # suite: none of this project's 38 NiagaraSystems declares a user parameter, and they are
+        # all COOKED - set_niagara_user_parameter refuses a cooked system outright, because the
+        # parameter store is runtime data that cannot be saved or recompiled, so the old value
+        # returns. There is also no endpoint that CREATES a user parameter, so no fixture can be
+        # built the way test_landscape_heightmap builds its landscape.
+        print("SKIPPED - nothing was verified.")
+        print("  No NiagaraSystem in this project declares a user parameter (%d systems checked),"
+              % len(M.call("find_assets", {"class": "NiagaraSystem", "limit": 300}).get("assets")
+                    or []))
+        print("  and this project's Niagara content is COOKED, which set_niagara_user_parameter")
+        print("  refuses anyway - the parameter store cannot be saved or recompiled.")
+        print("  No endpoint creates a user parameter, so this suite cannot build its own fixture.")
+        print("  Needs an UNCOOKED project with authored user parameters.")
+        print("  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose.")
+        return 2
     print("richest system: %s (%d parameters)" % (path, n))
 
     r = M.call("list_niagara_user_parameters", {"path": path})

@@ -6646,6 +6646,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       state=="stopped" at the end rather than assuming stop_pie worked.
 
 
+- [ ] **nothing CREATES a Niagara user parameter, so its suite can never build a fixture** (hours)
+      Filed 2026-08-31 while working out why test_niagara_params asserted nothing. The bridge has
+      list_niagara_user_parameters and set_niagara_user_parameter, a read and a write against
+      parameters that already exist, and no way to ADD one. So a project without authored user
+      parameters cannot be given any, and the suite has nothing to test on - it now SKIPs honestly
+      rather than returning a setup error, but skipping is all it can ever do here.
+
+      This project makes it doubly unreachable: none of its 38 NiagaraSystems declares a user
+      parameter, AND they are all cooked, which set_niagara_user_parameter refuses outright because
+      the parameter store is runtime data that cannot be saved or recompiled.
+
+      The read/write pair without an ADD is the asymmetry worth naming: every other authoring family
+      here has one (add_anim_curve, add_ik_goal, add_niagara_emitter, create_data_layer). Whether
+      UNiagaraSystem exposes a supported way to add a user parameter outside the editor UI is the
+      first question, and it may be the answer is no - in which case this closes as REFUTED with the
+      engine reason, which is worth more than leaving it looking like an oversight.
+
+
 ### Refuted, recorded so they are not re-proposed
 
 - add_retarget_pose / set_retarget_pose_bone / set_current_retarget_pose -- Refuted on the strongest and most common ground: existing endpoints already do it. I verified the reflective machinery by reading it rather than trusting it - H_set_property has no CPF_Edit gate (and MifBridgeDetails.cpp
