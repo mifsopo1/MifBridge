@@ -9281,3 +9281,37 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       holds, and compile/validate is verified only in the trivial case for want of a
       failing-compile fixture. The third, preview_composite_widget -> list_live_widgets, needs PIE
       and is attended-only.
+
+- [x] **the UE parameter-reach number was 85% alias spellings too - 252 became 33** - DONE 2026-08-31
+      Andre asked how far from 100% coverage, and the honest answer was that the UE depth number
+      could not be quoted: the Blender equivalent had just read 46 and meant 5 once the addon's own
+      alias declarations were parsed, and the UE list showed exactly the same shape - name x18,
+      rig x12, actorPath x11, assetPath x10. One role spelled several ways, with the tool sending
+      one of them.
+
+      THREE DECLARATION SHAPES, found one at a time by looking at what survived:
+
+        JStrAny(In, { TEXT("blueprintId"), TEXT("path") })   302 call sites, first is the role
+             252 -> 68
+        the same, in a shared RESOLVER below the handlers   ResolveSkeletonForWrite reads
+             add_virtual_bone's skeleton/path/assetPath entirely inside itself, so a scan that only
+             looked above the first handler missed the family
+             68 -> 54
+        the endpoint's own SUMMARY, in prose                "blueprintId (alias: path) - ..." is the
+             endpoint documenting its own spellings, and 288 endpoints do it
+             54 -> 33
+
+      TWO SILENT NO-OPS IN ONE FUNCTION, both mine, both caught only because the number they were
+      meant to move did not move. summary_alias_map first assumed harvest() returned a list of dicts
+      (it returns a 4-tuple) and returned {} looking healthy; then it unpacked rows as 2-tuples when
+      they are 3, so every row raised ValueError into a bare `continue` and it returned {} again. A
+      shape assumption that fails closed is indistinguishable from a clean result - which is the
+      vacuous-check class this file is full of, written by the person who keeps finding it.
+
+      THE REMAINING 33 ARE READABLE IN ONE SCREEN, which is the point of the exercise. They are a
+      handful of real families rather than a fog: set_material_parameter's four spellings,
+      capture_camera's x/y/z, the sublevel `level` alias on four endpoints, DataTable's op/simpleText,
+      and about a dozen singletons. Baseline 252 -> 33, parity_check green.
+
+      Blender is 0. The two halves are now measured the same way, which is what makes the comparison
+      mean anything.

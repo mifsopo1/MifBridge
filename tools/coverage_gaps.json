@@ -1053,6 +1053,7 @@
    "test_lighting_status.py"
   ],
   "list_animations": [
+   "test_duplicate_cooked_guard.py",
    "test_ported_anim.py",
    "test_sync_markers.py",
    "test_uncovered_reads4.py"
@@ -1073,6 +1074,7 @@
    "test_ik_authoring.py",
    "test_list_bones.py",
    "test_ported_anim.py",
+   "test_socket_authoring.py",
    "test_virtual_bone_authoring.py"
   ],
   "list_collections": [

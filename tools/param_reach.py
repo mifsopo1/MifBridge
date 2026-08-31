@@ -174,15 +174,141 @@ def looks_like_alias(key, sent):
     return False
 
 
+CPP_SRC = os.path.join(HERE, "..", "Source", "MifBridge", "Private")
+# JStrAny(In, { TEXT("blueprintId"), TEXT("path"), TEXT("asset") }) - the UE half's alias
+# declaration, and the exact counterpart of the addon's take(params, "object", "name"). The FIRST
+# literal is the role and every later one is a second spelling of it. 302 call sites carry this.
+ANY_CALL = re.compile(
+    r"\bJ(?:Str|Bool|Int|Num)Any\s*\(\s*In\s*,\s*\{([^}]*)\}")
+CPP_LITERAL = re.compile(r'TEXT\("([A-Za-z_]\w*)"\)')
+CPP_HANDLER = re.compile(r"^\s*void H_(\w+)\(const TSharedRef<FJsonObject>&", re.M)
+
+
+def endpoint_alias_map():
+    """endpoint -> {alias_lower: primary_lower}, read from the handlers' own J*Any calls.
+
+    THE UE NUMBER HAD THE SAME PROBLEM THE BLENDER ONE DID, and nobody had checked. The Blender half
+    read 46 unreachable parameters and meant 5 once the addon's own alias declarations were read;
+    the UE list showed exactly the same shape - name x18, rig x12, actorPath x11, assetPath x10 -
+    which is not lost capability, it is one role spelled several ways with the tool sending one of
+    them.
+
+    Handlers declare it themselves on the line that READS the value, so this is derived from the
+    source of truth rather than guessed at by string similarity - which is all looks_like_alias can
+    do, and it cannot know that `rig` is a second spelling of `path`.
+
+    Module-level J*Any calls (shared resolvers above the handlers) apply file-wide as a FALLBACK, the
+    same rule the Blender map uses after ops_gen.py's shared host/server reader was missed once.
+    """
+    out, shared = {}, {}
+    src_dir = os.path.normpath(CPP_SRC)
+    if not os.path.isdir(src_dir):
+        return out
+    for fn in sorted(os.listdir(src_dir)):
+        if not fn.endswith(".cpp"):
+            continue
+        with open(os.path.join(src_dir, fn), encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+        bounds = [(m.group(1), m.start()) for m in CPP_HANDLER.finditer(text)]
+        # EVERY non-handler region, not just the part above the first handler. Shared resolvers sit
+        # wherever they were written - ResolveSkeletonForWrite is below the handlers that use it, and
+        # add_virtual_bone reads its skeleton/path/assetPath aliases entirely inside that helper. A
+        # fallback that only looked at the file's header missed the whole family.
+        spans = []
+        prev = 0
+        for _, start in bounds:
+            spans.append((prev, start))
+            prev = start
+        # ...and everything after the last handler's opening line is helper territory too, which is
+        # imprecise (it includes the last handler's own body) and harmless: an alias declared inside
+        # a handler is a correct alias for that handler, and the per-handler pass below wins anyway.
+        spans.append((bounds[-1][1], len(text)) if bounds else (0, len(text)))
+        for lo, hi in spans:
+            for m in ANY_CALL.finditer(text, lo, hi):
+                names = [n.lower() for n in CPP_LITERAL.findall(m.group(1))]
+                if len(names) >= 2:
+                    for alias in names[1:]:
+                        shared.setdefault(fn, {})[alias] = names[0]
+        for i, (ep, start) in enumerate(bounds):
+            end = bounds[i + 1][1] if i + 1 < len(bounds) else len(text)
+            for alias, primary in shared.get(fn, {}).items():
+                out.setdefault(ep, {}).setdefault(alias, primary)
+            for m in ANY_CALL.finditer(text, start, end):
+                names = [n.lower() for n in CPP_LITERAL.findall(m.group(1))]
+                if len(names) < 2:
+                    continue
+                for alias in names[1:]:
+                    out.setdefault(ep, {})[alias] = names[0]
+    return out
+
+
+# THE ENDPOINT'S OWN SUMMARY DECLARES THEM IN PROSE, and it is the most reliable source of the three
+# because it is what a caller reads. add_virtual_bone's says outright:
+#
+#     "skeleton (aliases: path, assetPath); source (alias sourceBone); target (alias targetBone)"
+#
+# That is the endpoint documenting its own spellings, and a key named there as an alias of a role the
+# tool already sends is reachable by definition. Parsed from the SUMMARY argument of
+# RejectUnknownParams, which harvest_param_table already extracts verbatim for the describe table.
+SUMMARY_ALIAS = re.compile(r"(\w+)\s*\(alias(?:es)?:?\s+([^)]+)\)")
+
+
+def summary_alias_map():
+    """endpoint -> {alias_lower: primary_lower}, read from each handler's own summary string."""
+    # harvest() returns a 4-TUPLE, and the first version of this function assumed a list of dicts.
+    # It therefore returned {} for every endpoint and looked perfectly healthy doing it - the exact
+    # vacuous-check shape this repo keeps finding, written by the person who keeps finding it. The
+    # only reason it was caught is that the number it was supposed to move did not move.
+    #
+    # Shape: (rows, unresolved, problems, order) where rows is [(endpoint, {file, line, keys,
+    # summary, ...})] and `summary` is the RAW C++ text - TEXT("...") fragments and all - because
+    # harvest copies literals verbatim rather than decoding them.
+    out = {}
+    try:
+        import harvest_param_table as _H
+        rows = _H.harvest()[0]
+    except Exception:
+        return out
+    # THREE elements, not two. The first version unpacked (ep, meta) and every row raised
+    # ValueError into a bare `continue`, so the function returned {} and looked healthy - the second
+    # silent no-op in this one function, and both were caught only because the number they were
+    # meant to move did not move. A shape assumption that fails closed is indistinguishable from a
+    # clean result.
+    for entry in rows or []:
+        if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+            continue
+        ep, meta = entry[0], entry[1]
+        summary = (meta or {}).get("summary") or ""
+        if not ep or not summary:
+            continue
+        for m in SUMMARY_ALIAS.finditer(summary):
+            primary = m.group(1).lower()
+            for alias in re.split(r"[,\s]+", m.group(2)):
+                alias = alias.strip().strip("'\"").lower()
+                if alias and alias != primary:
+                    out.setdefault(ep, {})[alias] = primary
+    return out
+
+
 def unreachable():
     """Sorted 'endpoint.key' strings for capabilities no tool call can send."""
     accepts, sends = endpoint_accepts(), tool_sends()
+    aliases = endpoint_alias_map()
+    for ep, m in summary_alias_map().items():
+        for alias, primary in m.items():
+            aliases.setdefault(ep, {}).setdefault(alias, primary)
     rows = []
     for ep, keys in accepts.items():
         if ep not in sends:
             continue                      # name-level parity is parity_check.py's job
         sent = sends[ep]
+        alias_of = aliases.get(ep, {})
         for k in sorted((keys - sent) - NOISE):
+            # An alias whose PRIMARY spelling is already sent is not lost capability - the caller can
+            # express the call, just not in that wording. Same rule as the Blender half.
+            primary = alias_of.get(k)
+            if primary and primary in sent:
+                continue
             if not looks_like_alias(k, sent):
                 rows.append("%s.%s" % (ep, k))
     return sorted(rows)
