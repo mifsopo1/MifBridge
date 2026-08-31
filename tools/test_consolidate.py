@@ -136,9 +136,21 @@ def main():
     # ------------------------------------------------------------------ T5102 the split + trap
     print("\n=== T5102: the preview is never gated; the act always is ===")
     mode = M.write_mode()
-    w = M.raw_post("consolidate_assets", {"target": mats[0], "sources": [mats[1]],
-                                          "confirm": True})
+
+    # confirm:true IS ONLY SENT WHERE THE GATE IS KNOWN TO REFUSE IT, and the ordering is the whole
+    # point. This used to call consolidate_assets with confirm:true BEFORE looking at the mode, so in
+    # FULL mode the call went through against whatever two materials find_assets returned - and its
+    # result was never asserted on, because the full-mode branch below only tests the no-confirm
+    # refusal. It did no harm on this project by luck: find_assets with no pathPrefix returns
+    # /Engine/ content first, and the endpoint reports blockedBy.rootedSources for engine material
+    # held in memory. On a project whose first two materials are ordinary /Game/ content that passes
+    # the ladder, the same code consolidates one real material into another and deletes the source.
+    #
+    # A suite that would destroy real content on someone else's project is a defect whether or not it
+    # ever fires here, and consolidating saves packages, which this work is not supposed to do at all.
     if mode != "full":
+        w = M.raw_post("consolidate_assets", {"target": mats[0], "sources": [mats[1]],
+                                              "confirm": True})
         check("T5102 in '%s' mode the act is refused by the gate" % mode,
               w.get("ok") is False and "safety gate" in (w.get("error") or ""),
               (w.get("error") or "")[:200])
@@ -147,9 +159,19 @@ def main():
               "these are two endpoints rather than one with a dryRun flag",
               again.get("ok") is True, json.dumps(again)[:200])
     else:
+        # FULL MODE TESTS WHAT IT CAN TEST WITHOUT ACTING. The gate is off here by definition, so
+        # there is no refusal to assert and no safe way to prove the act - only that the confirm
+        # requirement itself still stands, and that the preview is unaffected by the mode.
         noconf = M.raw_post("consolidate_assets", {"target": mats[0], "sources": [mats[1]]})
         check("T5102 acting without confirm is refused", noconf.get("ok") is False,
               (noconf.get("error") or "")[:220])
+        preview = M.call("check_consolidate_assets", {"target": mats[0], "sources": [mats[1]]})
+        check("T5102 - and the PREVIEW still works, which is the whole reason these are two "
+              "endpoints rather than one with a dryRun flag",
+              preview.get("ok") is True, json.dumps(preview)[:200])
+        print("  NOTE  the gated-refusal arm is UNEXERCISED in full mode, and deliberately so:")
+        print("        proving it needs confirm:true, and in full mode nothing would stop that")
+        print("        from consolidating two real assets. Run in scratch mode to cover it.")
         # WHICH GATE FIRED MATTERS, and asserting the confirm wording unconditionally made this
         # test ORDER-DEPENDENT. consolidate_assets refuses on the most fundamental failure first,
         # so when find_assets happens to hand back /Engine materials - where the source is ROOTED
