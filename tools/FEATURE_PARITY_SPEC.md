@@ -8116,7 +8116,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       test_blender_mesh M900/M901, 86 -> 90 assertions, green on all four installed Blenders.
 
-- [ ] **three live detectors produced their FIRST real result - and that is not the same as proven**
+- [ ] **all four live detectors have now produced a real result - which is not the same as proven**
       (hours)
       Run 2026-08-31 against the editor Andre was working in, both read-only:
 
@@ -8134,6 +8134,17 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                that exists" while NO endpoint reported a landscape's edit layer names,
                                so the caller was told to name something unenumerable. It blocked a
                                whole suite until landscape_info grew editLayers[].
+        audit_roundtrip        23 checks, 0 gaps. Asks whether what MifBridge can CREATE reads back
+                               well enough to create AGAIN - the macro defect generalised, where
+                               list_nodes reported class:K2Node_MacroInstance and nothing about WHICH
+                               macro, so a user guessed twice, was refused twice, and concluded the
+                               engine needed a new endpoint that already existed.
+
+      IT LEFT ONE SCRATCH ASSET BEHIND and that is worth recording. Its cleanup is best-effort, and
+      delete_asset needs confirm, which mifaudit strips from every payload - so the tool CANNOT tidy
+      up after itself by design. /Game/_MifAuditRT/BP_RT_96969 was removed through
+      tools/scratch_confirm.py, the sanctioned route, and find_assets reports 0 under that prefix
+      now. Worth a fix in the tool: it could call through scratch_confirm the way the suites do.
 
       THE DISTINCTION THAT MATTERS. These are real results and they are not what
       audit_detectors_fire means by proven. A clean run says the corpus is clean IF the detector
