@@ -8309,3 +8309,51 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       on the destructive consolidate_assets, droppedByValidation/droppedNote/rejected/invalidNote on
       set_blendspace_samples - four fields on ONE endpoint, all reporting input silently discarded -
       leftBehind on add_timeline, and reverted on revert_inherited_component.
+
+- [ ] **set_blendspace_samples REWRITES the blend axis and says nothing - FIXED IN SOURCE, needs a build**
+      (hours)
+      Found 2026-08-31 while working the consequence-field backlog, by doing the thing the suite
+      said could not be done. test_ported_anim's header says there is "no scratch equivalent to
+      practise on" for BlendSpaces, so it stayed read-mostly. There is: create_asset makes one,
+      set_property gives it a Skeleton, and samples can reference real AnimSequences read-only.
+
+      MEASURED, NOT ARGUED, against the live editor, and read from the ASSET rather than from the
+      endpoint's own response:
+
+        fresh BlendSpace     BlendParameters: Min 0, Max 100, GridNum 4     (the engine default)
+        one sample at x=777  BlendParameters: Min 0, Max 800, GridNum 32
+        the response         7 fields, not one of them mentioning it
+
+      AddSample -> ValidateSampleValue WIDENS the range to fit a sample outside it rather than
+      refusing, and resamples the grid to match. That is a consequence the caller did not ask for
+      and cannot see - the exact class this response's other fields exist for. It is worse than
+      merely unreported: the handler's own `note` tells the caller to set the axis with
+      set_property BlendParameters[0].Max, which is advice about a value THIS CALL just overwrote.
+
+      AND THE REFUSAL MESSAGE NAMED THE ONE CAUSE THAT CANNOT HAPPEN. On a rejected sample it said
+      "usually outside the axis range; widen it with set_property BlendParameters[0].Min/.Max
+      first". Out-of-range does not refuse - it expands, as above. What DOES refuse is a duplicate
+      point, and this same handler's reconciliation comment already said so: AddSample ->
+      ValidateSampleValue calls IsTooCloseToExistingSamplePoint. Two samples at (10, 0) produced
+      exactly that message, sending the reader to widen an axis that had nothing to do with it. A
+      wrong diagnosis costs more than none.
+
+      FIXED IN SOURCE: axisChanged[] (per axis, min/max/gridNum before AND after) with
+      axisChangedNote, and the refusal now names the duplicate first and says outright that
+      out-of-range does not refuse. GetBlendParameter is ENGINE_API, BlendSpace.h 5.3 :520;
+      FBlendParameter's Min/Max/GridNum at :122/:126/:130; the GridNum 4 default at :144. Only 5.3
+      is installed on this machine, so the 5.7 citation is not made.
+
+      NOT BUILT - Andre's editor is open and Live Coding blocks UBT entirely. test_ported_anim's new
+      T575 is committed RED on purpose: 36 PASS 3 FAIL, and the three failures are exactly the three
+      things the fix addresses, each naming "if this build predates the fix, rebuild". The axis
+      assertion is a POSTCONDITION - list_object_properties before and after, so the endpoint's word
+      is never evidence about the endpoint.
+
+      ALSO SETTLED, and it removes an item rather than adding one: droppedByValidation and
+      droppedNote are NOT reachable through this endpoint at all. AddSample refuses a duplicate
+      before ValidateSampleData ever sees it, so a duplicate lands in rejected[]; the deletion path
+      is belt-and-braces for samples that arrived some other way. That is a real answer about two of
+      the 29, not a gap.
+
+      Next visit with the editor closed: rebuild, rerun test_ported_anim, expect 39 PASS 0 FAIL.

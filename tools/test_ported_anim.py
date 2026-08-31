@@ -26,6 +26,7 @@ import json
 import sys
 
 import mifaudit as M
+import scratch_confirm as SC
 
 PASS, FAIL = [], []
 
@@ -166,12 +167,140 @@ def main():
               (r.get("invalidCount") or 0) <= (r.get("sampleCount") or 0),
               "invalidCount=%s sampleCount=%s" % (r.get("invalidCount"), r.get("sampleCount")))
         dirty_after = len(M.call("list_dirty_packages", {}, timeout=90).get("packages") or [])
-        # NOTE: the droppedByValidation path is NOT exercised here. Reaching it needs two samples at
-        # the same point, which means writing to a real BlendSpace - this suite deliberately does not.
-        # It is asserted structurally above instead; a scratch BlendSpace would be needed to hit it.
+        # The note that used to sit here said a scratch BlendSpace would be needed to reach the
+        # partial-failure paths, and that writing to a real one was the only alternative. Both were
+        # true and the first half is now done - see T575, which builds one. What that turned up is
+        # that droppedByValidation is NOT reachable through this endpoint at all, by construction:
+        # AddSample refuses a duplicate point before ValidateSampleData ever sees it, so a duplicate
+        # lands in rejected[] instead. This handler's own reconciliation comment says so.
         check("T574 and the no-op dirtied nothing beyond what was already dirty",
               dirty_after <= dirty_before + 1,
               "dirty packages %d -> %d" % (dirty_before, dirty_after))
+
+    # ------------------------------------------------------------------ T575 the scratch BlendSpace
+    print("")
+    print("=== T575: a SCRATCH BlendSpace - the partial-failure paths, on nobody's content ===")
+    # THIS SUITE'S OWN PREMISE WAS OUT OF DATE. Its header says there is "no scratch equivalent to
+    # practise on", so it stayed read-mostly. There is: create_asset makes a BlendSpace, set_property
+    # gives it a Skeleton, and the samples can reference real AnimSequences read-only. Nothing here
+    # touches game content, and everything created is deleted at the end.
+    SCRATCH = "/Game/_MifAnim/BS_T575"
+    SCRATCH_OBJ = SCRATCH + ".BS_T575"
+
+    def axis_params():
+        """BlendParameters read INDEPENDENTLY of the endpoint's own response.
+
+        The whole point of T575's axis assertion is that the endpoint's word is not evidence about
+        the endpoint. list_object_properties is a different code path reading the asset itself.
+        """
+        props = M.call("list_object_properties", {"objectPath": SCRATCH_OBJ},
+                       timeout=90).get("properties") or []
+        for prop in props:
+            if (prop.get("name") if isinstance(prop, dict) else prop) == "BlendParameters":
+                return str(prop.get("value"))
+        return ""
+
+    made = M.call("create_asset", {"path": SCRATCH, "class": "BlendSpace"}, timeout=120)
+    if made.get("ok") is not True:
+        check("T575 (not exercised: could not create a scratch BlendSpace)", True,
+              json.dumps(made)[:200])
+    else:
+        try:
+            skel = None
+            seqs = []
+            for cand in (M.call("find_assets", {"class": "Skeleton", "pathPrefix": "/Game/",
+                                                "limit": 4}, timeout=120).get("assets") or []):
+                path = cand.get("path") or ""
+                name = path.rsplit("/", 1)[-1].split(".")[0]
+                anims = M.call("list_animations", {"skeleton": name, "limit": 2000},
+                               timeout=300).get("animations") or []
+                found = [a.get("assetPath") for a in anims
+                         if str(a.get("class", "")).endswith("AnimSequence")]
+                if len(found) >= 2:
+                    skel, seqs = path, found[:2]
+                    break
+
+            if not skel:
+                check("T575 (not exercised: no Skeleton with two AnimSequences in /Game/)", True)
+            else:
+                sp = M.call("set_property", {"objectPath": SCRATCH_OBJ, "propertyPath": "Skeleton",
+                                             "value": skel}, timeout=90)
+                check("T575 the scratch blend space takes a Skeleton", sp.get("ok") is True,
+                      json.dumps(sp)[:200])
+
+                # ---- the axis rewrite, measured from the asset rather than from the response
+                before = axis_params()
+                check("T575 BlendParameters is readable before the write", bool(before), before)
+                far = M.call("set_blendspace_samples",
+                             {"assetPath": SCRATCH, "clear": True,
+                              "samples": [{"animation": seqs[0], "x": 777, "y": 0}]}, timeout=120)
+                after = axis_params()
+                check("T575 the far sample was accepted, not refused", far.get("addedCount") == 1,
+                      json.dumps(far)[:260])
+                # THE FINDING. A fresh BlendSpace is Min 0 / Max 100 / GridNum 4; one sample at
+                # x=777 leaves it 0 / 800 / 32. AddSample WIDENS the axis rather than refusing, and
+                # for a long time the response said nothing about it - while its own `note` told the
+                # caller to configure the axis this call had just overwritten.
+                moved = before != after
+                check("T575 the axis really was rewritten by adding one far sample", moved,
+                      "before=%s after=%s" % (before, after))
+                if moved:
+                    changed = far.get("axisChanged")
+                    check("T575 and the response REPORTS the rewrite in axisChanged",
+                          isinstance(changed, list) and len(changed) >= 1,
+                          "the asset's axis moved and the response did not say so - if this build "
+                          "predates the fix, rebuild. before=%s after=%s response=%s"
+                          % (before, after, json.dumps(far)[:200]))
+                    if isinstance(changed, list) and changed:
+                        row = changed[0]
+                        check("T575 and names both the before and after value",
+                              row.get("maxBefore") is not None and row.get("maxAfter") is not None,
+                              json.dumps(row)[:220])
+                        check("T575 and the reported after-value matches the ASSET",
+                              str(int(row.get("maxAfter") or 0)) in after,
+                              "axisChanged says maxAfter=%s, the asset says %s"
+                              % (row.get("maxAfter"), after))
+                    check("T575 and explains it in axisChangedNote",
+                          "REWRITTEN" in str(far.get("axisChangedNote") or ""),
+                          str(far.get("axisChangedNote"))[:200])
+
+                # ---- a duplicate point is REFUSED, and the message must say why
+                dup = M.call("set_blendspace_samples",
+                             {"assetPath": SCRATCH, "clear": True,
+                              "samples": [{"animation": seqs[0], "x": 10, "y": 0},
+                                          {"animation": seqs[1], "x": 10, "y": 0}]}, timeout=120)
+                rejected = dup.get("rejected") or []
+                check("T575 a second sample at an occupied point is rejected", len(rejected) == 1,
+                      json.dumps(dup)[:260])
+                check("T575 and only the first survives", dup.get("addedCount") == 1,
+                      json.dumps(dup)[:260])
+                # The message used to blame the axis range - the one cause that cannot produce this
+                # refusal, since the axis auto-expands. A wrong diagnosis costs more than none.
+                check("T575 and the refusal names the DUPLICATE, not the axis range",
+                      "DUPLICATE" in str(rejected[0] if rejected else ""),
+                      str(rejected[0] if rejected else "<no rejection>")[:240])
+
+                # ---- an animation that is not one
+                bad = M.call("set_blendspace_samples",
+                             {"assetPath": SCRATCH, "clear": True,
+                              "samples": [{"animation": "/Game/NoSuchAnim_zz.NoSuchAnim_zz",
+                                           "x": 20, "y": 0}]}, timeout=120)
+                check("T575 a missing animation is rejected by name",
+                      any("not a UAnimSequence" in str(x) for x in (bad.get("rejected") or [])),
+                      json.dumps(bad)[:240])
+                check("T575 and nothing was added", bad.get("addedCount") == 0,
+                      json.dumps(bad)[:240])
+        finally:
+            # THROUGH scratch_confirm, NOT M.call: mifaudit strips `confirm` from every payload, so a
+            # delete_asset sent the ordinary way silently does nothing - which is how audit_roundtrip
+            # left a scratch blueprint in somebody's live session. Reported, never swallowed.
+            gone = SC.confirm_call("delete_asset", {"path": SCRATCH, "confirm": True}, timeout=120)
+            left = M.call("find_assets", {"pathPrefix": "/Game/_MifAnim", "limit": 10},
+                          timeout=120).get("assets") or []
+            check("T575 the scratch blend space was deleted", not left,
+                  "delete said %s; still present: %s"
+                  % (json.dumps(gone)[:160], [a.get("path") for a in left]))
+
     check("T573 the bridge is still answering", M.bridge_responsive() is True, "bridge died")
 
     print("")

@@ -76,8 +76,17 @@ CONSEQUENCE = re.compile(
     r"(?:^|[a-z])("
     r"[Ff]ailed|[Ff]ailure|[Dd]ropped|[Ss]kipped|[Rr]everted|[Dd]iscarded|[Dd]isplaced|"
     r"[Oo]rphaned|[Ll]eftBehind|[Ll]ost|[Uu]nresolved|[Uu]nchanged|[Rr]ejected|[Rr]emoved|"
-    r"[Tt]runcated|[Cc]lamped|[Ss]ilentl|[Pp]artial|[Ss]tale|[Bb]roken|[Mm]issing|[Ii]nvalid"
+    r"[Tt]runcated|[Cc]lamped|[Ss]ilentl|[Pp]artial|[Ss]tale|[Bb]roken|[Mm]issing|[Ii]nvalid|"
+    r"[Ii]ncomplete"
     r")")
+
+# WHAT THIS PATTERN CANNOT SEE, said out loud rather than left as a clean-looking number. It matches
+# names that say something went WRONG. It does NOT match names that say something merely MOVED -
+# `axisChanged` on set_blendspace_samples is as much an unasked-for consequence as anything in the
+# list above, and no name-based rule can separate it from the dozens of `changed` fields that are the
+# honest ANSWER to "did this change anything". Adding [Cc]hanged would drown the real findings in
+# them. So a side effect named for the thing it moved rather than for the failure it represents is
+# invisible here, and has to be found by reading the handler - which is how axisChanged was found.
 
 # Emitted by an endpoint the standing rules put out of reach of an unattended suite. Listed with the
 # reason, because "no suite asserts it" and "no suite CAN assert it" are different findings and only

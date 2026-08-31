@@ -901,6 +901,32 @@ namespace MifBridge
 			}
 		}
 
+		// THE AXIS IS REWRITTEN BY THIS CALL AND NOTHING USED TO SAY SO.
+		//
+		// Measured against a live 5.3 editor, 2026-08-31: a fresh BlendSpace carries the default
+		// axis Min 0, Max 100, GridNum 4 (FBlendParameter's own constructor, BlendSpace.h 5.3 :144).
+		// One sample at x=777 left it Min 0, Max 800, GridNum 32 - and the response reported seven
+		// fields, none of them this. AddSample -> ValidateSampleValue widens the range to fit the
+		// sample rather than refusing it.
+		//
+		// That is a consequence the caller did not ask for and cannot see, which is the exact class
+		// this response's other fields exist for. It is worse than unreported here, because the
+		// `note` at the bottom of this handler tells the caller to set the axis with
+		// set_property BlendParameters[0].Max - advice about a value THIS CALL just overwrote.
+		//
+		// Snapshot before, compare after. GetBlendParameter is ENGINE_API and long-standing
+		// (BlendSpace.h 5.3 :520); BlendParameters is a fixed array of 3 (:862), so all three are
+		// snapshotted and only the ones that actually moved are reported.
+		struct FMifAxisSnapshot { float Min = 0.f; float Max = 0.f; int32 GridNum = 0; };
+		FMifAxisSnapshot AxisBefore[3];
+		for (int32 Axis = 0; Axis < 3; ++Axis)
+		{
+			const FBlendParameter& P = BS->GetBlendParameter(Axis);
+			AxisBefore[Axis].Min = P.Min;
+			AxisBefore[Axis].Max = P.Max;
+			AxisBefore[Axis].GridNum = P.GridNum;
+		}
+
 		TArray<TSharedPtr<FJsonValue>> Added;
 		TArray<FString> Rejected;
 
@@ -936,10 +962,25 @@ namespace MifBridge
 			const int32 Index = BS->AddSample(Seq, FVector(X, Y, 0.0));
 			if (Index == INDEX_NONE)
 			{
-				// Almost always an out-of-range value: AddSample refuses a sample outside the
-				// axis, so say so rather than reporting a bare failure.
+				// THIS MESSAGE USED TO NAME THE ONE CAUSE THAT CANNOT HAPPEN. It said "usually
+				// outside the axis range; widen it with set_property BlendParameters[0].Min/.Max
+				// first", and both halves were wrong:
+				//
+				//   Out of range does not refuse. Measured against a live 5.3 editor on
+				//   2026-08-31: a fresh BlendSpace with the default axis 0..100, GridNum 4, given
+				//   a sample at x=777, ACCEPTED it and rewrote the axis to 0..800, GridNum 32.
+				//   AddSample -> ValidateSampleValue expands the range rather than rejecting.
+				//
+				//   A duplicate point DOES refuse, and this file's own reconciliation comment
+				//   below says so - AddSample -> ValidateSampleValue calls
+				//   IsTooCloseToExistingSamplePoint, so a second sample at an occupied point
+				//   lands here. Sending two samples at (10, 0) produced exactly this message,
+				//   advising the caller to widen an axis that had nothing to do with it.
+				//
+				// A wrong diagnosis costs more than none: it spends the reader's time on the
+				// wrong fix. Both real causes are named, likeliest first.
 				Rejected.Add(FString::Printf(
-					TEXT("%s: AddSample refused (%.2f, %.2f) - usually outside the axis range; widen it with set_property BlendParameters[0].Min/.Max first"),
+					TEXT("%s: AddSample refused (%.2f, %.2f) - usually a DUPLICATE point: ValidateSampleValue calls IsTooCloseToExistingSamplePoint, so a second sample at an occupied position is refused. Move it. (An out-of-range value does NOT refuse - the axis auto-expands, see axisChanged.)"),
 					*Seq->GetName(), X, Y));
 				continue;
 			}
@@ -1076,8 +1117,38 @@ namespace MifBridge
 			for (const FString& S : Rejected) { R.Add(MakeShared<FJsonValueString>(S)); }
 			Out->SetArrayField(TEXT("rejected"), R);
 		}
+		// The axis comparison promised above. Reported only when it MOVED, and always with both
+		// values, because "the axis changed" without the numbers just moves the question along.
+		{
+			TArray<TSharedPtr<FJsonValue>> AxisChanged;
+			for (int32 Axis = 0; Axis < 3; ++Axis)
+			{
+				const FBlendParameter& P = BS->GetBlendParameter(Axis);
+				const bool bMoved = !FMath::IsNearlyEqual(P.Min, AxisBefore[Axis].Min)
+					|| !FMath::IsNearlyEqual(P.Max, AxisBefore[Axis].Max)
+					|| P.GridNum != AxisBefore[Axis].GridNum;
+				if (!bMoved) { continue; }
+				TSharedRef<FJsonObject> A = MakeShared<FJsonObject>();
+				A->SetNumberField(TEXT("axis"), Axis);
+				A->SetNumberField(TEXT("minBefore"), AxisBefore[Axis].Min);
+				A->SetNumberField(TEXT("minAfter"), P.Min);
+				A->SetNumberField(TEXT("maxBefore"), AxisBefore[Axis].Max);
+				A->SetNumberField(TEXT("maxAfter"), P.Max);
+				A->SetNumberField(TEXT("gridNumBefore"), AxisBefore[Axis].GridNum);
+				A->SetNumberField(TEXT("gridNumAfter"), P.GridNum);
+				AxisChanged.Add(MakeShared<FJsonValueObject>(A));
+			}
+			if (AxisChanged.Num() > 0)
+			{
+				Out->SetArrayField(TEXT("axisChanged"), AxisChanged);
+				Out->SetStringField(TEXT("axisChangedNote"), FString::Printf(
+					TEXT("%d blend axis/axes were REWRITTEN by this call. AddSample widens the range to fit a sample outside it rather than refusing, and the grid is resampled to match. Nothing was asked for this; if the axis mattered, set it again with set_property BlendParameters[<axis>].Min/.Max AFTER adding samples, not before."),
+					AxisChanged.Num()));
+			}
+		}
+
 		Out->SetStringField(TEXT("note"),
-			TEXT("save_package to persist. Set the axis with set_property propertyPath=BlendParameters[0].Max"));
+			TEXT("save_package to persist. Set the axis with set_property propertyPath=BlendParameters[0].Max - but AFTER this call, which rewrites it when a sample falls outside the current range."));
 	}
 
 	// --- set_bone_translation_retargeting -------------------------------------
