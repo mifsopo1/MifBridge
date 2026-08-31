@@ -4515,9 +4515,17 @@ def bl_list_modifiers(object_name: str) -> dict:
 
 
 @mcp.tool()
-def bl_import_mesh(file: str, clear_scene: bool = True) -> dict:
+def bl_import_mesh(file: str, clear_scene: bool = True,
+                   use_custom_normals: bool = None) -> dict:
     "Import an FBX file into Blender and report what arrived. FBX ONLY - the addon hard-refuses every other extension, OBJ included, because FBX is the only format whose axis and unit round trip with Unreal is verified (UE's OBJ exporter swaps"
-    return _blender("import_mesh", file=file, clearScene=clear_scene)
+    # use_custom_normals reads the FBX's authored normals instead of letting Blender recompute
+    # them. The addon has always accepted it (ops_mesh.py:177-178) and nothing sent it, so a mesh
+    # whose normals were authored deliberately - hard edges, a normal-map bake target - came in with
+    # Blender's own. The export half of this pair gained useTspace the same night, for the same
+    # reason: what survives the round trip is what Unreal ends up rendering.
+    # None means unset; _blender drops it and the addon's default stands.
+    return _blender("import_mesh", file=file, clearScene=clear_scene,
+                    useCustomNormals=use_custom_normals)
 
 
 @mcp.tool()
@@ -4540,14 +4548,18 @@ def bl_uv_unwrap(object_name: str, method: str = "SMART", uv_layer: str = None,
                  replace: bool = False, dry_run: bool = False,
                  mark_seams: dict = None, clear_seams: bool = False,
                  uv_pack: bool = False, pack_margin: float = None,
-                 uv_transform: dict = None) -> dict:
+                 uv_transform: dict = None, correct_aspect: bool = None) -> dict:
     "Generate a UV layer on a Blender mesh. Closes a gap the addon could already SEE: object_info and gen_status both report uvLayers, and the quality check says outright 'no UVs - texturing and lightmaps will both fail until it is unwrapped',"
     return _blender("uv_unwrap", object=object_name, method=method, uvLayer=uv_layer,
                     angleLimitDeg=angle_limit_deg, islandMargin=island_margin,
                     replace=replace, dryRun=dry_run,
                     markSeams=mark_seams, clearSeams=clear_seams or None,
                     uvPack=uv_pack or None, packMargin=pack_margin,
-                    uvTransform=uv_transform)
+                    uvTransform=uv_transform,
+                    # correctAspect scales the unwrap by the material's texture aspect ratio. The
+                    # addon takes it (ops_mesh.py:1502) and nothing sent it, so a non-square texture
+                    # got a UV layout stretched against it with no way to ask otherwise.
+                    correctAspect=correct_aspect)
 
 
 @mcp.tool()

@@ -291,7 +291,6 @@ bl:gen_status.server
 bl:gen_texture.import_result
 bl:gen_texture.server
 bl:import_mesh.clear_scene
-bl:import_mesh.usecustomnormals
 bl:join_objects.sources
 bl:list_modifiers.name
 bl:list_objects.detail
@@ -313,5 +312,4 @@ bl:transfer_weights.object
 bl:transfer_weights.to
 bl:transform_object.name
 bl:uv_info.name
-bl:uv_unwrap.correctaspect
 bl:uv_unwrap.name

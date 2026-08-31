@@ -7694,11 +7694,19 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                       use_tspace is tangents/binormals in the file - without them Unreal recomputes,
                       and a normal map baked against Blender's tangents will not match. Baseline
                       62 Blender entries now.
-        import_mesh   useCustomNormals
-        uv_unwrap     correctAspect
+        import_mesh   useCustomNormals - DONE 2026-08-31. Reads the FBX's AUTHORED normals instead
+                      of letting Blender recompute them. Pairs with export's useTspace: what
+                      survives the round trip is what Unreal renders.
+        uv_unwrap     correctAspect - DONE 2026-08-31. Scales the unwrap by the texture aspect
+                      ratio; without it a non-square texture gets a UV layout stretched against it.
         bake_texture  device  (CPU vs GPU)
-        decimate_mesh targetTriangles - a triangle BUDGET rather than a ratio
         list_objects  pattern, detail
+
+      TWO OF THAT LIST WERE ALIASES AND ARE STRUCK OUT, which is why each one is read before it is
+      forwarded rather than the list being applied wholesale:
+        decimate_mesh.targetTriangles  is an alias of targetTris, which the server already sends -
+                      take_int(params, "targetTris", "targetTriangles").
+        import_mesh.clear_scene  is the snake_case spelling of clearScene, already sent.
         create_primitive align, fillType
         extrude_skirt allowNonBoundary, dryRun
         bevel_edges   dryRun, seamBand
