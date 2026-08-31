@@ -4580,7 +4580,7 @@ def bl_list_modifiers(object_name: str) -> dict:
 @mcp.tool()
 def bl_import_mesh(file: str, clear_scene: bool = True,
                    use_custom_normals: bool = None) -> dict:
-    "Import an FBX file into Blender and report what arrived. FBX ONLY - the addon hard-refuses every other extension, OBJ included, because FBX is the only format whose axis and unit round trip with Unreal is verified (UE's OBJ exporter swaps"
+    "Import an FBX or glTF/GLB file into Blender and report what arrived. Those two only - OBJ and everything else are hard-refused, because FBX and glTF are the formats whose axis and unit round trip is verified: glTF because its SPEC fixes the convention (+Y up, metres) and FBX because it carries its own metadata in the file. UE's OBJ exporter swaps Y/Z, de-indexes and writes no normals, and the file cannot tell you it did. NOTE for glTF: it has no shared-vertex-with-split-normals concept, so vertices are de-indexed per corner and a cube's 8 come back as 24 - the geometry is identical, so compare DIMENSIONS rather than vertex counts across a round trip. use_custom_normals is an FBX option and is refused for glTF rather than silently ignored."
     # use_custom_normals reads the FBX's authored normals instead of letting Blender recompute
     # them. The addon has always accepted it (ops_mesh.py:177-178) and nothing sent it, so a mesh
     # whose normals were authored deliberately - hard edges, a normal-map bake target - came in with

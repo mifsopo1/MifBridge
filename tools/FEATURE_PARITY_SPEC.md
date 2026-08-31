@@ -6874,7 +6874,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 - [rendering-fx] material layer stack: read via list_material_parameters {layers:true}, write via set_material_layers: Enumerate a material instance's layer stack (which MaterialLayer and MaterialLayerBlend function is at 
 - [rendering-fx] viewport bookmarks: list_viewport_bookmarks / set_viewport_bookmark / jump_to_viewport_bookmark: Store the current viewport camera into one of the level's numbered bookmark slots, jump back to one, and lis
 - [gameplay-systems] list_automation_tests: Enumerates the automation tests registered in this editor - engine tests, project tests, and Functional Test maps - with their names, flags and source. An agent that wants to ver
-- [blender] extend import_mesh with glTF/GLB support (format param): Lets import_mesh accept .glb/.gltf, not only .fbx — the format every AI mesh generator and most asset marketplaces actually emit.
+- [x] **import_mesh accepts glTF/GLB** - DONE 2026-08-31, verified on 3.6/4.2/4.4/5.0
 
 - [x] **load_partition_actors** (the write half of list_partition_actors) (day)  **DONE 2026-08-31.**
       H_load_partition_actors in MifBridgeStreaming.cpp, MCP wrapper, extended help,
@@ -8089,3 +8089,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       No tool landed: the distinction that matters is "wrong subject" versus "real thing, nothing in
       it", and no mechanical test separates those - reading the message is the test.
+
+      The old refusal said "FBX is the only format whose axis and unit round-trip with Unreal is
+      VERIFIED". That is a claim about evidence, so it was answered with evidence rather than argued
+      with: a 1 x 2 x 3 box - asymmetric on every axis, so a swap shows as a permutation of the
+      dimensions - exported to GLB and imported back came out 1 x 2 x 3 exactly, name intact.
+
+      It round-trips because the glTF SPEC fixes the convention (+Y up, right-handed, metres) and
+      Blender's importer applies that conversion itself. FBX by contrast carries its axis and unit
+      metadata IN THE FILE, which is why FBX_IMPORT_ARGS passes no axis arguments at all. OBJ stays
+      refused because it fixes nothing and declares nothing, and the refusal now says which of those
+      two reasons applies rather than just naming FBX.
+
+      WHAT GLTF CHANGES, and callers are TOLD rather than left to find out: it has no
+      shared-vertex-with-split-normals concept, so vertices de-index per corner and a cube's 8 come
+      back as 24. Geometry, dimensions and normals are identical. A response warning says so, because
+      a vertex count that jumps without explanation reads as corruption.
+
+      useCustomNormals is an FBX importer option with no glTF equivalent, so it is REFUSED for a
+      glTF import rather than accepted and ignored - the silent-parameter class this bridge refuses
+      on principle.
+
+      test_blender_mesh M900/M901, 86 -> 90 assertions, green on all four installed Blenders.

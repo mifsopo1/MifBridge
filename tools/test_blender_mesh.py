@@ -96,6 +96,58 @@ def verts(name):
     return None
 
 
+GLTF_FIXTURE = """
+import bpy, os
+bpy.ops.object.select_all(action='SELECT'); bpy.ops.object.delete()
+bpy.ops.mesh.primitive_cube_add(size=2.0)
+o = bpy.context.active_object
+o.name = "MifGlbSource"
+o.scale = (0.5, 1.0, 1.5)
+bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+bpy.ops.export_scene.gltf(filepath=r"%s", export_format='GLB', use_selection=False)
+result = os.path.getsize(r"%s")
+"""
+
+
+def gltf_checks(call, check, tmp_glb):
+    """import_mesh's glTF support, added 2026-08-31.
+
+    A 1 x 2 x 3 box, asymmetric on every axis so an axis swap shows up as a permutation of the
+    dimensions - a cube would round-trip through a Y/Z swap unchanged and prove nothing.
+
+    SKIPS rather than fails when run_python is unavailable: building the fixture needs it, and the
+    addon deliberately cannot create a GLB any other way. That is the same shape test_blender_rig
+    uses, and a false failure would be worse than a gap.
+    """
+    probe = call("run_python", code="pass")
+    if probe.get("ok") is False:
+        print("  SKIPPED the glTF checks - run_python is off, so the fixture cannot be built.")
+        return
+    made = call("run_python", code=GLTF_FIXTURE % (tmp_glb, tmp_glb))
+    if made.get("ok") is False or not os.path.isfile(tmp_glb):
+        print("  SKIPPED the glTF checks - the fixture export did not produce a file.")
+        return
+
+    r = call("import_mesh", file=tmp_glb, clearScene=True)
+    check("M900 import_mesh accepts a .glb", r.get("ok") is not False, json.dumps(r)[:200])
+    imported = (r.get("imported") or [{}])[0]
+    dims = imported.get("dimensionsBU") or []
+    # DIMENSIONS, not vertex counts. glTF de-indexes per corner and the count legitimately changes.
+    check("M900 a 1x2x3 box comes back 1x2x3 - axis and unit preserved",
+          len(dims) == 3 and all(abs(a - b) < 1e-3 for a, b in zip(dims, [1.0, 2.0, 3.0])),
+          "dimensions %s" % dims)
+    # The de-index is real and the caller is TOLD, because a vertex count that jumped without
+    # explanation reads as corruption.
+    check("M900 and the response warns that glTF de-indexes vertices",
+          any("de-index" in w for w in (r.get("warnings") or [])),
+          str(r.get("warnings"))[:200])
+
+    bad = call("import_mesh", file=tmp_glb, useCustomNormals=True)
+    check("M901 useCustomNormals is REFUSED for glTF, not silently ignored",
+          bad.get("ok") is False and "useCustomNormals" in str(bad.get("error") or ""),
+          json.dumps(bad)[:200])
+
+
 def main():
     print("MifBlender mesh pipeline - %s:%d" % (HOST, PORT))
 
@@ -476,6 +528,17 @@ def main():
     check("T769 clear_scene succeeded", r.get("ok") is not False, r.get("error"))
     check("T769 and no mesh remains", first_mesh() is None,
           "a mesh survived clear_scene: %r" % first_mesh())
+
+    # ------------------------------------------------------------------ M900 glTF/GLB import
+    print("\n=== M900: import_mesh takes a .glb, and says what glTF changes ===")
+    tmp_glb = os.path.join(tempfile.gettempdir(), "mif_suite_gltf.glb")
+    try:
+        gltf_checks(call, check, tmp_glb)
+    finally:
+        try:
+            os.remove(tmp_glb)
+        except OSError:
+            pass
 
     try:
         os.remove(out)
