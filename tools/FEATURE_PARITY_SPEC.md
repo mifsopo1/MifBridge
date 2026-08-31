@@ -5878,6 +5878,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       KismetDebugUtilities.h declares FBlueprintWatchedPin at :18 and WatchedPin.h defines it,
       the same shape as FBlueprintBreakpoint an hour earlier and the 5.7 break this morning.
 - [ ] **describe_ability_system** (day)
+      DEFERRAL CORRECTED 2026-08-31. I had been holding this back all session on "this project has
+      zero GAS content, so it cannot be verified here". The content half is TRUE and now measured
+      properly rather than assumed: find_assets with class AttributeSet / GameplayAbility /
+      GameplayEffect / AbilitySystemComponent and recursiveClasses returns 0 of each. (My earlier
+      queries used classFilter, which this endpoint does not accept - it takes `class` - so they
+      were being REFUSED rather than returning zero, and I read the refusal as an answer.)
+
+      BUT THE CONCLUSION WAS WRONG. GameplayAbilities is ENABLED in this project, and
+      create_blueprint accepts GameplayAbility and GameplayEffect as parent classes - both verified
+      by creating and deleting one of each under /Game/_MifGAS. So the fixture can be BUILT rather
+      than found, and the ability and effect halves are testable here. I checked whether GAS assets
+      existed without checking whether I could create them, which is the same error as reading the
+      handler of the endpoint a proposal names instead of grepping for the capability.
+
+      What stays genuinely unexercisable is the ASC half: no actor in this project has an
+      AbilitySystemComponent, and one cannot be added to a cooked actor. That arm should be built
+      and REPORTED as unexercised rather than skipped, the way the sync-marker mirror guard and the
+      bounds-load path already are.
+
       Reads a live actor's AbilitySystemComponent: which abilities are granted, every attribute's base and current value, which GameplayEffects are active and how long they have left, and the owned gameplay tags. This is the answer to "why is this character not taking damage" - the question GAS debugging is entirely made of.
       API: UAbilitySystemComponent, public, read in D:/UE532/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Public/AbilitySystemComponent.h (5.3): void GetAllAttributes(TArray<FGameplayAttribute>&) [:162]; const TArray<UAttributeSet*>& GetSpawnedAttributes() const [:193]; float GetNumericAttributeBase(const FGameplayAttribute&) const [:214]; float GetNumericAttribute(const FGameplayAttribu...
       Cooked: Fully cooked-safe, and this is the rare one where cooked is the PRIMARY case. Everything read here is live runtime state on a live component - no MeshDescription, no SourceModel, no FSkeletalMeshModel, nothing editor-only is touched, so there is no crash surface at all. It works identically on a coo...
@@ -6024,7 +6043,38 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cooked: Cooked-safe, pure Blender data. The guard: writing material_index out of range is exactly the silent-wrong-render failure set_material_slots' allowResize refusal already exists to prevent, so every index must be validated against len(obj.material_slots) BEFORE any write, and the write must be all-or...
       Vetter corrected the proposal: Rank medium is correct, but for a slightly weaker reason than the proposer gives: `run_python` (ops_scene.py:242) is an explicit escape hatch for exactly this, so an agent is inconvenienced rather than blocked. The proposer also oversells "reuse the _select_edges grammar" — that grammar's angle criterion is the dihedral angle `edge.calc_face_angle()` (ops_mesh.py:368), which does not exist on the ...
 
-- [ ] **extend uv_unwrap with pack / seams / transform (uvPack, markSeams, uvTransform)** (day)
+- [x] **extend uv_unwrap with pack / seams / transform (uvPack, markSeams, uvTransform)** (day)  **DONE 2026-08-31.**
+      markSeams / clearSeams / uvPack / packMargin / uvTransform on uv_unwrap, MCP wrapper,
+      extended help, T779 in test_blender_mesh.py - 86 PASS 0 FAIL, and green on all four Blenders.
+
+      markSeams IS THE ONE THAT MATTERS, and the endpoint had already been saying so. Its ANGLE
+      method refuses to pretend: "NO seams marked ... the whole mesh flattens as a single island and
+      the result is unusable for texturing". T778 has asserted that warning for as long as it has
+      existed - so the endpoint offered a method its own callers could not use, because nothing in
+      the addon could set edge.use_seam. T779 now asserts the warning is GONE when seams are marked
+      in the same call. That is the read-with-no-write asymmetry in its sharpest form: the endpoint
+      names the missing piece itself.
+
+      THE ANGLE GRAMMAR IS VALID HERE, and this is NOT a contradiction of the vetter's refusal on
+      the assignFaces item. That objection was that edge.calc_face_angle() is a DIHEDRAL angle
+      between the two faces sharing an edge and therefore means nothing for a single FACE. Seams
+      are marked on EDGES, so the criterion is exactly right - "seam everything sharper than 40
+      degrees" is the standard way to cut a mesh for unwrapping. _select_edges is reused unchanged.
+
+      TWO REFUSALS WORTH KEEPING. markSeams:true is ambiguous - "every edge" and "the sharp ones"
+      are different meshes and guessing would silently pick one. A criterion matching NO edge is
+      refused rather than marking nothing, because the unwrap that follows would then behave
+      exactly as though seams had never been asked for, and report success.
+
+      ORDER IS FIXED: seams, unwrap, pack, transform. Packing before unwrapping packs the OLD
+      layout, which looks like it worked and is just the previous islands rearranged.
+
+      ROTATION IS DELIBERATELY ABSENT from uvTransform and the refusal says why: rotating a packed
+      layout moves islands out of 0-1 with nothing to put them back. scale and offset are read back
+      off the layer afterwards - the response carries the bounds BEFORE and AFTER, and T779 asserts
+      a 0.5 scale really halved the U span rather than trusting the request. Leaving 0-1 is warned
+      about, not refused: legal for a tiling texture, wrong for a lightmap channel.
+
       The finishing operations an unwrap needs: pack islands into 0-1 with a margin, equalise island scale, mark seams (or derive them from existing islands), and scale/rotate/offset a whole UV layer.
       API: bpy.ops.uv.pack_islands(margin=, rotate=), bpy.ops.uv.average_islands_scale(), bpy.ops.uv.seams_from_islands(), bpy.ops.mesh.mark_seam(clear=), bpy.ops.uv.minimize_stretch(), bpy.ops.uv.cube_project() — every one of these idnames is confirmed present in this build in C:/Program Files/Blender Foundation/Blender 4.4/4.4/scripts/modules/rna_manual_reference.py. They run under the mode_set(EDIT) + mes...
       Cooked: Cooked-safe. One guard worth naming: repacking a channel Unreal already uses for lightmaps invalidates baked lighting, so when the target layer is not the active/first one the response should say which channel index it moved and that a rebuild is needed — the note uv_unwrap already emits about the s...

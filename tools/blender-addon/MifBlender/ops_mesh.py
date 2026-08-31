@@ -1445,6 +1445,9 @@ _UV_KEYS = {
     "object", "name",
     "method", "angleLimitDeg", "islandMargin", "uvLayer", "replace",
     "correctAspect", "dryRun",
+    # seams -> unwrap -> pack -> transform, in that order and no other. Packing before unwrapping
+    # packs the old layout; seams marked afterwards do nothing until the next unwrap.
+    "markSeams", "clearSeams", "uvPack", "packMargin", "uvTransform",
 }
 
 
@@ -1526,6 +1529,63 @@ def op_uv_unwrap(params):
             "another. Pass uvLayer with one of the existing names plus replace:true. Layers: %s"
             % (obj.name, len(before), before))
 
+    # ---- SEAMS FIRST, and before the ANGLE check below, which is the whole point ----------------
+    # That check refuses an ANGLE unwrap on a mesh with no seams, so the endpoint has always offered
+    # a method its callers could not use: nothing in this addon could set edge.use_seam. Marking
+    # here, in the same call, is what makes ANGLE reachable.
+    #
+    # The angle criterion is edge.calc_face_angle() - the DIHEDRAL angle between the two faces an
+    # edge joins - which is exactly right for seams and is why _select_edges is reused here even
+    # though the same grammar was refuted for FACE selection, where a dihedral angle means nothing.
+    seams = None
+    mark = take(params, "markSeams", default=None)
+    clear = take_bool(params, "clearSeams", default=False)
+    if mark is not None or clear:
+        import bmesh as _bmesh
+        bm = _bmesh.new()
+        try:
+            bm.from_mesh(mesh)
+            bm.edges.ensure_lookup_table()
+            cleared = 0
+            if clear:
+                for e in bm.edges:
+                    if e.seam:
+                        e.seam = False
+                        cleared += 1
+            marked = 0
+            criteria = None
+            if mark is not None:
+                spec = mark if isinstance(mark, dict) else {}
+                if mark is True:
+                    # Bare true is ambiguous - "every edge" and "the sharp ones" are different
+                    # meshes, and guessing would produce one of them silently.
+                    raise MifOpError(
+                        "markSeams:true is ambiguous - say which edges. Pass an object using the "
+                        "same selectors bevel_edges takes: {minAngleDeg: 40} for everything "
+                        "sharper than 40 degrees, {boundaryOnly: true}, {edgeIndices: [...]}, or "
+                        "{allEdges: true}. NOTHING was changed.")
+                edges, criteria = _select_edges(bm, obj, spec, "uv_unwrap.markSeams")
+                for e in edges:
+                    if not e.seam:
+                        e.seam = True
+                        marked += 1
+                if not edges:
+                    raise MifOpError(
+                        "markSeams matched NO edges on '%s', so it would mark nothing and the "
+                        "unwrap below would behave as though seams had never been asked for. "
+                        "Criteria: %s. NOTHING was changed." % (obj.name, criteria))
+            bm.to_mesh(mesh)
+            mesh.update()
+        finally:
+            bm.free()
+        # Read back off the MESH, not the bmesh that wrote it.
+        seams = {
+            "marked": marked,
+            "cleared": cleared,
+            "seamEdgesNow": sum(1 for e in mesh.edges if e.use_seam),
+            "criteria": criteria,
+        }
+
     warnings = []
     if method == "ANGLE" and not any(e.use_seam for e in mesh.edges):
         warnings.append(
@@ -1582,6 +1642,13 @@ def op_uv_unwrap(params):
         else:
             bpy.ops.uv.unwrap(method="ANGLE_BASED", margin=margin,
                               correct_aspect=correct_aspect)
+
+        # PACK AFTER THE UNWRAP, never before - packing first packs the OLD layout, which looks
+        # like it worked and is simply the previous islands rearranged.
+        if take_bool(params, "uvPack", default=False):
+            pack_margin = take_float(params, "packMargin")
+            bpy.ops.uv.select_all(action="SELECT")
+            bpy.ops.uv.pack_islands(margin=margin if pack_margin is None else pack_margin)
     except Exception as exc:
         # A layer created for an unwrap that then threw is debris that would change the next
         # export without appearing in any response.
@@ -1599,6 +1666,71 @@ def op_uv_unwrap(params):
         except Exception:
             pass
 
+    # ---- TRANSFORM LAST, on the layer that was just written ------------------------------------
+    # Plain RNA on the UV loops rather than an operator: no mode change, no selection, and the
+    # postcondition is the bounds read back off the layer afterwards.
+    transform = take(params, "uvTransform", default=None)
+    uv_transform = None
+    if transform is not None:
+        if not isinstance(transform, dict):
+            raise MifOpError("uvTransform must be an object like {scale: [1,1], offset: [0,0]}. "
+                             "The unwrap above already ran.")
+        unknown = set(transform) - {"scale", "offset"}
+        if unknown:
+            raise MifOpError("uvTransform does not take %s - it takes scale [u,v] and offset "
+                             "[u,v]. Rotation is not offered because rotating a packed layout "
+                             "moves islands out of 0-1 with nothing to put them back."
+                             % ", ".join(sorted(unknown)))
+
+        def _pair(key, default):
+            v = transform.get(key, default)
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                return (float(v), float(v))
+            if not isinstance(v, (list, tuple)) or len(v) != 2 \
+                    or any(not isinstance(x, (int, float)) or isinstance(x, bool) for x in v):
+                raise MifOpError("uvTransform.%s must be a number or [u,v]; got %r" % (key, v))
+            return (float(v[0]), float(v[1]))
+
+        sx, sy = _pair("scale", 1.0)
+        ox, oy = _pair("offset", 0.0)
+        layer = mesh.uv_layers.get(active_name) or mesh.uv_layers.active
+        if layer is None:
+            raise MifOpError("no UV layer to transform after the unwrap, which should be "
+                             "impossible - reported rather than crashing on None.")
+        n = len(layer.data)
+        flat = [0.0] * (n * 2)
+        layer.data.foreach_get("uv", flat)
+        before_u = flat[0::2]
+        before_v = flat[1::2]
+        for i in range(n):
+            flat[i * 2] = flat[i * 2] * sx + ox
+            flat[i * 2 + 1] = flat[i * 2 + 1] * sy + oy
+        layer.data.foreach_set("uv", flat)
+        mesh.update()
+
+        check = [0.0] * (n * 2)
+        layer.data.foreach_get("uv", check)
+        us, vs = check[0::2], check[1::2]
+        # Read back off the layer - foreach_set reports nothing, and a transform that did not take
+        # would leave a layout that looks unwrapped and is in the wrong place.
+        uv_transform = {
+            "scale": [sx, sy],
+            "offset": [ox, oy],
+            "loops": n,
+            "boundsBefore": {"min": [min(before_u), min(before_v)],
+                             "max": [max(before_u), max(before_v)]} if n else None,
+            "boundsAfter": {"min": [min(us), min(vs)], "max": [max(us), max(vs)]} if n else None,
+        }
+        if n and (min(us) < -1e-6 or min(vs) < -1e-6 or max(us) > 1.0 + 1e-6
+                  or max(vs) > 1.0 + 1e-6):
+            # Said, not refused: leaving 0-1 is legal and sometimes deliberate (tiling), but it is
+            # NOT what Unreal wants from a lightmap channel and nothing else would mention it.
+            warnings.append(
+                "after uvTransform the layout extends outside 0-1 (u %.4f..%.4f, v %.4f..%.4f). "
+                "That is legal and fine for a tiling texture, but a lightmap channel must stay "
+                "inside 0-1 or Unreal will pack it wrong."
+                % (min(us), max(us), min(vs), max(vs)))
+
     after = [uv.name for uv in mesh.uv_layers]
     return {
         "object": obj.name,
@@ -1610,6 +1742,9 @@ def op_uv_unwrap(params):
         "angleLimitDeg": angle_deg if method == "SMART" else None,
         "islandMargin": margin,
         "faces": len(mesh.polygons),
+        "seams": seams,
+        "packed": bool(take_bool(params, "uvPack", default=False)),
+        "uvTransform": uv_transform,
         "warnings": warnings,
         "note": ("the unwrap wrote into %r. Unreal reads lightmaps from a SECOND UV channel, so "
                  "pass uvLayer to put a LIGHTMAP pass somewhere other than the base UVs."

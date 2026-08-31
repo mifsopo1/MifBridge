@@ -417,6 +417,60 @@ def main():
           % json.dumps(r.get("warnings")))
 
     print("")
+    print("=== T779: markSeams closes the gap T778 reports, and pack/transform ride along ===")
+    # T778 asserts the endpoint WARNS that ANGLE has no seams. Nothing could mark one - the
+    # endpoint offered a method its callers could not use. This is the other half.
+    amb = call("uv_unwrap", object=name, markSeams=True, uvLayer="MifSeamAmb")
+    check("T779 markSeams:true is refused as ambiguous rather than guessing between "
+          "'every edge' and 'the sharp ones', which are different meshes",
+          amb.get("ok") is False and "ambiguous" in (amb.get("error") or ""),
+          (amb.get("error") or "")[:200])
+
+    none_match = call("uv_unwrap", object=name, markSeams={"minAngleDeg": 179},
+                      uvLayer="MifSeamNone")
+    check("T779 a criterion matching NO edge is refused - it would mark nothing and the unwrap "
+          "would behave as though seams had never been asked for",
+          none_match.get("ok") is False and "matched NO edges" in (none_match.get("error") or ""),
+          (none_match.get("error") or "")[:220])
+
+    seamed = call("uv_unwrap", object=name, markSeams={"minAngleDeg": 40}, method="ANGLE",
+                  uvLayer="MifSeamed")
+    check("T779 marking seams by dihedral angle succeeds and counts them off the MESH",
+          seamed.get("ok") is not False and (seamed.get("seams") or {}).get("marked", 0) > 0
+          and (seamed.get("seams") or {}).get("seamEdgesNow", 0) > 0,
+          json.dumps(seamed.get("seams"))[:220])
+    # THE assertion. T778's warning is the endpoint saying it cannot do its job; with seams marked
+    # in the same call it stops saying it.
+    check("T779 and the ANGLE no-seams warning is GONE - the method T778 shows as unusable is "
+          "now reachable in one call",
+          not any("seam" in str(w).lower() for w in (seamed.get("warnings") or [])),
+          json.dumps(seamed.get("warnings"))[:220])
+
+    packed = call("uv_unwrap", object=name, method="SMART", uvPack=True, uvLayer="MifPacked")
+    check("T779 uvPack runs after the unwrap and reports that it did",
+          packed.get("ok") is not False and packed.get("packed") is True,
+          json.dumps(packed)[:200])
+
+    xf = call("uv_unwrap", object=name, method="SMART", uvLayer="MifXf",
+              uvTransform={"scale": 0.5, "offset": [0.25, 0.25]})
+    t = xf.get("uvTransform") or {}
+    check("T779 uvTransform reports the bounds BEFORE and AFTER, read back off the layer",
+          xf.get("ok") is not False and t.get("boundsBefore") and t.get("boundsAfter"),
+          json.dumps(t)[:250])
+    # Measured, not assumed: a half-scale transform must halve the span.
+    if t.get("boundsBefore") and t.get("boundsAfter"):
+        span_before = t["boundsBefore"]["max"][0] - t["boundsBefore"]["min"][0]
+        span_after = t["boundsAfter"]["max"][0] - t["boundsAfter"]["min"][0]
+        check("T779 and a 0.5 scale really halved the U span - measured from the layer, not "
+              "trusted from the request",
+              abs(span_after - span_before * 0.5) < 1e-4,
+              "before %.5f after %.5f" % (span_before, span_after))
+    bad = call("uv_unwrap", object=name, uvTransform={"rotate": 45}, uvLayer="MifXfBad")
+    check("T779 an unsupported uvTransform key is refused and says why rotation is not offered",
+          bad.get("ok") is False and "Rotation is not offered" in (bad.get("error") or ""),
+          (bad.get("error") or "")[:220])
+
+    print("")
     print("=== T769: clear_scene empties it ===")
     r = call("clear_scene")
     check("T769 clear_scene succeeded", r.get("ok") is not False, r.get("error"))

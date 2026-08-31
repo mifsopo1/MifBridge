@@ -4531,11 +4531,17 @@ def bl_select_edges(object_name: str, selector: dict = None, max_reported: int =
 @mcp.tool()
 def bl_uv_unwrap(object_name: str, method: str = "SMART", uv_layer: str = None,
                  angle_limit_deg: float = None, island_margin: float = 0.02,
-                 replace: bool = False, dry_run: bool = False) -> dict:
+                 replace: bool = False, dry_run: bool = False,
+                 mark_seams: dict = None, clear_seams: bool = False,
+                 uv_pack: bool = False, pack_margin: float = None,
+                 uv_transform: dict = None) -> dict:
     "Generate a UV layer on a Blender mesh. Closes a gap the addon could already SEE: object_info and gen_status both report uvLayers, and the quality check says outright 'no UVs - texturing and lightmaps will both fail until it is unwrapped',"
     return _blender("uv_unwrap", object=object_name, method=method, uvLayer=uv_layer,
                     angleLimitDeg=angle_limit_deg, islandMargin=island_margin,
-                    replace=replace, dryRun=dry_run)
+                    replace=replace, dryRun=dry_run,
+                    markSeams=mark_seams, clearSeams=clear_seams or None,
+                    uvPack=uv_pack or None, packMargin=pack_margin,
+                    uvTransform=uv_transform)
 
 
 @mcp.tool()
