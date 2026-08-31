@@ -6007,7 +6007,56 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
 ### LOW - worth having, not worth prioritising
 
-- [ ] **extend describe_animation and add write for montage sections + sync markers (add_montage_section / add_sync_marker)** (hours)
+- [x] **extend describe_animation and add write for montage sections + sync markers (add_montage_section / add_sync_marker)** (hours)  **DONE 2026-08-31, at the vetter's scope.**
+      SHIPPED: add_sync_marker / remove_sync_marker in MifBridgeAnimation.cpp, MCP wrappers,
+      extended help, tools/test_sync_markers.py - 15 PASS 0 FAIL against a live editor.
+
+      TWO THIRDS OF THIS ENTRY WERE ALREADY DONE OR REFUTED, found by reading the handler rather
+      than the entry:
+        * the describe_animation half needed NOTHING. It has reported AuthoredSyncMarkers since it
+          was written (MifBridgeAnimation.cpp:514) and montage CompositeSections and SlotAnimTracks
+          at :531 and :547.
+        * the montage-section WRITE half stays dropped, as the vetter ruled: set_property already
+          does the link operation through the Member=Value array accessor.
+      So the real remaining work was the sync-marker write half, and that is what was built.
+
+      T1912 IS WORTH MORE THAN THE ENDPOINTS. test_anim_notify.py carried a paragraph headed "NOT
+      COVERED, AND IT IS THE MOST IMPORTANT BRANCH", about remove_anim_notify_track's guard against
+      a HARD EDITOR CRASH - UAnimSequence::RefreshCacheData reaching
+      `AnimNotifyTracks[0].SyncMarkers.Add(...)` with no bounds check (AnimSequence.cpp:3431),
+      operator[] on an empty array. It said the state "CANNOT BE BUILT ON THIS PROJECT" because
+      nothing could author a sync marker onto a cooked animation. add_sync_marker builds it -
+      AuthoredSyncMarkers is a plain UPROPERTY that survives the cook - and T1912 now watches that
+      guard refuse and cite the engine line. A guard against an editor crash had never once been
+      seen to fire before. That suite's docstring was corrected in the same commit rather than left
+      claiming coverage it no longer lacks.
+
+      THE MIRROR GUARD IS REPORTED AS UNEXERCISED, not passed. add_sync_marker refuses a sequence
+      with ZERO notify tracks, which is the same crash from the other side, and on this project that
+      arm cannot be reached: UE synthesises notify tracks on the first RefreshCacheData, so a
+      cooked-loaded sequence already has one by the time any endpoint sees it. Said out loud rather
+      than counted - a guard nobody has watched refuse is not a tested guard.
+
+      Markers are kept sorted by time (the runtime marker walk assumes it, and adding out of order
+      makes a blend pick the wrong marker without failing). `time` is required with no default,
+      because a marker at 0 is an authoring choice rather than a fallback, and a time past the end
+      is refused rather than clamped. The postcondition checks BOTH lists: AuthoredSyncMarkers and
+      UniqueMarkerNames, the derived one the runtime sync-group system actually matches on - a
+      marker present in the first but not the second exists in the asset and never takes effect.
+
+      FOUND AND NOT FIXED, filed below: nothing reports notify track NAMES, so a track can only be
+      addressed if you are the one who created it.
+
+- [ ] **describe_animation should report notify TRACK NAMES** (hours)
+      Found while writing test_sync_markers.py on 2026-08-31. describe_animation reports notifies
+      and sync markers, and remove_anim_notify_track addresses a track BY NAME - but no endpoint
+      anywhere reports the names of the tracks a sequence has. Its own refusal says "no notify track
+      named 'X' on this sequence (it has 1)" - the count, never the names. So a track can be removed
+      only if the caller created it in the same session and remembers what it called it, and a
+      cooked sequence whose tracks UE synthesised is effectively unaddressable (T1912 had to guess
+      "1"). The fix is small - emit AnimNotifyTracks' names alongside notifyCount - and it makes an
+      existing write endpoint usable rather than adding a new one.
+
       Author a montage's section list (names, times, next-section links - what makes a montage loop, chain or branch) and an AnimSequence's authored sync markers (what makes two animations in a sync group stay in step).
       API: Sections: UAnimMontage::CompositeSections (Runtime/Engine/Classes/Animation/AnimMontage.h:673-674, plain UPROPERTY), ::SlotAnimTracks (:677-678), ::GetAnimCompositeSection(int32) (:782, ENGINE_API), ::GetSectionStartAndEndTime (:786), and crucially ::RefreshNextPrevSections() (:591, ENGINE_API) which rebuilds the link graph. Sync markers: UAnimationBlueprintLibrary::AddAnimationSyncMarker(UAnimSeq...
       Cooked: Cooked-SAFE for both. CompositeSections, SlotAnimTracks and AuthoredSyncMarkers are all runtime data present in a cooked package (they must be - the runtime montage and sync-group systems read them), and RefreshNextPrevSections / RefreshSyncMarkerDataFromAuthored touch only those runtime arrays. The...

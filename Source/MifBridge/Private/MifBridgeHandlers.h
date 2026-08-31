@@ -1428,6 +1428,8 @@ namespace MifBridge
 	MIF_DECL(add_anim_state);
 	MIF_DECL(add_anim_notify);
 	MIF_DECL(remove_anim_notify);
+	MIF_DECL(add_sync_marker);
+	MIF_DECL(remove_sync_marker);
 	MIF_DECL(add_anim_notify_track);
 	MIF_DECL(remove_anim_notify_track);
 	/** Sockets on a SkeletalMesh or StaticMesh asset - there was no way to see what a mod could

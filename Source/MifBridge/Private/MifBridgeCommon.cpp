@@ -372,6 +372,8 @@ namespace MifBridge
 			MIF_BIND(add_anim_state);
 			MIF_BIND(add_anim_notify);
 			MIF_BIND(remove_anim_notify);
+			MIF_BIND(add_sync_marker);
+			MIF_BIND(remove_sync_marker);
 			MIF_BIND(add_anim_notify_track);
 			MIF_BIND(remove_anim_notify_track);
 			MIF_BIND(list_sockets);

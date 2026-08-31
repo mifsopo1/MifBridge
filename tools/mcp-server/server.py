@@ -4689,6 +4689,19 @@ def bl_separate_mesh(object: str, mode: str = "loose") -> dict:
 
 
 @mcp.tool()
+def add_sync_marker(asset_path: str, name: str, time: float, track_index: int = 0) -> dict:
+    "Author a sync marker on an AnimSequence - the write half of the syncMarkers describe_animation already reports. Sync markers are what keep two animations in a sync group in step, so a locomotion blend does not slide its feet. REFUSES on a sequence with zero notify tracks: that combination crashes the editor on the next refresh, and it is exactly the shape a cooked sequence loads in. Call add_anim_notify_track first. See mif_help."
+    return _post("add_sync_marker", assetPath=asset_path, name=name, time=time,
+                 trackIndex=track_index)
+
+
+@mcp.tool()
+def remove_sync_marker(asset_path: str, name: str, time: float = None) -> dict:
+    "Remove sync markers from an AnimSequence by name - every marker with that name, or just the one at `time` if given. Judged by re-reading AuthoredSyncMarkers afterwards, and it also checks the name left UniqueMarkerNames, which is the derived list the runtime sync-group system actually matches on. See mif_help."
+    return _post("remove_sync_marker", assetPath=asset_path, name=name, time=time)
+
+
+@mcp.tool()
 def set_plugin_enabled(name: str, enabled: bool, dry_run: bool = False,
                        save: bool = True) -> dict:
     "Enable or disable a plugin in the current .uproject and save it - the write half of the `enabled` field list_game_feature_plugins and describe_game_feature_plugin already report. Changes what the NEXT LAUNCH loads and nothing about this session: no plugin can be loaded or unloaded into a running editor, and the response says so. `enabled` is REQUIRED and has no default. dry_run reports exactly what would change and writes nothing, in any write mode; the real write is full-mode only and backs the .uproject up first. Refuses a plugin name it cannot find, because the engine would otherwise write that name into the .uproject as a reference to nothing and report success. See mif_help."

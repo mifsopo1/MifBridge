@@ -2623,4 +2623,305 @@ namespace MifBridge
 		Out->SetStringField(TEXT("assetNote"),
 			TEXT("the animation is dirty and NOTHING has been saved."));
 	}
+
+	// ============================================================================================
+	// add_sync_marker / remove_sync_marker - the write half of AuthoredSyncMarkers.
+	// ============================================================================================
+	//
+	// Sync markers are what keep two animations in a sync group in step: a locomotion set whose
+	// footfalls are marked plays a blend without sliding feet. describe_animation has reported them
+	// since it was written (:514) and nothing could author one.
+	//
+	// THE CRASH GUARD HERE IS THE MIRROR OF MifNotifyTrackRemovalIsSafe, and it matters more,
+	// because the state it prevents is the state a COOKED sequence arrives in. RefreshCacheData
+	// (AnimSequence.cpp:3421-3435) walks AuthoredSyncMarkers and, for a marker whose TrackIndex is
+	// out of range, does:
+	//
+	//     ensureMsgf(0, TEXT("AnimNotifyTrack: Wrong indices found"));
+	//     AnimNotifyTracks[0].SyncMarkers.Add(&SyncMarker);
+	//
+	// with no bounds check. Adding a marker to a sequence that has ZERO notify tracks creates
+	// exactly that pairing - markers present, tracks absent - and the next refresh is
+	// TArray::operator[] on an empty array, a check() failure that takes the editor with it.
+	// AuthoredSyncMarkers is a plain UPROPERTY and survives the cook; AnimNotifyTracks is
+	// WITH_EDITORONLY_DATA and does not. So the caller most likely to hit this is someone working
+	// on a cooked asset, which is the case this plugin exists to serve. Refused up front, with
+	// add_anim_notify_track named as the fix.
+	//
+	// MARKERS LIVE ON UAnimSequence ALONE. UAnimMontage and UAnimComposite have no
+	// AuthoredSyncMarkers, and answering "not that kind of asset" beats a cast that quietly does
+	// nothing.
+
+	/** Would adding a marker leave this sequence in the state that crashes RefreshCacheData? */
+	bool MifSyncMarkerAddIsSafe(UAnimSequence* Seq, FString& OutWhy)
+	{
+		if (Seq->AnimNotifyTracks.Num() > 0)
+		{
+			return true;
+		}
+		OutWhy = FString::Printf(
+			TEXT("'%s' has ZERO notify tracks, and adding a sync marker to a sequence with no "
+				 "tracks CRASHES the editor on the next refresh - UAnimSequence::RefreshCacheData "
+				 "reaches `AnimNotifyTracks[0].SyncMarkers.Add(...)` with no bounds check "
+				 "(AnimSequence.cpp:3431), which is TArray::operator[] on an empty array. This is "
+				 "what a COOKED sequence looks like, because AuthoredSyncMarkers survives the cook "
+				 "and the editor-only track array does not. Refused before the engine was touched. "
+				 "Call add_anim_notify_track first, then add the marker. NOTHING was changed."),
+			*Seq->GetName());
+		return false;
+	}
+
+	/** The markers as they exist right now - the postcondition every write here is judged by. */
+	void MifWriteSyncMarkers(UAnimSequence* Seq, const TSharedRef<FJsonObject>& Out)
+	{
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		for (const FAnimSyncMarker& M : Seq->AuthoredSyncMarkers)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetStringField(TEXT("name"), M.MarkerName.ToString());
+			J->SetNumberField(TEXT("time"), M.Time);
+#if WITH_EDITORONLY_DATA
+			J->SetNumberField(TEXT("trackIndex"), M.TrackIndex);
+#endif
+			Arr.Add(MakeShared<FJsonValueObject>(J));
+		}
+		Out->SetArrayField(TEXT("syncMarkers"), Arr);
+		Out->SetNumberField(TEXT("syncMarkerCount"), Seq->AuthoredSyncMarkers.Num());
+
+		// UniqueMarkerNames is DERIVED, rebuilt by RefreshSyncMarkerDataFromAuthored. Reporting it
+		// separately is how a caller can tell the authored array was written from the runtime view
+		// having actually been refreshed - the two disagreeing is the failure worth seeing.
+		// RETURNS A POINTER, not an array - TArray<FName>* (AnimSequence.h:405). Dereferencing it
+		// blind would be a crash for the sake of three characters.
+		TArray<TSharedPtr<FJsonValue>> Uniq;
+		if (const TArray<FName>* Names = Seq->GetUniqueMarkerNames())
+		{
+			for (const FName& N : *Names)
+			{
+				Uniq.Add(MakeShared<FJsonValueString>(N.ToString()));
+			}
+		}
+		Out->SetArrayField(TEXT("uniqueMarkerNames"), Uniq);
+	}
+
+	UAnimSequence* MifResolveSyncSeq(const TSharedRef<FJsonObject>& In,
+									 const TSharedRef<FJsonObject>& Out, const TCHAR* Endpoint)
+	{
+		UAnimSequenceBase* Base = MifResolveAnimSeq(In, Out, Endpoint);
+		if (!Base) { return nullptr; }
+		UAnimSequence* Seq = Cast<UAnimSequence>(Base);
+		if (!Seq)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s, and sync markers live on UAnimSequence alone - a montage or "
+					 "composite has no AuthoredSyncMarkers at all. NOTHING was changed."),
+				*Base->GetName(), *Base->GetClass()->GetName()));
+			return nullptr;
+		}
+		return Seq;
+	}
+
+	void H_add_sync_marker(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("asset"), TEXT("name"), TEXT("marker"),
+			  TEXT("time"), TEXT("trackIndex") },
+			TEXT("assetPath (aliases: path, asset) - an AnimSequence; name (alias: marker) - the "
+				 "marker name, which is what a sync group matches on; time (seconds into the "
+				 "sequence); trackIndex (default 0 - which notify track it sits on)"),
+			{ { TEXT("track"), TEXT("spell it trackIndex - this takes the INDEX, not the track name") },
+			  { TEXT("notify"), TEXT("a sync marker is not a notify - add_anim_notify places those") },
+			  { TEXT("montage"), TEXT("sync markers live on an AnimSequence; a montage has none") } }))
+		{
+			return;
+		}
+		UAnimSequence* Seq = MifResolveSyncSeq(In, Out, TEXT("add_sync_marker"));
+		if (!Seq) { return; }
+
+		const FString Name = JStrAny(In, { TEXT("name"), TEXT("marker") });
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required - the marker name a sync group matches on. "
+						   "NOTHING was changed."));
+			return;
+		}
+		if (!In->HasField(TEXT("time")))
+		{
+			Fail(Out, TEXT("time is required (seconds into the sequence), and has no sensible "
+						   "default - a marker at 0 is a real authoring choice, not a fallback. "
+						   "NOTHING was changed."));
+			return;
+		}
+		const float Time = (float)JNum(In, TEXT("time"), 0.0);
+		const float Length = Seq->GetPlayLength();
+		if (Time < 0.0f || Time > Length)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("time %.4f is outside '%s', which is %.4f seconds long. A marker past the end "
+					 "never fires and nothing reports it. NOTHING was changed."),
+				Time, *Seq->GetName(), Length));
+			return;
+		}
+
+		// THE CRASH GUARD, before anything is touched.
+		FString Why;
+		if (!MifSyncMarkerAddIsSafe(Seq, Why))
+		{
+			Fail(Out, Why);
+			return;
+		}
+
+		const int32 TrackIndex = JInt(In, TEXT("trackIndex"), 0);
+		if (TrackIndex < 0 || TrackIndex >= Seq->AnimNotifyTracks.Num())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("trackIndex %d is outside this sequence's %d notify track(s). An out-of-range "
+					 "TrackIndex is the exact condition RefreshCacheData mishandles, so it is "
+					 "refused rather than clamped. NOTHING was changed."),
+				TrackIndex, Seq->AnimNotifyTracks.Num()));
+			return;
+		}
+
+		const int32 Before = Seq->AuthoredSyncMarkers.Num();
+		Seq->Modify();
+
+		FAnimSyncMarker Marker;
+		Marker.MarkerName = FName(*Name);
+		Marker.Time = Time;
+#if WITH_EDITORONLY_DATA
+		Marker.TrackIndex = TrackIndex;
+		Marker.Guid = FGuid::NewGuid();
+#endif
+		Seq->AuthoredSyncMarkers.Add(Marker);
+
+		// Sorted by time, which is what the runtime marker walk assumes. Adding out of order does
+		// not fail loudly - it makes a blend pick the wrong marker - so it is done here rather than
+		// left to whoever adds the second marker.
+		Seq->AuthoredSyncMarkers.Sort([](const FAnimSyncMarker& A, const FAnimSyncMarker& B)
+		{
+			return A.Time < B.Time;
+		});
+		Seq->RefreshSyncMarkerDataFromAuthored();
+		Seq->MarkPackageDirty();
+
+		// POSTCONDITION. Add() cannot fail, but the refresh deriving UniqueMarkerNames from it can,
+		// and a marker the runtime cannot see is the failure that matters.
+		MifWriteSyncMarkers(Seq, Out);
+		MifNoteTrackState(Seq, Out);
+		const bool bPresent = Seq->AuthoredSyncMarkers.ContainsByPredicate(
+			[&](const FAnimSyncMarker& M) { return M.MarkerName == FName(*Name)
+											   && FMath::IsNearlyEqual(M.Time, Time); });
+		const TArray<FName>* UniqueNames = Seq->GetUniqueMarkerNames();
+		const bool bUnique = UniqueNames && UniqueNames->Contains(FName(*Name));
+		if (!bPresent || Seq->AuthoredSyncMarkers.Num() != Before + 1)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("the marker was added but is not in AuthoredSyncMarkers afterwards (%d -> %d). "
+					 "Read back rather than assumed."), Before, Seq->AuthoredSyncMarkers.Num()));
+			return;
+		}
+		if (!bUnique)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is in AuthoredSyncMarkers but did NOT reach UniqueMarkerNames, which is "
+					 "the list the runtime sync-group system matches on - so the marker exists in "
+					 "the asset and would never take effect. RefreshSyncMarkerDataFromAuthored did "
+					 "not do what it was called for."), *Name));
+			return;
+		}
+		Out->SetStringField(TEXT("added"), Name);
+		Out->SetNumberField(TEXT("time"), Time);
+		Out->SetStringField(TEXT("note"),
+			TEXT("the asset is dirty and NOT saved - save_asset persists it. Sync markers only do "
+				 "anything inside a sync group: two sequences must share the marker NAMES for a "
+				 "blend between them to stay in step."));
+	}
+
+	void H_remove_sync_marker(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("assetPath"), TEXT("path"), TEXT("asset"), TEXT("name"), TEXT("marker"),
+			  TEXT("time") },
+			TEXT("assetPath (aliases: path, asset) - an AnimSequence; name (alias: marker) - every "
+				 "marker with this name is removed unless time is given; time (optional, seconds) - "
+				 "remove only the one at this time"),
+			{ { TEXT("index"), TEXT("markers are addressed by NAME (and optionally time); an array index would shift under you as soon as one is removed") },
+			  { TEXT("all"), TEXT("omitting time already removes every marker with that name") } }))
+		{
+			return;
+		}
+		UAnimSequence* Seq = MifResolveSyncSeq(In, Out, TEXT("remove_sync_marker"));
+		if (!Seq) { return; }
+
+		const FString Name = JStrAny(In, { TEXT("name"), TEXT("marker") });
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required - which marker to remove. NOTHING was changed."));
+			return;
+		}
+		const bool bByTime = In->HasField(TEXT("time"));
+		const float Time = (float)JNum(In, TEXT("time"), 0.0);
+		const FName MarkerName(*Name);
+
+		const int32 Before = Seq->AuthoredSyncMarkers.Num();
+		const int32 Matching = Seq->AuthoredSyncMarkers.FilterByPredicate(
+			[&](const FAnimSyncMarker& M)
+			{
+				return M.MarkerName == MarkerName
+					&& (!bByTime || FMath::IsNearlyEqual(M.Time, Time));
+			}).Num();
+
+		if (Matching == 0)
+		{
+			// Named, with what IS there - "nothing matched" alone leaves the caller guessing
+			// whether the name or the time was wrong.
+			TArray<FString> Have;
+			for (const FAnimSyncMarker& M : Seq->AuthoredSyncMarkers)
+			{
+				Have.Add(FString::Printf(TEXT("%s@%.3f"), *M.MarkerName.ToString(), M.Time));
+			}
+			Fail(Out, FString::Printf(
+				TEXT("no sync marker named '%s'%s on '%s'. It has %d: %s. NOTHING was changed."),
+				*Name, bByTime ? *FString::Printf(TEXT(" at time %.4f"), Time) : TEXT(""),
+				*Seq->GetName(), Before,
+				Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		Seq->Modify();
+		Seq->AuthoredSyncMarkers.RemoveAll([&](const FAnimSyncMarker& M)
+		{
+			return M.MarkerName == MarkerName
+				&& (!bByTime || FMath::IsNearlyEqual(M.Time, Time));
+		});
+		Seq->RefreshSyncMarkerDataFromAuthored();
+		Seq->MarkPackageDirty();
+
+		MifWriteSyncMarkers(Seq, Out);
+		MifNoteTrackState(Seq, Out);
+		const int32 Removed = Before - Seq->AuthoredSyncMarkers.Num();
+		Out->SetNumberField(TEXT("removed"), Removed);
+		if (Removed != Matching)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("%d marker(s) matched but %d were removed. Counted from the array afterwards, "
+					 "not from the call."), Matching, Removed));
+			return;
+		}
+		// Still in UniqueMarkerNames after removal means the derived view was not rebuilt, and a
+		// sync group would keep matching a marker that no longer exists.
+		const TArray<FName>* UniqueAfter = Seq->GetUniqueMarkerNames();
+		if (UniqueAfter && UniqueAfter->Contains(MarkerName)
+			&& !Seq->AuthoredSyncMarkers.ContainsByPredicate(
+				[&](const FAnimSyncMarker& M) { return M.MarkerName == MarkerName; }))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is gone from AuthoredSyncMarkers but is STILL in UniqueMarkerNames, so "
+					 "the runtime would keep matching a marker that no longer exists."), *Name));
+			return;
+		}
+		Out->SetStringField(TEXT("note"),
+			TEXT("the asset is dirty and NOT saved - save_asset persists it."));
+	}
+
 }

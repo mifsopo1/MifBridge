@@ -30,16 +30,19 @@ on this project:
   TArray::operator[] on an empty array. The guard refuses exactly that combination before the engine
   is touched.
 
-  That combination CANNOT BE BUILT ON THIS PROJECT. No AnimSequence in the first 150 scanned has any
-  authored sync marker, and edit_container refuses to add one because every animation here lives in
-  a COOKED package. So the guard's dangerous branch is unexercised, and this suite says so rather
-  than implying otherwise. What IS asserted is that the guard does not fire when it should not -
-  T1902 removes a track with siblings and T1903 removes a last track from a marker-free sequence,
-  both of which must be ALLOWED. A guard that refuses everything would pass a test that only ever
-  checks it refuses.
+  COVERED SINCE 2026-08-31, BY test_sync_markers.py T1912 - and the paragraph that used to sit here
+  said it never could be. It read: "That combination CANNOT BE BUILT ON THIS PROJECT. No
+  AnimSequence in the first 150 scanned has any authored sync marker, and edit_container refuses to
+  add one because every animation here lives in a COOKED package." That was true, and it stopped
+  being true the moment add_sync_marker existed: it authors AuthoredSyncMarkers directly, which is a
+  plain UPROPERTY that survives a cook, so the marker-plus-one-track state is now buildable here.
+  T1912 builds it and watches the guard refuse, citing AnimNotifyTracks[0]. A guard against an
+  editor crash had never once been seen to fire until then.
 
-  On an uncooked project the branch is reachable and should be tested there. That is the reason it
-  is guarded rather than left to the engine.
+  What this suite still asserts is the other half, which matters just as much: that the guard does
+  NOT fire when it should not - T1902 removes a track with siblings and T1903 removes a last track
+  from a marker-free sequence, both of which must be ALLOWED. A guard that refuses everything would
+  pass a test that only ever checks it refuses.
 
 COOKED TRACK SYNTHESIS. UAnimSequenceBase::Notifies is a plain UPROPERTY and survives a cook;
 AnimNotifyTracks is WITH_EDITORONLY_DATA and does not. So a cooked sequence loads with notifies

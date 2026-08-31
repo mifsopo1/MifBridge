@@ -49,6 +49,7 @@ add_sequence_track.binding
 add_sequence_track.sequence
 add_socket.mesh
 add_sublevel.level
+add_sync_marker.marker
 add_to_collection.assets
 add_virtual_bone.assetpath
 analyze_skeletal_split.mesh
@@ -181,6 +182,7 @@ remove_niagara_emitter.system
 remove_pcg_node.assetpath
 remove_pin.name
 remove_sublevel.level
+remove_sync_marker.marker
 remove_virtual_bone.assetpath
 rename_event.to
 rename_event_dispatcher.dispatcher
