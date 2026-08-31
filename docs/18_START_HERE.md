@@ -68,8 +68,19 @@ failed, printed `Result: Failed (OtherCompilationError)`, and exited 0. Grep the
 DLL, so a broken build is not "no new features", it is no bridge at all.
 
 **Reading two engine headers is not enough to know something compiles on both.** Reading finds
-symbols that were deleted; it reliably misses symbols that changed shape. There is a compiler for
-this:
+symbols that were deleted; it reliably misses symbols that changed shape. And there is a third case
+that is worse than either, because the code compiles AND runs:
+
+> A deprecated engine function may have been replaced by a **CONSTANT**, or by an **EMPTY body**.
+> `UE_DEPRECATED` tells you the call is going away. It never tells you the answer changed.
+
+`ALandscape::HasLayersContent()` is `return true;` on 5.7. A guard reading it refuses EVERY landscape
+there while behaving perfectly on 5.3, and no presence check sees it - the symbol has the same name,
+the same signature, in both trees. `ToggleCanHaveLayersContent()` is empty on 5.7, which is why
+`create_landscape`'s "edit layers OFF" cannot hold. **Read the body of anything deprecated that you
+branch on.** docs/02 has the taxonomy.
+
+There is a compiler for this:
 
 ```
 python tools/make_engine_probe.py --engine "C:/Program Files/Epic Games/UE_5.7" --out <scratch>/probe57 --build
@@ -78,13 +89,40 @@ python tools/make_engine_probe.py --engine "C:/Program Files/Epic Games/UE_5.7" 
 Run it before claiming an engine works. `docs/02_GOTCHAS.md` section 14 has the six failure shapes and
 why four of them are invisible to inspection.
 
+**If it says "Unable to build while Live Coding is active"** and the editor holding it is not yours to
+close (Curfew, usually), the block is keyed on a mutex named after the target's executable - and an
+installed-engine *Development* editor target resolves to the shared `UnrealEditor.exe`, the exact
+binary that editor is live-coding. Building **DebugGame** emits `UnrealEditor-Win64-DebugGame.exe`, a
+different path and so a different mutex, and compiles the same sources against the same headers with
+no bypass flag:
+
+```
+Build.bat MifProbeEditor Win64 DebugGame -Project=D:/p57/MifProbe.uproject -WaitMutex
+```
+
+Use a SHORT project path - the scratchpad blows the 260-character limit on DebugGame's longer
+intermediate names. It is a compile CHECK only: it dies near the end on an engine header
+(`UnrealType.h`, C4702) that DebugGame promotes to an error, and it does **not** satisfy
+`make_release`'s 5.7 gate, which wants a recorded Development probe.
+
 ## How to know the state is healthy
 
 ```
-python tools/parity_check.py          # endpoint registry, params, hook drift
-python tools/night_heartbeat.py       # is another session working?
-python tools/mifwatch.py              # did any session die mid-call?
+python tools/parity_check.py            # endpoint registry, params, hook drift
+python tools/harvest_param_table.py --check   # describe table vs the real guards
+python tools/audit_undefined_names.py   # NameErrors in paths tests never reach
+python tools/audit_advice_gaps.py       # advice naming an operation that does not exist
+python tools/audit_value_discovery.py   # a parameter demanding a value nothing enumerates
+python tools/coverage_gaps.py           # endpoints named in no suite
+python tools/audit_suite_reach.py       # how much of each suite actually RUNS
+python tools/night_heartbeat.py         # is another session working?
+python tools/mifwatch.py                # did any session die mid-call?
 ```
+
+The last one is the newest and the least obvious: a suite reporting PASS is not a suite that tested
+what it contains. `test_safety_gate` ran 5 of its 38 assertions here for months, because everything
+below its fail-safe bail-out skips whenever the write gate is off - which is the mode this editor
+runs in.
 
 `self_audit` on the live bridge is the authoritative endpoint list. **Verify coverage by READING
 handlers, never by endpoint name** — `list_collision_profiles` sounds like a collision read and lists
