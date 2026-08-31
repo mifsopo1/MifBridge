@@ -6150,7 +6150,32 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       ForEachIntersectingActorDescInstance - list_partition_actors currently refuses a `bounds`
       parameter by name and points at nameContains/classFilter instead.
 
-- [ ] **extend set_sequence_keys with object-path and string channels** (hours)
+- [x] **extend set_sequence_keys with object-path and string channels** (hours)  **DONE 2026-08-31.**
+      set_sequence_keys now keys FMovieSceneStringChannel and FMovieSceneObjectPathChannel alongside
+      double, float, bool and integer. T2307/T2308 in test_sequence_keys.py, 40 PASS 0 FAIL.
+
+      THE OBJECT-PATH CHANNEL IS MORE THAN A COERCION, which is why it was worth its own care.
+      FMovieSceneObjectPathChannel::GetPropertyClass() is the class the bound property expects, and
+      the engine does NOT enforce it - FMovieSceneObjectPathChannelKeyValue takes a bare UObject*,
+      so an object of any class keys cleanly and the section then looks authored while resolving at
+      runtime to something the property cannot use. That is the same failure mode this endpoint is
+      arranged to prevent, one level deeper, so the class is checked here and both classes are named
+      in the refusal.
+
+      EMPTY AND UNRESOLVABLE ARE DIFFERENT, and telling them apart is the point. An empty value is a
+      real key meaning "no object" - that is how a slot gets cleared - so it is accepted. A path
+      that fails to LOAD is refused, because keying null because someone mistyped a path is exactly
+      the silent wrong answer the endpoint refuses everywhere else.
+
+      NOT COVERED, and the suite says so rather than implying otherwise: the wrong-CLASS refusal is
+      unexercised. PropertyClass is set from the bound property, and a track added by class alone
+      has none, so it is null and the check is skipped. Keying a LevelSequence into an object
+      property channel succeeded in the probe, which is the proof it is null. Reachable on a track
+      bound to a real object property and should be tested there.
+
+      The suite's own scope paragraph said object-path and string channels were refused. True when
+      written, false once they were built, and corrected in the same commit.
+
       Scoped out of the 2026-08-30 v1 deliberately. It keys double, float, bool and integer -
       transforms, most property tracks, visibility. FMovieSceneObjectPathChannel and
       FMovieSceneStringChannel each need their own JSON coercion and AddKey shape. The endpoint

@@ -22,7 +22,9 @@ Reporting the request back would be a number that is not true. T2302 writes over
 checks the count reflects what actually happened.
 
 SCOPED, AND THE LIMIT IS DECLARED RATHER THAN DISCOVERED. This pass keys double, float, bool and
-integer channels - transforms, most property tracks and visibility. An object-path or string channel
+integer channels - transforms, most property tracks and visibility. STRING AND OBJECT-PATH WERE
+ADDED 2026-08-31 and T2307/T2308 cover them; the paragraph here used to say they were refused, which
+was true when it was written and stopped being true when they were built. Anything still unhandled
 is refused BY NAME rather than skipped, because a key silently not written leaves a section that
 looks authored and animates nothing. T2303 covers that refusal shape through the unknown-channel
 path, which is the same failure a caller actually hits.
@@ -242,6 +244,77 @@ def main():
         print("  with an UNBOUNDED playback range and none exists here - create_asset produces a")
         print("  bounded 0-0 range and all four project LevelSequences are bounded. describe_level_")
         print("  sequence is what detects that state if you ever meet one.")
+
+        # ------------------------------------------------------------------ T2307 string keys
+        print("\n=== T2307: a string channel, which this endpoint used to refuse ===")
+        ts = SC.confirm_call("add_sequence_track", {
+            "path": seq, "guid": guid,
+            "trackClass": "/Script/MovieSceneTracks.MovieSceneStringTrack"})
+        check("T2307 (setup) a string track is added", ts.get("ok") is True, json.dumps(ts)[:220])
+        ss = SC.confirm_call("add_sequence_section", {
+            "path": seq, "guid": guid, "trackClass": "MovieSceneStringTrack",
+            "startTime": 0, "endTime": 5})
+        chans = ss.get("channels") or []
+        check("T2307 (setup) its section carries a MovieSceneStringChannel",
+              any(c.get("type") == "MovieSceneStringChannel" for c in chans),
+              json.dumps(chans)[:220])
+        sk = SC.confirm_call("set_sequence_keys", {
+            "path": seq, "guid": guid, "trackClass": "MovieSceneStringTrack",
+            "channel": chans[0].get("name") if chans else "None",
+            "keys": [{"time": 1.0, "value": "MifHello"}]})
+        # keysAfter is read from the channel, not counted from the request - the distinction this
+        # suite already makes for the numeric channels.
+        check("T2307 a string key is written and READ BACK off the channel",
+              sk.get("ok") is True and sk.get("keysWritten") == 1 and sk.get("keysAfter") == 1,
+              json.dumps(sk)[:250])
+
+        # ------------------------------------------------------------------ T2308 object paths
+        print("\n=== T2308: an object-path channel, and the difference between empty and wrong ===")
+        to = SC.confirm_call("add_sequence_track", {
+            "path": seq, "guid": guid,
+            "trackClass": "/Script/MovieSceneTracks.MovieSceneObjectPropertyTrack"})
+        check("T2308 (setup) an object property track is added", to.get("ok") is True,
+              json.dumps(to)[:220])
+        so = SC.confirm_call("add_sequence_section", {
+            "path": seq, "guid": guid, "trackClass": "MovieSceneObjectPropertyTrack",
+            "startTime": 0, "endTime": 5})
+        ochans = so.get("channels") or []
+        check("T2308 (setup) its section carries a MovieSceneObjectPathChannel",
+              any(c.get("type") == "MovieSceneObjectPathChannel" for c in ochans),
+              json.dumps(ochans)[:220])
+        oname = ochans[0].get("name") if ochans else "None"
+        # The sequence itself is a real UObject under /Game/_Mif, so it is both loadable and a path
+        # scratch_confirm will allow - a non-scratch path in the payload is refused by check(), and
+        # rightly.
+        ok = SC.confirm_call("set_sequence_keys", {
+            "path": seq, "guid": guid, "trackClass": "MovieSceneObjectPropertyTrack",
+            "channel": oname, "keys": [{"time": 1.0, "value": seq}]})
+        check("T2308 an object-path key naming a real object is written",
+              ok.get("ok") is True and ok.get("keysAfter") == 1, json.dumps(ok)[:250])
+        empty = SC.confirm_call("set_sequence_keys", {
+            "path": seq, "guid": guid, "trackClass": "MovieSceneObjectPropertyTrack",
+            "channel": oname, "keys": [{"time": 2.0, "value": ""}]})
+        # THE distinction. "no object" is a real authoring choice and must be keyable; a path that
+        # fails to load must NOT quietly become the same thing.
+        check("T2308 an EMPTY value is accepted - 'no object' is a real key, not an error",
+              empty.get("ok") is True and empty.get("keysAfter") == 2, json.dumps(empty)[:250])
+        bad = SC.confirm_call("set_sequence_keys", {
+            "path": seq, "guid": guid, "trackClass": "MovieSceneObjectPropertyTrack",
+            "channel": oname, "keys": [{"time": 3.0, "value": "/Game/_MifSeqKeys/Nope.Nope"}]})
+        check("T2308 but a path that does NOT load is refused, rather than silently keying null "
+              "the way an empty value legitimately does",
+              bad.get("ok") is False and "did not load" in (bad.get("error") or ""),
+              (bad.get("error") or "")[:250])
+
+        # NOT COVERED, and said so rather than implied. The endpoint also refuses an object whose
+        # class does not match the channel's GetPropertyClass(), which the engine itself does not
+        # enforce - FMovieSceneObjectPathChannelKeyValue takes a bare UObject*. That arm cannot be
+        # reached here: PropertyClass is set from the bound property, and a track added by class
+        # alone has no property bound, so it is null and the check is skipped. Keying a
+        # LevelSequence into this channel succeeded above, which is the proof it is null.
+        print("  NOTE  the wrong-CLASS refusal is UNEXERCISED: an object property track added by")
+        print("        class alone has no bound property, so the channel's PropertyClass is null")
+        print("        and there is nothing to violate. Reported rather than passed.")
 
     finally:
         if actor:

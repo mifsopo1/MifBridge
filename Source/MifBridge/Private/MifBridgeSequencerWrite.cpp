@@ -45,6 +45,8 @@
 #include "Channels/MovieSceneFloatChannel.h"
 #include "Channels/MovieSceneBoolChannel.h"
 #include "Channels/MovieSceneIntegerChannel.h"
+#include "Channels/MovieSceneStringChannel.h"       // MovieSceneTracks module
+#include "Channels/MovieSceneObjectPathChannel.h"   // GetPropertyClass - the constraint
 #include "ScopedTransaction.h"
 #include "Subsystems/EditorActorSubsystem.h"
 #include "Editor.h"
@@ -851,14 +853,65 @@ namespace MifBridge
 				C->GetData().UpdateOrAddKey(Frame, static_cast<int32>(JNum(K, TEXT("value"), 0.0)));
 				++Written;
 			}
+			else if (ChannelType == FMovieSceneStringChannel::StaticStruct()->GetFName())
+			{
+				FMovieSceneStringChannel* C = static_cast<FMovieSceneStringChannel*>(Channel);
+				C->GetData().UpdateOrAddKey(Frame, JStr(K, TEXT("value")));
+				++Written;
+			}
+			else if (ChannelType == FMovieSceneObjectPathChannel::StaticStruct()->GetFName())
+			{
+				FMovieSceneObjectPathChannel* C = static_cast<FMovieSceneObjectPathChannel*>(Channel);
+				const FString ObjPath = JStr(K, TEXT("value"));
+
+				// AN EMPTY PATH IS A REAL KEY. "no object" is what clears a slot, so it is accepted;
+				// a path that fails to LOAD is refused. Keying null because someone mistyped a path
+				// is the silent wrong answer this endpoint exists to refuse.
+				UObject* Obj = nullptr;
+				if (!ObjPath.IsEmpty())
+				{
+					Obj = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjPath);
+					if (!Obj)
+					{
+						TypeError = FString::Printf(
+							TEXT("key at %.4fs names '%s', which did not load. An EMPTY value is ")
+							TEXT("accepted and keys 'no object'; a path that does not resolve is ")
+							TEXT("refused, because keying null for a mistyped path is exactly the ")
+							TEXT("silent wrong answer this endpoint refuses elsewhere."),
+							TimeSec, *ObjPath);
+						break;
+					}
+
+					// THE CONSTRAINT. The channel knows what class the bound property expects, and
+					// nothing in the engine stops a key of any other class going in - the key value
+					// takes a bare UObject*. A section keyed with the wrong class looks authored and
+					// resolves at runtime to something the property cannot accept.
+					if (UClass* Expected = C->GetPropertyClass())
+					{
+						if (!Obj->IsA(Expected))
+						{
+							TypeError = FString::Printf(
+								TEXT("key at %.4fs names '%s', which is a %s, but channel '%s' ")
+								TEXT("expects a %s. The engine would accept it - the key value takes ")
+								TEXT("a bare UObject* - and the section would look authored while ")
+								TEXT("resolving to something the property cannot use."),
+								TimeSec, *ObjPath, *Obj->GetClass()->GetName(), *ChannelName,
+								*Expected->GetName());
+							break;
+						}
+					}
+				}
+				C->GetData().UpdateOrAddKey(Frame, FMovieSceneObjectPathChannelKeyValue(Obj));
+				++Written;
+			}
 			else
 			{
 				TypeError = FString::Printf(
 					TEXT("channel '%s' is a %s, which this endpoint does not key yet - it handles ")
-					TEXT("double, float, bool and integer channels. That covers transforms, most ")
-					TEXT("property tracks and visibility. Named rather than skipped, because a key ")
-					TEXT("silently not written leaves a section that looks authored and animates ")
-					TEXT("nothing."), *ChannelName, *ChannelType.ToString());
+					TEXT("double, float, bool, integer, string and object-path channels. That ")
+					TEXT("covers transforms, most property tracks and visibility. Named rather than ")
+					TEXT("skipped, because a key silently not written leaves a section that looks ")
+					TEXT("authored and animates nothing."), *ChannelName, *ChannelType.ToString());
 				break;
 			}
 		}
