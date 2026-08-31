@@ -1018,6 +1018,7 @@ namespace MifBridge
 	MIF_DECL(list_blueprints);
 	MIF_DECL(save_blueprint);
 	MIF_DECL(save_package);
+	MIF_DECL(list_automation_tests);
 	MIF_DECL(backup_blueprint);
 
 	// Introspection

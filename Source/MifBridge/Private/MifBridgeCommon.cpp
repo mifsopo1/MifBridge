@@ -88,6 +88,7 @@ namespace MifBridge
 			MIF_BIND(list_blueprints);
 			MIF_BIND(save_blueprint);
 			MIF_BIND(save_package);
+			MIF_BIND(list_automation_tests);
 			MIF_BIND(backup_blueprint);
 			// Introspection
 			MIF_BIND(list_graphs);

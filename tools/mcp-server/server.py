@@ -484,6 +484,12 @@ def save_package(path: str) -> dict:
 
 
 @mcp.tool()
+def list_automation_tests(filter: str = None, limit: int = 200, offset: int = 0) -> dict:
+    "List the automation tests this editor has registered - engine tests, project tests, and the Functional Test maps a project ships - with their full path, source file and line, and flag names taken from the ENGINE's own flag table rather than spelled here. assetPath is set for a Functional Test, which lives in a map rather than in C++, so an agent can open the thing itself. filter is a case-insensitive substring of the full test path. It LISTS and runs nothing. Read-only and cheap: it walks an in-memory registry."
+    return _post("list_automation_tests", filter=filter, limit=limit, offset=offset)
+
+
+@mcp.tool()
 def backup_blueprint(blueprint_id: str) -> dict:
     "Write a .bak copy of the Blueprint's .uasset on disk."
     return _post("backup_blueprint", blueprintId=blueprint_id)

@@ -8047,3 +8047,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       verification living in an auditor rather than a suite. A check that flagged T633 would teach
       readers to ignore it, which audit_vacuous_checks' own header warns about: a tool that cries
       wolf gets ignored. The knowledge is the deliverable here, not the script.
+
+- [ ] **list_automation_tests - BUILT, never run** (hours)
+      An agent that changes a Blueprint could not discover that a test covering it EXISTS, let alone
+      which one. This walks FAutomationTestFramework's in-memory registry: engine tests, project
+      tests, and the Functional Test maps a project ships.
+
+      FLAG NAMES COME FROM THE ENGINE. EAutomationTestFlags::GetTestFlagsMap() is UE's own
+      String -> flag table, so decoding through it means this cannot drift from the enum the way an
+      invented spelling would - the same call made for `kind` on list_widget_bindings, resolved the
+      other way because here the engine PUBLISHES its names. The raw bitfield is reported alongside
+      them, not instead: a flag added in a later engine has no entry in an older map, and
+      flags:0x400 with no matching name still tells a caller something is there.
+
+      assetPath is set only for a Functional Test, which lives in a MAP rather than in C++, so an
+      agent can open the thing itself. Empty for a C++ test, hence conditional rather than "".
+
+      `run` is refused BY NAME - this lists and runs nothing, and an endpoint called
+      list_automation_tests is exactly where somebody would try. Three counts are reported because
+      they answer different questions: registered (every test this editor knows), matched (how many
+      passed the filter), count (how many are in this page), so a filter that matched nothing reads
+      differently from an offset past the end.
+
+      DebugGame compiled and LINKED first try; DECL 441 == BIND 441; parity_check, mcp_static_check,
+      audit_message_endpoints and audit_family_asymmetry all pass. NOT [x]: never run, no suite.

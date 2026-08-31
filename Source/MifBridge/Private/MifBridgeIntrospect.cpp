@@ -1,5 +1,6 @@
 // MifBridge — session/assets, introspection, variables, and compile read-back endpoints.
 #include "MifBridgeHandlers.h"
+#include "Misc/AutomationTest.h"   // FAutomationTestFramework - list_automation_tests
 #include "SourceControlHelpers.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
@@ -247,6 +248,101 @@ namespace MifBridge
 	// Save ANY asset's package to disk by /Game/ path (DataTables, materials, etc. — not just Blueprints).
 	// An asset the editor loaded from a mounted game pak saves as a LOOSE Content override, which the cook then
 	// bakes into a _P — the DataTable-redirect lane (repoint SoftEquipmentActorClass to a child + save + cook).
+	// --- list_automation_tests ----------------------------------------------
+	// Every automation test this editor has registered: engine tests, project tests, and the
+	// Functional Test maps a project ships. An agent that has just changed a Blueprint can find the
+	// test that covers it; without this it cannot even discover that a test exists, let alone which.
+	//
+	// FLAG NAMES COME FROM THE ENGINE, not from here. EAutomationTestFlags::GetTestFlagsMap() is the
+	// engine's own String -> flag table, so decoding through it means this endpoint cannot drift from
+	// the enum the way an invented spelling would. The raw bitfield is reported ALONGSIDE the names
+	// rather than instead of them: a flag added in a later engine version has no name in an older
+	// map, and a caller who sees flags:0x400 with no matching name at least knows something is there.
+	//
+	// READ-ONLY and cheap - GetValidTestNames walks an in-memory registry. It does not run anything,
+	// which is worth stating because "automation test" reads like something that might.
+	void H_list_automation_tests(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("filter"), TEXT("limit"), TEXT("offset") },
+			TEXT("filter? (case-insensitive substring of the full test path), limit? (default 200), ")
+			TEXT("offset?"),
+			{ { TEXT("run"), TEXT("this endpoint only LISTS - it never runs a test. Running one is a separate concern and is not offered here.") },
+			  { TEXT("name"), TEXT("spell it filter - it is a substring match, not an exact name") } }))
+		{
+			return;
+		}
+
+		const FString Filter = JStr(In, TEXT("filter"));
+		const int32 Offset = FMath::Max(0, JInt(In, TEXT("offset"), 0));
+		const int32 Limit = FMath::Clamp(JInt(In, TEXT("limit"), 200), 1, 5000);
+
+		TArray<FAutomationTestInfo> Info;
+		FAutomationTestFramework::Get().GetValidTestNames(Info);
+
+		// The engine's own name table, read once. Decoding through it is what keeps this endpoint from
+		// inventing a second spelling for EAutomationTestFlags.
+		const TMap<FString, EAutomationTestFlags::Type>& FlagNames =
+			EAutomationTestFlags::GetTestFlagsMap();
+
+		TArray<TSharedPtr<FJsonValue>> Rows;
+		int32 Matched = 0;
+		for (const FAutomationTestInfo& Test : Info)
+		{
+			const FString FullPath = Test.GetFullTestPath();
+			if (!Filter.IsEmpty() && !FullPath.Contains(Filter, ESearchCase::IgnoreCase))
+			{
+				continue;
+			}
+			++Matched;
+			if (Matched <= Offset || Rows.Num() >= Limit)
+			{
+				continue;
+			}
+
+			TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+			Row->SetStringField(TEXT("fullTestPath"), FullPath);
+			Row->SetStringField(TEXT("displayName"), Test.GetDisplayName());
+			Row->SetStringField(TEXT("testName"), Test.GetTestName());
+			const FString SourceFile = Test.GetSourceFile();
+			if (!SourceFile.IsEmpty())
+			{
+				Row->SetStringField(TEXT("sourceFile"), SourceFile);
+				Row->SetNumberField(TEXT("sourceFileLine"), Test.GetSourceFileLine());
+			}
+			// A Functional Test lives in a MAP rather than in C++, so assetPath is how an agent finds
+			// the thing to open. It is empty for a C++ test, which is why it is only set when present.
+			const FString AssetPath = Test.GetAssetPath();
+			if (!AssetPath.IsEmpty())
+			{
+				Row->SetStringField(TEXT("assetPath"), AssetPath);
+			}
+			const uint32 Flags = Test.GetTestFlags();
+			Row->SetNumberField(TEXT("flags"), static_cast<double>(Flags));
+			TArray<TSharedPtr<FJsonValue>> Named;
+			for (const TPair<FString, EAutomationTestFlags::Type>& Pair : FlagNames)
+			{
+				if (Pair.Value != 0 && (Flags & static_cast<uint32>(Pair.Value)) == static_cast<uint32>(Pair.Value))
+				{
+					Named.Add(MakeShared<FJsonValueString>(Pair.Key));
+				}
+			}
+			Row->SetArrayField(TEXT("flagNames"), Named);
+			Rows.Add(MakeShared<FJsonValueObject>(Row));
+		}
+
+		Out->SetArrayField(TEXT("tests"), Rows);
+		Out->SetNumberField(TEXT("count"), Rows.Num());
+		Out->SetNumberField(TEXT("matched"), Matched);
+		Out->SetNumberField(TEXT("registered"), Info.Num());
+		Out->SetBoolField(TEXT("truncated"), Matched > Offset + Rows.Num());
+		Out->SetStringField(TEXT("runNote"),
+			TEXT("this LISTS registered tests and runs nothing. `registered` is every test this editor "
+				 "knows, `matched` is how many passed the filter, and `count` is how many are in this "
+				 "page - a filter that matched nothing gives matched:0, which is different from an "
+				 "offset past the end."));
+	}
+
 	void H_save_package(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
