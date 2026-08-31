@@ -241,6 +241,12 @@ def main():
         #
         # So: rebuild to three bodies and remove the MIDDLE one. Now the claim has something to be
         # wrong about.
+        #
+        # THE REPO ALREADY KNEW THIS, one suite over. test_ik_goals_solvers' T265 adds THREE solvers,
+        # removes index 0, and asserts `after == before[1:]` - the shift measured, not the note
+        # quoted. The pattern existed and had not reached here, which is the same shape as the four
+        # AnimSequence guards that each learned the class was fragile separately. If you are writing
+        # a third of these, make the three reference each other.
         for bone in ("spine", "spine_02"):
             M.raw_post("add_physics_body", {"assetPath": PA, "boneName": bone})
         before = M.call("describe_physics_asset", {"assetPath": PA}).get("bodies") or []

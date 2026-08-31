@@ -8505,6 +8505,17 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       asserts what the note actually claims: removedIndex equals the index that body held, the
       follower really moved down by one, and nothing below the hole moved. 36 -> 43.
 
+      AND THE REPO ALREADY KNEW HOW, one suite over. test_ik_goals_solvers' T265 adds THREE solvers,
+      removes index 0, and asserts `after == before[1:]` - the shift measured, not the note quoted.
+      That is exactly what T2906 had to be written to do, and the pattern simply had not reached the
+      physics suite. Same shape as the four AnimSequence guards that each learned the class was
+      fragile separately, and the same fix: the two now reference each other.
+
+      SWEPT FOR MORE OF IT rather than assuming physics was the only one. Fifteen suite call sites
+      pass a literal index 0; the ones that matter are the shift-causing operations, and they hold
+      up - set_enum_value moves 0 -> 2 (a real shift, not a no-op) and remove_ik_solver is T265
+      itself. The physics suite was the outlier, not the rule.
+
       Real gaps: 8. Out of reach with a written reason: 10. Read by a suite: 46.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
