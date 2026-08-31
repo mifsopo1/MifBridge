@@ -2069,3 +2069,25 @@ identical on 5.3.2, 5.6 and 5.7).
 THE GENERAL RULE: after connecting anything to a wildcard or type-resolving pin, `refresh_node`
 before you read the node back or judge the result. Reading first and concluding "it did not work"
 is a false negative, and it is a convincing one - the pins really are still generic at that moment.
+## A self-check anchor cannot be a case you later teach the scanner to ignore
+
+`audit_loop_writes` asserts on every run that it can still find two known sites, so a heuristic that
+quietly stops matching cannot report a clean scan. On 2026-08-31 that self-check FAILED, and it was
+right to.
+
+One anchor was `MifBridgeDataTables.cpp:row`, chosen months earlier for a reason recorded in the
+comment beside it: it "writes once and returns on the next line". That is a precise description of
+the search-and-return shape - and the scan had just been taught that search-and-return is write-once
+and not worth reporting. The anchor was defined by the exact property that now disqualifies it.
+
+The trap is that both halves look reasonable in isolation. Picking a correct-but-detected site as an
+anchor is sound: it will not be "fixed away", so it stays findable. Teaching a scanner to skip a
+shape that is provably safe is also sound. The two are only incompatible when the anchor's
+description IS the shape, and nothing links them but a comment.
+
+So: choose anchors the scanner is still MEANT to report, not merely ones it currently does.
+`MifBridgeCooked.cpp:cookedClassNote` replaced it - a genuine per-iteration write with no return and
+no break, safe only because a `continue` guard admits at most one of three distinct class names.
+That safety is a fact about the DATA, invisible to brace matching, so the scan should go on
+reporting it and a human should go on reading it. An anchor that survives BECAUSE the scanner cannot
+prove it safe is stable in a way a correct-and-detected one is not.

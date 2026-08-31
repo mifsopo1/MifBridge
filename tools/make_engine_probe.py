@@ -27,11 +27,23 @@ The probe directory is disposable. This script is the thing worth keeping.
 
 TWO TRAPS ON THIS MACHINE, both learned the expensive way:
 
-1. TOOLCHAIN. The DDS2 5.3.2 cooked-editor fork requires MSVC 14.36.32532 exactly (it lives in
-   C:/BT176). UE 5.7 cannot build with 14.36. If a global UBT pin ever forces that toolchain -
-   %APPDATA%/Unreal Engine/UnrealBuildTool/BuildConfiguration.xml - a 5.7 build fails in a way that
-   looks like a source problem and is not. The generated target sets CompilerVersion explicitly so
-   the two engines stay independent, and so that file never needs editing.
+1. TOOLCHAIN, AND IT IS PER-ENGINE. The DDS2 5.3.2 cooked-editor fork requires MSVC 14.36.32532
+   exactly (it lives in C:/BT176). UE 5.7 cannot build with 14.36. If a global UBT pin ever forces
+   that toolchain - %APPDATA%/Unreal Engine/UnrealBuildTool/BuildConfiguration.xml - a 5.7 build
+   fails in a way that looks like a source problem and is not. The generated target sets
+   CompilerVersion explicitly so the two engines stay independent, and so that file never needs
+   editing.
+
+   Until 2026-08-31 it set the SAME value for every engine: "Latest". That is not a pin, it is
+   "whatever happens to be installed" - the exact coupling the paragraph above claims to have
+   removed, just to a different global. On this machine Latest resolves to 14.44.35207, which UE 5.3
+   rejects: the build dies in ConcurrentLinearAllocator.h with C4668 on __has_feature, one of those
+   engine-header errors that reads as a source problem and is not. The effect was that UE 5.3 could
+   not be probed AT ALL, so the manifest's 5.3 claim had never once been checked by this route -
+   which is the single thing this script exists to do.
+
+   The default is now chosen from the engine version, and --compiler overrides it. If the pinned
+   toolchain is not installed UBT says so by name, which is a better failure than C4668.
 
 2. THE EXIT CODE LIES. Same rule as every other build in this repo: check that the binary's mtime
    actually moved. A "success" that took under a second did nothing.
@@ -70,13 +82,27 @@ NL = "\n"
 CANONICAL = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 
+def default_compiler(assoc):
+    """UE 5.3/5.4 refuse a toolchain newer than they know; 5.6+ want a modern one.
+
+    Returned by VERSION rather than by asking what is installed. "Latest" reads like a safe default
+    and is the opposite of one: it hands the choice to whatever was last installed on the machine,
+    so the probe's answer changes when an unrelated Visual Studio update lands.
+    """
+    try:
+        major, minor = [int(x) for x in str(assoc).split(".")[:2]]
+    except (TypeError, ValueError):
+        return "Latest"
+    return "14.36.32532" if (major, minor) <= (5, 4) else "Latest"
+
+
 def write(path, text):
     """Every file this repo writes is CRLF. C# and .uproject are no exception."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     io.open(path, "wb").write(text.replace(NL, "\r\n").encode("utf-8"))
 
 
-def generate(root, module, engine_assoc):
+def generate(root, module, engine_assoc, compiler):
     uproject = {
         "FileVersion": 3,
         "EngineAssociation": engine_assoc,
@@ -97,7 +123,9 @@ def generate(root, module, engine_assoc):
         "\t\t// build with it. Setting this explicitly means a global UBT pin - one exists at",
         "\t\t// %APPDATA%/Unreal Engine/UnrealBuildTool/BuildConfiguration.xml and must NOT be edited,",
         "\t\t// because the DDS2 modding builds depend on it - cannot silently break this probe.",
-        "\t\tWindowsPlatform.CompilerVersion = " + chr(34) + "Latest" + chr(34) + ";",
+        "\t\t// The value is PER-ENGINE. It was \"Latest\" for both, which is not a pin at all and made",
+        "\t\t// 5.3 unbuildable here - see trap 1 in make_engine_probe.py.",
+        "\t\tWindowsPlatform.CompilerVersion = " + chr(34) + compiler + chr(34) + ";",
     ])
 
     for suffix, ttype in (("", "Game"), ("Editor", "Editor")):
@@ -250,11 +278,23 @@ def record_result(engine, module, ok, inconclusive=False, why=""):
         "head": git("rev-parse", "HEAD"),
         "sourceCommit": git("log", "-1", "--format=%H", "--", "Source"),
         "sourceCommitDate": git("log", "-1", "--format=%cI", "--", "Source"),
+        # WAS THAT COMMIT ACTUALLY WHAT COMPILED? The record names a commit, and the gate compares
+        # commits, but a probe run over a dirty tree compiled the commit PLUS whatever was still
+        # uncommitted - so the record claimed something that had never been built. It fails in the
+        # dangerous direction: the file looks more precise than a date, which is the whole reason it
+        # replaced one, and 0.7.0 shipped broken behind exactly that kind of truthful-looking claim.
+        "sourceDirty": [ln[3:] for ln in
+                        git("status", "--porcelain", "--", "Source").splitlines() if ln.strip()],
     }
     with io.open(PROBE_RESULT, "w", encoding="utf-8", newline="") as fh:
         fh.write(json.dumps(payload, indent=1))
     print("recorded   %s (succeeded=%s, source commit %s)"
           % (PROBE_RESULT, payload["succeeded"], (payload["sourceCommit"] or "?")[:12]))
+    if payload["sourceDirty"]:
+        print("WARNING    Source/ was DIRTY when this ran, so the commit named above is NOT what")
+        print("           compiled. Commit and re-probe before treating this as evidence:")
+        for f in payload["sourceDirty"][:8]:
+            print("             %s" % f)
 
 
 def main():
@@ -264,6 +304,10 @@ def main():
     ap.add_argument("--out", required=True, help="where to generate the probe project")
     ap.add_argument("--module", default="MifProbe")
     ap.add_argument("--assoc", default="5.7")
+    ap.add_argument("--compiler", default=None,
+                    help="MSVC toolchain for WindowsPlatform.CompilerVersion. Default is chosen "
+                         "from --assoc: 14.36.32532 for 5.3/5.4, Latest above that. 'Latest' picks "
+                         "whatever is newest on the machine, which UE 5.3 refuses.")
     ap.add_argument("--build", action="store_true", help="run the build after generating")
     ap.add_argument("--force", action="store_true",
                     help="probe a SOURCE engine anyway - read trap 3 first, it costs an engine rebuild")
@@ -273,7 +317,7 @@ def main():
     refuse_source_engine(a.engine, a.force)
 
     root = os.path.abspath(a.out)
-    generate(root, a.module, a.assoc)
+    generate(root, a.module, a.assoc, a.compiler or default_compiler(a.assoc))
     print("generated  " + root)
     print("plugin     " + link_plugin(root))
 

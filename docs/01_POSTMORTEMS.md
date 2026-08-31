@@ -2247,3 +2247,112 @@ memory has been reused. `ReferenceError: StructRNA of type X has been removed` i
 behind a freed `FName`-like field are no longer text. If a version-specific text-decoding error
 appears where no text is being decoded, look for a lifetime problem rather than an encoding one.
 
+## A fix that documents itself makes a prose-matching scanner worse every time (2026-08-31)
+
+**Symptom.** `audit_postconditions` reported `set_pin_default` as calling `TrySetDefaultValue` and
+checking nothing afterwards - severity `low`, sitting in the accepted baseline. That endpoint is the
+FIRST case named in the tool's own docstring, listed there as the founding defect and as FIXED.
+
+**Root cause.** The scanner matched its evidence against the raw file. `set_pin_default` contains
+exactly one occurrence of `TrySetDefaultValue`, at `MifBridgeNodes.cpp:2315`, and it is a comment
+explaining the bug the handler no longer has. Fixing the bug is what CREATED the string the scanner
+matches on. Four more handlers were flagged as mutating on comments alone, one of them because the
+word `PrivateDestroyLevel` contains `Destroy`.
+
+**The part that makes it a class rather than an incident.** This is not a scanner that was wrong
+from the start and stayed equally wrong. It got worse in proportion to how well the module was
+documented, and specifically in proportion to how carefully each fix explained itself. Every
+postmortem-quality comment written above a repaired call site is a fresh false positive. A codebase
+that follows the house rules degrades this kind of tool fastest.
+
+**Fix.** Ask the two questions of different texts. What a handler DOES is read from code with
+comments and string literals blanked; what it CLAIMS is read from the raw text, because half of
+`VERIFY_MARKERS` are deliberately comment idioms (`READ BACK`, `rather than assume`) added because
+handlers that genuinely verify were being re-reported. The asymmetry is written into the code with
+its reason, including the cost accepted: a handler could claim in a comment to verify and not do it.
+Mutation is the claim worth doubting, because a false mutation flag sends a reader to a handler with
+nothing wrong with it. 105 findings -> 99.
+
+**Prevention.** Any scanner reading this module's C++ must decide, per question, whether prose is
+evidence - and say which it chose. `harvest_param_table.blank_comments_and_strings` is the one
+scrubber; a second implementation is a second thing to get wrong. Of the fourteen tools that parse
+these sources, two used it before tonight.
+
+### The general rule
+
+A grep for a symbol name finds the places that USE it and the places that DISCUSS it, and a
+well-commented repo has more of the second. Four tool bugs in one night had this single root cause:
+`param_reach` reading a refusal list because `RejectUnknownParams` appeared in a comment saying not
+to add one, `audit_postconditions` centring a window on a comment 25 lines above the function it
+wanted, and these two. Judge by postcondition, never by the engine's return value - and judge by
+code, never by the prose next to it.
+
+
+## `layerCreated` answered "yes" without saying what, and vanished when the answer was "no" (2026-08-31)
+
+**Symptom.** Found by `audit_loop_writes`, which had been failing for an unknown length of time with
+19 findings. It is not in the release gate, so nothing blocked and nobody looked.
+
+**Root cause.** `manage_layers` writes `Out->SetBoolField(TEXT("layerCreated"), true)` INSIDE
+`for (const FName& N : LayerNames)`. Three consequences, in increasing order of how much they
+matter:
+
+  * it says the same thing for one implicitly-created layer as for six
+  * it names none of them
+  * it is only ever set to `true`, so when nothing was created the field is ABSENT - and a caller
+    cannot tell "created nothing" from "this build has no such field"
+
+**Why it matters more here than the shape suggests.** Layer creation in this endpoint is IMPLICIT
+by design - passing a name that does not exist creates it, which is what the Outliner does when you
+drag onto a new name. So `manage_layers { layers: ["Props", "Prpos"], ... }` silently turns a typo
+into a real, empty, permanent layer. There is no error for that and there should not be one; the
+only defence a caller has is being TOLD which names were new, and that is exactly what the response
+withheld.
+
+**Fix.** Collect the created names and emit `layersCreated` as an array, always, alongside a
+`layerCreated` bool DERIVED from it rather than tracked beside it - two independently maintained
+answers to one question is how they come to disagree. A `layerCreatedNote` fires when the array is
+non-empty and names the typo case outright. Nothing in the repo read the old field: not the MCP
+server, not a suite, not the docs.
+
+**Prevention.** `audit_loop_writes` now discounts search-and-return loops, which were 18 of the 19
+findings; the scan is 4. That is the actual prevention - not the rule, the SIGNAL-TO-NOISE. Nineteen
+entries on a check that fails outside the release gate is a check nobody reads, and the one real
+defect in it had been sitting there in plain view.
+## The engine probe could not probe one of the two engines it exists for, and said "Latest" (2026-08-31)
+
+**Symptom.** A Development build of the 5.3 probe died in
+`Engine/Source/Runtime/Core/Public/Experimental/ConcurrentLinearAllocator.h(31)` with
+`error C4668: '__has_feature' is not defined as a preprocessor macro`, preceded by
+`Detected compiler newer than Visual Studio 2022, please update min version checking`. Nothing to do
+with this plugin - the first compile of an engine header failed.
+
+**Root cause.** `make_engine_probe.py` writes `WindowsPlatform.CompilerVersion = "Latest"` into the
+generated target, identically for every engine. On this machine Latest resolves to MSVC 14.44.35207,
+which UE 5.3 does not know how to be built with. The pinned 14.36.32532 that the DDS2 fork requires
+is installed, in `C:/BT176`, and was never selected.
+
+**Why it survived so long.** The script's own trap 1 explains the toolchain hazard at length and
+says the generated target "sets CompilerVersion explicitly so the two engines stay independent". It
+does set it explicitly. `"Latest"` is not a pin: it is "whatever is installed", which is precisely
+the global coupling the paragraph claims to have removed - the same failure mode, pointed at a
+different global. The comment describes an intent that the value contradicts, and it reads as
+correct because the word "explicitly" is true.
+
+**What it cost.** Every probe run on this machine was a 5.7 probe. The plugin's release manifest
+claims two engines, and the whole reason this script exists is that READING headers misses symbols
+that changed shape. So the 5.3 half of the claim had never been checked by the one thing built to
+check it - and the failure was silent, because nobody had reason to run a 5.3 probe until a change
+landed in a file worth proving.
+
+**Fix.** `default_compiler(assoc)` chooses by engine version - `14.36.32532` at or below 5.4,
+`Latest` above - and `--compiler` overrides. Chosen by VERSION, not by asking the machine what it
+has, so an unrelated Visual Studio update cannot change the probe's answer. When the pinned
+toolchain is absent UBT names it, which is a better failure than C4668 in an engine header.
+
+### The general rule
+
+"Latest", "Default", and "Auto" are values that make a config line look decided when it is not.
+Writing one is indistinguishable, in a diff and in a comment, from having chosen. The test is
+whether the setting can change without the file changing - if it can, it is not a pin, whatever the
+comment beside it says.

@@ -101,9 +101,32 @@ Build.bat MifProbeEditor Win64 DebugGame -Project=D:/p57/MifProbe.uproject -Wait
 ```
 
 Use a SHORT project path - the scratchpad blows the 260-character limit on DebugGame's longer
-intermediate names. It is a compile CHECK only: it dies near the end on an engine header
-(`UnrealType.h`, C4702) that DebugGame promotes to an error, and it does **not** satisfy
-`make_release`'s 5.7 gate, which wants a recorded Development probe.
+intermediate names. It is a compile CHECK only: it always ends `Result: Failed` on an engine header
+(`UnrealType.h(7136)`, C4702 unreachable code) that DebugGame promotes to an error, and it does
+**not** satisfy `make_release`'s 5.7 gate, which wants a recorded Development probe.
+
+That failure is reported at translation unit **16 of 95** - inlined into `MifBridgeDataTables.cpp:172`
+via `TFieldIterator<FTextProperty>::operator++` - and the build then CARRIES ON and compiles the
+rest. Earlier wording here said it "dies near the end", which is what the summary looks like and is
+the opposite of what happens; the distinction is the whole value of the route. Because it continues,
+every one of the plugin's translation units is still compiled against 5.7 headers, so a per-file
+verdict is real evidence even though the run as a whole is red. Read the log for YOUR file:
+
+```
+grep -n "Compile \[x64\] MifBridgeYourFile.cpp" <log>   # it got there
+grep -n "MifBridgeYourFile.cpp(" <log>                  # and said nothing about it
+```
+
+`buildcheck.py` will still say BUILD NOT OK, correctly - `Result: Failed` is present and no DLL is
+linked. Do not talk yourself past that into calling the build green. What you have is a compile
+result for one file, and that is worth saying in those words.
+
+**A cleaner option when the mutex is what pushed you here.** The block is per-executable, so an
+installed engine with no editor running on it is free. `Get-Process *Unreal*` and compare the
+`Path` column: a 5.7 editor out of `C:/Program Files/Epic Games/UE_5.7` blocks Development builds
+against that engine and says nothing about UE_5.3. Probing the *installed* 5.3 gets a real
+Development build with a linked binary. Never the source tree at `D:/UE532` - see trap 3 in
+`make_engine_probe.py`.
 
 ## How to know the state is healthy
 

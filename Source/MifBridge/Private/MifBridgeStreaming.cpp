@@ -2628,6 +2628,14 @@ namespace MifBridge
 		}
 
 		int32 Changed = 0;
+		// WHICH layers were created, not merely THAT one was. This was a bare
+		// SetBoolField("layerCreated", true) written inside the per-name loop, so it said the
+		// same thing for one implicit layer as for six, named none of them, and was OMITTED
+		// entirely when none was created - leaving a caller unable to tell "created nothing"
+		// from "this build has no such field". That matters here more than it would elsewhere
+		// because creation is IMPLICIT: add ["Props", "Prpos"] and the typo silently becomes a
+		// real layer. Naming them is how the caller sees that happen.
+		TArray<TSharedPtr<FJsonValue>> Created;
 		if (Op == TEXT("select"))
 		{
 			for (const FName& N : LayerNames)
@@ -2646,7 +2654,7 @@ namespace MifBridge
 					// Creating implicitly is what the Outliner does when you drag onto a new layer
 					// name, and it is reported rather than done quietly.
 					Layers->CreateLayer(N);
-					Out->SetBoolField(TEXT("layerCreated"), true);
+					Created.Add(MakeShared<FJsonValueString>(N.ToString()));
 				}
 				for (AActor* A : Actors)
 				{
@@ -2670,6 +2678,19 @@ namespace MifBridge
 			}
 		}
 
+		// Always emitted, both of them, so absence never has to be interpreted. The bool is
+		// DERIVED from the array rather than tracked beside it - two independently-maintained
+		// answers to one question is how they come to disagree.
+		Out->SetArrayField(TEXT("layersCreated"), Created);
+		Out->SetBoolField(TEXT("layerCreated"), Created.Num() > 0);
+		if (Created.Num())
+		{
+			Out->SetStringField(TEXT("layerCreatedNote"),
+				TEXT("these layer names did not exist and were CREATED by this call, which is what ")
+				TEXT("the Outliner does when you drag onto a new name. If one of them is a ")
+				TEXT("misspelling of a layer you meant, it is now a real empty layer - there is no ")
+				TEXT("error for that, so it is reported instead."));
+		}
 		Out->SetNumberField(TEXT("actorsResolved"), Actors.Num());
 		if (NotFound.Num()) { Out->SetArrayField(TEXT("notFound"), NotFound); }
 		if (Invalid.Num())

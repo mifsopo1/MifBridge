@@ -336,6 +336,26 @@ def check_engine_probe():
                        "release that is known not to build on a claimed engine is the exact thing "
                        "0.7.0 did." % rec.get("engine"))
 
+    # A COMMIT MATCH IS NOT ENOUGH IF NEITHER SIDE IS THE COMMIT. This gate compared the recorded
+    # Source commit against the current one and passed when they were equal - true even when the
+    # probe had compiled that commit plus uncommitted edits, or when the release is about to package
+    # uncommitted edits on top of a commit the probe did cover. tracked_files() ships what git
+    # TRACKS, read from the WORKING TREE, so a dirty Source/ means shipping code no probe has seen
+    # with the engine gate showing green.
+    was_dirty = rec.get("sourceDirty") or []
+    if was_dirty:
+        return False, ("the recorded probe ran over a DIRTY Source/, so the commit it names is not\n"
+                       "  what compiled. Commit and re-probe.\n"
+                       "  Dirty at probe time: %s"
+                       % ", ".join(was_dirty[:6]))
+    now_dirty = [ln[3:] for ln in
+                 (_git("status", "--porcelain", "--", "Source") or "").splitlines() if ln.strip()]
+    if now_dirty:
+        return False, ("Source/ is dirty NOW, so the release would package code the probe never\n"
+                       "  compiled, behind a gate reporting the matching commit as verified.\n"
+                       "  Uncommitted: %s"
+                       % ", ".join(now_dirty[:6]))
+
     probed = rec.get("sourceCommit") or ""
     current = _git("log", "-1", "--format=%H", "--", "Source")
     if not current:
