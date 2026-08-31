@@ -9311,7 +9311,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       What closes it: one editor-closed run of audit_detectors_fire, the same window a rebuild needs.
 
-- [ ] **two prose claims measured, and neither is settled** (hours)
+- [ ] **two prose claims measured - BOTH NOW SETTLED, one fix awaits the same build** (hours)
       Acting on audit_cross_endpoint_claims' shortlist - the three claims no single suite drives both
       sides of - and both attempts ended in a partial answer worth writing down rather than a tick.
 
