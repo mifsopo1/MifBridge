@@ -259,6 +259,37 @@ def main():
     check("T912 answers cleanly either way (found or honestly not found)",
           "ok" in rl, json.dumps(rl)[:200])
 
+    # TWO DIFFERENT TRUNCATIONS, and conflating them is the easy mistake. `truncatedRead` means the
+    # LOG FILE exceeded 64 MB and only its tail was read, so the oldest entries are missing and line
+    # numbers do not match the file's own. It has nothing to do with the `lines` cap, which limits
+    # how much of the MATCHED set comes back. A caller who reads truncatedRead:false as "I got
+    # everything" is wrong whenever lines < matched.
+    #
+    # truncatedRead was among 48 consequence-reporting response fields no suite named (2026-08-31).
+    if rl.get("ok") is True and rl.get("found") is True:
+        one = M.call("read_modloader_log", {"lines": 1})
+        allp = M.call("read_modloader_log", {"lines": 1000000})
+        check("T912 truncatedRead is ALWAYS present, so its absence never has to be interpreted",
+              isinstance(one.get("truncatedRead"), bool), json.dumps(one)[:200])
+        check("T912 a line cap of 1 returns exactly 1 line", len(one.get("lines") or []) == 1,
+              "returned %d" % len(one.get("lines") or []))
+        check("T912 and `returned` agrees with the array it describes",
+              one.get("returned") == len(one.get("lines") or []),
+              "returned=%s len=%d" % (one.get("returned"), len(one.get("lines") or [])))
+        check("T912 `matched` still reports the WHOLE population, so a capped caller learns how "
+              "much they did not get",
+              (one.get("matched") or 0) >= (one.get("returned") or 0), json.dumps(one)[:220])
+        check("T912 a LINE CAP does not set truncatedRead - that field is about the 64 MB file "
+              "tail-read, and a caller reading it as 'I got everything' would be wrong whenever "
+              "lines < matched",
+              one.get("truncatedRead") is False, json.dumps(one)[:220])
+        check("T912 uncapped, `returned` rises to `matched` - which is what proves the cap was the "
+              "thing limiting it",
+              allp.get("returned") == allp.get("matched"),
+              "returned=%s matched=%s" % (allp.get("returned"), allp.get("matched")))
+    else:
+        print("  SKIP - no log file on this machine, so the truncation reporting is unreachable.")
+
     # ------------------------------------------------------------------ T913 trace_start / trace_stop
     # mifaudit.py DENIES trace_start for every OTHER caller in this codebase, deliberately: a blind
     # sweep that enumerates endpoint_names() would call it with no matching stop and leave a profiler

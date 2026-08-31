@@ -7542,3 +7542,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       BlendSpaces are all real DDS2 assets. A scratch fixture is possible - create_asset then
       set_property for the skeleton, the two-call form - but it also needs an AnimSequence valid for
       that skeleton. Filed rather than bodged.
+- [x] **truncatedRead - a LINE CAP is not a truncated READ, and now nothing can blur them** (hours)  **DONE 2026-08-31.**
+      Seventh of the 48 consequence-reporting fields. T912 in test_uncovered_reads5 extended by six
+      checks.
+
+      The two truncations are genuinely confusable and the response uses one word for one of them.
+      `truncatedRead` means the LOG FILE exceeded 64 MB and only its tail was read - the oldest
+      entries are gone and line numbers do not match the file's own. The `lines` parameter is a
+      different thing entirely: it caps how much of the MATCHED set comes back. Measured live:
+      lines=1 returns 1 line out of matched=1521 with truncatedRead FALSE, which is correct and
+      which a caller could easily read as "I got everything".
+
+      Pinned: truncatedRead is always present so absence needs no interpretation; `returned` agrees
+      with the array it describes; `matched` reports the whole population so a capped caller learns
+      what they did not get; a line cap does NOT set truncatedRead; and uncapped, returned rises to
+      matched - the half that proves the cap was what limited it.
+
+      TWO OTHERS IN THE SAME FAMILY ARE UNREACHABLE HERE, recorded so nobody re-derives it.
+      instancesTruncated needs foliage, and list_foliage_instances reports this level "has no
+      InstancedFoliageActor at all, so it has never had foliage painted or placed" - a state its own
+      note distinguishes from an actor with zero instances. availableComponentsTruncated sits in a
+      helper with no reachable handler boundary from the scan.
