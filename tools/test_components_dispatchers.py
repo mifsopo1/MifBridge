@@ -182,6 +182,21 @@ def main():
     gone_v = [x.get("name") for x in (M.call("list_variables", {"blueprintId": bid}).get("variables") or [])]
     check("T325 the dispatcher is gone", "OnCostChanged" not in gone_d, str(gone_d))
     check("T325 and so is its backing delegate variable", "OnCostChanged" not in gone_v, str(gone_v))
+    # THE RESPONSE'S OWN CLAIM ABOUT THE SAME TWO FACTS, asserted here for the first time. The
+    # handler checks both halves and refuses the whole call if either survives, so these flags are
+    # observations rather than echoes - which is exactly why they are worth pinning against the
+    # independent reads above. A response claiming both halves removed while list_variables still
+    # shows the delegate would be the failure this endpoint was written to make impossible.
+    check("T325 and the response claims the signature graph was removed",
+          rm.get("removedSignatureGraph") is True, json.dumps(rm)[:220])
+    check("T325 and claims the delegate variable was removed",
+          rm.get("removedDelegateVariable") is True, json.dumps(rm)[:220])
+    check("T325 and neither claim disagrees with what list_* reports",
+          (rm.get("removedSignatureGraph") is True) == ("OnCostChanged" not in gone_d)
+          and (rm.get("removedDelegateVariable") is True) == ("OnCostChanged" not in gone_v),
+          "flags=(%r, %r) actual=(graph gone %r, var gone %r)"
+          % (rm.get("removedSignatureGraph"), rm.get("removedDelegateVariable"),
+             "OnCostChanged" not in gone_d, "OnCostChanged" not in gone_v))
     # T323 left a call node behind, so the count has to be real rather than always zero.
     check("T325 and the orphaned call node is reported", (rm.get("orphanedNodeCount") or 0) >= 1,
           "orphanedNodeCount=%s - a caller who is not told goes looking for the compile error blind"

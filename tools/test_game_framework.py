@@ -142,6 +142,24 @@ def main():
         check("T1408 and it reports what the request actually DOES",
               row.get("receiverClass", "").endswith("StaticMeshActor")
               and row.get("componentClass", "").endswith("AudioComponent"), row)
+        # staleHandles is emitted ALWAYS, not only when nonzero - the same discipline as
+        # invalidCount on set_blendspace_samples, and for the same reason: a caller can assert on a
+        # number that is always there, but has to notice the ABSENCE of one that is not. Nothing
+        # read it until now.
+        check("T1408 staleHandles is always present, not only when something is stale",
+              isinstance(live.get("staleHandles"), (int, float)), json.dumps(live)[:220])
+        check("T1408 and it cannot exceed the number of rows it describes",
+              (live.get("staleHandles") or 0) <= (live.get("count") or 0),
+              "staleHandles=%s count=%s" % (live.get("staleHandles"), live.get("count")))
+        # The count and the per-row flags describe the same set and must agree. staleNote is NOT
+        # asserted: it appears only when a handle's owning manager has gone away with its world,
+        # which needs a world teardown this suite does not perform.
+        check("T1408 and it matches the rows that report handleValid false",
+              (live.get("staleHandles") or 0)
+              == len([r for r in rows if r.get("handleValid") is False]),
+              "staleHandles=%s but %d row(s) report handleValid false"
+              % (live.get("staleHandles"),
+                 len([r for r in rows if r.get("handleValid") is False])))
         check("T1408 handleValid is a real bool, not absent",
               isinstance(row.get("handleValid"), bool), row.get("handleValid"))
     check("T1408 count agrees with the rows returned", live.get("count") == len(rows),

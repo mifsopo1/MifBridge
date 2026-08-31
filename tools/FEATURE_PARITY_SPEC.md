@@ -8302,7 +8302,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **30 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **25 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+      Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
+      whose entire job is to say a removal really completed, asserted by nobody.
+
+        removedVerified                                 test_uncovered_reads5 T916, 58 -> 60
+        removedSignatureGraph, removedDelegateVariable  test_components_dispatchers T325, 39 -> 42
+        staleHandles                                    test_game_framework T1408, 27 -> 30
+
+      Each is asserted TWICE on purpose: that the flag is what the handler says it is, and that it
+      does not disagree with an independent list_* read of the same fact. A true flag over a
+      surviving variable is worse than no flag, and only the second assertion can catch it.
+
+      staleHandles got the invalidCount treatment - it is emitted ALWAYS, so a caller can assert on
+      it rather than having to notice an absence, and the suite now pins that plus its agreement
+      with the per-row handleValid flags. staleNote is deliberately NOT asserted: it appears only
+      once a handle's owning manager has gone away with its world, which needs a teardown no
+      unattended suite performs.
+
+      `rejected` closed earlier the same evening via test_ported_anim T575.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote

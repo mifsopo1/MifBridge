@@ -350,6 +350,21 @@ def main():
     vars_after = M.call("list_variables", {"blueprintId": bid}).get("variables") or []
     check("T916 the variable is really gone",
           not any(v.get("name") == "Reads5Amount" for v in vars_after), vars_after)
+    # removedVerified is not decoration and not a synonym for ok. RemoveMemberVariable returns
+    # nothing, so the handler re-runs FindNewVariableIndex and FAILS the call if the variable is
+    # still there - this flag is that observation, and it is the only thing separating "the engine
+    # was asked" from "the variable is gone". Asserted here for the first time; the two facts must
+    # agree, because a true flag over a surviving variable would be the worst of both.
+    check("T916 and removedVerified reports the READ-BACK, not the request",
+          real2.get("removedVerified") is True,
+          "removedVerified=%r - the handler proves removal by re-reading, so this must be True on "
+          "any successful call" % real2.get("removedVerified"))
+    check("T916 and the flag agrees with list_variables",
+          (real2.get("removedVerified") is True)
+          == (not any(v.get("name") == "Reads5Amount" for v in vars_after)),
+          "flag=%r list_variables still has it=%r"
+          % (real2.get("removedVerified"),
+             any(v.get("name") == "Reads5Amount" for v in vars_after)))
 
     # ------------------------------------------------------------------ T917 set_cast_purity
     print("\n=== T917: set_cast_purity - toggles an existing cast between pure and impure ===")
