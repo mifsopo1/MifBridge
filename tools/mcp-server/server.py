@@ -4702,6 +4702,13 @@ def remove_sync_marker(asset_path: str, name: str, time: float = None) -> dict:
 
 
 @mcp.tool()
+def load_partition_actors(guids: list = None, bounds: dict = None,
+                          unpin: bool = False) -> dict:
+    "Bring World Partition actors into memory - the write half of list_partition_actors, which reports every actor including the ones not loaded and could not act on any of them. Pass `guids` from that endpoint to PIN actors (reversible with unpin:true), or `bounds` {min,max} to load a region (NOT reversible from here). Every result is READ BACK: PinActors returns void and does nothing at all when the partition has no pinned-actor container, so the response reports IsActorPinned before and after and says plainly when nothing moved. nowLoaded carries the actorSoftPath other endpoints take. See mif_help."
+    return _post("load_partition_actors", guids=guids, bounds=bounds, unpin=unpin or None)
+
+
+@mcp.tool()
 def set_plugin_enabled(name: str, enabled: bool, dry_run: bool = False,
                        save: bool = True) -> dict:
     "Enable or disable a plugin in the current .uproject and save it - the write half of the `enabled` field list_game_feature_plugins and describe_game_feature_plugin already report. Changes what the NEXT LAUNCH loads and nothing about this session: no plugin can be loaded or unloaded into a running editor, and the response says so. `enabled` is REQUIRED and has no default. dry_run reports exactly what would change and writes nothing, in any write mode; the real write is full-mode only and backs the .uproject up first. Refuses a plugin name it cannot find, because the engine would otherwise write that name into the .uproject as a reference to nothing and report success. See mif_help."

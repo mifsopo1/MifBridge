@@ -6181,7 +6181,52 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 - [gameplay-systems] list_automation_tests: Enumerates the automation tests registered in this editor - engine tests, project tests, and Functional Test maps - with their names, flags and source. An agent that wants to ver
 - [blender] extend import_mesh with glTF/GLB support (format param): Lets import_mesh accept .glb/.gltf, not only .fbx — the format every AI mesh generator and most asset marketplaces actually emit.
 
-- [ ] **load_partition_actors** (the write half of list_partition_actors) (day)
+- [x] **load_partition_actors** (the write half of list_partition_actors) (day)  **DONE 2026-08-31.**
+      H_load_partition_actors in MifBridgeStreaming.cpp, MCP wrapper, extended help,
+      tools/test_load_partition_actors.py - 15 PASS 0 FAIL against a live partitioned map.
+
+      PinActors CANNOT FAIL LOUDLY, AND IT IS WORSE THAN THE ENTRY SAID. Read out of the engine
+      rather than assumed:
+
+          void UWorldPartition::PinActors(const TArray<FGuid>& ActorGuids)
+          { if (PinnedActors) { PinnedActors->AddActors(ActorGuids); } }
+
+      It returns void, and when PinnedActors is null it does NOTHING AT ALL - no log, no return
+      value, nothing to distinguish it from success. So the entire result is read back, and the
+      thing to read it back with is IsActorPinned(), which the entry did not mention and which sits
+      directly beside PinActors in the header. It answers "the pin took" separately from "the actor
+      happens to be in memory", and those are different questions: an actor already loaded for
+      another reason would satisfy an IsLoaded() check while the pin silently did nothing.
+
+      UNPIN IS INCLUDED because UnpinActors is right there too and a load with no release is a
+      one-way door - every actor an agent ever pinned would stay pinned for the session.
+
+      BOUNDS AND GUIDS HAVE DIFFERENT LIFETIMES, so passing both is refused rather than merged. A
+      bounds load goes through LoadLastLoadedRegions, whose NAME is about restoring editor state at
+      startup but whose body builds an FLoaderAdapterShape per box, marks it user-created and loads
+      it. It works, and it leaves a PERSISTENT adapter behind with no handle returned - this
+      endpoint cannot undo it, only the editor's own World Partition window can. Reported as
+      reversible:false rather than presented as the mirror of pinning.
+
+      NOT PROVEN, and the suite says so instead of implying otherwise: that a bounds load MOVES an
+      ordinary actor. Every unloaded descriptor in this project's map is a WorldPartitionHLOD, which
+      the region adapter does not pick up - pinning loads them fine, so it is not "HLOD cannot
+      load". The endpoint reported newlyLoaded:0 truthfully rather than claiming success, which is
+      the behaviour under test. Needs a map with ordinary unloaded actors.
+
+      Also folded in: MifForEachActorDesc, so the 5.4 iterator rename lives in ONE place. That guard
+      matters more than a usual version split - the file's own comment says the 5.3 spelling still
+      COMPILES against 5.7 with an EMPTY body, so the wrong branch iterates nothing and answers
+      confidently about a map full of actors. It was inline at one call site and was about to be at
+      six.
+
+- [ ] **spatial filtering on list_partition_actors (a `bounds` parameter)** (hours)
+      Split out of load_partition_actors on 2026-08-31 when the write half landed. The read half
+      currently refuses `bounds` BY NAME and points at nameContains/classFilter, which is honest but
+      is the last piece of that item. ForEachIntersectingActorDescInstance is the engine call. Worth
+      noting the write half already reports per-descriptor bounds, so a caller can filter client
+      side today - this is a convenience and a bandwidth saving, not a capability gap.
+
       UWorldPartition::PinActors(const TArray<FGuid>&) and LoadLastLoadedRegions(const TArray<FBox>&)
       - WorldPartition.h:346/:350 on 5.3, :460/:464 on 5.7, unrenamed across versions unlike the
       descriptor iterators. Split out of the read half deliberately on 2026-08-30: the read is the

@@ -2697,6 +2697,24 @@ namespace MifBridge
 	using FMifActorDescPtr = const FWorldPartitionActorDesc*;
 #endif
 
+	/** The ONE place the 5.4 iterator rename is handled.
+	 *
+	 *  The comment above explains why this is not a usual version split: the 5.3 spelling still
+	 *  COMPILES against 5.7 and its body is empty, so the wrong branch iterates nothing and
+	 *  answers confidently about a map full of actors. That belongs in one place rather than at
+	 *  every call site, which is what it was about to become when load_partition_actors needed
+	 *  to iterate too.
+	 */
+	template <typename FuncT>
+	void MifForEachActorDesc(UWorldPartition* Partition, TSubclassOf<AActor> Filter, FuncT Visit)
+	{
+#if MIF_ENGINE_AT_LEAST(5, 4)
+		FWorldPartitionHelpers::ForEachActorDescInstance(Partition, Filter, Visit);
+#else
+		FWorldPartitionHelpers::ForEachActorDesc(Partition, Filter, Visit);
+#endif
+	}
+
 	TSharedRef<FJsonObject> MifSerializeActorDesc(FMifActorDescPtr Desc)
 	{
 		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
@@ -2743,6 +2761,307 @@ namespace MifBridge
 		J->SetBoolField(TEXT("loaded"), Desc->IsLoaded());
 		return J;
 	}
+
+	// ============================================================================================
+	// load_partition_actors - the write half of list_partition_actors.
+	// ============================================================================================
+	//
+	// list_partition_actors reports every actor in a World Partition map including the ones not in
+	// memory, and reports `loaded` per row - and nothing could act on that. An agent could see the
+	// actor it needed and had no way to bring it in.
+	//
+	// PinActors CANNOT FAIL LOUDLY, AND IT IS WORSE THAN THAT. Read from the engine rather than
+	// assumed (WorldPartition.cpp):
+	//
+	//     void UWorldPartition::PinActors(const TArray<FGuid>& ActorGuids)
+	//     {
+	//         if (PinnedActors) { PinnedActors->AddActors(ActorGuids); }
+	//     }
+	//
+	// It returns void, and when PinnedActors is null it does NOTHING AT ALL - no log, no return
+	// value, no observable difference from success. So the entire result has to be read back, and
+	// the thing to read it back with is IsActorPinned(), which the backlog entry did not mention:
+	// it answers "the pin took" separately from "the actor happens to be in memory", and those are
+	// different questions. An actor already loaded for some other reason would make an IsLoaded()
+	// check pass while the pin silently did nothing.
+	//
+	// UNPIN IS INCLUDED because UnpinActors sits directly beside PinActors and a load with no
+	// unload is a one-way door - every actor an agent ever pinned would stay pinned for the session.
+	//
+	// BOUNDS GO THROUGH LoadLastLoadedRegions, whose name is about restoring editor state at startup
+	// but whose body is a general "load these boxes": it builds an FLoaderAdapterShape per box,
+	// marks it user-created and loads it. That works, and it has a cost worth stating rather than
+	// discovering - each call leaves a PERSISTENT user-created loader adapter behind, there is no
+	// handle returned to remove it, and only the editor's own World Partition window can unload one.
+	// So it is reported as one-way rather than presented as the mirror of pinning.
+
+	void H_load_partition_actors(const TSharedRef<FJsonObject>& In,
+								 const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("guids"), TEXT("guid"), TEXT("bounds"), TEXT("unpin") },
+			TEXT("guids (alias: guid) - actor guids from list_partition_actors; bounds {min:{x,y,z},"
+				 " max:{x,y,z}} - load every actor intersecting this box; unpin (default false) - "
+				 "release the given guids instead of pinning them"),
+			{ { TEXT("actorPath"), TEXT("an unloaded actor has no path yet - that is the point. Pass the guid list_partition_actors reports") },
+			  { TEXT("load"), TEXT("this endpoint loads by default; pass unpin:true to release") },
+			  { TEXT("all"), TEXT("there is no load-everything switch - a partitioned map is partitioned because loading all of it does not fit. Use bounds") } }))
+		{
+			return;
+		}
+
+		UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+		if (!World)
+		{
+			Fail(Out, TEXT("no editor world."));
+			return;
+		}
+		if (!World->IsPartitionedWorld())
+		{
+			Fail(Out, TEXT("this level is NOT World Partitioned, so nothing is streamed and there "
+						   "is nothing to load - every actor in it is already in memory and "
+						   "list_level_actors sees all of them. NOTHING was changed."));
+			return;
+		}
+		UWorldPartition* Partition = World->GetWorldPartition();
+		if (!Partition)
+		{
+			Fail(Out, TEXT("this world is partitioned but has no UWorldPartition, which is what a ")
+				TEXT("COOKED World Partition map looks like: its actors were baked into runtime ")
+				TEXT("streaming cells at cook time and there are no editor descriptors to pin. ")
+				TEXT("NOTHING was changed."));
+			return;
+		}
+		Out->SetStringField(TEXT("world"), World->GetName());
+
+		const TArray<TSharedPtr<FJsonValue>>* GuidsJson = nullptr;
+		const bool bHasGuids = In->TryGetArrayField(TEXT("guids"), GuidsJson)
+			|| In->TryGetArrayField(TEXT("guid"), GuidsJson);
+		const TSharedPtr<FJsonObject>* BoundsJson = nullptr;
+		const bool bHasBounds = In->TryGetObjectField(TEXT("bounds"), BoundsJson);
+
+		if (bHasGuids == bHasBounds)
+		{
+			Fail(Out, bHasGuids
+				? TEXT("pass EITHER guids OR bounds, not both - they are different mechanisms with "
+					   "different lifetimes: pinning is reversible with unpin, a bounds load is not. "
+					   "NOTHING was changed.")
+				: TEXT("one of guids or bounds is required. guids come from "
+					   "list_partition_actors; bounds is {min:{x,y,z}, max:{x,y,z}}. NOTHING was "
+					   "changed."));
+			return;
+		}
+
+		// ------------------------------------------------------------------ bounds
+		if (bHasBounds)
+		{
+			auto ReadVec = [](const TSharedPtr<FJsonObject>& O, const TCHAR* Field, FVector& V)
+			{
+				const TSharedPtr<FJsonObject>* Sub = nullptr;
+				if (!O->TryGetObjectField(Field, Sub) || !Sub) { return false; }
+				V = FVector((*Sub)->GetNumberField(TEXT("x")), (*Sub)->GetNumberField(TEXT("y")),
+							(*Sub)->GetNumberField(TEXT("z")));
+				return true;
+			};
+			FVector Min, Max;
+			if (!ReadVec(*BoundsJson, TEXT("min"), Min) || !ReadVec(*BoundsJson, TEXT("max"), Max))
+			{
+				Fail(Out, TEXT("bounds needs both min and max as {x,y,z}. NOTHING was changed."));
+				return;
+			}
+			const FBox Box(Min.ComponentMin(Max), Min.ComponentMax(Max));
+			if (!Box.IsValid || Box.GetVolume() <= 0.0)
+			{
+				Fail(Out, TEXT("bounds is empty - min and max describe no volume. NOTHING was "
+							   "changed."));
+				return;
+			}
+
+			int32 LoadedBefore = 0, Total = 0;
+			MifForEachActorDesc(Partition, AActor::StaticClass(), [&](FMifActorDescPtr D)
+			{
+				++Total;
+				if (D->IsLoaded()) { ++LoadedBefore; }
+				return true;
+			});
+
+			Partition->LoadLastLoadedRegions({ Box });
+
+			int32 LoadedAfter = 0;
+			TArray<TSharedPtr<FJsonValue>> NowLoaded;
+			MifForEachActorDesc(Partition, AActor::StaticClass(), [&](FMifActorDescPtr D)
+			{
+				if (D->IsLoaded())
+				{
+					++LoadedAfter;
+					if (Box.Intersect(D->GetEditorBounds()))
+					{
+						NowLoaded.Add(MakeShared<FJsonValueString>(
+							D->GetActorSoftPath().ToString()));
+					}
+				}
+				return true;
+			});
+
+			Out->SetStringField(TEXT("mode"), TEXT("bounds"));
+			Out->SetNumberField(TEXT("descriptors"), Total);
+			Out->SetNumberField(TEXT("loadedBefore"), LoadedBefore);
+			Out->SetNumberField(TEXT("loadedAfter"), LoadedAfter);
+			// COUNTED FROM THE DESCRIPTORS, not from the call - LoadLastLoadedRegions returns void
+			// and reports nothing at all about what it loaded.
+			Out->SetNumberField(TEXT("newlyLoaded"), FMath::Max(0, LoadedAfter - LoadedBefore));
+			Out->SetArrayField(TEXT("loadedInBounds"), NowLoaded);
+			Out->SetBoolField(TEXT("reversible"), false);
+			Out->SetStringField(TEXT("note"),
+				TEXT("a bounds load is ONE-WAY from here. It goes through LoadLastLoadedRegions, "
+					 "which creates a persistent user-created loader adapter per box and returns no "
+					 "handle, so this endpoint cannot undo it - only the editor's own World "
+					 "Partition window can unload a region. Pin by guid instead when you want "
+					 "something you can release: unpin:true reverses that."));
+			return;
+		}
+
+		// ------------------------------------------------------------------ guids
+		const bool bUnpin = JBool(In, TEXT("unpin"), false);
+		TArray<FGuid> Wanted;
+		TArray<TSharedPtr<FJsonValue>> Malformed;
+		for (const TSharedPtr<FJsonValue>& V : *GuidsJson)
+		{
+			FString Str;
+			if (!V.IsValid() || !V->TryGetString(Str)) { continue; }
+			FGuid G;
+			if (FGuid::ParseExact(Str, EGuidFormats::Digits, G) || FGuid::Parse(Str, G))
+			{
+				Wanted.AddUnique(G);
+			}
+			else
+			{
+				Malformed.Add(MakeShared<FJsonValueString>(Str));
+			}
+		}
+		if (Malformed.Num())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("%d of the supplied guids are not guids at all (first: %s). "
+					 "list_partition_actors reports them in Digits form. NOTHING was changed."),
+				Malformed.Num(), *Malformed[0]->AsString()));
+			return;
+		}
+		if (Wanted.Num() == 0)
+		{
+			Fail(Out, TEXT("guids is empty - there is nothing to do, which is not the same as "
+						   "success. NOTHING was changed."));
+			return;
+		}
+
+		// Which of these actually EXIST as descriptors, and what their state is beforehand. A guid
+		// that names nothing must be reported rather than silently counted as handled.
+		TSet<FGuid> Known;
+		TMap<FGuid, bool> PinnedBefore;
+		TMap<FGuid, bool> LoadedBefore;
+		MifForEachActorDesc(Partition, AActor::StaticClass(), [&](FMifActorDescPtr D)
+		{
+			const FGuid G = D->GetGuid();
+			if (Wanted.Contains(G))
+			{
+				Known.Add(G);
+				PinnedBefore.Add(G, Partition->IsActorPinned(G));
+				LoadedBefore.Add(G, D->IsLoaded());
+			}
+			return true;
+		});
+
+		TArray<TSharedPtr<FJsonValue>> NotFound;
+		TArray<FGuid> Actionable;
+		for (const FGuid& G : Wanted)
+		{
+			if (Known.Contains(G)) { Actionable.Add(G); }
+			else { NotFound.Add(MakeShared<FJsonValueString>(G.ToString(EGuidFormats::Digits))); }
+		}
+		if (Actionable.Num() == 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("none of the %d guid(s) match an actor descriptor in this map. "
+					 "list_partition_actors is where the guids come from, and they are per-MAP. "
+					 "NOTHING was changed."), Wanted.Num()));
+			return;
+		}
+
+		if (bUnpin) { Partition->UnpinActors(Actionable); }
+		else        { Partition->PinActors(Actionable); }
+
+		// POSTCONDITION, and it is the whole endpoint. PinActors is `if (PinnedActors) {...}` - when
+		// that is null it does nothing whatsoever, with no signal of any kind.
+		TMap<FGuid, bool> LoadedAfter;
+		MifForEachActorDesc(Partition, AActor::StaticClass(), [&](FMifActorDescPtr D)
+		{
+			const FGuid G = D->GetGuid();
+			if (Known.Contains(G)) { LoadedAfter.Add(G, D->IsLoaded()); }
+			return true;
+		});
+
+		TArray<TSharedPtr<FJsonValue>> Changed, Unchanged, NowLoadedPaths;
+		int32 PinnedNow = 0;
+		for (const FGuid& G : Actionable)
+		{
+			const FString Key = G.ToString(EGuidFormats::Digits);
+			const bool bIsPinned = Partition->IsActorPinned(G);
+			if (bIsPinned) { ++PinnedNow; }
+			if (bIsPinned != PinnedBefore.FindRef(G))
+			{
+				Changed.Add(MakeShared<FJsonValueString>(Key));
+			}
+			else
+			{
+				Unchanged.Add(MakeShared<FJsonValueString>(Key));
+			}
+		}
+		MifForEachActorDesc(Partition, AActor::StaticClass(), [&](FMifActorDescPtr D)
+		{
+			const FGuid G = D->GetGuid();
+			if (Known.Contains(G) && D->IsLoaded() && !LoadedBefore.FindRef(G))
+			{
+				NowLoadedPaths.Add(MakeShared<FJsonValueString>(D->GetActorSoftPath().ToString()));
+			}
+			return true;
+		});
+
+		Out->SetStringField(TEXT("mode"), bUnpin ? TEXT("unpin") : TEXT("pin"));
+		Out->SetNumberField(TEXT("requested"), Wanted.Num());
+		Out->SetNumberField(TEXT("matched"), Actionable.Num());
+		Out->SetArrayField(TEXT("notFound"), NotFound);
+		Out->SetNumberField(TEXT("pinnedNow"), PinnedNow);
+		Out->SetArrayField(TEXT("stateChanged"), Changed);
+		Out->SetArrayField(TEXT("stateUnchanged"), Unchanged);
+		// actorSoftPath is the handle every other endpoint takes - the point of loading an actor is
+		// being able to address it afterwards.
+		Out->SetArrayField(TEXT("nowLoaded"), NowLoadedPaths);
+		Out->SetBoolField(TEXT("changed"), Changed.Num() > 0);
+
+		if (Changed.Num() == 0)
+		{
+			const bool bAllAlready = Actionable.Num() == Unchanged.Num()
+				&& PinnedNow == (bUnpin ? 0 : Actionable.Num());
+			Out->SetStringField(TEXT("note"), bAllAlready
+				? TEXT("every matched actor was ALREADY in the state you asked for, so nothing "
+					   "moved. Read back through IsActorPinned rather than inferred from the call.")
+				: TEXT("NOTHING CHANGED, and that is a real finding rather than a quiet success. "
+					   "PinActors is `if (PinnedActors) { ... }` in the engine - when that is null "
+					   "it does nothing at all, with no return value and no log. IsActorPinned says "
+					   "the state did not move. This usually means the world partition has no "
+					   "pinned-actor container, which happens when the editor world is not fully "
+					   "initialised for World Partition editing."));
+		}
+		else
+		{
+			Out->SetStringField(TEXT("note"), bUnpin
+				? TEXT("unpinned. An actor may still be loaded for another reason - unpinning "
+					   "releases THIS hold on it, not every hold.")
+				: TEXT("pinned. Pinned actors stay in memory until unpinned or the editor closes; "
+					   "nowLoaded carries the actorSoftPath every other endpoint takes."));
+		}
+	}
+
 
 	void H_list_partition_actors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
@@ -2849,11 +3168,7 @@ namespace MifBridge
 			return true;
 		};
 
-#if MIF_ENGINE_AT_LEAST(5, 4)
-		FWorldPartitionHelpers::ForEachActorDescInstance(Partition, Filter, Visit);
-#else
-		FWorldPartitionHelpers::ForEachActorDesc(Partition, Filter, Visit);
-#endif
+		MifForEachActorDesc(Partition, Filter, Visit);
 
 		// "scanned", NOT "count" - live-corrected 2026-08-30. classFilter is applied by the ENGINE
 		// iterator, not by this loop, so with one set the total reflects descriptors YIELDED rather

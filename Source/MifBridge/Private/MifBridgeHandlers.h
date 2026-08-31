@@ -1660,6 +1660,7 @@ namespace MifBridge
 	 *  engine derefs GetLandscapeInfo() unchecked) and a 5.7-only SILENT NO-OP. */
 	MIF_DECL(apply_spline_to_landscape);
 	MIF_DECL(list_partition_actors);
+	MIF_DECL(load_partition_actors);
 	MIF_DECL(list_layers);
 	MIF_DECL(modify_actor_layers);
 	MIF_DECL(set_layer_visibility);

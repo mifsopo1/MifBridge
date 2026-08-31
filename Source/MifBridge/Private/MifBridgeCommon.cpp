@@ -477,6 +477,7 @@ namespace MifBridge
 			MIF_BIND(list_data_layers);
 			MIF_BIND(apply_spline_to_landscape);
 			MIF_BIND(list_partition_actors);
+			MIF_BIND(load_partition_actors);
 			MIF_BIND(list_layers);
 			MIF_BIND(modify_actor_layers);
 			MIF_BIND(set_layer_visibility);
