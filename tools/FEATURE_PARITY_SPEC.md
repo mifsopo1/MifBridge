@@ -6743,6 +6743,14 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       autosave away from being persisted, which turns an in-memory test artifact into an edit to
       Andre's project.
 
+      THE DESTRUCTIVE ANGLE IS ALREADY CLEARED, so nobody needs to re-run that search. Every raw
+      confirm:true on a delete/destroy endpoint was checked by hand: test_graph_patch deletes
+      /Game/_MifPatchTest/..., test_collections destroys a MifTest<n> collection it created, and
+      test_uncovered_reads7 deletes a scratch NavMeshBoundsVolume it spawned - with a comment already
+      explaining why scratch_confirm cannot apply there (an actor path is not a /Game/ asset path, so
+      its prefix check would wrongly refuse it). test_consolidate was the only one that could destroy
+      something the project owned, and it is fixed. What remains above is mutation, not deletion.
+
       NOT swept unilaterally: nine suites is a large change on my own judgment, several may be
       deliberate (mutating a real asset is sometimes the only way to test a guard that only fires on
       real content), and the right fix differs per suite - scratch fixture, scratch_confirm, or an
