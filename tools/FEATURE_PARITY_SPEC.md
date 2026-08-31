@@ -7310,3 +7310,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       is a reading list, and this repo has learned twice tonight what a long reading list does to the
       one real finding inside it. Noted for anyone re-deriving: `bTransact` scans as ZERO occurrences
       in code, because the only place the NAME appears is the comment in `/*bTransact=*/true`.
+- [x] **every endpoint that ACCEPTS a promise flag READS it - 70 of 70 do** (hours)  **DONE 2026-08-31.**
+      tools/audit_promise_flags.py, gated in make_release and listed in the runbook. A flag like
+      confirm or dryRun is a PROMISE, and an endpoint that lists one in RejectUnknownParams and never
+      reads the value has made it and does not keep it - silently, in the worst direction, because
+      the caller gets exactly what they were guarding against and the response looks like success.
+
+        confirm    57 accepted, 57 read     the destructive thing happens when it was meant to be gated
+        save        7 accepted,  7 read     writes to disk when the caller asked it not to
+        dryRun      5 accepted,  5 read     MUTATES when explicitly asked only to report
+        allOrFail   1 accepted,  1 read     applies partially when atomicity was requested
+
+      Static on purpose: testing it live means handing valid arguments to a destructive endpoint to
+      see whether it stops, which is the one experiment you cannot afford to have answered "no".
+      Mutation-tested instead - blanking delete_asset's confirm read while leaving confirm in its
+      accepted list makes it exit 1 and name the flag, the endpoint and the file.
+
+      TWO SCRUBBING MISTAKES, and the second is the one worth carrying. Searching a body scrubbed by
+      blank_comments_and_strings for TEXT("confirm") found nothing, because that scrubber BLANKS
+      STRING LITERALS and here the string content IS the evidence - it reported 63 of 65 endpoints
+      unguarded, caught by the implausible ratio rather than by reading. The lesson five tools
+      learned tonight has a boundary: scrubbing is not free, and the question is whether a string is
+      DATA or EVIDENCE. Then matching only JBool left one apparent failure, move_tree_widget, which
+      reads confirm through JBoolAny as an alias for replaceRoot - a missing IDIOM, not a defect,
+      which is why the tool says to add the idiom rather than an exception.

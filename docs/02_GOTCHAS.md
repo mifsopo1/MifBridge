@@ -2156,3 +2156,25 @@ Content, editor still answering with 446 endpoints.
    piped, so there was no way to tell how far it had got — which is exactly what you need to know
    when deciding whether something dangerous ran. Piping to `tail` compounds it: `tail` shows nothing
    until EOF, so a long sweep looks identical whether it is working or wedged.
+## `sed -i` rewrites this repo's files as LF, and git tells you only in passing
+
+The rule here is CRLF everywhere. Every write tonight went through Python with
+`newline='\r\n'` except two, which went through `sed -i` because it was one line shorter - and
+`sed -i` writes LF. Both files came back as LF in the working tree, and the only warning was two
+lines git printed during `git push`:
+
+    warning: in the working copy of 'docs/18_START_HERE.md', LF will be replaced by CRLF the next
+    time Git touches it
+
+That is easy to scroll past, and it is the ONLY notice you get.
+
+The damage is confined to the working tree - the index stores LF regardless, `git diff` normalises
+both sides and shows nothing, and the file heals on the next checkout. But the CRLF rule exists so
+the editor, Visual Studio and GitHub Desktop agree about the file in front of you, and "git does not
+mind" is not the standard. It also leaves a file in the state that produces a persistent `M` in
+`git status` with an EMPTY `git diff`, which is its own twenty minutes if you have not seen it
+before: content identical both ways, `git add` resolves it, nothing was ever wrong.
+
+Use Python and set the newline explicitly, or `python -c` with `io.open(..., newline='\r\n')`.
+`sed -i`, `>` redirection from a shell, and anything else that rewrites a whole file will silently
+opt out of `.gitattributes` in the working tree.
