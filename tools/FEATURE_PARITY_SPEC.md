@@ -7381,9 +7381,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       invoke_editor_command's dryRun names the modal hazard, a modal on the game thread being the
       thing that takes this bridge down.
 
-- [ ] **move_tree_widget's replaceRoot gate is tested by nothing** (hours)
+- [x] **move_tree_widget's replaceRoot gate is tested by nothing** (hours)  **DONE 2026-08-31.**
       The third of the three gaps above. move_tree_widget reads confirm as an ALIAS for replaceRoot -
       JBoolAny(In, { TEXT("replaceRoot"), TEXT("confirm") }, false) - and no suite anywhere mentions
       replaceRoot. The gate guards replacing an EXISTING root widget, which discards the current root
       from the tree. Needs a widget-blueprint fixture with a root already present, which
       test_widget_tree.py already builds, so this is an extension of that suite rather than a new one.
+
+      CLOSED the same night as T435, nine checks, test_widget_tree 37 PASS -> 46. The gate refuses,
+      names replaceRoot, and leaves the tree untouched; with the flag it promotes and keeps the
+      subtree. The best part was not the gate: the response NAMES the root it displaced, COUNTS the
+      subtree that left the hierarchy with it, and warns that it "will not render". A displaced root
+      does not vanish from the asset - it stops being mounted, which is invisible from an ok:true -
+      so those three fields are what the test pins hardest.
+
+      THE FIRST VERSION FAILED, and the test was wrong rather than the endpoint. It asserted that Btn
+      was still under Box after promoting Box, but T430 moves Btn out to the root, so Box had no
+      children by then. Probed on a clean fixture: the promotion preserves the subtree exactly. T435
+      now builds its own two widgets - a test that inherits four earlier tests' mutations and asserts
+      a shape none of them promised is testing its own assumptions.

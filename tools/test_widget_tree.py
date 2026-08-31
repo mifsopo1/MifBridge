@@ -199,6 +199,65 @@ def main():
     check("T434 the widget blueprint still compiles",
           c.get("ok") is True and c.get("numErrors", 1) == 0, "errors=%s" % c.get("numErrors"))
 
+    # ------------------------------------------------------------------ T435 the root gate
+    print("")
+    print("=== T435: replacing an EXISTING root is gated, and the refusal names the flag ===")
+    # WHY THIS IS LAST. It discards the blueprint's original root, so every test above would be
+    # working on a different tree if it ran earlier.
+    #
+    # Found 2026-08-31 by asking which confirm-gated endpoints have a suite that mentions confirm
+    # near them. 54 of 57 did. This one hides behind an ALIAS: move_tree_widget reads
+    # JBoolAny(In, { TEXT("replaceRoot"), TEXT("confirm") }, false), and no suite anywhere mentioned
+    # replaceRoot - so the gate on discarding a root widget was tested by nothing at all.
+    # BUILD ITS OWN SUBTREE. The first version asserted that "Btn" was still under "Box" after the
+    # promotion, and it FAILED - because T430 moves Btn out to the root, so by here Box had no
+    # children at all. The endpoint was right and the test was wrong: on a clean fixture the
+    # promotion preserves the subtree exactly. A test that inherits four earlier tests' mutations
+    # and then asserts a shape none of them promised is testing its own assumptions.
+    build("SizeBox", "Promoted", root)
+    build("TextBlock", "PromotedChild", "Promoted")
+    before = tree()
+    gate = M.call("move_tree_widget", {"blueprintId": bid, "widgetName": "Promoted", "asRoot": True})
+    check("T435 asRoot with a root already present is REFUSED - replacing it throws the current "
+          "root out of the tree, and that is not a default",
+          gate.get("ok") is False, json.dumps(gate)[:220])
+    check("T435 and the refusal names replaceRoot, so the caller learns the flag rather than "
+          "guessing at confirm",
+          "replaceroot" in (gate.get("error") or "").lower(), (gate.get("error") or "")[:240])
+    check("T435 the tree is untouched by the refused call - a gate that refuses AFTER moving "
+          "something is not a gate",
+          tree() == before, json.dumps({"before": before, "after": tree()})[:240])
+
+    # The gate OPENING, on a scratch blueprint that exists for this. SC.confirm_call for the same
+    # reason T433 uses it: guarded_payload strips confirm from every payload, and confirm is the
+    # spelling this endpoint shares with replaceRoot.
+    old_root = M.call("list_tree_widgets", {"blueprintId": bid}).get("root")
+    opened = SC.confirm_call("move_tree_widget",
+                             {"blueprintId": bid, "widgetName": "Promoted", "asRoot": True,
+                              "confirm": True})
+    check("T435 with the flag passed, the move succeeds", opened.get("ok") is True,
+          json.dumps(opened)[:220])
+    after = M.call("list_tree_widgets", {"blueprintId": bid})
+    check("T435 and Promoted is now the root - read from list_tree_widgets, not from the writer",
+          after.get("root") == "Promoted",
+          "root is %r: %s" % (after.get("root"), json.dumps(after)[:200]))
+    kids = {x.get("name"): x.get("parent") for x in (after.get("widgets") or [])}
+    check("T435 and it kept its own child through the promotion",
+          kids.get("PromotedChild") == "Promoted", json.dumps(kids)[:220])
+
+    # THE PART WORTH THE MOST HERE. A displaced root does not disappear from the asset - it stops
+    # being in the hierarchy and stops rendering, which is invisible from an ok:true. The endpoint
+    # names it, counts the subtree that went with it, and says the flag that allowed it.
+    check("T435 the response NAMES the root it displaced", opened.get("displacedRoot") == old_root,
+          "displacedRoot=%r, expected %r" % (opened.get("displacedRoot"), old_root))
+    check("T435 and counts the subtree that went out of the hierarchy with it",
+          isinstance(opened.get("displacedSubtreeSize"), (int, float))
+          and opened.get("displacedSubtreeSize") >= 1, json.dumps(opened)[:220])
+    warn = (opened.get("warning") or "")
+    check("T435 and warns that the displaced subtree WILL NOT RENDER - the caller asked to swap a "
+          "root, not to silently unmount a subtree",
+          "render" in warn.lower() and "replaceRoot" in warn, warn[:240])
+
     print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
