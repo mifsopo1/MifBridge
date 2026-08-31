@@ -8793,3 +8793,45 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       verified by sha256.
 
       Blender suites: 10 files, all green on 5.0, 0 failed 0 skipped.
+
+- [x] **the Blender consequence fields nothing read - measured, then five of them closed**
+      - DONE 2026-08-31
+      Third off the Blender scrutiny backlog, and the answer was worse in proportion than the UE
+      side. Eleven consequence-shaped response keys in the addon; ONE was read by any suite:
+
+        clean_mesh         vertsRemoved, edgesRemoved, facesRemoved, discardedCustomSplitNormals
+        decimate_mesh      trisRemoved
+        normalize_weights  influencesDropped
+        export_mesh        seamVertsRemoved
+        bevel_edges        edgeIndicesTruncated  (also extrude_skirt, select_edges)
+        clear_scene        removed, removedCount
+
+      Every one reports geometry or data that is GONE, and a caller who does not read them cannot
+      tell a clean run from one that quietly ate half the mesh.
+
+      tools/test_blender_consequence.py closes the clean_mesh and decimate_mesh families, 18 checks.
+      The shape throughout is the one that matters: the reported number must AGREE with an
+      independent object_info before/after, never merely be present. A count that is present but
+      wrong is worse than absent, because it reads as a measurement. C100 also asserts that something
+      really was removed - a 0 == 0 match between two numbers that never moved proves nothing, which
+      is the vacuous-check trap this repo has been bitten by before.
+
+      C102 pins discardedCustomSplitNormals as a real bool and FALSE on a mesh with none, so a caller
+      can branch either way. The TRUE arm is deliberately not forced: authoring custom split normals
+      needs run_python, and the guard that refuses recalcNormals on a mesh that has them - "they are
+      usually authored deliberately (hard-surface shading, foliage cards)" - is the half that
+      protects somebody's shading work anyway.
+
+      TWICE IN ONE EVENING I READ THE WRONG LEVEL. object_info and create_primitive both nest their
+      counts under `object`, and reading the top level returned None, which turned every comparison
+      into None == None and passed. The first time cost a wrong verdict in T4008; the second cost
+      seven here. The helper now says so in its docstring, with the line number of mesh_counts.
+
+      11 Blender suite files, all green on 5.0, 0 failed 0 skipped.
+
+- [ ] **five more Blender consequence fields still read by nothing** (hours)
+      influencesDropped (normalize_weights), seamVertsRemoved (export_mesh), edgeIndicesTruncated
+      (bevel_edges, extrude_skirt, select_edges), removed and removedCount (clear_scene,
+      delete_object, remove_modifier). Same shape as the five closed above: assert the number against
+      an independent before/after rather than asserting it is present. edgeIndicesTruncated is the
+      most interesting - it says a LIST was cut short, so the caller is reading a partial answer.
