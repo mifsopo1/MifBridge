@@ -6658,10 +6658,32 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the parameter store is runtime data that cannot be saved or recompiled.
 
       The read/write pair without an ADD is the asymmetry worth naming: every other authoring family
-      here has one (add_anim_curve, add_ik_goal, add_niagara_emitter, create_data_layer). Whether
-      UNiagaraSystem exposes a supported way to add a user parameter outside the editor UI is the
-      first question, and it may be the answer is no - in which case this closes as REFUTED with the
-      engine reason, which is worth more than leaving it looking like an oversight.
+      here has one (add_anim_curve, add_ik_goal, add_niagara_emitter, create_data_layer).
+
+      RESEARCHED 2026-08-31, and the answer is that it IS buildable - this does not close as REFUTED.
+      The API is public, present in BOTH trees, and its 5.7 bodies are real rather than the deprecated
+      stubs that caught us on the landscape side the same night:
+
+          UNiagaraSystem::GetExposedParameters()                     5.3 NiagaraSystem.h:337, 5.7 :365
+              -> FNiagaraUserRedirectionParameterStore&   (NON-const overload exists)
+          FNiagaraUserRedirectionParameterStore::AddParameter(...)   5.3 :80, 5.7 :75   (an override)
+          FNiagaraUserRedirectionParameterStore::MakeUserVariable()  5.3 :99, 5.7 :94   (static, NIAGARA_API)
+
+      MakeUserVariable is the part not to skip: user parameters live under a `User.` namespace and the
+      store REDIRECTS them, so a raw AddParameter with a bare name would add something that is not a
+      user parameter. Its 5.7 body was read, not assumed - it prefixes "User." and no-ops if already
+      prefixed.
+
+      Sketch: build FNiagaraVariable(type, name), MakeUserVariable it, AddParameter on the exposed
+      store, Modify() the system. Type comes from the caller and must be validated against
+      FNiagaraTypeDefinition - set_niagara_user_parameter already refuses a caller-chosen `type` with
+      "writing a mismatched type would terminate the editor", so this one has to get typing right at
+      CREATE time, which is the whole risk in the item.
+
+      COOKED SYSTEMS STILL REFUSE, and should - the parameter store is runtime data that cannot be
+      saved or recompiled. So this unblocks test_niagara_params only on an UNCOOKED project (Curfew),
+      not on DDS2. Worth doing anyway: MifBridge is a general UE5 tool and authoring is the uncooked
+      case.
 
 
 ### Refuted, recorded so they are not re-proposed
