@@ -115,6 +115,13 @@ UNREACHABLE = {
                            "grid-snapping is now reported as movedByEngine in samples[] rather than "
                            "as dropped. Verified live 2026-08-31 in both directions",
     "droppedNote": "emitted beside droppedByValidation, same branch",
+    "duplicatePinsRemoved": "belt-and-braces for a root cause that is already FIXED, and the source "
+                            "says so: 'the root cause is fixed in PlaceAndInit ... but this makes "
+                            "create_function self-healing if any other terminator ever behaves the "
+                            "same'. The obvious way to reach it - two outputs sharing a name - does "
+                            "not, because CreateUserDefinedPin runs with bUseUniqueName true and "
+                            "RENAMES the second (Same -> Same1). Verified live 2026-08-31; that "
+                            "rename path is asserted instead, test_idempotence T384",
     "staleNote": "needs a component request whose owning manager has gone away WITH ITS WORLD - a "
                  "teardown no unattended suite performs. staleHandles, the always-emitted count "
                  "beside it, IS asserted (test_game_framework T1408)",

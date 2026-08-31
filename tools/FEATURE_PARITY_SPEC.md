@@ -8319,7 +8319,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **13 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **12 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8434,7 +8434,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       that neither skipped op left its value on the pin - "never attempted" and "attempted then
       rolled back" look identical in a count.
 
-      Real gaps: 13. Out of reach with a written reason: 6. Read by a suite: 45.
+      duplicatePinsRemoved left the backlog by being READ rather than by being tested, and what
+      the reading found was better than the field. The source says outright that it is
+      belt-and-braces for a root cause already fixed in PlaceAndInit, "self-healing if any other
+      terminator ever behaves the same" - and the obvious way to reach it, two outputs sharing a
+      name, does not: CreateUserDefinedPin runs with bUseUniqueName true and RENAMES the second.
+
+      So the reachable behaviour is a RENAME, and that is the more dangerous shape anyway. Asking
+      create_function for two outputs called "Same" succeeds and returns Same and Same1, with
+      pinsRenamed naming the mapping and pinsRenamedNote saying outright "Wire the names in
+      inputNames/outputNames, not the ones you asked for". Neither field was read by anything -
+      advice a caller never reads is the same as advice that was never written.
+
+      T384 in test_idempotence, 26 -> 32, and that suite is where it belongs rather than a new one:
+      its whole premise is that a caller who does not compare believes they got the name they asked
+      for, with add_component quietly making Turret1 and Turret2. This is the same trap one level
+      down - the collision inside a SINGLE call rather than between two.
+
+      THE UE HALF GOT THERE FIRST, and the Blender consequence suite now says so. Its "call it again"
+      rule was written up as learned-here; test_idempotence had the same premise already, from the
+      other end - an object that duplicates rather than a report that repeats. Two files converging
+      on one rule should reference each other rather than drift.
+
+      Real gaps: 12. Out of reach with a written reason: 7. Read by a suite: 45.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote

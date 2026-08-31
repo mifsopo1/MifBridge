@@ -136,6 +136,40 @@ def main():
     check("T383 set_variable_type refuses it too", q.get("ok") is False, json.dumps(q)[:170])
 
     print("")
+    print("=== T384: the same trap INSIDE one call - two parameters asking for one name ===")
+    # This suite's premise is that a caller who does not compare believes they got the name they
+    # asked for, and add_component was the example: "Turret" becomes "Turret1" with ok:true. The
+    # same thing happens WITHIN a single create_function call, because CreateUserDefinedPin runs
+    # with bUseUniqueName true - so two outputs both called "Same" come back as Same and Same1, and
+    # nothing about the call failed.
+    #
+    # It is reported, and reported well: pinsRenamed names the mapping and pinsRenamedNote says
+    # outright "Wire the names in inputNames/outputNames, not the ones you asked for". Nothing read
+    # either field until now, which is the part that made it worth asserting - advice a caller never
+    # reads is the same as advice that was never written.
+    dup = M.call("create_function", {"blueprintId": bid, "name": "MifDupOut%d" % st,
+                                     "outputs": [{"name": "Same", "type": "int"},
+                                                 {"name": "Same", "type": "int"}]})
+    check("T384 the call SUCCEEDS - the collision is resolved, not refused",
+          dup.get("ok") is True, json.dumps(dup)[:220])
+    names = dup.get("outputNames") or []
+    check("T384 and both outputs exist", len(names) == 2, names)
+    # THE ASSERTION THAT MATTERS. The caller asked for two pins called Same and has one that is not.
+    check("T384 but the second is NOT the name that was asked for",
+          "Same" in names and names != ["Same", "Same"], names)
+    check("T384 and pinsRenamed names the mapping rather than leaving the caller to diff",
+          "Same" in str(dup.get("pinsRenamed") or ""), dup.get("pinsRenamed"))
+    check("T384 and the note tells the caller which names to actually wire",
+          "outputNames" in str(dup.get("pinsRenamedNote") or ""),
+          str(dup.get("pinsRenamedNote"))[:220])
+    # And duplicatePinsRemoved must stay ABSENT: the engine renamed rather than duplicating, so
+    # there was nothing for the self-healing pass to remove. Its presence here would mean two pins
+    # really were made with one name.
+    check("T384 and nothing was deduplicated, because nothing was duplicated",
+          dup.get("duplicatePinsRemoved") is None,
+          "duplicatePinsRemoved=%r - two pins shared a name after all"
+          % dup.get("duplicatePinsRemoved"))
+
     print("=== T382: none of it broke the blueprint ===")
     c = M.call("compile", {"blueprintId": bid})
     check("T382 the blueprint compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,

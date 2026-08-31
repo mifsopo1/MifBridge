@@ -20,7 +20,13 @@ WHAT THIS SUITE ASSERTS, and the shape is the same throughout: the reported numb
 INDEPENDENT before/after measurement of the object, never just be present. A count that is merely
 present proves the field exists; a count that matches the mesh proves it was measured.
 
-AND THEN CALL IT AGAIN. That is the standing rule of this file, learned here rather than imported:
+AND THEN CALL IT AGAIN. That is the standing rule of this file - and it is NOT original to it, which
+is worth saying because the UE half got there first and the two should not drift apart.
+tools/test_idempotence.py opens on the same premise: "a setup script gets re-run ... so what does the
+second identical call do is a question every add_* endpoint has to answer, and the answers were not
+the same". It found add_component quietly making Turret1, Turret2 for a caller who did not compare.
+This file learned the same lesson from the other end - a REPORT that repeats rather than an object
+that duplicates:
 where a second identical call cannot change anything, its report must say so. The before/after
 cross-check is necessary and NOT sufficient - it is one measurement, and a count recomputed from the
 request rather than from the mesh agrees with it perfectly the first time and then repeats itself
