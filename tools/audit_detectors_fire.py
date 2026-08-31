@@ -454,12 +454,30 @@ def plant_unread_consequence_field(text):
     return text.replace('.get("propertiesFailed")', '.get("propertiesFailedZz")')
 
 
+def plant_blender_dead_param(text):
+    """Add a key to an addon op's reject_unknown that nothing reads.
+
+    Targets the ADDON rather than Source/, so it runs while an editor is up - the same reason the
+    consequence-field plant targets tools/. And camelCase with no underscore, because the first
+    version of this question was asked with lowercased keys against a camelCase source and reported
+    two working parameters as dead; a plant has to look like the thing it imitates.
+    """
+    needle = 'reject_unknown(params, ('
+    i = text.find(needle)
+    if i < 0:
+        return None
+    j = i + len(needle)
+    return text[:j] + '"probeDeadZz", ' + text[j:]
+
+
 PLANTS = {
     "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind, "mif_probe_zz"),
     "harvest_param_table.py": (os.path.join(PRIV, "MifBridgeDescribe.cpp"),
                                plant_missing_desc_row, "CONTRACT DRIFT"),
     "audit_consequence_fields.py": (os.path.join(HERE, "test_inherited_components.py"),
                                     plant_unread_consequence_field, "propertiesFailed"),
+    "audit_blender_dead_params.py": (os.path.join(HERE, "blender-addon", "MifBlender", "ops_mesh.py"),
+                                     plant_blender_dead_param, "probeDeadZz"),
     "audit_promise_flags.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_confirm, "confirm"),
     "mcp_static_check.py": (SERVER, plant_unbound, "mif_probe_zz_unbound"),
     "audit_postconditions.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_silent_mutator,

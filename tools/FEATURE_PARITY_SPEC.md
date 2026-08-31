@@ -8718,3 +8718,33 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       All 9 Blender suites green on 5.0 - 0 failed, 0 skipped. param_reach baseline 262 -> 252, and
       the whole remainder is UE-side.
+
+- [x] **the Blender half had 2 audit tools to the UE half's 20 - the most important one now exists**
+      - DONE 2026-08-31
+      With parameter REACH closed, the next Blender asymmetry is not ops - it is scrutiny. The UE
+      side has roughly twenty static auditors; the Blender side had two, and neither asked the
+      question that matters most here: does the addon accept a parameter nothing reads?
+
+      That is the same blind spot RejectUnknownParams has on the UE side, in the addon's
+      reject_unknown. A name ON the accepted list passes the guard by definition, and if nothing then
+      reads it the call succeeds, reports ok, and does nothing with the thing the caller asked for -
+      the silent wrong result the guard exists to end, arriving through the door the guard holds open.
+
+      tools/audit_blender_dead_params.py is the Blender arm of audit_dead_params.py - same question,
+      same permissive module-wide scope, and the header says it is the same idea rather than dressing
+      it up as a new one. RESULT: 0. Every accepted key appears somewhere other than its accept list.
+
+      TWO THINGS THAT KEEP THE ZERO HONEST.
+
+      Case-insensitive on both sides, because getting that wrong already cost a wrong answer today: a
+      first pass at this question compared param_reach's lowercased keys against a camelCase source
+      and reported decimate_mesh.targetTriangles and create_primitive.fillType as dead. Both are read
+      perfectly well.
+
+      Module-wide scope, deliberately, and create_primitive is why: it accepts "fillType" and reads it
+      through a module-level dict rather than a take() call, so a scan confined to the function body
+      would call a working parameter dead. False positives are what kill an audit tool.
+
+      And it is PROVEN rather than merely quiet - detector 23, "went red on the planted probeDeadZz".
+      An all-clear from an unproven tool is a tool that has never said anything. The plant targets the
+      addon rather than Source/, so it runs while an editor is up.
