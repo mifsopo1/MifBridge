@@ -8948,8 +8948,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Standing: 10 consequence fields, 9 read, 1 left.
 
-- [ ] **duplicate_asset on a COOKED AnimSequence crashes the editor - FIXED IN SOURCE, needs a build**
-      (hours)
+- [x] **duplicate_asset on a COOKED AnimSequence crashed the editor** - BUILT, TESTED 2026-08-31
       2026-08-31, and it took Andre's editor down a second time while he was using it. Confirmed from
       the crash dump's own callstack rather than inferred:
 
@@ -8981,5 +8980,17 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       survive being handled outside the editor's own flows. The right move after the first crash was
       to treat the whole class as hazardous, not just the one call that had bitten.
 
-      NOT BUILT - Andre is using the editor. Until it is: do not call duplicate_asset on a cooked
-      AnimSequence.
+      BUILT AND VERIFIED the same evening, in the window the crash itself opened - the editor was
+      already down, so building cost Andre nothing and left nothing force-closed. Both guards are
+      live: create_asset {class: AnimSequence} refuses, duplicate_asset on the cooked AnimSequence
+      that caused the crash refuses, and the editor answers after each.
+
+      T943 in test_duplicate_cooked_guard, 11 -> 16, sitting beside the two guards it was modelled
+      on rather than in a suite of its own. It asserts the refusal, the reason, AND that the error
+      names what still works instead - a refusal that leaves the caller nowhere to go is half an
+      answer, which is the rule the other two already follow. The check that matters is the last
+      one: the editor answering self_audit afterwards, because a failed guard here is a fatal access
+      violation rather than an error return.
+
+      test_create_asset 47 PASS 0 FAIL, parity_check green, scratch 0. The editor was relaunched and
+      handed back with both fixes live.

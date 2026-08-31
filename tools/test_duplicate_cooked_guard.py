@@ -77,6 +77,36 @@ def main():
         check("T941 the editor is still alive afterward", alive.get("ok") is True,
               "a failed guard here is a fatal exception, not an error return")
 
+    # ------------------------------------------------------------------ T943 cooked AnimSequence
+    print("\n=== T943: duplicate_asset refuses a cooked AnimSequence - the third of the family ===")
+    # Found 2026-08-31 the expensive way: this call took a live editor down with
+    # EXCEPTION_ACCESS_VIOLATION reading 0x28, through AssetTools' DuplicateAsset. The log named
+    # NOTHING - the crash beat the handler's own logging, so the last entry was an unrelated
+    # create_blueprint - and only Saved/Crashes' callstack put a MifBridge frame under AssetTools.
+    #
+    # Same shape as its two siblings above: cook strips editor-only data and DUPLICATION is what
+    # re-runs the path that dereferences it. Reading the asset is fine, which is why the guard is on
+    # duplication alone.
+    anims = M.call("find_assets", {"class": "AnimSequence", "pathPrefix": "/Game/",
+                                   "limit": 5}).get("assets") or []
+    real_anim = next((a.get("path") for a in anims if "_Mif" not in (a.get("path") or "")), None)
+    check("T943 (setup) a real AnimSequence exists to try", bool(real_anim), real_anim)
+    if real_anim:
+        r = M.call("duplicate_asset", {"path": real_anim,
+                                       "newPath": "/Game/_MifDupGuard/AS_%d" % st})
+        check("T943 the duplicate is refused, not attempted", r.get("ok") is False,
+              json.dumps(r)[:200])
+        check("T943 and explains the real reason (cooked, crashes the post-duplicate load path)",
+              "COOKED" in (r.get("error") or "") and "AnimSequence" in (r.get("error") or ""),
+              r.get("error"))
+        # It also has to say what DOES work, because a refusal that leaves the caller with nowhere
+        # to go is only half an answer - the same rule the other two guards follow.
+        check("T943 and names what still works instead of duplication",
+              "list_animations" in (r.get("error") or ""), (r.get("error") or "")[:240])
+        alive = M.call("self_audit", {})
+        check("T943 the editor is still alive afterward", alive.get("ok") is True,
+              "a failed guard here is a fatal access violation, not an error return")
+
     # ------------------------------------------------------------------ T942 a normal duplication still works
     print("\n=== T942: a normal, NOT-cooked scratch Blueprint still duplicates successfully ===")
     src = "/Game/_MifDupGuard/BP_Src_%d" % st
