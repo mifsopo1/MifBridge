@@ -6457,7 +6457,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       about it.
 
 
-- [ ] **compile the 5.6+ landscape branch against a real 5.7 - it has never been through a compiler** (minutes)
+- [x] **compile the 5.6+ landscape branch against a real 5.7 - it has never been through a compiler** (minutes)
+      DONE 2026-08-31, and it caught a shipped regression rather than confirming a clean bill.
+
+      HOW, since Live Coding blocks the obvious route and Curfew holds it: the block is keyed on
+      a mutex named after Makefile.ExecutableFile, and an installed-engine Development editor
+      target resolves to the shared UnrealEditor.exe - the exact binary Curfew is live-coding,
+      so the match is real and not a cross-project false positive. Building **DebugGame**
+      instead outputs UnrealEditor-Win64-DebugGame.exe, a different path and so a different
+      mutex, while compiling the same sources against the same 5.7 headers. No bypass flag, and
+      nothing of Curfew's touched. It also needs a SHORT project path - the scratchpad blew the
+      260-character limit on DebugGame's longer intermediate names.
+
+      RESULT: MifBridgeLandscape.cpp compiled at [71/95] and MifBridgeStreaming.cpp at [88/95].
+      The 5.6+ arm - GetEditLayersConst, ULandscapeEditLayerBase, GetName/GetGuid/IsVisible/
+      IsLocked, LandscapeEditLayer.h - is compiler-verified against 5.7. The build then died at
+      [92/95] on an ENGINE header (UnrealType.h:7136, C4702 unreachable code, inlined into
+      MifBridgeDataTables.cpp) which DebugGame promotes to an error. Not our code; the reason
+      DebugGame is a compile check here and not a build target.
+
+      WHAT IT CAUGHT is the point. ALandscape::HasLayersContent() is UE_DEPRECATED(5.7) and its
+      5.7 body is `return true;` unconditionally. The RefuseIfEditLayers guard added hours
+      earlier read exactly that, so on 5.7 it would have refused EVERY landscape and disabled
+      sculpt_landscape and import_landscape_heightmap for every user of that engine. Nothing on
+      5.3 could show it, because 5.3 returns the real answer. Deprecated-but-CONSTANT, the
+      sibling of the deprecated-but-EMPTY trap already in docs/01. Postmortem written.
       Filed 2026-08-31. ReadEditLayers() has a MIF_ENGINE_AT_LEAST(5,6) arm using GetEditLayersConst()
       and ULandscapeEditLayerBase, which the 5.3 build here does not compile at all. Header-verified
       against both installed engines - the signatures, the header's presence, and the WITH_EDITOR
@@ -6523,12 +6547,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the actual fix rather than a one-off pass.
 
 
-- [ ] **a suite can leave the editor's CURRENT LEVEL changed, and the next suite inherits it** (hours)
-      Filed 2026-08-31, after it caused three failures in test_layers that were the endpoint being
-      right and the suite being wrong. test_uncovered_reads7 runs add_sublevel + set_current_sublevel
-      and cannot put it back: remove_sublevel needs discardUnsaved, which has no scratch_confirm
-      exemption by design and should not get one. So every suite after it in the same editor is
-      placing actors into a different level than it thinks.
+- [ ] **a suite that DIES mid-run leaves the editor's current level changed** (hours)
+      Filed 2026-08-31, CORRECTED the same night - the first version of this item blamed the wrong
+      thing and would have sent someone to fix working code.
+
+      What I wrote first: "test_uncovered_reads7 changes the current level and cannot put it back."
+      That is wrong. It restores at T952 with set_current_sublevel {"path": "persistent"}, and that
+      call works - verified directly: currentLevel goes back to the persistent level and
+      currentLevelIsPartitioned flips back with it. The suite is well-behaved on its happy path.
+
+      What actually happened: that run TIMED OUT partway (the editor was busy compositing landscape
+      edit layers), so it never reached the restore, and every suite after it placed actors into a
+      streaming sublevel. The restore is a plain statement in the middle of main(), not a `finally`,
+      so any exception, timeout or interrupt skips it.
+
+      So the fix is smaller and different from what I first filed: put the level restore in a
+      `finally`, in reads7 and anywhere else that changes editor-wide state mid-suite. The sublevel
+      itself still cannot be removed (remove_sublevel needs discardUnsaved, correctly ungated), but
+      leaving a sublevel ADDED is harmless where leaving it CURRENT is not.
 
       This is not only a tidiness problem. It changed what was TRUE: with a classic streaming
       sublevel current inside a partitioned world, AActor::SupportsLayers flips, and test_layers'
@@ -6546,6 +6582,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Worth doing properly because the sweep runs 157 suites in one editor, so anything one suite
       leaves behind is inherited by up to 156 others.
+
+
+- [ ] **create_landscape's "edit layers OFF" cannot hold on 5.7, and nothing has measured it** (hours)
+      Filed 2026-08-31 from deprecation warnings in the 5.7 probe. create_landscape calls
+      ALandscapeProxy::CanHaveLayersContent and ALandscape::ToggleCanHaveLayersContent, both
+      UE_DEPRECATED(5.7), the second saying "Use ConvertNonEditLayerLandscape to convert non-edit
+      layer landscapes to edit layer based landscapes".
+
+      Its documented behaviour - "create_landscape deliberately turns edit layers OFF", which several
+      comments and one suite rely on - describes something 5.7 no longer has. On that engine every
+      landscape uses edit layers. So on 5.7 create_landscape either silently produces a layered
+      landscape anyway, or trips a deprecated no-op; which one is UNMEASURED, and both matter,
+      because test_landscape_heightmap builds its fixture with it precisely to get a NON-layered one.
+
+      Needs a real 5.7 editor, not a compile. Blocked by the same thing as the item above was: the
+      only 5.7 editor here is running someone else's work. The compile route cannot answer it -
+      HasLayersContent returning a constant is visible in the source, but what create_landscape
+      actually produces is a runtime question.
 
 
 ### Refuted, recorded so they are not re-proposed

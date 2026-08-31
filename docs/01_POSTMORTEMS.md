@@ -5,6 +5,85 @@ Newest first.
 
 ---
 
+## A guard I had just written would have refused every landscape on 5.7
+
+**Date** 2026-08-31
+
+**Symptom.** None, on the engine I was testing. Every suite was green, the endpoint behaved exactly
+as designed, and the regression was invisible.
+
+It was found by a **compiler**, on an engine with no editor I was allowed to use.
+
+**What it was.** Earlier the same night I added `RefuseIfEditLayers()` - a guard stopping
+`sculpt_landscape` and `import_landscape_heightmap` from writing the merged heightmap on a landscape
+whose edit-layer composite would discard the write. It asked the obvious question:
+
+```cpp
+if (!Landscape || !Landscape->HasLayersContent()) { return false; }
+```
+
+On UE 5.7 that function is:
+
+```cpp
+// LandscapeEditLayers.cpp:6747
+bool ALandscape::HasLayersContent() const
+{
+	return true;
+}
+```
+
+Unconditionally. 5.7 deprecated non-edit-layer landscapes entirely - *"all landscapes use the edit
+layer system now"* - so the predicate is a **constant** there. The guard would have refused every
+landscape on 5.7, disabling two endpoints for every user of that engine, and nothing on 5.3 could
+ever have shown it because 5.3 returns the real answer.
+
+**How it was found.** A probe build of the plugin against a stock 5.7. Not a test - a compile. The
+deprecation warning is what pointed at it:
+
+```
+warning C4996: 'ALandscape::HasLayersContent': Non-edit layer landscapes are deprecated,
+all landscapes use the edit layer system now. - Please update your code to the new API
+before upgrading to the next release, otherwise your project will no longer compile.
+```
+
+Reading the 5.7 body to see what the "new API" replaced is what turned a routine deprecation warning
+into a shipped-regression catch. **The warning did not say the function had become a constant.**
+That was only in the source.
+
+**Fix.** `HasEditLayers()` reads the edit-layer STACK on 5.6+ (`ReadEditLayers().Num() > 0`) - a real
+answer on any engine - and keeps the old call only under `#if !MIF_ENGINE_AT_LEAST(5, 6)`, where it
+is neither deprecated nor constant.
+
+**And a deliberate asymmetry, which is the part worth arguing with.** On 5.6+ the guard now WARNS
+instead of refusing. It is true that a 5.7 landscape always has edit layers, and it may well be true
+that the merged write is discarded there too - but that was measured on 5.3 and cannot be measured
+on 5.7 here, because the only 5.7 editor on this machine is running someone else's work. Refusing
+across an entire engine version on an inference is worse than the hazard it would prevent, so the
+response carries `editLayerWarning` naming the 5.3 measurement and telling the caller to re-export
+and compare. The finding reaches them; the endpoint is not taken away from them.
+
+**Prevention - two rules, and the second is the one I would have missed.**
+
+> A deprecated engine function may have been replaced by a CONSTANT. `UE_DEPRECATED` tells you the
+> call is going away; it does not tell you the answer changed. Read the body.
+
+This project already had the sibling rule from `ForEachActorDesc` - deprecated-but-EMPTY, compiles
+and iterates nothing. Deprecated-but-CONSTANT is the same trap returning `true` instead of doing
+nothing, and it is more dangerous, because an empty function usually shows up as "nothing happened"
+while a constant `true` shows up as confident wrong behaviour.
+
+> A guard added on one engine is UNTESTED on every other engine until a compiler has seen it there.
+
+The 5.6+ branch of this code had been reasoned about carefully against the headers and was right
+about the API. It was wrong about the SEMANTICS, and only building it surfaced that.
+
+**Also found, not fixed, filed.** `create_landscape` calls `CanHaveLayersContent` and
+`ToggleCanHaveLayersContent`, both `UE_DEPRECATED(5.7)`, the latter with *"Use
+ConvertNonEditLayerLandscape"*. Its documented behaviour - "create_landscape deliberately turns edit
+layers OFF" - cannot hold on 5.7, where that is not a thing a landscape can be. That is pre-existing
+and needs its own measurement on a real 5.7 editor.
+
+
 ## A helper named for the level it does not read, and three messages that claimed "every actor"
 
 **Date** 2026-08-31

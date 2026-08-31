@@ -138,9 +138,50 @@ namespace MifBridge
 		// "landscape writer + edit layers" is not the bug; writing the merged result is.
 		//
 		// Succeeding and then silently reverting is the worst outcome available, so this refuses.
+		// "Does this landscape have sculpt edit layers", answered without a deprecated constant.
+		//
+		// ALandscape::HasLayersContent() is UE_DEPRECATED(5.7) and its 5.7 body is `return true;`
+		// - unconditionally, because 5.7 deprecated non-edit-layer landscapes entirely. Reading it
+		// there is not a check, it is a constant, and the deprecation text says the call stops
+		// compiling in the release after 5.7. On 5.6+ the layer STACK is read instead, which is a
+		// real answer on any engine.
+		bool HasEditLayers(ALandscape* Landscape)
+		{
+			if (!Landscape) { return false; }
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			return ReadEditLayers(Landscape).Num() > 0;
+#else
+			return Landscape->HasLayersContent();
+#endif
+		}
+
 		bool RefuseIfEditLayers(ALandscape* Landscape, const TSharedRef<FJsonObject>& Out)
 		{
-			if (!Landscape || !Landscape->HasLayersContent()) { return false; }
+			if (!HasEditLayers(Landscape)) { return false; }
+
+#if MIF_ENGINE_AT_LEAST(5, 6)
+			// DO NOT REFUSE ON 5.6+, and this is a deliberate asymmetry rather than an oversight.
+			//
+			// On 5.7 EVERY landscape has edit layers, so refusing here would take sculpt_landscape
+			// and import_landscape_heightmap away from every 5.7 user. The discarded-write was
+			// MEASURED on 5.3; whether 5.6+ behaves the same has NOT been measured, because the only
+			// 5.7 editor on this machine is running someone else's work. Breaking two endpoints
+			// across an engine version on an inference is worse than the hazard it would prevent.
+			//
+			// So the caller is warned and left in control. If the 5.7 measurement is ever taken and
+			// the write is discarded there too, this becomes a refusal like the branch below.
+			Out->SetStringField(TEXT("editLayerWarning"), FString::Printf(
+				TEXT("'%s' has sculpt edit layers (%s), and this endpoint writes the MERGED heightmap ")
+				TEXT("with no FScopedSetLandscapeEditingLayer. On UE 5.3 that write is DISCARDED by the ")
+				TEXT("next edit-layer composite - measured: ok:true, an export immediately after ")
+				TEXT("differs, and two seconds later it is byte-identical to before. Whether 5.6+ ")
+				TEXT("behaves the same is UNVERIFIED, and on 5.6+ every landscape has edit layers, so ")
+				TEXT("refusing would disable this endpoint entirely. Re-export after a second and ")
+				TEXT("compare before trusting this. apply_spline_to_landscape writes THROUGH the layer ")
+				TEXT("and does not have this problem."),
+				*Landscape->GetActorLabel(), *FString::Join(EditLayerNames(Landscape), TEXT(", "))));
+			return false;
+#else
 			const TArray<FString> Names = EditLayerNames(Landscape);
 			Fail(Out, FString::Printf(
 				TEXT("'%s' has sculpt EDIT LAYERS (%s), and this endpoint writes the MERGED ")
@@ -154,6 +195,7 @@ namespace MifBridge
 				TEXT("landscape_info's editLayers[]. NOTHING was changed."),
 				*Landscape->GetActorLabel(), *FString::Join(Names, TEXT(", "))));
 			return true;
+#endif
 		}
 
 		ALandscape* FindLandscape(UWorld* World, const FString& Query)
@@ -1271,7 +1313,7 @@ namespace MifBridge
 
 		// GUARD 2 - the 5.7 silent no-op.
 		const FName EditLayer(*JStr(In, TEXT("editLayer")));
-		const bool bHasLayers = Landscape->HasLayersContent();
+		const bool bHasLayers = HasEditLayers(Landscape);
 #if MIF_ENGINE_AT_LEAST(5, 7)
 		if (Landscape->GetEditLayerConst(EditLayer) == nullptr)
 		{
@@ -1402,7 +1444,7 @@ namespace MifBridge
 		// ForceUpdateLayersContent() plus a DEPRECATED (bool) overload. No-arg binds the default on
 		// the old engines and the non-deprecated overload on 5.7 - passing an explicit false would
 		// pick the deprecated one there.
-		if (Landscape->HasLayersContent())
+		if (HasEditLayers(Landscape))
 		{
 			Landscape->ForceUpdateLayersContent();
 		}
