@@ -128,6 +128,28 @@ against that engine and says nothing about UE_5.3. Probing the *installed* 5.3 g
 Development build with a linked binary. Never the source tree at `D:/UE532` - see trap 3 in
 `make_engine_probe.py`.
 
+## Committed but UNPROVEN — check these before trusting them
+
+Work lands here faster than the two environments that can verify it. Nothing below is known broken;
+each is committed, statically validated, and has never been observed doing its job. They are `- [ ]`
+in the spec rather than `- [x]` on that file's own rule: *"'- [x]' only when BUILT, TESTED and
+COMMITTED"*, and a compile is not a test.
+
+| what | why it is unproven | what proves it |
+|---|---|---|
+| Three C++ fixes (2026-08-31): `layersCreated` on `modify_actor_layers`; the create-after-delete dead end at four create-guards (docs/06 issue 28); three refusals that reported a MISSING parameter as a failed lookup | the running editor loads a DLL built before them | rebuild, then `python tools/verify_pending_fixes.py` — exit 2 means SKIPPED because the loaded DLL predates the fixes, which is the honest answer rather than a failure |
+| Seven Blender parameter additions (2026-08-31): cone/torus radii, six `bevel_edges` options, four `export_mesh` FBX overrides, `import_mesh.useCustomNormals`, `uv_unwrap.correctAspect`, `bake_texture.device`, `list_objects.pattern`/`detail` | the addon suites skip without a running Blender | start Blender with the addon, then `python tools/run_blender_suites.py` |
+| Two suite repairs: `compile_blueprint` → `compile` (three call sites), and `read_datatable`'s `limit` → `maxRows` | both need the editor to run the suites | re-run `test_ability_system`, `test_spline_landscape`, `test_datatables` |
+
+**What IS proven about them.** The C++ fixes are BUILD OK on UE 5.3 installed, Development, with a
+linked DLL and a verified mtime. The Blender additions are names the addon provably accepts —
+`parity_check` fails on a name it does not, which was mutation-tested with a planted `bogusKey_zz`.
+The suite repairs were found by comparing call sites against `MIF_BIND` and each handler's
+`RejectUnknownParams`, and `audit_suite_payloads` now fails if either regresses.
+
+**The distinction worth keeping.** "It compiles" and "the name is accepted" are real evidence about a
+real failure mode, and they are not evidence that the feature works. Say which one you have.
+
 ## How to know the state is healthy
 
 ```
