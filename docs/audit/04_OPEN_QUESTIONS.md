@@ -283,6 +283,22 @@ closes it.
 
 ## 4. Operational prerequisites (do these before/at implementation start)
 
+> **ALL THREE ARE HISTORICAL, verified 2026-08-31.** They were written against a 160-endpoint
+> surface; it is now 434 own endpoints (446 live, including 12 foreign `kr_*`). Specifically:
+> **(1)** the four in-source-but-not-live endpoints have been live for a long time and
+> `self_audit` reports far past 160. **(2)** `diagnose_landscape_draws` is registered AND
+> reachable from MCP - checked directly, not inferred. Better: a both-directions sweep found
+> **zero** own endpoints without an MCP tool, so the three-way registry rule holds in the
+> direction `parity_check` does not cover (it checks MCP -> endpoint; this checked endpoint ->
+> MCP). **(3)** the 160-name covered-set list in `work/_BRIEF.md` is stale by ~274 endpoints and
+> should not be diffed against - `self_audit` is the live list, which is the rule the repo
+> settled on anyway.
+>
+> Kept rather than deleted because prerequisite 3 records a real failure mode - the brief once
+> circulated 159 names and dropped one, and later readers mis-classified work from it. That
+> hazard is now permanent for this file: any name-list here is a snapshot, and the endpoint
+> registry is not.
+
 1. **Editor rebuild + restart** to pick up the 4 in-source-but-not-live endpoints:
    `set_viewport_camera`, `get_viewport_camera`, `focus_viewport` (read-only) and
    `spawn_actor_in_pie` (transacted). Live DLL serves 156 of 160
