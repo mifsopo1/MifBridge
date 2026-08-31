@@ -572,8 +572,10 @@ namespace MifBridge
 	// TWO CRASH TRAPS, both check() rather than an error return, both guarded by dispatching only on
 	// an exact type match:
 	//
-	//   SetParameterValue<T>  check(Param.GetSizeInBytes() == sizeof(T))   ParameterStore.h:527
-	//   Position parameters   check(HasPositionData(Param.GetName()))      ParameterStore.h:531
+	//   SetParameterValue<T>  check(Param.GetSizeInBytes() == sizeof(T))
+	//                        NiagaraParameterStore.h  5.3 :527   5.7 :562
+	//   Position parameters   check(HasPositionData(Param.GetName()))
+	//                        NiagaraParameterStore.h  5.3 :532   5.7 :567
 	//
 	// So there is no default branch that "tries" a float: a type this endpoint does not handle is
 	// refused by name. Guessing here does not produce a bad value, it ends the process.

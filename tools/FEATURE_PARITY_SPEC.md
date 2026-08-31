@@ -7170,3 +7170,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Worth knowing for anything similar: self_audit already returns transactionBuckets.readOnly, the
       whole list of 88, in ONE call. The first version of this scan made 446 describe_endpoint calls
       to rebuild a list that was already sitting in a field it had fetched.
+- [x] **659 engine citations checked against three engine trees - one was unresolvable** (hours)  **DONE 2026-08-31.**
+      The sources cite engine files by name and line 659 times, across 272 distinct files, beside
+      guards whose entire reasoning rests on what is at that line. audit_modals verifies THREE of
+      them, with the expected text at each; nothing checked the rest. A citation to a file that is
+      gone, or to a line past the end of one, is provably stale without knowing what the line should
+      say - so that much is mechanically checkable, and was checked against D:/UE532 (5.3 source),
+      installed 5.3 and installed 5.7, indexing 257,559 engine source files.
+
+      657 of 659 land inside a real file. ZERO point past the end of one. The single failure was a
+      filename rather than a line: MifBridgeNiagara.cpp cited "ParameterStore.h:527" and ":531",
+      which is an abbreviation - the file is NiagaraParameterStore.h, and there are three files in
+      that directory ending in ParameterStore.h, so the reader cannot resolve it. Verified the lines
+      before rewriting: 5.3 :527 is exactly `check(Param.GetSizeInBytes() == sizeof(T))`, and the
+      position check is at :532 rather than the cited :531 - inside the +/-6 tolerance audit_modals
+      uses precisely because citations drift by a line or two. Rewritten with the full filename and
+      BOTH engines' lines, since 5.7 has them at :562 and :567.
+
+      NO TOOL COMMITTED. Indexing three engine trees takes minutes and the whole scan produced one
+      finding, which is not a thing to put in a runbook people run often. The measurement is the
+      deliverable, and it says the citation base is in good order - which is the answer somebody
+      would otherwise spend an evening re-deriving.
