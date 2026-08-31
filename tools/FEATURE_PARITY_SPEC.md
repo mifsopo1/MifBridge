@@ -7860,7 +7860,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       zero. Doing it in that order is what proves the tool rather than just the messages - and this
       one belongs in audit_detectors_fire's PLANTS afterwards, where it is not yet listed.
 
-- [ ] **MifBridge's parameter contract is now public - the KR mirrors are gone, and it needs a BUILD**
+- [x] **MifBridge's parameter contract is public and PROVEN AT RUNTIME** - DONE 2026-08-31
       (hours)
       2026-08-31. New Source/MifBridge/Public/MifBridgeParams.h exports Fail, IsOk, JStr, JNum, JInt,
       JBool, JStrAny, JBoolAny, JIntAny, JHasAny, RejectUnknownParams and MifDeferToNextTick with
@@ -7884,7 +7884,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       build when the editor is next closed; the sources are identical, so this is a formality rather
       than a doubt, and it is still not a [x] until it happens.
 
-- [ ] **list_widget_bindings is BUILT and has a suite, and neither has ever run** (hours)
+- [x] **list_widget_bindings** - DONE 2026-08-31. test_widget_bindings 10 PASS 0 FAIL, first run.
       Found 2026-08-31 while fixing a message that promised `list_widget_bindings`, an endpoint that
       was never built. add_widget_binding and remove_widget_binding write them; add_widget_binding
       reports a bindingCount and nothing returns the bindings themselves. The refusal text now says
@@ -7915,7 +7915,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       padded with things somebody already decided not to do overstates how much is left, and the
       next reader has to re-derive each one to find that out.
 
-- [ ] **list_game_framework_component_requests - BUILT, never run** (hours)
+- [x] **list_game_framework_component_requests** - DONE 2026-08-31. test_game_framework T1408, 27 PASS 0 FAIL.
       Found 2026-08-31 by sweeping all 435 endpoints for families that can WRITE a thing and not READ
       it back - the shape widget bindings had until the same day. 18 families looked like it; 15 were
       readable through an endpoint under a DIFFERENT noun (describe_animation reports sync markers,
@@ -7933,7 +7933,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       audit_message_endpoints pass. NOT [x]: never run, and it has no suite yet - the endpoint needs
       a live component request to list, which means calling add_ against a real receiver class.
 
-- [ ] **add_make_set - BUILT, never run** (hours)
+- [x] **add_make_set** - DONE 2026-08-31. test_node_spawns T330 drives it, 109 PASS 0 FAIL.
       The third UK2Node_MakeContainer. add_make_array and add_make_map both existed, which is exactly
       why this was worth finding: a family missing one member is invisible until somebody needs the
       missing one, and then it looks like the bridge cannot do Blueprint containers at all.
@@ -7954,7 +7954,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the moment it registers. NOT [x] because that has not HAPPENED yet, not because it is
       uncovered.
 
-- [ ] **add_switch_name - BUILT, never run** (hours)
+- [x] **add_switch_name** - DONE 2026-08-31. test_node_spawns T334/T335, including the FName trap.
       The fourth switch, alongside add_switch_int, add_switch_enum and add_switch_string. FName is
       what UE uses for anything looked up by IDENTITY rather than read as text - a socket, a bone, a
       montage section - so a Blueprint branching on one of those had to be built from a chain of ==
@@ -7977,7 +7977,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the same FName and are refused as duplicates, and caseSensitive is refused BY NAME rather
       than accepted and ignored. NOT [x] because it has not run.
 
-- [ ] **fix_up_redirectors - BUILT, never run** (hours)
+- [x] **fix_up_redirectors** - DONE 2026-08-31. test_modal_guard T75, 21 PASS 0 FAIL.
       rename_asset calls IAssetTools::RenameAssets, which deliberately leaves an ObjectRedirector for
       every asset that was still referenced. Nothing could clean one up, so a session that renames
       steadily accumulates redirector packages - and those get COOKED INTO THE MOD: dead packages
@@ -8052,7 +8052,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       readers to ignore it, which audit_vacuous_checks' own header warns about: a tool that cries
       wolf gets ignored. The knowledge is the deliverable here, not the script.
 
-- [ ] **list_automation_tests - BUILT, never run** (hours)
+- [x] **list_automation_tests** - DONE 2026-08-31. verify_pending_fixes V4, 20 PASS 0 FAIL 0 SKIP.
       An agent that changes a Blueprint could not discover that a test covering it EXISTS, let alone
       which one. This walks FAutomationTestFramework's in-memory registry: engine tests, project
       tests, and the Functional Test maps a project ships.
@@ -8161,3 +8161,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Incidental, and Andre's business rather than a finding: 77 packages were already dirty in that
       session. Normal for an editor somebody is working in, and the auditor counts only NEW ones,
       which is why it can run at all against a live session.
+
+- [ ] **a new endpoint is INVISIBLE to describe_endpoint until harvest_param_table is rerun** (minutes)
+      Found 2026-08-31 the only way it could be: test_node_spawns passed 106 checks and never
+      exercised add_make_set, and the suite could not say so because it drives whatever the LIVE
+      REGISTRY reports as taking only cosmetic parameters. describe_endpoint answered
+      acceptedParams:NONE for the new endpoint, so the filter skipped it silently and the suite went
+      green having tested one thing fewer than the day before.
+
+      The static table in MifBridgeDescribe.cpp is harvested from the RejectUnknownParams guards by
+      hand, and none of the seven endpoints added that day had a row. Its own docstring says the
+      table has gone stale TWICE before; this was the third. Regenerated - 433 rows to 439 - rebuilt,
+      and test_node_spawns went 106 to 109 with add_make_set driven, guid-checked and confirmed in
+      the graph.
+
+      WHAT IS STILL OPEN. Nothing catches this. audit_describe_drift compares rows against handlers
+      and reported "0 endpoints have no row at all" earlier the same day - correctly, because it ran
+      before the endpoints existed. A check that the MIF_BIND count equals the harvested row count
+      would have caught it in seconds, and belongs either in parity_check or in the release gate.
+      Adding an endpoint has to mean regenerating the table, and right now only memory enforces that.
