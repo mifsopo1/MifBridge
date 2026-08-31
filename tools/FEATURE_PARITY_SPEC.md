@@ -9030,3 +9030,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       It therefore missed the two guards that motivated the tool. Fourth regex-too-simple bug of the
       day: C++ string concatenation across lines is the house style here, not the exception, and a
       scanner that does not expect it reads a fraction of the source and reports a clean number.
+
+- [ ] **two detectors registered tonight are UNPROVEN until the editor is free** (minutes)
+      audit_editor_fatal_guards and audit_cross_endpoint_claims are both registered in
+      audit_detectors_fire (detectors 25 and 26) and neither has fired yet. Both plant into Source/,
+      and the harness refuses Source/ plants while an editor holds the project - correctly; a plant
+      writes a deliberately broken .cpp for about a second and Live Coding compiles on demand.
+
+      They are registered rather than exempted BECAUSE the harness's own invariant caught the second
+      one. Adding the first took "0 have neither" to 1, and that line is the whole reason the
+      accounting exists: an untracked tool is invisible until something counts. Standing:
+      33 detectors, 26 planted, 6 not provable here, 0 with neither.
+
+      Both plants are written the way the module actually writes refusals - multi-fragment literals
+      across lines - rather than as single-fragment probes. That is deliberate: a single-fragment
+      plant would have been caught by the BROKEN version of audit_editor_fatal_guards' own regex, so
+      it would have proven a scanner that read a fraction of the source.
+
+      What closes it: one editor-closed run of audit_detectors_fire, the same window a rebuild needs.

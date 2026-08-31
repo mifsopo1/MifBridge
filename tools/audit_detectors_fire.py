@@ -486,6 +486,55 @@ def plant_blender_consequence_field(text):
                         '"removedCount": len(removed),', 1)
 
 
+def plant_fatal_guard(text):
+    """Add a fatal-sounding refusal naming a class nothing else guards.
+
+    The probe name ends in "Mesh" deliberately: the tool groups BY CLASS and its CLASSISH pattern
+    only recognises names ending in the UObject-ish suffixes it lists, so a bare probe token would be
+    filed under "naming no class" and never printed with a marker the harness could see. Fourth time
+    today a plant has had to look like the thing it imitates rather than like a probe.
+
+    Multi-fragment on purpose too - a single-fragment literal would have been matched by the BROKEN
+    version of the tool's regex, so this plant would have passed against a scanner that read a
+    fraction of the source. It is written the way the module actually writes refusals.
+    """
+    needle = '\tvoid H_list_blueprints('
+    i = text.find(needle)
+    if i < 0:
+        return None
+    brace = text.find("{", i)
+    if brace < 0:
+        return None
+    j = text.find("\n", brace) + 1
+    return (text[:j]
+            + '\t\tif (false) { Fail(Out, TEXT("a ProbeZzMesh would CRASH the editor "\n'
+              '\t\t\t"outright, so it is refused here rather than attempted. ")); }\n'
+            + text[j:])
+
+
+def plant_cross_endpoint_claim(text):
+    """Make a handler promise something about ANOTHER endpoint that no suite drives with it.
+
+    Needs BOTH halves or the tool correctly ignores it: a real endpoint name, and one of the
+    equivalence/completeness shapes it filters on. A bare probe token would be dropped as
+    navigation, which is the tool working - so the plant carries "returns the same set" and names
+    list_blueprints, and hides a unique marker inside the same sentence so the harness can see it in
+    the printed quote.
+    """
+    needle = '\tvoid H_list_automation_tests('
+    i = text.find(needle)
+    if i < 0:
+        return None
+    brace = text.find("{", i)
+    if brace < 0:
+        return None
+    j = text.find("\n", brace) + 1
+    return (text[:j]
+            + '\t\tif (false) { Fail(Out, TEXT("probeSameZz - list_blueprints returns the same set "\n'
+              '\t\t\t"as this endpoint, so either will do. ")); }\n'
+            + text[j:])
+
+
 PLANTS = {
     "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind, "mif_probe_zz"),
     "harvest_param_table.py": (os.path.join(PRIV, "MifBridgeDescribe.cpp"),
@@ -494,6 +543,14 @@ PLANTS = {
                                     plant_unread_consequence_field, "propertiesFailed"),
     "audit_blender_dead_params.py": (os.path.join(HERE, "blender-addon", "MifBlender", "ops_mesh.py"),
                                      plant_blender_dead_param, "probeDeadZz"),
+    # REPORT-STYLE (gate False): it always exits 0, so the exit code proves nothing and the marker
+    # is the whole test. Plants into Source/, so it only runs in an editor-closed window.
+    "audit_editor_fatal_guards.py": (os.path.join(PRIV, "MifBridgeIntrospect.cpp"),
+                                     plant_fatal_guard, "ProbeZzMesh", False),
+    # Same shape, same window. Both of these were written tonight and the harness's own
+    # "0 have neither" invariant is what noticed the second one had no plant.
+    "audit_cross_endpoint_claims.py": (os.path.join(PRIV, "MifBridgeIntrospect.cpp"),
+                                       plant_cross_endpoint_claim, "probeSameZz", False),
     "audit_blender_consequence_fields.py": (
         os.path.join(HERE, "blender-addon", "MifBlender", "ops_scene.py"),
         plant_blender_consequence_field, "probeDroppedZz"),
