@@ -7068,3 +7068,37 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       makes the gate refuse, restoring it makes the gate pass. coverage_gaps and audit_suite_reach
       are deliberately NOT gated: they carry a standing backlog by design, and gating a check that is
       meant to be non-zero teaches people to pass --force.
+- [x] **a check for the prose-as-evidence class, and the sixth instance it found** (hours)  **DONE 2026-08-31.**
+      tools/audit_prose_dependence.py runs each source-scanning tool twice - once normally, once with
+      every C++ comment blanked underneath it - and diffs the output. A tool whose answer changes is
+      reading prose as evidence. Deliberately does NOT read the tools: reading them is what produced
+      the wrong answer twice, because string literals that looked like search terms were os.path.join
+      components. Two tools are listed as by-design prose readers with what they read and why.
+      It found parity_check, and that one is self-refuting - see the commit. The harness also wrote
+      to MifBridgeDescribe.cpp on its first run, so tools now get a read-only argv and every run is
+      bracketed by a size+mtime digest of Source/ that aborts if anything moved.
+
+- [ ] **three plugin dependencies are linked with nothing compiling against their guard - ANDRE'S CALL** (hours)
+      parity_check's idle-plugin advisory reports LiveLink, MassEntity and Metasound. It reported
+      only MassEntity until 2026-08-31, because the other two are named in COMMENTS explaining their
+      absence and the check matched raw text. Each is a real cost: a module to compile and link, a
+      plugin the host project must have enabled, and one more way for Build.cs and the .uplugin to
+      drift (issues 17 and 22, both of which took the editor down). The three are NOT the same case
+      and the decision differs for each:
+
+        Metasound   MifBridgeMetasound.cpp:42 says outright that it includes no Metasound header and
+                    needs no Metasound module, so it "answers on an engine where the plugin is absent
+                    entirely - and it is therefore NOT the reason to keep MIF_WITH_METASOUND linked."
+                    The author already judged this idle. Nothing else references it. Strongest
+                    candidate for dropping.
+        LiveLink    NOT idle in the way the advisory's wording suggests. Every type
+                    MifBridgeLiveLink.cpp touches lives in LiveLinkInterface, an always-present
+                    engine RUNTIME module added to Build.cs unconditionally; what the PLUGIN supplies
+                    is looked up at runtime through IModularFeatures. So the endpoints work on an
+                    engine without the plugin, and dropping the dependency may be right - but for a
+                    different reason than "no capability".
+        MassEntity  no source reference of any kind, in code or prose. Never investigated.
+
+      Not mine to decide: dropping a dependency changes what host projects must have enabled, and
+      that is a compatibility decision. Flagged rather than acted on, which is what the advisory's
+      own docstring asks for - "the choice should be deliberate rather than forgotten".
