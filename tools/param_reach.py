@@ -188,6 +188,69 @@ def unreachable():
     return sorted(rows)
 
 
+# --------------------------------------------------------------------------- the Blender half
+#
+# Added 2026-08-31. parity_check already checks server -> addon for keys the addon would REFUSE,
+# which is mcp_sends_unknown's direction. Nothing checked the reverse until a cone and a torus turned
+# out to be creatable only at their DEFAULT dimensions: the addon accepted radius1/radius2 and
+# majorRadius/minorRadius, nothing sent them, and the op refuses size/radius for those kinds rather
+# than reinterpreting them, so there was no workaround either.
+#
+# It goes HERE rather than into a new tool because the whole difficulty is the same difficulty: a raw
+# diff says 41 of 45 ops have an unreached key, and most of those are ALIASES the server simply does
+# not use - `type` for `kind`, `name` beside `object`. looks_like_alias and the baseline are what turn
+# that into something readable, and duplicating them would mean maintaining the judgement twice.
+
+BLENDER_TRANSPORT = {"_timeout", "_lock_timeout"}
+
+
+def addon_accepts():
+    """op -> accepted keys, from the addon's own reject_unknown sets via parity_check."""
+    try:
+        import parity_check as PC
+    except Exception:
+        return {}
+    problems = []
+    try:
+        ops = PC.load_addon_ops(problems)
+    except Exception:
+        return {}
+    out = {}
+    for op, entry in (ops or {}).items():
+        acc = entry.get("accepts")
+        if acc:
+            out[op] = {k.lower() for k in acc}
+    return out
+
+
+def blender_sends():
+    """op -> keys any _blender(...) call site passes."""
+    py = open(SERVER, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
+    out = {}
+    for m in re.finditer(r'_blender\(\s*"([a-z0-9_]+)"\s*,?([^;]{0,900}?)\)\s*$', py, re.M):
+        keys = {x.lower() for x in re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*=", m.group(2) or "")}
+        out.setdefault(m.group(1), set()).update(keys)
+    # multi-line call sites the anchored form above misses
+    for m in re.finditer(r'_blender\(\s*"([a-z0-9_]+)"\s*,([^;]{0,900}?)\n\n', py):
+        keys = {x.lower() for x in re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*=", m.group(2) or "")}
+        out.setdefault(m.group(1), set()).update(keys)
+    return out
+
+
+def blender_unreachable():
+    """Sorted 'bl:op.key' strings for addon capabilities no _blender call site can send."""
+    accepts, sends = addon_accepts(), blender_sends()
+    rows = []
+    for op, keys in accepts.items():
+        if op not in sends:
+            continue                      # op-level parity is parity_check's job
+        sent = sends[op] | BLENDER_TRANSPORT
+        for k in sorted((keys - sent) - NOISE):
+            if not looks_like_alias(k, sent):
+                rows.append("bl:%s.%s" % (op, k))
+    return sorted(rows)
+
+
 def load_baseline():
     if not os.path.exists(BASELINE):
         return set()
@@ -196,7 +259,7 @@ def load_baseline():
 
 
 def main():
-    found = unreachable()
+    found = unreachable() + blender_unreachable()
     if "--update-baseline" in sys.argv:
         with open(BASELINE, "w", encoding="utf-8", newline="\r\n") as f:
             f.write("# Endpoint parameters no MCP tool currently sends - see param_reach.py.\n")
@@ -211,7 +274,10 @@ def main():
     new = [r for r in found if r not in base]
     gone = [r for r in base if r not in found]
 
-    print("param reach: %d unreachable (baseline %d)" % (len(found), len(base)))
+    ue = [r for r in found if not r.startswith("bl:")]
+    bl = [r for r in found if r.startswith("bl:")]
+    print("param reach: %d unreachable (baseline %d) - %d UE, %d Blender"
+          % (len(found), len(base), len(ue), len(bl)))
     for r in gone:
         print("  FIXED    %s  (now reachable - drop it from the baseline)" % r)
     if new:

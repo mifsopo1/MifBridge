@@ -7665,7 +7665,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       NOT RUN AGAINST BLENDER. The addon suites skip without a running Blender, and this needs one to
       prove a cone actually comes out at the requested radii.
 
-- [ ] **the param_reach question, asked of the Blender half** (day)
+- [x] **the param_reach question, asked of the Blender half** (day)  **DONE 2026-08-31.**
       Found while fixing the above. parity_check checks server -> addon for keys the addon REFUSES
       (the mcp_sends_unknown direction). Nothing checks the reverse: an addon op that ACCEPTS a
       parameter no _blender call site sends, which is param_reach's question and the same cost - a
@@ -7677,3 +7677,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       carries looks_like_alias and a baseline rather than a raw diff. The honest next step is to fold
       the Blender half into param_reach so the alias logic and the ratchet are shared, then read what
       survives. create_primitive's four were found by reading, not by the count.
+
+      DONE: param_reach now carries both halves. `bl:<op>.<key>` entries share looks_like_alias and
+      the same baseline, and parity_check picks the failure up because it already invokes param_reach.
+      318 baseline entries - 252 UE, 66 Blender - and only ADDITIONS fail from here.
+
+      66 after alias folding, of which 24 are a bare `name` beside `object` and legitimately unused.
+      bevel_edges' six real bmesh options were fixed on the spot rather than baselined. What is left
+      is a genuine backlog and the baseline is NOT a to-do list, so the candidates worth reading are
+      named here rather than left to be rediscovered:
+
+        export_mesh   meshSmoothType, useTriangles, useTspace, useMeshModifiers - FBX export options
+                      the addon maps straight onto the exporter (ops_mesh.py:228-229). The most
+                      valuable of the lot: mesh smoothing and tangent space decide what Unreal gets.
+        import_mesh   useCustomNormals
+        uv_unwrap     correctAspect
+        bake_texture  device  (CPU vs GPU)
+        decimate_mesh targetTriangles - a triangle BUDGET rather than a ratio
+        list_objects  pattern, detail
+        create_primitive align, fillType
+        extrude_skirt allowNonBoundary, dryRun
+        bevel_edges   dryRun, seamBand
+
+      Fixing them needs a running Blender to verify, which the addon suites already require.

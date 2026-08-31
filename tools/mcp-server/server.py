@@ -4627,8 +4627,20 @@ def bl_uv_info(object_name: str, layer: str = None, max_reported_islands: int = 
 
 @mcp.tool()
 def bl_bevel_edges(object_name: str, selector: dict = None, offset_uu: float = 15.0,
-                   segments: int = 3, profile: float = 0.5, preserve_x: bool = True) -> dict:
-    "Round or chamfer the selected edges with bmesh.ops.bevel (NOT bpy.ops.mesh.bevel, which needs an EDIT_MESH context and a real VIEW_3D area and therefore cannot run under blender -b)."
+                   segments: int = 3, profile: float = 0.5, preserve_x: bool = True,
+                   clamp_overlap: bool = None, loop_slide: bool = None,
+                   harden_normals: bool = None, miter_outer: str = None,
+                   miter_inner: str = None, spread: float = None) -> dict:
+    "Round or chamfer the selected edges with bmesh.ops.bevel (NOT bpy.ops.mesh.bevel, which needs an EDIT_MESH context and a real VIEW_3D area and therefore cannot run under blender -b). clamp_overlap, loop_slide, harden_normals, miter_outer, miter_inner and spread are bmesh.ops.bevel's own options - left unset they keep the addon's defaults."
+    # THE SIX OPTIONS ABOVE WERE UNREACHABLE. The addon has always accepted them and passed them
+    # straight to bmesh.ops.bevel - clamp_overlap, loop_slide and harden_normals are read at
+    # ops_mesh.py:936-938 - and this tool sent none of them, so a caller could only ever get the
+    # addon's defaults. Same shape as the cone/torus radii found the same night, and found the same
+    # way: diff each addon op's reject_unknown set against the keys any _blender call site sends.
+    #
+    # Defaulted to None rather than to the addon's values on purpose: _blender drops unset params, so
+    # None means "the addon decides" and this tool does not have to track defaults that live in
+    # ops_mesh.py. Duplicating them here is how the two halves drift.
     try:
         sel = _bl_selector(selector)
     except _MifToolError as exc:
@@ -4640,7 +4652,10 @@ def bl_bevel_edges(object_name: str, selector: dict = None, offset_uu: float = 1
                     maxAngleDeg=sel["maxAngleDeg"], edgeIndices=sel["edgeIndices"],
                     allEdges=sel["allEdges"],
                     offsetUU=offset_uu, segments=segments, profile=profile,
-                    preserveAxes=pres, assertAxes=pres)
+                    preserveAxes=pres, assertAxes=pres,
+                    clampOverlap=clamp_overlap, loopSlide=loop_slide,
+                    hardenNormals=harden_normals, miterOuter=miter_outer,
+                    miterInner=miter_inner, spread=spread)
 
 
 @mcp.tool()
