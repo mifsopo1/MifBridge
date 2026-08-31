@@ -2029,7 +2029,7 @@ def run_console_captured(command: str, filter: str = "") -> dict:
 @mcp.tool()
 def self_audit(summary_only: bool = False, include_endpoint_details: bool = None,
                include_endpoints: bool = None) -> dict:
-    "The plugin reporting its OWN invariants from inside the running DLL: live endpoint count and names (the ones actually dispatching, not parsed from a header), each endpoint's transaction bucket (readOnly / selfManaged / transacted /"
+    "PASS summary_only:true UNLESS YOU NEED PER-ENDPOINT DETAIL - the default response is ~24k tokens (96 KB, measured), the compact form ~370. The plugin reporting its OWN invariants from inside the running DLL: live endpoint count and names (the ones actually dispatching, not parsed from a header), each endpoint's transaction bucket (readOnly / selfManaged / transacted /"
     return _post("self_audit", summaryOnly=summary_only or None,
                  includeEndpointDetails=include_endpoint_details, includeEndpoints=include_endpoints)
 
@@ -4686,6 +4686,14 @@ def bl_join_objects(target: str, objects: list) -> dict:
 def bl_separate_mesh(object: str, mode: str = "loose") -> dict:
     "Split a Blender mesh into separate objects - mode 'loose' (each disconnected island becomes its own object) or 'material' (one object per material slot in use). The counterpart to bl_join_objects."
     return _blender("separate_mesh", object=object, mode=mode)
+
+
+@mcp.tool()
+def bl_boolean_op(target: str, cutter: str, operation: str = "difference",
+                  delete_cutter: bool = False, solver: str = None) -> dict:
+    "Cut, merge or intersect one Blender mesh with another - operation 'difference' (default), 'union' or 'intersect'. APPLIES the modifier rather than leaving it stacked, and reports before/after vertex and face counts as the evidence. Says changed:false with the likely cause when the boolean legally did nothing. bl_add_modifier can create a BOOLEAN modifier but cannot point it at a cutter, so this is the only route to an actual boolean. The cutter is KEPT unless delete_cutter. See mif_help."
+    return _blender("boolean_op", target=target, cutter=cutter, operation=operation,
+                    deleteCutter=delete_cutter, solver=solver)
 
 
 @mcp.tool()

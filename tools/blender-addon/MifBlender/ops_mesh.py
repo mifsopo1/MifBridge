@@ -1740,6 +1740,11 @@ def op_decimate_mesh(params):
     # THROUGH THE MODIFIER, not a hand-rolled bmesh collapse. Blender's decimate is a
     # quadric-error solver and anything written here would be a worse one wearing the same name.
     mod = obj.modifiers.new(name="MifDecimate", type="DECIMATE")
+    # THE NAME AS A PYTHON STRING, taken now. modifier_apply frees the modifier, and the except
+    # below covers that call - so reading mod.name in the handler, or handing `mod` to remove(),
+    # would be a read of released RNA memory. boolean_op did exactly that and raised
+    # UnicodeDecodeError from inside a plain `.name` on Blender 5.0.1 while passing on 3.6/4.2/4.4.
+    mod_name = str(mod.name)
     try:
         mod.decimate_type = mode
         if mode == "COLLAPSE":
@@ -1752,14 +1757,15 @@ def op_decimate_mesh(params):
         prev = bpy.context.view_layer.objects.active
         bpy.context.view_layer.objects.active = obj
         try:
-            bpy.ops.object.modifier_apply(modifier=mod.name)
+            bpy.ops.object.modifier_apply(modifier=mod_name)
         finally:
             bpy.context.view_layer.objects.active = prev
     except Exception as exc:
         # Leave nothing behind on the failure path. A stranded modifier would change the next
         # export without appearing in any response -- an invisible edit is the worst kind.
-        if mod.name in [m.name for m in obj.modifiers]:
-            obj.modifiers.remove(mod)
+        stale = obj.modifiers.get(mod_name)
+        if stale is not None:
+            obj.modifiers.remove(stale)
         raise MifOpError("decimate failed on '%s': %s: %s" % (obj.name, type(exc).__name__, exc))
 
     after = mesh_counts(obj)

@@ -278,11 +278,65 @@ def main():
         badmode = B.call("separate_mesh", {"object": solo["name"], "mode": "sideways"})
         check("T4005 an unknown mode is refused", badmode.get("ok") is False,
               (badmode.get("error") or "")[:160])
+
+        # ------------------------------------------------------------------ T4006 boolean
+        print("\n=== T4006: boolean is a MODIFIER - the cut must be applied, not just added ===")
+        B.call("create_primitive", {"kind": "cube", "name": "MifT_BoolTarget", "size": 2.0})
+        B.call("create_primitive", {"kind": "cube", "name": "MifT_BoolCutter", "size": 1.0,
+                                    "location": [0.5, 0.5, 0.5]})
+        made.extend(["MifT_BoolTarget", "MifT_BoolCutter"])
+        bd = B.call("boolean_op", {"target": "MifT_BoolTarget", "cutter": "MifT_BoolCutter",
+                                   "operation": "difference"})
+        check("T4006 a difference against an overlapping cutter succeeds",
+              bd.get("ok") is not False and bd.get("changed") is True, json.dumps(bd)[:250])
+        # THE assertion. An unapplied modifier renders as a cut and exports as the original, so the
+        # count moving is the only evidence the geometry really changed.
+        check("T4006 and the face count actually MOVED - the modifier was applied, not just added",
+              (bd.get("after") or {}).get("faces") != (bd.get("before") or {}).get("faces"),
+              json.dumps(bd)[:250])
+        info = B.call("object_info", {"name": "MifT_BoolTarget"})
+        check("T4006 no modifier is left on the object - one left behind would export the original "
+              "geometry while showing the cut",
+              not (info.get("modifiers") or []), json.dumps(info.get("modifiers"))[:200])
+        check("T4006 the cutter is KEPT by default rather than deleted as a side effect",
+              bd.get("cutterDeleted") is False
+              and B.call("object_info", {"name": "MifT_BoolCutter"}).get("ok") is not False,
+              json.dumps(bd)[:200])
+
+        # A boolean that legally changes nothing is the one that reaches Unreal as a bug.
+        B.call("create_primitive", {"kind": "cube", "name": "MifT_BoolFar", "size": 1.0,
+                                    "location": [50.0, 50.0, 50.0]})
+        made.append("MifT_BoolFar")
+        miss = B.call("boolean_op", {"target": "MifT_BoolTarget", "cutter": "MifT_BoolFar",
+                                     "operation": "difference"})
+        check("T4006 a cutter that misses reports changed:false rather than a plain success",
+              miss.get("changed") is False, json.dumps(miss)[:250])
+        check("T4006 and says the likely cause is that they do not overlap",
+              "do not overlap" in (miss.get("note") or ""), (miss.get("note") or "")[:220])
+
+        bad = B.call("boolean_op", {"target": "MifT_BoolTarget", "cutter": "MifT_BoolTarget"})
+        check("T4006 cutting an object with itself is refused",
+              bad.get("ok") is False, json.dumps(bad)[:200])
+        badop = B.call("boolean_op", {"target": "MifT_BoolTarget", "cutter": "MifT_BoolFar",
+                                      "operation": "subtract"})
+        check("T4006 an unknown operation is refused and names the real ones",
+              badop.get("ok") is False
+              and "difference, union, intersect" in (badop.get("error") or ""),
+              (badop.get("error") or "")[:200])
     finally:
         for n in dict.fromkeys(made):
             B.call("delete_object", {"object": n})
-        left = [n for n in names() if n.startswith("MifT_")]
-        check("T4006 (cleanup) every object this suite made is gone", not left, left)
+        # TWO CHECKS, because a prefix and a recorded list miss opposite things. The prefix sweep
+        # alone was passing while ignoring three objects this suite created: they were named
+        # MifBool* and only MifT_* was ever looked at, so "every object this suite made is gone"
+        # could not see them. The recorded list cannot be dodged by a naming slip; the prefix sweep
+        # still catches an object the addon made as a side effect that was never recorded.
+        survivors = set(names())
+        left = [n for n in dict.fromkeys(made) if n in survivors]
+        check("T4009 (cleanup) every object this suite RECORDED is gone - checked against the list "
+              "it built, not a name prefix", bool(made) and not left, left)
+        stray = sorted(n for n in survivors if n.startswith("MifT_"))
+        check("T4009 (cleanup) and no MifT_* object is left behind either", not stray, stray)
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

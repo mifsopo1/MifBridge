@@ -4921,17 +4921,46 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       polygon array and must report how many faces actually changed, since a selection that matches
       nothing is otherwise indistinguishable from success.
 
-- [ ] **BLENDER CREATION: bl_boolean_op** (hours)
-      NARROWED 2026-08-30. bl_join_objects and bl_separate_mesh were part of this entry and
-      both landed in 613ee48 - registered in ops_create.py, exercised by
-      test_blender_creation.py, re-run green on Blender 4.4. bl_boolean_op is NOT written
-      and is what remains: it is the odd one of the three because it is a MODIFIER rather
-      than an operator - add a BOOLEAN modifier naming the second object, apply it, then
-      delete the cutter - and each of those three steps can fail independently, so the
-      postcondition is the resulting vert/face count, never the modifier_add return.
-      The mesh-combining verbs, and the last item left from the 2026-08-27 gap audit. boolean_op
-      wraps the boolean modifier (union/difference/intersect) and must apply it, since an unapplied
-      modifier does not survive export. join/separate are the counterpart pair.
+- [x] **BLENDER CREATION: bl_boolean_op** (hours)
+      DONE 2026-08-31. op_boolean_op in ops_create.py, bl_boolean_op in server.py, extended help
+      in tool_help.json, T4006 in test_blender_creation.py. Verified across the whole matrix:
+      28 runs, 4 Blenders (3.6 / 4.2.17 LTS / 4.4.0 / 5.0.1), 7 suites each, 0 failed 0 skipped.
+      The last item from the 2026-08-27 gap audit, and the odd one of the three mesh-combining
+      verbs because it is a MODIFIER rather than an operator: add a BOOLEAN modifier naming the
+      cutter, APPLY it, dispose of the cutter, each failing independently. So the postcondition is
+      the resulting vert/face count and the emptiness of the modifier stack, never modifier_add's
+      return - an added-but-unapplied modifier renders as a cut and exports as the original, which
+      is the worst failure available here because the 3D view agrees with the request while the
+      FBX does not.
+
+      NOT REDUNDANT WITH bl_add_modifier, checked before writing the wrapper: that op accepts any
+      modifier type Blender knows, BOOLEAN included, but its curated settings table
+      (_MODIFIER_WRITES) has no BOOLEAN entry, so the modifier it creates carries Blender's
+      defaults - and a BOOLEAN with no object set does nothing. There is no other route to name a
+      cutter.
+
+      AN UNCHANGED MESH IS REPORTED RATHER THAN SWALLOWED. A DIFFERENCE whose cutter misses applies
+      cleanly and changes nothing; that is geometry, not failure, and almost always a modelling
+      mistake, so the response says changed:false and names the likely cause. Zero faces is called
+      out the same way. The cutter is KEPT unless deleteCutter.
+
+      WHAT THE VERSION MATRIX CAUGHT, and it is the reason this entry is worth reading: the first
+      implementation passed on 3.6, 4.2 and 4.4 and failed on 5.0.1 with UnicodeDecodeError raised
+      from inside a plain `modifier.name`. bpy.ops.object.modifier_apply FREES the modifier, so
+      every attribute read after it - the post-apply stack check, the failure cleanup, .solver in
+      the response - was a read of released RNA memory. Three Blenders returned the stale-but-valid
+      string and one returned bytes that are not UTF-8, which is also why the FIRST boolean in the
+      suite survived and the second did not: freed-memory reads are not deterministic. Passing on
+      three of four versions was luck, not correctness. Everything needed is now taken as Python
+      values before the apply, and the postcondition looks the modifier up by name.
+
+      THE SAME PATTERN WAS SWEPT FOR AFTERWARDS. Three modifier_apply sites exist in the addon.
+      apply_modifier (ops_rig.py) was already correct - it captures mod_name up front and never
+      touches the handle again. decimate_mesh (ops_mesh.py) had the identical defect on its failure
+      path, where the except reads mod.name and hands the freed handle to remove(), and it is MORE
+      exposed than boolean_op was because it has no multi-user guard - and applying a modifier to
+      shared mesh data is precisely what makes modifier_apply raise. Fixed. Found by pattern sweep,
+      not by a failing test, which is stated so nobody reads it as a caught regression.
 
 - [x] **BLENDER CREATION: bl_transform_object (place without baking)** (hours)
       DONE 2026-08-30, in commit 613ee48 - the box was never flipped at the time, which is

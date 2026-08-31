@@ -312,6 +312,138 @@ def op_transform_object(params):
     return out
 
 
+def op_boolean_op(params):
+    """Cut, merge or intersect one mesh with another, and prove it by the resulting counts.
+
+    THIS IS A MODIFIER, NOT AN OPERATOR, which is what makes it the awkward one of the three
+    mesh-combining verbs. Three steps fail independently: add the BOOLEAN modifier naming the
+    cutter, APPLY it, and dispose of the cutter. A modifier added and never applied is the worst
+    failure available here - the viewport shows the cut, and the exported FBX does not, so the 3D
+    view agrees with the request while the deliverable disagrees.
+
+    So success is measured from the mesh afterwards. modifier_add returns a status about the
+    OPERATOR, not about the geometry.
+
+    AN UNCHANGED COUNT IS REPORTED, not swallowed. A DIFFERENCE whose cutter misses, or an INTERSECT
+    with no overlap, legitimately changes nothing or empties the mesh - and both are almost always a
+    modelling mistake the caller wants to hear about at once rather than discover in Unreal.
+
+    The cutter is KEPT unless deleteCutter is asked for: it is usually reusable, and deleting
+    someone's object as a side effect is not a default worth having.
+    """
+    reject_unknown(params, ("target", "cutter", "operation", "op", "deleteCutter", "solver"),
+                   "boolean_op")
+    _require_object_mode("boolean_op")
+
+    target = get_object(take(params, "target", required=True), want_mesh=True)
+    cutter = get_object(take(params, "cutter", required=True), want_mesh=True)
+    if target is cutter:
+        raise MifOpError("target and cutter are the same object ('%s') - a boolean cannot cut an "
+                         "object with itself. NOTHING was changed." % target.name)
+
+    raw = take(params, "operation", "op") or "difference"
+    operation = str(raw).strip().upper()
+    valid = ("DIFFERENCE", "UNION", "INTERSECT")
+    if operation not in valid:
+        raise MifOpError("operation '%s' is not one of difference, union, intersect. NOTHING was "
+                         "changed." % raw)
+
+    # A hidden object is not a boolean problem the way it is a join problem - the modifier reads the
+    # cutter's mesh data directly rather than going through selection - but applying the modifier
+    # DOES need the target reachable and active, so that is checked.
+    view_layer = bpy.context.view_layer
+    if target.name not in view_layer.objects:
+        raise MifOpError("'%s' is not in the active view layer, so its modifier cannot be applied. "
+                         "NOTHING was changed." % target.name)
+
+    before = mesh_counts(target)
+    cutter_counts = mesh_counts(cutter)
+    if cutter_counts["faces"] == 0:
+        raise MifOpError("the cutter '%s' has no faces, so a boolean against it is undefined - "
+                         "DIFFERENCE would remove nothing and INTERSECT would empty '%s'. NOTHING "
+                         "was changed." % (cutter.name, target.name))
+
+    modifier = target.modifiers.new(name="MifBoolean", type="BOOLEAN")
+    modifier.object = cutter
+    modifier.operation = operation
+    solver = take(params, "solver")
+    if solver:
+        wanted = str(solver).strip().upper()
+        if wanted not in ("FAST", "EXACT"):
+            target.modifiers.remove(modifier)
+            raise MifOpError("solver '%s' is not fast or exact. NOTHING was changed." % solver)
+        modifier.solver = wanted
+
+    # TAKE WHAT IS NEEDED AS PYTHON VALUES NOW, because modifier_apply FREES the modifier and every
+    # attribute read after it is a read of released RNA memory. That is undefined behaviour, and it
+    # behaved differently per version rather than failing honestly: 3.6, 4.2 and 4.4 returned the
+    # old string, 5.0.1 returned bytes that are not UTF-8 and raised UnicodeDecodeError from inside
+    # a plain `.name`. Passing on three versions was luck, not correctness.
+    mod_name = str(modifier.name)
+    mod_solver = str(modifier.solver) if solver else "default"
+
+    # APPLY IT. Everything above only describes the cut; this is the step that performs it, and
+    # leaving it out is the failure this whole function is arranged around.
+    view_layer.objects.active = target
+    try:
+        bpy.ops.object.modifier_apply(modifier=mod_name)
+    except Exception as exc:
+        # Leave nothing half-done: an unapplied modifier would render as a cut that does not export.
+        # Looked up by NAME rather than through the handle - apply may have freed it even on the
+        # path that then raised, and removing a freed modifier is its own crash.
+        stale = target.modifiers.get(mod_name)
+        if stale is not None:
+            target.modifiers.remove(stale)
+        raise MifOpError("the boolean modifier could not be applied to '%s' (%s). The modifier was "
+                         "removed rather than left in place, because an unapplied one shows the cut "
+                         "in the viewport and exports the original. NOTHING was changed."
+                         % (target.name, exc))
+
+    # THE postcondition, and it must be asked of data that is still alive. `modifier` is freed by
+    # now; asking IT whether it still exists is the bug this line used to be.
+    leftover = target.modifiers.get(mod_name)
+    if leftover is not None:
+        target.modifiers.remove(leftover)
+        raise MifOpError("the boolean modifier is still on '%s' after apply, so the geometry was "
+                         "NOT changed - it has been removed. An unapplied modifier renders as a cut "
+                         "and exports as the original." % target.name)
+
+    after = mesh_counts(target)
+
+    deleted = False
+    if bool(take(params, "deleteCutter")):
+        name = cutter.name
+        bpy.data.objects.remove(cutter, do_unlink=True)
+        deleted = name not in bpy.data.objects
+
+    result = {
+        "target": target.name,
+        "operation": operation,
+        "solver": mod_solver,
+        "before": before,
+        "after": after,
+        "cutterDeleted": deleted,
+    }
+    # THE POSTCONDITION, and it is reported rather than asserted, because "no change" is a legal
+    # outcome that is nearly always a mistake.
+    if after["faces"] == before["faces"] and after["verts"] == before["verts"]:
+        result["changed"] = False
+        result["note"] = (
+            "the mesh is UNCHANGED. The modifier applied cleanly, so this is geometry rather than "
+            "failure: for DIFFERENCE it almost always means '%s' and '%s' do not overlap, and for "
+            "UNION it means the cutter is entirely inside the target. Check their positions before "
+            "exporting this." % (target.name, cutter.name))
+    elif after["faces"] == 0:
+        result["changed"] = True
+        result["note"] = (
+            "the mesh is now EMPTY - every face was removed. For INTERSECT that means the two "
+            "objects share no volume; for DIFFERENCE it means the cutter completely enclosed the "
+            "target. Almost certainly not what was wanted.")
+    else:
+        result["changed"] = True
+    return result
+
+
 def op_join_objects(params):
     """Join several mesh objects into one, keeping every material slot.
 
@@ -454,6 +586,7 @@ def op_separate_mesh(params):
 OPS = {
     "create_primitive": op_create_primitive,
     "transform_object": op_transform_object,
+    "boolean_op": op_boolean_op,
     "join_objects": op_join_objects,
     "separate_mesh": op_separate_mesh,
 }
