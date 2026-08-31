@@ -7334,3 +7334,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       DATA or EVIDENCE. Then matching only JBool left one apparent failure, move_tree_widget, which
       reads confirm through JBoolAny as an alias for replaceRoot - a missing IDIOM, not a defect,
       which is why the tool says to add the idiom rather than an exception.
+- [~] **failures after a mutation that do not say what survived - NOT mechanically checkable** (hours)
+      DECLINED 2026-08-31 as a CHECK, not as a standard. The standard is real and this module keeps
+      it: a caller who gets an error and cannot tell whether the operation partially applied has no
+      safe next move, since retrying may double-apply and not retrying may leave an asset half-built.
+
+      Measured anyway: 81 handlers mutate, 48 have a Fail() textually after their first mutating
+      call. A scan for the module's stock phrases flagged 31 of those, and three sampled at random
+      were all fine.
+
+        create_asset ends its EditorData failure "NOTHING usable was produced." - the standard met
+        in words the pattern did not list.
+        add_socket's "late" Fail is its #if !WITH_EDITOR refusal, which happens before anything at
+        all; text position is a poor proxy for control flow.
+
+      Two reasons it cannot be made precise. The answer lives in FREE PROSE - "NOTHING was changed",
+      "WHAT IS LEFT BEHIND", "NOTHING usable was produced", "the override ALREADY EXISTED and has
+      deliberately NOT been removed" - and enumerating that vocabulary is endless, with each miss
+      producing a false accusation against a handler that did the right thing. And position in the
+      text does not imply reachability after the mutation runs.
+
+      The first attempt also counted `->Modify()` as a mutation and reported 83 of 127. Modify marks
+      an object for the transaction and changes nothing observable, and handlers call it early, so
+      nearly every Fail was "after a mutation". Removing it halved the population - which is the
+      measurement worth keeping from this: 81 handlers mutate, not 179.
+
+      Not a tool. Third class tonight where the honest answer is that prose carries the meaning and a
+      matcher cannot read it - after handler messages naming absent response fields, and count/array
+      consistency where only sixteen pairs were reachable.
