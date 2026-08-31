@@ -7060,15 +7060,39 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         Metasound   MifBridgeMetasound.cpp:42 says outright that it includes no Metasound header and
                     needs no Metasound module, so it "answers on an engine where the plugin is absent
                     entirely - and it is therefore NOT the reason to keep MIF_WITH_METASOUND linked."
-                    The author already judged this idle. Nothing else references it. Strongest
-                    candidate for dropping.
+                    Confirmed 2026-08-31: no MetasoundEngine type, no Metasound header, anywhere in
+                    the sources. The file parses the document through reflection instead, which is
+                    why it works with the plugin absent. Nothing else references it.
         LiveLink    NOT idle in the way the advisory's wording suggests. Every type
                     MifBridgeLiveLink.cpp touches lives in LiveLinkInterface, an always-present
                     engine RUNTIME module added to Build.cs unconditionally; what the PLUGIN supplies
                     is looked up at runtime through IModularFeatures. So the endpoints work on an
                     engine without the plugin, and dropping the dependency may be right - but for a
                     different reason than "no capability".
-        MassEntity  no source reference of any kind, in code or prose. Never investigated.
+        MassEntity  INVESTIGATED 2026-08-31 and it is the clear one. Zero references anywhere in
+                    Source/MifBridge/Private - not the MIF_WITH_MASSENTITY guard, not a Mass type,
+                    not a mention in a comment. It links the MassEntity module and defines a macro,
+                    and nothing consumes either.
+
+      PRECEDENT, in the same file and only two days old. ChaosVehiclesPlugin/MIF_WITH_VEHICLES was
+      DELIBERATELY REMOVED on 2026-08-29, and the comment left in its place says it was "linked with
+      no source file ever checking the guard (parity_check.py's check_linked_but_unused_plugins
+      caught it)", with a note saying what would justify reinstating it. So the decision has a shape
+      already: remove, leave a comment saying why and what would bring it back.
+
+      WORTH NOTING WHO MISSED WHAT. That Chaos removal was driven by this exact check - and the check
+      was reporting ONE dependency when it should have reported three, because it matched guard names
+      in raw text and the two files EXPLAINING their absent guards silenced themselves. LiveLink and
+      Metasound were invisible to the very process that removed Chaos. Fixed 2026-08-31.
+
+      THE ONE REAL UNCERTAINTY, and it is why this stays ANDRE'S CALL rather than being done.
+      Removing the LiveLink plugin modules may not be neutral: MifBridgeLiveLink.cpp finds
+      FLiveLinkClient through IModularFeatures at RUNTIME, and a modular feature is registered when
+      its module LOADS. Linking LiveLink from here may be what causes that load in a project where
+      the plugin is enabled but nothing else pulls it in. I have not established whether it is, and
+      guessing would be exactly the "confirmed by actually checking rather than assumed" standard the
+      Chaos comment sets. MassEntity and Metasound carry no such question - neither is referenced at
+      all - so they can be judged independently of it.
 
       Not mine to decide: dropping a dependency changes what host projects must have enabled, and
       that is a compatibility decision. Flagged rather than acted on, which is what the advisory's
