@@ -1491,7 +1491,13 @@ def diff_properties_vs_default(object_path: str = "", blueprint_id: str = "", wi
     return _post("diff_properties_vs_default", objectPath=object_path or None,
                  blueprintId=blueprint_id or None, widgetName=widget_name or None,
                  nameContains=name_contains or None, limit=limit, maxValueChars=max_value_chars,
-                 includeTransient=include_transient, deep=deep, recursive=recursive or None)
+                 includeTransient=include_transient, deep=deep,
+                 # recursive=recursive, NOT : _post drops a None, so an explicit False
+                 # became ABSENT and any endpoint reading recursive with a true default saw true.
+                 # Harmless while every such endpoint defaulted false - and fix_up_redirectors,
+                 # added the same day, defaults it TRUE. Caught by mcp_static_check's lossy-bool
+                 # rule within hours of that endpoint landing, which is what the rule is for.
+                 recursive=recursive)
 
 
 @mcp.tool()
@@ -3077,6 +3083,15 @@ def delete_asset(path: str, confirm: bool = False) -> dict:
 def rename_asset(path: str, new_path: str, confirm: bool = False) -> dict:
     "Rename/move a /Game/ asset package, leaving a redirector. Requires confirm=True."
     return _post("rename_asset", path=path, newPath=new_path, confirm=confirm)
+
+
+@mcp.tool()
+def fix_up_redirectors(path: str, confirm: bool = False, dry_run: bool = False,
+                       keep_redirectors: bool = False, recursive: bool = True) -> dict:
+    "Fix up ObjectRedirectors under a /Game folder - the Content Browser's 'Fix Up Redirectors in Folder', and the other half of rename_asset. RenameAssets deliberately leaves a redirector behind for every asset that was still referenced, and nothing could clean them up, so a renaming session accumulates dead packages that get COOKED INTO THE MOD. This repoints every referencer at the live asset and deletes the redirector. dry_run surveys without loading or changing anything and needs no confirm; the real run requires confirm=true because it rewrites referencers and deletes packages. keep_redirectors fixes the references but leaves the packages. The rewritten referencers are left DIRTY - save_dirty_packages persists them."
+    return _post("fix_up_redirectors", path=path, confirm=confirm or None,
+                 dryRun=dry_run or None, keepRedirectors=keep_redirectors or None,
+                 recursive=recursive)
 
 
 @mcp.tool()

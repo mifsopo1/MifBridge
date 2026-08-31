@@ -7965,3 +7965,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       DebugGame compiled and LINKED; DECL 438 == BIND 438; parity_check and mcp_static_check pass.
       NOT [x]: never run, no suite - placing a node needs a Blueprint graph to place it into.
+
+- [ ] **fix_up_redirectors - BUILT, never run** (hours)
+      rename_asset calls IAssetTools::RenameAssets, which deliberately leaves an ObjectRedirector for
+      every asset that was still referenced. Nothing could clean one up, so a session that renames
+      steadily accumulates redirector packages - and those get COOKED INTO THE MOD: dead packages
+      shipped to users whose only job is to point at something that moved. This is the Content
+      Browser's "Fix Up Redirectors in Folder".
+
+      THE MODAL IS THE REASON THIS NEEDED CARE. FixupReferencers' second parameter is
+      bCheckoutDialogPrompt and it DEFAULTS TO TRUE (IAssetTools.h 5.3 :538). Called with the default
+      from a handler it raises a source-control checkout dialog on the game thread - the thread
+      answering HTTP - and the bridge stops responding while the editor still looks alive. Passed
+      false explicitly, which is what makes the endpoint safe to call from here. audit_modals still
+      reports 0 unguarded.
+
+      dryRun needs NO confirm, because surveying is not destroying, and it does not even load the
+      redirectors it counts. The real run requires confirm=true. Judged by POSTCONDITION: FixupReferencers
+      is void and reports nothing, so the registry is re-queried afterwards and `fixed` is the
+      difference. A redirector whose referencer will not load is left alone rather than broken, and
+      remainingNote says so instead of presenting the survivors as a failure.
+
+      DebugGame compiled and LINKED; DECL 439 == BIND 439; parity_check, mcp_static_check,
+      audit_promise_flags and audit_modals all pass. NOT [x]: never run, no suite - a suite needs a
+      renamed asset with a live referencer to make a redirector worth fixing.

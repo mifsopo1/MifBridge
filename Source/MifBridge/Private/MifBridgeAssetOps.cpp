@@ -14,6 +14,7 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
+#include "UObject/ObjectRedirector.h"   // UObjectRedirector - fix_up_redirectors
 #include "CoreGlobals.h"                         // GIsRunningUnattendedScript
 #include "Misc/PackageName.h"
 #include "Templates/UnrealTemplate.h"            // TGuardValue (GIsRunningUnattendedScript)
@@ -304,6 +305,146 @@ namespace MifBridge
 	//        it is what the engine actually produced, not a string we reassembled.
 	// newPath's final segment is BOTH the destination folder and the new asset name (UE convention:
 	// PackagePath/AssetName.AssetName) — same as the Content Browser's F2 rename / drag-to-folder.
+	// --- fix_up_redirectors -------------------------------------------------
+	// The Content Browser's "Fix Up Redirectors in Folder", and the other half of rename_asset.
+	//
+	// IAssetTools::RenameAssets leaves an ObjectRedirector behind for every asset that was still
+	// referenced - deliberately, so existing references keep resolving. Nothing here could clean one
+	// up, so a session that renames steadily accumulates redirector packages, and those get COOKED
+	// INTO THE MOD: dead packages shipped to users whose only job is to point at something that moved.
+	//
+	// THE MODAL, and it is the reason this needs a comment rather than a one-liner. FixupReferencers'
+	// second parameter is `bCheckoutDialogPrompt` and it DEFAULTS TO TRUE (IAssetTools.h 5.3 :538).
+	// Called with the default from a handler, it raises a source-control checkout dialog on the game
+	// thread - which is the thread answering HTTP - and the bridge stops responding while the editor
+	// still looks alive. Passed false explicitly, and that false is the whole reason this endpoint is
+	// safe to call from here.
+	//
+	// dryRun needs no confirm, because surveying is not destroying. That asymmetry is the point: a
+	// caller can find out how much litter a folder holds, and how much of it is fixable, before
+	// deciding whether to sweep.
+	void H_fix_up_redirectors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("confirm"), TEXT("dryRun"), TEXT("keepRedirectors"), TEXT("recursive") },
+			TEXT("path (a /Game folder), confirm (required true unless dryRun), dryRun? (survey only, ")
+			TEXT("no confirm needed), keepRedirectors? (fix the references but leave the redirector ")
+			TEXT("packages), recursive? (default true)"),
+			{ { TEXT("folder"), TEXT("spell it path") },
+			  { TEXT("deleteRedirectors"), TEXT("inverted - pass keepRedirectors:true to KEEP them; deleting is the default because leaving them is what created the problem") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStr(In, TEXT("path"));
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required - the /Game folder to sweep, e.g. /Game/Mods/MyMod. There ")
+					  TEXT("is deliberately no whole-project default: fixing up every redirector in a ")
+					  TEXT("project touches packages you did not rename."));
+			return;
+		}
+		const bool bDryRun = JBool(In, TEXT("dryRun"), false);
+		if (!bDryRun && !JBool(In, TEXT("confirm"), false))
+		{
+			Fail(Out, TEXT("fix_up_redirectors DELETES redirector packages and rewrites every referencer ")
+					  TEXT("that points at them, so it requires confirm=true. Pass dryRun:true instead to ")
+					  TEXT("see what it WOULD do - that needs no confirm and changes nothing."));
+			return;
+		}
+
+		IAssetTools& Tools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+		if (Tools.IsFixupReferencersInProgress())
+		{
+			Fail(Out, TEXT("a redirector fixup is already running in this editor. NOTHING was started - ")
+					  TEXT("two concurrent fixups would race on the same packages."));
+			return;
+		}
+
+		FARFilter Filter;
+		Filter.bRecursivePaths = JBool(In, TEXT("recursive"), true);
+		Filter.PackagePaths.Add(FName(*Path));
+		Filter.ClassPaths.Add(UObjectRedirector::StaticClass()->GetClassPathName());
+		// A LOCAL, not the Registry() helper - that one is defined further down this file and is not
+		// visible here. Lines 113 and 247 take the module the same way for the same reason.
+		IAssetRegistry& AssetRegistry =
+			FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		TArray<FAssetData> Found;
+		AssetRegistry.GetAssets(Filter, Found);
+
+		TArray<TSharedPtr<FJsonValue>> Names;
+		TArray<UObjectRedirector*> Redirectors;
+		for (const FAssetData& Data : Found)
+		{
+			Names.Add(MakeShared<FJsonValueString>(Data.PackageName.ToString()));
+			if (!bDryRun)
+			{
+				// LOADED ONLY FOR THE REAL RUN. A dry run that loaded every redirector to count them
+				// would be a survey with a side effect, which is the thing dryRun exists to avoid.
+				if (UObjectRedirector* Redirector = Cast<UObjectRedirector>(Data.GetAsset()))
+				{
+					Redirectors.Add(Redirector);
+				}
+			}
+		}
+
+		Out->SetStringField(TEXT("path"), Path);
+		Out->SetNumberField(TEXT("found"), Found.Num());
+		Out->SetArrayField(TEXT("redirectors"), Names);
+		Out->SetBoolField(TEXT("dryRun"), bDryRun);
+		if (bDryRun)
+		{
+			Out->SetStringField(TEXT("dryRunNote"), FString::Printf(
+				TEXT("%d redirector package(s) under '%s'. NOTHING was changed and nothing was even ")
+				TEXT("loaded. Re-send with confirm:true to fix their referencers and delete them."),
+				Found.Num(), *Path));
+			return;
+		}
+		if (Redirectors.Num() == 0)
+		{
+			Out->SetNumberField(TEXT("fixed"), 0);
+			Out->SetNumberField(TEXT("remaining"), 0);
+			Out->SetStringField(TEXT("note"), TEXT("no redirectors under that path - nothing to do."));
+			return;
+		}
+
+		// false, EXPLICITLY. See the block above this function: the default is true and raises a
+		// checkout dialog on the thread that answers HTTP.
+		const bool bKeep = JBool(In, TEXT("keepRedirectors"), false);
+		Tools.FixupReferencers(Redirectors, /*bCheckoutDialogPrompt=*/false,
+			bKeep ? ERedirectFixupMode::LeaveFixedUpRedirectors
+				  : ERedirectFixupMode::DeleteFixedUpRedirectors);
+
+		// JUDGED BY POSTCONDITION, not by the call returning. FixupReferencers is void - it reports
+		// nothing at all - and it cannot fix a redirector whose referencer will not load. So the
+		// registry is asked again and the answer is the difference.
+		TArray<FAssetData> After;
+		AssetRegistry.GetAssets(Filter, After);
+		const int32 Remaining = After.Num();
+		Out->SetNumberField(TEXT("attempted"), Redirectors.Num());
+		Out->SetNumberField(TEXT("remaining"), Remaining);
+		Out->SetNumberField(TEXT("fixed"), FMath::Max(0, Found.Num() - Remaining));
+		Out->SetBoolField(TEXT("keptRedirectors"), bKeep);
+		if (bKeep)
+		{
+			Out->SetStringField(TEXT("keptNote"),
+				TEXT("keepRedirectors:true - referencers were repointed and the redirector packages were "
+					 "LEFT in place, so `remaining` counts them and is not a failure."));
+		}
+		else if (Remaining > 0)
+		{
+			Out->SetStringField(TEXT("remainingNote"), FString::Printf(
+				TEXT("%d redirector(s) survived. FixupReferencers cannot repoint a referencer it cannot ")
+				TEXT("load - an unloaded map, a plugin that is off, or a package outside this project - ")
+				TEXT("and it leaves those alone rather than breaking the reference. Load what references ")
+				TEXT("them and run it again."),
+				Remaining));
+		}
+		Out->SetStringField(TEXT("saveNote"),
+			TEXT("the rewritten referencers are DIRTY and NOT saved - save_dirty_packages persists them, "
+				 "or the fixup is undone by an editor restart while the deleted redirectors stay deleted."));
+	}
+
 	void H_rename_asset(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,

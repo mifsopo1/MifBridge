@@ -435,6 +435,7 @@ namespace MifBridge
 			MIF_BIND(delete_asset);
 			MIF_BIND(close_asset_editors);
 			MIF_BIND(rename_asset);
+			MIF_BIND(fix_up_redirectors);
 			MIF_BIND(duplicate_asset);
 			// Static-mesh simple collision (MifBridgeCollision.cpp) — the StaticMeshEditor
 			// toolbar equivalent, reachable without opening that editor.

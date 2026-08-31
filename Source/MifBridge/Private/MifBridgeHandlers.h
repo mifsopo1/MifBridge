@@ -1519,6 +1519,7 @@ namespace MifBridge
 	// opts in rather than a delete doing it silently as a side effect.
 	MIF_DECL(close_asset_editors);
 	MIF_DECL(rename_asset);
+	MIF_DECL(fix_up_redirectors);
 	MIF_DECL(duplicate_asset);
 	// Static-mesh simple collision. The StaticMeshEditor's collision toolbar cannot be reached
 	// through invoke_editor_command (its FUICommandList is only broadcast when that editor is
