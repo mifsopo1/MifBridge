@@ -9147,3 +9147,37 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       compile error because the stale connection hangs off an orphaned pin the compiler ignores.
       That was the fifth and last hypothesis; the answer is that this route cannot break a blueprint,
       for a reason that is itself a defect.
+
+- [ ] **set_struct_member may be the second stale-pin instance - the sweep found it, the fixture did not**
+      (hours)
+      After fixing set_variable_type, swept every handler that changes a member's SHAPE - the thing a
+      referencing node's pins are built from - and checked which follow it with a node fixup
+      (ReconstructNode, RefreshVariableNodes, MarkBlueprintAsStructurallyModified). 13 handlers, and
+      7 with no fixup at all. Most of the 7 are fine, and saying WHY is the point of writing it down:
+
+        create_function, add_custom_event, recipe_add_debug_print
+              CreateUserDefinedPin on a node they have just made - there are no pre-existing
+              referencing nodes to fix, so a fixup would have nothing to do.
+        rename_variable
+              per set_variable_type's own comment, this one REFUSES a variable that has nodes rather
+              than retyping around them. Safe by refusal, not by repair.
+        remove_variable, remove_event_dispatcher
+              the nodes become orphans by design, and remove_event_dispatcher REPORTS them
+              (orphanedNodeCount) rather than pretending otherwise. Measured separately: an orphaned
+              dispatcher call node still compiles clean, so the note saying they "will fail the next
+              compile" is the thing in doubt there, not the fixup.
+
+      WHICH LEAVES ONE: set_struct_member calls ChangeVariableType with no fixup, and Break/Make
+      struct nodes have pins derived directly from struct members - the exact relationship that made
+      set_variable_type leave a stale pin. It is the same shape one level over.
+
+      NOT CONFIRMED, and the reason is fixture plumbing rather than the endpoint: add_break_struct
+      wants `structName` (not `struct`) and then did not resolve '/Game/_MifVal/S_W9926' - it wants a
+      different path form, probably the object path or a registered short name. Two round trips went
+      into parameter spelling and the third into path form, and that is the point to stop guessing
+      and write down where the next attempt starts.
+
+      NEXT STEP, concretely: get add_break_struct to place a node against a scratch UserDefinedStruct
+      (try the full object path S_X.S_X, and read the handler if that fails), then run the same
+      three-step fixture the set_variable_type fix uses - place the node, note its pins, retype the
+      member, compare. Pass condition is the same: no pin of the OLD type surviving with a link.
