@@ -37,6 +37,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -91,11 +92,34 @@ def ping(port, timeout=2.0):
         s.close()
 
 
-def serve(exe, port):
+def serve(exe, port, log_path):
+    """Start a headless Blender serving the addon, with its output going to a FILE.
+
+    NOT A PIPE, and that is the point of log_path. This used to pass stdout=subprocess.PIPE for a
+    process that then lives for the whole suite while nothing ever reads it. A Windows anonymous
+    pipe defaults to a 4 KB buffer and test_blender_creation makes Blender write about 8 KB - so
+    partway through the suite Blender's next print blocked forever waiting for a reader that did
+    not exist, the socket server stopped being serviced, and the following call died on a 30s
+    timeout with every assertion already passed. It presented as "boolean_op broke Blender".
+
+    A file has no buffer limit, so the child never blocks. The pipe bought nothing: this output is
+    only ever read when the server fails to come up.
+    """
     expr = ("import sys; sys.path.insert(0, r'%s'); import MifBlender; "
             "MifBlender.serve_forever(port=%d)" % (ADDON_DIR, port))
-    return subprocess.Popen([exe, "--background", "--factory-startup", "--python-expr", expr],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    log = io.open(log_path, "wb")
+    proc = subprocess.Popen([exe, "--background", "--factory-startup", "--python-expr", expr],
+                            stdout=log, stderr=subprocess.STDOUT)
+    return proc, log
+
+
+def server_log_tail(log_path, limit=400):
+    """What the server printed, for the case where it never came up."""
+    try:
+        with io.open(log_path, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read()[-limit:]
+    except OSError:
+        return ""
 
 
 PASSFAIL = re.compile(r"PASS (\d+)\s+FAIL (\d+)")
@@ -118,12 +142,15 @@ def run_one(version, exe, quiet):
         name = os.path.basename(suite)
         if not quiet:
             print("  %-8s %-26s running..." % (version, name))
-        proc = serve(exe, PORT)
+        log_path = os.path.join(tempfile.gettempdir(),
+                                "mif_blender_%s_%s.log" % (version, name))
+        proc, log = serve(exe, PORT, log_path)
         try:
             hello = None
             for _ in range(80):
                 if proc.poll() is not None:
-                    tail = (proc.stdout.read() or "")[-400:]
+                    log.flush()
+                    tail = server_log_tail(log_path)
                     rows.append({"version": version, "reported": "?", "suite": name,
                                  "state": "server died",
                                  "detail": tail.strip().splitlines()[-1] if tail.strip() else ""})
@@ -175,6 +202,10 @@ def run_one(version, exe, quiet):
         finally:
             try:
                 proc.kill()
+            except Exception:
+                pass
+            try:
+                log.close()
             except Exception:
                 pass
             # The port lingers in TIME_WAIT and the next run needs it. A short pause is cheaper
