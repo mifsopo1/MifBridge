@@ -7584,3 +7584,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       test_confirm_gated has an `except SC.NotScratch` doing the same, and test_niagara_emitter's
       else sits fourteen lines further down than the lookahead window. T44 was found by CALLING the
       endpoint to see what it returns, and discovering the call had never worked.
+- [x] **a check for suite calls that pass a parameter the endpoint refuses** (hours)  **DONE 2026-08-31.**
+      tools/audit_suite_payloads.py, gated and in the runbook. Built because T44 spent weeks green
+      while testing its own typo, and NOTHING could see it: coverage_gaps sees the endpoint NAMED in
+      a suite, audit_suite_reach sees the assertions RUN, and both are satisfied by a call that never
+      reaches the handler's body. It compares suite payload keys against each handler's
+      RejectUnknownParams list, read from the source.
+
+      FIVE CANDIDATES, ONE REAL. test_datatables' row-struct helper called read_datatable with
+      `limit`, which that endpoint refuses - it takes maxRows - so rowStruct came back None, the loop
+      yielded nothing, and the brute-force FALLBACK ran every single time. Its own docstring says the
+      one-call route was written to replace a search that "burned 288 refusals to find 4 successes"
+      and which Andre saw as a wall of red FAILED cards. That replacement had never once run.
+      find_assets, called on the line above, DOES accept `limit`, which is how it survived review.
+
+      The other four are deliberate refusal tests, and they taught the tool something: only ONE of
+      them contains the word "refused". The rest read "points at the real key", "the 'axis' hint
+      points at set_property", "points at the write half" - a refusal test is usually written as
+      ADVICE-checking. INTENT now matches that vocabulary, and the context window reaches 400
+      characters past the call because a two-line call with a timeout= argument pushed the telling
+      assertion out of the first one.
+
+      AND THE MUTATION TEST FAILED FIRST TIME, for the most fitting reason available. Reintroducing
+      the defect did not trip the check, because the comment written above the FIX says
+      "read_datatable refuses `limit` by name" - and `refus` is an INTENT word. The explanation of a
+      bug suppressed the detector for that bug. Python comments are stripped before the intent match
+      now, which is the same fix five C++ scanners got the same night.

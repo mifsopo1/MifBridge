@@ -55,7 +55,13 @@ def find_row_struct():
     """
     tables = (M.call("find_assets", {"class": "DataTable", "limit": 5}).get("assets") or [])
     for t in tables:
-        r = M.call("read_datatable", {"path": t.get("path"), "limit": 1})
+        # maxRows, NOT limit. read_datatable refuses `limit` by name, and find_assets on the line
+        # above DOES take it - which is how the slip survived. The call failed on the parameter name
+        # every run, rowStruct came back None, and this loop yielded nothing, so the fallback below
+        # ran EVERY time. The brute-force search this docstring says was replaced was never actually
+        # replaced. Found 2026-08-31 by audit_suite_payloads, which compares suite payload keys
+        # against each handler's RejectUnknownParams list.
+        r = M.call("read_datatable", {"path": t.get("path"), "maxRows": 1})
         rs = r.get("rowStruct")
         if rs:
             yield rs

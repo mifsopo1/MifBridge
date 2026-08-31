@@ -336,7 +336,7 @@ def check_static_audits():
     failed = []
     for tool, args in (("audit_loop_writes.py", []), ("audit_postconditions.py", []),
                        ("audit_modals.py", []), ("test_fuzz_detector.py", []),
-                       ("audit_promise_flags.py", [])):
+                       ("audit_promise_flags.py", []), ("audit_suite_payloads.py", [])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
