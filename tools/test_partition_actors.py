@@ -174,8 +174,16 @@ def main():
           again.get("scanned") == scanned and again.get("loadedInEditor") == loaded,
           "first=%s/%s second=%s/%s" % (scanned, loaded, again.get("scanned"),
                                         again.get("loadedInEditor")))
-    check("T2104 and it reports scratchClean - no real package was dirtied",
-          again.get("scratchClean") is not False, json.dumps(again)[:200])
+    # LABEL MATCHED TO ASSERTION, 2026-08-31. This said "it REPORTS scratchClean" while asserting
+    # `is not False`, which passes when the field is ABSENT - and it IS absent here: FMifScratchWatch
+    # emits it only from the watch OWNER, so a read-only call in full write mode reports nothing.
+    # The old check therefore proved nothing while claiming to prove reporting. What IS verifiable is
+    # the direction: if the watch spoke, it must not say a package was dirtied by a READ.
+    sc = again.get("scratchClean")
+    print("     scratchClean: %r (absent means the watch did not own this call)" % sc)
+    check("T2104 and the scratch watch never reports a DIRTIED package for a read - absence means "
+          "the watch did not own this call, which is write-mode dependent, not a failure",
+          sc is not False, json.dumps(again)[:200])
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

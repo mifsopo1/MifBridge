@@ -7460,3 +7460,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       `is not False` is the tell worth remembering: it is the spelling that survives a field being
       dropped entirely, and it reads like a real assertion.
+- [x] **swept the suites for `is not False`, the spelling that survives a missing field** (hours)  **DONE 2026-08-31.**
+      Follow-through on the rollback fix rather than a suggestion left in a commit message. 48 uses
+      across the suites, and the first thing the sweep established is that 43 of them are CORRECT:
+      they test `ok`, and this repo's first rule is that failure is the PRESENCE of `error`, never
+      the absence of `ok`. `ok is not False` is the house idiom, deliberately.
+
+      Five are on other fields. Three of those are right too, and worth writing down because each is
+      right for a different reason:
+
+        test_pie_idle collects flags where `st.get(k) is not False`, so an ABSENT flag counts as
+        DISAGREEING with idle - the conservative direction for a test that must not miss a live PIE.
+        test_v3_apply sets claimed_clean from it and asserts `restored or not claimed_clean`, so an
+        absent field forces the STRICTER branch.
+        The remaining two are my own comments explaining the pattern.
+
+      ONE WAS GENUINELY VACUOUS. test_partition_actors asserted "it reports scratchClean" while
+      testing `is not False` - and the field is ABSENT for that call, so it proved nothing while
+      claiming to prove reporting. FMifScratchWatch emits scratchClean only from the watch OWNER, so
+      a read-only endpoint in full write mode reports none, which the endpoint's own comment
+      explains. The label now matches what is verifiable - the watch never reports a DIRTIED package
+      for a read - and the observed value is printed, so a reader sees None rather than inferring it.
+
+      The lesson is about direction, not the spelling: `is not False` is fine when an absent field
+      makes the test HARDER to pass, and vacuous when it makes it easier. Three of these were the
+      first, one was the second, and only reading each told them apart.
