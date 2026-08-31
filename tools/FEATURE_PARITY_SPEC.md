@@ -7102,3 +7102,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Not mine to decide: dropping a dependency changes what host projects must have enabled, and
       that is a compatibility decision. Flagged rather than acted on, which is what the advisory's
       own docstring asks for - "the choice should be deliberate rather than forgotten".
+- [x] **the suites obey the postcondition rule - checked, and they do** (hours)  **DONE 2026-08-31.**
+      The house rule is judge by POSTCONDITION, never by the engine's return value. audit_postconditions
+      enforces it on handlers; nothing had ever asked it of the SUITES, where the same defect one layer
+      up is a check that proves the call was accepted rather than that it worked. Scanned every
+      check() condition across all suites: 5 assert only the ok flag, out of 4218. All five were read
+      and all five are deliberate - two are "the ordinary path must still work" regression guards
+      against a refusal fix that refuses too much, and test_node_spawns' pair is immediately followed
+      by node_exists(graph, guid). Nothing to fix. Recorded because "already fine" is an answer worth
+      being able to look up, and because the next person to wonder should not have to re-derive it.
+
+- [x] **handlers pointing a caller at a response field they do not emit - checked, none** (hours)  **DONE 2026-08-31.**
+      Messages like "membershipsChanged:0 is the engine's own answer" are the most directly actionable
+      prose the bridge produces, and nothing verified the field was one the handler returns. 128 raw
+      candidates fell to 4 once input parameters and cross-endpoint advice ({...} argument groups) were
+      excluded, and all 4 are false positives: `applied` and `neverPainted` ARE emitted, from helper
+      scope the scan bounded out; `bAsync` and `reported` are prose. No tool committed - a checker with
+      a 100% false-positive rate on its own findings is not one worth keeping, and the exclusions it
+      needed (every endpoint's accepted keys, brace-group nesting) cost more than the class is worth.
+
+- [x] **ten load-bearing lines the source calls fatal, enforced by nothing** (hours)  **DONE 2026-08-31.**
+      audit_modals grew a counted, scrubbed INVARIANTS table covering MifBridgeExport.cpp,
+      MifBridgeImport.cpp and MifBridgeIKRig.cpp. The reusable part is the grep now written into the
+      table - "INVARIANT|fatal if|load-bearing|must NOT be removed" - because a file that declares its
+      own invariants is telling you what to check. It found that Export says "the THREE invariants"
+      while marking FOUR lines // INVARIANT, that Import had been saying the same sentence about
+      itself all along, that an existence test whose absence was a SHIPPED bug had no guard, and that
+      IKSolverIsNull's `const auto*` is a cross-engine invariant a single-engine compile cannot catch.
+      All eleven call sites mutation-tested by blanking the CODE occurrence; every one reports.

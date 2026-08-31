@@ -429,7 +429,13 @@ def main():
         print("  MISSING  %s   %s" % (rel, where))
         print("           %s" % why)
     if not broken:
-        print("  all %d present in code - the FBX export and import gates" % len(INVARIANTS))
+        # Named by COUNT and by FILE, not by a description that has to be maintained. This line
+        # read "the FBX exporter's three options-modal gates", then "the FBX export and import
+        # gates", and was wrong within an hour of each edit as rows were added - the same
+        # title-outlives-its-revision drift docs/02 records for declined spec items.
+        print("  all %d present in code, across %d file(s): %s"
+              % (len(INVARIANTS), len({r for r, _p, _c, _w in INVARIANTS}),
+                 ", ".join(sorted({r for r, _p, _c, _w in INVARIANTS}))))
 
     print()
     print("=" * 78)
