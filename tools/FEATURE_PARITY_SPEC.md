@@ -6748,7 +6748,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       just sweep themselves.
 
 
-- [~] **nine suites send a raw confirm:true while working on a DISCOVERED real asset** (hours)
+- [~] **ONE suite raw-confirmed against a real asset (fixed); the other eight were a bad grep** (hours)
       DECLINED 2026-08-31 after reading all nine. My heuristic was "raw confirm:true in a file that
       also calls find_assets", and that is not the same question as "confirm:true against a real
       asset". Every one resolves, and none needs the sweep I filed for:
