@@ -8144,7 +8144,10 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       delete_asset needs confirm, which mifaudit strips from every payload - so the tool CANNOT tidy
       up after itself by design. /Game/_MifAuditRT/BP_RT_96969 was removed through
       tools/scratch_confirm.py, the sanctioned route, and find_assets reports 0 under that prefix
-      now. Worth a fix in the tool: it could call through scratch_confirm the way the suites do.
+      now. FIXED the same day: it calls through scratch_confirm, which refuses any payload whose
+      paths are not scratch - so the guard is satisfied rather than bypassed - and reports rather
+      than swallows a failure to tidy, since quietly failing to clean up is how the leftover went
+      unnoticed. Re-run against the same live session: 23 checks, 0 gaps, 0 scratch assets left.
 
       THE DISTINCTION THAT MATTERS. These are real results and they are not what
       audit_detectors_fire means by proven. A clean run says the corpus is clean IF the detector

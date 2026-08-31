@@ -27,6 +27,7 @@ import sys
 import time
 
 import mifaudit as M
+import scratch_confirm as SC
 
 RESULTS = []
 
@@ -198,7 +199,19 @@ def main():
     note("set_variable_flags", "RTCat" in blob, "read-back carries the category", blob[:220])
     note("set_variable_flags", "round trip" in blob, "read-back carries the tooltip", blob[:220])
 
-    M.call("delete_asset", {"path": root})     # confirm is stripped by the harness; best effort
+    # THROUGH scratch_confirm, NOT M.call. mifaudit strips `confirm` from every payload - the guard
+    # that makes an unattended overnight run safe - so this line was a no-op and every run of this
+    # tool left a blueprint behind in whatever editor it was pointed at. Observed 2026-08-31 against
+    # a session somebody was working in: /Game/_MifAuditRT/BP_RT_96969, still there afterwards.
+    #
+    # scratch_confirm exists for exactly this and refuses any payload whose paths are not scratch, so
+    # the guard is not bypassed, it is satisfied: the root here is always /Game/_MifAuditRT/...
+    gone = SC.confirm_call("delete_asset", {"path": root, "confirm": True})
+    if gone.get("ok") is False:
+        # Reported rather than swallowed. A tool that quietly fails to tidy up is how the leftover
+        # went unnoticed in the first place.
+        print("\nNOTE: could not remove the scratch blueprint %s - %s"
+              % (root, str(gone.get("error"))[:160]))
 
     print("\n" + "=" * 72)
     gaps = [r for r in RESULTS if not r[1]]
