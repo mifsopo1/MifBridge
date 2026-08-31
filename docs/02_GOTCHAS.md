@@ -772,7 +772,7 @@ preferences are not ours to change.
 ### The backstop: `RunEndpoint` runs every handler unattended
 
 Guarding known prompting APIs one call site at a time cannot close this class, because the danger is
-the calls **nobody has classified yet** — 421 endpoints reaching hundreds of engine functions, and
+the calls **nobody has classified yet** — several hundred endpoints reaching hundreds of engine functions, and
 `audit_modals.py` knows about eight of them. PM-011 was one of the unclassified ones.
 
 So `RunEndpoint` opens every handler with:

@@ -25,6 +25,7 @@ RUNS AGAINST A HEADLESS BLENDER started by tools/run_blender_suites.py on a priv
 and removes its own materials and objects.
 """
 import json
+import os
 import sys
 
 import blender_audit_common as B
@@ -281,6 +282,56 @@ def main():
               "and combining them would silently pick one",
               clash.get("ok") is False and "EITHER faces OR fromSlot" in (clash.get("error") or ""),
               (clash.get("error") or "")[:220])
+        # ------------------------------------------------------------------ T4107 bake
+        print("\n=== T4107: bake_texture, judged by the IMAGE rather than the operator ===")
+        plane = B.call("create_primitive", {"kind": "plane", "name": "MifT_BakePlane",
+                                            "size": 2.0})
+        if plane.get("ok") is not False:
+            objs.append(plane.get("name"))
+        B.call("uv_unwrap", {"object": "MifT_BakePlane", "method": "SMART", "replace": True})
+
+        import tempfile
+        out = os.path.join(tempfile.gettempdir(), "mif_t4107_bake.png")
+        if os.path.isfile(out):
+            os.remove(out)
+        bake = B.call("bake_texture", {"object": "MifT_BakePlane", "type": "AO",
+                                       "width": 32, "height": 32, "samples": 4,
+                                       "filepath": out})
+        check("T4107 an AO bake succeeds", bake.get("ok") is not False, json.dumps(bake)[:250])
+        # THE assertion the whole endpoint is arranged around. bpy.ops.object.bake returns FINISHED
+        # and writes NOTHING when there is no active image-texture node, so success is judged from
+        # the image - and the image is filled with a magenta sentinel first, because a fresh image
+        # is black and a legitimately BLACK bake result would otherwise be indistinguishable from
+        # an untouched one.
+        check("T4107 the image started as the magenta SENTINEL, not black - which is what makes "
+              "'wrote nothing' distinguishable from a legitimately black result",
+              abs((bake.get("signatureBefore") or [0, 0, 0])[2] - 0.75) < 1e-3,
+              json.dumps(bake.get("signatureBefore")))
+        check("T4107 and the buffer really moved off it",
+              bake.get("changed") is True
+              and bake.get("signatureAfter") != bake.get("signatureBefore"),
+              json.dumps([bake.get("signatureBefore"), bake.get("signatureAfter")]))
+        check("T4107 the file is on disk at a non-zero size - measured, not reported",
+              os.path.isfile(out) and os.path.getsize(out) > 0,
+              "%s -> %s" % (out, os.path.isfile(out) and os.path.getsize(out)))
+        check("T4107 a material was created for the bake target and SAID so, rather than being "
+              "invented silently",
+              bool(bake.get("createdMaterial")), json.dumps(bake)[:200])
+        if os.path.isfile(out):
+            os.remove(out)
+
+        badtype = B.call("bake_texture", {"object": "MifT_BakePlane", "type": "SPARKLE"})
+        check("T4107 an unknown bake type is refused and names the real ones",
+              badtype.get("ok") is False and "AO" in (badtype.get("error") or ""),
+              (badtype.get("error") or "")[:200])
+        badsize = B.call("bake_texture", {"object": "MifT_BakePlane", "width": 99999})
+        check("T4107 an absurd resolution is refused rather than attempted",
+              badsize.get("ok") is False, (badsize.get("error") or "")[:180])
+        nouv = B.call("bake_texture", {"object": "MifT_BakePlane", "uvLayer": "MifNoSuchUV"})
+        check("T4107 a named UV layer that does not exist is refused AND the real ones listed",
+              nouv.get("ok") is False and "UVMap" in (nouv.get("error") or ""),
+              (nouv.get("error") or "")[:200])
+
     finally:
         for n in dict.fromkeys(o for o in objs if o):
             B.call("delete_object", {"object": n})

@@ -4971,7 +4971,41 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       simply place an object - which the round trip currently papers over by asserting
       isIdentityTransform stays true. Needed as soon as more than one object exists in a scene.
 
-- [ ] **BLENDER MATERIALISATION: bl_bake_texture** (day)
+- [x] **BLENDER MATERIALISATION: bl_bake_texture** (day)  **DONE 2026-08-31.**
+      op_bake_texture in ops_material.py, MCP wrapper, extended help, T4107 in
+      test_blender_material.py - 43 PASS 0 FAIL, green on all four Blenders. AO, NORMAL, DIFFUSE,
+      COMBINED, ROUGHNESS, EMIT, GLOSSY and SHADOW, optionally saved to disk.
+
+      THE SILENT SUCCESS IS REAL AND WAS MEASURED, not designed around from the docs. With no ACTIVE
+      image-texture node in the material, bpy.ops.object.bake returns {'FINISHED'} and writes
+      nothing at all - no error, no warning, an untouched image. A caller then saves a blank PNG and
+      wires it into a material. So the result is judged from the image and a blank bake is reported
+      as the failure it is, with the image discarded rather than handed back.
+
+      THE ENTRY WAS WRONG ABOUT WHICH CASE IS SILENT, and the correction is worth keeping. It
+      predicted "a bake with no UV layer silently produces nothing"; the operator actually RAISES
+      "No active UV layer found in the object". That case is loud. The silent one is the missing
+      bake target, which the entry did not name.
+
+      A SENTINEL FILL, ADDED AFTER THE FIRST VERSION CRIED WOLF. Judging by "did the image change"
+      is wrong on a fresh image, because a new image is BLACK and a legitimately black bake result -
+      AO on a face with nothing to occlude it - leaves the buffer byte-identical to an untouched
+      one. is_dirty does not separate them either: it goes true merely from the bake touching the
+      image. Verified on a lone plane, whose AO result IS black and which the first version refused.
+      The image is now filled magenta first, so "unchanged" means untouched and nothing else.
+
+      ONE MORE USE-AFTER-FREE, MINE, THE SECOND IN A NIGHT. The failure path removed the image and
+      then read image.is_dirty in the message - "ReferenceError: StructRNA of type Image has been
+      removed", the same mistake boolean_op made against a modifier hours earlier. Captured before
+      the free now.
+
+      Selection is part of the contract - bake reads the SELECTED objects and writes into the ACTIVE
+      one, so a stray selection is another way it produces nothing while reporting FINISHED - and
+      the render engine, Cycles device, sample count and selection are all restored afterwards. A
+      material is created when there is none, and SAID so; the bake target node is removed unless
+      keepNode. Device defaults to CPU because a headless box may have no configured GPU and a
+      silent fallback is a bake nobody can reason about.
+
       The other sense of materialisation: baking AO, normal, diffuse or combined maps to an image
       and saving it. This is how a high-poly detail becomes a texture an Unreal material can use.
       Day-ranked rather than hours because it needs a render engine configured (Cycles), a UV layer

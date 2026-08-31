@@ -33,10 +33,13 @@ set_material_properties reports `resolvedInputs` - the real socket name each req
 property landed on - so a caller can see which spelling this Blender used rather than
 having to know.
 """
+import os
+
 import bpy
 
 from .ops_common import (MifOpError, get_object, jsonable, reject_unknown, rnd, take,
-                         take_bool, take_float, take_int)
+                         take_bool, take_float, take_int,
+                         select_only, selection_restore, selection_snapshot)
 
 # Requested name -> the socket names it may be called on some supported Blender.
 # Order matters only for reporting; the first that EXISTS on this build wins.
@@ -416,6 +419,262 @@ def op_describe_material(params):
     return _material_json(mat, deep=take_bool(params, "links", default=False))
 
 
+_BAKE_TYPES = {
+    "AO": "AO",
+    "NORMAL": "NORMAL",
+    "DIFFUSE": "DIFFUSE",
+    "COMBINED": "COMBINED",
+    "ROUGHNESS": "ROUGHNESS",
+    "EMIT": "EMIT",
+    "GLOSSY": "GLOSSY",
+    "SHADOW": "SHADOW",
+}
+
+
+def _pixel_signature(image):
+    """(min, max, mean) over the raw float buffer - the cheapest honest 'did anything change'."""
+    px = image.pixels[:]
+    if not px:
+        return (0.0, 0.0, 0.0)
+    return (round(min(px), 6), round(max(px), 6), round(sum(px) / len(px), 6))
+
+
+def op_bake_texture(params):
+    """Bake AO / normal / diffuse and the rest into an image, and prove the image actually moved.
+
+    THE FAILURE THIS IS ARRANGED AROUND IS A SILENT SUCCESS, measured rather than assumed. With no
+    ACTIVE image-texture node in the material, bpy.ops.object.bake returns {'FINISHED'} and writes
+    nothing at all - no error, no warning, an untouched image and a call that looks like it worked.
+    That is the worst outcome available here, because the caller then saves a blank PNG and wires it
+    into a material.
+
+    So success is judged from the IMAGE: is_dirty plus a before/after pixel signature. A bake that
+    reports FINISHED over an unchanged buffer is reported as a failure, which is what it is.
+
+    WHAT IS LOUD ALREADY, and therefore not re-implemented: a missing UV layer. The operator raises
+    "No active UV layer found in the object" itself. It is still checked up front, because a
+    pre-flight refusal names the fix and costs nothing, and because the entry that asked for this
+    predicted that case would be silent - it is not, and that is worth recording where the next
+    person will look.
+
+    THE SETUP IS RESTORED. Render engine, device, sample count and the whole selection state belong
+    to whoever is using this Blender; a bake that leaves the scene on CYCLES with 4096 samples is a
+    side effect nobody asked for.
+    """
+    reject_unknown(params, ("object", "name", "type", "bakeType", "width", "height", "imageName",
+                            "filepath", "uvLayer", "margin", "samples", "keepNode", "device"),
+                   "bake_texture")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+
+    raw_type = take(params, "type", "bakeType") or "AO"
+    bake_type = str(raw_type).strip().upper()
+    if bake_type not in _BAKE_TYPES:
+        raise MifOpError("unknown bake type %r - use one of %s. NOTHING was baked."
+                         % (raw_type, ", ".join(sorted(_BAKE_TYPES))))
+
+    mesh = obj.data
+    if not mesh.polygons:
+        raise MifOpError("'%s' has no faces, so there is nothing to bake. NOTHING was baked."
+                         % obj.name)
+
+    # PRE-FLIGHT, even though the operator raises for this itself. Its message names the object;
+    # this one names the fix.
+    uv_name = take(params, "uvLayer")
+    if not mesh.uv_layers:
+        raise MifOpError(
+            "'%s' has NO UV layer, and a bake writes through UVs - there is nowhere for the result "
+            "to land. uv_unwrap creates one. (The operator raises for this too rather than failing "
+            "silently, so this refusal is only about naming the fix.) NOTHING was baked."
+            % obj.name)
+    if uv_name:
+        layer = mesh.uv_layers.get(uv_name)
+        if layer is None:
+            raise MifOpError("'%s' has no UV layer named %r. It has: %s. NOTHING was baked."
+                             % (obj.name, uv_name, ", ".join(u.name for u in mesh.uv_layers)))
+        mesh.uv_layers.active = layer
+
+    width = take_int(params, "width", default=512)
+    height = take_int(params, "height", default=512)
+    if width < 1 or height < 1 or width > 8192 or height > 8192:
+        raise MifOpError("width/height must be between 1 and 8192; got %dx%d" % (width, height))
+    samples = take_int(params, "samples", default=16)
+    if samples < 1 or samples > 4096:
+        raise MifOpError("samples must be between 1 and 4096; got %d" % samples)
+    margin = take_int(params, "margin", default=4)
+    image_name = take(params, "imageName") or ("MifBake_%s_%s" % (obj.name, bake_type))
+    filepath = take(params, "filepath")
+    keep_node = bool(take(params, "keepNode"))
+
+    # A material is where the bake TARGET lives, so one is required. Created rather than refused,
+    # and reported - an AO bake on an unmaterialed mesh is a perfectly reasonable request.
+    created_material = None
+    if not obj.data.materials or all(sl.material is None for sl in obj.material_slots):
+        mat = bpy.data.materials.new("%s_BakeMat" % obj.name)
+        mat.use_nodes = True
+        if obj.data.materials:
+            obj.data.materials[0] = mat
+        else:
+            obj.data.materials.append(mat)
+        created_material = mat.name
+
+    materials = [sl.material for sl in obj.material_slots if sl.material]
+    for mat in materials:
+        if not mat.use_nodes:
+            mat.use_nodes = True
+
+    # A SENTINEL FILL, because "the image did not change" is NOT the same question as "the bake
+    # wrote nothing". A fresh image is black, and a legitimately black bake result - AO on a face
+    # with nothing to occlude it, an EMIT pass on an unlit material - leaves the buffer identical
+    # to an untouched one. is_dirty does not separate them either: it goes true merely from the
+    # bake touching the image. Filling with magenta first means ANY value the bake writes differs
+    # from the start state, so "unchanged" means untouched and nothing else.
+    image = bpy.data.images.new(image_name, width=width, height=height)
+    image.generated_color = (1.0, 0.0, 1.0, 1.0)
+    if image.name != image_name:
+        # Blender uniquifies silently, and a caller who then looks up image_name finds the OLD one.
+        note_renamed = image.name
+    else:
+        note_renamed = None
+
+    scene = bpy.context.scene
+    prev = {
+        "engine": scene.render.engine,
+        "samples": getattr(getattr(scene, "cycles", None), "samples", None),
+        "device": getattr(getattr(scene, "cycles", None), "device", None),
+        "active": bpy.context.view_layer.objects.active,
+    }
+    snap = selection_snapshot()
+    added_nodes = []
+    try:
+        scene.render.engine = "CYCLES"
+        if hasattr(scene, "cycles"):
+            scene.cycles.samples = samples
+            # CPU by default: a headless box may have no configured GPU device at all, and a bake
+            # that silently falls back is a bake nobody can reason about.
+            scene.cycles.device = str(take(params, "device") or "CPU").upper()
+
+        for mat in materials:
+            node = mat.node_tree.nodes.new("ShaderNodeTexImage")
+            node.image = image
+            node.name = "MifBakeTarget"
+            added_nodes.append((mat, node))
+            for other in mat.node_tree.nodes:
+                other.select = False
+            node.select = True
+            mat.node_tree.nodes.active = node
+
+        # SELECTION IS PART OF THE CONTRACT: bake reads the selected objects and writes into the
+        # ACTIVE one. Leaving a stray selection from earlier work is one of the ways this produces
+        # nothing while reporting FINISHED.
+        select_only([obj])
+        bpy.context.view_layer.objects.active = obj
+
+        before = _pixel_signature(image)
+        kwargs = {"type": bake_type, "margin": margin, "use_clear": True}
+        if bake_type == "DIFFUSE":
+            kwargs["pass_filter"] = {"COLOR"}
+        bpy.ops.object.bake(**kwargs)
+        after = _pixel_signature(image)
+    except Exception as exc:
+        for mat, node in added_nodes:
+            try:
+                mat.node_tree.nodes.remove(node)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            bpy.data.images.remove(image)
+        except Exception:  # noqa: BLE001
+            pass
+        raise MifOpError("bake failed on '%s' (%s): %s: %s. NOTHING was written."
+                         % (obj.name, bake_type, type(exc).__name__, exc))
+    finally:
+        scene.render.engine = prev["engine"]
+        if hasattr(scene, "cycles"):
+            if prev["samples"] is not None:
+                scene.cycles.samples = prev["samples"]
+            if prev["device"] is not None:
+                scene.cycles.device = prev["device"]
+        selection_restore(snap)
+        try:
+            bpy.context.view_layer.objects.active = prev["active"]
+        except Exception:  # noqa: BLE001
+            pass
+
+    # THE POSTCONDITION. bake returns {'FINISHED'} with no active image-texture node and writes
+    # nothing whatsoever - measured, not feared. So the image is asked whether it moved.
+    # CAPTURED BEFORE THE IMAGE IS REMOVED. The first version read image.is_dirty in the message
+    # AFTER bpy.data.images.remove(image), which is a use-after-free on freed RNA - the same
+    # mistake boolean_op made against a modifier earlier the same night, and Blender says so:
+    # "ReferenceError: StructRNA of type Image has been removed".
+    was_dirty = image.is_dirty
+    if not was_dirty or before == after:
+        for mat, node in added_nodes:
+            try:
+                mat.node_tree.nodes.remove(node)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            bpy.data.images.remove(image)
+        except Exception:  # noqa: BLE001
+            pass
+        raise MifOpError(
+            "the bake reported FINISHED and the image is still the magenta sentinel it was "
+            "filled with (signature %s, dirty=%s) - so nothing was written. That is "
+            "bpy.ops.object.bake's silent-success case: with no active image-texture node to bake "
+            "into it returns FINISHED, touches nothing and reports no error at all. The sentinel "
+            "exists so this is distinguishable from a legitimately BLACK result, which a fresh "
+            "image would have matched exactly. The image was discarded rather than handed back "
+            "blank." % (before, was_dirty))
+
+    saved = None
+    if filepath:
+        image.filepath_raw = str(filepath)
+        ext = os.path.splitext(str(filepath))[1].lower()
+        image.file_format = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG",
+                             ".tga": "TARGA", ".exr": "OPEN_EXR"}.get(ext, "PNG")
+        image.save()
+        saved = str(filepath)
+        if not os.path.isfile(saved):
+            raise MifOpError("image.save() reported no error but '%s' is not on disk. The bake "
+                             "itself succeeded." % saved)
+
+    if not keep_node:
+        for mat, node in added_nodes:
+            try:
+                mat.node_tree.nodes.remove(node)
+            except Exception:  # noqa: BLE001
+                pass
+
+    result = {
+        "object": obj.name,
+        "bakeType": bake_type,
+        "image": image.name,
+        "width": width,
+        "height": height,
+        "samples": samples,
+        "margin": margin,
+        "uvLayer": mesh.uv_layers.active.name if mesh.uv_layers.active else None,
+        "materials": [m.name for m in materials],
+        "createdMaterial": created_material,
+        "signatureBefore": list(before),
+        "signatureAfter": list(after),
+        "changed": True,
+        "savedTo": saved,
+        "targetNodeKept": keep_node,
+    }
+    if note_renamed:
+        result["imageRenamed"] = note_renamed
+        result["renameNote"] = (
+            "an image named %r already existed, so Blender uniquified this one to %r. Look it up "
+            "by the returned name, not the one you asked for." % (image_name, note_renamed))
+    result["note"] = (
+        "the image is IN MEMORY%s. Nothing else references it - the bake target node was %s - so "
+        "it is lost on file reload unless it was saved."
+        % ("" if saved else " and NOT saved; pass filepath to write it to disk",
+           "kept" if keep_node else "removed"))
+    return result
+
+
 def op_assign_material_to_faces(params):
     """Point a range of polygons at one of the object's material SLOTS.
 
@@ -534,5 +793,6 @@ OPS = {
     "set_material_properties": op_set_material_properties,
     "list_materials": op_list_materials,
     "describe_material": op_describe_material,
+    "bake_texture": op_bake_texture,
     "assign_material_to_faces": op_assign_material_to_faces,
 }

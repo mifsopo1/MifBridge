@@ -1,7 +1,7 @@
 # MifBridge — capability roadmap
 
 > **STALE AS A WHOLE, RE-CHECKED 2026-08-29 - READ THIS BEFORE TRUSTING ANY ITEM BELOW.** This file is
-> a snapshot from 2026-07-25; the plugin has gone from roughly 230 to 421 endpoints since, and a spot
+> a snapshot from 2026-07-25; the plugin has more than doubled its endpoint count since, and a spot
 > check against the current endpoint list (`grep MIF_DECL MifBridgeHandlers.h`) found most of the
 > "Blocking" and "High value" items already shipped: struct/enum authoring (`create_struct`,
 > `add_struct_member`), PIE control (the whole `pie_*`/`start_pie`/`stop_pie` family), rename for

@@ -5,7 +5,7 @@
 ### **Let an AI edit your Unreal Blueprints — and read the compiler errors back.**
 
 <!-- MIFBRIDGE-VERSION-LINE -->
-`v0.7.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **428 endpoints** &nbsp;·&nbsp; 🧰 **485 MCP tools** &nbsp;·&nbsp; 🧪 **150 test suites**
+`v0.7.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **433 endpoints** &nbsp;·&nbsp; 🧰 **493 MCP tools** &nbsp;·&nbsp; 🧪 **155 test suites**
 
 </div>
 
@@ -30,7 +30,7 @@ Every change goes through Unreal's own graph API (`Schema->TryCreateConnection`,
 
 | Half | State |
 |---|---|
-| 🎮 **UE plugin + MCP server** | **Mature.** 421 endpoints, 144 suites. Last full double-pass sweep: **282 runs across 141 suites, 1 failed, 16 skipped, 0 editor deaths**. The 3 suites that drive PIE are excluded from unattended sweeps and are named in the run output rather than counted as passing — starting PIE saturates the game thread, and the bridge runs every endpoint on it. |
+| 🎮 **UE plugin + MCP server** | **Mature.** Endpoint and suite counts are in the version line at the top of this file, which is generated and checked at packaging time rather than typed here. Last full double-pass sweep: **282 runs across 141 suites, 1 failed, 16 skipped, 0 editor deaths**. The 3 suites that drive PIE are excluded from unattended sweeps and are named in the run output rather than counted as passing — starting PIE saturates the game thread, and the bridge runs every endpoint on it. |
 | 🎨 **Blender addon** | **Working, version‑tested.** 20 ops and a real mesh round trip, green on Blender 3.6.23, 4.2.17 LTS, 4.4.0 and 5.0.1 — 89 assertions per version. The five `gen_*` ops that need an external service are declared in the suite output rather than skipped silently. |
 
 ---
@@ -75,7 +75,7 @@ The UE plugin answers each request on the game thread, applies it through the re
 
 | For | You need |
 |---|---|
-| 🎮 **UE plugin** | **Unreal Engine 5.3 or 5.7** — built and tested continuously against 5.3.2; last verified against a stock 5.7 on 2026-08-27, at 330 of the current 421 endpoints. Editor‑only C++, so it must be built against the engine you actually run; a marketplace prebuilt will not ABI‑match a source build. Win64. |
+| 🎮 **UE plugin** | **Unreal Engine 5.3 or 5.7** — built and tested continuously against 5.3.2; last verified against a stock 5.7 on 2026-08-27, at 330 endpoints, which was the whole surface at that date. Editor‑only C++, so it must be built against the engine you actually run; a marketplace prebuilt will not ABI‑match a source build. Win64. |
 | 🐍 **MCP server** | **Python 3.10+**, with `mcp>=1.2.0` and `requests>=2.31.0`. Any OS — it only speaks loopback. |
 | 🎨 **Blender addon** | **Blender 4.4+** — the `bl_info` floor. Verified green on **3.6, 4.2, 4.4 and 5.0**; see `tools/blender-addon/README.md` for the matrix. Shipped as a zip; optional. |
 | 🤖 **Client** | Claude Code, or anything that speaks MCP over stdio. |
@@ -141,7 +141,7 @@ comm -23 /tmp/plugin.txt /tmp/mcp.txt   # endpoints with no tool
 comm -13 /tmp/plugin.txt /tmp/mcp.txt   # tools with no endpoint -> the 12 kr_* externals
 ```
 
-Measured on the current tree: **421 built-in endpoints + 12 external = 433**, against **478 tools**
+Measured on the current tree: **433 built-in endpoints + 12 external = 445**, against **478 tools**
 (320 that reach Unreal, 12 `kr_*`, 20 `bl_*`, 1 `mif_*`). Both columns of the diff are now EMPTY —
 `parity_check` reports no drift and no exempted gaps:
 
@@ -306,7 +306,7 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 
 ---
 
-## 🧠 Capabilities — 433 HTTP endpoints (421 built‑in + 12 external)
+## 🧠 Capabilities — 445 HTTP endpoints (433 built‑in + 12 external)
 
 > The authoritative list is whatever `self_audit` reports from the running editor, never this
 > section. `tools/endpoints_current.json` is a snapshot of it, and `tools/parity_check.py`

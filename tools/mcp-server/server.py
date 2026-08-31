@@ -4735,6 +4735,16 @@ def bl_rename_bones(object: str, renames: dict, dry_run: bool = False) -> dict:
 
 
 @mcp.tool()
+def bl_bake_texture(object: str, type: str = "AO", width: int = 512, height: int = 512,
+                    image_name: str = None, filepath: str = None, uv_layer: str = None,
+                    margin: int = 4, samples: int = 16, keep_node: bool = False) -> dict:
+    "Bake AO / NORMAL / DIFFUSE / COMBINED / ROUGHNESS / EMIT / GLOSSY / SHADOW into an image on a Blender mesh - how a high-poly detail becomes a texture an Unreal material can use. Judged by the IMAGE, not the operator: bpy.ops.object.bake returns FINISHED and writes NOTHING when there is no active image-texture node, so the result is checked with is_dirty plus a before/after pixel signature and a blank bake is reported as the failure it is. Needs a UV layer. Render engine, device, samples and selection are all restored afterwards. Pass filepath to write it to disk - without one the image is in memory only. See mif_help."
+    return _blender("bake_texture", object=object, type=type, width=width, height=height,
+                    imageName=image_name, filepath=filepath, uvLayer=uv_layer,
+                    margin=margin, samples=samples, keepNode=keep_node or None)
+
+
+@mcp.tool()
 def bl_boolean_op(target: str, cutter: str, operation: str = "difference",
                   delete_cutter: bool = False, solver: str = None) -> dict:
     "Cut, merge or intersect one Blender mesh with another - operation 'difference' (default), 'union' or 'intersect'. APPLIES the modifier rather than leaving it stacked, and reports before/after vertex and face counts as the evidence. Says changed:false with the likely cause when the boolean legally did nothing. bl_add_modifier can create a BOOLEAN modifier but cannot point it at a cutter, so this is the only route to an actual boolean. The cutter is KEPT unless delete_cutter. See mif_help."
