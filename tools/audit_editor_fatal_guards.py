@@ -136,6 +136,13 @@ def main():
         for who, base, line, quote in unclassed:
             print("  %-32s %s:%d" % (who, base, line))
     print("")
+    print("NOT EVERY NAME ABOVE IS A CLASS. The grouping reads capitalised identifiers out of the")
+    print("refusal text, and those texts quote assert messages and callstacks - so DuplicateAsset is")
+    print("an AssetTools function and OwningNode is the variable an engine assert names, not types.")
+    print("Tightening the pattern to exclude them would also drop real classes named in the same")
+    print("sentences, and this is a reading list: a reader who sees a function name loses ten")
+    print("seconds, where a reader who never sees a real class loses an editor.")
+    print("")
     print("A class listed against ONE handler is not automatically a gap - reading an asset is safe")
     print("in every case guarded here, and it is creation, duplication or rebuild that dies. But it")
     print("IS the shape that cost two editors on 2026-08-31: AnimSequence was guarded in create_asset")

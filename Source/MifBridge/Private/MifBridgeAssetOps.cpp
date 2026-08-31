@@ -636,6 +636,16 @@ namespace MifBridge
 		// Scoped to COOKED, like its two siblings, and not to AnimSequence in general - the editor's
 		// own Content Browser duplicates an uncooked one perfectly well, and refusing that would cost
 		// a capability for a crash that only happens to cooked content.
+		// CHECKED AND CLEARED, so the next person does not widen this guard on suspicion. Cooked
+		// SkeletalMesh and cooked Skeleton both duplicate SAFELY - test_socket_authoring has been
+		// copying one of each into /Game/_MifSock on every run for as long as it has existed, which
+		// is the strongest kind of evidence available here: a suite that would have taken the editor
+		// down long ago if it were not true.
+		//
+		// That distinction is worth keeping because the first version of the AnimSequence refusal
+		// (create_asset, the same evening) was TOO WIDE and cost a working capability until a suite
+		// caught it within a minute. Cook stripping editor-only data is not a property of cooked
+		// assets in general - it is a property of the specific subsystems that rebuild on load.
 		{
 			const FString AssetClassName = Asset->GetClass()->GetName();
 			const bool bNiagara = AssetClassName == TEXT("NiagaraSystem")
