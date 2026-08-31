@@ -7610,3 +7610,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       "read_datatable refuses `limit` by name" - and `refus` is an INTENT word. The explanation of a
       bug suppressed the detector for that bug. Python comments are stripped before the intent match
       now, which is the same fix five C++ scanners got the same night.
+- [x] **three suite calls to `compile_blueprint`, an endpoint that does not exist** (hours)  **DONE 2026-08-31.**
+      The sibling of the wrong-key check, found by the same idea an hour later: compare suite call
+      sites against the MIF_BIND list. The endpoint is `compile`. All three sites -
+      test_ability_system twice, test_spline_landscape once - were FIRE-AND-FORGET, so nothing went
+      red and no assertion was vacuous. What did not happen is the compile: each site adds a
+      component and then, on the next lines, spawns an actor from that blueprint's GENERATED class.
+      The fixture intends "compile, then spawn" and has been doing "spawn from a class that was never
+      recompiled".
+
+      coverage_gaps cannot see this by construction - it maps suite mentions ONTO the registry, so a
+      name matching no endpoint contributes nothing and is silently ignored. audit_suite_payloads now
+      checks both arms and mutation-tests both: reintroducing `compile_blueprint` names the file,
+      line and the fact that it is not a MIF_BIND name; reintroducing read_datatable's `limit` names
+      the endpoint and key; restoring gives exit 0.
+
+      NOT VERIFIED LIVE - the SDK editor exited cleanly at 09:24 (a cook, then LogExit) and the
+      bridge is down. The change is a rename to an endpoint that provably exists in MIF_BIND and in
+      describe_endpoint; the suites should be re-run when the editor is back.

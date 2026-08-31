@@ -42,6 +42,10 @@ import param_reach as PR
 CALL = re.compile(
     r'(?:M\.call|M\.raw_post|SC\.confirm_call|post)\s*\(\s*["\']([a-z0-9_]+)["\']\s*,\s*\{')
 
+# Name only - no dict required. A call with no payload can still name an endpoint that does not exist.
+CALL_ANY = re.compile(
+    r'(?:M\.call|M\.raw_post|SC\.confirm_call)\s*\(\s*["\']([a-z0-9_]+)["\']')
+
 # Keys a test passes ON PURPOSE to see them refused.
 JUNK = re.compile(r"^(zzz|__|nope|bogus|bad|junk|xyzzy|notaparam|unknown)", re.I)
 # A test that MEANS to be refused says so in one of these ways. The list grew after the first run:
@@ -120,9 +124,50 @@ def top_level_keys(blob):
     return out
 
 
+def bound_endpoints():
+    """Every name passed to MIF_BIND, read from the source rather than from a live editor."""
+    priv = os.path.join(os.path.dirname(HERE), "Source", "MifBridge", "Private")
+    out = set()
+    for fn in os.listdir(priv):
+        if fn.endswith(".cpp"):
+            src = io.open(os.path.join(priv, fn), encoding="utf-8", errors="replace").read()
+            out |= set(re.findall(r"MIF_BIND\s*\(\s*([a-z0-9_]+)\s*\)", src))
+    return out
+
+
+def unknown_endpoint_calls(bound):
+    """Suite calls to a name nothing binds - refused 100% of the time, for everyone.
+
+    The sibling of the wrong-key check and found the same night: three sites called
+    `compile_blueprint`, which does not exist - the endpoint is `compile`. All three were
+    fire-and-forget, so no assertion went red; the blueprint simply was never recompiled before the
+    next line spawned an actor from its generated class.
+
+    coverage_gaps cannot see this. It maps suite mentions ONTO the registry, so a name matching no
+    endpoint contributes nothing and is silently ignored.
+
+    kr_* is skipped: those come from an external provider and are not in this module's MIF_BIND list.
+    """
+    rows = []
+    for f in sorted(glob.glob(os.path.join(HERE, "test_*.py"))):
+        src = io.open(f, encoding="utf-8", errors="replace").read().replace("\r\n", "\n")
+        for m in CALL_ANY.finditer(src):
+            ep = m.group(1)
+            if ep in bound or ep.startswith("kr_"):
+                continue
+            rows.append((os.path.basename(f), src[:m.start()].count("\n") + 1, ep))
+    return rows
+
+
 def main():
     accepts = PR.endpoint_accepts()
     print("endpoints with a parsed accept-list: %d" % len(accepts))
+
+    bound = bound_endpoints()
+    ghosts = unknown_endpoint_calls(bound)
+    print("suite calls to an endpoint nothing binds: %d" % len(ghosts))
+    for fn, line, ep in sorted(ghosts):
+        print("   %-34s:%-5d calls %r, which is not a MIF_BIND name" % (fn, line, ep))
 
     rows = []
     for f in sorted(glob.glob(os.path.join(HERE, "test_*.py"))):
@@ -148,10 +193,12 @@ def main():
                 rows.append((os.path.basename(f), line, ep, k))
 
     print("suite calls passing a key the endpoint refuses: %d" % len(rows))
-    if not rows:
+    if not rows and not ghosts:
         print("")
-        print("OK  no suite call names a parameter its endpoint would reject")
+        print("OK  every suite call names a real endpoint and only keys it accepts")
         return 0
+    if not rows:
+        return 1
     print("")
     print("Each of these fails on the PARAMETER NAME, so whatever it asserts is about the refusal")
     print("rather than the behaviour. Read the endpoint's accepted list before assuming a typo -")

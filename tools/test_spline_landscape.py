@@ -82,7 +82,11 @@ def main():
                                             "name": "Spline"})
         check("S100 (setup) a SplineComponent can be added - the fixture is BUILT, since nothing "
               "in this project carries one", comp.get("ok") is not False, json.dumps(comp)[:220])
-        M.raw_post("compile_blueprint", {"blueprintId": bid})
+        # `compile`, not `compile_blueprint` - there is no such endpoint, so this call was
+        # refused every run and the blueprint was never recompiled before the spawn below
+        # took its generated class. Fire-and-forget, so nothing went red. Found 2026-08-31
+        # by checking suite call sites against the MIF_BIND list.
+        M.raw_post("compile", {"blueprintId": bid})
 
         # ON THE LANDSCAPE, not at the world origin. The origin happens to sit near this
         # project's landscape, which is precisely the assumption that would make this suite pass

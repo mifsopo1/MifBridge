@@ -70,7 +70,11 @@ def main():
         check("(setup) an AbilitySystemComponent can be added - the fixture is BUILT, not found, "
               "which is what makes this endpoint testable on a project with zero GAS content",
               comp.get("ok") is not False, json.dumps(comp)[:220])
-        M.raw_post("compile_blueprint", {"blueprintId": bid})
+        # `compile`, not `compile_blueprint` - there is no such endpoint, so this call was
+        # refused every run and the blueprint was never recompiled before the spawn below
+        # took its generated class. Fire-and-forget, so nothing went red. Found 2026-08-31
+        # by checking suite call sites against the MIF_BIND list.
+        M.raw_post("compile", {"blueprintId": bid})
 
         # The FULL class path. The bare asset path is refused, and finding that out cost a probe.
         q = SC.spawn_tracked("spawn_actor_in_level", {
@@ -115,7 +119,11 @@ def main():
         plain = M.raw_post("create_blueprint", {"path": "/Game/_MifGAS/BP_NoASC%d" % st,
                                                 "parentClass": "Actor"})
         pb = plain.get("blueprintId")
-        M.raw_post("compile_blueprint", {"blueprintId": pb})
+        # `compile`, not `compile_blueprint` - there is no such endpoint, so this call was
+        # refused every run and the blueprint was never recompiled before the spawn below
+        # took its generated class. Fire-and-forget, so nothing went red. Found 2026-08-31
+        # by checking suite call sites against the MIF_BIND list.
+        M.raw_post("compile", {"blueprintId": pb})
         q2 = SC.spawn_tracked("spawn_actor_in_level", {
             "class": "/Game/_MifGAS/BP_NoASC%d.BP_NoASC%d_C" % (st, st),
             "location": {"x": 1963000 + st, "y": 1963000 + st, "z": 50000},
