@@ -184,10 +184,10 @@ closes it.
 
 ### [A — editor core](work/A_editor_core.md)
 - `set_editor_mode` (write twin of get_editor_modes) — linkage verified; mid-frame safety is not: activating a mode spawns Slate toolkits from an HTTP handler → design pass with SetTimerForNextTick deferral + PIE guard, then one live activation test.
-- Viewport bookmarks — headers located (Editor/UnrealEd/Public/Bookmarks/) but export macros/signatures unaudited → read IBookmarkTypeTools.h; low value (set/get_viewport_camera already covers save/restore).
+- Viewport bookmarks — **AUDITED 2026-08-31, the linkage blocker is resolved.** `IBookmarkTypeTools::Get()` is `static UNREALED_API` (IBookmarkTypeTools.h:19) and `CreateOrSetBookmark` / `JumpToBookmark` / `ClearBookmark` / `ClearAllBookmarks` are reachable through it, each taking an `FEditorViewportClient*` the bridge would have to resolve. So it is BUILDABLE; the decline now rests only on value (set/get_viewport_camera already covers save/restore), which is a legitimate basis where "unaudited signatures" was not.
 - `UEditorActorSubsystem::ConvertActors` on Blueprint actors with cooked parents → one live conversion test on an editable child.
 - Undo-barrier endpoints (SetUndoBarrier/RemoveUndoBarrier) — would a barrier strand RunEndpoint's blanket transactions? → design pass + transaction-stack experiment before exposing.
-- USelection BSP-surface selection — irrelevant to this game; close by dropping it.
+- USelection BSP-surface selection — **THE DECLINE REASON IS NOT ALLOWED HERE, flagged 2026-08-31.** "Irrelevant to this game" is explicitly not a valid reason to drop an item: MifBridge is a GENERAL UE5 tool, and DDS2 is one of two projects it is TESTED on, not the limit of who it is for. BSP brushes are a normal UE5 blockout workflow, and surface selection is how a material gets applied to one - that is a real use case for someone greyboxing a level, whatever DDS2 happens to ship. Re-judge on general value or leave it open; do not close it on relevance to this project. (No opinion offered here on whether it is worth building - only that the stated reason cannot be the one that closes it.)
 - UEditorAssetSubsystem metadata tags — exported, deliberately unproposed → decision only, revisit if asset-tagging workflows appear.
 
 ### [B — assets/registry](work/B_assets_registry.md)
