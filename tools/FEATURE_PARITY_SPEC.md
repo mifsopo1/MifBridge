@@ -8611,3 +8611,45 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       The assertion is deliberately written as a LOSS, because keys[] in the response is read back
       from the channel - after a replace it shows exactly what was sent and looks like a complete,
       healthy channel. keysBefore is the only field that says anything was there before.
+
+- [ ] **create_asset {class: AnimSequence} TERMINATES the editor - FIXED IN SOURCE, needs a build**
+      (hours)
+      2026-08-31, and it took Andre's running session with it. One call, no warning:
+
+        LogMifBridge: create_asset: /Game/_MifAnim/AS4421.AS4421 (AnimSequence)
+        ... 333 ms later ...
+        Assertion failed: MovieScene
+        [AnimSequencerDataModel.cpp:947] No Movie Scene found for SequencerDataModel
+
+      UAnimationSequencerDataModel::ValidateSequencerData opens with checkf(MovieScene). Nothing in
+      a plain NewObject builds that MovieScene - the engine's flow goes through UAnimSequenceFactory,
+      which REQUIRES a target skeleton create_asset has no parameter for. The asset is born in a
+      state where the next thing to touch its data model kills the process, and something did.
+
+      THE HTTP CLIENT BLAMED THE WRONG CALL. All the script saw was ConnectionResetError on the NEXT
+      request, so the first reading was "set_property crashed it". The log settled it: create_asset
+      logged and answered ok:true, and the assert landed a third of a second later. A reset socket
+      names the call that noticed, never the call that did it.
+
+      THE WARNING WAS ALREADY THERE AND WAS THE WRONG INSTRUMENT. AnimSequence is already in
+      create_asset's FactoryInitClasses list, so the response carried factoryInitIncomplete:true and
+      "the asset exists and may well be usable, but VERIFY it". Both true and useless - the caller
+      cannot verify anything, because verifying is what kills the editor.
+
+      FIXED IN SOURCE as a REFUSAL BEFORE construction, not a repair after it. This is the third
+      member of the crash-bomb family (UUserDefinedEnum, UNiagaraSystem) and the first that cannot be
+      repaired in place: the other two are fixed by running the one init call their factory does, and
+      those repairs sit AFTER NewObject - which is exactly where this assert already is. A fourth
+      entry in that block would not have helped.
+
+      Over-matched to UAnimSequenceBase on purpose (covers AnimStreamable, AnimComposite,
+      AnimMontage). Only UAnimSequence is proven; the rest share the plumbing and are equally
+      meaningless without a skeleton. The factory-warning list notes that under-matching is the
+      unsafe direction for a WARNING; for a REFUSAL it is the other way round, and the asymmetry is
+      extreme - over-refusing costs an error message, under-refusing costs an editor.
+
+      NOT BUILT - it needs the same rebuild as the three set_blendspace_samples fixes. Until then
+      create_asset {class: AnimSequence} STILL KILLS THE EDITOR: do not call it. Postmortem in
+      docs/01_POSTMORTEMS.md.
+
+      Filed alongside: a suite for this refusal, once built, belongs with test_create_asset.

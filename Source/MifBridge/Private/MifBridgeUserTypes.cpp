@@ -20,6 +20,9 @@
 #include "GameFramework/Actor.h"          // create_asset refuses Actor classes
 #include "Components/ActorComponent.h"    // ... and component classes
 #include "Engine/Blueprint.h"             // ... and points Blueprint classes at create_blueprint
+#include "Animation/AnimSequenceBase.h"  // ... and refuses anim sequences outright: a bare
+                                         // NewObject leaves the sequencer data model without
+                                         // its MovieScene and the next toucher asserts
 #include "MifBridgeLog.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -786,6 +789,51 @@ namespace MifBridge
 		{
 			Fail(Out, TEXT("use create_blueprint to author a Blueprint - this endpoint instantiates an "
 						   "existing class as a data asset. NOTHING was created."));
+			return;
+		}
+
+		// A BARE NewObject<UAnimSequence> TERMINATES THE EDITOR, and it did - 2026-08-31, on the
+		// machine this was written on, taking a running session with it. This is the third member of
+		// the crash-bomb family below (UUserDefinedEnum, UNiagaraSystem) and the first that cannot be
+		// repaired in place, which is why it is a REFUSAL here rather than an initialisation there.
+		//
+		//     LogMifBridge: create_asset: /Game/_MifAnim/AS4421.AS4421 (AnimSequence)
+		//     Assertion failed: MovieScene
+		//     [AnimSequencerDataModel.cpp:947] No Movie Scene found for SequencerDataModel
+		//
+		// UAnimationSequencerDataModel::ValidateSequencerData begins `checkf(MovieScene, ...)`, and
+		// nothing in a plain NewObject builds that MovieScene - the engine's own creation flow does
+		// it through UAnimSequenceFactory, which REQUIRES a target skeleton. Note the timing: the
+		// crash landed about a third of a second AFTER this endpoint had logged and answered, on
+		// whatever touched the data model next. A check placed after construction, where the
+		// UUserDefinedEnum repair sits, would already have been too late.
+		//
+		// WHY REFUSE RATHER THAN REPAIR. The other two crash bombs are fixed by running the one
+		// initialisation call their factory does. This one needs a skeleton, and create_asset has no
+		// parameter for one - an AnimSequence with no skeleton is not a usable asset in any case.
+		// The honest answer is to say so and name the alternative, the same shape as the UBlueprint
+		// refusal directly above.
+		//
+		// DELIBERATELY OVER-MATCHED to UAnimSequenceBase, which also covers UAnimStreamable,
+		// UAnimComposite and UAnimMontage. Only UAnimSequence is PROVEN to crash here; the others
+		// share UAnimSequenceBase's data-model plumbing and are equally meaningless without a
+		// skeleton. The factory-warning list further down notes that under-matching is the unsafe
+		// direction for a WARNING; for a refusal it is the other way round, and the asymmetry here
+		// is extreme - over-refusing costs an error message that names the alternative, and
+		// under-refusing costs somebody's editor.
+		if (Class->IsChildOf(UAnimSequenceBase::StaticClass()))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' CANNOT be created by this endpoint and the attempt would TERMINATE THE "
+					 "EDITOR. A plain NewObject leaves the sequencer data model without its "
+					 "MovieScene, and UAnimationSequencerDataModel::ValidateSequencerData asserts on "
+					 "it (AnimSequencerDataModel.cpp:947, 'No Movie Scene found for "
+					 "SequencerDataModel') - not on this call, but on whatever touches the asset "
+					 "next. The engine builds that model in UAnimSequenceFactory, which REQUIRES a "
+					 "target skeleton this endpoint has no parameter for. Create it from the editor's "
+					 "own Animation menu against a skeleton, then drive it with add_anim_notify, "
+					 "add_anim_notify_track and set_blendspace_samples. NOTHING was created."),
+				*Class->GetPathName()));
 			return;
 		}
 

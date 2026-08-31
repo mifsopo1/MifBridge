@@ -2384,3 +2384,50 @@ toolchain is absent UBT names it, which is a better failure than C4668 in an eng
 Writing one is indistinguishable, in a diff and in a comment, from having chosen. The test is
 whether the setting can change without the file changing - if it can, it is not a pin, whatever the
 comment beside it says.
+
+
+## PM-0xx  create_asset {class: AnimSequence} terminated a running editor
+
+**Date** 2026-08-31, during autopilot. **Cost** one live editor session, Andre's.
+
+**Symptom.** A single call took the editor down with no warning:
+
+    LogMifBridge: create_asset: /Game/_MifAnim/AS4421.AS4421 (AnimSequence)
+    ... 333 ms later ...
+    Assertion failed: MovieScene
+    [AnimSequencerDataModel.cpp:947] No Movie Scene found for SequencerDataModel
+
+The HTTP client saw only `ConnectionResetError` on the NEXT call, which is why the first
+reading blamed that call rather than this one. The log is what settled it: create_asset
+logged and answered `ok:true`, and the assert landed a third of a second later.
+
+**Root cause.** `UAnimationSequencerDataModel::ValidateSequencerData` opens with
+`checkf(MovieScene, ...)`. Nothing in a plain `NewObject` builds that MovieScene - the
+engine's own flow goes through `UAnimSequenceFactory`, which REQUIRES a target skeleton.
+So the asset was born in a state where the next thing to touch its data model would
+terminate the process, and something did.
+
+**What made it worse than the two before it.** UUserDefinedEnum and UNiagaraSystem are the
+same family - a bare NewObject producing an asset that asserts on first use - and both are
+FIXED IN PLACE by running the one initialisation call their factory does. Those repairs sit
+AFTER construction, and the AnimSequence assert fires after construction too. A fourth
+entry in that block would not have helped. It had to be a refusal BEFORE NewObject.
+
+**The warning that was already there, and why it was not enough.** `AnimSequence` was
+already in create_asset's FactoryInitClasses list, so the response carried
+`factoryInitIncomplete:true` and a note saying "the asset exists and may well be usable,
+but VERIFY it". Both true, and useless: the caller cannot verify anything, because the
+verification is what kills the editor. A warning is the wrong instrument for a class whose
+failure mode is process termination.
+
+**Fix.** create_asset now refuses any `UAnimSequenceBase` subclass before constructing
+anything, naming the assert, the file and line, the reason (no skeleton parameter), and the
+route that does work. Deliberately over-matched to the base class: only UAnimSequence is
+proven, but the others share the same plumbing and are equally meaningless without a
+skeleton - and for a refusal, over-matching costs an error message while under-matching
+costs an editor.
+
+**Prevention.** tools/audit_factory_init.py already flags this whole family; what it cannot
+tell is which members merely need verifying and which are fatal. The three known-fatal ones
+are now handled at two different points for a reason worth remembering: repair-after-
+construction works only when the asset survives long enough to be repaired.
