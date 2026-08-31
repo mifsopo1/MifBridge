@@ -44,14 +44,37 @@ def skip(name, why):
     print("  SKIP  %s\n        %s" % (name, why))
 
 
+# Where UBT writes the plugin binary. Its MTIME is the honest answer to "when was this built",
+# which the banner is not - see below.
+DLL = os.path.join(os.path.dirname(HERE), "Binaries", "Win64", "UnrealEditor-MifBridge.dll")
+
+
 def loaded_build_is_current():
-    """(bool, message). Does the running DLL post-date the last commit that touched Source/?"""
-    a = M.raw_post("self_audit", {"summaryOnly": True})
-    stamp = "%s %s" % (a.get("buildDate") or "?", a.get("buildTime") or "?")
+    """(bool, message). Does the running DLL post-date the last commit that touched Source/?
+
+    THE BANNER LIES, AND THIS GATE USED TO BELIEVE IT. self_audit reports buildDate/buildTime from
+    __DATE__ and __TIME__, which are baked into whichever translation unit holds them - and an
+    INCREMENTAL build only recompiles the files that changed. On 2026-08-31 a rebuild relinked the
+    DLL at 19:17, the banner still said 15:37:47 because the file carrying it had not needed
+    recompiling, and the fixes WERE live: set_variable_type returned its new nodesReconstructed
+    field to prove it. This gate, reading the banner, would have skipped and reported the work
+    unverifiable while it was sitting there working.
+
+    So the FILE decides. mtime moves on every relink, which is exactly the question being asked, and
+    it is the same signal tools/buildcheck.py already treats as authoritative for the same reason.
+
+    The banner is still read and still reported, because a large gap between the two is worth
+    SEEING - it means most of the module did not recompile, which is either fine or the sign of a
+    partial build. It just no longer gets a vote.
+    """
+    # The banner is a nice-to-have now, so a dead bridge must not take the whole check down with
+    # it - the mtime question below is answerable with no editor running at all, and that is
+    # exactly when somebody wants to ask it.
     try:
-        built = time.mktime(time.strptime(stamp, "%b %d %Y %H:%M:%S"))
+        a = M.raw_post("self_audit", {"summaryOnly": True})
+        stamp = "%s %s" % (a.get("buildDate") or "?", a.get("buildTime") or "?")
     except Exception:
-        return None, "could not parse the DLL build stamp %r" % stamp
+        stamp = "(no bridge - not asked)"
     try:
         out = subprocess.run(["git", "log", "-1", "--format=%ct", "--", "Source"],
                              capture_output=True, text=True, cwd=os.path.dirname(HERE),
@@ -59,9 +82,15 @@ def loaded_build_is_current():
         committed = float(out)
     except Exception as exc:
         return None, "could not read the last Source commit time: %s" % exc
-    return built >= committed, ("DLL built %s; last Source commit %s"
-                                % (stamp, time.strftime("%b %d %Y %H:%M:%S",
-                                                        time.localtime(committed))))
+    try:
+        built = os.path.getmtime(DLL)
+    except OSError as exc:
+        return None, ("could not stat the plugin DLL (%s) - and its mtime, not the compiled-in "
+                      "banner, is what says whether the build is current" % exc)
+    when = time.strftime("%b %d %Y %H:%M:%S", time.localtime(built))
+    return built >= committed, (
+        "DLL relinked %s (mtime, authoritative); banner says %s; last Source commit %s"
+        % (when, stamp, time.strftime("%b %d %Y %H:%M:%S", time.localtime(committed))))
 
 
 def main():
