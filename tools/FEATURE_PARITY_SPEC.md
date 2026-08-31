@@ -8850,8 +8850,30 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       test_blender_reject_unknown had just demonstrated for all 45 ops, arriving unprompted in a
       different suite an hour later.
 
-- [ ] **three Blender consequence fields still read by nothing** (hours)
-      influencesDropped (normalize_weights), seamVertsRemoved (export_mesh), and the
-      edgeIndicesTruncated emitters in bevel_edges and extrude_skirt - the same field on two more ops
-      with their own selection grammar. influencesDropped needs vertex weights, which needs
-      run_python to author; the other two are straightforward.
+- [x] **the Blender consequence count is DERIVED now, and down to two** - DONE 2026-08-31
+      The eleven were counted by hand in a throwaway script, which is exactly how the UE side's "48"
+      came to be wrong before anyone read it again. tools/audit_blender_consequence_fields.py makes
+      the Blender figure derived, ratcheted against a committed baseline, and proven - detector 24,
+      "went red on the planted probeDroppedZz".
+
+      It found two the hand-count had missed, which is the whole argument for the tool: C100 asserted
+      vertsRemoved from clean_mesh's merge step and stopped there, and facesRemoved / edgesRemoved
+      from its dissolveDegenerate step were still unread. A hand-picked assertion covers what the
+      author happened to notice; a derived list covers the rest. C106 closes both.
+
+      NESTED FIELDS ARE MOST OF THE INTERESTING ONES and the scan is built for it: clean_mesh reports
+      vertsRemoved inside steps.merged, not at the top level, so a tool that only read an op's
+      outermost return dict would miss the entire family.
+
+      C106's assertion is deliberately an UPPER BOUND rather than an equality. Two steps run in one
+      call and both remove geometry, so neither count alone equals the mesh's total loss - what can
+      be asserted is that a reported loss never EXCEEDS what the mesh actually lost, which is the
+      failure worth catching: a count larger than reality is a number measured from the wrong thing.
+
+      Standing: 10 fields, 8 read, 2 unread. test_blender_consequence 30 -> 36.
+
+- [ ] **two Blender consequence fields left** (hours)
+      influencesDropped (normalize_weights) needs authored vertex weights, which needs run_python.
+      seamVertsRemoved belongs to the seam-integrity measurement family - "tracked seam verts the op
+      destroyed" - and is reported per axis by the tiling/modular checks, so reaching it needs a mesh
+      with a real seam rather than a primitive.

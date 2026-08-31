@@ -133,6 +133,48 @@ def main():
           dec.get("trisRemoved") == lost_tris,
           "reported %r, the mesh lost %r" % (dec.get("trisRemoved"), lost_tris))
 
+    # ---------------------------------------------------------------- C106 dissolveDegenerate
+    print("")
+    print("=== C106: facesRemoved and edgesRemoved - the OTHER two counts clean_mesh reports ===")
+    # C100 asserted vertsRemoved from the merge step and stopped there; the derived audit
+    # (audit_blender_consequence_fields.py) then named these two as still unread, which is exactly
+    # what a derived number is for - a hand-picked assertion covers what the author happened to
+    # notice, and the tool covers the rest.
+    #
+    # dissolve_degenerate removes zero-area faces and zero-length edges. Collapsing a cube's corners
+    # onto each other with a huge merge distance manufactures exactly that, so the two steps run in
+    # one call and each reports its own losses.
+    B.call("create_primitive", {"kind": "uvsphere", "name": "MifC_Degen", "radius": 1,
+                                "segments": 16, "ringCount": 8})
+    g_before = counts("MifC_Degen")
+    deg = B.call("clean_mesh", {"object": "MifC_Degen", "mergeDistance": 0.35,
+                                "dissolveDegenerate": True})
+    check("C106 clean_mesh with dissolveDegenerate succeeds", deg.get("ok") is not False,
+          json.dumps(deg)[:220])
+    dstep = (deg.get("steps") or {}).get("dissolvedDegenerate") or {}
+    check("C106 it reports a dissolvedDegenerate step with BOTH counts",
+          isinstance(dstep.get("facesRemoved"), (int, float))
+          and isinstance(dstep.get("edgesRemoved"), (int, float)),
+          json.dumps(deg.get("steps"))[:260])
+    g_after = counts("MifC_Degen")
+    # The two steps both remove geometry, so neither count alone equals the mesh's total loss - what
+    # CAN be asserted is that the reported losses never exceed it, and that the mesh really shrank.
+    # An over-report is the failure mode worth catching: a count larger than the mesh lost is a
+    # number measured from the wrong thing.
+    lost_faces = (g_before.get("faces") or 0) - (g_after.get("faces") or 0)
+    lost_edges = (g_before.get("edges") or 0) - (g_after.get("edges") or 0)
+    check("C106 and the mesh really lost faces and edges", lost_faces > 0 and lost_edges > 0,
+          "faces %s -> %s, edges %s -> %s" % (g_before.get("faces"), g_after.get("faces"),
+                                              g_before.get("edges"), g_after.get("edges")))
+    check("C106 facesRemoved never exceeds what the mesh actually lost",
+          (dstep.get("facesRemoved") or 0) <= lost_faces,
+          "reported %r, the mesh lost %r" % (dstep.get("facesRemoved"), lost_faces))
+    check("C106 edgesRemoved never exceeds what the mesh actually lost",
+          (dstep.get("edgesRemoved") or 0) <= lost_edges,
+          "reported %r, the mesh lost %r" % (dstep.get("edgesRemoved"), lost_edges))
+    check("C106 and the response says the call changed something",
+          deg.get("changedAnything") is True, json.dumps(deg)[:220])
+
     # ---------------------------------------------------------------- C104 edgeIndicesTruncated
     print("")
     print("=== C104: edgeIndicesTruncated - the caller is reading a PARTIAL list and must know ===")
@@ -190,7 +232,8 @@ def main():
 
     # ---------------------------------------------------------------- cleanup
     print("")
-    for n in ("MifC_Merge", "MifC_Noop", "MifC_Dec", "MifC_Edges", "MifC_Keep"):
+    for n in ("MifC_Merge", "MifC_Noop", "MifC_Dec", "MifC_Edges", "MifC_Keep",
+              "MifC_Degen"):
         B.call("delete_object", {"object": n})
     survivors = [o.get("name") for o in (B.call("list_objects").get("objects") or [])]
     check("C199 (cleanup) no MifC_* object is left behind",

@@ -470,6 +470,22 @@ def plant_blender_dead_param(text):
     return text[:j] + '"probeDeadZz", ' + text[j:]
 
 
+def plant_blender_consequence_field(text):
+    """Add a consequence-shaped response key to an addon op that no suite reads.
+
+    "probeDroppedZz" rather than a plain probe name: the tool matches on the CONSEQUENCE shape, so a
+    key that does not contain one of its words would be ignored - correctly - and the harness would
+    call the tool asleep for declining to care about an ordinary field. A plant has to look like the
+    thing it imitates, which is the lesson three earlier plants taught the hard way.
+    """
+    needle = '    return {"removed": removed, "removedCount": len(removed),'
+    if needle not in text:
+        return None
+    return text.replace(needle,
+                        '    return {"probeDroppedZz": 1, "removed": removed, '
+                        '"removedCount": len(removed),', 1)
+
+
 PLANTS = {
     "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind, "mif_probe_zz"),
     "harvest_param_table.py": (os.path.join(PRIV, "MifBridgeDescribe.cpp"),
@@ -478,6 +494,9 @@ PLANTS = {
                                     plant_unread_consequence_field, "propertiesFailed"),
     "audit_blender_dead_params.py": (os.path.join(HERE, "blender-addon", "MifBlender", "ops_mesh.py"),
                                      plant_blender_dead_param, "probeDeadZz"),
+    "audit_blender_consequence_fields.py": (
+        os.path.join(HERE, "blender-addon", "MifBlender", "ops_scene.py"),
+        plant_blender_consequence_field, "probeDroppedZz"),
     "audit_promise_flags.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_confirm, "confirm"),
     "mcp_static_check.py": (SERVER, plant_unbound, "mif_probe_zz_unbound"),
     "audit_postconditions.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_silent_mutator,
@@ -559,6 +578,8 @@ ARGS = {"audit_vacuous_checks.py": ["--all"],
         # Without --check it REPORTS and exits 0, so the harness would call it asleep for doing
         # exactly what it is meant to do outside the gate.
         "audit_consequence_fields.py": ["--check"],
+        # Same reason: without --check it reports and exits 0.
+        "audit_blender_consequence_fields.py": ["--check"],
         # WITHOUT --check THIS TOOL REWRITES THE TABLE. It is a generator first; the detector is
         # the --check mode. An empty ARGS entry here would have the harness regenerate the file it
         # is meant to be testing, and then report the tool asleep for finding nothing.
