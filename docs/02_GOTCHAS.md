@@ -4,6 +4,43 @@ Everything here is a trap someone actually hit. Read this before spending a prob
 
 ---
 
+## The lesson written down in one place, and not carried to the others
+
+Three separate defects on 2026-08-31 had the same shape, and it is not a coding mistake - it is what
+happens after one is fixed well.
+
+| the lesson, already written down | where it had not reached |
+|---|---|
+| `reachable()` must send a framed PING, never a bare connect - `blender_audit_common`'s docstring says it was shared "so the next one cannot miss it" | `test_blender_ops` (the file the copy came FROM), `test_blender_rig`, `test_blender_gen` |
+| "whichever asset `find_assets` happens to return first is a coin flip - that already burned test_material_params" - `pick_system()` in `test_niagara_params` | `test_thumbnails`, which drew a symmetric sky mesh and reported the endpoint broken |
+| `confirm:true` belongs only where the gate is known to refuse it | `test_consolidate`, which sent it BEFORE checking the write mode |
+
+Every one of those lessons was **already documented, in this repo, in prose, by someone who had just
+paid for it**. Each cost a second investigation anyway. `test_blender_rig` produced four FALSE
+FAILURES; `test_thumbnails` accused a working endpoint of ignoring its parameters.
+
+**Why it keeps happening.** Fixing a bug well ends with a good comment where the bug was. That is the
+one place a future reader of the OTHER copy will never look. The fix feels finished because the
+explanation is excellent - and an excellent explanation attached to one call site is exactly as
+useful as no explanation at all to the other five.
+
+**What to do, in the order that actually works.**
+
+1. **Delete the copies, do not just add the shared thing.** Extracting a helper leaves N+1
+   implementations, and the new one is the least used. `blender_audit_common` existed for months
+   while three suites kept their own `reachable()`. Grep for the *shape* - `socket.connect`,
+   `find_assets(...limit.*1)`, `"confirm": True` - not for the name of the thing you extracted.
+2. **Grep for the pattern the moment the fix lands**, while you still know what it looks like. A week
+   later you will remember the fix and not the search that would find its siblings.
+3. **Say where else it applies, in the comment.** "This is the same fault as X" gives the next reader
+   a thread to pull. A comment that only explains the local fix cannot travel.
+
+**And the reason to bother**, since all three of these were caught eventually: the two that a test
+suite surfaced were caught by a full two-pass sweep and by a measurement of how much of each suite
+runs - neither of which is cheap, and both of which report the symptom, not the cause. Three separate
+investigations to re-derive three lessons that were already written down is the actual cost.
+
+
 ## A deprecated engine call can be EMPTY, or a CONSTANT, and neither says so
 
 Both were found in the same four lines of landscape code on 2026-08-31, by building against 5.7
