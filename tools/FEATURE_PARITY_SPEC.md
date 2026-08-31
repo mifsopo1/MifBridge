@@ -7740,3 +7740,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       test_fuzz_detector, audit_promise_flags and audit_suite_payloads. audit_vacuous_checks is not
       among them, which is why it has been able to sit at exit 1. Adding it means first reading the
       9 above - gating a tool that is already red just blocks releases.
+
+- [ ] **21 of 25 audit tools have never been proven to fire** (day)
+      tools/audit_detectors_fire.py plants a defect each tool claims to catch and requires it to go
+      red AND name the marker; 4 are proven (parity_check, audit_promise_flags, mcp_static_check,
+      audit_vacuous_checks) and the other 21 have no plant. The tool LISTS them as NOT PROVEN rather
+      than omitting them, because a silently missing entry is the same bug it exists to catch.
+
+      Each remaining plant needs the target tool's contract READ first, not guessed. The first
+      parity_check plant asserted a MIF_DECL with no MIF_BIND and reported the tool ASLEEP - wrongly.
+      That pair is a link error, so the compiler owns it and parity_check deliberately does not look;
+      it says so in its own header. The plant had to become a MIF_BIND with no _post() wrapper, which
+      is what CHECK 3 actually covers. Guessing a plant produces false ASLEEP verdicts, which are
+      worse than no verdict.
+
+      Highest value first, by how much is trusted to them: audit_postconditions (the judge-by-
+      postcondition rule itself), audit_loop_writes and audit_suite_payloads (both release-gated, so
+      a silent one lets a release through), audit_modals (blocking dialogs), audit_read_purity.

@@ -157,6 +157,26 @@ nothing could fail, because neither environment was up to fail in. The other two
 review: `layersCreated`'s `Created` array is declared outside both branches and emitted after them,
 and the refusal fixes only add an early return on a path that already ended in `Fail` and `return`.
 
+## Are the checkers themselves awake?
+
+```
+python tools/audit_detectors_fire.py --list    # coverage, touches nothing
+python tools/audit_detectors_fire.py           # plant a defect in each, require it to go red
+```
+
+A green audit is worth exactly as much as the evidence that it can go red, and this repo has been
+caught twice: `audit_prose_dependence` found 5 of 7 tools intercepting ZERO reads through a path bug,
+and on 2026-08-31 a check in `mcp_static_check` printed OK for hours without ever executing. Both
+reported success throughout.
+
+The harness restores every planted file byte-for-byte and hashes the CONTENT of `Source/` before and
+after, refusing to report anything if the tree moved. 4 of 25 detectors are proven today; the rest
+are listed as NOT PROVEN, which is deliberate - an entry that was quietly absent would repeat the
+same bug one level up.
+
+**Read the tool's contract before believing an ASLEEP verdict.** The first `parity_check` plant was
+aimed at something the compiler owns, not the tool, and produced a false ASLEEP.
+
 ## How to know the state is healthy
 
 ```
