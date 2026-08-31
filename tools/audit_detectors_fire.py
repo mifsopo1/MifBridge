@@ -287,6 +287,40 @@ def plant_dead_citation(text):
                         "\n\nSee " + DEAD_CITATION + " for the probe.\n" + needle, 1)
 
 
+
+def plant_unreachable_param(text):
+    """Stop sending a parameter the endpoint accepts, so nothing can reach it.
+
+    This is the whole shape param_reach exists for: an endpoint takes a key, RejectUnknownParams
+    would honour it, and no MCP wrapper puts it on the wire - so the capability is real, documented
+    and unusable. Removing a keyword from a _post call recreates it exactly.
+
+    hideKnots on list_nodes because it is a plain optional bool with no aliases, so its removal
+    cannot be masked by another spelling still being sent.
+    """
+    needle = ", hideKnots=hide_knots"
+    if needle not in text:
+        return None
+    return text.replace(needle, "", 1)
+
+
+
+def plant_advice_gap(text):
+    """Advice telling the caller to run an operation that does not exist.
+
+    "call X" is one of the shapes ADVICE matches, and an endpoint saying "do X first" is ASSERTING
+    that X is possible - which is why this check exists at all: uv_unwrap once warned "Mark seams
+    first" when nothing in the addon could set edge.use_seam. Planted in the addon rather than a
+    .cpp so it runs while an editor is open; the tool reads both.
+    """
+    needle = 'raise MifOpError("pass \'code\' or \'file\', not both")'
+    if needle not in text:
+        return None
+    return text.replace(
+        needle,
+        'raise MifOpError("pass \'code\' or \'file\', not both - call mif_probe_zz_op first")', 1)
+
+
 # tool -> (target file, plant function, marker, gate)
 #
 # gate=True  - proof is a NON-ZERO exit AND the marker in the output. Both, because several of these
@@ -321,6 +355,11 @@ PLANTS = {
                                 plant_absence_claim, "save_package"),
     "audit_citations.py": (os.path.join(HERE, "FEATURE_PARITY_SPEC.md"), plant_dead_citation,
                            DEAD_CITATION),
+    "param_reach.py": (SERVER, plant_unreachable_param, "list_nodes.hideknots"),
+    # gate=False: audit_advice_gaps exits 0 whatever it finds, deliberately - "a tool that fails the
+    # build over prose would be gamed by rewording the prose, which would make the source worse".
+    "audit_advice_gaps.py": (os.path.join(HERE, "blender-addon", "MifBlender", "ops_scene.py"),
+                             plant_advice_gap, "mif_probe_zz_op", False),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.
