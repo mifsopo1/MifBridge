@@ -12,12 +12,14 @@
   "kr_reconstruct_request",
   "kr_reconstruct_status",
   "kr_verify_fidelity",
+  "list_automation_tests",
   "save_dirty_packages",
   "save_level_as"
  ],
  "dynamicallyCovered": [
   "add_get_array_item",
   "add_make_map",
+  "add_make_set",
   "add_self",
   "add_sequence"
  ],
@@ -267,6 +269,9 @@
   "add_switch_int": [
    "test_node_spawns.py"
   ],
+  "add_switch_name": [
+   "test_node_spawns.py"
+  ],
   "add_switch_string": [
    "test_node_spawns.py"
   ],
@@ -418,6 +423,7 @@
    "test_uncovered_reads5.py"
   ],
   "compile": [
+   "test_ability_system.py",
    "test_add_k2_node.py",
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
@@ -446,6 +452,7 @@
    "test_reroute.py",
    "test_rollback_real.py",
    "test_selfpin.py",
+   "test_spline_landscape.py",
    "test_timeline.py",
    "test_uncovered_reads5.py",
    "test_uncovered_reads6.py",
@@ -456,6 +463,7 @@
    "test_widget_animation.py",
    "test_widget_animation_props.py",
    "test_widget_animation_track.py",
+   "test_widget_bindings.py",
    "test_widget_tree.py"
   ],
   "connect_material_expressions": [
@@ -499,6 +507,7 @@
    "test_node_spawns.py",
    "test_pcg_authoring.py",
    "test_physics_asset.py",
+   "test_ported_anim.py",
    "test_run_retarget.py",
    "test_sequence_keys.py",
    "test_sequencer_authoring.py",
@@ -678,6 +687,7 @@
    "test_physics_primitive_collision.py",
    "test_pinlifetime.py",
    "test_pins.py",
+   "test_ported_anim.py",
    "test_recipes.py",
    "test_rename_widget.py",
    "test_reroute.py",
@@ -913,11 +923,15 @@
    "test_uncovered_reads6.py",
    "test_uncovered_reads7.py",
    "test_uncovered_reads8.py",
-   "test_virtual_bone_authoring.py"
+   "test_virtual_bone_authoring.py",
+   "test_widget_bindings.py"
   ],
   "find_nodes": [
    "test_anim_nodes.py",
    "test_find_and_move.py"
+  ],
+  "fix_up_redirectors": [
+   "test_modal_guard.py"
   ],
   "fixup_redirectors": [
    "test_redirectors.py"
@@ -1020,6 +1034,7 @@
    "test_textures.py"
   ],
   "invoke_editor_command": [
+   "test_editor_input_gates.py",
    "test_safety_gate.py"
   ],
   "invoke_editor_tab": [
@@ -1038,6 +1053,7 @@
    "test_lighting_status.py"
   ],
   "list_animations": [
+   "test_ported_anim.py",
    "test_sync_markers.py",
    "test_uncovered_reads4.py"
   ],
@@ -1070,6 +1086,7 @@
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
    "test_idempotence.py",
+   "test_inherited_components.py",
    "test_instance_components.py",
    "test_undo_integrity.py"
   ],
@@ -1091,6 +1108,7 @@
    "test_idempotence.py"
   ],
   "list_editor_commands": [
+   "test_editor_input_gates.py",
    "test_lighting_status.py",
    "test_uncovered_reads2.py"
   ],
@@ -1109,6 +1127,9 @@
   "list_game_feature_plugins": [
    "test_game_features.py",
    "test_set_plugin_enabled.py"
+  ],
+  "list_game_framework_component_requests": [
+   "test_game_framework.py"
   ],
   "list_gameplay_tags": [
    "test_uncovered_reads.py"
@@ -1226,6 +1247,7 @@
   ],
   "list_object_properties": [
    "test_game_framework.py",
+   "test_ported_anim.py",
    "test_settings_config.py",
    "test_uncovered_reads5.py"
   ],
@@ -1314,6 +1336,9 @@
    "test_widget_anim_recreate.py",
    "test_widget_animation.py",
    "test_widget_animation_props.py"
+  ],
+  "list_widget_bindings": [
+   "test_widget_bindings.py"
   ],
   "live_coding_compile": [
    "test_uncovered_reads4.py"
@@ -1653,6 +1678,7 @@
    "test_consolidate.py",
    "test_create_struct_init.py",
    "test_duplicate_cooked_guard.py",
+   "test_editor_input_gates.py",
    "test_enum_edit.py",
    "test_factory_init.py",
    "test_gameplay_tag_authoring.py",
@@ -1693,6 +1719,7 @@
    "test_widget_transform_channels.py"
   ],
   "send_editor_key": [
+   "test_editor_input_gates.py",
    "test_safety_gate.py"
   ],
   "set_actor_label": [
@@ -1803,6 +1830,7 @@
    "test_foliage_removal.py",
    "test_ik_rig.py",
    "test_inherited_components.py",
+   "test_ported_anim.py",
    "test_run_retarget.py",
    "test_settings_config.py",
    "test_socket_authoring.py",
