@@ -6646,7 +6646,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       state=="stopped" at the end rather than assuming stop_pie worked.
 
 
-- [ ] **nothing CREATES a Niagara user parameter, so its suite can never build a fixture** (hours)
+- [~] **nothing CREATES a Niagara user parameter, so its suite can never build a fixture** (hours)
+      DECLINED 2026-08-31 - I filed this as an oversight and the code had already answered it. I
+      should have read the handler before filing, which is this repo's own rule.
+
+      set_niagara_user_parameter REFUSES an `add` parameter BY NAME, with the reasoning attached:
+      "this sets an EXISTING parameter. Adding one is not offered: a user parameter no emitter reads
+      is invisible in the editor and does nothing, so creating one by typo is worse than being told
+      the name is unknown." That is a deliberate design decision, not a missing feature, and Andre's
+      standing rule is to ask before changing something that looks deliberate.
+
+      The research stands and is kept below, because if the decision is ever revisited the API work
+      is done: it IS buildable, on both engines, with real bodies.
+
+      THE ONE COUNTER-ARGUMENT, for whoever weighs this later rather than for me to act on: the
+      reasoning is about an agent creating junk by typo, and a TEST FIXTURE is not that. add_variable
+      on a blueprint has the same "an unused one does nothing" property and is offered. So a narrower
+      shape might satisfy both - an add that REQUIRES the type explicitly and refuses a name that
+      already exists, or one gated to scratch assets. That is a product decision about what the
+      endpoint is for, and it is Andre's.
+
+      Either way test_niagara_params keeps its honest SKIP, which is the outcome that mattered.
       Filed 2026-08-31 while working out why test_niagara_params asserted nothing. The bridge has
       list_niagara_user_parameters and set_niagara_user_parameter, a read and a write against
       parameters that already exist, and no way to ADD one. So a project without authored user
