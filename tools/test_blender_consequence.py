@@ -20,6 +20,17 @@ WHAT THIS SUITE ASSERTS, and the shape is the same throughout: the reported numb
 INDEPENDENT before/after measurement of the object, never just be present. A count that is merely
 present proves the field exists; a count that matches the mesh proves it was measured.
 
+AND THEN CALL IT AGAIN. That is the standing rule of this file, learned here rather than imported:
+where a second identical call cannot change anything, its report must say so. The before/after
+cross-check is necessary and NOT sufficient - it is one measurement, and a count recomputed from the
+request rather than from the mesh agrees with it perfectly the first time and then repeats itself
+forever. normalize_weights did exactly that: run 1 correctly dropped 32 influences, run 2 changed
+nothing and reported dropping 32 again, along with verticesLimited 8 and maxInfluencesSeenBefore 8.
+The cross-check passed both times. Only the repeat exposed it (C107, fixed in ops_rig.py).
+
+Not every op is idempotent in EFFECT - decimating twice legitimately removes more - so the rule is
+narrower than "call everything twice": where the effect cannot repeat, the REPORT must not either.
+
 Usage:
     python tools/test_blender_consequence.py     # needs a Blender with MifBlender listening
 
@@ -98,6 +109,26 @@ def main():
     n_after = counts("MifC_Noop")
     check("C101 and the mesh really is untouched - 8 verts still",
           (n_after.get("verts") or 0) == 8, n_after)
+
+    # ---------------------------------------------------------------- C108 the merge repeat
+    print("")
+    print("=== C108: merging an already-merged mesh must report NOTHING, not the same work twice ===")
+    # The second instance of the rule above, on a different op. C100 proved the first merge's count
+    # against object_info; this proves the count is measured from the MESH rather than recomputed
+    # from the request - the exact defect C107 found in normalize_weights, asked of clean_mesh.
+    m_before = counts("MifC_Merge")
+    twice = B.call("clean_mesh", {"object": "MifC_Merge", "mergeDistance": 3.0})
+    check("C108 the repeat call succeeds", twice.get("ok") is not False, json.dumps(twice)[:220])
+    m_after = counts("MifC_Merge")
+    check("C108 and the mesh really is unchanged by it",
+          (m_after.get("verts") or -1) == (m_before.get("verts") or -2),
+          "verts %s -> %s" % (m_before.get("verts"), m_after.get("verts")))
+    again_merged = (twice.get("steps") or {}).get("merged") or {}
+    check("C108 so vertsRemoved must be 0 the second time",
+          again_merged.get("vertsRemoved") == 0,
+          "reported %r on a mesh that did not move" % again_merged.get("vertsRemoved"))
+    check("C108 and changedAnything must be FALSE",
+          twice.get("changedAnything") is False, json.dumps(twice)[:240])
 
     # ---------------------------------------------------------------- C102 recalcNormals
     print("")
