@@ -7504,3 +7504,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       propertiesUnchanged == 0 is the subtle one. A batch that touched nothing must not report values
       as "unchanged", which a caller would reasonably read as "already correct" rather than "never
       attempted".
+- [x] **skippedGround - the ground itself is skipped, and the skip is COUNTED** (hours)  **DONE 2026-08-31.**
+      Fourth of the 48 consequence-reporting fields. T68 in test_snap_ground, five checks.
+
+      The guard exists because "a landscape traced against the rest of the scene lands on whatever
+      happens to be under it, which drags the whole world with it", and an `all:true` or folder
+      selector that happens to include the landscape is the ORDINARY way to reach it. What the count
+      buys is the difference between two answers that look identical from outside: an actor the
+      caller asked to move and which did not move has to be accounted for, or snapped:0 reads as a
+      failure rather than a refusal. T68 also pins that it is NOT counted as `missed` - a deliberate
+      skip and a failed trace are different things, and separating them is what this endpoint's
+      counts exist for.
+
+      Probed before writing, with ONLY the landscape in the selector - the smallest blast radius that
+      still tests the thing, since a broken guard would have moved the ground and nothing else.
+
+      AND THE PROBE CAUGHT ME. It also compared the landscape's transform before and after and
+      printed "unmoved - the guard held". Both reads had returned ok:false, so it compared {} to {}
+      and would have said "unmoved" whatever happened. The real evidence is considered:1,
+      skippedGround:1, snapped:0 - snapped:0 means SetActorLocation was never reached - so the test
+      asserts the counts and does not pretend to a position check it cannot make.

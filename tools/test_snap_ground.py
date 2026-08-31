@@ -192,6 +192,40 @@ def main():
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for f in FAIL:
         print("  FAILED: %s\n          %s" % f)
+    # ------------------------------------------------------------------ T68 the ground itself
+    print("")
+    print("=== T68: a landscape in the selector is SKIPPED, and the skip is counted ===")
+    # WHY THE GUARD EXISTS, in the endpoint's own words: "Never snap the ground itself. A landscape
+    # traced against the rest of the scene lands on whatever happens to be under it, which drags the
+    # whole world with it." An `all:true` or a folder selector that happens to include the landscape
+    # is the ordinary way to hit this, not an exotic one.
+    #
+    # skippedGround was among 48 consequence-reporting response fields that no suite named, found
+    # 2026-08-31. The count is the point: an actor the caller ASKED to move and which did not move
+    # has to be accounted for, or `snapped: 0` looks like a failure rather than a refusal.
+    land = None
+    for a in (M.call("list_level_actors", {"limit": 400}).get("actors") or []):
+        if (a.get("class") or "").endswith(".Landscape"):
+            land = a.get("actorPath")
+            break
+    if not land:
+        print("  SKIP - no Landscape in this level, so the guard cannot be exercised here.")
+    else:
+        # ONLY the landscape in the selector. If the guard were broken this would move the ground and
+        # nothing else - the smallest blast radius that still tests the thing.
+        r = M.call("snap_actors_to_ground", {"actorPaths": [land]})
+        check("T68 the call succeeds - a landscape in the selector is not an ERROR, it is a skip",
+              r.get("ok") is True, json.dumps(r)[:220])
+        check("T68 it was considered", r.get("considered") == 1, json.dumps(r)[:220])
+        check("T68 and counted as skippedGround", r.get("skippedGround") == 1,
+              "skippedGround=%r" % r.get("skippedGround"))
+        check("T68 nothing was snapped - the guard runs BEFORE any trace, so no move was attempted",
+              r.get("snapped") == 0, "snapped=%r" % r.get("snapped"))
+        check("T68 and it is not counted as MISSED - a deliberate skip and a failed trace are "
+              "different answers, and lumping them together is what this endpoint's counts exist "
+              "to avoid",
+              r.get("missed") == 0, "missed=%r" % r.get("missed"))
+
     print("props left in /Temp/Untitled_1 on purpose - it is never saved, and deleting an actor")
     print("would mean sending confirm:true, which the audit rules do not do.")
     print("=" * 72)
