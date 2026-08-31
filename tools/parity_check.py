@@ -567,6 +567,7 @@ def check_linked_but_unused_plugins():
     import io as _io
     import os
     import re as _re
+    import harvest_param_table as _H          # the one comment/string scrubber
 
     build_cs = os.path.join(HERE, "..", "Source", "MifBridge", "MifBridge.Build.cs")
     private = os.path.join(HERE, "..", "Source", "MifBridge", "Private")
@@ -583,16 +584,33 @@ def check_linked_but_unused_plugins():
         if not fn.endswith((".cpp", ".h")):
             continue
         text = _io.open(os.path.join(private, fn), encoding="utf-8", errors="replace").read()
+        # USED MEANS COMPILED, NOT MENTIONED. This was a bare `macro in text`, and a #if guard is
+        # exactly the kind of thing files explain in prose - so writing ABOUT a guard marked it used
+        # and silenced the advisory.
+        #
+        # The clearest case is self-refuting. MifBridgeMetasound.cpp:42 reads "...it is therefore NOT
+        # the reason to keep MIF_WITH_METASOUND linked. parity_check still reports that dependency as
+        # idle, correctly." It did not: that sentence is what stopped it. A comment asserting the
+        # tool's behaviour changed the tool's behaviour, and read as confirmation while doing it.
+        # MIF_WITH_LIVELINK was hidden the same way, by the two comments explaining its absence.
+        code = _H.blank_comments_and_strings(text)
         for macro, _plugin in guards:
-            if macro in text:
+            if macro in code:
                 used.add(macro)
     idle = sorted(plugin for macro, plugin in guards if macro not in used)
     if not idle:
         return []
-    return ["%d plugin dependency(ies) are linked and NO source file uses their MIF_WITH_ guard: %s. "
-            "Build cost and load risk with no capability - the state MifBridgeWater.cpp describes at "
-            "the top of itself. Build endpoints for them or drop the dependency; either is fine, "
-            "forgetting is not." % (len(idle), ", ".join(idle))]
+    return ["%d plugin dependency(ies) are linked and NO source file COMPILES against their "
+            "MIF_WITH_ guard: %s. Build cost and load risk - the state MifBridgeWater.cpp describes "
+            "at the top of itself. Build endpoints for them or drop the dependency; either is fine, "
+            "forgetting is not.\n"
+            "    Read the file before dropping one: an unused GUARD is not always an unused "
+            "CAPABILITY. MifBridgeLiveLink.cpp has no MIF_WITH_LIVELINK because every type it "
+            "touches lives in LiveLinkInterface, an always-present runtime module, and the part the "
+            "PLUGIN supplies is checked at runtime through IModularFeatures instead. That file works "
+            "on an engine without the plugin; the dependency may still be droppable, but not for the "
+            "reason this line would suggest."
+            % (len(idle), ", ".join(idle))]
 
 
 def main() -> int:
