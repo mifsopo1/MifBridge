@@ -6723,7 +6723,16 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       case.
 
 
-- [ ] **run_all_suites should stamp each record with when that suite RAN** (minutes)
+- [x] **run_all_suites should stamp each record with when that suite RAN** (minutes)
+      DONE 2026-08-31, both halves, and verified by a real sweep rather than by reading the
+      diff: 156 of 156 records now carry `ranAt`. audit_suite_reach uses it when present and
+      falls back to the results file's mtime for older records, saying how many rows rested on
+      that weaker basis instead of quietly mixing the two.
+
+      The weakness it closes: an mtime is not a content age. Copying a backup over
+      suite_results.json moves it without changing a single record, and the tool then called
+      hours-old results current - wrong in the direction that gets believed rather than
+      re-checked.
       Filed 2026-08-31. audit_suite_reach judges whether a recorded result still describes the code
       by comparing suite_results.json's MTIME against each suite's source. An mtime is not a content
       age: copying a backup over that file makes every record in it look current while it describes
