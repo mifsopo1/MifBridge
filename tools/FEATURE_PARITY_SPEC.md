@@ -6372,9 +6372,18 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       120 materials and sorting /Game/ first still returned engine content on a project holding 193
       of them. One query per root, in preference order.
 
+      IK DONE TOO 2026-08-31, via mifaudit.discover_skeletal_mesh(required_bones). Selecting on the
+      BONES is what made it safe: those suites assert against real ones - a goal on foot_r, a chain
+      spine_01..spine_05 - so an arbitrary skeleton would have left them green while testing nothing.
+      Both now find a mesh that HAS the bones. Proof it worked: identical counts (56 and 67, 0 FAIL)
+      against Male_Gizmo instead of SKM_Manny, so they were testing the endpoints, not the asset.
+
+      The Akita stays NAMED and should. T242 needs a skeleton whose Spine_01 is a SIBLING of the
+      spine chain - the misleading topology the chain validator exists to catch - and "some
+      quadruped" is not a substitute. Its absence now skips that one arm instead of the suite.
+
       REMAINING, from a scan of /Game/ literals in tools/test_*.py that are not deliberately
-      nonexistent: test_ik_authoring (SKM_Manny, SK_Mannequin, Mesh_Akita), test_ik_goals_solvers
-      (SKM_Manny), test_report_intake (/Game/MODS/QOLCrafting_P/BP_Path), test_uncovered_reads5
+      nonexistent: test_report_intake (/Game/MODS/QOLCrafting_P/BP_Path), test_uncovered_reads5
       (/Game/MODS/MifCore/MifFunctionLibrary), test_uncovered_reads7 (/Game/Maps/MifWeaponTest, a
       Brushify material). The mannequins are UE template content present in many projects but not
       all; the MODS ones are DDS2-only. Everything else the scan flagged is a path chosen BECAUSE it

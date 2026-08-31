@@ -29,7 +29,9 @@ import time
 import mifaudit as M
 
 PASS, FAIL = [], []
-HUMAN = "/Game/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny"
+# Discovered in main() by the bones these assertions name - see the note there.
+HUMAN = None
+HUMAN_BONES = ("pelvis", "spine_01", "spine_05", "thigh_r", "foot_r", "foot_l")
 
 
 def check(name, cond, detail=""):
@@ -37,7 +39,8 @@ def check(name, cond, detail=""):
     print(("  PASS  " if cond else "  FAIL  ") + name + ("" if cond else "   " + str(detail)))
 
 
-def new_rig(tag, st, mesh=HUMAN):
+def new_rig(tag, st, mesh=None):
+    mesh = mesh or HUMAN
     p = M.call("create_asset", {"path": "/Game/_MifIK/GS_%s_%d" % (tag, st),
                                 "class": "IKRigDefinition"}).get("assetPath")
     if mesh:
@@ -55,9 +58,17 @@ def main():
     if "unavailable" in (probe.get("error") or ""):
         print("IK Rig is unavailable on this engine build; the endpoints say so. Nothing to test.")
         return 0
-    if not M.call("list_bones", {"path": HUMAN}).get("ok"):
-        print("fixture mesh missing: %s" % HUMAN)
-        return 3
+    # A SKELETON THAT ACTUALLY HAS THESE BONES, found rather than named. This hardcoded one DDS2
+    # mesh and returned 3 - an error, not a skip - anywhere else. Any skeletal mesh will not do:
+    # every assertion below names a real bone, and a goal on foot_r means something that a goal on
+    # an arbitrary bone does not.
+    global HUMAN
+    HUMAN, _bones = M.discover_skeletal_mesh(HUMAN_BONES)
+    if not HUMAN:
+        print("SKIPPED - no skeletal mesh in this project carries %s," % ", ".join(HUMAN_BONES))
+        print("  so there is no skeleton these IK assertions can mean anything against.")
+        return 0
+    print("humanoid fixture: %s" % HUMAN)
 
     # ------------------------------------------------------------------ T260 solver types
     print("\n=== T260: what solvers does this engine have ===")

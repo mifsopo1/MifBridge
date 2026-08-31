@@ -837,3 +837,30 @@ def discover_material(require=None, min_params=1, limit=120, cooked=None):
 def params_of_kind(params, kind):
     """The subset of a discover_material() result with one parameter kind."""
     return [x for x in params if (x.get("kind") or x.get("type")) == kind]
+
+
+def discover_skeletal_mesh(required_bones=(), limit=200):
+    """A SkeletalMesh whose skeleton carries every bone in `required_bones`. (path, bones) or (None, []).
+
+    Selecting on the BONES rather than on the class is the whole point. The IK suites assert against
+    real bone names - a goal on foot_r, a chain from spine_01 to spine_05 - and handing them an
+    arbitrary skeleton would leave them green while testing nothing those assertions were written
+    for. A mesh that lacks the bones is not a substitute fixture, it is a different test.
+
+    /Game/ is searched first here, unlike discover_material: the engine ships only three skeletal
+    meshes and none is a full UE5 mannequin, so project content is where a match realistically is.
+    """
+    want = [b.lower() for b in required_bones]
+    for root in ("/Game/", "/Engine/"):
+        for row in (call("find_assets", {"class": "SkeletalMesh", "pathPrefix": root,
+                                         "limit": limit}).get("assets") or []):
+            path = row.get("path") or row.get("objectPath")
+            if not path:
+                continue
+            got = call("list_bones", {"path": path})
+            if not got.get("ok"):
+                continue
+            names = {str(b.get("name") or b).lower() for b in (got.get("bones") or [])}
+            if all(w in names for w in want):
+                return path, sorted(names)
+    return None, []

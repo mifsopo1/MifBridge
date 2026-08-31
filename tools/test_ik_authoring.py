@@ -33,7 +33,14 @@ import time
 import mifaudit as M
 
 PASS, FAIL = [], []
-HUMAN = "/Game/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny"
+# Discovered in main() by the bones these assertions name - see the note there.
+HUMAN = None
+HUMAN_BONES = ("spine_02", "spine_04", "thigh_l", "head")
+# NAMED ON PURPOSE, and not discoverable. T242 needs a skeleton whose Spine_01 is a
+# SIBLING of the spine chain rather than a descendant - the misleading topology the
+# chain validator exists to catch. "Some quadruped" is not a substitute; a skeleton
+# without that trap would leave T242 passing while testing nothing. Its absence skips
+# that one arm rather than the suite.
 DOG = "/Game/SkeletalMeshes/AssetPacks/Dogs_Big_pack/Meshes/Akita/Mesh_Akita.Mesh_Akita"
 
 
@@ -57,10 +64,17 @@ def main():
     if "unavailable" in (probe.get("error") or ""):
         print("IK Rig is unavailable on this engine build; the endpoints say so. Nothing to test.")
         return 0
-    for m in (HUMAN, DOG):
-        if not (M.call("list_bones", {"path": m}).get("ok")):
-            print("fixture mesh missing: %s" % m)
-            return 3
+    global HUMAN
+    HUMAN, _bones = M.discover_skeletal_mesh(HUMAN_BONES)
+    if not HUMAN:
+        print("SKIPPED - no skeletal mesh in this project carries %s," % ", ".join(HUMAN_BONES))
+        print("  so there is no skeleton these IK assertions can mean anything against.")
+        return 0
+    print("humanoid fixture: %s" % HUMAN)
+    have_dog = M.call("list_bones", {"path": DOG}).get("ok") is True
+    if not have_dog:
+        print("  NOTE  the misleading-topology fixture is absent, so T242's sibling-Spine_01 arm")
+        print("        is UNEXERCISED rather than counted. It is not substitutable - see DOG.")
 
     # ------------------------------------------------------------------ T240 building the rig
     print("\n=== T240: set_ik_rig_mesh BUILDS the skeleton ===")
