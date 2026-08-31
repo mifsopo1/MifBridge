@@ -51,18 +51,67 @@ def find_armature():
     return None
 
 
+# A 2-bone armature, built OUTSIDE the addon, for the case where the scene has none.
+#
+# WHY THIS IS HERE AT ALL. This suite used to skip whenever no rig was loaded, saying the addon
+# cannot create an armature and run_python is "a security choice this suite will not work around".
+# Both halves of that are still true and neither has been weakened: this does not enable anything.
+# It PROBES - exactly as test_blender_rig's T811 does - and builds the fixture only where run_python
+# is already available, which is the runner's own throwaway headless Blender or a session whose
+# owner turned the hatch on deliberately. Where it is off, the skip below is reached unchanged.
+#
+# The reasoning is lifted from test_blender_rig, which had already settled it: "prove nothing is a
+# worse answer than prove it after restoring the one precondition this suite needs, when restoring
+# it is cheap, safe and scoped to exactly the thing being tested against". Fourteen assertions had
+# never executed in automation on any Blender - the rename contract this file exists to protect was
+# covered by a hand-run transcript from development and nothing else.
+ARMATURE_CODE = """
+import bpy
+arm_data = bpy.data.armatures.new("MifRenameFixture")
+arm_obj = bpy.data.objects.new("MifRenameFixture", arm_data)
+bpy.context.collection.objects.link(arm_obj)
+bpy.context.view_layer.objects.active = arm_obj
+bpy.ops.object.mode_set(mode='EDIT')
+b1 = arm_data.edit_bones.new("root")
+b1.head = (0, 0, 0)
+b1.tail = (0, 0, 1)
+b2 = arm_data.edit_bones.new("child")
+b2.head = (0, 0, 1)
+b2.tail = (0, 0, 2)
+b2.parent = b1
+bpy.ops.object.mode_set(mode='OBJECT')
+result = arm_obj.name
+"""
+
+
+def build_armature():
+    """Build the fixture if run_python is available. Returns the armature name, or None."""
+    if call("run_python", {"code": "pass"}).get("ok") is False:
+        return None
+    r = call("run_python", {"code": ARMATURE_CODE})
+    if r.get("ok") is False:
+        return None
+    return find_armature()
+
+
 def main():
     if not reachable():
         return skip_banner("rename_bones")
 
     arm = find_armature()
-    print("armature: %s" % arm)
+    built = False
+    if not arm:
+        arm = build_armature()
+        built = arm is not None
+    print("armature: %s%s" % (arm, " (built by this suite)" if built else ""))
     if not arm:
         print("")
-        print("SKIPPED - no ARMATURE with at least two bones is in this scene, so NOTHING was")
-        print("  verified. The addon cannot create one and run_python is off by default, which is")
-        print("  a security choice this suite will not work around. Load a rig, or run against a")
-        print("  GUI Blender. Exit 2 means SKIPPED, distinct from 0 (passed) and 1 (failed).")
+        print("SKIPPED - no ARMATURE with at least two bones is in this scene, and one could not")
+        print("  be built: the addon cannot create an armature, and run_python - the only way to")
+        print("  make one from here - is off. That is a deliberate security default and this suite")
+        print("  does not turn it on; it only USES it where it is already available. Load a rig,")
+        print("  enable the hatch, or use run_blender_suites.py, which enables it inside its own")
+        print("  headless Blender. Exit 2 means SKIPPED, distinct from 0 (passed) and 1 (failed).")
         return 2
 
     bones = [b["name"] for b in (call("list_bones", {"object": arm}).get("bones") or [])]

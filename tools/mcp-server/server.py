@@ -4653,7 +4653,8 @@ def bl_bevel_edges(object_name: str, selector: dict = None, offset_uu: float = 1
                    segments: int = 3, profile: float = 0.5, preserve_x: bool = True,
                    clamp_overlap: bool = None, loop_slide: bool = None,
                    harden_normals: bool = None, miter_outer: str = None,
-                   miter_inner: str = None, spread: float = None) -> dict:
+                   miter_inner: str = None, spread: float = None,
+                   dry_run: bool = None, seam_band: float = None) -> dict:
     "Round or chamfer the selected edges with bmesh.ops.bevel (NOT bpy.ops.mesh.bevel, which needs an EDIT_MESH context and a real VIEW_3D area and therefore cannot run under blender -b). clamp_overlap, loop_slide, harden_normals, miter_outer, miter_inner and spread are bmesh.ops.bevel's own options - left unset they keep the addon's defaults."
     # THE SIX OPTIONS ABOVE WERE UNREACHABLE. The addon has always accepted them and passed them
     # straight to bmesh.ops.bevel - clamp_overlap, loop_slide and harden_normals are read at
@@ -4669,6 +4670,18 @@ def bl_bevel_edges(object_name: str, selector: dict = None, offset_uu: float = 1
     except _MifToolError as exc:
         return {"ok": False, "error": str(exc)}
     pres = _bl_preserve_axes(preserve_x)
+    # dryRun reports WHICH edges would be touched and changes nothing. Both of these ops are
+    # destructive and select edges by tolerance, so "did my selector catch what I meant" had no cheap
+    # answer - you ran it and looked at the result. seamBand is how wide the near-but-off band around
+    # the seam is; the addon defaults it to the larger of the snap and on tolerances, and a band
+    # NARROWER than the snap tolerance is the blind spot its own comment warns about.
+    #
+    # THIS COMMENT LIVES ABOVE THE CALL, NOT INSIDE IT, and that is not a style preference. Its first
+    # draft sat between the keywords and mentioned "ops_mesh.py" in brackets. param_reach captures a
+    # call's keywords with a non-greedy match that stops at the first close paren, so the paren in
+    # that citation TRUNCATED the capture and nine already-working parameters - every bevel option
+    # added this morning, plus direction and flipNormals - were reported as newly unreachable. The
+    # same [^)]* trap that hid move_tree_widget from audit_promise_flags earlier today.
     return _blender("bevel_edges", object=object_name,
                     boundaryOnly=sel["boundaryOnly"], axis=sel["axis"], side=sel["side"],
                     tolerance=sel["tolerance"], minAngleDeg=sel["minAngleDeg"],
@@ -4678,26 +4691,41 @@ def bl_bevel_edges(object_name: str, selector: dict = None, offset_uu: float = 1
                     preserveAxes=pres, assertAxes=pres,
                     clampOverlap=clamp_overlap, loopSlide=loop_slide,
                     hardenNormals=harden_normals, miterOuter=miter_outer,
-                    miterInner=miter_inner, spread=spread)
+                    miterInner=miter_inner, spread=spread,
+                    dryRun=dry_run, seamBand=seam_band)
 
 
 @mcp.tool()
 def bl_extrude_skirt(object_name: str, selector: dict = None, depth_uu: float = 15.0,
                      preserve_x: bool = True, direction: str = "down",
-                     flip_normals: bool = False) -> dict:
+                     flip_normals: bool = False, dry_run: bool = None,
+                     seam_band: float = None, allow_non_boundary: bool = None) -> dict:
     "Extrude the selected boundary edge loops straight DOWN by depth_uu, forming a skirt - the fix for a flat-edged tile that hovers where the terrain falls away."
     try:
         sel = _bl_selector(selector)
     except _MifToolError as exc:
         return {"ok": False, "error": str(exc)}
     pres = _bl_preserve_axes(preserve_x)
+    # dryRun reports WHICH edges would be touched and changes nothing. Both of these ops are
+    # destructive and select edges by tolerance, so "did my selector catch what I meant" had no cheap
+    # answer - you ran it and looked at the result. seamBand is how wide the near-but-off band around
+    # the seam is; the addon defaults it to the larger of the snap and on tolerances, and a band
+    # NARROWER than the snap tolerance is the blind spot its own comment warns about.
+    #
+    # THIS COMMENT LIVES ABOVE THE CALL, NOT INSIDE IT, and that is not a style preference. Its first
+    # draft sat between the keywords and mentioned "ops_mesh.py" in brackets. param_reach captures a
+    # call's keywords with a non-greedy match that stops at the first close paren, so the paren in
+    # that citation TRUNCATED the capture and nine already-working parameters - every bevel option
+    # added this morning, plus direction and flipNormals - were reported as newly unreachable. The
+    # same [^)]* trap that hid move_tree_widget from audit_promise_flags earlier today.
     return _blender("extrude_skirt", object=object_name,
                     boundaryOnly=sel["boundaryOnly"], axis=sel["axis"], side=sel["side"],
                     tolerance=sel["tolerance"], minAngleDeg=sel["minAngleDeg"],
                     maxAngleDeg=sel["maxAngleDeg"], edgeIndices=sel["edgeIndices"],
                     allEdges=sel["allEdges"],
                     depthUU=depth_uu, direction=direction, flipNormals=flip_normals,
-                    preserveAxes=pres, assertAxes=pres)
+                    preserveAxes=pres, assertAxes=pres,
+                    dryRun=dry_run, seamBand=seam_band, allowNonBoundary=allow_non_boundary)
 
 
 @mcp.tool()
@@ -4885,15 +4913,23 @@ def bl_export_mesh(object_name: str, file: str, object_types: list = None,
 
 
 @mcp.tool()
-def bl_delete_object(object_name: str) -> dict:
-    "Delete one object from the Blender scene by name. Use it to clean up a specific import; bl_clear_scene is the whole-scene form. Deleting is not undo-able through this bridge."
-    return _blender("delete_object", object=object_name)
+def bl_delete_object(object_name: str, purge_orphans: bool = None) -> dict:
+    "Delete one object from the Blender scene by name. purge_orphans also frees the datablocks the deletion orphaned - the addon defaults it to FALSE here (unlike bl_clear_scene, which defaults it true), so a mesh deleted this way leaves its mesh data behind until something purges it. Use it to clean up a specific import; bl_clear_scene is the whole-scene form. Deleting is not undo-able through this bridge."
+    # ops_scene.py:219 - `take_bool(params, "purgeOrphans", "purge", default=False)`. The differing
+    # defaults between this and clear_scene are the addon's, not a mistake here, and worth stating in
+    # the docstring: deleting one object leaves its data, clearing the scene does not.
+    return _blender("delete_object", object=object_name, purgeOrphans=purge_orphans)
 
 
 @mcp.tool()
-def bl_clear_scene() -> dict:
-    "Delete every object in the Blender scene. bl_import_mesh already does this by default, so the usual reason to call it directly is to inspect a failed run's leftovers first and then reset. Not undo-able through this bridge."
-    return _blender("clear_scene")
+def bl_clear_scene(object_type: str = None, purge_orphans: bool = None) -> dict:
+    "Delete objects in the Blender scene. object_type limits it to ONE Blender type ('MESH', 'ARMATURE', 'EMPTY', ...) so a rig or the lights and cameras can be kept while the meshes go; omit it to clear everything. purge_orphans (default true in the addon) also frees the datablocks the deletion orphaned. bl_import_mesh already clears by default, so the usual reason to call this directly is to inspect a failed run's leftovers first and then reset. Not undo-able through this bridge."
+    # The addon has always taken both (ops_scene.py:204) and this wrapper sent NEITHER - it called
+    # _blender("clear_scene") bare, so "clear the meshes and keep my armature" was unaskable and the
+    # only available answer was to delete everything. purge_orphans matters separately: leaving
+    # orphaned meshes and materials behind keeps a .blend growing across a long import session, and
+    # turning it OFF is what you want when something else still references them.
+    return _blender("clear_scene", type=object_type, purgeOrphans=purge_orphans)
 
 
 @mcp.tool()

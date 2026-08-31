@@ -45,6 +45,8 @@ ADDON_DIR = os.path.join(HERE, "blender-addon")
 # Deliberately NOT 8792. A GUI Blender with the addon enabled owns that one, and a runner that
 # fights the user's own session for a port is a runner that reports nonsense.
 PORT = int(os.environ.get("MIF_BLENDER_SUITE_PORT", "8795"))
+# Set from --no-run-python in main(); see serve() for why the default is on.
+ALLOW_RUN_PYTHON = True
 
 
 def installed():
@@ -92,7 +94,7 @@ def ping(port, timeout=2.0):
         s.close()
 
 
-def serve(exe, port, log_path):
+def serve(exe, port, log_path, allow_run_python=True):
     """Start a headless Blender serving the addon, with its output going to a FILE.
 
     NOT A PIPE, and that is the point of log_path. This used to pass stdout=subprocess.PIPE for a
@@ -105,8 +107,60 @@ def serve(exe, port, log_path):
     A file has no buffer limit, so the child never blocks. The pipe bought nothing: this output is
     only ever read when the server fails to come up.
     """
-    expr = ("import sys; sys.path.insert(0, r'%s'); import MifBlender; "
-            "MifBlender.serve_forever(port=%d)" % (ADDON_DIR, port))
+    # RUN_PYTHON, AND WHY IT IS ON BY DEFAULT *HERE* AND NOWHERE ELSE.
+    #
+    # `allow_run_python` is an addon PREFERENCE and is off by default - a deliberate security
+    # choice, because the op execs whatever the client sends. Two suites are shaped around that:
+    # test_blender_rig probes for it and runs only its empty-state branch without it (23 of its 46
+    # assertions), and test_blender_rename_bones SKIPS outright, saying "the addon cannot create
+    # [an armature] and run_python is off by default, which is a security choice this suite will
+    # not work around". Both are right, and neither had ever run its populated path in automation.
+    #
+    # The distinction that resolves it: a SUITE must not flip a security preference inside somebody
+    # else's Blender - that is what those comments refuse, and it still holds. This RUNNER is a
+    # different actor. It launches its own `--background --factory-startup` Blender, on a port it
+    # chose, serving a scene nobody else can see, and kills it at the end. Turning the hatch on in a
+    # process the runner owns and disposes grants nothing that running this script did not already
+    # grant. test_blender_rig's own docstring anticipates exactly this: "when run_python IS enabled
+    # (whoever runs this suite turned it on)".
+    #
+    # It has to be a real addon_enable, not just the preference. _prefs() reads
+    # bpy.context.preferences.addons[__package__], and importing the module leaves that mapping
+    # empty - so _prefs() returns None and run_python is refused whatever the preference says.
+    # Verified by probe before this was written: addon_enable off sys.path succeeds, the entry
+    # appears, the flag sticks, and op_run_python returns a result.
+    #
+    # --no-run-python restores the old behaviour, and the header says which mode ran, because
+    # "23 of 46" and "46 of 46" are different facts about the same suite.
+    # EVERY STEP IS GUARDED, and 4.2 is why. On Blender 4.2.17 LTS addon_enable RAISES while
+    # having actually worked: the addon is enabled, the preferences entry exists, the flag sticks
+    # and run_python returns a result - and then the operator dies formatting its own compatibility
+    # warning, `).format(info_ver)` on a version TUPLE, in Blender's own
+    # scripts/startup/bl_operators/userpref.py:502. Unguarded, that exception propagates out of
+    # --python-expr and Blender exits before serve_forever is ever reached, so all 8 suites report
+    # "server died / Blender quit" on 4.2 and pass on 3.6, 4.4 and 5.0. It cost a full four-version
+    # sweep to see, because every single-version run this was developed against happened to be 5.0.
+    #
+    # So: try the enable, ignore what it raises, then set the preference SEPARATELY and ignore what
+    # THAT raises too. If the hatch cannot be opened the server still comes up and the two suites
+    # that want it fall back to their skip and empty-state branches, which is the pre-existing
+    # behaviour and a fine outcome. What must never happen is the harness killing Blender over a
+    # cosmetic string-formatting bug in one version's operator.
+    hatch = ""
+    if allow_run_python:
+        hatch = (
+            "import bpy\n"
+            "try:\n"
+            "    bpy.ops.preferences.addon_enable(module='MifBlender')\n"
+            "except Exception:\n"
+            "    pass\n"
+            "try:\n"
+            "    bpy.context.preferences.addons['MifBlender'].preferences"
+            ".allow_run_python = True\n"
+            "except Exception:\n"
+            "    pass\n")
+    expr = ("import sys\nsys.path.insert(0, r'%s')\nimport MifBlender\n%s"
+            "MifBlender.serve_forever(port=%d)\n" % (ADDON_DIR, hatch, port))
     log = io.open(log_path, "wb")
     proc = subprocess.Popen([exe, "--background", "--factory-startup", "--python-expr", expr],
                             stdout=log, stderr=subprocess.STDOUT)
@@ -144,7 +198,7 @@ def run_one(version, exe, quiet):
             print("  %-8s %-26s running..." % (version, name))
         log_path = os.path.join(tempfile.gettempdir(),
                                 "mif_blender_%s_%s.log" % (version, name))
-        proc, log = serve(exe, PORT, log_path)
+        proc, log = serve(exe, PORT, log_path, allow_run_python=ALLOW_RUN_PYTHON)
         try:
             hello = None
             for _ in range(80):
@@ -217,8 +271,14 @@ def run_one(version, exe, quiet):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--only", help="just this version, e.g. 5.0")
+    ap.add_argument("--no-run-python", action="store_true",
+                    help="do NOT enable the run_python hatch in the runner's own headless "
+                         "Blender; test_blender_rename_bones then SKIPS and test_blender_rig "
+                         "runs 23 of its 46 assertions")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
+    global ALLOW_RUN_PYTHON
+    ALLOW_RUN_PYTHON = not a.no_run_python
 
     versions = installed()
     if a.only:
@@ -231,6 +291,9 @@ def main():
         return 2
 
     if not a.quiet:
+        print("run_python hatch: %s"
+              % ("ENABLED in the runner's own headless Blender" if ALLOW_RUN_PYTHON
+                 else "disabled (--no-run-python)"))
         print("%d Blender(s), %d suite(s), port %d\n"
               % (len(versions), len(suites()), PORT))
 
