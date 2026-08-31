@@ -237,15 +237,67 @@ def blender_sends():
     return out
 
 
+ADDON_DIR = os.path.join(HERE, "blender-addon", "MifBlender")
+# take(params, "object", "name", required=True) - the FIRST literal is the primary spelling and every
+# later one is an alias for the same role. The addon declares these itself, on the line that reads
+# the value, so this is derived from the source of truth rather than guessed at.
+TAKE_CALL = re.compile(
+    r"\btake(?:_bool|_int|_float|_vec)?\s*\(\s*params\s*,\s*((?:\s*[\"'][A-Za-z_]\w*[\"']\s*,?)+)")
+LITERAL = re.compile(r"[\"']([A-Za-z_]\w*)[\"']")
+OP_DEF = re.compile(r"^def op_(\w+)\s*\(", re.M)
+
+
+def addon_alias_map():
+    """op -> {alias_lower: primary_lower}, read from the addon's own take() calls.
+
+    WHY THIS IS NOT looks_like_alias. That function folds SPELLING variants - one key containing the
+    other, or differing by a name/path/id suffix - and it cannot possibly know that `name` is a second
+    spelling of `object`, because the two strings have nothing in common. So every op that accepts
+    both reported `name` as a lost capability, and 44 of the 46 Blender entries in the baseline were
+    that one shape: add_modifier.name, uv_unwrap.name, transfer_weights.to, run_python.script,
+    create_primitive.type, rename_bones.map, join_objects.sources and the rest.
+
+    A number that is 95% noise is worse than no number - it is the one that gets quoted. Measured
+    2026-08-31: the Blender half of param_reach read 46 unreachable parameters and meant about 2.
+    """
+    out = {}
+    if not os.path.isdir(ADDON_DIR):
+        return out
+    for fn in sorted(os.listdir(ADDON_DIR)):
+        if not fn.startswith("ops_") or not fn.endswith(".py"):
+            continue
+        with open(os.path.join(ADDON_DIR, fn), encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+        bounds = [(m.group(1), m.start()) for m in OP_DEF.finditer(text)]
+        for i, (op, start) in enumerate(bounds):
+            end = bounds[i + 1][1] if i + 1 < len(bounds) else len(text)
+            for m in TAKE_CALL.finditer(text, start, end):
+                names = [n.lower() for n in LITERAL.findall(m.group(1))]
+                if len(names) < 2:
+                    continue
+                primary = names[0]
+                for alias in names[1:]:
+                    out.setdefault(op, {})[alias] = primary
+    return out
+
+
 def blender_unreachable():
     """Sorted 'bl:op.key' strings for addon capabilities no _blender call site can send."""
     accepts, sends = addon_accepts(), blender_sends()
+    aliases = addon_alias_map()
     rows = []
     for op, keys in accepts.items():
         if op not in sends:
             continue                      # op-level parity is parity_check's job
         sent = sends[op] | BLENDER_TRANSPORT
+        alias_of = aliases.get(op, {})
         for k in sorted((keys - sent) - NOISE):
+            # An alias whose PRIMARY spelling is already sent is not lost capability - the caller can
+            # express the call, just not in that particular wording. Only a key with no reachable
+            # primary is a real gap.
+            primary = alias_of.get(k)
+            if primary and (primary in sent or primary in BLENDER_TRANSPORT):
+                continue
             if not looks_like_alias(k, sent):
                 rows.append("bl:%s.%s" % (op, k))
     return sorted(rows)

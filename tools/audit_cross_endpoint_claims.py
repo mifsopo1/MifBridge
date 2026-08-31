@@ -29,8 +29,9 @@ reason: a tool that failed the build over prose would be satisfied by deleting t
 the source worse. This is a reading list.
 
 Usage:
-    python tools/audit_cross_endpoint_claims.py            # pairs no suite exercises together
-    python tools/audit_cross_endpoint_claims.py --all      # every cross-endpoint mention
+    python tools/audit_cross_endpoint_claims.py              # equivalence/completeness claims
+    python tools/audit_cross_endpoint_claims.py --navigation # every mention, including hints
+    python tools/audit_cross_endpoint_claims.py --all        # show the paired ones too
 
 Talks to nothing. Source and suites, both static.
 """
@@ -59,6 +60,26 @@ TEXT_LIT = re.compile(r'TEXT\("((?:[^"\\]|\\.)*)"\)')
 # ordinary English; `describe_endpoint` and `self_audit` are named by dozens of handlers as the
 # generic "go look it up" pointer rather than as a claim about behaviour.
 IGNORE = {"batch", "compile", "describe_endpoint", "self_audit", "ping"}
+
+# THE FILTER THAT MAKES THIS READABLE, and getting it wrong first is what taught the shape. The
+# unfiltered scan found 546 mentions and 219 with no suite driving both sides - a list nobody reads,
+# because most of it is NAVIGATION rather than assertion: "save_package to persist", "set it
+# afterwards with set_property", "list_bones reports the bones". Those tell a caller where to go
+# next. They promise nothing, so there is nothing to be wrong about.
+#
+# What CAN be wrong is a claim of EQUIVALENCE or COMPLETENESS - "returns the same set", "lists them
+# all", "is uncapped", "returns everything". Those assert a property of the other endpoint's output,
+# and that is precisely the sentence that was already found wrong once here: an earlier version of
+# override_inherited_component's note pointed at a list which structurally could not contain an
+# inherited or native row and said it was the same set.
+#
+# Filtering on the claim rather than on the named endpoint also keeps the useful hits that a
+# name-based ignore list would drop - "list_bones lists them all" is a completeness claim and stays.
+CLAIM_SHAPES = [
+    "same set", "the same", "all of them", "lists them all", "reports them all",
+    "uncapped", "not capped", "everything", "the real set", "the whole set", "the full set",
+    "complete list", "the complete", "is the same", "identical",
+]
 
 
 def endpoint_names():
@@ -104,6 +125,8 @@ def suite_endpoints():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--all", action="store_true", help="list every mention, not just the unpaired")
+    ap.add_argument("--navigation", action="store_true",
+                    help="include the navigational hints too - 219 of them, mostly not claims")
     args = ap.parse_args()
 
     names = endpoint_names()
@@ -119,6 +142,12 @@ def main():
 
     suites = suite_endpoints()
     print("endpoints: %d   cross-endpoint claims in handler text: %d" % (len(names), len(rows)))
+
+    if not args.navigation:
+        shaped = [r for r in rows if any(s in r[4].lower() for s in CLAIM_SHAPES)]
+        print("of those, ones asserting EQUIVALENCE or COMPLETENESS: %d   (the rest are "
+              "navigation - 'save_package to persist' promises nothing)" % len(shaped))
+        rows = shaped
 
     unpaired = []
     for speaker, other, base, line, quote in rows:
