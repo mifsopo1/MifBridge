@@ -387,6 +387,34 @@ def main():
         after = [f.get("name") for f in (M.call("list_functions", {"blueprintId": bid}).get("functions") or [])]
         check("T915 the function is really gone", "Reads5Func_%d" % st not in after, after)
 
+        # ---------------------------------------------------------- T915b functionGraphsRemaining
+        # remove_function reports how many function graphs SURVIVE the removal - a consequence the
+        # caller did not ask about and cannot see from ok:true. Nothing asserted it until 2026-08-31,
+        # because the consequence classifier could not see a field named for what REMAINS.
+        #
+        # CHECKED AGAINST ITSELF, NOT AGAINST list_functions. The tempting cross-check is
+        # "functionGraphsRemaining == len(list_functions)", and it is not safe: the field is
+        # Blueprint->FunctionGraphs.Num() while list_functions applies its own filter, so the two
+        # may legitimately disagree and a mismatch would prove nothing about either. Removing a
+        # SECOND function and requiring the count to fall by exactly one is arithmetic the endpoint
+        # cannot satisfy by accident, and it holds whatever the baseline number happens to be.
+        first_remaining = real.get("functionGraphsRemaining")
+        check("T915b it reports functionGraphsRemaining as a real number",
+              isinstance(first_remaining, (int, float)), "got %r" % first_remaining)
+        cf2 = M.call("create_function", {"blueprintId": bid, "name": "Reads5Func2_%d" % st})
+        check("T915b (setup) a second scratch function", cf2.get("ok") is True, json.dumps(cf2)[:170])
+        if cf2.get("ok") and isinstance(first_remaining, (int, float)):
+            mid = SC.confirm_call("remove_function",
+                                  {"blueprintId": bid, "name": "Reads5Func2_%d" % st})
+            check("T915b the second removal succeeds", mid.get("ok") is True, json.dumps(mid)[:170])
+            second_remaining = mid.get("functionGraphsRemaining")
+            # The second function was CREATED after the first count was taken, so the graph list went
+            # up by one and back down by one: the count after removing it must equal the first count.
+            check("T915b and the count tracks the graphs rather than being a constant",
+                  second_remaining == first_remaining,
+                  "after removing one: %r; after adding and removing another: %r"
+                  % (first_remaining, second_remaining))
+
     # ------------------------------------------------------------------ T916 remove_variable
     print("\n=== T916: remove_variable - refusal, then the real removal via scratch_confirm ===")
     rv = M.call("remove_variable", {"blueprintId": bid, "name": "Reads5Amount"})

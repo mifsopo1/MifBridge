@@ -9525,7 +9525,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       captures PROSE, because prose is what this codebase writes across fragments and identifiers
       are what it does not.
 
-- [ ] **five unread consequence fields, newly VISIBLE rather than newly broken** (hours)
+- [ ] **four unread consequence fields, newly VISIBLE rather than newly broken** (hours)
       The classifier only matched names saying something went WRONG. A name saying something
       REMAINS is the same class of unasked-for consequence and it could not see any of them.
       Widening it with [Rr]emaining and StillPresent took the field count 64 -> 73, and the nine new
@@ -9535,9 +9535,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
         duplicatesStillPresent   remove_pin - mine, from today's duplicate fix. V11 asserts it;
                                  needs the build, then it moves into test_pins.py.
-        functionGraphsRemaining  remove_function - how many function graphs survive a removal, which
-                                 is exactly the kind of thing a caller cannot otherwise see. Scratch
-                                 blueprint, no special fixture; blocked only on a live bridge.
+        functionGraphsRemaining  CLOSED as T915b - WRITTEN, not yet RUN. Checked against ITSELF
+                                 across two removals rather than against list_functions: the field
+                                 is Blueprint->FunctionGraphs.Num() while list_functions applies its
+                                 own filter, so the two may legitimately disagree and a mismatch
+                                 would prove nothing about either. Creating a second function and
+                                 removing it must return the count to where it was - arithmetic the
+                                 endpoint cannot satisfy by accident, whatever the baseline is.
         remainingNote            fix_up_redirectors - same, and cheap.
         numRemainingJobs         a shader-compile helper. Harder: it needs a compile actually in
                                  flight, so a fixture has to catch it mid-queue.
@@ -9580,6 +9584,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       green, the assertions belong in test_pins.py beside T447/T448, and the two placeholder entries
       in audit_consequence_fields' table should be DELETED rather than left to rot into permanent
       exemptions - which is exactly how a reason table stops meaning anything.
+
+- [ ] **list_graphs cannot say which graphs are FUNCTIONS** (hours)
+      Found 2026-08-31 while trying to cross-check functionGraphsRemaining. list_graphs returns
+      graphId, name and nodeCount for every graph in the blueprint, nested ones included - and
+      nothing that says what KIND each one is. A caller cannot tell an event graph from a function
+      from a macro from a delegate signature graph except by matching on the NAME, which is exactly
+      what every suite here does: `if "EventGraph" in (x.get("name") or "")`.
+
+      THAT IS A NAME HEURISTIC STANDING IN FOR A TYPE, and this repo has a rule about those. It
+      works until somebody creates a function called EventGraph2, or until a localised or renamed
+      graph does not match. GatherGraphs already walks the blueprint's own FunctionGraphs,
+      UbergraphPages, MacroGraphs and DelegateSignatureGraphs arrays to build the list, so the kind
+      is KNOWN at the moment each row is written and is simply not reported.
+
+      A one-line addition per bucket, and it removes the heuristic from every suite that currently
+      needs it. Blocked only on a build.
 
 - [ ] **set_niagara_emitter's whyNotSetProperty claims an ASYMMETRY nothing tests** (hours)
       Surfaced 2026-08-31 the moment audit_cross_endpoint_claims could read multi-line literals -
