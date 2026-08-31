@@ -6526,7 +6526,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       cannot be written portably today.
 
 
-- [ ] **93 files are LF in the WORKING TREE - and it costs nothing to fix - ANDRE'S CALL** (minutes)
+- [x] **93 files are LF in the WORKING TREE - and it costs nothing to fix - ANDRE'S CALL** (minutes)
+      DONE 2026-08-31, and the title was wrong twice over.
+
+      IT WAS 86, NOT 93. Some had been fixed by hand since the note was written and the number went
+      stale - counted rather than quoted, which is the whole argument for counting.
+
+      AND THERE WAS NEVER A COMMIT TO MAKE. .gitattributes ALREADY declares `* text=auto eol=crlf`
+      plus a per-extension list, core.autocrlf is true, and git stores LF in the INDEX by design -
+      `i/lf` is correct and normal, not drift. All 86 were refreshed in place (72 before the engine
+      rebuild, 14 under Source/ after it, so nothing changed mtime while UBT was reading it) and git
+      correctly reported NO CONTENT CHANGE for any of them. Anyone who reads this item expecting a
+      diff will not find one, and that is not a mistake.
+
+      WHAT ACTUALLY CAUSES IT: a file written by anything other than a git checkout - an editor, a
+      script, an agent's file tool - keeps whatever endings it was written with until the next
+      checkout. It recurs whenever such a tool runs and no committed file can prevent it, so the
+      only durable move is to NOTICE. parity_check now prints EOL DRIFT naming the files and saying
+      there is nothing to commit, verified in both directions: it named exactly the 14 remaining
+      before they were refreshed, and is silent now.
+
+      Checked the cases where CRLF would actually break something before running it: no shell
+      scripts are tracked here.
       RE-MEASURED 2026-08-31 with git rather than by reading bytes, and both halves of the original
       filing were wrong. It said 26 files and said the sweep would cost blame. It is 93, and it costs
       nothing at all.

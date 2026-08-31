@@ -2431,3 +2431,38 @@ costs an editor.
 tell is which members merely need verifying and which are fatal. The three known-fatal ones
 are now handled at two different points for a reason worth remembering: repair-after-
 construction works only when the asset survives long enough to be repaired.
+
+
+## Asking the editor to close after a session of scratch work stalls on a prompt nobody can click (2026-08-31)
+
+**Symptom.** A rebuild needed the editor closed. `CloseMainWindow()` was sent, and several
+minutes later `UnrealEditor.exe` was still resident at ~4 GB with the bridge no longer answering
+on 8791 - a TIMEOUT rather than a connection refusal, so the process was alive and not mid-exit
+in any way a caller could observe. The build could not start; a human had to click.
+
+**Root cause, stated honestly as an inference rather than a reading.** Nothing here can see the
+screen, so "it is showing a save prompt" is the best explanation of the evidence and not a fact
+that was verified. What IS established: the session created and deleted scratch blueprints
+repeatedly, `compile` itself reports `packageDirtyBefore` / `packageDirtyAfter`, and a dirty
+package at shutdown is what makes UE raise a modal. A modal on the game thread would stop the
+bridge answering while leaving the process alive, which is exactly the observed pair.
+
+**Why it was not force-killed.** The standing rule on this project is no force-closing an
+editor, and a modal is the case that rule is FOR: the dialog exists because something is asking
+whether to discard work, and killing it answers that question by destroying the answer. The
+scratch assets were this session's own and worthless, but that is knowable only from outside the
+dialog.
+
+**Prevention, and it is a checkable precondition rather than a habit.** Before requesting a
+close, ask whether anything is dirty and deal with it deliberately. `compile` already reports
+package dirtiness per blueprint, and `save_dirty_packages` exists but is on mifaudit's DENY list,
+so an unattended run cannot clear the state it created. There is no general discard-unsaved
+endpoint - `discardUnsaved` exists only on `remove_sublevel`. So today the honest sequence is:
+delete scratch, then check for dirtiness, then close, and expect to need a human if anything is
+still dirty.
+
+**The cheaper lesson.** The editor only needed closing because a source fix needed a build, and
+the fix needed a build because it had never been RUN. A fix that reports success without reading
+its postcondition back - which is what this one did - buys a whole extra build-and-close cycle to
+discover something a single read-back would have shown the first time.
+
