@@ -7015,3 +7015,56 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       REFUSES them by name with the type it found, rather than skipping the key, because a key
       silently not written leaves a section that looks authored and animates nothing - so this is
       an extension, not a latent bug.
+- [x] **manage_layers reported THAT a layer was implicitly created, never WHICH** (hours)  **DONE 2026-08-31.**
+      layersCreated (array, always emitted), layerCreated derived from it, layerCreatedNote naming
+      the risk. Layer creation here is implicit by design, so `layers: ["Props", "Prpos"]` turns a
+      typo into a real permanent layer with no error - being told which names were new is the
+      caller's only defence and was exactly what the response withheld. It was also OMITTED when
+      nothing was created, so absence had to be interpreted. Proven on UE 5.3 installed,
+      Development, BUILD OK with a linked DLL and verified mtime; also compiled against 5.7 headers
+      via DebugGame (unit 88/95, no diagnostics).
+
+- [x] **five audit tools matched C++ symbols in PROSE, and one was hiding a real defect** (day)  **DONE 2026-08-31.**
+      param_reach, audit_postconditions (twice - a comment-centred window and a handler body running
+      to the next handler), audit_loop_writes and audit_modals. One root cause: a grep for a symbol
+      finds the places that USE it and the places that DISCUSS it, and a well-commented repo has more
+      of the second. The sharpest case is audit_postconditions reporting set_pin_default - the
+      founding defect named in its own docstring as FIXED - because the comment written by the fix
+      contains TrySetDefaultValue. These tools got WORSE in proportion to how well the module was
+      documented. Mutation and silent-API detection now read scrubbed code; verification still reads
+      prose, deliberately, with the trade-off written down. 105 findings -> 99, loop-writes 19 -> 4.
+
+- [x] **make_engine_probe could not probe UE 5.3 at all** (hours)  **DONE 2026-08-31.**
+      It wrote WindowsPlatform.CompilerVersion = "Latest" for every engine. "Latest" is not a pin, it
+      is "whatever is installed" - the exact global coupling the script's own trap 1 claims to have
+      removed. Here it resolves to MSVC 14.44.35207, which UE 5.3 refuses with C4668 in
+      ConcurrentLinearAllocator.h, an engine-header error that reads as a source problem. So every
+      probe ever run on this machine was a 5.7 probe and the manifest's 5.3 claim had never been
+      compiler-checked by the one tool built to check it. default_compiler() chooses by engine
+      VERSION now, --compiler overrides.
+
+- [x] **a probe record could name a commit it had not compiled** (hours)  **DONE 2026-08-31.**
+      record_result() took sourceCommit from git log without asking whether Source/ was dirty, so a
+      probe over uncommitted edits claimed a commit that had never been built - and make_release
+      compared commits without asking either, while tracked_files() packages the WORKING TREE. The
+      record carries sourceDirty and warns; the gate refuses on a dirty record and on a dirty tree at
+      package time. Same shape as 0.7.0, which both files already cite: a claim that looks more
+      precise than a date and is not.
+
+- [x] **nothing enforced the three FBX gates their own file calls "fatal if dropped"** (hours)  **DONE 2026-08-31.**
+      MifBridgeExport.cpp documents a modal reached through FFbxExporter::FillExportOptions, below
+      anything audit_modals could see, and notes that FillExportOptions tests FApp::IsUnattended()
+      and NOT GIsRunningUnattendedScript - so the guard the rest of that tool is about does not apply.
+      Now a counted, scrubbed invariant table. Counted because Task->Options is set at TWO call sites
+      and presence-checking passed with either one blanked; scrubbed because that file names all
+      three gates verbatim in its own header. Every call site was mutation-tested and every one
+      reports.
+
+- [x] **the ratcheted source audits were outside the release gate** (minutes)  **DONE 2026-08-31.**
+      Which is why audit_loop_writes had been failing, with 19 findings, for an unknown length of
+      time, with a real defect among them. make_release now runs audit_loop_writes,
+      audit_postconditions and audit_modals; all three are baseline-ratcheted, so a green tree stays
+      green and only a NEW finding turns one red. Verified in both directions - emptying a baseline
+      makes the gate refuse, restoring it makes the gate pass. coverage_gaps and audit_suite_reach
+      are deliberately NOT gated: they carry a standing backlog by design, and gating a check that is
+      meant to be non-zero teaches people to pass --force.

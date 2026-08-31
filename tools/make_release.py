@@ -310,6 +310,45 @@ def check_value_discovery():
                    % (tail[-1] if tail else "see its output"))
 
 
+def check_static_audits():
+    """(ok, message) - do the RATCHETED source audits still pass?
+
+    These three are baseline-ratcheted: they print their whole known set every run and exit non-zero
+    only for something NEW. That makes them safe to gate - a green tree stays green, and the only
+    way to turn one red is to add a finding.
+
+    Gated because of what happened on 2026-08-31. audit_loop_writes had been failing, with 19
+    findings, for an unknown length of time. Nothing depended on it, so nothing went red, and the
+    one real defect among the nineteen - manage_layers reporting layerCreated:true per name inside
+    its loop, so it never said WHICH layer an implicit creation had invented from a typo - sat in
+    plain view in a check nobody had reason to run. A ratchet outside the gate is a ratchet with
+    nothing on the other end of it.
+
+    Deliberately NOT here: coverage_gaps and audit_suite_reach, which measure how much is TESTED
+    rather than whether the source is wrong, and are expected to carry a standing backlog. Gating a
+    check that is meant to be non-zero teaches people to pass --force, and a gate people route
+    around protects nothing.
+    """
+    failed = []
+    for tool in ("audit_loop_writes.py", "audit_postconditions.py", "audit_modals.py"):
+        script = os.path.join(HERE, tool)
+        if not os.path.isfile(script):
+            failed.append("%s is MISSING" % tool)
+            continue
+        r = subprocess.run([sys.executable, script], capture_output=True, text=True)
+        if r.returncode != 0:
+            lines = [l.strip() for l in (r.stdout or "").splitlines() if l.strip()]
+            head = next((l for l in lines if l.startswith(("NEW", "SELF-CHECK", "MISSING"))),
+                        lines[-1] if lines else "no output")
+            failed.append("%s -> %s" % (tool, head[:110]))
+    if not failed:
+        return True, "audit_loop_writes, audit_postconditions and audit_modals are all at baseline"
+    return False, ("a ratcheted source audit reports something NEW:\n    %s\n"
+                   "  Read it and either fix it or accept it with that tool's --update-baseline,\n"
+                   "  saying why in the commit. Do not package past it."
+                   % "\n    ".join(failed))
+
+
 def check_engine_probe():
     """(ok, message) - is there a passing 5.7 probe covering the current Source/?"""
     if not os.path.isfile(PROBE_RESULT):
@@ -556,6 +595,13 @@ def main():
         return 1
     if not okvd:
         print("  --force given: packaging a parameter nothing can supply a value for.")
+
+    oksa, msgsa = check_static_audits()
+    print(("static audits: " + msgsa) if oksa else ("REFUSING TO PACKAGE - " + msgsa))
+    if not oksa and not args.force:
+        return 1
+    if not oksa:
+        print("  --force given: packaging with an unread source-audit finding.")
 
     name, _ = plugin_version()
     out = args.out or os.path.join(HERE, "dist", "MifBridge-%s.zip" % name)
