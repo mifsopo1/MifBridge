@@ -437,10 +437,29 @@ def plant_missing_desc_row(text):
     return text[:m.start()] + text[m.end():]
 
 
+def plant_unread_consequence_field(text):
+    """Stop a suite from reading a consequence field, so the backlog grows past its baseline.
+
+    Targets tools/ rather than Source/, which matters: the harness skips every Source/ plant while
+    an editor holds the project, and a detector that can only be proven in that window is a detector
+    that mostly is not.
+
+    propertiesFailed is read in exactly one place - test_inherited_components T295 - so renaming the
+    read makes the field genuinely unread rather than merely less read. The check LABEL on the same
+    line still says "propertiesFailed", which is the point: a name in a label is not a read, and if
+    the tool counted it this plant would prove nothing.
+    """
+    if '.get("propertiesFailed")' not in text:
+        return None
+    return text.replace('.get("propertiesFailed")', '.get("propertiesFailedZz")')
+
+
 PLANTS = {
     "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind, "mif_probe_zz"),
     "harvest_param_table.py": (os.path.join(PRIV, "MifBridgeDescribe.cpp"),
                                plant_missing_desc_row, "CONTRACT DRIFT"),
+    "audit_consequence_fields.py": (os.path.join(HERE, "test_inherited_components.py"),
+                                    plant_unread_consequence_field, "propertiesFailed"),
     "audit_promise_flags.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_confirm, "confirm"),
     "mcp_static_check.py": (SERVER, plant_unbound, "mif_probe_zz_unbound"),
     "audit_postconditions.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_silent_mutator,
@@ -519,6 +538,9 @@ NOT_OURS = {
 
 # Extra argv some tools need to report everything rather than only new-against-baseline findings.
 ARGS = {"audit_vacuous_checks.py": ["--all"],
+        # Without --check it REPORTS and exits 0, so the harness would call it asleep for doing
+        # exactly what it is meant to do outside the gate.
+        "audit_consequence_fields.py": ["--check"],
         # WITHOUT --check THIS TOOL REWRITES THE TABLE. It is a generator first; the detector is
         # the --check mode. An empty ARGS entry here would have the harness regenerate the file it
         # is meant to be testing, and then report the tool asleep for finding nothing.

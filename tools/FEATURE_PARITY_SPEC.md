@@ -8250,3 +8250,62 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       clear_scene in a comment. Checked with harvest_param_table.blank_comments_and_strings rather
       than by eye, which is the same scrubber parity_check needed after a comment about a guard
       silenced the guard.
+
+- [x] **the 48 consequence fields are now a DERIVED number instead of a remembered one** - DONE 2026-08-31
+      The 48 above were counted by hand, once. harvest_param_table.py says the thing that matters
+      about a number like that, having watched its own table go stale twice: a number nothing
+      recomputes is a number that will be wrong again next month. This one was already drifting when
+      the tool was written - the item names propertiesFailed as asserted by nothing, and
+      test_inherited_components T295 asserts it.
+
+      tools/audit_consequence_fields.py derives it. 1569 distinct response fields across 3402 call
+      sites; 63 are consequence fields; 32 are read by a suite, 1 is out of reach by the standing
+      rules, and **30 are read by nothing** - each printed with its endpoint and file:line, so
+      closing one is a matter of reading the emitter rather than hunting for it.
+
+      NOT THE SAME 48, and the difference is not a correction of either number. The hand count and
+      this pattern list are two different definitions of "consequence"; what changed is that one of
+      them is now re-derived on every run and prints its own definition. Do not read 30 as "18 got
+      fixed".
+
+      WHAT COUNTS AS READ was where the work actually was, and both directions cost a bug.
+
+        Too loose, from the item above: modalHazard was in the hand-counted backlog even though a
+        test had "asserted" it an hour earlier, because that test looked for "modal" ANYWHERE in the
+        response - which a note mentioning modals satisfies. So a check LABEL naming a field is not
+        a read of it, and the rule is a string whose WHOLE VALUE is the field name.
+
+        Too strict, mine, and wrong within the hour: the first rule demanded a SUBSCRIPT -
+        `.get("f")` or `["f"]`. test_rollback_real drives
+        `resp[k] for k in ("rollbackUnresolvedPins", "rollbackLostLinks")`, where the subscript is a
+        variable and the names live in a tuple, so both fields read as unasserted while a suite was
+        asserting them. A scanner that understands one spelling of a read manufactures the backlog
+        it exists to measure.
+
+      A THIRD SELF-DECLARING PROBE, and this one is worth the space because it is now a pattern.
+      The harness called the new tool ASLEEP. The tool was fine: audit_detectors_fire.py is matched
+      by the `audit_*.py` glob, its planter contains the literal `.get("propertiesFailed")` by
+      construction, and the scan therefore counted THE HARNESS as a suite that reads the field - so
+      the plant could never make it unread. The same shape as the MIF_BIND probe and the blocking
+      probe whose marker was a word its own declaration contained. If a scanner reads the corpus,
+      the corpus includes the thing doing the planting. NOT_A_READER excludes it, with the reason.
+
+      Detector 22, proven: "went red on the planted propertiesFailed". Ratcheted against a committed
+      baseline (tools/consequence_fields_baseline.txt, 30), and --check NEVER writes it - a
+      threshold that ratchets itself can move without anybody reviewing the move, including a shrink
+      caused by deleting a suite. --baseline is the deliberate way to move it.
+
+- [ ] **should audit_consequence_fields join the release gate? - ANDRE'S CALL** (minutes)
+      make_release.check_static_audits already gates six. This one is a weaker candidate than most
+      in one way and a stronger one in another: it cannot fire on somebody's honest new assertion
+      the way audit_vacuous_checks might, because it is ratcheted and only goes red when a NEW field
+      reports a consequence nothing reads. My recommendation is yes, but gating a release is a
+      policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
+
+- [ ] **30 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+      `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
+      value by what a silent failure costs, unchanged from the hand-picked list above and now
+      confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote
+      on the destructive consolidate_assets, droppedByValidation/droppedNote/rejected/invalidNote on
+      set_blendspace_samples - four fields on ONE endpoint, all reporting input silently discarded -
+      leftBehind on add_timeline, and reverted on revert_inherited_component.
