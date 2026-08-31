@@ -1634,7 +1634,8 @@ namespace MifBridge
 		// path stayed unusable for the rest of the editor session with no way out from the bridge.
 		// Reproduced live on 2026-08-31 before this was touched. IsValid() is false for a garbage
 		// object, which makes the two endpoints agree on what exists.
-		if (IsValid(StaticLoadObject(UBlueprint::StaticClass(), nullptr, *ObjectPath, nullptr, LOAD_NoWarn | LOAD_Quiet)))
+		// Reverted with the others - see MifBridgeUserTypes.cpp for the StaticAllocateObject Fatal.
+		if (StaticLoadObject(UBlueprint::StaticClass(), nullptr, *ObjectPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
 		{
 			Fail(Out, FString::Printf(TEXT("a Blueprint already exists at '%s' — pick a new path or delete it first"), *ObjectPath));
 			return;

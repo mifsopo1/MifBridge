@@ -7269,7 +7269,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cost: three rewrites and about twenty-five minutes to re-derive a check that exists in better
       form. No tool committed. Recorded so the next person reading that limitation note does not
       start where I started.
-- [ ] **delete_asset then create_asset at the same path - FIXED IN SOURCE, awaiting a reload** (hours)
+- [ ] **delete_asset then create_asset at the same path - fix REVERTED, it was worse than the bug** (hours)
       docs/06 issue 28, filed 2026-08-30 as an unrecoverable dead end and fixed in source 2026-08-31.
       Reproduced live first: delete succeeds, the registry forgets it, create_asset says "an asset
       already exists ... delete it first", delete_asset says "no asset found at package". Told to
@@ -7283,6 +7283,15 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       MifBridgeMetaHuman.cpp:94, MifBridgeMaterials.cpp:970 (which spelled it StaticFindObject !=
       nullptr). Import and Thumbnail share the lookup but offer overwrite:true, so neither closes the
       loop and both were left alone.
+
+      REVERTED 2026-08-31, hours after landing. IsValid() trades the dead end for an EDITOR CRASH:
+      StaticAllocateObject looks the name up with StaticFindObjectFastInternal, which excludes only
+      Unreachable and NOT Garbage, so it finds the corpse the guard was taught to ignore - and then
+      UE_LOG(..., Fatal, ...) if its class is not a parent of the one being created. Delete a
+      Blueprint, create a DataTable at the same path, and a confusing refusal becomes a terminated
+      editor. All four guards are back to their original form and BUILD OK. docs/06 issue 28 carries
+      the engine citations and says the remaining remedy is the rename-to-transient one, which
+      changes object lifetime and must not land unverified.
 
       NOT [x] because it is not TESTED. BUILD OK on 5.3 Development with a linked DLL and verified
       mtime; the running editor loads an older one, so what was verified live is the BUG. The issue's

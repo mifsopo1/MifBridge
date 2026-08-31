@@ -2079,7 +2079,7 @@ refusal every time". That confirmed the *guard's* behaviour, read back as though
 have done, so it cannot tell a correct guard from a blanket one. The suite now proves the guard is
 narrow — that the shapes which should work, do.
 
-## 28. delete_asset then create_asset at the same path is an unrecoverable dead end — FIXED IN SOURCE 2026-08-31 (2026-08-30)
+## 28. delete_asset then create_asset at the same path is an unrecoverable dead end — STILL OPEN; the obvious fix is WORSE than the bug (2026-08-30)
 
 Found by running `test_input_mapping.py` a second time in the same editor session. Its cleanup had
 already passed - `find_assets {pathPrefix:"/Game/_MifInput"}` returned count 0 - and the next run
@@ -2145,6 +2145,41 @@ would have left the identical dead end behind `create_blueprint`:
 same flaw in a different spelling; its `FPackageName::DoesPackageExist` half is the DISK question and
 is untouched. `MifBridgeImport.cpp` and `MifBridgeThumbnail.cpp` share the lookup but not the defect -
 both offer `overwrite:true`, so neither closes the loop, and both were left alone.
+
+### The IsValid() fix was tried, and REVERTED the same day
+
+`IsValid(StaticLoadObject(...))` looks like the minimal correct fix and this issue recommended it. It
+is not safe, and the reason is in `StaticAllocateObject`:
+
+```
+Obj = StaticFindObjectFastInternal( /*Class=*/ NULL, InOuter, InName, true );   UObjectGlobals.cpp:3323
+if (Obj && !Obj->GetClass()->IsChildOf(InClass))
+        UE_LOG(LogUObjectGlobals, Fatal, ...);                                  UObjectGlobals.cpp:3326
+```
+
+That lookup excludes only `Unreachable`, **not** `Garbage` (`UObjectHash.cpp:712`,
+`ExclusiveInternalFlags |= EInternalObjectFlags::Unreachable`), so it finds exactly the corpse the
+guard was taught to ignore. Then, if its class is not a parent of the class being created, the engine
+calls `UE_LOG(..., Fatal, ...)` — which terminates the editor.
+
+So the sequence
+
+1. `create_asset` `/Game/X/Foo` class `Blueprint`
+2. `delete_asset` `/Game/X/Foo` — object is garbage, still resident
+3. `create_asset` `/Game/X/Foo` class `DataTable`
+
+went from *refused with a confusing message* to **editor terminated**. Refusing is annoying. Fatal
+takes whatever was unsaved with it. The guard is back to its original form in all four places.
+
+**What that leaves.** The dead end is real and still unfixed, and the remedy is the OTHER one this
+issue proposed: rename the doomed object to the transient package, as `ObjectTools` does, so no
+object holds the name when `NewObject` runs. That cannot be tested with the editor closed, and it
+changes object lifetime rather than reading a flag, so it is not something to land unverified — this
+entry exists so the next attempt starts from the crash rather than rediscovering it.
+
+**The general lesson.** The minimal change that makes two endpoints agree can be worse than the
+disagreement. "Treat a garbage object as absent" is only safe if everything downstream also treats it
+as absent, and `StaticAllocateObject` does not.
 
 ### What is proven, and what is not
 

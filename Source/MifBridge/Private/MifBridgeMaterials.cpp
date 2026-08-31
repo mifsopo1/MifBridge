@@ -967,7 +967,8 @@ namespace MifBridge
 				// until GC, and refusing on the corpse leaves the path unusable for the session
 				// while delete_asset reports nothing there. DoesPackageExist above is the disk
 				// question and is unaffected.
-				|| IsValid(StaticFindObject(UObject::StaticClass(), nullptr, *(OutPath + TEXT(".") + OutAssetName))))
+				// Reverted with the others - see MifBridgeUserTypes.cpp for the StaticAllocateObject Fatal.
+				|| StaticFindObject(UObject::StaticClass(), nullptr, *(OutPath + TEXT(".") + OutAssetName)) != nullptr)
 			{
 				Fail(Out, FString::Printf(
 					TEXT("asset already exists at %s — use a new path or delete_asset first"), *OutPath));

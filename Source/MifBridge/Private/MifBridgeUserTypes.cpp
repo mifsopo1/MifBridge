@@ -70,7 +70,21 @@ namespace MifBridge
 			// path stayed unusable for the rest of the editor session with no way out from the bridge.
 			// Reproduced live on 2026-08-31 before this was touched. IsValid() is false for a garbage
 			// object, which makes the two endpoints agree on what exists.
-			if (IsValid(StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath, nullptr, LOAD_NoWarn | LOAD_Quiet)))
+			// REVERTED 2026-08-31, hours after being changed, and the reason is worth more than the fix was.
+			// This briefly read IsValid(StaticLoadObject(...)) so that a DELETED-but-resident object
+			// would not block re-creation - docs/06 issue 28's dead end. Reading UObjectGlobals.cpp
+			// afterwards showed that trades a dead end for an EDITOR CRASH:
+			//   StaticAllocateObject with an explicit name calls
+			//     Obj = StaticFindObjectFastInternal(NULL, InOuter, InName, true);   (:3323)
+			//   which excludes only Unreachable, NOT Garbage (UObjectHash.cpp:712) - so it finds the
+			//   corpse - and then
+			//     if (Obj && !Obj->GetClass()->IsChildOf(InClass)) UE_LOG(..., Fatal, ...);   (:3326)
+			// Delete a Blueprint, create a DataTable at the same path, and the guard that used to
+			// refuse now lets NewObject reach that Fatal. Refusing is merely annoying; Fatal ends the
+			// editor and whatever was unsaved in it.
+			// The real fix is the issue's OTHER remedy - rename the doomed object to the transient
+			// package, as ObjectTools does - which cannot be tested with the editor closed.
+			if (StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
 			{
 				OutError = FString::Printf(TEXT("an asset already exists at '%s' — pick a new path or delete it first"), *ObjectPath);
 				return false;
