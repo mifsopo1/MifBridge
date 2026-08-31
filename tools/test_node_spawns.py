@@ -250,6 +250,9 @@ def main():
         ("add_format_text", {"graphId": graph, "format": "Hello {Name}, you have {Count}"}),
         ("add_switch_int", {"graphId": graph, "cases": 3}),
         ("add_switch_string", {"graphId": graph, "cases": ["Open", "Closed", "Locked"]}),
+        # Socket and bone names, because FName is what UE uses for exactly those - the reason a
+        # Switch on Name is worth having at all.
+        ("add_switch_name", {"graphId": graph, "cases": ["Head", "Spine_02", "Hand_R"]}),
         # A stock engine enum, not a project one, so this passes on any project this bridge runs
         # against - the same reasoning list_enum_values' own tests use a stock enum for.
         ("add_switch_enum", {"graphId": graph, "enumName": "ECollisionChannel"}),
@@ -257,6 +260,25 @@ def main():
         # An object-reference literal needs a real asset path; the scratch blueprint itself is one.
         ("add_literal", {"graphId": graph, "object": bpath}),
     ]
+    # ------------------------------------------------------------------ T335 the FName trap
+    # add_switch_name's distinctive behaviour, and the one a caller coming from add_switch_string
+    # will get wrong. FName comparison is case-insensitive, so 'Head' and 'head' are the SAME case
+    # and would collapse into one pin - the node would silently have fewer cases than the request
+    # listed. The endpoint refuses instead. Checked here rather than left to the generic loop
+    # because a refusal is not something the loop can see.
+    print("\n=== T335: a Switch on Name refuses two cases that differ only in case ===")
+    dupe = M.call("add_switch_name", {"graphId": graph, "cases": ["Head", "head"]})
+    check("T335 'Head' and 'head' are refused as duplicates",
+          dupe.get("ok") is False, json.dumps(dupe)[:220])
+    check("T335 and the refusal explains that FName comparison is case-insensitive",
+          "case-insensitive" in str(dupe.get("error") or ""), str(dupe.get("error"))[:220])
+    # caseSensitive is refused BY NAME rather than accepted and ignored, which is the whole point -
+    # UK2Node_SwitchName has no bIsCaseSensitive to set.
+    cs = M.call("add_switch_name", {"graphId": graph, "cases": ["A"], "caseSensitive": True})
+    check("T335 caseSensitive is REFUSED, not silently ignored",
+          cs.get("ok") is False and "caseSensitive" in str(cs.get("error") or ""),
+          json.dumps(cs)[:220])
+
     for ep, payload in node_specific:
         payload = dict(payload)
         y2 += 150

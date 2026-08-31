@@ -7944,7 +7944,11 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       PAIR MakeMap gives each entry. Element type is wildcard until wired.
 
       DebugGame compiled and LINKED; DECL 437 == BIND 437; parity_check and mcp_static_check pass.
-      NOT [x]: never run, and no suite - it needs a Blueprint graph to place a node into.
+      SUITE: none needed. test_node_spawns' T330 iterates the LIVE registry for every add_*
+      endpoint whose accepted params are all cosmetic, and add_make_set's are (graphId,
+      numInputs, x, y) - so it is driven, guid-checked and node_exists-verified automatically
+      the moment it registers. NOT [x] because that has not HAPPENED yet, not because it is
+      uncovered.
 
 - [ ] **add_switch_name - BUILT, never run** (hours)
       The fourth switch, alongside add_switch_int, add_switch_enum and add_switch_string. FName is
@@ -7964,7 +7968,10 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       and collapse into one pin, which is a stricter trap than the string switch has.
 
       DebugGame compiled and LINKED; DECL 438 == BIND 438; parity_check and mcp_static_check pass.
-      NOT [x]: never run, no suite - placing a node needs a Blueprint graph to place it into.
+      SUITE WRITTEN: test_node_spawns T334 drives it with socket-and-bone case names, and T335
+      covers the trap that makes it different from its three siblings - 'Head' and 'head' are
+      the same FName and are refused as duplicates, and caseSensitive is refused BY NAME rather
+      than accepted and ignored. NOT [x] because it has not run.
 
 - [ ] **fix_up_redirectors - BUILT, never run** (hours)
       rename_asset calls IAssetTools::RenameAssets, which deliberately leaves an ObjectRedirector for
