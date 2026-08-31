@@ -8319,7 +8319,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       reports a consequence nothing reads. My recommendation is yes, but gating a release is a
       policy decision and this is the second one now waiting on you, alongside audit_vacuous_checks.
 
-- [ ] **8 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
+- [ ] **3 consequence fields still read by nothing - the list is now derived, so pick from it** (day)
       Down from 30 on 2026-08-31. Four closed the same evening, all of them the same shape: a flag
       whose entire job is to say a removal really completed, asserted by nobody.
 
@@ -8516,7 +8516,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       up - set_enum_value moves 0 -> 2 (a real shift, not a no-op) and remove_ik_solver is T265
       itself. The physics suite was the outlier, not the rule.
 
-      Real gaps: 8. Out of reach with a written reason: 10. Read by a suite: 46.
+      FOUR MORE CLASSIFIED, each blocked by a DIFFERENT standing rule, which is why they get four
+      reasons rather than one line:
+
+        droppedLines               needs a RUNNING PIE producing more output than the ring buffer
+                                   holds. PIE is attended-only and never runs in an autopilot pass
+        duplicatesRemoved          remove_pin's duplicate branch cannot remove a same-direction
+                                   duplicate - the case it exists for - because ResolvePin returns
+                                   the FIRST pin matching (guid, name, direction), so every captured
+                                   ref equals the one being kept. Already declined as issue O
+        failedConsolidationObjects consolidate_assets CLOSES EVERY OPEN ASSET EDITOR, which its own
+        + failedNote               confirm refusal states. Not something to run against a session
+                                   somebody is working in
+        partialNote                spawn_many places actors in WHATEVER LEVEL IS OPEN and issue J
+                                   says they cannot be cleaned up, so its suite refuses unless the
+                                   open level is scratch. A precondition on the session, not an
+                                   impossibility
+
+      Real gaps: 3 - broken (break_level_instance), compileFailed (material_statistics) and
+      verifyFailure (reset_property_to_default). Out of reach with a written reason: 15. Read by a
+      suite: 46.
       `python tools/audit_consequence_fields.py` prints all 30 with endpoint and file:line. Highest
       value by what a silent failure costs, unchanged from the hand-picked list above and now
       confirmed against the source: rollback residue (done), failedConsolidationObjects/failedNote

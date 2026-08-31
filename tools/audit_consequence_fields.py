@@ -157,6 +157,30 @@ UNREACHABLE = {
                            "suite at all, with or without dryRun. The field itself is emitted on "
                            "every response, so this is a harness boundary rather than an endpoint "
                            "limitation",
+    "droppedLines": "emitted by MifBridgePIE's log Emit helper, so reaching it needs a RUNNING PIE "
+                    "session producing more output than the ring buffer holds. The PIE family is "
+                    "attended-only by the standing rules and never runs in an autopilot pass",
+
+    "duplicatesRemoved": "remove_pin's duplicate branch CANNOT remove a same-direction duplicate - "
+                         "the case it exists for - because ResolvePin matches on "
+                         "(NodeGuid, PinName, Direction) and returns the FIRST pin satisfying it, so "
+                         "for two genuine duplicates every captured ref is identical to the one "
+                         "being kept and Removed stays 0. Already declined in the spec as issue O; "
+                         "only a cross-direction pair can reach it, which is not a duplicate",
+
+    "failedConsolidationObjects": "consolidate_assets CLOSES EVERY OPEN ASSET EDITOR to do its work, "
+                                  "which is stated in its own confirm refusal. Running it against a "
+                                  "session somebody is working in is not something an unattended "
+                                  "suite may do, and the failure path additionally needs a "
+                                  "consolidation the engine partially refuses",
+    "failedNote": "emitted beside failedConsolidationObjects, same gate",
+
+    "partialNote": "spawn_many places actors in WHATEVER LEVEL IS OPEN and issue J records that they "
+                   "cannot be cleaned up, so test_spawn_many refuses to run unless the open level is "
+                   "Untitled*/_Mif*. Reaching partialNote also needs a batch where SOME items fail "
+                   "and some succeed. A precondition on the session rather than an impossibility - "
+                   "run it with a scratch level open",
+
     "duplicatePinsRemoved": "belt-and-braces for a root cause that is already FIXED, and the source "
                             "says so: 'the root cause is fixed in PlaceAndInit ... but this makes "
                             "create_function self-healing if any other terminator ever behaves the "
