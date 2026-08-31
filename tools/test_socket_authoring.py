@@ -104,6 +104,44 @@ def main():
         base_skel = s.get("skeletonSocketCount")
 
         # ------------------------------------------------------------------ T3100 the read fields
+        # ---------------------------------------------------------------- T3099 the refusal's promise
+        print("\n=== T3099: the bad-bone refusal counts the skeleton, and points at list_bones ===")
+        # A REFUSAL THAT MAKES A CHECKABLE CLAIM ABOUT ANOTHER ENDPOINT. add_socket refuses an
+        # unknown bone with "(N bones) ... list_bones lists them all" - two assertions in one
+        # sentence, both about a different endpoint's output, and nothing compared them. That is the
+        # shape audit_cross_endpoint_claims exists to surface, and the shape that was already found
+        # WRONG once here: an earlier availableComponents note pointed at a list which structurally
+        # could not contain the rows it claimed.
+        #
+        # The count is the interesting half. It comes from RefSkel.GetNum() inside the refusal, so a
+        # caller reading it is being told how big the search space is - and if list_bones returned a
+        # filtered or capped view, that number would send them looking for a bone in a list that
+        # cannot contain it.
+        import re as _re
+        bad = M.raw_post("add_socket", {"path": skel, "bone": "NoSuchBone_zz",
+                                        "name": "MifT3099Probe"})
+        check("T3099 an unknown bone is refused", bad.get("ok") is False, json.dumps(bad)[:220])
+        err = bad.get("error") or ""
+        check("T3099 and the refusal points at list_bones by name",
+              "list_bones lists them all" in err, err[:220])
+        m = _re.search(r"\((\d+) bones\)", err)
+        check("T3099 and states how many bones the reference skeleton has",
+              bool(m), err[:220])
+        if m:
+            claimed = int(m.group(1))
+            listed = M.raw_post("list_bones", {"path": skel}).get("bones") or []
+            # THE COMPARISON. Two endpoints, one skeleton, and the promise is that they agree.
+            check("T3099 and list_bones really does list them ALL - the two agree",
+                  claimed == len(listed),
+                  "the refusal says %d bones, list_bones returned %d" % (claimed, len(listed)))
+            check("T3099 and it is a real skeleton, not an empty one - a 0 == 0 match proves nothing",
+                  claimed > 0, "claimed %d bones" % claimed)
+        # And nothing was created by the refused call.
+        after = M.raw_post("list_sockets", {"path": skel}).get("sockets") or []
+        check("T3099 and the refused call created no socket",
+              not [s for s in after if s.get("name") == "MifT3099Probe"],
+              [s.get("name") for s in after][:8])
+
         print("\n=== T3100: list_sockets emits what the reflective write verbs need ===")
         rows = s.get("sockets") or []
         check("T3100 every socket reports an index", len(rows) > 0

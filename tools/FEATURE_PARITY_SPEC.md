@@ -9199,3 +9199,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       (MemberVar_0_ -> MemberVar_0_1_). Callers address struct members by friendlyName, which is
       stable, so this is a curiosity rather than a break - but it is the kind of thing that would
       matter to anything caching raw pin names.
+
+- [x] **the second cross-endpoint claim verified: add_socket's bone count agrees with list_bones**
+      - DONE 2026-08-31
+      add_socket refuses an unknown bone with "no bone 'X' in the reference skeleton (161 bones) ...
+      list_bones lists them all" - two assertions in one sentence, both about a DIFFERENT endpoint's
+      output, and nothing compared them. Measured on DDS2_CharacterSkeleton: the refusal says 161 and
+      list_bones returns 161.
+
+      THE COUNT IS THE INTERESTING HALF, not the pointer. It comes from RefSkel.GetNum() inside the
+      refusal, so a caller reading it is being told how big the search space is - and if list_bones
+      returned a filtered or capped view, that number would send them hunting for a bone in a list
+      that cannot contain it. That is precisely how the availableComponents note was wrong before it
+      was fixed: it pointed at a list which structurally could not hold the rows it promised.
+
+      T3099 in test_socket_authoring, and it also asserts the count is nonzero - a 0 == 0 agreement
+      between two empty answers proves nothing - and that the refused call created no socket. 34 PASS
+      0 FAIL.
+
+      Two of the three claims on audit_cross_endpoint_claims' shortlist are now settled: this one
+      holds, and compile/validate is verified only in the trivial case for want of a
+      failing-compile fixture. The third, preview_composite_widget -> list_live_widgets, needs PIE
+      and is attended-only.
