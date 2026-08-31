@@ -4,6 +4,35 @@ Everything here is a trap someone actually hit. Read this before spending a prob
 
 ---
 
+## Ask whether the data is UPROPERTY before asking whether the class is exported
+
+Three audit questions in one evening (2026-08-31) were phrased as export-macro problems and none of
+them was one:
+
+| the question as filed | what it actually needed |
+|---|---|
+| "read MoviePipelineOutputSetting.h **+ export macro** before implementing the config step" | `OutputDirectory` / `FileNameFormat` / `OutputResolution` are `UPROPERTY(EditAnywhere, BlueprintReadWrite)` |
+| "read the USoundFactory **ctor** before promising SoundWave-only import" | `bAutoCreateCue` is a `UPROPERTY` bitfield, defaulting false |
+| "the exact no-dialog static-vs-skeletal forcing combination → **one-shot editor import test**" | `MeshTypeToImport` and `bAutomatedImportShouldDetectType` are `UPROPERTY(BlueprintReadWrite)` |
+
+**The order that saves the work.** A `_API` macro is what a C++ caller needs. This bridge is not
+only a C++ caller - it has a reflective property path that reaches any `UPROPERTY` on any `UObject`
+without linking the module that declares it. So the first question about a candidate is not "is the
+class exported" but **"is the data I need a UPROPERTY"**. If it is, the export macro is irrelevant,
+the module dependency is irrelevant, and there is nothing to test.
+
+**And it is the more robust route for a tool that spans 5.3 to 5.7.** A field renamed in a later
+engine surfaces as a property-not-found REFUSAL. The same field reached through C++ surfaces as a
+LINK ERROR - which is not an endpoint that degrades, it is a plugin that will not load. Given that
+this same night turned up `HasLayersContent` silently becoming `return true` and
+`ToggleCanHaveLayersContent` becoming an empty body, preferring the path that fails visibly is not
+theoretical.
+
+**Where it does NOT apply**, so this is not read as "always use reflection": behaviour. A UFUNCTION
+you need to CALL, a factory method, an engine subsystem entry point - those need the export and the
+module dependency, and that is when the macro question is the right one. The rule is about DATA.
+
+
 ## The lesson written down in one place, and not carried to the others
 
 Three separate defects on 2026-08-31 had the same shape, and it is not a coding mistake - it is what
