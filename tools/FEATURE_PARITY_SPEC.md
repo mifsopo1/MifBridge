@@ -8748,3 +8748,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       And it is PROVEN rather than merely quiet - detector 23, "went red on the planted probeDeadZz".
       An all-clear from an unproven tool is a tool that has never said anything. The plant targets the
       addon rather than Source/, so it runs while an editor is up.
+
+- [x] **every addon guard is now PROVEN to run, not just declared** - DONE 2026-08-31
+      The second item off the Blender scrutiny backlog, and the one this repo's own first rule
+      demanded: a checker proves nothing until it has been run against a known instance. The addon's
+      reject_unknown guards had never been asked to demonstrate themselves.
+
+      tools/test_blender_reject_unknown.py calls every op with ONE key it cannot know and nothing
+      else - no valid parameters at all. reject_unknown is the first statement in an op body by
+      convention, so a refusal naming the probe key proves the guard ran before anything happened.
+      RESULT: 45 ops, 45 pass. Every guard fires.
+
+      IT REQUIRES THE ERROR TO NAME THE PROBE KEY, and that is not fussiness - it is the whole test.
+      Planting proved why: with op_object_info's guard made unreachable, the op STILL returned
+      ok:false, because it then failed on a missing required parameter instead. A naive "did it
+      refuse?" check would have passed a completely unguarded op. The suite went 45 -> 44 pass 1 fail
+      and put it in the "refused for the WRONG REASON" bucket rather than "accepted an unknown key",
+      which is the more common real shape and the more dangerous one.
+
+      WHY WRONG-REASON IS A FAILURE. It means the op validated the caller's real arguments before
+      noticing one it does not understand. That ordering is what lets a typo'd parameter survive a
+      call that otherwise looks correct: the caller fixes the missing-required complaint, resends,
+      and the typo is still there and still ignored.
+
+      Safe by construction - every call sends only the probe key, and run_blender_suites gives the
+      suite its own throwaway --background --factory-startup Blender. Plant restored byte-identical,
+      verified by sha256.
+
+      Blender suites: 10 files, all green on 5.0, 0 failed 0 skipped.
