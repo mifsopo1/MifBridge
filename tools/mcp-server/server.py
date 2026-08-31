@@ -4486,8 +4486,13 @@ def bl_list_objects(object_type: str = "", pattern: str = None,
     # listing a busy scene meant retrieving everything and filtering client-side. The addon reports
     # `filteredBy: {type, pattern}` precisely so a caller can tell "nothing matched" from "no filter
     # was applied" - which is unanswerable if the filter cannot be set.
+    # detail, NOT `detail or None`. _blender drops only None (v is not None), so `or None` turns an
+    # explicit False into ABSENT - harmless while the addon's default is False, and a silent drop the
+    # day that default changes. The parameter is `bool = False` and so is never None anyway, which
+    # makes the guard pure downside. The `or None` on object_type above is different: that one is a
+    # STRING whose empty value genuinely means "no filter".
     return _blender("list_objects", type=object_type or None, pattern=pattern,
-                    detail=detail or None)
+                    detail=detail)
 
 
 @mcp.tool()
