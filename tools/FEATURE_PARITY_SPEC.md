@@ -6748,7 +6748,38 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       just sweep themselves.
 
 
-- [ ] **nine suites send a raw confirm:true while working on a DISCOVERED real asset** (hours)
+- [~] **nine suites send a raw confirm:true while working on a DISCOVERED real asset** (hours)
+      DECLINED 2026-08-31 after reading all nine. My heuristic was "raw confirm:true in a file that
+      also calls find_assets", and that is not the same question as "confirm:true against a real
+      asset". Every one resolves, and none needs the sweep I filed for:
+
+        SCRATCH TARGET, flagged only because the suite discovers something ELSE first -
+          test_physics_asset      PA is /Game/_MifPhys/PA_MifTest<n>; it discovers a mesh to build it
+          test_virtual_bone_authoring  DST is /Game/_MifVB/SK_Test<n>; it discovers a skeleton to copy
+          test_collections        destroys a MifTest<n> collection it created
+          test_uncovered_reads7   deletes a scratch NavMeshBoundsVolume it spawned
+        NOT AN ASSET MUTATION AT ALL -
+          test_uncovered_reads4   live_coding_compile, which is a compile trigger
+        DELIBERATE, WITH THE REASONING ALREADY IN THE FILE -
+          test_simplified_collision_guard  cites the "nothing saved, reverts on restart" precedent
+                                  and says why no scratch alternative exists
+          test_anim_curve         fires all three endpoints at a real COOKED sequence ON PURPOSE:
+                                  the assertion is that they REFUSE rather than hit a checkf, which
+                                  is a process termination. Nothing is ever written, because the
+                                  refusal is the test. Its docstring already scopes the success half
+                                  to Curfew and says plainly what it does not cover.
+        REAL MUTATION, ALREADY GUARDED -
+          test_anim_notify        adds a track/notify to a real cooked AnimSequence and removes them
+                                  in a `finally`. This is the only genuine one, and it is correct.
+
+      WHAT I GOT WRONG, worth keeping: I filed "nine suites" from a grep, and the grep answered a
+      cheaper question than the one I asked in the title. Four were scratch targets that merely
+      discovered something else on the way, and two were deliberate with the reasoning sitting in the
+      file I had not read. test_consolidate - the one that WAS dangerous - was found by reading, not
+      by the pattern, and the pattern then produced eight false leads around it.
+
+      The rule this earns is the repo's own, one level up: verify by READING, never by grepping for a
+      shape. A grep is how you build the reading list, not how you finish it.
       Filed 2026-08-31 after fixing test_consolidate, which was the dangerous one and is done. The
       standing rule is never to send confirm:true except through scratch_confirm, whose whole job is
       proving the target is scratch. These bypass it on assets the project already owned:
