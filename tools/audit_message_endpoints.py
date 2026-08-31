@@ -37,6 +37,7 @@ Usage:
 """
 import ast
 import io
+import json
 import os
 import re
 import sys
@@ -49,7 +50,44 @@ VERBS = ("list_", "get_", "set_", "add_", "remove_", "create_", "delete_", "desc
          "analyze_", "audit_", "capture_", "render_", "duplicate_", "move_", "snap_", "pie_",
          "load_", "save_", "open_", "close_", "run_", "trigger_", "self_", "implement_", "revert_")
 
-LITERAL = re.compile(r'TEXT\("([^"]*)"\)')
+# TWO patterns, because one line-anchored pattern misses the messages that matter most.
+#
+# The original was TEXT\("([^"]*)"\) - it required the closing `")` on the SAME LINE. C++ string
+# literals concatenate across lines, and every LONG message in this module is written that way:
+#
+#     Fail(Out, TEXT("the asset is dirty and NOT saved - save_asset persists it. Sync markers only "
+#                    "do anything inside a sync group: two sequences must share the marker NAMES"));
+#
+# findall returned [] for that first line. The risk is exactly inverted from where the check was
+# looking: the longer and more helpful a message is, the more likely it spans lines, and the more
+# likely it names an endpoint to go to next - which is the thing this tool exists to verify. Two
+# identical `save_asset persists it` notes sat in MifBridgeAnimation.cpp and only the single-line
+# one was ever reported.
+#
+# OPEN matches a TEXT( literal whether or not its closing paren is on the line. CONT matches a
+# continuation line that is nothing but a quoted string, which is how the second and later fragments
+# of a concatenated literal are always written here. A continuation line cannot be confused with an
+# ordinary statement: a bare "..." with no call around it is not valid C++ on its own.
+LITERAL = re.compile(r'TEXT\("([^"]*)"')
+CONTINUATION = re.compile(r'^\s*"([^"]*)"\s*[)\];,]*\s*$')
+
+# TWO THINGS THAT LOOK LIKE BAD ADVICE AND ARE NOT. Both surfaced the moment the scan could see
+# multi-line literals, and both would have made this tool cry wolf on correct, careful text.
+#
+# 1. A DECLARED ABSENCE. MifBridgeAnimation.cpp tells the caller how to move and delete a socket
+#    with set_property and edit_container, and finishes: "Both work today, which is why there is no
+#    set_socket_transform or remove_socket endpoint." Naming a non-endpoint is the POINT of that
+#    sentence. Reporting it would punish the most honest kind of message this bridge writes.
+#    Matched the same way audit_absence_claims does it - by direction, on a window, rather than by
+#    hunting for the name anywhere in the file.
+# 2. A TOOL PATH. "tools/audit_factory_init.py --class U%s shows exactly what that factory does" is
+#    a script, not an endpoint, and VERBS happens to include audit_ so the token matched. Anything
+#    written as tools/<name>.py is excluded by shape.
+ABSENCE = re.compile(
+    r"(there (?:is|are) no\b|no such\b|does not exist\b|is not an endpoint\b|\bnever built\b)",
+    re.I)
+ABSENCE_WINDOW = 90
+TOOL_PATH = re.compile(r"tools/[A-Za-z0-9_]+\.py")
 TOKEN = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b")
 # "maps (aliases: saveMaps, save_maps)" documents PARAMETER names. They are shaped exactly like
 # endpoints and mean something else entirely, so the span after an 'alias' marker is excluded.
@@ -75,13 +113,24 @@ def scan(names):
             continue
         path = os.path.join(PRIVATE, fn)
         for i, line in enumerate(io.open(path, encoding="utf-8", errors="replace").read().split("\n")):
-            for lit in LITERAL.findall(line):
+            for lit in LITERAL.findall(line) + CONTINUATION.findall(line):
                 stripped = lit.strip()
                 aliased = set()
                 for span in ALIAS_SPAN.findall(lit):
                     aliased |= set(TOKEN.findall(span))
-                for tok in TOKEN.findall(lit):
+                # A declared absence names the missing endpoint deliberately; look BEHIND the
+                # token, because the phrasing always precedes it ("there is no X", not "X there is
+                # no"). The window keeps it local - a "there is no" elsewhere in a long message must
+                # not license every name after it.
+                absent_spans = [m.end() for m in ABSENCE.finditer(lit)]
+                tool_paths = set(TOOL_PATH.findall(lit))
+                for m in TOKEN.finditer(lit):
+                    tok = m.group(1)
                     if not tok.startswith(VERBS) or tok in names:
+                        continue
+                    if any("tools/%s.py" % tok in tp for tp in tool_paths):
+                        continue
+                    if any(0 <= m.start() - e <= ABSENCE_WINDOW for e in absent_spans):
                         continue
                     # The token IS the literal: an alias or a command name, not advice.
                     if stripped == tok:
@@ -123,6 +172,26 @@ def mcp_docstrings():
                 tools[node.name] = (
                     set(a.arg for a in list(args.args) + list(args.kwonlyargs)),
                     ast.get_docstring(node) or "")
+
+    # AND THE SIDECAR, which is the half an agent reads most carefully. server.py keeps only the lead
+    # sentence inline - 450 tool descriptions sit in the model's context on EVERY turn, which came to
+    # ~72,000 tokens - and serves the FULL text from tool_help.json through mif_help. That sidecar is
+    # where the traps, the engine citations and the failure modes live, and mif_help's own description
+    # tells the agent to call it BEFORE using a tool it has not used before.
+    #
+    # It was never scanned. A wrong endpoint name is MORE costly there than inline, not less: the
+    # agent has just been told to read this text precisely because it is about to do something it
+    # does not know how to do. Two `save_asset persists it` notes sat in it and were found by hand.
+    help_path = os.path.join(HERE, "mcp-server", "tool_help.json")
+    try:
+        store = json.load(io.open(help_path, encoding="utf-8", errors="replace"))
+    except Exception:
+        store = {}
+    for key, text in store.items():
+        if key.startswith("__") or not isinstance(text, str):
+            continue
+        params, doc = tools.get(key, (set(), ""))
+        tools[key] = (params, (doc + "\\n" + text) if doc else text)
     return tools
 
 

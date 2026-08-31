@@ -228,6 +228,23 @@ def plant_unrun_assertions(text):
     return text.rstrip("\n") + "\n\n\ndef _mif_probe_zz():\n" + body
 
 
+
+def plant_bad_advice(text):
+    """A message telling the caller to use an endpoint that does not exist.
+
+    Planted into tool_help.json rather than a .cpp on purpose: this tool reads BOTH, and a tools/
+    file can be planted while an editor is open, where a Source/ plant is skipped. The endpoint
+    surface being scanned is the same either way.
+
+    save_asset is the real name this tool found advised in four places on 2026-08-31 - two C++ notes
+    and these two help texts - none of which exist on any build.
+    """
+    needle = "save_package {path} persists it"
+    if needle not in text:
+        return None
+    return text.replace(needle, "save_asset persists it", 1)
+
+
 # tool -> (target file, plant function, marker, gate)
 #
 # gate=True  - proof is a NON-ZERO exit AND the marker in the output. Both, because several of these
@@ -256,6 +273,8 @@ PLANTS = {
                                  "MIF_PROBE_ZZ_UNDEFINED"),
     "audit_suite_reach.py": (os.path.join(HERE, "test_layers.py"), plant_unrun_assertions,
                              "test_layers.py", False),
+    "audit_message_endpoints.py": (os.path.join(HERE, "mcp-server", "tool_help.json"),
+                                   plant_bad_advice, "save_asset"),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.

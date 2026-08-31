@@ -7829,8 +7829,8 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       postcondition rule itself), audit_loop_writes and audit_suite_payloads (both release-gated, so
       a silent one lets a release through), audit_modals (blocking dialogs), audit_read_purity.
 
-- [ ] **audit_message_endpoints is blind to multi-line string literals, and save_asset is advised
-      in 4 places and is not an endpoint** (hours)
+- [x] **audit_message_endpoints was blind to multi-line literals AND to tool_help.json - 11 bad
+      names fixed** (hours)
       Found 2026-08-31 evening. Two separate things, one of which hides the other.
 
       THE PRODUCT DEFECT. Four user-facing texts tell the caller "save_asset persists it" and
@@ -7883,3 +7883,10 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       used to compile the same sources without touching the Development binaries. Run the Development
       build when the editor is next closed; the sources are identical, so this is a formality rather
       than a doubt, and it is still not a [x] until it happens.
+
+- [ ] **nothing LISTS widget property bindings - add and remove exist, no read** (hours)
+      Found 2026-08-31 while fixing a message that promised `list_widget_bindings`, an endpoint that
+      was never built. add_widget_binding and remove_widget_binding write them; add_widget_binding
+      reports a bindingCount and nothing returns the bindings themselves. The refusal text now says
+      so honestly instead of naming a reader that does not exist, but the read-with-no-write
+      asymmetry this project treats as a gap is still there, inverted.

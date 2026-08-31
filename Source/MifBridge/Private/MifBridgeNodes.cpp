@@ -1102,7 +1102,7 @@ namespace MifBridge
 			Fail(Out, FString::Printf(
 				TEXT("the node was created but its macro reference did not take, so it points at no "
 					 "macro ('%s' in %s). It is in the graph and does nothing - remove it with "
-					 "delete_node."),
+					 "remove_node."),
 				*MacroGraph->GetName(), *MacroPath));
 			return;
 		}

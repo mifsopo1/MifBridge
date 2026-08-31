@@ -1599,7 +1599,7 @@ namespace MifBridge
 			Fail(Out, FString::Printf(
 				TEXT("no binding on widget '%s' for property '%s' - nothing was removed. Bindings are "
 					 "matched on widget name and property name only, so check both spellings; "
-					 "list_widget_bindings reports what this blueprint actually has. %d binding(s) "
+					 "There is no endpoint that LISTS widget property bindings. %d binding(s) "
 					 "remain, unchanged."),
 				*WidgetName, *PropertyName, WBP->Bindings.Num()));
 			return;

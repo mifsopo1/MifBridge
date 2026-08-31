@@ -2890,7 +2890,7 @@ namespace MifBridge
 		Out->SetStringField(TEXT("added"), Name);
 		Out->SetNumberField(TEXT("time"), Time);
 		Out->SetStringField(TEXT("note"),
-			TEXT("the asset is dirty and NOT saved - save_asset persists it. Sync markers only do "
+			TEXT("the asset is dirty and NOT saved - save_package {path} persists it. Sync markers only do "
 				 "anything inside a sync group: two sequences must share the marker NAMES for a "
 				 "blend between them to stay in step."));
 	}
@@ -2979,7 +2979,7 @@ namespace MifBridge
 			return;
 		}
 		Out->SetStringField(TEXT("note"),
-			TEXT("the asset is dirty and NOT saved - save_asset persists it."));
+			TEXT("the asset is dirty and NOT saved - save_package {path} persists it."));
 	}
 
 }

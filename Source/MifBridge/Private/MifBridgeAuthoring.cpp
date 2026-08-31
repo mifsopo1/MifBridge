@@ -1628,7 +1628,7 @@ namespace MifBridge
 								   "reports the type path to pass here") },
 			  { TEXT("actorPath"), TEXT("instances are not actors. If you placed a standalone HISM "
 										"holder with add_foliage_instances{mesh}, that is an ACTOR "
-										"and delete_actor removes it - this endpoint is for painted "
+										"and delete_level_actor removes it - this endpoint is for painted "
 										"foliage in the level's InstancedFoliageActor") } }))
 		{
 			return;

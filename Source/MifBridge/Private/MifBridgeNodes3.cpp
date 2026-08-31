@@ -160,7 +160,7 @@ namespace MifBridge
 		{
 			Fail(Out, TEXT("the reroute node was created but has no input/output pin. WHAT IS LEFT "
 						   "BEHIND: the node IS in the graph - find it with list_nodes and remove it "
-						   "with delete_node."));
+						   "with remove_node."));
 			return;
 		}
 
@@ -174,7 +174,7 @@ namespace MifBridge
 			{
 				Fail(Out, TEXT("the schema will not route this link through a reroute. The original "
 							   "wire is untouched. WHAT IS LEFT BEHIND: the reroute node is in the "
-							   "graph - remove it with delete_node."));
+							   "graph - remove it with remove_node."));
 				return;
 			}
 			SrcPin->BreakLinkTo(DstPin);
@@ -716,7 +716,7 @@ namespace MifBridge
 					Out->SetStringField(TEXT("valueApplied"), After);
 					Out->SetStringField(TEXT("valueError"), FString::Printf(
 						TEXT("'%s' was NOT accepted for this enum (%s); the pin is still '%s'. Use the "
-							 "enumerator's internal name - describe_enum lists them - not the display text."),
+							 "enumerator's internal name - list_enum_values lists them - not the display text."),
 						*Value, *Err, *After));
 				}
 			}
