@@ -66,8 +66,18 @@ def main():
     try:
         p = _call("ping", {}, timeout=5.0)
     except OSError as exc:
-        print("Blender backend unreachable (%s). Start it first." % exc)
-        return 2
+        # A SQUATTER IS NOT AN ABSENCE. blender_audit_common owns the distinction so the two audits
+        # and three suites give the same answer - see docs/06 issue 15 for the UE editor that has
+        # held MifBlender's port on this machine.
+        try:
+            # No HOST/PORT globals in this file - blender_audit_common owns the address as well as
+            # the diagnosis, which is the point of sharing it.
+            import blender_audit_common as _B
+            print("Blender backend unreachable (%s)." % exc)
+            return _B.skip_banner("postconditions")
+        except ImportError:
+            print("Blender backend unreachable (%s). Start it first." % exc)
+            return 2
     if not p.get("ok"):
         print("ping failed: %s" % p.get("error"))
         return 2

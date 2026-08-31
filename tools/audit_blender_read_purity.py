@@ -108,9 +108,19 @@ def main():
     try:
         p = _call("ping", {}, timeout=5.0)
     except OSError as exc:
-        print("Blender backend unreachable at %s:%d (%s). Start it first - see this file's own "
-              "docstring for the launch command." % (HOST, PORT, exc))
-        return 2
+        # A SQUATTER IS NOT AN ABSENCE, and this used to report both as "start it first". On this
+        # machine 8792 is held by a UE editor (docs/06 issue 15), so that advice sent the reader
+        # looking for a Blender that had failed to start rather than for the process on its port.
+        # blender_audit_common owns the distinction so the two audits and three suites agree.
+        try:
+            import blender_audit_common as _B
+            _B.HOST, _B.PORT = HOST, PORT
+            print("Blender backend unreachable at %s:%d (%s)." % (HOST, PORT, exc))
+            return _B.skip_banner("read-purity")
+        except ImportError:
+            print("Blender backend unreachable at %s:%d (%s). Start it first - see this file's own "
+                  "docstring for the launch command." % (HOST, PORT, exc))
+            return 2
     if not p.get("ok"):
         print("ping failed: %s" % p.get("error"))
         return 2

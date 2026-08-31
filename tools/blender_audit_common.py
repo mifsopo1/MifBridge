@@ -64,13 +64,45 @@ def reachable(timeout=1.5):
         s.close()
 
 
+def port_is_occupied(timeout=1.0):
+    """True if SOMETHING accepts a connection on the port without being a MifBlender.
+
+    Only meaningful once reachable() has said no. The two failures need different fixes and read
+    identically otherwise: nothing listening means Blender is not running, something listening that
+    will not answer a framed ping means its port is taken. On this machine 8792 is held by a UE
+    editor (docs/06 issue 15), and "Blender is not listening" sent me looking for a Blender that had
+    failed to start instead of for the process squatting on it.
+    """
+    s = socket.socket()
+    s.settimeout(timeout)
+    try:
+        s.connect((HOST, PORT))
+        return True
+    except Exception:
+        return False
+    finally:
+        s.close()
+
+
 def skip_banner(name):
     """The loud skip every Blender suite should print. A skip that looks like a pass is how an
     untested thing gets believed, so it names what was NOT verified and why."""
+    occupied = port_is_occupied()
     print("")
     print("SKIPPED - nothing was verified.")
-    print("  Blender is not listening on %s:%d, so no %s op was exercised." % (HOST, PORT, name))
-    print("  Start one with tools/run_blender_suites.py, or run Blender with the MifBlender addon.")
+    if occupied:
+        # A squatter is not a missing Blender, and saying so saves the next reader the hunt.
+        print("  Something IS listening on %s:%d but it is not a MifBlender - it accepted the"
+              % (HOST, PORT))
+        print("  connection and never answered a framed ping. That is a PORT CONFLICT, not a")
+        print("  Blender that failed to start, and starting another one will not fix it.")
+        print("  On this machine a UE editor has held that port before - see docs/06 issue 15.")
+        print("  Find the holder with:")
+        print("    Get-NetTCPConnection -LocalPort %d -State Listen | %%{Get-Process -Id $_.OwningProcess}"
+              % PORT)
+    else:
+        print("  Nothing is listening on %s:%d, so no %s op was exercised." % (HOST, PORT, name))
+        print("  Start one with tools/run_blender_suites.py, or run Blender with the MifBlender addon.")
     print("  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose.")
     return 2
 
