@@ -2061,7 +2061,7 @@ refusal every time". That confirmed the *guard's* behaviour, read back as though
 have done, so it cannot tell a correct guard from a blanket one. The suite now proves the guard is
 narrow — that the shapes which should work, do.
 
-## 28. delete_asset then create_asset at the same path is an unrecoverable dead end (2026-08-30)
+## 28. delete_asset then create_asset at the same path is an unrecoverable dead end — FIXED IN SOURCE 2026-08-31 (2026-08-30)
 
 Found by running `test_input_mapping.py` a second time in the same editor session. Its cleanup had
 already passed - `find_assets {pathPrefix:"/Game/_MifInput"}` returned count 0 - and the next run
@@ -2092,15 +2092,55 @@ This bites hardest on never-saved scratch assets, which is to say the ones every
 any suite that runs twice without an editor restart can hit it. It is also the shape most likely to
 be hit by an agent iterating - create, test, delete, adjust, create again.
 
-### Not yet fixed, and what the fix probably is
+### Reproduced again before touching it, 2026-08-31
 
-`create_asset` should treat a garbage or pending-kill object as absent rather than as a collision -
-that is the smallest change and it makes the three endpoints agree. `delete_asset` renaming the
-doomed object out of the way (to the transient package) would also work and is what the editor's own
-delete does. Both need checking against 5.3 and 5.7; neither has been attempted yet.
+Not taken on trust. Against the live editor, on a scratch asset created for the purpose:
 
-Filed rather than fixed on the spot because it is a separate defect from the work that surfaced it,
-and it deserves its own build-test-commit cycle rather than being smuggled into an unrelated commit.
+```
+find_assets  {pathPrefix:"/Game/_MifScratch"}   -> count 2, MifIAProbe present
+delete_asset {path:".../MifIAProbe", confirm}   -> ok, numDeleted 1, deleted true
+find_assets  {pathPrefix:"/Game/_MifScratch"}   -> count 1, MifIAProbe gone
+create_asset {path:".../MifIAProbe", class:...} -> "an asset already exists at ... delete it first"
+delete_asset {path:".../MifIAProbe", confirm}   -> "no asset found at package ..."
+```
+
+The closed loop, exactly as filed.
+
+### Fixed in source
+
+The smaller of the two proposed fixes: a garbage object is not an existing asset. `IsValid()` is
+false for one, so wrapping the existence lookup in it makes `create_asset` and `delete_asset` agree
+about what is there. No lifetime is changed and nothing is renamed - it is a pure predicate, so the
+only behaviour that moves is that a corpse stops blocking creation, which is the whole defect.
+
+FOUR SITES, not one. The same lookup guards four create paths, and fixing only the reproduced one
+would have left the identical dead end behind `create_blueprint`:
+
+| file | line | endpoint |
+|---|---|---|
+| `MifBridgeUserTypes.cpp` | 73 | `create_asset` (the reproduced one) |
+| `MifBridgeNodes2.cpp` | 1637 | `create_blueprint` |
+| `MifBridgeMetaHuman.cpp` | 94 | `create_metahuman_character` |
+| `MifBridgeMaterials.cpp` | 970 | `create_material` / `create_material_function` |
+
+`MifBridgeMaterials.cpp` used `StaticFindObject(...) != nullptr` rather than `StaticLoadObject`, the
+same flaw in a different spelling; its `FPackageName::DoesPackageExist` half is the DISK question and
+is untouched. `MifBridgeImport.cpp` and `MifBridgeThumbnail.cpp` share the lookup but not the defect -
+both offer `overwrite:true`, so neither closes the loop, and both were left alone.
+
+### What is proven, and what is not
+
+COMPILE-verified on UE 5.3 installed, Development, BUILD OK with a linked DLL and a verified mtime.
+NOT behaviour-verified: the running editor loads a DLL built before this change, and loading a new one
+means `live_coding_compile`, which requires `confirm:true` and whose own refusal says a bad patch can
+destabilise the process holding unsaved work. That is a decision for a human at the keyboard, not for
+an overnight run. So the reproduction above is of the BUG, not of the fix.
+
+The second proposed remedy - renaming the doomed object to the transient package, which is what the
+editor's own delete does - was deliberately NOT attempted. It changes object lifetime rather than
+reading a flag, and it cannot be tested here tonight. If `IsValid()` alone turns out to be
+insufficient because the name is still taken, that is the next thing to try and it is written down
+here rather than guessed at now.
 
 ### Workaround in the meantime
 

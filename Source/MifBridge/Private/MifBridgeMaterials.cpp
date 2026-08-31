@@ -963,7 +963,11 @@ namespace MifBridge
 			}
 			// Existing asset (on disk OR already in memory) — never silently overwrite.
 			if (FPackageName::DoesPackageExist(OutPath)
-				|| StaticFindObject(UObject::StaticClass(), nullptr, *(OutPath + TEXT(".") + OutAssetName)) != nullptr)
+				// IsValid, not != nullptr - see docs/06 issue 28. A deleted asset stays resident
+				// until GC, and refusing on the corpse leaves the path unusable for the session
+				// while delete_asset reports nothing there. DoesPackageExist above is the disk
+				// question and is unaffected.
+				|| IsValid(StaticFindObject(UObject::StaticClass(), nullptr, *(OutPath + TEXT(".") + OutAssetName))))
 			{
 				Fail(Out, FString::Printf(
 					TEXT("asset already exists at %s — use a new path or delete_asset first"), *OutPath));

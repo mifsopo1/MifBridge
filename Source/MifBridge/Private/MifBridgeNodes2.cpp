@@ -1626,7 +1626,15 @@ namespace MifBridge
 		// Refuse to clobber silently (mirrors the confirm-destructive rule). Overwrite is deliberately NOT supported
 		// here — deleting a loaded asset safely is out of scope; pick a new path or delete it in the editor.
 		const FString ObjectPath = Path + TEXT(".") + AssetName;
-		if (StaticLoadObject(UBlueprint::StaticClass(), nullptr, *ObjectPath, nullptr, LOAD_NoWarn | LOAD_Quiet))
+		// A DELETED OBJECT IS NOT AN EXISTING ASSET (docs/06 issue 28). delete_asset ->
+		// ObjectTools::DeleteAssets unregisters the asset and clears RF_Public|RF_Standalone, but
+		// the UObject stays resident until a GC pass. This lookup found that corpse and refused,
+		// while delete_asset - which consults the REGISTRY - answered "no asset found at package".
+		// So an agent told to "delete it first" was then told there was nothing to delete, and the
+		// path stayed unusable for the rest of the editor session with no way out from the bridge.
+		// Reproduced live on 2026-08-31 before this was touched. IsValid() is false for a garbage
+		// object, which makes the two endpoints agree on what exists.
+		if (IsValid(StaticLoadObject(UBlueprint::StaticClass(), nullptr, *ObjectPath, nullptr, LOAD_NoWarn | LOAD_Quiet)))
 		{
 			Fail(Out, FString::Printf(TEXT("a Blueprint already exists at '%s' — pick a new path or delete it first"), *ObjectPath));
 			return;
