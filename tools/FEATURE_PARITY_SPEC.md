@@ -6869,7 +6869,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 - [level-world] group_actors / ungroup_actors: Create and disband an AGroupActor so a multi-part agent-assembled prop (a market stall built from a table, an awning and six crates) is selected and moved as one unit by a hum
 - [level-world] extend paint_landscape/create_landscape with register:true (register a target layer on a landscape): Register a ULandscapeLayerInfoObject as one of a landscape's target layers, so it can then be painted. To
 - [assets-content] extend rename_asset with a `renames` array (bulk rename / move in one AssetTools pass): Renames or moves many assets in a single IAssetTools::RenameAssets call. That matters beyond convenience: RenameAss
-- [blueprint-graph] extend add_make_array with container:"set", and add_switch_string with type:"name": Completes two families that are each missing exactly one member: Make Set (the third UK2Node_MakeContainer alongside M
+- [blueprint-graph] add_switch_string with type:"name" - the OTHER half of this proposal. add_make_set was built 2026-08-31 (see below); the switch half is untouched.
 - [blueprint-graph] extend an existing node endpoint (or add set_node_state) with enabled: enabled|disabled|developmentOnly and comment: Sets a node's enabled state — the editor's right-click Disable / Enable (Development 
 - [rendering-fx] material layer stack: read via list_material_parameters {layers:true}, write via set_material_layers: Enumerate a material instance's layer stack (which MaterialLayer and MaterialLayerBlend function is at 
 - [rendering-fx] viewport bookmarks: list_viewport_bookmarks / set_viewport_bookmark / jump_to_viewport_bookmark: Store the current viewport camera into one of the level's numbered bookmark slots, jump back to one, and lis
@@ -7928,3 +7928,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       DebugGame compiled and LINKED; DECL 436 == BIND 436; parity_check, mcp_static_check and
       audit_message_endpoints pass. NOT [x]: never run, and it has no suite yet - the endpoint needs
       a live component request to list, which means calling add_ against a real receiver class.
+
+- [ ] **add_make_set - BUILT, never run** (hours)
+      The third UK2Node_MakeContainer. add_make_array and add_make_map both existed, which is exactly
+      why this was worth finding: a family missing one member is invisible until somebody needs the
+      missing one, and then it looks like the bridge cannot do Blueprint containers at all.
+
+      THE PROPOSAL SAID container:"set" ON add_make_array, and that was the wrong shape for this
+      codebase. add_make_array and add_make_map are already separate endpoints, one per node type;
+      adding a container parameter to one of them would have left add_make_map as an odd duplicate of
+      a mode. Built as its own endpoint to match. `container` is refused BY NAME with a note saying
+      the three are separate endpoints, so a caller who read the old proposal is told where to go.
+
+      numInputs is the ELEMENT count, as with MakeArray - a Set has one pin per element, not the pin
+      PAIR MakeMap gives each entry. Element type is wildcard until wired.
+
+      DebugGame compiled and LINKED; DECL 437 == BIND 437; parity_check and mcp_static_check pass.
+      NOT [x]: never run, and no suite - it needs a Blueprint graph to place a node into.

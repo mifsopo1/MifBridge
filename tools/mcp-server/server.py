@@ -1320,6 +1320,12 @@ def add_make_map(graph_id: str, num_inputs: int = 1, x: int = 0, y: int = 0) -> 
     return _post("add_make_map", graphId=graph_id, numInputs=num_inputs, x=x, y=y)
 
 
+@mcp.tool()
+def add_make_set(graph_id: str, num_inputs: int = 1, x: int = 0, y: int = 0) -> dict:
+    "Place a Make Set literal node - the third UK2Node_MakeContainer alongside add_make_array and add_make_map, and the one this bridge could not place. num_inputs is the ELEMENT count (one pin each, unlike Make Map's Key/Value pair per entry); the element type stays wildcard until something is wired to it. A Set is how a Blueprint says 'these, no duplicates, constant-time membership' - building one from Make Array plus To Set is three nodes where this is one."
+    return _post("add_make_set", graphId=graph_id, numInputs=num_inputs, x=x, y=y)
+
+
 # --------------------------------------------------------------------------
 # Pins (removal)
 # --------------------------------------------------------------------------

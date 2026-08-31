@@ -18,6 +18,7 @@
 #include "K2Node_GetSubsystem.h"
 #include "K2Node_MakeArray.h"
 #include "K2Node_MakeMap.h"
+#include "K2Node_MakeSet.h"
 #include "K2Node_SpawnActorFromClass.h"
 #include "Nodes/K2Node_CreateWidget.h"   // UMGEditor private header (see MifBridge.Build.cs PrivateIncludePaths)
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -256,6 +257,49 @@ namespace MifBridge
 		Graph->Modify();
 
 		UK2Node_MakeArray* Node = NewObject<UK2Node_MakeArray>(Graph);
+		Node->NumInputs = FMath::Clamp(JInt(In, TEXT("numInputs"), 1), 1, 64); // base member; before AllocateDefaultPins
+		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
+
+		MarkStructural(Blueprint);
+		EmitNode(Out, Node);
+	}
+
+	// --- add_make_set -------------------------------------------------------
+	// Make Set literal node (UK2Node_MakeSet). The THIRD UK2Node_MakeContainer, alongside MakeArray and
+	// MakeMap - both of which this bridge could already place, which is exactly why this one was worth
+	// finding: a family missing one member is invisible until somebody needs the missing one, and then
+	// it looks like the bridge cannot do Blueprint containers at all.
+	//
+	// numInputs is the ELEMENT count, as with MakeArray - a Set has one pin per element, not the pin
+	// PAIR that MakeMap gives each entry. Element type is wildcard until something is wired to it.
+	//
+	// Set literals matter more than they look: a Set is how a Blueprint expresses "these, no
+	// duplicates, membership tested in constant time", and building one from a Make Array plus a
+	// To Set conversion is three nodes where this is one.
+	void H_add_make_set(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("graphId"), TEXT("numInputs"), TEXT("x"), TEXT("y") },
+			TEXT("graphId, numInputs (element pin count, 1-64, default 1), x, y"),
+			{ { TEXT("graph"), TEXT("spell it graphId") },
+			  { TEXT("num"), TEXT("spell it numInputs") },
+			  { TEXT("count"), TEXT("spell it numInputs") },
+			  { TEXT("container"), TEXT("not a parameter - add_make_array, add_make_map and add_make_set are separate endpoints, one per node type") },
+			  { TEXT("items"), TEXT("the element values are pins - place the node, then set_pin_default or connect_pins") } }))
+		{
+			return;
+		}
+
+		UBlueprint* Blueprint = nullptr;
+		UEdGraph* Graph = ResolveGraphField(In, Out, Blueprint);
+		if (!Graph)
+		{
+			return;
+		}
+		Blueprint->Modify();
+		Graph->Modify();
+
+		UK2Node_MakeSet* Node = NewObject<UK2Node_MakeSet>(Graph);
 		Node->NumInputs = FMath::Clamp(JInt(In, TEXT("numInputs"), 1), 1, 64); // base member; before AllocateDefaultPins
 		PlaceAndInit(Graph, Node, JInt(In, TEXT("x")), JInt(In, TEXT("y")));
 

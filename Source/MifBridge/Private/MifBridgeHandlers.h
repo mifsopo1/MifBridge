@@ -1239,6 +1239,7 @@ namespace MifBridge
 	MIF_DECL(add_get_subsystem);
 	MIF_DECL(add_make_array);
 	MIF_DECL(add_make_map);
+	MIF_DECL(add_make_set);
 	MIF_DECL(add_format_text);
 	MIF_DECL(add_get_data_table_row);
 	MIF_DECL(add_comment);

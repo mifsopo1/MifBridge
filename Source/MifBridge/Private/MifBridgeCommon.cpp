@@ -271,6 +271,7 @@ namespace MifBridge
 			MIF_BIND(add_get_subsystem);
 			MIF_BIND(add_make_array);
 			MIF_BIND(add_make_map);
+			MIF_BIND(add_make_set);
 			MIF_BIND(add_format_text);
 			MIF_BIND(add_get_data_table_row);
 			MIF_BIND(add_comment);
