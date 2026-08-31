@@ -895,9 +895,14 @@ namespace MifBridge
 		}
 
 		// Counted BEFORE the removal, because afterwards there is no variable to count against. These
-		// nodes survive the removal as orphans that fail on the next compile, and a caller who is
-		// told the number can go and fix them; one who is not will meet them as compile errors with
-		// no obvious cause.
+		// nodes survive the removal as orphans - and they do NOT fail the next compile, which is the
+		// whole reason the count is worth reporting. Measured 2026-08-31: get_node still resolves the
+		// orphan, still titled "Call MifDisp", and the compile straight afterwards is clean. This
+		// comment used to say they "fail on the next compile" and that a caller who was not told the
+		// number "will meet them as compile errors with no obvious cause" - the second half was
+		// wrong, and it was wrong in the direction that matters: they meet them as NOTHING, and the
+		// clean compile reads as confirmation the removal was fine. The count is the only signal
+		// there is.
 		// FBlueprintEditorUtils::GetNodesForVariable would be the obvious call and is PROTECTED, which
 		// the compiler catches rather than the linker. Every call/bind/unbind node for a dispatcher
 		// derives from UK2Node_BaseMCDelegate and answers GetPropertyName(), so walking the graphs is

@@ -9441,6 +9441,41 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the same as "it is wrong", and the difference matters for a note a caller acts on. Running
       them properly is what turned both into results.
 
+- [ ] **three more notes promise the compile will catch something, and none is measured** (hours)
+      Filed 2026-08-31 by sweeping for the pattern after fixing ONE instance of it, which is the
+      rule this repo keeps relearning: remove_event_dispatcher's note promised orphaned nodes "will
+      fail the next compile", they do not, and fixing that one without looking for siblings is how
+      the cooked-AnimSequence guard came to need writing four times.
+
+      grep for "next compile", "compile will", "compile to see" across Source/ returns four
+      user-facing claims. One is now measured and corrected. The other three describe DIFFERENT
+      mechanisms, so the fix does not transfer and neither does the refutation - each needs its own
+      measurement:
+
+        MifBridgeNodes2.cpp:831    rename_event_dispatcher's HALF-RENAME refusal: a dispatcher that
+                                   "resolves under two different names and breaks on the next
+                                   compile". Different mechanism - two live names, not one cached
+                                   reference - and plausibly true. Hard to test on purpose, because
+                                   the endpoint guards against reaching that state at all.
+        MifBridgeIntrospect.cpp:1501  a refusal explaining that renaming would "orphan the signature
+                                   graph and break the dispatcher on the next compile". Hypothetical
+                                   by construction: the endpoint refuses, so the claim is never
+                                   exercised. Testable only by doing it another way and looking.
+        MifBridgeDelegates.cpp:534 a signature mismatch where "compile will say so precisely".
+                                   The most checkable of the three.
+
+      WHAT MAKES THIS WORTH DOING rather than filing and forgetting: the one that was measured was
+      wrong in the direction that costs most. A note promising a failure that never arrives sends a
+      caller to run the compile, see it clean, and conclude the operation was safe. Silence read as
+      confirmation. Any of these three could be the same.
+
+      THE RULE THE FIRST ONE ESTABLISHED, which is the cheap way to predict the answer: a node that
+      has ALREADY CACHED what it refers to leaves breakage the compiler cannot see - orphaned
+      dispatcher calls, orphaned calls to a removed function, and set_variable_type's stale pin all
+      compile clean. The compiler only fails on a reference IT must resolve, which is why a
+      component-bound event whose component was removed does fail (T840b). Predict with that, then
+      measure anyway.
+
 - [ ] **set_variable_type left a STALE PIN with its link intact, and said it had reconstructed**
       - FIXED IN SOURCE, needs a build (hours)
       Found by testing the narrowed hypothesis from the failing-compile investigation rather than by
