@@ -6684,16 +6684,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       open_blueprint and open_asset_editor, so it is possible - it is just not free, and it makes
       layout depend on a UI tab existing.
 
-      TWO ROUTES, AND THE DEFAULT SHOULD BE THE NATIVE ONE:
+      CORRECTING MY OWN FIRST ANALYSIS, which said the native route could reuse "the same shape
+      layout_material_expressions already does". It cannot, because that endpoint contains NO
+      algorithm: it is one line, `UMaterialEditingLibrary::LayoutMaterialExpressions(Material)`
+      (MifBridgeMaterials.cpp:1828). The engine ships material layout and MifBridge delegates to it.
+      There is nothing there to reuse.
 
-        native layout      compute positions from the graph itself - columns by exec order, inputs
-                           to the left of their consumer - the same shape layout_material_expressions
-                           already does for material nodes. Works with no editor tab, no third-party
-                           plugin, and on any project. This is what a GENERAL UE5 tool should ship.
-        Blueprint Assist   better output, and OPTIONAL. It is a paid marketplace plugin most projects
-                           do not have, so it must sit behind a MIF_WITH_BLUEPRINTASSIST guard like
-                           LiveLink and MassEntity, and degrade to the native path when absent -
-                           never a hard dependency.
+      AND THE ENGINE SHIPS NO BLUEPRINT EQUIVALENT. Checked rather than assumed: no AutoArrange,
+      LayoutGraph, ArrangeNodes or AutoLayout in Editor/BlueprintGraph, Editor/Kismet or
+      Editor/GraphEditor headers, and nothing in BlueprintEditorUtils.h. Node arrangement in the
+      Blueprint editor is a human dragging nodes. That is precisely why Blueprint Assist exists and
+      sells.
+
+      SO THE TWO ROUTES ARE NOT WHAT I SAID THEY WERE:
+
+        native layout      means WRITING a graph layout algorithm - layered by exec flow, data
+                           inputs to the left of their consumer, collision resolution between rows.
+                           A day's work at least, not a reuse. No dependency, works headless, works
+                           on any project.
+        Blueprint Assist   already written, already good, and needs a graph OPEN IN A TAB
+                           (FBAGraphHandler takes an SGraphEditor). MifBridge can open one. It is a
+                           paid marketplace plugin, so it must sit behind a MIF_WITH_BLUEPRINTASSIST
+                           guard like LiveLink and MassEntity, never a hard dependency.
+
+      THE TRADE IS THEREFORE ANDRE'S, and it is a real one rather than the obvious call I first
+      implied. Doing BA first is much cheaper and gives better output on this machine today; doing
+      native first is the only thing that helps a project without the plugin. The two are not
+      exclusive - BA behind a guard, native as the fallback, is the end state either way. The
+      question is only which gets built first.
 
       NOT STARTED: raised while the DDS2 session was off-limits, so nothing was built or tested. The
       analysis above is from reading BlueprintAssist's headers and MifBridge's own layout surface,
