@@ -348,7 +348,11 @@ def main():
                                  [(x.get("direction"), (x.get("type") or {}).get("category"))
                                   for x in before]))
         if len(before) == 2:
-            rp = M.call("remove_pin", {"graphId": dg, "nodeGuid": gg, "pin": "A"})
+            # THROUGH scratch_confirm, because remove_pin is confirm-gated. The first version used
+            # M.call and got "requires confirm=true" - a TEST bug that reading the logic did not
+            # catch and only running it could, which is the argument for running.
+            rp = SC.confirm_call("remove_pin",
+                                 {"graphId": dg, "nodeGuid": gg, "pin": "A", "confirm": True})
             check("V11 it reports removing one", (rp.get("duplicatesRemoved") or 0) >= 1,
                   json.dumps(rp)[:220])
             check("V11 and duplicatesStillPresent says none is left - read back, not claimed",
