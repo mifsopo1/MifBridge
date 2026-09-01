@@ -7256,7 +7256,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Still 0 dead across 2431 parameters and 438 endpoints, so this is a STRONGER all-clear rather
       than a new finding - same outcome as the Blender twin.
 
-- [ ] **the Blender arm has no typed op for lights, cameras, keyframes, geometry nodes, particles, physics, rendering or world** (day+)
+- [x] **the Blender arm has no typed op for lights, cameras, keyframes, geometry nodes, particles, physics, rendering or world** - ALL EIGHT DONE 2026-09-01
       FILED 2026-09-01 at Andre's request, after a collaborator sketched a seven-test "autonomous
       environment" benchmark - modelling, materials, geometry nodes, lighting, animation,
       simulation, rendering - and the honest answer to "could MifBridge do that" turned out to be
@@ -7304,9 +7304,40 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         keyframes   set_keyframe, set_frame_range, list_keyframes - transforms on the object,
                                       everything else routed to whichever datablock owns it
 
-      Five remain: particles, physics, rendering, world/HDRI, and authoring geometry-node TREES
-      (attaching a nodes modifier already works through add_modifier). Rendering is the next one
-      worth doing - it is what turns the other three into a picture.
+      AND THEN THE OTHER FIVE, the same day, at Andre's instruction to take all of them:
+
+        rendering   set_render_settings, render_still
+        world       set_world
+        physics     add_rigid_body, add_cloth, add_collision, bake_physics
+        particles   add_particles, list_particles
+        geo nodes   create_node_group, add_group_node, link_group_nodes, add_group_interface,
+                    list_group_nodes, assign_node_group - authoring the TREE, which was the real
+                    gap; attaching a nodes modifier already worked through add_modifier
+
+      The addon is 45 ops -> 65. Full sweep 48 runs across 3.6/4.2/4.4/5.0, 0 failed; parity, param
+      reach (0 unreachable both arms) and the Blender dead-param scan all clean.
+
+      FOUR THINGS THESE COST, and each is a trap the next engine surface will hit too:
+
+        RNA IDENTITY DOES NOT SURVIVE A CALL. link_group_nodes verified its own work with
+        `l.from_node is fn` and reported linked:false for three links it had just made - linkCount
+        went 0 to 3 and outputReachable was true in the same response. bpy references are proxies
+        recreated on access, so `is` is False for the same underlying node. Compare by NAME. This
+        was a false NEGATIVE, the worse direction: it sends a caller to debug working wiring.
+
+        THE GROUP INTERFACE MOVED IN 4.0. tree.inputs/outputs are GONE, replaced by
+        tree.interface.new_socket(); and the modifier addresses exposed inputs by IDENTIFIER
+        (Socket_2) rather than by name, which is the most confusing thing about driving geometry
+        nodes from a script. Both are handled behind the op.
+
+        A SAMPLE COUNT LIVES IN A DIFFERENT PLACE PER ENGINE. Writing cycles.samples while EEVEE is
+        active changes nothing and reports nothing, so set_render_settings routes it and names the
+        property it actually wrote.
+
+        SIMULATION IS NOT VALID AT A FRAME YOU JUMPED TO. Physics steps forward from the start
+        frame, so frame 200 shows the rest pose unless the cache is baked. Every physics op says so
+        and bake_physics reports which caches actually hold frames, because bake_all returns
+        success when there is nothing to bake.
 
       THREE THINGS THIS COST, all worth reading before starting the next one:
 

@@ -4907,6 +4907,163 @@ def bl_list_keyframes(object: str, target: str = None) -> dict:
     return _blender("list_keyframes", object=object, target=target)
 
 
+# --------------------------------------------------------------------------
+# Blender: rendering, world, physics, particles and geometry-node authoring.
+# Added 2026-09-01 to close the last five capability families that had no typed
+# op at all and could only be reached through run_python.
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+def bl_set_render_settings(engine: str = None, resolution_x: int = None, resolution_y: int = None,
+                           percentage: int = None, samples: int = None, file_path: str = None,
+                           file_format: str = None, film_transparent: bool = None,
+                           color_mode: str = None, use_denoising: bool = None,
+                           exposure: float = None) -> dict:
+    "Configure the Blender render: engine (EEVEE/CYCLES aliases resolve to whatever THIS build calls them), resolution, samples, output path and format. The sample count lives in a different property per engine and writing the wrong one is a silent no-op, so this routes it and says which property it used. Warns when there is no scene camera, since a render would then fail."
+    return _blender("set_render_settings", engine=engine, resolutionX=resolution_x,
+                    resolutionY=resolution_y, percentage=percentage, samples=samples,
+                    filePath=file_path, fileFormat=file_format, filmTransparent=film_transparent,
+                    colorMode=color_mode, useDenoising=use_denoising, exposure=exposure)
+
+
+@mcp.tool()
+def bl_render_still(file_path: str = None, frame: float = None, samples: int = None,
+                    resolution_x: int = None, resolution_y: int = None, percentage: int = None,
+                    write_still: bool = None) -> dict:
+    "Render the current frame to a file. BLOCKS Blender's main thread for the whole render, so start small - a heavy frame exceeds the addon's job timeout and reads as a hung bridge. render() returns FINISHED whether or not a file appeared, so the file is stat'd afterwards and wroteFile/fileBytes are measurements rather than the operator's opinion."
+    return _blender("render_still", filePath=file_path, frame=frame, samples=samples,
+                    resolutionX=resolution_x, resolutionY=resolution_y, percentage=percentage,
+                    writeStill=write_still, _timeout=600.0)
+
+
+@mcp.tool()
+def bl_set_world(color: list = None, strength: float = None, hdri: str = None,
+                 rotation: float = None, mist_use: bool = None, mist_start: float = None,
+                 mist_depth: float = None, use_as_light: bool = None, name: str = None) -> dict:
+    "Set the Blender world background - a flat colour or an HDRI, plus strength and mist. A scene with no world contributes no ambient light at all, so an interior renders pure black outside its own fixtures and the lights get blamed. strength multiplies emission: 1.0 with mid grey is roughly overcast and washes out a dark interior, which usually wants 0.02-0.1. Passing both an hdri and a colour is refused - the texture would silently override the colour."
+    return _blender("set_world", color=color, strength=strength, hdri=hdri, rotation=rotation,
+                    mistUse=mist_use, mistStart=mist_start, mistDepth=mist_depth,
+                    useAsLight=use_as_light, name=name)
+
+
+@mcp.tool()
+def bl_add_rigid_body(object: str, type: str = None, mass: float = None, friction: float = None,
+                      bounciness: float = None, collision_shape: str = None,
+                      kinematic: bool = None, margin: float = None, linear_damping: float = None,
+                      angular_damping: float = None) -> dict:
+    "Make a Blender object an ACTIVE (falls) or PASSIVE (is landed on) rigid body. The simulation lives in a scene-level rigid body world that Blender creates on demand, so this goes through the operator with a context override - assigning obj.rigid_body directly is not possible. A rigid body is stepped forward from the start frame, so jumping to a late frame shows it at REST: call bl_bake_physics before rendering that frame."
+    return _blender("add_rigid_body", object=object, type=type, mass=mass, friction=friction,
+                    bounciness=bounciness, collisionShape=collision_shape, kinematic=kinematic,
+                    margin=margin, linearDamping=linear_damping, angularDamping=angular_damping)
+
+
+@mcp.tool()
+def bl_add_cloth(object: str, quality: int = None, mass: float = None, stiffness: float = None,
+                 damping: float = None, gravity: float = None, use_pressure: bool = None,
+                 pressure: float = None, collision_quality: int = None,
+                 self_collision: bool = None) -> dict:
+    "Add a cloth simulation to a Blender mesh. Refused on a mesh with too few vertices to drape - cloth deforms the geometry it is given and a quad has nothing to bend, so subdivide first."
+    return _blender("add_cloth", object=object, quality=quality, mass=mass, stiffness=stiffness,
+                    damping=damping, gravity=gravity, usePressure=use_pressure, pressure=pressure,
+                    collisionQuality=collision_quality, selfCollision=self_collision)
+
+
+@mcp.tool()
+def bl_add_collision(object: str, damping: float = None, friction: float = None,
+                     thickness: float = None, remove: bool = None) -> dict:
+    "Give a Blender object a Collision modifier so cloth, softbody and particles collide with it. RIGID BODIES DO NOT USE THIS - they collide through the rigid body world, so a floor for a falling crate needs bl_add_rigid_body type=PASSIVE instead. Giving the floor a Collision modifier and expecting a bounce is a common silent mistake."
+    return _blender("add_collision", object=object, damping=damping, friction=friction,
+                    thickness=thickness, remove=remove)
+
+
+@mcp.tool()
+def bl_bake_physics(start: float = None, end: float = None, clear: bool = None,
+                    type: str = None) -> dict:
+    "Bake Blender's physics point caches so a given frame shows the simulated state rather than the rest state. BLOCKS for the length of the bake. Reports which caches actually hold frames, because bake_all returns success even when nothing in the scene has a cache to bake."
+    return _blender("bake_physics", start=start, end=end, clear=clear, type=type,
+                    _timeout=600.0)
+
+
+@mcp.tool()
+def bl_add_particles(object: str, type: str = None, count: int = None, seed: int = None,
+                     frame_start: float = None, frame_end: float = None, lifetime: float = None,
+                     lifetime_random: float = None, emit_from: str = None,
+                     distribution: str = None, physics_type: str = None,
+                     normal_factor: float = None, random_factor: float = None,
+                     gravity_factor: float = None, damping_factor: float = None,
+                     size: float = None, size_random: float = None, render_type: str = None,
+                     instance_object: str = None, instance_collection: str = None,
+                     hair_length: float = None, child_count: int = None,
+                     show_emitter: bool = None, system_name: str = None,
+                     use_modifier_stack: bool = None, rotation_mode: str = None,
+                     use_rotations: bool = None) -> dict:
+    "Add a Blender particle system: EMITTER throws particles over time (steam, sparks) and HAIR instances geometry across a surface without moving (rubble, grass). Type-specific settings are refused on the wrong type. render_type OBJECT without instance_object renders NOTHING and Blender reports no error, so the two are validated together."
+    return _blender("add_particles", object=object, type=type, count=count, seed=seed,
+                    frameStart=frame_start, frameEnd=frame_end, lifetime=lifetime,
+                    lifetimeRandom=lifetime_random, emitFrom=emit_from, distribution=distribution,
+                    physicsType=physics_type, normalFactor=normal_factor,
+                    randomFactor=random_factor, gravityFactor=gravity_factor,
+                    dampingFactor=damping_factor, size=size, sizeRandom=size_random,
+                    renderType=render_type, instanceObject=instance_object,
+                    instanceCollection=instance_collection, hairLength=hair_length,
+                    childCount=child_count, showEmitter=show_emitter, systemName=system_name,
+                    useModifierStack=use_modifier_stack, rotationMode=rotation_mode,
+                    useRotations=use_rotations)
+
+
+@mcp.tool()
+def bl_list_particles(object: str) -> dict:
+    "Read every particle system on a Blender object off its datablocks - the verification half of bl_add_particles. Flags a system that renders nothing because render_type is OBJECT with no instance object."
+    return _blender("list_particles", object=object)
+
+
+@mcp.tool()
+def bl_create_node_group(name: str = None, type: str = None, with_group_io: bool = None) -> dict:
+    "Create a Blender node group - a geometry node tree by default, with Group Input/Output already wired to a Geometry socket pair. A geometry group with no geometry sockets cannot drive a modifier at all. Group sockets moved to tree.interface in Blender 4.0 and the old tree.inputs/outputs are GONE rather than deprecated; both are handled."
+    return _blender("create_node_group", name=name, type=type, withGroupIO=with_group_io)
+
+
+@mcp.tool()
+def bl_add_group_node(group: str, type: str, name: str = None, location: list = None,
+                      inputs: dict = None, label: str = None, operation: str = None,
+                      data_type: str = None, domain: str = None, mode: str = None) -> dict:
+    "Add a node to a Blender node group. `inputs` is {socketName: value} and a name that does not match a real socket is refused with the sockets the node actually has - a value written to a socket that is not there vanishes without a word."
+    return _blender("add_group_node", group=group, type=type, name=name, location=location,
+                    inputs=inputs, label=label, operation=operation, dataType=data_type,
+                    domain=domain, mode=mode)
+
+
+@mcp.tool()
+def bl_link_group_nodes(group: str, from_node: str, to_node: str, from_socket: str = None,
+                        to_socket: str = None) -> dict:
+    "Wire one node's output into another's input inside a Blender node group. links.new returns a link object even when Blender immediately drops it as invalid (mismatched socket types), so the link is read back and `linked` is a measurement rather than the call's return."
+    return _blender("link_group_nodes", group=group, fromNode=from_node, toNode=to_node,
+                    fromSocket=from_socket, toSocket=to_socket)
+
+
+@mcp.tool()
+def bl_add_group_interface(group: str, name: str, socket_type: str = None, in_out: str = None,
+                           default: float = None, min: float = None, max: float = None) -> dict:
+    "Expose a value as a group input or output - what turns a Blender node tree into a modifier with sliders on it. socket_type is a NodeSocket id such as NodeSocketFloat."
+    return _blender("add_group_interface", group=group, name=name, socketType=socket_type,
+                    inOut=in_out, default=default, min=min, max=max)
+
+
+@mcp.tool()
+def bl_list_group_nodes(group: str) -> dict:
+    "Every node and link in a Blender node group, plus whether the Group Output is actually reachable. That last line is the point: an unlinked Group Output is NOT an error - the modifier passes geometry through unchanged, which is indistinguishable from a tree that ran and did nothing."
+    return _blender("list_group_nodes", group=group)
+
+
+@mcp.tool()
+def bl_assign_node_group(object: str, group: str, modifier_name: str = None,
+                         inputs: dict = None) -> dict:
+    "Attach a Blender geometry node group to an object as a Nodes modifier and set its exposed inputs. The modifier addresses inputs by IDENTIFIER (Socket_2), not by name, which is the most confusing thing about driving geometry nodes from script - this resolves names to identifiers for you and reports anything it could not place."
+    return _blender("assign_node_group", object=object, group=group, modifierName=modifier_name,
+                    inputs=inputs)
+
+
+
 
 
 @mcp.tool()
