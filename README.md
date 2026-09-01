@@ -21,6 +21,8 @@ MifBridge is a Model Context Protocol (MCP) server fronting **two backends**: an
 
 Every change goes through Unreal's own graph API (`Schema->TryCreateConnection`, `ReconstructNode`, `FKismetEditorUtilities::CompileBlueprint`), so it fires the pin/notification callbacks that clipboard paste skips — the ones that resolve wildcard pins, relink variables, and expand macros. Every edit is wrapped in a transaction, so **Ctrl‑Z in the editor undoes anything the AI did.**
 
+Release history and the numbers at each version: **[CHANGELOG.md](CHANGELOG.md)** · packaged zips on the [releases page](https://github.com/mifsopo1/MifBridge/releases).
+
 ### ✨ Why this one is different
 
 | | |
