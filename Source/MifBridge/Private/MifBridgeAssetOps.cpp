@@ -448,12 +448,168 @@ namespace MifBridge
 	void H_rename_asset(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("path"), TEXT("newPath"), TEXT("confirm") },
-			TEXT("path, newPath (the destination - its last segment is BOTH the destination folder and the new asset name), confirm (required true)"),
+			{ TEXT("path"), TEXT("newPath"), TEXT("renames"), TEXT("confirm") },
+			TEXT("path, newPath (the destination - its last segment is BOTH the destination folder and the new asset name), confirm (required true); ")
+			TEXT("OR renames[] of {path, newPath} to move many in ONE IAssetTools pass"),
 			{ { TEXT("newName"), TEXT("there is no newName - put the whole destination in newPath (e.g. /Game/Foo/NewName); its last segment becomes the new asset name") },
 			  { TEXT("newPackageName"), TEXT("spell it newPath - newPackageName is a RESPONSE field only") },
-			  { TEXT("destination"), TEXT("spell it newPath") } }))
+			  { TEXT("destination"), TEXT("spell it newPath") },
+			  { TEXT("assets"), TEXT("the array parameter is called renames[], and each entry is an OBJECT {path, newPath} rather than a bare path - a rename needs both halves") },
+			  { TEXT("paths"), TEXT("the array parameter is called renames[], and each entry is {path, newPath}") } }))
 		{
+			return;
+		}
+
+		// ------------------------------------------------------------------ renames[] : the batch
+		//
+		// WHY A BATCH IS NOT JUST A LOOP, and the whole reason this exists. IAssetTools::RenameAssets
+		// fixes up REFERENCES to everything it is given, as one operation. Renaming A then B in two
+		// calls means anything in B that pointed at A is redirected mid-flight and then B itself
+		// moves; feeding both to one call lets AssetTools resolve the whole graph at once. It is
+		// also the only way to swap two names, or to move a folder's worth of assets that reference
+		// each other, without leaving a trail of redirectors.
+		//
+		// EVERY ENTRY IS VALIDATED BEFORE ANY OF THEM RUNS. RenameAssets takes the array and returns
+		// ONE bool for the lot, so there is no per-entry failure to report afterwards and no partial
+		// rollback to offer. A batch containing one bad path therefore refuses whole, before the
+		// engine is touched - which is the only honest shape available.
+		const TArray<TSharedPtr<FJsonValue>>* RenameArr = nullptr;
+		if (In->TryGetArrayField(TEXT("renames"), RenameArr) && RenameArr)
+		{
+			if (In->HasField(TEXT("path")) || In->HasField(TEXT("newPath")))
+			{
+				Fail(Out, TEXT("pass renames[] OR path/newPath, not both - two spellings of the ")
+					TEXT("same request would silently disagree about what was asked for. NOTHING ")
+					TEXT("was renamed."));
+				return;
+			}
+			// EMPTY IS CHECKED BEFORE CONFIRM, deliberately. A structurally invalid request
+			// should not need to be AUTHORISED before it can be told it is malformed - and the
+			// other way round the refusal is unreachable without confirm, which is how a test for
+			// it ends up silently asserting the confirm message instead.
+			if (RenameArr->Num() == 0)
+			{
+				Fail(Out, TEXT("renames[] is empty, so there is nothing to rename. NOTHING was "
+					TEXT("renamed.")));
+				return;
+			}
+			if (!JBool(In, TEXT("confirm"), false))
+			{
+				Fail(Out, TEXT("rename_asset requires confirm=true. NOTHING was renamed."));
+				return;
+			}
+
+			IAssetTools& BatchTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+			TArray<FAssetRenameData> Batch;
+			TArray<UObject*> Objects;
+			TArray<FString> Expected;
+			TArray<FString> Sources;
+			TSet<FString> SeenTargets;
+
+			for (int32 i = 0; i < RenameArr->Num(); ++i)
+			{
+				const TSharedPtr<FJsonObject>* Entry = nullptr;
+				if (!(*RenameArr)[i].IsValid() || !(*RenameArr)[i]->TryGetObject(Entry) || !Entry)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("renames[%d] is not an object - each entry is {path, newPath}. ")
+						TEXT("NOTHING was renamed."), i));
+					return;
+				}
+				const FString From = (*Entry)->GetStringField(TEXT("path"));
+				const FString To = (*Entry)->GetStringField(TEXT("newPath"));
+				if (From.IsEmpty() || !From.StartsWith(TEXT("/Game/")))
+				{
+					Fail(Out, FString::Printf(
+						TEXT("renames[%d].path '%s' is required and must start with /Game/. ")
+						TEXT("NOTHING was renamed."), i, *From));
+					return;
+				}
+				if (To.IsEmpty() || !To.StartsWith(TEXT("/Game/")))
+				{
+					Fail(Out, FString::Printf(
+						TEXT("renames[%d].newPath '%s' is required and must start with /Game/ ")
+						TEXT("(e.g. /Game/Foo/NewName). NOTHING was renamed."), i, *To));
+					return;
+				}
+				UObject* Obj = LoadAssetLenient(From);
+				if (!Obj)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("renames[%d]: asset not found: %s. NOTHING was renamed."), i, *From));
+					return;
+				}
+				const FString ToDir = FPackageName::GetLongPackagePath(To);
+				const FString ToName = FPackageName::GetLongPackageAssetName(To);
+				if (!IsValidIdentifier(ToName))
+				{
+					Fail(Out, FString::Printf(
+						TEXT("renames[%d]: invalid new asset name '%s' (from newPath '%s'). ")
+						TEXT("NOTHING was renamed."), i, *ToName, *To));
+					return;
+				}
+				// TWO ENTRIES AIMING AT ONE DESTINATION is the batch-only mistake, and AssetTools
+				// would answer it by UNIQUIFYING - producing NewName and NewName1 - which reads as
+				// success and is not what anybody asked for. Caught here where it can still be
+				// refused rather than reported after the fact.
+				const FString Target = ToDir / ToName;
+				if (SeenTargets.Contains(Target))
+				{
+					Fail(Out, FString::Printf(
+						TEXT("renames[%d] targets '%s', which an earlier entry already claims. ")
+						TEXT("AssetTools would uniquify one of them into a name you did not ask ")
+						TEXT("for. NOTHING was renamed."), i, *Target));
+					return;
+				}
+				SeenTargets.Add(Target);
+
+				Batch.Add(FAssetRenameData(TWeakObjectPtr<UObject>(Obj), ToDir, ToName));
+				Objects.Add(Obj);
+				Expected.Add(Target);
+				Sources.Add(NormalizePackagePath(From));
+			}
+
+			const bool bBatchOk = [&]()
+			{
+				TGuardValue<bool> UnattendedGuard(GIsRunningUnattendedScript, true);
+				return BatchTools.RenameAssets(Batch);
+			}();
+
+			// JUDGED PER ASSET, not from the single bool. RenameAssets returns one value for the
+			// whole array and can uniquify a name inside it, so `true` does not mean every entry
+			// landed where it was asked to. Each object is read back for where it ACTUALLY is.
+			TArray<TSharedPtr<FJsonValue>> Results;
+			int32 Exact = 0;
+			for (int32 i = 0; i < Objects.Num(); ++i)
+			{
+				const FString Actual = Objects[i] ? Objects[i]->GetOutermost()->GetName() : FString();
+				const bool bExact = (Actual == Expected[i]);
+				if (bExact) { ++Exact; }
+				TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
+				R->SetStringField(TEXT("oldPath"), Sources[i]);
+				R->SetStringField(TEXT("expectedPath"), Expected[i]);
+				R->SetStringField(TEXT("newPackageName"), Actual);
+				R->SetStringField(TEXT("newObjectPath"), Objects[i] ? Objects[i]->GetPathName() : FString());
+				R->SetBoolField(TEXT("exact"), bExact);
+				Results.Add(MakeShared<FJsonValueObject>(R));
+			}
+			Out->SetArrayField(TEXT("results"), Results);
+			Out->SetNumberField(TEXT("requested"), Objects.Num());
+			Out->SetNumberField(TEXT("renamedExactly"), Exact);
+			Out->SetBoolField(TEXT("renamed"), bBatchOk && Exact == Objects.Num());
+			Out->SetBoolField(TEXT("assetToolsReportedSuccess"), bBatchOk);
+			Out->SetStringField(TEXT("batchNote"),
+				TEXT("all of these went through ONE IAssetTools::RenameAssets call, so references "
+					 "between them were fixed up together rather than one redirector at a time."));
+			if (Exact != Objects.Num())
+			{
+				Out->SetStringField(TEXT("exactNote"),
+					TEXT("at least one asset did NOT land on the path it was given - compare "
+						 "expectedPath against newPackageName in results[]. AssetTools uniquifies "
+						 "on a clash rather than failing, so this can happen under a true return."));
+			}
+			UE_LOG(LogMifBridge, Log, TEXT("rename_asset: batch of %d, %d exact"),
+				Objects.Num(), Exact);
 			return;
 		}
 

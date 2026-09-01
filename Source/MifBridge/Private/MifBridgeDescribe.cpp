@@ -796,8 +796,8 @@ namespace MifBridge
 		static const TCHAR* const GMifDescNotes_delete_asset[] = { TEXT("packageName"), TEXT("spell it path - delete_asset takes the package under 'path'; an object path is accepted and reduced to its package") ,  TEXT("objectPath"), TEXT("spell it path - the whole PACKAGE is deleted, not one object inside it") ,  TEXT("force"), TEXT("there is no force - deletion is gated on confirm=true and still fails if the asset is still referenced"), nullptr };
 		static const TCHAR* const GMifDescKeys_close_asset_editors[] = { TEXT("path"), TEXT("objectPath"), TEXT("assetPath"), TEXT("confirm"), nullptr };
 		static const TCHAR* const GMifDescNotes_close_asset_editors[] = { TEXT("all"), TEXT("closing EVERY asset editor is not offered - name the asset you mean") ,  TEXT("force"), TEXT("there is no force; this finds an open editor or reports that there is none"), nullptr };
-		static const TCHAR* const GMifDescKeys_rename_asset[] = { TEXT("path"), TEXT("newPath"), TEXT("confirm"), nullptr };
-		static const TCHAR* const GMifDescNotes_rename_asset[] = { TEXT("newName"), TEXT("there is no newName - put the whole destination in newPath (e.g. /Game/Foo/NewName); its last segment becomes the new asset name") ,  TEXT("newPackageName"), TEXT("spell it newPath - newPackageName is a RESPONSE field only") ,  TEXT("destination"), TEXT("spell it newPath"), nullptr };
+		static const TCHAR* const GMifDescKeys_rename_asset[] = { TEXT("path"), TEXT("newPath"), TEXT("renames"), TEXT("confirm"), nullptr };
+		static const TCHAR* const GMifDescNotes_rename_asset[] = { TEXT("newName"), TEXT("there is no newName - put the whole destination in newPath (e.g. /Game/Foo/NewName); its last segment becomes the new asset name") ,  TEXT("newPackageName"), TEXT("spell it newPath - newPackageName is a RESPONSE field only") ,  TEXT("destination"), TEXT("spell it newPath") ,  TEXT("assets"), TEXT("the array parameter is called renames[], and each entry is an OBJECT {path, newPath} rather than a bare path - a rename needs both halves") ,  TEXT("paths"), TEXT("the array parameter is called renames[], and each entry is {path, newPath}"), nullptr };
 		static const TCHAR* const GMifDescKeys_fix_up_redirectors[] = { TEXT("path"), TEXT("confirm"), TEXT("dryRun"), TEXT("keepRedirectors"), TEXT("recursive"), nullptr };
 		static const TCHAR* const GMifDescNotes_fix_up_redirectors[] = { TEXT("folder"), TEXT("spell it path") ,  TEXT("deleteRedirectors"), TEXT("inverted - pass keepRedirectors:true to KEEP them; deleting is the default because leaving them is what created the problem"), nullptr };
 		static const TCHAR* const GMifDescKeys_duplicate_asset[] = { TEXT("path"), TEXT("newPath"), nullptr };
@@ -1246,10 +1246,10 @@ namespace MifBridge
 			  TEXT("MifBridgeCooked.cpp"), 1615, nullptr },
 			{ TEXT("check_consolidate_assets"), GMifDescKeys_check_consolidate_assets, GMifDescNotes_check_consolidate_assets,
 			  TEXT("target - the asset every reference will point at; sources[] - the assets to " "repoint away from"),
-			  TEXT("MifBridgeAssetOps.cpp"), 1603, nullptr },
+			  TEXT("MifBridgeAssetOps.cpp"), 1754, nullptr },
 			{ TEXT("consolidate_assets"), GMifDescKeys_consolidate_assets, GMifDescNotes_consolidate_assets,
 			  TEXT("target; sources[]; deleteSources (default false); confirm:true"),
-			  TEXT("MifBridgeAssetOps.cpp"), 1627, nullptr },
+			  TEXT("MifBridgeAssetOps.cpp"), 1778, nullptr },
 			{ TEXT("generate_lods"), GMifDescKeys_generate_lods, GMifDescNotes_generate_lods,
 			  TEXT("path (aliases assetPath, mesh); lodCount (total LODs including LOD0); ") TEXT("reductionPercentages[] - FRACTIONS 0..1, one per LOD, 1.0 = no reduction; ") TEXT("screenSizes[] (only with autoScreenSize:false); autoScreenSize (default true); ") TEXT("confirm:true"),
 			  TEXT("MifBridgeCollision.cpp"), 782, nullptr },
@@ -1965,14 +1965,14 @@ namespace MifBridge
 			  TEXT("path (aliases: objectPath, assetPath) - a /Game/ package or object path; confirm (required true)"),
 			  TEXT("MifBridgeAssetOps.cpp"), 219, nullptr },
 			{ TEXT("rename_asset"), GMifDescKeys_rename_asset, GMifDescNotes_rename_asset,
-			  TEXT("path, newPath (the destination - its last segment is BOTH the destination folder and the new asset name), confirm (required true)"),
+			  TEXT("path, newPath (the destination - its last segment is BOTH the destination folder and the new asset name), confirm (required true); ") TEXT("OR renames[] of {path, newPath} to move many in ONE IAssetTools pass"),
 			  TEXT("MifBridgeAssetOps.cpp"), 450, nullptr },
 			{ TEXT("fix_up_redirectors"), GMifDescKeys_fix_up_redirectors, GMifDescNotes_fix_up_redirectors,
 			  TEXT("path (a /Game folder), confirm (required true unless dryRun), dryRun? (survey only, ") TEXT("no confirm needed), keepRedirectors? (fix the references but leave the redirector ") TEXT("packages), recursive? (default true)"),
 			  TEXT("MifBridgeAssetOps.cpp"), 328, nullptr },
 			{ TEXT("duplicate_asset"), GMifDescKeys_duplicate_asset, GMifDescNotes_duplicate_asset,
 			  TEXT("path (the source asset), newPath (the destination - its last segment is BOTH the destination folder and the new asset name)"),
-			  TEXT("MifBridgeAssetOps.cpp"), 533, nullptr },
+			  TEXT("MifBridgeAssetOps.cpp"), 684, nullptr },
 			{ TEXT("get_collision"), GMifDescKeys_get_collision, GMifDescNotes_get_collision,
 			  TEXT("path (aliases: assetPath, mesh, staticMesh) - a StaticMesh asset; lod (default 0) - " "which LOD's sections to report"),
 			  TEXT("MifBridgeCollision.cpp"), 572, nullptr },
@@ -1990,13 +1990,13 @@ namespace MifBridge
 			  TEXT("MifBridgeCollision.cpp"), 160, nullptr },
 			{ TEXT("get_referencers"), GMifDescKeys_get_referencers, GMifDescNotes_get_referencers,
 			  TEXT("path; category (package|manage|searchableName|all, default package); hard (true = ") TEXT("hard only, false = SOFT only, omit for both); includeEditorOnly (default true); ") TEXT("includeProperties (per-edge hard/game/build detail)"),
-			  TEXT("MifBridgeAssetOps.cpp"), 975, nullptr },
+			  TEXT("MifBridgeAssetOps.cpp"), 1126, nullptr },
 			{ TEXT("get_dependencies"), GMifDescKeys_get_dependencies, GMifDescNotes_get_dependencies,
 			  TEXT("path; category (package|manage|searchableName|all, default package); hard (true = ") TEXT("hard only, false = SOFT only, omit for both); includeEditorOnly (default true); ") TEXT("includeProperties (per-edge hard/game/build detail)"),
-			  TEXT("MifBridgeAssetOps.cpp"), 1003, nullptr },
+			  TEXT("MifBridgeAssetOps.cpp"), 1154, nullptr },
 			{ TEXT("audit_unused"), GMifDescKeys_audit_unused, nullptr,
 			  TEXT("pathPrefix, class, includeAll, limit, rescan, excludeReferencers (aliases: excludeReferencer, ignoreReferencers)"),
-			  TEXT("MifBridgeAssetOps.cpp"), 1157, nullptr },
+			  TEXT("MifBridgeAssetOps.cpp"), 1308, nullptr },
 			{ TEXT("create_editable_child"), GMifDescKeys_create_editable_child, GMifDescNotes_create_editable_child,
 			  TEXT("sourceAsset (the cooked BP - its _C class path or its asset path), childPath (destination; defaults to /Game/Mif/<Name>_Child or _Editable), variant: child | sibling | uncooked | sibling_full | full"),
 			  TEXT("MifBridgeReconstruct.cpp"), 46, nullptr },

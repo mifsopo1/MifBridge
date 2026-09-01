@@ -7436,8 +7436,14 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
           Covered by tools/test_landscape_layer_register.py at 25 checks, and the postcondition is
           the chain rather than a flag: paint refused -> register -> paintable:true -> paint
           SUCCEEDS and touches 58 vertices.
-        rename_asset renames[]                          bulk rename/move in one IAssetTools pass;
-          matters beyond convenience because RenameAssets fixes up references as a batch
+        rename_asset renames[]                          DONE 2026-09-01, covered by
+          tools/test_bulk_rename.py at 21 checks. The assertion that matters is not "two assets
+          moved" - it is that a MaterialInstance still resolves to its parent AFTER both were
+          renamed in the same pass, which is what a loop of single renames leaves a redirector
+          trail for. Validated whole and refused whole, because RenameAssets takes the array and
+          returns ONE bool: there is no per-entry failure to report and no partial rollback. Two
+          entries aiming at one destination are refused rather than uniquified, and every entry is
+          read back for where it actually landed.
         set_node_state                                  DONE 2026-09-01. Built, and covered by
           tools/test_node_state.py at 26 checks. Two things it taught, both worth more than the
           endpoint: a hand-written name table beside ENodeEnabledState had Enabled and Disabled

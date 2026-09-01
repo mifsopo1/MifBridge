@@ -3146,8 +3146,11 @@ def delete_asset(path: str, confirm: bool = False) -> dict:
 
 
 @mcp.tool()
-def rename_asset(path: str, new_path: str, confirm: bool = False) -> dict:
-    "Rename/move a /Game/ asset package, leaving a redirector. Requires confirm=True."
+def rename_asset(path: str = None, new_path: str = None, renames: list = None,
+                 confirm: bool = False) -> dict:
+    "Rename/move a /Game/ asset package, leaving a redirector. Requires confirm=True. Pass renames=[{path, newPath}, ...] to move MANY in one IAssetTools pass - that is not the same as looping, because references between them are fixed up together rather than one redirector at a time, and it is the only way to swap two names or move a set of assets that reference each other. A batch is validated whole and refused whole: one bad entry renames nothing, and two entries aiming at the same destination are refused rather than silently uniquified. Every entry is read back for where it ACTUALLY landed, since RenameAssets returns a single bool for the array."
+    if renames:
+        return _post("rename_asset", renames=renames, confirm=confirm)
     return _post("rename_asset", path=path, newPath=new_path, confirm=confirm)
 
 
