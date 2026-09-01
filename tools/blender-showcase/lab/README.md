@@ -1,6 +1,6 @@
 # The abandoned-lab showcase
 
-Six staged scripts that build a lit, animated, rendered interior in Blender **entirely through
+9 staged scripts that build a lit, animated, rendered interior in Blender **entirely through
 MifBridge's typed ops**. No `run_python` — each stage prints which ops it used and whether the
 escape hatch was among them, so the claim is measured rather than asserted.
 
@@ -24,7 +24,7 @@ one and `import MifBlender; MifBlender.register()`). Run them in order; stage 1 
 ## Why it is staged rather than one script
 
 It was built while being recorded. A single script that runs for a minute and then reveals a
-finished room shows nothing about which capability did what; six stages that each visibly change
+finished room shows nothing about which capability did what; stages that each visibly change
 the viewport show the bridge working. It is also how you find out *which* stage broke something,
 which one script never tells you.
 
