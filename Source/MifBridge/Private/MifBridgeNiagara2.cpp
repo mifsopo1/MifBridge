@@ -121,6 +121,42 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("enabledEmitterCount"), Enabled);
 		Out->SetNumberField(TEXT("disabledEmitterCount"), Handles.Num() - Enabled);
 
+		// WHETHER THE COMPILED DATA STILL MATCHES THE SYSTEM, which nothing here reported until
+		// 2026-08-31. set_niagara_emitter's own whyNotSetProperty note warns that changing an
+		// emitter the wrong way "leaves a stale compile result and an emitter that stays dark with a
+		// flag saying otherwise" - and a caller had no way to check that, because the only thing on
+		// offer was the flag the note says is lying. Measured then: set_property flips bIsEnabled
+		// both ways and list_niagara_emitters reports it happily, so the read-back surface could not
+		// distinguish a working system from a stale one.
+		//
+		// ALL THREE ARE const AND NON-BLOCKING, which is the whole reason they are safe to put on a
+		// describe endpoint. PollForCompilationComplete is NOT used: it defaults to flushing pending
+		// requests, and a read that quietly waits on a shader compile is the material_statistics trap
+		// this project already has a guard and a postmortem for.
+#if WITH_EDITORONLY_DATA
+		const bool bNeedsCompile = System->NeedsRequestCompile();
+		const bool bCompiling = System->HasOutstandingCompilationRequests();
+		Out->SetBoolField(TEXT("compiledDataCurrent"), !bNeedsCompile);
+		Out->SetBoolField(TEXT("compilePending"), bCompiling);
+		Out->SetBoolField(TEXT("readyToRun"), System->IsReadyToRun());
+		if (bNeedsCompile || bCompiling)
+		{
+			Out->SetStringField(TEXT("compileNote"), FString::Printf(
+				TEXT("this system's compiled data does NOT match its current state%s. Until it "
+					 "recompiles, what runs is the PREVIOUS compile - so an emitter you just enabled "
+					 "can report enabled and still render nothing. The editor recompiles when it next "
+					 "needs the system, or set_niagara_emitter with recompile:true forces it now."),
+				bCompiling ? TEXT(" (a compile is already in flight)") : TEXT("")));
+		}
+#else
+		// Reported ALWAYS so a caller can assert on a value rather than on a field's absence - the
+		// same rule the counts above follow. Without editor-only data the question is unanswerable,
+		// and saying so beats omitting the field.
+		Out->SetStringField(TEXT("compileNote"),
+			TEXT("compile state is editor-only data and this build has none, so whether the compiled "
+				 "data is current cannot be answered here."));
+#endif
+
 		if (Handles.Num() == 0)
 		{
 			Out->SetStringField(TEXT("note"),

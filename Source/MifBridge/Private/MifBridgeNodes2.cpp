@@ -828,7 +828,8 @@ namespace MifBridge
 			Fail(Out, FString::Printf(
 				TEXT("rename of dispatcher '%s' to '%s' did not complete (signature graph renamed=%s, delegate ")
 				TEXT("variable renamed=%s). The blueprint may now hold HALF a rename, which resolves under two ")
-				TEXT("names and breaks on the next compile - check list_dispatchers and list_variables before ")
+				TEXT("names. Do NOT expect the compile to catch it - an orphaned dispatcher node survives and ")
+				TEXT("compiles clean, measured 2026-08-31 - so check list_dispatchers and list_variables before ")
 				TEXT("doing anything else. A cancelled transaction does not undo this (PM-007)."),
 				*OldName, *NewName,
 				bGraphRenamed ? TEXT("yes") : TEXT("no"), bVarRenamed ? TEXT("yes") : TEXT("no")));

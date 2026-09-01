@@ -1525,8 +1525,11 @@ namespace MifBridge
 		{
 			Fail(Out, FString::Printf(
 				TEXT("'%s' is the backing delegate of an event dispatcher, not a plain variable. ")
-				TEXT("Renaming it here would orphan the signature graph and break the dispatcher on the next compile — ")
-				TEXT("use rename_event_dispatcher, which renames both halves."), *OldName));
+				TEXT("Renaming it here would rename the VARIABLE and leave the signature graph behind under ")
+				TEXT("the old name, which is half a dispatcher. Do NOT expect the compile to tell you: measured ")
+				TEXT("2026-08-31, an orphaned dispatcher call node survives its dispatcher being removed and the ")
+				TEXT("next compile reports 0 errors, because the node has already cached what it refers to. ")
+				TEXT("Use rename_event_dispatcher, which renames both halves."), *OldName));
 			return;
 		}
 
