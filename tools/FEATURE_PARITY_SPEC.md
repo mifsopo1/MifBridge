@@ -6919,7 +6919,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       checker already carries exemption tables for them, so the pattern exists; it just needs
       extending deliberately rather than by adding a tool and seeing what goes red.
 
-- [ ] **no endpoint reports whether a Niagara system's compiled data is current** (hours)
+- [x] **no endpoint reports whether a Niagara system's compiled data is current** (hours)
       Found 2026-08-31 while trying to test set_niagara_emitter's whyNotSetProperty claim, which
       warns that enabling an emitter the wrong way leaves "a stale compile result and an emitter
       that stays dark with a flag saying otherwise".
@@ -6934,9 +6934,18 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       tells callers the change "will recompile when the editor next needs it" - advice with nothing
       to verify it against.
 
-      UNiagaraSystem exposes the state internally (it is what InvalidateCompileResults invalidates),
-      so this is a reporting gap rather than an engine limitation. describe_niagara_system is the
-      obvious home.
+      DONE 2026-08-31 and verified live. describe_niagara_system reports compiledDataCurrent,
+      compilePending and readyToRun, plus a compileNote when either is true saying that what runs is
+      the PREVIOUS compile. T591 asserts all three and - the part with teeth - that the note is
+      present exactly when the two bools say it should be, so the three cannot drift apart.
+      test_niagara 68 checks 0 fail; a real cooked system reports current true, pending false,
+      readyToRun true, note absent.
+
+      ALL THREE SOURCES ARE const AND NON-BLOCKING, which is why they belong on a describe endpoint.
+      PollForCompilationComplete is deliberately unused: it defaults to flushing pending requests,
+      and a read that quietly waits on a compile is the material_statistics trap this project
+      already has a guard and a postmortem for. Guarded on WITH_EDITORONLY_DATA, with the #else
+      still emitting compileNote so a caller asserts on a value rather than a field's absence.
 
 - [ ] **mcp_sends_unknown mis-parses a _post() used inline in an expression** (hours)
       Found 2026-08-31 by writing the first MCP tool that reads a response back inside a
@@ -7132,7 +7141,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       it was ordering, not a new guard.
 
 
-- [ ] **create_asset cannot configure at CREATION - the two-call form works** (hours)
+- [ ] **create_asset - CONVENIENCE DONE, atomicity still open** (hours)
       RETITLED AND RE-SCOPED 2026-08-31 after measuring it against the live editor. The old title,
       "11 asset types can only be created UNCONFIGURED", is wrong, and it was wrong in the direction
       that makes work look necessary. This is the fourth revision of this entry; the previous three
@@ -10182,7 +10191,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the source rather than by trying it, which is how the question should have been answered when
       the item was first filed.
 
-- [ ] **three more notes promise the compile will catch something, and none is measured** (hours)
+- [x] **three more notes promise the compile will catch something, and none is measured** (hours)
       Filed 2026-08-31 by sweeping for the pattern after fixing ONE instance of it, which is the
       rule this repo keeps relearning: remove_event_dispatcher's note promised orphaned nodes "will
       fail the next compile", they do not, and fixing that one without looking for siblings is how
@@ -10228,6 +10237,18 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       compile clean. The compiler only fails on a reference IT must resolve, which is why a
       component-bound event whose component was removed does fail (T840b). Predict with that, then
       measure anyway.
+
+      CLOSED 2026-08-31. The Delegates one was ATTEMPTED and its branch could not be reached - a
+      deliberate parameter mismatch still resolved the signature - and its collateral evidence
+      pointed the same way, so it is covered by the rule rather than by a test. The other two are
+      CORRECTED IN SOURCE AND BUILT: both keep their refusal and their advice, since renaming half a
+      dispatcher is wrong either way, but neither now tells the caller to expect the compile to
+      catch it. Verified live - rename_variable's refusal now reads "Do NOT expect the compile to
+      tell you: measured 2026-08-31, an orphaned dispatcher call node survives...".
+
+      That is three notes corrected from ONE measurement, which is the argument for chasing a rule
+      rather than a bug: the same afternoon's finding rewrote remove_event_dispatcher's note, a
+      comment seventy lines from it, and these two.
 
 - [x] **set_variable_type left a STALE PIN with its link intact, and said it had reconstructed**
       CLOSED 2026-08-31, after the first fix for it FAILED IN EXACTLY THE WAY THE BUG DID. That fix

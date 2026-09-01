@@ -98,6 +98,32 @@ def main():
             check("T591 %s echoes an object path" % label,
                   str(d.get("system", "")).startswith("/"), json.dumps(d)[:180])
 
+            # ---- compile state, added 2026-08-31 ------------------------------------------
+            # set_niagara_emitter warns that the wrong kind of edit leaves "a stale compile result
+            # and an emitter that stays dark with a flag saying otherwise", and until this endpoint
+            # reported compile state there was NO WAY to check that - the only thing on offer was
+            # the flag the note says is lying. Measured then: set_property flips bIsEnabled both
+            # ways and list_niagara_emitters reports it happily either way.
+            check("T591 %s reports whether its compiled data is current" % label,
+                  isinstance(d.get("compiledDataCurrent"), bool),
+                  "compiledDataCurrent=%r" % d.get("compiledDataCurrent"))
+            check("T591 %s reports compilePending and readyToRun as real bools" % label,
+                  isinstance(d.get("compilePending"), bool)
+                  and isinstance(d.get("readyToRun"), bool),
+                  "compilePending=%r readyToRun=%r"
+                  % (d.get("compilePending"), d.get("readyToRun")))
+            # THE AGREEMENT CHECK, which is what makes this more than a presence test: the note is
+            # emitted on exactly the condition the two bools describe, so the three are one fact
+            # told twice and must not disagree.
+            if isinstance(d.get("compiledDataCurrent"), bool)                     and isinstance(d.get("compilePending"), bool):
+                stale = (not d.get("compiledDataCurrent")) or d.get("compilePending")
+                check("T591 %s: compileNote is present exactly when it is stale or compiling"
+                      % label,
+                      bool(d.get("compileNote")) is stale,
+                      "current=%r pending=%r note=%r"
+                      % (d.get("compiledDataCurrent"), d.get("compilePending"),
+                         (d.get("compileNote") or "")[:70]))
+
     # ------------------------------------------------------------------ T592 filter honesty
     print("")
     print("=== T592 [filter honesty]: a filtered list must never read as completeness ===")
