@@ -105,6 +105,8 @@ def _resolve_target(obj, data_path, explicit):
         raise MifOpError("unknown target '%s' - use 'object' or 'data'. NOTHING was keyed."
                          % explicit)
     root = data_path.split(".")[0].split("[")[0]
+    # rigid_body, collision, cloth and friends hang off the OBJECT, and a dotted path rooted at one
+    # of them is an object path however deep it goes.
     if root in _OBJECT_CHANNELS:
         return obj, "object (a transform channel lives on the object)"
     if root in _DATA_HINTS and obj.data is not None:
@@ -179,16 +181,30 @@ def op_set_keyframe(params):
                              "was keyed.")
         value = params.get("value")
         index = params.get("index")
+        # A DOTTED PATH NEEDS WALKING. keyframe_insert takes "rigid_body.kinematic" happily, but
+        # setattr does not - it would look for an attribute literally named that and fail with
+        # "'Object' object has no attribute 'kinematic'", which names the leaf and hides that the
+        # problem was the walk. Found keying a rigid body's kinematic flag, which is the ordinary
+        # way to hold an object still and then hand it to the simulation.
+        holder, leaf = owner, path
+        if "." in path:
+            head, leaf = path.rsplit(".", 1)
+            for part in head.split("."):
+                holder = getattr(holder, part.split("[")[0])
+                if holder is None:
+                    raise MifOpError("'%s' is None on '%s', so '%s' cannot be written. A rigid "
+                                     "body path needs add_rigid_body to have run first. NOTHING "
+                                     "was keyed." % (part, obj.name, path))
         try:
             if index is not None:
-                cur = getattr(owner, path.split(".")[0])
+                cur = getattr(holder, leaf)
                 cur[int(index)] = float(value)
             elif isinstance(value, (list, tuple)):
-                setattr(owner, path, tuple(float(v) for v in value))
+                setattr(holder, leaf, tuple(float(v) for v in value))
             elif isinstance(value, bool):
-                setattr(owner, path, value)
+                setattr(holder, leaf, value)
             else:
-                setattr(owner, path, float(value))
+                setattr(holder, leaf, float(value))
         except (AttributeError, TypeError, ValueError) as exc:
             raise MifOpError("could not write %r to '%s' on the %s datablock: %s. NOTHING was "
                              "keyed." % (value, path, why, exc))
