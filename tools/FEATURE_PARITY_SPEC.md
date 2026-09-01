@@ -6975,6 +6975,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       is what everyone else is trusting - and it had already cost a false positive that took a
       detour to diagnose.
 
+- [ ] **a shared Blender helper names ONE of its two callers in its refusal** (hours)
+      audit_message_endpoints has been reporting this and it is not gated, so nothing forced anyone
+      to look. ops_mesh.py:169 _check_format is called by BOTH import_mesh and export_mesh, and its
+      refusal names one of them - so half the callers are sent to the wrong op's documentation.
+
+      PRE-EXISTING, not from tonight: the file's last change was ce4239f and it is unmodified since.
+      The comment directly above the helper already explains that _check_format being shared by two
+      verbs caused a real bug once ("my glTF import change let export_mesh write FBX bytes into a
+      .glb"), so the sharing is known - it is the MESSAGE that was not revisited.
+
+      THE SHAPE IS WORTH THE ENTRY MORE THAN THE FIX IS: the refusal is CORRECT and the name on it
+      is wrong, which is harder to notice than a wrong refusal. A caller reads a right answer, goes
+      to the named op's docs, and finds nothing that matches what they did.
+
+      Cheap: pass the calling op's name in, or name neither and describe the constraint instead.
+      Needs a Blender to verify the message actually changes, so it waits for the same session the
+      seamVertsRemoved fixture does.
+
 - [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
       The idle half needed no session and should never have been declined; the running half genuinely

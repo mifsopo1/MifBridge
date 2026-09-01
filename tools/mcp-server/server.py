@@ -5567,30 +5567,7 @@ if __name__ == "__main__":
 
 @mcp.tool()
 def mif_layout_graph(graph_id: str, apply: bool = False, comment: bool = False) -> dict:
-    """Arrange a blueprint graph left-to-right and optionally box each chain in a comment.
-
-    WHY THIS IS A mif_ TOOL. It owns no C++ endpoint - it composes three that already exist:
-    list_nodes for the topology, move_node to place, add_comment to box. The engine ships no
-    blueprint graph layout at all, so this looked like an engine job and is not one.
-
-    WHY IT EXISTS. MifBridge can author a graph and could not arrange one, so an agent could build
-    a correct graph that was unreadable to the person who opened it - every node at the caller's
-    coordinates or a hardcoded offset. The human's first act was to tidy it by hand.
-
-    DRY RUN UNLESS apply IS TRUE. With apply false it returns the plan and moves nothing, which is
-    the safe way to see what it would do to somebody's graph.
-
-    NODE SIZES ARE ESTIMATED, and cannot be otherwise: an ordinary K2 node has no stored size
-    (UEdGraphNode::NodeWidth is "only used when the node can be resized"), so extents come from pin
-    count and title length. Spacing is deliberately generous - sprawl is legible, overlap is not -
-    and comment boxes err LARGE because AutoSizeComments can shrink a too-big box to fit but cannot
-    grow a too-small one, since UE decides membership geometrically.
-
-    Args:
-        graph_id: the graph to arrange, as list_graphs returns it
-        apply: actually move the nodes (default false = plan only)
-        comment: also add one comment box per independent chain
-    """
+    """Arrange a blueprint graph left-to-right, optionally boxing each chain in a comment. DRY RUN unless apply=true. --reflow REPLACES agent-authored "MIF: " comment boxes and DELETES what it matches. Call mif_help("mif_layout_graph") first."""
     import importlib.util
     _spec = importlib.util.spec_from_file_location("mif_layout_graph_impl", _LAYOUT_GRAPH_PATH)
     if _spec is None or _spec.loader is None:
@@ -5655,34 +5632,7 @@ def mif_layout_graph(graph_id: str, apply: bool = False, comment: bool = False) 
 
 @mcp.tool()
 def mif_create_curve(path: str, keys: list, save_note: bool = True) -> dict:
-    """Create a CurveFloat and populate its keys in ONE call, then read them back.
-
-    WHY THIS IS A mif_ TOOL RATHER THAN AN ENDPOINT. create_asset already makes the curve and
-    set_property already fills it - measured, not assumed: FloatCurve.Keys accepts an ImportText
-    struct array through the ordinary property path. The gap was never capability, it was that a
-    caller had to make two calls AND spell
-    "((Time=0.0,Value=1.0),(Time=1.0,Value=5.0))" correctly by hand. Composing them here costs no
-    C++ and works on every engine version the bridge supports.
-
-    WHAT IT DOES NOT FIX, and cannot from out here: creation and configuration are still TWO
-    transactions. Between them the asset exists with an empty curve, which matters to an undo step
-    and to anything watching the asset registry. Only an endpoint can make that atomic, and that -
-    not the convenience - is the part of the original item still open.
-
-    NOT SAVED. Like everything else the bridge creates, the asset is registered and dirty; it is
-    lost on restart unless something saves it.
-
-    THE READ-BACK IS NOT A COPY OF WHAT YOU SENT, and that is correct rather than a bug. ExportText
-    omits DEFAULT values, so a key at time 0 comes back as "(Value=1.000000)" with no Time at all
-    while later keys keep theirs. Verified live: sending three keys returns
-    "((Value=1.000000),(Time=1.000000,Value=5.000000),(Time=2.500000,Value=0.250000))". Compare
-    keysRequested against the number of tuples, not the strings.
-
-    Args:
-        path: where to create it, e.g. /Game/_MifCurves/C_Damage
-        keys: [{"time": 0.0, "value": 1.0}, ...] - time/value pairs, in any order
-        save_note: include the reminder that nothing was saved (default true)
-    """
+    """Create a CurveFloat and populate its keys in one call, then read them back. keys is [{"time","value"}]. Not saved. Call mif_help("mif_create_curve") first."""
     made = _post("create_asset", path=path, **{"class": "CurveFloat"})
     if made.get("ok") is False:
         return {"ok": False, "error": made.get("error"), "stage": "create_asset"}
