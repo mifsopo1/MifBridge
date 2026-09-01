@@ -191,8 +191,16 @@ def _delete(objs, purge):
     purged = 0
     if purge:
         # orphan meshes/materials left behind by the delete
+        # LIGHTS, CAMERAS AND NODE GROUPS ADDED 2026-09-01, and their absence was not theoretical.
+        # This list predates the ops that create them, so clearing a scene left orphaned light and
+        # camera DATA behind holding their names - and the next create_light called "Fluoro_01" got
+        # "Fluoro_01.001", because bpy.data.objects.new() takes the datablock's name and the
+        # datablock could not have the old one. A later keyframe call then failed with "no object
+        # named 'Fluoro_01'" on a scene that had just been cleared and rebuilt. The response had
+        # reported the real name all along; nothing was reading it.
         for coll in (bpy.data.meshes, bpy.data.materials, bpy.data.images,
-                     bpy.data.armatures):
+                     bpy.data.armatures, bpy.data.lights, bpy.data.cameras,
+                     bpy.data.node_groups, bpy.data.particles, bpy.data.actions):
             for datablock in list(coll):
                 if datablock.users == 0:
                     coll.remove(datablock)
