@@ -7451,8 +7451,15 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
           engine's own LexToString, which cannot drift from the enum. And a PrintString node is
           BORN developmentOnly, because the UFUNCTION carries meta=(DevelopmentOnly); the suite now
           asserts that rather than working around it.
-        set_material_layers + list_material_parameters {layers:true}   read and write a material
-          instance's layer stack
+        set_material_layers + list_material_parameters {layers:true}   DONE 2026-09-01, covered by
+          tools/test_material_layers.py at 27 checks. The invariant is the whole difficulty:
+          Layers[0] is the BASE and takes no blend, so Blends holds exactly one fewer entry, and
+          FOUR editor-only arrays run parallel to Layers. SetMaterialLayers ACCEPTS a stack whose
+          parallel arrays disagree and then misbehaves in the material editor rather than at the
+          point of the mistake - so the writer never assembles the arrays, it builds through the
+          engine's AddDefaultBackgroundLayer/AppendBlendedLayer and asserts stackWellFormed off the
+          result. Both halves of the invariant are refused: a blend on the base, and a layer above
+          the base without one.
         list/set/jump_viewport_bookmark                 DONE 2026-09-01, plus clear_viewport_bookmark
           because a set-only API you cannot undo is a trap. Covered by
           tools/test_viewport_bookmarks.py at 30 checks. The reason this family is worth having at

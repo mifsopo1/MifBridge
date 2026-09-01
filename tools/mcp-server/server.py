@@ -3406,9 +3406,17 @@ def list_niagara_user_parameters(path: str, name_contains: str = "") -> dict:
 
 
 @mcp.tool()
-def list_material_parameters(path: str, types: list = None, group: str = "") -> dict:
-    "List the parameters a Material or MaterialInstance EXPOSES."
-    return _post("list_material_parameters", path=path, types=types or [], group=group)
+def list_material_parameters(path: str, types: list = None, group: str = "",
+                             layers: bool = False) -> dict:
+    "List the parameters a Material or MaterialInstance EXPOSES. Pass layers=True to also report the material LAYER STACK - a different axis from parameters: which UMaterialFunctions composite and in what order, which a material instance can override wholesale without anything in the parameter table hinting at it. hasLayers is false for a material that does not use Material Attribute Layers, which is most of them and is not an error."
+    return _post("list_material_parameters", path=path, types=types or [], group=group,
+                 layers=layers)
+
+
+@mcp.tool()
+def set_material_layers(path: str, layers: list) -> dict:
+    "Replace a MaterialInstance's layer stack. layers=[{function, blend, name, enabled}, ...] where entry 0 is the BASE and takes no blend, and every entry above it requires one - Blends holds exactly one fewer entry than Layers, and a stack whose parallel arrays disagree is accepted by the engine and then misbehaves in the material editor rather than at the point of the mistake. Built through the engine's own AddDefaultBackgroundLayer/AppendBlendedLayer so the six parallel arrays stay in step, and read back afterwards. Only works on a MaterialInstance: a base UMaterial's stack comes from its expression graph."
+    return _post("set_material_layers", path=path, layers=layers)
 
 
 @mcp.tool()

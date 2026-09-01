@@ -480,6 +480,7 @@ namespace MifBridge
 			MIF_BIND(delete_material_expression);
 			MIF_BIND(list_material_expressions);
 			MIF_BIND(list_material_parameters);
+			MIF_BIND(set_material_layers);
 			MIF_BIND(list_niagara_user_parameters);
 			MIF_BIND(set_niagara_user_parameter);
 			MIF_BIND(layout_material_expressions);

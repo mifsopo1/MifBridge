@@ -63,6 +63,9 @@
 #include "Factories/MaterialFunctionFactoryNew.h"
 #include "MaterialDomain.h"                      // EMaterialDomain (Runtime/Engine/Public/MaterialDomain.h:12-30)
 #include "MaterialEditingLibrary.h"              // MATERIALEDITOR_API statics — the NEW module dep
+#include "Materials/MaterialLayersFunctions.h"   // the layer stack
+#include "Materials/MaterialFunctionInterface.h"  // UMaterialFunctionInterface
+#include "Materials/MaterialInstanceConstant.h"   // SetMaterialLayers is on the constant
 #include "MaterialShared.h"                      // FMaterialUpdateContext (ENGINE_API, MaterialShared.h:2779+)
 #include "Materials/Material.h"
 #include "Materials/MaterialExpression.h"
@@ -181,10 +184,12 @@ namespace MifBridge
 	void H_list_material_parameters(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("path"), TEXT("material"), TEXT("assetPath"), TEXT("types"), TEXT("group") },
+			{ TEXT("path"), TEXT("material"), TEXT("assetPath"), TEXT("types"), TEXT("group"),
+			  TEXT("layers") },
 			TEXT("path (aliases: material, assetPath) of a Material or MaterialInstance; "
 				 "types:[scalar|vector|texture|staticSwitch|doubleVector|font|runtimeVirtualTexture|"
-				 "sparseVolumeTexture|staticComponentMask] to filter; group to filter by parameter group"),
+				 "sparseVolumeTexture|staticComponentMask] to filter; group to filter by parameter group; "
+				 "layers:true to also report the material LAYER STACK"),
 			{ { TEXT("parameterName"), TEXT("this LISTS parameters - to read one value use get_property on a material instance, and to write one use set_material_parameter") },
 			  { TEXT("includeExpressions"), TEXT("that is list_material_expressions, which returns nothing on a COOKED material - this endpoint exists precisely because the cached parameter table survives cook and the expression graph does not") } }))
 		{
@@ -305,6 +310,71 @@ namespace MifBridge
 				WantTypes.Num() > 0 || !WantGroup.IsEmpty()
 					? TEXT("nothing matched the types/group filter - call again without it to see everything")
 					: TEXT("this material genuinely exposes no parameters (it is not a filter artefact)"));
+		}
+
+		// ------------------------------------------------------------------ layers:true
+		//
+		// A DIFFERENT AXIS FROM PARAMETERS, which is why it is opt-in rather than always reported.
+		// Parameters are scalars and textures; the layer stack is which UMaterialFunctions are
+		// composited and in what order. A material instance can override the whole stack, and
+		// nothing in the parameter table hints that it has.
+		//
+		// THE INVARIANT WORTH KNOWING: Layers[0] is the BASE and has no blend, so Blends has
+		// exactly one fewer entry - Blends[i] blends Layers[i+1] onto everything beneath it. The
+		// editor-only arrays (LayerNames, LayerStates) run parallel to Layers. Reporting them
+		// zipped rather than as three loose arrays is the difference between a caller being able
+		// to act on this and having to rediscover the pairing.
+		if (JBool(In, TEXT("layers"), false))
+		{
+			FMaterialLayersFunctions Stack;
+			const bool bHas = Mat->GetMaterialLayers(Stack);
+			Out->SetBoolField(TEXT("hasLayers"), bHas);
+			if (!bHas)
+			{
+				Out->SetStringField(TEXT("layersNote"),
+					TEXT("this material has no layer stack. GetMaterialLayers returns false for a "
+						 "material that does not use Material Attribute Layers at all - which is "
+						 "most of them - and that is not an error."));
+			}
+			else
+			{
+				TArray<TSharedPtr<FJsonValue>> Arr;
+				for (int32 i = 0; i < Stack.Layers.Num(); ++i)
+				{
+					TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+					J->SetNumberField(TEXT("index"), i);
+					J->SetStringField(TEXT("layer"),
+						Stack.Layers[i] ? Stack.Layers[i]->GetPathName() : FString());
+					J->SetBoolField(TEXT("isBase"), i == 0);
+					// The blend that puts THIS layer over the ones below. Layer 0 has none, and
+					// saying so beats emitting an empty string that reads like a missing asset.
+					if (i > 0 && Stack.Blends.IsValidIndex(i - 1))
+					{
+						J->SetStringField(TEXT("blend"),
+							Stack.Blends[i - 1] ? Stack.Blends[i - 1]->GetPathName() : FString());
+					}
+#if WITH_EDITORONLY_DATA
+					if (Stack.EditorOnly.LayerNames.IsValidIndex(i))
+					{
+						J->SetStringField(TEXT("name"), Stack.EditorOnly.LayerNames[i].ToString());
+					}
+					if (Stack.EditorOnly.LayerStates.IsValidIndex(i))
+					{
+						J->SetBoolField(TEXT("enabled"), Stack.EditorOnly.LayerStates[i]);
+					}
+#endif
+					Arr.Add(MakeShared<FJsonValueObject>(J));
+				}
+				Out->SetArrayField(TEXT("layers"), Arr);
+				Out->SetNumberField(TEXT("layerCount"), Stack.Layers.Num());
+				Out->SetNumberField(TEXT("blendCount"), Stack.Blends.Num());
+				Out->SetBoolField(TEXT("stackWellFormed"),
+					Stack.Blends.Num() == FMath::Max(0, Stack.Layers.Num() - 1));
+				Out->SetStringField(TEXT("layersNote"),
+					TEXT("layers[0] is the BASE and has no blend; blend on layer i composites it "
+						 "over everything beneath. A well-formed stack has exactly one fewer blend "
+						 "than layers."));
+			}
 		}
 	}
 
@@ -2155,4 +2225,225 @@ namespace MifBridge
 				 "for comparing one material against ITSELF before and after a change; comparing the "
 				 "absolute counts of two different materials says much less than it appears to."));
 	}
+
+	// --- set_material_layers -------------------------------------------------------------------
+	//   in:  { path, layers: [{ function, blend, name, enabled }] }
+	//   out: { layerCount, blendCount, layers[], ... }
+	//
+	// WRITING THE STACK, and the invariant that makes it easy to corrupt by hand. Layers[0] is the
+	// BASE and takes no blend; every layer after it needs one, so Blends must hold exactly
+	// Layers.Num() - 1 entries. Four editor-only arrays run parallel to Layers - LayerNames,
+	// LayerStates, LayerGuids, LayerLinkStates - and a stack whose parallel arrays disagree in
+	// length is accepted by SetMaterialLayers and then misbehaves in the material editor rather
+	// than at the point of the mistake.
+	//
+	// So this never assembles the arrays directly. It builds through AddDefaultBackgroundLayer()
+	// and AppendBlendedLayer(), which are the engine's own methods for keeping all six in step,
+	// and then only assigns into slots those calls created.
+	//
+	// ONLY ON A MATERIAL INSTANCE. SetMaterialLayers lives on UMaterialInstance; the stack of a
+	// base UMaterial is defined by its expression graph, and there is no setter for it that would
+	// not be a lie. A UMaterial is refused by name rather than silently doing nothing.
+	void H_set_material_layers(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("path"), TEXT("material"), TEXT("assetPath"), TEXT("layers") },
+			TEXT("path (aliases: material, assetPath) of a MaterialInstance; "
+				 "layers[] of { function (a UMaterialFunction path), blend (required on every "
+				 "entry except the first), name, enabled }"),
+			{ { TEXT("blends"), TEXT("blends are not a separate array here - each layer carries its own `blend`, which is what keeps the two in step; the base layer takes none") },
+			  { TEXT("parameter"), TEXT("that is set_material_parameter - this replaces the LAYER STACK, not a value inside it") },
+			  { TEXT("append"), TEXT("this sets the whole stack; read the current one with list_material_parameters {layers:true} and send it back with your addition") } }))
+		{
+			return;
+		}
+
+		const FString Path = JStrAny(In, { TEXT("path"), TEXT("material"), TEXT("assetPath") });
+		if (Path.IsEmpty())
+		{
+			Fail(Out, TEXT("path is required (a MaterialInstance). NOTHING was changed."));
+			return;
+		}
+		UObject* Asset = LoadAssetLenient(Path);
+		if (!Asset)
+		{
+			Fail(Out, FString::Printf(TEXT("asset not found: %s. NOTHING was changed."), *Path));
+			return;
+		}
+		UMaterialInstanceConstant* MIC = Cast<UMaterialInstanceConstant>(Asset);
+		if (!MIC)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is a %s. SetMaterialLayers is a MaterialInstance operation - a base "
+					 "UMaterial's layer stack comes from its expression graph and cannot be "
+					 "written this way. create_material_instance makes one from it. NOTHING was "
+					 "changed."), *Path, *Asset->GetClass()->GetName()));
+			return;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if (!In->TryGetArrayField(TEXT("layers"), Arr) || !Arr)
+		{
+			Fail(Out, TEXT("layers[] is required. Read the current stack with "
+				TEXT("list_material_parameters {layers:true}. NOTHING was changed.")));
+			return;
+		}
+		if (Arr->Num() == 0)
+		{
+			Fail(Out, TEXT("layers[] is empty - a stack needs at least a base layer. NOTHING was "
+				TEXT("changed.")));
+			return;
+		}
+
+		// EVERYTHING RESOLVED AND VETTED BEFORE THE STACK IS TOUCHED, because a half-built stack
+		// left behind by a mid-loop failure is worse than the original.
+		struct FEntry
+		{
+			UMaterialFunctionInterface* Function = nullptr;
+			UMaterialFunctionInterface* Blend = nullptr;
+			FString Name;
+			bool bEnabled = true;
+		};
+		TArray<FEntry> Entries;
+		for (int32 i = 0; i < Arr->Num(); ++i)
+		{
+			const TSharedPtr<FJsonObject>* Obj = nullptr;
+			if (!(*Arr)[i].IsValid() || !(*Arr)[i]->TryGetObject(Obj) || !Obj)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("layers[%d] is not an object - each entry is { function, blend, name, "
+						 "enabled }. NOTHING was changed."), i));
+				return;
+			}
+			FEntry E;
+			const FString FnPath = (*Obj)->GetStringField(TEXT("function"));
+			if (!FnPath.IsEmpty())
+			{
+				E.Function = Cast<UMaterialFunctionInterface>(LoadAssetLenient(FnPath));
+				if (!E.Function)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("layers[%d].function '%s' is not a loadable MaterialFunction. "
+							 "NOTHING was changed."), i, *FnPath));
+					return;
+				}
+			}
+			const FString BlendPath = (*Obj)->GetStringField(TEXT("blend"));
+			if (i == 0 && !BlendPath.IsEmpty())
+			{
+				Fail(Out, TEXT("layers[0] is the BASE layer and takes no blend - a blend "
+					TEXT("composites a layer over the ones beneath it, and nothing is beneath the ")
+					TEXT("base. NOTHING was changed.")));
+				return;
+			}
+			if (i > 0)
+			{
+				if (BlendPath.IsEmpty())
+				{
+					Fail(Out, FString::Printf(
+						TEXT("layers[%d].blend is required - every layer above the base needs a "
+							 "blend to composite it, and Blends must hold exactly one entry fewer "
+							 "than Layers. NOTHING was changed."), i));
+					return;
+				}
+				E.Blend = Cast<UMaterialFunctionInterface>(LoadAssetLenient(BlendPath));
+				if (!E.Blend)
+				{
+					Fail(Out, FString::Printf(
+						TEXT("layers[%d].blend '%s' is not a loadable MaterialFunction. NOTHING "
+							 "was changed."), i, *BlendPath));
+					return;
+				}
+			}
+			E.Name = (*Obj)->GetStringField(TEXT("name"));
+			bool bEnabled = true;
+			(*Obj)->TryGetBoolField(TEXT("enabled"), bEnabled);
+			E.bEnabled = bEnabled;
+			Entries.Add(E);
+		}
+
+		const FScopedTransaction Transaction(
+			NSLOCTEXT("MifBridge", "MifSetMaterialLayers", "Set Material Layers"));
+		MIC->Modify();
+
+		// BUILT THROUGH THE ENGINE'S OWN METHODS. AddDefaultBackgroundLayer creates slot 0 and its
+		// parallel editor-only entries; AppendBlendedLayer adds a layer AND its blend together.
+		// Assigning into Layers/Blends by hand is what leaves the six parallel arrays disagreeing.
+		FMaterialLayersFunctions Stack;
+		Stack.Empty();
+		Stack.AddDefaultBackgroundLayer();
+		if (Stack.Layers.Num() > 0) { Stack.Layers[0] = Entries[0].Function; }
+		for (int32 i = 1; i < Entries.Num(); ++i)
+		{
+			const int32 Idx = Stack.AppendBlendedLayer();
+			if (Stack.Layers.IsValidIndex(Idx)) { Stack.Layers[Idx] = Entries[i].Function; }
+			if (Stack.Blends.IsValidIndex(Idx - 1)) { Stack.Blends[Idx - 1] = Entries[i].Blend; }
+		}
+#if WITH_EDITORONLY_DATA
+		for (int32 i = 0; i < Entries.Num(); ++i)
+		{
+			if (!Entries[i].Name.IsEmpty() && Stack.EditorOnly.LayerNames.IsValidIndex(i))
+			{
+				Stack.EditorOnly.LayerNames[i] = FText::FromString(Entries[i].Name);
+			}
+			if (Stack.EditorOnly.LayerStates.IsValidIndex(i))
+			{
+				Stack.EditorOnly.LayerStates[i] = Entries[i].bEnabled;
+			}
+		}
+#endif
+		MIC->SetMaterialLayers(Stack);
+		MIC->PostEditChange();
+		MIC->MarkPackageDirty();
+
+		// READ BACK off the instance. SetMaterialLayers returns void on the constant, so the only
+		// evidence that the stack took is the stack the material now reports.
+		FMaterialLayersFunctions After;
+		const bool bHas = MIC->GetMaterialLayers(After);
+		Out->SetBoolField(TEXT("hasLayers"), bHas);
+		Out->SetNumberField(TEXT("requested"), Entries.Num());
+		Out->SetNumberField(TEXT("layerCount"), After.Layers.Num());
+		Out->SetNumberField(TEXT("blendCount"), After.Blends.Num());
+		Out->SetBoolField(TEXT("stackWellFormed"),
+			After.Blends.Num() == FMath::Max(0, After.Layers.Num() - 1));
+		Out->SetBoolField(TEXT("layerCountMatches"), After.Layers.Num() == Entries.Num());
+
+		TArray<TSharedPtr<FJsonValue>> Report;
+		for (int32 i = 0; i < After.Layers.Num(); ++i)
+		{
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			J->SetNumberField(TEXT("index"), i);
+			J->SetStringField(TEXT("layer"),
+				After.Layers[i] ? After.Layers[i]->GetPathName() : FString());
+			J->SetBoolField(TEXT("isBase"), i == 0);
+			if (i > 0 && After.Blends.IsValidIndex(i - 1))
+			{
+				J->SetStringField(TEXT("blend"),
+					After.Blends[i - 1] ? After.Blends[i - 1]->GetPathName() : FString());
+			}
+#if WITH_EDITORONLY_DATA
+			if (After.EditorOnly.LayerNames.IsValidIndex(i))
+			{
+				J->SetStringField(TEXT("name"), After.EditorOnly.LayerNames[i].ToString());
+			}
+			if (After.EditorOnly.LayerStates.IsValidIndex(i))
+			{
+				J->SetBoolField(TEXT("enabled"), After.EditorOnly.LayerStates[i]);
+			}
+#endif
+			Report.Add(MakeShared<FJsonValueObject>(J));
+		}
+		Out->SetArrayField(TEXT("layers"), Report);
+		if (After.Layers.Num() != Entries.Num())
+		{
+			Out->SetStringField(TEXT("countNote"), FString::Printf(
+				TEXT("asked for %d layers and the instance now reports %d. Treat this as a "
+					 "FAILURE despite ok:true."), Entries.Num(), After.Layers.Num()));
+		}
+		Out->SetStringField(TEXT("saveNote"),
+			TEXT("the material instance is dirty and NOTHING has been saved. Shaders recompile in "
+				 "the background - shader_compile_status reports when that settles."));
+	}
+
+
 }

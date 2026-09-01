@@ -1621,6 +1621,7 @@ namespace MifBridge
 	/** What a material EXPOSES, as opposed to how it is built. The cached parameter table survives
 	 *  cook, so unlike list_material_expressions this works on shipped content. */
 	MIF_DECL(list_material_parameters);
+	MIF_DECL(set_material_layers);
 	/** A NiagaraSystem's User. parameters WITH VALUES. The names are reachable through
 	 *  get_property; the values are a flat byte array behind an opaque type index, and are not. */
 	MIF_DECL(list_niagara_user_parameters);
