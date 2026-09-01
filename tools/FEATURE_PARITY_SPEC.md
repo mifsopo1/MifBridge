@@ -7294,9 +7294,39 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       clear_scene, list_objects. Modelling and materials are genuinely covered. Everything in the
       list above is not.
 
-      NOT STARTED, and deliberately not scoped as one item - each category is its own piece of work
-      with its own engine surface, and lights/cameras are worth far more than particles for the
-      uses this bridge actually has. Splitting comes when somebody decides to start.
+      THREE OF THE EIGHT ARE NOW CLOSED, 2026-09-01, after Andre confirmed the intent: full Blender
+      control from this one plugin, so these are gaps to close rather than notes to keep.
+
+        lights      create_light      POINT/SUN/SPOT/AREA, type-specific settings REFUSED on the
+                                      wrong type rather than silently dropped
+        cameras     create_camera     including lookAt, which derives the euler - a Blender camera
+                                      faces its local -Z and that is what hand-aiming gets wrong
+        keyframes   set_keyframe, set_frame_range, list_keyframes - transforms on the object,
+                                      everything else routed to whichever datablock owns it
+
+      Five remain: particles, physics, rendering, world/HDRI, and authoring geometry-node TREES
+      (attaching a nodes modifier already works through add_modifier). Rendering is the next one
+      worth doing - it is what turns the other three into a picture.
+
+      THREE THINGS THIS COST, all worth reading before starting the next one:
+
+        THE MIRROR. The edit went into the repo source and the running GUI Blender kept serving the
+        INSTALLED copy, so the new op answered "unknown endpoint". sync_blender_addon.py's header
+        already documents this happening twice, including "again the same evening, in the small".
+        All four installed Blenders were stale. Run the sync tool; do not hand-copy.
+
+        BLENDER 5.0 MOVED THE FCURVES AND DELETED THE OLD PATH. Up to 4.4 an action owns
+        action.fcurves; in 5.0 they are at layers[].strips[].channelbag(slot).fcurves and `Action`
+        has no `fcurves` attribute at all, so the old access RAISES rather than returning empty.
+        Any future animation work needs the same two-path accessor.
+
+        A GREEN SWEEP OVER UNEXERCISED CODE PROVES NOTHING. The 44-run sweep passed with all three
+        op families already written, because no suite called any of them. test_blender_anim.py was
+        written to fix that and found three real bugs on its FIRST run: set_frame_range validated
+        the clamped RESULT instead of the request (Blender drags start down to meet end, so a
+        backwards range read as consistent), and create_light created the light before refusing a
+        misplaced parameter, littering the scene for somebody who only made a typo. 48 runs now,
+        0 failed, on 3.6/4.2/4.4/5.0.
 
 - [ ] **two reads the purity sweep can now PROVE it never exercises** (hours)
       FILED 2026-09-01, and only findable because "attempted only" stopped being one bucket.

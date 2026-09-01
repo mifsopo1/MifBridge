@@ -102,6 +102,25 @@ def op_create_light(params):
         raise MifOpError("unknown light type '%s' for this Blender. Valid: %s. NOTHING was created."
                          % (kind, ", ".join(sorted(valid))))
 
+    # TYPE-SPECIFIC KEYS ARE CHECKED BEFORE THE LIGHT EXISTS. The first version created it and then
+    # refused, which is honest - the error said "The light WAS created" - and still leaves a stray
+    # object in the scene for a caller who did nothing but make a typo. test_blender_anim's cleanup
+    # check found it by refusing to ignore an A_Bad nobody meant to keep. Everywhere else in this
+    # addon a refusal means NOTHING was created, and this now matches.
+    _MISPLACED = (
+        (("spotAngle", "spotBlend"), "SPOT", "spotAngle/spotBlend"),
+        (("size", "sizeY", "shape"), "AREA", "size/sizeY/shape"),
+        (("angle",), "SUN", "angle"),
+        (("radius",), ("POINT", "SPOT"), "radius (the soft-shadow size)"),
+    )
+    for keys, want, label in _MISPLACED:
+        present = [k for k in keys if k in params]
+        wants = want if isinstance(want, tuple) else (want,)
+        if present and kind not in wants:
+            raise MifOpError("%s only applies to a %s light and this one is %s (%s given). "
+                             "NOTHING was created."
+                             % (label, " or ".join(wants), kind, ", ".join(present)))
+
     snap = selection_snapshot()
     try:
         data = bpy.data.lights.new(name=str(take(params, "name", default="Light", kind=str)),
@@ -125,12 +144,9 @@ def op_create_light(params):
         # who sets spotAngle on a POINT light has a bug, and being told is the whole point of a
         # guarded op - Blender itself would just not have the attribute.
         def _only(prop_names, want, label):
-            present = [p for p in prop_names if p in params]
-            if present and kind != want:
-                raise MifOpError("%s only applies to a %s light and this one is %s (%s given). "
-                                 "The light WAS created; fix the parameters and set them, or "
-                                 "delete it." % (label, want, kind, ", ".join(present)))
-            return present
+            # The mismatch was already refused above, before anything was created; this only asks
+            # whether there is work to do.
+            return [p for p in prop_names if p in params]
 
         if _only(("spotAngle", "spotBlend"), "SPOT", "spotAngle/spotBlend"):
             sa = take_float(params, "spotAngle", default=None)
@@ -153,11 +169,8 @@ def op_create_light(params):
             ang = take_float(params, "angle", default=None)
             if ang is not None:
                 data.angle = ang
-        if "radius" in params and kind in ("POINT", "SPOT"):
+        if "radius" in params:
             data.shadow_soft_size = take_float(params, "radius", default=0.1)
-        elif "radius" in params:
-            raise MifOpError("'radius' is the soft-shadow size and applies to POINT and SPOT "
-                             "lights; this one is %s. The light WAS created." % kind)
 
         if "shadow" in params:
             val = take_bool(params, "shadow", default=True)

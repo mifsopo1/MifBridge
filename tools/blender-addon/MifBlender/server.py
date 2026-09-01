@@ -145,7 +145,7 @@ def _op_table():
     # Imported here rather than at module scope so a syntax error in an ops
     # module surfaces as a per-request error instead of a dead addon.
     from . import (ops_scene, ops_mesh, ops_gen, ops_rig, ops_create, ops_material,
-                   ops_lightcam)
+                   ops_lightcam, ops_anim)
 
     table = {}
     table.update(ops_scene.OPS)
@@ -155,6 +155,7 @@ def _op_table():
     table.update(ops_create.OPS)
     table.update(ops_material.OPS)
     table.update(ops_lightcam.OPS)
+    table.update(ops_anim.OPS)
     return table
 
 

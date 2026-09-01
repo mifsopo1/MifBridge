@@ -4884,6 +4884,30 @@ def bl_create_camera(name: str = "", location: list = None, rotation: list = Non
                     makeActive=make_active)
 
 
+@mcp.tool()
+def bl_set_keyframe(object: str, frame: float, location: list = None, rotation: list = None,
+                    scale: list = None, data_path: str = None, value=None, index: int = None,
+                    target: str = None, interpolation: str = None) -> dict:
+    "Key a value at a frame in Blender. Transform channels (location/rotation/scale) key the OBJECT; anything else goes through data_path+value and is routed to the object or its data automatically - a light's energy lives on the data datablock, not the object. keyframe_insert stores the CURRENT value, so the value is WRITTEN first and the object is left holding it. interpolation CONSTANT/LINEAR/BEZIER: a flicker needs CONSTANT or it eases and stops reading as a flicker. Call mif_help(\"bl_set_keyframe\") first."
+    return _blender("set_keyframe", object=object, frame=frame, location=location,
+                    rotation=rotation, scale=scale, dataPath=data_path, value=value,
+                    index=index, target=target, interpolation=interpolation)
+
+
+@mcp.tool()
+def bl_set_frame_range(start: float = None, end: float = None, fps: float = None,
+                       current: float = None) -> dict:
+    "Set the Blender scene's frame range, fps and current frame. An end before start is REFUSED and the previous range restored - Blender accepts it and then renders nothing. Reports before, after and the resulting duration in seconds."
+    return _blender("set_frame_range", start=start, end=end, fps=fps, current=current)
+
+
+@mcp.tool()
+def bl_list_keyframes(object: str, target: str = None) -> dict:
+    "Read every animation curve on a Blender object and/or its data, with the frames and values actually stored. The read half of bl_set_keyframe - a write is not verified by the writer. target: object | data | both (default both)."
+    return _blender("list_keyframes", object=object, target=target)
+
+
+
 
 @mcp.tool()
 def bl_transform_object(object: str, location: list = None, rotation: list = None,
