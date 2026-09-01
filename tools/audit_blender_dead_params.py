@@ -31,6 +31,7 @@ Usage:
 
 Talks to nothing. Addon source only.
 """
+import ast
 import io
 import os
 import re
@@ -62,6 +63,51 @@ def match_paren(text, open_idx):
             if depth == 0:
                 return i
     return -1
+
+
+
+def other_op_bodies(text, keep_op):
+    """Character ranges of every `op_*` function in `text` EXCEPT keep_op's.
+
+    THE MIDDLE TIER BETWEEN THE TWO OBVIOUS SCOPES, and both obvious ones are wrong here. Confining
+    the search to the op's own function body calls create_primitive.fillType dead, because it is
+    read through a module-level EXTRA_KEYS dict - the docstring above records that as the reason
+    this tool went module-wide. But module-wide is what makes the all-clear WEAK by its own
+    admission: a key that appears ONLY inside a different op's body counts as read, and that is
+    exactly the wrong-op's-helper hole.
+
+    So the scope is: the whole module, minus every OTHER op's function body. Module-level tables,
+    shared resolvers and helper functions all stay in scope - fillType still resolves - while
+    another op's private body no longer vouches for this one.
+
+    THE COST OF GETTING THIS WRONG IS ALREADY ON RECORD, one file over. _check_format in
+    ops_mesh.py is shared by import_mesh and export_mesh and recited the IMPORT format list to
+    BOTH, so an export caller was told glTF was supported and then refused when they believed it.
+    One helper, two callers, and the answer was right for only one of them. That is this hole with
+    a different shape.
+
+    Falls back to the whole module if the file will not parse - a syntax error is the addon's
+    problem to report, not a reason for this tool to invent a narrower answer.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    lines = text.split("\n")
+    starts = [0]
+    for ln in lines:
+        starts.append(starts[-1] + len(ln) + 1)
+    spans = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) or not node.name.startswith("op_"):
+            continue
+        if node.name == "op_%s" % keep_op:
+            continue
+        end = getattr(node, "end_lineno", None)
+        if not end:
+            continue
+        spans.append((starts[node.lineno - 1], min(starts[end], len(text))))
+    return spans
 
 
 def scan():
@@ -96,6 +142,11 @@ def scan():
             if close > 0:
                 blanked = blanked[:m.start()] + " " * (close - m.start() + 1) + blanked[close + 1:]
 
+        # Blank every OTHER op's body too - see other_op_bodies for why this is the right scope
+        # and why neither obvious alternative is.
+        for lo, hi in other_op_bodies(text, op):
+            blanked = blanked[:lo] + " " * (hi - lo) + blanked[hi:]
+
         present = {n.lower() for n in LITERAL.findall(blanked)}
         for key in sorted(accepts):
             if key.lower() in present:
@@ -116,9 +167,15 @@ def main():
     if not dead:
         print("OK  every accepted key appears somewhere other than the accept list.")
         print("")
-        print("That is a WEAK all-clear by construction - module-wide scope will not notice a name")
-        print("read by the wrong op's helper. It catches the regression it was built for: a")
-        print("parameter added to an accept list and never wired up, which appears nowhere else.")
+        print("Scope is the module MINUS every other op's body, so a key read only inside a")
+        print("DIFFERENT op no longer counts as read here - that hole is closed. Still permissive")
+        print("about module-level tables and shared helpers, deliberately: create_primitive reads")
+        print("fillType through a module-level dict, and a narrower scope would call it dead.")
+        print("")
+        print("One softness remains, stated rather than papered over: a name read by a SHARED")
+        print("helper counts as read by EVERY op that calls it, and _check_format in ops_mesh.py")
+        print("is the standing proof that a shared helper can be right for one caller and wrong")
+        print("for the other. Narrowing further would need call-graph reachability per op.")
         return 0
     for op, key, module in dead:
         print("  %-28s %-24s %s" % (op, key, module))
