@@ -7537,6 +7537,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       needs confirm:true, and its own refusal says a bad patch can destabilise the process holding
       unsaved work - a decision for a human at the keyboard, not for an overnight run.
 
+      A THIRD ROUTE EXISTS AND THE ENTRY MISSED IT. This item said "BOTH routes to one were checked
+      before re-filing rather than assumed" - add_sublevel, and creating a .umap - and concluded
+      "There is no third route from here." There is: new_level, MIF_BOUND since before this entry
+      was written, whose ONLY parameter is `partitioned` and which defaults it to FALSE. It creates
+      an unsaved transient map, forces bPromptUserToSave false precisely so an unattended agent
+      cannot be blocked by a modal, and defers to the next tick to avoid the TickTaskManager assert.
+      That is exactly the classic level this item wants.
+
+      IT IS DENIED BY THE HARNESS, NOT BY THE ENGINE, and that is a much better-characterised
+      blocker than "no route exists". mifaudit's DENY list carries new_level, load_level and
+      open_level under the comment "discards unsaved work in the open map without asking". Calling
+      it returns {"ok": false, "error": "denied by harness", "_denied": true} before it reaches the
+      editor at all.
+
+      SO THE GUARD IS RIGHT AND THE ITEM IS MIS-FILED. Destroying whatever map somebody has open is
+      not a decision an unattended run may take - the same reasoning that keeps the PIE family
+      attended-only. What this item actually needs is a HUMAN to say "the open map is scratch, go
+      ahead", after which new_level {partitioned:false} makes the fixture in one call and both
+      layers items become ordinary work.
+
       RE-MEASURED 2026-08-31 AFTER THE REBUILD, and the second blocker is gone while the first
       stands. The DLL now contains the fix, so "the editor is older than the fix" no longer applies.
       The level does. Spawned a StaticMeshActor into a FRESHLY CREATED /Temp/Untitled_1 through
