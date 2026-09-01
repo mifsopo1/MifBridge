@@ -471,7 +471,7 @@ namespace MifBridge
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("blueprintId"), TEXT("path") },
-			TEXT("blueprintId (alias: path) - lists every graph in the blueprint, nested ones included, with its graphId"),
+			TEXT("blueprintId (alias: path) - lists every graph in the blueprint, nested ones included, each with its graphId and kind (ubergraph | function | macro | delegateSignature | interface | nested)"),
 			{ { TEXT("graphId"), TEXT("list_graphs RETURNS graphIds, it does not take one - to read a single graph use list_nodes {graphId}") },
 			  { TEXT("filter"),  TEXT("list_graphs has no filter; it returns every graph. find_nodes {graphId, byTitle} searches inside one graph.") } }))
 		{
@@ -484,6 +484,32 @@ namespace MifBridge
 		}
 		TArray<UEdGraph*> Graphs;
 		GatherGraphs(Blueprint, Graphs);
+
+		// WHICH KIND OF GRAPH THIS IS, because until 2026-08-31 the answer was only obtainable by
+		// matching on the NAME. Every suite in this repo does `if ("EventGraph" in name)`, which is a
+		// name heuristic standing in for a type: it survives until somebody creates a function called
+		// EventGraph2, or a graph is renamed. GatherGraphs already walks the blueprint's own buckets
+		// to build this list, so the kind was known exactly where each row is written and simply was
+		// not reported.
+		//
+		// Membership, not guesswork - the same four arrays GatherGraphs iterates, in its order, plus
+		// the interface graphs it takes care to include (they live in ImplementedInterfaces[].Graphs
+		// and NOT in FunctionGraphs, which is why they were once invisible to the whole bridge).
+		// Anything left is a SUBGRAPH reached through a node - a collapsed graph, a state machine -
+		// and "nested" says so rather than pretending it is a root.
+		auto KindOf = [Blueprint](UEdGraph* G) -> const TCHAR*
+		{
+			if (Blueprint->UbergraphPages.Contains(G))          { return TEXT("ubergraph"); }
+			if (Blueprint->FunctionGraphs.Contains(G))          { return TEXT("function"); }
+			if (Blueprint->MacroGraphs.Contains(G))             { return TEXT("macro"); }
+			if (Blueprint->DelegateSignatureGraphs.Contains(G)) { return TEXT("delegateSignature"); }
+			for (const auto& Iface : Blueprint->ImplementedInterfaces)
+			{
+				if (Iface.Graphs.Contains(G))                   { return TEXT("interface"); }
+			}
+			return TEXT("nested");
+		};
+
 		TArray<TSharedPtr<FJsonValue>> Arr;
 		for (UEdGraph* Graph : Graphs)
 		{
@@ -491,6 +517,7 @@ namespace MifBridge
 			Json->SetStringField(TEXT("graphId"), GraphIdOf(Blueprint, Graph));
 			Json->SetStringField(TEXT("name"), Graph->GetName());
 			Json->SetNumberField(TEXT("nodeCount"), Graph->Nodes.Num());
+			Json->SetStringField(TEXT("kind"), KindOf(Graph));
 			Arr.Add(MakeShared<FJsonValueObject>(Json));
 		}
 		Out->SetArrayField(TEXT("graphs"), Arr);

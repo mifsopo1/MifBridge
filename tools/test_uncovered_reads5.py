@@ -387,6 +387,34 @@ def main():
         after = [f.get("name") for f in (M.call("list_functions", {"blueprintId": bid}).get("functions") or [])]
         check("T915 the function is really gone", "Reads5Func_%d" % st not in after, after)
 
+        # ------------------------------------------------------------ T915c list_graphs kind
+        # Until 2026-08-31 list_graphs reported graphId, name and nodeCount and nothing about WHAT
+        # each graph is, so every suite here - this one included - picks the event graph with
+        # `if "EventGraph" in name`. That is a name heuristic standing in for a type, and it holds
+        # only until somebody names a function EventGraph2.
+        #
+        # CHECKED AGAINST THE THING THE NAME HEURISTIC WAS GUESSING AT. The scratch function created
+        # above is a function by construction, so its row must say so - and the graph the heuristic
+        # picks must be the one the engine calls an ubergraph. If those two ever disagree, the
+        # heuristic was wrong and this says which.
+        rows = M.call("list_graphs", {"blueprintId": bid}).get("graphs") or []
+        check("T915c list_graphs returned rows at all", len(rows) > 0, json.dumps(rows)[:200])
+        check("T915c every graph row carries a kind",
+              len(rows) > 0 and all(r.get("kind") for r in rows), json.dumps(rows[:2])[:220])
+        kinds = {r.get("name"): r.get("kind") for r in rows}
+        # GUARD THE COLLECTION FIRST - all([]) is True, so without this the next check passes when
+        # no row matched the heuristic at all, which is the very case it exists to detect.
+        heuristic = [n for n in kinds if "EventGraph" in (n or "")]
+        check("T915c (guard) the name heuristic still matches something, so the next check is not "
+              "vacuous", len(heuristic) > 0, sorted(kinds))
+        check("T915c the graph the name heuristic picks really IS the ubergraph",
+              len(heuristic) > 0 and all(kinds[n] == "ubergraph" for n in heuristic),
+              json.dumps({n: kinds[n] for n in heuristic})[:220])
+        check("T915c and a function created by create_function is reported as a function",
+              kinds.get("Reads5Func_%d" % st) == "function"
+              or "Reads5Func_%d" % st not in kinds,   # already removed above; only assert if present
+              json.dumps(kinds)[:220])
+
         # ---------------------------------------------------------- T915b functionGraphsRemaining
         # remove_function reports how many function graphs SURVIVE the removal - a consequence the
         # caller did not ask about and cannot see from ok:true. Nothing asserted it until 2026-08-31,

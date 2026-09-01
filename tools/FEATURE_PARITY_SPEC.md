@@ -9600,7 +9600,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       in audit_consequence_fields' table should be DELETED rather than left to rot into permanent
       exemptions - which is exactly how a reason table stops meaning anything.
 
-- [ ] **list_graphs cannot say which graphs are FUNCTIONS** (hours)
+- [ ] **list_graphs cannot say which graphs are FUNCTIONS** - BUILT IN SOURCE, needs a build (hours)
       Found 2026-08-31 while trying to cross-check functionGraphsRemaining. list_graphs returns
       graphId, name and nodeCount for every graph in the blueprint, nested ones included - and
       nothing that says what KIND each one is. A caller cannot tell an event graph from a function
@@ -9613,8 +9613,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       UbergraphPages, MacroGraphs and DelegateSignatureGraphs arrays to build the list, so the kind
       is KNOWN at the moment each row is written and is simply not reported.
 
-      A one-line addition per bucket, and it removes the heuristic from every suite that currently
-      needs it. Blocked only on a build.
+      DONE IN SOURCE 2026-08-31. list_graphs now reports kind: ubergraph | function | macro |
+      delegateSignature | interface | nested, decided by MEMBERSHIP of the same arrays GatherGraphs
+      iterates - including the interface graphs it takes care to include, which live in
+      ImplementedInterfaces[].Graphs and not in FunctionGraphs. Anything reached only as a subgraph
+      of one of those is "nested", which says what it is rather than pretending it is a root.
+
+      T915c asserts it against the thing the heuristic was guessing at: the graph
+      `if "EventGraph" in name` picks must be the one the engine calls an ubergraph. If those ever
+      disagree the heuristic was wrong, and the check says which.
+
+      TWO GATES CAUGHT THE WORK ON THE WAY THROUGH, which is the argument for both of them.
+      audit_vacuous_checks flagged the first version of T915c - an all() over a filtered subset that
+      is True when nothing matched, the exact case the check exists to detect - and parity_check
+      refused because changing the endpoint's summary made the compiled describe table stale, which
+      is the same staleness that once shrank T330 from 109 checks to 106 in silence. Regenerated
+      with harvest_param_table; it needs the rebuild like everything else.
 
 - [ ] **set_niagara_emitter's whyNotSetProperty claims an ASYMMETRY nothing tests** (hours)
       Surfaced 2026-08-31 the moment audit_cross_endpoint_claims could read multi-line literals -
