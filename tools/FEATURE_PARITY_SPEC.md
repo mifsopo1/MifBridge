@@ -6728,7 +6728,39 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       exclusive - BA behind a guard, native as the fallback, is the end state either way. The
       question is only which gets built first.
 
-      REVISED RECOMMENDATION, on the size finding: BUILD THE BA PATH FIRST. Quality layout needs a
+      A THIRD ROUTE, AND IT IS CHEAPER THAN BOTH. I framed this as a C++ job and it need not be one.
+      Checked 2026-08-31:
+
+        list_nodes   calls SerializeNode(Node, bIncludePins=true), so ONE call returns the whole
+                     topology - every node, its pins, and each pin's linkedTo. Nothing else is
+                     needed to compute a layered layout.
+        move_node    already exists and writes NodePosX/NodePosY directly
+                     (MifBridgeNodes.cpp:1639-1640).
+
+      So a layout can be computed ENTIRELY CLIENT-SIDE: list_nodes once, compute positions in
+      python, move_node per node. No C++, no build, no plugin dependency, no editor tab, and it
+      works on any project and any engine version the bridge supports. It can be written and
+      iterated in an afternoon instead of a day, and thrown away cheaply if the output is poor.
+
+      IT HAS THE SAME NODE-SIZE LIMIT as any headless approach, and no worse: extents must be
+      estimated. But the estimate has better inputs than I assumed - list_nodes already returns each
+      node's pins, so pin COUNT and the longest pin name are available per node, which is most of
+      what drives a node's real height and width.
+
+      WHAT THIS DOES TO THE ORDER. Prototype the client-side layout FIRST, because it is hours and
+      answers the question everything else depends on: how good is good enough? If estimated extents
+      look acceptable, the C++ port is a performance decision rather than a capability one, and
+      Blueprint Assist becomes a nice-to-have for projects that own it. If they look bad, that is
+      the strongest possible argument for the BA path and it was bought cheaply.
+
+      THIS IS THE THIRD REVISION OF THIS RECOMMENDATION, and the earlier ones were not wrong so much
+      as under-informed: first "reuse the material algorithm" (there is none), then "BA first
+      because a tab is needed for node sizes" (true, but a layout does not need exact sizes to be a
+      large improvement on none). Each revision came from going and checking one more thing. The
+      pattern worth noting is that all three questions were answerable in minutes from the source,
+      and none of them was answered before the first recommendation was given.
+
+      SUPERSEDED RECOMMENDATION, kept for the reasoning: BUILD THE BA PATH FIRST. Quality layout needs a
       tab either way - a native path good enough to be worth shipping would have to open one too,
       to measure widgets - and at that point a project WITH Blueprint Assist should simply use it.
       The native fallback stays worth having for projects without the plugin, but it should be
