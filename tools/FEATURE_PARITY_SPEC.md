@@ -9630,6 +9630,40 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       is the same staleness that once shrank T330 from 109 checks to 106 in silence. Regenerated
       with harvest_param_table; it needs the rebuild like everything else.
 
+- [ ] **reconnect_pin breaks TWO pins in a row, and the first break can free the second** (hours)
+      CRASH CLASS, found 2026-08-31 by sweeping for the shape of a bug I had just written into
+      remove_pin. Not a regression - it predates today - and it is filed rather than fixed because
+      the fix is not obvious and it sits in the middle of core graph editing.
+
+      TWO SITES, ONE SHAPE:
+
+        MifBridgeNodes.cpp:655-656    DoConnect, reached by reconnect_pin (bBreakFirst true)
+        MifBridgeCommon.cpp:4995-4996 the same body's sibling in the shared helper
+
+            Schema->BreakPinLinks(*OutPin, true);
+            Schema->BreakPinLinks(*InPin, true);      <- InPin may already be freed
+            ... CanCreateConnection(OutPin, InPin) / TryCreateConnection(OutPin, InPin)
+
+      THE CITATION IS ALREADY IN THIS REPO, at MifBridgeCommon.cpp:3591: "UEdGraphSchema_K2::
+      BreakPinLinks says the target pin reference can be invalidated here." Two other sites
+      (:3586, :3680) capture identities before breaking for exactly this reason, and
+      MifBridgeNodes.cpp:2120 and :2233 both carry comments about it. So the knowledge is present
+      in four places in the module and did not reach these two.
+
+      REACHABLE, NOT THEORETICAL. bSendsNodeNotification is TRUE here, which reconstructs the nodes
+      on the far end of the links being broken. If OutPin and InPin are ALREADY CONNECTED TO EACH
+      OTHER - which is the ordinary case for reconnect_pin, whose whole job is rewiring - then
+      breaking OutPin notifies InPin's owner, and a node that reconstructs frees and rebuilds its
+      pins. The next line dereferences InPin.
+
+      WHY IT IS NOT FIXED HERE. Every candidate fix changes connect semantics: breaking with
+      notification FALSE skips the reconstruction some node types need; re-resolving between the two
+      breaks needs a pin identity that survives a rebuild, and ResolvePin's (NodeGuid, PinName,
+      Direction) key is the one that could not tell two duplicates apart earlier today. Writing
+      either into the endpoint every graph edit passes through, with no editor to test in, is how a
+      confusing refusal becomes a terminated editor - which is the exact lesson issue 28 records
+      about the last "obvious" fix that landed unverified and had to be reverted.
+
 - [ ] **set_niagara_emitter's whyNotSetProperty claims an ASYMMETRY nothing tests** (hours)
       Surfaced 2026-08-31 the moment audit_cross_endpoint_claims could read multi-line literals -
       it had been invisible, along with every other claim written across more than one TEXT()
