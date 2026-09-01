@@ -6735,9 +6735,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       honest about being an approximation: estimated extents, generous spacing, and a note saying
       so, rather than pretending to the same output.
 
+      THE BA PATH IS MAPPED AND SHORT, and every symbol it needs is exported:
+
+        FBAGraphHandler                        class BLUEPRINTASSIST_API  (GraphHandler.h:20)
+        FBAActionsBase::GetGraphHandler()      static, BLUEPRINTASSIST_API (ActionsBase.h:16)
+        FBAGraphHandler::SmartFormatAll()      public   (GraphHandler.h:84-86)
+        FBAGraphHandler::FormatAllEvents()     public   (GraphHandler.h:137)
+
+      So: open_blueprint to get the graph into a tab, GetGraphHandler(), SmartFormatAll(), then read
+      the node positions back to prove it moved something. The read-back is not optional here - a
+      formatter that silently did nothing would otherwise report success, which is the defect this
+      repo spends most of its time catching.
+
+      TWO TRAPS, BOTH WORTH KNOWING BEFORE STARTING:
+
+        1. GetGraphHandler() TAKES NO GRAPH. It returns the handler for whatever is FOCUSED, so an
+           endpoint that opens graph A while graph B happens to be focused will format B and report
+           success about A. The handler must be asked which graph it holds and that must be checked
+           against the requested graphId BEFORE formatting - not after, and not assumed from having
+           just opened it.
+
+        2. THERE IS A SaveAndFormat() AND IT MUST NEVER BE CALLED
+           (BlueprintAssistGraphActions.h:29). The standing rules forbid saving assets outright.
+           SmartFormatAll is the one that formats without persisting. A name that pairs the two
+           operations is exactly the kind a hurried caller reaches for.
+
       NOT STARTED: raised while the DDS2 session was off-limits, so nothing was built or tested. The
-      analysis above is from reading BlueprintAssist's headers and MifBridge's own layout surface,
-      not from running either.
+      analysis above is from reading BlueprintAssist's headers, the engine's EdGraphNode.h and
+      MifBridge's own layout surface - not from running any of it.
 
 - [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
