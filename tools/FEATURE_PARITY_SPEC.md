@@ -9525,7 +9525,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       captures PROSE, because prose is what this codebase writes across fragments and identifiers
       are what it does not.
 
-- [ ] **four unread consequence fields, newly VISIBLE rather than newly broken** (hours)
+- [x] **four unread consequence fields, newly VISIBLE rather than newly broken** (hours)
       The classifier only matched names saying something went WRONG. A name saying something
       REMAINS is the same class of unasked-for consequence and it could not see any of them.
       Widening it with [Rr]emaining and StillPresent took the field count 64 -> 73, and the nine new
@@ -9567,8 +9567,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         membershipsChanged       modify_actor_layers - needs actors in a level, so it shares the
                                  scratch-level precondition with partialNote and broken.
 
-      THE FIRST THREE ARE ORDINARY WORK once an editor is up. The fourth is the only one that may
-      end up with a written reason instead of a test.
+      SETTLED 2026-08-31. Two closed with tests (T840c, T915b - both WRITTEN, not yet RUN), three
+      with written reasons, one left as a pending-build debt. 80 consequence fields: 56 read by a
+      suite, 23 out of reach with a reason, 1 unread and tracked.
+
+      THE THREE REASONS NAME A PRECONDITION, NOT A NUMBER. remainingNote needs a referencer the
+      engine genuinely cannot LOAD - an unloaded map, a disabled plugin - which means arranging a
+      broken environment rather than building a fixture. numRemainingJobs needs a shader compile IN
+      FLIGHT when the response is built, a race no suite that must terminate can reliably win.
+      membershipsChanged needs actors in a level, the same session precondition as partialNote and
+      broken, and is ordinary work with a scratch level open.
+
+      AND ONE CHECK WAS DELIBERATELY NOT WRITTEN. remainingNote admits a biconditional - the note is
+      present exactly when remaining > 0 - which would have made the field READ and taken the count
+      to zero. Its true branch would never have exercised, because getting a surviving redirector is
+      the hard part. That is closing a number rather than testing anything, and the tool's own header
+      already warns that a read is not an assertion; writing one to satisfy the tool would have been
+      the first place to stop believing it.
 
 - [ ] **move nodesWithOrphanedPin / orphanedPinsRemaining into a suite once the build is green** (minutes)
       A DEBT, filed the moment it was incurred. Both are new consequence fields on

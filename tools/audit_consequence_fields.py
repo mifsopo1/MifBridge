@@ -187,6 +187,28 @@ UNREACHABLE = {
                     "session producing more output than the ring buffer holds. The PIE family is "
                     "attended-only by the standing rules and never runs in an autopilot pass",
 
+    "remainingNote": "fires only when redirectors SURVIVE a fixup with keepRedirectors false, and "
+                     "the handler names the causes: FixupReferencers cannot repoint a referencer it "
+                     "cannot LOAD - an unloaded map, a disabled plugin, a package outside the "
+                     "project. Constructing one of those on purpose means arranging for a broken "
+                     "environment, which is a different thing from a fixture. A biconditional check "
+                     "- note present exactly when remaining > 0 - would make this field READ while "
+                     "only ever exercising the false branch, and that is closing a number rather "
+                     "than testing anything",
+
+    "numRemainingJobs": "a shader-compile progress count, so reaching it needs a compile IN FLIGHT "
+                        "when the response is built. Any fixture has to win a race it does not "
+                        "control: compile fast enough and the queue is empty, compile something big "
+                        "and the editor stalls for minutes, which material_statistics' own "
+                        "wouldBlock guard exists to refuse. Reachable in principle by watching a "
+                        "real compile, not by a suite that must finish",
+
+    "membershipsChanged": "modify_actor_layers reports it per actor, so it needs ACTORS IN A LEVEL - "
+                          "the same session precondition as partialNote and broken, and issue J's "
+                          "warning about actors that cannot be cleaned up applies equally. Not an "
+                          "impossibility: run it with a scratch level open (Untitled* or _Mif*), "
+                          "which is the condition test_spawn_many already enforces on itself",
+
     # ADDED 2026-08-31 AND NOT YET SUITE-COVERED, which is a DEBT recorded here rather than paid by
     # re-baselining. Both are read and asserted by V9 in verify_pending_fixes.py - including an
     # agreement check against get_node - but that file is not a test_*.py suite, so this tool does
