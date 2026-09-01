@@ -63,7 +63,8 @@ from bpy.types import AddonPreferences, Operator, Panel
 
 # Reload submodules cleanly when the addon is re-enabled or hot-reloaded,
 # otherwise Blender keeps the stale bytecode and edits appear not to apply.
-_SUBMODULES = ("framing", "ops_common", "ops_scene", "ops_mesh", "ops_gen", "ops_rig", "server")
+_SUBMODULES = ("framing", "ops_common", "ops_scene", "ops_mesh", "ops_gen", "ops_rig",
+               "ops_lightcam", "server")
 for _name in _SUBMODULES:
     _full = "%s.%s" % (__name__, _name)
     if _full in sys.modules:

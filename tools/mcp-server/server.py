@@ -4852,6 +4852,40 @@ def bl_create_primitive(kind: str, name: str = "", size: float = None, radius: f
 
 
 @mcp.tool()
+def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
+                    rotation: list = None, energy: float = None, color: list = None,
+                    radius: float = None, size: float = None, size_y: float = None,
+                    shape: str = None, spot_angle: float = None, spot_blend: float = None,
+                    angle: float = None, shadow: bool = None, diffuse_factor: float = None,
+                    specular_factor: float = None) -> dict:
+    "Create a Blender light: POINT, SUN, SPOT or AREA. Type-specific settings are REFUSED on the wrong type rather than ignored - spot_angle on a POINT light is an error, not a no-op. rotation and spot_angle/angle are RADIANS. The response reports what the light IS, read back off the datablock. Call mif_help(\"bl_create_light\") first."
+    # EVERY accepted key is sent. param_reach asks exactly this question of the Blender half, and a
+    # capability the addon accepts but no tool forwards is one an MCP caller cannot reach at all -
+    # which is how cone and torus dimensions went unreachable until 2026-08-31.
+    return _blender("create_light", type=type, name=name or None, location=location,
+                    rotation=rotation, energy=energy, color=color, radius=radius,
+                    size=size, sizeY=size_y, shape=shape, spotAngle=spot_angle,
+                    spotBlend=spot_blend, angle=angle, shadow=shadow,
+                    diffuseFactor=diffuse_factor, specularFactor=specular_factor)
+
+
+@mcp.tool()
+def bl_create_camera(name: str = "", location: list = None, rotation: list = None,
+                     look_at: list = None, lens: float = None, sensor_width: float = None,
+                     type: str = None, ortho_scale: float = None, clip_start: float = None,
+                     clip_end: float = None, f_stop: float = None, dof_distance: float = None,
+                     shift_x: float = None, shift_y: float = None,
+                     make_active: bool = None) -> dict:
+    "Create a Blender camera, optionally aimed with look_at instead of rotation - passing both is refused, since they are two answers to the same question. A Blender camera faces its local -Z, which is what hand-written aiming gets wrong, so look_at derives the euler for you. f_stop or dof_distance enables depth of field; neither is turned on by default. Call mif_help(\"bl_create_camera\") first."
+    return _blender("create_camera", name=name or None, location=location, rotation=rotation,
+                    lookAt=look_at, lens=lens, sensorWidth=sensor_width, type=type,
+                    orthoScale=ortho_scale, clipStart=clip_start, clipEnd=clip_end,
+                    fStop=f_stop, dofDistance=dof_distance, shiftX=shift_x, shiftY=shift_y,
+                    makeActive=make_active)
+
+
+
+@mcp.tool()
 def bl_transform_object(object: str, location: list = None, rotation: list = None,
                         scale: list = None, relative: bool = False) -> dict:
     "Move, rotate or scale a Blender object WITHOUT baking the transform into its mesh data."
