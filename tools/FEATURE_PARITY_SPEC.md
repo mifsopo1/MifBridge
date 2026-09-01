@@ -6760,6 +6760,19 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
            SmartFormatAll is the one that formats without persisting. A name that pairs the two
            operations is exactly the kind a hurried caller reaches for.
 
+        3. THE EXISTING PLUGIN-GUARD HELPER WILL NOT FIND IT, and will fail SILENTLY.
+           MifBridge.Build.cs's FindPluginDescriptor searches EngineDirectory/Plugins only - every
+           guard it serves (Niagara, StateTree, PCG, GAS, GeometryScripting...) is an ENGINE plugin.
+           Blueprint Assist is a PROJECT plugin, at Game/Plugins/BlueprintAssist. Reusing
+           AddPluginModules as-is would set MIF_WITH_BLUEPRINTASSIST=0 on a machine where BA is
+           installed and working, and the endpoint would compile its refusal branch and report that
+           the plugin is absent.
+           That is precisely the failure the comment above FindPluginDescriptor warns about in its
+           own words - "a clean-looking build with the endpoints quietly refusing" - which it
+           records having already happened once, when hardcoded paths dropped three families on 5.7.
+           The search has to cover the PROJECT plugin directory too, and the guard needs a live
+           check that it found what it thinks it found.
+
       NOT STARTED: raised while the DDS2 session was off-limits, so nothing was built or tested. The
       analysis above is from reading BlueprintAssist's headers, the engine's EdGraphNode.h and
       MifBridge's own layout surface - not from running any of it.
