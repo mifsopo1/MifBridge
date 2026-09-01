@@ -39,7 +39,10 @@ import json
 import sys
 from collections import defaultdict
 
-import mifaudit as M
+# mifaudit is imported LAZILY, inside main(), so the algorithm below can be imported by anything
+# that already has its own transport - the MCP server's mif_layout_graph does exactly that, driving
+# list_nodes/move_node/add_comment through _post instead. Everything above main() is pure: it takes
+# the node list list_nodes returns and gives back positions.
 
 # Spacing, in graph units. Deliberately generous - see the estimation note above.
 COL_GAP = 420      # between layers, left to right
@@ -391,6 +394,7 @@ def main():
     graph_id = sys.argv[1]
     apply_it = "--apply" in sys.argv
 
+    import mifaudit as M
     if not M.wait_for_bridge(timeout=300):
         print("bridge never came up")
         return 2

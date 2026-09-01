@@ -145,6 +145,12 @@ mcp = FastMCP(
 # original text, and the extraction asserted the surviving lead still matched it.
 # ---------------------------------------------------------------------------
 _TOOL_HELP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tool_help.json")
+# Resolved HERE rather than inside the tool, matching _TOOL_HELP_PATH above. __file__ is a module
+# global; reading it inside a function is what mcp_static_check calls an unbound name, and it is
+# right to - a name that resolves only because of where the module happens to be executed is the
+# shape that becomes a NameError under a different loader.
+_LAYOUT_GRAPH_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                  "layout_graph.py")
 _TOOL_HELP_CACHE = None
 
 
@@ -5557,6 +5563,94 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+@mcp.tool()
+def mif_layout_graph(graph_id: str, apply: bool = False, comment: bool = False) -> dict:
+    """Arrange a blueprint graph left-to-right and optionally box each chain in a comment.
+
+    WHY THIS IS A mif_ TOOL. It owns no C++ endpoint - it composes three that already exist:
+    list_nodes for the topology, move_node to place, add_comment to box. The engine ships no
+    blueprint graph layout at all, so this looked like an engine job and is not one.
+
+    WHY IT EXISTS. MifBridge can author a graph and could not arrange one, so an agent could build
+    a correct graph that was unreadable to the person who opened it - every node at the caller's
+    coordinates or a hardcoded offset. The human's first act was to tidy it by hand.
+
+    DRY RUN UNLESS apply IS TRUE. With apply false it returns the plan and moves nothing, which is
+    the safe way to see what it would do to somebody's graph.
+
+    NODE SIZES ARE ESTIMATED, and cannot be otherwise: an ordinary K2 node has no stored size
+    (UEdGraphNode::NodeWidth is "only used when the node can be resized"), so extents come from pin
+    count and title length. Spacing is deliberately generous - sprawl is legible, overlap is not -
+    and comment boxes err LARGE because AutoSizeComments can shrink a too-big box to fit but cannot
+    grow a too-small one, since UE decides membership geometrically.
+
+    Args:
+        graph_id: the graph to arrange, as list_graphs returns it
+        apply: actually move the nodes (default false = plan only)
+        comment: also add one comment box per independent chain
+    """
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location("mif_layout_graph_impl", _LAYOUT_GRAPH_PATH)
+    if _spec is None or _spec.loader is None:
+        return {"ok": False, "error": "layout_graph.py not found beside the MCP server at %s"
+                                      % _LAYOUT_GRAPH_PATH}
+    _lg = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_lg)
+
+    read = _post("list_nodes", graphId=graph_id, hideKnots=False)
+    nodes = read.get("nodes") or []
+    if not nodes:
+        return {"ok": False, "error": "no nodes returned for %r" % graph_id,
+                "listNodes": read}
+
+    by_guid, positions, columns = _lg.plan(nodes)
+    _, succ, pred = _lg.build_graph(nodes)
+    boxes = _lg.comment_boxes(by_guid, positions, succ, pred) if comment else []
+    plan_rows = [{"guid": g, "title": by_guid[g].get("title") or by_guid[g].get("class"),
+                  "x": xy[0], "y": xy[1]} for g, xy in sorted(positions.items())]
+
+    if not apply:
+        return {"ok": True, "dryRun": True, "nodes": len(nodes), "columns": len(columns),
+                "planned": plan_rows,
+                "commentBoxes": [{"x": b[0], "y": b[1], "width": b[2], "height": b[3],
+                                  "text": b[4]} for b in boxes],
+                "note": "nothing was moved - call again with apply:true to place them"}
+
+    moved, refused = 0, []
+    for g, (x, y) in positions.items():
+        if (by_guid[g].get("x"), by_guid[g].get("y")) == (x, y):
+            continue
+        mv = _post("move_node", graphId=graph_id, nodeGuid=g, x=x, y=y)
+        if mv.get("ok") is False:
+            refused.append({"guid": g, "error": mv.get("error")})
+        else:
+            moved += 1
+
+    # POSTCONDITION, not the calls' word for it. move_node reporting ok is not the graph having
+    # changed, and reading it back is the only thing that tells them apart.
+    # Read back through a NAMED call, not inline. mcp_sends_unknown matches a _post( up to the
+    # next ")" at end of line, so a _post(...).get(...) buried in a comprehension leaves it
+    # scanning on through the function and reporting local names as though they were payload keys.
+    # Its regex deserves fixing (filed), and this reads better regardless.
+    reread = _post("list_nodes", graphId=graph_id, hideKnots=False)
+    after = {n.get("guid"): (n.get("x"), n.get("y")) for n in (reread.get("nodes") or [])}
+    wrong = [g for g, want in positions.items() if after.get(g) != want]
+
+    added = 0
+    for b in boxes:
+        c = _post("add_comment", graphId=graph_id, x=b[0], y=b[1], width=b[2], height=b[3],
+                  text=b[4])
+        if c.get("ok") is not False:
+            added += 1
+
+    return {"ok": not wrong, "dryRun": False, "nodes": len(nodes), "columns": len(columns),
+            "moved": moved, "refused": refused, "commentBoxesAdded": added,
+            "notWherePlaced": wrong,
+            "note": ("every node read back where it was placed" if not wrong else
+                     "%d node(s) are NOT where they were placed - read the graph before trusting "
+                     "this" % len(wrong))}
 
 
 @mcp.tool()

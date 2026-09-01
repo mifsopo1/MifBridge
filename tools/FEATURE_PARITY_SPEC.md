@@ -6879,7 +6879,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       analysis above is from reading BlueprintAssist's headers, the engine's EdGraphNode.h and
       MifBridge's own layout surface - not from running any of it.
 
-- [ ] **layout_graph is not an MCP tool, so no agent can call it** (hours)
+- [x] **layout_graph is not an MCP tool, so no agent can call it** (hours)
       Andre asked whether the usage is announced in the docs. It was not - the tool existed only in
       a spec entry, invisible to anyone not reading this file. Added to the architecture doc's tools
       table with its three invocations.
@@ -6889,7 +6889,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       graph tidied. Building a capability and leaving it reachable only from a shell is most of the
       way to not having built it.
 
-      THE WRINKLE IS PARITY. parity_check enforces MIF_DECL <-> MIF_BIND <-> @mcp.tool three ways,
+      DONE 2026-08-31 as mif_layout_graph. The wrinkle turned out to be smaller than expected and a
+      different one than expected.
+
+      mif_ WAS ALREADY THE RIGHT SHAPE, and documented: server.py's own banner says "mif_* tools are
+      the only ones in this file that contain logic: they compose both backends... bl_* and mif_*
+      own no C++ endpoint and are outside that set by construction". mif_mesh_roundtrip is the
+      precedent. So there was nothing to extend - only to notice the convention already existed.
+
+      TWO CHECKERS CAUGHT IT ON THE WAY IN, and both were right:
+
+        mcp_static_check   flagged __file__ read INSIDE the function as an unbound name. server.py
+                           already resolves its one other path at module scope (_TOOL_HELP_PATH) for
+                           the same reason, so the layout path is hoisted beside it.
+        mcp_sends_unknown  reported list_nodes being sent added, c, height, text, width, wrong, x, y
+                           - local variable names. Its regex matches a _post( up to the next ")" at
+                           END OF LINE, and the read-back was written inline as
+                           _post(...).get("nodes") inside a comprehension, so the match ran on
+                           through the whole function. Rewritten as a named call, which reads better
+                           anyway; the regex fragility is filed below.
+
+      The algorithm's mifaudit import is lazy now, so everything above main() can be imported by
+      anything with its own transport - the MCP tool drives list_nodes/move_node/add_comment through
+      _post. One algorithm, two front ends, no duplication.
+
+      THE ORIGINAL WRINKLE, WHICH DID NOT MATERIALISE: parity_check enforces MIF_DECL <-> MIF_BIND <-> @mcp.tool three ways,
       and this would be an @mcp.tool with NO endpoint behind it - a shape that does not exist yet.
       Blender ops are the nearest precedent (they have addon ops rather than MIF_BINDs) and the
       checker already carries exemption tables for them, so the pattern exists; it just needs
@@ -6913,6 +6937,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       UNiagaraSystem exposes the state internally (it is what InvalidateCompileResults invalidates),
       so this is a reporting gap rather than an engine limitation. describe_niagara_system is the
       obvious home.
+
+- [ ] **mcp_sends_unknown mis-parses a _post() used inline in an expression** (hours)
+      Found 2026-08-31 by writing the first MCP tool that reads a response back inside a
+      comprehension. Its extractor is
+
+          re.finditer(r'_post\(\s*"(\w+)"\s*(.*?)\)\s*$', src, re.S | re.M)
+
+      - non-greedy, DOTALL, anchored on a ")" at END OF LINE. A call written as
+      `_post("list_nodes", ...).get("nodes")` inside a larger expression has no ")" at line end, so
+      the match runs on through following lines and collects every `name =` it passes as though it
+      were a payload key. It reported list_nodes as sending `added, c, wrong` - local variables -
+      and parity_check exits non-zero on the result.
+
+      IT IS A LATENT FRAGILITY, not a live failure: no existing call site writes _post inline, which
+      is why this has never fired. That also means fixing it has no immediate payoff and carries the
+      usual risk of changing a checker nothing currently disagrees with - so it is filed rather than
+      done. An ast walk would be exact and is what the neighbouring checks already use.
 
 - [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
