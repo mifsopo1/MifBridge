@@ -2183,6 +2183,14 @@ namespace MifBridge
 			// a pin the graph has already dropped is no longer in Node->Pins, and Contains answers
 			// that without dereferencing anything. Comparing addresses of a freed pin is safe; only
 			// touching one is not, and Contains gates every touch.
+			// CAPTURED BEFORE THE LOOP, BY VALUE. The identity round-trip this replaced existed
+			// because breaking links can CASCADE - PinConnectionListChanged runs on both ends and
+			// can RemovePin an orphan - and that cascade can take Keep itself. Reading
+			// Keep->PinName after the loop would then be a dereference of a freed pin, which is the
+			// one thing worse than the bug being fixed. The name and direction cannot change during
+			// the loop, so copying them is free and removes the exposure entirely.
+			const FName KeepName = Keep->PinName;
+			const auto KeepDir = Keep->Direction;
 			int32 Removed = 0;
 			for (UEdGraphPin* Pin : TArray<UEdGraphPin*>(Matches))
 			{
@@ -2202,7 +2210,7 @@ namespace MifBridge
 			int32 StillNamed = 0;
 			for (UEdGraphPin* Pin : Node->Pins)
 			{
-				if (Pin && Pin->PinName == Keep->PinName && Pin->Direction == Keep->Direction)
+				if (Pin && Pin->PinName == KeepName && Pin->Direction == KeepDir)
 				{
 					++StillNamed;
 				}
@@ -2210,7 +2218,11 @@ namespace MifBridge
 			Out->SetNumberField(TEXT("duplicatesStillPresent"), FMath::Max(0, StillNamed - 1));
 			Kind = TEXT("duplicate");
 			Out->SetNumberField(TEXT("duplicatesRemoved"), Removed);
-			Out->SetBoolField(TEXT("keptLinkedCopy"), Keep->LinkedTo.Num() > 0);
+			// Guarded for the same reason: if the cascade took Keep, it is no longer in Node->Pins
+			// and must not be dereferenced. Contains compares addresses, which is safe on a freed
+			// pointer; LinkedTo is only read once the pin is known to still be there.
+			Out->SetBoolField(TEXT("keptLinkedCopy"),
+				Node->Pins.Contains(Keep) && Keep->LinkedTo.Num() > 0);
 			// IT CAN NOW, and duplicatesStillPresent is how a caller checks rather than assumes:
 			// it is read from the node's pins AFTER the removal, so a claim that is not true cannot
 			// be made. Until 2026-08-31 this branch could not delete a same-direction duplicate at
