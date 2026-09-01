@@ -6707,11 +6707,33 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                            paid marketplace plugin, so it must sit behind a MIF_WITH_BLUEPRINTASSIST
                            guard like LiveLink and MassEntity, never a hard dependency.
 
+      AND NODE SIZE IS THE FACT THAT DECIDES IT. UEdGraphNode::NodeWidth/NodeHeight carry the
+      comment "only used when the node can be resized" (EdGraphNode.h:293-299) - they are for comment
+      boxes and the few resizable nodes. An ordinary K2 node has no stored size at all; its extent is
+      measured by the SGraphNode widget at paint time, from its title, its pin count and its pin
+      names.
+
+      SO A HEADLESS LAYOUT CANNOT KNOW HOW BIG A NODE IS. It can only estimate from pin count and
+      title length, and every estimate is wrong in one of two ways: too small and nodes overlap, too
+      large and the graph sprawls. That is not a polish problem, it is the core input to any layered
+      layout.
+
+      IT ALSO EXPLAINS BLUEPRINT ASSIST'S DESIGN. Needing an SGraphEditor is not an arbitrary
+      coupling - it is the only way to measure real node extents. BA formats well BECAUSE it runs
+      against live widgets.
+
       THE TRADE IS THEREFORE ANDRE'S, and it is a real one rather than the obvious call I first
       implied. Doing BA first is much cheaper and gives better output on this machine today; doing
       native first is the only thing that helps a project without the plugin. The two are not
       exclusive - BA behind a guard, native as the fallback, is the end state either way. The
       question is only which gets built first.
+
+      REVISED RECOMMENDATION, on the size finding: BUILD THE BA PATH FIRST. Quality layout needs a
+      tab either way - a native path good enough to be worth shipping would have to open one too,
+      to measure widgets - and at that point a project WITH Blueprint Assist should simply use it.
+      The native fallback stays worth having for projects without the plugin, but it should be
+      honest about being an approximation: estimated extents, generous spacing, and a note saying
+      so, rather than pretending to the same output.
 
       NOT STARTED: raised while the DDS2 session was off-limits, so nothing was built or tested. The
       analysis above is from reading BlueprintAssist's headers and MifBridge's own layout surface,
