@@ -7256,6 +7256,48 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Still 0 dead across 2431 parameters and 438 endpoints, so this is a STRONGER all-clear rather
       than a new finding - same outcome as the Blender twin.
 
+- [ ] **the Blender arm has no typed op for lights, cameras, keyframes, geometry nodes, particles, physics, rendering or world** (day+)
+      FILED 2026-09-01 at Andre's request, after a collaborator sketched a seven-test "autonomous
+      environment" benchmark - modelling, materials, geometry nodes, lighting, animation,
+      simulation, rendering - and the honest answer to "could MifBridge do that" turned out to be
+      worth writing down.
+
+      MEASURED, not assumed: every op name was matched against the live OPS map rather than
+      recalled. 45 addon ops, and these eight categories return NOTHING:
+
+        lights      no create_light / no emitter of any kind
+        cameras     no camera, lens or focal-length op
+        keyframes   no keyframe, action or frame op - nothing animates
+        geometry nodes  no node or node-tree op (but see the modifier note below)
+        particles   none
+        physics     no rigid body, cloth, collision or simulation op
+        rendering   no render op; bake_texture bakes a texture, which is a different thing
+        world       no world, HDRI or environment op
+
+      THE ONE PARTIAL, and it matters because it changes what "no geometry nodes" means.
+      add_modifier accepts ANY modifier type this Blender knows - it validates against
+      bpy.types.Modifier.bl_rna - so a GEOMETRY NODES modifier CAN be attached, and `settings` can
+      write properties on it. What cannot be done is AUTHORING the node tree: creating nodes,
+      linking them, exposing inputs. So the gap is "cannot build a node graph", not "cannot touch
+      geometry nodes at all", and an entry that said the latter would send someone to build
+      something that already half exists.
+
+      WHY THIS IS WORTH A LINE RATHER THAN A SHRUG. run_python reaches all of it, and that is
+      exactly the problem with using the benchmark as a demonstration: run_python is a MifBridge op
+      but it is a general Python escape hatch, not a capability the bridge exposes. A benchmark
+      that does not separate the two mostly demonstrates that Blender has a Python API.
+
+      THE MEASUREMENT THAT MAKES THE POINT: a 112-object procedural laboratory - modular damaged
+      walls, pipes, ventilation fan, benches, shelving, barrels, crates, glassware, paperwork,
+      puddles, broken furniture, light housings - was built for that benchmark using exactly SIX
+      typed ops and NO run_python: create_primitive, transform_object, apply_transform, boolean_op,
+      clear_scene, list_objects. Modelling and materials are genuinely covered. Everything in the
+      list above is not.
+
+      NOT STARTED, and deliberately not scoped as one item - each category is its own piece of work
+      with its own engine surface, and lights/cameras are worth far more than particles for the
+      uses this bridge actually has. Splitting comes when somebody decides to start.
+
 - [ ] **two reads the purity sweep can now PROVE it never exercises** (hours)
       FILED 2026-09-01, and only findable because "attempted only" stopped being one bucket.
 
