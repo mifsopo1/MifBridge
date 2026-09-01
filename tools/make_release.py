@@ -114,7 +114,16 @@ def is_dev_only(abs_path):
 # A row here is a claim someone will rely on. Reading the headers is not evidence for it.
 # Stated as a claim about what has actually been built, not a guess about what might work.
 ENGINE_MATRIX = [
-    {"engine": "5.3.2", "status": "built and tested", "notes": "cooked editor (DDS2 SDK) - the primary target"},
+    # STATUS IS FILLED IN AT PACKAGING TIME by gate_53(), not written here. It read
+    # "built and tested" as a literal string for the whole life of this file, and on 2026-09-01
+    # that string was FALSE for about an hour: 0.8.0 was packaged while the last real 5.3 build
+    # predated two compile fixes, and one of them - a version-guarded alias whose right-hand side a
+    # blanket rename had rewritten into `using X = X;` - broke 5.3 outright while 5.7 compiled
+    # clean, because 5.7 never enters that arm.
+    #
+    # The 5.7 row has been gated on a recorded probe since 0.7.0 shipped broken. The PRIMARY engine
+    # had no such gate at all, which is the wrong way round.
+    {"engine": "5.3.2", "status": None, "notes": "cooked editor (DDS2 SDK) - the primary target"},
     {"engine": "5.7", "status": "built, not deployed",
      "notes": "COMPILED against stock 5.7.4 via tools/make_engine_probe.py, most recently 2026-08-27 "
               "at 330 endpoints. NOT currently running in any project: the Curfew deployment that "
@@ -473,6 +482,61 @@ def check_engine_probe():
     return True, "5.7 probe passed and covers the current Source commit %s" % current[:12]
 
 
+
+BUILD_RECORD_53 = os.path.join(HERE, "engine_build_53.json")
+
+
+def record_53_build(ok, detail=""):
+    """Write what the 5.3 build actually did, against the Source commit it did it to."""
+    rec = {
+        "engine": "5.3.2",
+        "succeeded": bool(ok),
+        "sourceCommit": _git("log", "-1", "--format=%H", "--", "Source") or "",
+        "sourceDirty": bool((_git("status", "--porcelain", "--", "Source") or "").strip()),
+        "detail": detail,
+    }
+    with io.open(BUILD_RECORD_53, "w", encoding="utf-8") as fh:
+        json.dump(rec, fh, indent=1, sort_keys=True)
+    return rec
+
+
+def gate_53():
+    """(ok, message) - the 5.3 half of the same question gate_57 asks.
+
+    WHY THIS EXISTS. The engine matrix asserted 5.3.2 was "built and tested" as a hardcoded string,
+    so it stayed true-looking through every change to Source. 5.7 has been gated on a recorded probe
+    since 0.7.0 shipped broken on the strength of a truthful-but-stale README - and 5.3 is the
+    PRIMARY target, so it had the weaker guarantee of the two.
+
+    It is deliberately not a probe build: 5.3 is the engine this project develops against, so the
+    ordinary incremental build IS the verification. What was missing is recording WHICH COMMIT it
+    verified, which is the only part that makes a dated claim mean anything.
+    """
+    try:
+        with io.open(BUILD_RECORD_53, "r", encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except (OSError, ValueError):
+        return False, ("no 5.3 build has been recorded. The matrix used to ASSERT 5.3.2 was built\n"
+                       "  and tested; it now has to be shown. Build MifBridge against 5.3 and run:\n"
+                       "    python tools/make_release.py --record-53")
+    if not rec.get("succeeded"):
+        return False, "the recorded 5.3 build FAILED: %s" % (rec.get("detail") or "(no detail)")
+    if rec.get("sourceDirty"):
+        return False, ("the recorded 5.3 build ran against a DIRTY Source tree, so the commit it\n"
+                       "  names is not what compiled. Commit and rebuild.")
+    built = rec.get("sourceCommit") or ""
+    current = _git("log", "-1", "--format=%H", "--", "Source")
+    if current and built != current:
+        changed = _git("diff", "--name-only", built, current, "--", "Source") if built else "?"
+        return False, ("the recorded 5.3 build covers Source commit %s and Source is now at %s.\n"
+                       "  5.3 is the PRIMARY target and this row asserted 'built and tested' as a\n"
+                       "  literal string until 2026-09-01, when that string was false.\n"
+                       "  Changed since: %s"
+                       % (built[:12] or "(none)", current[:12],
+                          ", ".join((changed or "").split()[:6]) or "(unknown)"))
+    return True, "5.3 build passed and covers the current Source commit %s" % (current or built)[:12]
+
+
 def tracked_files():
     """Ship exactly what git tracks, minus the two categories above.
 
@@ -609,6 +673,8 @@ def main():
     ap.add_argument("--check", metavar="ZIP", help="verify a zip against this tree instead of building")
     ap.add_argument("--update-badge", action="store_true",
                     help="rewrite README.md's version line from the real counts, then exit")
+    ap.add_argument("--record-53", action="store_true",
+                    help="stamp a successful 5.3 build against the current Source commit")
     ap.add_argument("--force", action="store_true",
                     help="package even when the badge is stale (it will ship wrong)")
     args = ap.parse_args()
@@ -632,7 +698,24 @@ def main():
             return 1
         print("  --force given: packaging anyway, with a badge that is wrong.")
 
-    # A release claiming two engines has to have compiled against both.
+    if getattr(args, "record_53", False):
+        rec = record_53_build(True, "recorded by --record-53 after a successful 5.3 build")
+        print("recorded 5.3 build for Source commit %s (dirty=%s)"
+              % ((rec["sourceCommit"] or "(none)")[:12], rec["sourceDirty"]))
+        return 0
+
+    # A release claiming two engines has to have compiled against both. 5.3 first, because it is
+    # the PRIMARY target and was the one with no gate at all - the matrix asserted it as a string.
+    ok53, msg53 = gate_53()
+    print(("5.3 gate: " + msg53) if ok53 else ("REFUSING TO PACKAGE - " + msg53))
+    if not ok53 and not args.force:
+        return 1
+    if not ok53:
+        print("  --force given: packaging anyway, without a 5.3 build covering this Source.")
+    for _row in ENGINE_MATRIX:
+        if _row["engine"].startswith("5.3"):
+            _row["status"] = ("built and tested" if ok53 else "NOT VERIFIED for this Source commit")
+
     ok57, msg57 = check_engine_probe()
     print(("5.7 gate: " + msg57) if ok57 else ("REFUSING TO PACKAGE - " + msg57))
     if not ok57 and not args.force:
