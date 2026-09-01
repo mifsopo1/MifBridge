@@ -7199,6 +7199,30 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Separately, the running editor is older than the fix: live_coding_compile would patch it in but
       needs confirm:true, and its own refusal says a bad patch can destabilise the process holding
       unsaved work - a decision for a human at the keyboard, not for an overnight run.
+
+      RE-MEASURED 2026-08-31 AFTER THE REBUILD, and the second blocker is gone while the first
+      stands. The DLL now contains the fix, so "the editor is older than the fix" no longer applies.
+      The level does. Spawned a StaticMeshActor into a FRESHLY CREATED /Temp/Untitled_1 through
+      scratch_confirm.spawn_tracked and called modify_actor_layers add; refused with:
+
+        "these actors live in a WORLD PARTITIONED level, so classic Layers cannot hold them -
+         AActor::SupportsLayers reads GetLevel()->bIsPartitioned"
+
+      THE NEW FACT IS THAT THE LEVEL WAS FRESH. The entry read as though this were a property of the
+      particular map that happened to be open; it is not. A brand-new untitled level in 5.3 is
+      partitioned too, because that is the default template. So no amount of closing and reopening
+      reaches a classic level - which strengthens the original conclusion rather than changing it,
+      and is worth knowing before somebody tries the obvious thing.
+
+      AND THE PROBE LEFT LITTER IT CANNOT CLEAN UP, which is the guard working rather than failing.
+      An earlier malformed call - `name` instead of `label`, refused by RejectUnknownParams, then
+      retried without capturing the path - spawned one unlabelled StaticMeshActor. scratch_confirm
+      REFUSES to confirm deleting it: a level actor's path is not under /Game/_Mif, so the only proof
+      available is having watched the spawn in this process, and a later process cannot claim it.
+      There is deliberately no track() function. The cost is real and the design is right: the actor
+      sits in an UNSAVED /Temp map and goes when the editor closes without saving. Recorded rather
+      than bypassed, because a hand-written confirm with a comment explaining why it is safe is
+      exactly the shape spawn_tracked was written to remove.
 - [x] **response counts that disagree with the array they name - checked, none** (hours)  **DONE 2026-08-31.**
       A caller that trusts `count` and a caller that iterates `items` should get the same answer, and
       the two are written by different lines of C++ with nothing comparing them. Called all 88
