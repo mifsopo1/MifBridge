@@ -9630,7 +9630,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       is the same staleness that once shrank T330 from 109 checks to 106 in silence. Regenerated
       with harvest_param_table; it needs the rebuild like everything else.
 
-- [ ] **reconnect_pin breaks TWO pins in a row, and the first break can free the second** (hours)
+- [x] **reconnect_pin breaks TWO pins in a row, and the first break can free the second** (hours)
       CRASH CLASS, found 2026-08-31 by sweeping for the shape of a bug I had just written into
       remove_pin. Not a regression - it predates today - and it is filed rather than fixed because
       the fix is not obvious and it sits in the middle of core graph editing.
@@ -9656,7 +9656,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       breaking OutPin notifies InPin's owner, and a node that reconstructs frees and rebuilds its
       pins. The next line dereferences InPin.
 
-      WHY IT IS NOT FIXED HERE. Every candidate fix changes connect semantics: breaking with
+      FIXED AND VERIFIED 2026-08-31, once an editor existed to test in. Both sites now capture the
+      pin identities, break, RE-RESOLVE, and refuse with an honest message if a pin does not come
+      back - the same pattern MifBridgeCommon.cpp:3586 already used three lines away, which is where
+      the fix should have come from in the first place.
+
+      THE IDENTITY IS SUFFICIENT HERE, and that is not obvious given the same key failed in
+      remove_pin the same evening. ResolvePin matches on (NodeGuid, PinName, Direction); the two
+      pins in a connect have OPPOSITE DIRECTIONS by construction, so neither can ever resolve to the
+      other. The duplicate case that defeated it needed two pins sharing a direction.
+
+      THE SECOND SITE WAS LATENT, NOT LIVE: every caller of ConnectPinsChecked passes bBreakFirst
+      false, so its branch runs for nobody today. Fixed anyway - "unreachable" there is a property
+      of the CALLERS, and the next one to pass true would have inherited a crash with no warning on
+      it.
+
+      Verified by regression rather than by reproducing the crash: T442 still passes (reconnect
+      moves a link and the old end lets go), test_pins 44, test_node_spawns 110, test_pinlifetime
+      13, test_selfpin 20, verify_pending_fixes 37, all 0 FAIL. Deliberately did NOT try to trigger
+      the use-after-free - proving a crash by causing one in a live editor is not a test, it is the
+      thing the guard exists to prevent.
+
+      WHY IT WAS NOT FIXED EARLIER. Every candidate fix changes connect semantics: breaking with
       notification FALSE skips the reconstruction some node types need; re-resolving between the two
       breaks needs a pin identity that survives a rebuild, and ResolvePin's (NodeGuid, PinName,
       Direction) key is the one that could not tell two duplicates apart earlier today. Writing

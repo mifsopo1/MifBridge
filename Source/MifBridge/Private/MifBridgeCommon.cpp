@@ -4992,8 +4992,33 @@ namespace MifBridge
 		}
 		if (bBreakFirst)
 		{
-			Schema->BreakPinLinks(*OutPin, true);
-			Schema->BreakPinLinks(*InPin, true);
+			// SAME USE-AFTER-FREE AS reconnect_pin, and LATENT rather than live: every caller of
+			// ConnectPinsChecked today passes bBreakFirst false, so this branch runs for nobody.
+			// Fixed anyway, because "unreachable" here is a property of the CALLERS and the next
+			// one to pass true would inherit a crash with no warning attached to it.
+			// See MifBridgeCommon.cpp:3586 for the same pattern with the engine citation.
+			const FMifPinRef OutRef = CapturePin(OutPin);
+			const FMifPinRef InRef = CapturePin(InPin);
+
+			Schema->BreakPinLinks(*OutPin, /*bSendsNodeNotification*/ true);
+			OutPin = ResolvePin(OutRef);
+			InPin = ResolvePin(InRef);
+			if (!OutPin || !InPin)
+			{
+				OutError = TEXT("breaking the source pin's links rebuilt a node and a pin did not come "
+								"back; the source pin's old links are gone and nothing was connected.");
+				return false;
+			}
+
+			Schema->BreakPinLinks(*InPin, /*bSendsNodeNotification*/ true);
+			OutPin = ResolvePin(OutRef);
+			InPin = ResolvePin(InRef);
+			if (!OutPin || !InPin)
+			{
+				OutError = TEXT("breaking the destination pin's links rebuilt a node and a pin did not "
+								"come back; both pins' old links are gone and nothing was connected.");
+				return false;
+			}
 		}
 
 		const FPinConnectionResponse Response = Schema->CanCreateConnection(OutPin, InPin);

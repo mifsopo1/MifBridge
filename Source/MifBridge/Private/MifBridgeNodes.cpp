@@ -652,8 +652,45 @@ namespace MifBridge
 
 			if (bBreakFirst)
 			{
-				Schema->BreakPinLinks(*OutPin, true);
-				Schema->BreakPinLinks(*InPin, true);
+				// CAPTURE BEFORE BREAKING, then re-resolve between the two breaks. Same reasoning
+				// as MifBridgeCommon.cpp:3586, and the same engine comment: BreakPinLinks notifies
+				// every node on the far end of the links it destroys, and those handlers may
+				// ReconstructNode, which frees every pin on that node.
+				//
+				// THE FAR END OF OutPin CAN BE InPin. That is not an edge case here - it is the
+				// ordinary one, because reconnect_pin exists to rewire a pair that is already
+				// wired. So breaking OutPin could free InPin, and the next line dereferenced it.
+				// Found 2026-08-31 by sweeping for the shape of a use-after-free written into
+				// remove_pin the same evening; this one predates it.
+				//
+				// The identity is SUFFICIENT here, unlike the duplicate case that defeated it in
+				// remove_pin: ResolvePin keys on (NodeGuid, PinName, Direction) and these two pins
+				// have opposite directions by construction, so neither can resolve to the other.
+				const FMifPinRef OutRef = CapturePin(OutPin);
+				const FMifPinRef InRef = CapturePin(InPin);
+
+				Schema->BreakPinLinks(*OutPin, /*bSendsNodeNotification*/ true);
+				OutPin = ResolvePin(OutRef);
+				InPin = ResolvePin(InRef);
+				if (!OutPin || !InPin)
+				{
+					Fail(Out, TEXT("breaking the source pin's links rebuilt a node and a pin did not "
+								   "come back, so the second break was not attempted. The source "
+								   "pin's old links are already gone - re-read the graph with "
+								   "list_nodes before assuming anything about its state."));
+					return;
+				}
+
+				Schema->BreakPinLinks(*InPin, /*bSendsNodeNotification*/ true);
+				OutPin = ResolvePin(OutRef);
+				InPin = ResolvePin(InRef);
+				if (!OutPin || !InPin)
+				{
+					Fail(Out, TEXT("breaking the destination pin's links rebuilt a node and a pin did "
+								   "not come back, so nothing was reconnected. Both pins' old links "
+								   "are already gone - re-read the graph with list_nodes."));
+					return;
+				}
 			}
 
 			const bool bConnected = Schema->TryCreateConnection(OutPin, InPin);
