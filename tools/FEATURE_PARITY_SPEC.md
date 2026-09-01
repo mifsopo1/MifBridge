@@ -7359,21 +7359,15 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         misplaced parameter, littering the scene for somebody who only made a typo. 48 runs now,
         0 failed, on 3.6/4.2/4.4/5.0.
 
-- [ ] **connect_pins takes fromPin/toPin but not fromNode/toNode** (30 min)
-      FOUND 2026-09-01 while writing test_node_state.py, by having the obvious spelling refused.
-      The accepted list is:
+- [~] **connect_pins takes fromPin/toPin but not fromNode/toNode** - DECLINED 2026-09-01, the
+      refusal is the feature. Filed as a defect an hour earlier and withdrawn after reading
+      DoConnect: `fromNode` is not missing, it is an explicit KeyNote reading "spell it srcNode",
+      alongside `from` and `sourceNode`. Adding the alias would DELETE that teaching and leave two
+      vocabularies where the endpoint currently establishes one. Refuse-and-teach beats
+      accept-silently, and this is the plugin's own house style rather than an oversight.
 
-        srcNode, srcPin, sourcePin, fromPin, dstNode, dstPin, destPin, toPin, graphId, path
-
-      So the PIN argument answers to from/to and the NODE argument does not. Anyone who writes
-      `fromPin` - which is offered - will write `fromNode` beside it, and get a rejection naming a
-      key they did not think they were using. A half-alias is worse than no alias: no alias teaches
-      one vocabulary, half an alias teaches one and then refuses it a word later.
-
-      RejectUnknownParams caught it and said so, which is the system working - this is a
-      smoothness item, not a correctness one. Add fromNode/toNode as aliases of srcNode/dstNode.
-      Check the same shape elsewhere before fixing just this one: the question is whether any other
-      endpoint offers from/to on one argument and src/dst on its partner.
+      Kept because the near-miss is the useful part: I hit it, assumed a half-alias, and was
+      wrong. That is what the KeyNote is for and it worked.
 
 - [ ] **six proposals were invisible to the backlog counter for weeks** (day+ each)
       FOUND 2026-09-01 with the spec reporting 0 open. It was reporting the truth about `- [ ]`

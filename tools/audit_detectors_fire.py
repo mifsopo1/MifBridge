@@ -598,7 +598,40 @@ def plant_unreleased_acquire(text):
     return text.replace(needle, plant + needle, 1)
 
 
+def plant_removed_guard(text):
+    """Strip the RejectUnknownParams out of H_disconnect_pin.
+
+    audit_param_guards reports zero unguarded endpoints today, and "disconnect_pin" appears nowhere
+    in its clean output - the six it DOES name are the ones guarding through a shared helper
+    (connect_pins, reconnect_pin, add_variable_get/set, add_bind/call_dispatcher). So the endpoint
+    name is a safe marker: it can only be there because the plant worked.
+
+    Removing a guard rather than adding a hole-shaped handler, because the bug being modelled is a
+    guard going away in a refactor - which is exactly how the real ones would be lost.
+    """
+    i = text.find("void H_disconnect_pin(")
+    if i < 0:
+        return None
+    j = text.find("RejectUnknownParams", i)
+    if j < 0:
+        return None
+    start = text.rindex("if", i, j)
+    k = text.index("{", text.index(")", j))
+    depth, q = 0, k
+    while q < len(text):
+        if text[q] == "{":
+            depth += 1
+        elif text[q] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        q += 1
+    return text[:start] + "if (false) { }" + text[q + 1:]
+
+
 PLANTS = {
+    "audit_param_guards.py": (os.path.join(PRIV, "MifBridgeNodes.cpp"), plant_removed_guard,
+                             "disconnect_pin"),
     # Exits 1 on a finding, so the exit code is real proof. No must_vanish: this plant ADDS a
     # call rather than removing one, and "it is there now" is already proved by the marker.
     "audit_suite_teardown.py": (os.path.join(HERE, "test_pie_family.py"),
