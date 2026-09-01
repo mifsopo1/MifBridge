@@ -6662,7 +6662,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       actually produces is a runtime question.
 
 
-- [ ] **MifBridge can AUTHOR a blueprint graph and cannot ARRANGE one** - PROTOTYPE BUILT, UNRUN (day)
+- [ ] **MifBridge can AUTHOR a blueprint graph and cannot ARRANGE one** - WORKING, AWAITING ANDRE'S EYES (day)
       Raised by Andre 2026-08-31: the project uses Blueprint Assist and MifBridge never calls it.
       Checked, and the gap is sharper than that - there is no graph layout of ANY kind for
       blueprints, third-party or native:
@@ -6838,9 +6838,32 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       generous (140) to choose the RECOVERABLE error - which is a design decision driven by another
       plugin's semantics rather than by taste, and the code says so.
 
-      WHAT IS LEFT IS THE ONLY QUESTION THAT MATTERS - how good does it look on a real graph? The
-      estimated extents are the known weakness, and one --apply on a scratch graph answers whether
-      they are good enough or whether Blueprint Assist is worth wiring up after all.
+      RUN ON A REAL GRAPH 2026-08-31, on Andre's instruction, at /Game/_MifLayout/BP_LayoutDemo:
+      nine nodes stacked at the origin became four columns with a comment box, positions verified by
+      reading them back, and the blueprint still compiles 0 errors 0 warnings.
+
+      RUNNING IT FOUND THREE DEFECTS THE SELF-TEST COULD NOT, and the first is the one to remember:
+
+        THE SELF-TEST'S OVERLAP CHECK WAS VACUOUS. The synthetic graph produced only ONE comment
+        box, so "no two boxes overlap" passed without comparing anything - while the real graph drew
+        two boxes at identical coordinates. A test that cannot fail, written the same night as the
+        detector that hunts them. The synthetic graph now carries a second independent chain.
+
+        GROUPING BY ROOT REACHABILITY WAS WRONG. Two roots reaching one shared node produced groups
+        disjoint in MEMBERSHIP whose rectangles collided. Grouping is by weakly-connected component
+        now, following edges in BOTH directions, because a getter points into the chain it feeds and
+        nothing points at it.
+
+        AND THAT EXPOSED A LAYOUT BUG. plan() packed every column from y=0 regardless of chain, so
+        independent chains interleaved their rows. Components get their own horizontal band now.
+
+      Plus the label: the first real run produced a box reading "Get Health" for a chain any person
+      would call "Event BeginPlay". It prefers an event in the component now.
+
+      WHAT WOULD CLOSE THIS: Andre looking at the demo graph. The estimated extents are the one
+      thing no check here can judge - whether the spacing reads well is an eye question, and the
+      answer is a constant either way. If it reads badly, that is the argument for Blueprint Assist
+      and it was bought for an afternoon.
 
       ORIGINAL NOTE: raised while the DDS2 session was off-limits, so nothing was built or tested. The
       analysis above is from reading BlueprintAssist's headers, the engine's EdGraphNode.h and
