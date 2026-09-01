@@ -21,6 +21,11 @@ from .ops_common import MifOpError, get_object, reject_unknown, take, take_bool,
 _SHADE_KEYS = {"shading", "mode", "studioLight", "useSceneLights", "useSceneWorld",
                "showOverlays", "showGizmos", "colorType"}
 _FRAME_KEYS = {"object", "name", "all", "camera"}
+# No "target" alias for focus. It was accepted and no tool sent it, which param_reach
+# correctly called unreachable - and a second name for the same thing is not worth a
+# baseline entry. One name, one meaning.
+_VIEW_KEYS = {"focus", "distance", "azimuth", "elevation", "lookFrom",
+              "perspective", "lens"}
 
 
 def _view3d_spaces():
@@ -152,7 +157,108 @@ def op_frame_viewport(params):
             "objectCount": len(bpy.context.view_layer.objects)}
 
 
+def op_set_viewport_view(params):
+    """Place the viewport's own camera - the orbit pivot, the distance and the angle.
+
+    WHY THIS EXISTS SEPARATELY FROM frame_viewport. Framing answers "show me this object"; this
+    answers "stand HERE and look THERE", which is what a walkthrough needs. Andre asked for the
+    view to move itself while a scene is being built so he does not have to drive it, and framing
+    alone cannot do a slow push down a room.
+
+    THE VIEWPORT IS AN ORBIT, NOT A CAMERA. region_3d has view_location (the pivot), view_distance
+    (how far back) and view_rotation (a quaternion). There is no "position" to set directly - the
+    eye is derived from those three, so a caller who thinks in eye-positions gets lookFrom, which
+    is converted here rather than left as an exercise.
+
+    params:
+      focus {x,y,z}            the point being orbited - what you are looking AT
+      distance (float)         metres back from the focus
+      azimuth (float)          RADIANS around Z. 0 looks along +Y, increasing turns anticlockwise
+      elevation (float)        RADIANS above the horizon; positive looks DOWN at the focus
+      lookFrom {x,y,z}         eye position INSTEAD of azimuth/elevation/distance - all three are
+                               derived from it, and passing both is refused
+      perspective              PERSP | ORTHO | CAMERA
+    """
+    import math
+    import mathutils
+
+    reject_unknown(params, _VIEW_KEYS, "set_viewport_view")
+    spaces = _view3d_spaces()
+    if not spaces:
+        raise MifOpError("there is no 3D viewport in this Blender. NOTHING was changed.")
+    _area, sp = spaces[0]
+    r3d = sp.region_3d
+
+    have_polar = any(k in params for k in ("azimuth", "elevation", "distance"))
+    if "lookFrom" in params and have_polar:
+        raise MifOpError("pass lookFrom OR azimuth/elevation/distance, not both - lookFrom already "
+                         "determines all three. NOTHING was changed.")
+
+    focus = params.get("focus")
+    if focus is not None:
+        f = _vec3_of(focus, "focus")
+        r3d.view_location = f
+    else:
+        f = tuple(r3d.view_location)
+
+    if "lookFrom" in params:
+        eye = _vec3_of(params["lookFrom"], "lookFrom")
+        d = mathutils.Vector((f[0] - eye[0], f[1] - eye[1], f[2] - eye[2]))
+        if d.length == 0.0:
+            raise MifOpError("lookFrom is the focus point, so there is no direction to look. "
+                             "NOTHING was changed.")
+        r3d.view_distance = d.length
+        # The view looks down its own -Z, same convention as a camera object.
+        r3d.view_rotation = d.to_track_quat("-Z", "Y")
+    else:
+        dist = take_float(params, "distance", default=None)
+        if dist is not None:
+            if dist <= 0:
+                raise MifOpError("distance must be positive, got %r. NOTHING was changed." % dist)
+            r3d.view_distance = dist
+        az = take_float(params, "azimuth", default=None)
+        el = take_float(params, "elevation", default=None)
+        if az is not None or el is not None:
+            az = 0.0 if az is None else az
+            el = 0.35 if el is None else el
+            # Direction from eye toward focus, from polar angles: azimuth 0 looks along +Y.
+            d = mathutils.Vector((math.sin(az) * math.cos(el),
+                                  math.cos(az) * math.cos(el),
+                                  -math.sin(el)))
+            r3d.view_rotation = d.to_track_quat("-Z", "Y")
+
+    persp = take(params, "perspective", default=None, kind=str)
+    if persp:
+        want = str(persp).upper()
+        if want not in ("PERSP", "ORTHO", "CAMERA"):
+            raise MifOpError("perspective must be PERSP, ORTHO or CAMERA, got '%s'." % persp)
+        if want == "CAMERA" and bpy.context.scene.camera is None:
+            raise MifOpError("there is no scene camera to look through. NOTHING was changed.")
+        r3d.view_perspective = want
+    lens = take_float(params, "lens", default=None)
+    if lens is not None:
+        sp.lens = lens
+
+    eye = r3d.view_matrix.inverted().translation
+    return {
+        "focus": [round(v, 4) for v in r3d.view_location],
+        "distance": round(float(r3d.view_distance), 4),
+        "eye": [round(v, 4) for v in eye],
+        "perspective": r3d.view_perspective,
+        "lens": round(float(sp.lens), 3),
+    }
+
+
+def _vec3_of(v, key):
+    if isinstance(v, dict):
+        return (float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0)))
+    if isinstance(v, (list, tuple)) and len(v) == 3:
+        return tuple(float(x) for x in v)
+    raise MifOpError("'%s' must be {x,y,z} or a 3-list, got %r." % (key, v))
+
+
 OPS = {
     "set_viewport_shading": op_set_viewport_shading,
+    "set_viewport_view": op_set_viewport_view,
     "frame_viewport": op_frame_viewport,
 }

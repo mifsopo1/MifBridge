@@ -5080,6 +5080,16 @@ def bl_frame_viewport(object: str = None, all: bool = None, camera: bool = None)
     return _blender("frame_viewport", object=object, all=all, camera=camera)
 
 
+@mcp.tool()
+def bl_set_viewport_view(focus: list = None, distance: float = None, azimuth: float = None,
+                         elevation: float = None, look_from: list = None,
+                         perspective: str = None, lens: float = None) -> dict:
+    "Place the Blender viewport's own view - the orbit pivot (focus), how far back, and the angle. The viewport is an ORBIT, not a camera: there is no eye position to set directly, so pass look_from and it derives the pivot, distance and rotation for you. azimuth/elevation are RADIANS; azimuth 0 looks along +Y and positive elevation looks DOWN at the focus. Use this to drive a walkthrough without the human touching the viewport."
+    return _blender("set_viewport_view", focus=focus, distance=distance, azimuth=azimuth,
+                    elevation=elevation, lookFrom=look_from, perspective=perspective, lens=lens)
+
+
+
 
 
 
