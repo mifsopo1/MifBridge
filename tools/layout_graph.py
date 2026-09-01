@@ -148,7 +148,19 @@ def plan(nodes):
 # GROUPED BY EVENT CHAIN, because that is how a person comments a graph - "BeginPlay setup",
 # "OnHit handling" - and because it is the grouping this tool can actually compute. Every node
 # reachable from one root goes in that root's box.
-COMMENT_PAD = 60
+# ERR LARGE, NEVER SMALL, and this is not aesthetics - it is AutoSizeComments' semantics.
+#
+# UE comment membership is GEOMETRIC: a node inside the rectangle is contained, one outside is not.
+# AutoSizeComments (installed here, and on plenty of other projects) exposes ResizeToFit, which
+# resizes a comment to fit the nodes it CONTAINS. So the two error directions are not symmetric:
+#
+#   box too LARGE   ASC shrinks it to fit, and the result is correct
+#   box too SMALL   the excluded node was never a member, so ASC fits the box to what IS inside
+#                   and the mistake is locked in rather than corrected
+#
+# Since the extents feeding these boxes are estimates (an ordinary K2 node has no stored size), one
+# of the two WILL happen. Generous padding chooses the recoverable one.
+COMMENT_PAD = 140
 NODE_WIDTH_MIN = 260
 TITLE_CHAR_W = 9
 

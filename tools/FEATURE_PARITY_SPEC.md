@@ -6825,6 +6825,19 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       was until today the only offline test there, and mutation-tested: removing the +1 from the
       layering makes three checks fail and the gate go red.
 
+      AUTOSIZECOMMENTS MAKES THE BOX ESTIMATE SELF-CORRECTING, IN ONE DIRECTION ONLY. It is
+      installed here and on plenty of other projects, and it exposes ResizeToFit, which resizes a
+      comment to fit the nodes it CONTAINS. UE comment membership is GEOMETRIC - inside the
+      rectangle is a member, outside is not - so the two error directions are not symmetric:
+
+        box too LARGE   ASC shrinks it to fit and the result is correct
+        box too SMALL   the excluded node was never a member, so ASC fits the box to what IS
+                        inside and locks the mistake in rather than correcting it
+
+      Since the extents are estimates, one of the two will happen. So the padding is deliberately
+      generous (140) to choose the RECOVERABLE error - which is a design decision driven by another
+      plugin's semantics rather than by taste, and the code says so.
+
       WHAT IS LEFT IS THE ONLY QUESTION THAT MATTERS - how good does it look on a real graph? The
       estimated extents are the known weakness, and one --apply on a scratch graph answers whether
       they are good enough or whether Blueprint Assist is worth wiring up after all.
