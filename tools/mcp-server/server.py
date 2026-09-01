@@ -2235,9 +2235,12 @@ def select_level_actors(actor_paths: list = None, clear: bool = False) -> dict:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
-def create_asset(path: str, asset_class: str) -> dict:
-    "Instantiate a data-asset class at a /Game path."
-    return _post("create_asset", path=path, **{"class": asset_class})
+def create_asset(path: str, asset_class: str, properties: dict = None) -> dict:
+    "Instantiate a data-asset class at a /Game path. Optional properties={path:value} are applied BEFORE the asset is registered, so nothing watching the registry sees the default state. Call mif_help(\"create_asset\") first."
+    # _post drops None-valued kwargs, so an omitted `properties` never reaches the bridge.
+    # NOT passed as payload={...}: _post takes **payload, so that would have sent a body of
+    # {"payload": {...}} and the endpoint would have rejected every key it contained.
+    return _post("create_asset", path=path, properties=properties, **{"class": asset_class})
 
 
 @mcp.tool()

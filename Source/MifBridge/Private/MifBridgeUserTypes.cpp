@@ -738,9 +738,12 @@ namespace MifBridge
 	void H_create_asset(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("path"), TEXT("class"), TEXT("assetClass"), TEXT("className") },
+			{ TEXT("path"), TEXT("class"), TEXT("assetClass"), TEXT("className"),
+			  TEXT("properties") },
 			TEXT("path (/Game/...), class (alias: assetClass, className) - a concrete UObject class, "
-				 "typically a UDataAsset or UPrimaryDataAsset subclass"),
+				 "typically a UDataAsset or UPrimaryDataAsset subclass. properties is an OPTIONAL "
+				 "{propertyPath: value} map applied before the asset is registered, so nothing "
+				 "watching the registry sees it in its default state"),
 			{ { TEXT("parentClass"), TEXT("that is create_blueprint's key - this endpoint instantiates an existing class rather than authoring a new one") },
 			  { TEXT("blueprintType"), TEXT("create_asset makes a DATA asset, not a blueprint - use create_blueprint for those") },
 			  { TEXT("rowStruct"), TEXT("that is create_datatable's key") } }))
@@ -1128,6 +1131,94 @@ namespace MifBridge
 		}
 #endif
 
+		// --- optional `properties`, applied BEFORE the registry is told ----------------------
+		// WHAT "ATOMIC" MEANS HERE, said plainly because the word promises more than this delivers.
+		// It does NOT mean all-or-nothing: the object exists the moment NewObject returns, and
+		// undoing that would mean deleting it, which this plugin has direct evidence is the worse
+		// trade (see docs/06 issue 28 - the delete/recreate path took the editor down twice).
+		//
+		// What it DOES mean is that no registry observer ever sees the default state. AssetCreated
+		// below is what broadcasts AssetAdded; every property written above this line is already in
+		// place when that fires. With the two-call form - create_asset then set_property - there is
+		// a window where the asset is registered, discoverable and wrong, and anything reacting to
+		// AssetAdded reads it in that window. That window is the entire point of this key.
+		//
+		// IT CALLS H_set_property RATHER THAN WRITING PROPERTIES ITSELF, and that is deliberate.
+		// The write bracket in MifBridgeNodes5.cpp - resolve, dot-walk, ImportText_Direct into a
+		// scratch buffer, Modify/PreEditChange/publish/PostEditChangeProperty - carries PM-003 and
+		// the UStaticMesh::PostEditChangeProperty-calls-Build() guard among others. A second copy of
+		// that here would be a parallel system that has to re-learn every one of those the hard way.
+		// Calling the handler inherits all of it, including guards added later.
+		//
+		// Passing objectPath on an UNREGISTERED asset works, and this is not a guess: the ghost-asset
+		// failure below is described in this file as one that "will answer get_property and
+		// set_property perfectly" - a registry-less asset is exactly what set_property can still
+		// reach, because it resolves through the object hash that NewObject has already populated.
+		const TSharedPtr<FJsonObject>* PropsObj = nullptr;
+		if (In->TryGetObjectField(TEXT("properties"), PropsObj) && PropsObj && PropsObj->IsValid())
+		{
+			TArray<TSharedPtr<FJsonValue>> Applied, Refused;
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : (*PropsObj)->Values)
+			{
+				TSharedRef<FJsonObject> SubIn = MakeShared<FJsonObject>();
+				SubIn->SetStringField(TEXT("objectPath"), Asset->GetPathName());
+				SubIn->SetStringField(TEXT("propertyPath"), Pair.Key);
+				SubIn->SetField(TEXT("value"), Pair.Value);
+
+				TSharedRef<FJsonObject> SubOut = MakeShared<FJsonObject>();
+				H_set_property(SubIn, SubOut);
+
+				bool bOk = false;
+				SubOut->TryGetBoolField(TEXT("ok"), bOk);
+				// JUDGE BY THE POSTCONDITION, NOT BY ok. set_property reports `changed` separately,
+				// and a write that resolved and imported cleanly but left the value where it was is
+				// not a configured property - it is a caller who spelled the value wrong and would
+				// otherwise be told everything went fine.
+				bool bChanged = false;
+				SubOut->TryGetBoolField(TEXT("changed"), bChanged);
+
+				TSharedRef<FJsonObject> Row = MakeShared<FJsonObject>();
+				Row->SetStringField(TEXT("propertyPath"), Pair.Key);
+				if (bOk && bChanged)
+				{
+					FString After;
+					if (SubOut->TryGetStringField(TEXT("valueAfter"), After))
+					{
+						Row->SetStringField(TEXT("valueAfter"), After);
+					}
+					Applied.Add(MakeShared<FJsonValueObject>(Row));
+				}
+				else
+				{
+					FString Err;
+					if (!SubOut->TryGetStringField(TEXT("error"), Err))
+					{
+						Err = bOk ? TEXT("set_property reported ok but changed:false - the value was "
+										 "accepted and left the property where it already was")
+								  : TEXT("set_property failed without naming a reason");
+					}
+					Row->SetStringField(TEXT("error"), Err);
+					Refused.Add(MakeShared<FJsonValueObject>(Row));
+				}
+			}
+			Out->SetArrayField(TEXT("propertiesApplied"), Applied);
+			Out->SetNumberField(TEXT("propertiesAppliedCount"), Applied.Num());
+			if (Refused.Num() > 0)
+			{
+				// REPORTED, NOT FATAL, and the asset is NOT rolled back - see the note above on why
+				// deleting it would be the worse trade. The caller is told exactly which properties
+				// did not take so they can fix them with set_property or delete the asset and retry.
+				Out->SetArrayField(TEXT("propertiesRefused"), Refused);
+				Out->SetNumberField(TEXT("propertiesRefusedCount"), Refused.Num());
+				Out->SetStringField(TEXT("propertiesNote"), FString::Printf(
+					TEXT("%d of %d properties were NOT applied and the asset EXISTS anyway, in a "
+						 "partly-configured state. It is not rolled back: deleting a just-created "
+						 "asset is a worse failure than leaving one that can be fixed with "
+						 "set_property. Read propertiesRefused."),
+					Refused.Num(), Applied.Num() + Refused.Num()));
+			}
+		}
+
 		// WITHOUT THESE TWO LINES THE ASSET IS A GHOST. It answers get_property and set_property
 		// perfectly, never appears in find_assets or save_dirty_packages, and evaporates on restart -
 		// a whole session reporting ok:true and losing everything it did.
@@ -1165,8 +1256,13 @@ namespace MifBridge
 		Out->SetStringField(TEXT("class"), Class->GetPathName());
 		Out->SetBoolField(TEXT("registered"), true);
 		Out->SetStringField(TEXT("note"),
-			TEXT("created and registered but NOT saved - set its properties with set_property, then "
-				 "save_dirty_packages or it is lost on restart"));
+			In->HasField(TEXT("properties"))
+				? TEXT("created, configured and registered - in that order, so nothing watching the "
+					   "asset registry saw the default state. NOT saved: call save_dirty_packages or "
+					   "it is lost on restart")
+				: TEXT("created and registered but NOT saved - set its properties with set_property, then "
+					   "save_dirty_packages or it is lost on restart. To configure it BEFORE the "
+					   "registry sees it, pass properties:{path:value} to this endpoint instead"));
 		UE_LOG(LogMifBridge, Log, TEXT("create_asset: %s (%s)"), *Asset->GetPathName(), *Class->GetName());
 	}
 
