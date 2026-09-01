@@ -316,6 +316,7 @@
    "test_modal_hazards.py",
    "test_mvvm.py",
    "test_node_spawns.py",
+   "test_pins.py",
    "test_rollback_real.py",
    "test_selfpin.py",
    "test_transactions.py",
@@ -330,6 +331,7 @@
    "test_graph_patch.py",
    "test_modal_hazards.py",
    "test_node_spawns.py",
+   "test_pins.py",
    "test_rollback_real.py",
    "test_selfpin.py",
    "test_uncovered_reads6.py",
@@ -338,7 +340,8 @@
   "add_variable_set": [
    "test_confirm_gated.py",
    "test_modal_hazards.py",
-   "test_node_spawns.py"
+   "test_node_spawns.py",
+   "test_pins.py"
   ],
   "add_virtual_bone": [
    "test_virtual_bone_authoring.py"
@@ -1895,6 +1898,7 @@
   "set_variable_type": [
    "test_idempotence.py",
    "test_modal_hazards.py",
+   "test_pins.py",
    "test_undo_integrity.py"
   ],
   "set_viewport_camera": [
