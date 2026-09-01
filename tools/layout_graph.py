@@ -213,6 +213,83 @@ def components(by_guid, succ, pred):
 BAND_GAP = 260
 
 
+def exec_links(nodes, by_guid):
+    """(successors, predecessors) over EXEC links only - the control flow, without the data."""
+    esucc, epred = defaultdict(set), defaultdict(set)
+    for n in nodes:
+        g = n.get("guid")
+        for pin in (n.get("pins") or []):
+            if (pin.get("direction") or "") != "output":
+                continue
+            if ((pin.get("type") or {}).get("category") or "") != "exec":
+                continue
+            for link in (pin.get("linkedTo") or []):
+                other = link.get("node")
+                if other and other in by_guid and other != g:
+                    esucc[g].add(other)
+                    epred[other].add(g)
+    return esucc, epred
+
+
+def chain_groups(nodes, by_guid, succ, pred):
+    """Groups for banding and for comment boxes: one per EXEC chain, data attached to what reads it.
+
+    WHY NOT CONNECTED COMPONENTS, which is what this used to do. On BP_MifThrowComponent - 411
+    nodes, six events - the whole graph is ONE weakly-connected component, so it produced ONE
+    comment box 21540 pixels wide with 409 nodes in it. That is not documentation, it is a
+    rectangle. What welded it together was not control flow at all: a `Get MagCount` read by both
+    the fire chain and the reload chain joins them through DATA, and a component walk cannot tell
+    that kind of link from an exec link.
+
+    Over exec links alone the same graph is 7 chains - 70, 45, 44, 32, 17, 10 and 2 nodes - which
+    is what a person would draw boxes around, and roughly what the six events predict.
+
+    DATA NODES THEN GO WHERE THEY ARE READ. Every getter is its own exec component (it has no exec
+    pins at all), so they are followed forward through data links to the first node that does have
+    one, and join that node's group. Nearest wins, because a getter read by two chains has to live
+    somewhere and the closest reader is the one whose box it belongs in - and it MUST end up in
+    exactly one, since UE decides comment membership geometrically and a node in two bands is a
+    node in neither.
+    """
+    esucc, epred = exec_links(nodes, by_guid)
+    exec_nodes = {g for g in by_guid if not is_pure_data(by_guid[g])}
+    groups = [gr for gr in components({g: by_guid[g] for g in exec_nodes}, esucc, epred)]
+    owner = {}
+    for i, gr in enumerate(groups):
+        for g in gr:
+            owner[g] = i
+
+    # Breadth-first from every data node to the first exec node that reads it, following data
+    # links. Distance decides ties, then guid, so two runs group identically.
+    for g in by_guid:
+        if g in owner:
+            continue
+        seen, frontier, found = {g}, [g], None
+        for _ in range(len(by_guid)):
+            nxt = []
+            for cur in frontier:
+                for s in succ.get(cur, ()):
+                    if s in seen:
+                        continue
+                    seen.add(s)
+                    if s in owner:
+                        found = owner[s] if found is None else min(found, owner[s])
+                    else:
+                        nxt.append(s)
+            if found is not None or not nxt:
+                break
+            frontier = nxt
+        if found is not None:
+            owner[g] = found
+
+    out = defaultdict(set)
+    for g in by_guid:
+        # A node that reaches no exec chain at all - an orphan getter - is its own group, which
+        # means no box, which is right: there is nothing to document.
+        out[owner.get(g, ("orphan", g))].add(g)
+    return [set(v) for v in out.values()]
+
+
 def plan(nodes):
     """Positions, laid out one CONNECTED COMPONENT per horizontal band.
 
@@ -234,7 +311,7 @@ def plan(nodes):
     columns = defaultdict(list)
     y_offset = 0
 
-    for group in sorted(components(by_guid, succ, pred),
+    for group in sorted(chain_groups(nodes, by_guid, succ, pred),
                         key=lambda gr: (min(layer[g] for g in gr), sorted(gr)[0])):
         members = {g: by_guid[g] for g in group}
         # Order within this component only - a barycentre computed across unrelated chains means
@@ -303,7 +380,7 @@ def reachable(start, succ):
     return seen
 
 
-def comment_boxes(by_guid, positions, succ, pred):
+def comment_boxes(nodes, by_guid, positions, succ, pred):
     """[(x, y, w, h, text)] - one box per connected component, skipping trivial ones.
 
     A box around a SINGLE node is noise rather than documentation, so groups of one are dropped.
@@ -315,7 +392,10 @@ def comment_boxes(by_guid, positions, succ, pred):
     that would overlap one already placed is DROPPED and reported, not drawn.
     """
     boxes = []
-    for group in sorted(components(by_guid, succ, pred),
+    # THE SAME GROUPING plan() BANDED BY. If these two ever disagree the boxes stop
+    # matching the bands, and since UE decides membership geometrically a box would then claim
+    # nodes from a chain it does not describe.
+    for group in sorted(chain_groups(nodes, by_guid, succ, pred),
                         key=lambda gr: min(positions[g] for g in gr)):
         if len(group) < 2:
             continue
@@ -425,7 +505,29 @@ SELF_TEST_GRAPH = [
         {"name": "then", "direction": "output", "type": {"category": "exec"},
          "linkedTo": [{"node": "G", "pin": "execute"}]}]},
     {"guid": "G", "title": "Add Movement", "x": 0, "y": 900, "pins": [
-        {"name": "execute", "direction": "input", "type": {"category": "exec"}, "linkedTo": []}]},
+        {"name": "execute", "direction": "input", "type": {"category": "exec"}, "linkedTo": []},
+        {"name": "Scale", "direction": "input", "type": {"category": "float"}, "linkedTo": []}]},
+    # THE SHAPE THAT WELDED BP_MifThrowComponent INTO ONE BOX. S is read by BOTH chains - by B in
+    # the BeginPlay chain and by G in the Tick chain - which is ordinary blueprint practice and says
+    # nothing whatever about control flow. But it makes the two chains ONE weakly-connected
+    # component, and grouping by component then drew a single box around everything: on the real
+    # graph, 409 nodes in one rectangle 21540 pixels wide.
+    #
+    # Without this node the fixture cannot tell the two groupings apart - its components ARE its
+    # exec chains, so component-grouping and chain-grouping give the same two boxes and the check
+    # passes either way. That is exactly how the defect survived to a 411-node graph.
+    {"guid": "S", "title": "Get Shared Value", "x": 0, "y": 450, "pins": [
+        {"name": "Value", "direction": "output", "type": {"category": "float"},
+         "linkedTo": [{"node": "B", "pin": "Condition"}, {"node": "G", "pin": "Scale"}]}]},
+    # AN ORPHAN, and it is here because a mutation test FAILED TO FIRE without it. Deleting the
+    # branch that discards an unattachable node changed nothing: every data node in this fixture
+    # reaches an exec chain, so the discard was never reached and "none dropped on the floor"
+    # passed over a code path it never ran. A plant that does not fire is the finding, not a pass.
+    #
+    # A getter wired to nothing is also just common - somebody deletes the node that read it and
+    # leaves the getter behind - so this costs the fixture nothing to carry.
+    {"guid": "O", "title": "Get Orphaned Value", "x": 0, "y": 1200, "pins": [
+        {"name": "Value", "direction": "output", "type": {"category": "float"}, "linkedTo": []}]},
 ]
 
 
@@ -500,10 +602,22 @@ def self_test():
 
     # ---- comment boxes ------------------------------------------------------------------
     _, succ2, pred2 = build_graph(SELF_TEST_GRAPH)
-    boxes = comment_boxes(by_guid, positions, succ2, pred2)
+    boxes = comment_boxes(SELF_TEST_GRAPH, by_guid, positions, succ2, pred2)
     # TWO components, so TWO boxes - and the overlap check below has something to compare.
-    check("each separate chain gets its own comment box", len(boxes) == 2,
+    # TWO BOXES, AND THE SHARED GETTER IS WHY THIS IS A REAL CHECK. Over all links these two chains
+    # are ONE component, so component-grouping draws ONE box around both - which is what the real
+    # graph got. Over exec links they are two, which is what a person would draw.
+    check("a getter read by both chains does NOT merge them into one box", len(boxes) == 2,
           [t for *_, t in boxes])
+    # And it has to land in exactly ONE of them: UE decides comment membership geometrically, so a
+    # node the grouping put in two bands is a node in neither.
+    _groups = chain_groups(SELF_TEST_GRAPH, by_guid, *build_graph(SELF_TEST_GRAPH)[1:])
+    check("the shared getter belongs to exactly one group, never two",
+          sum(1 for gr in _groups if "S" in gr) == 1,
+          [sorted(gr) for gr in _groups if "S" in gr])
+    check("and every node is in a group - none dropped on the floor",
+          sum(len(gr) for gr in _groups) == len(SELF_TEST_GRAPH),
+          "%d grouped, %d nodes" % (sum(len(gr) for gr in _groups), len(SELF_TEST_GRAPH)))
     if boxes:
         check("and it is labelled with the event that starts the chain",
               any("BeginPlay" in t for _, _, _, _, t in boxes), [t for *_, t in boxes])
@@ -560,7 +674,7 @@ def main():
 
     by_guid, positions, columns = plan(nodes)
     _, succ, pred = build_graph(nodes)
-    boxes = comment_boxes(by_guid, positions, succ, pred) if "--comment" in sys.argv else []
+    boxes = comment_boxes(nodes, by_guid, positions, succ, pred) if "--comment" in sys.argv else []
     print("%d node(s) in %d column(s)" % (len(nodes), len(columns)))
     for col in sorted(columns):
         names = [(by_guid[g].get("title") or by_guid[g].get("class") or "?")[:28]
