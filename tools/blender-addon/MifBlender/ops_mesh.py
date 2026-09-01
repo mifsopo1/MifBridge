@@ -172,14 +172,31 @@ def _check_format(path, verb, allowed=None):
             "in whatever pose it happened to be in, and none of that transfers to the glTF "
             "exporter unexamined. Export .fbx, or use run_python and own the result." % ext)
     if ext not in allowed:
+        # THE LIST MUST BE THIS CALLER'S LIST. This branch used to recite "FBX and glTF/GLB"
+        # whatever it was passed, which is the import set - so `export_mesh {file:"x.obj"}` was
+        # told glTF and GLB were available, and the caller who believed it got the branch ABOVE
+        # saying "export_mesh writes FBX only". One helper, two refusals, contradicting each other,
+        # and the verb name on both was right. That is what made it survive: a wrong refusal gets
+        # reported, a right refusal followed by a wrong sentence gets acted on.
+        #
+        # Derived from `allowed` rather than restated, so widening either tuple cannot desynchronise
+        # the message again - which is the same failure the comment at the top of this block already
+        # records once, when a shared _SUPPORTED let export_mesh write FBX bytes into a .glb.
+        takes_gltf = any(g in allowed for g in _GLTF)
         raise MifOpError(
-            "%s: supported formats are FBX and glTF/GLB (got '%s'). Those two round-trip "
-            "axis and unit verifiably - glTF because its spec FIXES the convention (+Y up, "
-            "metres) and FBX because it carries its own metadata. OBJ in particular does "
-            "neither, which is why it stays refused: UE's OBJ exporter swaps Y/Z, de-indexes "
-            "to 3 verts per triangle and writes no normals, and the file cannot tell you so. "
-            "Use run_python if you need another format and accept that the orientation is on "
-            "you." % (verb, ext or "<no extension>"))
+            "%s: supported formats are %s (got '%s'). %s OBJ in particular does not, which is why "
+            "it stays refused: UE's OBJ exporter swaps Y/Z, de-indexes to 3 verts per triangle and "
+            "writes no normals, and the file cannot tell you so. Use run_python if you need "
+            "another format and accept that the orientation is on you."
+            % (verb,
+               "FBX and glTF/GLB" if takes_gltf else "FBX",
+               ext or "<no extension>",
+               "Those two round-trip axis and unit verifiably - glTF because its spec FIXES the "
+               "convention (+Y up, metres) and FBX because it carries its own metadata."
+               if takes_gltf else
+               "FBX round-trips axis and unit verifiably because it carries its own metadata. "
+               "import_mesh additionally takes glTF and GLB; this verb does not, and the reason "
+               "is on the glTF refusal above."))
     return ext
 
 

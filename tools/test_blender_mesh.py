@@ -282,6 +282,21 @@ def main():
     check("T764 a non-FBX extension is refused", r.get("ok") is False, json.dumps(r)[:200])
     check("T764 and says why FBX is the only one",
           "axis" in str(r.get("error", "")).lower(), str(r.get("error"))[:220])
+    # AND THE LIST IT RECITES MUST BE THIS CALLER'S LIST. _check_format is shared by import_mesh and
+    # export_mesh, and this branch described the IMPORT capability set to whoever called it - so an
+    # export caller was told glTF/GLB were supported, and got the helper's OTHER branch saying "FBX
+    # only" the moment they believed it. The verb name was right and the sentence after it was not,
+    # which is harder to notice than a wrong refusal.
+    # THE CLAUSE, not the substring. A first attempt here asserted glTF was absent from the message
+    # entirely and failed against the CORRECT text, because naming glTF to say "this verb does not
+    # take it" is the helpful half. What must be true is narrower: the list of SUPPORTED formats
+    # names only what this verb can actually write.
+    err = str(r.get("error", ""))
+    check("T764 and the supported-format list it recites is EXPORT's, which is FBX alone",
+          "supported formats are FBX (" in err, err[:300])
+    imp = str(call("import_mesh", file=out.replace(".fbx", ".obj")).get("error", ""))
+    check("T764 while import, which really does take glTF, is told the wider list",
+          "supported formats are FBX and glTF/GLB (" in imp, imp[:300])
     r = call("export_mesh", object="MifNoSuchObject", file=out)
     check("T764 an unknown object is refused", r.get("ok") is False, json.dumps(r)[:180])
     r = call("import_mesh", file=os.path.join(tempfile.gettempdir(), "mif_does_not_exist.fbx"))

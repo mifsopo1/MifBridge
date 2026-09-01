@@ -6975,7 +6975,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       is what everyone else is trusting - and it had already cost a false positive that took a
       detour to diagnose.
 
-- [ ] **a shared Blender helper names ONE of its two callers in its refusal** (hours)
+- [x] **a shared Blender helper names ONE of its two callers in its refusal** - DONE 2026-08-31
       audit_message_endpoints has been reporting this and it is not gated, so nothing forced anyone
       to look. ops_mesh.py:169 _check_format is called by BOTH import_mesh and export_mesh, and its
       refusal names one of them - so half the callers are sent to the wrong op's documentation.
@@ -6994,6 +6994,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       seamVertsRemoved fixture does. UNBLOCKED 2026-08-31: that session turned out to need no
       interactive Blender at all - run_blender_suites.py launches its own headless ones, four
       versions of them.
+
+      AND THE DIAGNOSIS IN THIS ENTRY WAS OFF BY ONE LEVEL, which only running it showed. The verb
+      NAME was never wrong - it is passed in as `verb` and both callers pass their own. What was
+      wrong is the sentence after it: the branch recited "supported formats are FBX and glTF/GLB"
+      whatever it was handed, and that is the IMPORT set. So `export_mesh {file:"x.obj"}` was told
+      glTF and GLB were available, and a caller who believed it hit the helper's OTHER branch
+      saying "export_mesh writes FBX only". One helper, two refusals, contradicting each other,
+      correct verb on both.
+
+      THAT IS WHY IT SURVIVED. A wrong refusal gets reported by whoever hits it. A right refusal
+      followed by a wrong sentence gets ACTED ON. T764 had covered this exact call since it was
+      written and asserted only that the word "axis" appeared - true of the broken message.
+
+      Fixed by deriving the list from `allowed` rather than restating it, so widening either tuple
+      cannot desynchronise the message again - the same failure the comment above _check_format
+      already records once, when a shared _SUPPORTED let export_mesh write FBX bytes into a .glb.
+
+      T764 now asserts the clause, both directions: export is told "FBX (", import "FBX and
+      glTF/GLB (". PROVEN BOTH WAYS - the tightened check was re-run against the reverted addon and
+      failed, then against the fix and passed. The first version of it was too crude (it forbade
+      the substring "glTF" anywhere) and failed against the CORRECT text, because naming glTF to
+      say this verb does not take it is the helpful half.
 
 - [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
