@@ -7359,6 +7359,44 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         misplaced parameter, littering the scene for somebody who only made a typo. 48 runs now,
         0 failed, on 3.6/4.2/4.4/5.0.
 
+- [ ] **six proposals were invisible to the backlog counter for weeks** (day+ each)
+      FOUND 2026-09-01 with the spec reporting 0 open. It was reporting the truth about `- [ ]`
+      lines and nothing about the nine `- [category]` proposal lines sitting further down the file,
+      which are real work in a shape the counter does not read. "0 open" meant "nothing is tracked",
+      not "nothing is left".
+
+      CHECKED AGAINST MIF_DECL RATHER THAN ASSUMED, because two of the nine had quietly been built:
+      add_make_set / add_switch_name, and list_automation_tests (whose 5.7 compile break was fixed
+      the same day, which is how I knew it existed). The remaining six are genuinely absent, and for
+      the two "extend an existing endpoint" ones the accept lists were read to be sure:
+
+        rename_asset accepts path, newPath, confirm, newName, newPackageName - no `renames`
+        paint_landscape accepts landscape, actorPath, layerInfo, center, radius, weight, falloff -
+          no `register`
+        list_material_parameters accepts path, material, assetPath, types, group - no `layers`
+
+      THE SIX, each now its own item below rather than a bullet in a list nobody counts:
+
+        create_blend_profile / set_blend_profile_bone   per-bone blend scales on a USkeleton -
+          the weighting that makes an upper-body montage blend in fast on the spine and slow on
+          the legs
+        group_actors / ungroup_actors                   AGroupActor, so a multi-part agent-built
+          prop moves as one unit for a human
+        paint_landscape/create_landscape register:true  register a ULandscapeLayerInfoObject as a
+          target layer, WITHOUT which a layer cannot be painted at all
+        rename_asset renames[]                          bulk rename/move in one IAssetTools pass;
+          matters beyond convenience because RenameAssets fixes up references as a batch
+        set_node_state                                  enabled | disabled | developmentOnly, plus
+          a node comment - the editor's right-click Disable
+        set_material_layers + list_material_parameters {layers:true}   read and write a material
+          instance's layer stack
+        list/set/jump_viewport_bookmark                 the level's numbered camera slots
+
+      NOT STARTED. Filed as one item rather than six because the useful finding is the COUNTER GAP,
+      and splitting comes when somebody picks the first one. The lesson stands on its own: a
+      backlog tool that reads one syntax will report zero while a second syntax holds work, and it
+      will look exactly like being finished.
+
 - [x] **two reads the purity sweep can now PROVE it never exercises** - DONE 2026-09-01, both
       FILED 2026-09-01, and only findable because "attempted only" stopped being one bucket.
 
