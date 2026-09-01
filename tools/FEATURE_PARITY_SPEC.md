@@ -6662,6 +6662,43 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       actually produces is a runtime question.
 
 
+- [ ] **MifBridge can AUTHOR a blueprint graph and cannot ARRANGE one** (day)
+      Raised by Andre 2026-08-31: the project uses Blueprint Assist and MifBridge never calls it.
+      Checked, and the gap is sharper than that - there is no graph layout of ANY kind for
+      blueprints, third-party or native:
+
+        layout_material_expressions   exists, for MATERIAL graphs only
+        (nothing)                     for blueprint graphs
+
+      Every node lands where the caller put it or at a hardcoded offset - PlaceAndInit uses things
+      like `EntryLike->NodePosX + 800`. So an agent can build a correct graph that is unreadable to
+      the human who opens it, and the human's first act is to tidy it by hand. For a tool whose whole
+      premise is that an agent authors what a person then works with, that is a real cost and not a
+      cosmetic one.
+
+      BLUEPRINT ASSIST CANNOT BE CALLED HEADLESS, which decides the design. FBAGraphHandler is
+      constructed from (TWeakPtr<SDockTab>, TWeakPtr<SGraphEditor>)
+      (BlueprintAssistGraphHandler.h:28) - it formats a graph that is OPEN IN A TAB. Its entry
+      points are there and are good (SmartFormatAll, SimpleFormatAll, FormatNodes, FormatAllEvents,
+      FormatNewNodes), but reaching them means opening the asset editor first. MifBridge has
+      open_blueprint and open_asset_editor, so it is possible - it is just not free, and it makes
+      layout depend on a UI tab existing.
+
+      TWO ROUTES, AND THE DEFAULT SHOULD BE THE NATIVE ONE:
+
+        native layout      compute positions from the graph itself - columns by exec order, inputs
+                           to the left of their consumer - the same shape layout_material_expressions
+                           already does for material nodes. Works with no editor tab, no third-party
+                           plugin, and on any project. This is what a GENERAL UE5 tool should ship.
+        Blueprint Assist   better output, and OPTIONAL. It is a paid marketplace plugin most projects
+                           do not have, so it must sit behind a MIF_WITH_BLUEPRINTASSIST guard like
+                           LiveLink and MassEntity, and degrade to the native path when absent -
+                           never a hard dependency.
+
+      NOT STARTED: raised while the DDS2 session was off-limits, so nothing was built or tested. The
+      analysis above is from reading BlueprintAssist's headers and MifBridge's own layout surface,
+      not from running either.
+
 - [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
       The idle half needed no session and should never have been declined; the running half genuinely
