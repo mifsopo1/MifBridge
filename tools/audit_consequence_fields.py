@@ -115,7 +115,6 @@ CONSEQUENCE = re.compile(
 UNREACHABLE = {
     "discardedUnsaved": "remove_sublevel needs discardUnsaved, which mifaudit's FORBIDDEN_KEYS "
                         "strips on purpose, and needs a sublevel, which needs a SAVED .umap",
-    "discardedNote": "emitted beside discardedUnsaved, same gate",
     # EVERY ENTRY BELOW WAS ADDED AFTER READING ITS EMITTER, not after failing to think of a test.
     # The difference matters: an unreachable list is the one place where a wrong entry silently
     # shrinks the backlog, so a reason that cannot be checked against the source does not belong.
@@ -363,6 +362,26 @@ TEMPORAL = ("until", "pending", "for now", "temporarily", "once the", "once a", 
             "not yet", "still to")
 
 
+def orphaned_exemptions(table, emitted_names):
+    """Exemptions for a field nothing emits any more.
+
+    THE SECOND WAY THIS TABLE ROTS, and it surfaced because a count disagreed with itself: the dict
+    held 20 rows while the report listed 19 out-of-reach fields. The extra was discardedNote,
+    exempted on the grounds that it "is emitted beside discardedUnsaved" - which it no longer is.
+    Nothing in Source/ emits it at all.
+
+    An exemption for a field that does not exist justifies nothing, and it reads as though it does:
+    an auditor sees a reasoned entry and moves on, while the out-of-reach count sits one above the
+    truth. Same rot as a stale condition on a different clock - here the SOURCE moved, not the world.
+
+    Takes NAMES, not emitted_fields()' rows. That function returns
+    [(field, endpoint, file, line)] tuples, and passing it straight to set() gives a set of tuples
+    in which no field name is ever a member - so every exemption looks orphaned and the check reads
+    as catastrophic instead of empty. It did exactly that on the first attempt.
+    """
+    return sorted(k for k in table if k not in emitted_names)
+
+
 def self_declared_temporary(table):
     """Exemptions whose own text says they describe a passing state."""
     out = []
@@ -471,6 +490,13 @@ def main():
             return 0
         print("OK  %d unread, unchanged from baseline." % len(gaps))
         return 0
+
+    orphans = orphaned_exemptions(UNREACHABLE, {r[0] for r in emitted_fields()})
+    if orphans:
+        print("")
+        print("EXEMPTIONS FOR FIELDS NOTHING EMITS - these justify nothing: %s" % ", ".join(orphans))
+        print("  The field was removed or renamed and its exemption outlived it, so the")
+        print("  out-of-reach count reads higher than the truth. Delete the row.")
 
     temporary = self_declared_temporary(UNREACHABLE)
     if temporary:
