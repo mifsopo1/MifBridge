@@ -14,6 +14,22 @@ Since 0.3.0 this repo ships three things, and only one of them is Unreal:
 | `MifBridge.uplugin`, `Source/` — **the repo root is the plugin** | UE editor plugin (C++) | `<Project>/Plugins/MifBridge/` |
 | `tools/mcp-server/` | The MCP server. Fronts **both** backends. | nowhere; referenced by path from `.mcp.json` |
 | `tools/blender-addon/` | `MifBlender` — the Blender backend. 12 ops. | Blender's addons dir, as a zip |
+| `tools/layout_graph.py` | Arranges a blueprint graph and adds comment boxes, entirely from the client — `list_nodes` for the topology, `move_node` and `add_comment` to apply. No C++, no plugin. `--self-test` proves the algorithm offline. | nowhere; run it from `tools/` |
+
+### Client-side capability
+
+`layout_graph.py` is the first thing here that adds a real capability **without touching the
+plugin**. It exists because the endpoints underneath were already sufficient: `list_nodes` returns
+the whole graph topology in one call, and `move_node` and `add_comment` write positions and boxes.
+Worth checking for that before reaching for C++ — the engine ships no blueprint graph layout, so
+this looked like an engine job and was not one.
+
+    python tools/layout_graph.py <graphId>                     # plan only, nothing moves
+    python tools/layout_graph.py <graphId> --comment --apply   # arrange and box it
+    python tools/layout_graph.py --self-test                   # no editor needed
+
+NOT AN MCP TOOL YET, which is the gap that matters more than this table entry: an agent driving
+MifBridge through MCP cannot call it, and agents authoring graphs are exactly who needs it.
 
 The root is the UE plugin because Unreal locates a plugin by finding a `.uplugin` at the root of the
 plugin folder — a tidy `unreal-plugin/` subdirectory would mean nobody can clone this straight into

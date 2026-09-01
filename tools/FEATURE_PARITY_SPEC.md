@@ -6879,6 +6879,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       analysis above is from reading BlueprintAssist's headers, the engine's EdGraphNode.h and
       MifBridge's own layout surface - not from running any of it.
 
+- [ ] **layout_graph is not an MCP tool, so no agent can call it** (hours)
+      Andre asked whether the usage is announced in the docs. It was not - the tool existed only in
+      a spec entry, invisible to anyone not reading this file. Added to the architecture doc's tools
+      table with its three invocations.
+
+      THE DOC WAS THE SMALLER HALF. It is not an @mcp.tool either, so an agent driving MifBridge
+      through MCP cannot call it at all - and agents authoring graphs are precisely who needs a
+      graph tidied. Building a capability and leaving it reachable only from a shell is most of the
+      way to not having built it.
+
+      THE WRINKLE IS PARITY. parity_check enforces MIF_DECL <-> MIF_BIND <-> @mcp.tool three ways,
+      and this would be an @mcp.tool with NO endpoint behind it - a shape that does not exist yet.
+      Blender ops are the nearest precedent (they have addon ops rather than MIF_BINDs) and the
+      checker already carries exemption tables for them, so the pattern exists; it just needs
+      extending deliberately rather than by adding a tool and seeing what goes red.
+
 - [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
       The idle half needed no session and should never have been declined; the running half genuinely
