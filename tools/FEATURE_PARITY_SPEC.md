@@ -9200,7 +9200,36 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Verified across every installed Blender: 44 runs, 4 versions, 0 failed 0 skipped.
       test_blender_consequence 36 -> 44. Backlog 2 -> 1.
 
-- [ ] **one Blender consequence field left: seamVertsRemoved** (hours)
+- [ ] **one Blender consequence field left: seamVertsRemoved** - FIXTURE IDENTIFIED (hours)
+      NARROWED 2026-08-31 by reading the addon rather than by running it, which is worth doing first
+      because it costs nothing and it changed the shape of the job. The entry said only that the
+      field was unread; it can now name the exact call that reaches it.
+
+      WHAT THE FIELD COUNTS. _seam_verdict (ops_mesh.py:659) re-measures every vertex it was
+      watching on a seam and buckets it: moved off the seam, or REMOVED - `if not vert.is_valid`.
+      So an op that merely relocates seam vertices contributes to movedOffSeam and leaves this at
+      zero forever. Only an op that DESTROYS one reaches it, which is why every existing Blender
+      suite passes without ever seeing it.
+
+      TWO CALLERS, AND ONLY ONE IS A GOOD BET:
+
+        op_bevel_edges (ops_mesh.py:850, verdict at :1032)   <- the fixture
+        op_extrude_skirt (:1144, verdict at :1309)
+
+      Bevel REPLACES geometry - the original vertex is consumed and new ones take its place - so
+      bevelling an edge whose vertices sit on the mesh's own X/Y/Z extreme should invalidate exactly
+      those tracked verts. Extrusion normally keeps the originals and builds outward from them, so
+      it is the weaker candidate and should not be tried first.
+
+      THE TEST, when a Blender is available and NOT interactive: create a cube, bevel an edge lying
+      on a seam plane, and assert seamVertsRemoved > 0 for that axis - then assert it AGREES with
+      the other buckets, since onSeamBefore should equal onSeamAfter + movedOffSeam +
+      seamVertsRemoved for the tracked set. The agreement check is the one worth having; a bare
+      "greater than zero" would pass on a field that counted the wrong thing.
+
+      STILL BLOCKED ON THE SESSION, not on knowing what to do: test_blender_mesh MUTATES the scene
+      (it opens with clear_scene) and refuses against an interactive Blender, which is the right
+      refusal and the one that stopped this earlier tonight.
       LOCATED PROPERLY 2026-08-31, and the first location was wrong because the TOOL was wrong. The
       audit said export_mesh; it is reported by bevel_edges and extrude_skirt through the shared
       helper _seam_verdict (ops_mesh.py:683). Module-level helpers sitting BETWEEN two ops were being
