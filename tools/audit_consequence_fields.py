@@ -347,6 +347,33 @@ def suite_reads():
     return reads
 
 
+# SELF-DECLARED TEMPORARY EXEMPTIONS, which are the ones that rot.
+#
+# On 2026-08-31 duplicatesRemoved sat in the table above reading "kept here only until a rebuild
+# verifies it (V11)". V11 had passed and a suite was reading the field, so the condition it named
+# was met and the row should have gone - and nobody re-read it, because nothing re-reads these.
+# That is quieter than a WRONG reason: the entry was true when written, and the count it feeds
+# quietly understates the real coverage.
+#
+# A prose condition cannot be evaluated here. What CAN be spotted is an entry that announces itself
+# as temporary, and those are exactly the ones worth re-reading. REPORTED, NEVER GATED: an exemption
+# saying "until the editor is free" is doing its job right up until the editor is free, and failing
+# a build over it would teach people to word around the check instead of revisiting the entry.
+TEMPORAL = ("until", "pending", "for now", "temporarily", "once the", "once a", "awaits",
+            "not yet", "still to")
+
+
+def self_declared_temporary(table):
+    """Exemptions whose own text says they describe a passing state."""
+    out = []
+    for name, why in sorted(table.items()):
+        low = why.lower()
+        cue = next((t for t in TEMPORAL if t in low), None)
+        if cue:
+            out.append((name, cue, why))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--all", action="store_true", help="list every consequence field, not just gaps")
@@ -445,6 +472,15 @@ def main():
         print("OK  %d unread, unchanged from baseline." % len(gaps))
         return 0
 
+    temporary = self_declared_temporary(UNREACHABLE)
+    if temporary:
+        print("")
+        print("SELF-DECLARED TEMPORARY - re-read these before trusting the count:")
+        for name, cue, why in temporary:
+            print("  %-28s (%s) %s" % (name, cue, why[:86].replace(chr(10), " ")))
+        print("  An exemption naming a CONDITION expires when the condition does, and nothing here")
+        print("  re-reads it. duplicatesRemoved outlived its own 'until a rebuild verifies it'.")
+        print("")
     print("A mention is not a read, and a read is not an assertion - this tool only proves the")
     print("field is INDEXED somewhere. Read the check before believing it tests anything.")
     return 0
