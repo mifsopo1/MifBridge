@@ -14,6 +14,7 @@ the C++, and compares them per endpoint. Anything it reports still needs reading
 payload or an alias list spread across lines can look like a mismatch and not be one.
 """
 import json
+import ast
 import os
 import re
 import sys
@@ -24,15 +25,39 @@ PRIVATE = os.path.join(HERE, "..", "Source", "MifBridge", "Private")
 
 
 def mcp_sends():
-    """endpoint -> set of keys the tool passes to _post."""
-    src = open(SERVER, encoding="utf-8").read()
+    r"""endpoint -> set of keys the tool passes to _post, read with ast.
+
+    THE REGEX THIS REPLACES COULD NOT READ A CALL USED INSIDE AN EXPRESSION. It was
+
+        _post\(\s*"(\w+)"\s*(.*?)\)\s*$   with re.S | re.M
+
+    - non-greedy, DOTALL, anchored on a ")" at END OF LINE. A call written as
+    `_post("list_nodes", ...).get("nodes")` inside a comprehension has no ")" at line end, so the
+    match ran on through the following lines and swallowed them. On 2026-08-31 that reported
+    list_nodes as sending `added`, `c` and `wrong` - LOCAL VARIABLE NAMES from the enclosing
+    function - because `name =` matches an assignment as readily as a keyword argument.
+
+    It had never fired before because no call site wrote _post inline; the first mif_ tool that
+    read a response back inside a comprehension found it immediately. A latent bug in a checker is
+    worse than a live one, because the checker is what everyone else is trusting.
+
+    ast gets both halves right by construction: keywords belong to the CALL NODE, so a call nested
+    in an expression is read exactly like a standalone one, and an assignment is not a keyword.
+    **payload splats carry no name and are skipped, as before.
+    """
+    tree = ast.parse(open(SERVER, encoding="utf-8").read())
     out = {}
-    for m in re.finditer(r'_post\(\s*"(\w+)"\s*(.*?)\)\s*$', src, re.S | re.M):
-        ep, args = m.group(1), m.group(2)
-        # Only the keyword names; values are irrelevant and may span lines.
-        keys = set(re.findall(r"(\w+)\s*=", args))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+            continue
+        if node.func.id != "_post" or not node.args:
+            continue
+        first = node.args[0]
+        if not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+            continue
+        keys = {kw.arg for kw in node.keywords if kw.arg}
         keys.discard("payload")
-        out.setdefault(ep, set()).update(keys)
+        out.setdefault(first.value, set()).update(keys)
     return out
 
 

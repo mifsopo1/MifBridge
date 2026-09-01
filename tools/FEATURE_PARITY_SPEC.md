@@ -6947,7 +6947,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       already has a guard and a postmortem for. Guarded on WITH_EDITORONLY_DATA, with the #else
       still emitting compileNote so a caller asserts on a value rather than a field's absence.
 
-- [ ] **mcp_sends_unknown mis-parses a _post() used inline in an expression** (hours)
+- [x] **mcp_sends_unknown mis-parses a _post() used inline in an expression** (hours)
       Found 2026-08-31 by writing the first MCP tool that reads a response back inside a
       comprehension. Its extractor is
 
@@ -6959,10 +6959,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       were a payload key. It reported list_nodes as sending `added, c, wrong` - local variables -
       and parity_check exits non-zero on the result.
 
-      IT IS A LATENT FRAGILITY, not a live failure: no existing call site writes _post inline, which
-      is why this has never fired. That also means fixing it has no immediate payoff and carries the
-      usual risk of changing a checker nothing currently disagrees with - so it is filed rather than
-      done. An ast walk would be exact and is what the neighbouring checks already use.
+      FIXED 2026-08-31 with an ast walk, which is what the neighbouring checks already use. Keywords
+      belong to the CALL NODE, so a call nested in an expression reads exactly like a standalone one
+      and an assignment is not a keyword.
+
+      PROVEN BY RUNNING BOTH AGAINST THE SAME PLANTED CODE, not by assuming the rewrite was better.
+      With an inline `_post("list_nodes", ...).get("nodes")` in a comprehension:
+
+        old regex : list_nodes sends added, c, graphId, height, hideKnots, text, width, wrong, x, y
+                    - added, c and wrong are LOCAL VARIABLES of the enclosing function
+        ast walk  : clean, exit 0
+
+      The earlier reasoning for filing it was that a latent bug has no payoff. That was wrong in one
+      respect worth keeping: a latent bug in a CHECKER is worse than a live one, because the checker
+      is what everyone else is trusting - and it had already cost a false positive that took a
+      detour to diagnose.
 
 - [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
