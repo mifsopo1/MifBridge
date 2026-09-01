@@ -107,6 +107,55 @@ def assign_layers(by_guid, succ, pred):
     return layer
 
 
+def is_pure_data(node):
+    """A node with no exec pin at all - a getter, a literal, a Make Rotator.
+
+    These are the ones longest-path layering strands: having no predecessor they are ROOTS, so they
+    all land in column 0 regardless of how far right the node that reads them ended up.
+    """
+    for pin in (node.get("pins") or []):
+        if ((pin.get("type") or {}).get("category") or "") == "exec":
+            return False
+    return True
+
+
+def pull_data_right(by_guid, layer, succ, pred):
+    """Move every pure-data node to one column LEFT of its nearest consumer. Returns how many moved.
+
+    WHY THIS EXISTS, and it was measured rather than imagined. Run against BP_MifThrowComponent -
+    411 nodes, 51 columns - the forward pass put 81 of 121 source nodes more than one column from
+    the node that reads them, the worst 47 columns away. A `Get Player Controller` in column 0
+    feeding a node in column 47 is a wire across the entire graph, and there were 81 of them. That
+    is the single biggest reason the arranged graph still read as a tangle.
+
+    THE ASYMMETRY IS THE POINT. Exec nodes keep their longest-path column, because the exec spine is
+    the left-to-right story a person actually reads. Data feeds in from just left of where it is
+    consumed. Layering both the same way is what stranded them.
+
+    Iterated to a fixpoint because data nodes CHAIN - Get Foo -> Make Rotator -> a node in column 40
+    only settles once the Make Rotator has moved - and capped because a data cycle would otherwise
+    spin. Nodes with no consumer are left alone: there is nowhere to pull them to.
+    """
+    moved = 0
+    for _ in range(len(by_guid) + 1):
+        changed = False
+        for g, node in by_guid.items():
+            if not is_pure_data(node) or not succ.get(g):
+                continue
+            want = min(layer[s] for s in succ[g]) - 1
+            # Never left of where the forward pass already put it, and never on top of a
+            # predecessor: a data node fed by another data node still has to sit right of it.
+            floor = max([layer[q] + 1 for q in pred.get(g, ())] or [0])
+            want = max(want, floor)
+            if want > layer[g]:
+                layer[g] = want
+                changed = True
+                moved += 1
+        if not changed:
+            break
+    return moved
+
+
 def order_within_layers(by_guid, layer, pred, succ):
     """Barycentre ordering - a node sits near the average row of what it connects to.
 
@@ -179,6 +228,8 @@ def plan(nodes):
     """
     by_guid, succ, pred = build_graph(nodes)
     layer = assign_layers(by_guid, succ, pred)
+    # The forward pass alone strands every getter in column 0 - see pull_data_right.
+    pull_data_right(by_guid, layer, succ, pred)
     positions = {}
     columns = defaultdict(list)
     y_offset = 0
@@ -339,7 +390,24 @@ SELF_TEST_GRAPH = [
         {"name": "then", "direction": "output", "type": {"category": "exec"},
          "linkedTo": [{"node": "C", "pin": "execute"}]}]},
     {"guid": "C", "title": "Print String", "x": 0, "y": 0, "pins": [
-        {"name": "execute", "direction": "input", "type": {"category": "exec"}, "linkedTo": []}]},
+        {"name": "execute", "direction": "input", "type": {"category": "exec"}, "linkedTo": []},
+        {"name": "then", "direction": "output", "type": {"category": "exec"},
+         "linkedTo": [{"node": "H", "pin": "execute"}]}]},
+    # THE CHAIN NEEDS DEPTH OR THE STRANDING IS INVISIBLE. Every check here passed while
+    # pull_data_right did not exist, because with a consumer in column 1 a stranded getter in
+    # column 0 is already exactly one column to its left - right answer, no algorithm. The bug only
+    # shows against a consumer that is FAR right, so the fixture now has one.
+    {"guid": "H", "title": "Set Foo", "x": 0, "y": 0, "pins": [
+        {"name": "execute", "direction": "input", "type": {"category": "exec"}, "linkedTo": []},
+        {"name": "then", "direction": "output", "type": {"category": "exec"},
+         "linkedTo": [{"node": "I", "pin": "execute"}]}]},
+    {"guid": "I", "title": "Set Bar", "x": 0, "y": 0, "pins": [
+        {"name": "execute", "direction": "input", "type": {"category": "exec"}, "linkedTo": []},
+        {"name": "Value", "direction": "input", "type": {"category": "int"}, "linkedTo": []}]},
+    # The getter that measured 47 columns from its consumer on the real graph, in miniature.
+    {"guid": "Z", "title": "Get Far Value", "x": 0, "y": 0, "pins": [
+        {"name": "Value", "direction": "output", "type": {"category": "int"},
+         "linkedTo": [{"node": "I", "pin": "Value"}]}]},
     {"guid": "D", "title": "Get Health", "x": 0, "y": 0, "pins": [
         {"name": "Health", "direction": "output", "type": {"category": "float"},
          "linkedTo": [{"node": "B", "pin": "Condition"}]}]},
@@ -385,6 +453,20 @@ def self_test():
     # the LEFT of whatever consumes it, not stacked at the origin with the other sources.
     check("a data-only node sits LEFT of its consumer",
           col_of["D"] < col_of["B"], "D=%d B=%d" % (col_of["D"], col_of["B"]))
+    # AND IMMEDIATELY LEFT, WHICH IS THE ONE THAT WAS MISSING. "left of" was true of every getter
+    # in the stranded version too - they were in column 0, and everything is right of column 0. On
+    # BP_MifThrowComponent that read as 119 data nodes further than one column from the node that
+    # used them, the worst 47 away, each one a wire across the whole graph. Measured, then fixed by
+    # pull_data_right, then measured again: 119 -> 0.
+    _succ_all = build_graph(SELF_TEST_GRAPH)[1]
+    strays = [(by_guid[g].get("title"), min(col_of[s] for s in _succ_all[g]) - col_of[g])
+              for g in col_of
+              if is_pure_data(by_guid[g]) and _succ_all.get(g)
+              and min(col_of[s] for s in _succ_all[g]) - col_of[g] > 1]
+    check("and IMMEDIATELY left - no data node stranded columns away from its use",
+          not strays, strays)
+    check("Z, whose consumer is the far end of the chain, is pulled right to meet it",
+          col_of["Z"] == col_of["I"] - 1, "Z=%d I=%d" % (col_of["Z"], col_of["I"]))
     check("a CYCLE terminates instead of hanging", "E" in col_of, sorted(col_of))
     # Overlap is the failure a reader notices first, so it is asserted rather than assumed.
     per_col = {}

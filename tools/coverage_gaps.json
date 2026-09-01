@@ -1586,7 +1586,8 @@
    "test_physics_asset.py"
   ],
   "remove_pin": [
-   "test_pinlifetime.py"
+   "test_pinlifetime.py",
+   "test_pins.py"
   ],
   "remove_struct_member": [
    "test_structs.py"
