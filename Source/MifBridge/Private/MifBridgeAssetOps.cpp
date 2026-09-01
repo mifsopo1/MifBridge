@@ -5,6 +5,9 @@
 // (delete/rename) are confirm-gated, matching remove_node/remove_variable/etc. All go through the
 // headless (no-dialog) engine entry points, matching the rest of the plugin's no-popup design.
 #include "MifBridgeHandlers.h"
+#include "UObject/ObjectMacros.h"       // FReferencerInformationList
+#include "UObject/UObjectGlobals.h"     // IsReferenced - the in-memory object graph
+#include "Editor/Transactor.h"          // UTransactor - is the UNDO BUFFER the only holder?
 #include "ObjectTools.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "MifBridgeLog.h"
@@ -171,11 +174,77 @@ namespace MifBridge
 			Registry.GetReferencers(FName(*PackagePath), Refs);
 			for (const FName& R : Refs) { Referencers.Add(MakeShared<FJsonValueString>(R.ToString())); }
 
+			// THE IN-MEMORY OBJECT GRAPH, which is the one that actually matters and was the one
+			// thing not being asked.
+			//
+			// The three checks above miss the common case entirely. GetReferencers is the ASSET
+			// REGISTRY, which knows about references recorded on DISK - so for an unsaved asset,
+			// and every fixture a test suite builds is unsaved, it returns nothing. Measured on
+			// 2026-09-01: a material with a live MaterialInstance child pointing straight at it
+			// reported all three lists empty, and the message told the caller there was nothing to
+			// see. A cleanup check written on top of that classification would have passed on the
+			// exact leak it was written to catch.
+			//
+			// IsReferenced walks the real graph. Same flags the editor's own delete path uses
+			// (ObjectTools.cpp:395), so this reports what the editor would report.
+			TArray<TSharedPtr<FJsonValue>> MemRefs;
+			bool bUndoBufferHolds = false;
+			bool bAskedMemory = false;
+			for (const FAssetData& AD : AssetsToDelete)
+			{
+				UObject* Obj = AD.FastGetAsset(false);
+				if (!Obj) { continue; }
+				bAskedMemory = true;
+				FReferencerInformationList Found;
+				UObject* Probe = Obj;
+				const bool bRef = IsReferenced(Probe, GARBAGE_COLLECTION_KEEPFLAGS,
+					EInternalObjectFlags::GarbageCollectionKeepFlags, /*bCheckSubObjects*/ true,
+					&Found);
+				for (const FReferencerInformation& R : Found.ExternalReferences)
+				{
+					if (!R.Referencer) { continue; }
+					TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+					J->SetStringField(TEXT("referencer"), R.Referencer->GetPathName());
+					J->SetStringField(TEXT("class"), R.Referencer->GetClass()->GetName());
+					J->SetNumberField(TEXT("references"), R.TotalReferences);
+					TArray<TSharedPtr<FJsonValue>> Props;
+					for (const FProperty* Prop : R.ReferencingProperties)
+					{
+						if (Prop) { Props.Add(MakeShared<FJsonValueString>(Prop->GetName())); }
+					}
+					J->SetArrayField(TEXT("throughProperties"), Props);
+					MemRefs.Add(MakeShared<FJsonValueObject>(J));
+				}
+
+				// IS IT JUST THE UNDO HISTORY? This is the editor's own question and it is the one
+				// that explains most of these. Every mutating endpoint in this plugin opens an
+				// FScopedTransaction, so an asset a suite created and then modified is referenced
+				// by the transaction buffer - invisibly, until somebody asks exactly this way.
+				// ObjectTools.cpp:392-395 does the same thing for the same reason.
+				if (bRef && GEditor && GEditor->Trans)
+				{
+					GEditor->Trans->DisableObjectSerialization();
+					FReferencerInformationList Without;
+					UObject* Probe2 = Obj;
+					const bool bStill = IsReferenced(Probe2, GARBAGE_COLLECTION_KEEPFLAGS,
+						EInternalObjectFlags::GarbageCollectionKeepFlags, true, &Without);
+					GEditor->Trans->EnableObjectSerialization();
+					if (!bStill) { bUndoBufferHolds = true; }
+				}
+			}
+
 			TSharedRef<FJsonObject> Why = MakeShared<FJsonObject>();
 			Why->SetArrayField(TEXT("openAssetEditors"), OpenEditors);
 			Why->SetArrayField(TEXT("registryReferencers"), Referencers);
 			Why->SetArrayField(TEXT("rootedInMemory"), Rooted);
+			Why->SetArrayField(TEXT("memoryReferencers"), MemRefs);
+			Why->SetBoolField(TEXT("transactionBuffer"), bUndoBufferHolds);
+			Why->SetStringField(TEXT("registryNote"),
+				TEXT("registryReferencers is the ASSET REGISTRY, which records references saved to "
+					 "DISK - it is empty for an unsaved asset however many live objects point at "
+					 "it. memoryReferencers is the real object graph."));
 			Out->SetObjectField(TEXT("blockedBy"), Why);
+			(void)bAskedMemory;
 
 			FString Hint;
 			if (OpenEditors.Num() > 0)
@@ -192,12 +261,32 @@ namespace MifBridge
 			{
 				Hint = TEXT(" the object is ROOTED, so garbage collection will not release it.");
 			}
+			else if (bUndoBufferHolds)
+			{
+				// THE ANSWER IN MOST OF THESE CASES, and it used to be reported as "a handle this
+				// endpoint cannot see". Every mutating endpoint here opens an FScopedTransaction,
+				// so an asset a script created and then modified is held by the undo history.
+				Hint = TEXT(" the editor's TRANSACTION BUFFER (undo history) is holding it - with"
+					TEXT(" object serialization disabled nothing else references it. Undo history is")
+					TEXT(" the user's, so this endpoint will not clear it; an editor restart"
+						 " releases it, as does resetting the transaction buffer by hand."));
+			}
+			else if (MemRefs.Num() > 0)
+			{
+				Hint = FString::Printf(
+					TEXT(" %d live object(s) in memory still reference it - see"
+						 " blockedBy.memoryReferencers, which names each one and the properties"
+						 " holding the reference. The asset registry showed nothing because those"
+						 " references are not on disk."), MemRefs.Num());
+			}
 			else
 			{
-				// All three checks clean and it STILL refused. Say that plainly rather than implying a
-				// cause we did not find: a transient in-memory handle is invisible from here.
-				Hint = TEXT(" no open editor, no registry referencer and not rooted - the holder is an in-memory"
-					TEXT(" handle this endpoint cannot see. An editor restart releases it."));
+				// Every check clean, INCLUDING the object graph, and it still refused. Now this
+				// sentence means something narrower than it used to.
+				Hint = TEXT(" no open editor, no registry referencer, not rooted, and nothing in the"
+					TEXT(" live object graph references it either - so the holder is below the"
+						 " reference graph (a raw pointer or a native handle). An editor restart"
+						 " releases it."));
 			}
 			Fail(Out, FString::Printf(TEXT("delete reported 0 assets removed for '%s'.%s"), *PackagePath, *Hint));
 			return;

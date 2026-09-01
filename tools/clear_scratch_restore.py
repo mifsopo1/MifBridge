@@ -33,6 +33,29 @@ MANIFEST = "D:/DDS2SDK/Game/Saved/Autosaves/PackageRestoreData.json"
 # disposable as the /Game/_Mif* assets the suites create.
 SCRATCH_PREFIXES = ("/Game/_Mif", "/Temp/")
 
+# EDITOR FURNITURE THE EDITOR DIRTIES BY ITSELF, and it is here because refusing over it made this
+# guard useless three times in one session.
+#
+# Every sweep leaves the same 22 entries in the restore list: the transform-gizmo meshes, the
+# camera and crane rig meshes, the snap-grid plane, the engine sphere. Nobody authored them - they
+# ship with the engine as editor-only visuals, and simply moving a gizmo in a viewport marks them
+# dirty. They are not somebody's unsaved work under any reading, and there is nothing to lose by
+# declining to restore one.
+#
+# Measured 2026-09-01: with these treated as real, the guard refused on every launch after a sweep,
+# the editor sat in a modal the bridge could not answer, and the run had to be recovered by hand
+# THREE times. A guard that always refuses gets forced past routinely, which is exactly how the
+# forced path stops being read - so narrowing it to actual ambiguity makes the remaining refusal
+# mean something.
+#
+# NARROW ON PURPOSE. Not all of /Engine: engine content a project has legitimately modified is real
+# work. Only the editor-visual trees, listed one by one.
+EDITOR_FURNITURE_PREFIXES = (
+    "/Engine/EditorMeshes/",
+    "/Engine/VREditor/",
+    "/Engine/EngineMeshes/",
+)
+
 
 def read_entries(path=MANIFEST):
     """Return the package path names the manifest offers to restore.
@@ -49,7 +72,13 @@ def read_entries(path=MANIFEST):
 
 
 def is_scratch(name):
-    return any(name.startswith(p) for p in SCRATCH_PREFIXES)
+    return (any(name.startswith(p) for p in SCRATCH_PREFIXES)
+            or any(name.startswith(p) for p in EDITOR_FURNITURE_PREFIXES))
+
+
+def is_editor_furniture(name):
+    """Engine editor-visual content, reported separately so the count stays honest."""
+    return any(name.startswith(p) for p in EDITOR_FURNITURE_PREFIXES)
 
 
 def clear(path=MANIFEST, quiet=False, force=False, why=None):
@@ -136,8 +165,13 @@ def main():
         print("nothing in the restore list - the editor will start without the prompt")
         return 0
     scratch = [n for n in names if is_scratch(n)]
-    print("restore list holds %d package(s): %d scratch, %d other"
-          % (len(names), len(scratch), len(names) - len(scratch)))
+    # COUNTED SEPARATELY so folding editor furniture into is_scratch does not quietly inflate the
+    # scratch number - the report should still say what it is actually looking at.
+    furniture = [n for n in names if is_editor_furniture(n)]
+    real_scratch = [n for n in scratch if not is_editor_furniture(n)]
+    print("restore list holds %d package(s): %d scratch, %d engine editor furniture, %d other"
+          % (len(names), len(real_scratch), len(furniture),
+             len(names) - len(real_scratch) - len(furniture)))
     cleared, _, offenders = clear()
     return 2 if offenders else (0 if cleared else 1)
 

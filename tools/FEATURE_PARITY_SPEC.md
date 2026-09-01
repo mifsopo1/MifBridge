@@ -7372,7 +7372,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       NOT STARTED.
 
-- [ ] **delete_asset's blockedBy is empty for the referencers a TEST SUITE creates** (half a day)
+- [x] **delete_asset's blockedBy is empty for the referencers a TEST SUITE creates** - DONE 2026-09-01
       FOUND 2026-09-01 while writing test_landscape_layer_register's cleanup, by testing a claim I
       had just written in a comment instead of leaving it asserted.
 
@@ -7396,12 +7396,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the reasoning. It would have passed on the exact leak it was written to catch. The check is
       still there, now labelled best-effort and not load-bearing.
 
-      The fix is a referencer probe that does not depend on the registry - FReferencerInformation
-      / IsReferenced against the in-memory object graph, which is what actually holds these. That
-      would also let delete_asset say WHO is holding an asset instead of "an in-memory handle this
-      endpoint cannot see", which is the single least actionable message the bridge emits.
+      FIXED with exactly that: IsReferenced against the live object graph, using the same flags
+      the editor's own delete path uses (ObjectTools.cpp:395). blockedBy gained memoryReferencers -
+      each holder named, with its class and the PROPERTIES the reference goes through - and the
+      registryNote now says out loud that the registry only knows about references saved to disk.
 
-      NOT STARTED.
+      AND THE ANSWER IN MOST CASES TURNED OUT TO BE THE UNDO BUFFER. Every mutating endpoint here
+      opens an FScopedTransaction, so an asset a script created and then modified is held by the
+      transaction buffer. The editor asks this exact question by disabling object serialization on
+      the transactor and re-testing (ObjectTools.cpp:392-395); blockedBy.transactionBuffer now does
+      the same. The refusal names it and declines to clear the undo history, because that is the
+      user's.
+
+      Covered by tools/test_delete_blockers.py at 17 checks. The decisive one: after the response
+      names a referencer, DELETING that referencer frees the asset - so the diagnosis is the actual
+      cause rather than a plausible one. B600 also asserts registryReferencers is empty for the
+      same case, so the blind spot cannot quietly return.
+
+      Knock-on: test_landscape_layer_register's cleanup classifier, demoted to best-effort when
+      this gap was found, is load-bearing again and now fails on an UNEXPLAINED leftover.
 
 - [~] **connect_pins takes fromPin/toPin but not fromNode/toNode** - DECLINED 2026-09-01, the
       refusal is the feature. Filed as a defect an hour earlier and withdrawn after reading
@@ -7413,7 +7426,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Kept because the near-miss is the useful part: I hit it, assumed a half-alias, and was
       wrong. That is what the KeyNote is for and it worked.
 
-- [ ] **six proposals were invisible to the backlog counter for weeks** (day+ each)
+- [x] **six proposals were invisible to the backlog counter for weeks** - ALL SIX BUILT 2026-09-01
       FOUND 2026-09-01 with the spec reporting 0 open. It was reporting the truth about `- [ ]`
       lines and nothing about the nine `- [category]` proposal lines sitting further down the file,
       which are real work in a shape the counter does not read. "0 open" meant "nothing is tracked",
@@ -7486,10 +7499,21 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
           cannot tell from a bookmark saved where the camera already stood. jump refuses an empty
           slot and reports the measured distance from the bookmark it landed on.
 
-      NOT STARTED. Filed as one item rather than six because the useful finding is the COUNTER GAP,
-      and splitting comes when somebody picks the first one. The lesson stands on its own: a
-      backlog tool that reads one syntax will report zero while a second syntax holds work, and it
-      will look exactly like being finished.
+      ALL SIX ARE NOW BUILT, TESTED AND PUSHED - see the DONE notes against each above. Together
+      they added 11 endpoints (453 -> 464) and 7 suites totalling 179 checks, and the full sweep
+      afterwards ran 344 runs / 0 failed / 10,186 checks.
+
+      THE LESSON STANDS ON ITS OWN and is the reason this item existed rather than six: a backlog
+      tool that reads ONE syntax will report zero while a second syntax holds work, and it looks
+      exactly like being finished. "0 open" meant "nothing is tracked".
+
+      WHAT THE SIX HAD IN COMMON, which was not visible until they were built together: five of the
+      engine APIs behind them return void or a single bool and DO NOTHING, silently -
+      JumpToBookmark on an empty slot, SetBoneBlendScale with its default bCreate=false,
+      UActorGroupingUtils::GroupActors (four distinct nullptr causes), RenameAssets (one bool for
+      the array, and it uniquifies on a clash rather than failing). Every one of these endpoints is
+      mostly diagnosis: check the cause BEFORE the call, and verify through the same predicate the
+      consumer uses.
 
 - [x] **two reads the purity sweep can now PROVE it never exercises** - DONE 2026-09-01, both
       FILED 2026-09-01, and only findable because "attempted only" stopped being one bucket.

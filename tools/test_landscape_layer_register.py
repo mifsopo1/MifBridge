@@ -180,19 +180,20 @@ def main():
     # "the holder is an in-memory handle this endpoint cannot see. An editor restart releases it."
     # There is no GC endpoint on this build to force the issue, so it is reported, not failed.
     #
-    # THE CLASSIFICATION BELOW IS BEST-EFFORT AND HAS NEVER BEEN SEEN TO FIRE, which is said here
-    # because the first version of this block claimed the opposite. It sorted a blocked delete by
-    # whether blockedBy named anything, and asserted that an empty blockedBy meant a harmless
-    # invisible handle while a populated one meant a real leak. That distinction was then tested:
-    # a material with a genuine MaterialInstance child pointing at it ALSO reports
-    #     blockedBy {openAssetEditors: [], registryReferencers: [], rootedInMemory: []}
-    # because both assets are unsaved, so the asset registry holds no reference edge to report -
-    # and unsaved is what every suite fixture is. The check would have passed on the exact leak it
-    # was written to catch.
+    # THIS CLASSIFICATION IS LOAD-BEARING AGAIN, and the history is why it says so explicitly.
     #
-    # It is kept because openAssetEditors and rootedInMemory are still worth surfacing if they ever
-    # do populate, but it is NOT load-bearing and must not be read as proof that nothing leaked.
-    # The leftovers are printed either way, which is the part that actually informs anyone.
+    # It originally sorted a blocked delete by whether blockedBy named anything, treating an empty
+    # blockedBy as a harmless invisible handle. Testing that showed it was worthless: a material
+    # with a genuine MaterialInstance child pointing at it ALSO reported
+    #     blockedBy {openAssetEditors: [], registryReferencers: [], rootedInMemory: []}
+    # because all three miss the live object graph and the registry only knows about references
+    # saved to DISK. The check would have passed on the exact leak it was written to catch, so it
+    # was demoted to best-effort and the gap was filed.
+    #
+    # delete_asset now reports memoryReferencers (the real object graph, naming each holder and the
+    # property) and transactionBuffer (is the UNDO history the only thing holding it). The blind
+    # spot is closed, so this check is real again - see test_delete_blockers.py, which asserts that
+    # deleting the named referencer actually frees the asset.
     blocked_invisible, blocked_visible = [], []
     for x in (M.call("find_assets", {"pathPrefix": "/Game/_MifLandLayer%d" % st}).get("assets") or []):
         p = str(x.get("objectPath") or x.get("path")).split(".")[0]
@@ -204,14 +205,25 @@ def main():
         if out.get("deleted"):
             continue
         by = out.get("blockedBy") or {}
-        if any(by.get(k) for k in ("openAssetEditors", "registryReferencers", "rootedInMemory")):
+        if any(by.get(k) for k in ("openAssetEditors", "registryReferencers", "rootedInMemory",
+                                   "memoryReferencers")) or by.get("transactionBuffer"):
             blocked_visible.append("%s: %s" % (p, json.dumps(by)[:160]))
         else:
             blocked_invisible.append(p)
 
-    check("L999 (cleanup) no leftover names an open editor or a rooted object "
-          "(best-effort - blockedBy is empty for unsaved referencers, see the note above)",
-          not blocked_visible, blocked_visible)
+    # A LEFTOVER IS FINE; AN UNEXPLAINED ONE IS NOT. The material genuinely is held by the undo
+    # buffer once a landscape has used it, and that is not a leak this suite can fix. What it CAN
+    # insist on is that delete_asset named the holder - which is the whole point of the
+    # memoryReferencers/transactionBuffer work, and the thing that would regress silently.
+    #
+    # `blocked_invisible` is the failing set on purpose: it is populated only when every blocker
+    # list came back empty AND the transaction buffer said no, which is now the genuinely rare
+    # case. The first draft of this line was `all(... or True) or True` - a check that cannot fail,
+    # which is the exact defect this file spends its comments warning about.
+    check("L999 (cleanup) every leftover has a NAMED holder - no 'invisible handle' answers",
+          not blocked_invisible, blocked_invisible)
+    for line in blocked_visible:
+        print("  HELD  %s" % str(line)[:200])
     if blocked_invisible:
         print("  NOTE  %d scratch asset(s) survive as in-memory handles delete_asset cannot see;"
               % len(blocked_invisible))
