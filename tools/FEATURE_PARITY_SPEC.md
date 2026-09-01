@@ -9301,7 +9301,14 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       day: C++ string concatenation across lines is the house style here, not the exception, and a
       scanner that does not expect it reads a fraction of the source and reports a clean number.
 
-- [ ] **two detectors registered tonight are UNPROVEN until the editor is free** (minutes)
+- [x] **two detectors registered tonight are UNPROVEN until the editor is free** (minutes)
+      CLOSED 2026-08-31, and the answer was worse than "unproven". With the editor closed the
+      harness could finally plant into Source/, and BOTH were ASLEEP - neither reacted to a defect
+      it claims to catch. In each case the plant was right and the tool was wrong.
+      audit_editor_fatal_guards matched "crashes the editor" by exact case and was seeing 10 of 23
+      real citations; audit_cross_endpoint_claims assumed a TEXT() literal is one fragment, so every
+      multi-line claim in the module was invisible - 546 claims became 805. Both fixed, both
+      plant-proven afterwards.
       audit_editor_fatal_guards and audit_cross_endpoint_claims are both registered in
       audit_detectors_fire (detectors 25 and 26) and neither has fired yet. Both plant into Source/,
       and the harness refuses Source/ plants while an editor holds the project - correctly; a plant
@@ -9362,7 +9369,11 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       What closes it: one editor-closed run of audit_detectors_fire, the same window a rebuild needs.
 
-- [ ] **two prose claims measured - BOTH NOW SETTLED, one fix awaits the same build** (hours)
+- [x] **two prose claims measured - BOTH NOW SETTLED, one fix awaits the same build** (hours)
+      CLOSED 2026-08-31. CLAIM 1 verified against the repo's first blueprint that does not compile
+      clean (T840b). CLAIM 2's correction is built and V10 passes: the note no longer promises a
+      compile failure, the orphaned node really does survive, and the compile really is clean - which
+      is why the old note was wrong.
       Acting on audit_cross_endpoint_claims' shortlist - the three claims no single suite drives both
       sides of - and both attempts ended in a partial answer worth writing down rather than a tick.
 
@@ -9609,7 +9620,16 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       already warns that a read is not an assertion; writing one to satisfy the tool would have been
       the first place to stop believing it.
 
-- [ ] **move nodesWithOrphanedPin / orphanedPinsRemaining into a suite once the build is green** (minutes)
+- [x] **move nodesWithOrphanedPin / orphanedPinsRemaining into a suite once the build is green** (minutes)
+      PAID 2026-08-31, in the direction the entry demanded: the assertions are now T449 in
+      test_pins.py and the two placeholder rows are DELETED from audit_consequence_fields' table,
+      rather than left to rot into permanent exemptions. Out-of-reach 23 -> 21, read by a suite
+      56 -> 58, test_pins 44 -> 51.
+
+      T449 asserts what the earlier fix got wrong: the count is compared against get_node, and the
+      surviving LINK is checked to be on the OLD typed pin - which is the whole hazard, since a
+      caller resolving by name gets whichever comes first and cannot tell the live pin from the
+      dead one.
       A DEBT, filed the moment it was incurred. Both are new consequence fields on
       set_variable_type, both are asserted by V9 in verify_pending_fixes.py including an agreement
       check against get_node - and V9 is not a test_*.py suite, so audit_consequence_fields does not
@@ -9624,7 +9644,10 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       in audit_consequence_fields' table should be DELETED rather than left to rot into permanent
       exemptions - which is exactly how a reason table stops meaning anything.
 
-- [ ] **list_graphs cannot say which graphs are FUNCTIONS** - BUILT IN SOURCE, needs a build (hours)
+- [x] **list_graphs cannot say which graphs are FUNCTIONS** - BUILT IN SOURCE, needs a build (hours)
+      CLOSED 2026-08-31: built and verified. T915c passes - every row carries a kind, the graph the
+      `"EventGraph" in name` heuristic picks really is the one the engine calls an ubergraph, and
+      create_function's graph is reported as a function rather than guessed at.
       Found 2026-08-31 while trying to cross-check functionGraphsRemaining. list_graphs returns
       graphId, name and nodeCount for every graph in the blueprint, nested ones included - and
       nothing that says what KIND each one is. A caller cannot tell an event graph from a function
@@ -9785,7 +9808,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       component-bound event whose component was removed does fail (T840b). Predict with that, then
       measure anyway.
 
-- [ ] **set_variable_type left a STALE PIN with its link intact, and said it had reconstructed**
+- [x] **set_variable_type left a STALE PIN with its link intact, and said it had reconstructed**
+      CLOSED 2026-08-31, after the first fix for it FAILED IN EXACTLY THE WAY THE BUG DID. That fix
+      counted ReconstructNode calls and reported them as the outcome; the node still carried two
+      pins named A. A fix that reports success without reading its postcondition back is the bug it
+      was fixing.
+
+      The premise was wrong too. UE RETAINS a mistyped pin that is still connected, flagged
+      bOrphanedPin, so a human can rewire instead of losing the link silently - ReconstructNode
+      cannot remove it and should not. Demanding one pin was demanding the engine throw the caller's
+      connection away.
+
+      It now MEASURES what it left - nodesWithOrphanedPin and orphanedPinsRemaining, read from each
+      node's pins after the reconstruct - and says outright that a clean compile is not evidence the
+      retype was safe. V9 and T449 both pass.
       - FIXED IN SOURCE, needs a build (hours)
       Found by testing the narrowed hypothesis from the failing-compile investigation rather than by
       guessing again - an int/Actor pair UE cannot coerce, to separate "the link was dropped" from

@@ -300,6 +300,51 @@ def main():
         check("T448 and the default impure one does - so `pure` is read, not ignored",
               len(shapes["impure"]) > 0, [x.get("name") for x in shapes["impure"]])
 
+    # ------------------------------------------------------------------ T449 the orphaned pin
+    print("\n=== T449: retyping a wired variable leaves an ORPHAN, and says so ===")
+    # THE ENGINE KEEPS IT ON PURPOSE. A pin whose type no longer fits but which is still CONNECTED
+    # is retained and flagged bOrphanedPin, so a human can see what broke and rewire it instead of
+    # losing the link silently. ReconstructNode cannot remove it and should not.
+    #
+    # So the endpoint's job is not to produce a clean pin list - it is to TELL YOU what it left.
+    # An earlier version of the fix counted ReconstructNode calls and reported them as the outcome,
+    # which is how it came to claim the pins matched while the node carried two named A.
+    #
+    # THE GRAPH IS THE ARBITER. The reported count is compared against get_node rather than trusted,
+    # because a number the graph does not back up is the same failure wearing a new field.
+    M.call("add_variable", {"blueprintId": bid, "name": "T449A", "type": "int"})
+    M.call("add_variable", {"blueprintId": bid, "name": "T449B", "type": "int"})
+    og = M.call("add_variable_get", {"graphId": g, "variable": "T449A"})
+    os_ = M.call("add_variable_set", {"graphId": g, "variable": "T449B"})
+    ogg = og.get("nodeGuid") or (og.get("node") or {}).get("nodeGuid")
+    osg = os_.get("nodeGuid") or (os_.get("node") or {}).get("nodeGuid")
+    wired = M.call("connect_pins", {"graphId": g, "srcNode": ogg, "srcPin": "T449A",
+                                    "dstNode": osg, "dstPin": "T449B"})
+    check("T449 (setup) a legal int -> int link", wired.get("ok") is True, json.dumps(wired)[:200])
+    rt = M.call("set_variable_type", {"blueprintId": bid, "name": "T449A", "type": "Actor"})
+    check("T449 the retype succeeds", rt.get("ok") is True, json.dumps(rt)[:200])
+    check("T449 it reports how many nodes it reconstructed", rt.get("nodesReconstructed") == 1,
+          "nodesReconstructed=%r" % rt.get("nodesReconstructed"))
+    check("T449 and MEASURES the orphans it left rather than claiming a clean result",
+          rt.get("orphanedPinsRemaining") == 1 and rt.get("nodesWithOrphanedPin") == 1,
+          "orphanedPinsRemaining=%r nodesWithOrphanedPin=%r"
+          % (rt.get("orphanedPinsRemaining"), rt.get("nodesWithOrphanedPin")))
+    named = [x for x in ((M.call("get_node", {"graphId": g, "nodeGuid": ogg}).get("node") or {})
+                         .get("pins") or []) if x.get("name") == "T449A"]
+    check("T449 the count AGREES with the graph - two pins of that name, one of them the orphan",
+          (rt.get("orphanedPinsRemaining") or 0) == max(0, len(named) - 1) and len(named) == 2,
+          "%d pin(s): %s" % (len(named), [((x.get("type") or {}).get("category"),
+                                           len(x.get("linkedTo") or [])) for x in named]))
+    check("T449 and the note says a clean compile is NOT evidence the retype was safe",
+          "NOT evidence" in (rt.get("note") or "") or "compiles clean" in (rt.get("note") or ""),
+          (rt.get("note") or "")[:200])
+    # THE ORPHAN IS THE ONE HOLDING THE LINK. That is the whole hazard: a caller resolving by name
+    # gets whichever comes first and cannot tell the live pin from the dead one.
+    linked = [x for x in named if len(x.get("linkedTo") or []) > 0]
+    check("T449 the surviving link is on the OLD typed pin, which is what makes this dangerous",
+          len(linked) == 1 and (linked[0].get("type") or {}).get("category") == "int",
+          [((x.get("type") or {}).get("category"), len(x.get("linkedTo") or [])) for x in named])
+
     SC.confirm_call("delete_asset", {"path": "/Game/_MifPin/BP_%d" % st})
     print("")
     print("=" * 72)

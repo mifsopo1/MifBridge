@@ -209,19 +209,6 @@ UNREACHABLE = {
                           "impossibility: run it with a scratch level open (Untitled* or _Mif*), "
                           "which is the condition test_spawn_many already enforces on itself",
 
-    # ADDED 2026-08-31 AND NOT YET SUITE-COVERED, which is a DEBT recorded here rather than paid by
-    # re-baselining. Both are read and asserted by V9 in verify_pending_fixes.py - including an
-    # agreement check against get_node - but that file is not a test_*.py suite, so this tool does
-    # not count it, and it is right not to: a one-shot verification pass is not regression coverage.
-    #
-    # They cannot move into a suite yet because the DLL that emits them has not been built. The
-    # moment verify_pending_fixes runs green, the assertions belong in test_pins.py beside T447/T448
-    # and these two entries should be DELETED rather than left to rot into permanent exemptions.
-    "nodesWithOrphanedPin": "new field on set_variable_type, asserted by V9 pending a build - move "
-                            "to test_pins.py and delete this entry once the build is green",
-    "orphanedPinsRemaining": "new field on set_variable_type, asserted by V9 pending a build - move "
-                             "to test_pins.py and delete this entry once the build is green",
-
     "duplicatesRemoved": "FIXED 2026-08-31 and no longer out of reach - kept here only until a "
                          "rebuild verifies it (V11). remove_pin could not remove a SAME-DIRECTION "
                          "duplicate, the case its branch exists for, because ResolvePin matches "
