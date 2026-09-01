@@ -7017,7 +7017,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the substring "glTF" anywhere) and failed against the CORRECT text, because naming glTF to
       say this verb does not take it is the helpful half.
 
-- [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
+- [x] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** - DONE 2026-08-31
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
       The idle half needed no session and should never have been declined; the running half genuinely
       does, and PIE has been authorised since 2026-08-28.
@@ -7040,6 +7040,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       current-level contamination fixed in reads7, with a worse blast radius. Whatever is written
       here starts PIE inside a try and stops it in a `finally`, and asserts pie_status is back to
       state=="stopped" at the end rather than assuming stop_pie worked.
+
+      DONE 2026-08-31, attended, against Andre's live editor with him at the keyboard. 46 checks,
+      0 failed, PIE confirmed back to state=="stopped" afterwards by reading pie_status.
+
+      AND THE SUITE DID NOT DO WHAT THIS ENTRY REQUIRED. test_pie_family.py had no try/finally at
+      all - one bare stop_pie at the bottom of main(), plus a `return 3` four lines after start_pie
+      that would have skipped it outright. Any exception, any missing key, any early return between
+      the two left the editor in a PLAY SESSION: for whatever ran next, and for the person sitting
+      in front of it.
+
+      FOUND BY READING THE FILE BEFORE RUNNING IT, which is the only reason it cost nothing. The
+      requirement was written in this entry and the suite was written without it, and nothing
+      compares the two - a spec line is not a control. The wrap is now in place and the finally
+      ASSERTS rather than assumes: stop_pie returning ok proves the request was accepted, not that
+      the session ended, so the state is read back and a still-running session is a reported
+      failure.
+
+      spawn_actor_in_pie, listed above as uncovered, turned out to be covered already by
+      test_game_framework.py:101 inside its own PIE session. Named here so the next reader does not
+      re-derive it.
 
 
 - [~] **nothing CREATES a Niagara user parameter, so its suite can never build a fixture** (hours)
