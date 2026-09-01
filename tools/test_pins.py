@@ -345,6 +345,29 @@ def main():
           len(linked) == 1 and (linked[0].get("type") or {}).get("category") == "int",
           [((x.get("type") or {}).get("category"), len(x.get("linkedTo") or [])) for x in named])
 
+    # ------------------------------------------------------------------ T450 clearing the orphan
+    # remove_pin's duplicate branch could not remove a SAME-DIRECTION duplicate until 2026-08-31 -
+    # the case it exists for - because ResolvePin keys on (NodeGuid, PinName, Direction) and returned
+    # the first match, so every captured ref resolved to the pin being kept and it reported Kind
+    # "duplicate" having removed nothing. The state T449 just built is exactly that case, so the fix
+    # gets tested where the fixture already is rather than in a second blueprint.
+    if len(named) == 2:
+        rp = SC.confirm_call("remove_pin", {"graphId": g, "nodeGuid": ogg, "pin": "T449A",
+                                            "confirm": True})
+        check("T450 the duplicate is removed", (rp.get("duplicatesRemoved") or 0) >= 1,
+              json.dumps(rp)[:220])
+        # READ BACK, NOT CLAIMED. A count of loop iterations is not a count of pins gone, and
+        # conflating those is what let the old version report a cleanup it had not done.
+        check("T450 and duplicatesStillPresent reports none left",
+              rp.get("duplicatesStillPresent") == 0,
+              "duplicatesStillPresent=%r" % rp.get("duplicatesStillPresent"))
+        after = [x for x in ((M.call("get_node", {"graphId": g, "nodeGuid": ogg}).get("node") or {})
+                             .get("pins") or []) if x.get("name") == "T449A"]
+        check("T450 and the GRAPH agrees - exactly one pin of that name remains",
+              len(after) == 1,
+              "%d pin(s): %s" % (len(after), [((x.get("type") or {}).get("category"),
+                                               len(x.get("linkedTo") or [])) for x in after]))
+
     SC.confirm_call("delete_asset", {"path": "/Game/_MifPin/BP_%d" % st})
     print("")
     print("=" * 72)

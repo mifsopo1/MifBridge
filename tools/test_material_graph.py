@@ -120,6 +120,20 @@ def main():
     # Shader compilation is asynchronous, so the poll endpoint must exist and answer.
     sc = M.call("shader_compile_status", {})
     check("T354 and the async status can be polled", sc.get("ok") is True, json.dumps(sc)[:170])
+    # numRemainingJobs is emitted UNCONDITIONALLY - both branches of WriteShaderCompileFields set
+    # it, including the one where there is no GShaderCompilingManager at all. It was filed as
+    # out-of-reach on the theory that it needed a compile IN FLIGHT; it does not, and this
+    # read-only endpoint hands it over any time.
+    check("T354 numRemainingJobs is a real, non-negative number",
+          isinstance(sc.get("numRemainingJobs"), (int, float))
+          and (sc.get("numRemainingJobs") or 0) >= 0,
+          "numRemainingJobs=%r" % sc.get("numRemainingJobs"))
+    # THE ASSERTION WITH TEETH, and it holds whichever way the editor happens to be: the two fields
+    # are one fact told twice, so an idle compiler must report zero remaining. A count that drifts
+    # from `compiling` is the failure worth catching, and a bare >= 0 would never see it.
+    check("T354 and it AGREES with `compiling` - idle means nothing remaining",
+          sc.get("compiling") is True or (sc.get("numRemainingJobs") or 0) == 0,
+          "compiling=%r numRemainingJobs=%r" % (sc.get("compiling"), sc.get("numRemainingJobs")))
 
     # ------------------------------------------------------------------ T355 delete and guards
     print("\n=== T355: deleting an expression, and guards ===")

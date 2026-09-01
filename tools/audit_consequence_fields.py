@@ -196,13 +196,6 @@ UNREACHABLE = {
                      "only ever exercising the false branch, and that is closing a number rather "
                      "than testing anything",
 
-    "numRemainingJobs": "a shader-compile progress count, so reaching it needs a compile IN FLIGHT "
-                        "when the response is built. Any fixture has to win a race it does not "
-                        "control: compile fast enough and the queue is empty, compile something big "
-                        "and the editor stalls for minutes, which material_statistics' own "
-                        "wouldBlock guard exists to refuse. Reachable in principle by watching a "
-                        "real compile, not by a suite that must finish",
-
     "membershipsChanged": "modify_actor_layers reports it per actor, so it needs ACTORS IN A LEVEL - "
                           "the same session precondition as partialNote and broken, and issue J's "
                           "warning about actors that cannot be cleaned up applies equally. Not an "

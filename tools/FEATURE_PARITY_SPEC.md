@@ -9722,8 +9722,20 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                  removing it must return the count to where it was - arithmetic the
                                  endpoint cannot satisfy by accident, whatever the baseline is.
         remainingNote            fix_up_redirectors - same, and cheap.
-        numRemainingJobs         a shader-compile helper. Harder: it needs a compile actually in
-                                 flight, so a fixture has to catch it mid-queue.
+        numRemainingJobs         MY REASON FOR THIS WAS WRONG, and it was wrong in the direction
+                                 that closes work off. I wrote that it "needs a compile IN FLIGHT,
+                                 a race no suite that must terminate can reliably win". It is
+                                 emitted UNCONDITIONALLY - both branches of WriteShaderCompileFields
+                                 set it, including the one where there is no GShaderCompilingManager
+                                 at all - and shader_compile_status is a READ-ONLY endpoint that
+                                 hands it over any time. No race, no fixture. Asserted in T354 with
+                                 the check that has teeth: it must AGREE with `compiling`, since an
+                                 idle compiler reporting jobs remaining is the drift worth catching
+                                 and a bare >= 0 would never see it.
+                                 THE LESSON IS ABOUT THE REASON, NOT THE FIELD. A written reason is
+                                 how this table earns the right to say "out of reach", and one
+                                 written from a plausible story rather than from the source is worse
+                                 than no reason - it looks settled.
 
       TWO MORE ARRIVED THE SAME WAY, once the classifier learned the MOVED case. Its header had
       declared that unreachable - adding [Cc]hanged "would drown the real findings" - and that is
