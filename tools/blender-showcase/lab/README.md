@@ -5,13 +5,18 @@ MifBridge's typed ops**. No `run_python` — each stage prints which ops it used
 escape hatch was among them, so the claim is measured rather than asserted.
 
 ```
-python tools/blender-showcase/lab/s1_shell.py     # 33 objects   ~20s
-python tools/blender-showcase/lab/s2_props.py     # 101 props    ~20s
-python tools/blender-showcase/lab/s3_scatter.py   # node tree    ~2s
-python tools/blender-showcase/lab/s4_light.py     # 8 lights     ~7s
-python tools/blender-showcase/lab/s5_anim.py      # 27 keys      ~4s
-python tools/blender-showcase/lab/s6_render.py    # dust + PNG   ~1s
+python tools/blender-showcase/lab/s1_shell.py      # 33 objects           ~21s
+python tools/blender-showcase/lab/s2_props.py      # 101 props            ~21s
+python tools/blender-showcase/lab/s2b_clutter.py   # 354 instances        ~3s
+python tools/blender-showcase/lab/s3_scatter.py    # node tree            ~2s
+python tools/blender-showcase/lab/s4_light.py      # 8 lights             ~6s
+python tools/blender-showcase/lab/s5_anim.py       # 27 keys              ~4s
+python tools/blender-showcase/lab/s6_render.py     # dust + PNG           ~1s
+python tools/blender-showcase/lab/s7_cinematic.py  # 55s, 125 keys        ~9s
 ```
+
+`s5` and `s7` are alternatives: `s5` is a short loop for looking at the room, `s7` is the full
+55-second timeline and replaces `s5`'s camera when it finds one.
 
 Needs a Blender with the MifBlender addon listening (see `tools/run_blender_suites.py`, or launch
 one and `import MifBlender; MifBlender.register()`). Run them in order; stage 1 clears the scene.
@@ -64,3 +69,51 @@ attaching a nodes modifier already worked, building the tree did not.
 
 Select `Debris_Surface`, find its **GeometryNodes** modifier, and drag **Density**. The floor's
 rubble regenerates live. It is a real node graph the bridge wrote, not a bake.
+
+## Stage 2b — density, and why it is scattered
+
+The reference frames are *full*: bottles on every shelf, litter across the whole floor. 101
+hand-placed props does not get there, and doing it by hand means several hundred more calls in a
+script nobody can adjust afterwards — change your mind about how full a shelf is and you rewrite a
+loop.
+
+So it scatters. **354 instances across 6 HAIR particle systems**, each count a *field on the
+modifier*. Ten bottles or eighty is one number.
+
+It is also the more honest demonstration: hand-placing 400 props proves the bridge can call
+`create_primitive` 400 times; scattering them proves it drives Blender's instancing system, which
+is what did not exist before 0.8.0.
+
+## Stage 7 — the 55-second cinematic
+
+The benchmark's timeline, verbatim: lights up, fan, computer boot, flicker, steam, camera move,
+warning lamp, something falls off a shelf, arrive at the workstation, monitor change, blackout,
+emergency lighting, pull back. **1345 frames, 125 keyframes**, six capability families at once —
+lights, keyframes, physics, particles, cameras, world.
+
+Beats are declared in **seconds** and converted in one place, and the conversion is *asserted*
+against the scene's real fps. Writing `20` where `480` was meant is the easiest mistake to make
+silently — the render just looks wrong.
+
+Measured per beat rather than eyeballed:
+
+| beat | mean luminance | lit pixels |
+|---|---|---|
+| 00:18 running | 0.075 | 32 % |
+| 00:31 warning lamp | 0.043 | 14 % (peak 0.68 — the red punches through) |
+| **00:51 blackout** | **0.0004** | **0 %** |
+| **00:53 emergency** | **0.109** | **36 %** |
+
+A 270× jump in mean is the beat working.
+
+### The detour worth knowing about
+
+The emergency beat first rendered **pure black**, and it was chased through the keyframe (right
+datablock, right frame), the evaluated depsgraph (energy confirmed), the scene camera and colour
+management. **100× the wattage changed the frame not at all, to four decimal places.**
+
+The lamp was at (9, 5.5, 3.2) — directly *behind* the camera at that beat. The same frame from a
+static camera showed peak luminance **0.63**. The light was blazing; nobody was looking at it.
+
+Every op reported correctly the whole time. A light nobody is looking at is not a lighting bug, and
+no amount of instrumentation on the bridge would have said so.
