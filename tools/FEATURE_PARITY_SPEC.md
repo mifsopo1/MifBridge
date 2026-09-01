@@ -7409,7 +7409,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       REFUSES them by name with the type it found, rather than skipping the key, because a key
       silently not written leaves a section that looks authored and animates nothing - so this is
       an extension, not a latent bug.
-- [ ] **modify_actor_layers reported THAT a layer was created, never WHICH - FIXED IN SOURCE** (hours)
+- [x] **modify_actor_layers reported THAT a layer was created, never WHICH - FIXED IN SOURCE** - DONE 2026-08-31
       DOWNGRADED FROM [x] on 2026-08-31 for the same reason as the refusal entry, and this one
       was self-contradictory besides: it claimed DONE while a separate open item below asks for
       its behaviour verification. "Proven on UE 5.3 ... BUILD OK" is a COMPILE claim. Built and
@@ -7421,6 +7421,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       nothing was created, so absence had to be interpreted. Proven on UE 5.3 installed,
       Development, BUILD OK with a linked DLL and verified mtime; also compiled against 5.7 headers
       via DebugGame (unit 88/95, no diagnostics).
+
+      DONE 2026-08-31, BEHAVIOUR-VERIFIED at last, on a classic level made the way this entry's
+      sibling predicted: the editor was relaunched, opened on Untitled_1, and new_level_if_scratch
+      permitted {partitioned:false} because the open world's name was scratch. MifWeaponTest - 99
+      actors of somebody's work, and world-partitioned, confirmed by a live refusal naming
+      AActor::SupportsLayers - was never touched.
+
+      BOTH DIRECTIONS MEASURED, which is the whole point of the entry:
+
+        add two NEW names   layersCreated ["MifLayerAlpha","MifLayerBeta"], layerCreated true,
+                            layerCreatedNote present, membershipsChanged 2
+        add the SAME two    layersCreated [] - PRESENT and EMPTY - layerCreated false, note ABSENT,
+                            membershipsChanged 2
+
+      The second row is the fix. The complaint was never that the field was wrong; it was that the
+      field was OMITTED when nothing was created, so a caller had to interpret absence, and absence
+      is also what a missing implementation looks like. Present-and-empty distinguishes "nothing was
+      created" from "this build cannot tell you".
 
 - [x] **five audit tools matched C++ symbols in PROSE, and one was hiding a real defect** (day)  **DONE 2026-08-31.**
       param_reach, audit_postconditions (twice - a comment-centred window and a handler body running
@@ -7582,7 +7600,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       and no undo step. Probed against the live editor before writing it - resolution really does run
       first - so the test pins behaviour that already holds rather than asserting a hope.
 
-- [ ] **layersCreated is compile-verified but not behaviour-verified - needs a classic level** (hours)
+- [x] **layersCreated is compile-verified but not behaviour-verified - needs a classic level** - DONE 2026-08-31
       The 2026-08-31 fix to modify_actor_layers cannot be exercised on this machine. The SDK editor's
       open level is WORLD PARTITIONED and AActor::SupportsLayers is false for every actor in one, so
       every `add` is refused before any layer work happens; and actor resolution runs before the
@@ -8651,7 +8669,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       test_blender_mesh M900/M901, 86 -> 90 assertions, green on all four installed Blenders.
 
-- [ ] **all four live detectors have now produced a real result - which is not the same as proven**
+- [x] **all four live detectors have now produced a real result - which is not the same as proven** - DONE 2026-08-31
       (hours)
       Run 2026-08-31 against the editor Andre was working in, both read-only:
 
@@ -8692,6 +8710,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       What would close it: run audit_detectors_fire with the editor CLOSED and a plant defined for
       each. That is the same window the Development build needs, so it is one visit rather than two.
+
+      DONE 2026-08-31 in exactly that window. 28 detectors proven, ZERO asleep - and the run was
+      worth far more than the tick, because BOTH tools it had been calling ASLEEP were awake and
+      the harness was wrong about them:
+
+        param_reach   the plant removed 1 of 3 _post("list_nodes") call sites while param_reach
+                      UNIONS keys per ENDPOINT, so hideKnots stayed on the wire and nothing was
+                      planted. The other two call sites were mif_layout_graph's internal reads,
+                      added hours earlier the same day. The plant's docstring had reasoned about an
+                      ALIAS masking a removal and never about a second CALL SITE.
+        blender       the ratchet baseline still read 1 while the real backlog was 0, so the
+                      equal-branch absorbed the plant. The seamVertsRemoved commit closed the last
+                      field and never re-ran --baseline.
+
+      SO THE FIX IS SYSTEMIC RATHER THAN TWO PATCHES: a plant may now declare must_vanish, a string
+      that must be GONE from the mutated text, and a plant that leaves it behind is reported as
+      "plant-did-not-land" - explicitly NOT as ASLEEP. This harness had already been bitten by that
+      once (DEAD_CITATION) and diagnosed it by hand; twice makes it a verdict.
+
+      Also fixed: the two SKIP buckets were polarity-opposites sharing one list while the summary
+      hardcoded a single header, so with the editor CLOSED it printed "SKIPPED - an editor was
+      running" - the exact inverse of the truth, every time.
+
+      audit_absence_claims remains the one skip, and now says why honestly: it needs a LIVE bridge
+      and none was answering, which is the opposite condition to the Source/-plant skip.
 
       Incidental, and Andre's business rather than a finding: 77 packages were already dirty in that
       session. Normal for an editor somebody is working in, and the auditor counts only NEW ones,

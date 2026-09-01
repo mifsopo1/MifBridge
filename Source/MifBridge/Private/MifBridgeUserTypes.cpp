@@ -1168,8 +1168,15 @@ namespace MifBridge
 				TSharedRef<FJsonObject> SubOut = MakeShared<FJsonObject>();
 				H_set_property(SubIn, SubOut);
 
-				bool bOk = false;
-				SubOut->TryGetBoolField(TEXT("ok"), bOk);
+				// IsOk, NOT TryGetBoolField. RunEndpoint sets ok:true BEFORE dispatching to a
+				// handler, so a handler called directly like this one never has the field at all
+				// unless Fail() wrote ok:false - and reading it with TryGetBoolField left bOk at
+				// its `false` initialiser on every SUCCESS. The first live call reported
+				// "1 of 1 properties were NOT applied" for a property that get_property then read
+				// back correctly: a false negative that would have sent callers chasing a working
+				// feature. IsOk already encodes exactly this - absent means ok - and existed the
+				// whole time; writing a second check instead of finding it is what caused this.
+				const bool bOk = IsOk(SubOut);
 				// JUDGE BY THE POSTCONDITION, NOT BY ok. set_property reports `changed` separately,
 				// and a write that resolved and imported cleanly but left the value where it was is
 				// not a configured property - it is a caller who spelled the value wrong and would
@@ -1256,10 +1263,15 @@ namespace MifBridge
 		Out->SetStringField(TEXT("class"), Class->GetPathName());
 		Out->SetBoolField(TEXT("registered"), true);
 		Out->SetStringField(TEXT("note"),
-			In->HasField(TEXT("properties"))
+			// Not "configured" when something was refused - propertiesNote already says what
+			// happened, and a headline note contradicting it is how a caller stops reading either.
+			(In->HasField(TEXT("properties")) && !Out->HasField(TEXT("propertiesRefused")))
 				? TEXT("created, configured and registered - in that order, so nothing watching the "
 					   "asset registry saw the default state. NOT saved: call save_dirty_packages or "
 					   "it is lost on restart")
+				: In->HasField(TEXT("properties"))
+				? TEXT("created and registered, but NOT fully configured - read propertiesRefused. "
+					   "NOT saved: call save_dirty_packages or it is lost on restart")
 				: TEXT("created and registered but NOT saved - set its properties with set_property, then "
 					   "save_dirty_packages or it is lost on restart. To configure it BEFORE the "
 					   "registry sees it, pass properties:{path:value} to this endpoint instead"));
