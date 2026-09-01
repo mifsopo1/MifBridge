@@ -66,6 +66,80 @@ def match_paren(text, open_idx):
 
 
 
+
+def call_graph(tree):
+    """name -> set of names it calls. Plain `f()` and `mod.f()` both count, by the trailing name."""
+    graph = {}
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        called = set()
+        for sub in ast.walk(node):
+            if not isinstance(sub, ast.Call):
+                continue
+            fn = sub.func
+            if isinstance(fn, ast.Name):
+                called.add(fn.id)
+            elif isinstance(fn, ast.Attribute):
+                called.add(fn.attr)
+        graph[node.name] = called
+    return graph
+
+
+def reachable_from(graph, start):
+    """Transitive closure, so a helper that calls a helper still counts."""
+    seen, stack = set(), [start]
+    while stack:
+        cur = stack.pop()
+        for nxt in graph.get(cur, ()):
+            if nxt in graph and nxt not in seen:
+                seen.add(nxt)
+                stack.append(nxt)
+    return seen
+
+
+def out_of_reach_spans(text, keep_op):
+    """Char ranges of every module function keep_op cannot reach - including other ops.
+
+    THE LAST SOFTNESS THIS FILE ADMITTED TO, now closed. Scoping to "the module minus every OTHER
+    op's body" already stopped one op vouching for another, but a shared HELPER still vouched for
+    every op that calls it - and for every op that does NOT. That is exactly the shape that bit:
+    _check_format in ops_mesh.py is called by import_mesh and export_mesh, recited the IMPORT
+    format list to both, and told an export caller glTF was supported right up to refusing them
+    for asking.
+
+    So the scope is now: module-level code, plus this op's body, plus the bodies of the functions it
+    can actually REACH. Module-level tables stay in scope - create_primitive still reads fillType
+    through EXTRA_KEYS - and an unreachable helper no longer counts.
+
+    CONSERVATIVE WHERE IT CANNOT SEE. The call graph matches on plain and attribute call names, so
+    dispatch through a dict or getattr is invisible to it. A function that cannot be parsed, or an
+    op that is not in the graph at all, leaves EVERYTHING in scope rather than guessing - because
+    under-narrowing costs a missed finding and over-narrowing costs a false one.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    graph = call_graph(tree)
+    if keep_op not in graph:
+        return []
+    keep = reachable_from(graph, keep_op) | {keep_op}
+    lines = text.split("\n")
+    starts = [0]
+    for ln in lines:
+        starts.append(starts[-1] + len(ln) + 1)
+    spans = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) or node.name in keep:
+            continue
+        end = getattr(node, "end_lineno", None)
+        if not end:
+            continue
+        spans.append((starts[node.lineno - 1], min(starts[end], len(text))))
+    return spans
+
+
 def other_op_bodies(text, keep_op):
     """Character ranges of every `op_*` function in `text` EXCEPT keep_op's.
 
@@ -144,7 +218,7 @@ def scan():
 
         # Blank every OTHER op's body too - see other_op_bodies for why this is the right scope
         # and why neither obvious alternative is.
-        for lo, hi in other_op_bodies(text, op):
+        for lo, hi in out_of_reach_spans(text, "op_%s" % op):
             blanked = blanked[:lo] + " " * (hi - lo) + blanked[hi:]
 
         present = {n.lower() for n in LITERAL.findall(blanked)}
@@ -167,15 +241,13 @@ def main():
     if not dead:
         print("OK  every accepted key appears somewhere other than the accept list.")
         print("")
-        print("Scope is the module MINUS every other op's body, so a key read only inside a")
-        print("DIFFERENT op no longer counts as read here - that hole is closed. Still permissive")
-        print("about module-level tables and shared helpers, deliberately: create_primitive reads")
-        print("fillType through a module-level dict, and a narrower scope would call it dead.")
+        print("Scope is now per-op REACHABILITY: module-level code, plus this op's body, plus the")
+        print("helpers it can actually reach through the call graph. A shared helper vouches only")
+        print("for the ops that call it - which is what _check_format in ops_mesh.py needed, being")
+        print("shared by import_mesh and export_mesh and correct for only one of them.")
         print("")
-        print("One softness remains, stated rather than papered over: a name read by a SHARED")
-        print("helper counts as read by EVERY op that calls it, and _check_format in ops_mesh.py")
-        print("is the standing proof that a shared helper can be right for one caller and wrong")
-        print("for the other. Narrowing further would need call-graph reachability per op.")
+        print("Blind to dispatch it cannot see statically - a dict of handlers, getattr - and in")
+        print("that case it leaves EVERYTHING in scope rather than guessing.")
         return 0
     for op, key, module in dead:
         print("  %-28s %-24s %s" % (op, key, module))
