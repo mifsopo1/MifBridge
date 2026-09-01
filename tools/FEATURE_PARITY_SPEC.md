@@ -7251,6 +7251,14 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       conditions sharing one list under a header that described only one of them. Worth grepping
       the other report-style tools for a third.
 
+      GREPPED 2026-09-01 and there is no third. Walked every audit_* and *check* tool with ast,
+      listing each bucket appended from three or more distinct sites: audit_blender_read_purity's
+      `exercised`, buildcheck's `ran`, spec_check's and parity_check's `problems`. All four are
+      SINGLE-meaning buckets. parity_check shows the shape the two broken ones were missing - it
+      appends Problem(kind, message), so the reason travels WITH the item and no summary header can
+      contradict it, which is the same fix applied to both tonight and arrived at independently.
+      Nothing to change, and that is a real answer rather than an absence of one.
+
 - [x] **create_asset - CONVENIENCE DONE, atomicity still open** - DONE 2026-08-31, both halves
       RETITLED AND RE-SCOPED 2026-08-31 after measuring it against the live editor. The old title,
       "11 asset types can only be created UNCONFIGURED", is wrong, and it was wrong in the direction
