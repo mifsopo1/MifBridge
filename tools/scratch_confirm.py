@@ -179,6 +179,48 @@ def check(payload):
     return found
 
 
+# Worlds a new_level may destroy, checked by NAME because that is the only handle available before
+# the map is gone. UE names an unsaved map Untitled_N, and this project's own scratch convention is
+# _Mif*; anything else is somebody's real level.
+SCRATCH_WORLD_PREFIXES = ("Untitled", "_Mif")
+
+
+def new_level_if_scratch(partitioned=False, timeout=None):
+    """new_level, but only when the map it would destroy is provably a scratch one.
+
+    WHY THIS NEEDS A BYPASS AT ALL. mifaudit's DENY list carries new_level, load_level and
+    open_level under "discards unsaved work in the open map without asking", so the ordinary call
+    returns {"ok": false, "error": "denied by harness"} before it reaches the editor. That guard is
+    right: destroying whatever map somebody has open is not a decision an unattended run may take.
+
+    WHY IT IS WORTH ONE. Two spec items - modify_actor_layers and layersCreated - need a CLASSIC,
+    non-partitioned level, and AActor::SupportsLayers reads GetLevel()->bIsPartitioned, so on a
+    partitioned map every `add` is refused before any layer work happens. A brand-new 5.3 level is
+    partitioned by default, so no amount of reopening the editor reaches one. new_level
+    {partitioned:false} makes exactly the fixture in one call.
+
+    THE CHECK IS THE SAME SHAPE AS check() ABOVE: prove it, do not assert it. The open world's name
+    is read from the editor FIRST, and the call only proceeds when that name looks scratch. A world
+    called anything else raises, exactly as a non-scratch path does.
+
+    Andre approved this specifically on 2026-08-31, for the case where the open map is the untitled
+    one an agent created by launching the editor.
+    """
+    world = M.call("list_level_actors", {}, **({"timeout": timeout} if timeout else {})).get("world")
+    if not world:
+        raise NotScratch(
+            "could not read the open world's name, so it cannot be shown to be scratch. "
+            "new_level destroys whatever is open - it is not sent on a guess.")
+    if not any(str(world).startswith(pref) for pref in SCRATCH_WORLD_PREFIXES):
+        raise NotScratch(
+            "the open world is %r, which is not a scratch map. new_level DISCARDS unsaved work in "
+            "it without asking, so it is only ever sent when the open world starts with %s - an "
+            "untitled map, or one of this project's own. Open a scratch level first."
+            % (world, " or ".join(SCRATCH_WORLD_PREFIXES)))
+    kwargs = {"timeout": timeout} if timeout else {}
+    return M.raw_post("new_level", {"partitioned": bool(partitioned)}, **kwargs)
+
+
 def confirm_call(endpoint, payload, timeout=None):
     """M.call with confirm=true, permitted only for a provably scratch-only payload.
 
@@ -232,5 +274,44 @@ if __name__ == "__main__":
             print("  WRONG - ALLOWED %s: %s" % (why, json.dumps(p)[:60]))
         except NotScratch:
             print("  refuse  %-34s (%s)" % (json.dumps(p)[:34], why))
+    # ---- new_level_if_scratch, proven the same way and for the same reason ----------------
+    # It destroys the OPEN MAP, which is the most irreversible thing anything here can do, so the
+    # decision is exercised offline with the transport stubbed - no editor is touched to prove a
+    # guard about editors. The case that matters is L_Downtown: a real level must be refused even
+    # though the CALL is perfectly well formed.
+    class _FakeM:
+        def __init__(self, world):
+            self.world = world
+            self.sent = []
+
+        def call(self, ep, payload, **kw):
+            return {"world": self.world}
+
+        def raw_post(self, ep, body, **kw):
+            self.sent.append((ep, body))
+            return {"ok": True}
+
+    _real_M = M
+    for _world, _should_allow, _why in (
+            ("Untitled_1", True, "the untitled map an agent gets by launching the editor"),
+            ("_MifScratch", True, "this project's own scratch convention"),
+            ("L_Downtown", False, "a REAL level - the case the guard exists for"),
+            (None, False, "world unreadable, so it cannot be shown to be scratch")):
+        globals()["M"] = _FakeM(_world)
+        try:
+            new_level_if_scratch()
+            _allowed = True
+        except NotScratch:
+            _allowed = False
+        if _allowed == _should_allow:
+            print("  %-7s new_level on %-13r (%s)"
+                  % ("allow" if _allowed else "refuse", _world, _why))
+        else:
+            bad_count += 1
+            print("  WRONG - %s new_level on %r (%s)"
+                  % ("allowed" if _allowed else "refused", _world, _why))
+    globals()["M"] = _real_M
+
+
     print("\n%s" % ("self-test clean" if bad_count == 0 else "%d WRONG DECISIONS" % bad_count))
     raise SystemExit(1 if bad_count else 0)
