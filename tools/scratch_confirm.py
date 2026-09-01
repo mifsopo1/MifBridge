@@ -221,6 +221,35 @@ def new_level_if_scratch(partitioned=False, timeout=None):
     return M.raw_post("new_level", {"partitioned": bool(partitioned)}, **kwargs)
 
 
+# Collection names this may destroy. A collection is addressed by NAME, not by an asset path, so
+# check() cannot say anything about it - it refuses for want of a path, correctly.
+SCRATCH_COLLECTION_PREFIXES = ("MifPure_", "MifTest", "_Mif")
+
+
+def destroy_collection_if_scratch(name, share_type="local", timeout=None):
+    """destroy_collection, but only for a collection this project's own tooling made.
+
+    WHY IT NEEDS ITS OWN ROUTE. check() requires an asset PATH in the payload and a collection has
+    only a name, so confirm_call refuses it - not because destroying it is unsafe but because the
+    guard has nothing to look at. Same shape as new_level_if_scratch: prove it by reading the thing
+    itself, rather than adding an exemption that would let any collection through.
+
+    WHY IT IS NEEDED AT ALL. audit_read_purity has to CREATE a collection to exercise
+    describe_collection, and unlike every other fixture in that sweep a collection does not die with
+    the editor - create_collection writes a file under Content/Collections. Without a teardown the
+    sweep would leave one behind on every run, timestamped, forever.
+    """
+    if not any(str(name).startswith(pref) for pref in SCRATCH_COLLECTION_PREFIXES):
+        raise NotScratch(
+            "collection %r is not one of this tooling's own. destroy_collection is only ever sent "
+            "for a name starting with %s - anything else is somebody's hand-made set, and a "
+            "collection is a curated list that is tedious to rebuild."
+            % (name, " or ".join(SCRATCH_COLLECTION_PREFIXES)))
+    kwargs = {"timeout": timeout} if timeout else {}
+    return M.raw_post("destroy_collection",
+                      {"name": name, "shareType": share_type, "confirm": True}, **kwargs)
+
+
 def confirm_call(endpoint, payload, timeout=None):
     """M.call with confirm=true, permitted only for a provably scratch-only payload.
 

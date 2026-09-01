@@ -7359,7 +7359,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         misplaced parameter, littering the scene for somebody who only made a typo. 48 runs now,
         0 failed, on 3.6/4.2/4.4/5.0.
 
-- [ ] **two reads the purity sweep can now PROVE it never exercises** (hours)
+- [x] **two reads the purity sweep can now PROVE it never exercises** - DONE 2026-09-01, both
       FILED 2026-09-01, and only findable because "attempted only" stopped being one bucket.
 
       That bucket printed "Those needed an argument this sweep could not guess" over ten endpoints,
@@ -7395,6 +7395,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                    function does not have, and that teardown would have to run in a
                                    finally for exactly the reason audit_suite_teardown exists.
                                    That is a structural change, not a fixture.
+
+      BOTH DONE 2026-09-01. Exercised reads 102 -> 104, and the ACTIONABLE bucket is now empty:
+      what remains is four endpoints needing a live session this sweep must not start, and two
+      whose asset class does not exist in this project - measured against the registry, not assumed.
+
+      The structural change got built rather than dodged. scratch_fixtures now creates a collection
+      and a NEW teardown_fixtures removes it, called from a finally in main() - for exactly the
+      reason audit_suite_teardown was written the same night: a teardown that only runs on the happy
+      path is a teardown that does not run on the day it matters.
+
+      AND THE SCRATCH GUARD COULD NOT COVER IT, correctly. check() requires an asset PATH in the
+      payload and a collection has only a NAME, so confirm_call refuses it - not because destroying
+      it is unsafe but because the guard has nothing to look at. Rather than weaken check() with an
+      exemption that would let ANY collection through, destroy_collection_if_scratch proves it the
+      other way, by the name, the same shape as new_level_if_scratch. Verified in the run output:
+      "teardown: removed MifPure_40571".
 
       NEITHER IS HARD. They are filed rather than done because the editor went back to Andre
       mid-sweep, and because a read-purity fixture is only worth adding while the sweep can be

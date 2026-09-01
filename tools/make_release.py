@@ -41,6 +41,7 @@ so it can run in CI or on a machine that has never opened this project.
 
 import argparse
 import hashlib
+import ast
 import io
 import json
 import os
@@ -182,14 +183,47 @@ def suite_count():
         return 0
 
 
+def blender_op_count():
+    """Ops in the addon, counted from its OPS dicts rather than remembered.
+
+    The badge advertised UE's endpoint count and said nothing about the Blender arm - half the
+    tool - while the one prose line that DID mention it read "20 ops" long after it was 68. A
+    generated number cannot go stale the way a typed one does, which is the entire reason the rest
+    of this line is generated.
+    """
+    total = 0
+    root = os.path.join(ROOT, "tools", "blender-addon", "MifBlender")
+    if not os.path.isdir(root):
+        return 0
+    for fn in sorted(os.listdir(root)):
+        if not (fn.startswith("ops_") and fn.endswith(".py")):
+            continue
+        try:
+            tree = ast.parse(io.open(os.path.join(root, fn), encoding="utf-8").read())
+        except (OSError, SyntaxError):
+            continue
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            if any(isinstance(t, ast.Name) and t.id == "OPS" for t in node.targets) \
+                    and isinstance(node.value, ast.Dict):
+                total += len(node.value.keys)
+    return total
+
+
 def badge_line():
     """The line the README SHOULD carry, built from the same sources the manifest uses."""
     version, _ = plugin_version()
-    return ("`v%s` &nbsp;\u00b7&nbsp; \U0001f3ae **UE 5.3 + 5.7** &nbsp;\u00b7&nbsp; "
-            "\U0001f3a8 **Blender 3.6\u20135.0** &nbsp;\u00b7&nbsp; \U0001f50c **%d endpoints** "
-            "&nbsp;\u00b7&nbsp; \U0001f9f0 **%d MCP tools** &nbsp;\u00b7&nbsp; "
-            "\U0001f9ea **%d test suites**"
-            % (version, endpoint_count(), mcp_tool_count(), suite_count()))
+    parts = [
+        "`v%s`" % version,
+        "\U0001f3ae **UE 5.3 + 5.7**",
+        "\U0001f3a8 **Blender 3.6\u20135.0**",
+        "\U0001f50c **%d UE endpoints**" % endpoint_count(),
+        "\U0001f9f1 **%d Blender ops**" % blender_op_count(),
+        "\U0001f9f0 **%d MCP tools**" % mcp_tool_count(),
+        "\U0001f9ea **%d test suites**" % suite_count(),
+    ]
+    return " &nbsp;\u00b7&nbsp; ".join(parts)
 
 
 VERSION_MARKER = "<!-- MIFBRIDGE-VERSION-LINE -->"

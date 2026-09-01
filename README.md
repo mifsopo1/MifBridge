@@ -2,16 +2,22 @@
 
 # 🌉 MifBridge
 
-### **Let an AI edit your Unreal Blueprints — and read the compiler errors back.**
+### **Let an AI drive Unreal *and* Blender — and read the results back.**
+
+*Compile a Blueprint and get the errors mapped to node and pin. Build, light, animate and render a Blender scene. One agent, two DCCs, one round trip.*
 
 <!-- MIFBRIDGE-VERSION-LINE -->
-`v0.7.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **434 endpoints** &nbsp;·&nbsp; 🧰 **494 MCP tools** &nbsp;·&nbsp; 🧪 **159 test suites**
+`v0.8.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **440 UE endpoints** &nbsp;·&nbsp; 🧱 **68 Blender ops** &nbsp;·&nbsp; 🧰 **525 MCP tools** &nbsp;·&nbsp; 🧪 **168 test suites**
 
 </div>
 
 ---
 
-MifBridge is an in‑editor Unreal Engine plugin plus a Model Context Protocol (MCP) server that lets an AI assistant **build, wire, and compile Blueprint graphs programmatically, then read the actual compiler output**. It replaces the blind "AI writes T3D → you paste → you screenshot the errors → AI guesses → repeat" loop with a direct, closed feedback loop.
+MifBridge is a Model Context Protocol (MCP) server fronting **two backends**: an in‑editor Unreal Engine plugin, and a Blender addon. One agent drives both, and each one reports what actually happened rather than what it was asked to do.
+
+**On the Unreal side** it lets an AI **build, wire and compile Blueprint graphs programmatically, then read the actual compiler output** — replacing the blind "AI writes T3D → you paste → you screenshot the errors → AI guesses → repeat" loop with a closed one.
+
+**On the Blender side** it models, booleans, UV‑unwraps, rigs, lights, aims cameras, keyframes, authors geometry‑node trees, simulates and renders — all as typed, guarded operations rather than as arbitrary Python. There is a `run_python` escape hatch and it is deliberately not how the interesting work is done: it is an arbitrary‑code‑execution switch a user can turn off, it reports nothing, and it is unavailable when the addon is imported rather than installed.
 
 Every change goes through Unreal's own graph API (`Schema->TryCreateConnection`, `ReconstructNode`, `FKismetEditorUtilities::CompileBlueprint`), so it fires the pin/notification callbacks that clipboard paste skips — the ones that resolve wildcard pins, relink variables, and expand macros. Every edit is wrapped in a transaction, so **Ctrl‑Z in the editor undoes anything the AI did.**
 
@@ -25,13 +31,17 @@ Every change goes through Unreal's own graph API (`Schema->TryCreateConnection`,
 | 🧊 **Cooked projects are first‑class** | Cooked Blueprints have no graphs; MifBridge *says so* and names the route out instead of returning an empty answer. |
 | 🎚️ **A safety gate you can see** | `read` / `scratch` / `full` write modes, switchable from the in‑editor panel. |
 | 🧱 **Two DCCs, one agent** | Unreal over HTTP **and** Blender over a local socket — the mesh round trip neither tool can do alone. |
+| 🎬 **Blender is a full DCC here, not an exporter** | Lights, cameras, keyframes, geometry‑node **tree authoring**, particles, physics, rendering, world and viewport control — all typed ops. An agent can build a lit, animated, rendered scene without writing a line of `bpy`. |
+| 🧯 **Every op guards the trap it knows about** | `renderType: OBJECT` with no instance object renders nothing and Blender says nothing — so it is refused. An unlinked Group Output is not an error, it silently passes geometry through — so it is reported. A camera faces its local −Z — so `lookAt` derives the euler for you. |
 
 ### 🧭 Honest status
 
 | Half | State |
 |---|---|
 | 🎮 **UE plugin + MCP server** | **Mature.** Endpoint and suite counts are in the version line at the top of this file, which is generated and checked at packaging time rather than typed here. Last full double-pass sweep: **282 runs across 141 suites, 1 failed, 16 skipped, 0 editor deaths**. The 3 suites that drive PIE are excluded from unattended sweeps and are named in the run output rather than counted as passing — starting PIE saturates the game thread, and the bridge runs every endpoint on it. |
-| 🎨 **Blender addon** | **Working, version‑tested.** 20 ops and a real mesh round trip, green on Blender 3.6.23, 4.2.17 LTS, 4.4.0 and 5.0.1 — 89 assertions per version. The five `gen_*` ops that need an external service are declared in the suite output rather than skipped silently. |
+| 🎨 **Blender addon** | **Mature.** **68 ops across 14 modules**, covering modelling, materials, UV, rigging, lights, cameras, keyframes, geometry‑node authoring, particles, physics, rendering, world and viewport — plus a real mesh round trip. Green on Blender **3.6.23, 4.2.17 LTS, 4.4.0 and 5.0.1**, every suite on every version. Counted from the live `OPS` map at packaging time, not typed here — this line read "20 ops" for a while after it stopped being true. |
+
+> **One external dependency, and only one.** The five `gen_*` ops (text/image → 3D) drive a **ComfyUI** instance you run yourself — MifBridge does not ship or install it, and no models or weights are in the release. Default `127.0.0.1:8188`, overridable with `MIF_COMFY_HOST`. Without it those five refuse with a message naming the command to start one; **the other 63 Blender ops and every UE endpoint are unaffected.**
 
 ---
 

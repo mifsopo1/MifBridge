@@ -202,7 +202,40 @@ def scratch_fixtures():
                  timeout=60)
     if ikrt.get("assetPath"):
         fx["ikRetargeter"] = ikrt["assetPath"]
+
+    # A COLLECTION, AND THE ONLY FIXTURE HERE THAT NEEDS TEARING DOWN. Everything else above is an
+    # unsaved asset under /Game/_MifPure and dies with the editor - that IS the cleanup strategy,
+    # and it is why this function has no teardown at all. A collection does not play by it:
+    # create_collection writes a real file under Content/Collections that outlives the process, and
+    # the name is timestamped, so without a matching destroy this sweep would drop one artifact per
+    # run and accumulate them forever. teardown_fixtures below removes it, from a finally.
+    cname = "MifPure_%d" % st
+    if M.call("create_collection", {"name": cname, "shareType": "local"},
+              timeout=60).get("ok") is not False:
+        fx["collection"] = cname
     return fx
+
+
+def teardown_fixtures(fx):
+    """Undo the fixtures that do NOT die with the editor. Returns what it removed, and what it could not.
+
+    Only the collection qualifies today. It is separated from scratch_fixtures rather than folded
+    into it because a teardown that runs alongside creation is a teardown that never runs when
+    something in between raises - which is the whole reason audit_suite_teardown exists.
+    """
+    removed, failed = [], []
+    cname = fx.get("collection")
+    if cname:
+        try:
+            import scratch_confirm as SC
+            # NOT confirm_call: check() wants an asset PATH and a collection has only a name, so it
+            # refuses for want of something to look at. destroy_collection_if_scratch proves it the
+            # other way, by the name.
+            r = SC.destroy_collection_if_scratch(cname)
+            (removed if r.get("ok") is not False else failed).append(cname)
+        except Exception as exc:                      # noqa: BLE001 - reported, never swallowed
+            failed.append("%s (%s)" % (cname, exc))
+    return removed, failed
 
 
 def special_payloads(ep, acc, ctx, assets):
@@ -219,6 +252,8 @@ def special_payloads(ep, acc, ctx, assets):
         out.append({"struct": fx["struct"]})
     if fx.get("actorPath") and ep in ("get_actor_bounds", "get_level_actor"):
         out.append({"actorPath": fx["actorPath"]})
+    if fx.get("collection") and ep == "describe_collection":
+        out.append({"name": fx["collection"]})
     if fx.get("blueprintId") and ep == "get_inherited_component":
         out.append({"blueprintId": fx["blueprintId"], "name": "DefaultSceneRoot"})
     # check_consolidate_assets ASKS whether a consolidation would be safe and changes nothing - its
@@ -435,6 +470,20 @@ def main():
     ctx = build_context()
     ctx["_fixtures"] = scratch_fixtures()
     print("context: %s" % ", ".join(sorted(k for k in ctx if ctx.get(k))))
+    try:
+        return _sweep(ctx, assets)
+    finally:
+        # IN A FINALLY, for the reason audit_suite_teardown was written: a teardown that only runs
+        # on the happy path is a teardown that does not run on the day it matters.
+        gone, stuck = teardown_fixtures(ctx.get("_fixtures") or {})
+        if gone:
+            print("\nteardown: removed %s" % ", ".join(gone))
+        if stuck:
+            print("\nTEARDOWN FAILED for %s - these persist on disk and need removing by hand."
+                  % ", ".join(stuck))
+
+
+def _sweep(ctx, assets):
 
     names = [n for n in sorted(M.endpoint_names())
              if n.startswith(READ_PREFIXES) and n not in EXCLUDE and n not in M.DENY]
