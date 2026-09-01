@@ -7097,6 +7097,19 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       because the atomicity point is real and someone may want the one-call form; downgraded from
       "cannot be configured" to "takes two calls", which is a different decision.
 
+      AND THE ERGONOMIC HALF NEED NOT BE C++ AT ALL, noticed 2026-08-31 after the graph-layout work
+      made the same point in a different place. `create_curve {path, keys}` is create_asset followed
+      by set_property with an ImportText string - both endpoints exist and both work, as this entry
+      already measured. A python helper that does the pair and reads the result back gives the
+      caller the one-call form TODAY, on any project, with no build and no endpoint.
+
+      That does not touch the atomicity point, which is the only part that genuinely needs the
+      engine: two calls are two transactions whatever wraps them. But it separates the two halves
+      cleanly - convenience is a helper, atomicity is an endpoint - where this entry had them as one
+      "hours" item. tools/layout_graph.py is the precedent: it delivered a whole capability from the
+      client side because the endpoints underneath were already sufficient, and the same is true
+      here.
+
       SCRATCH CLEANED UP. MifIAProbe and MifCurveProbe were left in the unsaved /Game/_MifScratch
       while measuring this; both are gone, deleted through tools/scratch_confirm.py, which is the
       sanctioned route for confirm:true on a /Game/_Mif path. An earlier draft of this entry said
