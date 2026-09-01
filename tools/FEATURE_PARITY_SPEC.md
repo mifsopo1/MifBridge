@@ -7214,6 +7214,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       it was ordering, not a new guard.
 
 
+- [ ] **audit_dead_params unions literals across EVERY .cpp, so any handler vouches for all** (hours)
+      FILED 2026-09-01. The Blender twin had the same hole and it is now closed there
+      (audit_blender_dead_params: scope is the module MINUS every other op's body, proven both
+      directions by mutation). The UE arm is wider still - names_read_anywhere() unions the TEXT
+      literals of every source file, so a name read by ANY handler counts as read by ALL 438.
+
+      The defect shape it cannot see is a parameter accepted by endpoint A and only ever read by
+      endpoint B. Not hypothetical: _check_format in the addon did exactly that with two callers and
+      one shared format list, and cost an export caller a refusal contradicting the message it had
+      just been handed.
+
+      THE FIX IS WRITTEN AND WAS REVERTED UNWIRED, not because it is wrong but because wiring it
+      naively is O(handlers x files) - 438 handlers re-scanning ~60 files each - and it needs a
+      per-file mask cache before it is worth running. The design: scope is every source file minus
+      every OTHER `void H_x(...)` body, brace-counted, conservative (an unbalanced handler is left
+      IN scope rather than guessed at). Free functions, resolvers and tables all stay in scope,
+      which the tool's own history says they must - its first run found four names that looked dead
+      at a tighter scope and were all fine, three of them `actor` aliases read through ResolveActor
+      in a different file. ResolveActor is not an H_ handler, so it survives this narrowing.
+
+      Worth doing on a 2431-parameter corpus; the Blender one found nothing new but that corpus is
+      45 ops rather than 438 endpoints.
+
 - [ ] **two reads the purity sweep can now PROVE it never exercises** (hours)
       FILED 2026-09-01, and only findable because "attempted only" stopped being one bucket.
 
