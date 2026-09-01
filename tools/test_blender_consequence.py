@@ -9,8 +9,8 @@ suite:
     clean_mesh      vertsRemoved, edgesRemoved, facesRemoved, discardedCustomSplitNormals
     decimate_mesh   trisRemoved
     normalize_weights  influencesDropped
-    export_mesh     seamVertsRemoved
-    bevel_edges     edgeIndicesTruncated        (and two more ops)
+    bevel_edges     edgeIndicesTruncated, seamVertsRemoved   (extrude_skirt: both too)
+    extrude_skirt   seamVertsRemoved
     clear_scene     removed, removedCount
 
 Every one of them reports geometry or data that is GONE. A caller who does not read them cannot tell
@@ -334,10 +334,81 @@ def main():
               % again.get("influencesDropped"))
         B.call("delete_object", {"object": "MifC_Weights"})
 
+    # ---------------------------------------------------------------- C108 seamVertsRemoved
+    print("")
+    print("=== C108: seamVertsRemoved - the bucket that stops movedOffSeam:0 reading as CLEAN ===")
+    # THE FIELD EXISTS FOR A MISREADING. _seam_verdict sorts every vertex it tracked on a seam
+    # plane into buckets: destroyed by the op (seamVertsRemoved), survived but drifted off
+    # (movedOffSeam), or survived in place. A caller who reads only movedOffSeam sees 0 and
+    # concludes the seam is intact - when the truthful reading may be that there is nothing LEFT
+    # to have moved. ops_mesh.py:618 says so in as many words. Nothing asserted it.
+    #
+    # It is NESTED, under seamPlanarity[axisLetter], which is the other half of why it went
+    # unread: a suite looking for a top-level key finds nothing and reports clean.
+    B.call("create_primitive", {"kind": "cube", "name": "MifC_Seam", "size": 2})
+    bev = B.call("bevel_edges", {"object": "MifC_Seam", "allEdges": True, "offset": 0.1})
+    check("C108 bevel_edges succeeds", bev.get("ok") is not False, json.dumps(bev)[:220])
+    seam = bev.get("seamPlanarity") or {}
+    check("C108 the report is nested under seamPlanarity, per axis",
+          sorted(seam.keys()) == ["X", "Y", "Z"], sorted(seam.keys()))
+
+    # THE INVARIANT, on every axis. The buckets partition the TRACKED set, so the two reported
+    # ones can never between them exceed the population they were drawn from. If they can, the
+    # numbers are computed from the request rather than counted off the mesh.
+    for letter in sorted(seam):
+        row = seam[letter] or {}
+        before = row.get("onSeamBefore") or 0
+        gone = row.get("seamVertsRemoved")
+        moved = row.get("movedOffSeam")
+        check("C108 %s: removed+moved cannot exceed the set they were drawn from" % letter,
+              isinstance(gone, int) and isinstance(moved, int) and gone + moved <= before,
+              "onSeamBefore=%r seamVertsRemoved=%r movedOffSeam=%r" % (before, gone, moved))
+        # AND THE CHECK MUST BE REACHED. An invariant over an empty tracked set holds vacuously,
+        # which is how a field goes on being unmeasured while a suite reports it green.
+        check("C108 %s: and the tracked set was NOT empty, so that check could fail" % letter,
+              before > 0, "onSeamBefore=%r" % before)
+
+    x = seam.get("X") or {}
+    # THE DOCUMENTED CLAIM, pinned. ops_mesh.py:620 states the measurement: this bevel destroys
+    # all 8 cube corners and rebuilds 8 in the same places. If that ever stops being true the
+    # comment becomes a lie about the field's own worked example.
+    check("C108 the bevel really did destroy tracked seam verts",
+          (x.get("seamVertsRemoved") or 0) > 0, json.dumps(x))
+    check("C108 and it destroyed ALL of them, as the source comment claims",
+          x.get("seamVertsRemoved") == x.get("onSeamBefore"),
+          "removed=%r onSeamBefore=%r" % (x.get("seamVertsRemoved"), x.get("onSeamBefore")))
+    # THIS IS THE WHOLE POINT OF THE FIELD, asserted directly rather than described: the two
+    # numbers a caller might read say opposite things about the same run.
+    check("C108 movedOffSeam reads 0 on that very run - which alone would say CLEAN",
+          x.get("movedOffSeam") == 0 and (x.get("seamVertsRemoved") or 0) > 0,
+          "movedOffSeam=%r seamVertsRemoved=%r" % (x.get("movedOffSeam"), x.get("seamVertsRemoved")))
+    check("C108 and the plane is repopulated, so 'removed' never meant 'plane is now empty'",
+          (x.get("onSeamAfter") or 0) > 0, "onSeamAfter=%r" % x.get("onSeamAfter"))
+
+    # THE NO-PLANT, through the OTHER op that emits this field. A count that is recomputed from
+    # the request instead of the mesh agrees with a positive case perfectly and then reports the
+    # same thing forever - so the field is only proven once something that destroys nothing
+    # reports zero. extrude_skirt adds geometry below the boundary and moves no original vertex,
+    # so every bucket must be empty while the tracked set stays non-empty.
+    B.call("create_primitive", {"kind": "plane", "name": "MifC_Skirt", "size": 2})
+    skirt = B.call("extrude_skirt", {"object": "MifC_Skirt", "boundaryOnly": True, "depth": 0.5})
+    check("C108 extrude_skirt succeeds", skirt.get("ok") is not False, json.dumps(skirt)[:260])
+    s_seam = skirt.get("seamPlanarity") or {}
+    check("C108 extrude_skirt reports the same nested block", sorted(s_seam.keys()) == ["X", "Y", "Z"],
+          sorted(s_seam.keys()))
+    for letter in sorted(s_seam):
+        row = s_seam[letter] or {}
+        check("C108 %s: a skirt destroys no tracked vert, so the count is 0" % letter,
+              row.get("seamVertsRemoved") == 0,
+              "seamVertsRemoved=%r onSeamBefore=%r" % (row.get("seamVertsRemoved"),
+                                                       row.get("onSeamBefore")))
+        check("C108 %s: and it had verts to destroy, so the 0 is measured not vacuous" % letter,
+              (row.get("onSeamBefore") or 0) > 0, "onSeamBefore=%r" % row.get("onSeamBefore"))
+
     # ---------------------------------------------------------------- cleanup
     print("")
     for n in ("MifC_Merge", "MifC_Noop", "MifC_Dec", "MifC_Edges", "MifC_Keep",
-              "MifC_Degen"):
+              "MifC_Degen", "MifC_Seam", "MifC_Skirt"):
         B.call("delete_object", {"object": n})
     survivors = [o.get("name") for o in (B.call("list_objects").get("objects") or [])]
     check("C199 (cleanup) no MifC_* object is left behind",

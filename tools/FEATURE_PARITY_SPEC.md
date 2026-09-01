@@ -6991,7 +6991,9 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Cheap: pass the calling op's name in, or name neither and describe the constraint instead.
       Needs a Blender to verify the message actually changes, so it waits for the same session the
-      seamVertsRemoved fixture does.
+      seamVertsRemoved fixture does. UNBLOCKED 2026-08-31: that session turned out to need no
+      interactive Blender at all - run_blender_suites.py launches its own headless ones, four
+      versions of them.
 
 - [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
@@ -9597,7 +9599,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Verified across every installed Blender: 44 runs, 4 versions, 0 failed 0 skipped.
       test_blender_consequence 36 -> 44. Backlog 2 -> 1.
 
-- [ ] **one Blender consequence field left: seamVertsRemoved** - FIXTURE IDENTIFIED (hours)
+- [x] **one Blender consequence field left: seamVertsRemoved** - DONE 2026-08-31, C108
       NARROWED 2026-08-31 by reading the addon rather than by running it, which is worth doing first
       because it costs nothing and it changed the shape of the job. The entry said only that the
       field was unread; it can now name the exact call that reaches it.
@@ -9623,6 +9625,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       the other buckets, since onSeamBefore should equal onSeamAfter + movedOffSeam +
       seamVertsRemoved for the tracked set. The agreement check is the one worth having; a bare
       "greater than zero" would pass on a field that counted the wrong thing.
+
+      DONE 2026-08-31 as C108 in test_blender_consequence.py. 17 checks, passing on 3.6 / 4.2 / 4.4
+      / 5.0 - full sweep 44 runs, 0 failed. The bevel prediction above was right: allEdges at
+      offset 0.1 on a cube destroys all 8 tracked corners on every axis.
+
+      AND THE IDENTITY WRITTEN ABOVE IS FALSE - caught by reading _seam_verdict before writing the
+      assert, which is the only reason it did not become a check that fails for the wrong reason.
+      onSeamAfter is NOT the count of tracked survivors. It is recomputed from scratch over the
+      whole post-op mesh (ops_mesh.py:674), so it INCLUDES vertices the op created, and on the very
+      fixture this item proposed it reads 8 while all 8 tracked verts are gone. The subtraction
+      would have balanced by accident. What actually partitions the tracked set is
+      onSeamBefore == seamVertsRemoved + movedOffSeam + survivors-still-on, and that last bucket is
+      not reported - so the provable invariant is the INEQUALITY, removed + moved <= onSeamBefore,
+      which is what C108 asserts on all three axes.
+
+      THE FIELD IS ONLY PROVEN BY THE PAIR. A count recomputed from the request rather than off the
+      mesh matches a positive case perfectly and then repeats itself forever, which is exactly the
+      normalize_weights failure C107 exists for. So C108 runs the other emitter too: extrude_skirt
+      on a plane adds geometry below the boundary and moves no original vertex, so every bucket
+      must read 0 while the tracked set stays NON-EMPTY - the emptiness check is there because an
+      invariant over an empty set holds vacuously, which is how a field goes on being unmeasured
+      while a suite reports green.
+
+      Also fixed the file header, which listed the field under export_mesh. It is emitted only by
+      _seam_verdict, called from op_bevel_edges (:1032) and op_extrude_skirt (:1309), and it is
+      NESTED under seamPlanarity[axisLetter] - the second half of why nothing read it, since a
+      suite looking for a top-level key finds nothing and reports clean. That is detector 27's
+      whole subject.
 
       STILL BLOCKED ON THE SESSION, not on knowing what to do: test_blender_mesh MUTATES the scene
       (it opens with clear_scene) and refuses against an interactive Blender, which is the right
