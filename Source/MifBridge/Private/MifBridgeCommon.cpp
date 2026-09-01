@@ -277,6 +277,7 @@ namespace MifBridge
 			MIF_BIND(add_format_text);
 			MIF_BIND(add_get_data_table_row);
 			MIF_BIND(add_comment);
+			MIF_BIND(set_node_state);
 			// UWidgetBlueprint asset endpoints + generic property setter
 			MIF_BIND(set_widget_is_variable);
 			MIF_BIND(add_widget_binding);

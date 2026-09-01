@@ -1245,6 +1245,7 @@ namespace MifBridge
 	MIF_DECL(add_format_text);
 	MIF_DECL(add_get_data_table_row);
 	MIF_DECL(add_comment);
+	MIF_DECL(set_node_state);
 
 	// UWidgetBlueprint asset endpoints (Is-Variable / bindings / widget tree) + generic property setter
 	MIF_DECL(set_widget_is_variable);

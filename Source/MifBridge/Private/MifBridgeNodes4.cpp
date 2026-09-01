@@ -461,6 +461,134 @@ namespace MifBridge
 		EmitNode(Out, Node);
 	}
 
+
+	// --- set_node_state ------------------------------------------------------
+	//   in:  { node, enabled: enabled|disabled|developmentOnly, comment, commentBubble }
+	//   out: { node, enabledBefore, enabledAfter, comment, ... }
+	//
+	// WHAT THIS IS. The editor's right-click "Disable" on a node, plus the per-node comment that
+	// shows above it. Both are things a person does constantly while debugging a graph and neither
+	// had any bridge equivalent - an agent could ADD and DELETE nodes but not turn one off, so the
+	// only way to bisect a misbehaving graph was to destroy nodes and rebuild them.
+	//
+	// DISABLED IS NOT DELETED, AND THAT IS THE POINT. A disabled node keeps its pins and its
+	// connections; the compiler skips it and the links survive, so re-enabling restores the graph
+	// exactly. Deleting and re-adding does not: BreakPinLinks cascades, and this plugin has a
+	// postmortem about that.
+	//
+	// DEVELOPMENT-ONLY IS A THIRD STATE, not a synonym for enabled. ENodeEnabledState::DevelopmentOnly
+	// compiles in editor/PIE builds and is stripped from a shipping cook - so a print-string an agent
+	// leaves behind is harmless in the packaged game only if it is marked this way, and reporting
+	// the state back is how a caller can check that rather than hope.
+	void H_set_node_state(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("node"), TEXT("enabled"), TEXT("state"), TEXT("comment"),
+			  TEXT("commentBubble") },
+			TEXT("node (guid or objectPath); enabled (alias state): enabled | disabled | "
+				 "developmentOnly; comment (the note shown on the node); commentBubble (bool, "
+				 "whether that note is pinned open)"),
+			{ { TEXT("text"), TEXT("that is add_comment's key - this sets the comment ON an existing node, not a comment BOX") },
+			  { TEXT("enable"), TEXT("spell it `enabled`, and it takes a STATE not a bool - developmentOnly is a third value a bool cannot express") } }))
+		{
+			return;
+		}
+
+		UEdGraphNode* Node = ResolveNodeField(In, TEXT("node"), Out);
+		if (!Node)
+		{
+			return;   // ResolveNodeField has already said what it could not resolve
+		}
+		UEdGraph* Graph = Node->GetGraph();
+		UBlueprint* Blueprint = Graph ? Cast<UBlueprint>(Graph->GetOuter()) : nullptr;
+
+		const TCHAR* const StateNames[] = { TEXT("disabled"), TEXT("enabled"), TEXT("developmentOnly") };
+		auto NameOf = [&StateNames](ENodeEnabledState S) -> FString
+		{
+			const int32 Idx = static_cast<int32>(S);
+			return (Idx >= 0 && Idx < 3) ? FString(StateNames[Idx]) : FString(TEXT("unknown"));
+		};
+
+		const ENodeEnabledState Before = Node->GetDesiredEnabledState();
+		Out->SetStringField(TEXT("enabledBefore"), NameOf(Before));
+		Out->SetStringField(TEXT("commentBefore"), Node->NodeComment);
+
+		const bool bWantsState = In->HasField(TEXT("enabled")) || In->HasField(TEXT("state"));
+		const bool bWantsComment = In->HasField(TEXT("comment")) || In->HasField(TEXT("commentBubble"));
+		if (!bWantsState && !bWantsComment)
+		{
+			Fail(Out, TEXT("nothing to change - pass enabled, comment or commentBubble. NOTHING was changed."));
+			return;
+		}
+
+		FScopedTransaction Transaction(NSLOCTEXT("MifBridge", "MifSetNodeState", "Set Node State"));
+		Node->Modify();
+		if (Blueprint)
+		{
+			Blueprint->Modify();
+		}
+
+		if (bWantsState)
+		{
+			const FString Want = JStrAny(In, { TEXT("enabled"), TEXT("state") }).ToLower();
+			ENodeEnabledState NewState = ENodeEnabledState::Enabled;
+			if (Want == TEXT("enabled"))                     { NewState = ENodeEnabledState::Enabled; }
+			else if (Want == TEXT("disabled"))               { NewState = ENodeEnabledState::Disabled; }
+			else if (Want == TEXT("developmentonly"))        { NewState = ENodeEnabledState::DevelopmentOnly; }
+			else
+			{
+				// Transaction unwinds on scope exit, so nothing above has to be undone by hand.
+				Fail(Out, FString::Printf(
+					TEXT("unknown enabled state '%s' - use enabled, disabled or developmentOnly. "
+						 "NOTHING was changed."), *Want));
+				return;
+			}
+			// SetEnabledState(bUserAction=true) is what the editor's own menu calls. Passing false
+			// marks it as a compiler-driven change, which the editor then feels free to revert on
+			// the next compile - the write appears to work and silently comes back.
+			Node->SetEnabledState(NewState, /*bUserAction*/ true);
+		}
+
+		if (In->HasField(TEXT("comment")))
+		{
+			Node->NodeComment = JStr(In, TEXT("comment"));
+		}
+		if (In->HasField(TEXT("commentBubble")))
+		{
+			const bool bPinned = JBool(In, TEXT("commentBubble"), false);
+			Node->bCommentBubblePinned = bPinned;
+			Node->bCommentBubbleVisible = bPinned;
+		}
+
+		if (Blueprint)
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		}
+
+		// READ BACK off the node, so this reports what it IS. SetEnabledState can be a no-op on a
+		// node type that refuses the state, and a caller who trusts the request would never know.
+		const ENodeEnabledState After = Node->GetDesiredEnabledState();
+		Out->SetStringField(TEXT("node"), Node->NodeGuid.ToString());
+		Out->SetStringField(TEXT("enabledAfter"), NameOf(After));
+		Out->SetBoolField(TEXT("enabledChanged"), Before != After);
+		Out->SetStringField(TEXT("comment"), Node->NodeComment);
+		Out->SetBoolField(TEXT("commentBubblePinned"), Node->bCommentBubblePinned);
+		Out->SetStringField(TEXT("nodeTitle"), Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
+		if (After == ENodeEnabledState::Disabled)
+		{
+			Out->SetStringField(TEXT("disabledNote"),
+				TEXT("DISABLED, not deleted - the node keeps its pins and every connection, the "
+					 "compiler skips it, and setting enabled again restores the graph exactly. "
+					 "Deleting and re-adding does not: breaking a pin link cascades."));
+		}
+		else if (After == ENodeEnabledState::DevelopmentOnly)
+		{
+			Out->SetStringField(TEXT("developmentNote"),
+				TEXT("compiled in editor and PIE, STRIPPED from a shipping cook. This is how a "
+					 "debug print is left in a graph without shipping it."));
+		}
+	}
+
 	// --- add_comment --------------------------------------------------------
 
 	void H_add_comment(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)

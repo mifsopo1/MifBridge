@@ -2235,6 +2235,14 @@ def select_level_actors(actor_paths: list = None, clear: bool = False) -> dict:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+def set_node_state(node: str, enabled: str = None, comment: str = None,
+                   comment_bubble: bool = None) -> dict:
+    "Disable, enable or mark a Blueprint node development-only, and set the comment shown on it. DISABLED IS NOT DELETED: the node keeps its pins and every connection, the compiler skips it, and re-enabling restores the graph exactly - deleting and re-adding does not, because breaking a pin link cascades. developmentOnly is a third state, not a synonym for enabled: it compiles in editor and PIE and is STRIPPED from a shipping cook, which is how a debug print is left in a graph without shipping it. Call mif_help(\"set_node_state\") first."
+    return _post("set_node_state", node=node, enabled=enabled, comment=comment,
+                 commentBubble=comment_bubble)
+
+
+@mcp.tool()
 def create_asset(path: str, asset_class: str, properties: dict = None) -> dict:
     "Instantiate a data-asset class at a /Game path. Optional properties={path:value} are applied BEFORE the asset is registered, so nothing watching the registry sees the default state. Call mif_help(\"create_asset\") first."
     # _post drops None-valued kwargs, so an omitted `properties` never reaches the bridge.
