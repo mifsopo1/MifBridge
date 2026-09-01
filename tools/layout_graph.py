@@ -53,17 +53,19 @@ def estimate_height(node):
     return NODE_BASE + PIN_HEIGHT * len(node.get("pins") or [])
 
 
-def exec_pins(node, direction):
-    return [p for p in (node.get("pins") or [])
-            if (p.get("type") or {}).get("category") == "exec"
-            and (p.get("direction") or "") == direction]
-
-
 def build_graph(nodes):
-    """(successors, predecessors) over EXEC flow, falling back to data links.
+    """(by_guid, successors, predecessors) over EVERY output link - exec and data alike.
 
-    Exec first because it is what a reader follows. A pure-data node - a getter, a literal - has no
-    exec pins at all, so it is attached to whatever consumes it and lands one column to its left.
+    NOT EXEC-FIRST, and an earlier version of this docstring claimed it was while the code did no
+    such filtering. Corrected rather than implemented, because treating all links equally turns out
+    to be the behaviour wanted: a pure-data node - a getter, a literal - has no exec pins at all,
+    and counting its data link makes it a PREDECESSOR of whatever consumes it, so it lands one
+    column to the LEFT. Filtering to exec would have left it stranded in column 0 with the events.
+
+    The cost is that a data link running backwards - an output feeding a node earlier in exec order
+    - pushes its consumer further right than a reader would draw it. Longest-path layering absorbs
+    that as well as anything can without a proper cycle-breaking pass, and assign_layers is capped
+    so it terminates either way.
     """
     by_guid = {n.get("guid"): n for n in nodes}
     succ, pred = defaultdict(set), defaultdict(set)
