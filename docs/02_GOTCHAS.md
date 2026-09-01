@@ -2402,3 +2402,40 @@ POLICY - which formats are allowed, which values are legal - is the opposite: it
 about one caller's capability that another caller may not share, and that is what makes it dangerous
 to put in a shared constant. Share resolvers freely; share policy only after asking who else reads
 it.
+
+
+## `find_assets` pathPrefix matches whole PATH SEGMENTS, not string prefixes (2026-08-31)
+
+**The trap.** `{"pathPrefix": "/Game/_Mif"}` returns **nothing, ever** - not because there is no
+scratch, but because no directory is literally named `_Mif`. The scratch folders are `_MifPure`,
+`_MifPin`, `_MifLayout`, `_MifAnim` and so on, and a partial segment name matches none of them.
+
+Measured against the running editor:
+
+    /Game/_MifPure    -> 6     complete segment, matches
+    /Game/_MifPure/   -> 6     trailing slash makes no difference
+    /Game/_MifPur     -> 0     PARTIAL segment, matches nothing
+    /Game/_Mif        -> 0     partial segment, matches nothing
+    /Game             -> 50    complete segment, matches
+
+**Why it matters more than it looks.** `find_assets {"pathPrefix": "/Game/_Mif"}` is the obvious
+way to ask "did I leave any scratch behind", and it answers **0** whether the answer is zero or
+seven. It is a check that cannot fail, and it reads exactly like a check that passed. On
+2026-08-31 it reported a clean session while seven assets sat under `/Game/_MifPure` and
+`/Game/_MifPurity`, and the mistake was only caught because a DIFFERENT prefix
+(`/Game/_MifLayout`) was tried on the same registry a minute later and returned 1.
+
+**What to do instead.** Either name the complete folder - `/Game/_MifPure` - or scan `/Game/` and
+filter in the caller:
+
+    assets = M.call("find_assets", {"pathPrefix": "/Game/", "limit": 500}).get("assets") or []
+    scratch = [a["path"] for a in assets if "/_Mif" in a["path"]]
+
+The suites already do the right thing: `test_add_k2_node` asks for `/Game/_MifK2`,
+`test_create_macro` for `/Game/_MifMacro`. It is ad-hoc cleanup probes that reach for the short
+prefix, because the short prefix is what a person thinks the convention is called.
+
+**The general shape**, which is worth more than the specific API: a filter whose vocabulary you
+have guessed at will answer "none" for a wrong guess and for a genuinely empty set, and those two
+answers are indistinguishable from the outside. Prove a filter finds something you KNOW is there
+before trusting it to report that nothing is.
