@@ -7706,7 +7706,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Cost: three rewrites and about twenty-five minutes to re-derive a check that exists in better
       form. No tool committed. Recorded so the next person reading that limitation note does not
       start where I started.
-- [ ] **delete_asset then create_asset at the same path - fix REVERTED, it was worse than the bug** (hours)
+- [~] **delete_asset then create_asset at the same path - fix REVERTED, it was worse than the bug** (hours)
+      DECLINED 2026-08-31 on Andre's call, asked explicitly: leave it, and record why.
+
+      THE TRADE IS NOT CLOSE. The bug is a confusing dead end - create_asset says "an asset already
+      exists, delete it first" while delete_asset says "no asset found" - and it is RECOVERABLE by
+      restarting the editor, which clears the resident corpse GC has not collected. The remaining
+      remedy is rename-to-transient, which changes object LIFETIME. The last fix that looked
+      obviously right here (wrapping the lookup in IsValid()) turned that confusing refusal into a
+      TERMINATED EDITOR, because StaticAllocateObject looks names up with
+      StaticFindObjectFastInternal, which excludes Unreachable and NOT Garbage - so it finds the
+      corpse the guard had been taught to ignore and then UE_LOG(Fatal) on a class mismatch.
+
+      A RECOVERABLE DEAD END IS BETTER THAN A CRASH, and it is better by more than one step: the
+      dead end costs a restart, the crash costs whatever was unsaved. This project has already paid
+      that price twice tonight for AnimSequence, and the guards it wrote in response are the
+      precedent for declining rather than retrying.
+
+      WHAT WOULD CHANGE THE ANSWER: an uncooked project where the whole delete-then-create cycle can
+      be exercised repeatedly without risking somebody's session, plus the class-MISMATCH case
+      (delete a Blueprint, create a DataTable at the same path) which is the one that crashed. Not
+      this machine, and not while an editor holds work.
+
+      docs/06 issue 28 keeps the engine citations.
       docs/06 issue 28, filed 2026-08-30 as an unrecoverable dead end and fixed in source 2026-08-31.
       Reproduced live first: delete succeeds, the registry forgets it, create_asset says "an asset
       already exists ... delete it first", delete_asset says "no asset found at package". Told to
