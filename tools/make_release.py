@@ -346,7 +346,14 @@ def check_static_audits():
                        ("audit_modals.py", []), ("test_fuzz_detector.py", []),
                        ("audit_promise_flags.py", []), ("audit_suite_payloads.py", []),
                        ("audit_vacuous_checks.py", ["--check"]),
-                       ("audit_consequence_fields.py", ["--check"])):
+                       ("audit_consequence_fields.py", ["--check"]),
+                       # The SECOND thing here that runs entirely offline. layout_graph computes
+                       # node positions from what list_nodes returns, so its algorithm is pure and
+                       # testable with no editor, no bridge and no session - exec ordering, the
+                       # data-node case, cycle termination, column overlap and comment-box overlap.
+                       # Gated because an unrun layout rots silently: nothing else would notice it
+                       # started stacking nodes until somebody opened a graph and saw the mess.
+                       ("layout_graph.py", ["--self-test"])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
@@ -360,8 +367,8 @@ def check_static_audits():
             failed.append("%s -> %s" % (tool, head[:110]))
     if not failed:
         return True, ("audit_loop_writes, audit_postconditions, audit_modals, audit_vacuous_checks "
-                      "and audit_consequence_fields at baseline; test_fuzz_detector's offline "
-                      "detector regressions pass")
+                      "and audit_consequence_fields at baseline; test_fuzz_detector's and "
+                      "layout_graph's offline regressions pass")
     return False, ("a ratcheted source audit reports something NEW:\n    %s\n"
                    "  Read it and either fix it or accept it with that tool's --update-baseline,\n"
                    "  saying why in the commit. Do not package past it."

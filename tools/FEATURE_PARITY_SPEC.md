@@ -6662,7 +6662,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       actually produces is a runtime question.
 
 
-- [ ] **MifBridge can AUTHOR a blueprint graph and cannot ARRANGE one** (day)
+- [ ] **MifBridge can AUTHOR a blueprint graph and cannot ARRANGE one** - PROTOTYPE BUILT, UNRUN (day)
       Raised by Andre 2026-08-31: the project uses Blueprint Assist and MifBridge never calls it.
       Checked, and the gap is sharper than that - there is no graph layout of ANY kind for
       blueprints, third-party or native:
@@ -6805,7 +6805,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
            The search has to cover the PROJECT plugin directory too, and the guard needs a live
            check that it found what it thinks it found.
 
-      NOT STARTED: raised while the DDS2 session was off-limits, so nothing was built or tested. The
+      BUILT 2026-08-31 AS tools/layout_graph.py, client-side, and NEVER RUN AGAINST A REAL GRAPH -
+      the session was off-limits throughout. Layered columns over exec flow, data-only nodes left of
+      their consumer, barycentre ordering within a column, and iterative layering with a visit cap
+      because blueprints have CYCLES and a topological sort would hang on one.
+
+      COMMENT BOXES TOO, which Andre asked for in the same breath. add_comment takes pure geometry,
+      and UE treats whatever falls inside a comment's rectangle as its members, so there is nothing
+      to attach. Grouped by event chain and labelled with the event that starts it; a node is
+      claimed by the FIRST root that reaches it, because three of the five self-test nodes are roots
+      and one-box-per-root would draw three boxes on top of each other.
+
+      DRY RUN BY DEFAULT, and it reads the positions BACK from list_nodes after applying, because
+      move_node reporting ok is not the graph having changed.
+
+      --self-test PROVES THE ALGORITHM OFFLINE - no editor, no bridge, no session. Eight checks:
+      exec ordering, the data-node case, cycle termination, column overlap, a labelled box, and no
+      overlapping boxes. It is now in make_release's static gate beside test_fuzz_detector, which
+      was until today the only offline test there, and mutation-tested: removing the +1 from the
+      layering makes three checks fail and the gate go red.
+
+      WHAT IS LEFT IS THE ONLY QUESTION THAT MATTERS - how good does it look on a real graph? The
+      estimated extents are the known weakness, and one --apply on a scratch graph answers whether
+      they are good enough or whether Blueprint Assist is worth wiring up after all.
+
+      ORIGINAL NOTE: raised while the DDS2 session was off-limits, so nothing was built or tested. The
       analysis above is from reading BlueprintAssist's headers, the engine's EdGraphNode.h and
       MifBridge's own layout surface - not from running any of it.
 
