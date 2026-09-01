@@ -410,10 +410,23 @@ def main():
         check("T915c the graph the name heuristic picks really IS the ubergraph",
               len(heuristic) > 0 and all(kinds[n] == "ubergraph" for n in heuristic),
               json.dumps({n: kinds[n] for n in heuristic})[:220])
-        check("T915c and a function created by create_function is reported as a function",
-              kinds.get("Reads5Func_%d" % st) == "function"
-              or "Reads5Func_%d" % st not in kinds,   # already removed above; only assert if present
-              json.dumps(kinds)[:220])
+        # ITS OWN FUNCTION, ALIVE AT THE MOMENT OF THE CHECK. The first version asked about
+        # Reads5Func_<st>, which T915 has already REMOVED by this point - so kinds.get() returned
+        # None and the "only assert if present" escape made the check pass without ever exercising
+        # it. That is the shape this file keeps catching elsewhere, written into a brand new check:
+        # a guard meant to make a test robust instead made it vacuous.
+        kn = "Reads5Kind_%d" % st
+        mk = M.call("create_function", {"blueprintId": bid, "name": kn})
+        check("T915c (setup) a function that is alive when the kind is read", mk.get("ok") is True,
+              json.dumps(mk)[:170])
+        if mk.get("ok"):
+            live = {r.get("name"): r.get("kind")
+                    for r in (M.call("list_graphs", {"blueprintId": bid}).get("graphs") or [])}
+            check("T915c the function's graph is present to be classified", kn in live,
+                  sorted(live))
+            check("T915c and create_function's graph is reported as a function, not guessed at",
+                  live.get(kn) == "function", "%s -> %r" % (kn, live.get(kn)))
+            SC.confirm_call("remove_function", {"blueprintId": bid, "name": kn, "confirm": True})
 
         # ---------------------------------------------------------- T915b functionGraphsRemaining
         # remove_function reports how many function graphs SURVIVE the removal - a consequence the
