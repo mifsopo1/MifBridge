@@ -2347,6 +2347,17 @@ namespace MifBridge
 		}
 
 		Out->SetBoolField(TEXT("compiled"), true);
+		// AND THE OTHER END OF THE SAME ADVICE. create_blueprint says it when graph work starts;
+		// compile is where an agent actually STOPS, which is the moment the layout is worth running.
+		// Only emitted when there is enough of a graph for arrangement to mean anything - a note on
+		// a two-node blueprint is noise, and noise is how a useful note gets ignored.
+		if (NodesAfter >= 8)
+		{
+			Out->SetStringField(TEXT("layoutNote"), FString::Printf(
+				TEXT("this blueprint has %d graph nodes and nothing here has arranged them. If an agent "
+					 "built this, run mif_layout_graph before leaving it - a correct graph that reads as "
+					 "a wire tangle costs the next person more than it saved."), NodesAfter));
+		}
 		// Flat false, always. compile has never written to disk and must not start: a caller that
 		// believes otherwise skips save_blueprint and loses the work on the next crash.
 		Out->SetBoolField(TEXT("savedToDisk"), false);

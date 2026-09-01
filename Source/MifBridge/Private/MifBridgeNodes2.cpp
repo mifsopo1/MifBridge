@@ -1727,6 +1727,23 @@ namespace MifBridge
 		{
 			Out->SetStringField(TEXT("eventGraphId"), GraphIdOf(NewBP, EventGraph));
 		}
+		// SAID HERE BECAUSE THIS IS WHERE GRAPH WORK STARTS. Nothing in this bridge arranges a graph:
+		// every node lands where the caller put it or at a hardcoded offset, so an agent can build a
+		// correct blueprint that is unreadable to the person who opens it, and their first act is to
+		// tidy it by hand. Andre raised it on 2026-08-31 against a real graph whose nodes were all at
+		// the origin under comment boxes that did not match their own labels.
+		//
+		// IT CANNOT BE DONE AUTOMATICALLY HERE, and the reason is worth stating rather than leaving
+		// somebody to wonder: at create_blueprint time the graph is EMPTY. The moment to arrange one
+		// is when the caller has finished adding nodes, which only the caller knows - and doing it on
+		// every add_* would fight a caller placing nodes deliberately and thrash positions.
+		Out->SetStringField(TEXT("layoutNote"),
+			TEXT("nothing here arranges a graph - nodes land where you put them. When you have finished "
+				 "adding nodes, run mif_layout_graph (or tools/layout_graph.py) to lay it out and box "
+				 "each chain in a comment. Do NOT compose comment geometry by hand: UE decides comment "
+				 "membership GEOMETRICALLY, so a box drawn larger than you intended silently captures "
+				 "nodes it never meant to and dragging it moves them."));
+
 		UE_LOG(LogMifBridge, Log, TEXT("create_blueprint: %s (parent %s)"), *NewBP->GetPathName(), *ParentClass->GetName());
 	}
 
