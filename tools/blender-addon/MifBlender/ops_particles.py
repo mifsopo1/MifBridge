@@ -160,7 +160,24 @@ def op_add_particles(params):
         st.instance_collection = c
         st.render_type = "COLLECTION"
     if "showEmitter" in params:
-        st.use_render_emitter = take_bool(params, "showEmitter", default=True)
+        # THE FLAG MOVED OFF ParticleSettings. It was settings.use_render_emitter in 2.7x and is
+        # now show_instancer_for_render / _viewport on the OBJECT - so writing the old name raises
+        # AttributeError rather than being ignored. Found the hard way: it took down a live build
+        # at the dust-emitter step, because the suite never passed showEmitter and so never
+        # reached this line. Newest name first, with the old one as a fallback.
+        want = take_bool(params, "showEmitter", default=True)
+        wrote = []
+        for holder, attr in ((obj, "show_instancer_for_render"),
+                             (obj, "show_instancer_for_viewport"),
+                             (st, "use_render_emitter")):
+            if hasattr(holder, attr):
+                setattr(holder, attr, want)
+                wrote.append(attr)
+        if not wrote:
+            raise MifOpError("this Blender exposes no emitter-visibility flag this op knows "
+                             "(tried show_instancer_for_render/_viewport and use_render_emitter), "
+                             "so showEmitter would have been silently ignored. The system WAS "
+                             "created.")
 
     return {
         "object": obj.name,
@@ -176,6 +193,7 @@ def op_add_particles(params):
                       if st.type == "EMITTER" else None,
         "hairLength": round(float(st.hair_length), 4) if st.type == "HAIR" else None,
         "systemsOnObject": len(obj.particle_systems),
+        "showEmitter": bool(getattr(obj, "show_instancer_for_render", True)),
         "bakeNote": ("EMITTER particles are stepped forward from frame_start; a late frame shows "
                      "nothing until the sim has run through. bake_physics covers particle caches "
                      "too."),

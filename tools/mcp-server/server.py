@@ -5063,6 +5063,24 @@ def bl_assign_node_group(object: str, group: str, modifier_name: str = None,
                     inputs=inputs)
 
 
+@mcp.tool()
+def bl_set_viewport_shading(shading: str = None, use_scene_lights: bool = None,
+                            use_scene_world: bool = None, studio_light: str = None,
+                            show_overlays: bool = None, show_gizmos: bool = None,
+                            color_type: str = None) -> dict:
+    "Set the Blender 3D viewport shading: WIREFRAME, SOLID, MATERIAL or RENDERED. This is what makes lighting work VISIBLE - SOLID ignores materials and lamps entirely, so a correctly lit scene looks grey. MATERIAL preview uses a studio light and does NOT show your scene's lamps; only RENDERED runs the render engine, so it is the only mode in which a flickering light actually flickers."
+    return _blender("set_viewport_shading", shading=shading, useSceneLights=use_scene_lights,
+                    useSceneWorld=use_scene_world, studioLight=studio_light,
+                    showOverlays=show_overlays, showGizmos=show_gizmos, colorType=color_type)
+
+
+@mcp.tool()
+def bl_frame_viewport(object: str = None, all: bool = None, camera: bool = None) -> dict:
+    "Point the Blender viewport at one object, at everything, or through the scene camera. Framing matters when a person is watching a build happen - work that happens off-screen is work nobody can see."
+    return _blender("frame_viewport", object=object, all=all, camera=camera)
+
+
+
 
 
 
