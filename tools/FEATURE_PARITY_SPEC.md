@@ -9737,6 +9737,19 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                  written from a plausible story rather than from the source is worse
                                  than no reason - it looks settled.
 
+      SO THE WHOLE TABLE WAS AUDITED, 2026-08-31, and it turned up a second problem of a different
+      kind: a STALE exemption. duplicatesRemoved's own text said it was "kept here only until a
+      rebuild verifies it (V11)". V11 has passed and T450 reads the field, so the condition it named
+      was met and the row should have gone. It had not. Removed - out-of-reach 21 -> 19, read by a
+      suite 59 -> 61.
+
+      THAT IS THE FAILURE MODE OF A REASON TABLE, and it is quieter than a wrong reason: an entry
+      that was true when written and is not any more. Nothing re-reads these, so an exemption
+      outlives its condition and the count it feeds looks smaller than the real coverage. Two of the
+      remaining nineteen name a condition rather than a permanent fact - membershipsChanged and
+      partialNote both need a scratch level open - and those are the ones to re-read first next time
+      rather than the ones that cite a hard limit like a 64 MB log or a DENY list.
+
       TWO MORE ARRIVED THE SAME WAY, once the classifier learned the MOVED case. Its header had
       declared that unreachable - adding [Cc]hanged "would drown the real findings" - and that is
       true of the LOWERCASE form, which is the direct answer on set_property. The camelCase form is

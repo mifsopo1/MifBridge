@@ -202,16 +202,6 @@ UNREACHABLE = {
                           "impossibility: run it with a scratch level open (Untitled* or _Mif*), "
                           "which is the condition test_spawn_many already enforces on itself",
 
-    "duplicatesRemoved": "FIXED 2026-08-31 and no longer out of reach - kept here only until a "
-                         "rebuild verifies it (V11). remove_pin could not remove a SAME-DIRECTION "
-                         "duplicate, the case its branch exists for, because ResolvePin matches "
-                         "on (NodeGuid, PinName, Direction) and returns the FIRST hit, so every "
-                         "captured ref resolved to the pin being kept and Removed stayed 0 while "
-                         "the response still said Kind duplicate. The trigger turned out to be "
-                         "ordinary: retyping a wired variable leaves the node with two pins of one "
-                         "name and direction - the new one and the engine ORPHAN holding the old "
-                         "link. The loop now works on pointers, guarded by Node->Pins.Contains, "
-                         "and reports duplicatesStillPresent read back from the node afterwards",
     "failedConsolidationObjects": "consolidate_assets CLOSES EVERY OPEN ASSET EDITOR to do its work, "
                                   "which is stated in its own confirm refusal. Running it against a "
                                   "session somebody is working in is not something an unattended "
