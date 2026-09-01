@@ -6662,7 +6662,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       actually produces is a runtime question.
 
 
-- [ ] **MifBridge can AUTHOR a blueprint graph and cannot ARRANGE one** - WORKING, AWAITING ANDRE'S EYES (day)
+- [x] **MifBridge can AUTHOR a blueprint graph and cannot ARRANGE one** (day)
       Raised by Andre 2026-08-31: the project uses Blueprint Assist and MifBridge never calls it.
       Checked, and the gap is sharper than that - there is no graph layout of ANY kind for
       blueprints, third-party or native:
@@ -6860,7 +6860,17 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Plus the label: the first real run produced a box reading "Get Health" for a chain any person
       would call "Event BeginPlay". It prefers an event in the component now.
 
-      WHAT WOULD CLOSE THIS: Andre looking at the demo graph. The estimated extents are the one
+      CLOSED 2026-08-31: Andre looked at /Game/_MifLayout/BP_LayoutDemo and confirmed "sizing and
+      all looks good". That was the one thing no check here could judge - whether estimated node
+      extents read well on screen - so the constants stand as they are (COL_GAP 420, ROW_GAP 90,
+      COMMENT_PAD 140) and Blueprint Assist is NOT needed to make this useful.
+
+      WHAT REMAINS IS OPTIONAL RATHER THAN OUTSTANDING. A C++ endpoint would be a performance and
+      ergonomics decision, not a capability one - the client tool already does the job. Blueprint
+      Assist behind MIF_WITH_BLUEPRINTASSIST would give better output to projects that own it, and
+      the three traps on that path are documented above for whoever takes it.
+
+      ORIGINAL CLOSING CONDITION: Andre looking at the demo graph. The estimated extents are the one
       thing no check here can judge - whether the spacing reads well is an eye question, and the
       answer is a constant either way. If it reads badly, that is the argument for Blueprint Assist
       and it was bought for an afternoon.
