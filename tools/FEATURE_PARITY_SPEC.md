@@ -7214,7 +7214,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       it was ordering, not a new guard.
 
 
-- [ ] **create_asset - CONVENIENCE DONE, atomicity still open** (hours)
+- [x] **create_asset - CONVENIENCE DONE, atomicity still open** - DONE 2026-08-31, both halves
       RETITLED AND RE-SCOPED 2026-08-31 after measuring it against the live editor. The old title,
       "11 asset types can only be created UNCONFIGURED", is wrong, and it was wrong in the direction
       that makes work look necessary. This is the fourth revision of this entry; the previous three
@@ -7278,6 +7278,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       "hours" item. tools/layout_graph.py is the precedent: it delivered a whole capability from the
       client side because the endpoints underneath were already sufficient, and the same is true
       here.
+
+      ATOMICITY DONE 2026-08-31 as create_asset {properties}, built and verified live BOTH ways:
+
+        {ValueType:"Axis2D"}     propertiesAppliedCount 1, refused 0, note "created, configured and
+                                 registered - in that order", and get_property - a DIFFERENT
+                                 endpoint - reads back Axis2D
+        {NoSuchPropertyZz:"1"}   refused 1, applied 0, note "created and registered, but NOT fully
+                                 configured - read propertiesRefused"
+
+      Properties are applied BETWEEN construction and AssetCreated, which is the whole point:
+      AssetCreated is what broadcasts AssetAdded, so with the two-call form there is a window where
+      the asset is registered, discoverable and still in its default state, and anything reacting to
+      AssetAdded reads it there. It is NOT all-or-nothing and the response says so - the object
+      exists once constructed, and rolling back means DELETING it, which docs/06 issue 28 records as
+      having taken the editor down twice.
+
+      It calls H_set_property rather than duplicating the write bracket, so it inherits PM-003 and
+      the UStaticMesh PostEditChangeProperty-calls-Build() guard for free, including guards added
+      later.
+
+      AND IT SHIPPED WITH A FALSE NEGATIVE THAT ONLY A LIVE CALL COULD FIND. The first build
+      reported "1 of 1 properties were NOT applied" for a property get_property then read back
+      correctly - the worst shape of wrong, since it sends a caller to debug a working feature.
+      RunEndpoint sets ok:true BEFORE dispatching, so a handler invoked directly never carries the
+      field, and TryGetBoolField left the flag at its `false` initialiser on every SUCCESS. The
+      right helper - IsOk(), which treats an absent field as ok - already existed. Writing a second
+      check instead of finding the first is the entire cause: the house rule about parallel systems,
+      in the small.
 
       SCRATCH CLEANED UP. MifIAProbe and MifCurveProbe were left in the unsaved /Game/_MifScratch
       while measuring this; both are gone, deleted through tools/scratch_confirm.py, which is the
