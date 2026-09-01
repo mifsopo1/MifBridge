@@ -7232,13 +7232,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         2  STILL OPEN, and they are this item.
 
       WHAT IS LEFT:
-        check_consolidate_assets   needs two real assets to compare. Scratch ones under
-                                   /Game/_MifPure would do; scratch_fixtures() already builds a
-                                   blueprint, a struct and a DataTable there for exactly this
-                                   reason, so this is one more fixture in a function that exists.
-        describe_collection        needs a collection. list_collections reports this project has
-                                   none, and test_collections already CREATES a MifTest<n> one and
-                                   destroys it - so the fixture is written, in another file.
+        check_consolidate_assets   WIRED 2026-09-01, NOT YET VERIFIED. It takes asset path
+                                   strings on target and sources[] (MifBridgeAssetOps.cpp:1455-
+                                   1490) and changes nothing - its own guard says "nothing here
+                                   changes anything, so there is nothing to confirm" - and
+                                   scratch_fixtures had been building two scratch blueprints all
+                                   along without ever handing them over. Needs one sweep against a
+                                   live editor to confirm it moves from attempted to exercised.
+        describe_collection        DELIBERATELY NOT DONE, and the reason is the interesting half.
+                                   Every other fixture in that function is safe to leave behind
+                                   because an unsaved asset under /Game/_MifPure dies with the
+                                   editor - that IS the cleanup strategy. A collection does not:
+                                   create_collection writes a real file under Content/Collections
+                                   that outlives the process, and the names are timestamped, so
+                                   this sweep would drop a permanent artifact on every run and
+                                   accumulate them. Doing it properly needs a teardown phase the
+                                   function does not have, and that teardown would have to run in a
+                                   finally for exactly the reason audit_suite_teardown exists.
+                                   That is a structural change, not a fixture.
 
       NEITHER IS HARD. They are filed rather than done because the editor went back to Andre
       mid-sweep, and because a read-purity fixture is only worth adding while the sweep can be

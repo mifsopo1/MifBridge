@@ -116,6 +116,18 @@ def scratch_fixtures():
     COOKED, and list_struct_members correctly refuses those ("its editor-only data was stripped"), so a
     fixture drawn from game content can never exercise it. Creating one is the only way to reach the
     branch. Everything made here is under /Game/_MifPure and is never saved.
+
+    AND THAT LAST SENTENCE IS THE WHOLE CLEANUP STRATEGY, which is why describe_collection is NOT
+    fed from here even though it is the obvious next one to add. Nothing in this function is
+    cleaned up, and nothing needs to be: an unsaved asset under /Game/_MifPure dies with the
+    editor. A COLLECTION does not. create_collection with the default shareType writes a real file
+    under Content/Collections that outlives the process, so feeding describe_collection would mean
+    this sweep leaving a permanent artifact behind on every single run - and it would accumulate,
+    because the names are timestamped.
+
+    Doing it properly needs a teardown phase this function does not have, and that teardown would
+    have to run in a `finally` for the same reason audit_suite_teardown was written. That is a
+    structural change, not a fixture, so it is filed rather than smuggled in here.
     """
     import time
     st = int(time.time() % 100000)
@@ -128,6 +140,10 @@ def scratch_fixtures():
         short = bp.split("/")[-1]
         fx["cdo"] = "%s.Default__%s_C" % (bp, short)
         fx["blueprintId"] = bid
+        # The ASSET path, not the CDO and not the blueprintId. check_consolidate_assets takes asset
+        # path strings on both target and sources[] (MifBridgeAssetOps.cpp:1455-1490), and it was
+        # the only read left that needed TWO real assets rather than one.
+        fx["assetA"] = "%s.%s" % (bp, short)
     sp = "/Game/_MifPure/S_%d" % st
     c = M.call("create_struct", {"path": sp}, timeout=90)
     if c.get("ok"):
@@ -157,6 +173,10 @@ def scratch_fixtures():
         ap = (sp.get("actor") or {}).get("actorPath")
         if ap:
             fx["splineActor"] = ap
+        # The second asset for check_consolidate_assets. Same class as assetA deliberately -
+        # consolidating across classes is a different question and not one a purity sweep should
+        # be asking; this only needs the check to REACH its real work.
+        fx["assetB"] = "%s.BPSpline_%d" % (sbp, st)
     acts = M.call("list_level_actors", {"limit": 3}, timeout=60).get("actors") or []
     if acts:
         fx["actorPath"] = acts[0].get("path") or acts[0].get("actorPath")
@@ -201,6 +221,12 @@ def special_payloads(ep, acc, ctx, assets):
         out.append({"actorPath": fx["actorPath"]})
     if fx.get("blueprintId") and ep == "get_inherited_component":
         out.append({"blueprintId": fx["blueprintId"], "name": "DefaultSceneRoot"})
+    # check_consolidate_assets ASKS whether a consolidation would be safe and changes nothing - its
+    # own guard says "nothing here changes anything, so there is nothing to confirm" - so a purity
+    # sweep can call it freely. It just needed two assets, and the sweep had been building two
+    # scratch blueprints all along without ever handing them over.
+    if fx.get("assetA") and fx.get("assetB") and ep == "check_consolidate_assets":
+        out.append({"target": fx["assetA"], "sources": [fx["assetB"]]})
     # These three take `path`, NOT a name matching their subject - tree/blackboard/rig were all tried
     # first and all refused.
     for cls, name in (("BehaviorTree", "describe_behavior_tree"),
