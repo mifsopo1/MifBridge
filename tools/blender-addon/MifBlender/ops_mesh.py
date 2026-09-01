@@ -165,6 +165,9 @@ def _check_format(path, verb, allowed=None):
     ext = os.path.splitext(path)[1].lower()
     allowed = allowed or _IMPORT_FORMATS
     if ext in _GLTF and allowed is _EXPORT_FORMATS:
+        # audit-ok: export_mesh, import_mesh - this branch is gated on `allowed is _EXPORT_FORMATS`,
+        # so export_mesh is the ONLY caller that can reach it and naming it is correct. import_mesh
+        # is named on purpose too: the useful half of the sentence is which verb DOES take glTF.
         raise MifOpError(
             "export_mesh writes FBX only (got '%s'). import_mesh DOES take glTF and GLB, so the "
             "asymmetry is deliberate rather than an oversight: the FBX export path carries the "
@@ -183,6 +186,9 @@ def _check_format(path, verb, allowed=None):
         # the message again - which is the same failure the comment at the top of this block already
         # records once, when a shared _SUPPORTED let export_mesh write FBX bytes into a .glb.
         takes_gltf = any(g in allowed for g in _GLTF)
+        # audit-ok: import_mesh - the verb this refusal is FOR arrives as `verb` and is formatted
+        # in, never hard-coded. import_mesh appears only in the not-takes_gltf arm, which is
+        # reachable only by export_mesh, and it is there to say where glTF support does live.
         raise MifOpError(
             "%s: supported formats are %s (got '%s'). %s OBJ in particular does not, which is why "
             "it stays refused: UE's OBJ exporter swaps Y/Z, de-indexes to 3 verts per triangle and "

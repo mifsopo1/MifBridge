@@ -87,6 +87,11 @@ ABSENCE = re.compile(
     r"(there (?:is|are) no\b|no such\b|does not exist\b|is not an endpoint\b|\bnever built\b)",
     re.I)
 ABSENCE_WINDOW = 90
+# How far an `# audit-ok:` waiver reaches. Bounded on purpose: a waiver explains the ONE branch
+# written under it. Letting it run to the end of the function would allow a note about
+# _check_format's glTF branch to excuse a hard-coded verb name reintroduced in its OTHER branch -
+# which is precisely the defect this check was built to find.
+WAIVER_LINES = 16
 TOOL_PATH = re.compile(r"tools/[A-Za-z0-9_]+\.py")
 TOKEN = re.compile(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b")
 # "maps (aliases: saveMaps, save_maps)" documents PARAMETER names. They are shaped exactly like
@@ -205,8 +210,22 @@ def scan_mcp(tools):
     """
     found = {}
     for name, (params, doc) in tools.items():
+        # A SIBLING TOOL'S PARAMETER, when the docstring says whose it is. bl_list_particles is
+        # described as "the verification half of bl_add_particles" and goes on to explain
+        # render_type - which is bl_add_particles' parameter and Blender's own ParticleSettings
+        # property, not an endpoint. The existing `tok in params` exclusion could not see it,
+        # because the READ op has no parameters of its own to match against.
+        #
+        # Scoped to tools the docstring actually NAMES rather than to every tool: a paired
+        # read/write tool discussing its partner's arguments is normal and correct, and blanket-
+        # excluding every parameter of every tool would hide a genuinely dead endpoint name that
+        # happened to collide with some argument somewhere.
+        kin = set(params)
+        for other in TOKEN.findall(doc):
+            if other in tools and other != name:
+                kin |= tools[other][0]
         for tok in set(TOKEN.findall(doc)):
-            if not tok.startswith(VERBS) or tok in tools or tok in params:
+            if not tok.startswith(VERBS) or tok in tools or tok in kin:
                 continue
             sentence = ""
             for part in re.split(r"(?<=[.;])\s+", doc):
@@ -273,10 +292,14 @@ def blender_helper_findings():
     found = []
     for fn, src in sources.items():
         current = None
+        in_doc = False
+        waived = {}
         for i, line in enumerate(src.split("\n")):
             m = DEF_RE.match(line)
             if m:
                 current = m.group(1)
+                in_doc = False
+                waived = {}
                 continue
             # BACK TO MODULE LEVEL ends the function. Without this the tracker stayed on the last
             # def it saw, so the OPS = { "gen_mesh": op_gen_mesh, ... } table at the bottom of
@@ -284,12 +307,45 @@ def blender_helper_findings():
             # a dispatch table doing its job.
             if line and not line[0].isspace() and not line.startswith(")"):
                 current = None
+                in_doc = False
+                waived = {}
                 continue
             if not current or not current.startswith("_"):
                 continue
             # A COMMENT is not a message. The fix for this very bug carries a comment quoting
             # "bevel_edges" while explaining it, and flagged itself on the first run.
             if line.lstrip().startswith("#"):
+                # ...but a comment IS where a deliberate exception gets declared. Some branches of
+                # a shared helper are reachable by exactly one caller - _check_format's glTF refusal
+                # only runs when `allowed is _EXPORT_FORMATS` - so naming that caller is correct,
+                # and naming the OTHER verb is the useful part of the sentence ("import_mesh DOES
+                # take glTF"). The waiver lists the names it excuses rather than silencing the
+                # helper, so a THIRD op's name appearing here later still gets reported.
+                w = re.search(r"audit-ok:\s*([^-\n]+)", line)
+                if w:
+                    for nm in re.split(r"[,\s]+", w.group(1).strip()):
+                        if nm:
+                            waived[nm] = i + WAIVER_LINES
+                continue
+            # NEITHER IS A DOCSTRING, and assuming otherwise produced a false positive on
+            # 2026-09-01: ops_render._apply_common's docstring reads "Settings shared by
+            # set_render_settings and the overrides render_still accepts", which names BOTH
+            # callers, correctly, and is documentation rather than anything a caller is ever
+            # shown. The refusal inside that helper says "this op" and is caller-agnostic, so
+            # there was nothing wrong with the code the report pointed at.
+            #
+            # It matters because a false positive is how a detector stops being read. The
+            # line-wise quote scan cannot tell a docstring from a message, so docstring lines
+            # are tracked and skipped explicitly.
+            stripped = line.lstrip()
+            if in_doc:
+                if '"""' in stripped or "'''" in stripped:
+                    in_doc = False
+                continue
+            if stripped.startswith('"""') or stripped.startswith("'''"):
+                quote = stripped[:3]
+                if stripped.count(quote) < 2:     # a one-line docstring opens AND closes here
+                    in_doc = True
                 continue
             mine = callers.get(current, set())
             if len(mine) < 2:
@@ -304,6 +360,8 @@ def blender_helper_findings():
             # entries live at module level and never reach this branch.
             for text in re.findall(r'"([^"]*)"', line):
                 for op in mine:
+                    if i <= waived.get(op, -1):
+                        continue
                     if re.search(r"\b%s\b" % re.escape(op), text):
                         found.append("%s:%d\t%s() is shared by %d ops and its message names '%s'"
                                      % (fn, i + 1, current, len(mine), op))
