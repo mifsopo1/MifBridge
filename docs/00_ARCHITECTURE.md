@@ -13,8 +13,34 @@ Since 0.3.0 this repo ships three things, and only one of them is Unreal:
 |---|---|---|
 | `MifBridge.uplugin`, `Source/` — **the repo root is the plugin** | UE editor plugin (C++) | `<Project>/Plugins/MifBridge/` |
 | `tools/mcp-server/` | The MCP server. Fronts **both** backends. | nowhere; referenced by path from `.mcp.json` |
-| `tools/blender-addon/` | `MifBlender` — the Blender backend. 12 ops. | Blender's addons dir, as a zip |
+| `tools/blender-addon/` | `MifBlender` — the Blender backend. **68 ops across 14 `ops_*` modules** (2026-09-01). Counted from `parity_check.load_addon_ops`, not remembered — this line read "12 ops" for long enough to be misleading. | Blender's addons dir, **via `tools/sync_blender_addon.py`** |
 | `tools/layout_graph.py` | Arranges a blueprint graph and adds comment boxes, entirely from the client — `list_nodes` for the topology, `move_node` and `add_comment` to apply. No C++, no plugin. `--self-test` proves the algorithm offline. | nowhere; run it from `tools/` |
+
+### The Blender arm's capability families
+
+Added 2026-09-01, when the arm went from 45 ops to 68. Before that it could model, boolean,
+transform and shade — and could not light, aim, animate, simulate or render, so anything past
+modelling had to leave the typed path for `run_python`.
+
+| family | ops | the trap it exists to guard |
+|---|---|---|
+| lights | `create_light` | type-specific settings are REFUSED on the wrong type; Blender would just not have the attribute and the write would vanish |
+| cameras | `create_camera` | a camera faces its local **−Z**; `lookAt` derives the euler, because hand-aiming gets this wrong first |
+| keyframes | `set_keyframe`, `set_frame_range`, `list_keyframes` | a transform is on the object, a light's energy on its **data** — `keyframe_insert` on the wrong one raises about a data path, not about the mistake |
+| geometry nodes | `create_node_group`, `add_group_node`, `link_group_nodes`, `add_group_interface`, `list_group_nodes`, `assign_node_group` | an unlinked Group Output is **not an error** — the modifier passes geometry through unchanged, indistinguishable from one that is broken |
+| particles | `add_particles`, `list_particles` | `renderType: OBJECT` with no instance object renders NOTHING and Blender says nothing |
+| physics | `add_rigid_body`, `add_cloth`, `add_collision`, `bake_physics` | a sim is stepped **forward**; jumping to a late frame shows the rest pose until the cache is baked |
+| rendering | `set_render_settings`, `render_still` | `render()` returns FINISHED whether or not a file appeared, so `wroteFile` is stat'd off disk |
+| world | `set_world` | strength 1.0 with mid-grey is overcast daylight and washes out a dark interior; a dim room wants 0.02–0.1 |
+| viewport | `set_viewport_shading`, `frame_viewport`, `set_viewport_view` | SOLID shading ignores lamps, so a correctly lit scene looks grey — and only **RENDERED** shows a flicker flickering |
+
+The ninth family was not on the original gap list. That list was written by asking what the ENGINE
+can do; viewport control is about what the person watching can SEE, and a bridge that can light a
+scene and cannot show it has not finished the job.
+
+Exercised by `test_blender_anim.py` (32 checks) and `test_blender_scene.py` (49), both across
+3.6/4.2/4.4/5.0 — written **because** a 44-run sweep went green over all of it while calling none
+of it.
 
 ### Client-side capability
 
@@ -224,7 +250,7 @@ It parses both sides with `ast` — no `bpy`, no `fastmcp`, no editor — and ru
 
 | check | what it ties together |
 |---|---|
-| op parity | `_blender("...")` literals in `server.py` **==** the union of `ops_scene.OPS` + `ops_mesh.OPS`, both directions |
+| op parity | `_blender("...")` literals in `server.py` **==** the union of **every** `ops_*.OPS` dict, both directions. Named two modules until 2026-09-01, when there were fourteen — the checker always read them all; only this row was stale. |
 | param parity | every kwarg each `_blender("op", …)` call site sends **∈** that op's `reject_unknown` accepted set |
 | UE parity | `MIF_BIND(...)` **==** `_post("...")` literals, minus the recorded exemptions — the `comm` recipe below, mechanised |
 
