@@ -7214,7 +7214,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       it was ordering, not a new guard.
 
 
-- [ ] **audit_dead_params unions literals across EVERY .cpp, so any handler vouches for all** (hours)
+- [x] **audit_dead_params unions literals across EVERY .cpp, so any handler vouches for all** - DONE 2026-09-01
       FILED 2026-09-01. The Blender twin had the same hole and it is now closed there
       (audit_blender_dead_params: scope is the module MINUS every other op's body, proven both
       directions by mutation). The UE arm is wider still - names_read_anywhere() unions the TEXT
@@ -7236,6 +7236,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Worth doing on a 2431-parameter corpus; the Blender one found nothing new but that corpus is
       45 ops rather than 438 endpoints.
+
+      DONE 2026-09-01. A name now counts as read if it appears in the handler's OWN body or
+      anywhere OUTSIDE every handler - free functions, resolvers, tables. Another handler's private
+      body no longer vouches for it.
+
+      THE O(handlers x files) WORRY WAS THE WRONG WAY ROUND, and inverting it removed the problem
+      rather than caching around it. Asking "what can handler H see" 438 times rebuilds the same
+      strings; but the answer is always the same two pieces - the shared pool, and H's own body - so
+      both are computed ONCE and unioned at the point of use. Whole run: 0.18s.
+
+      PROVEN BOTH DIRECTIONS against the real tree, planted and restored byte-identical:
+        key accepted by new_level, read ONLY inside H_save_level_as  -> flagged, exit 1
+        same key read at FILE scope instead                          -> correctly NOT flagged
+      The second is the one that matters: it is what keeps the four names this tool's first run
+      already cleared - three `actor` aliases read through ResolveActor in a different file - from
+      becoming false positives. ResolveActor is a free function, so it lives in the shared pool.
+
+      Still 0 dead across 2431 parameters and 438 endpoints, so this is a STRONGER all-clear rather
+      than a new finding - same outcome as the Blender twin.
 
 - [ ] **two reads the purity sweep can now PROVE it never exercises** (hours)
       FILED 2026-09-01, and only findable because "attempted only" stopped being one bucket.

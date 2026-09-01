@@ -60,6 +60,74 @@ def span_of_call(lines, start):
     return len(lines) - 1
 
 
+
+def handler_spans(lines):
+    """[(name, first, last)] for each `void H_x(...)` body, by brace depth.
+
+    Conservative on purpose: a handler whose braces never balance is NOT recorded, so its text
+    stays in the shared pool and the check stays permissive there. Under-narrowing costs a missed
+    finding; over-narrowing costs a false one, and a false one is what ends a tool's credibility.
+    """
+    spans = []
+    for i, line in enumerate(lines):
+        m = HANDLER.search(line)
+        if not m:
+            continue
+        depth, j, opened = 0, i, False
+        while j < len(lines):
+            depth += lines[j].count("{") - lines[j].count("}")
+            if lines[j].count("{"):
+                opened = True
+            if opened and depth <= 0:
+                spans.append((m.group(1), i, j))
+                break
+            j += 1
+    return spans
+
+
+def literal_pools():
+    """(shared, per_handler) - the two sets a name can legitimately be read in.
+
+    WHY THE OLD SCOPE WAS TOO WIDE. names_read_anywhere() unioned the literals of every .cpp in the
+    plugin, so a name read by ANY handler counted as read by ALL of them. The header calls that
+    "deliberately permissive", and it is - but the one defect it cannot see is a parameter accepted
+    by endpoint A and only ever read by endpoint B. That is not hypothetical: _check_format in the
+    Blender addon did exactly this with two callers and one shared format list, and told an export
+    caller that glTF was supported right up until it refused them for asking.
+
+    THE INVERSION THAT MAKES IT CHEAP. Asking "what can handler H see" for each of 438 handlers
+    across ~60 files is O(handlers x files) and rebuilds the same strings hundreds of times. But
+    the answer is always the same two pieces - everything OUTSIDE any handler, plus H's own body -
+    so both are computed ONCE here and unioned per handler at the point of use.
+
+    Everything outside a handler body stays shared, which is what the tool's own history requires:
+    its first run found four names that looked dead at a tighter scope and were all fine, three of
+    them `actor` aliases read through ResolveActor IN ANOTHER FILE. ResolveActor is a free
+    function, not an H_ handler, so it lives in the shared pool and those three still resolve.
+    """
+    shared, per = set(), {}
+    for fn in sources():
+        lines = read_lines(fn)
+        masked = list(lines)
+        i = 0
+        while i < len(lines):
+            if "RejectUnknownParams(" in lines[i]:
+                end = span_of_call(lines, i)
+                for j in range(i, end + 1):
+                    masked[j] = ""
+                i = end
+            i += 1
+        spans = handler_spans(lines)
+        covered = set()
+        for name, lo, hi in spans:
+            body = "\n".join(masked[lo:hi + 1])
+            per.setdefault(name, set()).update(LITERAL.findall(body))
+            covered.update(range(lo, hi + 1))
+        outside = "\n".join(masked[k] for k in range(len(masked)) if k not in covered)
+        shared |= set(LITERAL.findall(outside))
+    return shared, per
+
+
 def names_read_anywhere():
     """Every TEXT literal in the module that is NOT inside a RejectUnknownParams call.
 
@@ -111,12 +179,17 @@ def accepted_lists():
 
 def main():
     quiet = "--quiet" in sys.argv
-    read = names_read_anywhere()
-    if not read:
+    shared, per_handler = literal_pools()
+    if not shared:
         print("could not read the module sources")
         return 2
     lists = accepted_lists()
-    dead = [(h, fn, ln, [a for a in acc if a not in read]) for h, fn, ln, acc in lists]
+    # A name counts as read if it appears in this handler's OWN body, or anywhere outside every
+    # handler - free functions, resolvers, tables. Another handler's private body no longer vouches
+    # for this one, which is the whole narrowing.
+    dead = [(h, fn, ln, [a for a in acc
+                         if a not in shared and a not in per_handler.get(h, ())])
+            for h, fn, ln, acc in lists]
     dead = [d for d in dead if d[3]]
     total = sum(len(acc) for _, _, _, acc in lists)
     if not dead:
