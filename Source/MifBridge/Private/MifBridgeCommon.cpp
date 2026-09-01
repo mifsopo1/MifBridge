@@ -331,6 +331,10 @@ namespace MifBridge
 			MIF_BIND(snap_actors_to_ground);
 			// Viewport camera control
 			MIF_BIND(set_viewport_camera);
+			MIF_BIND(list_viewport_bookmarks);
+			MIF_BIND(set_viewport_bookmark);
+			MIF_BIND(jump_viewport_bookmark);
+			MIF_BIND(clear_viewport_bookmark);
 			MIF_BIND(focus_viewport);
 			MIF_BIND(get_viewport_camera);
 			// Spatial awareness + visual feedback

@@ -2187,6 +2187,32 @@ def attach_actor(child: str, parent: str, socket: str = "",
 
 
 @mcp.tool()
+def list_viewport_bookmarks() -> dict:
+    "List the level's numbered camera slots - the ones behind Ctrl+1..0 in a viewport - with which are set and where each points. They live on AWorldSettings, so they belong to the LEVEL and are saved with it, not to a viewport."
+    return _post("list_viewport_bookmarks")
+
+
+@mcp.tool()
+def set_viewport_bookmark(index: int) -> dict:
+    "Capture the CURRENT viewport camera into a numbered bookmark slot. There is no way to write a bookmark for somewhere the camera is not - the engine reads the viewport - so move there with set_viewport_camera first. Sets dirty the level."
+    return _post("set_viewport_bookmark", index=index)
+
+
+@mcp.tool()
+def jump_viewport_bookmark(index: int) -> dict:
+    "Move the viewport camera to a numbered bookmark. An EMPTY slot is refused rather than jumped to: the engine's JumpToBookmark does nothing at all for one - no error, no movement - which is indistinguishable from a bookmark saved where the camera already was. Reports the measured distance from the bookmark it landed on, so arrival is checked rather than assumed."
+    return _post("jump_viewport_bookmark", index=index)
+
+
+@mcp.tool()
+def clear_viewport_bookmark(index: int = None, all: bool = False) -> dict:
+    "Clear one numbered bookmark slot, or every slot with all=True. Reports whether the slot actually held one, so 'cleared' and 'was already empty' stay different answers."
+    if all:
+        return _post("clear_viewport_bookmark", all=True)
+    return _post("clear_viewport_bookmark", index=index)
+
+
+@mcp.tool()
 def group_actors(actor_paths: list, enable_grouping: bool = False) -> dict:
     "Group two or more placed actors into an AGroupActor - the editor's Ctrl+G, so a multi-part prop selects and moves as one thing. Grouping is NOT attachment: it is flat, editor-only and stripped from a cook, where attach_actor builds a real transform hierarchy that ships. The engine returns nothing at all if grouping mode is off, the actors span two levels, fewer than two are groupable, or they were already groups; this names which. Pass enable_grouping to switch the editor's grouping mode on, which is a persistent setting."
     return _post("group_actors", actorPaths=actor_paths, enableGrouping=enable_grouping)

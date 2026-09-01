@@ -7453,7 +7453,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
           asserts that rather than working around it.
         set_material_layers + list_material_parameters {layers:true}   read and write a material
           instance's layer stack
-        list/set/jump_viewport_bookmark                 the level's numbered camera slots
+        list/set/jump_viewport_bookmark                 DONE 2026-09-01, plus clear_viewport_bookmark
+          because a set-only API you cannot undo is a trap. Covered by
+          tools/test_viewport_bookmarks.py at 30 checks. The reason this family is worth having at
+          all: IBookmarkTypeTools::JumpToBookmark is void and does NOTHING for an empty slot
+          (BookmarkTypeToolsImpl.cpp:153-165 falls out of both its guards silently), which an agent
+          cannot tell from a bookmark saved where the camera already stood. jump refuses an empty
+          slot and reports the measured distance from the bookmark it landed on.
 
       NOT STARTED. Filed as one item rather than six because the useful finding is the COUNTER GAP,
       and splitting comes when somebody picks the first one. The lesson stands on its own: a

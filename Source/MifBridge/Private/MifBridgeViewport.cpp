@@ -24,6 +24,9 @@
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "LevelEditorViewport.h"
+#include "Bookmarks/IBookmarkTypeTools.h"   // viewport bookmarks
+#include "Engine/BookMark.h"                // UBookMark::Location/Rotation
+#include "GameFramework/WorldSettings.h"    // where bookmarks are actually stored
 
 namespace MifBridge
 {
@@ -551,4 +554,308 @@ namespace MifBridge
 				 "BuildLightingOnly_VisibilityOnly, all in the LevelEditor context via "
 				 "invoke_editor_command."));
 	}
+
+	// --- viewport bookmarks --------------------------------------------------------------------
+	//
+	// WHAT THEY ARE. The numbered camera slots behind Ctrl+1..0 / 1..0 in a level viewport. They are
+	// stored on AWorldSettings, not on the viewport - so they belong to the LEVEL, they are saved
+	// with it, and every viewport in the editor shares them.
+	//
+	// THE SILENT NO-OP THIS FAMILY EXISTS TO REFUSE. IBookmarkTypeTools::JumpToBookmark returns void
+	// and does nothing at all when the index holds no bookmark (BookmarkTypeToolsImpl.cpp:153-165 -
+	// it checks IsValidIndex, then a null entry, and falls out of both). An agent jumping to an
+	// empty slot gets no error, no movement, and no way to tell that from a bookmark that happened
+	// to be saved where the camera already was. So the slot is checked BEFORE the jump, and the
+	// camera is compared against the bookmark AFTER it.
+	//
+	// SET CAPTURES THE CAMERA WHERE IT IS. CreateOrSetBookmark takes no transform - it reads the
+	// viewport client. There is no way to write a bookmark for a place the camera is not, so a
+	// caller who wants one moves the camera first with set_viewport_camera. Said in the refusal
+	// text rather than left to be discovered from a bookmark pointing somewhere unexpected.
+	namespace
+	{
+		// The bookmark array is on the world settings, and both halves are needed: the tools object
+		// to mutate through, and the settings to read back off. Returning them together keeps the
+		// four handlers from each re-deriving it slightly differently.
+		AWorldSettings* BookmarkSettings(FLevelEditorViewportClient* Client)
+		{
+			UWorld* World = Client ? Client->GetWorld() : nullptr;
+			return World ? World->GetWorldSettings() : nullptr;
+		}
+
+		void WriteBookmark(const TSharedRef<FJsonObject>& J, int32 Index, UBookmarkBase* Base)
+		{
+			J->SetNumberField(TEXT("index"), Index);
+			J->SetBoolField(TEXT("set"), Base != nullptr);
+			if (const UBookMark* Mark = Cast<UBookMark>(Base))
+			{
+				TSharedRef<FJsonObject> L = MakeShared<FJsonObject>();
+				L->SetNumberField(TEXT("x"), Mark->Location.X);
+				L->SetNumberField(TEXT("y"), Mark->Location.Y);
+				L->SetNumberField(TEXT("z"), Mark->Location.Z);
+				J->SetObjectField(TEXT("location"), L);
+				TSharedRef<FJsonObject> R = MakeShared<FJsonObject>();
+				R->SetNumberField(TEXT("pitch"), Mark->Rotation.Pitch);
+				R->SetNumberField(TEXT("yaw"), Mark->Rotation.Yaw);
+				R->SetNumberField(TEXT("roll"), Mark->Rotation.Roll);
+				J->SetObjectField(TEXT("rotation"), R);
+			}
+			else if (Base)
+			{
+				// A bookmark of some other registered type. Reporting the class beats reporting
+				// nothing and letting a caller assume the slot is empty.
+				J->SetStringField(TEXT("class"), Base->GetClass()->GetName());
+				J->SetStringField(TEXT("note"),
+					TEXT("not a UBookMark, so it carries no location/rotation this endpoint can "
+						 "read - jump still works on it."));
+			}
+		}
+	}
+
+	void H_list_viewport_bookmarks(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out, { },
+			TEXT("(no parameters) - lists every bookmark slot on the CURRENT LEVEL"),
+			{ { TEXT("index"), TEXT("this lists them all; describe one by reading the entry with that index") },
+			  { TEXT("viewport"), TEXT("bookmarks live on AWorldSettings, not on a viewport - every viewport in the editor shares one set") } }))
+		{
+			return;
+		}
+		FLevelEditorViewportClient* Client = ActiveLevelViewport();
+		if (!Client) { Fail(Out, TEXT("no level editor viewport")); return; }
+		AWorldSettings* Settings = BookmarkSettings(Client);
+		if (!Settings) { Fail(Out, TEXT("no AWorldSettings - is a level open?")); return; }
+
+		const TArray<UBookmarkBase*>& Marks = Settings->GetBookmarks();
+		const uint32 Max = IBookmarkTypeTools::Get().GetMaxNumberOfBookmarks(Client);
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		int32 SetCount = 0;
+		for (int32 i = 0; i < static_cast<int32>(Max); ++i)
+		{
+			UBookmarkBase* Base = Marks.IsValidIndex(i) ? Marks[i] : nullptr;
+			if (Base) { ++SetCount; }
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			WriteBookmark(J, i, Base);
+			Arr.Add(MakeShared<FJsonValueObject>(J));
+		}
+		Out->SetArrayField(TEXT("bookmarks"), Arr);
+		Out->SetNumberField(TEXT("maxBookmarks"), static_cast<double>(Max));
+		Out->SetNumberField(TEXT("setCount"), SetCount);
+		Out->SetStringField(TEXT("world"), Settings->GetWorld() ? Settings->GetWorld()->GetName() : TEXT(""));
+		Out->SetStringField(TEXT("storageNote"),
+			TEXT("bookmarks live on AWorldSettings, so they belong to the LEVEL and are saved with "
+				 "it - not to a viewport, and not to the editor."));
+	}
+
+	void H_set_viewport_bookmark(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("index"), TEXT("slot") },
+			TEXT("index (alias slot) - which numbered slot to capture the CURRENT camera into"),
+			{ { TEXT("location"), TEXT("a bookmark cannot be written for a place the camera is not - CreateOrSetBookmark reads the viewport. Move there with set_viewport_camera first, then set the bookmark") },
+			  { TEXT("rotation"), TEXT("same as location - set_viewport_camera first, then bookmark where you are") },
+			  { TEXT("name"), TEXT("bookmarks are numbered, not named - there is no label to set") } }))
+		{
+			return;
+		}
+		FLevelEditorViewportClient* Client = ActiveLevelViewport();
+		if (!Client) { Fail(Out, TEXT("no level editor viewport. NOTHING was set.")); return; }
+		AWorldSettings* Settings = BookmarkSettings(Client);
+		if (!Settings) { Fail(Out, TEXT("no AWorldSettings - is a level open? NOTHING was set.")); return; }
+
+		IBookmarkTypeTools& Tools = IBookmarkTypeTools::Get();
+		const uint32 Max = Tools.GetMaxNumberOfBookmarks(Client);
+		const int32 Index = JIntAny(In, { TEXT("index"), TEXT("slot") }, -1);
+		if (Index < 0 || Index >= static_cast<int32>(Max))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("index %d is out of range - this level has %u bookmark slots, numbered 0..%u. "
+					 "NOTHING was set."), Index, Max, Max ? Max - 1 : 0));
+			return;
+		}
+
+		const bool bWasSet = Tools.CheckBookmark(static_cast<uint32>(Index), Client);
+		Tools.CreateOrSetBookmark(static_cast<uint32>(Index), Client);
+
+		// READ BACK. CreateOrSetBookmark returns void and, when GetOrAddBookmark fails, only writes
+		// a line to LogEditorBookmarks - so the call is indistinguishable from success unless the
+		// slot is checked afterwards.
+		const bool bNowSet = Tools.CheckBookmark(static_cast<uint32>(Index), Client);
+		if (!bNowSet)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("slot %d is still empty after CreateOrSetBookmark - it failed and reports "
+					 "failure only to the log. NOTHING was set."), Index));
+			return;
+		}
+
+		const TArray<UBookmarkBase*>& Marks = Settings->GetBookmarks();
+		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+		WriteBookmark(J, Index, Marks.IsValidIndex(Index) ? Marks[Index] : nullptr);
+		Out->SetObjectField(TEXT("bookmark"), J);
+		Out->SetNumberField(TEXT("index"), Index);
+		Out->SetBoolField(TEXT("replacedExisting"), bWasSet);
+		Out->SetBoolField(TEXT("set"), true);
+
+		// The camera it captured, so a caller can see WHAT was stored without a second call - and
+		// so a mismatch between this and the bookmark is visible rather than assumed away.
+		WriteCamera(Out, Client);
+		Out->SetStringField(TEXT("capturedNote"),
+			TEXT("captured the camera where it currently is - CreateOrSetBookmark takes no "
+				 "transform. set_viewport_camera moves there first if you wanted somewhere else."));
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("bookmarks are stored on AWorldSettings, so the LEVEL is now dirty and NOTHING "
+				 "has been saved."));
+	}
+
+	void H_jump_viewport_bookmark(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("index"), TEXT("slot") },
+			TEXT("index (alias slot) - the numbered slot to move the camera to"),
+			{ { TEXT("speed"), TEXT("the jump is immediate; there is no interpolation setting on this endpoint") },
+			  { TEXT("create"), TEXT("jumping never creates - set_viewport_bookmark writes a slot") } }))
+		{
+			return;
+		}
+		FLevelEditorViewportClient* Client = ActiveLevelViewport();
+		if (!Client) { Fail(Out, TEXT("no level editor viewport. The camera did NOT move.")); return; }
+		AWorldSettings* Settings = BookmarkSettings(Client);
+		if (!Settings) { Fail(Out, TEXT("no AWorldSettings - is a level open? The camera did NOT move.")); return; }
+
+		IBookmarkTypeTools& Tools = IBookmarkTypeTools::Get();
+		const uint32 Max = Tools.GetMaxNumberOfBookmarks(Client);
+		const int32 Index = JIntAny(In, { TEXT("index"), TEXT("slot") }, -1);
+		if (Index < 0 || Index >= static_cast<int32>(Max))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("index %d is out of range - this level has %u bookmark slots, numbered 0..%u. "
+					 "The camera did NOT move."), Index, Max, Max ? Max - 1 : 0));
+			return;
+		}
+
+		// THE WHOLE POINT. JumpToBookmark is void and does NOTHING for an empty slot - no error, no
+		// movement. Without this check a caller cannot tell an empty slot from a bookmark saved
+		// where the camera already was.
+		if (!Tools.CheckBookmark(static_cast<uint32>(Index), Client))
+		{
+			int32 Have = 0;
+			TArray<FString> Which;
+			const TArray<UBookmarkBase*>& All = Settings->GetBookmarks();
+			for (int32 i = 0; i < static_cast<int32>(Max); ++i)
+			{
+				if (All.IsValidIndex(i) && All[i]) { ++Have; Which.Add(FString::FromInt(i)); }
+			}
+			Fail(Out, FString::Printf(
+				TEXT("bookmark slot %d is empty, and JumpToBookmark does nothing at all for an "
+					 "empty slot - it would have returned with the camera where it was and no "
+					 "error. Slots with a bookmark: %s. The camera did NOT move."),
+				Index, Have ? *FString::Join(Which, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		const FVector Before = Client->GetViewLocation();
+		Tools.JumpToBookmark(static_cast<uint32>(Index), nullptr, Client);
+		Client->Invalidate();
+
+		const TArray<UBookmarkBase*>& Marks = Settings->GetBookmarks();
+		const UBookMark* Mark = Marks.IsValidIndex(Index) ? Cast<UBookMark>(Marks[Index]) : nullptr;
+		const FVector After = Client->GetViewLocation();
+
+		Out->SetNumberField(TEXT("index"), Index);
+		Out->SetBoolField(TEXT("jumped"), true);
+		WriteCamera(Out, Client);
+		Out->SetBoolField(TEXT("cameraMoved"), !After.Equals(Before, 0.01));
+		if (Mark)
+		{
+			// POSTCONDITION: the camera must actually be AT the bookmark, not merely "a jump was
+			// requested". Compared against the stored location rather than against the previous
+			// camera, because a bookmark saved where the camera already stood moves nothing and is
+			// still correct.
+			const double Off = FVector::Dist(After, Mark->Location);
+			Out->SetNumberField(TEXT("distanceFromBookmark"), Off);
+			Out->SetBoolField(TEXT("cameraIsAtBookmark"), Off < 1.0);
+			if (Off >= 1.0)
+			{
+				Out->SetStringField(TEXT("arrivalNote"), FString::Printf(
+					TEXT("the camera is %.2f units from the bookmark it was told to jump to. The "
+						 "jump did not land - treat this as a FAILURE despite ok:true."), Off));
+			}
+		}
+	}
+
+	void H_clear_viewport_bookmark(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("index"), TEXT("slot"), TEXT("all") },
+			TEXT("index (alias slot) - the slot to clear; OR all:true to clear every slot"),
+			{ { TEXT("confirm"), TEXT("clearing a bookmark destroys no asset and no actor - it is a camera slot on the level, and undo covers it") } }))
+		{
+			return;
+		}
+		FLevelEditorViewportClient* Client = ActiveLevelViewport();
+		if (!Client) { Fail(Out, TEXT("no level editor viewport. NOTHING was cleared.")); return; }
+		AWorldSettings* Settings = BookmarkSettings(Client);
+		if (!Settings) { Fail(Out, TEXT("no AWorldSettings - is a level open? NOTHING was cleared.")); return; }
+
+		IBookmarkTypeTools& Tools = IBookmarkTypeTools::Get();
+		const uint32 Max = Tools.GetMaxNumberOfBookmarks(Client);
+		const bool bAll = JBool(In, TEXT("all"), false);
+		if (!bAll && !In->HasField(TEXT("index")) && !In->HasField(TEXT("slot")))
+		{
+			Fail(Out, TEXT("pass index (which slot) or all:true. NOTHING was cleared."));
+			return;
+		}
+
+		int32 Cleared = 0;
+		if (bAll)
+		{
+			const TArray<UBookmarkBase*>& Before = Settings->GetBookmarks();
+			for (int32 i = 0; i < static_cast<int32>(Max); ++i)
+			{
+				if (Before.IsValidIndex(i) && Before[i]) { ++Cleared; }
+			}
+			Tools.ClearAllBookmarks(Client);
+		}
+		else
+		{
+			const int32 Index = JIntAny(In, { TEXT("index"), TEXT("slot") }, -1);
+			if (Index < 0 || Index >= static_cast<int32>(Max))
+			{
+				Fail(Out, FString::Printf(
+					TEXT("index %d is out of range - this level has %u bookmark slots, numbered "
+						 "0..%u. NOTHING was cleared."), Index, Max, Max ? Max - 1 : 0));
+				return;
+			}
+			// SAYS SO rather than reporting a cleared count of one for a slot that was already
+			// empty. "cleared" and "was already empty" are different answers to the same call.
+			const bool bWasSet = Tools.CheckBookmark(static_cast<uint32>(Index), Client);
+			Tools.ClearBookmark(static_cast<uint32>(Index), Client);
+			Cleared = bWasSet ? 1 : 0;
+			Out->SetNumberField(TEXT("index"), Index);
+			Out->SetBoolField(TEXT("wasSet"), bWasSet);
+		}
+
+		// READ BACK, so "cleared" means the slots are empty rather than that clear was called.
+		const TArray<UBookmarkBase*>& After = Settings->GetBookmarks();
+		int32 StillSet = 0;
+		for (int32 i = 0; i < static_cast<int32>(Max); ++i)
+		{
+			if (After.IsValidIndex(i) && After[i]) { ++StillSet; }
+		}
+		Out->SetNumberField(TEXT("cleared"), Cleared);
+		Out->SetNumberField(TEXT("stillSet"), StillSet);
+		Out->SetBoolField(TEXT("all"), bAll);
+		if (bAll && StillSet > 0)
+		{
+			Out->SetStringField(TEXT("clearNote"), FString::Printf(
+				TEXT("all:true was asked for and %d slot(s) still hold a bookmark. Treat this as a "
+					 "FAILURE despite ok:true."), StillSet));
+		}
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("bookmarks are stored on AWorldSettings, so the LEVEL is now dirty and NOTHING "
+				 "has been saved."));
+	}
+
+
 }

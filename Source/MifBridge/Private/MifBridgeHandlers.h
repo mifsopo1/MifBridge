@@ -1334,6 +1334,10 @@ namespace MifBridge
 	// capture_camera which spawns a transient scene-capture and changes nothing on screen.
 	// Read-only in the transaction sense: a camera move dirties no asset.
 	MIF_DECL(set_viewport_camera);
+	MIF_DECL(list_viewport_bookmarks);
+	MIF_DECL(set_viewport_bookmark);
+	MIF_DECL(jump_viewport_bookmark);
+	MIF_DECL(clear_viewport_bookmark);
 	MIF_DECL(focus_viewport);
 	MIF_DECL(get_viewport_camera);
 
