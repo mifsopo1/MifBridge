@@ -300,7 +300,12 @@ namespace MifBridge
 		using EMifAutomationFlag = EAutomationTestFlags;
 		const TMap<FString, EMifAutomationFlag>& FlagNames = EAutomationTestFlags_GetTestFlagsMap();
 #else
-		using EMifAutomationFlag = EMifAutomationFlag;
+		// SELF-REFERENTIAL FOR ONE BUILD, and 5.7 never saw it. A blanket rename of
+		// EAutomationTestFlags::Type ran AFTER this block was inserted and rewrote the alias's
+		// own right-hand side, so the 5.3 branch read `using X = X;`. The 5.7 probe compiled
+		// clean because it never enters this arm - which is exactly why a fix verified on one
+		// engine is not a fix.
+		using EMifAutomationFlag = EAutomationTestFlags::Type;
 		const TMap<FString, EMifAutomationFlag>& FlagNames = EAutomationTestFlags::GetTestFlagsMap();
 #endif
 
