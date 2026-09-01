@@ -6895,6 +6895,25 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       checker already carries exemption tables for them, so the pattern exists; it just needs
       extending deliberately rather than by adding a tool and seeing what goes red.
 
+- [ ] **no endpoint reports whether a Niagara system's compiled data is current** (hours)
+      Found 2026-08-31 while trying to test set_niagara_emitter's whyNotSetProperty claim, which
+      warns that enabling an emitter the wrong way leaves "a stale compile result and an emitter
+      that stays dark with a flag saying otherwise".
+
+      The warning is almost certainly right and it CANNOT BE CHECKED. describe_niagara_system
+      reports name, system, emitterCount, enabledEmitterCount and disabledEmitterCount;
+      list_niagara_emitters reports the enabled flag - the very thing the note says is lying. There
+      is no compile-state field anywhere in the family.
+
+      WHAT IT COSTS: an agent that edits a Niagara system has no way to tell a working system from
+      one whose compiled data no longer matches it, and set_niagara_emitter's own recompileNote
+      tells callers the change "will recompile when the editor next needs it" - advice with nothing
+      to verify it against.
+
+      UNiagaraSystem exposes the state internally (it is what InvalidateCompileResults invalidates),
+      so this is a reporting gap rather than an engine limitation. describe_niagara_system is the
+      obvious home.
+
 - [ ] **the PIE family's RUNNING paths - ATTENDED ONLY, not in an autopilot run** (hours)
       Filed 2026-08-31 alongside test_pie_idle, which covers what these do with nothing playing.
       The idle half needed no session and should never have been declined; the running half genuinely
@@ -10032,7 +10051,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       confusing refusal becomes a terminated editor - which is the exact lesson issue 28 records
       about the last "obvious" fix that landed unverified and had to be reverted.
 
-- [ ] **set_niagara_emitter's whyNotSetProperty claims an ASYMMETRY nothing tests** (hours)
+- [~] **set_niagara_emitter's whyNotSetProperty claims an ASYMMETRY nothing tests** (hours)
       Surfaced 2026-08-31 the moment audit_cross_endpoint_claims could read multi-line literals -
       it had been invisible, along with every other claim written across more than one TEXT()
       fragment, which is most of them. The tool went from 546 claims to 805 and from 11
@@ -10056,6 +10075,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       real game content is out by the standing rules - so this needs a scratch Niagara System, which
       create_asset's factory gap may not produce usefully either. Curfew (uncooked 5.7) is where
       this is cheap, and a different session owns it.
+
+      MEASURED 2026-08-31 ON A REAL FIXTURE, and the answer is in two halves. Built a scratch
+      NiagaraSystem, added /Niagara/VectorFields/VectorFieldArrowEmitter to it, then drove the flag
+      with set_property on EmitterHandles[0].bIsEnabled:
+
+        start                       enabled true
+        set_property -> false       changed true,  list_niagara_emitters says false
+        set_property -> true        changed true,  list_niagara_emitters says true
+
+      THE FLAG HALF OF THE CLAIM IS CONFIRMED AS WRITTEN: set_property "flips the same bool", and it
+      flips it BOTH ways. Nothing refuses the enable.
+
+      THE CONSEQUENCE HALF CANNOT BE SEEN FROM HERE, and that is the finding. The claim is that
+      enabling this way leaves "a stale compile result and an emitter that stays dark with a flag
+      saying otherwise" - a statement about COMPILED DATA, not about the bool. No Niagara endpoint
+      reports compile state: describe_niagara_system returns name, system, emitterCount,
+      enabledEmitterCount and disabledEmitterCount, and nothing else. list_niagara_emitters returns
+      the flag, which is the thing the claim says is lying.
+
+      SO THE MEASUREMENT CORROBORATES THE WARNING RATHER THAN TESTING IT. A caller who enables via
+      set_property and checks list_niagara_emitters sees enabled:true and has no way, through any
+      endpoint in this bridge, to learn otherwise. That is precisely the hazard the note describes,
+      and it is now established that the read-back surface is blind to the difference - which is a
+      stronger reason to keep the note than a passing test would have been.
+
+      DECLINED AS A TEST, FILED AS A GAP. The claim is not falsifiable through this API today, so
+      there is nothing to assert; what IS actionable is that no endpoint reports whether a Niagara
+      system's compiled data is current. Filed below.
 
       SO THE NEXT STEP IS NOT THE TEST. It is deciding whether a scratch NiagaraSystem can be built
       here at all; every attempt so far in this family has ended at a cooked-asset guard, and that
