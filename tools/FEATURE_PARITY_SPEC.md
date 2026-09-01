@@ -7179,6 +7179,17 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       already measured. A python helper that does the pair and reads the result back gives the
       caller the one-call form TODAY, on any project, with no build and no endpoint.
 
+      DONE 2026-08-31 as mif_create_curve, and verified live. create_asset makes the CurveFloat,
+      set_property fills FloatCurve.Keys from an ImportText literal the tool builds from
+      [{"time","value"}] pairs, and get_property reads it back through a DIFFERENT endpoint because
+      set_property reporting changed:true is not the curve holding the keys.
+
+      Measured on a scratch curve: three keys in, and back as
+      "((Value=1.000000),(Time=1.000000,Value=5.000000),(Time=2.500000,Value=0.250000))" - the first
+      key's Time is ABSENT because ExportText omits defaults and time 0 is the default. That is
+      correct and it would confuse anyone diffing sent against received, so the tool's docstring says
+      so and tells callers to compare the COUNT.
+
       That does not touch the atomicity point, which is the only part that genuinely needs the
       engine: two calls are two transactions whatever wraps them. But it separates the two halves
       cleanly - convenience is a helper, atomicity is an endpoint - where this entry had them as one

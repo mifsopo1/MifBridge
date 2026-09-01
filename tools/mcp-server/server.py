@@ -5654,6 +5654,67 @@ def mif_layout_graph(graph_id: str, apply: bool = False, comment: bool = False) 
 
 
 @mcp.tool()
+def mif_create_curve(path: str, keys: list, save_note: bool = True) -> dict:
+    """Create a CurveFloat and populate its keys in ONE call, then read them back.
+
+    WHY THIS IS A mif_ TOOL RATHER THAN AN ENDPOINT. create_asset already makes the curve and
+    set_property already fills it - measured, not assumed: FloatCurve.Keys accepts an ImportText
+    struct array through the ordinary property path. The gap was never capability, it was that a
+    caller had to make two calls AND spell
+    "((Time=0.0,Value=1.0),(Time=1.0,Value=5.0))" correctly by hand. Composing them here costs no
+    C++ and works on every engine version the bridge supports.
+
+    WHAT IT DOES NOT FIX, and cannot from out here: creation and configuration are still TWO
+    transactions. Between them the asset exists with an empty curve, which matters to an undo step
+    and to anything watching the asset registry. Only an endpoint can make that atomic, and that -
+    not the convenience - is the part of the original item still open.
+
+    NOT SAVED. Like everything else the bridge creates, the asset is registered and dirty; it is
+    lost on restart unless something saves it.
+
+    THE READ-BACK IS NOT A COPY OF WHAT YOU SENT, and that is correct rather than a bug. ExportText
+    omits DEFAULT values, so a key at time 0 comes back as "(Value=1.000000)" with no Time at all
+    while later keys keep theirs. Verified live: sending three keys returns
+    "((Value=1.000000),(Time=1.000000,Value=5.000000),(Time=2.500000,Value=0.250000))". Compare
+    keysRequested against the number of tuples, not the strings.
+
+    Args:
+        path: where to create it, e.g. /Game/_MifCurves/C_Damage
+        keys: [{"time": 0.0, "value": 1.0}, ...] - time/value pairs, in any order
+        save_note: include the reminder that nothing was saved (default true)
+    """
+    made = _post("create_asset", path=path, **{"class": "CurveFloat"})
+    if made.get("ok") is False:
+        return {"ok": False, "error": made.get("error"), "stage": "create_asset"}
+
+    rows = []
+    for k in keys or []:
+        if not isinstance(k, dict) or "time" not in k or "value" not in k:
+            return {"ok": False, "stage": "keys",
+                    "error": "each key needs a time and a value; got %r" % (k,)}
+        rows.append("(Time=%s,Value=%s)" % (float(k["time"]), float(k["value"])))
+    literal = "(%s)" % ",".join(rows)
+
+    obj = "%s.%s" % (path, path.rsplit("/", 1)[-1])
+    setr = _post("set_property", objectPath=obj, propertyPath="FloatCurve.Keys", value=literal)
+    if setr.get("ok") is False:
+        return {"ok": False, "error": setr.get("error"), "stage": "set_property",
+                "created": path, "sent": literal,
+                "note": "the curve EXISTS but is empty - the asset was created before this failed"}
+
+    # READ BACK THROUGH A DIFFERENT ENDPOINT. set_property reporting changed:true is not the curve
+    # holding the keys, and this whole repo turns on that distinction.
+    got = _post("get_property", objectPath=obj, propertyPath="FloatCurve.Keys")
+    out = {"ok": True, "created": path, "keysRequested": len(rows),
+           "sent": literal, "readBack": got.get("value"),
+           "changed": setr.get("changed")}
+    if save_note:
+        out["saveNote"] = ("created and registered but NOT saved - save_dirty_packages persists it, "
+                           "or it is lost on restart")
+    return out
+
+
+@mcp.tool()
 def mif_help(tool: str = "") -> dict:
     "Get the FULL documentation for a MifBridge tool - the traps, engine citations and failure modes that were moved out of the tool descriptions to keep them out of every turn's context. Call this BEFORE using a tool you have not used before: several endpoints guard engine asserts that would terminate the editor, and the reason lives here rather than in the one-line summary. Pass no argument to list every tool that has extended help. For an endpoint's real accepted parameters as the LIVE editor sees them, use describe_endpoint instead - that reads the running plugin and is the authority when this server and the plugin disagree."
     store = _tool_help()
