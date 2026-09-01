@@ -1874,6 +1874,14 @@ def paint_landscape(layer_info: str, center: dict, radius: float, weight: float 
 
 
 @mcp.tool()
+def register_landscape_layer(layer_name: str, landscape: str = None, layer_info: str = None,
+                             template: str = None) -> dict:
+    "Give a landscape paint layer the ULandscapeLayerInfoObject it needs before it can be painted - the '+' in the editor's paint panel. A landscape material can declare a layer and leave its LayerInfo null, which is the ordinary state of a fresh landscape and the reason paint_landscape refuses it; this creates and assigns one. The layer NAME must already be declared by the material - registration writes into the entry the material created, so an undeclared name is refused with the list of real ones. Pass layer_info to assign an existing asset instead of creating one, or template to clone another LayerInfo's settings. The created asset is unsaved and its path is chosen by the engine from the level."
+    return _post("register_landscape_layer", layerName=layer_name, landscape=landscape,
+                 layerInfo=layer_info, template=template)
+
+
+@mcp.tool()
 def bind_landscape_rvt(runtime_virtual_textures: list, landscape: str = None, create_volumes: bool = True) -> dict:
     "Bind runtime virtual textures to a landscape AND create the bounding volumes. A landscape material that samples an RVT renders its base colour BLACK unless both exist: the RVT in the landscape's array (what to draw into) and an"
     return _post("bind_landscape_rvt", runtimeVirtualTextures=runtime_virtual_textures,

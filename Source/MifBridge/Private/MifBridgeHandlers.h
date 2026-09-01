@@ -1315,6 +1315,7 @@ namespace MifBridge
 	MIF_DECL(import_landscape_heightmap);
 	MIF_DECL(export_landscape_heightmap);
 	MIF_DECL(paint_landscape);
+	MIF_DECL(register_landscape_layer);
 	MIF_DECL(bind_landscape_rvt);
 	MIF_DECL(landscape_info);
 

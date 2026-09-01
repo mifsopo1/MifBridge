@@ -7359,6 +7359,37 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         misplaced parameter, littering the scene for somebody who only made a typo. 48 runs now,
         0 failed, on 3.6/4.2/4.4/5.0.
 
+- [ ] **delete_asset's blockedBy is empty for the referencers a TEST SUITE creates** (half a day)
+      FOUND 2026-09-01 while writing test_landscape_layer_register's cleanup, by testing a claim I
+      had just written in a comment instead of leaving it asserted.
+
+      delete_asset reports a refused delete as numDeleted 0 plus
+          blockedBy { openAssetEditors: [], registryReferencers: [], rootedInMemory: [] }
+      and the message is honest about it: "the holder is an in-memory handle this endpoint cannot
+      see. An editor restart releases it."
+
+      The problem is how OFTEN that is the answer. Measured on two cases:
+
+        a material a landscape has used, after the landscape actor is deleted   -> all three empty
+        a material with a live MaterialInstance child pointing at it            -> all three empty
+
+      The second is a textbook registry referencer and it reports nothing, because both assets are
+      UNSAVED and the asset registry holds reference edges for what is on disk. Unsaved is the
+      normal state of every fixture every suite builds, so blockedBy is blank precisely when a
+      suite is trying to work out whether it leaked something.
+
+      WHY IT MATTERS BEYOND TIDINESS: I wrote a cleanup check that sorted leftovers by whether
+      blockedBy named anything, called the empty case harmless, and committed a comment explaining
+      the reasoning. It would have passed on the exact leak it was written to catch. The check is
+      still there, now labelled best-effort and not load-bearing.
+
+      The fix is a referencer probe that does not depend on the registry - FReferencerInformation
+      / IsReferenced against the in-memory object graph, which is what actually holds these. That
+      would also let delete_asset say WHO is holding an asset instead of "an in-memory handle this
+      endpoint cannot see", which is the single least actionable message the bridge emits.
+
+      NOT STARTED.
+
 - [~] **connect_pins takes fromPin/toPin but not fromNode/toNode** - DECLINED 2026-09-01, the
       refusal is the feature. Filed as a defect an hour earlier and withdrawn after reading
       DoConnect: `fromNode` is not missing, it is an explicit KeyNote reading "spell it srcNode",
@@ -7396,8 +7427,15 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
           fewer than two groupable, everything passed already a group - so each is diagnosed before
           the engine call rather than reported as "nothing happened". Grouping mode is a persistent
           editor setting, so it is never flipped implicitly; enableGrouping:true asks for it.
-        paint_landscape/create_landscape register:true  register a ULandscapeLayerInfoObject as a
-          target layer, WITHOUT which a layer cannot be painted at all
+        paint_landscape/create_landscape register:true  DONE 2026-09-01, as its own endpoint
+          register_landscape_layer rather than a flag. A `register:true` on paint_landscape would
+          make a paint call create assets as a side effect, and one verb doing two jobs is what
+          this plugin's refusals keep teaching against. Splitting them also let paint_landscape's
+          existing refusal name the remedy, which it could not do while the remedy did not exist -
+          that refusal was a precise diagnosis with no cure attached.
+          Covered by tools/test_landscape_layer_register.py at 25 checks, and the postcondition is
+          the chain rather than a flag: paint refused -> register -> paintable:true -> paint
+          SUCCEEDS and touches 58 vertices.
         rename_asset renames[]                          bulk rename/move in one IAssetTools pass;
           matters beyond convenience because RenameAssets fixes up references as a batch
         set_node_state                                  DONE 2026-09-01. Built, and covered by

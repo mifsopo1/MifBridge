@@ -319,6 +319,7 @@ namespace MifBridge
 			MIF_BIND(import_landscape_heightmap);
 			MIF_BIND(export_landscape_heightmap);
 			MIF_BIND(paint_landscape);
+			MIF_BIND(register_landscape_layer);
 			MIF_BIND(bind_landscape_rvt);
 			MIF_BIND(landscape_info);
 			// World lifecycle + splines + ground snapping
