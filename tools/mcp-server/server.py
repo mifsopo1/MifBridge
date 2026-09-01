@@ -2193,9 +2193,15 @@ def list_blend_profiles(skeleton: str, profile: str = "") -> dict:
 
 
 @mcp.tool()
-def create_blend_profile(skeleton: str, name: str) -> dict:
-    "Create an empty named blend profile on a USkeleton - the per-bone weighting that makes an upper-body montage blend in fast on the spine and slowly on the legs. The profile's MODE decides what its numbers mean (timeFactor 0.5 = this bone takes half the transition time; weightFactor 0.5 = its blend weight is halved), and the mode has no setter, so the response reports which one it got. Dirties the SKELETON, not the animation."
-    return _post("create_blend_profile", skeleton=skeleton, name=name)
+def create_blend_profile(skeleton: str, name: str, mode: str = "") -> dict:
+    "Create an empty named blend profile on a USkeleton - the per-bone weighting that makes an upper-body montage blend in fast on the spine and slowly on the legs. mode is timeFactor (default) | weightFactor | blendMask and decides what the per-bone numbers MEAN: timeFactor 0.5 = this bone takes half the transition time, weightFactor 0.5 = its blend weight is halved. It also decides which value ERASES an entry - a blendMask's default is 0.0, the others 1.0. Dirties the SKELETON, not the animation."
+    return _post("create_blend_profile", skeleton=skeleton, name=name, mode=mode)
+
+
+@mcp.tool()
+def remove_blend_profile(skeleton: str, profile: str) -> dict:
+    "Remove a blend profile from a USkeleton. Unlists it AND marks it garbage - unlisting alone leaves a live UObject inside the skeleton's package that nothing references. To drop a single BONE from a profile instead, set that bone to the profile's default scale, which removes its entry."
+    return _post("remove_blend_profile", skeleton=skeleton, profile=profile)
 
 
 @mcp.tool()

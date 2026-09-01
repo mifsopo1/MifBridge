@@ -7359,18 +7359,34 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         misplaced parameter, littering the scene for somebody who only made a typo. 48 runs now,
         0 failed, on 3.6/4.2/4.4/5.0.
 
-- [ ] **no remove_blend_profile, so a profile can only be added** (2 hours)
+- [x] **no remove_blend_profile, so a profile can only be added** - DONE 2026-09-01
       FOUND 2026-09-01 while writing test_blend_profiles.py, which cannot clean up after itself.
       USkeleton exposes CreateNewBlendProfile and GetBlendProfile and no removal at all, so taking
       one off means editing the BlendProfiles array directly and running whatever fixup the editor
       does around it. The suite does not save the skeleton, so nothing persists today - but a
       caller who creates a profile and then saves is stuck with it.
 
-      Worth doing WITH the removal path read properly rather than by shrinking the array: a
-      UBlendProfile is a UObject owned by the skeleton, and orphaning one is how a package grows a
-      referencer nothing can see - which is the same shape as the delete_asset item above.
+      DONE, and reading the removal path first was the right call for exactly the reason filed:
+      the editor's own sequence (EditableSkeleton.cpp:168-178) is Remove from the array AND
+      MarkAsGarbage. Unlisting alone would leave a live UObject inside the skeleton's package that
+      nothing points at - precisely the orphan this note predicted, and one that delete_asset's new
+      memoryReferencers would surface without being able to explain.
 
-      NOT STARTED.
+      TWO THINGS THE SAME READING TURNED UP, both corrections to what shipped hours earlier:
+
+        * `mode` IS settable. create_blend_profile refused it with "UBlendProfile::Mode is a
+          private UPROPERTY with no setter", and Mode is PUBLIC - FEditableSkeleton assigns it
+          directly. I asserted a limitation that does not exist, built a refusal on it, and wrote a
+          test that agreed with the refusal, so the test proved nothing. mode now works, and
+          changing it re-sets every existing entry the way the editor does, because switching
+          to/from blendMask changes the default scale and a profile only stores bones that deviate.
+        * set_blend_profile_bone was missing SetFlags(RF_Transactional) + Modify() ON THE PROFILE.
+          A UBlendProfile is not transactional by default, so the transaction recorded the skeleton
+          and not the entry that changed - undo would have appeared to work and restored nothing.
+
+      Covered by tools/test_blend_profiles.py, now 37 checks. D306 asserts the consequence rather
+      than the label: on a blendMask 1.0 STORES an entry and 0.0 erases it, the exact inverse of
+      every other mode.
 
 - [x] **delete_asset's blockedBy is empty for the referencers a TEST SUITE creates** - DONE 2026-09-01
       FOUND 2026-09-01 while writing test_landscape_layer_register's cleanup, by testing a claim I

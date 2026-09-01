@@ -31,8 +31,8 @@ indistinguishable from somebody's actual unsaved work, and the guard protecting 
 to refuse. A suite must not leave a human to judge whether its leftovers matter. It now duplicates
 a skeleton into /Game/_MifBlendProf* and deletes the copy.
 
-That also disposes of the profile: there is no remove_blend_profile endpoint, so the only way to
-leave nothing behind is for the skeleton written on to be a throwaway.
+That also disposes of the profile. remove_blend_profile exists now and D307 covers it, but the
+throwaway copy stays: it is what makes this suite safe to run against a live editor at all.
 
 Usage:  python tools/test_blend_profiles.py
 Exit:   0 passed   1 failed   2 SKIPPED, no bridge or no skeleton
@@ -130,10 +130,20 @@ def main():
           dup.get("ok") is False and "already has" in str(dup.get("error", "")),
           str(dup.get("error"))[:220])
 
-    nomode = M.call("create_blend_profile", {"skeleton": skel, "name": prof + "X", "mode": "weightFactor"})
-    check("D301 `mode` is refused honestly - there is no setter to pretend with",
-          nomode.get("ok") is False and "no setter" in str(nomode.get("error", "")),
-          str(nomode.get("error"))[:240])
+    # THIS ASSERTION USED TO BE THE OPPOSITE AND IT WAS WRONG. It read:
+    #   check("`mode` is refused honestly - there is no setter to pretend with", ...)
+    # against a KeyNote claiming "UBlendProfile::Mode is a private UPROPERTY with no setter".
+    # Mode is PUBLIC (BlendProfile.h, under the public: at :193) and FEditableSkeleton assigns it
+    # directly. I asserted a limitation that does not exist and built a refusal on top of it, then
+    # wrote a test that agreed with the refusal - which is why the test proved nothing.
+    badmode = M.call("create_blend_profile", {"skeleton": skel, "name": prof + "X",
+                                              "mode": "sometimes"})
+    check("D301 an unknown mode is refused with the three real names",
+          badmode.get("ok") is False and "weightFactor" in str(badmode.get("error", "")),
+          str(badmode.get("error"))[:240])
+    check("D301 and the bad mode created NOTHING - parsed before the profile is made",
+          M.call("list_blend_profiles", {"skeleton": skel, "profile": prof + "X"}).get("count") == 0,
+          prof + "X")
 
     badprof = M.call("set_blend_profile_bone",
                      {"skeleton": skel, "profile": "NoSuchProfile", "bone": root, "scale": 0.5})
@@ -204,6 +214,50 @@ def main():
           not any(x.get("bone") == root for x in (gone.get("bones") or [])),
           json.dumps(gone)[:250])
 
+    # ------------------------------------------------------------------ D306 mode
+    print("\n=== D306: mode is settable, and it changes which value ERASES an entry ===")
+    mprof = prof + "_Mask"
+    mk = M.call("create_blend_profile", {"skeleton": skel, "name": mprof, "mode": "blendMask"})
+    check("D306 a profile can be created as blendMask",
+          (mk.get("profile") or {}).get("mode") == "blendMask", json.dumps(mk.get("profile"))[:220])
+    check("D306 and it reports the mode was applied", mk.get("modeApplied") is True,
+          json.dumps(mk)[:200])
+    # THE CONSEQUENCE, which is the reason mode matters rather than a label: a blendMask's default
+    # is 0.0, so 0.0 erases an entry there while 1.0 stores one - the exact inverse of timeFactor.
+    # `x or -1` IS WRONG HERE and failed on the correct answer: 0.0 is FALSY in Python, so the
+    # sentinel replaced the very value being asserted. The reading was right the whole time.
+    _dbs = (mk.get("profile") or {}).get("defaultBlendScale")
+    check("D306 a blendMask's defaultBlendScale is 0.0, not 1.0",
+          isinstance(_dbs, (int, float)) and abs(_dbs - 0.0) < 0.001, _dbs)
+    one = M.call("set_blend_profile_bone",
+                 {"skeleton": skel, "profile": mprof, "bone": root, "scale": 1.0})
+    check("D306 so scale 1.0 STORES an entry on a mask (it would erase one on timeFactor)",
+          one.get("entryRemoved") is False and one.get("boneCountAfter") == 1,
+          json.dumps(one)[:240])
+    zero = M.call("set_blend_profile_bone",
+                  {"skeleton": skel, "profile": mprof, "bone": root, "scale": 0.0})
+    check("D306 and scale 0.0 ERASES it - the inverse of every other mode",
+          zero.get("entryRemoved") is True, json.dumps(zero)[:240])
+
+    # ------------------------------------------------------------------ D307 remove
+    print("\n=== D307: removing a profile, read back BY NAME ===")
+    rm = M.call("remove_blend_profile", {"skeleton": skel, "profile": mprof})
+    check("D307 remove succeeds", rm.get("ok") is not False, json.dumps(rm)[:240])
+    check("D307 the skeleton can no longer find it by name", rm.get("removed") is True,
+          json.dumps(rm)[:220])
+    check("D307 the profile count really dropped",
+          rm.get("profilesAfter") == rm.get("profilesBefore") - 1,
+          "%s -> %s" % (rm.get("profilesBefore"), rm.get("profilesAfter")))
+    check("D307 and it says the object was MarkAsGarbage'd, not merely unlisted",
+          "unlisting alone" in str(rm.get("garbageNote", "")), rm.get("garbageNote"))
+    gone = M.call("list_blend_profiles", {"skeleton": skel, "profile": mprof})
+    check("D307 an independent read agrees it is gone", gone.get("count") == 0,
+          json.dumps(gone)[:200])
+    rm2 = M.call("remove_blend_profile", {"skeleton": skel, "profile": mprof})
+    check("D307 removing it twice is refused, listing what the skeleton does have",
+          rm2.get("ok") is False and "It has" in str(rm2.get("error", "")),
+          str(rm2.get("error"))[:220])
+
     # ------------------------------------------------------------------ D305 list
     print("\n=== D305: listing ===")
     all_p = M.call("list_blend_profiles", {"skeleton": skel})
@@ -232,8 +286,9 @@ def main():
         print("  NOTE  it may be held by an in-memory handle delete_asset cannot see; an editor")
         print("        restart releases it. See the delete_asset blockedBy item in the spec.")
 
-    print("\n  NOT COVERED: there is no remove_blend_profile endpoint, so a profile cannot be taken")
-    print("  off a skeleton you want to KEEP. Filed in the spec.")
+    print("\n  remove_blend_profile now exists and D307 covers it, so a profile can be taken off a")
+    print("  skeleton anybody keeps. The throwaway fixture copy stays regardless - it is what")
+    print("  makes this suite safe to run against a live editor at all.")
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

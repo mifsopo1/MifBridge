@@ -3193,6 +3193,40 @@ namespace MifBridge
 	// number, opposite intent. Every response names the mode for that reason.
 	namespace
 	{
+		// PARSED, not guessed. The three names match what BlendProfileModeName emits, so a caller
+		// can feed `mode` straight back from any response that reported one.
+		bool ParseBlendProfileMode(const FString& In, EBlendProfileMode& Out)
+		{
+			const FString L = In.ToLower();
+			if (L == TEXT("timefactor"))   { Out = EBlendProfileMode::TimeFactor;   return true; }
+			if (L == TEXT("weightfactor")) { Out = EBlendProfileMode::WeightFactor; return true; }
+			if (L == TEXT("blendmask"))    { Out = EBlendProfileMode::BlendMask;    return true; }
+			return false;
+		}
+
+		// CHANGING THE MODE IS NOT AN ASSIGNMENT, and this is the editor's own sequence
+		// (EditableSkeleton.cpp:194-215). Switching to or from BlendMask changes what
+		// GetDefaultBlendScale returns - 0.0 for a mask, 1.0 otherwise - and a profile only stores
+		// bones that DEVIATE from its default. So every existing entry has to be re-set through
+		// SetBoneBlendScale afterwards, from the END backwards, or entries that now sit at the new
+		// default stay in the list holding a value the profile is supposed to omit.
+		void ApplyBlendProfileMode(UBlendProfile* Profile, EBlendProfileMode NewMode)
+		{
+			if (!Profile) { return; }
+			const bool bWasMask = Profile->IsBlendMask();
+			Profile->SetFlags(RF_Transactional);
+			Profile->Modify();
+			Profile->Mode = NewMode;
+			if (bWasMask != Profile->IsBlendMask())
+			{
+				for (int32 i = Profile->GetNumBlendEntries() - 1; i >= 0; --i)
+				{
+					const FBlendProfileBoneEntry& E = Profile->ProfileEntries[i];
+					Profile->SetBoneBlendScale(E.BoneReference.BoneName, E.BlendScale);
+				}
+			}
+		}
+
 		const TCHAR* BlendProfileModeName(EBlendProfileMode Mode)
 		{
 			switch (Mode)
@@ -3308,11 +3342,11 @@ namespace MifBridge
 	void H_create_blend_profile(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
 		if (RejectUnknownParams(In, Out,
-			{ TEXT("skeleton"), TEXT("path"), TEXT("assetPath"), TEXT("name") },
+			{ TEXT("skeleton"), TEXT("path"), TEXT("assetPath"), TEXT("name"), TEXT("mode") },
 			TEXT("skeleton (aliases path, assetPath) - a USkeleton, or a SkeletalMesh whose "
-				 "skeleton to add to; name - the profile's name"),
-			{ { TEXT("mode"), TEXT("UBlendProfile::Mode is a private UPROPERTY with no setter - a new profile is TimeFactor and this endpoint reports which mode it got rather than pretending to choose") },
-			  { TEXT("bones"), TEXT("create makes an EMPTY profile; set_blend_profile_bone adds bones to it one at a time") } }))
+				 "skeleton to add to; name - the profile's name; mode - timeFactor (the default) | "
+				 "weightFactor | blendMask, which decides what the per-bone numbers MEAN"),
+			{ { TEXT("bones"), TEXT("create makes an EMPTY profile; set_blend_profile_bone adds bones to it one at a time") } }))
 		{
 			return;
 		}
@@ -3343,11 +3377,26 @@ namespace MifBridge
 		const FScopedTransaction Transaction(
 			NSLOCTEXT("MifBridge", "MifCreateBlendProfile", "Create Blend Profile"));
 		Skeleton->Modify();
+		// MODE IS PARSED BEFORE THE PROFILE IS MADE, so a typo does not leave one behind.
+		EBlendProfileMode WantMode = EBlendProfileMode::TimeFactor;
+		const FString ModeStr = JStr(In, TEXT("mode"));
+		if (!ModeStr.IsEmpty() && !ParseBlendProfileMode(ModeStr, WantMode))
+		{
+			Fail(Out, FString::Printf(
+				TEXT("unknown mode '%s' - use timeFactor, weightFactor or blendMask. NOTHING was "
+					 "created."), *ModeStr));
+			return;
+		}
+
 		UBlendProfile* Profile = Skeleton->CreateNewBlendProfile(FName(*Name));
 		if (!Profile)
 		{
 			Fail(Out, TEXT("CreateNewBlendProfile returned nothing. NOTHING was created."));
 			return;
+		}
+		if (!ModeStr.IsEmpty())
+		{
+			ApplyBlendProfileMode(Profile, WantMode);
 		}
 
 		// READ BACK through GetBlendProfile, so "created" means the skeleton can find it by name -
@@ -3359,10 +3408,13 @@ namespace MifBridge
 		WriteBlendProfile(J, Profile);
 		Out->SetObjectField(TEXT("profile"), J);
 		Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+		Out->SetBoolField(TEXT("modeRequested"), !ModeStr.IsEmpty());
+		Out->SetBoolField(TEXT("modeApplied"), Profile->GetMode() == WantMode);
 		Out->SetStringField(TEXT("modeNote"),
 			TEXT("mode decides what the numbers MEAN: timeFactor 0.5 is 'this bone takes half the "
 				 "transition time', weightFactor 0.5 is 'this bone's blend weight is halved'. Same "
-				 "number, opposite intent."));
+				 "number, opposite intent. It also decides which value ERASES an entry - "
+				 "blendMask's default is 0.0, the others 1.0."));
 		Out->SetStringField(TEXT("saveNote"),
 			TEXT("the SKELETON is dirty and NOTHING has been saved - blend profiles live on it, "
 				 "not on the animation."));
@@ -3438,6 +3490,14 @@ namespace MifBridge
 		const FScopedTransaction Transaction(
 			NSLOCTEXT("MifBridge", "MifSetBlendProfileBone", "Set Blend Profile Bone"));
 		Skeleton->Modify();
+		// RF_Transactional ON THE PROFILE, which the first version left out. A UBlendProfile is a
+		// subobject of the skeleton and is NOT transactional by default, so wrapping the call in a
+		// transaction and calling Skeleton->Modify() records the skeleton and not the entry that
+		// actually changed - undo would appear to work and restore nothing. The editor sets this
+		// flag on the profile before every write for exactly that reason
+		// (EditableSkeleton.cpp:187-188).
+		Profile->SetFlags(RF_Transactional);
+		Profile->Modify();
 		const int32 Before = Profile->GetNumBlendEntries();
 
 		// bCreate TRUE, ALWAYS. The engine's default of false writes nothing when the bone has no
@@ -3484,6 +3544,85 @@ namespace MifBridge
 						 "despite ok:true."), Scale, ReadBack));
 			}
 		}
+		Out->SetStringField(TEXT("saveNote"),
+			TEXT("the SKELETON is dirty and NOTHING has been saved."));
+	}
+
+
+
+	// --- remove_blend_profile ------------------------------------------------------------------
+	//   in:  { skeleton, profile }
+	//   out: { removed, profilesBefore, profilesAfter, ... }
+	//
+	// The editor's own sequence (EditableSkeleton.cpp:168-178): remove it from the skeleton's array
+	// and MarkAsGarbage. The second half is the part worth getting right - a UBlendProfile is an
+	// Instanced subobject of the skeleton, so dropping it from the array without marking it leaves
+	// a live UObject inside the skeleton's package that nothing points at, which is how a package
+	// grows a referencer nobody can account for. delete_asset's memoryReferencers would find it and
+	// be unable to say why it was there.
+	void H_remove_blend_profile(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("skeleton"), TEXT("path"), TEXT("assetPath"), TEXT("profile"), TEXT("name") },
+			TEXT("skeleton (aliases path, assetPath), profile (alias name) - the blend profile to "
+				 "remove from that skeleton"),
+			{ { TEXT("bone"), TEXT("this removes the WHOLE profile - to drop one bone from it, set that bone to the profile's default scale, which removes its entry") },
+			  { TEXT("confirm"), TEXT("no confirm: this removes a profile from a skeleton in memory and nothing is saved, and undo covers it") } }))
+		{
+			return;
+		}
+		USkeleton* Skeleton = ResolveSkeleton(In, Out, TEXT("removed"));
+		if (!Skeleton) { return; }
+
+		const FString Name = JStrAny(In, { TEXT("profile"), TEXT("name") });
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("profile is required. NOTHING was removed."));
+			return;
+		}
+		UBlendProfile* Profile = Skeleton->GetBlendProfile(FName(*Name));
+		if (!Profile)
+		{
+			TArray<FString> Have;
+			for (const UBlendProfile* P : Skeleton->BlendProfiles)
+			{
+				if (P) { Have.Add(P->GetName()); }
+			}
+			Fail(Out, FString::Printf(
+				TEXT("no blend profile called '%s' on this skeleton. It has: %s. NOTHING was "
+					 "removed."), *Name,
+				Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		const int32 Before = Skeleton->BlendProfiles.Num();
+		const int32 Bones = Profile->GetNumBlendEntries();
+
+		const FScopedTransaction Transaction(
+			NSLOCTEXT("MifBridge", "MifRemoveBlendProfile", "Remove Blend Profile"));
+		Skeleton->Modify();
+		Skeleton->BlendProfiles.Remove(Profile);
+		Profile->MarkAsGarbage();
+		Skeleton->MarkPackageDirty();
+
+		// READ BACK BY NAME, which is how everything else reaches a profile - an array that got
+		// shorter is not the same claim as "the skeleton can no longer find it".
+		const bool bGone = Skeleton->GetBlendProfile(FName(*Name)) == nullptr;
+		Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+		Out->SetStringField(TEXT("profile"), Name);
+		Out->SetNumberField(TEXT("profilesBefore"), Before);
+		Out->SetNumberField(TEXT("profilesAfter"), Skeleton->BlendProfiles.Num());
+		Out->SetNumberField(TEXT("bonesItHeld"), Bones);
+		Out->SetBoolField(TEXT("removed"), bGone);
+		if (!bGone)
+		{
+			Out->SetStringField(TEXT("removedNote"),
+				TEXT("the skeleton still finds this profile by name after removing it. Treat this "
+					 "as a FAILURE despite ok:true."));
+		}
+		Out->SetStringField(TEXT("garbageNote"),
+			TEXT("the profile was MarkAsGarbage'd as well as unlisted - unlisting alone would "
+				 "leave a live UObject in the skeleton's package that nothing references."));
 		Out->SetStringField(TEXT("saveNote"),
 			TEXT("the SKELETON is dirty and NOTHING has been saved."));
 	}

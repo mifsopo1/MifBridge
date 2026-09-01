@@ -281,6 +281,7 @@ namespace MifBridge
 			MIF_BIND(list_blend_profiles);
 			MIF_BIND(create_blend_profile);
 			MIF_BIND(set_blend_profile_bone);
+			MIF_BIND(remove_blend_profile);
 			MIF_BIND(group_actors);
 			MIF_BIND(ungroup_actors);
 			// UWidgetBlueprint asset endpoints + generic property setter
