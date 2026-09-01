@@ -238,7 +238,21 @@ CPP_HANDLER = re.compile(r"^\s*void H_(\w+)\(const TSharedRef<FJsonObject>&", re
 
 
 def endpoint_alias_map():
-    """endpoint -> {alias_lower: primary_lower}, read from the handlers' own J*Any calls.
+    """RETURNS A PAIR: (per_endpoint, global_groups). Destructure it, and in that order.
+
+    per_endpoint    endpoint -> {alias_lower: frozenset(the whole alias GROUP)}   ~389 entries
+    global_groups   alias_lower -> frozenset(group), across every endpoint          ~271 entries
+
+    THE ORDER IS EASY TO GET BACKWARDS AND FAILS CONVINCINGLY. Reading the second as the first
+    makes every endpoint look absent, so a caller checking "does this endpoint still exist" gets a
+    confident list of endpoints that plainly do exist - reset_property_to_default, capture_camera,
+    focus_viewport. That happened on 2026-08-31 and the wrong answer looked like a real finding
+    about a rotten exemption table rather than like a misread tuple.
+
+    It is the third shape-assumption of that night: harvest() read as a list of dicts when it
+    returns a 4-tuple, emitted_fields() passed to set() when it returns [(field, endpoint, file,
+    line)] rows, and this. Each cost minutes and each would have been prevented by printing the
+    thing before using it. If you are about to index into a return value here, look at it first.
 
     THE UE NUMBER HAD THE SAME PROBLEM THE BLENDER ONE DID, and nobody had checked. The Blender half
     read 46 unreachable parameters and meant 5 once the addon's own alias declarations were read;
