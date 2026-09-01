@@ -7442,6 +7442,42 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       Kept because the near-miss is the useful part: I hit it, assumed a half-alias, and was
       wrong. That is what the KeyNote is for and it worked.
 
+- [ ] **suites that ADOPT an existing fixture break once another suite starts making one** (half a day)
+      FOUND 2026-09-01 by the sweep, and it is a regression I introduced.
+
+      test_landscape_heightmap picks the first landscape in the level with NO edit layers and only
+      builds its own if none exists - "prefer an existing suitable one" (test_landscape_heightmap.py
+      :74-80). That was safe for as long as nothing else produced a non-layered landscape: DDS2's own
+      has edit layers (Base Landscape, Flat Middle), so the branch never fired and the suite always
+      tested its own 2x2 / quads-63 / rolling fixture.
+
+      test_landscape_layer_register, added the same day, creates a landscape through
+      create_landscape - which "leaves edit layers OFF deliberately" and returns editLayers: [].
+      Alphabetically heightmap sorts BEFORE layer_register, so on pass 1 heightmap builds its own and
+      passes; by pass 2 there is a leftover non-layered landscape in the world and heightmap adopts
+      THAT one - a 2x2 / quads-31 landscape with a LandscapeLayerWeight material, whose heights it
+      never set. It then reports T8002 collision disagreeing with the heightmap by 1590.62uu at 2 of
+      3 probe points. The suite is correct; it is measuring the wrong terrain.
+
+      THE SAME CLASS IS ALREADY VISIBLE ELSEWHERE: test_socket_authoring's T3104 cleanup fails in a
+      sweep (33/1) and passes alone against a fresh editor (34/0), because its scratch skeleton
+      cannot be deleted in-session. delete_asset can now say why - see the memoryReferencers /
+      transactionBuffer work - and that diagnosis has NOT been run on it yet. That is the first move.
+
+      TWO WAYS TO FIX, and they are not exclusive:
+        * a suite that adopts a fixture must be able to tell somebody else's scratch from the
+          level's own content. Anything labelled or pathed /Game/_Mif* or Mif* is not a candidate.
+        * a suite that CREATES a landscape has to remove it reliably, and this one believes it does
+          (its L999 cleanup passes). Whether the actor is really gone by the time the next suite
+          runs, or whether a proxy or an undo reference keeps it discoverable, is the thing to
+          measure rather than assume.
+
+      DO NOT "fix" this by making heightmap always build its own. That hides the general problem -
+      any suite that adopts a fixture has it - and the sweep is the only thing that surfaces it,
+      because it only appears on the second pass.
+
+      NOT STARTED. Needs the editor; deferred at Andre's request 2026-09-01.
+
 - [x] **six proposals were invisible to the backlog counter for weeks** - ALL SIX BUILT 2026-09-01
       FOUND 2026-09-01 with the spec reporting 0 open. It was reporting the truth about `- [ ]`
       lines and nothing about the nine `- [category]` proposal lines sitting further down the file,
