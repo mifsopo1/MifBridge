@@ -1,6 +1,6 @@
 # The abandoned-lab showcase
 
-9 staged scripts that build a lit, animated, rendered interior in Blender **entirely through
+8 staged scripts that build a lit, animated, rendered interior in Blender **entirely through
 MifBridge's typed ops**. No `run_python` — each stage prints which ops it used and whether the
 escape hatch was among them, so the claim is measured rather than asserted.
 
