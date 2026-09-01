@@ -7214,6 +7214,43 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       it was ordering, not a new guard.
 
 
+- [ ] **two reads the purity sweep can now PROVE it never exercises** (hours)
+      FILED 2026-09-01, and only findable because "attempted only" stopped being one bucket.
+
+      That bucket printed "Those needed an argument this sweep could not guess" over ten endpoints,
+      which was true of some and wrong about most. Split by CAUSE - and with the class existence
+      MEASURED against the registry rather than assumed - the ten resolve into:
+
+        4  need a live session this sweep must not start (PIE x2, a LiveLink subject inside its
+           staleness window, an actor with an AbilitySystemComponent)
+        2  this project genuinely has no asset of the class - describe_state_tree,
+           describe_level_snapshot. Confirmed live. On a project that HAS them the same sweep
+           exercises them with no change, which is the point of measuring instead of listing.
+        2  FIXED the same day - describe_physics_asset and describe_pcg_graph. This project has 164
+           PhysicsAssets and 11 PCGGraphs and the sweep had never called either. Exercised reads
+           100 -> 102.
+        2  STILL OPEN, and they are this item.
+
+      WHAT IS LEFT:
+        check_consolidate_assets   needs two real assets to compare. Scratch ones under
+                                   /Game/_MifPure would do; scratch_fixtures() already builds a
+                                   blueprint, a struct and a DataTable there for exactly this
+                                   reason, so this is one more fixture in a function that exists.
+        describe_collection        needs a collection. list_collections reports this project has
+                                   none, and test_collections already CREATES a MifTest<n> one and
+                                   destroys it - so the fixture is written, in another file.
+
+      NEITHER IS HARD. They are filed rather than done because the editor went back to Andre
+      mid-sweep, and because a read-purity fixture is only worth adding while the sweep can be
+      re-run to prove the endpoint moved from attempted to exercised. Adding a fixture and NOT
+      seeing the count change is how this bucket got its blanket message in the first place.
+
+      THE LESSON IS BIGGER THAN THE TWO ENDPOINTS, and it is the second time in two days: one label
+      over several causes reads as a backlog, so nobody works it, and the actionable tenth stays
+      invisible. audit_detectors_fire had the identical defect - two polarity-opposite skip
+      conditions sharing one list under a header that described only one of them. Worth grepping
+      the other report-style tools for a third.
+
 - [x] **create_asset - CONVENIENCE DONE, atomicity still open** - DONE 2026-08-31, both halves
       RETITLED AND RE-SCOPED 2026-08-31 after measuring it against the live editor. The old title,
       "11 asset types can only be created UNCONFIGURED", is wrong, and it was wrong in the direction

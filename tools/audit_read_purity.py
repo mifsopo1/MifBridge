@@ -65,6 +65,12 @@ BY_CLASS = [
     # unexercised - they need a subject of their own class and no generic sample supplied one.
     ("WidgetBlueprint", ("blueprintid", "blueprintId", "path")),
     ("AnimSequence", ("animation", "asset", "assetPath", "path")),
+    # 2026-09-01. BOTH TABLES ARE NEEDED and adding only one proves nothing: EXTRA_CLASSES decides
+    # what gets SAMPLED, this decides what gets TRIED. Adding these two to EXTRA_CLASSES alone left
+    # both endpoints still reported as never exercised, which is what said the first edit was
+    # incomplete - the re-run, not the reasoning.
+    ("PhysicsAsset", ("assetPath", "asset", "path")),
+    ("PCGGraph", ("graph", "assetPath", "path")),
 ]
 
 
@@ -284,6 +290,68 @@ def special_payloads(ep, acc, ctx, assets):
     return out
 
 
+
+# ---------------------------------------------------------------------------
+# WHY "attempted only" WAS NOT ONE BUCKET
+# ---------------------------------------------------------------------------
+# It printed "Those needed an argument this sweep could not guess", which was true of some of them
+# and wrong about most. Three quite different things were being averaged into one line:
+#
+#   1. it needs a LIVE SESSION this sweep must not start - list_pie_actors and describe_live_widget
+#      need PIE, and the autopilot rules forbid starting it. Nothing about the fixture is missing.
+#   2. this PROJECT contains no asset of the class the endpoint reads. DDS2 has no PhysicsAsset, no
+#      StateTree, no PCGGraph and no LevelSnapshot - so the sweep is correct and complete here, and
+#      the same run against a project that HAS them would exercise them with no change at all.
+#   3. the sweep could BUILD the fixture and does not. Only this one is a to-do.
+#
+# Averaging them made the whole bucket read as a backlog, so it was never worked: nine tenths of it
+# was not actionable and the tenth was invisible. This is the same defect as the two polarity-
+# opposite skip buckets in audit_detectors_fire, found the same night - one label over several
+# causes, where the label happens to describe only one of them.
+#
+# CAUSE 2 IS MEASURED, NOT LISTED. Asking find_assets whether the class exists is the difference
+# between a report and a guess, and it is the only way this stays true on a project that is not
+# this one. A general UE5 tool cannot hardcode what DDS2 happens to contain.
+NEEDS_LIVE_SESSION = {
+    "list_pie_actors": "a running PIE session",
+    "describe_live_widget": "a running PIE session with a real widget instance",
+    "describe_livelink_subject": "a LiveLink subject pushed within the staleness window",
+    "describe_ability_system": "an actor with an AbilitySystemComponent in the open level",
+}
+
+# endpoint -> the asset class it reads. Checked LIVE, so this stays honest on any project.
+READS_ASSET_CLASS = {
+    "describe_physics_asset": "PhysicsAsset",
+    "describe_state_tree": "StateTree",
+    "describe_pcg_graph": "PCGGraph",
+    "describe_level_snapshot": "LevelSnapshot",
+}
+
+
+def classify_attempted(attempted):
+    """(live, absent, todo) - and `absent` is confirmed by asking the registry, never assumed."""
+    live, absent, todo = [], [], []
+    for ep in attempted:
+        if ep in NEEDS_LIVE_SESSION:
+            live.append((ep, NEEDS_LIVE_SESSION[ep]))
+            continue
+        cls = READS_ASSET_CLASS.get(ep)
+        if cls:
+            r = M.call("find_assets", {"class": cls, "limit": 1}, timeout=60)
+            found = r.get("count")
+            if found is None:
+                found = len(r.get("assets") or [])
+            if not found:
+                absent.append((ep, cls))
+                continue
+            # The class DOES exist here and the endpoint still never got a valid call - that is a
+            # real gap in the sampler, not a property of the project, so it belongs in the to-do.
+            todo.append((ep, "%s assets exist (%d) and it still never got a valid call" % (cls, found)))
+            continue
+        todo.append((ep, "no fixture rule - the generic by-class guesser could not satisfy it"))
+    return live, absent, todo
+
+
 def dirty_set():
     r = M.call("list_dirty_packages", {}, timeout=60)
     return {p.get("name") for p in (r.get("packages") or []) if p.get("name")}
@@ -295,8 +363,14 @@ def dirty_set():
 # InputMappingContext and MetaSoundSource added 2026-08-28 for list_input_mappings/describe_metasound,
 # found unexercised the same day as the /Game/-only pathPrefix bug above - both take a real asset of
 # their own class and neither had one sampled at all before this.
+# PhysicsAsset and PCGGraph added 2026-09-01. Both were sitting in the "attempted only" bucket
+# under the blanket line "needed an argument this sweep could not guess" - and this project has 164
+# PhysicsAssets and 11 PCGGraphs. Nothing was missing but a row here. They surfaced the moment that
+# bucket was split by CAUSE and the sweep started ASKING the registry whether the class exists
+# instead of leaving the reader to assume it did not.
 EXTRA_CLASSES = ("BehaviorTree", "BlackboardData", "IKRigDefinition", "IKRetargeter",
-                 "NiagaraSystem", "LevelSequence", "InputMappingContext", "MetaSoundSource")
+                 "NiagaraSystem", "LevelSequence", "InputMappingContext", "MetaSoundSource",
+                 "PhysicsAsset", "PCGGraph")
 
 
 def sample_assets():
@@ -384,9 +458,26 @@ def main():
     print("  exercised (at least one call returned ok)  %3d" % len(exercised))
     print("  attempted only (never got a valid call)    %3d" % len(attempted))
     if attempted:
-        print("     %s" % ", ".join(attempted)[:400])
-        print("     Those needed an argument this sweep could not guess. They are NOT evidence of")
-        print("     purity - they were never exercised.")
+        live, absent, todo = classify_attempted(attempted)
+        print("     NONE of these are evidence of purity - they were never exercised. But they are")
+        print("     not one problem, and only the last group is work:")
+        if live:
+            print("")
+            print("     needs a live session this sweep must not start:")
+            for ep, why in live:
+                print("       %-28s %s" % (ep, why))
+        if absent:
+            print("")
+            print("     this PROJECT has no asset of the class they read - CONFIRMED against the")
+            print("     registry just now, not assumed. On a project that has them, the same sweep")
+            print("     exercises them with no change:")
+            for ep, cls in absent:
+                print("       %-28s no %s in this project" % (ep, cls))
+        if todo:
+            print("")
+            print("     ACTIONABLE - the sweep could satisfy these and does not:")
+            for ep, why in todo:
+                print("       %-28s %s" % (ep, why))
     print("  endpoints that dirtied a package           %3d" % len(findings))
     for ep, payload, pkgs in findings:
         print("     %-30s %s" % (ep, ", ".join(pkgs)[:80]))
