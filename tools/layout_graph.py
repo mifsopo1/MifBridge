@@ -126,16 +126,74 @@ def order_within_layers(by_guid, layer, pred, succ):
     return columns
 
 
+def components(by_guid, succ, pred):
+    """Weakly-connected components - the groups that actually do not share nodes.
+
+    ROOT REACHABILITY WAS THE WRONG GROUPING and running it on a real graph proved it. Two roots -
+    Event BeginPlay and a Get Health getter - both reach the same Print String, so claiming nodes
+    for the first root left two groups that were disjoint in MEMBERSHIP while their bounding
+    rectangles sat on top of each other. Both boxes came out at (-140,-140).
+
+    A component cannot overlap another by construction, because they share no nodes at all. Edges
+    are followed in BOTH directions to build them: a data getter points INTO the chain it feeds and
+    nothing points at it, so a forward-only walk would leave it in a component of its own.
+    """
+    seen, groups = set(), []
+    for start in sorted(by_guid):
+        if start in seen:
+            continue
+        stack, group = [start], []
+        while stack:
+            g = stack.pop()
+            if g in seen:
+                continue
+            seen.add(g)
+            group.append(g)
+            stack.extend(succ[g])
+            stack.extend(pred[g])
+        groups.append(group)
+    return groups
+
+
+# Vertical gap between one independent chain and the next.
+BAND_GAP = 260
+
+
 def plan(nodes):
+    """Positions, laid out one CONNECTED COMPONENT per horizontal band.
+
+    THE FIRST VERSION PACKED EVERY COLUMN FROM y=0 regardless of which chain a node belonged to, so
+    two independent chains interleaved their rows - Event Tick's nodes sitting between Event
+    BeginPlay's. It looked plausible in the column listing and was wrong on screen, and it only
+    surfaced when a comment box for the second chain had to be DROPPED for overlapping the first.
+    That was the layout's fault, not the box's.
+
+    Components are laid out independently and stacked, which is what a person does with two
+    unrelated event chains, and it makes the comment boxes disjoint by construction rather than by
+    luck.
+    """
     by_guid, succ, pred = build_graph(nodes)
     layer = assign_layers(by_guid, succ, pred)
-    columns = order_within_layers(by_guid, layer, pred, succ)
     positions = {}
-    for col in sorted(columns):
-        y = 0
-        for g in columns[col]:
-            positions[g] = (col * COL_GAP, y)
-            y += estimate_height(by_guid[g]) + ROW_GAP
+    columns = defaultdict(list)
+    y_offset = 0
+
+    for group in sorted(components(by_guid, succ, pred),
+                        key=lambda gr: (min(layer[g] for g in gr), sorted(gr)[0])):
+        members = {g: by_guid[g] for g in group}
+        # Order within this component only - a barycentre computed across unrelated chains means
+        # nothing.
+        local = order_within_layers(members, {g: layer[g] for g in group}, pred, succ)
+        band_bottom = y_offset
+        for col in sorted(local):
+            y = y_offset
+            for g in local[col]:
+                positions[g] = (col * COL_GAP, y)
+                y += estimate_height(by_guid[g]) + ROW_GAP
+            band_bottom = max(band_bottom, y)
+            columns[col].extend(local[col])
+        y_offset = band_bottom + BAND_GAP
+
     return by_guid, positions, columns
 
 
@@ -190,28 +248,45 @@ def reachable(start, succ):
 
 
 def comment_boxes(by_guid, positions, succ, pred):
-    """[(x, y, w, h, text)] - one box per event chain, skipping trivial ones.
+    """[(x, y, w, h, text)] - one box per connected component, skipping trivial ones.
 
-    A box around a SINGLE node is noise, not documentation, so groups of one are dropped. Chains
-    that share nodes would produce overlapping boxes, so a node is claimed by the first root that
-    reaches it - overlapping comments nest visually in UE and read as a mistake.
+    A box around a SINGLE node is noise rather than documentation, so groups of one are dropped.
+    The label is the component's leftmost node, which for an event chain is the event.
+
+    OVERLAP IS STILL CHECKED rather than assumed. Components share no nodes, but nothing stops two
+    of them being interleaved by row within the same columns, and a comment that swallows another
+    component's nodes would claim them as members - UE decides membership by geometry. So a box
+    that would overlap one already placed is DROPPED and reported, not drawn.
     """
-    boxes, claimed = [], set()
-    for root in sorted(roots_of(by_guid, pred),
-                       key=lambda g: (positions[g][0], positions[g][1])):
-        group = [g for g in reachable(root, succ) if g not in claimed]
+    boxes = []
+    for group in sorted(components(by_guid, succ, pred),
+                        key=lambda gr: min(positions[g] for g in gr)):
         if len(group) < 2:
             continue
-        claimed.update(group)
         xs = [positions[g][0] for g in group]
         ys = [positions[g][1] for g in group]
         x2 = max(positions[g][0] + estimate_width(by_guid[g]) for g in group)
         y2 = max(positions[g][1] + estimate_height(by_guid[g]) for g in group)
-        title = by_guid[root].get("title") or by_guid[root].get("class") or "Group"
-        boxes.append((min(xs) - COMMENT_PAD, min(ys) - COMMENT_PAD,
-                      (x2 - min(xs)) + COMMENT_PAD * 2, (y2 - min(ys)) + COMMENT_PAD * 2,
-                      title))
+        # LABEL WITH THE EVENT, not the leftmost node. On the first real graph the leftmost node
+        # was a Get Health getter, so the box read "Get Health" for a chain any person would call
+        # "Event BeginPlay". The label IS the documentation - it is the whole reason for the box -
+        # so an event in the component wins, and position only breaks the tie when there is none.
+        events = [g for g in group if "Event" in (by_guid[g].get("class") or "")]
+        lead = min(events or group, key=lambda g: positions[g])
+        title = by_guid[lead].get("title") or by_guid[lead].get("class") or "Group"
+        box = (min(xs) - COMMENT_PAD, min(ys) - COMMENT_PAD,
+               (x2 - min(xs)) + COMMENT_PAD * 2, (y2 - min(ys)) + COMMENT_PAD * 2, title)
+        if any(_overlaps(box, placed) for placed in boxes):
+            print("  skipping a box for %r - it would overlap one already placed" % title[:28])
+            continue
+        boxes.append(box)
     return boxes
+
+
+def _overlaps(a, b):
+    ax, ay, aw, ah, _ = a
+    bx, by, bw, bh, _ = b
+    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
 
 
 SELF_TEST_GRAPH = [
@@ -233,6 +308,15 @@ SELF_TEST_GRAPH = [
     {"guid": "E", "title": "Loop Back", "x": 0, "y": 0, "pins": [
         {"name": "then", "direction": "output", "type": {"category": "exec"},
          "linkedTo": [{"node": "B", "pin": "execute"}]},
+        {"name": "execute", "direction": "input", "type": {"category": "exec"}, "linkedTo": []}]},
+    # A SECOND, WHOLLY SEPARATE CHAIN. Without it there is only ever ONE comment box, and the
+    # "no two boxes overlap" check passes without comparing anything - which is exactly what
+    # happened: it went green here while the real graph drew two boxes on top of each other.
+    # A test that cannot fail is the thing this repo spends its time finding.
+    {"guid": "F", "title": "Event Tick", "x": 0, "y": 900, "pins": [
+        {"name": "then", "direction": "output", "type": {"category": "exec"},
+         "linkedTo": [{"node": "G", "pin": "execute"}]}]},
+    {"guid": "G", "title": "Add Movement", "x": 0, "y": 900, "pins": [
         {"name": "execute", "direction": "input", "type": {"category": "exec"}, "linkedTo": []}]},
 ]
 
@@ -277,7 +361,9 @@ def self_test():
     # ---- comment boxes ------------------------------------------------------------------
     _, succ2, pred2 = build_graph(SELF_TEST_GRAPH)
     boxes = comment_boxes(by_guid, positions, succ2, pred2)
-    check("a multi-node chain gets a comment box", len(boxes) >= 1, boxes)
+    # TWO components, so TWO boxes - and the overlap check below has something to compare.
+    check("each separate chain gets its own comment box", len(boxes) == 2,
+          [t for *_, t in boxes])
     if boxes:
         check("and it is labelled with the event that starts the chain",
               any("BeginPlay" in t for _, _, _, _, t in boxes), [t for *_, t in boxes])
