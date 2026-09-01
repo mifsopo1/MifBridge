@@ -372,6 +372,19 @@ def main():
         check("(cleanup) PIE stopped cleanly", stopped_status.get("state") == "stopped", stopped_status)
 
     finally:
+        # ui_scenario_stop FIRST, and it is NOT redundant with the stop_pie below. Nothing in the
+        # plugin clears GScenario.bActive when PIE ends - there is no EndPIE hook anywhere in it -
+        # so ending the play session leaves the bridge still believing a scenario is running, and
+        # every later ui_scenario_start is refused with "already active". The scenario's state
+        # lives on the BRIDGE side, not in the PIE world, which is exactly why the world dying
+        # does not release it. (MifBridgeUIScenario.cpp now reaps a scenario whose world is gone,
+        # so this is belt and braces rather than the only defence - but the suite should not
+        # depend on a fix in the thing it is testing.)
+        #
+        # It needs no PIE world of its own: H_ui_scenario_stop never resolves one, and it answers
+        # ok with wasActive:false when nothing is active, so calling it unconditionally is safe.
+        M.raw_post("ui_scenario_stop", {})
+
         # UNCONDITIONAL, and it asserts rather than assumes. stop_pie returning ok proves the
         # request was accepted, not that the session ended - so the state is read back, and a
         # session still running after the stop is reported as a FAILURE rather than left silent.

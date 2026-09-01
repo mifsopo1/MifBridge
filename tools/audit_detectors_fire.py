@@ -345,11 +345,23 @@ def plant_unreachable_param(text):
 
     hideKnots on list_nodes because it is a plain optional bool with no aliases, so its removal
     cannot be masked by another spelling still being sent.
+
+    EVERY CALL SITE, NOT JUST THE WRAPPER - and the line above is exactly the reasoning that was not
+    enough. param_reach's tool_sends() UNIONS the keys of every `_post("<endpoint>", ...)` in
+    server.py into one set per ENDPOINT, so a key still passed by any other call site stays
+    "reachable" no matter what the user-facing wrapper does. Removing one of three list_nodes call
+    sites planted nothing at all, and the harness reported param_reach ASLEEP for it.
+
+    The two extra call sites are mif_layout_graph's internal reads, which pass a hardcoded
+    hideKnots=False. They were added the same day this was reported ASLEEP: the plant was correct
+    when written and a new tool silently invalidated it. Choosing a key with no ALIASES is not
+    enough - it also has to have no SECOND CALL SITE, and nothing stops one appearing later. That
+    is what must_vanish (below) is for.
     """
-    needle = ", hideKnots=hide_knots"
-    if needle not in text:
-        return None
-    return text.replace(needle, "", 1)
+    wrapper, internal = ", hideKnots=hide_knots", ", hideKnots=False"
+    if wrapper not in text or internal not in text:
+        return None   # fail closed: reported as anchor-gone, never as a silent pass
+    return text.replace(wrapper, "").replace(internal, "")
 
 
 
@@ -427,7 +439,10 @@ def plant_mode_param(text):
     return text[:m.start() + 1] + probe + text[m.start() + 1:]
 
 
-# tool -> (target file, plant function, marker, gate)
+# tool -> (target file, plant function, marker, gate, must_vanish)
+#   gate        False for report-style tools that always exit 0 - the marker is then the whole test
+#   must_vanish a string that must be ABSENT from the mutated text, so a plant that
+#               failed to land is reported as such instead of as a blind detector
 #
 # gate=True  - proof is a NON-ZERO exit AND the marker in the output. Both, because several of these
 #              exit 1 on unrelated pre-existing findings, and a blind detector would otherwise pass
@@ -556,7 +571,38 @@ def plant_cross_endpoint_claim(text):
             + text[j:])
 
 
+def plant_unreleased_acquire(text):
+    """Turn a suite's `finally:` into a plain block, so its acquire is no longer released on failure.
+
+    IMITATES THE DEFECT THAT SHIPPED rather than a synthetic one. test_pie_family.py genuinely looked
+    like this until 2026-08-31: start_pie near the top of main(), a bare stop_pie at the bottom, and a
+    `return 3` four lines after the start that skipped it. audit_suite_teardown was written for that
+    shape and found four more instances of it the first time it ran.
+
+    ADDS AN UNPROTECTED ACQUIRE rather than dismantling the existing try, and the first version did
+    the latter. Replacing `finally:` with `if True:` leaves a `try:` with no handler of any kind,
+    which is a SyntaxError - so the detector could not parse the file, skipped it, and was reported
+    ASLEEP for a defect it had been prevented from reading. (It also swallowed that SyntaxError
+    silently and still exited 0, which was a real bug in the detector and is now fixed.)
+
+    A PLANT MUST LEAVE THE CORPUS READABLE. Inserting one more start_pie above the try creates
+    exactly the shape this detector looks for - an acquire with no finally releasing it - while the
+    file stays valid Python and everything else about it stays true.
+
+    Targets tools/ rather than Source/, so it runs whether or not an editor is up.
+    """
+    needle = "    try:" + chr(10)
+    if needle not in text:
+        return None
+    plant = ('    M.raw_post("start_pie", {})  # MIF_PROBE_ZZ_UNRELEASED_ACQUIRE' + chr(10))
+    return text.replace(needle, plant + needle, 1)
+
+
 PLANTS = {
+    # Exits 1 on a finding, so the exit code is real proof. No must_vanish: this plant ADDS a
+    # call rather than removing one, and "it is there now" is already proved by the marker.
+    "audit_suite_teardown.py": (os.path.join(HERE, "test_pie_family.py"),
+                                plant_unreleased_acquire, "test_pie_family.py"),
     "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind, "mif_probe_zz"),
     "harvest_param_table.py": (os.path.join(PRIV, "MifBridgeDescribe.cpp"),
                                plant_missing_desc_row, "CONTRACT DRIFT"),
@@ -598,7 +644,9 @@ PLANTS = {
                                 plant_absence_claim, "save_package"),
     "audit_citations.py": (os.path.join(HERE, "FEATURE_PARITY_SPEC.md"), plant_dead_citation,
                            DEAD_CITATION),
-    "param_reach.py": (SERVER, plant_unreachable_param, "list_nodes.hideknots"),
+    # must_vanish: every remaining hideKnots= must be gone. Without it, a fourth list_nodes call
+    # site appearing in server.py would silently un-plant this again and blame the tool.
+    "param_reach.py": (SERVER, plant_unreachable_param, "list_nodes.hideknots", True, "hideKnots="),
     # gate=False: audit_advice_gaps exits 0 whatever it finds, deliberately - "a tool that fails the
     # build over prose would be gamed by rewording the prose, which would make the source worse".
     "audit_advice_gaps.py": (os.path.join(HERE, "blender-addon", "MifBlender", "ops_scene.py"),
@@ -727,6 +775,11 @@ def prove(tool):
     entry = PLANTS[tool]
     target, planter, marker = entry[0], entry[1], entry[2]
     gate = entry[3] if len(entry) > 3 else True
+    # OPTIONAL 5th slot: a string that must be GONE from the mutated text for the plant to have
+    # landed. Optional because most plants ADD something rather than remove it, and "it is there
+    # now" is already proved by the marker; this is for the removal-shaped plants, where nothing
+    # else distinguishes "the plant did not land" from "the detector is blind".
+    must_vanish = entry[4] if len(entry) > 4 else None
     if not os.path.isfile(target):
         return "anchor-gone", "target file missing: %s" % os.path.basename(target)
 
@@ -740,6 +793,21 @@ def prove(tool):
     if mutated is None:
         return "anchor-gone", ("the plant's anchor is no longer in %s - the tool was NOT proven"
                                % os.path.basename(target))
+
+    # DID THE PLANT ACTUALLY LAND? This is a separate question from "did the tool notice", and
+    # until it was asked separately the two were indistinguishable: a plant that changed nothing
+    # the tool cares about produced a clean run, which was then reported as ASLEEP - a detector
+    # accused of blindness for a defect that was never created.
+    #
+    # THAT HAS NOW HAPPENED TWICE IN THIS FILE. DEAD_CITATION's plant did it once ("the first run of
+    # this plant reported the tool ASLEEP when the plant had never landed"), and param_reach's did
+    # it again when mif_layout_graph added two new list_nodes call sites that kept the key
+    # reachable. Both times the diagnosis cost more than the bug. A plant may now declare a string
+    # that MUST be gone from the mutated text, and its absence is its own verdict.
+    if must_vanish is not None and must_vanish in mutated:
+        return "plant-did-not-land", (
+            "the plant ran but %r is still present afterwards, so no defect was created. This says "
+            "NOTHING about %s - do not read it as ASLEEP. Fix the plant." % (must_vanish, tool))
     # A marker already present before planting would make the check pass for the wrong reason.
     if marker in before_out and (before_rc != 0 or not gate):
         return "already-red", ("%s already reports %r before planting, so this run proves nothing"
@@ -801,21 +869,30 @@ def main():
         print("")
 
     before = source_digest()
-    asleep, notproven, skipped = [], [], []
+    # TWO SKIP REASONS, AND THEY ARE POLARITY-OPPOSITES, so they cannot share a bucket. They did,
+    # and the summary hardcoded one of the two headers - so with the editor CLOSED the run printed
+    # "SKIPPED - an editor was running", which is the exact inverse of what happened, and sent a
+    # reader looking for an editor that was not there. The per-tool line printed the truth all
+    # along; only the summary lied. Carrying the reason with the tool is what makes that
+    # impossible rather than merely fixed.
+    asleep, notproven = [], []
+    skipped_no_bridge, skipped_editor_up, unlanded = [], [], []
     for tool in covered:
         if tool in LIVE and not busy:
-            skipped.append(tool)
+            skipped_no_bridge.append(tool)
             print("  %-26s %-12s %s" % (tool, "skipped", "needs the bridge; it exits 0 saying "
                                                          "'could not check', not ASLEEP"))
             continue
         if busy and PLANTS[tool][0].startswith(os.path.join(ROOT, "Source")):
-            skipped.append(tool)
+            skipped_editor_up.append(tool)
             print("  %-26s %-12s %s" % (tool, "skipped", "editor is running - plants into Source/"))
             continue
         status, detail = prove(tool)
         print("  %-26s %-12s %s" % (tool, status, detail))
         if status == "ASLEEP":
             asleep.append(tool)
+        elif status == "plant-did-not-land":
+            unlanded.append(tool)
         elif status != "proven":
             notproven.append(tool)
 
@@ -827,10 +904,24 @@ def main():
         return 2
 
     print("Source/ is byte-identical to before this run.")
-    if skipped:
+    if skipped_editor_up:
         print("")
         print("SKIPPED - an editor was running, so these were not attempted:")
-        for t in skipped:
+        for t in skipped_editor_up:
+            print("  %s" % t)
+    if skipped_no_bridge:
+        print("")
+        print("SKIPPED - NO bridge was answering, so these could not be plant-tested. This is the")
+        print("opposite condition to the block above; with no live editor they exit 0 saying they")
+        print("could not check, which a plant would misread as ASLEEP:")
+        for t in skipped_no_bridge:
+            print("  %s" % t)
+    if unlanded:
+        print("")
+        print("THE PLANT DID NOT LAND - and this says NOTHING about the detector. The mutation ran")
+        print("and left the thing it was supposed to remove still in place, so no defect existed")
+        print("for the tool to find. Fix the PLANT; do not read these as ASLEEP:")
+        for t in unlanded:
             print("  %s" % t)
     if live:
         print("")
@@ -864,7 +955,7 @@ def main():
         return 1
     # exit 2, not 0: a run that skipped most of its plants is not a pass, and a caller that only
     # looks at the exit code must not read "editor was open" as "everything is proven".
-    return 2 if skipped else 0
+    return 2 if (skipped_editor_up or skipped_no_bridge or unlanded) else 0
 
 
 if __name__ == "__main__":

@@ -117,6 +117,45 @@ namespace MifBridge
 			}
 		}
 
+		// A SCENARIO WHOSE PIE WORLD IS GONE IS NOT ACTIVE, and until this existed the plugin
+		// insisted it was - forever.
+		//
+		// THE BUG, found 2026-08-31 by audit_suite_teardown.py and then confirmed by reading every
+		// write to bActive in the plugin. There are exactly three: the struct default, the set in
+		// H_ui_scenario_start, and the clear in H_ui_scenario_stop. NOTHING clears it when PIE ends
+		// - there is no EndPIE, PrePIEEnded or world-cleanup delegate anywhere in this plugin. So
+		// any way of ending PIE other than calling ui_scenario_stop first - the human pressing Stop
+		// or Escape, a PIE crash, RequestEndPlayMap from another client of the bridge, a test suite
+		// that fails between its start and its stop - leaves bActive true with every weak pointer in
+		// the struct nulled out. From then on EVERY ui_scenario_start is refused with "a scenario
+		// (X, state READY) is already active", and the only exit is an endpoint the caller has to
+		// know to call. The guard sits above target and world resolution, so nothing gets past it.
+		//
+		// TickScenario ALREADY MAKES EXACTLY THIS INFERENCE - "PIE world no longer valid - PIE was
+		// stopped externally while this scenario was waiting" - so !World.IsValid() meaning "PIE
+		// ended under us" is a signal this file already trusts. It calls FailScenario, which sets
+		// State and FailReason and stops the ticker but never touches bActive; and it only runs in
+		// WaitingForStableUI, so a scenario parked in POSITIONED or READY has no ticker registered
+		// and observes nothing at all.
+		//
+		// WHY A REAPER RATHER THAN AN EndPIE DELEGATE. A delegate has to be registered and, more to
+		// the point, UNREGISTERED - on module shutdown and across a live-coding reload - and a
+		// stale delegate into an unloaded module is a crash rather than a refusal. This reads a
+		// weak pointer that the engine has already nulled, needs no lifecycle of its own, and
+		// cannot outlive the module it lives in. It reuses the signal instead of adding one.
+		void ReapScenarioIfWorldGone()
+		{
+			if (GScenario.bActive && !GScenario.World.IsValid())
+			{
+				const FString DeadId = GScenario.ScenarioId;
+				UnregisterTicker();
+				GScenario = FUIScenario();
+				UE_LOG(LogMifBridge, Log,
+					TEXT("ui_scenario %s reaped: its PIE world is gone, so the scenario cannot be "
+						 "active. PIE ended without ui_scenario_stop being called."), *DeadId);
+			}
+		}
+
 		void FailScenario(EUIScenarioState NewState, const FString& Reason)
 		{
 			GScenario.State = NewState;
@@ -234,6 +273,11 @@ namespace MifBridge
 
 		TSharedRef<FJsonObject> StatusJson()
 		{
+			// REPORTED TRUTHFULLY, NOT JUST FIXED AT THE START GATE. If the reap only ran in
+			// ui_scenario_start then status would go on answering active:true for a scenario whose
+			// world no longer exists, and a caller polling status - which is exactly what the
+			// scenario runner does - would wait out its whole budget on a corpse.
+			ReapScenarioIfWorldGone();
 			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
 			J->SetBoolField(TEXT("active"), GScenario.bActive);
 			J->SetStringField(TEXT("scenarioId"), GScenario.ScenarioId);
@@ -283,10 +327,16 @@ namespace MifBridge
 						   "a real gameplay-state mutation. Nothing was done."));
 			return;
 		}
+		// Reap first: refusing on behalf of a scenario whose world was destroyed is refusing
+		// forever, and this is the guard that made the leak permanent.
+		ReapScenarioIfWorldGone();
 		if (GScenario.bActive)
 		{
 			Fail(Out, FString::Printf(
-				TEXT("a scenario (%s, state %s) is already active - call ui_scenario_stop first."),
+				TEXT("a scenario (%s, state %s) is already active - call ui_scenario_stop first. "
+					 "Its PIE world is still alive, so this is a genuinely running scenario rather "
+					 "than a leftover: a scenario whose world has been torn down is reaped here "
+					 "instead of refusing."),
 				*GScenario.ScenarioId, StateName(GScenario.State)));
 			return;
 		}

@@ -131,34 +131,49 @@ def main():
     # start_pie/stop_pie are in mifaudit's own DENY list - a guard against a BLIND sweep starting
     # PIE, not against this: a deliberate, narrowly-scoped, immediately-paired start/stop, exactly
     # the documented exception. M.raw_post is the correct bypass, same as scratch_confirm elsewhere.
-    started = M.raw_post("start_pie", {})
-    check("T1309 start_pie accepted", started.get("ok") is True, started)
-    running_status = wait_for_pie_state("running")
-    check("T1309 PIE actually reached state=running", running_status.get("state") == "running",
-          running_status)
-
-    if running_status.get("state") == "running":
-        pie_push = M.call("push_livelink_transform", {"subjectName": pie_subject, "locationX": 7})
-        check("T1310 push during PIE works and reads back valid immediately",
-              pie_push.get("ok") is True and pie_push.get("isValid") is True, pie_push)
-
-        time.sleep(0.7)
-        pie_stale = M.call("describe_livelink_subject", {"subjectName": pie_subject})
-        check("T1311 the SAME staleness rule applies during PIE - invalid ~0.7s later, same as the editor",
-              pie_stale.get("ok") is False, pie_stale)
-
-        M.raw_post("stop_pie", {})
-        stopped_status = wait_for_pie_state("stopped")
-        check("T1312 PIE actually reached state=stopped", stopped_status.get("state") == "stopped",
-              stopped_status)
-
-        if stopped_status.get("state") == "stopped":
-            back_in_editor = M.call("push_livelink_transform", {"subjectName": pie_subject, "locationX": 9})
-            check("T1312 push/read works cleanly back in the editor after PIE stops",
-                  back_in_editor.get("ok") is True and back_in_editor.get("isValid") is True, back_in_editor)
-    else:
-        check("T1309-T1311 (skipped) PIE never reached running - cannot test the transition", True,
+    # THE LEAK HERE IS THE ELSE BRANCH, not an exception. stop_pie sits INSIDE
+    # `if running_status.get("state") == "running":`, so when PIE is merely slow to come up the
+    # else runs, logs a PASS, and returns with the play session still starting or started -
+    # start_pie was already accepted by then. A suite that reports green while walking away from a
+    # running editor is worse than one that fails.
+    try:
+        started = M.raw_post("start_pie", {})
+        check("T1309 start_pie accepted", started.get("ok") is True, started)
+        running_status = wait_for_pie_state("running")
+        check("T1309 PIE actually reached state=running", running_status.get("state") == "running",
               running_status)
+
+        if running_status.get("state") == "running":
+            pie_push = M.call("push_livelink_transform", {"subjectName": pie_subject, "locationX": 7})
+            check("T1310 push during PIE works and reads back valid immediately",
+                  pie_push.get("ok") is True and pie_push.get("isValid") is True, pie_push)
+
+            time.sleep(0.7)
+            pie_stale = M.call("describe_livelink_subject", {"subjectName": pie_subject})
+            check("T1311 the SAME staleness rule applies during PIE - invalid ~0.7s later, same as the editor",
+                  pie_stale.get("ok") is False, pie_stale)
+
+            M.raw_post("stop_pie", {})
+            stopped_status = wait_for_pie_state("stopped")
+            check("T1312 PIE actually reached state=stopped", stopped_status.get("state") == "stopped",
+                  stopped_status)
+
+            if stopped_status.get("state") == "stopped":
+                back_in_editor = M.call("push_livelink_transform", {"subjectName": pie_subject, "locationX": 9})
+                check("T1312 push/read works cleanly back in the editor after PIE stops",
+                      back_in_editor.get("ok") is True and back_in_editor.get("isValid") is True, back_in_editor)
+        else:
+            check("T1309-T1311 (skipped) PIE never reached running - cannot test the transition", True,
+                  running_status)
+
+    finally:
+        # Unconditional, and read back rather than assumed. Idempotent against a session that the
+        # branch above already stopped: stop_pie on a stopped editor is a harmless no-op.
+        M.raw_post("stop_pie", {})
+        _final = wait_for_pie_state("stopped")
+        if (_final or {}).get("state") != "stopped":
+            check("(finally) PIE was left RUNNING - the editor is still in a play session", False,
+                  _final)
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
