@@ -20,11 +20,20 @@ numbers precisely so a test can check the state actually changed, and that is wh
 a vertex count, an influence count, a bounds delta. ok:true is what an op that silently did
 nothing would also return.
 
-SELF-CONTAINED, same discipline as test_blender_mesh.py: the fixture is built from the factory
-startup Cube through the addon's own ops. No checked-in .fbx, no Unreal, no network.
+SELF-CONTAINED, same discipline as test_blender_mesh.py: the fixture is a cube this suite CREATES
+through the addon's own ops and deletes when it is done. No checked-in .fbx, no Unreal, no network.
 
-RUN IT the way run_blender_suites.py does - against a FRESH headless Blender of its own. Do not
-point it at a GUI Blender you have work open in: clean_scene is the first thing it calls.
+It used to take the factory startup Cube instead, and on 2026-09-01 the sweep reported it RED
+against a healthy addon - the Blender answering the port was in use, its scene held a built
+showcase rather than the startup cube, and "no MESH in the scene" was recorded as a failure. A
+suite that only passes against a factory-fresh Blender is reporting on the scene, not the code.
+
+SAFE AGAINST A GUI BLENDER, unlike its neighbours, and this note used to claim the opposite:
+"clean_scene is the first thing it calls" was copied from test_blender_mesh.py and was never true
+here - this suite has never called clean_scene, which is exactly why it needed a cube to already
+exist. It is additive and it cleans up after itself. test_blender_mesh, test_blender_rig and
+audit_blender_postconditions ARE the destructive ones, and they are the ones behind the headless
+guard.
 """
 import json
 import os
@@ -96,11 +105,29 @@ def main():
         print("  SKIP (exit 2) - a suite that verified nothing must not report success.")
         return 2
 
-    cube = first_mesh()
+    # MAKE THE FIXTURE, do not require somebody's scene to already contain one.
+    #
+    # This used to take whatever the first MESH in the scene happened to be and fail outright when
+    # there was none - "no MESH in the scene - this suite needs the factory startup Cube". That is
+    # only true of a Blender nobody has touched. On 2026-09-01 the nightly sweep reported this suite
+    # RED against a perfectly healthy addon: the Blender answering the port was the one being used,
+    # its scene held a built showcase rather than the startup cube, and the suite called that a
+    # failure. A suite that passes only against a factory-fresh scene reports on the SCENE, not on
+    # the code, and every one of those failures costs somebody a real investigation.
+    #
+    # Additive and named, which is the pattern test_blender_anim and test_blender_consequence
+    # already use - create what you need, prefix it, and leave the rest of the scene alone. The
+    # destructive suites are the ones behind the headless guard; this one now never needs to be.
+    made = call("create_primitive", kind="cube", name="MifA_Fixture", size=2)
+    cube = ((made.get("object") or {}).get("name")) or made.get("name")
+    if not cube:
+        cube = first_mesh()          # an older addon without create_primitive still works
     check("A000 (setup) a mesh exists to work on", cube is not None,
-          "no MESH in the scene - this suite needs the factory startup Cube")
+          "create_primitive did not return an object and the scene holds no MESH: %s"
+          % json.dumps(made)[:200])
     if not cube:
         return 1
+    print("  fixture: %s" % cube)
 
     # ================================================================= apply_transform
     print("\n=== A100-A104: apply_transform - the op the fidelity gate needs ===")
@@ -486,9 +513,16 @@ def main():
     # discipline test_blender_mesh.py applies to the five gen_* ops.
     print("\n  NOT COVERED, and said out loud: the SUCCESS paths of normalize_weights and")
     print("  transfer_weights need a skinned mesh with an armature, which this suite cannot build")
-    print("  from the startup Cube through the addon's own ops - there is no create_armature or")
+    print("  from its own cube fixture through the addon's own ops - there is no create_armature or")
     print("  assign_weights op. Their refusal paths are covered above; their happy paths are not.")
     print("  Building that fixture is the next piece of work, not an omission to forget.")
+
+    # PUT THE SCENE BACK. This suite now creates its own fixture, so it owns removing it - a
+    # sweep that runs twice must not leave MifA_Fixture.001 behind, and the Blender answering the
+    # port may well be one somebody is working in.
+    gone = call("delete_object", object=cube)
+    check("A999 (cleanup) the fixture is removed", gone.get("ok") is not False,
+          json.dumps(gone)[:200])
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
