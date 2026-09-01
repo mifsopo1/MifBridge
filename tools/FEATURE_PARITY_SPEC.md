@@ -7359,6 +7359,19 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         misplaced parameter, littering the scene for somebody who only made a typo. 48 runs now,
         0 failed, on 3.6/4.2/4.4/5.0.
 
+- [ ] **no remove_blend_profile, so a profile can only be added** (2 hours)
+      FOUND 2026-09-01 while writing test_blend_profiles.py, which cannot clean up after itself.
+      USkeleton exposes CreateNewBlendProfile and GetBlendProfile and no removal at all, so taking
+      one off means editing the BlendProfiles array directly and running whatever fixup the editor
+      does around it. The suite does not save the skeleton, so nothing persists today - but a
+      caller who creates a profile and then saves is stuck with it.
+
+      Worth doing WITH the removal path read properly rather than by shrinking the array: a
+      UBlendProfile is a UObject owned by the skeleton, and orphaning one is how a package grows a
+      referencer nothing can see - which is the same shape as the delete_asset item above.
+
+      NOT STARTED.
+
 - [ ] **delete_asset's blockedBy is empty for the referencers a TEST SUITE creates** (half a day)
       FOUND 2026-09-01 while writing test_landscape_layer_register's cleanup, by testing a claim I
       had just written in a comment instead of leaving it asserted.
@@ -7418,9 +7431,14 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       THE SIX, each now its own item below rather than a bullet in a list nobody counts:
 
-        create_blend_profile / set_blend_profile_bone   per-bone blend scales on a USkeleton -
-          the weighting that makes an upper-body montage blend in fast on the spine and slow on
-          the legs
+        create_blend_profile / set_blend_profile_bone   DONE 2026-09-01, plus list_blend_profiles
+          because verification needs a read. Covered by tools/test_blend_profiles.py at 24 checks.
+          BOTH silent no-ops live in UBlendProfile::SetSingleBoneBlendScale: bCreate DEFAULTS TO
+          FALSE, so the engine writes nothing for a bone with no entry - which is every FIRST write
+          - and setting a bone to the profile's default scale REMOVES its entry, after which a
+          read-back returns the default whether the value was stored or the override was deleted.
+          The endpoint always passes bCreate=true and reports entryRemoved, because nothing about
+          the number can distinguish those two.
         group_actors / ungroup_actors                   DONE 2026-09-01. Built and covered by
           tools/test_group_actors.py at 24 checks. UActorGroupingUtils::GroupActors returns nullptr
           and says NOTHING in four separate cases - grouping mode off, actors spanning two levels,

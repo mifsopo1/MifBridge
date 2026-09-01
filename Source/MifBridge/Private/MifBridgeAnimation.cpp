@@ -20,6 +20,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkeletalMeshSocket.h"
 #include "Animation/Skeleton.h"
+#include "Animation/BlendProfile.h"      // UBlendProfile - per-bone blend scales
 #include "ScopedTransaction.h"        // USkeleton::Sockets - where DDS2 actually keeps them
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshSocket.h"
@@ -3161,5 +3162,331 @@ namespace MifBridge
 		Out->SetStringField(TEXT("note"),
 			TEXT("the asset is dirty and NOT saved - save_package {path} persists it."));
 	}
+
+
+	// --- blend profiles ------------------------------------------------------------------------
+	//
+	// WHAT THEY ARE. A UBlendProfile is a named per-bone weighting stored on a USkeleton. It is what
+	// makes an upper-body montage blend in fast on the spine and slowly on the legs: the transition
+	// has one duration, and the profile scales it per bone. Without one every bone blends at the
+	// same rate, which is why a "reload" animation played on a running character snaps the hips.
+	//
+	// TWO SILENT NO-OPS, both in UBlendProfile::SetSingleBoneBlendScale, and both the reason these
+	// endpoints report more than ok:true:
+	//
+	//   * bCreate DEFAULTS TO FALSE. `if(!Entry && bCreate)` - with no existing entry for that bone
+	//     and bCreate false, the function writes nothing, creates nothing and says nothing. Every
+	//     first write to a bone would vanish. This bridge therefore always passes bCreate=true;
+	//     there is no reason to expose a flag whose false value is "silently do nothing".
+	//
+	//   * SETTING THE DEFAULT SCALE DELETES THE ENTRY. The same function ends with
+	//         if (Entry->BlendScale == GetDefaultBlendScale()) { ProfileEntries.RemoveAll(...) }
+	//     which is correct - a profile only stores bones that actually deviate - but it means
+	//     set_blend_profile_bone {scale: 1.0} on a TimeFactor profile REMOVES the override, and a
+	//     read-back returns 1.0 either way. The postcondition alone cannot tell "set to 1.0" from
+	//     "removed", so entryRemoved is reported explicitly.
+	//     The default is 0.0 for a BlendMask profile and 1.0 for the others, so WHICH value erases
+	//     an entry depends on the profile's mode.
+	//
+	// AND THE MODE CHANGES WHAT THE NUMBER MEANS. TimeFactor 0.5 means "this bone takes half the
+	// transition time"; WeightFactor 0.5 means "this bone's blend weight is halved". The same
+	// number, opposite intent. Every response names the mode for that reason.
+	namespace
+	{
+		const TCHAR* BlendProfileModeName(EBlendProfileMode Mode)
+		{
+			switch (Mode)
+			{
+			case EBlendProfileMode::TimeFactor:   return TEXT("timeFactor");
+			case EBlendProfileMode::WeightFactor: return TEXT("weightFactor");
+			case EBlendProfileMode::BlendMask:    return TEXT("blendMask");
+			default:                              return TEXT("unknown");
+			}
+		}
+
+		void WriteBlendProfile(const TSharedRef<FJsonObject>& J, UBlendProfile* Profile)
+		{
+			if (!Profile) { return; }
+			J->SetStringField(TEXT("name"), Profile->GetName());
+			J->SetStringField(TEXT("mode"), BlendProfileModeName(Profile->GetMode()));
+			J->SetNumberField(TEXT("defaultBlendScale"), Profile->GetDefaultBlendScale());
+			J->SetNumberField(TEXT("boneCount"), Profile->GetNumBlendEntries());
+			TArray<TSharedPtr<FJsonValue>> Bones;
+			for (int32 i = 0; i < Profile->GetNumBlendEntries(); ++i)
+			{
+				const FBlendProfileBoneEntry& E = Profile->GetEntry(i);
+				TSharedRef<FJsonObject> BJ = MakeShared<FJsonObject>();
+				BJ->SetStringField(TEXT("bone"), E.BoneReference.BoneName.ToString());
+				BJ->SetNumberField(TEXT("scale"), E.BlendScale);
+				Bones.Add(MakeShared<FJsonValueObject>(BJ));
+			}
+			J->SetArrayField(TEXT("bones"), Bones);
+			J->SetStringField(TEXT("storedNote"),
+				TEXT("only bones that DEVIATE from the default are stored - a bone set back to the "
+					 "default scale is removed from the profile rather than kept at it."));
+		}
+
+		USkeleton* ResolveSkeleton(const TSharedRef<FJsonObject>& In,
+			const TSharedRef<FJsonObject>& Out, const TCHAR* What)
+		{
+			const FString Path = JStrAny(In, { TEXT("skeleton"), TEXT("path"), TEXT("assetPath") });
+			if (Path.IsEmpty())
+			{
+				Fail(Out, FString::Printf(
+					TEXT("skeleton is required (a USkeleton asset path). NOTHING was %s."), What));
+				return nullptr;
+			}
+			UObject* Asset = LoadAssetLenient(Path);
+			if (!Asset)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("asset not found: %s. NOTHING was %s."), *Path, What));
+				return nullptr;
+			}
+			// A SkeletalMesh is the thing callers reach for, and it HAS a skeleton - so resolve it
+			// rather than refusing something one step away from correct.
+			if (USkeletalMesh* Mesh = Cast<USkeletalMesh>(Asset))
+			{
+				if (USkeleton* FromMesh = Mesh->GetSkeleton())
+				{
+					Out->SetStringField(TEXT("skeletonNote"), FString::Printf(
+						TEXT("'%s' is a SkeletalMesh; blend profiles live on its SKELETON, %s, "
+							 "which is what was used."), *Path, *FromMesh->GetPathName()));
+					return FromMesh;
+				}
+			}
+			USkeleton* Skeleton = Cast<USkeleton>(Asset);
+			if (!Skeleton)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("'%s' is a %s - blend profiles live on a USkeleton. NOTHING was %s."),
+					*Path, *Asset->GetClass()->GetName(), What));
+			}
+			return Skeleton;
+		}
+	}
+
+	void H_list_blend_profiles(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("skeleton"), TEXT("path"), TEXT("assetPath"), TEXT("profile") },
+			TEXT("skeleton (aliases path, assetPath) - a USkeleton, or a SkeletalMesh whose "
+				 "skeleton to read; profile (optional) to report just that one"),
+			{ { TEXT("bone"), TEXT("this lists profiles and every bone in them - filter on the client, or read one profile with `profile`") } }))
+		{
+			return;
+		}
+		USkeleton* Skeleton = ResolveSkeleton(In, Out, TEXT("read"));
+		if (!Skeleton) { return; }
+
+		const FString Want = JStr(In, TEXT("profile"));
+		TArray<TSharedPtr<FJsonValue>> Arr;
+		for (UBlendProfile* Profile : Skeleton->BlendProfiles)
+		{
+			if (!Profile) { continue; }
+			if (!Want.IsEmpty() && Profile->GetName() != Want) { continue; }
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			WriteBlendProfile(J, Profile);
+			Arr.Add(MakeShared<FJsonValueObject>(J));
+		}
+		Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+		Out->SetArrayField(TEXT("profiles"), Arr);
+		Out->SetNumberField(TEXT("count"), Arr.Num());
+		if (!Want.IsEmpty() && Arr.Num() == 0)
+		{
+			TArray<FString> Have;
+			for (const UBlendProfile* P : Skeleton->BlendProfiles)
+			{
+				if (P) { Have.Add(P->GetName()); }
+			}
+			Out->SetStringField(TEXT("note"), FString::Printf(
+				TEXT("no blend profile called '%s' on this skeleton. It has: %s"),
+				*Want, Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+		}
+	}
+
+	void H_create_blend_profile(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("skeleton"), TEXT("path"), TEXT("assetPath"), TEXT("name") },
+			TEXT("skeleton (aliases path, assetPath) - a USkeleton, or a SkeletalMesh whose "
+				 "skeleton to add to; name - the profile's name"),
+			{ { TEXT("mode"), TEXT("UBlendProfile::Mode is a private UPROPERTY with no setter - a new profile is TimeFactor and this endpoint reports which mode it got rather than pretending to choose") },
+			  { TEXT("bones"), TEXT("create makes an EMPTY profile; set_blend_profile_bone adds bones to it one at a time") } }))
+		{
+			return;
+		}
+		USkeleton* Skeleton = ResolveSkeleton(In, Out, TEXT("created"));
+		if (!Skeleton) { return; }
+
+		const FString Name = JStr(In, TEXT("name")).TrimStartAndEnd();
+		if (Name.IsEmpty())
+		{
+			Fail(Out, TEXT("name is required. NOTHING was created."));
+			return;
+		}
+		if (UBlendProfile* Existing = Skeleton->GetBlendProfile(FName(*Name)))
+		{
+			// SAYS SO rather than handing back the existing one as if it had just been made. A
+			// caller who believes it created an empty profile and finds bones in it has a much
+			// harder problem than one who is told the name is taken.
+			TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+			WriteBlendProfile(J, Existing);
+			Out->SetObjectField(TEXT("profile"), J);
+			Fail(Out, FString::Printf(
+				TEXT("this skeleton already has a blend profile called '%s', with %d bone(s) in "
+					 "it - see `profile` for what it holds. NOTHING was created."),
+				*Name, Existing->GetNumBlendEntries()));
+			return;
+		}
+
+		const FScopedTransaction Transaction(
+			NSLOCTEXT("MifBridge", "MifCreateBlendProfile", "Create Blend Profile"));
+		Skeleton->Modify();
+		UBlendProfile* Profile = Skeleton->CreateNewBlendProfile(FName(*Name));
+		if (!Profile)
+		{
+			Fail(Out, TEXT("CreateNewBlendProfile returned nothing. NOTHING was created."));
+			return;
+		}
+
+		// READ BACK through GetBlendProfile, so "created" means the skeleton can find it by name -
+		// which is how everything else will reach it - rather than that a pointer came back.
+		UBlendProfile* Found = Skeleton->GetBlendProfile(FName(*Name));
+		Out->SetBoolField(TEXT("created"), Found != nullptr);
+		Out->SetBoolField(TEXT("findableByName"), Found == Profile);
+		TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
+		WriteBlendProfile(J, Profile);
+		Out->SetObjectField(TEXT("profile"), J);
+		Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+		Out->SetStringField(TEXT("modeNote"),
+			TEXT("mode decides what the numbers MEAN: timeFactor 0.5 is 'this bone takes half the "
+				 "transition time', weightFactor 0.5 is 'this bone's blend weight is halved'. Same "
+				 "number, opposite intent."));
+		Out->SetStringField(TEXT("saveNote"),
+			TEXT("the SKELETON is dirty and NOTHING has been saved - blend profiles live on it, "
+				 "not on the animation."));
+	}
+
+	void H_set_blend_profile_bone(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("skeleton"), TEXT("path"), TEXT("assetPath"), TEXT("profile"), TEXT("bone"),
+			  TEXT("scale"), TEXT("recurse") },
+			TEXT("skeleton (aliases path, assetPath), profile - the blend profile's name, "
+				 "bone - a bone on that skeleton, scale - the per-bone factor, "
+				 "recurse (default false) to apply it to every child bone too"),
+			{ { TEXT("create"), TEXT("the entry is always created if the bone has none - the engine's bCreate defaults to FALSE and then writes nothing at all, which is not a behaviour worth offering") },
+			  { TEXT("weight"), TEXT("spell it scale - and what it means depends on the profile's mode, which every response reports") },
+			  { TEXT("bones"), TEXT("one bone per call; recurse:true covers a whole limb from its root") } }))
+		{
+			return;
+		}
+		USkeleton* Skeleton = ResolveSkeleton(In, Out, TEXT("changed"));
+		if (!Skeleton) { return; }
+
+		const FString ProfileName = JStr(In, TEXT("profile"));
+		if (ProfileName.IsEmpty())
+		{
+			Fail(Out, TEXT("profile is required - the name of a blend profile on this skeleton. "
+				TEXT("list_blend_profiles reports them. NOTHING was changed.")));
+			return;
+		}
+		UBlendProfile* Profile = Skeleton->GetBlendProfile(FName(*ProfileName));
+		if (!Profile)
+		{
+			TArray<FString> Have;
+			for (const UBlendProfile* P : Skeleton->BlendProfiles)
+			{
+				if (P) { Have.Add(P->GetName()); }
+			}
+			Fail(Out, FString::Printf(
+				TEXT("no blend profile called '%s' on this skeleton - create_blend_profile makes "
+					 "one. It has: %s. NOTHING was changed."),
+				*ProfileName,
+				Have.Num() ? *FString::Join(Have, TEXT(", ")) : TEXT("(none)")));
+			return;
+		}
+
+		const FString BoneName = JStr(In, TEXT("bone")).TrimStartAndEnd();
+		if (BoneName.IsEmpty())
+		{
+			Fail(Out, TEXT("bone is required. NOTHING was changed."));
+			return;
+		}
+		// THE BONE MUST EXIST. SetBoneBlendScale(FName) resolves through the reference skeleton and
+		// simply returns when the name is unknown - another quiet nothing.
+		const int32 BoneIdx = Skeleton->GetReferenceSkeleton().FindBoneIndex(FName(*BoneName));
+		if (BoneIdx == INDEX_NONE)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("'%s' is not a bone on this skeleton, and SetBoneBlendScale returns silently "
+					 "for an unknown bone. It has %d bones - list_bones reports them. NOTHING was "
+					 "changed."), *BoneName, Skeleton->GetReferenceSkeleton().GetNum()));
+			return;
+		}
+
+		if (!In->HasField(TEXT("scale")))
+		{
+			Fail(Out, TEXT("scale is required. NOTHING was changed."));
+			return;
+		}
+		const float Scale = static_cast<float>(JNum(In, TEXT("scale"), 1.0));
+		const bool bRecurse = JBool(In, TEXT("recurse"), false);
+		const float Default = Profile->GetDefaultBlendScale();
+
+		const FScopedTransaction Transaction(
+			NSLOCTEXT("MifBridge", "MifSetBlendProfileBone", "Set Blend Profile Bone"));
+		Skeleton->Modify();
+		const int32 Before = Profile->GetNumBlendEntries();
+
+		// bCreate TRUE, ALWAYS. The engine's default of false writes nothing when the bone has no
+		// entry yet, which is every FIRST write to a bone.
+		Profile->SetBoneBlendScale(FName(*BoneName), Scale, bRecurse, /*bCreate*/ true);
+		Skeleton->MarkPackageDirty();
+
+		const int32 After = Profile->GetNumBlendEntries();
+		const float ReadBack = Profile->GetBoneBlendScale(FName(*BoneName));
+		const bool bIsDefault = FMath::IsNearlyEqual(Scale, Default);
+
+		Out->SetStringField(TEXT("skeleton"), Skeleton->GetPathName());
+		Out->SetStringField(TEXT("profile"), Profile->GetName());
+		Out->SetStringField(TEXT("mode"), BlendProfileModeName(Profile->GetMode()));
+		Out->SetStringField(TEXT("bone"), BoneName);
+		Out->SetNumberField(TEXT("scale"), Scale);
+		Out->SetNumberField(TEXT("scaleReadBack"), ReadBack);
+		Out->SetBoolField(TEXT("recurse"), bRecurse);
+		Out->SetNumberField(TEXT("boneCountBefore"), Before);
+		Out->SetNumberField(TEXT("boneCountAfter"), After);
+		Out->SetNumberField(TEXT("defaultBlendScale"), Default);
+
+		// THE DISTINCTION THE READ-BACK CANNOT MAKE. Setting a bone to the default scale REMOVES
+		// its entry (SetSingleBoneBlendScale's RemoveAll), and GetBoneBlendScale then returns the
+		// default - which is exactly what it would return if the value had been stored. Without
+		// this flag "set to 1.0" and "override removed" are the same response.
+		Out->SetBoolField(TEXT("entryRemoved"), bIsDefault);
+		if (bIsDefault)
+		{
+			Out->SetStringField(TEXT("entryNote"), FString::Printf(
+				TEXT("scale %.4f IS this profile's default (%.4f for a %s profile), so the bone's "
+					 "entry was REMOVED rather than stored - a profile only keeps bones that "
+					 "deviate. Reading it back returns the default either way, which is why this "
+					 "is reported rather than left to be inferred."),
+				Scale, Default, BlendProfileModeName(Profile->GetMode())));
+		}
+		else
+		{
+			Out->SetBoolField(TEXT("scaleStored"), FMath::IsNearlyEqual(ReadBack, Scale, 0.0001f));
+			if (!FMath::IsNearlyEqual(ReadBack, Scale, 0.0001f))
+			{
+				Out->SetStringField(TEXT("scaleNote"), FString::Printf(
+					TEXT("asked for %.4f and the profile reports %.4f. Treat this as a FAILURE "
+						 "despite ok:true."), Scale, ReadBack));
+			}
+		}
+		Out->SetStringField(TEXT("saveNote"),
+			TEXT("the SKELETON is dirty and NOTHING has been saved."));
+	}
+
 
 }

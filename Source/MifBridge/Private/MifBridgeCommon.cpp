@@ -278,6 +278,9 @@ namespace MifBridge
 			MIF_BIND(add_get_data_table_row);
 			MIF_BIND(add_comment);
 			MIF_BIND(set_node_state);
+			MIF_BIND(list_blend_profiles);
+			MIF_BIND(create_blend_profile);
+			MIF_BIND(set_blend_profile_bone);
 			MIF_BIND(group_actors);
 			MIF_BIND(ungroup_actors);
 			// UWidgetBlueprint asset endpoints + generic property setter

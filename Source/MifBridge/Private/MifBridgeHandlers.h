@@ -1246,6 +1246,9 @@ namespace MifBridge
 	MIF_DECL(add_get_data_table_row);
 	MIF_DECL(add_comment);
 	MIF_DECL(set_node_state);
+	MIF_DECL(list_blend_profiles);
+	MIF_DECL(create_blend_profile);
+	MIF_DECL(set_blend_profile_bone);
 	MIF_DECL(group_actors);
 	MIF_DECL(ungroup_actors);
 

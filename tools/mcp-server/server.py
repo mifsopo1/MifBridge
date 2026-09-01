@@ -2187,6 +2187,26 @@ def attach_actor(child: str, parent: str, socket: str = "",
 
 
 @mcp.tool()
+def list_blend_profiles(skeleton: str, profile: str = "") -> dict:
+    "List the blend profiles on a USkeleton (or the skeleton of a SkeletalMesh) with every bone in each. Only bones that DEVIATE from the profile's default are stored, so a bone missing from the list is at the default rather than unset."
+    return _post("list_blend_profiles", skeleton=skeleton, profile=profile)
+
+
+@mcp.tool()
+def create_blend_profile(skeleton: str, name: str) -> dict:
+    "Create an empty named blend profile on a USkeleton - the per-bone weighting that makes an upper-body montage blend in fast on the spine and slowly on the legs. The profile's MODE decides what its numbers mean (timeFactor 0.5 = this bone takes half the transition time; weightFactor 0.5 = its blend weight is halved), and the mode has no setter, so the response reports which one it got. Dirties the SKELETON, not the animation."
+    return _post("create_blend_profile", skeleton=skeleton, name=name)
+
+
+@mcp.tool()
+def set_blend_profile_bone(skeleton: str, profile: str, bone: str, scale: float,
+                           recurse: bool = False) -> dict:
+    "Set one bone's blend scale in a profile, optionally recursing to every child bone. Two engine behaviours are handled rather than exposed: the entry is always created (the engine's bCreate defaults to FALSE and then writes nothing at all, which is every first write to a bone), and setting a bone to the profile's DEFAULT scale REMOVES its entry - a read-back returns the default either way, so entryRemoved says which happened. Which value erases an entry depends on the mode: 0.0 for blendMask, 1.0 otherwise."
+    return _post("set_blend_profile_bone", skeleton=skeleton, profile=profile, bone=bone,
+                 scale=scale, recurse=recurse)
+
+
+@mcp.tool()
 def list_viewport_bookmarks() -> dict:
     "List the level's numbered camera slots - the ones behind Ctrl+1..0 in a viewport - with which are set and where each points. They live on AWorldSettings, so they belong to the LEVEL and are saved with it, not to a viewport."
     return _post("list_viewport_bookmarks")
