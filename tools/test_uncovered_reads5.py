@@ -439,22 +439,40 @@ def main():
         # may legitimately disagree and a mismatch would prove nothing about either. Removing a
         # SECOND function and requiring the count to fall by exactly one is arithmetic the endpoint
         # cannot satisfy by accident, and it holds whatever the baseline number happens to be.
-        first_remaining = real.get("functionGraphsRemaining")
-        check("T915b it reports functionGraphsRemaining as a real number",
-              isinstance(first_remaining, (int, float)), "got %r" % first_remaining)
-        cf2 = M.call("create_function", {"blueprintId": bid, "name": "Reads5Func2_%d" % st})
-        check("T915b (setup) a second scratch function", cf2.get("ok") is True, json.dumps(cf2)[:170])
-        if cf2.get("ok") and isinstance(first_remaining, (int, float)):
-            mid = SC.confirm_call("remove_function",
-                                  {"blueprintId": bid, "name": "Reads5Func2_%d" % st})
-            check("T915b the second removal succeeds", mid.get("ok") is True, json.dumps(mid)[:170])
-            second_remaining = mid.get("functionGraphsRemaining")
-            # The second function was CREATED after the first count was taken, so the graph list went
-            # up by one and back down by one: the count after removing it must equal the first count.
-            check("T915b and the count tracks the graphs rather than being a constant",
-                  second_remaining == first_remaining,
-                  "after removing one: %r; after adding and removing another: %r"
-                  % (first_remaining, second_remaining))
+        # SELF-CONTAINED ON PURPOSE. An earlier version compared against the count from T915's own
+        # removal, which meant every check between here and there had to leave the graph list
+        # exactly as it found it - and T915c, which creates and removes a function, sits in
+        # between. If its cleanup ever failed, THIS check would go red and blame
+        # functionGraphsRemaining for somebody else's leftover. A check that can be broken by an
+        # unrelated neighbour reports the wrong culprit, which is worse than not checking.
+        #
+        # So it makes its own pair and reads both counts from its own removals: remove one of two,
+        # then the other, and the second count must be exactly one lower. That is arithmetic the
+        # endpoint cannot satisfy by accident and it holds whatever the baseline is.
+        a_name, b_name = "Reads5FuncA_%d" % st, "Reads5FuncB_%d" % st
+        ca = M.call("create_function", {"blueprintId": bid, "name": a_name})
+        cb = M.call("create_function", {"blueprintId": bid, "name": b_name})
+        check("T915b (setup) two scratch functions of its own",
+              ca.get("ok") is True and cb.get("ok") is True,
+              "%s / %s" % (json.dumps(ca)[:80], json.dumps(cb)[:80]))
+        if ca.get("ok") and cb.get("ok"):
+            ra = SC.confirm_call("remove_function", {"blueprintId": bid, "name": a_name})
+            rb = SC.confirm_call("remove_function", {"blueprintId": bid, "name": b_name})
+            first_remaining = ra.get("functionGraphsRemaining")
+            second_remaining = rb.get("functionGraphsRemaining")
+            check("T915b both removals succeed",
+                  ra.get("ok") is True and rb.get("ok") is True,
+                  "%s / %s" % (json.dumps(ra)[:80], json.dumps(rb)[:80]))
+            check("T915b it reports functionGraphsRemaining as a real number both times",
+                  isinstance(first_remaining, (int, float))
+                  and isinstance(second_remaining, (int, float)),
+                  "got %r then %r" % (first_remaining, second_remaining))
+            if all(isinstance(x, (int, float)) for x in (first_remaining, second_remaining)):
+                check("T915b and it falls by exactly one across the second removal - a count, not a "
+                      "constant",
+                      second_remaining == first_remaining - 1,
+                      "after the first removal: %r; after the second: %r"
+                      % (first_remaining, second_remaining))
 
     # ------------------------------------------------------------------ T916 remove_variable
     print("\n=== T916: remove_variable - refusal, then the real removal via scratch_confirm ===")
