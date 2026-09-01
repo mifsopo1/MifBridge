@@ -7390,8 +7390,12 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         create_blend_profile / set_blend_profile_bone   per-bone blend scales on a USkeleton -
           the weighting that makes an upper-body montage blend in fast on the spine and slow on
           the legs
-        group_actors / ungroup_actors                   AGroupActor, so a multi-part agent-built
-          prop moves as one unit for a human
+        group_actors / ungroup_actors                   DONE 2026-09-01. Built and covered by
+          tools/test_group_actors.py at 24 checks. UActorGroupingUtils::GroupActors returns nullptr
+          and says NOTHING in four separate cases - grouping mode off, actors spanning two levels,
+          fewer than two groupable, everything passed already a group - so each is diagnosed before
+          the engine call rather than reported as "nothing happened". Grouping mode is a persistent
+          editor setting, so it is never flipped implicitly; enableGrouping:true asks for it.
         paint_landscape/create_landscape register:true  register a ULandscapeLayerInfoObject as a
           target layer, WITHOUT which a layer cannot be painted at all
         rename_asset renames[]                          bulk rename/move in one IAssetTools pass;

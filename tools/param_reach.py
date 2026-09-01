@@ -86,6 +86,11 @@ NOT_A_PARAMETER = {
     ("add_to_collection", "assets"): "the tool sends `paths`",
     ("remove_from_collection", "assets"): "the tool sends `paths`",
     ("move_actors_to_level", "actors"): "the tool sends `actorPaths`",
+    ("group_actors", "actors"): "the tool sends `actorPaths`",
+    # ungroup_actors takes `group` OR `actorPaths`, and the MCP tool exposes BOTH because they are
+    # different affordances rather than two spellings - one group, or a set of its members. `actors`
+    # is the third spelling and is the one nothing needs to send.
+    ("ungroup_actors", "actors"): "the tool sends `group` or `actorPaths`",
     ("edit_container", "blueprintid"): "widget targeting; the tool sends objectPath",
     ("edit_container", "widgetname"): "widget targeting; the tool sends objectPath",
     ("reset_property_to_default", "blueprintid"): "widget targeting; the tool sends objectPath",

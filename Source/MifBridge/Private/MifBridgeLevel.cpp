@@ -26,6 +26,8 @@
 #include "GameFramework/Actor.h"
 #include "Components/SceneComponent.h"   // GetAttachSocketName / DoesSocketExist for attach_actor
 #include "Subsystems/EditorActorSubsystem.h"
+#include "Editor/GroupActor.h"                   // group_actors: AGroupActor
+#include "ActorGroupingUtils.h"                  // group_actors: the engine's own verb
 #include "ScopedTransaction.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -940,4 +942,334 @@ namespace MifBridge
 		Out->SetStringField(TEXT("levelNote"),
 			TEXT("the level is now dirty and NOTHING has been saved."));
 	}
+
+	// --- group_actors / ungroup_actors ---------------------------------------------------------
+	//   in:  { actorPaths[] (alias actors), enableGrouping }
+	//   out: { group, members[], memberCount, groupingWasActive, ... }
+	//
+	// WHAT THIS IS. The editor's Ctrl+G. An AGroupActor is an editor-only actor that owns a flat
+	// list of other actors so a person can select and move a multi-part prop as one thing. An agent
+	// could already spawn twenty pieces of a building and had no way to hand the result to a human
+	// as one object - every piece stayed separately clickable, which is the difference between
+	// delivering a prop and delivering a pile of parts.
+	//
+	// GROUPING IS NOT ATTACHMENT, and the distinction is why both exist. attach_actor builds a
+	// parent/child transform hierarchy that survives cooking and drives runtime movement. A group
+	// is flat, editor-only, and stripped from a cook - it changes what a click selects and nothing
+	// else. Asking for one when you meant the other is silent in both directions.
+	//
+	// UActorGroupingUtils::GroupActors RETURNS nullptr AND SAYS NOTHING in four distinct cases, and
+	// diagnosing which one is most of this endpoint. Read out of ActorGroupingUtils.cpp:51-100
+	// rather than guessed:
+	//
+	//   * grouping mode is OFF        IsGroupingActive() is a global editor toggle. With it off the
+	//                                 whole body is skipped and you get nullptr. This is the case
+	//                                 that reads as "the bridge is broken" - nothing about the
+	//                                 actors is wrong.
+	//   * actors span two levels      the engine breaks out of its scan on the first mismatch.
+	//   * fewer than two groupable    FinalActorList.Num() > 1 is required. A group of one is not
+	//                                 something the editor makes.
+	//   * every actor WAS a group     AGroupActor instances are filtered out of the candidate list,
+	//                                 so passing only groups leaves nothing to group.
+	//
+	// Every one is checked HERE, before the engine call, so the refusal names the cause instead of
+	// reporting that nothing happened.
+	void H_group_actors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPaths"), TEXT("actors"), TEXT("enableGrouping") },
+			TEXT("actorPaths[] (alias actors) - two or more actors in the SAME level; ")
+			TEXT("enableGrouping:true - switch the editor's grouping mode on if it is off. That is ")
+			TEXT("a persistent editor setting, so it is never changed implicitly"),
+			{ { TEXT("name"), TEXT("an AGroupActor is not named at creation - group first, then set_actor_label on the group this returns") },
+			  { TEXT("group"), TEXT("that is ungroup_actors' key; this endpoint CREATES a group out of actorPaths[]") },
+			  { TEXT("parent"), TEXT("grouping is not attachment - attach_actor is the parent/child verb and survives a cook, a group is a flat editor-only selection aid") },
+			  { TEXT("folder"), TEXT("a folder is an Outliner tree path, not a group - the two are independent, and there is no endpoint that SETS one today; list_level_actors filters by folder but nothing assigns it") } }))
+		{
+			return;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if ((!In->TryGetArrayField(TEXT("actorPaths"), Arr)
+			 && !In->TryGetArrayField(TEXT("actors"), Arr)) || !Arr || Arr->Num() == 0)
+		{
+			Fail(Out, TEXT("actorPaths[] is required and must be non-empty. list_level_actors ")
+				TEXT("reports the paths this takes. NOTHING was grouped."));
+			return;
+		}
+
+		UEditorActorSubsystem* ActorSub =
+			GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+		if (!ActorSub)
+		{
+			Fail(Out, TEXT("no EditorActorSubsystem - this is not a running editor. NOTHING was ")
+				TEXT("grouped."));
+			return;
+		}
+
+		// GROUPING MODE FIRST, because it is the only failure that has nothing to do with the
+		// actors and would otherwise be diagnosed as one of the others.
+		const bool bWasActive = UActorGroupingUtils::IsGroupingActive();
+		Out->SetBoolField(TEXT("groupingWasActive"), bWasActive);
+		if (!bWasActive)
+		{
+			if (!JBool(In, TEXT("enableGrouping"), false))
+			{
+				Fail(Out, TEXT("the editor's GROUPING MODE is off, so GroupActors is a no-op and ")
+					TEXT("would have returned nothing with no error - the actors are fine. Pass ")
+					TEXT("enableGrouping:true to switch it on. It is a persistent editor setting ")
+					TEXT("that also governs whether clicking one member selects the whole group, ")
+					TEXT("which is why this endpoint will not flip it behind you. NOTHING was ")
+					TEXT("grouped."));
+				return;
+			}
+			UActorGroupingUtils::SetGroupingActive(true);
+			Out->SetBoolField(TEXT("groupingModeEnabled"), true);
+		}
+
+		TArray<AActor*> ToGroup;
+		TArray<TSharedPtr<FJsonValue>> NotFound;
+		TArray<TSharedPtr<FJsonValue>> WereGroups;
+		for (const TSharedPtr<FJsonValue>& V : *Arr)
+		{
+			FString Path;
+			if (!V.IsValid() || !V->TryGetString(Path) || Path.IsEmpty())
+			{
+				NotFound.Add(MakeShared<FJsonValueString>(TEXT("(non-string entry)")));
+				continue;
+			}
+			TSharedRef<FJsonObject> One = MakeShared<FJsonObject>();
+			One->SetStringField(TEXT("actorPath"), Path);
+			AActor* Actor = ResolveActor(ActorSub, One, Out);
+			if (!Actor)
+			{
+				NotFound.Add(MakeShared<FJsonValueString>(Path));
+				continue;
+			}
+			// The engine drops these from the candidate list without comment. Counted separately so
+			// "you passed three things and all three were groups" is a sentence this can say.
+			if (Actor->IsA(AGroupActor::StaticClass()))
+			{
+				WereGroups.Add(MakeShared<FJsonValueString>(Path));
+				continue;
+			}
+			ToGroup.AddUnique(Actor);
+		}
+		if (NotFound.Num() > 0)
+		{
+			Out->SetArrayField(TEXT("notFound"), NotFound);
+		}
+		if (WereGroups.Num() > 0)
+		{
+			Out->SetArrayField(TEXT("alreadyGroups"), WereGroups);
+		}
+
+		if (ToGroup.Num() < 2)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("grouping needs at least TWO groupable actors and resolved %d. %s%sThe engine ")
+				TEXT("requires more than one and returns nothing otherwise. NOTHING was grouped."),
+				ToGroup.Num(),
+				NotFound.Num() ? *FString::Printf(TEXT("%d path(s) did not resolve - see notFound. "),
+												  NotFound.Num()) : TEXT(""),
+				WereGroups.Num() ? *FString::Printf(
+					TEXT("%d were already AGroupActors, which the engine filters out of the ")
+					TEXT("candidate list - see alreadyGroups. "), WereGroups.Num()) : TEXT("")));
+			return;
+		}
+
+		// SAME LEVEL, checked here because the engine's own check breaks out of its loop and
+		// returns nullptr without naming either level.
+		ULevel* First = ToGroup[0]->GetLevel();
+		for (AActor* A : ToGroup)
+		{
+			if (A->GetLevel() != First)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("every actor must live in the SAME level. '%s' is in %s and '%s' is in ")
+					TEXT("%s. move_actors_to_level can bring them together first. NOTHING was ")
+					TEXT("grouped."),
+					*ToGroup[0]->GetActorLabel(),
+					First ? *First->GetOutermost()->GetName() : TEXT("(none)"),
+					*A->GetActorLabel(),
+					A->GetLevel() ? *A->GetLevel()->GetOutermost()->GetName() : TEXT("(none)")));
+				return;
+			}
+		}
+
+		UActorGroupingUtils* Utils = UActorGroupingUtils::Get();
+		if (!Utils)
+		{
+			Fail(Out, TEXT("no UActorGroupingUtils. NOTHING was grouped."));
+			return;
+		}
+
+		const FScopedTransaction Transaction(
+			NSLOCTEXT("MifBridge", "MifGroupActors", "Group Actors"));
+		AGroupActor* Group = Utils->GroupActors(ToGroup);
+		if (!Group)
+		{
+			Fail(Out, TEXT("GroupActors returned nothing, and the four conditions this endpoint ")
+				TEXT("knows how to diagnose - grouping mode, actor count, mixed levels, actors ")
+				TEXT("that were already groups - all passed. NOTHING was grouped."));
+			return;
+		}
+
+		// POSTCONDITION, read back off the engine rather than assumed from a non-null return. A
+		// group whose members do not point at it is the failure mode worth catching here: the
+		// actor exists, the call succeeded, and selecting a member picks up nothing.
+		TArray<AActor*> Actual;
+		Group->GetGroupActors(Actual, /*bRecurse*/ false);
+		TArray<TSharedPtr<FJsonValue>> Members;
+		int32 Rooted = 0;
+		for (AActor* A : Actual)
+		{
+			if (!A) { continue; }
+			Members.Add(MakeShared<FJsonValueString>(A->GetPathName()));
+			if (AGroupActor::GetRootForActor(A) == Group) { ++Rooted; }
+		}
+		Out->SetStringField(TEXT("group"), Group->GetPathName());
+		Out->SetArrayField(TEXT("members"), Members);
+		Out->SetNumberField(TEXT("memberCount"), Members.Num());
+		Out->SetNumberField(TEXT("requested"), ToGroup.Num());
+		Out->SetBoolField(TEXT("everyMemberRootsToThisGroup"), Rooted == Members.Num());
+		if (Rooted != Members.Num())
+		{
+			Out->SetStringField(TEXT("membershipNote"), FString::Printf(
+				TEXT("%d of %d members do NOT resolve back to this group through ")
+				TEXT("GetRootForActor. Selecting one of those in the viewport will not pick up ")
+				TEXT("the group."), Members.Num() - Rooted, Members.Num()));
+		}
+		Out->SetStringField(TEXT("cookNote"),
+			TEXT("AGroupActor is EDITOR-ONLY and does not survive a cook. Grouping changes what a "
+				 "click selects in the editor; it is not a runtime relationship. attach_actor is "
+				 "the verb that builds one that ships."));
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("the level is now dirty and NOTHING has been saved."));
+	}
+
+	// --- ungroup_actors ------------------------------------------------------------------------
+	//   in:  { actorPaths[] (alias actors, group) }
+	//   out: { ungrouped[], freed[], ... }
+	//
+	// Takes either the GROUP itself or any of its members - UngroupActors resolves each actor to
+	// its root group and disbands that, so both spellings are the same operation and refusing one
+	// of them would be arbitrary. The group actor is destroyed; its members are left exactly where
+	// they are, which is the whole difference from deleting a group.
+	void H_ungroup_actors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
+	{
+		if (RejectUnknownParams(In, Out,
+			{ TEXT("actorPaths"), TEXT("actors"), TEXT("group") },
+			TEXT("actorPaths[] (aliases actors, group) - the group to disband, or any actor in it"),
+			{ { TEXT("recursive"), TEXT("UngroupActors disbands the root group it finds for each actor; there is no partial-depth ungroup to ask for") },
+			  { TEXT("delete"), TEXT("ungrouping never deletes members - it removes the AGroupActor and leaves every actor where it is. delete_level_actor is the destructive verb") } }))
+		{
+			return;
+		}
+
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		TArray<FString> Paths;
+		if (In->TryGetArrayField(TEXT("actorPaths"), Arr) || In->TryGetArrayField(TEXT("actors"), Arr))
+		{
+			for (const TSharedPtr<FJsonValue>& V : *Arr)
+			{
+				FString P;
+				if (V.IsValid() && V->TryGetString(P) && !P.IsEmpty()) { Paths.Add(P); }
+			}
+		}
+		else
+		{
+			const FString One = JStr(In, TEXT("group"));
+			if (!One.IsEmpty()) { Paths.Add(One); }
+		}
+		if (Paths.Num() == 0)
+		{
+			Fail(Out, TEXT("pass group (an AGroupActor path) or actorPaths[] naming the group or ")
+				TEXT("any actor in it. list_level_actors reports both. NOTHING was ungrouped."));
+			return;
+		}
+
+		UEditorActorSubsystem* ActorSub =
+			GEditor ? GEditor->GetEditorSubsystem<UEditorActorSubsystem>() : nullptr;
+		UActorGroupingUtils* Utils = UActorGroupingUtils::Get();
+		if (!ActorSub || !Utils)
+		{
+			Fail(Out, TEXT("no editor actor/grouping subsystem - this is not a running editor. ")
+				TEXT("NOTHING was ungrouped."));
+			return;
+		}
+
+		TArray<AActor*> Targets;
+		TArray<TSharedPtr<FJsonValue>> NotFound;
+		TArray<TSharedPtr<FJsonValue>> NotInAnyGroup;
+		TArray<AActor*> WillBeFreed;
+		for (const FString& P : Paths)
+		{
+			TSharedRef<FJsonObject> One = MakeShared<FJsonObject>();
+			One->SetStringField(TEXT("actorPath"), P);
+			AActor* Actor = ResolveActor(ActorSub, One, Out);
+			if (!Actor)
+			{
+				NotFound.Add(MakeShared<FJsonValueString>(P));
+				continue;
+			}
+			AGroupActor* Root = Cast<AGroupActor>(Actor);
+			if (!Root) { Root = AGroupActor::GetRootForActor(Actor); }
+			if (!Root)
+			{
+				// SAYS SO rather than counting it as done. "ungrouped 3" when one of them was never
+				// in a group is the shape of answer that gets believed.
+				NotInAnyGroup.Add(MakeShared<FJsonValueString>(P));
+				continue;
+			}
+			Targets.AddUnique(Actor);
+			// bRecurse TRUE, and it matters for more than depth: AGroupActor::GetGroupActors calls
+			// OutGroupActors.Empty() in its NON-recursive branch and does not in its recursive one
+			// (GroupActor.cpp:GetGroupActors). So this accumulating loop is only correct with true;
+			// passing false would silently keep just the LAST group's members and then report
+			// "every member freed" about a set it had already discarded.
+			Root->GetGroupActors(WillBeFreed, /*bRecurse*/ true);
+		}
+		if (NotFound.Num() > 0)     { Out->SetArrayField(TEXT("notFound"), NotFound); }
+		if (NotInAnyGroup.Num() > 0) { Out->SetArrayField(TEXT("notInAnyGroup"), NotInAnyGroup); }
+
+		if (Targets.Num() == 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("nothing to ungroup - %d path(s) did not resolve and %d resolved to actors ")
+				TEXT("that are not in any group. NOTHING was ungrouped."),
+				NotFound.Num(), NotInAnyGroup.Num()));
+			return;
+		}
+
+		const FScopedTransaction Transaction(
+			NSLOCTEXT("MifBridge", "MifUngroupActors", "Ungroup Actors"));
+		Utils->UngroupActors(Targets);
+
+		// POSTCONDITION: every actor that was in one of those groups must now root to nothing.
+		TArray<TSharedPtr<FJsonValue>> Freed;
+		int32 StillGrouped = 0;
+		for (AActor* A : WillBeFreed)
+		{
+			if (!A) { continue; }
+			if (AGroupActor::GetRootForActor(A) == nullptr)
+			{
+				Freed.Add(MakeShared<FJsonValueString>(A->GetPathName()));
+			}
+			else
+			{
+				++StillGrouped;
+			}
+		}
+		Out->SetArrayField(TEXT("freed"), Freed);
+		Out->SetNumberField(TEXT("freedCount"), Freed.Num());
+		Out->SetNumberField(TEXT("stillGrouped"), StillGrouped);
+		Out->SetBoolField(TEXT("everyMemberFreed"), StillGrouped == 0);
+		Out->SetStringField(TEXT("memberNote"),
+			TEXT("the members are untouched and still in the level - ungrouping removes the "
+				 "AGroupActor, it does not delete anything."));
+		Out->SetStringField(TEXT("levelNote"),
+			TEXT("the level is now dirty and NOTHING has been saved."));
+	}
+
 }

@@ -2179,6 +2179,20 @@ def attach_actor(child: str, parent: str, socket: str = "",
 
 
 @mcp.tool()
+def group_actors(actor_paths: list, enable_grouping: bool = False) -> dict:
+    "Group two or more placed actors into an AGroupActor - the editor's Ctrl+G, so a multi-part prop selects and moves as one thing. Grouping is NOT attachment: it is flat, editor-only and stripped from a cook, where attach_actor builds a real transform hierarchy that ships. The engine returns nothing at all if grouping mode is off, the actors span two levels, fewer than two are groupable, or they were already groups; this names which. Pass enable_grouping to switch the editor's grouping mode on, which is a persistent setting."
+    return _post("group_actors", actorPaths=actor_paths, enableGrouping=enable_grouping)
+
+
+@mcp.tool()
+def ungroup_actors(group: str = "", actor_paths: list = None) -> dict:
+    "Disband a group. Takes the AGroupActor itself or any actor in it - both resolve to the same root group. The members are left exactly where they are; ungrouping removes the group, it never deletes anything. Reports which actors were freed, read back off the level rather than assumed."
+    if actor_paths:
+        return _post("ungroup_actors", actorPaths=actor_paths)
+    return _post("ungroup_actors", group=group)
+
+
+@mcp.tool()
 def detach_actor(actor_path: str, keep_world_transform: bool = True) -> dict:
     "Detach a placed actor from whatever it is attached to. Takes only the CHILD - it detaches from whatever parent it currently has, which you can read from attachParent on any actor response."
     return _post("detach_actor", actorPath=actor_path,

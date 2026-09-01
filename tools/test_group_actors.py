@@ -157,8 +157,12 @@ def main():
     check("G105 no selector at all is refused", empty.get("ok") is False,
           str(empty.get("error"))[:180])
     delkey = M.call("ungroup_actors", {"group": c, "delete": True})
-    check("G105 `delete` is refused and points at delete_actor",
-          delkey.get("ok") is False and "delete_actor" in str(delkey.get("error", "")),
+    # delete_level_actor, not delete_actor. The first draft of these handlers advised the latter in
+    # a KeyNote and audit_message_endpoints caught it - there is no delete_actor on this build, so
+    # the refusal would have sent the caller to 'not an endpoint'. Asserted here so the advice stays
+    # a name that resolves.
+    check("G105 `delete` is refused and points at delete_level_actor",
+          delkey.get("ok") is False and "delete_level_actor" in str(delkey.get("error", "")),
           str(delkey.get("error"))[:220])
 
     # ---------------------------------------------------------------- cleanup
