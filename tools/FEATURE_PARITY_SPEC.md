@@ -9790,6 +9790,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       here at all; every attempt so far in this family has ended at a cooked-asset guard, and that
       question is worth answering once for all the Niagara items rather than per item.
 
+      ANSWERED 2026-08-31, AND THE ANSWER WAS ALREADY IN THE SOURCE: YES, it can. create_asset has a
+      NiagaraSystem special case at MifBridgeUserTypes.cpp:1125 - a bare NewObject<UNiagaraSystem>
+      crashes the editor (found live 2026-08-29), so it calls
+      UNiagaraSystemFactoryNew::InitializeSystem(System, bCreateDefaultNodes true) straight
+      afterwards, which is exactly what the stock "New Niagara System" factory does.
+
+      UNiagaraSystem IS IN THE CRASH-BOMB FAMILY AND IS REPAIRED IN PLACE, not refused. The source
+      draws that distinction itself: AnimSequence is "the first that cannot be repaired in place,
+      which is why it is a REFUSAL here rather than an initialisation there". So the two are handled
+      oppositely and this entry had folded them together.
+
+      WHAT THE COOKED-ASSET WALL ACTUALLY BLOCKS IS DUPLICATION, NOT CREATION. duplicate_asset on a
+      cooked Niagara faults at 0x30; create_asset builds a fresh one. This item read as though the
+      whole family were walled off, and only one operation is.
+
+      SO THE FIXTURE EXISTS and the Niagara items are blocked on an editor session rather than on a
+      capability. The test: create a scratch NiagaraSystem, add an emitter, disable it via
+      set_property on EmitterHandles[N].bIsEnabled and confirm that WORKS, then try to ENABLE it the
+      same way and confirm it does NOT - which is the asymmetry the note claims. Found by reading
+      the source rather than by trying it, which is how the question should have been answered when
+      the item was first filed.
+
 - [ ] **three more notes promise the compile will catch something, and none is measured** (hours)
       Filed 2026-08-31 by sweeping for the pattern after fixing ONE instance of it, which is the
       rule this repo keeps relearning: remove_event_dispatcher's note promised orphaned nodes "will
