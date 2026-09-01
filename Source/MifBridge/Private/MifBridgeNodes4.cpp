@@ -502,11 +502,26 @@ namespace MifBridge
 		UEdGraph* Graph = Node->GetGraph();
 		UBlueprint* Blueprint = Graph ? Cast<UBlueprint>(Graph->GetOuter()) : nullptr;
 
-		const TCHAR* const StateNames[] = { TEXT("disabled"), TEXT("enabled"), TEXT("developmentOnly") };
-		auto NameOf = [&StateNames](ENodeEnabledState S) -> FString
+		// LexToString IS the engine's own conversion, in EdGraphNode.h right under the enum. This
+		// was first written as a parallel array of names indexed by the enum value:
+		//
+		//     { TEXT("disabled"), TEXT("enabled"), TEXT("developmentOnly") }
+		//
+		// and the real order is Enabled, Disabled, DevelopmentOnly - so 0 and 1 were transposed and
+		// the endpoint reported the EXACT OPPOSITE state for the two values anybody actually uses.
+		// It answered ok:true throughout, the node really did change, and only the name on the way
+		// out was wrong, which is the shape of bug that survives a review: ask it to disable a node
+		// and it disables the node and tells you it enabled it.
+		//
+		// A hand-written table beside an engine enum has no way to notice the enum moving. This one
+		// was wrong the day it was written and would have been wrong forever.
+		auto NameOf = [](ENodeEnabledState S) -> FString
 		{
-			const int32 Idx = static_cast<int32>(S);
-			return (Idx >= 0 && Idx < 3) ? FString(StateNames[Idx]) : FString(TEXT("unknown"));
+			// Lowercased so it round-trips into this endpoint's own `enabled` parameter - the
+			// engine spells them Enabled/Disabled/DevelopmentOnly, and a caller feeding
+			// enabledAfter straight back in should not have to know that.
+			FString N = LexToString(S);
+			return N.Left(1).ToLower() + N.Mid(1);
 		};
 
 		const ENodeEnabledState Before = Node->GetDesiredEnabledState();

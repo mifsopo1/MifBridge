@@ -31,6 +31,26 @@ def check(name, cond, detail=""):
     (PASS if cond else FAIL).append(name if cond else (name, detail))
 
 
+def bail(why):
+    """Exit a setup failure LOUDLY.
+
+    The first run of this suite exited 1 having printed NOTHING AT ALL, which reads exactly like a
+    crash and sent me looking at the editor. It was not a crash: check() only accumulates, so the
+    three `return 1` setup guards below discarded every failure they had just recorded.
+
+    A suite that dies mute is worse than one that dies red - the failure it was holding said
+    `add_call_function is not an endpoint on this build (453 are registered)`, with a didYouMean
+    naming add_function_call. The bridge had diagnosed the bug perfectly and the harness threw the
+    message away.
+    """
+    print("SETUP FAILED: %s" % why)
+    for f in FAIL:
+        if isinstance(f, tuple):
+            print("  FAILED: %s\n          %s" % f)
+    print("%d setup check(s) passed before this." % len(PASS))
+    return 1
+
+
 def main():
     ok, why = M.require_sdk_bridge()
     if not ok:
@@ -42,30 +62,37 @@ def main():
     bpath = "/Game/_MifNodeState/BP_NS_%d" % st
     bid = M.call("create_blueprint", {"path": bpath, "parentClass": "Actor"}).get("blueprintId")
     if not bid:
-        print("could not create the fixture blueprint")
-        return 1
+        return bail("create_blueprint returned no blueprintId")
     graphs = M.call("list_graphs", {"blueprintId": bid}).get("graphs") or []
     graph = next((g.get("graphId") for g in graphs if "EventGraph" in (g.get("name") or "")), None)
     check("N600 (setup) the fixture has an event graph", bool(graph), graphs)
     if not graph:
-        return 1
+        return bail("no EventGraph in list_graphs")
 
     # A print node wired to BeginPlay - the exact thing somebody disables while debugging.
-    pr = M.call("add_call_function", {"graphId": graph, "function": "PrintString",
-                                      "x": 400, "y": 0})
+    # add_function_call, NOT add_call_function - the first draft of this suite had the words the
+    # other way round and the bridge said so, with a didYouMean. PrintString lives on
+    # KismetSystemLibrary and the class has to be named or the lookup has nowhere to start.
+    pr = M.call("add_function_call", {"graphId": graph, "class": "KismetSystemLibrary",
+                                      "function": "PrintString", "x": 400, "y": 0})
     guid = pr.get("nodeGuid") or (pr.get("node") or {}).get("guid")
     check("N600 (setup) a PrintString node exists", bool(guid), json.dumps(pr)[:200])
     if not guid:
-        return 1
+        return bail("add_function_call produced no node")
 
     nodes = M.call("list_nodes", {"graphId": graph}).get("nodes") or []
     begin = next((n.get("guid") for n in nodes
                   if "BeginPlay" in str(n.get("title") or "")), None)
     linked = False
     if begin:
-        c = M.call("connect_pins", {"graphId": graph, "fromNode": begin, "fromPin": "then",
-                                    "toNode": guid, "toPin": "execute"})
+        # srcNode/dstNode, NOT fromNode/toNode. connect_pins takes fromPin and toPin as aliases
+        # but has no from/to alias for the NODE, so the obvious symmetric spelling is refused -
+        # which is how this suite's setup failed the first time it ran for real.
+        c = M.call("connect_pins", {"graphId": graph, "srcNode": begin, "srcPin": "then",
+                                    "dstNode": guid, "dstPin": "execute"})
         linked = c.get("ok") is not False
+        if not linked:
+            print("  connect_pins refused: %s" % str(c.get("error"))[:200])
     check("N600 (setup) it is wired to BeginPlay", linked, "needed for the link-survival check")
 
     def links_on(g):
@@ -80,6 +107,24 @@ def main():
 
     # ---------------------------------------------------------------- N601 disable
     print("=== N601: disabling reports the change, and is read back off the node ===")
+
+    # A PrintString NODE IS BORN developmentOnly, and this suite asserts it rather than working
+    # around it. KismetSystemLibrary::PrintString is declared
+    #     UFUNCTION(BlueprintCallable, meta=(... DevelopmentOnly), Category="Development")
+    # so K2Node_CallFunction creates the node already in ENodeEnabledState::DevelopmentOnly. The
+    # first draft of this suite assumed "enabled" and read back "developmentOnly", which looked
+    # like the endpoint inventing a state and was in fact the endpoint reporting the truth.
+    #
+    # Worth an assertion because it is the one state a bool-shaped implementation cannot express,
+    # and here the engine hands it to us for free on the most common debug node there is.
+    zero = M.call("set_node_state", {"node": guid, "comment": "before anything"})
+    check("N601 a PrintString node starts developmentOnly - the engine flags the UFUNCTION so",
+          zero.get("enabledBefore") == "developmentOnly", zero.get("enabledBefore"))
+
+    on = M.call("set_node_state", {"node": guid, "enabled": "enabled"})
+    check("N601 (setup) it can be turned fully on first", on.get("enabledAfter") == "enabled",
+          on.get("enabledAfter"))
+
     r = M.call("set_node_state", {"node": guid, "enabled": "disabled"})
     check("N601 set_node_state succeeds", r.get("ok") is not False, json.dumps(r)[:220])
     check("N601 enabledBefore was enabled", r.get("enabledBefore") == "enabled",

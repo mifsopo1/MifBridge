@@ -23,6 +23,7 @@ import io
 import json
 import os
 import re
+import time
 import shutil
 import sys
 
@@ -101,7 +102,19 @@ def clear(path=MANIFEST, quiet=False, force=False, why=None):
             for n in sorted(set(offenders)):
                 print("    discarding restore offer for  %s" % n)
 
-    bak = path + (".bak-forced-clear" if offenders else ".bak-scratch-clear")
+    # TIMESTAMPED, because a fixed name made the backup a lie the second time it was used.
+    #
+    # Until 2026-09-01 this wrote ".bak-forced-clear" flat. force= stakes its entire safety
+    # argument on "still backs up first" - that is the sentence that makes discarding somebody
+    # else's unsaved work acceptable - and a fixed name means the SECOND forced clear silently
+    # destroys the first one's evidence. It did: a forced clear today overwrote the 21718-byte
+    # manifest saved on 2026-08-30, which is not recoverable.
+    #
+    # The neighbouring backups in this directory have carried timestamps for weeks
+    # (.bak-091545, .moved-011215). Only the two written by THIS file did not, and they are the
+    # two that matter most, because they are the ones taken when something is being thrown away.
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    bak = path + ("%s-%s" % (".bak-forced-clear" if offenders else ".bak-scratch-clear", stamp))
     try:
         shutil.copy2(path, bak)
     except Exception as e:

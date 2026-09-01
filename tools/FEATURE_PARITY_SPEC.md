@@ -7359,6 +7359,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
         misplaced parameter, littering the scene for somebody who only made a typo. 48 runs now,
         0 failed, on 3.6/4.2/4.4/5.0.
 
+- [ ] **connect_pins takes fromPin/toPin but not fromNode/toNode** (30 min)
+      FOUND 2026-09-01 while writing test_node_state.py, by having the obvious spelling refused.
+      The accepted list is:
+
+        srcNode, srcPin, sourcePin, fromPin, dstNode, dstPin, destPin, toPin, graphId, path
+
+      So the PIN argument answers to from/to and the NODE argument does not. Anyone who writes
+      `fromPin` - which is offered - will write `fromNode` beside it, and get a rejection naming a
+      key they did not think they were using. A half-alias is worse than no alias: no alias teaches
+      one vocabulary, half an alias teaches one and then refuses it a word later.
+
+      RejectUnknownParams caught it and said so, which is the system working - this is a
+      smoothness item, not a correctness one. Add fromNode/toNode as aliases of srcNode/dstNode.
+      Check the same shape elsewhere before fixing just this one: the question is whether any other
+      endpoint offers from/to on one argument and src/dst on its partner.
+
 - [ ] **six proposals were invisible to the backlog counter for weeks** (day+ each)
       FOUND 2026-09-01 with the spec reporting 0 open. It was reporting the truth about `- [ ]`
       lines and nothing about the nine `- [category]` proposal lines sitting further down the file,
@@ -7386,8 +7402,13 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
           target layer, WITHOUT which a layer cannot be painted at all
         rename_asset renames[]                          bulk rename/move in one IAssetTools pass;
           matters beyond convenience because RenameAssets fixes up references as a batch
-        set_node_state                                  enabled | disabled | developmentOnly, plus
-          a node comment - the editor's right-click Disable
+        set_node_state                                  DONE 2026-09-01. Built, and covered by
+          tools/test_node_state.py at 26 checks. Two things it taught, both worth more than the
+          endpoint: a hand-written name table beside ENodeEnabledState had Enabled and Disabled
+          TRANSPOSED, so it disabled the node correctly and reported "enabled" - fixed by using the
+          engine's own LexToString, which cannot drift from the enum. And a PrintString node is
+          BORN developmentOnly, because the UFUNCTION carries meta=(DevelopmentOnly); the suite now
+          asserts that rather than working around it.
         set_material_layers + list_material_parameters {layers:true}   read and write a material
           instance's layer stack
         list/set/jump_viewport_bookmark                 the level's numbered camera slots
