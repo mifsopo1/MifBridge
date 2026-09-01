@@ -37,6 +37,9 @@
 #include "LandscapeInfo.h"
 #include "LandscapeEdit.h"
 #include "LandscapeLayerInfoObject.h"
+#include "AssetToolsModule.h"                   // moving a created LayerInfo
+#include "AssetRegistry/AssetData.h"
+#include "Misc/PackageName.h"
 #if MIF_ENGINE_AT_LEAST(5, 6)
 #include "LandscapeEditLayer.h"                 // ULandscapeEditLayerBase - 5.6+ only
 #endif
@@ -804,11 +807,13 @@ namespace MifBridge
 	{
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("landscape"), TEXT("actorPath"), TEXT("layerName"), TEXT("layer"),
-			  TEXT("layerInfo"), TEXT("template") },
+			  TEXT("layerInfo"), TEXT("layerInfoPath"), TEXT("template") },
 			TEXT("landscape (alias actorPath; omit when there is only one), ")
 			TEXT("layerName (alias layer) - a layer the landscape MATERIAL declares, ")
 			TEXT("layerInfo - assign an EXISTING LandscapeLayerInfoObject asset path instead of ")
-			TEXT("creating one, template - clone another LayerInfo's settings when creating"),
+			TEXT("creating one, layerInfoPath - where to PUT a newly created one (default: beside ")
+			TEXT("the map, which is where the engine puts it), template - clone another LayerInfo's ")
+			TEXT("settings when creating"),
 			{ { TEXT("weight"), TEXT("registration does not paint - register the layer, then paint_landscape applies weight") },
 			  { TEXT("create"), TEXT("creating is the default; pass layerInfo to assign an existing asset instead") },
 			  { TEXT("material"), TEXT("this cannot add a layer to the material - the material must already declare the name, and set_material_parameter is not that verb either") } }))
@@ -910,6 +915,55 @@ namespace MifBridge
 			LayerInfo->LayerUsageDebugColor = LayerInfo->GenerateLayerUsageDebugColor();
 			LayerInfo->MarkPackageDirty();
 			bCreated = true;
+
+			// LET THE CALLER SAY WHERE IT WENT, and this was added because NOT having it did real
+			// damage rather than because it is tidier.
+			//
+			// CreateLayerInfo derives the package path from the LEVEL, so a new LayerInfo lands in
+			// the map's _sharedassets folder - outside any scratch prefix a caller might be using.
+			// Two runs of this endpoint's own test suite were therefore enough to leave two dirty
+			// non-scratch packages in the editor's Restore Packages list, where nothing can tell
+			// them from somebody's real unsaved work, and the next editor launch sat in a modal
+			// with the bridge unable to answer. "It is only unsaved" is not good enough: dirty is
+			// what puts it in that list.
+			//
+			// Built with the ENGINE's constructor and then MOVED, rather than reimplementing
+			// package creation. RenameAssets is the same call rename_asset uses, and this way the
+			// asset is still exactly what the editor's own "+" button produces.
+			const FString WantPath = JStr(In, TEXT("layerInfoPath"));
+			if (!WantPath.IsEmpty())
+			{
+				if (!WantPath.StartsWith(TEXT("/Game/")))
+				{
+					Fail(Out, FString::Printf(
+						TEXT("layerInfoPath '%s' must start with /Game/. The layer was NOT "
+							 "registered."), *WantPath));
+					return;
+				}
+				const FString ToDir = FPackageName::GetLongPackagePath(WantPath);
+				const FString ToName = FPackageName::GetLongPackageAssetName(WantPath);
+				IAssetTools& Tools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(
+					TEXT("AssetTools")).Get();
+				TArray<FAssetRenameData> Move;
+				Move.Add(FAssetRenameData(TWeakObjectPtr<UObject>(LayerInfo), ToDir, ToName));
+				const bool bMoved = [&]()
+				{
+					TGuardValue<bool> UnattendedGuard(GIsRunningUnattendedScript, true);
+					return Tools.RenameAssets(Move);
+				}();
+				// READ BACK. RenameAssets returns one bool and uniquifies on a clash, so where the
+				// asset actually IS is the only answer worth reporting.
+				const FString Landed = LayerInfo->GetOutermost()->GetName();
+				Out->SetBoolField(TEXT("layerInfoMoved"), bMoved && Landed == (ToDir / ToName));
+				Out->SetStringField(TEXT("layerInfoRequestedPath"), ToDir / ToName);
+				if (Landed != (ToDir / ToName))
+				{
+					Out->SetStringField(TEXT("layerInfoMoveNote"), FString::Printf(
+						TEXT("asked for '%s' and the asset is at '%s' - RenameAssets uniquifies on "
+							 "a clash rather than failing. The layer IS registered; only its "
+							 "location differs."), *(ToDir / ToName), *Landed));
+				}
+			}
 		}
 
 		// BOTH halves. EditorLayerSettings is the per-proxy record the editor UI reads; Layers[Idx]
@@ -951,16 +1005,15 @@ namespace MifBridge
 				TEXT("the LayerInfo asset was CREATED IN MEMORY and is NOT saved - it exists for "
 					 "this editor session only. save_package persists it; without that the layer is "
 					 "paintable now and gone on restart."));
-			// THE CALLER DID NOT CHOOSE THIS PATH and will not guess it, so it is stated rather
-			// than left to be discovered from the layerInfo field. ALandscapeProxy::CreateLayerInfo
-			// derives the package name from the LEVEL via GetLayerInfoObjectPackageName, which is
-			// what the editor's own "+" button does. There is no overload that takes a path, so
-			// honouring one here would mean reimplementing package creation rather than calling
-			// the engine - not worth diverging from what the editor produces.
+			// WHERE IT WENT, always stated, because the DEFAULT is not guessable.
+			// ALandscapeProxy::CreateLayerInfo derives the package name from the LEVEL, which is
+			// what the editor's "+" button does, so an unqualified call lands beside the map.
+			// layerInfoPath overrides that; either way layerInfo reports the truth.
 			Out->SetStringField(TEXT("pathNote"),
-				TEXT("the asset path was chosen by the ENGINE, not by this call - CreateLayerInfo "
+				TEXT("with no layerInfoPath the path is chosen by the ENGINE - CreateLayerInfo "
 					 "derives it from the level, so it lands beside the map in a _sharedassets "
-					 "folder. Read layerInfo for where it actually went."));
+					 "folder, OUTSIDE any scratch prefix. Pass layerInfoPath to place it yourself. "
+					 "Read layerInfo for where it actually went."));
 		}
 		Out->SetStringField(TEXT("levelNote"),
 			TEXT("the landscape is now dirty and NOTHING has been saved."));

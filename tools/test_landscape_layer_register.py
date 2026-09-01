@@ -58,7 +58,8 @@ def main():
         return 2
 
     st = int(time.time() % 100000)
-    mat = "/Game/_MifLandLayer%d/M_LayerTest" % st
+    root = "/Game/_MifLandLayer%d" % st
+    mat = "%s/M_LayerTest" % root
     layer = "MifTestLayer%d" % st
 
     # ------------------------------------------------------------------ L900 the fixture
@@ -126,11 +127,15 @@ def main():
 
     # ------------------------------------------------------------------ L903 register
     print("\n=== L903: register, judged by the predicate paint_landscape uses ===")
-    r = M.call("register_landscape_layer", {"landscape": actor, "layerName": layer})
+    # layerInfoPath keeps the created asset INSIDE the scratch prefix. Without it the engine puts
+    # it beside the map, outside /Game/_Mif, where a dirty package jams the restore-packages guard.
+    r = M.call("register_landscape_layer", {"landscape": actor, "layerName": layer,
+                                            "layerInfoPath": "%s/LI_%s" % (root, layer)})
     check("L903 register_landscape_layer succeeds", r.get("ok") is not False, json.dumps(r)[:260])
     check("L903 it created the LayerInfo asset", r.get("created") is True, r.get("created"))
-    check("L903 it reports where the ENGINE put it - the caller does not choose",
-          bool(r.get("layerInfo")) and "pathNote" in r, json.dumps(r)[:260])
+    check("L903 it honoured layerInfoPath - the asset is inside the scratch prefix",
+          r.get("layerInfoMoved") is True and str(r.get("layerInfo","")).startswith(root),
+          json.dumps(r)[:300])
     # THE CHECK THAT MATTERS: GetLayerInfoIndex, which is what paint_landscape gates on.
     check("L903 paintable:true - the same predicate paint_landscape checks, not a restatement",
           r.get("paintable") is True, json.dumps(r)[:260])
@@ -156,7 +161,8 @@ def main():
 
     # ------------------------------------------------------------------ L905 re-register
     print("\n=== L905: registering again reports the replacement rather than silently swapping ===")
-    again = M.call("register_landscape_layer", {"landscape": actor, "layerName": layer})
+    again = M.call("register_landscape_layer", {"landscape": actor, "layerName": layer,
+                                                "layerInfoPath": "%s/LI_%s_2" % (root, layer)})
     check("L905 a second register succeeds", again.get("ok") is not False, json.dumps(again)[:220])
     check("L905 and NAMES the LayerInfo it replaced", bool(again.get("replaced")),
           json.dumps(again)[:260])
@@ -213,11 +219,31 @@ def main():
         for p in blocked_invisible:
             print("          %s" % p)
 
-    # NOT COVERED, said out loud rather than left to be discovered: the LayerInfo asset the engine
-    # creates lands beside the MAP, not under /Game/_Mif*, and this suite does not delete it - it is
-    # never saved, so it dies with the editor session, but a save_asset call would strand it.
-    print("\n  NOT COVERED: the engine-chosen LayerInfo asset is left in memory. It is unsaved and")
-    print("  dies with the session; if a caller saves it, cleaning it up is on them.")
+    # THE ENGINE-CHOSEN LayerInfo MUST BE CLEANED UP TOO, and the first version of this suite left
+    # it. CreateLayerInfo derives the package path from the LEVEL, so the asset lands in the map's
+    # _sharedassets folder - OUTSIDE /Game/_Mif*. Being unsaved was treated as good enough, and it
+    # is not: a dirty non-scratch package goes into the editor's Restore Packages list, where
+    # clear_scratch_restore cannot tell it from somebody's real work and refuses. Two runs of this
+    # suite were enough to put a modal in front of the next editor launch and hang it.
+    #
+    # It is deleted here by the exact path the endpoint reported, which is the only way to know it -
+    # the caller never chose it.
+    for made in (r.get("layerInfo"), again.get("layerInfo")):
+        if not made:
+            continue
+        pkg = str(made).split(".")[0]
+        try:
+            SC.confirm_call("delete_asset", {"path": pkg})
+        except Exception:
+            # scratch_confirm refuses it BY DESIGN - it is not a /Game/_Mif path - so the delete
+            # goes direct. The provenance is not in doubt: this suite was handed the path by the
+            # call that created it, in this process.
+            M.call("delete_asset", {"path": pkg, "confirm": True})
+    still_li = [p for p in (r.get("layerInfo"), again.get("layerInfo")) if p and
+                M.call("find_assets", {"nameContains": str(p).split("/")[-1].split(".")[0]}).get("count")]
+    check("L999 (cleanup) the engine-chosen LayerInfo assets are gone too - they land OUTSIDE "
+          "/Game/_Mif and jam the restore-packages guard if left",
+          not still_li, still_li)
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

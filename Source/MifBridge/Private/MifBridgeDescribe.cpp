@@ -586,7 +586,7 @@ namespace MifBridge
 		static const TCHAR* const GMifDescNotes_export_landscape_heightmap[] = { TEXT("format"), TEXT("the format is taken from the file extension - .png or .r16") ,  TEXT("minZ"), TEXT("an export is the raw uint16 the landscape stores, so there is " "nothing to remap. The response reports the world Z that 0 and " "65535 correspond to, which is what you would remap WITH"), nullptr };
 		static const TCHAR* const GMifDescKeys_paint_landscape[] = { TEXT("landscape"), TEXT("actorPath"), TEXT("layerInfo"), TEXT("layer"), TEXT("info"), TEXT("center"), TEXT("radius"), TEXT("weight"), TEXT("falloff"), nullptr };
 		static const TCHAR* const GMifDescNotes_paint_landscape[] = { TEXT("layerName"), TEXT("pass the LandscapeLayerInfoObject asset path as layerInfo - landscape_info lists the legal ones") ,  TEXT("strength"), TEXT("use weight (0..1)") ,  TEXT("alpha"), TEXT("use weight (0..1)") ,  TEXT("brushSize"), TEXT("use radius (world units)") ,  TEXT("erase"), TEXT("there is no erase mode - weights normalise across layers, so paint a DIFFERENT layer up to push this one down"), nullptr };
-		static const TCHAR* const GMifDescKeys_register_landscape_layer[] = { TEXT("landscape"), TEXT("actorPath"), TEXT("layerName"), TEXT("layer"), TEXT("layerInfo"), TEXT("template"), nullptr };
+		static const TCHAR* const GMifDescKeys_register_landscape_layer[] = { TEXT("landscape"), TEXT("actorPath"), TEXT("layerName"), TEXT("layer"), TEXT("layerInfo"), TEXT("layerInfoPath"), TEXT("template"), nullptr };
 		static const TCHAR* const GMifDescNotes_register_landscape_layer[] = { TEXT("weight"), TEXT("registration does not paint - register the layer, then paint_landscape applies weight") ,  TEXT("create"), TEXT("creating is the default; pass layerInfo to assign an existing asset instead") ,  TEXT("material"), TEXT("this cannot add a layer to the material - the material must already declare the name, and set_material_parameter is not that verb either"), nullptr };
 		static const TCHAR* const GMifDescKeys_bind_landscape_rvt[] = { TEXT("landscape"), TEXT("actorPath"), TEXT("runtimeVirtualTextures"), TEXT("createVolumes"), nullptr };
 		static const TCHAR* const GMifDescNotes_bind_landscape_rvt[] = { TEXT("runtimeVirtualTexture"), TEXT("the key is PLURAL and takes an array - runtimeVirtualTextures:[assetPath], even for one") ,  TEXT("rvt"), TEXT("use runtimeVirtualTextures:[assetPath,...]") ,  TEXT("createVolume"), TEXT("the key is PLURAL - createVolumes (bool)"), nullptr };
@@ -1640,28 +1640,28 @@ namespace MifBridge
 			  TEXT("MifBridgeAuthoring.cpp"), 1412, nullptr },
 			{ TEXT("create_landscape"), GMifDescKeys_create_landscape, GMifDescNotes_create_landscape,
 			  TEXT("location {x,y,z}, scale {x,y,z}, componentsX, componentsY, quadsPerSection (7|15|31|63|127|255), ") TEXT("sectionsPerComponent (1|2), material (alias: landscapeMaterial), ") TEXT("layers [{layerInfo (aliases: info, path), weight}], heightMode (\"flat\"|\"rolling\"|\"island\"), ") TEXT("amplitude, frequency, seed, label, folder"),
-			  TEXT("MifBridgeLandscape.cpp"), 261, nullptr },
+			  TEXT("MifBridgeLandscape.cpp"), 264, nullptr },
 			{ TEXT("sculpt_landscape"), GMifDescKeys_sculpt_landscape, GMifDescNotes_sculpt_landscape,
 			  TEXT("landscape (alias: actorPath; omit when there is only one), center {x,y} in WORLD units, ") TEXT("radius (world units), mode (\"raise\"|\"lower\"|\"flatten\"|\"smooth\"), ") TEXT("amount (world units, raise/lower ONLY), targetZ (a world Z, flatten ONLY), ") TEXT("falloff (0..1 of the radius that is feathered)"),
-			  TEXT("MifBridgeLandscape.cpp"), 554, nullptr },
+			  TEXT("MifBridgeLandscape.cpp"), 557, nullptr },
 			{ TEXT("import_landscape_heightmap"), GMifDescKeys_import_landscape_heightmap, GMifDescNotes_import_landscape_heightmap,
 			  TEXT("landscape (alias actorPath); file - a 16-bit greyscale PNG or raw .r16 - OR data, " "base64 little-endian uint16; width/height REQUIRED with data; x0/y0 for a region " "write (default: the landscape's own origin); minZ/maxZ to map 0..65535 onto a " "world Z range (both or neither - default is a straight copy, since the native " "storage is already uint16)"),
-			  TEXT("MifBridgeLandscape.cpp"), 1838, nullptr },
+			  TEXT("MifBridgeLandscape.cpp"), 1891, nullptr },
 			{ TEXT("export_landscape_heightmap"), GMifDescKeys_export_landscape_heightmap, GMifDescNotes_export_landscape_heightmap,
 			  TEXT("landscape (alias actorPath); file - .png (16-bit greyscale) or .r16, default " "<ProjectSaved>/MifBridge/Export/<Landscape>.r16; x0/y0/width/height for a region; " "asData:true to also return base64 little-endian uint16 instead of only a path"),
-			  TEXT("MifBridgeLandscape.cpp"), 2047, nullptr },
+			  TEXT("MifBridgeLandscape.cpp"), 2100, nullptr },
 			{ TEXT("paint_landscape"), GMifDescKeys_paint_landscape, GMifDescNotes_paint_landscape,
 			  TEXT("landscape (alias: actorPath; omit when there is only one), ") TEXT("layerInfo (aliases: layer, info) - a LandscapeLayerInfoObject ASSET PATH, ") TEXT("center {x,y} in WORLD units, radius (world units), weight (0..1), ") TEXT("falloff (0..1 of the radius that is feathered)"),
-			  TEXT("MifBridgeLandscape.cpp"), 971, nullptr },
+			  TEXT("MifBridgeLandscape.cpp"), 1024, nullptr },
 			{ TEXT("register_landscape_layer"), GMifDescKeys_register_landscape_layer, GMifDescNotes_register_landscape_layer,
-			  TEXT("landscape (alias actorPath; omit when there is only one), ") TEXT("layerName (alias layer) - a layer the landscape MATERIAL declares, ") TEXT("layerInfo - assign an EXISTING LandscapeLayerInfoObject asset path instead of ") TEXT("creating one, template - clone another LayerInfo's settings when creating"),
-			  TEXT("MifBridgeLandscape.cpp"), 805, nullptr },
+			  TEXT("landscape (alias actorPath; omit when there is only one), ") TEXT("layerName (alias layer) - a layer the landscape MATERIAL declares, ") TEXT("layerInfo - assign an EXISTING LandscapeLayerInfoObject asset path instead of ") TEXT("creating one, layerInfoPath - where to PUT a newly created one (default: beside ") TEXT("the map, which is where the engine puts it), template - clone another LayerInfo's ") TEXT("settings when creating"),
+			  TEXT("MifBridgeLandscape.cpp"), 808, nullptr },
 			{ TEXT("bind_landscape_rvt"), GMifDescKeys_bind_landscape_rvt, GMifDescNotes_bind_landscape_rvt,
 			  TEXT("landscape (alias: actorPath; omit when there is only one), ") TEXT("runtimeVirtualTextures [assetPath,...], createVolumes (bool, default true)"),
-			  TEXT("MifBridgeLandscape.cpp"), 1117, nullptr },
+			  TEXT("MifBridgeLandscape.cpp"), 1170, nullptr },
 			{ TEXT("landscape_info"), GMifDescKeys_landscape_info, GMifDescNotes_landscape_info,
 			  TEXT("(none - this endpoint takes no parameters)"),
-			  TEXT("MifBridgeLandscape.cpp"), 1217, nullptr },
+			  TEXT("MifBridgeLandscape.cpp"), 1270, nullptr },
 			{ TEXT("new_level"), GMifDescKeys_new_level, GMifDescNotes_new_level,
 			  TEXT("partitioned (bool, default false) - the only parameter; new_level takes no path"),
 			  TEXT("MifBridgeWorld.cpp"), 124, nullptr },
@@ -2123,7 +2123,7 @@ namespace MifBridge
 			  TEXT("MifBridgeStreaming.cpp"), 1553, nullptr },
 			{ TEXT("apply_spline_to_landscape"), GMifDescKeys_apply_spline_to_landscape, GMifDescNotes_apply_spline_to_landscape,
 			  TEXT("splineActor (alias: spline) - an actor with a USplineComponent; landscape (alias: ") TEXT("actorPath, omit when the level has one); component - which spline component if the ") TEXT("actor has several; startWidth/endWidth (default 200uu); startSideFalloff/") TEXT("endSideFalloff (default 200uu); startRoll/endRoll (degrees, default 0); ") TEXT("subdivisions (default 20); raiseHeights/lowerHeights (default true); paintLayer - ") TEXT("a LandscapeLayerInfoObject path; editLayer - REQUIRED on a landscape with edit ") TEXT("layers"),
-			  TEXT("MifBridgeLandscape.cpp"), 1452, nullptr },
+			  TEXT("MifBridgeLandscape.cpp"), 1505, nullptr },
 			{ TEXT("list_partition_actors"), GMifDescKeys_list_partition_actors, GMifDescNotes_list_partition_actors,
 			  TEXT("classFilter (alias: class) - a native actor class path; nameContains - substring " "match on label or name; dataLayer - only actors in this Data Layer; loadedOnly " "(default false) - only actors currently in memory; limit (default 200); " "bounds {min:{x,y,z}, max:{x,y,z}} - only actors whose editor bounds intersect " "this box"),
 			  TEXT("MifBridgeStreaming.cpp"), 3137, nullptr },

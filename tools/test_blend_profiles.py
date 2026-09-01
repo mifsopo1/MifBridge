@@ -24,10 +24,15 @@ blendMask profile, 1.0 for the others).
 
 FIXTURE: whatever USkeleton this project already has. No asset is created and nothing is saved.
 
-THE PROFILE THIS SUITE ADDS IS NOT REMOVED, because there is no remove_blend_profile endpoint yet -
-USkeleton offers no public removal and it would mean editing BlendProfiles directly. The skeleton
-is never saved here so it does not persist, but a caller who saves that skeleton afterwards keeps
-it. Said here as well as at the end of the run rather than quietly left behind.
+FIXTURE IS A COPY. The first version borrowed the first Skeleton find_assets returned - which is a
+real DDS2 asset, UE4_Mannequin_Skeleton - and dirtied it on every run. Nothing here saves, so it
+never persisted, but a dirty REAL package lands in the editor's Restore Packages list where it is
+indistinguishable from somebody's actual unsaved work, and the guard protecting that list then has
+to refuse. A suite must not leave a human to judge whether its leftovers matter. It now duplicates
+a skeleton into /Game/_MifBlendProf* and deletes the copy.
+
+That also disposes of the profile: there is no remove_blend_profile endpoint, so the only way to
+leave nothing behind is for the skeleton written on to be a throwaway.
 
 Usage:  python tools/test_blend_profiles.py
 Exit:   0 passed   1 failed   2 SKIPPED, no bridge or no skeleton
@@ -60,17 +65,35 @@ def main():
         print("skipped: blend profiles are not in this build")
         return 2
 
+    # WORKS ON A COPY, and the first version of this suite did not.
+    #
+    # It took the first Skeleton find_assets returned and added a blend profile to it. That was
+    # /Game/Animations/.../UE4_Mannequin_Skeleton - a real DDS2 asset. Nothing here saves, so it did
+    # not persist, but it DIRTIED a real package every run: it turns up in the editor's Restore
+    # Packages list, where it is indistinguishable from somebody's actual unsaved work, and the
+    # guard that protects that list has to refuse because of it. A suite must not need a human to
+    # decide whether its leftovers are real.
+    #
     # `class` (aliases className, type) - NOT classNames, which find_assets refuses by name.
     found = M.call("find_assets", {"className": "Skeleton", "limit": 5})
-    assets = found.get("assets") or []
-    skel = None
-    for a in assets:
-        skel = str(a.get("objectPath") or a.get("path")).split(".")[0]
+    source = None
+    for a in (found.get("assets") or []):
+        source = str(a.get("objectPath") or a.get("path")).split(".")[0]
         break
-    if not skel:
-        print("skipped: this project has no USkeleton to test against")
+    if not source:
+        print("skipped: this project has no USkeleton to copy a fixture from")
         return 2
-    print("skeleton: %s" % skel)
+
+    st0 = int(time.time() % 100000)
+    root = "/Game/_MifBlendProf%d" % st0
+    skel = "%s/SK_Fixture" % root
+    dup = M.call("duplicate_asset", {"path": source, "newPath": skel})
+    if dup.get("ok") is False:
+        print("skipped: could not duplicate %s into scratch: %s"
+              % (source, str(dup.get("error"))[:160]))
+        return 2
+    skel = str(dup.get("newPackageName") or skel)
+    print("fixture skeleton: %s  (copied from %s)" % (skel, source))
 
     bones = M.call("list_bones", {"path": skel})
     names = [b.get("name") if isinstance(b, dict) else b for b in (bones.get("bones") or [])]
@@ -194,12 +217,23 @@ def main():
 
     # ------------------------------------------------------------------ cleanup
     print("")
-    # NOT COVERED and said out loud: there is no remove_blend_profile endpoint, so the profile this
-    # suite created stays on the skeleton for the session. The skeleton is NEVER saved, so it does
-    # not persist - but a caller who saves the skeleton afterwards keeps it.
-    print("  NOT COVERED: there is no remove_blend_profile endpoint, so '%s' stays on the" % prof)
-    print("  skeleton for this session. Nothing here saves, so it does not persist - but if you")
-    print("  save this skeleton afterwards it will. Filed in the spec.")
+    # THE PROFILE GOES WITH THE FIXTURE. There is no remove_blend_profile endpoint, so the only way
+    # this suite can leave nothing behind is for the skeleton it wrote on to be its own throwaway
+    # copy - which is the other reason the fixture is duplicated rather than borrowed.
+    import scratch_confirm as SC
+    try:
+        SC.confirm_call("delete_asset", {"path": skel})
+    except Exception as exc:
+        print("  cleanup: %s" % str(exc)[:140])
+    left = M.call("find_assets", {"pathPrefix": root}).get("count")
+    check("D399 (cleanup) the fixture skeleton is gone, taking its blend profile with it",
+          left == 0, left)
+    if left:
+        print("  NOTE  it may be held by an in-memory handle delete_asset cannot see; an editor")
+        print("        restart releases it. See the delete_asset blockedBy item in the spec.")
+
+    print("\n  NOT COVERED: there is no remove_blend_profile endpoint, so a profile cannot be taken")
+    print("  off a skeleton you want to KEEP. Filed in the spec.")
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
