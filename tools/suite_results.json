@@ -2,21 +2,21 @@
  {
   "suite": "test_ability_system.py",
   "pass": 1,
-  "rc": 0,
-  "summary": "PASS 15   FAIL 0",
-  "seconds": 1.8,
+  "rc": 1,
+  "summary": "PASS 14   FAIL 1",
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169449.1142602,
-  "tail": ""
+  "ranAt": 1788246962.098915,
+  "tail": "  PASS  (setup) it spawns into the level as a live actor\n\n=== T9100: what reflection reaches, and what it cannot ===\n  FAIL  T9100 get_property CANNOT reach the component from the actor - an SCS component is not a UPROPERTY by that name\n        {\"ok\": true, \"target\": \"/Temp/Untitled_1.Untitled_1:PersistentLevel.BP_ASCFix46961_C_UAID_E8C8292EF2A66AFD02_1419936401\", \"propertyPath\": \"ASC.ActivatableAbilities\", \"leafProperty\": \"ActivatableAbilit\n  PASS  T9100 addressed as the component it DOES reach it - so this endpoint is not about unreachable data\n  PASS  T9100 but reflection returns EXPORT TEXT, not structured data\n  PASS  T9100 describe_ability_system finds the component\n  PASS  T9100 and returns TYPED collections rather than a string\n  PASS  T9100 it says which route found the component, because 'via the interface' and 'found a component' are different facts about the actor\n\n=== T9101: the refusals ===\n  PASS  T9101 an actor with no ASC is refused, and told it is simply not part of the ability system rather than that something failed\n  PASS  T9101 a path that resolves to nothing is refused, saying it takes a LIVE object path\n  PASS  T9101 blueprintId is refused BY NAME - a Blueprint asset has no runtime state\n\n=== T9102: an empty ASC is explained, not reported as zeroes ===\n  PASS  T9102 the component answered every read\n  PASS  T9102 and an empty result SAYS it is uninitialised rather than absent, and names PIE as where populated state comes from\n  PASS  T9102 - the editor is still alive\n\n========================================================================\nPASS 14   FAIL 1\n  FAILED: T9100 get_property CANNOT reach the component from the actor - an SCS component is not a UPROPERTY by that name\n          {\"ok\": true, \"target\": \"/Temp/Untitled_1.Untitled_1:PersistentLevel.BP_ASCFix46961_C_UAID_E8C8292EF2A66AFD02_1419936401\", \"propertyPath\": \"ASC.ActivatableAbilities\", \"leafProperty\": \"ActivatableAbilit"
  },
  {
   "suite": "test_add_k2_node.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169451.6391692,
+  "ranAt": 1788246965.9267526,
   "tail": ""
  },
  {
@@ -24,9 +24,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 1.4,
+  "seconds": 2.0,
   "editorSurvived": true,
-  "ranAt": 1788169453.7881598,
+  "ranAt": 1788246969.3993542,
   "tail": ""
  },
  {
@@ -34,9 +34,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169456.3926134,
+  "ranAt": 1788246973.1597457,
   "tail": ""
  },
  {
@@ -44,9 +44,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 1.6,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169458.7359252,
+  "ranAt": 1788246976.7606757,
   "tail": ""
  },
  {
@@ -54,9 +54,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169461.313777,
+  "ranAt": 1788246980.562564,
   "tail": ""
  },
  {
@@ -64,9 +64,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 1.7,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169463.8876615,
+  "ranAt": 1788246984.2764788,
   "tail": ""
  },
  {
@@ -74,9 +74,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 5.1,
+  "seconds": 5.7,
   "editorSurvived": true,
-  "ranAt": 1788169469.7789645,
+  "ranAt": 1788246991.3803768,
   "tail": ""
  },
  {
@@ -84,9 +84,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 1.7,
+  "seconds": 2.1,
   "editorSurvived": true,
-  "ranAt": 1788169472.2736616,
+  "ranAt": 1788246994.927296,
   "tail": ""
  },
  {
@@ -94,109 +94,169 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 1.7,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169474.7410204,
+  "ranAt": 1788246998.478675,
   "tail": ""
  },
  {
   "suite": "test_audit_fixes.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 22   FAIL 0",
-  "seconds": 2.8,
+  "summary": "PASS 35   FAIL 0",
+  "seconds": 3.9,
   "editorSurvived": true,
-  "ranAt": 1788169478.370574,
+  "ranAt": 1788247003.7807386,
+  "tail": ""
+ },
+ {
+  "suite": "test_automation_tests.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 1.9,
+  "editorSurvived": true,
+  "ranAt": 1788247007.1197574,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_anim.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 32   FAIL 0",
+  "seconds": 1.8,
+  "editorSurvived": true,
+  "ranAt": 1788247010.3241916,
   "tail": ""
  },
  {
   "suite": "test_blender_authoring.py",
   "pass": 1,
-  "rc": 2,
+  "rc": 1,
   "summary": "",
-  "seconds": 5.4,
+  "seconds": 0.2,
   "editorSurvived": true,
-  "ranAt": 1788169484.5880344,
-  "tail": "MifBlender authoring ops - 127.0.0.1:8792\n  Nothing answered a ping on 127.0.0.1:8792, so no op was exercised.\n  SKIP (exit 2) - a suite that verified nothing must not report success."
+  "ranAt": 1788247011.8903599,
+  "tail": "MifBlender authoring ops - 127.0.0.1:8792\n  FAIL A000 (setup) a mesh exists to work on\n       no MESH in the scene - this suite needs the factory startup Cube"
+ },
+ {
+  "suite": "test_blender_consequence.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 68   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788247015.9437394,
+  "tail": ""
  },
  {
   "suite": "test_blender_creation.py",
   "pass": 1,
-  "rc": 2,
-  "summary": "",
-  "seconds": 1.6,
+  "rc": 0,
+  "summary": "PASS 56   FAIL 0",
+  "seconds": 4.1,
   "editorSurvived": true,
-  "ranAt": 1788169487.0539224,
-  "tail": "\nSKIPPED - nothing was verified.\n  Something IS listening on 127.0.0.1:8792 but it is not a MifBlender - it accepted the\n  connection and never answered a framed ping. That is a PORT CONFLICT, not a\n  Blender that failed to start, and starting another one will not fix it.\n  On this machine a UE editor has held that port before - see docs/06 issue 15.\n  Find the holder with:\n    Get-NetTCPConnection -LocalPort 8792 -State Listen | %{Get-Process -Id $_.OwningProcess}\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+  "ranAt": 1788247021.522743,
+  "tail": ""
  },
  {
   "suite": "test_blender_gen.py",
   "pass": 1,
-  "rc": 2,
-  "summary": "",
-  "seconds": 1.6,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 13.0,
   "editorSurvived": true,
-  "ranAt": 1788169489.4077935,
-  "tail": "MifBlender gen ops (ops_gen.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
+  "ranAt": 1788247036.0550625,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_headless_guard.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "",
+  "seconds": 0.9,
+  "editorSurvived": true,
+  "ranAt": 1788247038.308091,
+  "tail": ""
  },
  {
   "suite": "test_blender_material.py",
   "pass": 1,
-  "rc": 2,
-  "summary": "",
-  "seconds": 1.6,
+  "rc": 0,
+  "summary": "PASS 45   FAIL 0",
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169491.8055644,
-  "tail": "\nSKIPPED - nothing was verified.\n  Something IS listening on 127.0.0.1:8792 but it is not a MifBlender - it accepted the\n  connection and never answered a framed ping. That is a PORT CONFLICT, not a\n  Blender that failed to start, and starting another one will not fix it.\n  On this machine a UE editor has held that port before - see docs/06 issue 15.\n  Find the holder with:\n    Get-NetTCPConnection -LocalPort 8792 -State Listen | %{Get-Process -Id $_.OwningProcess}\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+  "ranAt": 1788247042.0599775,
+  "tail": ""
  },
  {
   "suite": "test_blender_mesh.py",
   "pass": 1,
   "rc": 2,
   "summary": "",
-  "seconds": 3.1,
+  "seconds": 0.2,
   "editorSurvived": true,
-  "ranAt": 1788169495.7406619,
-  "tail": "MifBlender mesh pipeline - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Nothing answered a ping on 127.0.0.1:8792, so no op was exercised.\n  Start one with:  python tools/blender_probe.py --serve <version>\n  Reason: TimeoutError: timed out"
+  "ranAt": 1788247043.6083875,
+  "tail": "MifBlender mesh pipeline - 127.0.0.1:8792\n\nREFUSED - nothing was verified, and nothing was changed.\n  test_blender_mesh MUTATES the scene (it opens with clear_scene), and\n  this Blender is INTERACTIVE - a person may have unsaved work open in it\n  The Blender answering 127.0.0.1:8792.\n  Start a throwaway one instead:  python tools/run_blender_suites.py\n  Or, if you really do mean this one:  set MIF_BLENDER_ALLOW_INTERACTIVE=1\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_blender_ops.py",
   "pass": 1,
-  "rc": 2,
-  "summary": "",
-  "seconds": 1.6,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 0.6,
   "editorSurvived": true,
-  "ranAt": 1788169498.1561804,
-  "tail": "MifBlender addon ops - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) on purpose."
+  "ranAt": 1788247045.5584805,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_reject_unknown.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 68   FAIL 0",
+  "seconds": 3.8,
+  "editorSurvived": true,
+  "ranAt": 1788247050.7202358,
+  "tail": ""
  },
  {
   "suite": "test_blender_rename_bones.py",
   "pass": 1,
-  "rc": 2,
-  "summary": "",
-  "seconds": 1.6,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 1.0,
   "editorSurvived": true,
-  "ranAt": 1788169500.5883365,
-  "tail": "\nSKIPPED - nothing was verified.\n  Something IS listening on 127.0.0.1:8792 but it is not a MifBlender - it accepted the\n  connection and never answered a framed ping. That is a PORT CONFLICT, not a\n  Blender that failed to start, and starting another one will not fix it.\n  On this machine a UE editor has held that port before - see docs/06 issue 15.\n  Find the holder with:\n    Get-NetTCPConnection -LocalPort 8792 -State Listen | %{Get-Process -Id $_.OwningProcess}\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+  "ranAt": 1788247053.0877433,
+  "tail": ""
  },
  {
   "suite": "test_blender_rig.py",
   "pass": 1,
   "rc": 2,
   "summary": "",
-  "seconds": 1.6,
+  "seconds": 0.1,
   "editorSurvived": true,
-  "ranAt": 1788169502.986849,
-  "tail": "  PASS R900 both modifier tables are found in ops_rig.py\n  PASS R901 the read and write modifier tables describe the SAME types - a type on one side and not the other is a silent asymmetry\nMifBlender rig ops (ops_rig.py) - 127.0.0.1:8792\n\nSKIPPED - nothing was verified.\n  Blender is not listening on 127.0.0.1:8792, so no addon op was exercised.\n  Start Blender with the MifBlender addon enabled and run this again."
+  "ranAt": 1788247054.6497273,
+  "tail": "  PASS R900 both modifier tables are found in ops_rig.py\n  PASS R901 the read and write modifier tables describe the SAME types - a type on one side and not the other is a silent asymmetry\nMifBlender rig ops (ops_rig.py) - 127.0.0.1:8792\n\nREFUSED - nothing was verified, and nothing was changed.\n  test_blender_rig MUTATES the scene (it opens with clear_scene), and\n  this Blender is INTERACTIVE - a person may have unsaved work open in it\n  The Blender answering 127.0.0.1:8792.\n  Start a throwaway one instead:  python tools/run_blender_suites.py\n  Or, if you really do mean this one:  set MIF_BLENDER_ALLOW_INTERACTIVE=1\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+ },
+ {
+  "suite": "test_blender_scene.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 49   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788247058.4420598,
+  "tail": ""
  },
  {
   "suite": "test_blueprint_breakpoint.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169505.8381915,
+  "ranAt": 1788247062.314294,
   "tail": ""
  },
  {
@@ -204,9 +264,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169508.5264578,
+  "ranAt": 1788247066.0682318,
   "tail": ""
  },
  {
@@ -214,9 +274,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169511.599802,
+  "ranAt": 1788247069.906267,
   "tail": ""
  },
  {
@@ -224,9 +284,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 4.3,
+  "seconds": 4.7,
   "editorSurvived": true,
-  "ranAt": 1788169516.7871213,
+  "ranAt": 1788247076.0358012,
   "tail": ""
  },
  {
@@ -234,19 +294,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169519.5246239,
+  "ranAt": 1788247079.7256162,
   "tail": ""
  },
  {
   "suite": "test_components_dispatchers.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 39   FAIL 0",
-  "seconds": 2.2,
+  "summary": "PASS 42   FAIL 0",
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169522.693983,
+  "ranAt": 1788247083.8031244,
   "tail": ""
  },
  {
@@ -254,19 +314,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 41   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788169526.419174,
+  "ranAt": 1788247088.3772128,
   "tail": ""
  },
  {
   "suite": "test_consolidate.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 22   FAIL 0",
-  "seconds": 2.1,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169529.5024934,
+  "ranAt": 1788247092.3795266,
   "tail": ""
  },
  {
@@ -274,9 +334,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788169533.2469418,
+  "ranAt": 1788247096.9202454,
   "tail": ""
  },
  {
@@ -284,19 +344,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 3.8,
   "editorSurvived": true,
-  "ranAt": 1788169537.1110222,
+  "ranAt": 1788247102.147188,
   "tail": ""
  },
  {
   "suite": "test_create_asset.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 42   FAIL 0",
-  "seconds": 1.9,
+  "summary": "PASS 47   FAIL 0",
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169540.0067866,
+  "ranAt": 1788247105.8927114,
   "tail": ""
  },
  {
@@ -304,9 +364,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788169543.1591544,
+  "ranAt": 1788247109.821336,
   "tail": ""
  },
  {
@@ -314,9 +374,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169546.1573625,
+  "ranAt": 1788247113.5911453,
   "tail": ""
  },
  {
@@ -324,9 +384,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 14   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169549.4990983,
+  "ranAt": 1788247117.7328718,
   "tail": ""
  },
  {
@@ -334,9 +394,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169552.455811,
+  "ranAt": 1788247121.421192,
   "tail": ""
  },
  {
@@ -346,7 +406,7 @@
   "summary": "PASS 23   FAIL 0",
   "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169555.9495785,
+  "ranAt": 1788247125.2592182,
   "tail": ""
  },
  {
@@ -354,9 +414,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 27   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788169560.004933,
+  "ranAt": 1788247130.024041,
   "tail": ""
  },
  {
@@ -364,19 +424,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788169563.3447645,
+  "ranAt": 1788247133.943787,
   "tail": ""
  },
  {
   "suite": "test_duplicate_cooked_guard.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 11   FAIL 0",
-  "seconds": 2.3,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169566.7348487,
+  "ranAt": 1788247138.022212,
   "tail": ""
  },
  {
@@ -384,9 +444,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169569.7922864,
+  "ranAt": 1788247141.623935,
+  "tail": ""
+ },
+ {
+  "suite": "test_editor_input_gates.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "ranAt": 1788247145.1832078,
   "tail": ""
  },
  {
@@ -394,9 +464,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 15   FAIL 0",
-  "seconds": 1.7,
+  "seconds": 2.0,
   "editorSurvived": true,
-  "ranAt": 1788169572.6599028,
+  "ranAt": 1788247148.6153462,
   "tail": ""
  },
  {
@@ -404,9 +474,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169576.168559,
+  "ranAt": 1788247152.7508838,
   "tail": ""
  },
  {
@@ -414,9 +484,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788169580.2738216,
+  "ranAt": 1788247157.3113585,
   "tail": ""
  },
  {
@@ -424,9 +494,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.2,
   "editorSurvived": true,
-  "ranAt": 1788169584.34753,
+  "ranAt": 1788247162.0271518,
   "tail": ""
  },
  {
@@ -434,9 +504,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 33   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169588.073155,
+  "ranAt": 1788247166.1583855,
   "tail": ""
  },
  {
@@ -446,7 +516,7 @@
   "summary": "PASS 22   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": true,
-  "ranAt": 1788169589.2606554,
+  "ranAt": 1788247167.6872852,
   "tail": ""
  },
  {
@@ -454,9 +524,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 37   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169592.4864585,
+  "ranAt": 1788247171.3699515,
   "tail": ""
  },
  {
@@ -464,9 +534,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169595.9600601,
+  "ranAt": 1788247175.1969724,
   "tail": ""
  },
  {
@@ -474,19 +544,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788169599.349805,
+  "ranAt": 1788247179.096431,
   "tail": ""
  },
  {
   "suite": "test_fuzz_detector.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 17   FAIL 0",
-  "seconds": 0.2,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 0.1,
   "editorSurvived": true,
-  "ranAt": 1788169600.6429212,
+  "ranAt": 1788247180.5559127,
   "tail": ""
  },
  {
@@ -494,9 +564,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.1,
   "editorSurvived": true,
-  "ranAt": 1788169603.7072446,
+  "ranAt": 1788247184.0965755,
   "tail": ""
  },
  {
@@ -504,9 +574,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.0,
   "editorSurvived": true,
-  "ranAt": 1788169607.1057098,
+  "ranAt": 1788247187.552789,
   "tail": ""
  },
  {
@@ -514,9 +584,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169610.5167565,
+  "ranAt": 1788247191.3252125,
   "tail": ""
  },
  {
@@ -526,7 +596,7 @@
   "summary": "PASS 41   FAIL 0",
   "seconds": 3.4,
   "editorSurvived": true,
-  "ranAt": 1788169615.16935,
+  "ranAt": 1788247196.0720303,
   "tail": ""
  },
  {
@@ -534,19 +604,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 1.2,
+  "seconds": 1.0,
   "editorSurvived": true,
-  "ranAt": 1788169617.6346395,
+  "ranAt": 1788247198.485843,
   "tail": ""
  },
  {
   "suite": "test_idempotence.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 26   FAIL 0",
+  "summary": "PASS 32   FAIL 0",
   "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169621.491146,
+  "ranAt": 1788247202.4072652,
   "tail": ""
  },
  {
@@ -554,9 +624,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 67   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169625.7041492,
+  "ranAt": 1788247206.5356655,
   "tail": ""
  },
  {
@@ -564,9 +634,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 56   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169629.9289565,
+  "ranAt": 1788247210.6338131,
   "tail": ""
  },
  {
@@ -576,17 +646,17 @@
   "summary": "PASS 31   FAIL 0",
   "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788169633.7994695,
+  "ranAt": 1788247214.5883882,
   "tail": ""
  },
  {
   "suite": "test_inherited_components.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 37   FAIL 0",
-  "seconds": 2.7,
+  "summary": "PASS 76   FAIL 0",
+  "seconds": 2.8,
   "editorSurvived": true,
-  "ranAt": 1788169637.8827975,
+  "ranAt": 1788247218.8713565,
   "tail": ""
  },
  {
@@ -596,7 +666,7 @@
   "summary": "PASS 34   FAIL 0",
   "seconds": 2.8,
   "editorSurvived": true,
-  "ranAt": 1788169641.9377348,
+  "ranAt": 1788247223.1034837,
   "tail": ""
  },
  {
@@ -604,9 +674,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169645.3675618,
+  "ranAt": 1788247226.7864888,
   "tail": ""
  },
  {
@@ -614,9 +684,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.9,
+  "seconds": 3.0,
   "editorSurvived": true,
-  "ranAt": 1788169649.582037,
+  "ranAt": 1788247231.2882757,
   "tail": ""
  },
  {
@@ -626,7 +696,7 @@
   "summary": "PASS 24   FAIL 0",
   "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169653.3581138,
+  "ranAt": 1788247235.2936504,
   "tail": ""
  },
  {
@@ -634,19 +704,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169656.9827752,
+  "ranAt": 1788247239.232825,
   "tail": ""
  },
  {
   "suite": "test_layers.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 17   FAIL 0",
-  "seconds": 2.1,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169660.4976547,
+  "ranAt": 1788247243.0658095,
   "tail": ""
  },
  {
@@ -654,9 +724,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169664.092091,
+  "ranAt": 1788247246.9358697,
   "tail": ""
  },
  {
@@ -664,9 +734,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.1,
   "editorSurvived": true,
-  "ranAt": 1788169667.375344,
+  "ranAt": 1788247250.5581841,
   "tail": ""
  },
  {
@@ -674,29 +744,29 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.1,
   "editorSurvived": true,
-  "ranAt": 1788169670.675658,
+  "ranAt": 1788247254.1201205,
   "tail": ""
  },
  {
   "suite": "test_levelsnapshots.py",
   "pass": 1,
-  "rc": 1,
-  "summary": "PASS 18   FAIL 2",
-  "seconds": 2.4,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169674.4832878,
-  "tail": "  PASS  T1103 appliedToWorld is true\n  FAIL  T1103 the actor is REALLY back at the origin, independently read back - not just ok:true   None\n\n=== T1104: describe_level_snapshot reads back the same summary through a separate LoadObject ===\n  PASS  T1104 describe succeeds\n  PASS  T1104 numSavedActors matches the original create response\n  PASS  T1104 snapshotName round-trips\n  PASS  T1104 description round-trips\n\n=== T1105-T1109: refusals checked for the specific reason ===\n  PASS  T1105 a second create at the SAME path is refused, not silently applied\n  PASS  T1105 refusal explains the path is already taken\n  PASS  T1106 describe on a missing snapshot is refused\n  PASS  T1107 apply on a missing snapshot is refused\n  PASS  T1108 a path outside /Game/ is refused\n  PASS  T1109 unknown parameter 'label' is rejected\n  PASS  T1109 rejection names the unrecognised key\n\n========================================================================\nPASS 18   FAIL 2\n  FAILED: T1102 the actor really moved, read back via list_level_actors (not trusted from the write)\n          None\n  FAILED: T1103 the actor is REALLY back at the origin, independently read back - not just ok:true\n          None\n========================================================================"
+  "ranAt": 1788247258.2112079,
+  "tail": ""
  },
  {
   "suite": "test_lighting_status.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169677.7127182,
+  "ranAt": 1788247261.9212766,
   "tail": ""
  },
  {
@@ -704,9 +774,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 68   FAIL 0",
-  "seconds": 5.4,
+  "seconds": 5.3,
   "editorSurvived": true,
-  "ranAt": 1788169684.363952,
+  "ranAt": 1788247268.8908424,
   "tail": ""
  },
  {
@@ -714,19 +784,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 6   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169687.8351135,
+  "ranAt": 1788247272.793811,
   "tail": ""
  },
  {
   "suite": "test_load_partition_actors.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 21   FAIL 0",
-  "seconds": 2.3,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169691.5039902,
+  "ranAt": 1788247276.9692981,
   "tail": ""
  },
  {
@@ -734,19 +804,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 0.8,
+  "seconds": 0.7,
   "editorSurvived": true,
-  "ranAt": 1788169693.7281322,
+  "ranAt": 1788247279.3303819,
   "tail": ""
  },
  {
   "suite": "test_material_graph.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 33   FAIL 0",
+  "summary": "PASS 35   FAIL 0",
   "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788169697.611907,
+  "ranAt": 1788247283.5328815,
   "tail": ""
  },
  {
@@ -754,9 +824,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 3.0,
   "editorSurvived": true,
-  "ranAt": 1788169701.6607234,
+  "ranAt": 1788247288.1787345,
   "tail": ""
  },
  {
@@ -764,9 +834,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.9,
   "editorSurvived": true,
-  "ranAt": 1788169705.7961698,
+  "ranAt": 1788247292.7499428,
   "tail": ""
  },
  {
@@ -774,9 +844,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169709.7746572,
+  "ranAt": 1788247297.1517258,
   "tail": ""
  },
  {
@@ -784,9 +854,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.1,
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788169714.2854137,
+  "ranAt": 1788247302.1394658,
   "tail": ""
  },
  {
@@ -796,7 +866,7 @@
   "summary": "PASS 25   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": true,
-  "ranAt": 1788169715.7967393,
+  "ranAt": 1788247303.8660488,
   "tail": ""
  },
  {
@@ -804,9 +874,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.2,
   "editorSurvived": true,
-  "ranAt": 1788169720.3806515,
+  "ranAt": 1788247308.8029025,
   "tail": ""
  },
  {
@@ -814,19 +884,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169724.2521672,
+  "ranAt": 1788247313.1761894,
   "tail": ""
  },
  {
   "suite": "test_modal_guard.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 13   FAIL 0",
-  "seconds": 2.1,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169727.7611926,
+  "ranAt": 1788247317.2193108,
   "tail": ""
  },
  {
@@ -834,9 +904,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 24   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.8,
   "editorSurvived": true,
-  "ranAt": 1788169731.7194245,
+  "ranAt": 1788247321.6359456,
   "tail": ""
  },
  {
@@ -844,9 +914,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169735.2314715,
+  "ranAt": 1788247325.4301546,
   "tail": ""
  },
  {
@@ -854,19 +924,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 39   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.9,
   "editorSurvived": true,
-  "ranAt": 1788169739.3607237,
+  "ranAt": 1788247329.9315195,
   "tail": ""
  },
  {
   "suite": "test_niagara.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 61   FAIL 0",
-  "seconds": 2.2,
+  "summary": "PASS 68   FAIL 0",
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788169743.0406537,
+  "ranAt": 1788247333.9195275,
   "tail": ""
  },
  {
@@ -874,9 +944,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169746.8256571,
+  "ranAt": 1788247338.378529,
   "tail": ""
  },
  {
@@ -884,9 +954,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169750.2480204,
+  "ranAt": 1788247343.262937,
   "tail": ""
  },
  {
@@ -894,10 +964,10 @@
   "pass": 1,
   "rc": 2,
   "summary": "",
-  "seconds": 2.6,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169754.1146724,
-  "tail": "bridge up on pid 4952 (DrugDealerSimulator2.uproject) - 446 endpoints, built Aug 31 2026 04:20:18\nSKIPPED - nothing was verified.\n  No NiagaraSystem in this project declares a user parameter (41 systems checked),\n  and this project's Niagara content is COOKED, which set_niagara_user_parameter\n  refuses anyway - the parameter store cannot be saved or recompiled.\n  No endpoint creates a user parameter, so this suite cannot build its own fixture.\n  Needs an UNCOOKED project with authored user parameters.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+  "ranAt": 1788247347.602964,
+  "tail": "bridge up on pid 32672 (DrugDealerSimulator2.uproject) - 453 endpoints, compiled Sep  1 2026 02:51:49 (banner: __DATE__ of one TU, NOT the link time)\nSKIPPED - nothing was verified.\n  No NiagaraSystem in this project declares a user parameter (40 systems checked),\n  and this project's Niagara content is COOKED, which set_niagara_user_parameter\n  refuses anyway - the parameter store cannot be saved or recompiled.\n  No endpoint creates a user parameter, so this suite cannot build its own fixture.\n  Needs an UNCOOKED project with authored user parameters.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
  },
  {
   "suite": "test_niagara_set_user_param.py",
@@ -906,27 +976,37 @@
   "summary": "PASS 16   FAIL 0",
   "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169757.747029,
+  "ranAt": 1788247351.5512795,
   "tail": ""
  },
  {
   "suite": "test_niagara_user_params.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 13   FAIL 0",
-  "seconds": 2.0,
+  "summary": "PASS 15   FAIL 0",
+  "seconds": 2.1,
   "editorSurvived": true,
-  "ranAt": 1788169761.0140698,
+  "ranAt": 1788247355.2791085,
   "tail": ""
  },
  {
   "suite": "test_node_spawns.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 101   FAIL 0",
-  "seconds": 6.0,
+  "summary": "PASS 110   FAIL 0",
+  "seconds": 6.2,
   "editorSurvived": true,
-  "ranAt": 1788169768.2671819,
+  "ranAt": 1788247363.1274443,
+  "tail": ""
+ },
+ {
+  "suite": "test_node_state.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788247367.4745045,
   "tail": ""
  },
  {
@@ -934,9 +1014,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169771.789595,
+  "ranAt": 1788247371.4062617,
   "tail": ""
  },
  {
@@ -944,9 +1024,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 36   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169775.8770967,
+  "ranAt": 1788247375.798509,
+  "tail": ""
+ },
+ {
+  "suite": "test_pcg_guards.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 11   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788247379.731217,
   "tail": ""
  },
  {
@@ -954,19 +1044,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788169779.5985518,
+  "ranAt": 1788247383.8807318,
   "tail": ""
  },
  {
   "suite": "test_physics_asset.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 36   FAIL 0",
-  "seconds": 2.5,
+  "summary": "PASS 44   FAIL 0",
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169783.5470066,
+  "ranAt": 1788247388.244525,
   "tail": ""
  },
  {
@@ -976,7 +1066,7 @@
   "summary": "PASS 19   FAIL 0",
   "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169787.2546527,
+  "ranAt": 1788247392.1081705,
   "tail": ""
  },
  {
@@ -986,7 +1076,7 @@
   "summary": "PASS 26   FAIL 0",
   "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169790.7908578,
+  "ranAt": 1788247395.8681285,
   "tail": ""
  },
  {
@@ -994,39 +1084,39 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 13   FAIL 0",
-  "seconds": 1.0,
+  "seconds": 0.9,
   "editorSurvived": true,
-  "ranAt": 1788169793.1591713,
+  "ranAt": 1788247398.3036642,
   "tail": ""
  },
  {
   "suite": "test_pins.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 25   FAIL 0",
-  "seconds": 2.7,
+  "summary": "PASS 54   FAIL 0",
+  "seconds": 3.0,
   "editorSurvived": true,
-  "ranAt": 1788169797.29207,
+  "ranAt": 1788247402.836296,
   "tail": ""
  },
  {
   "suite": "test_ported_anim.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 27   FAIL 0",
-  "seconds": 2.5,
+  "summary": "PASS 49   FAIL 0",
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169801.597117,
+  "ranAt": 1788247407.060451,
   "tail": ""
  },
  {
   "suite": "test_project_graph.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 57   FAIL 0",
-  "seconds": 2.2,
+  "summary": "PASS 64   FAIL 0",
+  "seconds": 3.0,
   "editorSurvived": true,
-  "ranAt": 1788169805.3007073,
+  "ranAt": 1788247411.7458107,
   "tail": ""
  },
  {
@@ -1034,9 +1124,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169808.4893684,
+  "ranAt": 1788247415.5370367,
   "tail": ""
  },
  {
@@ -1046,7 +1136,7 @@
   "summary": "PASS 17   FAIL 0",
   "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169812.169813,
+  "ranAt": 1788247419.5693908,
   "tail": ""
  },
  {
@@ -1054,9 +1144,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169815.4347482,
+  "ranAt": 1788247423.3342032,
   "tail": ""
  },
  {
@@ -1064,9 +1154,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169818.9709098,
+  "ranAt": 1788247427.2628355,
   "tail": ""
  },
  {
@@ -1074,9 +1164,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 34   FAIL 0",
-  "seconds": 0.2,
+  "seconds": 0.1,
   "editorSurvived": true,
-  "ranAt": 1788169820.363807,
+  "ranAt": 1788247428.927216,
   "tail": ""
  },
  {
@@ -1084,19 +1174,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169823.870704,
+  "ranAt": 1788247432.8272023,
   "tail": ""
  },
  {
   "suite": "test_rollback_real.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 10   FAIL 0",
+  "summary": "PASS 26   FAIL 0",
   "seconds": 0.7,
   "editorSurvived": true,
-  "ranAt": 1788169825.8648932,
+  "ranAt": 1788247435.0155654,
   "tail": ""
  },
  {
@@ -1104,9 +1194,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169829.5778985,
+  "ranAt": 1788247439.1683238,
   "tail": ""
  },
  {
@@ -1114,19 +1204,19 @@
   "pass": 1,
   "rc": 2,
   "summary": "PASS 8   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.0,
   "editorSurvived": true,
-  "ranAt": 1788169832.7429428,
-  "tail": "bridge up on pid 4952 (DrugDealerSimulator2.uproject) - 446 endpoints, built Aug 31 2026 04:20:18\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n=== T632: export_asset says where the file really went, in any mode ===\n  PASS  T632 the response reports the RESOLVED absolute path, with the `..` already applied - a caller can see where the file went instead of assuming the export root\n  PASS  T632 and states plainly that it landed OUTSIDE the export root, which is the claim the old comment got wrong by calling that root a boundary\n  PASS  T632 and the file is really at the path it reported - the report is checked against the filesystem, not taken at its word\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 8   FAIL 0\nSKIPPED - the gate cannot be tested from 'full' mode; nothing was verified beyond the reads above."
+  "ranAt": 1788247442.7418606,
+  "tail": "bridge up on pid 32672 (DrugDealerSimulator2.uproject) - 453 endpoints, compiled Sep  1 2026 02:51:49 (banner: __DATE__ of one TU, NOT the link time)\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n=== T632: export_asset says where the file really went, in any mode ===\n  PASS  T632 the response reports the RESOLVED absolute path, with the `..` already applied - a caller can see where the file went instead of assuming the export root\n  PASS  T632 and states plainly that it landed OUTSIDE the export root, which is the claim the old comment got wrong by calling that root a boundary\n  PASS  T632 and the file is really at the path it reported - the report is checked against the filesystem, not taken at its word\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 8   FAIL 0\nSKIPPED - the gate cannot be tested from 'full' mode; nothing was verified beyond the reads above."
  },
  {
   "suite": "test_self_audit_modes.py",
   "pass": 1,
   "rc": 0,
   "summary": "PASS 10   FAIL 0",
-  "seconds": 1.8,
+  "seconds": 2.0,
   "editorSurvived": true,
-  "ranAt": 1788169835.8407567,
+  "ranAt": 1788247446.2073421,
   "tail": ""
  },
  {
@@ -1134,9 +1224,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 20   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169839.3452034,
+  "ranAt": 1788247449.8313212,
   "tail": ""
  },
  {
@@ -1144,9 +1234,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 40   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788169842.996477,
+  "ranAt": 1788247453.8506315,
   "tail": ""
  },
  {
@@ -1154,9 +1244,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 35   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.0,
   "editorSurvived": true,
-  "ranAt": 1788169846.1390548,
+  "ranAt": 1788247457.4236977,
   "tail": ""
  },
  {
@@ -1164,9 +1254,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 12   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169849.3825142,
+  "ranAt": 1788247461.1681764,
   "tail": ""
  },
  {
@@ -1174,9 +1264,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.1,
   "editorSurvived": true,
-  "ranAt": 1788169852.532143,
+  "ranAt": 1788247464.7879694,
   "tail": ""
  },
  {
@@ -1184,9 +1274,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 3.2,
+  "seconds": 3.3,
   "editorSurvived": true,
-  "ranAt": 1788169857.005721,
+  "ranAt": 1788247469.6228619,
   "tail": ""
  },
  {
@@ -1194,9 +1284,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 19   FAIL 0",
-  "seconds": 1.9,
+  "seconds": 2.1,
   "editorSurvived": true,
-  "ranAt": 1788169860.1668544,
+  "ranAt": 1788247473.2457511,
   "tail": ""
  },
  {
@@ -1204,9 +1294,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 23   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169863.6290617,
+  "ranAt": 1788247477.1017232,
   "tail": ""
  },
  {
@@ -1216,17 +1306,17 @@
   "summary": "PASS 17   FAIL 0",
   "seconds": 3.2,
   "editorSurvived": true,
-  "ranAt": 1788169868.1520422,
+  "ranAt": 1788247481.7713206,
   "tail": ""
  },
  {
   "suite": "test_socket_authoring.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 28   FAIL 0",
+  "summary": "PASS 34   FAIL 0",
   "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169871.9997854,
+  "ranAt": 1788247485.7916214,
   "tail": ""
  },
  {
@@ -1236,7 +1326,7 @@
   "summary": "PASS 28   FAIL 0",
   "seconds": 2.0,
   "editorSurvived": true,
-  "ranAt": 1788169875.2472694,
+  "ranAt": 1788247489.298217,
   "tail": ""
  },
  {
@@ -1246,7 +1336,7 @@
   "summary": "PASS 18   FAIL 0",
   "seconds": 3.0,
   "editorSurvived": true,
-  "ranAt": 1788169879.5331905,
+  "ranAt": 1788247493.7503536,
   "tail": ""
  },
  {
@@ -1256,17 +1346,17 @@
   "summary": "PASS 39   FAIL 0",
   "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169883.1049733,
+  "ranAt": 1788247497.5369368,
   "tail": ""
  },
  {
   "suite": "test_spline_landscape.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 22   FAIL 0",
+  "summary": "PASS 28   FAIL 0",
   "seconds": 5.3,
   "editorSurvived": true,
-  "ranAt": 1788169889.6762094,
+  "ranAt": 1788247504.3438363,
   "tail": ""
  },
  {
@@ -1274,9 +1364,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 2.7,
+  "seconds": 2.8,
   "editorSurvived": true,
-  "ranAt": 1788169893.5996754,
+  "ranAt": 1788247508.602709,
   "tail": ""
  },
  {
@@ -1284,9 +1374,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 30   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788169897.793369,
+  "ranAt": 1788247513.1526217,
   "tail": ""
  },
  {
@@ -1294,9 +1384,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 18   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.1,
   "editorSurvived": true,
-  "ranAt": 1788169900.9717214,
+  "ranAt": 1788247516.7889028,
   "tail": ""
  },
  {
@@ -1304,9 +1394,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 2.5,
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788169904.623148,
+  "ranAt": 1788247520.9612863,
   "tail": ""
  },
  {
@@ -1314,9 +1404,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.8,
+  "seconds": 2.9,
   "editorSurvived": true,
-  "ranAt": 1788169908.629142,
+  "ranAt": 1788247525.2974222,
   "tail": ""
  },
  {
@@ -1324,9 +1414,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 26   FAIL 0",
-  "seconds": 2.0,
+  "seconds": 2.1,
   "editorSurvived": true,
-  "ranAt": 1788169911.848393,
+  "ranAt": 1788247528.8967113,
   "tail": ""
  },
  {
@@ -1334,9 +1424,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 44   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169915.1354587,
+  "ranAt": 1788247532.4684741,
   "tail": ""
  },
  {
@@ -1344,9 +1434,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 22   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788169918.4631126,
+  "ranAt": 1788247536.3191762,
   "tail": ""
  },
  {
@@ -1354,9 +1444,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 16   FAIL 0",
-  "seconds": 3.0,
+  "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788169922.6068552,
+  "ranAt": 1788247540.8615732,
   "tail": ""
  },
  {
@@ -1364,9 +1454,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 40   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169926.2751412,
+  "ranAt": 1788247544.879808,
   "tail": ""
  },
  {
@@ -1374,19 +1464,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 60   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169929.657353,
+  "ranAt": 1788247548.5828927,
   "tail": ""
  },
  {
   "suite": "test_uncovered_reads3.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 300   FAIL 0",
-  "seconds": 20.6,
+  "summary": "PASS 312   FAIL 0",
+  "seconds": 21.0,
   "editorSurvived": true,
-  "ranAt": 1788169951.450987,
+  "ranAt": 1788247570.9688952,
   "tail": ""
  },
  {
@@ -1396,27 +1486,27 @@
   "summary": "PASS 38   FAIL 0",
   "seconds": 2.3,
   "editorSurvived": true,
-  "ranAt": 1788169954.9686296,
+  "ranAt": 1788247574.7971146,
   "tail": ""
  },
  {
   "suite": "test_uncovered_reads5.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 52   FAIL 0",
-  "seconds": 4.8,
+  "summary": "PASS 77   FAIL 0",
+  "seconds": 5.3,
   "editorSurvived": true,
-  "ranAt": 1788169961.0307863,
+  "ranAt": 1788247581.5282097,
   "tail": ""
  },
  {
   "suite": "test_uncovered_reads6.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 31   FAIL 0",
-  "seconds": 2.6,
+  "summary": "PASS 37   FAIL 0",
+  "seconds": 2.8,
   "editorSurvived": true,
-  "ranAt": 1788169964.9016461,
+  "ranAt": 1788247585.9529607,
   "tail": ""
  },
  {
@@ -1424,9 +1514,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 32   FAIL 0",
-  "seconds": 4.6,
+  "seconds": 4.4,
   "editorSurvived": true,
-  "ranAt": 1788169970.7807715,
+  "ranAt": 1788247591.8993394,
   "tail": ""
  },
  {
@@ -1436,7 +1526,7 @@
   "summary": "PASS 24   FAIL 0",
   "seconds": 3.1,
   "editorSurvived": true,
-  "ranAt": 1788169975.1096046,
+  "ranAt": 1788247596.5090606,
   "tail": ""
  },
  {
@@ -1446,7 +1536,7 @@
   "summary": "PASS 23   FAIL 0",
   "seconds": 6.4,
   "editorSurvived": true,
-  "ranAt": 1788169982.7631395,
+  "ranAt": 1788247604.3071322,
   "tail": ""
  },
  {
@@ -1454,9 +1544,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.1,
+  "seconds": 2.2,
   "editorSurvived": true,
-  "ranAt": 1788169986.2316465,
+  "ranAt": 1788247608.1468391,
   "tail": ""
  },
  {
@@ -1464,9 +1554,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 9   FAIL 0",
-  "seconds": 0.6,
+  "seconds": 0.5,
   "editorSurvived": true,
-  "ranAt": 1788169988.2030406,
+  "ranAt": 1788247610.2897038,
   "tail": ""
  },
  {
@@ -1474,9 +1564,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 25   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169991.6950054,
+  "ranAt": 1788247614.4560947,
   "tail": ""
  },
  {
@@ -1484,9 +1574,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 31   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788169995.4145079,
+  "ranAt": 1788247618.6557152,
   "tail": ""
  },
  {
@@ -1494,9 +1584,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 29   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788169999.0847945,
+  "ranAt": 1788247622.8280473,
   "tail": ""
  },
  {
@@ -1504,9 +1594,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 43   FAIL 0",
-  "seconds": 2.6,
+  "seconds": 2.9,
   "editorSurvived": true,
-  "ranAt": 1788170003.0596113,
+  "ranAt": 1788247627.3592482,
   "tail": ""
  },
  {
@@ -1514,19 +1604,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 17   FAIL 0",
-  "seconds": 2.2,
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788170006.6343603,
+  "ranAt": 1788247631.3954573,
   "tail": ""
  },
  {
   "suite": "test_widget_animation_props.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 35   FAIL 0",
-  "seconds": 2.5,
+  "summary": "PASS 39   FAIL 0",
+  "seconds": 2.7,
   "editorSurvived": true,
-  "ranAt": 1788170010.4555206,
+  "ranAt": 1788247635.692616,
   "tail": ""
  },
  {
@@ -1534,9 +1624,19 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 21   FAIL 0",
-  "seconds": 2.3,
+  "seconds": 2.5,
   "editorSurvived": true,
-  "ranAt": 1788170014.0533516,
+  "ranAt": 1788247639.7747018,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_bindings.py",
+  "pass": 1,
+  "rc": 0,
+  "summary": "PASS 10  FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788247643.5870297,
   "tail": ""
  },
  {
@@ -1544,19 +1644,1679 @@
   "pass": 1,
   "rc": 0,
   "summary": "PASS 28   FAIL 0",
-  "seconds": 2.4,
+  "seconds": 2.6,
   "editorSurvived": true,
-  "ranAt": 1788170017.737744,
+  "ranAt": 1788247647.9012988,
   "tail": ""
  },
  {
   "suite": "test_widget_tree.py",
   "pass": 1,
   "rc": 0,
-  "summary": "PASS 37   FAIL 0",
+  "summary": "PASS 46   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788247652.134196,
+  "tail": ""
+ },
+ {
+  "suite": "test_ability_system.py",
+  "pass": 2,
+  "rc": 1,
+  "summary": "PASS 14   FAIL 1",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788247656.425873,
+  "tail": "  PASS  (setup) it spawns into the level as a live actor\n\n=== T9100: what reflection reaches, and what it cannot ===\n  FAIL  T9100 get_property CANNOT reach the component from the actor - an SCS component is not a UPROPERTY by that name\n        {\"ok\": true, \"target\": \"/Temp/Untitled_1.Untitled_1:PersistentLevel.BP_ASCFix47655_C_UAID_E8C8292EF2A66AFD02_2114262490\", \"propertyPath\": \"ASC.ActivatableAbilities\", \"leafProperty\": \"ActivatableAbilit\n  PASS  T9100 addressed as the component it DOES reach it - so this endpoint is not about unreachable data\n  PASS  T9100 but reflection returns EXPORT TEXT, not structured data\n  PASS  T9100 describe_ability_system finds the component\n  PASS  T9100 and returns TYPED collections rather than a string\n  PASS  T9100 it says which route found the component, because 'via the interface' and 'found a component' are different facts about the actor\n\n=== T9101: the refusals ===\n  PASS  T9101 an actor with no ASC is refused, and told it is simply not part of the ability system rather than that something failed\n  PASS  T9101 a path that resolves to nothing is refused, saying it takes a LIVE object path\n  PASS  T9101 blueprintId is refused BY NAME - a Blueprint asset has no runtime state\n\n=== T9102: an empty ASC is explained, not reported as zeroes ===\n  PASS  T9102 the component answered every read\n  PASS  T9102 and an empty result SAYS it is uninitialised rather than absent, and names PIE as where populated state comes from\n  PASS  T9102 - the editor is still alive\n\n========================================================================\nPASS 14   FAIL 1\n  FAILED: T9100 get_property CANNOT reach the component from the actor - an SCS component is not a UPROPERTY by that name\n          {\"ok\": true, \"target\": \"/Temp/Untitled_1.Untitled_1:PersistentLevel.BP_ASCFix47655_C_UAID_E8C8292EF2A66AFD02_2114262490\", \"propertyPath\": \"ASC.ActivatableAbilities\", \"leafProperty\": \"ActivatableAbilit"
+ },
+ {
+  "suite": "test_add_k2_node.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 34   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788247660.709508,
+  "tail": ""
+ },
+ {
+  "suite": "test_anim_curve.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788247664.6272283,
+  "tail": ""
+ },
+ {
+  "suite": "test_anim_nodes.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788247668.7173264,
+  "tail": ""
+ },
+ {
+  "suite": "test_anim_notify.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788247672.6917245,
+  "tail": ""
+ },
+ {
+  "suite": "test_anim_state.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788247676.7698724,
+  "tail": ""
+ },
+ {
+  "suite": "test_array_wildcard_durability.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 13   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788247680.8592186,
+  "tail": ""
+ },
+ {
+  "suite": "test_asset_tags.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 5.8,
+  "editorSurvived": true,
+  "ranAt": 1788247688.2729423,
+  "tail": ""
+ },
+ {
+  "suite": "test_attach_actor.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788247692.107574,
+  "tail": ""
+ },
+ {
+  "suite": "test_audio_nav.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
   "seconds": 2.4,
   "editorSurvived": true,
-  "ranAt": 1788170021.4541545,
+  "ranAt": 1788247696.0757902,
+  "tail": ""
+ },
+ {
+  "suite": "test_audit_fixes.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 35   FAIL 0",
+  "seconds": 4.4,
+  "editorSurvived": true,
+  "ranAt": 1788247702.0776985,
+  "tail": ""
+ },
+ {
+  "suite": "test_automation_tests.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "ranAt": 1788247705.9201818,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_anim.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 32   FAIL 0",
+  "seconds": 1.8,
+  "editorSurvived": true,
+  "ranAt": 1788247709.319958,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_authoring.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 79   FAIL 0",
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "ranAt": 1788247713.5506709,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_consequence.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 68   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788247717.83116,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_creation.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 56   FAIL 0",
+  "seconds": 4.1,
+  "editorSurvived": true,
+  "ranAt": 1788247723.5757818,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_gen.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 12.9,
+  "editorSurvived": true,
+  "ranAt": 1788247737.9913223,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_headless_guard.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "",
+  "seconds": 0.9,
+  "editorSurvived": true,
+  "ranAt": 1788247740.4292214,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_material.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 45   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788247744.4430459,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_mesh.py",
+  "pass": 2,
+  "rc": 2,
+  "summary": "",
+  "seconds": 0.2,
+  "editorSurvived": true,
+  "ranAt": 1788247746.1554487,
+  "tail": "MifBlender mesh pipeline - 127.0.0.1:8792\n\nREFUSED - nothing was verified, and nothing was changed.\n  test_blender_mesh MUTATES the scene (it opens with clear_scene), and\n  this Blender is INTERACTIVE - a person may have unsaved work open in it\n  The Blender answering 127.0.0.1:8792.\n  Start a throwaway one instead:  python tools/run_blender_suites.py\n  Or, if you really do mean this one:  set MIF_BLENDER_ALLOW_INTERACTIVE=1\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+ },
+ {
+  "suite": "test_blender_ops.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 0.6,
+  "editorSurvived": true,
+  "ranAt": 1788247748.2004094,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_reject_unknown.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 68   FAIL 0",
+  "seconds": 3.8,
+  "editorSurvived": true,
+  "ranAt": 1788247753.5637183,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_rename_bones.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 1.0,
+  "editorSurvived": true,
+  "ranAt": 1788247756.1530502,
+  "tail": ""
+ },
+ {
+  "suite": "test_blender_rig.py",
+  "pass": 2,
+  "rc": 2,
+  "summary": "",
+  "seconds": 0.1,
+  "editorSurvived": true,
+  "ranAt": 1788247757.9238143,
+  "tail": "  PASS R900 both modifier tables are found in ops_rig.py\n  PASS R901 the read and write modifier tables describe the SAME types - a type on one side and not the other is a silent asymmetry\nMifBlender rig ops (ops_rig.py) - 127.0.0.1:8792\n\nREFUSED - nothing was verified, and nothing was changed.\n  test_blender_rig MUTATES the scene (it opens with clear_scene), and\n  this Blender is INTERACTIVE - a person may have unsaved work open in it\n  The Blender answering 127.0.0.1:8792.\n  Start a throwaway one instead:  python tools/run_blender_suites.py\n  Or, if you really do mean this one:  set MIF_BLENDER_ALLOW_INTERACTIVE=1\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+ },
+ {
+  "suite": "test_blender_scene.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 49   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788247762.0159616,
+  "tail": ""
+ },
+ {
+  "suite": "test_blueprint_breakpoint.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "ranAt": 1788247766.7673674,
+  "tail": ""
+ },
+ {
+  "suite": "test_blueprint_watch.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788247771.2691133,
+  "tail": ""
+ },
+ {
+  "suite": "test_capture_viewport.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 33   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "ranAt": 1788247776.1009467,
+  "tail": ""
+ },
+ {
+  "suite": "test_collections.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 27   FAIL 0",
+  "seconds": 5.2,
+  "editorSurvived": true,
+  "ranAt": 1788247783.358997,
+  "tail": ""
+ },
+ {
+  "suite": "test_collision.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 2.8,
+  "editorSurvived": true,
+  "ranAt": 1788247788.0988197,
+  "tail": ""
+ },
+ {
+  "suite": "test_components_dispatchers.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 42   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788247793.136791,
+  "tail": ""
+ },
+ {
+  "suite": "test_confirm_gated.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 41   FAIL 0",
+  "seconds": 3.7,
+  "editorSurvived": true,
+  "ranAt": 1788247798.7744045,
+  "tail": ""
+ },
+ {
+  "suite": "test_consolidate.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "ranAt": 1788247803.994255,
+  "tail": ""
+ },
+ {
+  "suite": "test_cooked_class_trap.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 37   FAIL 0",
+  "seconds": 3.9,
+  "editorSurvived": true,
+  "ranAt": 1788247809.8753407,
+  "tail": ""
+ },
+ {
+  "suite": "test_crash_journal.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 4.4,
+  "editorSurvived": true,
+  "ranAt": 1788247816.422732,
+  "tail": ""
+ },
+ {
+  "suite": "test_create_asset.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 47   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788247821.5667071,
+  "tail": ""
+ },
+ {
+  "suite": "test_create_event.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "ranAt": 1788247827.0014246,
+  "tail": ""
+ },
+ {
+  "suite": "test_create_macro.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788247832.3746386,
+  "tail": ""
+ },
+ {
+  "suite": "test_create_struct_init.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 14   FAIL 0",
+  "seconds": 3.4,
+  "editorSurvived": true,
+  "ranAt": 1788247837.9855275,
+  "tail": ""
+ },
+ {
+  "suite": "test_data_layer_writes.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 36   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "ranAt": 1788247843.1466928,
+  "tail": ""
+ },
+ {
+  "suite": "test_datatables.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "ranAt": 1788247848.243323,
+  "tail": ""
+ },
+ {
+  "suite": "test_dependency_edges.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 27   FAIL 0",
+  "seconds": 4.1,
+  "editorSurvived": true,
+  "ranAt": 1788247854.506561,
+  "tail": ""
+ },
+ {
+  "suite": "test_dispatcher_ops.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 3.4,
+  "editorSurvived": true,
+  "ranAt": 1788247860.1803236,
+  "tail": ""
+ },
+ {
+  "suite": "test_duplicate_cooked_guard.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 3.5,
+  "editorSurvived": true,
+  "ranAt": 1788247866.0929425,
+  "tail": ""
+ },
+ {
+  "suite": "test_edit_container.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "ranAt": 1788247871.2846327,
+  "tail": ""
+ },
+ {
+  "suite": "test_editor_input_gates.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 2.9,
+  "editorSurvived": true,
+  "ranAt": 1788247876.4182208,
+  "tail": ""
+ },
+ {
+  "suite": "test_engine_log.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 15   FAIL 0",
+  "seconds": 2.8,
+  "editorSurvived": true,
+  "ranAt": 1788247881.6456082,
+  "tail": ""
+ },
+ {
+  "suite": "test_enum_edit.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 3.5,
+  "editorSurvived": true,
+  "ranAt": 1788247887.4303226,
+  "tail": ""
+ },
+ {
+  "suite": "test_enums.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 44   FAIL 0",
+  "seconds": 3.9,
+  "editorSurvived": true,
+  "ranAt": 1788247893.489007,
+  "tail": ""
+ },
+ {
+  "suite": "test_factory_init.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 3.8,
+  "editorSurvived": true,
+  "ranAt": 1788247899.4476304,
+  "tail": ""
+ },
+ {
+  "suite": "test_find_and_move.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 33   FAIL 0",
+  "seconds": 3.4,
+  "editorSurvived": true,
+  "ranAt": 1788247904.9861176,
+  "tail": ""
+ },
+ {
+  "suite": "test_find_tools.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 0.1,
+  "editorSurvived": true,
+  "ranAt": 1788247907.2917674,
+  "tail": ""
+ },
+ {
+  "suite": "test_foliage_modes.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 37   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788247912.624306,
+  "tail": ""
+ },
+ {
+  "suite": "test_foliage_removal.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 25   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788247917.930743,
+  "tail": ""
+ },
+ {
+  "suite": "test_function_flags.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 19   FAIL 0",
+  "seconds": 3.4,
+  "editorSurvived": true,
+  "ranAt": 1788247923.505535,
+  "tail": ""
+ },
+ {
+  "suite": "test_fuzz_detector.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 0.1,
+  "editorSurvived": true,
+  "ranAt": 1788247925.7229173,
+  "tail": ""
+ },
+ {
+  "suite": "test_game_features.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 68   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788247930.4571934,
+  "tail": ""
+ },
+ {
+  "suite": "test_gameplay_tag_authoring.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 19   FAIL 0",
+  "seconds": 2.8,
+  "editorSurvived": true,
+  "ranAt": 1788247935.1568336,
+  "tail": ""
+ },
+ {
+  "suite": "test_generate_lods.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788247940.3300104,
+  "tail": ""
+ },
+ {
+  "suite": "test_geometryscript.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 41   FAIL 0",
+  "seconds": 4.1,
+  "editorSurvived": true,
+  "ranAt": 1788247946.3895893,
+  "tail": ""
+ },
+ {
+  "suite": "test_graph_patch.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 1.0,
+  "editorSurvived": true,
+  "ranAt": 1788247949.2925875,
+  "tail": ""
+ },
+ {
+  "suite": "test_idempotence.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 32   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "ranAt": 1788247954.1901956,
+  "tail": ""
+ },
+ {
+  "suite": "test_ik_authoring.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 67   FAIL 0",
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "ranAt": 1788247959.3672054,
+  "tail": ""
+ },
+ {
+  "suite": "test_ik_goals_solvers.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 56   FAIL 0",
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "ranAt": 1788247964.5374732,
+  "tail": ""
+ },
+ {
+  "suite": "test_ik_rig.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 31   FAIL 0",
+  "seconds": 2.9,
+  "editorSurvived": true,
+  "ranAt": 1788247969.4226618,
+  "tail": ""
+ },
+ {
+  "suite": "test_inherited_components.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 76   FAIL 0",
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "ranAt": 1788247974.6616192,
+  "tail": ""
+ },
+ {
+  "suite": "test_input_mapping.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 34   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788247979.7244818,
+  "tail": ""
+ },
+ {
+  "suite": "test_instance_components.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "ranAt": 1788247984.2706819,
+  "tail": ""
+ },
+ {
+  "suite": "test_interfaces.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "ranAt": 1788247989.4028578,
+  "tail": ""
+ },
+ {
+  "suite": "test_landscape_heightmap.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788247993.9768312,
+  "tail": ""
+ },
+ {
+  "suite": "test_landscape_info.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788247998.3371117,
+  "tail": ""
+ },
+ {
+  "suite": "test_layers.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788248002.5916631,
+  "tail": ""
+ },
+ {
+  "suite": "test_legacy_input.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "ranAt": 1788248006.8807437,
+  "tail": ""
+ },
+ {
+  "suite": "test_level_blueprint.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248010.7093165,
+  "tail": ""
+ },
+ {
+  "suite": "test_level_instances.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248014.5234303,
+  "tail": ""
+ },
+ {
+  "suite": "test_levelsnapshots.py",
+  "pass": 2,
+  "rc": 1,
+  "summary": "PASS 18   FAIL 2",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248018.84636,
+  "tail": "  PASS  T1103 appliedToWorld is true\n  FAIL  T1103 the actor is REALLY back at the origin, independently read back - not just ok:true   None\n\n=== T1104: describe_level_snapshot reads back the same summary through a separate LoadObject ===\n  PASS  T1104 describe succeeds\n  PASS  T1104 numSavedActors matches the original create response\n  PASS  T1104 snapshotName round-trips\n  PASS  T1104 description round-trips\n\n=== T1105-T1109: refusals checked for the specific reason ===\n  PASS  T1105 a second create at the SAME path is refused, not silently applied\n  PASS  T1105 refusal explains the path is already taken\n  PASS  T1106 describe on a missing snapshot is refused\n  PASS  T1107 apply on a missing snapshot is refused\n  PASS  T1108 a path outside /Game/ is refused\n  PASS  T1109 unknown parameter 'label' is rejected\n  PASS  T1109 rejection names the unrecognised key\n\n========================================================================\nPASS 18   FAIL 2\n  FAILED: T1102 the actor really moved, read back via list_level_actors (not trusted from the write)\n          None\n  FAILED: T1103 the actor is REALLY back at the origin, independently read back - not just ok:true\n          None\n========================================================================"
+ },
+ {
+  "suite": "test_lighting_status.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 19   FAIL 0",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "ranAt": 1788248022.6239197,
+  "tail": ""
+ },
+ {
+  "suite": "test_list_bones.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 68   FAIL 0",
+  "seconds": 5.4,
+  "editorSurvived": true,
+  "ranAt": 1788248029.673098,
+  "tail": ""
+ },
+ {
+  "suite": "test_load_level_guard.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 6   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248033.5269895,
+  "tail": ""
+ },
+ {
+  "suite": "test_load_partition_actors.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248037.6321847,
+  "tail": ""
+ },
+ {
+  "suite": "test_macro_dispatch.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 0.7,
+  "editorSurvived": true,
+  "ranAt": 1788248039.9289122,
+  "tail": ""
+ },
+ {
+  "suite": "test_material_graph.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 35   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788248044.0348263,
+  "tail": ""
+ },
+ {
+  "suite": "test_material_params.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "ranAt": 1788248048.1738214,
+  "tail": ""
+ },
+ {
+  "suite": "test_material_statistics.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 2.8,
+  "editorSurvived": true,
+  "ranAt": 1788248052.5548375,
+  "tail": ""
+ },
+ {
+  "suite": "test_material_undo.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248056.9248085,
+  "tail": ""
+ },
+ {
+  "suite": "test_material_write.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "ranAt": 1788248061.8160658,
+  "tail": ""
+ },
+ {
+  "suite": "test_mcp_post_errors.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 25   FAIL 0",
+  "seconds": 0.1,
+  "editorSurvived": true,
+  "ranAt": 1788248063.5239303,
+  "tail": ""
+ },
+ {
+  "suite": "test_mesh_boolean.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788248068.2625842,
+  "tail": ""
+ },
+ {
+  "suite": "test_metasound.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248072.708354,
+  "tail": ""
+ },
+ {
+  "suite": "test_modal_guard.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248076.899206,
+  "tail": ""
+ },
+ {
+  "suite": "test_modal_hazards.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 2.8,
+  "editorSurvived": true,
+  "ranAt": 1788248081.410925,
+  "tail": ""
+ },
+ {
+  "suite": "test_move_actors_to_level.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 13   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788248085.3234558,
+  "tail": ""
+ },
+ {
+  "suite": "test_mvvm.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 39   FAIL 0",
+  "seconds": 2.9,
+  "editorSurvived": true,
+  "ranAt": 1788248089.8237965,
+  "tail": ""
+ },
+ {
+  "suite": "test_niagara.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 68   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788248093.723634,
+  "tail": ""
+ },
+ {
+  "suite": "test_niagara_add_remove.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788248097.787455,
+  "tail": ""
+ },
+ {
+  "suite": "test_niagara_emitter.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248101.5490358,
+  "tail": ""
+ },
+ {
+  "suite": "test_niagara_params.py",
+  "pass": 2,
+  "rc": 2,
+  "summary": "",
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "ranAt": 1788248105.8318222,
+  "tail": "bridge up on pid 32672 (DrugDealerSimulator2.uproject) - 453 endpoints, compiled Sep  1 2026 02:51:49 (banner: __DATE__ of one TU, NOT the link time)\nSKIPPED - nothing was verified.\n  No NiagaraSystem in this project declares a user parameter (41 systems checked),\n  and this project's Niagara content is COOKED, which set_niagara_user_parameter\n  refuses anyway - the parameter store cannot be saved or recompiled.\n  No endpoint creates a user parameter, so this suite cannot build its own fixture.\n  Needs an UNCOOKED project with authored user parameters.\n  Exit code 2 means SKIPPED, distinct from 0 (passed) and 1 (failed) on purpose."
+ },
+ {
+  "suite": "test_niagara_set_user_param.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788248109.669555,
+  "tail": ""
+ },
+ {
+  "suite": "test_niagara_user_params.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 15   FAIL 0",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "ranAt": 1788248113.359355,
+  "tail": ""
+ },
+ {
+  "suite": "test_node_spawns.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 110   FAIL 0",
+  "seconds": 6.3,
+  "editorSurvived": true,
+  "ranAt": 1788248121.184875,
+  "tail": ""
+ },
+ {
+  "suite": "test_node_state.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248125.5572534,
+  "tail": ""
+ },
+ {
+  "suite": "test_partition_actors.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788248129.4381332,
+  "tail": ""
+ },
+ {
+  "suite": "test_pcg_authoring.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 36   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248133.86814,
+  "tail": ""
+ },
+ {
+  "suite": "test_pcg_guards.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 11   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248137.8259375,
+  "tail": ""
+ },
+ {
+  "suite": "test_perf_stats.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 25   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248141.921215,
+  "tail": ""
+ },
+ {
+  "suite": "test_physics_asset.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 44   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248146.310659,
+  "tail": ""
+ },
+ {
+  "suite": "test_physics_primitive_collision.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 19   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788248150.3108208,
+  "tail": ""
+ },
+ {
+  "suite": "test_pie_idle.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248154.1041465,
+  "tail": ""
+ },
+ {
+  "suite": "test_pinlifetime.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 13   FAIL 0",
+  "seconds": 0.9,
+  "editorSurvived": true,
+  "ranAt": 1788248156.6020215,
+  "tail": ""
+ },
+ {
+  "suite": "test_pins.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 54   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788248161.32723,
+  "tail": ""
+ },
+ {
+  "suite": "test_ported_anim.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 49   FAIL 0",
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "ranAt": 1788248165.6213417,
+  "tail": ""
+ },
+ {
+  "suite": "test_project_graph.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 64   FAIL 0",
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "ranAt": 1788248169.7902527,
+  "tail": ""
+ },
+ {
+  "suite": "test_project_paths.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "ranAt": 1788248173.451638,
+  "tail": ""
+ },
+ {
+  "suite": "test_recipes.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248177.419627,
+  "tail": ""
+ },
+ {
+  "suite": "test_redirectors.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248181.1393712,
+  "tail": ""
+ },
+ {
+  "suite": "test_rename_widget.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248185.1035254,
+  "tail": ""
+ },
+ {
+  "suite": "test_report_intake.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 34   FAIL 0",
+  "seconds": 0.1,
+  "editorSurvived": true,
+  "ranAt": 1788248186.7466145,
+  "tail": ""
+ },
+ {
+  "suite": "test_reroute.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788248190.763698,
+  "tail": ""
+ },
+ {
+  "suite": "test_rollback_real.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 0.7,
+  "editorSurvived": true,
+  "ranAt": 1788248192.9836252,
+  "tail": ""
+ },
+ {
+  "suite": "test_run_retarget.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 18   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248197.194726,
+  "tail": ""
+ },
+ {
+  "suite": "test_safety_gate.py",
+  "pass": 2,
+  "rc": 2,
+  "summary": "PASS 8   FAIL 0",
+  "seconds": 2.0,
+  "editorSurvived": true,
+  "ranAt": 1788248200.7418838,
+  "tail": "bridge up on pid 32672 (DrugDealerSimulator2.uproject) - 453 endpoints, compiled Sep  1 2026 02:51:49 (banner: __DATE__ of one TU, NOT the link time)\n=== T630: the gate's state is discoverable before anything is attempted ===\n  PASS  T630 self_audit answers\n  PASS  T630 it reports writeMode\n  PASS  T630 writeMode is one of the three real modes\n  PASS  T630 it reports safetyGateActive as a bool\n  PASS  T630 safetyGateActive agrees with writeMode\n\n=== T631: the default is a GATED mode, not 'full' ===\n  SKIP  the gate is present and deliberately OFF (writeMode 'full').\n        Nothing to enforce, and the destructive probes below are NOT attempted.\n        Relaunch with launch_editor(write_mode='scratch') to exercise the gate.\n\n=== T632: export_asset says where the file really went, in any mode ===\n  PASS  T632 the response reports the RESOLVED absolute path, with the `..` already applied - a caller can see where the file went instead of assuming the export root\n  PASS  T632 and states plainly that it landed OUTSIDE the export root, which is the claim the old comment got wrong by calling that root a boundary\n  PASS  T632 and the file is really at the path it reported - the report is checked against the filesystem, not taken at its word\n\n  (bailing out before the destructive probes - without a confirmed gated mode they\n   would be real calls to save_package, start_pie and trigger_cook.)\n========================================================================\nPASS 8   FAIL 0\nSKIPPED - the gate cannot be tested from 'full' mode; nothing was verified beyond the reads above."
+ },
+ {
+  "suite": "test_self_audit_modes.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 10   FAIL 0",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "ranAt": 1788248204.3053293,
+  "tail": ""
+ },
+ {
+  "suite": "test_selfpin.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 20   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248208.0430315,
+  "tail": ""
+ },
+ {
+  "suite": "test_sequence_keys.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 40   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788248212.0851805,
+  "tail": ""
+ },
+ {
+  "suite": "test_sequencer.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 35   FAIL 0",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "ranAt": 1788248215.7019498,
+  "tail": ""
+ },
+ {
+  "suite": "test_sequencer_authoring.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 12   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788248219.4976907,
+  "tail": ""
+ },
+ {
+  "suite": "test_set_plugin_enabled.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788248223.4211602,
+  "tail": ""
+ },
+ {
+  "suite": "test_set_struct_member.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "ranAt": 1788248228.2533057,
+  "tail": ""
+ },
+ {
+  "suite": "test_settings_config.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 19   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248231.9659398,
+  "tail": ""
+ },
+ {
+  "suite": "test_simplified_collision_guard.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248235.8681898,
+  "tail": ""
+ },
+ {
+  "suite": "test_snap_ground.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 3.3,
+  "editorSurvived": true,
+  "ranAt": 1788248240.6938453,
+  "tail": ""
+ },
+ {
+  "suite": "test_socket_authoring.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 34   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248244.7577007,
+  "tail": ""
+ },
+ {
+  "suite": "test_sockets_ai.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 28   FAIL 0",
+  "seconds": 2.0,
+  "editorSurvived": true,
+  "ranAt": 1788248248.2247124,
+  "tail": ""
+ },
+ {
+  "suite": "test_source_control.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 18   FAIL 0",
+  "seconds": 2.9,
+  "editorSurvived": true,
+  "ranAt": 1788248252.6171873,
+  "tail": ""
+ },
+ {
+  "suite": "test_spawn_many.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 39   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248256.4847548,
+  "tail": ""
+ },
+ {
+  "suite": "test_spline_landscape.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 28   FAIL 0",
+  "seconds": 5.3,
+  "editorSurvived": true,
+  "ranAt": 1788248263.269167,
+  "tail": ""
+ },
+ {
+  "suite": "test_staticmesh_write_guard.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 9   FAIL 0",
+  "seconds": 2.8,
+  "editorSurvived": true,
+  "ranAt": 1788248267.5166934,
+  "tail": ""
+ },
+ {
+  "suite": "test_structs.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 30   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788248272.0841722,
+  "tail": ""
+ },
+ {
+  "suite": "test_sync_markers.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 18   FAIL 0",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "ranAt": 1788248275.7517827,
+  "tail": ""
+ },
+ {
+  "suite": "test_textures.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 29   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248279.9430876,
+  "tail": ""
+ },
+ {
+  "suite": "test_thumbnails.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 2.9,
+  "editorSurvived": true,
+  "ranAt": 1788248284.3117654,
+  "tail": ""
+ },
+ {
+  "suite": "test_timeline.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 26   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248287.906319,
+  "tail": ""
+ },
+ {
+  "suite": "test_trace_debug.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 44   FAIL 0",
+  "seconds": 2.2,
+  "editorSurvived": true,
+  "ranAt": 1788248291.5762591,
+  "tail": ""
+ },
+ {
+  "suite": "test_transactions.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 22   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788248295.603911,
+  "tail": ""
+ },
+ {
+  "suite": "test_unchecked_returns.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 16   FAIL 0",
+  "seconds": 3.1,
+  "editorSurvived": true,
+  "ranAt": 1788248300.241539,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 40   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788248304.1372373,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads2.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 60   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248307.9747899,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads3.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 312   FAIL 0",
+  "seconds": 21.2,
+  "editorSurvived": true,
+  "ranAt": 1788248330.6615515,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads4.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 38   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788248334.389678,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads5.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 77   FAIL 0",
+  "seconds": 5.3,
+  "editorSurvived": true,
+  "ranAt": 1788248341.161119,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads6.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 37   FAIL 0",
+  "seconds": 2.9,
+  "editorSurvived": true,
+  "ranAt": 1788248345.644455,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads7.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 32   FAIL 0",
+  "seconds": 4.4,
+  "editorSurvived": true,
+  "ranAt": 1788248351.5627375,
+  "tail": ""
+ },
+ {
+  "suite": "test_uncovered_reads8.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 24   FAIL 0",
+  "seconds": 3.2,
+  "editorSurvived": true,
+  "ranAt": 1788248356.3016672,
+  "tail": ""
+ },
+ {
+  "suite": "test_undo_integrity.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 23   FAIL 0",
+  "seconds": 6.6,
+  "editorSurvived": true,
+  "ranAt": 1788248364.4495487,
+  "tail": ""
+ },
+ {
+  "suite": "test_unknown_endpoint.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 2.3,
+  "editorSurvived": true,
+  "ranAt": 1788248368.3897426,
+  "tail": ""
+ },
+ {
+  "suite": "test_v3_apply.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 9   FAIL 0",
+  "seconds": 0.6,
+  "editorSurvived": true,
+  "ranAt": 1788248370.6201367,
+  "tail": ""
+ },
+ {
+  "suite": "test_viewport_view_mode.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 25   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248374.602667,
+  "tail": ""
+ },
+ {
+  "suite": "test_virtual_bone_authoring.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 31   FAIL 0",
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "ranAt": 1788248378.7782152,
+  "tail": ""
+ },
+ {
+  "suite": "test_water_zone.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 29   FAIL 0",
+  "seconds": 2.5,
+  "editorSurvived": true,
+  "ranAt": 1788248382.9157643,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_anim_recreate.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 43   FAIL 0",
+  "seconds": 3.0,
+  "editorSurvived": true,
+  "ranAt": 1788248387.491665,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_animation.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 17   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248391.516006,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_animation_props.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 39   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248395.82423,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_animation_track.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 21   FAIL 0",
+  "seconds": 2.4,
+  "editorSurvived": true,
+  "ranAt": 1788248399.835797,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_bindings.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 10  FAIL 0",
+  "seconds": 2.1,
+  "editorSurvived": true,
+  "ranAt": 1788248403.5613751,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_transform_channels.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 28   FAIL 0",
+  "seconds": 2.6,
+  "editorSurvived": true,
+  "ranAt": 1788248407.685972,
+  "tail": ""
+ },
+ {
+  "suite": "test_widget_tree.py",
+  "pass": 2,
+  "rc": 0,
+  "summary": "PASS 46   FAIL 0",
+  "seconds": 2.7,
+  "editorSurvived": true,
+  "ranAt": 1788248411.9728184,
   "tail": ""
  }
 ]

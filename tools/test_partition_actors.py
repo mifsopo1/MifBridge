@@ -76,6 +76,17 @@ def main():
     print("\n=== T2101: the actors list_level_actors cannot see ===")
     lv = M.call("list_level_actors", {"limit": 2000})
     seen = len(lv.get("actors") or [])
+    # TRUNCATION WOULD INVERT THE ASSERTION BELOW, so it is checked rather than hoped. `seen` is
+    # the RIGHT-hand side of `loaded <= seen`; a capped read shrinks it and turns "the descriptors
+    # and the level agree" into a failure naming an actor that is in fact perfectly visible.
+    # 2000 is far above this map's ~440 today, which is exactly why it would go unnoticed until a
+    # level got big and then read as a partition bug. test_levelsnapshots lost a sweep pass to the
+    # same shape on 2026-09-01, at the 200 default.
+    if lv.get("truncated"):
+        check("T2101 (precondition) the level read was not truncated", False,
+              "list_level_actors capped at %s of %s matched - raise the limit; `loaded <= seen` "
+              "cannot be judged against a partial list" % (lv.get("count"), lv.get("matched")))
+        return 1
     scanned = r.get("scanned")
     loaded = r.get("loadedInEditor")
     print("        list_level_actors sees %d; descriptors report %s scanned, %s loaded"

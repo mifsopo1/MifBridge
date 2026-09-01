@@ -48,10 +48,33 @@ def check(name, cond, detail=""):
 
 
 def find_actor_location(label):
-    r = M.call("list_level_actors", {})
+    """Where is this actor, read back through a different path than the write.
+
+    FILTERED, AND THE TRUNCATION IS NOT SWALLOWED. This used to call list_level_actors with {} and
+    scan the result, which fails the moment the level has more actors than one page holds:
+
+        count 200, matched 438, truncated True
+
+    The endpoint says all three. The helper ignored them and returned None, and None arrived at
+
+        FAIL T1102 the actor really moved, read back via list_level_actors ... None
+
+    which reads as "the move did not happen" and sends you to debug set_actor_transform and
+    apply_level_snapshot. Both were working perfectly. The suite failed on one sweep pass and
+    passed on the other because the number of actors in the level had changed between them - a
+    verification whose answer depends on how full somebody's level is.
+
+    A truncated read must never be able to look like an absent thing, so it raises rather than
+    returning the same None that means "not there".
+    """
+    r = M.call("list_level_actors", {"nameContains": label})
     for a in (r.get("actors") or []):
         if a.get("label") == label:
             return a.get("location")
+    if r.get("truncated"):
+        raise AssertionError(
+            "list_level_actors TRUNCATED at %s of %s and '%s' was not on the page - this is a "
+            "reading failure, not a missing actor" % (r.get("count"), r.get("matched"), label))
     return None
 
 

@@ -88,20 +88,40 @@ def main():
 
         # ------------------------------------------------------------------ T9100 the justification
         print("\n=== T9100: what reflection reaches, and what it cannot ===")
+        # THIS ASSERTION USED TO BE THE OPPOSITE, and it went red on 2026-09-01 because the
+        # capability improved underneath it. It read:
+        #
+        #     check("get_property CANNOT reach the component from the actor - an SCS component
+        #            is not a UPROPERTY by that name", viaactor.get("ok") is False)
+        #
+        # get_property now walks `ASC.ActivatableAbilities` from the actor and returns
+        # type FGameplayAbilitySpecContainer with a `typed` object beside the export text.
+        # Verified by hand before touching this, rather than assumed from the fact that it
+        # returned ok:true - a wrong success is exactly what this suite exists to catch.
+        #
+        # Updated rather than deleted, because "reflection cannot see it" was the stated
+        # justification for describe_ability_system existing, and that justification has CHANGED.
+        # It is now the weaker and more honest one asserted below: reflection reaches one property
+        # at a time and knows nothing about the ASC as a whole.
         viaactor = M.raw_post("get_property", {"actorPath": actor,
                                                "property": "ASC.ActivatableAbilities"})
-        check("T9100 get_property CANNOT reach the component from the actor - an SCS component is "
-              "not a UPROPERTY by that name",
-              viaactor.get("ok") is False, json.dumps(viaactor)[:200])
+        check("T9100 get_property now DOES walk an SCS component path from the actor",
+              viaactor.get("ok") is not False, json.dumps(viaactor)[:200])
         viacomp = M.raw_post("get_property", {"objectPath": actor + ".ASC",
                                               "property": "ActivatableAbilities"})
-        check("T9100 addressed as the component it DOES reach it - so this endpoint is not about "
+        check("T9100 addressed as the component it reaches it too - so this endpoint is not about "
               "unreachable data",
               viacomp.get("ok") is not False, json.dumps(viacomp)[:200])
-        # THE distinction. Reflection hands back export text; a caller would have to parse it.
-        check("T9100 but reflection returns EXPORT TEXT, not structured data",
+        # STILL TRUE, and now the whole of the distinction rather than half of it: reflection hands
+        # back export text for ONE named property. It cannot answer "what does this ASC hold".
+        check("T9100 reflection still returns EXPORT TEXT for the value",
               isinstance(viacomp.get("value"), str) and "(" in str(viacomp.get("value")),
               json.dumps(viacomp.get("value"))[:200])
+        check("T9100 and reaches ONE property - it has no notion of the ASC as a whole, which is "
+              "what describe_ability_system is for",
+              not any(k in viacomp for k in ("abilities", "attributes", "attributeSets",
+                                             "ownedTags")),
+              sorted(viacomp.keys()))
 
         d = M.raw_post("describe_ability_system", {"actorPath": actor})
         check("T9100 describe_ability_system finds the component", d.get("ok") is True,
