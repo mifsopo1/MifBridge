@@ -31,6 +31,8 @@ Usage:
     python tools/layout_graph.py <graphId>            # plan only, nothing moves
     python tools/layout_graph.py <graphId> --apply    # actually move the nodes
     python tools/layout_graph.py <graphId> --comment  # also plan a comment box per event chain
+    python tools/layout_graph.py <graphId> --reflow --comment --apply
+                                                      # REPLACE agent-authored 'MIF: ' boxes
     python tools/layout_graph.py --self-test          # prove the algorithm, no editor needed
 
 Exit codes:  0 planned or applied   1 could not read the graph   2 bridge not up
@@ -292,6 +294,41 @@ def _overlaps(a, b):
     return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
 
 
+# Reflowing a graph an agent has already commented, which is what BP_MifThrowComponent turned out
+# to need. Its boxes are labelled "MIF: Event Begin Play / ... (1 nodes)" and no plugin source
+# writes that string - an agent composed the text AND the rectangle in an earlier session, and got
+# the rectangle wrong: boxes span far more than the node count they claim.
+#
+# THAT IS NOT COSMETIC. UE comment membership is GEOMETRIC - whatever falls inside the rectangle is
+# a member - so an over-large box has silently CAPTURED nodes it never meant to, and dragging it
+# moves them. A box claiming "1 nodes" while enclosing thirty is a trap laid for the next person who
+# touches that graph.
+#
+# So reflow REMOVES the boxes matching a marker and redraws them from the real components. The
+# marker matters: a human's comments must never be touched, and "MIF: " is the prefix the agent
+# actually used. Anything not matching is left exactly where it is.
+COMMENT_CLASS_HINT = "Comment"
+DEFAULT_MARKER = "MIF: "
+
+
+def agent_comments(nodes, marker=DEFAULT_MARKER):
+    """Comment nodes whose text carries the marker - the ones a tool wrote, never a person's.
+
+    Matched on the node's TEXT, not its position or size, because the text is the only thing that
+    says who authored it. A box is identified as a comment by its class carrying "Comment"
+    (UEdGraphNode_Comment), which is what list_nodes reports.
+    """
+    out = []
+    for n in nodes:
+        if COMMENT_CLASS_HINT not in (n.get("class") or ""):
+            continue
+        text = n.get("title") or n.get("comment") or n.get("text") or ""
+        if marker and marker not in text:
+            continue
+        out.append((n.get("guid"), text))
+    return out
+
+
 SELF_TEST_GRAPH = [
     {"guid": "A", "title": "Event BeginPlay", "x": 0, "y": 0, "pins": [
         {"name": "then", "direction": "output", "type": {"category": "exec"},
@@ -361,6 +398,24 @@ def self_test():
                 overlaps.append((g1, g2))
     check("no two nodes in a column overlap, by their estimated heights", not overlaps, overlaps)
 
+    # ---- reflow selection ---------------------------------------------------------------
+    # Taken from a REAL graph Andre showed: BP_MifThrowComponent, whose boxes read
+    # "MIF: Event Begin Play / <...> (1 nodes)" while spanning far more than one node. The check
+    # that matters is not that it finds them - it is that it leaves a HUMAN's comment alone, since
+    # this deletes what it matches.
+    sample = [
+        {"guid": "c1", "class": "EdGraphNode_Comment",
+         "title": "MIF: Event Begin Play / <...> (1 nodes)"},
+        {"guid": "c2", "class": "EdGraphNode_Comment", "title": "MIF: Own Tick (27 nodes)"},
+        {"guid": "c3", "class": "EdGraphNode_Comment", "title": "Andre: do not touch this bit"},
+        {"guid": "n1", "class": "K2Node_Event", "title": "Event BeginPlay"},
+    ]
+    hit = {g for g, _ in agent_comments(sample)}
+    check("reflow finds the agent-authored boxes", hit == {"c1", "c2"}, sorted(hit))
+    check("reflow does NOT touch a human's comment - it deletes what it matches",
+          "c3" not in hit, sorted(hit))
+    check("reflow does not mistake an ordinary node for a comment", "n1" not in hit, sorted(hit))
+
     # ---- comment boxes ------------------------------------------------------------------
     _, succ2, pred2 = build_graph(SELF_TEST_GRAPH)
     boxes = comment_boxes(by_guid, positions, succ2, pred2)
@@ -407,6 +462,20 @@ def main():
         print("no nodes returned for %s: %s" % (graph_id, json.dumps(r)[:200]))
         return 1
 
+    marker = DEFAULT_MARKER
+    if "--marker" in sys.argv:
+        marker = sys.argv[sys.argv.index("--marker") + 1]
+    stale = agent_comments(nodes, marker) if "--reflow" in sys.argv else []
+    if stale:
+        print("reflow: %d existing comment box(es) match %r and would be REPLACED:"
+              % (len(stale), marker))
+        for _guid, text in stale[:8]:
+            print("    %s" % text.splitlines()[0][:74])
+        if len(stale) > 8:
+            print("    ... and %d more" % (len(stale) - 8))
+        # Laying out around boxes that are about to go would place nodes to dodge them.
+        nodes = [n for n in nodes if n.get("guid") not in {g for g, _ in stale}]
+
     by_guid, positions, columns = plan(nodes)
     _, succ, pred = build_graph(nodes)
     boxes = comment_boxes(by_guid, positions, succ, pred) if "--comment" in sys.argv else []
@@ -421,8 +490,23 @@ def main():
 
     moved = 0
     if not apply_it:
+        if stale:
+            print("\n(reflow is planned only - nothing was removed)")
         print("\nDRY RUN - nothing moved. Pass --apply to move the nodes.")
         return 0
+
+    # REMOVE FIRST, so the new boxes are not drawn inside the old ones. remove_node is
+    # confirm-gated, and scratch_confirm will not sanction a graph outside /Game/_Mif - so a reflow
+    # on somebody's real blueprint is a deliberate act, taken here through raw_post with the marker
+    # check above standing in for the path check. It removes ONLY comments carrying the marker.
+    removed = 0
+    for guid, _text in stale:
+        rm = M.raw_post("remove_node", {"graphId": graph_id, "nodeGuid": guid, "confirm": True},
+                        timeout=120)
+        if rm.get("ok") is not False:
+            removed += 1
+    if stale:
+        print("removed %d of %d stale comment box(es)" % (removed, len(stale)))
 
     for g, (x, y) in positions.items():
         before = (by_guid[g].get("x"), by_guid[g].get("y"))
