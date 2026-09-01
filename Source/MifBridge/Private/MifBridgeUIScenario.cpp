@@ -29,6 +29,7 @@
 // "how close is close enough to interact" is game-specific logic this bridge cannot know generically.
 // No PIE lifecycle management - start_pie/pie_status already do that; this assumes PIE is already
 // running and refuses cleanly if it is not.
+#include "Runtime/Launch/Resources/Version.h"
 #include "MifBridgeHandlers.h"
 #include "MifBridgeLog.h"
 
@@ -489,16 +490,31 @@ namespace MifBridge
 			return;
 		}
 
-		// PORTABLE SPELLING, checked in both trees rather than assumed: 5.7 added a 7th (timestamp)
-		// param to FInputKeyEventArgs, keeping the 6-arg form only as UE_DEPRECATED(5.6). 5.3 has
-		// ONLY the 6-arg form - the timestamp overload does not exist there at all (C2440 on the 5.3
-		// probe build, "no constructor could take the source type"). The 6-arg form is therefore the
-		// one spelling that compiles on both, same lesson as GAS's EGameplayModOp names.
+		// TWO SPELLINGS, AND THERE IS NO LONGER ONE THAT WORKS ON BOTH. 5.7 added a 7th
+		// (timestamp) parameter to FInputKeyEventArgs and marked the 6-arg form UE_DEPRECATED(5.6);
+		// 5.3 has ONLY the 6-arg form - the timestamp overload does not exist there at all (C2440
+		// on the 5.3 probe, "no constructor could take the source type").
+		//
+		// The 6-arg form was used for both until 2026-09-01, when the 5.7 probe FAILED the whole
+		// build on it. The only two diagnostics in the entire compile were the C4996 deprecations
+		// on these two lines - 5.7 escalates engine deprecation to a build error rather than a
+		// warning. Nothing had changed in this file's logic; the engine changed underneath it,
+		// which is exactly the case make_release refuses to package across without a fresh probe.
+		//
+		// So it is version-guarded now. The timestamp is in CPU CYCLES, not seconds - the header
+		// says "in the form of CPU cycles" and FPlatformTime::Cycles64() is what produces them;
+		// passing FPlatformTime::Seconds() would compile and be meaningless.
 		const FInputDeviceId DeviceId = IPlatformInputDeviceMapper::Get().GetDefaultInputDevice();
 		UE_LOG(LogMifBridge, Log, TEXT("ui_scenario_activate: %s InputKey('%s') via UGameViewportClient"),
 			*GScenario.ScenarioId, *KeyName);
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
+		const uint64 EventCycles = FPlatformTime::Cycles64();
+		GameViewport->InputKey(FInputKeyEventArgs(Viewport, DeviceId, Key, IE_Pressed, 1.0f, false, EventCycles));
+		GameViewport->InputKey(FInputKeyEventArgs(Viewport, DeviceId, Key, IE_Released, 0.0f, false, EventCycles));
+#else
 		GameViewport->InputKey(FInputKeyEventArgs(Viewport, DeviceId, Key, IE_Pressed, 1.0f, false));
 		GameViewport->InputKey(FInputKeyEventArgs(Viewport, DeviceId, Key, IE_Released, 0.0f, false));
+#endif
 
 		GScenario.bActivated = true;
 		GScenario.State = EUIScenarioState::WaitingForStableUI;

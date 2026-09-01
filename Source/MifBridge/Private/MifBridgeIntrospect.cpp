@@ -1,4 +1,5 @@
 // MifBridge — session/assets, introspection, variables, and compile read-back endpoints.
+#include "Runtime/Launch/Resources/Version.h"
 #include "MifBridgeHandlers.h"
 #include "Misc/AutomationTest.h"   // FAutomationTestFramework - list_automation_tests
 #include "SourceControlHelpers.h"
@@ -280,10 +281,28 @@ namespace MifBridge
 		TArray<FAutomationTestInfo> Info;
 		FAutomationTestFramework::Get().GetValidTestNames(Info);
 
-		// The engine's own name table, read once. Decoding through it is what keeps this endpoint from
-		// inventing a second spelling for EAutomationTestFlags.
-		const TMap<FString, EAutomationTestFlags::Type>& FlagNames =
-			EAutomationTestFlags::GetTestFlagsMap();
+		// THREE THINGS CHANGED SHAPE HERE BETWEEN 5.3 AND 5.7, and every one of them compiles
+		// cleanly on the tree it was written against:
+		//
+		//   5.3  namespace EAutomationTestFlags { enum Type; ... }
+		//        static const TMap<FString, Type>& EAutomationTestFlags::GetTestFlagsMap();
+		//        uint32 FAutomationTestInfo::GetTestFlags() const
+		//   5.7  enum class EAutomationTestFlags
+		//        CORE_API const TMap<FString, EAutomationTestFlags>& EAutomationTestFlags_GetTestFlagsMap();
+		//        EAutomationTestFlags FAutomationTestInfo::GetTestFlags() const
+		//
+		// The scoped name, the accessor's name AND its namespace, and the return type all moved.
+		// This is precisely the class of break a symbol-presence check cannot see - the names
+		// EAutomationTestFlags and GetTestFlagsMap exist in both trees - and it is why the release
+		// gate compiles against 5.7 rather than grepping it. Found by that gate refusing to package
+		// 0.8.0 (AutomationTest.h 5.3:134 / 5.7:150, and :401 / :421 for the return type).
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
+		using EMifAutomationFlag = EAutomationTestFlags;
+		const TMap<FString, EMifAutomationFlag>& FlagNames = EAutomationTestFlags_GetTestFlagsMap();
+#else
+		using EMifAutomationFlag = EMifAutomationFlag;
+		const TMap<FString, EMifAutomationFlag>& FlagNames = EAutomationTestFlags::GetTestFlagsMap();
+#endif
 
 		TArray<TSharedPtr<FJsonValue>> Rows;
 		int32 Matched = 0;
@@ -317,12 +336,18 @@ namespace MifBridge
 			{
 				Row->SetStringField(TEXT("assetPath"), AssetPath);
 			}
-			const uint32 Flags = Test.GetTestFlags();
+			// GetTestFlags returns uint32 on 5.3 and the enum class on 5.7; static_cast handles
+			// both, and going via uint32 keeps every comparison below unchanged.
+			const uint32 Flags = static_cast<uint32>(Test.GetTestFlags());
 			Row->SetNumberField(TEXT("flags"), static_cast<double>(Flags));
 			TArray<TSharedPtr<FJsonValue>> Named;
-			for (const TPair<FString, EAutomationTestFlags::Type>& Pair : FlagNames)
+			for (const TPair<FString, EMifAutomationFlag>& Pair : FlagNames)
 			{
-				if (Pair.Value != 0 && (Flags & static_cast<uint32>(Pair.Value)) == static_cast<uint32>(Pair.Value))
+				// CAST BEFORE COMPARING. On 5.7 Pair.Value is an enum CLASS, which has no implicit
+				// conversion and so cannot be compared against a bare 0 - C2676. On 5.3 it is a
+				// plain enum and the cast is a no-op, so one spelling serves both.
+				const uint32 Bit = static_cast<uint32>(Pair.Value);
+				if (Bit != 0 && (Flags & Bit) == Bit)
 				{
 					Named.Add(MakeShared<FJsonValueString>(Pair.Key));
 				}

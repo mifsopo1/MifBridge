@@ -1,11 +1,14 @@
 {
  "engine": "C:/Program Files/Epic Games/UE_5.7",
  "module": "MifProbe",
- "succeeded": false,
+ "succeeded": true,
  "inconclusive": false,
  "why": "",
- "head": "4076c60835865576faabed2c6fc96ba95486143c",
+ "head": "4d97d6a8ad80197b4427528eb64491a0da61ac2e",
  "sourceCommit": "7ba0c075c2768236405f5667f332eade7a6a0bda",
  "sourceCommitDate": "2026-08-31T23:15:18-04:00",
- "sourceDirty": []
+ "sourceDirty": [
+  "ource/MifBridge/Private/MifBridgeIntrospect.cpp",
+  "Source/MifBridge/Private/MifBridgeUIScenario.cpp"
+ ]
 }
