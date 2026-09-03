@@ -117,6 +117,90 @@ READERS = ("JStr", "JNum", "JBool", "JInt", "JArray",
 TOP_LEVEL = 1
 
 
+# WHAT A SHARED RESOLVER READS, so that CALLING one counts as reading its parameters.
+#
+# This is the cause the KNOWN LIMITATION above describes. Each resolver's own body is scanned once
+# for the fields it pulls off `In`; a handler that calls one is then treated as reading those, AT
+# THE DEPTH OF THE CALL - so a resolver called at top level reads its parameters on every path, and
+# one called inside a mode branch does not. That distinction is the whole point of branch depth and
+# it is preserved rather than flattened.
+#
+# THREE TRAPS, all hit on the first attempt and all the reason this is written out rather than
+# regexed in one line:
+#   * the definitions are INDENTED inside a namespace, so anchoring to line start finds none;
+#   * some are `static`, so the return type is not the first token;
+#   * MifBridgeHandlers.h DECLARES the same signatures, and a declaration ends in `;` - brace
+#     matching from one runs into whatever function follows and attributes its reads to the wrong
+#     resolver. The body must be REQUIRED, not assumed.
+RESOLVER_DEF = re.compile(r'\b(\w*(?:Resolve|Wants)\w*)\s*\('
+                          r'\s*const\s+TSharedRef<FJsonObject>\s*&\s*In\b')
+RESOLVER_CALL = re.compile(r'\b(\w*(?:Resolve|Wants)\w*)\s*\(\s*In\s*,')
+
+
+def _body_after(text, sig_end):
+    """The braced body that follows a signature, or None when this is only a declaration."""
+    k, para = sig_end, 1
+    while k < len(text) and para:
+        if text[k] == "(":
+            para += 1
+        elif text[k] == ")":
+            para -= 1
+        k += 1
+    if not text[k:k + 400].lstrip().startswith("{"):
+        return None
+    i = text.index("{", k)
+    depth, j = 0, i
+    while j < len(text):
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[i:j]
+        j += 1
+    return None
+
+
+def resolver_reads(all_source):
+    """{resolver name: {param, ...}} - the request fields each shared resolver reads.
+
+    RESOLVERS CALL RESOLVERS, and missing that left the whole property family listed.
+    MifDetailsResolveWritableTarget reads NOTHING itself - it delegates to
+    ResolvePropertyTarget(In, Out, &WidgetBP) - so a direct scan gives it an empty set and every
+    handler that goes through it still looked like it never read objectPath. One fixed-point pass
+    closes that: delegation is still reading.
+
+    Bounded to 8 rounds. A cycle would otherwise spin, and there is no reason to trust that this
+    codebase never grows one.
+    """
+    out, calls = {}, {}
+    for m in RESOLVER_DEF.finditer(all_source):
+        body = _body_after(all_source, m.end())
+        if body is None:
+            continue
+        name = m.group(1)
+        found = set()
+        for line in body.splitlines():
+            if any(r in line for r in READERS):
+                found |= set(PARAM.findall(line))
+        for g in ALIAS_READ.finditer(body):
+            found |= set(PARAM.findall(g.group(1)))
+        out.setdefault(name, set()).update(found)
+        calls.setdefault(name, set()).update(
+            c.group(1) for c in RESOLVER_CALL.finditer(body) if c.group(1) != name)
+    for _ in range(8):
+        changed = False
+        for name, callees in calls.items():
+            for callee in callees:
+                gained = out.get(callee, set()) - out[name]
+                if gained:
+                    out[name] |= gained
+                    changed = True
+        if not changed:
+            break
+    return {k: v for k, v in out.items() if v}
+
+
 def presence_guarded(body, param):
     """True when the handler explicitly tests whether this parameter was PASSED.
 
@@ -164,7 +248,7 @@ def alias_read_lines(body):
     return out
 
 
-def read_depth(body, param):
+def read_depth(body, param, resolvers=None):
     """Shallowest BRANCH depth at which this parameter is READ. Large number if it is never read.
 
     Branch depth, not brace depth. A BARE SCOPING BLOCK IS NOT A BRANCH: this codebase wraps a read
@@ -190,6 +274,11 @@ def read_depth(body, param):
         # The alias group's literals count as read HERE even when they sit on continuation lines.
         if param in aliases.get(i, ()):
             best = min(best, depth)
+        # A CALL TO A SHARED RESOLVER READS WHAT THAT RESOLVER READS, at this depth.
+        if resolvers:
+            for call in RESOLVER_CALL.finditer(line):
+                if param in resolvers.get(call.group(1), ()):
+                    best = min(best, depth)
         opens = line.count("{")
         closes = line.count("}")
         bare = (stripped == "{"
@@ -215,6 +304,15 @@ def handlers(text):
 
 def main():
     rows, cleared = [], []
+    # Built ONCE from the whole of Source: a resolver is routinely defined in a
+    # different file from the handlers that call it (ResolveGraphField lives in
+    # MifBridgeCommon.cpp and is called from 49 handlers across a dozen files).
+    all_src = []
+    for fn in sorted(os.listdir(SRC)):
+        if fn.endswith(".cpp"):
+            with open(os.path.join(SRC, fn), encoding="utf-8", errors="replace") as fh:
+                all_src.append(fh.read())
+    resolvers = resolver_reads("\n".join(all_src))
     for fname in sorted(os.listdir(SRC)):
         if not fname.endswith(".cpp"):
             continue
@@ -271,7 +369,8 @@ def main():
             # "inside a branch", and crude is fine here because the output is a review list: it
             # narrows where to look, it does not decide.
             conditional = [p for p in unexplained
-                           if read_depth(body, p) > TOP_LEVEL and not presence_guarded(body, p)]
+                           if read_depth(body, p, resolvers) > TOP_LEVEL
+                           and not presence_guarded(body, p)]
             if not conditional:
                 continue
             rows.append((fname, name[2:], modes, conditional, len(others)))
