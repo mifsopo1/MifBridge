@@ -11403,6 +11403,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       like set_function_flags listing `path, functionName, name` are three spellings of one
       argument that IS read on every path. Check the resolver before believing a row.
 
+- [ ] **12 confirm-gated endpoints have no extended help, and mif_help is what agents are told to read** (2 hours)
+      FOUND 2026-09-03. 57 endpoints demand confirm - the destructive set - and 14 of them had no
+      tool_help.json entry at all, so `mif_help("delete_asset")` returned nothing while the
+      one-line description said only "Delete a /Game/ asset package. Requires confirm=True."
+      Every MCP tool description tells an agent to call mif_help before using an unfamiliar tool.
+
+      DONE: delete_asset and delete_level_actor, the two most destructive, written from their
+      handlers rather than from the summary. delete_asset's is the one that pays for itself - its
+      refusal carries FIVE separate answers in blockedBy (openAssetEditors, registryReferencers,
+      rootedInMemory, memoryReferencers, transactionBuffer) and reading the right one is the
+      difference between one call and an hour. For anything unsaved that is memoryReferencers;
+      registryReferencers records DISK references and is empty however many live objects point at
+      it. Also blueprint_watch and blueprint_breakpoint earlier, for their op:clear hazard.
+
+      REMAINING 12: fix_up_redirectors, pcg_cleanup, remove_anim_curve, remove_function,
+      remove_interface, remove_struct_member, remove_tree_widget, remove_variable, rename_asset,
+      rename_event_dispatcher, rename_variable, revert_inherited_component. Write each from the
+      HANDLER, not the summary - the summary is what an agent already has and is not the part
+      that is missing.
+
 - [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
       THE OTHER TWELVE WERE READ 2026-09-03, which is what "paired" never meant. The tool says so
       itself - "a pair appearing in one suite proves only that both were CALLED there, never that
