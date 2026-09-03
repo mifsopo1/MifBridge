@@ -166,6 +166,22 @@ def main():
     ok = M.call("trace_ground", {"x": 0, "y": 0})
     check("T47 a plain trace still works", ok.get("ok") is True, json.dumps(ok)[:200])
 
+    # T47b: the SUCCESS side of the same guard. A name is not an identity - FindActorInWorld matches
+    # by label or path, and two actors can share a label - so the response echoes WHICH actor the
+    # name resolved to. Without reading it, a trace that ignored the wrong actor is indistinguishable
+    # from one that ignored the right one, and the whole point of T47 is that this endpoint must not
+    # let you believe you excluded something you did not.
+    victim = M.pick_adoptable(M.call("list_level_actors", {"limit": 20}).get("actors"))
+    if victim and victim.get("label"):
+        ig = M.call("trace_ground", {"x": 0, "y": 0, "ignoreActor": victim.get("label")})
+        check("T47b a resolvable ignoreActor traces", ig.get("ok") is True, json.dumps(ig)[:200])
+        check("T47b and ignoredActor names the actor it actually excluded, by full path",
+              (ig.get("ignoredActor") or "").endswith(victim.get("label"))
+              or victim.get("label") in (ig.get("ignoredActor") or ""),
+              "%s vs %s" % (ig.get("ignoredActor"), victim.get("label")))
+    else:
+        print("  NOTE  no non-scratch level actor to exclude, so T47b's success path is UNEXERCISED.")
+
     print("\n=== T45: everything still compiles ===")
     c = M.call("compile", {"blueprintId": bpid})
     check("T45 compiles", c.get("ok") is True and c.get("numErrors", 1) == 0,

@@ -151,6 +151,26 @@ def main():
     av = M.call("add_variable", {"blueprintId": bid, "name": "Temp", "type": "float",
                                  "scope": "local", "function": fname})
     check("T361 a local variable is added", av.get("ok") is True, json.dumps(av)[:170])
+
+    # T361b: a LOCAL variable cannot carry member-variable flags, and the response has to say which
+    # ones it dropped. The warning used to read "(replicated/saveGame/instanceEditable/...)" - three
+    # of sixteen and an ellipsis - so a caller who passed exposeOnSpawn had to guess whether it was
+    # one of the "...". The list is asserted rather than the prose, because prose is what changes.
+    flagged = M.call("add_variable", {"blueprintId": bid, "name": "TempFlagged_%d" % st,
+                                      "type": "float", "scope": "local", "function": fname,
+                                      "replicated": True, "exposeOnSpawn": True})
+    check("T361b a local variable with member-only flags is still created",
+          flagged.get("ok") is True, json.dumps(flagged)[:200])
+    check("T361b and ignoredFlags names EVERY flag that was dropped, not a sample",
+          sorted(flagged.get("ignoredFlags") or []) == ["exposeOnSpawn", "replicated"],
+          json.dumps(flagged.get("ignoredFlags")))
+    # GUARDED FIRST, because all([]) is True: without the bool() this passes when the field is
+    # missing entirely, which is the one outcome it exists to catch. Rule 1 in
+    # audit_vacuous_checks, and the first draft of this line had exactly that bug.
+    named = flagged.get("ignoredFlags") or []
+    check("T361b and the warning names them too, so prose and field agree",
+          bool(named) and all(f in (flagged.get("warning") or "") for f in named),
+          (flagged.get("warning") or "")[:200])
     fg = next((x.get("graphId") for x in (M.call("list_graphs", {"blueprintId": bid}).get("graphs") or [])
                if (x.get("name") or "") == fname), None)
     if fg:

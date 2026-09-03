@@ -1417,16 +1417,39 @@ namespace MifBridge
 			TEXT("blueprintReadOnly"), TEXT("exposeOnSpawn"), TEXT("advancedDisplay"), TEXT("interp"),
 			TEXT("deprecated"), TEXT("category"), TEXT("tooltip"), TEXT("fieldNotify")
 		};
-		bool bAnyFlagRequested = false;
+		// MODE-PARAMS-OK: flags ignored under scope=local are NAMED in a warning, not silently dropped
+		//
+		// NAME THE ONES ACTUALLY PASSED, not three of sixteen and an ellipsis. The warning used to
+		// read "flag options (replicated/saveGame/instanceEditable/...) were ignored", so a caller
+		// who passed exposeOnSpawn - or repNotifyFunction, or category - got a warning that did not
+		// mention their parameter and had to guess whether it was one of the "...". Collecting the
+		// requested keys costs one array and turns the warning into an answer.
+		//
+		// STILL A WARNING RATHER THAN A REFUSAL, deliberately, and that is a pre-existing decision
+		// this change does not touch: the variable IS created and the flags are inapplicable rather
+		// than contradictory, so the caller gets what they can have plus a statement of what they
+		// cannot. sculpt_landscape refuses in the same situation; which is right here is a judgement
+		// call for a person, and it is filed rather than made.
+		TArray<FString> IgnoredFlags;
 		for (const TCHAR* Key : FlagKeys)
 		{
-			if (In->HasField(Key)) { bAnyFlagRequested = true; break; }
+			if (In->HasField(Key)) { IgnoredFlags.Add(FString(Key)); }
 		}
+		const bool bAnyFlagRequested = IgnoredFlags.Num() > 0;
 
 		if (bAnyFlagRequested && bIsLocal)
 		{
-			Out->SetStringField(TEXT("warning"),
-				TEXT("flag options (replicated/saveGame/instanceEditable/...) were ignored: they apply to member variables only, and scope=local was requested"));
+			Out->SetStringField(TEXT("warning"), FString::Printf(
+				TEXT("%s %s ignored: flag options apply to member variables only, and scope=local "
+					 "was requested. The variable was created WITHOUT %s."),
+				*FString::Join(IgnoredFlags, TEXT(", ")),
+				IgnoredFlags.Num() == 1 ? TEXT("was") : TEXT("were"),
+				IgnoredFlags.Num() == 1 ? TEXT("it") : TEXT("them")));
+			// The list as a field too, so a caller can act on it without parsing prose - the same
+			// reason every other consequence field in this bridge exists.
+			TArray<TSharedPtr<FJsonValue>> Arr;
+			for (const FString& F : IgnoredFlags) { Arr.Add(MakeShared<FJsonValueString>(F)); }
+			Out->SetArrayField(TEXT("ignoredFlags"), Arr);
 		}
 		else if (bAnyFlagRequested)
 		{

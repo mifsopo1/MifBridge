@@ -77,7 +77,7 @@ CONSEQUENCE = re.compile(
     r"[Ff]ailed|[Ff]ailure|[Dd]ropped|[Ss]kipped|[Rr]everted|[Dd]iscarded|[Dd]isplaced|"
     r"[Oo]rphaned|[Ll]eftBehind|[Ll]ost|[Uu]nresolved|[Uu]nchanged|[Rr]ejected|[Rr]emoved|"
     r"[Tt]runcated|[Cc]lamped|[Ss]ilentl|[Pp]artial|[Ss]tale|[Bb]roken|[Mm]issing|[Ii]nvalid|"
-    r"[Ii]ncomplete|[Rr]emaining|StillPresent|Changed"
+    r"[Ii]ncomplete|[Rr]emaining|StillPresent|Changed|[Ii]gnored"
     r")")
 
 # WIDENED 2026-08-31 to include REMAINS as well as WENT WRONG. "Something is still there that you
