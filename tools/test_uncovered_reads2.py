@@ -35,9 +35,17 @@ def main():
     # against an actor whose owner deletes it mid-run fails T830 for a reason that is not about
     # bounds - and the level's own content is what this read is meant to be exercised on.
     actors = (M.call("list_level_actors", {"limit": 30}).get("actors") or [])
-    check("T830 (setup) there is at least one placed actor to test against", len(actors) > 0,
-          len(actors))
+    # ASSERT ON WHAT THE BODY ACTUALLY USES. This measured len(actors) - the UNFILTERED window -
+    # while every assertion below is gated on `if actor_path:`, which comes from the SCRATCH-FILTERED
+    # pick. When all 30 rows are scratch, and the comment above says sixteen suites spawn into that
+    # window, pick_adoptable returns None, the whole T830 body is skipped, and this check goes green
+    # announcing "there is at least one placed actor to test against". A setup check that passes
+    # while the thing it sets up is absent is worse than no setup check: it converts a skip into a
+    # reported PASS.
     actor_path = (M.pick_adoptable(actors) or {}).get("actorPath")
+    check("T830 (setup) there is at least one NON-SCRATCH placed actor to test against - the "
+          "filtered pick is what the body uses, so the row count is not the thing to assert on",
+          bool(actor_path), {"rows_returned": len(actors), "picked": actor_path})
 
     # ================================================================== T830 get_actor_bounds
     print("=== T830: get_actor_bounds ===")

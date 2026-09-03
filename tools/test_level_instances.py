@@ -79,7 +79,12 @@ def main():
     # for a cause that is not about level instances.
     actors = M.call("list_level_actors", {"limit": 40}).get("actors") or []
     victim = (M.pick_adoptable(actors, lambda a: bool(a.get("actorPath"))) or {}).get("actorPath")
-    check("T4501 (setup) some actor exists to point at wrongly", bool(victim), len(actors))
+    # The DETAIL reports both numbers, not just the raw count. The assertion is on `victim` - the
+    # scratch-filtered pick - so the only way it fails is "every row was somebody's fixture", and a
+    # bare len(actors) of 40 states the opposite of the diagnosis: it reads as "plenty of actors,
+    # something else is wrong". A detail has to answer the question the failure raises.
+    check("T4501 (setup) some non-scratch actor exists to point at wrongly", bool(victim),
+          {"rows_returned": len(actors), "picked": victim})
     if not victim:
         return 1
 
