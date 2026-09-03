@@ -11291,11 +11291,30 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       audit_vacuous_checks / audit_consequence_fields both at baseline. That is not a substitute for
       running the suites; it is the part of the answer that does not need the machine.
 
-- [ ] **10 rows left on the mode-param list, and most of them are the tool's own noise** (2 hours)
+- [ ] **the mode-param list is at ZERO, and none of the nine fixes has been run** (the sweep)
       COUNT CORRECTED 2026-09-03 - this said 18, then 22 before that, while the tool said 10. A
       number nothing recomputes is a number that will be wrong again next month, which is what
       harvest_param_table says about its own table and what audit_consequence_fields was built to
       stop. `python tools/audit_mode_params.py` is the live figure; do not retype it here.
+
+      REACHED ZERO 2026-09-03: 23 rows -> 0. Nine handlers fixed and BUILT against 5.3, nine marked
+      MODE-PARAMS-OK with a reason in the handler, seven detector blind spots removed. Every
+      clearance was checked by reading the handler; the plant fires throughout.
+
+      WHY THIS STAYS OPEN. Nine C++ changes are built and recorded, and not one has been RUN - the
+      editor has been in use all day. Nine new suite assertions were written alongside them and are
+      unverified for the same reason. The two destructive ones matter most here: blueprint_watch and
+      blueprint_breakpoint's op:clear guards are asserted by tests that set up TWO items first and
+      check both survived, and "the refusal came back" is not the same claim as "nothing was
+      cleared". Until the sweep runs, this is nine plausible guards.
+
+      THE SEVEN BLIND SPOTS, because they are the reusable part: refusals built from a TABLE name
+      nothing a message-literal scan can see; house reader helpers (ReadVectorField,
+      UiReadStringArray) were not recognised as reads at all; HasField was missing from the
+      presence-guard list; a bare `{ FString Err; ... }` scoping block was counted as a branch;
+      shared RESOLVERS do the reading for most alias clusters, and resolvers call resolvers so it
+      needs a fixed point; `In` is not always a resolver's first argument; and the field name is
+      sometimes passed TO the resolver rather than baked into it.
 
       NINE HANDLERS FIXED, 8 marked MODE-PARAMS-OK, and FOUR DETECTOR FALSE POSITIVES removed - the
       day's work on this item is recorded in the tool's own header, which now carries why each
