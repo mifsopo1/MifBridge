@@ -551,7 +551,16 @@ def check_static_audits():
                        # accept. It also SELF-TESTS on every invocation now, so gating it gates a
                        # checker that proves its own newest arm before reporting.
                        ("spec_check.py", []),
-                       ("audit_message_endpoints.py", [])):
+                       ("audit_message_endpoints.py", []),
+                       # NOT audit_prose_dependence, and the reason is measured rather than a
+                       # shrug: it runs 17 candidate tools THREE times each - plain, with comments
+                       # scrubbed, with string literals scrubbed - which is 51 tool invocations and
+                       # about 58 seconds. That is inherent to the question it asks, not incidental
+                       # slowness somebody could tune away, so it will not become gateable later.
+                       # Adding it would more than triple the cost of a question meant to be asked
+                       # casually, and a gate nobody runs because it is slow fails the same way as
+                       # a gate nobody reads.
+                       ):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
