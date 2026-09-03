@@ -11193,3 +11193,32 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       That leaves the UE gap at: 0 unreachable parameters, 0 uncovered endpoints, 8 consequence
       fields, and the editor-closed batch.
+
+- [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
+      FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which is not in the release gate and exits
+      0 either way - so its reading list had never been read. 844 cross-endpoint claims sit in
+      handler text; 16 assert equivalence or completeness rather than navigation; 2 of those have no
+      suite exercising both sides.
+
+      `set_niagara_emitter` -> `set_property` (MifBridgeNiagara2.cpp:655) is the substantive one. The
+      response field `whyNotSetProperty` tells the caller, as fact, that:
+
+        set_property on EmitterHandles[N].bIsEnabled flips the same bool and is enough to DISABLE an
+        emitter, but NOT to enable one, because it skips the RefreshFromExternalChanges and
+        InvalidateCompileResults this call makes - leaving a stale compile result and an emitter that
+        stays dark with a flag saying otherwise.
+
+      That is a specific, falsifiable claim about a DIFFERENT endpoint, asserted in prose a caller is
+      expected to act on. If it is wrong in either direction it actively misleads: either
+      set_property is fine and the warning is scaremongering, or disabling is ALSO broken and the
+      claim understates it. Nothing has ever checked it.
+
+      Needs a NiagaraSystem with at least one emitter. DDS2's are all COOKED, and create_asset
+      already refuses several cooked-hostile classes, so this may be out of reach here and ordinary
+      work on an uncooked project (Curfew). Establish which BEFORE writing the suite - "cannot be
+      tested here" is a finding worth recording, but only once it is measured rather than assumed.
+
+      `preview_composite_widget` -> `list_live_widgets` (MifBridgeCompositePreview.cpp:336) is the
+      other, and it needs a running PIE session, so it is attended-only and cannot go in an
+      unattended sweep.
+
