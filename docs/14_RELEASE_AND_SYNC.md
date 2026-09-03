@@ -119,6 +119,12 @@ and one takes a full engine build.
 | value discovery | an endpoint demands a value nothing can discover | fix the endpoint or record the exemption |
 | static audits | the tools/ checkers are not clean | run them and fix what they say |
 
+`--record-53` runs BEFORE all seven, and that is deliberate. It used to sit after them, which made
+the 5.3 row's own fix instruction fail: you would build on 5.3 successfully, run `--record-53`, and be
+refused because the README badge was stale - which is the NORMAL state between releases. Recording a
+build is bookkeeping about something that already happened; none of the packaging gates has an opinion
+on whether a compiler succeeded twenty minutes ago. Fixed 2026-09-02.
+
 Two of these exist because a release already went out wrong. **5.3** was added after v0.8.0 shipped
 not compiling on 5.3 at all - the 5.7 probe passed, nothing checked 5.3, and the break reached a tag.
 **changelog** was added 2026-09-02 after the UE column was found one too high in every row since
