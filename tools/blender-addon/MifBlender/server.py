@@ -146,7 +146,7 @@ def _op_table():
     # module surfaces as a per-request error instead of a dead addon.
     from . import (ops_scene, ops_mesh, ops_gen, ops_rig, ops_create, ops_material,
                    ops_lightcam, ops_anim, ops_render, ops_world,
-                   ops_physics, ops_particles, ops_nodes, ops_viewport)
+                   ops_physics, ops_particles, ops_nodes, ops_viewport, ops_file)
 
     table = {}
     table.update(ops_scene.OPS)
@@ -163,6 +163,7 @@ def _op_table():
     table.update(ops_particles.OPS)
     table.update(ops_nodes.OPS)
     table.update(ops_viewport.OPS)
+    table.update(ops_file.OPS)
     return table
 
 

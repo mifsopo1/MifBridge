@@ -5020,6 +5020,26 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_file_info() -> dict:
+    "What .blend this Blender session is, whether it has unsaved work, what it holds, and - the part Blender never volunteers - which datablocks a SAVE WOULD DELETE. Anything with no users and no fake user is purged on write, permanently and silently: an unlinked action, an unused image, a node group nobody instanced. Call this before bl_save_file if the session has been edited for a while. Cheap, no parameters. Call mif_help(\"bl_file_info\") first."
+    return _blender("file_info")
+
+
+@mcp.tool()
+def bl_save_file(filepath: str, overwrite: bool = None, repoint_session: bool = None,
+                 compress: bool = None) -> dict:
+    "Write the Blender session to a .blend on disk. Until this existed NOTHING the addon authored survived the process - every light, camera, keyframe, world and node group died when Blender closed, and the only artefacts were a mesh FBX, a baked texture and one rendered frame. SAVE-A-COPY BY DEFAULT: the session keeps its own filepath, so a later save still goes where it did before; pass repoint_session to make this the working file. An existing file is REFUSED unless overwrite is passed. The response reports purgedOrphans - what the save destroyed - which is data loss caused by the successful operation and invisible otherwise. Call mif_help(\"bl_save_file\") first."
+    return _blender("save_file", filepath=filepath, overwrite=overwrite,
+                    repointSession=repoint_session, compress=compress)
+
+
+@mcp.tool()
+def bl_open_file(filepath: str, discard_unsaved: bool = None) -> dict:
+    "Open a .blend, DISCARDING everything currently in memory. There is no undo across a file load, so an open over a DIRTY session is refused unless discard_unsaved is passed - this is the one Blender op here that can lose work which was never on disk. Save first with bl_save_file if you want it. The response re-reads the session path and refuses to claim success if the session did not actually become the file you asked for. Call mif_help(\"bl_open_file\") first."
+    return _blender("open_file", filepath=filepath, discardUnsaved=discard_unsaved)
+
+
+@mcp.tool()
 def bl_set_light(object: str, type: str = None, energy: float = None, color: list = None,
                  radius: float = None, size: float = None, size_y: float = None,
                  shape: str = None, spot_angle: float = None, spot_blend: float = None,
