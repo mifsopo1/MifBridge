@@ -391,6 +391,37 @@ def main():
         io.open(BASELINE, "wb").write(("\r\n".join(body + sorted(found)) + "\r\n").encode("utf-8"))
         print("baseline updated: %d entry(ies)" % len(found))
         return 0
+    # THE KEY FUNCTION IS PROVED BEFORE IT IS TRUSTED, and it needed its own proof because the
+    # detector harness cannot give it one. audit_detectors_fire runs this tool with --all (ARGS in
+    # audit_detectors_fire.py:843), and --all sets base to the empty set two lines below - so the
+    # plant exercises DETECTION and never touches load_baseline() or baseline_key() at all. That is
+    # a good reason (a planted finding matching a baselined entry would be suppressed and read as
+    # ASLEEP) with a bad consequence: the baseline rewrite of 2026-09-03 landed on a code path no
+    # plant reaches, and the harness still called this detector proven.
+    #
+    # Run inside --check so the GATED path proves it every release and it cannot rot separately.
+    if "--check" in sys.argv or "--self-test" in sys.argv:
+        a = "tools/test_x.py:10\tT1 the widget count is right"
+        b = "tools/test_x.py:99\tT1 the widget count is right"     # same text, moved by a comment
+        c = "tools/test_x.py:10\tT2 something else entirely"
+        d = "tools/test_y.py:10\tT1 the widget count is right"     # same text, different file
+        failures = []
+        if baseline_key(a) != baseline_key(b):
+            failures.append("a line number still changes the key - the 2026-09-03 breakage is back")
+        if baseline_key(a) == baseline_key(c):
+            failures.append("different assertion text collides - the key is not specific enough")
+        if baseline_key(a) == baseline_key(d):
+            failures.append("the file is not part of the key - two files would share a baseline row")
+        if failures:
+            print("SELF-CHECK FAILED on baseline_key:")
+            for f in failures:
+                print("  %s" % f)
+            return 2
+        if "--self-test" in sys.argv:
+            print("baseline_key self-test OK - line-insensitive, text-specific, file-specific")
+            if "--check" not in sys.argv:
+                return 0
+
     show_all = "--all" in sys.argv
     base = set() if show_all else load_baseline()
     new = [f for f in found if baseline_key(f) not in base]
