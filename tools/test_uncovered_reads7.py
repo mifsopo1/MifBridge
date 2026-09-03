@@ -212,6 +212,10 @@ def _run():
           json.dumps(land)[:200])
     # ANY RuntimeVirtualTexture will do - T955 asserts the BINDING, and binding is scene-wide and
     # does not mutate the texture asset. This named one Brushify asset, which only DDS2 has.
+    # BOUND BEFORE THE BRANCH that fills it, because the cleanup below reads it unconditionally and
+    # neither branch above is guaranteed to run. This is the same NameError shape found in
+    # coverage_gaps.py earlier today, where a value was assigned only on one path and read on all.
+    rvt_volumes = []
     rvt_rows = M.call("find_assets", {"class": "RuntimeVirtualTexture", "limit": 10}).get("assets") or []
     rvt_asset = (rvt_rows[0].get("path") or rvt_rows[0].get("objectPath")) if rvt_rows else None
     if land_path and not rvt_asset:
@@ -229,10 +233,28 @@ def _run():
         check("T955 and the RVT is covered by a volume - fresh or already-present",
               bool(rvt.get("volumesCreated")) or bool(rvt.get("alreadyPresent")),
               json.dumps({"volumesCreated": rvt.get("volumesCreated"), "alreadyPresent": rvt.get("alreadyPresent")}))
+        # WHAT THIS TEST CREATED, IT REMOVES. bind_landscape_rvt SPAWNS an
+        # ARuntimeVirtualTextureVolume into the editor world when none covers the RVT, and labels it
+        # "RVTVolume_<name>" (MifBridgeLandscape.cpp:1259) - a sensible name for a real caller, and
+        # invisible to mifaudit.is_scratch_fixture, which knows a level actor only by a Mif label.
+        # So an uncleaned one is indistinguishable from project content to every suite hunting for
+        # something to adopt, and it accumulates one per run. Only volumesCreated is taken:
+        # alreadyPresent names volumes this suite did NOT make, and deleting those would be
+        # vandalism of somebody else's level.
+        rvt_volumes = [p for p in (rvt.get("volumesCreated") or []) if p]
 
     # CLEANUP. create_landscape spawns into the EDITOR world, so this is NOT torn down when PIE
     # stops - it persists and is carried into every later PIE session. See
     # mifaudit.cleanup_level_actor for the T1606 breakage an uncleaned one already caused.
+    # VOLUMES BEFORE THE LANDSCAPE. The volume's component holds the landscape as its
+    # BoundsAlignActor, so removing the thing it aligns to first is the order that leaves a dangling
+    # reference rather than a clean deletion.
+    for _v in rvt_volumes:
+        _vc = M.cleanup_level_actor(_v, "scratch RVT volume")
+        check("T955 (cleanup) the RVT volume this test created is removed - its engine-assigned "
+              "label is not Mif-prefixed, so nothing else can tell it from project content",
+              _vc.get("ok") is True, {"volume": _v, "error": _vc.get("error")})
+
     if land_path:
         _c = M.cleanup_level_actor(land_path, "scratch landscape")
         check("T955 (cleanup) the scratch landscape is removed, not left in the level",
