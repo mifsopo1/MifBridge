@@ -99,7 +99,12 @@ today with `ForEach`, so it costs less time than a parameter rename that fails s
 
 ---
 
-## 1. Parameter names drift between builds — HIGHEST COST NOW
+## 1. Parameter names drift between builds — HIGHEST COST NOW — THE REPORTED INSTANCE IS FIXED
+
+*(2026-09-03. The Status table above records this "FIXED + verified": `path` accepted on
+`connect_pins` and `disconnect_pin`, checked in the handlers today. The GENERAL problem - names
+drifting between builds - is not something a fix closes, which is why the heading is qualified
+rather than marked FIXED outright. `describe_endpoint` and `parity_check` are the standing answer.)*
 
 Two endpoints **dropped `path` between the 00:01 and 02:56 builds**:
 
@@ -134,7 +139,11 @@ Related, lower priority — names still differ per verb:
 
 ---
 
-## 2. `list_components` returns nothing for a cooked parent blueprint
+## 2. `list_components` returns nothing for a cooked parent blueprint — FIXED
+
+*(2026-09-03. Status table: "FIXED + verified - BP_PlantPot returns 12 components (was 0)".
+Verified in MifBridgeComponents.cpp:997-1007 - the cooked route reports `targetKind:"cookedClass"`,
+`readOnly:true`, with every row `canOverride:false`, which is the honest shape for a cooked read.)*
 
 `list_components` on `/Game/Blueprints/LabEquipment/Growing/BP_PlantPot` (cooked-only parent) returns
 an empty list.
@@ -275,7 +284,12 @@ otherwise a manual editor job.
 
 ---
 
-## 7. `set_viewport_camera` returns `ok:true` but does not affect `capture_camera`
+## 7. `set_viewport_camera` returns `ok:true` but does not affect `capture_camera` — FIXED
+
+*(2026-09-03. Status table: "FIXED + verified - useViewportCamera opt-in; cameraSource echoes".
+MifBridgeSpatial.cpp:21 states it: "an OPT-IN useViewportCamera:true, and cameraSource is echoed on
+EVERY capture". Echoing the source on every capture is what stops the silent disagreement this
+entry is about - the caller can no longer be wrong about which camera took the shot.)*
 
 `set_viewport_camera` succeeds, and `capture_camera` then renders from somewhere else entirely.
 `capture_camera` accepts `location` / `rotation` inline and **that does work** — it is the only
@@ -544,7 +558,12 @@ impossible job into a routine one.
 
 ---
 
-## 11. `landscape_info` and `diagnose_landscape` disagree about the same world, and neither says which question it answered
+## 11. `landscape_info` and `diagnose_landscape` disagree about the same world, and neither says which question it answered — FIXED
+
+*(2026-09-03. Status table: "FIXED + verified 2026-08-26". The disagreement was World Partition
+proxies - MifBridgeLandscape.cpp:1332 records that diagnose_landscape iterates ALandscapeProxy and
+saw 896 components where the other verb did not. Both now say which question they answered, which
+is the actual complaint: neither said which.)*
 
 **Found:** 2026-08-26, overnight hunt, against build `Aug 26 03:34` (286 endpoints). Not from reading
 the source — from calling both endpoints on the open world and noticing the numbers could not both be
