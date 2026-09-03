@@ -463,7 +463,19 @@ def check_static_audits():
                        # shape one step earlier - RejectUnknownParams says yes and the handler
                        # ignores it. 2483 accepted parameters across 451 endpoints, currently zero
                        # dead.
-                       ("audit_dead_params.py", [])):
+                       ("audit_dead_params.py", []),
+                       # THE BLENDER TWINS OF TWO ENTRIES ABOVE. audit_consequence_fields and
+                       # audit_dead_params are gated; their Blender counterparts were not, which is
+                       # the same half-finished shape as gate_53 having weaker checks than
+                       # check_engine_probe - one half of a pair hardened and the other left alone.
+                       # The Blender backend is a first-class half of this tool, not an accessory:
+                       # parity_check exists because that half drifted once and shipped the flagship
+                       # road-mesh round trip dead on arrival.
+                       #
+                       # Both are static - they read the addon source, not a running Blender - and
+                       # together they add under a second.
+                       ("audit_blender_consequence_fields.py", ["--check"]),
+                       ("audit_blender_dead_params.py", [])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
