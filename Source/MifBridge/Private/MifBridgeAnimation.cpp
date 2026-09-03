@@ -3525,6 +3525,7 @@ namespace MifBridge
 		// default - which is exactly what it would return if the value had been stored. Without
 		// this flag "set to 1.0" and "override removed" are the same response.
 		Out->SetBoolField(TEXT("entryRemoved"), bIsDefault);
+		FString Mismatch;
 		if (bIsDefault)
 		{
 			Out->SetStringField(TEXT("entryNote"), FString::Printf(
@@ -3536,16 +3537,23 @@ namespace MifBridge
 		}
 		else
 		{
-			Out->SetBoolField(TEXT("scaleStored"), FMath::IsNearlyEqual(ReadBack, Scale, 0.0001f));
-			if (!FMath::IsNearlyEqual(ReadBack, Scale, 0.0001f))
+			const bool bStored = FMath::IsNearlyEqual(ReadBack, Scale, 0.0001f);
+			Out->SetBoolField(TEXT("scaleStored"), bStored);
+			if (!bStored)
 			{
-				Out->SetStringField(TEXT("scaleNote"), FString::Printf(
-					TEXT("asked for %.4f and the profile reports %.4f. Treat this as a FAILURE "
-						 "despite ok:true."), Scale, ReadBack));
+				Mismatch = FString::Printf(
+					TEXT("asked for %.4f and the profile reports %.4f. The write WAS attempted and "
+						 "the skeleton is dirty, so do not simply retry - read the bone back with "
+						 "list_blend_profiles first."), Scale, ReadBack);
 			}
 		}
 		Out->SetStringField(TEXT("saveNote"),
 			TEXT("the SKELETON is dirty and NOTHING has been saved."));
+		// FIELDS FIRST, VERDICT LAST. Fail() adds ok and error and clears nothing, so a caller that
+		// branches on ok:false still receives scaleStored, the read-back and saveNote. Reporting a
+		// failed postcondition as a NOTE on an ok:true response means `if resp["ok"]` reads a
+		// silent false success, which is the thing this project exists to stop.
+		if (!Mismatch.IsEmpty()) { Fail(Out, Mismatch); }
 	}
 
 
@@ -3614,17 +3622,18 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("profilesAfter"), Skeleton->BlendProfiles.Num());
 		Out->SetNumberField(TEXT("bonesItHeld"), Bones);
 		Out->SetBoolField(TEXT("removed"), bGone);
-		if (!bGone)
-		{
-			Out->SetStringField(TEXT("removedNote"),
-				TEXT("the skeleton still finds this profile by name after removing it. Treat this "
-					 "as a FAILURE despite ok:true."));
-		}
 		Out->SetStringField(TEXT("garbageNote"),
 			TEXT("the profile was MarkAsGarbage'd as well as unlisted - unlisting alone would "
 				 "leave a live UObject in the skeleton's package that nothing references."));
 		Out->SetStringField(TEXT("saveNote"),
 			TEXT("the SKELETON is dirty and NOTHING has been saved."));
+		// Fields first, verdict last - see H_set_blend_profile_bone above.
+		if (!bGone)
+		{
+			Fail(Out, TEXT("the skeleton STILL finds this profile by name after it was unlisted and "
+						   "marked garbage. The removal WAS attempted and the skeleton is dirty, so "
+						   "do not simply retry - read it back with list_blend_profiles first."));
+		}
 	}
 
 

@@ -775,11 +775,15 @@ namespace MifBridge
 			const double Off = FVector::Dist(After, Mark->Location);
 			Out->SetNumberField(TEXT("distanceFromBookmark"), Off);
 			Out->SetBoolField(TEXT("cameraIsAtBookmark"), Off < 1.0);
+			// FIELDS FIRST, VERDICT LAST. JumpToBookmark returns void and does nothing at all on
+			// an empty slot, so this distance is the ONLY evidence either way - which is exactly
+			// why it must set ok, not a note a caller has to know to look for.
 			if (Off >= 1.0)
 			{
-				Out->SetStringField(TEXT("arrivalNote"), FString::Printf(
-					TEXT("the camera is %.2f units from the bookmark it was told to jump to. The "
-						 "jump did not land - treat this as a FAILURE despite ok:true."), Off));
+				Fail(Out, FString::Printf(
+					TEXT("the camera is %.2f units from the bookmark it was told to jump to, so the "
+						 "jump did NOT land. distanceFromBookmark in this same response is the "
+						 "measurement."), Off));
 			}
 		}
 	}
@@ -846,15 +850,17 @@ namespace MifBridge
 		Out->SetNumberField(TEXT("cleared"), Cleared);
 		Out->SetNumberField(TEXT("stillSet"), StillSet);
 		Out->SetBoolField(TEXT("all"), bAll);
-		if (bAll && StillSet > 0)
-		{
-			Out->SetStringField(TEXT("clearNote"), FString::Printf(
-				TEXT("all:true was asked for and %d slot(s) still hold a bookmark. Treat this as a "
-					 "FAILURE despite ok:true."), StillSet));
-		}
 		Out->SetStringField(TEXT("levelNote"),
 			TEXT("bookmarks are stored on AWorldSettings, so the LEVEL is now dirty and NOTHING "
 				 "has been saved."));
+		// Fields first, verdict last - cleared and stillSet above still report what happened.
+		if (bAll && StillSet > 0)
+		{
+			Fail(Out, FString::Printf(
+				TEXT("all:true was asked for and %d slot(s) STILL hold a bookmark. Some slots may "
+					 "have been cleared and the level is dirty, so do not simply retry - cleared "
+					 "and stillSet in this same response are the counts."), StillSet));
+		}
 	}
 
 

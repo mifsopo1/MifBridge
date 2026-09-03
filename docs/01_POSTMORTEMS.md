@@ -2629,3 +2629,47 @@ the fix needed a build because it had never been RUN. A fix that reports success
 its postcondition back - which is what this one did - buys a whole extra build-and-close cycle to
 discover something a single read-back would have shown the first time.
 
+## Six endpoints reported a FAILED postcondition as a note on an ok:true response (2026-09-03)
+
+**Symptom.** `audit_consequence_fields` reported one field nothing reads: `removedNote`, on
+`remove_blend_profile`. Reading the field to decide whether it was reachable turned up something
+worse than an unread field - the string it holds says *"Treat this as a FAILURE despite ok:true."*
+
+**Root cause.** Six sites, all written in one session between 04:21 and 06:24 on 2026-09-01, all
+mine, verified a postcondition, found it FALSE, and reported that as a STRING on a success response:
+
+| endpoint | the postcondition that failed |
+|---|---|
+| `set_blend_profile_bone` | the scale read back is not the scale asked for |
+| `remove_blend_profile` | the skeleton still finds the profile by name after removal |
+| `register_landscape_layer` | `GetLayerInfoIndex` still does not find the layer |
+| `set_material_layers` | the instance reports a different layer count than requested |
+| `jump_viewport_bookmark` | the camera did not land at the bookmark |
+| `clear_viewport_bookmark` | `all:true` was asked and slots still hold bookmarks |
+
+A caller writing the ordinary `if resp["ok"]:` gets a silent false success. That is precisely the
+failure mode this project exists to prevent, and the responses were *telling the caller so in prose*
+- which only works if somebody reads a field they have no reason to look for. Nothing did: the audit
+found zero suites reading `removedNote`, and the same is true of a note by construction.
+
+Worth being exact about what went wrong. Each of these sites got the HARD part right - every one
+verifies through the same predicate the consumer uses, rather than trusting the engine's return. The
+verification was correct and the verdict was thrown away.
+
+**Fix.** All six now call `Fail()`. `Fail` sets `ok` and `error` and clears nothing
+(`MifBridgeCommon.cpp:1627`), so the rule is **set every field, then declare the verdict last** - the
+caller still receives the full diagnostic payload on `ok:false`. Each message states that the
+mutation WAS attempted, so nobody retries into a double-mutation. The house precedent was already
+there: `MifBridgeIKRig.cpp:1151` reads back through the asset and fails when the postcondition does
+not hold.
+
+**Prevention.** `audit_consequence_fields` found this, but indirectly - it flags fields nothing
+READS, and it was chance that the unread field happened to contain the word FAILURE. The phrase
+"despite ok:true" is now the searchable marker: `grep -rn "despite ok:true" Source/` must return
+nothing. Six occurrences existed and all six are gone.
+
+**And the thing that nearly hid it.** The obvious defence of the old shape is "the mutation happened,
+so ok:false would be a lie". It is not: `Fail` preserves the fields, so the response says both what
+happened and that it did not hold. Checking that took one look at `Fail`'s body - and not checking it
+was the only thing that made the note pattern look reasonable six times in a row.
+

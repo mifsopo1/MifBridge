@@ -2434,15 +2434,18 @@ namespace MifBridge
 			Report.Add(MakeShared<FJsonValueObject>(J));
 		}
 		Out->SetArrayField(TEXT("layers"), Report);
-		if (After.Layers.Num() != Entries.Num())
-		{
-			Out->SetStringField(TEXT("countNote"), FString::Printf(
-				TEXT("asked for %d layers and the instance now reports %d. Treat this as a "
-					 "FAILURE despite ok:true."), Entries.Num(), After.Layers.Num()));
-		}
 		Out->SetStringField(TEXT("saveNote"),
 			TEXT("the material instance is dirty and NOTHING has been saved. Shaders recompile in "
 				 "the background - shader_compile_status reports when that settles."));
+		// FIELDS FIRST, VERDICT LAST - layers[] above still reports what the instance actually
+		// holds, which is the thing a caller needs in order to recover from this.
+		if (After.Layers.Num() != Entries.Num())
+		{
+			Fail(Out, FString::Printf(
+				TEXT("asked for %d layers and the instance now reports %d. The write WAS attempted "
+					 "and the instance is dirty, so do not simply retry - layers[] in this same "
+					 "response is what it actually holds."), Entries.Num(), After.Layers.Num()));
+		}
 	}
 
 
