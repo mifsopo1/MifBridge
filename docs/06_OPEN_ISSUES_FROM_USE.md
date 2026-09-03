@@ -569,7 +569,22 @@ one measurement against `DDS2_Landscape_IslaSombra` before trusting the Z bounds
 
 ---
 
-## 12. Five endpoints that reported success while doing something else
+## 12. Five endpoints that reported success while doing something else — ALL SEVEN FIXED
+
+*(Marked 2026-09-03. Every sub-defect below was checked in the source individually - none on
+the strength of remembering it, and the heading says SEVEN because the list grew past its own
+title:*
+
+*1. `edit_container` - explicit `Index == Other` branch, reports `changed:false` with a note
+   rather than refusing (MifBridgeDetails.cpp:1996).*
+*2. `scope` - "Resolve the `scope` parameter, or refuse it" (MifBridgeIntrospect.cpp:1275).*
+*3. `draw_debug shape:"string"` - "shape 'string' needs text. NOTHING was drawn."*
+*4. `snap_actors_to_ground` - `MoveRefused` counted separately; the comment states outright
+   that the return "was discarded while incrementing Snapped regardless".*
+*5. `reparent_blueprint` - reports `compileStatus`, checks `BS_Error`, carries `compileNote`.*
+*6. `get_inherited_component` - emits `availableComponentCount` AND `availableComponentTotal`,
+   so an 80-capped list can no longer read as the whole set.*
+*7. batch guards - zero `TEXT("batch")` accept-lists remain.)*
 
 **Found:** 2026-08-26 by a ten-agent parallel read of all 49 handler files (~51k lines) against the
 eight patterns that had already produced real bugs here, with every candidate handed to a separate
