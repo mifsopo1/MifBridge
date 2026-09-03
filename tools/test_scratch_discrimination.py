@@ -87,6 +87,11 @@ def main():
           M.is_scratch_fixture(WEAPON_TEST_MAP) is False, WEAPON_TEST_MAP)
 
     print("\n=== S103: the gap, asserted so it cannot be forgotten ===")
+    # MEASURED, so the gap is not overstated: every spawn_actor_in_level call in tools/ passes a
+    # label, and every one of those labels is Mif-prefixed (MifAttachParent, MifGrp_A_, MifSnapFloorA,
+    # MifSnapTestActor, ...), so the label branch catches all of them. The hole below is in the code
+    # path, not in the suite set - and what keeps it shut is a naming convention rather than a check,
+    # which is exactly why it is worth an assertion.
     # An actor spawned from a scratch BLUEPRINT with no label is NOT detected - those classes are
     # BP_ASCFix, BP_NoASC, BP_NS_, BP_Probe with no shared prefix. Asserting the FALSE result rather
     # than leaving it undocumented: if someone later makes this detectable, this check goes red and

@@ -491,12 +491,20 @@ def is_scratch_fixture(row):
         return False
     if SCRATCH_ASSET_PREFIX in path:
         return True
-    # WHAT THIS DOES NOT CATCH, said plainly because the first draft of this function claimed it did.
-    # An actor spawned from a scratch BLUEPRINT with no label set carries only the class name in its
-    # path - ...PersistentLevel.BP_ASCFix46961_C_UAID_... - and those classes are named BP_ASCFix,
-    # BP_NoASC, BP_NS_, BP_Probe with no shared prefix, so there is nothing here to match on. Such an
-    # actor reads as adoptable. The fix for that is at the other end: a suite spawning a fixture
-    # should give it a Mif* label, which spawn_actor_in_level takes and most already pass.
+    # WHAT THIS DOES NOT CATCH, and how big the hole actually is - measured, not guessed.
+    #
+    # An actor spawned from a scratch BLUEPRINT with NO label carries only the class name in its path
+    # (...PersistentLevel.BP_ASCFix46961_C_UAID_...), and those classes are BP_ASCFix, BP_NoASC,
+    # BP_NS_, BP_Probe with no shared prefix, so there is nothing here to match on.
+    #
+    # In practice no suite reaches that state today. Every spawn_actor_in_level call in tools/ passes
+    # a label, and every one of those labels is Mif-prefixed - MifAttachParent, MifGrp_A_,
+    # MifSnapFloorA, MifSnapTestActor and the rest - so the label branch above catches them all. The
+    # hole is in the code path, not in the suite set.
+    #
+    # It stays a hole worth knowing about because the thing keeping it shut is a naming convention,
+    # not a check. A suite that spawns without a label, or with one that is not Mif-prefixed, becomes
+    # adoptable by everything else and nothing here will say so.
     return False
 
 
