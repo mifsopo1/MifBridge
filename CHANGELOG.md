@@ -5,15 +5,57 @@ Every number here was **measured from the tagged tree**, not remembered — UE e
 number in this repo that was ever hand-typed read "20 ops" long after it was 68, which is why none
 of these are.
 
+**Every UE column was one too high until 2026-09-02, and the correction is left visible rather than
+quietly applied.** The count included the macro DEFINITION — `#define MIF_DECL(Name) ...` matches
+`MIF_DECL\((\w+)\)` just as a real declaration does — so a parameter called `Name` was counted as an
+endpoint in every release since 0.3.0. Measured, and still wrong by one: being generated protects a
+number from going stale, not from a bug in the generator. The same off-by-one turned up the same day
+in `audit_param_guards`, which reported a phantom endpoint named `Name` for exactly this reason.
+
 | version | date | UE endpoints | Blender ops |
 |---|---|---|---|
-| [0.8.0](#080) | 2026-09-01 | 441 | 68 |
-| [0.7.0](#070) | 2026-08-30 | 422 | 42 |
-| [0.6.0](#060) | 2026-08-27 | 321 | 20 |
-| [0.5.0](#050) | 2026-08-27 | 321 | 18 |
-| [0.4.1](#041) | 2026-08-21 | 228 | 17 |
-| [0.4.0](#040) | 2026-08-21 | 228 | 17 |
-| [0.3.0](#030) | 2026-08-10 | 219 | 12 |
+| [Unreleased](#unreleased) | — | 453 | 68 |
+| [0.8.1](#081) | 2026-09-01 | 440 | 68 |
+| [0.8.0](#080) | 2026-09-01 | 440 | 68 |
+| [0.7.0](#070) | 2026-08-30 | 421 | 42 |
+| [0.6.0](#060) | 2026-08-27 | 320 | 20 |
+| [0.5.0](#050) | 2026-08-27 | 320 | 18 |
+| [0.4.1](#041) | 2026-08-21 | 227 | 17 |
+| [0.4.0](#040) | 2026-08-21 | 227 | 17 |
+| [0.3.0](#030) | 2026-08-10 | 218 | 12 |
+
+---
+
+## Unreleased
+
+**Not tagged, not packaged.** 43 commits sit past `v0.8.1` and the UE 5.7 compile probe has not been
+re-run since the C++ in them changed, so `make_release.py` will refuse to package this until it is.
+
+Thirteen new endpoints — `set_node_state`; `group_actors` / `ungroup_actors`;
+`register_landscape_layer`; four viewport bookmark ops; `set_material_layers`; and three blend-profile
+ops — plus `rename_asset renames[]` for bulk renames in one `IAssetTools` pass, and a `delete_asset`
+that names what is holding an asset instead of saying it cannot tell.
+
+The through-line, because it decided how all of them are written: five separate engine APIs return
+`void` or a single bool and then do **nothing, silently** — `JumpToBookmark` on an empty slot,
+`SetBoneBlendScale` with its default `bCreate=false`, `UActorGroupingUtils::GroupActors` on four
+distinct causes, `RenameAssets` uniquifying a clash rather than failing. Each new endpoint therefore
+diagnoses the cause *before* calling the engine and verifies afterwards through the same predicate its
+consumer uses. `register_landscape_layer`'s postcondition is literally "`paint_landscape` will accept
+this now", proven by then calling it.
+
+Also: the autonomous report loop went live and worked its first real report end to end, and now pings
+the reporter on Discord so they know to pull.
+
+---
+
+## 0.8.1
+
+**A one-line fix for a release that did not compile on 5.3.**
+
+0.8.0 shipped with a blanket rename that rewrote a type alias into `using X = X;`. The 5.7 build never enters that arm, so the probe passed and the break reached a tag. 0.8.1 fixes it and `make_release.py` gained `gate_53`, which refuses to package without a recorded successful 5.3 build — the check that would have caught it.
+
+No endpoints added; the count is 0.8.0's.
 
 ---
 
@@ -61,7 +103,7 @@ letting one handler vouch for every other.
 
 **+101 endpoints, and the first regression sweep that ever finished.**
 
-The endpoint count went 321 → 422 and the Blender arm doubled, 20 → 42. More importantly it is the
+The endpoint count went 320 → 421 and the Blender arm doubled, 20 → 42. More importantly it is the
 first release where a full sweep ran to completion rather than dying partway — which is what made
 every count after it trustworthy.
 
@@ -71,7 +113,7 @@ Blender 18 → 20 ops. UE endpoints unchanged from 0.5.0.
 
 ## 0.5.0
 
-**228 → 321 endpoints.** The largest single jump in the project's history.
+**227 → 320 endpoints.** The largest single jump in the project's history.
 
 ## 0.4.1
 
