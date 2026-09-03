@@ -5020,6 +5020,33 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_set_camera(object: str, type: str = None, lens: float = None, sensor_width: float = None,
+                  sensor_height: float = None, sensor_fit: str = None, ortho_scale: float = None,
+                  clip_start: float = None, clip_end: float = None, shift_x: float = None,
+                  shift_y: float = None, f_stop: float = None, dof_distance: float = None,
+                  look_at: list = None, location: list = None, rotation: list = None,
+                  make_active: bool = None) -> dict:
+    "Change a Blender camera that already exists, including SWITCHING which camera the scene renders through - make_active was previously available only at creation, so choosing between two existing cameras was impossible without bl_run_python. sensor_fit is here because without it sensor_width is a half-answer and no real lens can be matched. Type-gated settings are validated against the type the camera will BE after the call, so retyping to ORTHO and setting ortho_scale together is legal. Every refusal fires before any write. The response carries before, after and changedFields, with FOV derived at the current render resolution. rotation and look_at are mutually exclusive. Call mif_help(\"bl_set_camera\") first."
+    return _blender("set_camera", object=object, type=type, lens=lens, sensorWidth=sensor_width,
+                    sensorHeight=sensor_height, sensorFit=sensor_fit, orthoScale=ortho_scale,
+                    clipStart=clip_start, clipEnd=clip_end, shiftX=shift_x, shiftY=shift_y,
+                    fStop=f_stop, dofDistance=dof_distance, lookAt=look_at, location=location,
+                    rotation=rotation, makeActive=make_active)
+
+
+@mcp.tool()
+def bl_list_cameras(name_contains: str = None) -> dict:
+    "List every camera in the Blender file and, crucially, WHICH ONE the scene renders through. sceneCamera was unobtainable anywhere in the addon before this: bl_scene_info omits it, bl_set_render_settings reports a bare boolean, and bl_render_still names it only by blocking for a whole render. Each row carries the full optical set plus fovDegrees derived at the current render resolution - the number that actually determines framing, and which depends on sensor fit as well as focal length. Call mif_help(\"bl_list_cameras\") first."
+    return _blender("list_cameras", nameContains=name_contains)
+
+
+@mcp.tool()
+def bl_aim_object(object: str, target: str = None, look_at: list = None) -> dict:
+    "Point any Blender object at another object or at a point. Nothing could aim anything after creation - bl_create_camera took look_at at birth and that was the only user of the aiming maths, so a spot light could not be aimed at all. Pass exactly one of target (an object, aimed at its world origin) or look_at (a point). THE POSTCONDITION IS MEASURED, not assumed: it reports the ANGLE between the object's world-space local -Z and the direction to the target after the write, and refuses above ~1e-3 rad. That matters because the aiming derivation was once wrong by exactly pi - aiming 166 degrees off while returning a perfectly plausible euler - and reading back the euler you just wrote is a proxy that cannot catch it. Call mif_help(\"bl_aim_object\") first."
+    return _blender("aim_object", object=object, target=target, lookAt=look_at)
+
+
+@mcp.tool()
 def bl_render_info() -> dict:
     "Everything that decides what a Blender render will look like - engine, samples and WHICH property they live on, effective resolution after the percentage multiplier, output format, colour management (view transform, look, exposure - the usual cause of 'washed out'), frame range, scene camera, world, and how many lights actually contribute. The read half of bl_set_render_settings, which reports only the five fields it can write. It also answers the black-render question directly: `blockers` is a measured list of reasons this render will produce nothing useful - no scene camera, no world datablock (a scene with no world contributes NO ambient light, so interiors go black and the lights get blamed), every light hidden or at zero energy - and `wouldRenderSomething` is the one-field answer. No parameters. Call mif_help(\"bl_render_info\") first."
     return _blender("render_info")

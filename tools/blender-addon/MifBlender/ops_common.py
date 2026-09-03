@@ -292,6 +292,52 @@ def light_readback(obj, data):
     return out
 
 
+def camera_readback(obj, cam):
+    """What the camera IS, off the datablock. One reader for object_info, set_camera and
+    list_cameras - the same rule light_readback follows, and for the same reason: three response
+    builders for one object type drift, and nobody notices until a caller diffs two of them.
+
+    FOV is DERIVED here rather than left to the caller. It is the number that actually determines
+    framing, it depends on sensor fit as well as focal length, and getting it wrong is the usual
+    reason a camera "looks right in the numbers" and wrong in the render.
+    """
+    dof = getattr(cam, "dof", None)
+    fit = getattr(cam, "sensor_fit", "AUTO")
+    sw = float(cam.sensor_width)
+    sh = float(getattr(cam, "sensor_height", sw))
+    # AUTO fits to the LARGER render dimension, which is why a portrait render silently changes
+    # which sensor dimension the focal length is measured against.
+    r = bpy.context.scene.render
+    rx, ry = int(r.resolution_x), int(r.resolution_y)
+    if fit == "VERTICAL" or (fit == "AUTO" and ry > rx):
+        fov_sensor = sh if fit == "VERTICAL" else sw
+    else:
+        fov_sensor = sw
+    fov = 2.0 * math.atan(fov_sensor / (2.0 * float(cam.lens))) if cam.lens else 0.0
+    return {
+        "type": cam.type,
+        "lensMM": round(float(cam.lens), 6),
+        "sensorWidthMM": round(sw, 6),
+        "sensorHeightMM": round(sh, 6),
+        "sensorFit": fit,
+        "fovRadians": round(fov, 6),
+        "fovDegrees": round(math.degrees(fov), 4),
+        "clipStart": round(float(cam.clip_start), 6),
+        "clipEnd": round(float(cam.clip_end), 6),
+        "shiftX": round(float(cam.shift_x), 6),
+        "shiftY": round(float(cam.shift_y), 6),
+        "orthoScale": round(float(cam.ortho_scale), 6),
+        "dofEnabled": bool(getattr(dof, "use_dof", False)),
+        "dofDistance": round(float(getattr(dof, "focus_distance", 0.0)), 6),
+        "dofFocusObject": (dof.focus_object.name
+                           if dof is not None and getattr(dof, "focus_object", None) else None),
+        "fStop": round(float(getattr(dof, "aperture_fstop", 0.0)), 6),
+        # Whether THIS camera is the one a render will use. Obtainable nowhere else in the addon,
+        # and the first thing anybody asks about a camera.
+        "isSceneCamera": bpy.context.scene.camera is obj,
+    }
+
+
 def object_info(obj, with_counts=True):
     """The pre-image/post-image record. Every number a round-trip assertion
     might need, in both Blender units and Unreal units."""
@@ -319,26 +365,7 @@ def object_info(obj, with_counts=True):
         info["light"] = light_readback(obj, obj.data)
         return info
     if obj.type == "CAMERA" and obj.data is not None:
-        cam = obj.data
-        info["camera"] = {
-            "type": cam.type,
-            "lensMM": round(float(cam.lens), 6),
-            "sensorWidthMM": round(float(cam.sensor_width), 6),
-            "sensorHeightMM": round(float(getattr(cam, "sensor_height", 0.0)), 6),
-            "sensorFit": getattr(cam, "sensor_fit", None),
-            "clipStart": round(float(cam.clip_start), 6),
-            "clipEnd": round(float(cam.clip_end), 6),
-            "shiftX": round(float(cam.shift_x), 6),
-            "shiftY": round(float(cam.shift_y), 6),
-            "orthoScale": round(float(cam.ortho_scale), 6),
-            "dofEnabled": bool(getattr(getattr(cam, "dof", None), "use_dof", False)),
-            "dofDistance": round(float(getattr(getattr(cam, "dof", None),
-                                               "focus_distance", 0.0)), 6),
-            "fStop": round(float(getattr(getattr(cam, "dof", None), "aperture_fstop", 0.0)), 6),
-            # Whether THIS camera is the one a render will use. Obtainable nowhere else in the
-            # addon, and the first thing anybody asks about a camera.
-            "isSceneCamera": bpy.context.scene.camera is obj,
-        }
+        info["camera"] = camera_readback(obj, obj.data)
         return info
     if obj.type == "ARMATURE" and obj.data is not None:
         arm = obj.data

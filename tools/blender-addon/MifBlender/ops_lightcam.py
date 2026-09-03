@@ -24,8 +24,10 @@ than leaving them recorded.
 import math
 
 import bpy
+import mathutils
 
-from .ops_common import (MifOpError, light_readback, object_info, reject_unknown,
+from .ops_common import (MifOpError, camera_readback, light_readback, object_info,
+                         reject_unknown,
                          refuse_unsupported_shadow, rnd, shadow_attr,
                          selection_restore, selection_snapshot, take, take_bool, take_float)
 
@@ -522,9 +524,230 @@ def op_create_camera(params):
         selection_restore(snap)
 
 
+_SET_CAMERA_KEYS = set(_CAMERA_KEYS) | {"object", "camera"}
+
+
+def op_set_camera(params):
+    """Change a camera that already exists, including which one the scene renders through.
+
+    Same absence set_light closed for lights: a camera could be created and never adjusted, and
+    the scene camera could only be chosen at BIRTH via makeActive - so switching between two
+    existing cameras, which is ordinary shot work, was impossible without run_python.
+
+    params:
+      object / camera / name (str)  which camera. Required.
+      type                          PERSP | ORTHO | PANO
+      lens / focalLength (float)    mm, PERSP only
+      sensorWidth / sensorHeight    mm
+      sensorFit                     AUTO | HORIZONTAL | VERTICAL - without which sensorWidth is a
+                                    half-answer and no real lens can be matched
+      orthoScale                    ORTHO only
+      clipStart / clipEnd
+      shiftX / shiftY
+      fStop / dofDistance           enables depth of field when either is given
+      lookAt {x,y,z}                aim at a point; refused together with rotation
+      location / rotation {x,y,z}   rotation is RADIANS
+      makeActive (bool)             make this the scene camera
+
+    Every refusal fires before any write.
+    """
+    reject_unknown(params, _SET_CAMERA_KEYS | {"sensorHeight", "sensorFit"}, "set_camera")
+    want = take(params, "object", "camera", "name", default=None, kind=str)
+    if not want:
+        raise MifOpError("'object' is required - the name of the camera to change (list them with "
+                         "list_cameras). NOTHING was changed.")
+    obj = bpy.data.objects.get(want)
+    if obj is None:
+        known = [o.name for o in bpy.data.objects if o.type == "CAMERA"][:25]
+        raise MifOpError("no object named '%s'. Cameras present: %s. NOTHING was changed."
+                         % (want, ", ".join(known) if known else "<none>"))
+    if obj.type != "CAMERA":
+        raise MifOpError("'%s' is a %s, not a CAMERA. NOTHING was changed." % (want, obj.type))
+    cam = obj.data
+
+    if "lookAt" in params and "rotation" in params:
+        raise MifOpError("pass lookAt OR rotation, not both - they are two answers to the same "
+                         "question. NOTHING was changed.")
+
+    # THE TYPE THE CAMERA WILL BE, judged before anything is written - the same rule set_light
+    # follows, because lens is PERSP-only and orthoScale is ORTHO-only and both questions are about
+    # the type AFTER this call.
+    ctype = take(params, "type", default=None, kind=str)
+    if ctype:
+        valid = {i.identifier for i in bpy.types.Camera.bl_rna.properties["type"].enum_items}
+        ctype = str(ctype).upper()
+        if ctype not in valid:
+            raise MifOpError("unknown camera type '%s'. Valid: %s. NOTHING was changed."
+                             % (ctype, ", ".join(sorted(valid))))
+    effective = ctype or cam.type
+    if take_float(params, "lens", "focalLength", default=None) is not None and effective != "PERSP":
+        raise MifOpError("lens/focalLength applies to a PERSP camera and this one is %s - use "
+                         "orthoScale for ORTHO. NOTHING was changed." % effective)
+    if take_float(params, "orthoScale", default=None) is not None and effective != "ORTHO":
+        raise MifOpError("orthoScale applies to an ORTHO camera and this one is %s. "
+                         "NOTHING was changed." % effective)
+    fit = take(params, "sensorFit", default=None, kind=str)
+    if fit:
+        fit = str(fit).upper()
+        fits = {i.identifier for i in bpy.types.Camera.bl_rna.properties["sensor_fit"].enum_items}
+        if fit not in fits:
+            raise MifOpError("unknown sensorFit '%s'. Valid: %s. NOTHING was changed."
+                             % (fit, ", ".join(sorted(fits))))
+
+    before = camera_readback(obj, cam)
+
+    # COMMIT. Nothing below can refuse.
+    if ctype:
+        cam.type = ctype
+    if "location" in params:
+        obj.location = _vec3(params, "location", tuple(obj.location))
+    if "lookAt" in params:
+        obj.rotation_euler = _look_at_euler(tuple(obj.location),
+                                            _vec3(params, "lookAt", (0.0, 0.0, 0.0)))
+    elif "rotation" in params:
+        obj.rotation_euler = _vec3(params, "rotation", tuple(obj.rotation_euler))
+    for key, attr in (("lens", "lens"), ("focalLength", "lens"),
+                      ("sensorWidth", "sensor_width"), ("sensorHeight", "sensor_height"),
+                      ("orthoScale", "ortho_scale"), ("clipStart", "clip_start"),
+                      ("clipEnd", "clip_end"), ("shiftX", "shift_x"), ("shiftY", "shift_y")):
+        v = take_float(params, key, default=None)
+        if v is not None and hasattr(cam, attr):
+            setattr(cam, attr, v)
+    if fit:
+        cam.sensor_fit = fit
+    fstop = take_float(params, "fStop", default=None)
+    dofd = take_float(params, "dofDistance", default=None)
+    if (fstop is not None or dofd is not None) and getattr(cam, "dof", None) is not None:
+        cam.dof.use_dof = True
+        if fstop is not None:
+            cam.dof.aperture_fstop = fstop
+        if dofd is not None:
+            cam.dof.focus_distance = dofd
+    if take_bool(params, "makeActive", default=False):
+        bpy.context.scene.camera = obj
+
+    bpy.context.view_layer.update()
+    after = camera_readback(obj, cam)
+    changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    return {
+        "camera": obj.name,
+        "before": before,
+        "after": after,
+        "changedFields": changed,
+        "changedAnything": bool(changed),
+    }
+
+
+def op_list_cameras(params):
+    """Every camera in the file, and which one the scene actually renders through.
+
+    sceneCamera was unobtainable anywhere in this addon: scene_info omits it,
+    set_render_settings reports a bare boolean, and render_still names it only by blocking for a
+    whole render. It is the first thing anybody needs to know.
+
+    params:
+      nameContains (str)  optional substring filter, case-insensitive
+    """
+    reject_unknown(params, ("nameContains",), "list_cameras")
+    sub = take(params, "nameContains", default=None, kind=str)
+    rows = []
+    for obj in bpy.data.objects:
+        if obj.type != "CAMERA" or obj.data is None:
+            continue
+        if sub and sub.lower() not in obj.name.lower():
+            continue
+        row = camera_readback(obj, obj.data)
+        row["name"] = obj.name
+        row["location"] = rnd(list(obj.matrix_world.to_translation()))
+        row["rotationEuler"] = rnd(list(obj.matrix_world.to_euler()))
+        row["hideViewport"] = bool(obj.hide_viewport)
+        row["hideRender"] = bool(obj.hide_render)
+        rows.append(row)
+    rows.sort(key=lambda r: r["name"])
+    sc = bpy.context.scene
+    return {
+        "count": len(rows),
+        "cameras": rows,
+        "sceneCamera": sc.camera.name if sc.camera else None,
+        "hasSceneCamera": sc.camera is not None,
+    }
+
+
+def op_aim_object(params):
+    """Point any object at a point or another object, and MEASURE that it now points there.
+
+    Nothing could aim anything after creation. create_camera takes lookAt at birth and that was
+    the only caller of the aiming maths; a light could not be aimed at all, which makes a spot
+    light almost unusable through this bridge.
+
+    params:
+      object (str, required)   what to aim
+      target (str)             an object to aim AT - its world-space origin
+      lookAt {x,y,z}           a point to aim at. Exactly one of target/lookAt.
+
+    Blender aims down LOCAL -Z for lights and cameras alike, which is the convention _look_at_euler
+    derives - and got wrong by exactly pi in its first version, aiming 166 degrees off while
+    returning a plausible euler. So the postcondition is the ANGLE between the object's world -Z
+    and the direction to the target, not the euler that was just written. Reading back what you
+    wrote is a proxy that cannot fail.
+    """
+    reject_unknown(params, ("object", "name", "target", "lookAt"), "aim_object")
+    want = take(params, "object", "name", default=None, kind=str)
+    if not want:
+        raise MifOpError("'object' is required - what to aim. NOTHING was changed.")
+    obj = bpy.data.objects.get(want)
+    if obj is None:
+        raise MifOpError("no object named '%s'. NOTHING was changed." % want)
+
+    target_name = take(params, "target", default=None, kind=str)
+    has_point = "lookAt" in params
+    if bool(target_name) == bool(has_point):
+        raise MifOpError("pass exactly one of target (an object) or lookAt (a point) - %s. "
+                         "NOTHING was changed."
+                         % ("both were given" if target_name else "neither was given"))
+    if target_name:
+        tgt = bpy.data.objects.get(target_name)
+        if tgt is None:
+            raise MifOpError("no target object named '%s'. NOTHING was changed." % target_name)
+        if tgt is obj:
+            raise MifOpError("'%s' cannot be aimed at itself. NOTHING was changed." % want)
+        point = tuple(tgt.matrix_world.to_translation())
+    else:
+        point = _vec3(params, "lookAt", (0.0, 0.0, 0.0))
+
+    frm = tuple(obj.matrix_world.to_translation())
+    obj.rotation_euler = _look_at_euler(frm, point)
+    bpy.context.view_layer.update()
+
+    # THE MEASUREMENT. World -Z after the write, against the direction to the target.
+    fwd = (obj.matrix_world.to_quaternion() @ mathutils.Vector((0.0, 0.0, -1.0))).normalized()
+    to = mathutils.Vector((point[0] - frm[0], point[1] - frm[1], point[2] - frm[2]))
+    if to.length == 0.0:
+        raise MifOpError("the target is at the object's own origin, so there is no direction to "
+                         "face. The rotation may already have been written - re-read it.")
+    err = fwd.angle(to.normalized())
+    if err > 1e-3:
+        raise MifOpError("aimed '%s' but its -Z is %.4f rad (%.2f deg) off the target. The "
+                         "rotation WAS written; do not trust it." % (want, err, math.degrees(err)))
+    return {
+        "object": obj.name,
+        "target": target_name,
+        "aimedAt": rnd(list(point)),
+        "rotationEuler": rnd(list(obj.rotation_euler)),
+        "aimErrorRadians": round(float(err), 9),
+        "aimErrorDegrees": round(math.degrees(err), 7),
+        "measuredNote": ("The error is the angle between the object's world-space local -Z and the "
+                         "direction to the target, measured after the write - not the euler that "
+                         "was written, which cannot disagree with itself."),
+    }
+
+
 OPS = {
     "create_light": op_create_light,
     "set_light": op_set_light,
     "list_lights": op_list_lights,
     "create_camera": op_create_camera,
+    "set_camera": op_set_camera,
+    "list_cameras": op_list_cameras,
+    "aim_object": op_aim_object,
 }
