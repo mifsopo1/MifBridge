@@ -2675,8 +2675,14 @@ exists to catch the ASLEEP detector — the one whose plant stops making it fire
 `audit_fixture_adoption` earlier the same day and was caught within the hour. It cannot catch this
 one, because this one fires perfectly. The question the harness does not ask is *"and does anything
 ever make a person look at the output?"* Registration proves a detector WORKS; a gate is what makes
-somebody LOOK. A repo with 39 detectors and 15 gates has, by construction, detectors in this state,
+somebody LOOK. A repo with more detectors than gates has, by construction, detectors in this state,
 and the way to find them is to ask which ones cannot fail rather than which ones are asleep.
+
+The gap was 39 detectors against 15 gates when this paragraph was written, and 40 against 22 by the
+end of the same day — because asking the question closed seven of them. The figures are given as a
+before-and-after rather than as a standing count, since a standing count in prose is the second
+source of truth this file objects to everywhere else, and this very sentence was stale within hours
+of being typed.
 
 **The fix is differential, and gate-on-zero would have been the wrong shape.** Two of the 14 are
 blocked on the machine — `set_niagara_emitter` -> `set_property` needs an uncooked Niagara emitter
