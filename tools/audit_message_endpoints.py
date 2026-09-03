@@ -122,6 +122,45 @@ def registry():
     return names
 
 
+# ADVICE THAT NAMES ANOTHER ENDPOINT'S PARAMETERS, e.g. `save_blueprint {blueprintId}`,
+# `set_cvar {name, value}`, `list_nodes {graphId}`. Seven messages use the save_blueprint form
+# alone. The endpoint half of that advice has been checked since this file was written; the
+# PARAMETER half never has, and it rots the same way - a parameter renamed in one handler leaves
+# every message elsewhere sending callers to a key that endpoint now refuses by name.
+#
+# `location {x,y,z}` is the same shape and is NOT this: the left token has to be a registered
+# endpoint, which is what separates advice from a value-shape description.
+ADVISED_PARAMS = re.compile(r'\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\s*\{([a-zA-Z][a-zA-Z0-9, ]*)\}')
+
+
+def advised_param_findings(names, accepts):
+    """[(endpoint, param, where)] for advice naming a parameter that endpoint does not accept."""
+    out = []
+    for fn in sorted(os.listdir(PRIVATE)):
+        if not fn.endswith(".cpp"):
+            continue
+        path = os.path.join(PRIVATE, fn)
+        for i, line in enumerate(io.open(path, encoding="utf-8",
+                                         errors="replace").read().split("\n")):
+            for lit in LITERAL.findall(line) + CONTINUATION.findall(line):
+                for ep, plist in ADVISED_PARAMS.findall(lit):
+                    if ep not in names:
+                        continue            # a value shape, not advice
+                    allowed = accepts.get(ep)
+                    if not allowed:
+                        continue            # no parsed accept-list: says nothing either way
+                    # CASE-INSENSITIVE, because param_reach.endpoint_accepts() LOWERCASES every
+                    # key while the advice is written in the camelCase a caller actually sends.
+                    # Comparing them directly reported all 22 sites as wrong - including
+                    # `save_blueprint {blueprintId}`, which is the correct spelling of a parameter
+                    # that endpoint plainly accepts. Twenty-two findings that all looked wrong were
+                    # the check being wrong, which is the only reason they got read before filing.
+                    for p in [x.strip() for x in plist.split(",") if x.strip()]:
+                        if p.lower() not in allowed:
+                            out.append((ep, p, "%s:%d" % (fn, i + 1)))
+    return out
+
+
 def scan(names):
     found = {}
     for fn in sorted(os.listdir(PRIVATE)):
@@ -389,10 +428,18 @@ def main():
     tools = mcp_docstrings()
     found_mcp = scan_mcp(tools)
     found_bl = blender_helper_findings()
-    if not found and not found_mcp and not found_bl:
+    try:
+        import param_reach as PR
+        found_params = advised_param_findings(names, PR.endpoint_accepts())
+    except Exception as exc:                       # noqa: BLE001
+        # REPORTED, NEVER SKIPPED. A checker that cannot run must not print a clean result - that
+        # is the failure mode this repo keeps writing postmortems about.
+        found_params = [("(check did not run)", str(exc)[:60], "param_reach import")]
+    if not found and not found_mcp and not found_bl and not found_params:
         if not quiet:
             print("messages OK - %d endpoints, %d MCP tools and the Blender addon, and every name "
-                  "any of them advises exists and belongs to the right op" % (len(names), len(tools)))
+                  "any of them advises exists and belongs to the right op - and every PARAMETER "
+                  "advice names is one that endpoint accepts" % (len(names), len(tools)))
         return 0
     if not quiet:
         if found:
@@ -403,6 +450,11 @@ def main():
             print("%d name(s) cited in MCP DOCSTRINGS that are NOT tools:" % len(found_mcp))
             for tok, where in sorted(found_mcp.items()):
                 print("  %-32s cited by %s" % (tok, ", ".join(sorted(set(where))[:4])))
+        if found_params:
+            print("%d message(s) advising a parameter the named endpoint REFUSES:"
+                  % len(found_params))
+            for ep, param, where in found_params:
+                print("  %-28s %-16s %s" % (ep, param, where))
         if found_bl:
             print("%d shared Blender helper(s) blaming ONE of their callers:" % len(found_bl))
             for f in sorted(found_bl):
