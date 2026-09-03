@@ -11403,7 +11403,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       like set_function_flags listing `path, functionName, name` are three spellings of one
       argument that IS read on every path. Check the resolver before believing a row.
 
-- [ ] **12 confirm-gated endpoints have no extended help, and mif_help is what agents are told to read** (2 hours)
+- [x] **every confirm-gated endpoint now has extended help - 57 of 57** (done 2026-09-03)
       FOUND 2026-09-03. 57 endpoints demand confirm - the destructive set - and 14 of them had no
       tool_help.json entry at all, so `mif_help("delete_asset")` returned nothing while the
       one-line description said only "Delete a /Game/ asset package. Requires confirm=True."
@@ -11417,11 +11417,14 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       registryReferencers records DISK references and is empty however many live objects point at
       it. Also blueprint_watch and blueprint_breakpoint earlier, for their op:clear hazard.
 
-      REMAINING 12: fix_up_redirectors, pcg_cleanup, remove_anim_curve, remove_function,
-      remove_interface, remove_struct_member, remove_tree_widget, remove_variable, rename_asset,
-      rename_event_dispatcher, rename_variable, revert_inherited_component. Write each from the
-      HANDLER, not the summary - the summary is what an agent already has and is not the part
-      that is missing.
+      ALL 14 WRITTEN, from the handlers rather than the summaries. The ones worth knowing:
+      fix_up_redirectors has a dryRun:true mode that needs NO confirm and changes nothing -
+      it is the widest blast radius here and that escape hatch was undocumented;
+      remove_interface always takes the interface's functions with it (bPreserveFunctions=
+      false, no option); remove_struct_member costs every DataTable row its column;
+      rename_event_dispatcher's aliases are ASYMMETRIC, so `name` means the OLD one; and
+      revert_inherited_component discards EVERY override on the component in one step,
+      which is why override_inherited_component treats confirm as optional.
 
 - [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
       THE OTHER TWELVE WERE READ 2026-09-03, which is what "paired" never meant. The tool says so
