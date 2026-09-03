@@ -119,7 +119,16 @@ def main():
         # measurement of nothing, in the direction that manufactures a five-alarm finding out of a
         # tool that is working. Unparseable records are listed separately now and excluded from the
         # ratio entirely, because a ratio computed from a number nobody could read is not a ratio.
-        m = re.search(r"PASS (\d+)\s+FAIL (\d+)|(\d+) PASS\s+(\d+) FAIL", rec.get("summary") or "")
+        # \s+ ON EVERY GAP, not just the ones that happened to vary. The first version wrote
+        # `PASS (\d+)` with a literal single space while using \s+ everywhere else, so a summary
+        # with two spaces after PASS - or a tab - fell into the unparsed bucket and out of the
+        # ratio, taking the "ran 0% of itself" alarm with it. All 187 suites in the tree write one
+        # space there today (185 as "PASS %d   FAIL %d", one with two spaces before FAIL, one as
+        # "%d PASS  %d FAIL"), so this is brittleness rather than a live defect - which is exactly
+        # when it is cheap to fix. Verified the new pattern parses everything the old one did plus
+        # the two shapes it dropped, and that the ratio is unchanged on the current tree.
+        m = re.search(r"PASS\s+(\d+)\s+FAIL\s+(\d+)|(\d+)\s+PASS\s+(\d+)\s+FAIL",
+                      rec.get("summary") or "")
         if not m:
             unparsed.append((name, (rec.get("summary") or "").strip()[:60]))
             continue
