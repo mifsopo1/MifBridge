@@ -18,11 +18,24 @@ three passes escaping.
 Reading the output: a handler appearing here is NOT a bug. The question to ask of each row is
 "if I pass this parameter in the wrong mode, does anything tell me?"
 
-KNOWN LIMITATION, stated rather than discovered later. Alias parameters read through a MULTI-LINE
-`JStrAny(In, { TEXT("path"), TEXT("name"), ... })` are not recognised as reads, because the scan is
-line-based and the literals sit on continuation lines. That is why rows like set_function_flags list
-`path, functionName, name` - three spellings of one argument that IS read, on every path. Treat
-alias-looking clusters as probable false positives and check the resolver before believing them.
+KNOWN LIMITATION - AND THE CAUSE WRITTEN HERE WAS WRONG until 2026-09-03. It said alias clusters
+appear because a MULTI-LINE `JStrAny(In, { TEXT("path"), ... })` defeats a line-based scan. Teaching
+the scan to read those groups was worth doing and it cleared NOTHING, which is how the real causes
+came out. There are two, both verified by reading the handlers:
+
+  * A SHARED RESOLVER does the reading. edit_level_instance calls `ResolveLevelInstance(In, Out,
+    &Actor)`, which reads actorPath/actor/path inside itself - the literals appear nowhere in the
+    handler except its accept-list. Twelve such resolvers are used across Source, ResolveGraphField
+    alone from 49 handlers, so this accounts for most of the cluster.
+  * ALTERNATIVE SELECTORS, each read on its own branch by design. set_function_flags takes a target
+    by nodeGuid OR graphId OR blueprintId+function, and reads `function/functionName/name` only on
+    the branch that resolves by name. That is nested, so it scores as conditional, and it is
+    correct behaviour: you pass one of the three and the handler reads the one you passed.
+
+Both are structurally identical to a mode-ignored parameter and semantically fine. Treat
+alias-looking clusters as probable false positives, and check whether a resolver or a selector
+branch is doing the read before believing a row. Mapping each resolver's own reads back to its
+callers would clear them properly and is filed rather than done.
 
 The filters were each added because the tool accused something innocent:
   * refusal-mention, after it listed sculpt_landscape, which DOES say amount is raise/lower only;
@@ -126,6 +139,31 @@ def presence_guarded(body, param):
     return False
 
 
+# An ALIAS READ: one argument accepted under several spellings, `JStrAny(In, { TEXT("path"),
+# TEXT("assetPath") })`, whose brace group routinely spans lines.
+#
+# CURRENTLY INERT ON THIS TREE, and said so rather than left to imply otherwise. It was added to
+# clear the alias cluster, which the header used to blame on exactly this; it cleared nothing,
+# because those handlers do their reading inside shared resolvers or on alternative-selector
+# branches instead - see the corrected KNOWN LIMITATION above. It is kept because it is CORRECT: an
+# alias group is a read, and the next handler written in that style should not be reported. A rule
+# that happens to fire on nothing today is not the same as a rule that is wrong.
+ALIAS_READ = re.compile(r'\bJ[A-Za-z]*\s*\(\s*In\s*,\s*\{([^}]*)\}', re.S)
+
+
+def alias_read_lines(body):
+    """{line index: [param, ...]} for every multi-line alias read in this handler.
+
+    Keyed on the line the CALL STARTS on, because that is where the read happens as far as branch
+    depth is concerned - the continuation lines are inside the same statement.
+    """
+    out = {}
+    for m in ALIAS_READ.finditer(body):
+        line_no = body.count("\n", 0, m.start())
+        out.setdefault(line_no, []).extend(PARAM.findall(m.group(1)))
+    return out
+
+
 def read_depth(body, param):
     """Shallowest BRANCH depth at which this parameter is READ. Large number if it is never read.
 
@@ -140,21 +178,25 @@ def read_depth(body, param):
     (`)` for if/for/while/switch, or the word `else`), opens scope rather than a condition.
     """
     pattern = 'TEXT("%s")' % param
+    aliases = alias_read_lines(body)
     best = 99
     stack = []          # one entry per open brace: True when it is a branch rather than bare scope
     prev_code = ""
-    for line in body.splitlines():
+    for i, line in enumerate(body.splitlines()):
         stripped = line.strip()
         depth = sum(1 for is_branch in stack if is_branch)
         if pattern in line and any(r in line for r in READERS):
+            best = min(best, depth)
+        # The alias group's literals count as read HERE even when they sit on continuation lines.
+        if param in aliases.get(i, ()):
             best = min(best, depth)
         opens = line.count("{")
         closes = line.count("}")
         bare = (stripped == "{"
                 and not prev_code.endswith(")")
                 and not prev_code.endswith("else"))
-        for i in range(opens):
-            stack.append(not (bare and i == 0))
+        for j in range(opens):
+            stack.append(not (bare and j == 0))
         for _ in range(closes):
             if stack:
                 stack.pop()

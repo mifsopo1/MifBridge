@@ -11291,7 +11291,36 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       audit_vacuous_checks / audit_consequence_fields both at baseline. That is not a substitute for
       running the suites; it is the part of the answer that does not need the machine.
 
-- [ ] **18 more mode-dependent parameters that nothing tells the caller about** (most of a day)
+- [ ] **10 rows left on the mode-param list, and most of them are the tool's own noise** (2 hours)
+      COUNT CORRECTED 2026-09-03 - this said 18, then 22 before that, while the tool said 10. A
+      number nothing recomputes is a number that will be wrong again next month, which is what
+      harvest_param_table says about its own table and what audit_consequence_fields was built to
+      stop. `python tools/audit_mode_params.py` is the live figure; do not retype it here.
+
+      NINE HANDLERS FIXED, 8 marked MODE-PARAMS-OK, and FOUR DETECTOR FALSE POSITIVES removed - the
+      day's work on this item is recorded in the tool's own header, which now carries why each
+      filter exists next to the three that predate today.
+
+      THE REMAINING 10 ARE DOMINATED BY TWO PATTERNS, both verified by reading and neither a defect:
+        a shared RESOLVER does the reading - edit_level_instance calls ResolveLevelInstance(In,...),
+          which reads actorPath/actor/path inside itself, so the literals appear nowhere in the
+          handler but its accept-list. Twelve such resolvers exist; ResolveGraphField is called from
+          49 handlers, so this accounts for most of the cluster.
+        ALTERNATIVE SELECTORS read on their own branch by design - set_function_flags takes a target
+          by nodeGuid OR graphId OR blueprintId+function and reads function/functionName/name only
+          on the branch that resolves by name.
+
+      THE FIX THAT WOULD CLEAR THEM PROPERLY: scan each resolver's own body once for the fields it
+      pulls off `In`, and treat a handler that CALLS one as reading those, at the depth of the call.
+      Started and backed out today - the definitions are indented inside a namespace, some are
+      static, and the header DECLARATIONS match the same signature, so a body must be required or
+      brace-matching runs into the next function and attributes its reads to the wrong resolver.
+      Worth doing properly, not worth doing quickly.
+
+      DO NOT "FIX" THE REST BY LOOSENING THE RULE. Two of today's attempts cleared handlers for
+      reasons that had nothing to do with refusals, and were reverted; the third put the detector to
+      sleep entirely and audit_detectors_fire caught it. Every clearance since has been checked by
+      reading the handler.
       FOUND 2026-09-03 by reading `audit_mode_params`, whose 23-row review list had never been
       read - the same shape as audit_cross_endpoint_claims: exits 0 either way, not in the release
       gate, so nobody looked. One of the 23 is now fixed (create_procedural_mesh) and the tool
