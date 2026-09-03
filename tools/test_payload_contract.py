@@ -197,6 +197,56 @@ def main():
         check("P102 the Blender frame could not be read, so this arm proved NOTHING", False,
               "sent=%d frame=%r" % (len(sent), frame))
 
+    # ---------------------------------------------------------------- P104 the six, by name
+    print("")
+    print("=== P104: the six shipped bugs, each called the way that used to fail ===")
+    # THE REGRESSION TEST THE SIX NEVER HAD. Each call below is the exact invocation that was
+    # refused before 2026-09-03, and each assertion names the key whose PRESENCE did it. These run
+    # the real wrappers through the real _post and inspect the body it built - no editor, because
+    # the defect was never in the editor. The handlers were right throughout.
+    def body_of(fn, **kw):
+        del captured[:]
+        fn(**kw)
+        return captured[-1] if captured else {}
+
+    b = body_of(server.map_legacy_input, name="Jump", key="SpaceBar")
+    check("P104 map_legacy_input action mapping sends no `scale` - an action mapping refuses it, "
+          "and the wrapper sent scale=1.0 in every release that carried this tool",
+          "scale" not in b, sorted(b))
+    b = body_of(server.map_legacy_input, name="MoveForward", key="W", axis=True)
+    check("P104 map_legacy_input axis mapping sends no shift/ctrl/alt/cmd - an axis mapping "
+          "refuses all four, which is how BOTH modes were uncallable at once",
+          not ({"shift", "ctrl", "alt", "cmd"} & set(b)), sorted(b))
+
+    b = body_of(server.set_struct_member, struct="/Game/S", member="Tail", default="true")
+    check("P104 set_struct_member sends no `newName` on a default-only change - bWantRename is a "
+          "HasField check, so an empty one made every call a rename and then refused it",
+          "newName" not in b, sorted(b))
+    check("P104 and no empty `type` either", "type" not in b, sorted(b))
+
+    b = body_of(server.set_enum_value, enum="/Game/E", bitflags=True)
+    check("P104 set_enum_value bitflags mode sends no `value` - bHasEntry is a presence check and "
+          "bitflags-plus-entry is refused, so this mode had no reachable route at all",
+          "value" not in b, sorted(b))
+
+    b = body_of(server.set_collision, object_path="/Game/A.A:Comp", profile="BlockAll")
+    check("P104 set_collision profile-only sends no `collisionEnabled` - it used to, which made the "
+          "call APPLY the profile and then answer NOTHING was changed",
+          "collisionEnabled" not in b, sorted(b))
+
+    # SIGNATURES READ, NOT GUESSED - the first draft of these two invented `path=` and
+    # `blueprint_id=` from the shape of neighbouring tools and died with a TypeError. Which is the
+    # test doing its job in the least useful way: a wrong CALL is not a wrong wrapper.
+    b = body_of(server.sculpt_landscape, center={"x": 0, "y": 0, "z": 0}, radius=100.0)
+    check("P104 sculpt_landscape sends no `amount` by default - amount=0.0 with mode flatten made "
+          "the default invocation refused from v0.3.0 to v0.8.1",
+          "amount" not in b, sorted(b))
+
+    b = body_of(server.override_inherited_component, blueprint="BP", component="Mesh")
+    check("P104 override_inherited_component sends no `confirm` unasked - an explicit false was "
+          "refused outright, so the tool was uncallable in all eight tagged releases",
+          "confirm" not in b, sorted(b))
+
     # ---------------------------------------------------------------- P103 the harness strip
     print("")
     print("=== P103: guarded_payload strips an authorising flag under EVERY spelling ===")
