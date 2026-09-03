@@ -2624,3 +2624,24 @@ wrong: 22 messages reported as advising a parameter their endpoint refuses — i
 `save_blueprint {blueprintId}` — turned out to be a case mismatch, because
 `param_reach.endpoint_accepts()` lowercases every key while advice is written in camelCase. They got
 read instead of filed only because 22-out-of-22-looking-wrong is not a plausible defect rate.
+
+### Corollary: a real defect class does not always make a good detector
+
+Three checks were found the same day whose FAILURE MESSAGE asserted a conclusion instead of
+reporting what was seen — `"the refusal came back but the breakpoints were cleared anyway"` when the
+count could equally have been `None` (the list call failed) or higher than expected (something added
+one). Only one of the three possible failures made that sentence true. All three were found by
+re-reading assertions under the question *"when this finally runs, will its output answer the
+question it was run to answer?"*
+
+The obvious next move is to automate it, and the measurement says don't. The precise shape —
+a `check()` whose condition CALLS something (so there is a computed value) paired with a detail that
+is a bare string literal (so that value can never appear) — matches **157 sites**, and reading them
+shows why: `"bridge died"` against `M.bridge_responsive() is True`, `"no AnimGraphNode_Root found"`,
+`"nothing here loads an asset, which is the whole safety argument"`. Those details are complete
+statements; there is nothing further to report and a variable would make them worse.
+
+157 rows is a shrug dressed as a finding, which `audit_mode_params`' own header warns about in the
+same words. The distinction that matters — is the computed value one that could plausibly come back
+in several different ways? — is a judgement, and no cheap syntactic proxy for it survived contact
+with the corpus. Read the assertions you just wrote; do not build a tool to read them for you.
