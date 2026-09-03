@@ -172,13 +172,24 @@ def main():
     # from one that ignored the right one, and the whole point of T47 is that this endpoint must not
     # let you believe you excluded something you did not.
     victim = M.pick_adoptable(M.call("list_level_actors", {"limit": 20}).get("actors"))
-    if victim and victim.get("label"):
+    if victim and victim.get("label") and victim.get("actorPath"):
         ig = M.call("trace_ground", {"x": 0, "y": 0, "ignoreActor": victim.get("label")})
         check("T47b a resolvable ignoreActor traces", ig.get("ok") is True, json.dumps(ig)[:200])
-        check("T47b and ignoredActor names the actor it actually excluded, by full path",
-              (ig.get("ignoredActor") or "").endswith(victim.get("label"))
-              or victim.get("label") in (ig.get("ignoredActor") or ""),
-              "%s vs %s" % (ig.get("ignoredActor"), victim.get("label")))
+        # COMPARED AGAINST THE PATH, NOT THE LABEL. This asserted `label in ignoredActor`, which a
+        # bare echo of the caller's own input satisfies - and an echo is the exact failure the
+        # comment above says this test exists to catch: "a trace that ignored the wrong actor is
+        # indistinguishable from one that ignored the right one". It also claimed "by full path"
+        # while never checking that a path came back at all.
+        #
+        # Equality is safe because both sides are the SAME call: list_level_actors writes actorPath
+        # from Actor->GetPathName() (MifBridgeLevel.cpp) and trace_ground writes ignoredActor from
+        # Ignore->GetPathName() (MifBridgeSpatial.cpp:1346). A label cannot satisfy this, which is
+        # the point - the endpoint resolved a label to an actor and has to show which one.
+        check("T47b and ignoredActor is the resolved actor's FULL PATH, not an echo of the label "
+              "that was passed in",
+              ig.get("ignoredActor") == victim.get("actorPath"),
+              {"ignoredActor": ig.get("ignoredActor"), "expected": victim.get("actorPath"),
+               "label_passed": victim.get("label")})
     else:
         print("  NOTE  no non-scratch level actor to exclude, so T47b's success path is UNEXERCISED.")
 
