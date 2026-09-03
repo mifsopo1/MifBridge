@@ -29,6 +29,21 @@
 #include "UObject/Package.h"      // UPackage - duplicate_asset reads newPackageName off GetOutermost()
 #include "UObject/UObjectGlobals.h"
 #include "UObject/WeakObjectPtrTemplates.h"
+#include "MifBridgeVersion.h"     // MIF_ENGINE_5_7_PLUS - the GC keep-flags split below
+
+// 5.7 TURNED THIS FROM AN ENUMERATOR INTO A MACRO, so the 5.3 spelling does not compile there at
+// all. `EInternalObjectFlags::GarbageCollectionKeepFlags` (5.3 ObjectMacros.h:614) became
+// `EInternalObjectFlags_GarbageCollectionKeepFlags` (5.7 ObjectMacros.h:677) - the set outgrew the
+// enum, since it now also ORs Borrowed and splits AsyncLoading into two phases.
+//
+// A macro rather than a constant because the 5.7 form IS a macro over `|`, and whether that operator
+// is constexpr is not a question worth depending on. GARBAGE_COLLECTION_KEEPFLAGS, the OTHER
+// argument to IsReferenced, is unchanged in both - checked, not assumed.
+#if MIF_ENGINE_5_7_PLUS
+	#define MIF_GC_KEEP_INTERNAL_FLAGS EInternalObjectFlags_GarbageCollectionKeepFlags
+#else
+	#define MIF_GC_KEEP_INTERNAL_FLAGS EInternalObjectFlags::GarbageCollectionKeepFlags
+#endif
 
 namespace MifBridge
 {
@@ -198,7 +213,7 @@ namespace MifBridge
 				FReferencerInformationList Found;
 				UObject* Probe = Obj;
 				const bool bRef = IsReferenced(Probe, GARBAGE_COLLECTION_KEEPFLAGS,
-					EInternalObjectFlags::GarbageCollectionKeepFlags, /*bCheckSubObjects*/ true,
+					MIF_GC_KEEP_INTERNAL_FLAGS, /*bCheckSubObjects*/ true,
 					&Found);
 				for (const FReferencerInformation& R : Found.ExternalReferences)
 				{
@@ -227,7 +242,7 @@ namespace MifBridge
 					FReferencerInformationList Without;
 					UObject* Probe2 = Obj;
 					const bool bStill = IsReferenced(Probe2, GARBAGE_COLLECTION_KEEPFLAGS,
-						EInternalObjectFlags::GarbageCollectionKeepFlags, true, &Without);
+						MIF_GC_KEEP_INTERNAL_FLAGS, true, &Without);
 					GEditor->Trans->EnableObjectSerialization();
 					if (!bStill) { bUndoBufferHolds = true; }
 				}

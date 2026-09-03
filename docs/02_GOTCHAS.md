@@ -1716,6 +1716,25 @@ expands to garbage that corrupts everything after it. The first attempt produced
 this one cause, including an "illegal else without matching if" ninety lines above anything that had
 changed.
 
+**A second instance, found 2026-09-03: an ENUMERATOR became a MACRO.**
+
+```cpp
+// ObjectMacros.h
+5.3:614  EInternalObjectFlags::GarbageCollectionKeepFlags   // an enumerator
+5.7:677  EInternalObjectFlags_GarbageCollectionKeepFlags    // a #define over `|`
+```
+
+The set outgrew the enum - 5.7's version also ORs `Borrowed` and splits `AsyncLoading` into two
+phases - so it stopped being expressible as one enumerator. The 5.3 spelling is then an undeclared
+identifier on 5.7, and because it is used as a function argument the compiler also reports the
+enclosing `const` object as uninitialised, which points at the wrong line entirely.
+
+Handled with `MIF_GC_KEEP_INTERNAL_FLAGS` in `MifBridgeAssetOps.cpp`. A macro rather than a constant
+deliberately: the 5.7 form IS a macro over `|`, and whether that operator is `constexpr` is not a
+question worth depending on. `GARBAGE_COLLECTION_KEEPFLAGS` - the OTHER argument to the same
+`IsReferenced` call - is unchanged in both trees, which was checked rather than assumed, because
+fixing one of two similar-looking symbols and declaring victory is its own failure mode.
+
 ### Direction E: same type, same name, DIFFERENT HEADER
 
 ```cpp
