@@ -56,9 +56,13 @@ def main():
         return 2
     print("scratch level confirmed: %s" % world)
 
-    ft = (M.call("find_assets", {"class": "FoliageType_InstancedStaticMesh",
-                                 "limit": 1}).get("assets") or [{}])[0].get("path")
-    sm = (M.call("find_assets", {"class": "StaticMesh", "limit": 1}).get("assets") or [{}])[0].get("path")
+    # SKIP SCRATCH on both. test_foliage_removal creates a FoliageType and test_geometryscript a
+    # StaticMesh; painting with another suite's foliage type - or with a mesh it is about to delete -
+    # makes the mode assertions below measure a fixture that is changing underneath them.
+    ft = (M.pick_adoptable(M.call("find_assets", {"class": "FoliageType_InstancedStaticMesh",
+                                                  "limit": 20}).get("assets")) or {}).get("path")
+    sm = (M.pick_adoptable(M.call("find_assets", {"class": "StaticMesh",
+                                                  "limit": 20}).get("assets")) or {}).get("path")
     if not ft or not sm:
         print("setup failed: foliageType=%s staticMesh=%s" % (ft, sm))
         return 3

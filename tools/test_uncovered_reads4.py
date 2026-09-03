@@ -60,7 +60,12 @@ def main():
     # ================================================================== T851 get_collision
     print("")
     print("=== T851: get_collision ===")
-    meshes = (M.call("find_assets", {"class": "StaticMesh", "limit": 1}).get("assets") or [])
+    # SKIP SCRATCH: a GeometryScript box from test_geometryscript has no simple collision and no
+    # collision complexity worth reading, so T851 would be asking get_collision about an object
+    # that has nothing to report and calling the empty answer a pass.
+    meshes = [a for a in (M.call("find_assets", {"class": "StaticMesh",
+                                                 "limit": 20}).get("assets") or [])
+              if not M.is_scratch_fixture(a)]
     check("T851 (setup) there is at least one StaticMesh to test against", len(meshes) > 0, len(meshes))
     if meshes:
         r = M.call("get_collision", {"path": meshes[0].get("path")})

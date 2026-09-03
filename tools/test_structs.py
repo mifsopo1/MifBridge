@@ -122,8 +122,14 @@ def main():
     # ------------------------------------------------------------------ T484 the cooked hazard
     print("")
     print("=== T484 [the hazard]: a real COOKED struct must not take the editor down ===")
-    cooked = (M.call("find_assets", {"class": "UserDefinedStruct", "pathPrefix": "/Game/", "limit": 1})
-              .get("assets") or [{}])[0].get("path")
+    # SKIP SCRATCH, or this hazard test is vacuous. test_create_struct_init mints UserDefinedStructs
+    # under /Game/_Mif*, and an UNCOOKED struct cannot exercise "a CastChecked on cooked editor data
+    # terminates the process" - the reads answer normally and T484 goes green having probed nothing.
+    # test_set_struct_member goes one better and PROBES for an actual cooked refusal before trusting
+    # its fixture; doing the same here is the stronger fix and is filed rather than done.
+    cooked = (M.pick_adoptable(M.call("find_assets", {"class": "UserDefinedStruct",
+                                                      "pathPrefix": "/Game/",
+                                                      "limit": 25}).get("assets")) or {}).get("path")
     if cooked:
         print("   using %s" % cooked)
         # gotchas 6c: a CastChecked on cooked editor data terminates the process - not an error, a dead

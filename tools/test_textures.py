@@ -83,8 +83,10 @@ def main():
 
     # A source image of a size chosen HERE, so the decoded dimensions can be checked against something
     # known rather than against whatever the endpoint reports about itself.
-    mesh = (M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/Game/", "limit": 1})
-            .get("assets") or [{}])[0].get("path")
+    # SKIP SCRATCH: the whole suite depends on this render producing a PNG, and a scratch mesh
+    # another suite is about to delete makes that a setup failure charged to render_thumbnail.
+    mesh = (M.pick_adoptable(M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/Game/",
+                                                    "limit": 20}).get("assets")) or {}).get("path")
     check("a mesh exists to make a source image from", bool(mesh), "no StaticMesh in /Game/")
     if not mesh:
         return 1

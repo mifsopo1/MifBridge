@@ -42,8 +42,13 @@ def main():
 
     # A real instance that exposes texture parameters; duplicated so game content is never written.
     src = None
+    # SKIP SCRATCH. The comment above says "a real instance" and nothing enforced it: five suites
+    # mint MaterialInstanceConstants under /Game/_Mif*, and duplicating one means this suite's whole
+    # T130 section measures parameter writes against another suite's half-built fixture.
     for a in (M.call("find_assets", {"class": "MaterialInstanceConstant", "pathPrefix": "/Game/",
                                      "limit": 25}).get("assets") or []):
+        if M.is_scratch_fixture(a):
+            continue
         if len(params_of(a.get("path"), "texture")) > 0:
             src = a.get("path")
             break
@@ -62,8 +67,12 @@ def main():
     tex = [p["name"] for p in params_of(mi, "texture")]
     check("T130 the copy exposes texture parameters", len(tex) > 0, str(tex[:3]))
     target = tex[0]
-    real = (M.call("find_assets", {"class": "Texture2D", "pathPrefix": "/Game/",
-                                   "limit": 1}).get("assets") or [{}])[0].get("path")
+    # SKIP SCRATCH: test_textures imports a Texture2D into /Game/_MifTex and deletes it again. If
+    # limit 1 lands on that one mid-run, the assignment below either fails to resolve or reads back
+    # a path that no longer exists, and T130 fails for a reason that has nothing to do with
+    # set_material_parameter.
+    real = (M.pick_adoptable(M.call("find_assets", {"class": "Texture2D", "pathPrefix": "/Game/",
+                                                    "limit": 20}).get("assets")) or {}).get("path")
     r = M.call("set_material_parameter", {"material": mi, "textures": {target: real}})
     check("T130 applied", r.get("ok") is True and r.get("texturesApplied") == 1, json.dumps(r)[:200])
     back = [p for p in params_of(mi, "texture") if p["name"] == target]

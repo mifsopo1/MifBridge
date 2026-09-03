@@ -67,8 +67,13 @@ def main():
         print("bridge never came up")
         return 1
 
-    sk = M.call("find_assets", {"class": "Skeleton", "pathPrefix": "/Game/",
-                                "limit": 3}).get("assets") or []
+    # SKIP SCRATCH - same reason as test_anim_nodes, which does the same thing three lines in.
+    # A limit-3 window over all of /Game/ can be filled entirely by the scratch Skeletons
+    # test_virtual_bone_authoring and test_blend_profiles duplicate, and an Animation Blueprint
+    # parented to one loses its skeleton when that suite cleans up.
+    sk = [a for a in (M.call("find_assets", {"class": "Skeleton", "pathPrefix": "/Game/",
+                                             "limit": 20}).get("assets") or [])
+          if not M.is_scratch_fixture(a)]
     check("T2000 (setup) a Skeleton exists to parent an Anim Blueprint to", bool(sk), len(sk))
     if not sk:
         return 1

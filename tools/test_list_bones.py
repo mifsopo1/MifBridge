@@ -44,8 +44,12 @@ def main():
         print("bridge never came up")
         return 1
 
+    # SKIP SCRATCH: two suites duplicate a real Skeleton into their own tree, so a scratch copy has
+    # the SAME bone count as the original and can win the ranking below on a tie - then be deleted
+    # by its owner while this suite is still reading subtrees out of it.
     skels = [a.get("path") for a in
-             (M.call("find_assets", {"class": "Skeleton", "limit": 60}).get("assets") or [])]
+             (M.call("find_assets", {"class": "Skeleton", "limit": 60}).get("assets") or [])
+             if not M.is_scratch_fixture(a)]
     if not skels:
         print("no skeletons in this project")
         return 3
@@ -202,7 +206,11 @@ def main():
 
     # ------------------------------------------------------------------ T226 mesh vs skeleton
     print("\n=== T226: a mesh and its skeleton are not assumed to agree ===")
-    sm = (M.call("find_assets", {"class": "SkeletalMesh", "limit": 1}).get("assets") or [{}])[0].get("path")
+    # SKIP SCRATCH: test_socket_authoring mints a SkeletalMesh, and T226's whole point is that a mesh
+    # and its skeleton are read separately and compared - a scratch mesh whose owner deletes it
+    # mid-run turns that comparison into a setup failure charged to list_bones.
+    sm = (M.pick_adoptable(M.call("find_assets", {"class": "SkeletalMesh",
+                                                  "limit": 20}).get("assets")) or {}).get("path")
     m = M.call("list_bones", {"path": sm})
     check("T226 a SkeletalMesh is accepted", m.get("ok") is True, json.dumps(m)[:150])
     check("T226 and it says it read the MESH's reference skeleton",
@@ -293,8 +301,13 @@ def main():
     # path - has no content on this project to exercise it against. Said here rather than implied by a
     # quiet pass, same discipline test_landscape_info.py uses for the World Partition branch it cannot
     # reach either.
+    # SKIP SCRATCH, and it does not weaken the "without exception" above - it enforces it. The claim
+    # is about THIS PROJECT'S content, and the 188 that was measured is the project's own count; a
+    # scratch mesh another suite made is not part of that population, and one deleted by its owner
+    # part-way through this scan would fail T791 for a reason that is not about morph targets.
     meshes = [a.get("path") for a in
-              (M.call("find_assets", {"class": "SkeletalMesh", "limit": 500}).get("assets") or [])]
+              (M.call("find_assets", {"class": "SkeletalMesh", "limit": 500}).get("assets") or [])
+              if not M.is_scratch_fixture(a)]
     check("T791 there is at least one SkeletalMesh to scan", len(meshes) > 0, len(meshes))
     ranked_mt = []
     scan_failed = []

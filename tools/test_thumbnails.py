@@ -101,9 +101,13 @@ def main():
     # SELECTED BY THE PROPERTY THE TEST NEEDS: a candidate is accepted only once a yaw render is
     # shown to differ from its base. The fixture cannot silently stop being suitable, because
     # suitability is what chooses it.
+    # SKIP SCRATCH. The suitability loop below is self-correcting about a mesh whose thumbnail does
+    # not differ from its base, but not about one that is DELETED between the two renders - which is
+    # what a scratch mesh from test_geometryscript does when its own suite finishes.
     candidates = [a.get("path") for a in
                   (M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/Game/",
-                                          "limit": 40}).get("assets") or []) if a.get("path")]
+                                          "limit": 40}).get("assets") or [])
+                  if a.get("path") and not M.is_scratch_fixture(a)]
     check("a real static mesh was found to render", bool(candidates), "no StaticMesh in /Game/")
     if not candidates:
         return 1

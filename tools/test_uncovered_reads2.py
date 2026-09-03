@@ -85,7 +85,11 @@ def main():
     # ================================================================== T832 get_dependencies
     print("")
     print("=== T832: get_dependencies ===")
-    asset = (M.call("find_assets", {"class": "StaticMesh", "limit": 1}).get("assets") or [{}])[0]
+    # SKIP SCRATCH: test_geometryscript and test_mesh_boolean mint StaticMeshes that are never
+    # saved, and T832 asserts packageExists is True. Adopting an unsaved scratch mesh fails that
+    # for a reason that has nothing to do with get_dependencies.
+    asset = M.pick_adoptable(M.call("find_assets", {"class": "StaticMesh",
+                                                    "limit": 20}).get("assets")) or {}
     asset_path = asset.get("path")
     check("T832 (setup) there is at least one asset to test against", bool(asset_path), asset)
     if asset_path:

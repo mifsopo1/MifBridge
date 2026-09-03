@@ -68,8 +68,13 @@ def main():
         return 1
     st = int(time.time() % 100000)
 
-    skels = M.call("find_assets", {"class": "Skeleton", "pathPrefix": "/Game/", "limit": 1},
-                   timeout=90).get("assets") or []
+    # SKIP SCRATCH. limit 1 over all of /Game/ takes whatever the registry lists first, and
+    # test_virtual_bone_authoring and test_blend_profiles each duplicate a real Skeleton into their
+    # own scratch tree. Parenting an Animation Blueprint to one of those means the ABP's skeleton is
+    # deleted out from under it when that suite cleans up, and the failure lands here.
+    skels = [a for a in (M.call("find_assets", {"class": "Skeleton", "pathPrefix": "/Game/",
+                                                "limit": 20}, timeout=90).get("assets") or [])
+             if not M.is_scratch_fixture(a)]
     if not skels:
         print("no Skeleton in /Game/ - an Animation Blueprint cannot be created, so this suite cannot run")
         return 0

@@ -70,7 +70,12 @@ GUARDS = ("is_scratch_fixture", "pick_adoptable")
 # was in the tree before the helper existed. Reporting it as unguarded would be false, and reporting
 # it as fine loses a real observation - so it is cleared here and listed under --all, where the
 # parallel implementation is visible to anyone consolidating them.
-HANDROLLED = re.compile(r'_Mif[A-Za-z]*"\s*\)|startswith\(\s*SCRATCH|"_Mif"\s+(?:not\s+)?in')
+#
+# THREE SPELLINGS, FOUND BY READING THE FALSE POSITIVES. Besides the literal prefix there is
+# `p.startswith(SC.SCRATCH_PREFIXES)` - scratch_confirm's own tuple, used by test_set_struct_member
+# and test_node_spawns. Missing it reported two suites that already do exactly the right thing.
+HANDROLLED = re.compile(r'_Mif[A-Za-z]*"\s*\)|startswith\(\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)?SCRATCH'
+                        r'|"_Mif"\s+(?:not\s+)?in')
 
 # Reaching for one of these is what makes a row a FIXTURE rather than a number.
 IDENT = re.compile(r'\.get\(\s*"(path|actorPath|objectPath|name|label)"|'
@@ -93,7 +98,13 @@ SCRATCH_SCOPED = re.compile(r'_Mif|"Mif[A-Z]|SCRATCH|scratch')
 # identifier on one side of an ==. Nothing is being chosen when the answer has to equal one thing.
 _ROW_ID = (r'(?:\.get\(\s*"(?:path|actorPath|objectPath|name|label)"\s*\)'
            r'|\[\s*"(?:path|actorPath|objectPath|name|label)"\s*\])')
-IDENTITY = re.compile(_ROW_ID + r'[^\n!<>=]*==|==[^\n]*' + _ROW_ID)
+#
+# startswith AGAINST A VARIABLE IS THE SAME QUESTION. test_duplicate_cooked_guard writes
+# `any((a.get("path") or "").startswith(dst) for a in found)` - it is asking whether one specific
+# destination came back, not choosing among what did. Against a LITERAL it would be a scoping filter
+# rather than an identity test, which is why the argument must be an identifier.
+IDENTITY = re.compile(_ROW_ID + r'[^\n!<>=]*==|==[^\n]*' + _ROW_ID + r'|'
+                      + _ROW_ID + r'[^\n]{0,30}\.startswith\(\s*[A-Za-z_]')
 
 # AN IDENTITY LOOKUP WITH A FIRST-ROW FALLBACK IS STILL ADOPTION, and this is not hypothetical:
 # test_spline_landscape asks for its own landscape by actorPath and then, if that finds nothing,
@@ -164,10 +175,23 @@ def resolve_scoping(args, src):
     """
     if SCRATCH_SCOPED.search(args):
         return True
-    for name in re.findall(r'"(?:pathPrefix|folder|path)"\s*:\s*([A-Za-z_][A-Za-z0-9_]*)', args):
-        for val in re.findall(r'^\s*%s\s*=\s*[^\n]*' % re.escape(name), src, re.M):
-            if SCRATCH_SCOPED.search(val):
-                return True
+    # TWO LEVELS, because one was not enough. test_duplicate_cooked_guard confirms its own duplicate
+    # with `folder = dst.rsplit("/", 1)[0]` and then searches that folder - so the scratch literal is
+    # in `dst`, one hop further than the argument. Stopping at the first hop reported a suite
+    # checking its OWN destination as an unguarded adoption of any class in the project.
+    seen, pending = set(), list(
+        re.findall(r'"(?:pathPrefix|folder|path)"\s*:\s*([A-Za-z_][A-Za-z0-9_]*)', args))
+    for _ in range(2):
+        nxt = []
+        for name in pending:
+            if name in seen:
+                continue
+            seen.add(name)
+            for val in re.findall(r'^\s*%s\s*=\s*[^\n]*' % re.escape(name), src, re.M):
+                if SCRATCH_SCOPED.search(val):
+                    return True
+                nxt += re.findall(r'\b([A-Za-z_][A-Za-z0-9_]*)\b', val.split("=", 1)[1])
+        pending = nxt
     return False
 
 
