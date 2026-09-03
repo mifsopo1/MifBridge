@@ -249,8 +249,16 @@ def main():
         try:
             skel = None
             seqs = []
+            # SKIP SCRATCH - the SECOND adoption site in this suite, and it was missed when the
+            # first one was fixed on 2026-09-02. limit 4 over all of /Game/ can be filled entirely
+            # by scratch Skeletons (test_virtual_bone_authoring and test_blend_profiles each
+            # duplicate one), and a scratch skeleton has no AnimSequences pointing at it, so this
+            # loop would find nothing and the section below would skip claiming the project has no
+            # animation content. Raised to 20 for the same reason the first site was.
             for cand in (M.call("find_assets", {"class": "Skeleton", "pathPrefix": "/Game/",
-                                                "limit": 4}, timeout=120).get("assets") or []):
+                                                "limit": 20}, timeout=120).get("assets") or []):
+                if M.is_scratch_fixture(cand):
+                    continue
                 path = cand.get("path") or ""
                 name = path.rsplit("/", 1)[-1].split(".")[0]
                 anims = M.call("list_animations", {"skeleton": name, "limit": 2000},

@@ -2532,3 +2532,37 @@ prefix, because the short prefix is what a person thinks the convention is calle
 have guessed at will answer "none" for a wrong guess and for a genuinely empty set, and those two
 answers are indistinguishable from the outside. Prove a filter finds something you KNOW is there
 before trusting it to report that nothing is.
+
+## A hand survey is not a detector, and the difference shows up immediately
+
+**2026-09-03.** Twelve fixture-adoption sites were found on 2026-09-02 by surveying all 176 suites
+by hand, with an adversarial pass that made each verifier REFUTE the finding by naming a suite that
+could create a matching object. It was careful work and it produced twelve real fixes.
+
+It was also a one-off. Suite 179 gets no survey, and this bug class is invisible in the individual
+run its author will do - `test_landscape_heightmap` passed alone and failed only on the SECOND pass
+of a sweep, which is a 30-minute exclusive run nobody does while writing a suite.
+
+So the rule was mechanised as `tools/audit_fixture_adoption.py`. The interesting part is not that it
+reproduced the survey. It is that **the same rule, run over the same suites, found two sites the
+survey had missed - both inside suites the survey had already fixed**:
+
+  - `test_ported_anim` had a SECOND Skeleton adoption 180 lines below the one that got fixed.
+  - `test_spline_landscape` looks its landscape up by `actorPath` and then falls back to
+    `(info.get("landscapes") or [{}])[0]`. The comparison says what the suite WANTS; the fallback
+    says what it ACCEPTS. Reading the line, the comparison is what the eye stops on.
+
+**The general shape.** A survey stops when the surveyor is satisfied; a rule stops when the input
+runs out. If a finding is worth a survey it is usually worth a rule, and the rule should be scored
+against the survey rather than trusted because it agrees with it - `--ground-truth` rebuilds the
+tree at `8a626bc^`, where the answer is already known, and reports 8 of 8 caught before the fixes
+and 0 of 8 after. Without that number there is no way to tell a detector from a formatting exercise.
+
+**And the clause that made it usable was the survey's own rejection criterion.** "Name a suite that
+could create a matching object" is computable - read every `create_`/`import_`/`duplicate_` call in
+`tools/` for the class it produces, and clear any adoption of a class nothing else makes. Adopting a
+`SoundWave` is safe; adopting a `Skeleton` is not. Without that clause the rule flags 85 sites across
+52 suites and is worth nobody's time. With it, 55 across 36 - and a WRITES marker separating the two
+sizes of harm, because reading somebody's scratch gives you a wrong measurement while writing to it
+mutates another suite's fixture and the failure lands in that suite, later, looking like a defect in
+unrelated code.

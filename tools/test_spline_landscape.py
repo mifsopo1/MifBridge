@@ -233,7 +233,12 @@ def main():
         lrow = next((x for x in (info.get("landscapes") or [])
                      if x.get("actorPath") == land or x.get("label") == land), None)
         if lrow is None:
-            lrow = (info.get("landscapes") or [{}])[0]
+            # THE FALLBACK IS AN ADOPTION, and it survived the 2026-09-02 sweep of this suite
+            # because the line above LOOKS like an exact-identity lookup. It is - until it misses,
+            # and then this takes whatever is first, which on the second pass of a sweep is another
+            # suite's leftover create_landscape output. S101 would then read editLayers[] off a
+            # landscape this suite never touched.
+            lrow = M.pick_adoptable(info.get("landscapes")) or {}
         edit_layers = lrow.get("editLayers")
         check("S101 landscape_info reports editLayers[] at all - the read that apply_spline's own "
               "refusal tells you to make",

@@ -7526,6 +7526,33 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       test_socket_authoring's T3104 and test_landscape_heightmap's T8002 - the two that actually
       went red. Until that has run, this is a set of plausible fixes, not a fixed problem.
 
+      THE SURVEY IS NOW A DETECTOR, 2026-09-03: tools/audit_fixture_adoption.py. The hand survey
+      was a one-off and suite 179 would get none, so the rule is mechanised: a discovery call
+      (find_assets / list_level_actors / landscape_info / list_partition_actors) not scoped to the
+      caller's own scratch and not guarded, whose rows are reduced to an IDENTIFIER rather than
+      merely counted, FOR A CLASS SOME OTHER SUITE CREATES. That last clause is the adversarial
+      pass mechanised - its criterion was "name a suite that could create a matching object", and
+      that is computable by reading every create_/import_/duplicate_ call in tools/. Without it the
+      rule flags 85 sites across 52 suites and is worth nobody's time; with it, 55 across 36.
+
+      SCORED AGAINST GROUND TRUTH rather than asserted - --ground-truth rebuilds the tree at
+      8a626bc^, where the answer is known: 8 of 8 known-fixed suites flagged before, 0 of 8 after.
+
+      AND IT FOUND TWO THE HAND SURVEY MISSED, both inside suites the survey had already fixed:
+
+        test_ported_anim:252     a SECOND Skeleton adoption, limit 4 over all of /Game/. Two
+                                 suites duplicate a Skeleton into scratch, and a scratch skeleton
+                                 has no AnimSequences pointing at it - so a limit-4 window filled
+                                 with scratch makes this report the project as having no animation
+                                 content. Fixed: filter + limit 20, matching the first site.
+        test_spline_landscape:232  asks for its own landscape by actorPath and then falls back to
+                                 `(info.get("landscapes") or [{}])[0]`. The comparison says what it
+                                 WANTS; the fallback says what it ACCEPTS, which on pass 2 is
+                                 another suite's create_landscape leftover. Fixed: pick_adoptable.
+
+      This is why the item does not close on the detector: the count of pending-verification fixes
+      went from twelve to FOURTEEN. Same sweep, two more sites.
+
       Blocked on the editor, which Andre is using.
 
       A STATIC DETECTOR FOR THIS WAS TRIED AND ABANDONED, deliberately, because the alternative was
@@ -11193,6 +11220,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       That leaves the UE gap at: 0 unreachable parameters, 0 uncovered endpoints, 8 consequence
       fields, and the editor-closed batch.
+
+- [ ] **36 suites adopt a class another suite creates, and have never been asked about it** (a day)
+      FOUND 2026-09-03 by `audit_fixture_adoption`, which scores 8/8 recall against the known
+      instances - so this list is not speculative, it is the same rule that catches all fourteen
+      confirmed sites, applied where nobody has looked. 55 sites, 5 of them beside a WRITE.
+      The 5 writing sites are the ones to read first; a read gives a wrong measurement, a write
+      mutates another suite's fixture and the failure lands in that suite, later, looking like a
+      defect in unrelated code. NOT all defects: a suite may adopt something that does not affect
+      its verdict. `python tools/audit_fixture_adoption.py` prints the list.
+
+- [ ] **22 hand-rolled copies of the scratch filter that mifaudit already owns** (2 hours)
+      FOUND 2026-09-03. `if not a["path"].startswith("/Game/_Mif")` written inline across ~30
+      suites, all predating mifaudit.is_scratch_fixture. They work, which is why this is small -
+      but they are a parallel implementation of a rule that has an owner, and they only test the
+      path. is_scratch_fixture also reads `label` (level actors carry SCRATCH_LABEL_PREFIX "Mif"
+      with no underscore, so a hand-rolled path test cannot see them) and honours
+      NOT_SCRATCH_DESPITE_THE_NAME. Consolidating them means the next amendment lands everywhere.
+      `audit_fixture_adoption --all` lists them.
 
 - [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
       FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which is not in the release gate and exits

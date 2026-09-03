@@ -134,6 +134,46 @@ def plant_nested_field_read(text):
                         '              rc.get("arrayDim") is None, rc.get("arrayDim"))', 1)
 
 
+def plant_contradicted_heading(text):
+    """An OPEN issue heading whose own body says the defect is fixed.
+
+    THE PLANT IS THE REAL MISTAKE. Twelve entries in docs/06 read as open on 2026-09-03 while
+    something else in the same file already recorded them fixed - one of them an editor-fatal crash
+    with a crash GUID, fixed for over a week, sitting where a reader triaging for danger looks first.
+
+    The bold **Fixed and verified** is load-bearing: the detector deliberately does not accept the
+    unbolded word, because this file uses "resolved" in prose about paths and "not a defect" inside
+    a live entry. A plant in the loose form would be cleared, correctly, and prove nothing.
+    """
+    marker = "\n## 998. A planted entry whose body contradicts its own heading\n\n"
+    if marker in text:
+        return None
+    return text + (marker + "Reported and then **Fixed and verified** 2026-01-01. Left reading as\n"
+                   "open on purpose so the detector has something it must see.\n")
+
+
+def plant_fixture_adoption(text):
+    """A suite taking the first Blueprint it finds and naming it, with no scratch filter.
+
+    THE PLANT IS THE REAL MISTAKE. This is the shape that made test_landscape_heightmap report
+    1590uu of collision error on 2026-09-01 - it adopted a landscape another suite had left behind
+    and measured against heights it never set. Blueprint is the class used here because fifty suites
+    in this directory create one, so the collision clause the detector turns on has something real
+    to find; a class nothing creates is correctly cleared and would prove nothing.
+
+    Deliberately NOT scratch-scoped and NOT guarded, because those are the two ways out the detector
+    is supposed to honour. If either crept in, this would be cleared and the harness would report a
+    blind detector as proven.
+    """
+    anchor = "    st = int(time.time() % 100000)"
+    if anchor not in text:
+        return None
+    return text.replace(anchor, anchor + "\n"
+                        '    _zz = (M.call("find_assets", {"class": "Blueprint",\n'
+                        '                                  "pathPrefix": "/Game/"}).get("assets")\n'
+                        '           or [{}])[0].get("path")\n', 1)
+
+
 def plant_silent_mutator(text):
     """A handler that calls a void UE API and reports ok without reading anything back.
 
@@ -711,6 +751,17 @@ PLANTS = {
                                 "is only reached once main() has already returned 0"),
     # The marker names the FILE AND THE DEPTH, not just the field: "arrayDim" alone appears in the
     # detector's own header and in the C++, so a run that merely mentioned it would prove nothing.
+    # THE ONLY ENTRY THAT PLANTS INTO docs/. It is a file a person edits by hand, so the restore
+    # matters more here than anywhere else - and the harness already asserts the bytes come back
+    # identical, which is why this is acceptable at all. Report-style: always exits 0.
+    "audit_issue_headings.py": (os.path.join(ROOT, "docs", "06_OPEN_ISSUES_FROM_USE.md"),
+                                plant_contradicted_heading, "998.", False),
+    # REPORT-STYLE (gate False): always exits 0, so the marker is the whole test. The marker is the
+    # PLANTED SUITE'S NAME, which works only because test_pie_family is not in the report already -
+    # checked, not assumed. If it ever starts appearing there for its own reasons, this entry stops
+    # proving anything and needs a different target.
+    "audit_fixture_adoption.py": (os.path.join(HERE, "test_pie_family.py"),
+                                  plant_fixture_adoption, "test_pie_family.py", False),
     "audit_nested_field_reads.py": (os.path.join(HERE, "test_uncovered_reads2.py"),
                                     plant_nested_field_read,
                                     'writes "arrayDim" only into a sub-object'),
