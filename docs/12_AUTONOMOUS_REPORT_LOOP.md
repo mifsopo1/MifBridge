@@ -58,9 +58,10 @@ python tools/report_intake.py    # fetch, vet, sanitise -> report_queue.json
 python tools/report_repro.py     # replay against the live editor -> report_results.json
 #   ... an agent reads the results, fixes what is real, builds, regresses ...
 python tools/report_reply.py --number N --status fixed --commit SHA
+python tools/report_notify.py --issue N --author LOGIN --outcome fixed     --summary "one line of what changed" --commit SHA --discord THEIR_ID
 ```
 
-`report_intake` and `report_reply` never touch the editor. `report_repro` is the only part that does,
+`report_intake`, `report_reply` and `report_notify` never touch the editor. `report_repro` is the only part that does,
 and it:
 
 - refuses to run while a sweep holds `.sweep-lock` — one editor, one undo stack, and a replay landing
@@ -94,6 +95,39 @@ text was preserved and disobeyed.
 The rewrite was exercised in the same run. The report named
 `/Game/MODS/QOLCrafting_P/BP_Station.BP_Station`; what actually ran addressed
 `/Game/_MifReport/BP_Sim_abc123`, and the result was flagged `shapeOnly: true`.
+
+## Telling the reporter, which is not the same as closing the issue
+
+Closing a GitHub issue is correct and invisible. Somebody who filed a report from inside the editor is
+not watching this repository's notification feed, so the fix reaches them only when they happen to
+look. Andre's framing settled the design: a ping is worth sending only "if he knows to pull it", so
+the message says WHAT changed and that a pull and rebuild are needed. "Fixed" on its own reads as
+already working for you, which it is not until they pull.
+
+`report_notify.py` posts through a Discord webhook. Three things about it are deliberate.
+
+**It reuses `report_trust.json`.** The same file that decides who may be auto-processed and
+auto-replied to decides who may be pinged. There is no state where the loop messages people about
+reports it was not allowed to work on, and no second list to keep in step with the first.
+
+**It fails closed and always exits 0.** No config, no webhook, an unmapped login, a network error -
+each is "do not notify", never "raise". A report that was fixed and replied to must not be reported as
+failed because a courtesy ping did not go out.
+
+**The reporter supplies their own id.** The template asks for an optional `discord` field in the JSON
+block, because a hand-kept contacts map only ever helps people who have already reported - the FIRST
+report from anyone new could never mention them, and nobody goes back afterwards to add someone for a
+report that is already closed. The map remains as the fallback.
+
+That id is reporter-written, so it is untrusted like everything else in that block: a Discord
+snowflake is a bare decimal, and anything else is discarded rather than interpolated into a mention.
+`allowed_mentions` independently pins the ping to that one id, so a summary containing `@everyone` -
+and the summary derives partly from prose someone else wrote - cannot ping the server. Two layers,
+because the first is a parser and the second is Discord's own guarantee.
+
+Config lives in `tools/report_discord.json`, which is gitignored: the webhook is a credential, and the
+login-to-id map pairs identities across two services, which is not worth publishing on a public repo.
+
 
 ## What stays human
 
@@ -151,6 +185,8 @@ python tools/report_watch.py --push       # let the spawned agent push its fix
 | `report_intake.py` | fetch, vet against the trust allowlist, sanitise paths, queue | no |
 | `report_repro.py` | replay the sanitised payload against a scratch editor | no |
 | `claude -p` | read the diagnosis, write and commit the fix | **yes** |
+| `report_reply.py` | post the outcome onto the issue, and close it when genuinely fixed | no |
+| `report_notify.py` | @-mention the reporter on Discord so they know to pull | no |
 
 By the time a session starts, the report has been fetched, vetted, sanitised and reproduced. The model
 is spent on the part that actually needs judgement.
