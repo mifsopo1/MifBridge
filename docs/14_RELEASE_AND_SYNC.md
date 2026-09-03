@@ -102,5 +102,33 @@ nothing and would have caught the 62-endpoint gap the week it started.
 
 - `06_OPEN_ISSUES_FROM_USE.md` issue 15 — the port collision found while investigating this area.
 - `02_GOTCHAS.md` §14 — the two-directional engine version trap the matrix above depends on.
+## What will stop a release, and why
+
+`make_release.py` refuses on seven separate checks. None of them is advisory - each prints
+`REFUSING TO PACKAGE` and exits non-zero, and `--force` overrides only after saying what it is
+overriding. Worth knowing BEFORE you cut a release, because several are things you fix in a minute
+and one takes a full engine build.
+
+| gate | refuses when | fix |
+|---|---|---|
+| badge | `README.md`'s badge line disagrees with the tree | `--update-badge` |
+| changelog | `CHANGELOG.md`'s TOP row disagrees with the tree | edit the top row, or add an `Unreleased` one |
+| 5.3 | no recorded successful 5.3 build for this `Source/` commit | build on 5.3, then `--record-53` |
+| 5.7 | the 5.7 compile probe is missing or stale for this `Source/` | re-run `make_engine_probe.py` |
+| param table | `describe_endpoint`'s generated table has drifted | `harvest_param_table.py`, then rebuild |
+| value discovery | an endpoint demands a value nothing can discover | fix the endpoint or record the exemption |
+| static audits | the tools/ checkers are not clean | run them and fix what they say |
+
+Two of these exist because a release already went out wrong. **5.3** was added after v0.8.0 shipped
+not compiling on 5.3 at all - the 5.7 probe passed, nothing checked 5.3, and the break reached a tag.
+**changelog** was added 2026-09-02 after the UE column was found one too high in every row since
+0.3.0: the badge two files away had the correct number the whole time, and nothing compared them.
+
+The badge and changelog gates are RELEASE-TIME, not always-true. Both legitimately go stale between
+releases, because the badge is regenerated at packaging. A red badge on a working tree is the design,
+not a defect - `tools/test_release_gates.py` covers this and asserts the gates ANSWER rather than
+that today's answer is yes.
+
+
 - `tools/parity_check.py` — the in-tree gate; `make_release.py` is its cross-tree equivalent.
 - `tools/blender-addon/build_zip.py` — the packaging precedent this script follows.
