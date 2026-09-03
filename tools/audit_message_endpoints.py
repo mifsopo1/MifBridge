@@ -237,6 +237,21 @@ def mcp_docstrings():
     # It was never scanned. A wrong endpoint name is MORE costly there than inline, not less: the
     # agent has just been told to read this text precisely because it is about to do something it
     # does not know how to do. Two `save_asset persists it` notes sat in it and were found by hand.
+    #
+    # THE ENDPOINT HALF IS CHECKED HERE; THE PARAMETER HALF IS NOT, AND THAT WAS MEASURED RATHER
+    # THAN ASSUMED on 2026-09-03. "a help entry naming a parameter its endpoint does not accept"
+    # sounds like the same check one level down. It is not cheaply decidable: camelCase tokens in
+    # this prose are parameters, RESPONSE FIELDS, string VALUES and UE property names all at once,
+    # and three narrowings could not separate them.
+    #   582 flagged against the accept-lists alone - almost all response fields (fileCount,
+    #       valueBefore, canUndo), which help SHOULD name.
+    #   72 still flagged after allowing every Out->Set*Field literal in Source - and those are
+    #       values (worldStatic, twoWay, runOnServer), UE property names (bSimulatePhysics), and
+    #       KeyNote names the endpoint deliberately rejects (className on add_variable).
+    # So a wrong parameter in help stays a reading problem, not a checkable one. What DOES guard it
+    # is writing help from the handler rather than from the endpoint's purpose - seven claims were
+    # inferred and stated as fact the same day this note was written, and only re-reading found
+    # them.
     help_path = os.path.join(HERE, "mcp-server", "tool_help.json")
     try:
         store = json.load(io.open(help_path, encoding="utf-8", errors="replace"))
