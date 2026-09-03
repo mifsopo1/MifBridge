@@ -545,7 +545,16 @@ def plant_factory_init_drift(text):
     PoseAsset because the scan genuinely finds UPoseAsset (SkeletonFactory/PoseAssetFactory both do
     post-construct work), so removing its name produces real drift rather than a no-op.
     """
-    return text.replace('TEXT("PoseAsset"), ', "", 1)
+    # GUARDS ITS OWN ANCHOR. Swept 2026-09-03: 33 of the 34 plant functions return None when their
+    # anchor is absent, and the harness reports that as anchor-gone. This one used a bare .replace()
+    # and relied entirely on the must_vanish field in its registry entry - which does catch it, but
+    # puts the safety in a different file from the mistake. A plant that silently returns the text
+    # UNCHANGED is the shape written up in 02_GOTCHAS the same day: the plant fails, and the failure
+    # is indistinguishable from a result.
+    needle = 'TEXT("PoseAsset"), '
+    if needle not in text:
+        return None
+    return text.replace(needle, "", 1)
 
 
 def plant_spawn_label(text):
