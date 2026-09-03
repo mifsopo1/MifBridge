@@ -2590,3 +2590,37 @@ genuinely new assertion whose text matches a baselined one in the same file is n
 silently. That is a real narrowing and it is written into `baseline_key`'s docstring rather than
 left to be discovered. A duplicated assertion text in one file is a near-miss; an editor's comment
 reddening a gate is a certainty.
+
+## A shorter list is not a better list - check WHY each row left
+
+**2026-09-03.** Two review lists went to zero in one day: `audit_mode_params` 23 rows to 0, and
+`audit_fixture_adoption` 55 sites to 0. Roughly half of that came from fixing real defects. The
+other half came from teaching each tool to stop reporting things that were never wrong - and that
+half is where the danger is, because *every* change to a detector makes its list shorter, including
+the changes that break it.
+
+Three times that day a narrowing was **right for the wrong reason**, and each was caught only by
+reading the rows it cleared:
+
+* "the parameter literal appears somewhere other than the accept-list and the accessors" cleared six
+  handlers. Reading them showed three cleared because of a range-for alias read, a `ReadVectorField`
+  helper, and `Out->SetStringField(TEXT("label"), ...)` — which writes the RESPONSE. Reverted.
+* teaching the fixture detector dataflow broke the commonest shape in the suites,
+  `x = (M.call(...).get("assets") or [{}])[0].get("path")`. Both `--ground-truth` **and** the tool's
+  own `--plant` stayed green, because both exercised a different shape. `audit_detectors_fire`
+  reported ASLEEP on the next run, an hour after the commit message claimed the detector was fine.
+* the alias-group rule was written to fix the documented cause of a whole noisy cluster. It cleared
+  **nothing**, which is how the real causes came out: shared resolvers doing the reading, and
+  alternative selectors read on their own branch. The header had blamed the wrong thing since it was
+  written.
+
+**The rule.** When a detector's list shrinks, diff the rows that left and read the handler behind
+each one. "Recall against ground truth held" is necessary and not sufficient — ground truth only
+covers the instances someone already found. A plant is stronger, but a plant that exercises one arm
+of a three-arm rule proves a third of it; when a rule grows an arm, the plant grows one too.
+
+**And the inverse is just as real.** Findings that all look wrong usually *are* the checker being
+wrong: 22 messages reported as advising a parameter their endpoint refuses — including
+`save_blueprint {blueprintId}` — turned out to be a case mismatch, because
+`param_reach.endpoint_accepts()` lowercases every key while advice is written in camelCase. They got
+read instead of filed only because 22-out-of-22-looking-wrong is not a plausible defect rate.
