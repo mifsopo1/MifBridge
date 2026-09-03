@@ -248,7 +248,17 @@ class of thing in other people's code.
 
 ---
 
-## 6. No icon / thumbnail render endpoint
+## 6. No icon / thumbnail render endpoint — THE CAPABILITY IS BUILT
+
+*(Marked 2026-09-03. `render_thumbnail` renders, and `write_thumbnail_texture` does the part
+the triage note said was the whole point - it takes `texturePath`, "the /Game/... UTexture2D
+asset to write or REFILL", with `TC_EditorIcon` compression and `TEXTUREGROUP_UI`, which is
+what an icon wants. Refilling an existing stub is exactly the 42-stub case. `import_texture`
+covers the image-import work the note pairs this with.*
+
+*Deliberately NOT claiming the 42 icons are filled. That is content work against this mod, and
+this file is about what the bridge can do - the endpoint existing is the thing that was
+missing. Verified in MifBridgeThumbnail.cpp rather than assumed from the endpoint's name.)*
 
 Rendering an item icon from a mesh has no path through the bridge. `capture_camera` exists and may
 be adaptable — untested.
