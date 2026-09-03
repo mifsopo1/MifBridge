@@ -1209,9 +1209,19 @@ round trips that a listing would have saved.
 > But the SUMMARY half is still missing. `self_audit` sets `summary` only under
 > `if (Ext && !Ext->Summary.IsEmpty())` - EXTERNAL endpoints only. A built-in gets its name and its
 > flags (readOnly, selfManaged, compileHeavy) and no one-line description, so the listing still does
-> not tell you what a name DOES. That is the remaining work, and it is smaller than this entry
-> implies: the summaries already exist in describe_endpoint's tables, they are simply not joined
-> onto the listing.
+> not tell you what a name DOES.
+>
+> **Correction, same day.** The line above first said the remaining work was small because "the
+> summaries already exist in describe_endpoint's tables". They do not, and the distinction is
+> the entry's whole point. `FMifDescribeRow::Summary` is documented in the struct as "verbatim
+> AcceptedSummary - the text the guard prints on refusal" (MifBridgeDescribe.cpp:161): it is the
+> ACCEPTED-PARAMETERS text, so it says what an endpoint TAKES, not what it does. The genuine
+> one-liner exists only for EXTERNAL endpoints, in `FExternalEndpointDesc::Summary`
+> (MifBridgeEndpointRegistry.h:83, commented "one-liner for self_audit") - which is exactly why
+> self_audit emits a summary for those and for nothing else.
+>
+> So the remaining work is a real choice, not a join: either write purpose one-liners for the
+> built-ins, or put the accepted-parameters text on the listing and be clear that is what it is.
 >
 > Nearly marked FIXED on the strength of `summary` appearing in the handler. It appears in one
 > branch that built-ins never enter.
