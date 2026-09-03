@@ -157,9 +157,14 @@ def main():
               (mp.get("error") or "")[:240])
         # The postcondition is the assertion that matters: a handler that refused and started
         # anyway would satisfy both checks above.
-        after = M.raw_post("pie_status", {}).get("state")
+        # THE PROBE HAS TO HAVE ANSWERED. `.get("state")` on a FAILED pie_status is None, and None
+        # was in the accepted set - so a probe that never ran scored identically to "nothing was
+        # started". Requiring ok:true first is what makes this a postcondition rather than a shrug.
+        _status = M.raw_post("pie_status", {}) or {}
+        after = _status.get("state")
         check("T1610 and NOTHING was started - judged by pie_status, not by the error string",
-              after in ("stopped", "none", None, ""), "pie_status.state=%r" % after)
+              _status.get("ok") is True and after in ("stopped", "none", None, ""),
+              "pie_status=%s" % json.dumps(_status)[:200])
     except M.Timeout:
         check("T1610 start_pie answered the refusal rather than hanging", False,
               "start_pie did not respond - the refusal path must not reach RequestPlaySession")
@@ -170,9 +175,18 @@ def main():
         # stranded-session bug by stranding a session is not worth having. audit_suite_teardown
         # flagged the first draft for having no finally at all and it was right to: it cannot know
         # a start_pie is meant to be refused, and neither can the next person to edit this.
-        _st = (M.raw_post("pie_status", {}) or {}).get("state")
-        if _st not in ("stopped", "none", None, ""):
-            print("  NOTE  the guard let a session start; stopping it.")
+        # AND IT USED THE SAME TUPLE AS THE ASSERTION, which made the bug above worse rather than
+        # merely repeated. A pie_status that FAILED yields state None, None was in the set, so the
+        # teardown concluded "nothing running" and skipped - in precisely the situation it exists
+        # for. When the probe cannot answer, the safe move is to stop anyway: stop_pie on a stopped
+        # editor is a no-op, while a leaked PIE session is carried into every later suite.
+        _probe = M.raw_post("pie_status", {}) or {}
+        _st = _probe.get("state")
+        _unknown = _probe.get("ok") is not True
+        if _unknown or _st not in ("stopped", "none", None, ""):
+            print("  NOTE  %s; stopping it."
+                  % ("pie_status could not answer, so assuming a session may be running"
+                     if _unknown else "the guard let a session start"))
             M.raw_post("stop_pie", {})
             _back = wait_for_pie_state("stopped")
             check("T1610 the session that broken guard started was stopped again",

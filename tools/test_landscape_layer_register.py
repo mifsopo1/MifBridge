@@ -259,12 +259,25 @@ def main():
             SC.confirm_call("delete_asset", {"path": pkg})
         except Exception as exc:
             cleanup_errors.append("%s -> %s" % (pkg, str(exc)[:120]))
-    still_li = [p for p in (r.get("layerInfo"), again.get("layerInfo")) if p and
-                M.call("find_assets", {"nameContains": str(p).split("/")[-1].split(".")[0]}).get("count")]
+    # AN UNANSWERABLE QUESTION IS NOT A PASS. This read `.get("count")` straight into a truth test,
+    # and a find_assets that FAILED has no "count" at all - so None came back, None is falsy, and a
+    # probe that never ran scored exactly like "the asset is gone". The one case where cleanup
+    # verification matters most - the bridge in trouble - was the case it could not fail in.
+    still_li, probe_errors = [], []
+    for p in (r.get("layerInfo"), again.get("layerInfo")):
+        if not p:
+            continue
+        found = M.call("find_assets", {"nameContains": str(p).split("/")[-1].split(".")[0]})
+        if found.get("ok") is not True or "count" not in found:
+            probe_errors.append("%s -> find_assets could not answer: %s" % (p, json.dumps(found)[:120]))
+            continue
+        if found.get("count"):
+            still_li.append(p)
     check("L999 (cleanup) the LayerInfo assets this suite created are gone - layerInfoPath put "
           "them under the scratch root, and a dirty package left there jams restore-packages",
-          not still_li and not cleanup_errors,
-          {"still_present": still_li, "confirm_refusals": cleanup_errors})
+          not still_li and not cleanup_errors and not probe_errors,
+          {"still_present": still_li, "confirm_refusals": cleanup_errors,
+           "unanswered_probes": probe_errors})
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
