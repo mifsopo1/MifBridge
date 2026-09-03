@@ -1643,9 +1643,17 @@ The familiar one. You write against the editor in front of you, it compiles, and
 | `IAssetRegistry::GetAssetsByClass(FName, ...)` | `UE_DEPRECATED(5.1)` in 5.3, **deleted** in 5.7. Pass `GetClassPathName()`. |
 | `UObject::IsPendingKillOrUnreachable()` | deprecated in 5.3, gone in 5.7. Use `IsValid(Obj)`. |
 | `UDataLayerSubsystem::GetDataLayerInstances` | `UE_DEPRECATED(5.3)`. Use `UDataLayerManager`. |
+| `ALandscapeProxy::EditorLayerSettings` | renamed `EditorLayerSettings_DEPRECATED` in 5.7, and `FLandscapeEditorLayerSettings` carries `UE_DEPRECATED(all, ...)`. Use `AddTargetLayer(FName, FLandscapeTargetLayerSettings)` - the proxy now keeps a `TMap<FName, ...>`, not an array. |
 
 A 5.3 deprecation warning is a 5.7 BUILD BREAK. Treat every one as an error, not a warning - one of
 these shipped on 2026-08-26 and would have broken the build Curfew depends on.
+
+**A RENAME TO `_DEPRECATED` IS THIS DIRECTION TOO, and it is quieter than a deletion.** The landscape
+row above is not a symbol that vanished - the data still exists under a new name, so a grep for
+`EditorLayerSettings` finds it in 5.7 and reads as present. It compiles only on 5.3. `register_landscape_layer`
+was written on 2026-09-01 and did not compile on 5.7 at all; the 5.3 build was clean, which is the
+same shape as the break that reached tag 0.8.0. Found on 2026-09-03 by a `/Zs` parse against both
+engines (`docs/14`), not by reading either header.
 
 ### Direction B: 5.7 has it, 5.3 NEVER DID
 

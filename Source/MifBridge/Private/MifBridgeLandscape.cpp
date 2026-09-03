@@ -970,7 +970,18 @@ namespace MifBridge
 		// .LayerInfoObj is what GetLayerInfoIndex(LayerInfo) - and therefore paint_landscape -
 		// actually consults. Writing only one of them produces a layer that looks registered in the
 		// panel and is still refused for painting, or the reverse.
+#if MIF_ENGINE_5_7_PLUS
+		// 5.7 RENAMED THE MEMBER AND DEPRECATED THE STRUCT. `EditorLayerSettings` became
+		// `EditorLayerSettings_DEPRECATED`, and FLandscapeEditorLayerSettings carries
+		// UE_DEPRECATED(all, ...) naming FLandscapeTargetLayerSettings as its replacement - which
+		// the proxy keeps in a TMap<FName, ...> reached through AddTargetLayer, not an array.
+		//
+		// This did not compile on 5.7 AT ALL and the 5.3 build was clean, which is the same shape
+		// as the break that reached tag 0.8.0.
+		Landscape->AddTargetLayer(FName(*WantName), FLandscapeTargetLayerSettings(LayerInfo));
+#else
 		Landscape->EditorLayerSettings.Add(FLandscapeEditorLayerSettings(LayerInfo));
+#endif
 		Settings.LayerInfoObj = LayerInfo;
 
 		// POSTCONDITION, and deliberately the SAME predicate paint_landscape gates on rather than a
@@ -992,13 +1003,6 @@ namespace MifBridge
 					 "weights are stored per layer index, not per asset, so they stay - but the old "
 					 "asset is no longer what this landscape paints through."));
 		}
-		if (!bPaintable)
-		{
-			Out->SetStringField(TEXT("paintableNote"),
-				TEXT("the assignment was made and GetLayerInfoIndex still does not find it, which "
-					 "is the one outcome that would leave paint_landscape refusing this layer. "
-					 "Treat this response as a FAILURE despite ok:true."));
-		}
 		if (bCreated)
 		{
 			Out->SetStringField(TEXT("saveNote"),
@@ -1017,6 +1021,16 @@ namespace MifBridge
 		}
 		Out->SetStringField(TEXT("levelNote"),
 			TEXT("the landscape is now dirty and NOTHING has been saved."));
+		// FIELDS FIRST, VERDICT LAST. GetLayerInfoIndex not finding the layer after the assignment
+		// is precisely the state that makes paint_landscape refuse it, so it is a failure and not
+		// a note - the endpoint's whole postcondition is "paint_landscape will accept this now".
+		if (!bPaintable)
+		{
+			Fail(Out, TEXT("the assignment was made and GetLayerInfoIndex STILL does not find this "
+						   "layer, which is the one outcome that leaves paint_landscape refusing "
+						   "it. The landscape is dirty and any LayerInfo asset was already created, "
+						   "so do not simply retry - read it back with landscape_info first."));
+		}
 	}
 
 	void H_paint_landscape(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
