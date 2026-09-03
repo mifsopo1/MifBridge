@@ -55,8 +55,12 @@ def main():
               "%d endpoints and this one is absent - the MIF_WITH_NIAGARA guard is supposed to keep it "
               "registered and compile a refusal, not drop it" % len(eps))
 
-    systems = M.call("find_assets", {"class": "NiagaraSystem", "pathPrefix": "/Game/", "limit": 8},
-                     timeout=180).get("assets") or []
+    # SKIP SCRATCH. Unlike the three other Niagara suites, this one takes systems[0] outright rather
+    # than requiring a parameter count above zero - so a freshly minted scratch system from
+    # test_create_asset, which has no emitters at all, is exactly what it would describe.
+    systems = [a for a in (M.call("find_assets", {"class": "NiagaraSystem", "pathPrefix": "/Game/",
+                                                  "limit": 20}, timeout=180).get("assets") or [])
+               if not M.is_scratch_fixture(a)]
     probe = M.call("describe_niagara_system",
                    {"path": (systems[0].get("path") if systems else "/Game/zz.zz")}, timeout=120)
     plugin_absent = "no Niagara plugin" in (probe.get("error") or "")

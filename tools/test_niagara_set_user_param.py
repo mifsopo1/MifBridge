@@ -59,6 +59,7 @@ def main():
         return 0
 
     # A cooked system that actually HAS user parameters - the refusal is only meaningful against one.
+    # ADOPTION-OK: only a system with count > 0 is taken, and a scratch one has no parameters
     cooked = None
     for a in (M.call("find_assets", {"class": "NiagaraSystem", "limit": 12}).get("assets") or []):
         r = M.raw_post("list_niagara_user_parameters", {"path": a["path"]})

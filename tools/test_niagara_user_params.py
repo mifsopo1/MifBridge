@@ -49,6 +49,7 @@ def main():
         print("bridge never came up")
         return 1
 
+    # ADOPTION-OK: only systems with count > 0 are kept, and a scratch one has no parameters
     systems = [a["path"] for a in
                (M.call("find_assets", {"class": "NiagaraSystem", "limit": 12}).get("assets") or [])]
     withparams = []

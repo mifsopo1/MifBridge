@@ -48,9 +48,14 @@ def pick_system():
     A suite that samples whichever asset find_assets happens to return first is a coin flip - that
     already burned test_material_params, which passed for hours and then failed on a different draw.
     """
+    # SKIP SCRATCH. The most-parameters contest below is nearly self-correcting - a fresh scratch
+    # system has none and cannot win - but best_n starts at -1, so a project with only scratch
+    # systems left would elect one with zero parameters and measure against an empty asset.
     r = M.call("find_assets", {"class": "NiagaraSystem", "limit": 300})
     best, best_n = None, -1
     for a in (r.get("assets") or []):
+        if M.is_scratch_fixture(a):
+            continue
         p = a.get("path")
         q = M.call("list_niagara_user_parameters", {"path": p})
         n = q.get("totalParameters") or 0

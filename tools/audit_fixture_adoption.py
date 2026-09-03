@@ -65,6 +65,18 @@ DISCOVERY = ("find_assets", "list_level_actors", "landscape_info", "list_partiti
 # The helpers whose presence means the question HAS been asked.
 GUARDS = ("is_scratch_fixture", "pick_adoptable")
 
+# READ AND CLEARED, written next to the site as `# ADOPTION-OK: <why>`.
+#
+# WHY A SUPPRESSION EXISTS AT ALL, given how easily one becomes a way to hide things. Some sites are
+# self-correcting BY CONSTRUCTION and no filter would improve them: test_niagara_user_params only
+# accepts a system whose user-parameter count is above zero, and a freshly minted scratch system has
+# none, so it cannot be adopted however hard the registry tries. Reporting those every run is how a
+# reading list stops being read, and "already fine" is a legitimate answer to give in writing.
+#
+# THE REASON IS MANDATORY - a bare marker does not suppress - and the count of suppressed sites is
+# printed on every run whether or not anything is flagged, so they cannot quietly accumulate.
+CLEARED = re.compile(r'#\s*ADOPTION-OK:\s*(\S.*)')
+
 # HAND-ROLLED SCRATCH FILTERS COUNT AS GUARDS. test_anim_curve writes
 # `if not a["path"].startswith("/Game/_Mif")` inline, which is the same rule spelled differently and
 # was in the tree before the helper existed. Reporting it as unguarded would be false, and reporting
@@ -267,6 +279,10 @@ def scan_file(path, collisions, include_cleared=False):
         if any(g in win for g in GUARDS):
             cleared("guarded by mifaudit")
             continue
+        ok = CLEARED.search(win)
+        if ok:
+            cleared("ADOPTION-OK: %s" % ok.group(1).strip()[:70])
+            continue
         if HANDROLLED.search(win):
             cleared("hand-rolled scratch filter (should use mifaudit.is_scratch_fixture)")
             continue
@@ -318,8 +334,19 @@ def report(directory, include_cleared=False, quiet=False):
         return {k: v for k, v in found.items() if any(h[2].startswith("ADOPTS") for h in v)}
     flagged = sum(1 for v in found.values() for h in v if h[2].startswith("ADOPTS"))
     writes = sum(1 for v in found.values() for h in v if h[2].startswith("ADOPTS") and h[3])
-    print("%d suite(s) scanned; %d site(s) adopt a class another suite creates, %d beside a WRITE\n"
-          % (len(names), flagged, writes))
+    # THE SUPPRESSION COUNT IS PRINTED EVEN WHEN IT IS ZERO, and even on a clean run. A suppression
+    # nobody can see is how a reading list becomes a list of what somebody once felt like reading.
+    suppressed = []
+    for name in names:
+        src = io.open(os.path.join(directory, name), encoding="utf-8", errors="replace").read()
+        suppressed += [(name, m.group(1).strip()) for m in CLEARED.finditer(src)]
+    print("%d suite(s) scanned; %d site(s) adopt a class another suite creates, %d beside a WRITE; "
+          "%d marked ADOPTION-OK\n" % (len(names), flagged, writes, len(suppressed)))
+    if suppressed and ("--all" in sys.argv or not flagged):
+        print("READ AND CLEARED - suppressed by an explicit marker, with the reason given:")
+        for name, why in suppressed:
+            print("  %-34s %s" % (name, why[:78]))
+        print("")
     if not flagged:
         print("OK  every discovery call is scratch-scoped, guarded, count-only, or names a class")
         print("    nothing else here creates.")
