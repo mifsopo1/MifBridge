@@ -152,8 +152,12 @@ def main():
         # Watches are editor-only state that is not saved with the asset, so nothing undoes it and
         # nothing notices.
         #
-        # The precondition matters: TWO watches, so a wrong answer is visibly destructive rather
-        # than a no-op. Asserted AFTER the refusal, because the point is that nothing was removed.
+        # ONE watch, and that is enough here - an earlier version of this comment said TWO and the
+        # code has always added one. The count is not what makes this meaningful: the assertion is
+        # on SURVIVAL after the refusal (after_scoped == 1 below), so a clear that wrongly went
+        # through takes the count to 0 and the check goes red with one watch just as it would with
+        # two. test_blueprint_breakpoint's T8401b uses two because it distinguishes a scoped remove
+        # from a blueprint-wide clear, which needs the difference; this one does not.
         M.raw_post("blueprint_watch", {"op": "add", "graphId": graph, "nodeGuid": nid,
                                        "pin": ok_pin})
         before = M.raw_post("blueprint_watch", {"op": "list", "graphId": graph}).get("count")

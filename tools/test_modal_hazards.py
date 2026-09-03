@@ -159,7 +159,19 @@ def main():
     flagged = M.call("add_variable", {"blueprintId": bid, "name": "TempFlagged_%d" % st,
                                       "type": "float", "scope": "local", "function": fname,
                                       "replicated": True, "exposeOnSpawn": True})
-    check("T361b a local variable with member-only flags is still created",
+    # JUDGED BY ok:true, AND THAT IS THE CEILING HERE - said out loud because this repo's first rule
+    # is to judge by postcondition, and a reader is entitled to know why this one does not. There is
+    # no read-back path for a LOCAL variable: list_variables reports member variables only and says
+    # so itself ("a local variable lives on its function graph and is not listed here",
+    # MifBridgeIntrospect.cpp:645), and nothing else enumerates a function graph's locals.
+    #
+    # The check below carries the real weight - ignoredFlags is asserted by CONTENT, exactly, not by
+    # presence - so this line is a setup guard rather than the assertion. An indirect postcondition
+    # is available (add_variable_get on the function graph resolves only if the variable exists) but
+    # it MUTATES the graph every run, and buying a postcondition with a side effect in a hazard
+    # suite is a poor trade.
+    check("T361b (setup) a local variable with member-only flags is still created - ok:true is all "
+          "the bridge can answer for a local; the content assertion below is the real check",
           flagged.get("ok") is True, json.dumps(flagged)[:200])
     check("T361b and ignoredFlags names EVERY flag that was dropped, not a sample",
           sorted(flagged.get("ignoredFlags") or []) == ["exposeOnSpawn", "replicated"],

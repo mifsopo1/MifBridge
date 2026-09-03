@@ -288,7 +288,11 @@ def main():
         # least one probe sat at a real elevation.
         check("T8002 and at least one probe was at a non-zero height, so the agreement is not "
               "the trivial one on flat ground",
-              worst >= 0.0 and any(
+              # `worst >= 0.0` used to lead this condition and could never contribute: worst starts
+              # at 0.0 and only ever takes max(worst, delta), so it is non-negative by construction
+              # whatever delta does. A conjunct that cannot be False is not a weaker check, it is a
+              # reader telling the next person a condition was considered when it was not.
+              any(
                   struct.unpack_from("<H", zdata,
                                      (int(round((wy - wmin["y"]) / (wmax["y"] - wmin["y"]) * (H - 1))) * W
                                       + int(round((wx - wmin["x"]) / (wmax["x"] - wmin["x"]) * (W - 1)))) * 2)[0]
