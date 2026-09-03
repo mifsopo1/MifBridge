@@ -11269,6 +11269,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       NOT_SCRATCH_DESPITE_THE_NAME. Consolidating them means the next amendment lands everywhere.
       `audit_fixture_adoption --all` lists them.
 
+      MEASURED 2026-09-03, AND THE WORRYING HALF IS NOT TRUE HERE. The concern above - that a
+      path-only test cannot see a level actor whose scratch-ness is in its LABEL - was checked
+      against all 23 sites rather than assumed: for each, the endpoint that produced the rows being
+      filtered was read off the source. All 23 filter ASSET-registry rows (22 from find_assets, one
+      reading a level's own package path, two reading list_sockets output), and an asset row has no
+      label, so path-only is EQUIVALENT to the helper there. NOT_SCRATCH_DESPITE_THE_NAME does not
+      bite either: /Game/Maps/MifWeaponTest contains no "_Mif", so no hand-rolled test excludes it
+      and neither does the helper. So this is duplication, not a defect - "already fine" is the
+      honest answer to the behaviour question.
+
+      DELIBERATELY NOT DONE YET, and the reason is the sweep rather than the work. Thirty-one
+      suites are already changed and unverified; adding twenty more mechanical edits to that pile
+      before anything has run doubles what a red sweep would have to be bisected against, for zero
+      behavioural gain. Consolidate AFTER the sweep is green, when the diff is the only thing that
+      changed since a known-good run.
+
+      WHAT WAS VERIFIED WITHOUT AN EDITOR, because some of it can be: audit_suite_payloads (0 calls
+      passing a key any endpoint refuses, across 427 accept-lists), audit_undefined_names (250 files,
+      every loaded name resolves - which is what would catch a misspelled M.is_scratch_fixture), and
+      audit_vacuous_checks / audit_consequence_fields both at baseline. That is not a substitute for
+      running the suites; it is the part of the answer that does not need the machine.
+
 - [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
       FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which is not in the release gate and exits
       0 either way - so its reading list had never been read. 844 cross-endpoint claims sit in
