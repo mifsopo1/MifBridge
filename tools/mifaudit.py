@@ -445,6 +445,78 @@ def warn_if_sweep_running():
     return True
 
 
+# Every suite in this repo names its fixtures the same way, and that convention is what makes the
+# check below possible: scratch ACTORS carry a label beginning "Mif" (MifHeightmapFixture,
+# MifGuardProbe, MifLayerReg, MifASCTest, ...) and scratch ASSETS live under /Game/_Mif*.
+SCRATCH_LABEL_PREFIX = "Mif"
+SCRATCH_ASSET_PREFIX = "/Game/_Mif"
+
+# THE EXCEPTION, and it is a real one rather than a hypothetical. /Game/Maps/MifWeaponTest is a
+# genuine project map that several suites use ON PURPOSE - it is one of the very few LOOSE (uncooked)
+# maps here, so it is the only thing the sublevel family can be tested against. The Mif prefix does
+# NOT mean scratch in a package path; only the /Game/_Mif prefix does. Label and path are therefore
+# judged separately, and this list exists so the distinction is stated rather than remembered.
+NOT_SCRATCH_DESPITE_THE_NAME = ("/Game/Maps/MifWeaponTest",)
+
+
+def is_scratch_fixture(row):
+    """Is this level object somebody else's SCRATCH, rather than the project's own content?
+
+    WHY A SUITE NEEDS TO ASK. Several suites prefer an existing fixture and only build their own if
+    the level has none - "use the level's landscape if it has one" is cheaper and exercises real
+    content. That is safe exactly as long as no OTHER suite produces something the selector matches.
+
+    It stopped being safe on 2026-09-01. test_landscape_heightmap takes the first landscape with no
+    edit layers, which never fired because this project's own landscape has them; then
+    test_landscape_layer_register began creating one through create_landscape, which deliberately
+    leaves edit layers off. On the second pass of a sweep, heightmap adopted that leftover and
+    measured collision against heights it had never set - reporting a 1590uu error against a
+    perfectly good endpoint. The suite was right; it was measuring the wrong terrain.
+
+    So the rule is: a suite hunting for something to ADOPT must skip anything that looks like a
+    fixture. Takes a row as returned by list_level_actors or landscape_info - anything carrying
+    `label` and/or `actorPath`.
+
+    DELIBERATELY CONSERVATIVE. A false positive here costs a suite one candidate and it moves on to
+    the next or builds its own; a false negative is the bug above, which reports as a failure in
+    unrelated code. When the two are not equally bad, lean toward the cheap one.
+    """
+    if not isinstance(row, dict):
+        return False
+    label = str(row.get("label") or "")
+    if label.startswith(SCRATCH_LABEL_PREFIX):
+        return True
+    path = str(row.get("actorPath") or row.get("objectPath") or row.get("path") or "")
+    if any(path.startswith(ok) for ok in NOT_SCRATCH_DESPITE_THE_NAME):
+        return False
+    if SCRATCH_ASSET_PREFIX in path:
+        return True
+    # WHAT THIS DOES NOT CATCH, said plainly because the first draft of this function claimed it did.
+    # An actor spawned from a scratch BLUEPRINT with no label set carries only the class name in its
+    # path - ...PersistentLevel.BP_ASCFix46961_C_UAID_... - and those classes are named BP_ASCFix,
+    # BP_NoASC, BP_NS_, BP_Probe with no shared prefix, so there is nothing here to match on. Such an
+    # actor reads as adoptable. The fix for that is at the other end: a suite spawning a fixture
+    # should give it a Mif* label, which spawn_actor_in_level takes and most already pass.
+    return False
+
+
+def pick_adoptable(rows, want=None):
+    """First row that is NOT somebody's scratch, or None. The counterpart to is_scratch_fixture.
+
+    `want` is an optional predicate applied on top - so "the first non-scratch landscape with no edit
+    layers" is pick_adoptable(rows, lambda r: not r.get("editLayers")).
+
+    Returning None is a normal answer meaning "nothing here is safe to adopt, build your own", which
+    is what every caller of this should already do when the level has no candidate at all.
+    """
+    for row in rows or []:
+        if is_scratch_fixture(row):
+            continue
+        if want is None or want(row):
+            return row
+    return None
+
+
 def cleanup_level_actor(actor_path, what="scratch actor"):
     """Delete a level actor a suite spawned. Returns the delete_level_actor response.
 
