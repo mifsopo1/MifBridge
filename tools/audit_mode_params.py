@@ -84,9 +84,15 @@ def presence_guarded(body, param):
     `if (In->TryGetObjectField(TEXT("location"), ...))`, which tests the parameter's own presence and
     then applies it on every mode. That is deliberate handling, the opposite of a silent ignore.
     """
+    # HasField IS THE PLAINEST PRESENCE GUARD THERE IS, and it was the one spelling missing. Five
+    # TryGet* variants and JHasAny were listed; `if (In->HasField(TEXT("gameView")))` was not, so
+    # set_viewport_camera's gameView and realtime read as mode-ignored when the handler explicitly
+    # tests whether each was passed and applies it if so. That is deliberate handling - the same
+    # argument that put the TryGet* forms on this list.
     for probe in ('TryGetObjectField(TEXT("%s")', 'TryGetArrayField(TEXT("%s")',
                   'TryGetStringField(TEXT("%s")', 'TryGetNumberField(TEXT("%s")',
-                  'TryGetBoolField(TEXT("%s")', 'JHasAny(In, { TEXT("%s")'):
+                  'TryGetBoolField(TEXT("%s")', 'JHasAny(In, { TEXT("%s")',
+                  'HasField(TEXT("%s")'):
         if (probe % param) in body:
             return True
     return False
@@ -97,8 +103,17 @@ def read_depth(body, param):
     pattern = 'TEXT("%s")' % param
     depth, best = 0, 99
     for line in body.splitlines():
+        # THE HOUSE VECTOR HELPERS COUNT AS READS. Recognising only the J* accessors made
+        # `ReadVectorField(In, TEXT("location"), ...)` invisible, so add_socket's location/rotation/
+        # scale read as NEVER READ - which this function scores as 99, the same as a genuinely
+        # unread parameter, and the caller treats "never read at top level" as "conditional".
+        # They are read at the handler's top level and applied on every target; the row was a false
+        # positive for three passes. Four helpers, all in Source: ReadVectorField, ReadRotatorField,
+        # ReadScaleField, ReadTripleField.
         if pattern in line and ("JStr" in line or "JNum" in line or "JBool" in line
-                                or "JInt" in line or "JArray" in line):
+                                or "JInt" in line or "JArray" in line
+                                or "ReadVectorField" in line or "ReadRotatorField" in line
+                                or "ReadScaleField" in line or "ReadTripleField" in line):
             best = min(best, depth)
         depth += line.count("{") - line.count("}")
     return best
