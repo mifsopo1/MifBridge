@@ -57,6 +57,21 @@ this now", proven by then calling it.
 Also: the autonomous report loop went live and worked its first real report end to end, and now pings
 the reporter on Discord so they know to pull.
 
+### Fixed: `override_inherited_component` could not be called through the MCP at all — v0.3.0 to v0.8.1
+
+Same cause as the `sculpt_landscape` entry below, found the same way. `confirm` is **optional** on
+this endpoint — minting an override is reversible with `revert_inherited_component` — but it is
+*honoured* rather than ignored, so an explicit `confirm=false` is a deliberate no and is refused.
+The wrapper declared `confirm: bool = False` and `_post` sends anything that is not `None`, so every
+call carried `confirm: false` and every call was correctly refused. There was no argument list that
+made it work short of passing `confirm=True` by hand.
+
+`confirm` defaults to `None` now: omit it to proceed, pass `False` only when you mean it. Posting to
+the bridge directly was never affected.
+
+This is the only endpoint that honours `confirm` this way — checked, one handler
+(`MifBridgeInherited.cpp:817`), so no other tool has it.
+
 ### Fixed: `sculpt_landscape` flatten and smooth never worked through the MCP — v0.3.0 to v0.8.1
 
 If you drove terrain sculpting through the MCP server rather than posting to the bridge directly,

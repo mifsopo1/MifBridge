@@ -69,6 +69,12 @@ REFUSED_ON_PRESENCE = {
     "set_actor_transform":    {"scale"},
     "rename_asset":           {"path"},
     "set_function_flags":     {"pure"},
+    # NOT quite "refused whatever the value" - override_inherited_component honours confirm
+    # rather than ignoring it, so confirm=false is a deliberate NO and is refused while
+    # confirm=true proceeds. Listed anyway, because a wrapper carrying EITHER default is wrong:
+    # False could not call the tool at all (it shipped that way), and True would auto-confirm a
+    # guarded write on a caller's behalf, which is worse.
+    "override_inherited_component": {"confirm"},
 }
 
 

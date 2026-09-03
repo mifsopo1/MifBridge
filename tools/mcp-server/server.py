@@ -1193,8 +1193,16 @@ def get_inherited_component(blueprint: str, component: str) -> dict:
 
 @mcp.tool()
 def override_inherited_component(blueprint: str, component: str, properties: dict = None,
-                                 confirm: bool = False) -> dict:
-    "Create (or reuse) the per-child override template for a component inherited from a parent BLUEPRINT's SCS - the same delta the Details panel writes - and optionally apply properties to it."
+                                 confirm: bool = None) -> dict:
+    """Create (or reuse) the per-child override template for a component inherited from a parent BLUEPRINT's SCS - the same delta the Details panel writes - and optionally apply properties to it.
+
+    confirm is OPTIONAL on this endpoint - minting an override is reversible with
+    revert_inherited_component - but it is HONOURED rather than ignored, so `confirm=False` is a
+    deliberate no and the endpoint refuses it.
+
+    It defaults to None, NOT False. _post sends anything that is not None, so a False default was
+    posted on every call and the endpoint correctly refused every one of them: the tool could not
+    be called at all with its own defaults. Omit it to proceed; pass False only when you mean it."""
     return _post("override_inherited_component", blueprint=blueprint, component=component,
                  properties=properties or None, confirm=confirm)
 
