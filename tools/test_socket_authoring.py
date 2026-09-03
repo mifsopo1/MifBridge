@@ -258,6 +258,28 @@ def main():
             r = SC.confirm_call("delete_asset", {"path": path})
             if not r.get("ok"):
                 print("        cleanup: %s -> %s" % (path, (r.get("error") or "")[:160]))
+                # PRINT WHO IS HOLDING IT, not just that something is.
+                #
+                # T3104 fails in a SWEEP (33/1) and passes alone (34/0), and FEATURE_PARITY_SPEC
+                # names running delete_asset's diagnosis on it as the first move. That diagnosis
+                # already exists - blockedBy carries openAssetEditors, registryReferencers,
+                # rootedInMemory, memoryReferencers and transactionBuffer - and this cleanup was
+                # reading the error string only, so a sweep would have reported the same failure
+                # again with none of the answer in it.
+                #
+                # memoryReferencers is the one to read: registryReferencers records references
+                # saved to DISK and is empty for an unsaved scratch asset however many live objects
+                # point at it, which is exactly this suite's situation. The handler says so in its
+                # own registryNote and it is worth repeating where somebody reads the log.
+                why = r.get("blockedBy") or {}
+                if why:
+                    print("        blockedBy: transactionBuffer=%s  openAssetEditors=%s"
+                          % (why.get("transactionBuffer"),
+                             json.dumps(why.get("openAssetEditors"))[:80]))
+                    print("        memoryReferencers (the real object graph): %s"
+                          % json.dumps(why.get("memoryReferencers"))[:220])
+                    print("        registryReferencers (DISK only, empty for unsaved): %s"
+                          % json.dumps(why.get("registryReferencers"))[:120])
         # SCOPED TO WHAT THIS RUN MADE, not to the folder. /Game/_MifSock is shared, and an
         # earlier run's assets can still be listed there: delete_asset unregisters an asset while
         # the UObject stays resident, and the registry can re-discover it later (docs/06 #28). A
