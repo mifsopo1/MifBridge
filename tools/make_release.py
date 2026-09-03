@@ -308,6 +308,29 @@ def _git(*args):
         return ""
 
 
+def _porcelain_paths(out):
+    """Paths out of `git status --porcelain`, WITHOUT fixed-width slicing.
+
+    ln[3:] is the obvious reading of the format - two status columns and a space - and it is wrong
+    here for a reason that is easy to miss: _git() ends in .strip(), which eats the LEADING SPACE of
+    an unstaged entry (" M Source/x.cpp"). The first line then starts at "M " and ln[3:] takes one
+    character too many, so the gate printed "ource/MifBridge/Private/MifBridgeStreaming.cpp" and
+    sent the reader hunting a file that does not exist. Only the FIRST line is affected, which is
+    what made it survive: every later line keeps its leading space and reads correctly.
+
+    Found 2026-09-03 by running the gate against a deliberately dirty tree and READING the output,
+    not by reading the slice - which had looked right in isolation, and is right in isolation.
+    """
+    paths = []
+    for ln in (out or "").splitlines():
+        if not ln.strip():
+            continue
+        parts = ln.split(None, 1)
+        # A rename reads "R  old -> new"; keeping the whole tail beats truncating either half.
+        paths.append(parts[1] if len(parts) > 1 else parts[0])
+    return paths
+
+
 def check_param_table():
     """(ok, message) - is describe_endpoint's compiled table still what the guards say?
 
@@ -476,8 +499,7 @@ def check_engine_probe():
                        "  what compiled. Commit and re-probe.\n"
                        "  Dirty at probe time: %s"
                        % ", ".join(was_dirty[:6]))
-    now_dirty = [ln[3:] for ln in
-                 (_git("status", "--porcelain", "--", "Source") or "").splitlines() if ln.strip()]
+    now_dirty = _porcelain_paths(_git("status", "--porcelain", "--", "Source"))
     if now_dirty:
         return False, ("Source/ is dirty NOW, so the release would package code the probe never\n"
                        "  compiled, behind a gate reporting the matching commit as verified.\n"
@@ -586,9 +608,30 @@ def gate_53():
     if rec.get("sourceDirty"):
         return False, ("the recorded 5.3 build ran against a DIRTY Source tree, so the commit it\n"
                        "  names is not what compiled. Commit and rebuild.")
+    # DIRTY NOW, not just dirty at record time. check_engine_probe has asked this since it was
+    # written and gate_53 did not, which put the weaker guarantee on the PRIMARY target - the exact
+    # asymmetry this function's own docstring was written to end, left half-finished. tracked_files()
+    # ships what git TRACKS, read from the WORKING TREE, so uncommitted Source/ edits are packaged
+    # while this gate reports the matching commit as verified.
+    now_dirty = _porcelain_paths(_git("status", "--porcelain", "--", "Source"))
+    if now_dirty:
+        return False, ("Source/ is dirty NOW, so the release would package code the 5.3 build never\n"
+                       "  compiled, behind a gate reporting the matching commit as verified.\n"
+                       "  Uncommitted: %s" % ", ".join(now_dirty[:6]))
+
     built = rec.get("sourceCommit") or ""
     current = _git("log", "-1", "--format=%H", "--", "Source")
-    if current and built != current:
+    # FAIL CLOSED WHEN THE QUESTION CANNOT BE ASKED. _git returns "" on any failure, and the
+    # comparison below was guarded by `if current and ...` - so an unreadable git fell straight
+    # through to the success return and printed "covers the current Source commit" with nothing to
+    # back it. A gate that passes when it cannot see is worse than one that is absent, because it
+    # reports a positive.
+    if not current:
+        return False, ("could not read the current Source commit - `git log -1 -- Source` returned\n"
+                       "  nothing. This gate cannot compare the recorded build against a commit it\n"
+                       "  cannot name, and passing on an unanswerable question is how a stale build\n"
+                       "  record ships. Check the repository is intact.")
+    if built != current:
         changed = _git("diff", "--name-only", built, current, "--", "Source") if built else "?"
         return False, ("the recorded 5.3 build covers Source commit %s and Source is now at %s.\n"
                        "  5.3 is the PRIMARY target and this row asserted 'built and tested' as a\n"
