@@ -73,7 +73,23 @@ def plant_bind(text):
     if not m:
         return None
     indent = re.match(r"\n(\t+)", m.group(0)).group(1)
-    return text[:m.end(1)] + "\n" + indent + "MIF_BIND(mif_probe_zz);" + text[m.end(1):]
+    # TWO ARMS. The unconditional bind exercises CHECK 3 - a MIF_BIND with no _post wrapper - which
+    # is the long-standing arm. The CONDITIONAL bind exercises the "no MIF_BIND inside a #if" check
+    # added 2026-09-03, which had no plant at all: this plant added an unconditional bind and
+    # therefore proved a different arm entirely, while the harness reported parity_check as proven.
+    #
+    # The MARKER is the #if message rather than the probe name, because both binds also trip CHECK 3
+    # and a name would be reported by either arm. See the registry entry.
+    #
+    # Why the #if arm is worth a plant: zero of the 459 binds are conditional today, and two
+    # documented claims rest on that - that the disposable probe regenerates endpoints_current.json
+    # as well as a DDS2 editor, and that the MIF_DECL/MIF_BIND distinction is theoretical. Both fail
+    # QUIETLY, in the direction of reporting less work than exists.
+    probe = ("\n" + indent + "MIF_BIND(mif_probe_zz);"
+             + "\n" + indent + "#if MIF_PROBE_ZZ_CONDITIONAL"
+             + "\n" + indent + "MIF_BIND(mif_probe_cond_zz);"
+             + "\n" + indent + "#endif")
+    return text[:m.end(1)] + probe + text[m.end(1):]
 
 
 def plant_confirm(text):
@@ -757,7 +773,12 @@ PLANTS = {
     # call rather than removing one, and "it is there now" is already proved by the marker.
     "audit_suite_teardown.py": (os.path.join(HERE, "test_pie_family.py"),
                                 plant_unreleased_acquire, "test_pie_family.py"),
-    "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind, "mif_probe_zz"),
+    # MARKER IS THE #if MESSAGE, not the probe name. Both planted binds lack a _post wrapper, so
+    # CHECK 3 names both of them and a probe-name marker would pass without the #if arm ever
+    # running. This phrase appears only in the conditional-bind problem, which is the arm that had
+    # no plant until 2026-09-03.
+    "parity_check.py": (os.path.join(PRIV, "MifBridgeCommon.cpp"), plant_bind,
+                        "inside a preprocessor conditional"),
     "harvest_param_table.py": (os.path.join(PRIV, "MifBridgeDescribe.cpp"),
                                plant_missing_desc_row, "CONTRACT DRIFT"),
     "audit_consequence_fields.py": (os.path.join(HERE, "test_inherited_components.py"),
