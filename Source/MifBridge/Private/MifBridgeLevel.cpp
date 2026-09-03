@@ -219,9 +219,20 @@ namespace MifBridge
 	//   out: { world, count, truncated, actors:[{actorPath, name, label, class, folder, location, rotation, scale}] }
 	void H_list_level_actors(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// THE DEFAULT LIMIT IS NAMED IN THE SUMMARY ON PURPOSE, and this comment sits ABOVE the call
+		// rather than between its arguments: harvest_param_table reads the accepted-summary argument
+		// verbatim, so a comment placed inside the call is swept into the generated table in place of
+		// the summary - which does not compile. Found by regenerating and reading the row.
+		//
+		// The response has always been honest - count, matched and truncated are all reported - but a
+		// caller reading only actors[] gets a silently short list, and that once had a cleanup routine
+		// report "cleared 200/200" while 43 actors remained (docs/06, second sequence, entry 3).
+		// Saying it here puts it where describe_endpoint shows it, BEFORE the first call.
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("classFilter"), TEXT("nameContains"), TEXT("folder"), TEXT("selectedOnly"), TEXT("limit") },
-			TEXT("classFilter, nameContains, folder, selectedOnly, limit"),
+			TEXT("classFilter, nameContains, folder, selectedOnly, limit (DEFAULT 200 - the "
+				 "response reports count, matched and truncated; reading only actors[] gives a "
+				 "silently short list, so check truncated or raise limit)"),
 			{ { TEXT("class"), TEXT("the filter key here is 'classFilter' — a substring matched against the whole ancestry, not an exact class path") },
 			  { TEXT("labelContains"), TEXT("use nameContains — it matches the object name AND the Outliner label ('labelContains' is snap_actors_to_ground's key)") },
 			  { TEXT("filter"), TEXT("use nameContains ('filter'/'nameFilter' are the property-listing endpoints' aliases, not this one's)") } }))
