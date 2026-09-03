@@ -81,6 +81,10 @@ def main():
     # and a cold start is genuinely slow. An editor that is not running at all is not going to start
     # by itself, and waiting is just a long way to print the same answer. The two are distinguishable
     # by asking once.
+    # MEASURED, not assumed: with mifaudit pointed at a dead port (47999) and a queue entry present
+    # so this gets past the 'nothing to replay' exit above, this branch returns in 1.7s with code 3.
+    # The old path returned in 900s having printed [waiting Ns...] the entire time. Exercised that
+    # way deliberately - it tests the branch without closing the editor that happened to be running.
     ok, why = M.require_sdk_bridge()
     if not ok and not M.bridge_pid():
         print("no editor is running, and nothing here starts one - so there is nothing to replay "
