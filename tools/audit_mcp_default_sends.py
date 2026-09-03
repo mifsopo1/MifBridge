@@ -91,6 +91,14 @@ REFUSED_ON_PRESENCE = {
     # False could not call the tool at all (it shipped that way), and True would auto-confirm a
     # guarded write on a caller's behalf, which is worse.
     "override_inherited_component": {"confirm"},
+
+    # THE BLENDER ARM, reached through _blender rather than _post. Both of these refuse a
+    # MUTUAL EXCLUSION rather than a lone key - "pass lookAt OR rotation, not both" - so a
+    # wrapper carrying a default for EITHER side makes the other unusable. Both are correct
+    # today (every parameter defaults to None) and are listed so they stay that way. The tool
+    # names are the wrapper names, which is what this scan matches on.
+    "bl_create_camera":       {"lookAt", "rotation"},
+    "bl_set_viewport_view":   {"lookFrom", "azimuth", "elevation", "distance"},
 }
 
 
@@ -106,7 +114,12 @@ def posted_keys(fn_node):
     """
     posted, protected = {}, set()
     for n in ast.walk(fn_node):
-        if not (isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_post"):
+        # BOTH TRANSPORTS. _blender's own docstring says it "mirrors _post: unset (None) params are
+        # dropped", so the Blender arm carries the identical hazard - and it has two ops that refuse
+        # on presence, both mutual-exclusion (create_camera's lookAt-or-rotation,
+        # set_viewport_view's lookFrom-or-polar). Both are safe today, checked by hand; scanning
+        # only _post would have left them unguarded for the next person to break.
+        if not (isinstance(n, ast.Call) and getattr(n.func, "id", "") in ("_post", "_blender")):
             continue
         for kw in n.keywords:
             v = kw.value
