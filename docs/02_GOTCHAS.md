@@ -2566,3 +2566,27 @@ could create a matching object" is computable - read every `create_`/`import_`/`
 sizes of harm, because reading somebody's scratch gives you a wrong measurement while writing to it
 mutates another suite's fixture and the failure lands in that suite, later, looking like a defect in
 unrelated code.
+
+## A line number is not an identity either - the same mistake, a second time
+
+**2026-09-03.** `audit_vacuous_checks` keyed its accepted-findings baseline on `file:LINE`. Adding
+comment blocks ABOVE existing checks in three suites moved six baselined entries by 1 to 15 lines.
+Their text was identical one-for-one. The release gate went from rc 0 to rc 1, reporting ten "new"
+assertions that were the same ten as before, and nothing about any assertion had changed.
+
+This is the SECOND instance of one shape. `audit_suite_reach`'s own header already records it about
+mtimes: *"an mtime is not a content age"* - copy a backup over the results file and every record in
+it is suddenly "current" while describing runs from hours earlier. Same error, different stamp.
+
+**The shape.** A key that moves for reasons unrelated to what it identifies cannot stand in for
+what it identifies. Line numbers move when anyone edits above them; mtimes move when anyone touches
+the file; both are *correlated* with change and neither *is* change. If a baseline, cache or
+staleness check is keyed on one, it fails in the direction that gets believed: it reports work that
+did not happen, and the fix people reach for is to regenerate without reading - which is exactly the
+discipline the baseline existed to enforce.
+
+**When you must give something up, name it in the source.** Keying on `(file, text)` means a
+genuinely new assertion whose text matches a baselined one in the same file is now accepted
+silently. That is a real narrowing and it is written into `baseline_key`'s docstring rather than
+left to be discovered. A duplicated assertion text in one file is a near-miss; an editor's comment
+reddening a gate is a certainty.
