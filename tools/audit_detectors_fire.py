@@ -493,6 +493,24 @@ def plant_mode_param(text):
     return text[:m.start() + 1] + probe + text[m.start() + 1:]
 
 
+def plant_spawn_label(text):
+    """An actor spawned into the editor world with a label the adopt-guard cannot recognise.
+
+    THE PLANT IS THE REAL MISTAKE, twice over. audit_read_purity spawned "PureSpline_%d" and
+    "PureWaterProbe_%d" and leaked both, so every run left two actors that mifaudit.is_scratch_fixture
+    read as project content - adoptable by any suite hunting for a fixture. Found 2026-09-03 by
+    measuring the claim in that guard's own comment that no such site existed.
+
+    The label is Zz-prefixed rather than merely non-Mif so the marker cannot collide with a real
+    label in the corpus: the harness rejects a marker that is already present before planting, and a
+    plausible-looking probe name is exactly how that check gets accidentally defeated.
+    """
+    return text + (
+        '\n\ndef _mif_spawn_label_plant():\n'
+        '    M.call("spawn_actor_in_level", {"actorClass": "StaticMeshActor",\n'
+        '                                    "label": "ZzSpawnProbe_1"})\n')
+
+
 # tool -> (target file, plant function, marker, gate, must_vanish)
 #   gate        False for report-style tools that always exit 0 - the marker is then the whole test
 #   must_vanish a string that must be ABSENT from the mutated text, so a plant that
@@ -782,6 +800,12 @@ PLANTS = {
     "audit_nested_field_reads.py": (os.path.join(HERE, "test_uncovered_reads2.py"),
                                     plant_nested_field_read,
                                     'writes "arrayDim" only into a sub-object'),
+    # GATING (True): this one exits 1 on a finding, so both the exit code and the marker have to
+    # move. The marker is the planted label itself rather than the target's filename - test_group_
+    # actors already appears in this detector's UNRESOLVED list for its own reasons, and a marker
+    # that is present before the plant would pass for the wrong reason.
+    "audit_spawn_labels.py": (os.path.join(HERE, "test_group_actors.py"),
+                              plant_spawn_label, "ZzSpawnProbe", True),
 }
 
 # Detectors that drive the RUNNING editor. A planted defect in a source file cannot prove one of

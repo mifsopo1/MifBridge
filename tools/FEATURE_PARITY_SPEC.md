@@ -11473,11 +11473,18 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
 - [ ] **the claims auditor exits 0 either way, so for three days nobody read its list** (1 hour)
       `audit_cross_endpoint_claims` was written 2026-08-31. `return 0` at line 207 is its ONLY
-      success exit, and it is in no gate - `make_release.py` runs nine sibling audits
+      success exit, and it is in no gate - `make_release.py` gated seven sibling audits
       (consequence_fields, loop_writes, modals, postconditions, promise_flags, suite_payloads,
-      suite_reach, vacuous_checks, value_discovery) and not this one. So it printed a reading list
-      on demand and nothing ever made a person read it. The list was first read 2026-09-03, three
-      days later, and it held 14 equivalence claims of which 12 had never been compared by anything.
+      vacuous_checks) plus test_fuzz_detector and layout_graph, and not this one. So it printed a
+      reading list on demand and nothing ever made a person read it. The list was first read
+      2026-09-03, three days later, and it held 14 equivalence claims of which 12 had never been
+      compared by anything.
+
+      THE FIRST VERSION OF THIS ITEM SAID "nine sibling audits" and named suite_reach and
+      value_discovery among them. Both wrong, and wrong in an instructive way: the list came from
+      `grep -o "audit_[a-z_]*" make_release.py`, which matches every MENTION rather than the gate
+      tuple the release iterates. Neither is gated. Corrected the same day by parsing the tuple with
+      `ast` instead of grepping for names - the same lesson as the endpoint snapshot, one file along.
 
       THE DETECTOR IS NOT THE PROBLEM. It is registered in `audit_detectors_fire` with a real plant
       (`plant_cross_endpoint_claim`, probe `probeSameZz`) and goes red on it. What is missing is the

@@ -2656,10 +2656,17 @@ navigation, and named the ones no single suite exercises both sides of.
 
 Nobody read that list for three days.
 
-`return 0` at line 207 is its only success exit, and `make_release.py` runs nine sibling audits —
-consequence_fields, loop_writes, modals, postconditions, promise_flags, suite_payloads, suite_reach,
-vacuous_checks, value_discovery — and not this one. So it printed a correct answer, on demand, to a
-person who had no standing reason to ask. When the list was finally read, 12 of the 14 claims had
+`return 0` at line 207 is its only success exit, and `make_release.py` gates seven sibling audits —
+consequence_fields, loop_writes, modals, postconditions, promise_flags, suite_payloads,
+vacuous_checks — plus two non-audit self-tests, and not this one. So it printed a correct answer, on
+demand, to a person who had no standing reason to ask.
+
+*(An earlier version of this paragraph said "nine sibling audits" and listed `suite_reach` and
+`value_discovery` among them. Both are wrong: that list came from grepping `make_release.py` for
+`audit_[a-z_]*`, which matches every MENTION of a tool rather than the gate tuple the release
+actually iterates. Corrected the same day by reading the tuple with `ast`. Counting a thing by
+grepping for its name is how the endpoint snapshot went stale too — a name in a file is not a
+registration.)* When the list was finally read, 12 of the 14 claims had
 never been compared by anything; eleven turned out true, one only partly, and one asymmetry was
 found that is still open.
 

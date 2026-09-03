@@ -396,7 +396,18 @@ def check_static_audits():
                        # data-node case, cycle termination, column overlap and comment-box overlap.
                        # Gated because an unrun layout rots silently: nothing else would notice it
                        # started stacking nodes until somebody opened a graph and saw the mess.
-                       ("layout_graph.py", ["--self-test"])):
+                       ("layout_graph.py", ["--self-test"]),
+                       # JOINED 2026-09-03, the same day it was written, and deliberately so. It
+                       # exists because mifaudit.is_scratch_fixture's own comment said the thing
+                       # keeping its hole shut was "a naming convention, not a check" - and when
+                       # that convention was finally measured it had already been broken for some
+                       # time by audit_read_purity, which leaked two editor-world actors no guard
+                       # could see. Ungated it would be the exact failure written up in
+                       # 02_GOTCHAS the same morning: a plant-proven detector reporting to nobody.
+                       # Sits at zero findings across 32 call sites, and a deliberate exception has
+                       # a `# SPAWN-LABEL-OK: <reason>` escape hatch, so this is a ratchet and not
+                       # a tax on somebody's honest new spawn.
+                       ("audit_spawn_labels.py", [])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
