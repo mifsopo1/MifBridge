@@ -203,11 +203,13 @@ def main():
     # skippedGround was among 48 consequence-reporting response fields that no suite named, found
     # 2026-08-31. The count is the point: an actor the caller ASKED to move and which did not move
     # has to be accounted for, or `snapped: 0` looks like a failure rather than a refusal.
-    land = None
-    for a in (M.call("list_level_actors", {"limit": 400}).get("actors") or []):
-        if (a.get("class") or "").endswith(".Landscape"):
-            land = a.get("actorPath")
-            break
+    # SKIP SCRATCH, and this is the flagship shape: several suites create landscapes through
+    # create_landscape and do not reliably remove them, which is exactly how
+    # test_landscape_heightmap came to measure collision against terrain it had never set.
+    # Adopting one here would exercise the snap guard against a 2x2 scratch tile.
+    land = (M.pick_adoptable(M.call("list_level_actors", {"limit": 400}).get("actors"),
+                             lambda a: (a.get("class") or "").endswith(".Landscape"))
+            or {}).get("actorPath")
     if not land:
         print("  SKIP - no Landscape in this level, so the guard cannot be exercised here.")
     else:

@@ -31,10 +31,13 @@ def main():
         print("bridge never came up")
         return 1
 
+    # SKIP SCRATCH: actors[0] over a 30-row window that sixteen suites spawn into. get_actor_bounds
+    # against an actor whose owner deletes it mid-run fails T830 for a reason that is not about
+    # bounds - and the level's own content is what this read is meant to be exercised on.
     actors = (M.call("list_level_actors", {"limit": 30}).get("actors") or [])
     check("T830 (setup) there is at least one placed actor to test against", len(actors) > 0,
           len(actors))
-    actor_path = actors[0].get("actorPath") if actors else None
+    actor_path = (M.pick_adoptable(actors) or {}).get("actorPath")
 
     # ================================================================== T830 get_actor_bounds
     print("=== T830: get_actor_bounds ===")

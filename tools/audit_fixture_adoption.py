@@ -227,9 +227,52 @@ def window_around(text, start):
     for _ in range(WINDOW_AFTER + 1):
         nxt = text.find("\n", end)
         if nxt < 0:
-            return text[head:]
+            end = len(text)
+            break
         end = nxt + 1
+    # A SITE OWNS ONLY ITS OWN REGION. test_load_partition_actors takes an unfiltered listing purely
+    # to compare `matched` counts, and eight lines later a DIFFERENT list_partition_actors call reads
+    # labels off its rows. A fixed line window handed the second call's identifier to the first and
+    # reported a count-only site as an adoption. Stop at the next discovery call.
+    nxt_site = CALL_SITE.search(text, start + 1)
+    if nxt_site and nxt_site.start() < end:
+        end = nxt_site.start()
     return text[head:end]
+
+
+ASSIGNED = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[\(\[]?\s*$')
+
+
+def names_a_row(src, start, win):
+    """Does THIS call's result get reduced to an identifier, or just a nearby call's?
+
+    PROXIMITY IS NOT DATAFLOW, and the difference is not academic. test_partition_actors takes a
+    loadedOnly listing purely to compare `matched` against a number, and four lines later reads a
+    label off rows belonging to an EARLIER call to build a nameContains fragment. A line window
+    hands that label to the wrong site and reports a count-only call as an adoption.
+
+    Three shapes, because that is what the suites actually write:
+
+      chained inline   (M.call(...).get("assets") or [{}])[0].get("path")   - the identifier is
+                       downstream of this call and nothing else, so proximity is right.
+      comprehension    rows = [a.get("path") for a in (M.call(...)...)]     - the identifier sits
+                       ABOVE the call on the same logical line. Also unambiguous.
+      assigned         lo = M.call(...)                                     - the result has a NAME,
+                       and only reads that mention that name belong to it.
+    """
+    line_start = src.rfind("\n", 0, start) + 1
+    head = src[line_start:start]
+    if IDENT.search(head):                    # comprehension over this call's rows
+        return True
+    am = ASSIGNED.search(head)
+    if not am:                                # chained inline - nothing else can own it
+        return bool(IDENT.search(win))
+    var = am.group(1)
+    for hit in IDENT.finditer(win):
+        near = win[max(0, hit.start() - 90):hit.end() + 40]
+        if re.search(r'\b%s\b' % re.escape(var), near):
+            return True
+    return False
 
 
 def created_classes(directory):
@@ -296,7 +339,7 @@ def scan_file(path, collisions, include_cleared=False):
         if resolve_scoping(args, src):
             cleared("scoped to scratch")
             continue
-        if not IDENT.search(win):
+        if not names_a_row(src, m.start(), win):
             cleared("counts only, never names a row")
             continue
         if IDENTITY.search(win) and not FALLBACK.search(win):

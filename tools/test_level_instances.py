@@ -73,8 +73,12 @@ def main():
 
     # ------------------------------------------------------------------ T4501 wrong-target
     print("\n=== T4501: all four refuse a non-instance, and say what it really was ===")
+    # SKIP SCRATCH: sixteen suites spawn actors into this level. The refusal being asserted holds
+    # for a scratch actor identically, but one deleted by its owner between the listing and the
+    # call answers "no actor at" instead of naming what it really was, failing four guards here
+    # for a cause that is not about level instances.
     actors = M.call("list_level_actors", {"limit": 40}).get("actors") or []
-    victim = next((a["actorPath"] for a in actors if a.get("actorPath")), None)
+    victim = (M.pick_adoptable(actors, lambda a: bool(a.get("actorPath"))) or {}).get("actorPath")
     check("T4501 (setup) some actor exists to point at wrongly", bool(victim), len(actors))
     if not victim:
         return 1
