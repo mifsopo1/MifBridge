@@ -157,7 +157,16 @@ owning class), or add `list_inherited_components {path}`.
 
 ---
 
-## 3. `get_property` returns bools as strings
+## 3. `get_property` returns bools as strings — FIXED
+
+*(Marked FIXED 2026-09-03 after reading the handler, not from memory. The fix is ADDITIVE in
+exactly the shape the triage note below demands: `value` still carries the export text, so a
+bool is still the string "True" and nothing that read it broke, and a new `typed` field beside
+it carries real JSON - bool, number, ARRAY or object, which closes the array half of this entry
+too. `typedSupported` is reported at the top level (MifBridgeNodes6.cpp:214) so a caller can
+tell "no typed value" from "this build has no typed field", and the writer is SHARED with
+set_property (MifBridgeNodes5.cpp) so the round trip this entry complains about now closes.
+Emitted at :82 and :198.)*
 
 `get_property` on `bReplicates` returns the **string** `'True'`, not a boolean. Confirmed still
 present on 02:56.
