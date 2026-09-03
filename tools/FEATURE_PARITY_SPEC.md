@@ -11326,6 +11326,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       informative rather than less - it now measures the whole class at once.
 
 - [ ] **22 hand-rolled copies of the scratch filter that mifaudit already owns** (2 hours)
+      SURVEYED 2026-09-03 WITHOUT CHANGING ANYTHING, because "22 copies of one filter" turns out to
+      describe three different things and a naive replace would change behaviour at five sites. 29
+      sites match the hand-rolled shapes today:
+
+        ~20  `path.startswith("/Game/_Mif")` or `SC.SCRATCH_PREFIXES`. Genuinely equivalent to
+             is_scratch_fixture for asset paths - the helper tests `"/Game/_Mif" in path`, and the
+             two agree on every path shape these suites see. These are the real duplication.
+          4  `"_Mif" not in path` - test_duplicate_cooked_guard x3, test_simplified_collision_guard.
+             BROADER than the helper: it also excludes a legitimately named asset like
+             /Game/Props/SM_MifRock, because "_Mif" appears inside "SM_MifRock". Not a defect - it
+             errs toward skipping a candidate, which is the direction is_scratch_fixture's own
+             docstring calls correct ("a false positive costs a suite one candidate and it moves on
+             to the next; a false negative is the bug"). Replacing these NARROWS them, which is a
+             behaviour change and needs reading rather than sed.
+          5  `world.startswith("_Mif")` / `"Untitled"` - test_foliage_modes, test_landscape_info,
+             test_perf_stats, test_spawn_many, test_water_zone. NOT duplication at all: these test a
+             WORLD NAME, and is_scratch_fixture answers a question about an asset or actor row. It
+             has nothing to offer them and substituting it would be wrong.
+
+      So the item is worth roughly 20 sites, not 22 or 29, and the other 9 need a decision rather
+      than a substitution. Left deliberately unstarted: ~25 suite edits from today are still
+      unverified, and adding 20 more before the sweep runs makes the eventual failures harder to
+      bisect, not easier. That reason is stronger now than when the item was written.
       FOUND 2026-09-03. `if not a["path"].startswith("/Game/_Mif")` written inline across ~30
       suites, all predating mifaudit.is_scratch_fixture. They work, which is why this is small -
       but they are a parallel implementation of a rule that has an owner, and they only test the
