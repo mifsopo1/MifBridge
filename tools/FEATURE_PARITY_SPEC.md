@@ -11384,6 +11384,32 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       argument that IS read on every path. Check the resolver before believing a row.
 
 - [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
+      THE OTHER TWELVE WERE READ 2026-09-03, which is what "paired" never meant. The tool says so
+      itself - "a pair appearing in one suite proves only that both were CALLED there, never that
+      the claim was compared" - and nobody had taken it up on that. Three checked by hand so far,
+      all three correct:
+
+        compile -> validate        "the dry-run form returns the same messages". T840b already
+                                   tests it on a blueprint that does NOT compile clean, which is
+                                   the only version of the test worth having - before 2026-08-31 it
+                                   was only ever checked on a clean one, where both sides are empty
+                                   and the claim cannot fail.
+        render_thumbnail ->        "call it with the same asset/width/orbit arguments". Checked
+        write_thumbnail_texture    against both accept-lists: every argument named is accepted, and
+                                   write_thumbnail_texture takes more besides.
+        list_morph_targets ->      "list_bones takes the same path if you want to check it
+        list_bones                 resolves". True and the DIFFERENCE is the point -
+                                   list_morph_targets does LoadObject<USkeletalMesh> while
+                                   list_bones does LoadObject<UObject>, so it resolves more, which
+                                   is exactly what makes it a "does anything exist here" probe.
+
+      TWO WERE NEVER CLAIMS AT ALL and have been removed from the classifier: set_data_layer_
+      visibility's "not the same as hidden" and set_physics_primitive_collision's "not across all
+      of them" are DENIALS of equivalence, matched because the shape list read "the same" and "all
+      of them" without looking at what came before them. 16 -> 14.
+
+      NINE PAIRS STILL UNREAD, and the reason to read them is that this is the only list of
+      sentences the bridge asserts about OTHER endpoints' behaviour. Nothing else checks them.
       FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which is not in the release gate and exits
       0 either way - so its reading list had never been read. 844 cross-endpoint claims sit in
       handler text; 16 assert equivalence or completeness rather than navigation; 2 of those have no
