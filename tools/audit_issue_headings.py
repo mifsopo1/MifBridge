@@ -42,9 +42,15 @@ CLOSED = ("fixed", "capability is built", "all seven", "was built", "still open"
           "also correct", "note on", "downgraded")
 
 # The body claiming its own defect is closed.
+# BOLD IS LOAD-BEARING ON THE RESOLVED ARM, and the narrowness is measured rather than guessed. This
+# file marks a verdict in bold; the unbolded word means something else entirely. Entry 21 contains
+# "a relative path is resolved against the bridge's own export root" inside a CODE COMMENT, and entry
+# 3 says "not a defect so much as a sharp edge" while remaining a live entry. Accepting bare
+# `resolved` or bare `not a defect` gave one true positive and two false ones; the bolded verdict form
+# alone gives one true positive and none.
 BODY_FIXED = re.compile(
     r"(\*\*Fixed(?: and verified)?\*\*|\bboth are fixed\b|\bis fixed\b|\bare fixed\b|"
-    r"\bfixed and verified\b|\bnow fixed\b|\bhas been fixed\b)", re.I)
+    r"\bfixed and verified\b|\bnow fixed\b|\bhas been fixed\b|\*\*RESOLVED\b[^*]*\*\*)", re.I)
 
 # A status-table row: | ... | <subject> | **FIXED ...** |  - the section it refers to is named as
 # a paragraph reference, and that is what ties a row to a heading.

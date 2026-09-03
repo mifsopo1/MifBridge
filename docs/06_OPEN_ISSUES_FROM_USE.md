@@ -1235,7 +1235,12 @@ reported "cleared 200/200" while 43 actors remained.
 Not a defect so much as a sharp edge; the fields to check are there. **Suggested fix:** mention
 `truncated` in the `describe_endpoint` summary so it is visible without reading a response first.
 
-## 4. `get_property` cannot reach `UBodySetup::AggGeom`
+## 4. `get_property` cannot reach `UBodySetup::AggGeom` — RESOLVED, NOT A DEFECT
+
+*(Heading marked 2026-09-03. The body has said "**RESOLVED 2026-08-26 - not a defect**" since it was
+written, and the index read the opposite for a week. The entry is worth KEEPING - carrying snake_case
+over from Python is an easy habit, and the value here is that the bridge already named the answer in
+its own refusal - but a heading should not assert a defect its body denies.)*
 
 **RESOLVED 2026-08-26 - not a defect.** Checked live: `BodySetup.AggGeom` works and returns 1689
 characters with SphereElems, BoxElems, SphylElems and ConvexElems. The failing calls used `body_setup`,
