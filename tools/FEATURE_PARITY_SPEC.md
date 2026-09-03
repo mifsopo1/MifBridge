@@ -11291,6 +11291,29 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       audit_vacuous_checks / audit_consequence_fields both at baseline. That is not a substitute for
       running the suites; it is the part of the answer that does not need the machine.
 
+- [ ] **22 more mode-dependent parameters that nothing tells the caller about** (a day)
+      FOUND 2026-09-03 by reading `audit_mode_params`, whose 23-row review list had never been
+      read - the same shape as audit_cross_endpoint_claims: exits 0 either way, not in the release
+      gate, so nobody looked. One of the 23 is now fixed (create_procedural_mesh) and the tool
+      carries a `// MODE-PARAMS-OK: <why>` marker so a handler that HAS been dealt with stops
+      appearing. 22 remain, and they are not all defects - a parameter can be legitimately
+      mode-independent.
+
+      WORTH READING FIRST, by how badly a wrong answer would mislead:
+        trace           shape in {box, capsule, line, sphere}; radius, halfExtent, halfHeight are
+                        shape-specific. A box trace with `radius` set queries a different volume
+                        than the caller asked for and reports hits from it.
+        draw_debug      same shape/parameter split, same silence.
+        add_variable    scope in {local}; 18 of 24 declared, and a LOCAL variable cannot be
+                        replicated, have a repNotify, be config, or exposeOnSpawn. Passing any of
+                        those with scope local asks for something the engine will not do.
+        export_asset    format in {FBX, OBJ}; ascii, vertexColor, collision.
+        start_pie       netMode in {client, dedicated, standalone}; oneProcess, width, height.
+
+      TREAT ALIAS CLUSTERS AS PROBABLE FALSE POSITIVES - the tool's own header says so, and rows
+      like set_function_flags listing `path, functionName, name` are three spellings of one
+      argument that IS read on every path. Check the resolver before believing a row.
+
 - [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
       FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which is not in the release gate and exits
       0 either way - so its reading list had never been read. 844 cross-endpoint claims sit in
