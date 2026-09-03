@@ -3051,6 +3051,44 @@ namespace MifBridge
 			return;
 		}
 
+		// REFUSE A PIN-SCOPED ARGUMENT ON A BLUEPRINT-WIDE OP, before anything is resolved.
+		//
+		// MODE-PARAMS-OK: nodeGuid/nodeId/pin are refused on op list and clear, from the table below
+		//
+		// THIS IS THE DESTRUCTIVE ONE. `clear` calls ClearPinWatches(BP), which removes EVERY watch
+		// on the blueprint. A caller who writes {"op":"clear", "nodeGuid":X, "pin":"Y"} means "clear
+		// this one" - the verb they wanted is `remove` - and what they got was every watch in the
+		// blueprint deleted, with the pin arguments silently dropped and `removed: 7` coming back
+		// looking like confirmation. Watches are editor-only state that is not saved with the asset,
+		// so there is nothing to undo it with and nothing to notice it from.
+		//
+		// Found by audit_mode_params, which reported nodeGuid and nodeId as declared and never named
+		// in any refusal. It could not know which of its 23 rows was the one that deletes things.
+		{
+			struct FOpParam { const TCHAR* Name; const TCHAR* Ops; };
+			static const FOpParam kPinScoped[] = {
+				{ TEXT("nodeGuid"), TEXT("add, remove, read") },
+				{ TEXT("nodeId"),   TEXT("add, remove, read") },
+				{ TEXT("pin"),      TEXT("add, remove, read") },
+			};
+			for (const FOpParam& P : kPinScoped)
+			{
+				if (!In->HasField(P.Name) || FString(P.Ops).Contains(Op))
+				{
+					continue;
+				}
+				Fail(Out, FString::Printf(
+					TEXT("%s is only read by op %s; op '%s' is blueprint-wide and would have ignored "
+						 "it%s NOTHING was changed."),
+					P.Name, P.Ops, *Op,
+					Op == TEXT("clear")
+						? TEXT(" - clearing EVERY watch on the blueprint, not the one you named. "
+							   "Use op:remove to remove a single watch.")
+						: TEXT(", listing every watch on the blueprint rather than that one.")));
+				return;
+			}
+		}
+
 		UBlueprint* BP = nullptr;
 		UEdGraph* Graph = ResolveGraphField(In, Out, BP);
 		if (!BP) { return; }

@@ -144,6 +144,34 @@ def main():
               clr.get("ok") is True and clr.get("removed") == 1 and clr.get("count") == 0,
               json.dumps(clr)[:220])
 
+        # ---------------------------------------------------------- T8502b clear is not remove
+        # THE DESTRUCTIVE ONE. `clear` calls ClearPinWatches(BP) and removes EVERY watch on the
+        # blueprint. A caller who writes {"op":"clear","nodeGuid":...,"pin":...} means "clear this
+        # one" - the verb for that is `remove` - and used to get every watch deleted with the pin
+        # arguments silently dropped and `removed: N` coming back looking like confirmation.
+        # Watches are editor-only state that is not saved with the asset, so nothing undoes it and
+        # nothing notices.
+        #
+        # The precondition matters: TWO watches, so a wrong answer is visibly destructive rather
+        # than a no-op. Asserted AFTER the refusal, because the point is that nothing was removed.
+        M.raw_post("blueprint_watch", {"op": "add", "graphId": graph, "nodeGuid": nid,
+                                       "pin": ok_pin})
+        before = M.raw_post("blueprint_watch", {"op": "list", "graphId": graph}).get("count")
+        check("T8502b (setup) a watch exists to be destroyed by a wrong clear", before == 1, before)
+        scoped = M.raw_post("blueprint_watch", {"op": "clear", "graphId": graph,
+                                                "nodeGuid": nid, "pin": ok_pin})
+        check("T8502b clear with a pin-scoped argument is REFUSED rather than clearing everything",
+              scoped.get("ok") is False, json.dumps(scoped)[:220])
+        check("T8502b and it says clear is blueprint-wide and names op:remove as the one meant",
+              "EVERY watch" in (scoped.get("error") or "")
+              and "op:remove" in (scoped.get("error") or ""),
+              (scoped.get("error") or "")[:240])
+        check("T8502b and the watch is STILL THERE - the refusal is judged by what survived, not "
+              "by the error string",
+              M.raw_post("blueprint_watch", {"op": "list", "graphId": graph}).get("count") == 1,
+              "the refusal came back but the watch was cleared anyway")
+        M.raw_post("blueprint_watch", {"op": "clear", "graphId": graph})
+
         # ------------------------------------------------------------------ T8503 refusals
         print("\n=== T8503: the guards ===")
         nowatch = M.raw_post("blueprint_watch", {"op": "read", "graphId": graph, "nodeGuid": nid,
