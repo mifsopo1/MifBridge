@@ -38,7 +38,7 @@ measured by hand and was not.
 re-run since the C++ in them changed, so `make_release.py` will refuse to package this until it is.
 
 Thirteen new endpoints — `set_node_state`; `group_actors` / `ungroup_actors`;
-`register_landscape_layer`; four viewport bookmark ops; `set_material_layers`; and three blend-profile
+`register_landscape_layer`; four viewport bookmark ops; `set_material_layers`; and four blend-profile
 ops — plus `rename_asset renames[]` for bulk renames in one `IAssetTools` pass, and a `delete_asset`
 that names what is holding an asset instead of saying it cannot tell.
 
