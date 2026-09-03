@@ -5020,6 +5020,21 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_set_object_visibility(object: str, hide_viewport: bool = None, hide_render: bool = None,
+                             visible_camera: bool = None, visible_diffuse: bool = None,
+                             visible_glossy: bool = None, visible_transmission: bool = None,
+                             visible_volume_scatter: bool = None, visible_shadow: bool = None,
+                             holdout: bool = None, indirect_only: bool = None) -> dict:
+    "Control what a Blender object is visible TO - the viewport, the render, and each ray type separately. visible_glossy=false is how you stop a softbox appearing as a white rectangle in every reflection, which is the single most common adjustment in product and archviz lighting and was unreachable here. It also answers 'why is my object missing from the render', because hide_render and visible_camera are exactly where that answer lives - the response reports appearsInRender directly. Works on EVERY object type, because ray visibility is an object property and a mesh acting as a reflector needs it as much as a lamp does. Ray visibility moved off the Cycles addon onto the object in Blender 3.0, so both spellings are tried; a flag this build does not expose is REFUSED by name rather than silently ignored, and every flag is resolved before any is written. Call mif_help(\"bl_set_object_visibility\") first."
+    return _blender("set_object_visibility", object=object, hideViewport=hide_viewport,
+                    hideRender=hide_render, visibleCamera=visible_camera,
+                    visibleDiffuse=visible_diffuse, visibleGlossy=visible_glossy,
+                    visibleTransmission=visible_transmission,
+                    visibleVolumeScatter=visible_volume_scatter, visibleShadow=visible_shadow,
+                    holdout=holdout, indirectOnly=indirect_only)
+
+
+@mcp.tool()
 def bl_list_animation_data(object: str, target: str = None) -> dict:
     "Every route by which a Blender object is animated - action fcurves, DRIVERS and NLA strips. bl_list_keyframes reads animation_data.action only, which is one of three places animation lives, so an object driven entirely by drivers came back with curveCount 0 from an op whose purpose is verification - a wrong answer, not a missing one. This reports animatedBy (action/drivers/nla), the action's name and whether it has a fake user (an action WITHOUT one is deleted on save), each driver's expression, validity and variable targets, and every NLA track and strip. invalidDrivers counts drivers whose variables point at something that no longer exists - the silent failure where a driver evaluates to zero and reports nothing. Call mif_help(\"bl_list_animation_data\") first."
     return _blender("list_animation_data", object=object, target=target)

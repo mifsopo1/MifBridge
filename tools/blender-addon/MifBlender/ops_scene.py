@@ -320,6 +320,135 @@ def op_run_python(params):
     return response
 
 
+# RAY VISIBILITY MOVED OFF THE CYCLES ADDON onto the object itself in 3.0, so both spellings are
+# tried, newest first - the same discipline the light shadow flag needed. A hardcoded single name
+# is a silent no-op on half the Blenders this addon supports.
+_VIS_FLAGS = (
+    ("hideViewport", ("hide_viewport",), None),
+    ("hideRender", ("hide_render",), None),
+    ("visibleCamera", ("visible_camera",), "camera"),
+    ("visibleDiffuse", ("visible_diffuse",), "diffuse"),
+    ("visibleGlossy", ("visible_glossy",), "glossy"),
+    ("visibleTransmission", ("visible_transmission",), "transmission"),
+    ("visibleVolumeScatter", ("visible_volume_scatter",), "scatter"),
+    ("visibleShadow", ("visible_shadow",), "shadow"),
+    ("holdout", ("is_holdout",), "is_holdout"),
+    ("indirectOnly", ("is_shadow_catcher",), "is_shadow_catcher"),
+)
+
+
+# A LITERAL, because parity_check resolves accepted-key sets statically and is fail-closed - it
+# reads a set literal and refuses both a function-local build and a set comprehension rather than
+# SKIP a check it cannot read. That is the right behaviour and it costs this duplication of the
+# names in _VIS_FLAGS.
+#
+# So the duplication is GUARDED rather than trusted. The check below runs at import: it can only
+# fail if somebody edits one list and not the other, which is exactly the moment you want to be
+# stopped - and a key present in _VIS_FLAGS but missing here would be silently REFUSED at the door
+# while looking supported everywhere else, which is the worst of both.
+_VISIBILITY_KEYS = {
+    "object", "name",
+    "hideViewport", "hideRender",
+    "visibleCamera", "visibleDiffuse", "visibleGlossy", "visibleTransmission",
+    "visibleVolumeScatter", "visibleShadow",
+    "holdout", "indirectOnly",
+}
+
+_missing = {k for k, _a, _c in _VIS_FLAGS} - _VISIBILITY_KEYS
+if _missing:
+    raise RuntimeError(
+        "MifBlender ops_scene: _VIS_FLAGS names %s but _VISIBILITY_KEYS does not, so those keys "
+        "would be refused by reject_unknown while every other part of the op supports them. Add "
+        "them to the literal - it is duplicated on purpose so parity_check can read it."
+        % ", ".join(sorted(_missing)))
+
+
+def _vis_target(obj, attrs, cycles_attr):
+    """(holder, attribute) for a visibility flag on this Blender, or None if it has none."""
+    for a in attrs:
+        if hasattr(obj, a):
+            return obj, a
+    cyc = getattr(obj, "cycles", None)
+    if cycles_attr and cyc is not None and hasattr(cyc, cycles_attr):
+        return cyc, cycles_attr
+    return None
+
+
+def _visibility_readback(obj):
+    """Every visibility flag this Blender exposes for the object, by our key names."""
+    out = {}
+    for key, attrs, cyc in _VIS_FLAGS:
+        tgt = _vis_target(obj, attrs, cyc)
+        if tgt is not None:
+            out[key] = bool(getattr(tgt[0], tgt[1]))
+    return out
+
+
+def op_set_object_visibility(params):
+    """Control what an object is visible TO - the viewport, the render, and each ray type.
+
+    WHY THIS IS THE MOST-WANTED TOGGLE. Stopping a softbox appearing as a white rectangle in every
+    reflection is visibleGlossy=false, and it is the single most common adjustment in product and
+    archviz lighting. Nothing in this addon could reach it. The general form also answers the other
+    frequent question - "why is my object missing from the render" - because hide_render and the
+    per-ray flags are exactly where that answer lives.
+
+    Deliberately for EVERY object type rather than lights alone: ray visibility is an OBJECT
+    property, and a mesh acting as a reflector or a holdout needs it as much as a lamp does.
+
+    params:
+      object (str, required)
+      hideViewport / hideRender (bool)
+      visibleCamera / visibleDiffuse / visibleGlossy / visibleTransmission /
+      visibleVolumeScatter / visibleShadow (bool)
+      holdout / indirectOnly (bool)
+
+    A flag this Blender does not expose is REFUSED by name rather than silently ignored - the
+    mistake create_light's `shadow` made until it was fixed the same day.
+    """
+    reject_unknown(params, _VISIBILITY_KEYS, "set_object_visibility")
+    want = take(params, "object", "name", default=None, kind=str)
+    if not want:
+        raise MifOpError("'object' is required. NOTHING was changed.")
+    obj = bpy.data.objects.get(want)
+    if obj is None:
+        raise MifOpError("no object named '%s'. NOTHING was changed." % want)
+
+    # RESOLVE EVERY REQUESTED FLAG BEFORE WRITING ANY, so a flag this build lacks refuses the whole
+    # call rather than leaving half of them applied.
+    plan = []
+    for key, attrs, cyc in _VIS_FLAGS:
+        if key not in params:
+            continue
+        tgt = _vis_target(obj, attrs, cyc)
+        if tgt is None:
+            raise MifOpError("this Blender exposes no '%s' on an object (tried %s%s), so it would "
+                             "have been silently ignored. NOTHING was changed."
+                             % (key, ", ".join(attrs),
+                                " and cycles.%s" % cyc if cyc else ""))
+        plan.append((key, tgt, take_bool(params, key, default=True)))
+    if not plan:
+        raise MifOpError("no visibility flag was given. Pass at least one of %s. NOTHING was "
+                         "changed." % ", ".join(sorted(k for k, _a, _c in _VIS_FLAGS)))
+
+    before = _visibility_readback(obj)
+    for _key, (holder, attr), value in plan:
+        setattr(holder, attr, value)
+    after = _visibility_readback(obj)
+    changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    return {
+        "object": obj.name,
+        "before": before,
+        "after": after,
+        "changedFields": changed,
+        "changedAnything": bool(changed),
+        # THE QUESTION PEOPLE ACTUALLY ASK. Two flags decide whether this object appears at all,
+        # and they are easy to set and then forget about.
+        "appearsInRender": not after.get("hideRender", False)
+                           and after.get("visibleCamera", True),
+    }
+
+
 OPS = {
     "ping": op_ping,
     "scene_info": op_scene_info,
@@ -328,4 +457,5 @@ OPS = {
     "clear_scene": op_clear_scene,
     "delete_object": op_delete_object,
     "run_python": op_run_python,
+    "set_object_visibility": op_set_object_visibility,
 }
