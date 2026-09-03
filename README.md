@@ -193,20 +193,18 @@ count and was stale within the hour, because two more checks were added — the 
 warns about a few sections down. The command names every check it ran, so the count lives in one
 place and is always the true one.
 
-**Eight suites also run with no backend at all**, which is what you have when somebody else is using
+**Some suites also run with no backend at all**, which is what you have when somebody else is using
 the editor:
 
 ```bash
-for s in find_tools fuzz_detector report_intake mcp_post_errors \
-         blender_headless_guard release_gates scratch_discrimination payload_contract; do
-  python tools/test_$s.py || echo "FAILED: $s"
-done
+python tools/run_all_suites.py --offline --once   # launches nothing, names what it ran
 ```
 
-190 assertions, a few seconds, no editor and no Blender. `test_payload_contract` is the one to know
-about: it stubs both transports and pins the rule that `_post` and `_blender` drop `None` and **send
-every other falsy value** — the contract six shipped bugs turned on, each of which was reachable
-without a machine.
+Seconds, no editor and no Blender — 190 assertions across eight suites when it was measured
+(2026-09-03), and the command reports the current figures rather than this page doing it.
+`test_payload_contract` is the one to know about: it stubs both transports and pins the rule that
+`_post` and `_blender` drop `None` and **send every other falsy value** — the contract six shipped
+bugs turned on, each of which was reachable without a machine.
 
 That list was **measured by running every suite with the backends down**, not by grepping for
 `M.call`. Grepping got it wrong in both directions: it missed five suites that roll their own
