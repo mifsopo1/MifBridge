@@ -1447,6 +1447,19 @@ engine has no such class registered in this build, which is as definitive as it 
       entry, handled correctly: the buildable part was SPLIT OUT and the decline narrowed to what
       still stood, so neither heading ever lied.
 
+      THE COVERED SIDE WAS SWEPT TOO, the same day and the same way: does any `- [x]` heading name
+      a verb_noun that is NOT a live endpoint, Blender op or MCP tool? Six of 363 did, and all six
+      are accounted for. Three are tool names or a deliberate statement (`make_engine_probe`,
+      `run_all_suites`, and an item whose heading IS "There is no list_endpoints"). Three are
+      headings naming the PROPOSED scope where the body records what actually shipped -
+      add_anim_transition was scoped out and its suite's T2004 proves connect_pins already makes
+      the transition node; add_montage_section came in "at the vetter's scope" and delivered
+      add_sync_marker; set_transform shipped as the Blender op `transform_object`.
+
+      So both tallies hold: 363 covered and 45 declined are real numbers, and the ONE entry that
+      was not is this one. A heading may name the proposal as long as the body names the delivery
+      - what this entry did was name a decline and then let the delivery happen elsewhere.
+
       The original decline, verbatim:
       READING already works: `get_property` on a system's `ExposedParameters` returns the user
       parameters with names and types (`User.Color`, `User.FoamOpacity`, `User.FoamWidthLeft` on
