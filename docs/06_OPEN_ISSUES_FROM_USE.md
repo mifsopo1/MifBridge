@@ -1167,7 +1167,19 @@ Nothing below has been actioned in this repo yet; each has a spec item.
 Filed from a long session laying a street grid, ground, alleys, buildings and props into
 `L_City_P`. Every item below was hit for real and cost time; none came from reading source.
 
-## 1. `save_package` on a World Partition map saves the map and NONE of its actors — silently
+## 1. `save_package` on a World Partition map saves the map and NONE of its actors — silently — FIXED, NO LONGER SILENT
+
+*(Marked 2026-09-03, verified in MifBridgeIntrospect.cpp. `save_package` now detects
+`World->IsPartitionedWorld()`, counts the still-dirty external-actor packages under
+`GetExternalActorsPath`, and reports `partitionedWorld:true` with `dirtyExternalActorPackages:N`. When
+N > 0 it emits: "the MAP package was written, but this is a World Partition map and N external actor
+package(s) are STILL DIRTY - their actors live in their own packages and are NOT saved by this call.
+They will be lost on the next level reload. Use save_dirty_packages {maps:true, content:true}."*
+
+*The word this entry's title turns on is SILENTLY, and that is the part that is gone: the behaviour is
+unchanged and correct - saving a map package writes the map - but ok:true no longer arrives without
+the count, the consequence, and the name of the call that does the rest. Described here as "the most
+valuable item here", and it read as open for weeks after it was answered.)*
 
 **This nearly cost a session's work and is the most valuable item here.**
 
