@@ -42,8 +42,9 @@ DEFAULT = os.path.join(ROOT, "docs", "06_OPEN_ISSUES_FROM_USE.md")
 # detector flagged the very entry it had just found, because the heading was marked RESOLVED and only
 # the FIXED spellings were recognised as closed. A detector that cannot read its own fix re-reports it
 # forever.
-CLOSED = ("fixed", "resolved", "not a defect", "capability is built", "all seven", "was built",
-          "still open", "also correct", "note on", "downgraded")
+CLOSED = ("fixed", "resolved", "not a defect", "hazard record", "not a mifbridge",
+          "capability is built", "all seven", "was built", "still open", "also correct",
+          "note on", "downgraded")
 
 # The body claiming its own defect is closed.
 # BOLD IS LOAD-BEARING ON THE RESOLVED ARM, and the narrowness is measured rather than guessed. This
@@ -55,7 +56,7 @@ CLOSED = ("fixed", "resolved", "not a defect", "capability is built", "all seven
 BODY_FIXED = re.compile(
     r"(\*\*Fixed(?: and verified)?\*\*|\bboth are fixed\b|\bis fixed\b|\bare fixed\b|"
     r"\bfixed and verified\b|\bnow fixed\b|\bhas been fixed\b|\*\*RESOLVED\b[^*]*\*\*|"
-    r"\bpositive example\b)", re.I)
+    r"\bpositive example\b|\bNOT a MifBridge defect\b)", re.I)
 # `positive example` is a slightly different claim - not "this defect is closed" but "this was never
 # a defect, it is here as an example of good behaviour" - and it has the same consequence for a
 # reader: the heading asserts a problem the body denies. The phrase is exact for a reason. "Not a

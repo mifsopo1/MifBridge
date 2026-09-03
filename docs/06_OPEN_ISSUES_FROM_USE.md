@@ -1501,7 +1501,13 @@ Nothing warned, because nothing knew the allocation existed.
 
 ---
 
-## 16. Force Reload on a cooked Blueprint kills the editor
+## 16. Force Reload on a cooked Blueprint kills the editor — HAZARD RECORD, NOT A MIFBRIDGE DEFECT
+
+*(Heading marked 2026-09-03. The body says "NOT a MifBridge defect" in its opening line and
+explains it is kept because it is a hazard anyone driving this editor will meet, and because
+ruling the bridge out was the first question asked. The index counted it among the bridge's own
+defects, which is the opposite of what it records - and inflates the apparent defect count of
+the thing it exonerates.)*
 
 **FOUND 2026-08-26 by Andre, diagnosed from the crash log the same night. NOT a MifBridge defect** -
 recorded here because it is a hazard anyone driving this editor will meet, and because ruling the
