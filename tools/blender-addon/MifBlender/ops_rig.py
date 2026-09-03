@@ -423,7 +423,21 @@ def op_transfer_weights(params):
     # READ BACK. data_transfer reports nothing useful, so the postcondition is
     # measured: how many groups the destination has now, and how many of its
     # vertices actually carry a weight.
-    weighted = sum(1 for v in dst.data.vertices if v.groups)
+    #
+    # NONZERO WEIGHT, NOT MEMBERSHIP - the same distinction op_normalize_weights documents at length
+    # 120 lines up, and the 2026-08-31 fix there corrected only that site. `v.groups` is MEMBERSHIP:
+    # a vertex trimmed to weight 0 is still IN the group, and layers_select_dst="NAME" reuses groups
+    # that already exist rather than adding any. So on a SECOND transfer into the same destination,
+    # `len(dst.vertex_groups) > groups_before` is False by construction and `weighted > 0` was
+    # guaranteed True by the memberships the first run left behind - which made the refusal below
+    # unreachable in exactly the iterate-the-rig case it exists for.
+    #
+    # It also made two numbers wrong rather than merely weak: destinationVerticesWeighted reported
+    # the vertex COUNT, and coverageNote tested the same measure, so a destination whose every
+    # weight is 0.0 was reported as fully covered with no note. This file's own argument for the
+    # filter - "a zero weight is equivalent to absent everywhere Unreal reads it" - applies here
+    # unchanged, and list_vertex_groups' weightedVertexCount has always counted it this way.
+    weighted = sum(1 for v in dst.data.vertices if any(g.weight > 0.0 for g in v.groups))
     out = {
         "source": src.name,
         "destination": dst.name,
