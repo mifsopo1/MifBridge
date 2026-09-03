@@ -98,6 +98,29 @@ CLAIM_SHAPES = [
 ]
 
 
+# A DENIAL OF EQUIVALENCE IS NOT AN EQUIVALENCE CLAIM, and reading only the shapes made one.
+# set_data_layer_visibility's note says an unloaded layer "is not the same as hidden" - it exists to
+# tell you the two endpoints DIFFER, which is the opposite of the thing worth checking, and it was
+# sitting on the list as one of sixteen claims to verify.
+#
+# The negation has to be IMMEDIATELY before the shape. "returns the same set, not a subset" is a
+# positive claim with a trailing denial and must stay; a window of a few words is what separates
+# them.
+NEGATED = re.compile(r'\b(?:not|never|isn\'t|aren\'t|rather than)\s+(?:\w+\s+){0,2}$')
+
+
+def asserts_equivalence(text):
+    """True when the text claims two endpoints AGREE, rather than denying that they do."""
+    low = text.lower()
+    for shape in CLAIM_SHAPES:
+        at = low.find(shape)
+        while at >= 0:
+            if not NEGATED.search(low[max(0, at - 28):at]):
+                return True
+            at = low.find(shape, at + 1)
+    return False
+
+
 def endpoint_names():
     text = io.open(HANDLERS_H, encoding="utf-8", errors="replace").read()
     return {m.group(1) for m in DECL.finditer(text)} - IGNORE
@@ -160,7 +183,7 @@ def main():
     print("endpoints: %d   cross-endpoint claims in handler text: %d" % (len(names), len(rows)))
 
     if not args.navigation:
-        shaped = [r for r in rows if any(s in r[4].lower() for s in CLAIM_SHAPES)]
+        shaped = [r for r in rows if asserts_equivalence(r[4])]
         print("of those, ones asserting EQUIVALENCE or COMPLETENESS: %d   (the rest are "
               "navigation - 'save_package to persist' promises nothing)" % len(shaped))
         rows = shaped
