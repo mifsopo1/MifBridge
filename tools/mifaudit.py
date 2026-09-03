@@ -64,7 +64,29 @@ DENY = {
 }
 
 # Never send these keys, whatever the fuzz strategy says.
-FORBIDDEN_KEYS = {"confirm", "force", "discardunsaved", "overwrite", "replaceexisting", "save"}
+#
+# SPELLINGS, NOT CONCEPTS - which is why two authorising flags walked straight through this until
+# 2026-09-03. guarded_payload lowercases a key and looks it up here, so a handler that accepts an
+# ALIAS for the same flag is unguarded under the alias. Both were found by sweeping every
+# JBoolAny alias group in Source/ rather than by thinking of them:
+#
+#   allowEditConst  is a full alias for `force` in reset_property_to_default
+#                   (MifBridgeDetails.cpp:1088, JBoolAny(In, {force, allowEditConst})), so a payload
+#                   carrying it would force a write to an edit-const property with `force` stripped.
+#   replaceRoot     is a full alias for `confirm` in move_tree_widget
+#                   (JBoolAny(In, {replaceRoot, confirm})), and it authorises REPLACING an existing
+#                   root widget - destructive, and the thing confirm is gating there.
+#
+# The rest of the sweep came back clean and is recorded so nobody redoes it: {overwrite,
+# replaceExisting} was already covered by both spellings; {content, saveContent, save_content} and
+# {maps, saveMaps, save_maps} belong to save_dirty_packages, which is in DENY and unreachable from a
+# suite at all; {enforceClamps, clamp, respectClamps} is not an authorising flag - enforcing clamps
+# is the SAFE direction, and stripping it would be the dangerous one.
+#
+# Both new entries land in AUTHORISING_ONLY too (it is this set minus "confirm"), so an explicit
+# false still reaches the handler - a refusal to authorise is not the same as saying nothing.
+FORBIDDEN_KEYS = {"confirm", "force", "discardunsaved", "overwrite", "replaceexisting", "save",
+                  "alloweditconst", "replaceroot"}
 
 
 
