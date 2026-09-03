@@ -1226,7 +1226,17 @@ round trips that a listing would have saved.
 > Nearly marked FIXED on the strength of `summary` appearing in the handler. It appears in one
 > branch that built-ins never enter.
 
-## 3. `list_level_actors` defaults to 200 and truncates
+## 3. `list_level_actors` defaults to 200 and truncates — FIXED, THE SUGGESTED FIX WAS DONE
+
+*(2026-09-03. The suggested fix below was exactly one thing: "mention `truncated` in the
+`describe_endpoint` summary so it is visible without reading a response first." Done - the
+accepted-parameters text now reads "limit (DEFAULT 200 - the response reports count, matched and
+truncated; reading only actors[] gives a silently short list, so check truncated or raise limit)",
+harvested into the describe table and built on 5.3 (a2ec3cc).*
+
+*The behaviour is unchanged and was never wrong - the response has always reported count, matched and
+truncated. What changed is that a caller now sees the sharp edge BEFORE the first call rather than
+after a cleanup routine reports "cleared 200/200" with 43 actors left.)*
 
 Default `limit` is 200. The response is honest — `count:200, matched:239, truncated:true` — but a
 caller that reads only `actors` gets a silently short list. This bit a cleanup routine that
@@ -1291,7 +1301,17 @@ spawns return null") when nothing is wrong at all. Both behaviours are defensibl
 is real. **Suggested fix:** have both echo which world they operated on, the way `capture_camera`
 echoes `cameraSource`.
 
-## 8. `save_dirty_packages` cannot commit a DELETED package — and reports it as a failure
+## 8. `save_dirty_packages` cannot commit a DELETED package — and reports it as a failure — FIXED
+
+*(Marked 2026-09-03, verified in MifBridgeUndo.cpp. Packages needing deletion now come back in their
+own `needsDeletion` array with a `needsDeletionNote`, instead of being counted in `failed` under the
+guessed reason "still referenced by an in-flight operation?" — which was the actual complaint here:
+915 packages reported as failures for a cause that was not theirs.*
+
+*The endpoint still does not DELETE them, and the source says why: "Deleting a package is not what an
+endpoint called save_dirty_packages should do unasked." Reporting the distinct state and leaving the
+decision to the caller is the right shape, and it is what this entry asked for — it wanted the
+misreporting fixed, not the deletion automated.)*
 
 Destroying actors in an OFPA map leaves their external-actor packages needing **deletion**, not
 saving. `save_dirty_packages` calls SavePackage on a package with no object left in it, which
