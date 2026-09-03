@@ -90,9 +90,30 @@ the handler already had.
 was never affected.
 
 A check now covers the class: `tools/audit_mcp_default_sends.py` asks whether any MCP wrapper sends,
-by default, a key its endpoint refuses for being present. Eleven endpoints, plant-proven.
+by default, a key its endpoint refuses for being present. Eighteen endpoints, plant-proven across
+four shapes — a string default, a float, a bool, and one on the Blender transport — plus a negative
+control that an `or None` wrapper is *not* flagged.
 
-### Nine calls that used to succeed now REFUSE — read this before upgrading
+### Fixed: four more MCP tools were uncallable, and one of them lied about it
+
+The two entries above were not the whole class. A review of the tree found four more of exactly the
+same shape — the handler refuses a key for being *present*, and the wrapper sent a concrete default,
+so `_post` never dropped it.
+
+| tool | state before | detail |
+|---|---|---|
+| `map_legacy_input` | **uncallable in both modes** — v0.7.0 to v0.8.1, every release that has ever carried it | an action mapping refuses `scale`, an axis mapping refuses `shift`/`ctrl`/`alt`/`cmd`, and the wrapper sent all five — so each mode was refused for the *other* mode's keys, and no argument combination reached the mapping code |
+| `set_struct_member` | **uncallable** | `bWantRename` is a presence check on `newName`, and the wrapper sent `newName=""`, so the rename branch ran on every call and the next line refused the empty identifier |
+| `set_enum_value` | **bitflags mode unreachable** | `bHasEntry` is a presence check on `value` among others, and `value=""` made it true always; bitflags-plus-entry is refused. That mode has no other route — `UEnum::Names` is a protected non-`UPROPERTY`, which is why the endpoint exists |
+| `set_collision` | **applied the change, then reported it had not** | both branches are presence-gated and both keys were sent, so a profile-only call reached `SetCollisionProfileName` and *applied* it, then failed on the empty `collisionEnabled` with `NOTHING was changed.` The component was left on a new collision profile while the response said it was untouched |
+
+`set_collision` is the one to check if you script against it: a call that reported failure may have
+succeeded in part. The others refused cleanly, so nothing was half-done.
+
+Posting to the bridge directly was never affected in any of the four — the handlers were right
+throughout and the wrappers defeated them.
+
+### Seven calls that used to succeed now REFUSE — read this before upgrading
 
 Every one of them was accepted, silently ignored, and answered `ok:true`. That is the shape the
 `invoke_editor_tab` bug had, and `RejectUnknownParams` cannot catch it because the parameter *is*
@@ -115,7 +136,10 @@ use `op:remove`, which the refusal now names.
 Two more endpoints already warned rather than ignoring, and the warning did not say *what* it had
 dropped: `add_variable` named three of sixteen flags and an ellipsis, `export_asset` named none of
 its eight FBX-only options. Both now list exactly what was passed and carry it as an array —
-`ignoredFlags` and `ignoredOptions` — so a caller need not parse prose to react.
+`ignoredFlags` and `ignoredOptions` — so a caller need not parse prose to react. **They still
+succeed** — the heading above counts the seven in the table, not these two; an earlier draft said
+nine and counted them, which would have sent an upgrader looking for two call sites that never
+changed behaviour.
 
 Also fixed, and invisible from outside: `draw_debug`'s unknown-shape refusal sat inside the
 `center` branch, so `{"shape":"blob"}` answered *"shape 'blob' needs center"* — sending you off to
