@@ -2307,6 +2307,36 @@ or None` collapses `""` to absent, which is the intent. It is wrong for a bool, 
 value rather than an absence. One was introduced and removed the same night (`list_objects.detail`);
 the other 30 predate it and are fine today.
 
+## You cannot detect a stale ABSENCE claim by name-matching, because an absence has no name
+
+Tried and deleted on 2026-09-03, recorded so nobody builds it twice.
+
+Six entries in `docs/06` were found fixed while still reading as open. Three looked mechanically
+detectable - the entry declares an endpoint missing, and the endpoint exists now - so a detector was
+written to flag exactly that: an absence phrase ("does not exist", "404s", "nothing creates")
+followed by a backticked name that is in `MIF_DECL`.
+
+It does not work, and testing it against the three cases it was built for is what showed that:
+
+| entry | what happened |
+|---|---|
+| issue 4 | flagged, but naming `self_audit` - which the entry cites as something that DOES exist. The real answer, `describe_endpoint`, sits BEFORE the "404" and was missed. |
+| issue 6 | flagged, naming `capture_camera`, again an existing thing mentioned as context. |
+| issue 8 | **not flagged at all** - the cleanest case, where "a dedicated endpoint. Does not exist." names nothing. |
+
+Two of three matched for the wrong reason and the best one was missed, plus two false positives on
+the live file. The `names:` column would have pointed a reader at the endpoint that EXISTS as
+context, never at the missing capability.
+
+**The reason is structural rather than a tuning problem.** These entries describe something that is
+NOT THERE, and a thing that is not there has no identifier to match on. Issue 8 says "a dedicated
+endpoint. Does not exist." - there is nothing to look up. What would satisfy the entry lives only in
+its prose, and reading it is the work. Three of the six needed reading anyway: a body that said
+"Fixed" under a heading that did not, an additive fix, and seven sub-defects verified one at a time.
+
+Same call as the static detector abandoned earlier that session: a reading list that is wrong more
+often than right trains its reader to skip it, which costs more than never having written it.
+
 ## Scanning C++ string literals: JOIN THE ADJACENT ONES FIRST
 
 Any tool that reads message text out of `TEXT("...")` must concatenate adjacent literals the way the
