@@ -153,8 +153,10 @@ comm -23 /tmp/plugin.txt /tmp/mcp.txt   # endpoints with no tool
 comm -13 /tmp/plugin.txt /tmp/mcp.txt   # tools with no endpoint -> the 12 kr_* externals
 ```
 
-Measured on the current tree: **433 built-in endpoints + 12 external = 445**, against **478 tools**
-(320 that reach Unreal, 12 `kr_*`, 20 `bl_*`, 1 `mif_*`). Both columns of the diff are now EMPTY —
+Measured on the tree at 2026-09-02: **453 built-in endpoints + 12 external = 465**, against
+**538 tools**. The date is stated because this line said "the current tree" while quoting 433/445/478
+from some weeks earlier - a number that describes a moment needs to say which moment, or it becomes a
+claim about today that nobody rechecks. Both columns of the diff are EMPTY -
 `parity_check` reports no drift and no exempted gaps:
 
 - ✅ **0 endpoints with no tool.** There used to be five — `set_variable_type`,
@@ -318,7 +320,7 @@ MifBridge lets a local process **modify your project**, so it is locked down to 
 
 ---
 
-## 🧠 Capabilities — 445 HTTP endpoints (433 built‑in + 12 external)
+## 🧠 Capabilities — 465 HTTP endpoints (453 built‑in + 12 external, at 2026-09-02)
 
 > The authoritative list is whatever `self_audit` reports from the running editor, never this
 > section. `tools/endpoints_current.json` is a snapshot of it, and `tools/parity_check.py`
