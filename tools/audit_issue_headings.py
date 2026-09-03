@@ -38,8 +38,12 @@ ROOT = os.path.dirname(HERE)
 DEFAULT = os.path.join(ROOT, "docs", "06_OPEN_ISSUES_FROM_USE.md")
 
 # A heading carrying any of these already announces its own state and is not re-read.
-CLOSED = ("fixed", "capability is built", "all seven", "was built", "still open",
-          "also correct", "note on", "downgraded")
+# EVERY MARKER THIS FILE ACTUALLY USES. "resolved" belongs here as well as in BODY_FIXED: the
+# detector flagged the very entry it had just found, because the heading was marked RESOLVED and only
+# the FIXED spellings were recognised as closed. A detector that cannot read its own fix re-reports it
+# forever.
+CLOSED = ("fixed", "resolved", "not a defect", "capability is built", "all seven", "was built",
+          "still open", "also correct", "note on", "downgraded")
 
 # The body claiming its own defect is closed.
 # BOLD IS LOAD-BEARING ON THE RESOLVED ARM, and the narrowness is measured rather than guessed. This
