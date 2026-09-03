@@ -122,14 +122,28 @@ def main():
     # ------------------------------------------------------------------ T484 the cooked hazard
     print("")
     print("=== T484 [the hazard]: a real COOKED struct must not take the editor down ===")
-    # SKIP SCRATCH, or this hazard test is vacuous. test_create_struct_init mints UserDefinedStructs
-    # under /Game/_Mif*, and an UNCOOKED struct cannot exercise "a CastChecked on cooked editor data
-    # terminates the process" - the reads answer normally and T484 goes green having probed nothing.
-    # test_set_struct_member goes one better and PROBES for an actual cooked refusal before trusting
-    # its fixture; doing the same here is the stronger fix and is filed rather than done.
-    cooked = (M.pick_adoptable(M.call("find_assets", {"class": "UserDefinedStruct",
-                                                      "pathPrefix": "/Game/",
-                                                      "limit": 25}).get("assets")) or {}).get("path")
+    # SELECT FOR COOKEDNESS, DO NOT ASSUME IT. Skipping scratch is necessary and NOT sufficient:
+    # plenty of project structs under /Game/ have intact EditorData and load perfectly well
+    # (test_set_struct_member names BCE_DeveloperStruct), so a non-scratch pick can easily be an
+    # UNCOOKED struct - and against one of those every read answers normally and T484 goes green
+    # having probed nothing at all. find_assets' ordering is not stable either, so which it got was
+    # luck that could change between runs.
+    #
+    # This is the fix the previous comment here described and deferred - "doing the same here is the
+    # stronger fix and is filed rather than done". It is done now, mirroring test_set_struct_member:
+    # one read per candidate, and only a struct that actually REFUSES as cooked is used. The probe
+    # costs a read and cannot drift, because it asks the question rather than inferring it from a
+    # path.
+    cooked = None
+    for _a in (M.call("find_assets", {"class": "UserDefinedStruct", "pathPrefix": "/Game/",
+                                      "limit": 25}).get("assets") or []):
+        _p = _a.get("path") or ""
+        if not _p or _p.startswith(SC.SCRATCH_PREFIXES):
+            continue
+        _probe = M.raw_post("list_struct_members", {"struct": _p})
+        if _probe.get("ok") is False and "COOKED" in (_probe.get("error") or ""):
+            cooked = _p
+            break
     if cooked:
         print("   using %s" % cooked)
         # gotchas 6c: a CastChecked on cooked editor data terminates the process - not an error, a dead
@@ -142,7 +156,14 @@ def main():
             check("T484 and the editor survived %s" % ep, M.bridge_responsive() is True,
                   "the bridge stopped answering - a CastChecked on cooked editor data is fatal")
     else:
-        check("T484 (not exercised: no cooked UserDefinedStruct in /Game/)", True)
+        # RECORDED AS A SKIP, and deliberately still a passing row rather than a failure: a project
+        # with no cooked UserDefinedStruct is a legitimate place to run this suite (an uncooked 5.7
+        # project has none by construction), and failing there would make the suite unrunnable
+        # outside DDS2. What changed is that this line now means something specific - 25 candidates
+        # were ASKED and none refused as cooked - where before it only meant find_assets returned
+        # nothing pickable.
+        check("T484 (not exercised: no struct under /Game/ refused as COOKED, so the fatal-cast "
+              "guard has nothing to be proven against here)", True)
 
     # ------------------------------------------------------------------ T485 guards
     print("")
