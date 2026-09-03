@@ -240,22 +240,31 @@ def main():
     #
     # It is deleted here by the exact path the endpoint reported, which is the only way to know it -
     # the caller never chose it.
+    cleanup_errors = []
     for made in (r.get("layerInfo"), again.get("layerInfo")):
         if not made:
             continue
         pkg = str(made).split(".")[0]
+        # BOTH assets were created with an explicit layerInfoPath under `root`, so they ARE inside
+        # the scratch prefix and scratch_confirm accepts them.
+        #
+        # There was a fallback here that retried as M.call("delete_asset", {..., "confirm": True})
+        # when scratch_confirm refused. It could never delete anything: mifaudit strips `confirm`
+        # whatever its value (FORBIDDEN_KEYS), so the endpoint refused every one of those calls and
+        # the result was discarded. Dead in the normal case - layerInfoPath keeps these in scratch,
+        # so the except arm never ran - and actively harmful in the abnormal one, because a real
+        # scratch_confirm refusal became a silent no-op and L999 then failed saying nothing about
+        # why. The refusal is recorded instead, and reported as part of L999's detail.
         try:
             SC.confirm_call("delete_asset", {"path": pkg})
-        except Exception:
-            # scratch_confirm refuses it BY DESIGN - it is not a /Game/_Mif path - so the delete
-            # goes direct. The provenance is not in doubt: this suite was handed the path by the
-            # call that created it, in this process.
-            M.call("delete_asset", {"path": pkg, "confirm": True})
+        except Exception as exc:
+            cleanup_errors.append("%s -> %s" % (pkg, str(exc)[:120]))
     still_li = [p for p in (r.get("layerInfo"), again.get("layerInfo")) if p and
                 M.call("find_assets", {"nameContains": str(p).split("/")[-1].split(".")[0]}).get("count")]
-    check("L999 (cleanup) the engine-chosen LayerInfo assets are gone too - they land OUTSIDE "
-          "/Game/_Mif and jam the restore-packages guard if left",
-          not still_li, still_li)
+    check("L999 (cleanup) the LayerInfo assets this suite created are gone - layerInfoPath put "
+          "them under the scratch root, and a dirty package left there jams restore-packages",
+          not still_li and not cleanup_errors,
+          {"still_present": still_li, "confirm_refusals": cleanup_errors})
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

@@ -52,8 +52,12 @@ def main():
     marks = lst.get("bookmarks") or []
     check("V500 it reports every slot, not just the filled ones",
           len(marks) == lst.get("maxBookmarks"), "%s vs %s" % (len(marks), lst.get("maxBookmarks")))
-    check("V500 each entry says whether it is set",
-          all("set" in m for m in marks), json.dumps(marks[:2]))
+    # ASSERTS THE VALUE, AND GUARDS THE COLLECTION. `all("set" in m for m in marks)` was two
+    # vacuous shapes at once: all([]) is True, so an empty bookmarks[] passed; and testing that a
+    # KEY EXISTS says nothing about what it holds, which is how a mislabelled row passes green.
+    check("V500 each entry says whether it is set, as a real bool",
+          bool(marks) and all(isinstance(m.get("set"), bool) for m in marks),
+          json.dumps(marks[:2]))
     check("V500 and it says bookmarks belong to the LEVEL, not the viewport",
           "AWorldSettings" in str(lst.get("storageNote", "")), lst.get("storageNote"))
 

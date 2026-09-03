@@ -382,18 +382,29 @@ def main():
             # delete_asset sent the ordinary way silently does nothing - which is how audit_roundtrip
             # left a scratch blueprint in somebody's live session. Reported, never swallowed.
             gone = SC.confirm_call("delete_asset", {"path": SCRATCH, "confirm": True}, timeout=120)
-            left = M.call("find_assets", {"pathPrefix": "/Game/_MifAnim", "limit": 10},
-                          timeout=120).get("assets") or []
+            # THE CALL'S OWN SUCCESS IS PART OF THE ASSERTION. This used to read
+            # `.get("assets") or []`, which turns a FAILED find_assets into an empty list - and an
+            # empty list is exactly what "the asset was deleted" looks like here, so the check
+            # passed hardest when the question could not be answered at all.
+            # THE ASSERTION QUERIES ITS OWN PATH, and the broad sweep is kept only for the note.
+            # Asking for /Game/_MifAnim with limit 10 can return ten OTHER scratch assets and none
+            # of this suite's, and "my asset is not in this page" reads exactly like "my asset is
+            # gone". Narrowing the prefix to SCRATCH makes the page big enough to be conclusive.
+            own = M.call("find_assets", {"pathPrefix": SCRATCH, "limit": 10}, timeout=120)
+            mine = [a for a in (own.get("assets") or [])
+                    if (a.get("path") or "").startswith(SCRATCH)]
+            check("T575 the scratch blend space this suite made was deleted",
+                  own.get("ok") is not False and not mine,
+                  "find_assets ok=%s; delete said %s; still present: %s"
+                  % (own.get("ok"), json.dumps(gone)[:160], [a.get("path") for a in mine]))
             # ITS OWN ASSET, not the whole prefix. The first version asserted /Game/_MifAnim was
             # EMPTY, which failed the moment somebody else's scratch was sitting there - a false
             # failure about something this suite neither created nor is responsible for, and a false
             # failure teaches the reader to ignore the suite. Foreign scratch is REPORTED instead,
             # because it is still worth seeing.
-            mine = [a for a in left if (a.get("path") or "").startswith(SCRATCH)]
-            check("T575 the scratch blend space this suite made was deleted", not mine,
-                  "delete said %s; still present: %s"
-                  % (json.dumps(gone)[:160], [a.get("path") for a in mine]))
-            others = [a.get("path") for a in left if a not in mine]
+            left = M.call("find_assets", {"pathPrefix": "/Game/_MifAnim", "limit": 10},
+                          timeout=120).get("assets") or []
+            others = [a.get("path") for a in left if not (a.get("path") or "").startswith(SCRATCH)]
             if others:
                 print("       NOTE: other scratch is sitting under /Game/_MifAnim and is not this "
                       "suite's to remove: %s" % others)
