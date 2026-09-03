@@ -99,6 +99,29 @@ REFUSED_ON_PRESENCE = {
     # names are the wrapper names, which is what this scan matches on.
     "bl_create_camera":       {"lookAt", "rotation"},
     "bl_set_viewport_view":   {"lookFrom", "azimuth", "elevation", "distance"},
+
+    # ADDED 2026-09-03, and the reason they were missing IS the weakness this map's own header
+    # names. A multi-agent review of the day's tree found four more endpoints of exactly the shape
+    # the two shipped bugs had, and every one of them was invisible here only because nobody had
+    # thought to write the row. The detector was never broken; its corpus was hand-written. When
+    # one reviewer added `map_legacy_input` to a scratch copy of this map, the unmodified tool
+    # named all five of its parameters immediately.
+    #
+    # map_legacy_input refuses a MUTUAL EXCLUSION like the two Blender rows above, and was the
+    # worst case of it: an action mapping refuses `scale`, an axis mapping refuses the four
+    # modifiers, and the wrapper sent all five - so BOTH modes were uncallable. Shipped 2026-08-30.
+    "map_legacy_input":       {"scale", "shift", "ctrl", "alt", "cmd"},
+    # bWantRename/bWantRetype/bWantDefault are HasField checks; newName="" made the rename branch
+    # run on every call and the next line refuses an empty identifier.
+    "set_struct_member":      {"newName", "type", "default"},
+    # bHasEntry is HasField("index")||HasField("value")||...; value="" made it true always, so the
+    # enum-scoped bitflags mode could never be reached.
+    "set_enum_value":         {"value", "newName"},
+    # THE ONE THAT LIED. Both branches are HasField-gated and the wrapper sent both keys, so a
+    # profile-only call APPLIED the profile and then failed on the empty collisionEnabled with
+    # "NOTHING was changed." - a false claim of that exact sentence, which is the strongest promise
+    # this codebase makes.
+    "set_collision":          {"profile", "collisionEnabled"},
 }
 
 

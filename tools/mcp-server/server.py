@@ -2383,8 +2383,14 @@ def set_struct_member(struct: str, member: str = "", guid: str = "", new_name: s
                       type: str = "", container: str = "", value_type: str = "",
                       default: str = "") -> dict:
     "Rename, retype or re-default an EXISTING member of a Blueprint struct, in place."
-    return _post("set_struct_member", struct=struct, member=member, guid=guid, newName=new_name,
-                 type=type, container=container, valueType=value_type, default=default)
+    # `or None` ON EVERY OPTIONAL KEY, because the handler tests PRESENCE, not value:
+    # bWantRename/bWantRetype/bWantDefault are HasField() checks (MifBridgeUserTypes.cpp:606-608).
+    # Sending newName="" made bWantRename true on every call, and the very next branch refuses an
+    # empty name with "NOTHING was changed" - so this tool was uncallable through the MCP in all of
+    # its modes. add_struct_member directly below already used this idiom; this one did not.
+    return _post("set_struct_member", struct=struct, member=member or None, guid=guid or None,
+                 newName=new_name or None, type=type or None, container=container or None,
+                 valueType=value_type or None, default=default or None)
 
 
 @mcp.tool()
@@ -3085,8 +3091,13 @@ def add_create_event(graph_id: str, function: str, bind_node: str,
 def set_enum_value(enum: str, index: int = None, value: str = "", new_name: str = "",
                    move_to: int = None, bitflags: bool = None) -> dict:
     "Change an existing user-defined enum: rename an entry, reorder one, or toggle the enum's bitflags state. Address the entry by index or by its current display name. bitflags is enum-scoped and cannot be combined with an entry."
-    return _post("set_enum_value", enum=enum, index=index, value=value, newName=new_name,
-                 moveTo=move_to, bitflags=bitflags)
+    # The handler's two scopes are deliberately unmixable: bHasEntry is HasField("index")||
+    # HasField("value")||... and bitflags-plus-entry is refused outright (MifBridgeUserTypes.cpp:
+    # 1745-1750). Sending value="" made bHasEntry true on EVERY call, so the bitflags mode - one of
+    # the two things this endpoint exists for, and unreachable by any other route since UEnum::Names
+    # is a protected non-UPROPERTY - could never be reached through the MCP.
+    return _post("set_enum_value", enum=enum, index=index, value=value or None,
+                 newName=new_name or None, moveTo=move_to, bitflags=bitflags)
 
 
 @mcp.tool()
@@ -3276,8 +3287,15 @@ def list_collision_profiles() -> dict:
 @mcp.tool()
 def set_collision(object_path: str, profile: str = "", collision_enabled: str = "") -> dict:
     "Set a primitive component's collision profile, with the profile name CHECKED."
-    return _post("set_collision", objectPath=object_path, profile=profile,
-                 collisionEnabled=collision_enabled)
+    # THE WORST OF THE DEFAULT-SEND BUGS FOUND 2026-09-03, because it did not merely refuse - it LIED.
+    # Both branches are HasField-gated (MifBridgeCollision.cpp:193-194) and the wrapper sent
+    # profile="" AND collisionEnabled="" on every call, so both always ran. A profile-only call
+    # reached SetCollisionProfileName and APPLIED it, then fell into the collisionEnabled branch,
+    # found "", and failed with "NOTHING was changed." - leaving the component on a new collision
+    # profile while telling the caller it was untouched. That is the exact claim this codebase holds
+    # every refusal to. A collisionEnabled-only call was refused earlier, at the empty profile.
+    return _post("set_collision", objectPath=object_path, profile=profile or None,
+                 collisionEnabled=collision_enabled or None)
 
 
 @mcp.tool()
@@ -3549,10 +3567,15 @@ def list_legacy_input_mappings(name: str = "") -> dict:
 
 
 @mcp.tool()
-def map_legacy_input(name: str, key: str, axis: bool = False, scale: float = 1.0,
-                     shift: bool = False, ctrl: bool = False, alt: bool = False,
-                     cmd: bool = False) -> dict:
+def map_legacy_input(name: str, key: str, axis: bool = False, scale: float = None,
+                     shift: bool = None, ctrl: bool = None, alt: bool = None,
+                     cmd: bool = None) -> dict:
     "Add a LEGACY (pre-Enhanced) input binding to UInputSettings. name is a bare action or axis name, not an asset path; key is an FKey name such as SpaceBar."
+    # UNCALLABLE IN BOTH MODES until 2026-09-03, and the two halves hid each other. The handler
+    # (MifBridgeNodes7.cpp:709-736) refuses by PRESENCE on whichever side you are not on: an action
+    # mapping refuses `scale`, an axis mapping refuses shift/ctrl/alt/cmd. The wrapper sent scale=1.0
+    # AND all four modifiers on every call, so axis:false was refused for the scale and axis:true was
+    # refused for the modifiers. Every default here must stay None; a concrete default is a refusal.
     return _post("map_legacy_input", name=name, key=key, axis=axis, scale=scale, shift=shift,
                  ctrl=ctrl, alt=alt, cmd=cmd)
 
