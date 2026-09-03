@@ -95,14 +95,31 @@ def compose(issue, author, mention, outcome, summary, commit):
     return "\n".join(lines)
 
 
-def notify(issue, author, outcome, summary, commit=None, dry_run=False):
+def notify(issue, author, outcome, summary, commit=None, dry_run=False, supplied=None):
     if not trusted(author):
         log("%s is not a trusted reporter - not messaging anyone" % author)
         return False
     hook, contacts = load_config()
     if not hook:
         return False
-    mention = contacts.get(str(author).lower())
+    # THE REPORTER'S OWN ID WINS, because it is the only source that scales. The contacts map has to
+    # be filled in by hand for every new person, which means the first report from anyone new can
+    # never ping them - and nobody remembers to go back and add them afterwards.
+    #
+    # It is UNTRUSTED INPUT and is treated as such: a Discord snowflake is a bare decimal id, so
+    # anything else is discarded rather than interpolated. That is what stops "@everyone" or
+    # "1234> hey @here" arriving in the mention slot. allowed_mentions pins the ping to this exact
+    # id as well, so even a valid-looking id can only ever ping the one account it names.
+    mention = None
+    if supplied is not None:
+        s = str(supplied).strip().lstrip("<@!").rstrip(">")
+        if s.isdigit() and 5 <= len(s) <= 25:
+            mention = s
+            log("using the reporter's own Discord id from the report")
+        else:
+            log("ignoring a malformed `discord` value in the report - not a bare numeric id")
+    if not mention:
+        mention = contacts.get(str(author).lower())
     if not mention:
         # Send anyway, without a ping. The channel still learns the report was handled, which is
         # more useful than silence - it just cannot tap the one person on the shoulder.
@@ -146,9 +163,11 @@ def main():
                     choices=["fixed", "explained", "needs-you", "update"])
     ap.add_argument("--summary", default="")
     ap.add_argument("--commit", default=None)
+    ap.add_argument("--discord", default=None,
+                    help="the reporter's own Discord id, as carried through from the report")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    ok = notify(a.issue, a.author, a.outcome, a.summary, a.commit, a.dry_run)
+    ok = notify(a.issue, a.author, a.outcome, a.summary, a.commit, a.dry_run, a.discord)
     # ALWAYS 0. A courtesy ping that did not go out must never fail the pipeline step that calls it.
     log("notified" if ok else "not notified (see above) - not an error")
     return 0

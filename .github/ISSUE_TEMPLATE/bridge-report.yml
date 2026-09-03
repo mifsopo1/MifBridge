@@ -27,7 +27,8 @@ body:
           "expected": "what you expected to happen",
           "actual": "what actually happened",
           "dll": "the built <date> string from self_audit",
-          "notes": "anything else - read by a human, never executed"
+          "notes": "anything else - read by a human, never executed",
+          "discord": "your Discord user id, optional - you get pinged when this is fixed"
         }
         ```
     validations:

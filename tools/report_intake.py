@@ -229,8 +229,14 @@ def main():
             "shapeOnly": bool(rewrites),
             "rewrites": rewrites,
             # Prose, verbatim, for a human or an agent to READ. Never parsed, never executed.
+            # `discord` is OPTIONAL and reporter-supplied, so it is carried as data and never
+            # trusted: report_notify validates it is a bare numeric snowflake before it is allowed
+            # anywhere near an @-mention. Its whole purpose is that a NEW reporter can be pinged
+            # without Andre first hand-mapping their login, which is the only way that map ever
+            # got filled in before.
             "reported": {"expected": rep.get("expected"), "actual": rep.get("actual"),
-                         "notes": rep.get("notes"), "dll": rep.get("dll")},
+                         "notes": rep.get("notes"), "dll": rep.get("dll"),
+                         "discord": rep.get("discord")},
         }
         queue.append(entry)
         print("  %s  QUEUED - %s%s" % (head, rep["endpoint"],
