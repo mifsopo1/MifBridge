@@ -85,6 +85,20 @@ def plant_confirm(text):
                         'RejectUnknownParams(In, Out, { TEXT("partitioned"), TEXT("confirm") },', 1)
 
 
+def plant_default_send(text):
+    """An MCP wrapper handing back a default the endpoint refuses for being present.
+
+    THE PLANT IS THE REAL MISTAKE, and it shipped for a few hours on 2026-09-03. list_sublevels'
+    wrapper declared `net_mode: str = "server"`, _post sends anything that is not None, and the
+    endpoint had just started refusing netMode unless world is "pie" - so `list_sublevels()` with no
+    arguments at all was refused. Restoring that one default is the whole plant.
+    """
+    old = 'def list_sublevels(world: str = "editor", net_mode: str = None)'
+    if old not in text:
+        return None
+    return text.replace(old, 'def list_sublevels(world: str = "editor", net_mode: str = "server")', 1)
+
+
 def plant_unbound(text):
     """A wrapper that names a parameter its signature does not declare - the move_tree_widget shape."""
     m = re.search(r"\n(def [a-z0-9_]+\([^)]*\)[^\n]*\n)", text)
@@ -706,6 +720,9 @@ PLANTS = {
         plant_blender_consequence_field, "probeDroppedZz"),
     "audit_promise_flags.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_confirm, "confirm"),
     "mcp_static_check.py": (SERVER, plant_unbound, "mif_probe_zz_unbound"),
+    # Exits 1 on a finding, so the exit code is real proof; the marker names the wrapper. Plants
+    # into server.py rather than Source/, so it still runs with an editor up.
+    "audit_mcp_default_sends.py": (SERVER, plant_default_send, "list_sublevels"),
     "audit_postconditions.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_silent_mutator,
                                 "mif_probe_zz"),
     "audit_loop_writes.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_loop_write,
