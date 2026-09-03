@@ -116,7 +116,12 @@ def main():
     # ================================================================== T854 list_sequence_bindings
     print("")
     print("=== T854: list_sequence_bindings ===")
-    seqs = (M.call("find_assets", {"class": "LevelSequence", "limit": 1}).get("assets") or [])
+    # SKIP SCRATCH, or T854 goes green having checked nothing. A freshly created LevelSequence has
+    # no bindings, so `count == len(bindings)` holds at zero and the `if bindings:` block below -
+    # where the actual binding assertions live - never runs.
+    seqs = [a for a in (M.call("find_assets", {"class": "LevelSequence",
+                                               "limit": 20}).get("assets") or [])
+            if not M.is_scratch_fixture(a)]
     check("T854 (setup) there is at least one LevelSequence to test against", len(seqs) > 0, len(seqs))
     if seqs:
         r = M.call("list_sequence_bindings", {"path": seqs[0].get("path")})

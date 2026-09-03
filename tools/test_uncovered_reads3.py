@@ -33,7 +33,13 @@ def main():
 
     # ================================================================== T840 validate
     print("=== T840: validate (compile without saving) ===")
-    bps = (M.call("find_assets", {"class": "Blueprint", "limit": 1}).get("assets") or [])
+    # SKIP SCRATCH: forty-five suites create Blueprints under /Game/_Mif*, so limit 1 over the
+    # whole project is more likely to find somebody's half-built scratch than a real one - and a
+    # scratch Blueprint deleted between the find and the validate fails T840 for a cause that is
+    # not about validate.
+    bps = [a for a in (M.call("find_assets", {"class": "Blueprint",
+                                              "limit": 20}).get("assets") or [])
+           if not M.is_scratch_fixture(a)]
     check("T840 (setup) there is at least one Blueprint to validate", len(bps) > 0, len(bps))
     if bps:
         bp_path = bps[0].get("path")

@@ -78,8 +78,12 @@ def main():
         print("bridge never came up")
         return 1
 
-    seqs = M.call("find_assets", {"class": "AnimSequence", "pathPrefix": "/Game/",
-                                  "limit": 20}).get("assets") or []
+    # SKIP SCRATCH. The playLength gate below is nearly enough - a freshly created AnimSequence is
+    # empty and cannot pass it - but test_duplicate_cooked_guard duplicates a REAL sequence, which
+    # passes the gate and is then deleted by its owner while this suite is still using it.
+    seqs = [a for a in (M.call("find_assets", {"class": "AnimSequence", "pathPrefix": "/Game/",
+                                               "limit": 20}).get("assets") or [])
+            if not M.is_scratch_fixture(a)]
     target = None
     for s in seqs:
         d = M.call("describe_animation", {"assetPath": s["path"]})

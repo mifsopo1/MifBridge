@@ -54,7 +54,11 @@ def main():
 
     # ------------------------------------------------------------------ T4900 the read
     print("=== T4900: everything the registry knows, without loading the asset ===")
-    tex = (M.call("find_assets", {"class": "Texture2D", "limit": 1}).get("assets") or [{}])[0]
+    # SKIP SCRATCH: T4900 reads what the REGISTRY knows about an asset without loading it, and a
+    # texture test_textures imported minutes ago carries different tags from the project's own
+    # cooked content - which is the content this read exists to be exercised against.
+    tex = M.pick_adoptable(M.call("find_assets", {"class": "Texture2D",
+                                                  "limit": 20}).get("assets")) or {}
     target = tex.get("path")
     check("T4900 (setup) a texture to read", bool(target), json.dumps(tex)[:200])
     if not target:

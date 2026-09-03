@@ -87,7 +87,7 @@ CLEARED = re.compile(r'#\s*ADOPTION-OK:\s*(\S.*)')
 # `p.startswith(SC.SCRATCH_PREFIXES)` - scratch_confirm's own tuple, used by test_set_struct_member
 # and test_node_spawns. Missing it reported two suites that already do exactly the right thing.
 HANDROLLED = re.compile(r'_Mif[A-Za-z]*"\s*\)|startswith\(\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)?SCRATCH'
-                        r'|"_Mif"\s+(?:not\s+)?in')
+                        r'|"/?_Mif"\s+(?:not\s+)?in')
 
 # Reaching for one of these is what makes a row a FIXTURE rather than a number.
 IDENT = re.compile(r'\.get\(\s*"(path|actorPath|objectPath|name|label)"|'
