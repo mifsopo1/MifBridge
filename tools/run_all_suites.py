@@ -35,7 +35,7 @@ import mifaudit as M
 TIMEOUT = 900
 
 
-KNOWN_FLAGS = {"--once", "--with-pie", "--anyway"}
+KNOWN_FLAGS = {"--once", "--with-pie", "--anyway", "--offline"}
 
 
 def running_shipping_builds():
@@ -71,6 +71,10 @@ USAGE = """usage: run_all_suites.py [--once] [--with-pie] [--anyway] [name-subst
               suite created passes alone and fails on pass 2, which is the point.
   --with-pie  include the PIE suites. They need an ATTENDED run: starting PIE stops the bridge
               answering while the editor stays alive, which hangs an unattended sweep.
+
+  --offline   run ONLY the suites that need no editor, no Blender and no bridge. Eight of them,
+              190 assertions, a few seconds. Launches nothing - which is the point, since the
+              mode exists for when somebody else is using the machine.
 
   --anyway    sweep even though a packaged UE game build is running. That build is the strongest
               signal somebody is sitting at this machine, and a sweep costs them half an hour of
@@ -116,6 +120,42 @@ def main():
 
     here = os.path.dirname(__file__) or "."
     suites = sorted(os.path.basename(p) for p in glob.glob(os.path.join(here, "test_*.py")))
+
+    # --offline: THE SUITES THAT NEED NO BACKEND AT ALL, which is what you have when somebody else
+    # is using the editor. Measured 2026-09-03 by running every suite with the bridge and Blender
+    # both down and reading the exit code - 190 assertions across these eight.
+    #
+    # CURATED, AND THAT IS NOT LAZINESS. The PIE list above is derived because "does it call
+    # start_pie" is a question source can answer. "Does it need a backend" is not: a grep for
+    # M.call/raw_post/_blender MISSES five suites that roll their own urllib POST against
+    # 127.0.0.1:8791, and widening it to match urllib or a port number then EXCLUDES
+    # test_blender_headless_guard, which mentions ports while starting its own fake servers and
+    # passes with nothing running. Wrong in both directions, which is why the classifier here is an
+    # exit code and the list is written down.
+    #
+    # A FLOOR, NOT A CEILING. A new backend-free suite will not appear here on its own. What this
+    # list cannot do is go quietly wrong: run it and a member that starts needing a backend hangs or
+    # fails in front of you, because that is the whole point of running them with nothing listening.
+    OFFLINE_SUITES = (
+        "test_blender_headless_guard.py",   # starts its own fake servers
+        "test_find_tools.py",
+        "test_fuzz_detector.py",
+        "test_mcp_post_errors.py",
+        "test_payload_contract.py",         # stubs both transports
+        "test_release_gates.py",
+        "test_report_intake.py",
+        "test_scratch_discrimination.py",
+    )
+    if "--offline" in flags:
+        missing = [s for s in OFFLINE_SUITES if s not in suites]
+        if missing:
+            print("OFFLINE LIST NAMES A SUITE THAT NO LONGER EXISTS: %s" % ", ".join(missing))
+            return 2
+        suites = [s for s in suites if s in OFFLINE_SUITES]
+        print("OFFLINE MODE - %d suite(s) that need no editor, no Blender and no bridge." % len(suites))
+        print("  A floor rather than a full list: these are the ones measured to pass with the")
+        print("  backends down. Everything else is unverified by this run.")
+        print("")
 
     # PIE SUITES ARE SKIPPED UNLESS ASKED FOR. Starting PIE makes the bridge stop answering while
     # the editor stays alive (seen twice on 2026-08-30, with LogPlayLevel in the editor log and
@@ -184,8 +224,14 @@ def main():
     print("")
 
     ordered = [(name, p) for p in range(1, passes + 1) for name in suites]
+    offline = "--offline" in flags
     for name, which in ordered:
-        if not M.wait_for_bridge(timeout=600):
+        # OFFLINE MODE MUST NOT LAUNCH AN EDITOR, and this line is why the mode needed a guard
+        # rather than just a suite filter. The loop below waits for the bridge and STARTS an editor
+        # when none answers - so an --offline run would have launched one on a machine whose whole
+        # premise is that somebody else is using it, which is the exact opposite of what the flag is
+        # for. Caught before it shipped by reading the loop rather than by trusting the filter.
+        if not offline and not M.wait_for_bridge(timeout=600):
             M.launch_editor()
             M.wait_for_bridge(timeout=900)
         # NAMED BEFORE IT RUNS, not after. The result line is printed when a suite FINISHES, so a
@@ -224,9 +270,20 @@ def main():
         # BUSY IS NOT DEAD. A timeout here means the editor is alive and its game thread is
         # occupied - the bridge runs every endpoint on that thread - so relaunching starts a SECOND
         # editor beside a working one and both race for the port. That hung a 288-run sweep.
-        state = M.bridge_liveness()
+        # THE SECOND LAUNCH PATH, and the one that made --offline start an editor anyway. The first
+        # attempt at this flag guarded only the pre-suite launch above; here the runner asks whether
+        # the editor survived the suite, and with nothing listening the answer is "dead", so it
+        # helpfully started one. An offline run has no editor BY DESIGN, so "dead" is the expected
+        # state rather than a crash to recover from.
+        #
+        # Caught by running the flag and then looking at the machine, not by reading the diff - the
+        # log said nothing, every suite passed, and an editor was sitting there afterwards. Guarding
+        # one of two paths is the same half-a-pair mistake this repo recorded three times today.
+        state = "dead" if offline else M.bridge_liveness()
         alive = state == "alive"
-        if state == "busy":
+        if offline:
+            alive = None          # not applicable: nothing was supposed to be alive
+        elif state == "busy":
             print("  ... bridge busy (listening, not answering). The editor's game thread is "
                   "occupied; waiting rather than relaunching.", flush=True)
             alive = M.wait_for_bridge(timeout=900)
@@ -263,11 +320,17 @@ def main():
     # "63 passed" and "1 failed" are both lies in different directions.
     skipped = [r for r in results if r["rc"] == 2]
     bad = [r for r in results if r["rc"] not in (0, 2)]
-    died = [r for r in results if not r["editorSurvived"]]
+    # `is False`, NOT falsy. An offline run records editorSurvived as None - not applicable, there
+    # was no editor - and `not None` is True, so the first version of this counted all eight as
+    # having TAKEN THE EDITOR DOWN. A summary line asserting eight crashes that did not happen is
+    # worse than no summary, and it is the same shape as a detail that states an interpretation
+    # instead of the observation.
+    died = [r for r in results if r["editorSurvived"] is False]
     print("")
     print("=" * 72)
-    print("%d run(s) across %d suites, %d failed, %d skipped, %d took the editor down"
-          % (len(results), len(suites), len(bad), len(skipped), len(died)))
+    print("%d run(s) across %d suites, %d failed, %d skipped, %d took the editor down%s"
+          % (len(results), len(suites), len(bad), len(skipped), len(died),
+             " (no editor was involved)" if "--offline" in flags else ""))
     for r in skipped:
         # Named, not just counted. A skip nobody reads is indistinguishable from a pass.
         print("  SKIPPED (verified nothing): %s" % r["suite"])
