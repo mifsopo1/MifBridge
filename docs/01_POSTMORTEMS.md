@@ -2433,6 +2433,85 @@ are now handled at two different points for a reason worth remembering: repair-a
 construction works only when the asset survives long enough to be repaired.
 
 
+## A feature was down for five days because a 15-minute wait looked like a crash (2026-09-02)
+
+**Symptom.** The bridge-report pipeline - the thing that turns a user's GitHub issue into a fetched,
+vetted, reproduced and fixed bug - had not run since 27 August. Nobody noticed, because a watcher
+that is not running produces exactly the same output as a watcher with nothing to do: silence.
+
+It surfaced only because a reporter said in Discord that he had a crash to file, and the question
+"is that still set up?" got asked out loud.
+
+**The false diagnosis, which was mine and lasted a day.** `report_watch.log` ends like this:
+
+    03:50:48    gh error: Post "https://api.github.com/graphql": net/http: TLS handshake timeout
+    04:02:40    gh error: Post "https://api.github.com/graphql": net/http: TLS handshake timeout
+    04:15:42    gh error: error connecting to api.github.com
+
+Three network failures and then nothing, ever. I wrote that up as "the daemon exits on a network
+error instead of surviving one" and recorded it in the decision log. It is a tidy story and it is
+wrong. `poll()` catches every exception and returns `None`, the loop continues, and the log itself
+proves survival - it recovered from the first two errors and logged the third. A daemon that exits
+on the error cannot log the one after it.
+
+The real end of the process left no trace at all, because there was nothing to trace: something
+killed it.
+
+**Root cause.** `report_repro.py` opened with
+
+    if not M.wait_for_bridge(timeout=900):
+
+Nothing in that script launches an editor; it only waits for one. So when a report arrived with no
+editor running, the replay stood there for A QUARTER OF AN HOUR emitting
+
+    [waiting 63s - the bridge is not usable yet: ...]
+    [waiting 71s - the bridge is not usable yet: ...]
+
+onto the watcher's console, and Andre killed the watcher to stop the noise. Which is the correct
+response to a process that appears to have wedged.
+
+**Why the log looked innocent while the console was unusable.** `log()` writes to the file AND
+stdout, but it is only called on events - idle polls write nothing, by design, because the whole
+point was that watching costs nothing. The `[waiting...]` lines came from `mifaudit.wait_for_bridge`,
+which prints and does not log. So the artefact anyone would inspect afterwards was clean, and the
+only evidence of the actual problem scrolled past in a terminal that was then closed.
+
+**Fix.** Ask once, and distinguish "no editor" from "editor still coming up":
+
+    ok, why = M.require_sdk_bridge()
+    if not ok and not M.bridge_pid():
+        ... return 3          # nothing was WRONG, there was nowhere to replay
+
+Return code 3 rather than 1 deliberately: 1 means the replay failed, 3 means it never had a subject.
+An editor that is already starting is still waited for, because the port binds before it can answer
+and a cold start is genuinely slow - that wait is the one case where waiting is right.
+
+The watcher is also now started detached (PowerShell `Start-Process`) instead of from a terminal, so
+closing a shell cannot take it down again.
+
+**Prevention, and the general lesson is not about timeouts.**
+
+1. **A default timeout is a policy.** `wait_for_bridge(timeout=900)` was written for suites, where
+   waiting 15 minutes for an editor that is mid-launch is correct. Reusing it in a daemon imported
+   that policy silently. A shared helper's default is a decision every new caller inherits without
+   being asked.
+
+2. **Silence is not health, and an idle-quiet design has a blind spot.** "Idle polls cost NO tokens"
+   was a deliberate and good property, but it means down and idle are indistinguishable from the
+   outside. Anything whose healthy state is silence needs a liveness signal that is not its output -
+   a heartbeat file, a "last checked" timestamp, something a human can look at and see a clock
+   moving.
+
+3. **The log you kept is not the output the human saw.** Two streams existed - a curated file and a
+   raw console - and the noise that actually caused the outage only ever went to the one that was
+   thrown away. When diagnosing "why did someone kill this", look for what they were LOOKING at.
+
+4. **A plausible cause that fits the last lines of a log is still a guess.** The TLS errors were
+   sitting right at the end and were an easy, satisfying story. Reading `poll()` for thirty seconds
+   would have killed it immediately: it catches everything. The check that settles "does this error
+   kill the process" is reading the handler, not reading the log.
+
+
 ## Asking the editor to close after a session of scratch work stalls on a prompt nobody can click (2026-08-31)
 
 **Symptom.** A rebuild needed the editor closed. `CloseMainWindow()` was sent, and several
