@@ -5957,9 +5957,6 @@ def main():
     mcp.run()
 
 
-if __name__ == "__main__":
-    main()
-
 
 @mcp.tool()
 def mif_layout_graph(graph_id: str, apply: bool = False, comment: bool = False) -> dict:
@@ -6103,3 +6100,7 @@ def mif_help(tool: str = "") -> dict:
     return {"error": "no tool named %r. Either the name is wrong, or it is an ENDPOINT name rather "
                      "than an MCP tool name - describe_endpoint {name} answers for those." % name,
             "didYouMean": near}
+
+
+if __name__ == "__main__":
+    main()

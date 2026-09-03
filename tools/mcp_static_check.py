@@ -275,6 +275,44 @@ def main():
     # unreachable on every clean run - which is every run - so the checker printed OK while never
     # having looked. Found by planting `deep=hide_knots or None` into list_nodes and watching it
     # still say OK; the finder function was right the whole time, the wiring was dead code.
+    # A TOOL DEFINED AFTER THE __main__ GUARD IS NEVER REGISTERED, and nothing else would say so.
+    # main() ends in mcp.run(), which BLOCKS serving, so when server.py runs as a script - which is
+    # the only way it runs - execution never reaches a decorator below the guard. Found 2026-09-03:
+    # mif_layout_graph, mif_create_curve and mif_help sat after it, so 535 of 538 tools registered
+    # and those three were invisible to every MCP client. mif_help is the documented way to read
+    # tool prose and is backed by all 406 tool_help.json entries, none of which were reachable.
+    #
+    # Checked here rather than in a suite because it is a property of the FILE, not of a running
+    # server: importing the module registers everything, so the bug is invisible to any test that
+    # imports it. That is exactly why it survived - the module looks correct from inside Python.
+    unreachable = []
+    try:
+        tree = ast.parse(io.open(a.file, encoding="utf-8", errors="replace").read())
+        guards = [n.lineno for n in tree.body
+                  if isinstance(n, ast.If) and "__main__" in ast.dump(n.test)]
+        if guards:
+            first = min(guards)
+            for n in tree.body:
+                if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if n.lineno <= first:
+                    continue
+                for d in n.decorator_list:
+                    f = d.func if isinstance(d, ast.Call) else d
+                    if getattr(f, "attr", None) == "tool":
+                        unreachable.append((n.name, n.lineno))
+    except (OSError, SyntaxError) as exc:               # noqa: BLE001
+        print("could not parse %s for the __main__ ordering check: %s" % (a.file, exc))
+        return 2
+    if unreachable:
+        print("")
+        print("NEVER REGISTERED - %d @mcp.tool definition(s) sit BELOW `if __name__ == \"__main__\"`:"
+              % len(unreachable))
+        for name, ln in unreachable:
+            print("  %s (line %d)" % (name, ln))
+        print("  main() ends in mcp.run(), which blocks, so these decorators never execute when the")
+        print("  server runs as a script. Move the __main__ block to the END of the file.")
+
     lossy = lossy_bool_forwards()
     if lossy:
         print("")
@@ -286,9 +324,9 @@ def main():
         print("  Forward it directly - `key=param` - or guard the C++ read with JHasAny.")
 
     if not findings:
-        if not lossy:
+        if not lossy and not unreachable:
             print("OK  every one can be called - no unbound names")
-        return 1 if lossy else 0
+        return 1 if (lossy or unreachable) else 0
 
     print("")
     print("UNBOUND NAMES - these raise NameError on EVERY call:")
