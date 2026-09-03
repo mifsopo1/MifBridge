@@ -37,6 +37,7 @@
 #include "K2Node_Knot.h"
 #include "K2Node_Variable.h"      // FMemberReference retarget (retarget_variable_node)
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "FindInBlueprintManager.h"   // FDisableGatheringDataOnScope - see the retype below
 #include "Kismet2/CompilerResultsLog.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Logging/TokenizedMessage.h"
@@ -1846,12 +1847,43 @@ namespace MifBridge
 			}
 			{
 				FMifScopedDialogSuppression NoModal(TEXT("ChangeVariableType_Warning"));
+				FDisableGatheringDataOnScope NoFiB;
 				FBlueprintEditorUtils::ChangeLocalVariableType(Blueprint, LocalScope, FName(*Name), NewType);
 			}
 		}
 		else
 		{
+			// FDisableGatheringDataOnScope is the ENGINE's own RAII guard (FindInBlueprintManager.h
+			// :877, KISMET_API), not a hand-rolled one - the same lesson as reaching for LexToString
+			// instead of writing a table beside an enum.
+			//
+			// WHY IT IS HERE, traced from issue #2 rather than guessed. ChangeMemberVariableType
+			// reaches MarkBlueprintAsStructurallyModified, which calls
+			// FBlueprintCompilationManager::CompileSynchronously UNCONDITIONALLY - an implicit
+			// compile the HTTP caller never asked for, which is why that report could truthfully say
+			// "no compile was requested" while one happened. The compilation manager then calls
+			// AddOrUpdateBlueprintSearchMetadata (BlueprintCompilationManager.cpp:290), FiB
+			// re-indexes, and for any asset whose EditorObjectVersion is unknown it opens the
+			// package to read its file summary. In a COOKED editor that package is inside a .pak
+			// with no loose file, CreateFileReader returns null, and FindInBlueprintManager.cpp:408
+			// ensures "FiB: Unable to open package to read file summary."
+			//
+			// The ensure directly ABOVE it (DoesPackageExist) does not fire, which is what marks
+			// this as pak-resident content rather than a missing asset - and why it is a cooked
+			// problem that will not reproduce on a loose project.
+			//
+			// bEnableGatheringData is read in exactly ONE place, the early-out at the top of
+			// AddOrUpdateBlueprintSearchMetadata, so this removes the re-index and nothing else. A
+			// search a human starts by hand is untouched. The index goes stale for this blueprint
+			// until it is next compiled normally, which is the cost and is the same cost the engine
+			// already accepts wherever it uses this guard itself.
+			//
+			// NOT CLAIMED AS A CRASH FIX. The reporter saw the editor exit near this ensure and was
+			// careful not to assert the ensure caused it; neither is asserted here. This removes a
+			// package read that CANNOT succeed on cooked content. Whether that read was also what
+			// terminated the editor is unestablished.
 			FMifScopedDialogSuppression NoModal(TEXT("ChangeVariableType_Warning"));
+			FDisableGatheringDataOnScope NoFiB;
 			FBlueprintEditorUtils::ChangeMemberVariableType(Blueprint, FName(*Name), NewType);
 		}
 
