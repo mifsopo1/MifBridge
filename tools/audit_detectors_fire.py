@@ -543,8 +543,18 @@ def plant_fatal_guard(text):
         return None
     j = text.find("\n", brace) + 1
     return (text[:j]
-            + '\t\tif (false) { Fail(Out, TEXT("a ProbeZzMesh would CRASH the editor "\n'
-              '\t\t\t"outright, so it is refused here rather than attempted. ")); }\n'
+            # THE FATAL PHRASE STRADDLES THE LITERAL BOUNDARY ON PURPOSE. "CRASH THE " ends one
+            # literal and "EDITOR" begins the next, so the phrase exists only in the string the
+            # COMPILER builds - in the source bytes it reads `CRASH THE " "EDITOR`.
+            #
+            # That is a regression lock, not decoration. Until 2026-09-03 the tool matched raw
+            # source text and was therefore blind to every wrapped phrase, including create_asset's
+            # UAnimSequence refusal - the guard for the one type that has actually terminated this
+            # editor. The old plant kept its whole phrase inside the first literal, so it passed
+            # just as happily against the blind version and would pass again if the joining were
+            # reverted. Now it cannot.
+            + '\t\tif (false) { Fail(Out, TEXT("a ProbeZzMesh would CRASH THE "\n'
+              '\t\t\t"EDITOR outright, so it is refused here rather than attempted. ")); }\n'
             + text[j:])
 
 
