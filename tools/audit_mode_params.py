@@ -29,7 +29,22 @@ The filters were each added because the tool accused something innocent:
   * brace depth, after it listed every parameter of every mode-having handler;
   * presence-guard, after it accused set_viewport_camera, whose location/rotation/lookAt sit inside
     `if (TryGetObjectField(...))` and are applied on every mode.
-Each pass cut noise without cutting the one row that started this - invoke_editor_tab.
+  * MODE-PARAMS-OK, 2026-09-03, for refusals built from a TABLE - the name is assembled at runtime
+    and no message literal contains it, so create_procedural_mesh went on being listed for ten
+    parameters it had started refusing.
+  * the full READERS list, same day, after add_socket's location/rotation/scale and
+    invoke_editor_tab's probeIds were reported as mode-ignored: they go through house helpers
+    (ReadVectorField, UiReadStringArray) that this scan did not recognise as reads at all.
+  * HasField in presence_guarded, same day - five TryGet* spellings were listed and the plainest
+    one was not, which is how set_viewport_camera came back a second time on different parameters.
+  * branch depth rather than brace depth, same day, after invoke_editor_tab and create_landscape
+    were listed for parameters read inside `{ FString Err; ... }` - a bare scoping block, which is
+    this codebase's idiom for keeping an error string out of the enclosing scope and is not a
+    branch at all.
+Each pass cut noise without cutting the one row that started this - invoke_editor_tab. On
+2026-09-03 the list went 23 -> 10 that way, with 9 handlers actually fixed and 8 marked
+MODE-PARAMS-OK; every clearance above was checked by reading the handler, because a shorter list
+that is shorter for the wrong reason is worse than the long one.
 """
 import os
 import re
@@ -71,6 +86,19 @@ FAIL_MSG = re.compile(r'Fail\s*\(\s*Out\s*,(.*?)\)\s*;', re.S)
 MODE_OK = re.compile(r'//\s*MODE-PARAMS-OK:\s*(\S.*)')
 
 
+# EVERY FUNCTION THAT READS A NAMED FIELD OFF `In`, enumerated from Source rather than remembered:
+#
+#   grep -rhoE "[A-Za-z_]+\(In, TEXT\(" Source/MifBridge/Private/*.cpp | sort | uniq -c
+#
+# Recognising only the J* four made every helper-read parameter score as NEVER READ, which this
+# file's caller cannot distinguish from "read inside a mode branch" - so add_socket's
+# location/rotation/scale and invoke_editor_tab's probeIds were reported as mode-ignored while being
+# read at the handler's top level on every path. Re-run that grep before trusting a clean list; a
+# new helper added to Source and not added here fails in the direction that manufactures findings.
+READERS = ("JStr", "JNum", "JBool", "JInt", "JArray",
+           "ReadVectorField", "ReadRotatorField", "ReadScaleField", "ReadTripleField",
+           "ResolveNodeField", "ParsePinSpecs", "UiReadStringArray")
+
 # Depth inside a handler body: 1 is the function's own braces, so a statement directly in the body
 # sits at 1 and anything within an if/else/loop is deeper.
 TOP_LEVEL = 1
@@ -99,23 +127,39 @@ def presence_guarded(body, param):
 
 
 def read_depth(body, param):
-    """Shallowest brace depth at which this parameter is READ. Large number if it is never read."""
+    """Shallowest BRANCH depth at which this parameter is READ. Large number if it is never read.
+
+    Branch depth, not brace depth. A BARE SCOPING BLOCK IS NOT A BRANCH: this codebase wraps a read
+    in `{ FString ArrError; ... }` to keep an error string out of the enclosing scope, and counting
+    that as nesting made invoke_editor_tab's probeIds look like it sat inside a mode branch when it
+    is read on every path. Cancelling the opening brace alone is not enough - the matching close
+    still decrements and the count drifts negative for the rest of the handler - so the braces are
+    tracked on a stack and only the branching ones are counted.
+
+    A line that is nothing but `{`, whose previous code line does not end a control statement
+    (`)` for if/for/while/switch, or the word `else`), opens scope rather than a condition.
+    """
     pattern = 'TEXT("%s")' % param
-    depth, best = 0, 99
+    best = 99
+    stack = []          # one entry per open brace: True when it is a branch rather than bare scope
+    prev_code = ""
     for line in body.splitlines():
-        # THE HOUSE VECTOR HELPERS COUNT AS READS. Recognising only the J* accessors made
-        # `ReadVectorField(In, TEXT("location"), ...)` invisible, so add_socket's location/rotation/
-        # scale read as NEVER READ - which this function scores as 99, the same as a genuinely
-        # unread parameter, and the caller treats "never read at top level" as "conditional".
-        # They are read at the handler's top level and applied on every target; the row was a false
-        # positive for three passes. Four helpers, all in Source: ReadVectorField, ReadRotatorField,
-        # ReadScaleField, ReadTripleField.
-        if pattern in line and ("JStr" in line or "JNum" in line or "JBool" in line
-                                or "JInt" in line or "JArray" in line
-                                or "ReadVectorField" in line or "ReadRotatorField" in line
-                                or "ReadScaleField" in line or "ReadTripleField" in line):
+        stripped = line.strip()
+        depth = sum(1 for is_branch in stack if is_branch)
+        if pattern in line and any(r in line for r in READERS):
             best = min(best, depth)
-        depth += line.count("{") - line.count("}")
+        opens = line.count("{")
+        closes = line.count("}")
+        bare = (stripped == "{"
+                and not prev_code.endswith(")")
+                and not prev_code.endswith("else"))
+        for i in range(opens):
+            stack.append(not (bare and i == 0))
+        for _ in range(closes):
+            if stack:
+                stack.pop()
+        if stripped:
+            prev_code = stripped
     return best
 
 
