@@ -446,7 +446,15 @@ afterwards, so only the creation step is manual.
 
 ---
 
-## 9. Removing then recreating a WidgetAnimation of the same name crashed the editor
+## 9. Removing then recreating a WidgetAnimation of the same name crashed the editor — FIXED
+
+*(Heading marked 2026-09-03. The body says "Fixed and verified 2026-08-26" and the Status table
+agrees; only the heading did not - the third entry in this file with that exact disagreement,
+after 10 and 14. Verified in MifBridgeWidgets.cpp: `remove_widget_animation` renames the
+detached animation into `GetTransientPackage()` and cites `AnimationTabSummoner`, which is the
+engine's own delete path this entry identified as the missing step. An editor-fatal bug is the
+worst possible thing to leave reading as open - it is exactly what a reader triaging for danger
+would pick up first.)*
 
 **Reported** 2026-08-25 from QOLCrafting_P / `WBP_QOL_DropZone`, animation `ArrowLoop`, crash GUID
 `UECC-Windows-2A82EB2E400C3FC119CD1E859837B612_0000`. **Fixed and verified** 2026-08-26.
