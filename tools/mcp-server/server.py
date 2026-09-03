@@ -5020,6 +5020,12 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_render_info() -> dict:
+    "Everything that decides what a Blender render will look like - engine, samples and WHICH property they live on, effective resolution after the percentage multiplier, output format, colour management (view transform, look, exposure - the usual cause of 'washed out'), frame range, scene camera, world, and how many lights actually contribute. The read half of bl_set_render_settings, which reports only the five fields it can write. It also answers the black-render question directly: `blockers` is a measured list of reasons this render will produce nothing useful - no scene camera, no world datablock (a scene with no world contributes NO ambient light, so interiors go black and the lights get blamed), every light hidden or at zero energy - and `wouldRenderSomething` is the one-field answer. No parameters. Call mif_help(\"bl_render_info\") first."
+    return _blender("render_info")
+
+
+@mcp.tool()
 def bl_file_info() -> dict:
     "What .blend this Blender session is, whether it has unsaved work, what it holds, and - the part Blender never volunteers - which datablocks a SAVE WOULD DELETE. Anything with no users and no fake user is purged on write, permanently and silently: an unlinked action, an unused image, a node group nobody instanced. Call this before bl_save_file if the session has been edited for a while. Cheap, no parameters. Call mif_help(\"bl_file_info\") first."
     return _blender("file_info")

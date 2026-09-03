@@ -280,7 +280,101 @@ def op_render_still(params):
     }
 
 
+def op_render_info(params):
+    """Everything that decides what a render will look like, including why it will be black.
+
+    THE READ HALF THAT DID NOT EXIST. set_render_settings reports only the five fields it can
+    WRITE, and ops_render had no read op at all - one of six modules in that state. So "why is this
+    render black / washed out / the wrong size" was unanswerable without run_python, which is the
+    arbitrary-code switch a user may have turned off.
+
+    ARRANGED AROUND THE BLACK-RENDER QUESTION, because that is what people actually ask. The four
+    usual causes each get a direct field rather than being derivable from one: no scene camera
+    (render_still refuses, but set_render_settings and everything else will not tell you), no
+    world (a scene with no world contributes NO ambient light, so an interior is pure black outside
+    its own fixtures and the lights get blamed), every light hidden from the render, and a view
+    transform that is not what the caller assumed.
+
+    No parameters.
+    """
+    reject_unknown(params, (), "render_info")
+    sc = bpy.context.scene
+    r = sc.render
+    eng = r.engine
+
+    # Samples live in a different place per engine and this is the read half of the same problem
+    # _apply_common solves for writing, so it reports WHERE it found the number rather than just
+    # the number - a caller comparing against what they set needs to know they are the same field.
+    samples, samples_on = None, None
+    if "CYCLES" in eng and hasattr(sc, "cycles"):
+        samples, samples_on = int(sc.cycles.samples), "cycles.samples"
+    elif hasattr(sc, "eevee"):
+        for attr in ("taa_render_samples", "taa_samples"):
+            if hasattr(sc.eevee, attr):
+                samples, samples_on = int(getattr(sc.eevee, attr)), "eevee.%s" % attr
+                break
+
+    lights = [o for o in sc.objects if o.type == "LIGHT"]
+    lit = [o for o in lights if not o.hide_render and getattr(o.data, "energy", 0) > 0]
+    vs = getattr(sc, "view_settings", None)
+    ds = getattr(sc, "display_settings", None)
+
+    out = {
+        "engine": eng,
+        "samples": samples,
+        "samplesOn": samples_on,
+        "resolution": [r.resolution_x, r.resolution_y],
+        "percentage": r.resolution_percentage,
+        # What the file will ACTUALLY be, which is the number that matters and the one people get
+        # wrong - percentage is a multiplier nobody remembers is set.
+        "effectiveResolution": [int(r.resolution_x * r.resolution_percentage / 100.0),
+                                int(r.resolution_y * r.resolution_percentage / 100.0)],
+        "filePath": r.filepath,
+        "fileFormat": r.image_settings.file_format,
+        "colorMode": r.image_settings.color_mode,
+        "colorDepth": r.image_settings.color_depth,
+        "filmTransparent": bool(r.film_transparent),
+        "fps": r.fps,
+        "fpsBase": round(float(r.fps_base), 6),
+        "frameStart": sc.frame_start,
+        "frameEnd": sc.frame_end,
+        "frameCurrent": sc.frame_current,
+        # COLOUR MANAGEMENT, which silently changes every pixel and is the usual cause of "washed
+        # out". Reported rather than assumed - the default view transform differs by Blender
+        # version and a studio OCIO config renames all of these.
+        "viewTransform": getattr(vs, "view_transform", None),
+        "look": getattr(vs, "look", None),
+        "exposure": round(float(getattr(vs, "exposure", 0.0)), 6),
+        "gamma": round(float(getattr(vs, "gamma", 1.0)), 6),
+        "displayDevice": getattr(ds, "display_device", None),
+        "sceneCamera": sc.camera.name if sc.camera else None,
+        "worldName": sc.world.name if sc.world else None,
+        "lightCount": len(lights),
+        "lightsContributing": len(lit),
+        "viewLayer": bpy.context.view_layer.name,
+    }
+
+    # THE DIAGNOSIS, not just the census. Each entry is a measured reason this render will produce
+    # nothing useful, in the order they bite. A caller gets the answer rather than the inputs to it.
+    blockers = []
+    if sc.camera is None:
+        blockers.append("no scene camera - render_still will refuse and nothing can be framed")
+    if sc.world is None:
+        blockers.append("no world datablock - the scene contributes NO ambient light, so anything "
+                        "not lit by its own fixture renders pure black")
+    if not lit:
+        blockers.append("no light contributes to the render - %d light(s) exist but all are "
+                        "hidden from render or at zero energy" % len(lights))
+    if out["effectiveResolution"][0] < 1 or out["effectiveResolution"][1] < 1:
+        blockers.append("effective resolution is %s - percentage is %d%%"
+                        % (out["effectiveResolution"], r.resolution_percentage))
+    out["blockers"] = blockers
+    out["wouldRenderSomething"] = not blockers
+    return out
+
+
 OPS = {
     "set_render_settings": op_set_render_settings,
     "render_still": op_render_still,
+    "render_info": op_render_info,
 }
