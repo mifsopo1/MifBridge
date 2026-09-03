@@ -59,7 +59,15 @@ import mifaudit as M
 SCRATCH_PREFIXES = ("/Game/_Mif",)
 
 # No scratch exemption for these, ever. See the module docstring.
-NEVER = ("save", "force", "overwrite", "discardunsaved", "replaceexisting")
+# DERIVED, NOT COPIED. This was a second hand-kept spelling list, and on 2026-09-03 two aliases were
+# added to mifaudit's FORBIDDEN_KEYS - allowEditConst for `force`, replaceRoot for `confirm` - and
+# NOT here, so both authorising flags stayed passable through this module for the hours in between.
+# Fixing one copy of a duplicated list is the exact mistake recorded three times in 02_GOTCHAS that
+# same day, and a sync would only reset the clock on the next one.
+#
+# AUTHORISING_ONLY is precisely the right set: it is FORBIDDEN_KEYS minus "confirm", and passing a
+# confirm is this module's entire job. Anything else that authorises must not ride along with it.
+NEVER = tuple(sorted(M.AUTHORISING_ONLY))
 
 # A mount point, i.e. the shape of a thing that names an asset. Deliberately broad: if it looks like a
 # path at all it must prove it is a scratch path.
