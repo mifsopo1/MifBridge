@@ -49,38 +49,47 @@ def _apply_common(sc, params):
     """Settings shared by set_render_settings and the overrides render_still accepts."""
     applied = {}
     rx = take_float(params, "resolutionX", default=None)
-    if rx is not None:
-        sc.render.resolution_x = int(rx)
-        applied["resolutionX"] = sc.render.resolution_x
     ry = take_float(params, "resolutionY", default=None)
-    if ry is not None:
-        sc.render.resolution_y = int(ry)
-        applied["resolutionY"] = sc.render.resolution_y
     pct = take_float(params, "percentage", default=None)
-    if pct is not None:
-        sc.render.resolution_percentage = int(pct)
-        applied["percentage"] = sc.render.resolution_percentage
-
     samples = take_float(params, "samples", default=None)
+
+    # WHERE THE SAMPLE COUNT LIVES IS RESOLVED BEFORE ANYTHING IS WRITTEN. It lives in a different
+    # place per engine, and writing the wrong one is a silent no-op: setting cycles.samples on
+    # EEVEE changes nothing and reports nothing. That refusal used to fire AFTER resolution,
+    # resolutionY and percentage had already been written - and in render_still it also runs before
+    # the frame and output-path checks, so a call ending "NOTHING was rendered" had permanently
+    # changed the scene's resolution on the way past. Deciding the target first costs nothing:
+    # which attribute exists is a property of the engine, not of the value being written.
+    samples_target = None
     if samples is not None:
-        # THE SAMPLE COUNT LIVES IN A DIFFERENT PLACE PER ENGINE, and writing the wrong one is a
-        # silent no-op: setting cycles.samples on EEVEE changes nothing and reports nothing.
-        eng = sc.render.engine
-        if "CYCLES" in eng:
-            sc.cycles.samples = int(samples)
-            applied["samples"] = sc.cycles.samples
-            applied["samplesOn"] = "cycles.samples"
+        if "CYCLES" in sc.render.engine and hasattr(sc, "cycles"):
+            samples_target = (sc.cycles, "samples", "cycles.samples")
         elif hasattr(sc, "eevee"):
             for attr in ("taa_render_samples", "taa_samples"):
                 if hasattr(sc.eevee, attr):
-                    setattr(sc.eevee, attr, int(samples))
-                    applied["samples"] = int(samples)
-                    applied["samplesOn"] = "eevee.%s" % attr
+                    samples_target = (sc.eevee, attr, "eevee.%s" % attr)
                     break
-        if "samples" not in applied:
+        if samples_target is None:
             raise MifOpError("this Blender's %s engine exposes no sample count this op knows how "
                              "to write, so `samples` would have been silently ignored. Set it "
-                             "through the engine's own property instead." % sc.render.engine)
+                             "through the engine's own property instead. NOTHING was changed."
+                             % sc.render.engine)
+
+    # COMMIT. Nothing below can refuse.
+    if rx is not None:
+        sc.render.resolution_x = int(rx)
+        applied["resolutionX"] = sc.render.resolution_x
+    if ry is not None:
+        sc.render.resolution_y = int(ry)
+        applied["resolutionY"] = sc.render.resolution_y
+    if pct is not None:
+        sc.render.resolution_percentage = int(pct)
+        applied["percentage"] = sc.render.resolution_percentage
+    if samples_target is not None:
+        holder, attr, label = samples_target
+        setattr(holder, attr, int(samples))
+        applied["samples"] = int(getattr(holder, attr))
+        applied["samplesOn"] = label
     return applied
 
 
