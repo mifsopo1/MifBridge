@@ -11471,6 +11471,36 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       revert_inherited_component discards EVERY override on the component in one step,
       which is why override_inherited_component treats confirm as optional.
 
+- [ ] **the claims auditor exits 0 either way, so for three days nobody read its list** (1 hour)
+      `audit_cross_endpoint_claims` was written 2026-08-31. `return 0` at line 207 is its ONLY
+      success exit, and it is in no gate - `make_release.py` runs nine sibling audits
+      (consequence_fields, loop_writes, modals, postconditions, promise_flags, suite_payloads,
+      suite_reach, vacuous_checks, value_discovery) and not this one. So it printed a reading list
+      on demand and nothing ever made a person read it. The list was first read 2026-09-03, three
+      days later, and it held 14 equivalence claims of which 12 had never been compared by anything.
+
+      THE DETECTOR IS NOT THE PROBLEM. It is registered in `audit_detectors_fire` with a real plant
+      (`plant_cross_endpoint_claim`, probe `probeSameZz`) and goes red on it. What is missing is the
+      GATE, and those are different failures: an asleep detector reports nothing, this one reported
+      correctly to nobody.
+
+      THE FIX IS DIFFERENTIAL, NOT GATE-ON-ZERO. Zero is not reachable and should not be the target:
+      two of the claims are blocked on the machine (`set_niagara_emitter` -> `set_property` needs an
+      uncooked Niagara emitter with editor data; `preview_composite_widget` -> `list_live_widgets`
+      needs a running PIE session). A gate demanding zero would be red forever, and a permanently
+      red gate is one somebody switches off - which is how this file describes every stale exemption
+      it has already had to clean up. So: a NEW unpaired claim fails, a recorded one does not.
+
+      KEYED ON (speaker, other), NOT ON THE LINE AND NOT ON THE QUOTE. `audit_vacuous_checks` keyed
+      its baseline on file:LINE and broke on 2026-09-03 when comment insertions shifted six entries
+      whose text had not changed at all - a line number is not an identity. Handler prose gets
+      reworded constantly, so a quote-keyed baseline churns and stops being kept current; the quote
+      is stored and a change is REPORTED, but it does not fail. The case this deliberately misses is
+      a second, different claim between an already-recorded pair, and that trade belongs in the
+      code's own header rather than in someone's head.
+
+      Draft written 2026-09-03, not yet applied.
+
 - [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
       THE OTHER TWELVE WERE READ 2026-09-03, which is what "paired" never meant. The tool says so
       itself - "a pair appearing in one suite proves only that both were CALLED there, never that
