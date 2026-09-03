@@ -35,6 +35,22 @@ the MODE-PARAMS-OK marker the handler already needs. A guard added without one i
 this file cannot tell you that - which is exactly the situation before it existed, so it is not a
 regression, just a limit.
 
+THREE QUESTIONS WERE ASKED OF THIS BOUNDARY ON 2026-09-03. Two found shipped bugs and the third
+found nothing, which is worth writing down so it is not asked again from scratch:
+
+  1. does a wrapper SEND a key the handler refuses for being present?   -> this file. Found
+     sculpt_landscape (flatten and smooth unreachable, v0.3.0-v0.8.1) and five wrappers broken the
+     same morning by new guards.
+  2. does a wrapper DEFAULT disagree with the handler's default?        -> found
+     override_inherited_component, which could not be called at all in any tagged release because
+     the wrapper posted confirm:false and the endpoint honours it. Only 3 candidates in the whole
+     surface and 2 were my extractor's fault; the axis is otherwise clean, so it is not automated.
+  3. does a handler REQUIRE a key its wrapper cannot supply?            -> ZERO. Twelve candidates,
+     twelve false: eight reach the key through an alias family the handler reads with JStrAny, and
+     the rest were prose the scan misread - the real messages are "actorPaths[] is required" and
+     "pathPrefix is required and must start with /". Parsing a requirement out of a refusal
+     SENTENCE is reading prose as evidence, which this repo has a whole audit against. Not built.
+
   python tools/audit_mcp_default_sends.py           the check
   python tools/audit_mcp_default_sends.py --plant   prove it sees a wrapper that would break
 """
