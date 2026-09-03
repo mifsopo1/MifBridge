@@ -733,6 +733,23 @@ def main():
     # packaging step that edits the repo is how you get a commit you did not write. This is the one
     # number every reader sees first, and it had drifted a hundred endpoints with nothing anywhere
     # able to notice.
+    # --record-53 RUNS BEFORE THE PACKAGING GATES, and it used to sit after them.
+    #
+    # Recording that a 5.3 build succeeded is BOOKKEEPING, not packaging. Sitting below check_badge
+    # meant a stale badge - which is the normal state between releases, since the badge is only
+    # regenerated at packaging - refused the recording too. So the sequence was: build 5.3
+    # successfully, try to record it, get told the README badge is wrong, and have to do a
+    # release-time chore before you could write down a fact about a build that had already happened.
+    #
+    # Worse, it pushed you toward --update-badge on a tree you were not releasing. The gates that
+    # follow exist to stop a bad PACKAGE going out; none of them says anything about whether a
+    # compiler succeeded twenty minutes ago.
+    if getattr(args, "record_53", False):
+        rec = record_53_build(True, "recorded by --record-53 after a successful 5.3 build")
+        print("recorded 5.3 build for Source commit %s (dirty=%s)"
+              % ((rec["sourceCommit"] or "(none)")[:12], rec["sourceDirty"]))
+        return 0
+
     ok, msg = check_badge()
     if not ok:
         print("REFUSING TO PACKAGE - %s" % msg)
@@ -751,12 +768,6 @@ def main():
         if not args.force:
             return 1
         print("  --force given: packaging anyway, with a changelog that is wrong.")
-
-    if getattr(args, "record_53", False):
-        rec = record_53_build(True, "recorded by --record-53 after a successful 5.3 build")
-        print("recorded 5.3 build for Source commit %s (dirty=%s)"
-              % ((rec["sourceCommit"] or "(none)")[:12], rec["sourceDirty"]))
-        return 0
 
     # A release claiming two engines has to have compiled against both. 5.3 first, because it is
     # the PRIMARY target and was the one with no gate at all - the matrix asserted it as a string.
