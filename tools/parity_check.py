@@ -355,9 +355,51 @@ def load_ue_binds(problems: list):
     # Skip the #define line: `#define MIF_BIND(Name) ...` matches the same regex
     # and would otherwise register a phantom endpoint called "Name". This is the
     # documented off-by-one in docs/00_ARCHITECTURE.md, handled instead of noted.
-    lines = [ln for ln in open(UE_BIND_FILE, encoding="utf-8", errors="replace")
+    raw = open(UE_BIND_FILE, encoding="utf-8", errors="replace").read()
+
+    # NO BIND MAY SIT INSIDE A #if, AND TWO DOCUMENTED CLAIMS REST ON THAT.
+    #
+    # Measured 2026-09-03: zero of the 459 MIF_BINDs are inside any preprocessor conditional, so the
+    # dispatch table is identical on every engine and in every project configuration. Two things this
+    # repo asserts elsewhere are true only while that holds:
+    #
+    #   refresh_endpoints_snapshot.py says a DDS2 editor and the disposable probe "work equally
+    #   well" for regenerating the snapshot. A bind behind MIF_WITH_NIAGARA would make the bare probe
+    #   report FEWER endpoints, and refreshing from it would silently SHRINK the recorded universe
+    #   that every coverage judgement is computed against.
+    #
+    #   the same file calls the MIF_DECL vs MIF_BIND distinction "theoretical". A conditional bind is
+    #   exactly what would make it real, and nothing would say so.
+    #
+    # Neither breaks loudly. Both go quietly wrong in the direction of reporting less work than
+    # exists, which is why this is a check rather than a comment.
+    stack, conditional = [], []
+    for i, ln in enumerate(raw.split("\n"), 1):
+        st = ln.strip()
+        if re.match(r"#\s*if", st):
+            stack.append(st[:60])
+        elif re.match(r"#\s*endif", st) and stack:
+            stack.pop()
+        if stack and "MIF_BIND(" in ln and not st.startswith(("#define", "#undef")):
+            m = re.search(r"\bMIF_BIND\(([A-Za-z0-9_]+)\)", ln)
+            if m:
+                conditional.append("%s (line %d, inside %s)" % (m.group(1), i, stack[-1]))
+    if conditional:
+        problems.append(Problem(
+            "ue-parity",
+            "%d MIF_BIND(s) are inside a preprocessor conditional: %s. The dispatch table is no "
+            "longer identical across engines and project configurations, which silently breaks two "
+            "documented claims - that the disposable probe can regenerate endpoints_current.json as "
+            "well as a DDS2 editor, and that the MIF_DECL/MIF_BIND distinction is theoretical. "
+            "Either make the bind unconditional or update refresh_endpoints_snapshot.py's contract."
+            % (len(conditional), ", ".join(conditional[:4]))))
+
+    # Skip the #define line: `#define MIF_BIND(Name) ...` matches the same regex
+    # and would otherwise register a phantom endpoint called "Name". This is the
+    # documented off-by-one in docs/00_ARCHITECTURE.md, handled instead of noted.
+    lines = [ln for ln in raw.split("\n")
              if not ln.lstrip().startswith(("#define", "#undef"))]
-    return set(re.findall(r"\bMIF_BIND\(([A-Za-z0-9_]+)\)", "".join(lines)))
+    return set(re.findall(r"\bMIF_BIND\(([A-Za-z0-9_]+)\)", "\n".join(lines)))
 
 
 # ---------------------------------------------------------------------------

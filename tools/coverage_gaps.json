@@ -70,6 +70,7 @@
    "test_node_spawns.py"
   ],
   "add_comment": [
+   "test_node_state.py",
    "test_undo_integrity.py"
   ],
   "add_component": [
@@ -133,6 +134,7 @@
    "test_array_wildcard_durability.py",
    "test_find_and_move.py",
    "test_graph_patch.py",
+   "test_node_state.py",
    "test_pinlifetime.py",
    "test_pins.py",
    "test_reroute.py",
@@ -200,6 +202,8 @@
    "test_node_spawns.py"
   ],
   "add_material_expression": [
+   "test_delete_blockers.py",
+   "test_landscape_layer_register.py",
    "test_material_graph.py"
   ],
   "add_mvvm_binding": [
@@ -383,7 +387,8 @@
    "test_spline_landscape.py"
   ],
   "attach_actor": [
-   "test_attach_actor.py"
+   "test_attach_actor.py",
+   "test_group_actors.py"
   ],
   "audit_unused": [
    "test_audit_fixes.py"
@@ -456,6 +461,7 @@
    "test_modal_hazards.py",
    "test_mvvm.py",
    "test_node_spawns.py",
+   "test_node_state.py",
    "test_pinlifetime.py",
    "test_pins.py",
    "test_recipes.py",
@@ -483,6 +489,8 @@
    "test_material_graph.py"
   ],
   "connect_material_property": [
+   "test_delete_blockers.py",
+   "test_landscape_layer_register.py",
    "test_material_graph.py"
   ],
   "connect_pcg_nodes": [
@@ -494,6 +502,7 @@
    "test_array_wildcard_durability.py",
    "test_audit_fixes.py",
    "test_graph_patch.py",
+   "test_node_state.py",
    "test_pinlifetime.py",
    "test_pins.py",
    "test_reroute.py",
@@ -557,6 +566,7 @@
    "test_modal_hazards.py",
    "test_mvvm.py",
    "test_node_spawns.py",
+   "test_node_state.py",
    "test_pinlifetime.py",
    "test_pins.py",
    "test_recipes.py",
@@ -612,8 +622,10 @@
    "test_undo_integrity.py"
   ],
   "create_landscape": [
+   "test_delete_blockers.py",
    "test_landscape_heightmap.py",
    "test_landscape_info.py",
+   "test_landscape_layer_register.py",
    "test_uncovered_reads6.py",
    "test_uncovered_reads7.py"
   ],
@@ -625,12 +637,19 @@
   ],
   "create_material": [
    "test_blender_material.py",
-   "test_material_graph.py"
+   "test_bulk_rename.py",
+   "test_delete_blockers.py",
+   "test_landscape_layer_register.py",
+   "test_material_graph.py",
+   "test_material_layers.py"
   ],
   "create_material_function": [
    "test_uncovered_reads5.py"
   ],
   "create_material_instance": [
+   "test_bulk_rename.py",
+   "test_delete_blockers.py",
+   "test_material_layers.py",
    "test_material_undo.py",
    "test_material_write.py"
   ],
@@ -664,14 +683,17 @@
    "test_add_k2_node.py",
    "test_anim_state.py",
    "test_array_wildcard_durability.py",
+   "test_blend_profiles.py",
    "test_blueprint_breakpoint.py",
    "test_blueprint_watch.py",
+   "test_bulk_rename.py",
    "test_collision.py",
    "test_components_dispatchers.py",
    "test_confirm_gated.py",
    "test_create_event.py",
    "test_create_macro.py",
    "test_create_struct_init.py",
+   "test_delete_blockers.py",
    "test_dispatcher_ops.py",
    "test_duplicate_cooked_guard.py",
    "test_enum_edit.py",
@@ -686,8 +708,11 @@
    "test_inherited_components.py",
    "test_input_mapping.py",
    "test_interfaces.py",
+   "test_landscape_layer_register.py",
    "test_levelsnapshots.py",
    "test_macro_dispatch.py",
+   "test_material_graph.py",
+   "test_material_layers.py",
    "test_material_undo.py",
    "test_material_write.py",
    "test_mesh_boolean.py",
@@ -696,6 +721,7 @@
    "test_niagara_add_remove.py",
    "test_niagara_set_user_param.py",
    "test_node_spawns.py",
+   "test_node_state.py",
    "test_pcg_authoring.py",
    "test_physics_asset.py",
    "test_physics_primitive_collision.py",
@@ -733,6 +759,7 @@
    "test_datatables.py"
   ],
   "delete_level_actor": [
+   "test_group_actors.py",
    "test_perf_stats.py",
    "test_uncovered_reads7.py",
    "test_unknown_endpoint.py"
@@ -762,12 +789,19 @@
    "test_geometryscript.py"
   ],
   "describe_endpoint": [
+   "test_blend_profiles.py",
+   "test_bulk_rename.py",
    "test_crash_journal.py",
+   "test_delete_blockers.py",
    "test_graph_patch.py",
+   "test_group_actors.py",
+   "test_landscape_layer_register.py",
+   "test_material_layers.py",
    "test_node_spawns.py",
    "test_safety_gate.py",
    "test_staticmesh_write_guard.py",
-   "test_unknown_endpoint.py"
+   "test_unknown_endpoint.py",
+   "test_viewport_bookmarks.py"
   ],
   "describe_game_feature_plugin": [
    "test_game_features.py"
@@ -849,6 +883,7 @@
    "test_uncovered_reads5.py"
   ],
   "duplicate_asset": [
+   "test_blend_profiles.py",
    "test_duplicate_cooked_guard.py",
    "test_fuzz_detector.py",
    "test_generate_lods.py",
@@ -887,6 +922,8 @@
    "test_anim_state.py",
    "test_asset_tags.py",
    "test_audio_nav.py",
+   "test_blend_profiles.py",
+   "test_bulk_rename.py",
    "test_collections.py",
    "test_consolidate.py",
    "test_cooked_class_trap.py",
@@ -895,6 +932,7 @@
    "test_create_macro.py",
    "test_create_struct_init.py",
    "test_datatables.py",
+   "test_delete_blockers.py",
    "test_dependency_edges.py",
    "test_dispatcher_ops.py",
    "test_duplicate_cooked_guard.py",
@@ -904,8 +942,10 @@
    "test_geometryscript.py",
    "test_ik_rig.py",
    "test_input_mapping.py",
+   "test_landscape_layer_register.py",
    "test_list_bones.py",
    "test_material_graph.py",
+   "test_material_layers.py",
    "test_material_params.py",
    "test_material_statistics.py",
    "test_material_write.py",
@@ -917,6 +957,7 @@
    "test_niagara_set_user_param.py",
    "test_niagara_user_params.py",
    "test_node_spawns.py",
+   "test_node_state.py",
    "test_physics_asset.py",
    "test_physics_primitive_collision.py",
    "test_ported_anim.py",
@@ -1033,6 +1074,7 @@
   ],
   "get_viewport_camera": [
    "test_capture_viewport.py",
+   "test_viewport_bookmarks.py",
    "test_viewport_view_mode.py"
   ],
   "implement_interface_function": [
@@ -1059,6 +1101,7 @@
   "landscape_info": [
    "test_landscape_heightmap.py",
    "test_landscape_info.py",
+   "test_landscape_layer_register.py",
    "test_spline_landscape.py"
   ],
   "layout_material_expressions": [
@@ -1086,6 +1129,7 @@
    "test_safety_gate.py"
   ],
   "list_bones": [
+   "test_blend_profiles.py",
    "test_blender_rename_bones.py",
    "test_blender_rig.py",
    "test_find_tools.py",
@@ -1171,6 +1215,7 @@
    "test_level_blueprint.py",
    "test_modal_hazards.py",
    "test_node_spawns.py",
+   "test_node_state.py",
    "test_pins.py",
    "test_recipes.py",
    "test_uncovered_reads5.py",
@@ -1201,9 +1246,11 @@
    "test_legacy_input.py"
   ],
   "list_level_actors": [
+   "test_audit_fixes.py",
    "test_confirm_gated.py",
    "test_data_layer_writes.py",
    "test_foliage_modes.py",
+   "test_group_actors.py",
    "test_landscape_info.py",
    "test_level_instances.py",
    "test_levelsnapshots.py",
@@ -1231,6 +1278,8 @@
    "test_material_params.py"
   ],
   "list_material_parameters": [
+   "test_bulk_rename.py",
+   "test_material_layers.py",
    "test_material_params.py",
    "test_material_undo.py",
    "test_material_write.py"
@@ -1258,6 +1307,7 @@
    "test_graph_patch.py",
    "test_level_blueprint.py",
    "test_node_spawns.py",
+   "test_node_state.py",
    "test_pinlifetime.py",
    "test_recipes.py",
    "test_reroute.py",
@@ -1419,6 +1469,7 @@
    "test_inherited_components.py"
   ],
   "paint_landscape": [
+   "test_landscape_layer_register.py",
    "test_uncovered_reads6.py"
   ],
   "pcg_cleanup": [
@@ -1435,6 +1486,7 @@
    "test_pie_idle.py"
   ],
   "pie_status": [
+   "test_pie_family.py",
    "test_pie_idle.py"
   ],
   "pie_unload_level_instance": [
@@ -1488,6 +1540,8 @@
    "test_recipes.py"
   ],
   "recompile_material": [
+   "test_delete_blockers.py",
+   "test_landscape_layer_register.py",
    "test_material_graph.py"
   ],
   "reconnect_pin": [
@@ -1619,6 +1673,7 @@
    "test_uncovered_reads6.py"
   ],
   "rename_asset": [
+   "test_bulk_rename.py",
    "test_modal_guard.py"
   ],
   "rename_event": [
@@ -1745,7 +1800,8 @@
    "test_safety_gate.py"
   ],
   "set_actor_label": [
-   "test_audit_fixes.py"
+   "test_audit_fixes.py",
+   "test_group_actors.py"
   ],
   "set_actor_transform": [
    "test_levelsnapshots.py",
@@ -1904,6 +1960,7 @@
   ],
   "set_viewport_camera": [
    "test_capture_viewport.py",
+   "test_viewport_bookmarks.py",
    "test_viewport_view_mode.py"
   ],
   "set_water_body_spline": [
@@ -1941,6 +1998,7 @@
    "test_attach_actor.py",
    "test_audit_fixes.py",
    "test_confirm_gated.py",
+   "test_group_actors.py",
    "test_instance_components.py",
    "test_layers.py",
    "test_levelsnapshots.py",

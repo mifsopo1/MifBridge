@@ -147,8 +147,20 @@ def main():
     uncovered = [e for e in names if e not in covered and e not in dyn]
     dyn_used = sorted(e for e in names if e not in covered and e in dyn)
 
-    print("endpoints: %d   named in a suite: %d   named nowhere: %d"
-          % (len(names), len(covered), len(uncovered)))
+    # COMPUTED BEFORE THE HEADLINE, because the headline is the number a reader acts on. Leaving
+    # deliberately-denied endpoints inside "named nowhere" made that number overstate the gap by two
+    # and it could never be driven to zero - the same shape as a docs heading that reads OPEN while
+    # the body says fixed, one file along.
+    denied = set()
+    try:
+        sys.path.insert(0, HERE)
+        import mifaudit as _M
+        denied = {e for e in uncovered if e in getattr(_M, "DENY", ())}
+    except Exception as exc:                       # noqa: BLE001
+        print("(could not read mifaudit.DENY, so denied endpoints count as uncovered: %s)" % exc)
+
+    print("endpoints: %d   named in a suite: %d   named nowhere: %d  (%d of those are DENIED to "
+          "suites by design)" % (len(names), len(covered), len(uncovered), len(denied)))
     print("suites: %d\n" % len(suites))
 
     # Grouped by prefix, because a whole missing family is a different problem from a stray endpoint.
@@ -167,6 +179,26 @@ def main():
         print("driven dynamically by a suite, so NOT counted as uncovered%s:" % age)
         for e in dyn_used:
             print("  %-34s by %s" % (e, dyn.get(e)))
+        print("")
+
+    # DENIED IS NOT UNCOVERED, and conflating them leaves a permanently unclosable row.
+    #
+    # mifaudit.DENY blocks an endpoint from every suite payload on purpose - save_dirty_packages and
+    # save_level_as WRITE TO DISK, and the standing rule for this project is that audits save
+    # nothing. They will therefore never be "named in a suite" in the ordinary sense, so listing
+    # them beside genuinely forgotten endpoints trains a reader to skip the list. That is the same
+    # crying-wolf failure this file's own kr_* handling was written to avoid, one category along.
+    #
+    # They are not UNTESTABLE, only undrivable through M.call: a suite can still raw_post one to
+    # prove its refusal path, the way test_pie_family does with start_pie. So they are reported as
+    # their own line rather than dropped.
+    if denied:
+        print("")
+        print("DENIED BY mifaudit, so no suite can call them - not a coverage gap:")
+        for e in sorted(denied):
+            print("  %-34s writes to disk; a suite may still raw_post it to prove a refusal" % e)
+        fam = {k: [e for e in v if e not in denied] for k, v in fam.items()}
+        fam = {k: v for k, v in fam.items() if v}
         print("")
 
     print("never named in any suite, grouped by verb:")
