@@ -519,7 +519,23 @@ def check_static_audits():
                        # become redundant, every row in that audit would go quiet, and the tools
                        # would start working BY ACCIDENT - until somebody needed to send a
                        # deliberate false, which mifaudit.AUTHORISING_ONLY depends on being able to.
-                       ("test_payload_contract.py", [])):
+                       ("test_payload_contract.py", []),
+                       # PARITY_CHECK, which was not in this tuple and is not run anywhere else in
+                       # this file - checked 2026-09-03 by listing every script make_release
+                       # actually executes: audit_value_discovery, harvest_param_table, and whatever
+                       # is here. It is NAMED in four comments and invoked by none of them.
+                       #
+                       # This repo calls it "the compiler the Blender half doesn't have", and it
+                       # exists because that half drifted once and shipped the flagship road-mesh
+                       # round trip DEAD ON ARRIVAL. It checks three contracts in both directions -
+                       # op parity, param parity, UE MIF_BIND vs _post parity - and is FAIL-CLOSED
+                       # by design: anything it cannot statically resolve is a failure, not a skip.
+                       #
+                       # 3.4s, currently clean, so a ratchet at zero like the rest. The one thing
+                       # gating it changes is that a stale EXEMPTION now blocks a release rather
+                       # than sitting in a report - which is the whole point, since this file's own
+                       # header says an exemption is a decision and a stale one is worse than none.
+                       ("parity_check.py", [])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
