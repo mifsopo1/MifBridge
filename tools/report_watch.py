@@ -189,8 +189,30 @@ WHAT TO DO
   * Update docs in the SAME commit as the code.
   * If it is NOT a defect - the endpoint behaving correctly and the reporter expecting something else
     - say so plainly and write the explanation, rather than changing code to match a wrong expectation.
-  * Commit locally with a message explaining WHY. %(push)s
-  * Then run tools/report_reply.py to post the outcome back to the issue.
+
+VERIFY BEFORE YOU COMMIT. This is not optional and it is the difference between this loop being
+useful and it being a machine that generates plausible diffs unattended.
+
+  * A C++ change is not done until it BUILDS. Build the module and check the result with
+    tools/buildcheck.py - never by eyeballing the log, and never by trusting Build.bat's exit code,
+    which has returned 0 on a build that compiled nothing. If the editor must be closed to build,
+    close it; that is expected here.
+  * Run the suite that covers the endpoint you touched. If none covers the reported behaviour, WRITE
+    one - a fix with no test is how the same report arrives again in a month.
+  * Prove the fix addresses the REPORT: the symptom the reporter described must be gone, checked by
+    running it, not by reading the diff. If the repro could not run (no editor, missing preconditions),
+    say so explicitly in the commit and in the reply rather than implying it was verified.
+  * A check that passes both before and after your change has told you nothing. Make sure it fails
+    without the fix.
+
+  * Then commit locally with a message explaining WHY. %(push)s
+
+NEVER RELEASE. Committing is the whole deliverable. Do not tag, do not run tools/make_release.py, do
+not build a zip, do not bump the version in any manifest, and do not touch anything under tools/dist.
+Releasing is a deliberate, gated decision Andre makes by hand, and a fix arriving in a release nobody
+chose to cut is worse than the bug it fixed.
+
+  * Finally run tools/report_reply.py to post the outcome back to the issue.
 
 If you cannot reproduce it, or the fix needs a decision only Andre can make, stop and write what you
 found. An honest "here is what I know and here is what I need" is a better outcome than a guessed fix.
