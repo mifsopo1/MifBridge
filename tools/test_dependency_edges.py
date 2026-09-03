@@ -52,14 +52,24 @@ def main():
         return 1
 
     # ------------------------------------------------------------------ find a real fixture
+    # SKIP SCRATCH. `origin: "loose"` narrows to uncooked packages and does NOT exclude another
+    # suite's leftovers - a scratch blueprint under /Game/_Mif is loose too, and the second loop has
+    # no class filter at all, so it draws from a pool 90 suites in this directory contribute to. On
+    # the second pass of a sweep this suite would measure dependency edges on somebody's fixture and
+    # report it as "a loose package with real dependency edges". Found 2026-09-03 once
+    # is_scratch_fixture learned to read `packageName`, which is the key find_assets rows carry.
     target = None
     for a in (M.call("find_assets", {"origin": "loose", "class": "Material",
                                      "limit": 15}).get("assets") or []):
+        if M.is_scratch_fixture(a):
+            continue
         if (M.call("get_dependencies", {"path": a["packageName"]}).get("count") or 0) > 1:
             target = a["packageName"]
             break
     if not target:
         for a in (M.call("find_assets", {"origin": "loose", "limit": 60}).get("assets") or []):
+            if M.is_scratch_fixture(a):
+                continue
             if (M.call("get_dependencies", {"path": a["packageName"]}).get("count") or 0) > 1:
                 target = a["packageName"]
                 break

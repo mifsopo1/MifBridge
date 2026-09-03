@@ -486,7 +486,14 @@ def is_scratch_fixture(row):
     label = str(row.get("label") or "")
     if label.startswith(SCRATCH_LABEL_PREFIX):
         return True
-    path = str(row.get("actorPath") or row.get("objectPath") or row.get("path") or "")
+    # packageName ADDED 2026-09-03. find_assets rows carry the package path under `packageName`, not
+    # `path`, so every caller passing a find_assets row straight in was asking a question this
+    # function could not answer - it read an empty string and returned False, which is the FALSE
+    # NEGATIVE direction, the one the docstring above says is the actual bug. The same omission had
+    # been made one file along in audit_fixture_adoption's IDENT pattern, and for the same reason:
+    # the field list was written from list_level_actors' shape and never revisited for find_assets'.
+    path = str(row.get("actorPath") or row.get("objectPath") or row.get("path")
+               or row.get("packageName") or "")
     if any(path.startswith(ok) for ok in NOT_SCRATCH_DESPITE_THE_NAME):
         return False
     if SCRATCH_ASSET_PREFIX in path:

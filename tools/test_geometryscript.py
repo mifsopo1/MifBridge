@@ -157,6 +157,9 @@ def main():
 
     # ------------------------------------------------------------------ T1011 cooked asset, graceful failure
     print("\n=== T1011: describe_dynamic_mesh on a REAL cooked DDS2Casino mesh fails gracefully, no crash ===")
+    # Scratch fixtures live under /Game/_Mif*, which can never match a /DDS2Casino/ prefix, and a
+    # COOKED mesh is precisely what T1011 needs - nothing scratch could supply one anyway.
+    # ADOPTION-OK: pathPrefix /DDS2Casino/ is the scope; no suite can put anything in this result.
     found = M.call("find_assets", {"class": "StaticMesh", "pathPrefix": "/DDS2Casino/", "limit": 1})
     cooked_assets = found.get("assets") or []
     if cooked_assets:

@@ -90,8 +90,18 @@ HANDROLLED = re.compile(r'_Mif[A-Za-z]*"\s*\)|startswith\(\s*(?:[A-Za-z_][A-Za-z
                         r'|"/?_Mif"\s+(?:not\s+)?in')
 
 # Reaching for one of these is what makes a row a FIXTURE rather than a number.
-IDENT = re.compile(r'\.get\(\s*"(path|actorPath|objectPath|name|label)"|'
-                   r'\[\s*"(path|actorPath|objectPath|name|label)"\s*\]')
+#
+# THREE MORE SPELLINGS ADDED 2026-09-03, found by a review of this detector rather than of the
+# suites. find_assets emits `packageName` and `assetPath` alongside `path`, and suites really do
+# reduce rows through them - test_cooked_class_trap:190 takes `a.get("packageName")` and
+# test_create_struct_init:74 takes `a.get("assetPath")`. Both were being CLEARED as "counts only,
+# never names a row", which is the worst way for this tool to be wrong: a false clear reads exactly
+# like a suite that was checked and found safe. The list going 55 -> 0 earlier the same day was
+# therefore measured against an identifier set that did not cover its own corpus.
+IDENT = re.compile(r'\.get\(\s*"(path|actorPath|objectPath|name|label|packageName|package'
+                   r'|assetPath)"|'
+                   r'\[\s*"(path|actorPath|objectPath|name|label|packageName|package'
+                   r'|assetPath)"\s*\]')
 
 # Scratch scoping, in the ARGUMENT text only - a suite hunting its own leftovers is doing the right
 # thing. Bare identifiers are resolved against the file's own assignments before this is applied.
@@ -227,7 +237,19 @@ def resolve_scoping(args, src):
 
 
 def window_around(text, start):
-    """WINDOW_BEFORE lines above through WINDOW_AFTER lines below - a guard can sit on either side."""
+    """WINDOW_BEFORE lines above through WINDOW_AFTER lines below - a guard can sit on either side.
+
+    OFF BY ONE ON THE BEFORE SIDE, deliberately left alone. The loop walks back WINDOW_BEFORE
+    NEWLINES from the match, so `head` lands ON the newline that ENDS the third line up - which
+    means that line's text is outside the window and you get WINDOW_BEFORE-1 whole lines above, not
+    three. Measured 2026-09-03 when an `# ADOPTION-OK:` marker written exactly three lines above a
+    call went on being reported.
+
+    Not "fixed" by bumping the constant, because widening the window widens it for the GUARD search
+    too, and a guard belonging to a neighbouring statement clearing this one is a FALSE CLEAR - the
+    direction that reads exactly like a site somebody checked. Put the marker next to the call it
+    clears instead; that is where it belongs for a human reader anyway.
+    """
     head = start
     for _ in range(WINDOW_BEFORE):
         prev = text.rfind("\n", 0, head - 1)
