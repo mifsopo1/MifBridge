@@ -552,6 +552,21 @@ def check_static_audits():
                        # checker that proves its own newest arm before reporting.
                        ("spec_check.py", []),
                        ("audit_message_endpoints.py", []),
+                       # A POSTMORTEM CITES THIS AS ITS PREVENTION, and until 2026-09-03 it had no
+                       # non-zero exit anywhere in the file - it could not fail, so nothing made a
+                       # person read the drift it found. A "Prevention" line is a claim that a class
+                       # of defect is now caught; an ungated report-style tool does not deliver it.
+                       #
+                       # Found by checking every tool cited in a Prevention paragraph against this
+                       # tuple: 11 cited, 0 fictional, 7 already gated, 2 enforced by another route
+                       # (harvest_param_table via check_param_table, param_reach via parity_check),
+                       # and this one genuinely advisory.
+                       #
+                       # NEEDS --check for the same reason its siblings do: bare, it reports and
+                       # exits 0. What it guards is an engine upgrade adding a post-construct
+                       # factory that create_asset would then mint silently - the exact shape that
+                       # terminated the editor twice.
+                       ("audit_factory_init.py", ["--check"]),
                        # NOT audit_prose_dependence, and the reason is measured rather than a
                        # shrug: it runs 17 candidate tools THREE times each - plain, with comments
                        # scrubbed, with string literals scrubbed - which is 51 tool invocations and

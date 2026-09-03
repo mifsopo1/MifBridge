@@ -291,6 +291,9 @@ def main():
                     help="report only this asset class")
     ap.add_argument("--show-body", action="store_true",
                     help="print the factory body for each hit")
+    ap.add_argument("--check", action="store_true",
+                    help="exit 1 if the warning list has drifted from what this scan finds, 2 if "
+                         "the comparison could not run. Without it this tool always exits 0.")
     ap.add_argument("--utils", action="store_true",
                     help="only the editor-utils scan, skipping the factory scan")
     args = ap.parse_args()
@@ -327,7 +330,21 @@ def main():
           "create_asset." % (len(rows), unhandled))
 
     # DOES create_asset's HAND-WRITTEN WARNING LIST STILL COVER WHAT THIS FINDS?
+    # --check EXISTS BECAUSE A POSTMORTEM CITES THIS TOOL AS A PREVENTION and, until 2026-09-03, it
+    # had no non-zero exit anywhere in the file - it could not fail, so nothing ever made a person
+    # read the drift it found. That is the same shape as audit_cross_endpoint_claims, which printed
+    # a correct list to nobody for three days for exactly this reason, and it is worse here: a
+    # postmortem's "Prevention" line is a claim that this class of defect is now caught.
+    #
+    # Ratchet at zero rather than a baseline: drift is currently empty, and an entry that appears is
+    # a real engine change nobody has classified. It has the NOT_AN_ASSET escape hatch already, with
+    # a reason required per entry, so there is nothing to baseline.
     drift, err = warning_list_drift({r[0] for r in rows}, handled)
+    check_rc = 0
+    if err:
+        check_rc = 2
+    elif drift:
+        check_rc = 1
     if err:
         # A checker that cannot run must not print a clean result.
         print("\nWARNING-LIST DRIFT: NOT CHECKED - %s" % err)
@@ -364,7 +381,7 @@ def main():
     urows.sort(key=lambda r: r[0])
     if not urows:
         print("\nno helpers matched." if args.only else "\nnothing found - check ENGINE_ROOTS.")
-        return 0
+        return 2 if args.check else 0
     uunhandled = 0
     for cls, fn, path, line, calls, body in urows:
         mark = "  handled" if cls in handled else "  NOT HANDLED"
@@ -384,7 +401,7 @@ def main():
     print("Most of these construct transient conversion-context objects rather than assets, so the")
     print("list is short on things create_asset can even be asked for. Read before acting - the")
     print("point is that nobody has to GUESS which classes to look at.")
-    return 0
+    return check_rc if args.check else 0
 
 
 if __name__ == "__main__":
