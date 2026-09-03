@@ -25,8 +25,14 @@ def check(name, cond, detail=""):
 
 
 def first_asset(cls):
-    a = (M.call("find_assets", {"class": cls, "limit": 1}).get("assets") or [{}])[0]
-    return a.get("path")
+    """The first NON-SCRATCH asset of a class, or None.
+
+    SKIP SCRATCH here rather than at each call site: this helper is the single door every fixture
+    in this suite comes through, and limit 1 over the whole project is exactly the draw that
+    lands on somebody else's half-built asset.
+    """
+    rows = M.call("find_assets", {"class": cls, "limit": 20}).get("assets")
+    return (M.pick_adoptable(rows) or {}).get("path")
 
 
 def main():

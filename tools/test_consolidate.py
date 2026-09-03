@@ -57,8 +57,13 @@ def main():
             (M.call("find_assets", {"class": "Material", "origin": "container",
                                     "limit": 6}).get("assets") or [])]
     if len(mats) < 2:
+        # SKIP SCRATCH on the fallback. The branch above is safe by construction - container
+        # origin means a package with no loose file, which a scratch asset can never be - but
+        # this one is unscoped, and consolidating another suite's two Materials is exactly the
+        # blast radius T5100 is written to measure.
         mats = [a["path"] for a in
-                (M.call("find_assets", {"class": "Material", "limit": 6}).get("assets") or [])]
+                (M.call("find_assets", {"class": "Material", "limit": 20}).get("assets") or [])
+                if not M.is_scratch_fixture(a)]
     tex = [a["path"] for a in
            (M.call("find_assets", {"class": "Texture2D", "limit": 1}).get("assets") or [])]
     check("(setup) two materials and a texture to work with", len(mats) >= 2 and len(tex) >= 1,

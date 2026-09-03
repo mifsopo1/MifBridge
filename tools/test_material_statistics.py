@@ -102,9 +102,13 @@ def main():
     # ------------------------------------------------------------------ T7401 the freeze guard
     print("\n=== T7401: an unbuilt shader map is refused, not silently waited on ===")
     # Found by looking rather than assumed: these ship with no completed shader map here.
+    # SKIP SCRATCH: five suites mint MaterialInstanceConstants, and a fresh one has no completed
+    # shader map either - so it satisfies the wouldBlock probe below for the wrong reason and the
+    # finding stops being about this project shipping unbuilt instances.
     candidates = [x["path"] for x in
                   (M.call("find_assets", {"class": "MaterialInstanceConstant",
-                                          "limit": 40}).get("assets") or [])]
+                                          "limit": 40}).get("assets") or [])
+                  if not M.is_scratch_fixture(x)]
     unbuilt = None
     for path in candidates:
         probe = M.raw_post("material_statistics", {"path": path})

@@ -70,8 +70,13 @@ def find_row_struct():
     # FALLBACK, unchanged in spirit: the endpoint is the authority, so a refusal means "try the next".
     # Capped far lower than 200 now - if the DataTable route failed, twenty guesses will not save it,
     # and 200 refusals in the transcript actively hides real failures.
+    # SKIP SCRATCH without changing the design: the endpoint is still the authority and a refusal
+    # still means "try the next". What is removed is a candidate that might SUCCEED - a struct
+    # test_create_struct_init is midway through building, whose DataTable outlives it by seconds.
     r = M.call("find_assets", {"class": "UserDefinedStruct", "limit": 20})
     for a in (r.get("assets") or []):
+        if M.is_scratch_fixture(a):
+            continue
         yield a.get("path")
     for engine in ("RichTextStyleRow", "RichImageRow"):
         yield engine

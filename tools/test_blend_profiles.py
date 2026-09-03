@@ -75,9 +75,15 @@ def main():
     # decide whether its leftovers are real.
     #
     # `class` (aliases className, type) - NOT classNames, which find_assets refuses by name.
-    found = M.call("find_assets", {"className": "Skeleton", "limit": 5})
+    found = M.call("find_assets", {"className": "Skeleton", "limit": 20})
     source = None
+    # SKIP SCRATCH: this duplicates whatever it picks into its own fixture tree, and
+    # test_virtual_bone_authoring already duplicated a real Skeleton into /Game/_MifVB -
+    # copying that copy makes the fixture another suite's, and it disappears when that
+    # suite finishes.
     for a in (found.get("assets") or []):
+        if M.is_scratch_fixture(a):
+            continue
         source = str(a.get("objectPath") or a.get("path")).split(".")[0]
         break
     if not source:
