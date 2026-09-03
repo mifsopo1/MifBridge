@@ -194,28 +194,36 @@ def op_set_viewport_view(params):
         raise MifOpError("pass lookFrom OR azimuth/elevation/distance, not both - lookFrom already "
                          "determines all three. NOTHING was changed.")
 
+    # EVERYTHING IS VALIDATED BEFORE ANY OF IT IS APPLIED. This block used to write
+    # r3d.view_location as soon as `focus` was parsed and then run FOUR more refusals below it,
+    # three of them ending "NOTHING was changed" - so {"focus":[1,2,3],"lookFrom":[1,2,3]} moved
+    # the viewport pivot and then told the caller nothing had happened. Same for a negative
+    # distance, and for perspective:"CAMERA" with no scene camera, which could fire after the
+    # pivot, the distance AND the rotation had all been set.
+    #
+    # That sentence is what every refusal in MifBridge is held to, so a false one is worse than an
+    # ordinary bug. The house rule is that a refusal fires before a mutation; this now obeys it by
+    # computing the whole target state first and committing it only once nothing can still refuse.
     focus = params.get("focus")
-    if focus is not None:
-        f = _vec3_of(focus, "focus")
-        r3d.view_location = f
-    else:
-        f = tuple(r3d.view_location)
+    f = _vec3_of(focus, "focus") if focus is not None else tuple(r3d.view_location)
 
+    new_distance = None
+    new_rotation = None
     if "lookFrom" in params:
         eye = _vec3_of(params["lookFrom"], "lookFrom")
         d = mathutils.Vector((f[0] - eye[0], f[1] - eye[1], f[2] - eye[2]))
         if d.length == 0.0:
             raise MifOpError("lookFrom is the focus point, so there is no direction to look. "
                              "NOTHING was changed.")
-        r3d.view_distance = d.length
+        new_distance = d.length
         # The view looks down its own -Z, same convention as a camera object.
-        r3d.view_rotation = d.to_track_quat("-Z", "Y")
+        new_rotation = d.to_track_quat("-Z", "Y")
     else:
         dist = take_float(params, "distance", default=None)
         if dist is not None:
             if dist <= 0:
                 raise MifOpError("distance must be positive, got %r. NOTHING was changed." % dist)
-            r3d.view_distance = dist
+            new_distance = dist
         az = take_float(params, "azimuth", default=None)
         el = take_float(params, "elevation", default=None)
         if az is not None or el is not None:
@@ -225,17 +233,28 @@ def op_set_viewport_view(params):
             d = mathutils.Vector((math.sin(az) * math.cos(el),
                                   math.cos(az) * math.cos(el),
                                   -math.sin(el)))
-            r3d.view_rotation = d.to_track_quat("-Z", "Y")
+            new_rotation = d.to_track_quat("-Z", "Y")
 
     persp = take(params, "perspective", default=None, kind=str)
+    want = None
     if persp:
         want = str(persp).upper()
         if want not in ("PERSP", "ORTHO", "CAMERA"):
-            raise MifOpError("perspective must be PERSP, ORTHO or CAMERA, got '%s'." % persp)
+            raise MifOpError("perspective must be PERSP, ORTHO or CAMERA, got '%s'. "
+                             "NOTHING was changed." % persp)
         if want == "CAMERA" and bpy.context.scene.camera is None:
             raise MifOpError("there is no scene camera to look through. NOTHING was changed.")
-        r3d.view_perspective = want
     lens = take_float(params, "lens", default=None)
+
+    # COMMIT. Nothing below here can refuse.
+    if focus is not None:
+        r3d.view_location = f
+    if new_distance is not None:
+        r3d.view_distance = new_distance
+    if new_rotation is not None:
+        r3d.view_rotation = new_rotation
+    if want:
+        r3d.view_perspective = want
     if lens is not None:
         sp.lens = lens
 
