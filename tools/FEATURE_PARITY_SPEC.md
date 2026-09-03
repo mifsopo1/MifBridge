@@ -11221,7 +11221,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       That leaves the UE gap at: 0 unreachable parameters, 0 uncovered endpoints, 8 consequence
       fields, and the editor-closed batch.
 
-- [ ] **32 suites adopt a class another suite creates, and have never been asked about it** (half a day)
+- [ ] **every adoption site has now been read - and not one of the fixes is verified** (the sweep)
       FOUND 2026-09-03 by `audit_fixture_adoption`, which scores 8/8 recall against the known
       instances - so this list is not speculative, it is the same rule that catches all fourteen
       confirmed sites, applied where nobody has looked. NOT all defects: a suite may adopt something
@@ -11238,11 +11238,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       `startswith(SC.SCRATCH_PREFIXES)` as a third guard spelling. Recall stayed 8/8 through all
       three, which is the only reason the narrowing is believable.
 
-      WORTH READING NEXT, in order: the low-maker-count classes still listed - NiagaraSystem (4
-      makers), DataTable, MaterialFunction, LevelSequence - then the `*actor*` group behind
-      list_level_actors / list_partition_actors, where 16 suites spawn actors and the Mif- label
-      convention is the only thing keeping them apart. That convention is a naming habit, not a
-      check: see the hole documented in mifaudit.is_scratch_fixture.
+      THE READING IS FINISHED, 2026-09-03. 55 sites -> 0, over eight passes across 31 suites. Every
+      site was read before it was touched, and the ones that were already correct are marked
+      `# ADOPTION-OK: <why>` in the suite rather than fixed - four of them, each with its reason,
+      and the count prints on every run so they cannot quietly accumulate.
+
+      SEVEN FALSE POSITIVES CAME OUT OF THAT READING, and each narrowed the rule rather than being
+      waved away: scoping through a derived variable; `startswith(<var>)` as an identity test;
+      `startswith(SC.SCRATCH_PREFIXES)` and `"/_Mif" not in cand` as further guard spellings;
+      `className` as an alias for `class`; an identity comparison split across lines; an identifier
+      passed IN as an argument mistaken for one read OUT; and proximity treated as dataflow.
+
+      AND ONE REGRESSION I CAUSED AND DID NOT CATCH. The dataflow narrowing broke the commonest
+      shape in these suites - `x = (M.call(...).get("assets") or [{}])[0].get("path")` - and both
+      --ground-truth and the tool's own --plant stayed green, because both exercised a different
+      shape. audit_detectors_fire reported ASLEEP on the next run. The plant now carries all three
+      shapes the rule has arms for and requires all three. A plant that exercises one arm of a
+      three-arm rule proves a third of it, which is exactly how much warning it gave.
+
+      WHAT IS NOT DONE: any of it. Thirty-one suites changed and not one has been run. That is the
+      same two-pass sweep the parent item is blocked on, and these fixes make its result more
+      informative rather than less - it now measures the whole class at once.
 
 - [ ] **22 hand-rolled copies of the scratch filter that mifaudit already owns** (2 hours)
       FOUND 2026-09-03. `if not a["path"].startswith("/Game/_Mif")` written inline across ~30
