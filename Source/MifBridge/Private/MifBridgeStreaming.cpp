@@ -503,6 +503,34 @@ namespace MifBridge
 		}
 
 		const FString WantWorld = JStr(In, TEXT("world"), TEXT("editor")).ToLower();
+
+		// NO MODE-PARAMS-OK MARKER HERE, DELIBERATELY. The refusal below spells "netMode" in its
+		// message, so audit_mode_params' ordinary refusal-mention rule clears this handler on its
+		// own - a marker would be dead weight, and worse than dead: if someone later reworded that
+		// message so it no longer named the parameter, the row SHOULD come back, and a marker would
+		// suppress it. Markers are for refusals the scan cannot see, like the table-driven ones.
+		//
+		// netMode reaches the handler only through ResolvePIEWorld, which is called on the pie branch
+		// alone - so {"netMode":"client"} with no world at all defaulted to EDITOR, dropped the
+		// netMode, and answered with the editor's sublevels under ok:true. A caller asking which
+		// levels the CLIENT has streamed in got a different world's answer and nothing said so.
+		//
+		// The accepted summary above already says "only meaningful with world:pie". This is the
+		// second handler today where the contract was written down and not enforced - start_pie's
+		// "multiplayer only" was the other - which is worth noticing as a pattern rather than twice
+		// as a coincidence: a summary is read by whoever is writing the call, and ignored by
+		// whoever forgot the mode.
+		//
+		// Only "editor" is named here, not "anything that is not pie": an unrecognised world should
+		// still get the unknown-world message below rather than a complaint about netMode.
+		if (In->HasField(TEXT("netMode")) && WantWorld == TEXT("editor"))
+		{
+			Fail(Out, TEXT("netMode is only read when world is \"pie\" - the editor world has no net "
+						   "role, so this would have listed the EDITOR's sublevels and ignored it. "
+						   "Pass world:\"pie\", or drop netMode. NOTHING was listed."));
+			return;
+		}
+
 		UWorld* World = nullptr;
 		if (WantWorld == TEXT("editor"))
 		{

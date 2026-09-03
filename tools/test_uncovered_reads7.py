@@ -143,6 +143,28 @@ def _run():
     check("T951 the currently open level really is World Partition (confirms T914's flipped finding)",
           listed.get("isPartitioned") is True, listed.get("isPartitioned"))
 
+    # T951b: netMode is only read when world is "pie" - it reaches the handler through
+    # ResolvePIEWorld, which the editor branch never calls. {"netMode":"client"} with no world at
+    # all defaulted to EDITOR, dropped the netMode, and answered with the editor's sublevels under
+    # ok:true, so a caller asking what the CLIENT had streamed in got a different world's answer.
+    #
+    # Tested HERE rather than in the PIE suite on purpose: the refusal needs no play session, and a
+    # guard about "you did not ask for pie" should be proved without one.
+    print("\n=== T951b: netMode is refused when the world is not pie ===")
+    wrong = M.call("list_sublevels", {"netMode": "client"})
+    check("T951b netMode without world:pie is refused rather than answering about the editor",
+          wrong.get("ok") is False, json.dumps(wrong)[:220])
+    check("T951b and the refusal says which world it would have listed, and what to pass instead",
+          "EDITOR" in (wrong.get("error") or "") and "world:\"pie\"" in (wrong.get("error") or ""),
+          (wrong.get("error") or "")[:240])
+    check("T951b and it did NOT answer anyway - no sublevels came back with the refusal",
+          wrong.get("sublevels") is None and wrong.get("worldName") is None,
+          json.dumps({k: wrong.get(k) for k in ("sublevels", "worldName")})[:200])
+    # The ordinary call still works - a guard that refuses everything would pass the three above.
+    still = M.call("list_sublevels", {"world": "editor"})
+    check("T951b and an explicit world:editor with no netMode still answers",
+          still.get("ok") is True and still.get("world") == "editor", json.dumps(still)[:200])
+
     print("\n=== T952: set_current_sublevel ===")
     to_sub = M.call("set_current_sublevel", {"path": loose_map})
     # changed:True is not the only honest success - a full-suite regression sweep found this suite's
