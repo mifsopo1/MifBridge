@@ -11408,8 +11408,42 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       of them" are DENIALS of equivalence, matched because the shape list read "the same" and "all
       of them" without looking at what came before them. 16 -> 14.
 
-      NINE PAIRS STILL UNREAD, and the reason to read them is that this is the only list of
-      sentences the bridge asserts about OTHER endpoints' behaviour. Nothing else checks them.
+      ALL TWELVE READ, same day. Eleven verified outright, one only partly:
+
+        add_socket -> list_bones          "list_bones lists them all" - a completeness claim, and
+                                          T220 proves it structurally: indices contiguous 0..N-1
+                                          and boneCount equal to the array length.
+        remove_lods -> generate_lods      "rebuilds a chain of the size you want" - generate_lods
+                                          takes screenSizes, whose LENGTH is that size. Loosely
+                                          worded, accurate.
+        list_game_feature_plugins         "this lists them all" is about ITSELF; the
+          -> describe_game_feature_plugin  cross-endpoint half is navigation, which promises
+                                          nothing.
+        save_package -> save_blueprint    "for a Blueprint, save_blueprint does the same". True:
+                                          both take GetOutermost() and write through
+                                          UPackage::SavePackage with the same World/.umap handling.
+        set_viewport_camera               "rotation and lookAt take the same nested form" -
+          -> capture_camera               capture_camera accepts location, rotation and lookAt.
+        set_spline_points <->             reciprocal, and each is exactly right: snap_actors_to_
+          snap_actors_to_ground           ground accepts `offset` and NOT groundOffset,
+                                          set_spline_points accepts `groundOffset` and NOT offset.
+                                          Each note names the OTHER endpoint's spelling correctly.
+        analyze_skeletal_split            same wording and same truth as list_morph_targets'.
+          -> list_bones
+        capture_camera                    PARTLY. "answers the same question" is verifiable and
+          -> get_viewport_camera          true; "will fail the same way" needs an editor with NO
+                                          level open, which no unattended suite can arrange.
+
+      ONE ASYMMETRY FOUND, recorded rather than fixed because it falsifies nothing: save_package
+      calls Package->MarkPackageDirty() before saving and save_blueprint does not. UPackage::
+      SavePackage writes regardless of the flag, so the file lands either way and the claim stands -
+      but two sibling endpoints doing the same job should probably not differ on it, and whichever
+      is right the other is guessing.
+
+      SO THE ITEM IS DOWN TO ITS TWO ORIGINALS, both genuinely blocked: set_niagara_emitter ->
+      set_property needs an UNCOOKED Niagara emitter with editor data (the probe is written -
+      tools/probe_niagara_emitter_source.py - and needs a live editor), and
+      preview_composite_widget -> list_live_widgets needs a running PIE session.
       FOUND 2026-09-03 by `audit_cross_endpoint_claims`, which is not in the release gate and exits
       0 either way - so its reading list had never been read. 844 cross-endpoint claims sit in
       handler text; 16 assert equivalence or completeness rather than navigation; 2 of those have no
