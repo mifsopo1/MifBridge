@@ -60,6 +60,23 @@ ROOT = os.path.dirname(HERE)
 # Endpoints that hand back a list of objects THE PROJECT ALREADY CONTAINS - the only ones from which
 # a suite can adopt. Deliberately not every list_* endpoint: list_bones and list_graphs enumerate the
 # insides of an asset the caller already named, so there is no choice of fixture left to get wrong.
+#
+# THIS TUPLE IS ONLY HALF THE RULE, and widening it alone buys nothing. A site is reported when a
+# discovery call meets a class SOME OTHER SUITE CREATES, and the creating half comes from
+# created_classes(), which reads create_*/spawn_* call sites. A fixture produced as a SIDE EFFECT of
+# an unrelated write is invisible to that half however many endpoints are listed here.
+#
+# Measured 2026-09-03 on the case that prompted the question. list_redirectors is a genuine
+# project-wide discovery endpoint and test_redirectors takes rows[0] from it unscoped, while
+# test_bulk_rename leaves a redirector trail behind - rename_asset produces redirectors, nothing
+# "creates" one. Adding list_redirectors here surfaced ZERO new sites, because the collision clause
+# cannot connect "renames an asset" to "now a Redirector exists". So it is NOT added: a tuple entry
+# that can never fire is a claim of coverage this tool does not have.
+#
+# The site itself was read rather than left implied: T4800 only inspects the row STRUCTURALLY - the
+# fields exist, destination is non-empty, referencerCount is a number - and somebody else's
+# redirector satisfies every one of those identically. Real gap in the detector, no defect at the
+# call site. Modelling side-effect creation is the fix, and it is a bigger change than this note.
 DISCOVERY = ("find_assets", "list_level_actors", "landscape_info", "list_partition_actors")
 
 # The helpers whose presence means the question HAS been asked.
