@@ -2673,3 +2673,47 @@ so ok:false would be a lie". It is not: `Fail` preserves the fields, so the resp
 happened and that it did not hold. Checking that took one look at `Fail`'s body - and not checking it
 was the only thing that made the note pattern look reasonable six times in a row.
 
+
+## Two correct layers, one broken call: a wrapper default that defeats a handler guard (2026-09-03)
+
+**Symptom.** `sculpt_landscape(center, radius)` through the MCP server — the tool's own defaults,
+nothing else supplied — was refused with *"amount is only used by mode raise/lower"*. The caller
+never mentioned `amount`. `mode: "flatten"` and `mode: "smooth"` were unreachable through the MCP in
+**eight tagged releases, v0.3.0 through v0.8.1**. Posting to the bridge directly always worked.
+
+**Root cause, and both halves were written correctly.**
+
+* The handler refuses `amount` outside raise/lower. That is deliberate, and it is the example this
+  repo cites as the model for the whole silent-ignore class — it names the parameter, the modes that
+  read it, the mode given, and what to use instead.
+* The wrapper declared `mode: str = "flatten"` and `amount: float = 0.0`. `_post` drops `None` and
+  sends everything else, so `amount: 0.0` went out on every call.
+
+Neither is wrong on its own. The wrapper's default was harmless for as long as the endpoint merely
+*ignored* an inapplicable `amount` — which is precisely the behaviour the guard was later written to
+stop. **Closing a silent-ignore converts every duplicated default into a hard failure**, and the two
+layers are in different languages, different files, and were edited weeks apart.
+
+**How it was found, which is the least satisfying part.** Not by a user, a test or a check. On the
+same morning I added nine guards of exactly this shape and broke five wrappers the same way — the
+suites passed because they build explicit payloads and send only what they mean, which is not how
+the wrappers behave. Having fixed my own, I asked whether the hazard had older instances. It had one,
+five weeks old, in the handler held up as the exemplar.
+
+**Prevention.** `tools/audit_mcp_default_sends.py` asks whether any MCP wrapper sends, by default, a
+key its endpoint refuses for being present. Eleven endpoints, plant-proven, registered in
+`audit_detectors_fire`.
+
+Its map is **hand-written**, and that is stated at the top of the file rather than discovered later:
+three attempts to derive it were measured and thrown away the same hour — "HasField near a Fail"
+(49 handlers, 135 keys, conflating presence refusals with KeyNote hints and mode *values*),
+"optional params must default to None" (585 violations across 268 of 538 tools — a style this
+codebase does not follow), and "tables inside a MODE-PARAMS-OK handler" (a KeyNote pair
+`{ TEXT("key"), TEXT("advice") }` is structurally identical to a guard row
+`{ TEXT("param"), TEXT("modes") }`, in the same function).
+
+**The transferable rule.** A wrapper must not carry a default the handler already has. It is not a
+convenience; it is a second source of truth for the same value, and it only looks harmless until the
+handler starts caring whether the field is present at all. `_post`'s own comment already said the
+rule — *"drop unset optional args so the plugin sees only what the caller provided"* — and a numeric
+or empty-string default quietly makes that sentence false.
