@@ -1112,6 +1112,65 @@ namespace MifBridge
 		const bool bHasEnd = (EndRead == EJsonRead::Read);
 		const bool bHasCenter = (CenterRead == EJsonRead::Read);
 
+		// VALIDATE THE SHAPE BEFORE ANYTHING ELSE IS SAID ABOUT IT.
+		//
+		// The unknown-shape refusal further down sits INSIDE the center branch, so it is reached only
+		// after "shape '%s' needs center:{x,y,z}" has already fired. `{"shape":"blob"}` therefore
+		// answered "shape 'blob' needs center" - which sends a caller off to supply a center for a
+		// shape that does not exist. The message that helps is the one about the typo. That refusal
+		// is left in place below as a backstop rather than deleted: if this list and that chain ever
+		// disagree, an unhandled shape should still refuse rather than fall through to drawn:true.
+		{
+			static const TCHAR* const kShapes[] = { TEXT("line"), TEXT("arrow"), TEXT("sphere"),
+													TEXT("box"), TEXT("point"), TEXT("string") };
+			bool bKnown = false;
+			for (const TCHAR* S : kShapes) { if (Shape == S) { bKnown = true; break; } }
+			if (!bKnown)
+			{
+				Fail(Out, FString::Printf(
+					TEXT("unknown shape '%s' - use line, sphere, box, point, arrow or string. "
+						 "NOTHING was drawn."), *Shape));
+				return;
+			}
+		}
+
+		// REFUSE A PARAMETER THIS SHAPE WOULD IGNORE, before anything is drawn.
+		//
+		// MODE-PARAMS-OK: the geometry parameters are refused per shape from the table below
+		//
+		// Same defect as trace and create_procedural_mesh, and the same reason RejectUnknownParams
+		// cannot see it: every name IS declared. `{"shape":"sphere", "center":..., "extent":{...}}`
+		// drew a default-radius sphere and threw the extent away under drawn:true.
+		//
+		// start/end/center are in the table as well as in the required-argument checks below, and the
+		// two answer different questions: those refuse a shape that is MISSING what it needs, this
+		// refuses a shape that was GIVEN what it cannot use. A caller who passes start to a sphere
+		// gets nothing from the first check, because the sphere has its center.
+		{
+			struct FShapeParam { const TCHAR* Name; const TCHAR* Shapes; };
+			static const FShapeParam kShapeOnly[] = {
+				{ TEXT("start"),  TEXT("line, arrow") },
+				{ TEXT("end"),    TEXT("line, arrow") },
+				{ TEXT("center"), TEXT("sphere, box, point, string") },
+				{ TEXT("radius"), TEXT("sphere") },
+				{ TEXT("extent"), TEXT("box") },
+				{ TEXT("text"),   TEXT("string") },
+			};
+			for (const FShapeParam& P : kShapeOnly)
+			{
+				if (!In->HasField(P.Name) || FString(P.Shapes).Contains(Shape))
+				{
+					continue;
+				}
+				Fail(Out, FString::Printf(
+					TEXT("%s is only read by shape %s; shape '%s' would have ignored it and drawn a "
+						 "default %s anyway under drawn:true. Drop it, or use the shape that reads "
+						 "it. NOTHING was drawn."),
+					P.Name, P.Shapes, *Shape, *Shape));
+				return;
+			}
+		}
+
 		if (Shape == TEXT("line") || Shape == TEXT("arrow"))
 		{
 			if (!bHasStart || !bHasEnd)
