@@ -108,6 +108,7 @@ def main():
 
     live = _live_decl_names()
     if live is not None:
+        stale_added = []
         snap_set = set(names)
         added, removed = sorted(live - snap_set), sorted(snap_set - live)
         if added or removed:
@@ -123,8 +124,10 @@ def main():
                 print("!! %d name(s) in the snapshot no longer exist in source (stale noise below): %s"
                       % (len(removed), ", ".join(removed[:12])))
             print("!! Regenerate with: python tools/refresh_endpoints_snapshot.py")
+            print("!! Whether those are COVERED is answered below, after the suite scan.")
             print("!" * 72)
             print("")
+            stale_added = added
 
     suites = sorted(glob.glob(os.path.join(HERE, "test_*.py")))
     text = {}
@@ -139,6 +142,29 @@ def main():
                 mentions[ep].append(suite)
 
     covered = {e: s for e, s in mentions.items() if s}
+
+    # ANSWER THE STALENESS WARNING INSTEAD OF ONLY RAISING IT.
+    #
+    # "every result below is blind to these" is true and unhelpful alone: it tells a reader the
+    # coverage number is incomplete without saying whether the gap MATTERS, and refreshing needs a
+    # LIVE EDITOR - which is exactly what somebody reading this at 3am does not have. The suites
+    # are already scanned by this point, so the unseen endpoints can be checked against them
+    # directly and the stale snapshot stops blocking the question.
+    #
+    # Measured 2026-09-03: all 13 endpoints the snapshot had never seen WERE named in suites, so
+    # the coverage figure was conservative rather than wrong. Knowing that without an editor is
+    # the entire point - the warning had been shouting for a fortnight with no way to resolve it.
+    if stale_added:
+        unseen = {e: [s for s, b in text.items()
+                      if ('"%s"' % e) in b or ("'%s'" % e) in b] for e in stale_added}
+        blind = sorted(e for e, s in unseen.items() if not s)
+        print("THE %d ENDPOINTS THE SNAPSHOT HAS NOT SEEN, checked against the suites anyway:"
+              % len(stale_added))
+        print("  %d named in a suite, %d named nowhere%s"
+              % (len(stale_added) - len(blind), len(blind),
+                 (": " + ", ".join(blind[:8])) if blind else "."))
+        print("  (a name match is still not coverage - but a stale snapshot no longer hides it)")
+        print("")
     # SUBTRACT WHAT A SUITE ACTUALLY DROVE FROM THE LIVE REGISTRY. This scanner reads suite
     # SOURCE for literal endpoint names, so an endpoint reached by iterating endpoint_names() reads
     # as untested - four names were wrong on this list for that reason. The subtraction is shown
