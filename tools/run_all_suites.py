@@ -35,7 +35,42 @@ import mifaudit as M
 TIMEOUT = 900
 
 
+KNOWN_FLAGS = {"--once", "--with-pie"}
+
+USAGE = """usage: run_all_suites.py [--once] [--with-pie] [name-substring ...]
+
+  --once      one pass instead of two. TWO is the default because the second pass is what
+              catches state surviving between runs - a suite that adopts a fixture another
+              suite created passes alone and fails on pass 2, which is the point.
+  --with-pie  include the PIE suites. They need an ATTENDED run: starting PIE stops the bridge
+              answering while the editor stays alive, which hangs an unattended sweep.
+
+  Bare words are suite-name substrings. One that matches NOTHING is an error, not an empty
+  pass - see the comment at the filter below for the half hour that cost."""
+
+
 def main():
+    # AN UNKNOWN FLAG IS AN ERROR, NOT A NO-OP. This is the same lesson as the filter comment
+    # further down, one level up and unlearned: every argument starting with `--` used to be
+    # silently discarded, so `--help` did not print help - it ran the FULL two-pass sweep, launched
+    # an editor, and held the machine for half an hour. A typo like `--onlyy test_x` dropped the
+    # flag and then filtered on nothing.
+    #
+    # Checked FIRST, before the suite discovery below, so asking for usage costs nothing.
+    flags = [a for a in sys.argv[1:] if a.startswith("-")]
+    if "--help" in flags or "-h" in flags:
+        print(USAGE)
+        return 0
+    unknown = [f for f in flags if f not in KNOWN_FLAGS]
+    if unknown:
+        print("unknown flag(s): %s" % ", ".join(unknown))
+        print("known flags: %s" % ", ".join(sorted(KNOWN_FLAGS)))
+        print("REFUSING TO RUN - a full sweep takes the editor for a long time, and running one "
+              "because a flag was misspelled is not a reasonable default.")
+        print("")
+        print(USAGE)
+        return 2
+
     here = os.path.dirname(__file__) or "."
     suites = sorted(os.path.basename(p) for p in glob.glob(os.path.join(here, "test_*.py")))
 
