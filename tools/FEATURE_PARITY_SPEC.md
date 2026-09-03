@@ -11291,7 +11291,7 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       audit_vacuous_checks / audit_consequence_fields both at baseline. That is not a substitute for
       running the suites; it is the part of the answer that does not need the machine.
 
-- [ ] **22 more mode-dependent parameters that nothing tells the caller about** (a day)
+- [ ] **18 more mode-dependent parameters that nothing tells the caller about** (most of a day)
       FOUND 2026-09-03 by reading `audit_mode_params`, whose 23-row review list had never been
       read - the same shape as audit_cross_endpoint_claims: exits 0 either way, not in the release
       gate, so nobody looked. One of the 23 is now fixed (create_procedural_mesh) and the tool
@@ -11309,6 +11309,27 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                         those with scope local asks for something the engine will not do.
         export_asset    format in {FBX, OBJ}; ascii, vertexColor, collision.
         start_pie       netMode in {client, dedicated, standalone}; oneProcess, width, height.
+
+      FIVE DONE 2026-09-03, each built against 5.3 and parse-checked against 5.7 before commit:
+        create_procedural_mesh  17 shape-specific parameters, refused from a table.
+        trace                   radius/halfExtent/halfHeight, plus drawDuration-without-draw.
+                                The worst of them: shape DEFAULTS to line, so a caller who sets
+                                radius and forgets shape got a ray instead of a sweep, ok:true.
+        draw_debug              start/end/center/radius/extent/text per shape - and its
+                                unknown-shape refusal sat INSIDE the center branch, so a typo'd
+                                shape answered "needs center" rather than "unknown shape".
+        add_variable            already warned; the warning named 3 of 16 flags and an ellipsis.
+        export_asset            already warned; the warning named none of the 8 it dropped.
+
+      THE PATTERN IN THE LAST TWO IS WORTH KEEPING. Two of five were not silent at all - they
+      warned, which audit_mode_params cannot see because it reads Fail() message literals only.
+      So a row on this list means one of three things, not one: silently ignored, explained in a
+      warning the tool cannot read, or an alias cluster. Read before fixing.
+
+      Both warning cases had the SAME weakness and it is the one worth looking for in the rest:
+      the message said that something was ignored without saying WHAT. Both now name the fields
+      actually passed and carry them as an array (ignoredFlags, ignoredOptions) so a caller does
+      not have to parse prose to react.
 
       TREAT ALIAS CLUSTERS AS PROBABLE FALSE POSITIVES - the tool's own header says so, and rows
       like set_function_flags listing `path, functionName, name` are three spellings of one
