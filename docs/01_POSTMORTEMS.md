@@ -2717,3 +2717,19 @@ convenience; it is a second source of truth for the same value, and it only look
 handler starts caring whether the field is present at all. `_post`'s own comment already said the
 rule — *"drop unset optional args so the plugin sees only what the caller provided"* — and a numeric
 or empty-string default quietly makes that sentence false.
+
+**The part that stings.** A second instance turned up the same day —
+`override_inherited_component`, uncallable through the MCP in all eight tagged releases because the
+wrapper posted `confirm: False` and that endpoint *honours* confirm rather than ignoring it. The
+behaviour was not obscure and it was not undocumented. `mifaudit.py` says it in as many words, next
+to the constant that exists to handle it:
+
+> `override_inherited_component` refuses outright on an explicit `confirm:false`, where a stripped
+> one succeeds
+
+The **suite harness knew**, and strips the key so the success path works. The **MCP wrapper**, in
+the same repository, sent `confirm: False` on every call for eight releases. Nobody was wrong about
+the behaviour; the two layers simply never compared notes, and nothing existed to make them.
+
+That is the argument for the check rather than the fix: the fix takes one character, and the reason
+it survived eight releases is that no question was ever asked across the boundary.
