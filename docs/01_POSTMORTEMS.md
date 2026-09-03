@@ -2433,6 +2433,78 @@ are now handled at two different points for a reason worth remembering: repair-a
 construction works only when the asset survives long enough to be repaired.
 
 
+## A suite that ADOPTS a fixture is coupled to every other suite in the sweep (2026-09-02)
+
+**Symptom.** A full sweep reported `test_landscape_heightmap` T8002 failing: the collision surface
+disagreed with the heightmap by 1590.62uu at 2 of 3 probe points. The endpoint was fine. So was the
+suite. It was measuring the wrong terrain.
+
+It failed on the SECOND pass only, and passed alone. `test_socket_authoring` had the same signature -
+33/1 in a sweep, 34/34 against a fresh editor - and I had already misdiagnosed that one once.
+
+**Root cause.** The suite preferred an existing landscape and built its own only if the level had
+none:
+
+    for row in (M.call("landscape_info", {}).get("landscapes") or []):
+        if not row.get("editLayers"):
+            target = row.get("actorPath")
+
+That was safe for one reason and it was never written down: this project's own landscape HAS edit
+layers, so the branch never fired. Then `test_landscape_layer_register` was added, which creates a
+landscape through `create_landscape` - an endpoint that deliberately leaves edit layers OFF. On pass
+2 the leftover was there, the branch fired for the first time in its life, and the suite deformed and
+measured somebody else's 2x2 terrain.
+
+Two properties made it invisible for weeks. It cannot reproduce in a single run, because there is no
+leftover yet. And it is not in the suite that BREAKS - it is created by an unrelated suite that runs
+earlier in the alphabet.
+
+**It is a class, not an incident.** Surveying all 176 suites turned up 22 candidates; 12 survived an
+adversarial pass in which each verifier had to REFUTE the finding and name a specific suite capable of
+creating a matching object. Every one of them adopted something - a Skeleton it then wrote to, the 20
+StaticMeshes it wrote `bAllowCPUAccess` on, a Texture2D whose *absence* of an import source was the
+assertion, meshes in a shared Blender scene it destructively edited.
+
+The sharpest was `test_material_graph`, which needs no second suite at all: it takes the first
+Material under `/Game/` as its supposedly-COOKED fixture, and creates `/Game/_MifMat/M_<stamp>` that
+it never deleted. Its own leftover satisfies its own selector on the next pass - and T351's whole
+point is that writes must REFUSE, which against a live uncooked material they do not.
+
+**Fix.** `mifaudit.is_scratch_fixture` / `pick_adoptable`, keyed on the convention every suite already
+followed without anyone having stated it: scratch actors carry a `Mif` label, scratch assets live
+under `/Game/_Mif*`. Twelve sites now filter. Two suites also stopped LEAKING - not taking somebody's
+leftovers is only half of it.
+
+**The fix broke a suite immediately, and that is the most useful part.**
+`test_blender_rename_bones` BUILDS its own armature through `run_python` and then calls
+`find_armature()` to locate it. A rule that skips every `Mif`-prefixed object skipped the fixture the
+suite had just created. It went from adopting a neighbour's armature to printing
+`SKIPPED - verified nothing`.
+
+That is a worse outcome than the bug. Adoption gives a wrong answer; skipping gives NO answer wearing
+a green tick. The sweep line read `0 failed` and `1 skipped`, and only the second number described
+whether anything had been tested. A suite must skip everyone ELSE'S scratch, not its own.
+
+**Prevention.**
+
+1. **"Prefer an existing one, build if absent" is a coupling, not an optimisation.** It ties the
+   suite to every other suite that could produce a match, including ones written years later. If a
+   suite needs a fixture with specific properties, it should build it - and the selector should say
+   what it is really asking for.
+
+2. **A green individual run is the WEAKEST evidence for this class.** Not appearing in an individual
+   run is the bug's defining property, so twelve suites passing alone reproduces exactly the
+   condition under which it hid. The spec item stays OPEN until a two-pass sweep confirms it.
+
+3. **Read what a sweep says, not its exit code.** `0 failed, 1 skipped` is not a pass. A skip is a
+   suite reporting that it verified nothing, and it is displayed next to the failures precisely so it
+   is not mistaken for one.
+
+4. **Leaking a fixture is the same defect from the other end.** Two of the twelve created something
+   and never removed it; `made_landscape` was assigned and never read. Every cleanup that only runs
+   on the happy path is a future adoption bug in another file.
+
+
 ## A feature was down for five days because a 15-minute wait looked like a crash (2026-09-02)
 
 **Symptom.** The bridge-report pipeline - the thing that turns a user's GitHub issue into a fetched,
