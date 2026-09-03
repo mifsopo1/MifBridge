@@ -72,6 +72,15 @@ REFUSED_ON_PRESENCE = {
                                "stepsPhi", "stepsTheta", "height", "radialSteps", "heightSteps",
                                "capped", "baseRadius", "topRadius", "majorRadius", "minorRadius",
                                "majorSteps", "minorSteps"},
+    # `nodeId` LOOKS DEAD AND IS NOT. Neither wrapper posts it today, so a check for "map keys no
+    # wrapper sends" reports these two rows - which is a reason to leave them alone, not to prune
+    # them. nodeId is a real accepted alias for nodeGuid on both endpoints, and the handler's own
+    # refusal table is exactly { nodeGuid, nodeId } (MifBridgeNodes.cpp:2869), so the row MATCHES the
+    # handler rather than exceeding it. If somebody adds a node_id parameter to either wrapper, this
+    # catches it on the day it lands. Checked 2026-09-03: the accept-list is
+    # {op, graphId, blueprintId, path, nodeGuid, nodeId} and the other two spellings the codebase
+    # uses elsewhere - `node`, `guid` - are refused outright by RejectUnknownParams here, so there
+    # is no third alias missing from this row.
     "blueprint_watch":        {"nodeGuid", "nodeId", "pin"},
     "blueprint_breakpoint":   {"nodeGuid", "nodeId"},
     "start_pie":              {"oneProcess", "width", "height"},
@@ -191,13 +200,61 @@ def main():
     if "--plant" in sys.argv:
         # PLANTED IN MEMORY. This reads a file people edit; a killed run must not leave a broken
         # default behind in the real server.
-        planted = source.replace("def list_sublevels(world: str = \"editor\", net_mode: str = None)",
-                                 "def list_sublevels(world: str = \"editor\", net_mode: str = \"server\")")
-        seen = [b for b in scan(planted) if b[0] == "list_sublevels"]
-        print("PLANT  list_sublevels with netMode back to a sent default: seen=%s" % bool(seen))
-        print("\n%s" % ("PLANT SEEN FOR THE RIGHT REASON - a clean run is worth something" if seen
-                        else "PLANT NOT SEEN AS MINE - a clean run would mean NOTHING"))
-        return 0 if seen else 1
+        #
+        # FOUR SHAPES, because one proved a quarter of it. Until 2026-09-03 this planted only a
+        # STRING default on a _post wrapper - and the four bugs found that day were a float (1.0),
+        # three bools (False) and an empty string, on wrappers this arm never exercised. The tool
+        # scans _blender call sites too and no plant had ever touched that half.
+        shapes = [
+            ("string default, _post arm",
+             ('def list_sublevels(world: str = "editor", net_mode: str = None)',
+              'def list_sublevels(world: str = "editor", net_mode: str = "server")'),
+             "list_sublevels"),
+            # The exact shape of map_legacy_input's shipped bug, put back.
+            ("float default, _post arm",
+             ("def map_legacy_input(name: str, key: str, axis: bool = False, scale: float = None,",
+              "def map_legacy_input(name: str, key: str, axis: bool = False, scale: float = 1.0,"),
+             "map_legacy_input"),
+            ("bool default, _post arm",
+             ("shift: bool = None, ctrl: bool = None, alt: bool = None,",
+              "shift: bool = False, ctrl: bool = None, alt: bool = None,"),
+             "map_legacy_input"),
+            # THE BLENDER ARM. bl_create_camera refuses lookAt/rotation as a mutual exclusion, so a
+            # default on either makes the other unusable - the same class, a different transport.
+            ("default on a _blender wrapper",
+             ('def bl_create_camera(name: str = "", location: list = None, rotation: list = None,',
+              'def bl_create_camera(name: str = "", location: list = None, rotation: list = "xyz",'),
+             "bl_create_camera"),
+        ]
+        failures = []
+        for label, (old, new), endpoint in shapes:
+            if old not in source:
+                failures.append("%s: ANCHOR NOT FOUND - the plant matched nothing, which says "
+                                "nothing about the detector" % label)
+                continue
+            seen = [b for b in scan(source.replace(old, new, 1)) if b[0] == endpoint]
+            print("PLANT  %-30s -> seen=%s" % (label, bool(seen)))
+            if not seen:
+                failures.append("%s: NOT SEEN" % label)
+
+        # NEGATIVE CONTROL: the `or None` clearance. set_struct_member is in the map and posts every
+        # optional key as `x or None`, so the UNPLANTED source must not flag it. Without this, a
+        # detector that flagged everything would pass every plant above.
+        control = [b for b in scan(source) if b[0] == "set_struct_member"]
+        print("PLANT  %-30s -> flagged=%s (must be False)" % ("or-None clearance, unplanted",
+                                                              bool(control)))
+        if control:
+            failures.append("or-None clearance: set_struct_member flagged with no plant - the "
+                            "detector flags protected wrappers, so a seen plant proves nothing")
+
+        print("")
+        if failures:
+            for f in failures:
+                print("  %s" % f)
+            print("PLANT NOT SEEN AS MINE - a clean run would mean NOTHING")
+            return 1
+        print("PLANT SEEN FOR THE RIGHT REASON - a clean run is worth something")
+        return 0
 
     bad = scan(source)
     print("%d endpoint(s) refuse a key for being PRESENT; checked their MCP wrappers\n"
