@@ -149,7 +149,20 @@ def op_add_particles(params):
                              % (render_type, ", ".join(sorted(valid))))
         st.render_type = str(render_type).upper()
     if inst:
-        st.instance_object = get_object(inst)
+        # SAYS THE SAME THING AS ITS SIBLING THREE LINES DOWN. get_object raises "no object named
+        # 'X'. Present: ..." and stops there, so a typo'd instanceObject left the caller with a
+        # particle system they were never told about, while the instanceCollection path directly
+        # below has always ended "The system WAS created." Two adjacent paths, same situation,
+        # different honesty - and the one that stayed quiet is the one a caller is more likely to
+        # hit, because object names are typed more often than collection names.
+        #
+        # Reported as a mutate-then-refuse; it is not one. This op never claims nothing happened,
+        # and the renderType refusal above already says the system was created. The defect is only
+        # that this path forgot to.
+        try:
+            st.instance_object = get_object(inst)
+        except MifOpError as exc:
+            raise MifOpError("%s. The system WAS created." % str(exc).rstrip().rstrip("."))
         if st.render_type != "OBJECT":
             st.render_type = "OBJECT"
     coll = take(params, "instanceCollection", default=None, kind=str)
