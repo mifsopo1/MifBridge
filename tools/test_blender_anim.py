@@ -138,6 +138,22 @@ def main():
     check("A103 and its interpolation is LINEAR, not Blender's BEZIER default",
           zc and zc[0]["interpolation"] == ["LINEAR"], json.dumps(zc)[:200])
 
+    # THE WIDER READ. list_keyframes walks animation_data.action and nothing else, so an object
+    # animated by DRIVERS or NLA reports curveCount 0 there and is not un-animated - a wrong
+    # answer from a verification op. list_animation_data is the one that covers all three routes.
+    lad = B.call("list_animation_data", {"object": "A_Fan"})
+    check("A103b list_animation_data agrees the fan is animated",
+          lad.get("isAnimated") is True and "action" in (lad.get("animatedBy") or []),
+          json.dumps(lad)[:220])
+    check("A103b and it reports the action curve count list_keyframes found",
+          any((s.get("actionCurveCount") or 0) == 3 for s in (lad.get("sources") or [])),
+          json.dumps(lad.get("sources"))[:220])
+    # A fan keyed by hand has no drivers, so this is zero AND that zero is meaningful - it is the
+    # count of drivers whose variables point at something that no longer exists, which is the
+    # silent failure where a driver evaluates to 0 and reports nothing.
+    check("A103b no driver on it is broken - invalidDrivers is a measured zero, not an absent key",
+          lad.get("invalidDrivers") == 0, json.dumps(lad)[:220])
+
     # ---------------------------------------------------------------- A104 keyframes on DATA
     print("")
     print("=== A104: a light flicker keys the DATA datablock, which is the easy thing to get wrong ===")

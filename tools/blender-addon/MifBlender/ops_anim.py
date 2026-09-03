@@ -334,11 +334,190 @@ def op_list_keyframes(params):
                 "interpolation": sorted({kp.interpolation for kp in fc.keyframe_points}),
             })
     return {"object": obj.name, "curves": out, "curveCount": len(out),
-            "keyframeTotal": sum(len(c["keyframes"]) for c in out)}
+            "keyframeTotal": sum(len(c["keyframes"]) for c in out),
+            # SAYS WHAT IT DID NOT LOOK AT. This walks animation_data.action only, so an object
+            # animated entirely by drivers or by NLA strips reports curveCount 0 here and is not
+            # un-animated. Anyone reading a zero needs to know which question was asked.
+            "scopeNote": ("Action fcurves only. Drivers and NLA strips are separate collections "
+                          "and are NOT counted here - use list_animation_data for all three.")}
+
+
+def _anim_summary(label, holder):
+    """Every route by which `holder` can be animated, not just the one list_keyframes reads.
+
+    THE REASON THIS EXISTS. list_keyframes walks animation_data.action, which is one of THREE
+    places animation lives. Drivers are on animation_data.drivers and NLA strips on
+    animation_data.nla_tracks, both separate collections. So an object driven entirely by drivers -
+    a rig control, a procedural offset, anything wired rather than keyed - came back with
+    curveCount 0 from an op whose entire purpose is verification. That is not a missing answer, it
+    is a WRONG one, and a caller checking whether their driver landed was told it had not.
+    """
+    ad = getattr(holder, "animation_data", None)
+    if ad is None:
+        return {"target": label, "hasAnimationData": False, "animatedBy": []}
+
+    action = getattr(ad, "action", None)
+    action_curves = len(_fcurves(holder)) if action is not None else 0
+
+    drivers = []
+    for dr in (getattr(ad, "drivers", None) or []):
+        try:
+            var_targets = []
+            for var in (dr.driver.variables or []):
+                for tgt in (var.targets or []):
+                    if tgt.id is not None:
+                        var_targets.append(tgt.id.name)
+            drivers.append({
+                "dataPath": dr.data_path,
+                "index": dr.array_index,
+                "expression": getattr(dr.driver, "expression", ""),
+                "type": getattr(dr.driver, "type", None),
+                # A driver whose variable points at a deleted object is the silent failure mode -
+                # it evaluates to zero and reports nothing.
+                "isValid": bool(getattr(dr.driver, "is_valid", True)),
+                "variableTargets": sorted(set(var_targets)),
+            })
+        except (AttributeError, TypeError):
+            continue
+
+    tracks = []
+    for tr in (getattr(ad, "nla_tracks", None) or []):
+        tracks.append({
+            "name": tr.name,
+            "mute": bool(tr.mute),
+            "strips": [{"name": s.name,
+                        "action": s.action.name if s.action else None,
+                        "frameStart": round(float(s.frame_start), 4),
+                        "frameEnd": round(float(s.frame_end), 4)} for s in (tr.strips or [])],
+        })
+
+    by = []
+    if action_curves:
+        by.append("action")
+    if drivers:
+        by.append("drivers")
+    if tracks:
+        by.append("nla")
+    return {
+        "target": label,
+        "hasAnimationData": True,
+        "actionName": action.name if action is not None else None,
+        # An action with a fake user survives a save; one without is DELETED on save, which is
+        # data loss nobody is warned about anywhere else.
+        "actionHasFakeUser": bool(getattr(action, "use_fake_user", False)) if action else False,
+        "actionCurveCount": action_curves,
+        "driverCount": len(drivers),
+        "drivers": drivers,
+        "nlaTrackCount": len(tracks),
+        "nlaTracks": tracks,
+        "animatedBy": by,
+    }
+
+
+def op_list_animation_data(params):
+    """Every route by which an object is animated - action, drivers AND NLA.
+
+    list_keyframes answers "which keyframes are on the action", which is a narrower question than
+    it looks, and returns curveCount 0 for an object animated entirely by drivers. This answers
+    "is this animated at all, and by what".
+
+    params:
+      object (str, required)
+      target (str)   object | data | both (default)
+    """
+    reject_unknown(params, _LIST_KEYS, "list_animation_data")
+    obj = get_object(take(params, "object", "name", required=True))
+    want = str(take(params, "target", default="both", kind=str)).lower()
+    rows = []
+    if want in ("both", "object", "obj"):
+        rows.append(_anim_summary("object", obj))
+    if want in ("both", "data", "datablock") and obj.data is not None:
+        rows.append(_anim_summary("data", obj.data))
+    routes = sorted({r for row in rows for r in row.get("animatedBy", [])})
+    return {
+        "object": obj.name,
+        "sources": rows,
+        "animatedBy": routes,
+        "isAnimated": bool(routes),
+        "invalidDrivers": sum(1 for row in rows for d in row.get("drivers", [])
+                              if not d.get("isValid", True)),
+    }
+
+
+def op_delete_keyframe(params):
+    """Remove a keyframe, and prove it went. The correction path set_keyframe never had.
+
+    params:
+      object (str, required)
+      dataPath (alias path, required)  e.g. "location", "hide_render", 'pose.bones["x"].location'
+      frame (int)                      the frame to clear. Omitted removes EVERY key on the path.
+      index (int)                      which array element; omitted means all of them
+
+    Counted before and after on the matching curves, because keyframe_delete returns a bool that is
+    False both for "there was nothing there" and for "it refused", and those are different answers.
+    """
+    reject_unknown(params, {"object", "name", "dataPath", "path", "frame", "index"},
+                   "delete_keyframe")
+    obj = get_object(take(params, "object", "name", required=True))
+    path = take(params, "dataPath", "path", default=None, kind=str)
+    if not path:
+        raise MifOpError("'dataPath' is required - which channel to clear. NOTHING was deleted.")
+    frame = params.get("frame")
+    index = params.get("index")
+
+    def matching():
+        found = []
+        for holder in (obj, obj.data if obj.data is not None else None):
+            if holder is None:
+                continue
+            for fc in _fcurves(holder):
+                if fc.data_path != path:
+                    continue
+                if index is not None and fc.array_index != int(index):
+                    continue
+                found.append(fc)
+        return found
+
+    curves = matching()
+    if not curves:
+        raise MifOpError("no fcurve on '%s' for dataPath '%s'%s. Nothing to delete - list them "
+                         "with list_keyframes. NOTHING was deleted."
+                         % (obj.name, path,
+                            "" if index is None else " at index %s" % index))
+    before = sum(len(fc.keyframe_points) for fc in curves)
+
+    removed = 0
+    for fc in curves:
+        # Reverse order: removing shifts the collection under an ascending walk, which silently
+        # skips every second key.
+        for kp in reversed(list(fc.keyframe_points)):
+            if frame is None or abs(kp.co[0] - float(frame)) < 1e-6:
+                fc.keyframe_points.remove(kp)
+                removed += 1
+        fc.update()
+
+    after = sum(len(fc.keyframe_points) for fc in matching())
+    if removed == 0:
+        raise MifOpError("'%s' on '%s' has %d keyframe(s) but none at frame %s. NOTHING was "
+                         "deleted." % (path, obj.name, before, frame))
+    return {
+        "object": obj.name,
+        "dataPath": path,
+        "frame": frame,
+        "index": index,
+        "keyframesBefore": before,
+        "keyframesAfter": after,
+        "removed": removed,
+        # MEASURED, not the operator's word. before-after is the count that actually left the
+        # curve; `removed` is what this op thinks it did, and they must agree.
+        "countsAgree": (before - after) == removed,
+    }
 
 
 OPS = {
     "set_keyframe": op_set_keyframe,
     "set_frame_range": op_set_frame_range,
     "list_keyframes": op_list_keyframes,
+    "list_animation_data": op_list_animation_data,
+    "delete_keyframe": op_delete_keyframe,
 }

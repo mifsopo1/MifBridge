@@ -5020,6 +5020,19 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_list_animation_data(object: str, target: str = None) -> dict:
+    "Every route by which a Blender object is animated - action fcurves, DRIVERS and NLA strips. bl_list_keyframes reads animation_data.action only, which is one of three places animation lives, so an object driven entirely by drivers came back with curveCount 0 from an op whose purpose is verification - a wrong answer, not a missing one. This reports animatedBy (action/drivers/nla), the action's name and whether it has a fake user (an action WITHOUT one is deleted on save), each driver's expression, validity and variable targets, and every NLA track and strip. invalidDrivers counts drivers whose variables point at something that no longer exists - the silent failure where a driver evaluates to zero and reports nothing. Call mif_help(\"bl_list_animation_data\") first."
+    return _blender("list_animation_data", object=object, target=target)
+
+
+@mcp.tool()
+def bl_delete_keyframe(object: str, data_path: str, frame: int = None,
+                       index: int = None) -> dict:
+    "Remove keyframes from a Blender channel - the correction path bl_set_keyframe never had, which forced delete-and-recreate for any mistake. Omit frame to clear every key on the path; omit index to clear every array element. Counted before and after off the fcurves, because keyframe removal reports a bool that is False both for 'there was nothing there' and for 'it refused', and those are different answers. The response carries keyframesBefore, keyframesAfter, removed and countsAgree - the last is the op checking its own arithmetic against the curve rather than asking you to trust it. Call mif_help(\"bl_delete_keyframe\") first."
+    return _blender("delete_keyframe", object=object, dataPath=data_path, frame=frame, index=index)
+
+
+@mcp.tool()
 def bl_set_camera(object: str, type: str = None, lens: float = None, sensor_width: float = None,
                   sensor_height: float = None, sensor_fit: str = None, ortho_scale: float = None,
                   clip_start: float = None, clip_end: float = None, shift_x: float = None,
