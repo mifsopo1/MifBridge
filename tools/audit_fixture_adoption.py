@@ -115,7 +115,11 @@ _ROW_ID = (r'(?:\.get\(\s*"(?:path|actorPath|objectPath|name|label)"\s*\)'
 # `any((a.get("path") or "").startswith(dst) for a in found)` - it is asking whether one specific
 # destination came back, not choosing among what did. Against a LITERAL it would be a scoping filter
 # rather than an identity test, which is why the argument must be an identifier.
-IDENTITY = re.compile(_ROW_ID + r'[^\n!<>=]*==|==[^\n]*' + _ROW_ID + r'|'
+#
+# AND IT IS ROUTINELY SPLIT ACROSS LINES. test_bulk_rename's exists() reads the row identifier on
+# one line and compares it on the next; a newline-anchored pattern called that an adoption. Bounded
+# to 140 characters rather than the whole window so an unrelated == further down cannot clear a site.
+IDENTITY = re.compile(_ROW_ID + r'[^!<>=]{0,140}==|==[^\n]*' + _ROW_ID + r'|'
                       + _ROW_ID + r'[^\n]{0,30}\.startswith\(\s*[A-Za-z_]')
 
 # AN IDENTITY LOOKUP WITH A FIRST-ROW FALLBACK IS STILL ADOPTION, and this is not hypothetical:
@@ -135,7 +139,11 @@ WRITE_CALL = re.compile(POST + r'(set_|add_|delete_|create_|rename_|import_|reim
                         r'save_|apply_|remove_|assign_|connect_|compile|duplicate_)')
 
 CALL_SITE = re.compile(POST + r'(' + "|".join(DISCOVERY) + r')"\s*,')
-CLASS_ARG = re.compile(r'"(?:class|classFilter|classNames|type|assetClass)"\s*:\s*"([A-Za-z0-9_]+)"')
+# EVERY ALIAS find_assets ACCEPTS. test_blend_profiles passes `className`, and reading only `class`
+# made it "ADOPTS any class" - which collides with all 89 creators instead of the one suite that
+# makes a Skeleton, burying a precise finding inside a vague one.
+CLASS_ARG = re.compile(
+    r'"(?:class|className|classFilter|classNames|type|assetClass)"\s*:\s*"([A-Za-z0-9_]+)"')
 
 # Creators whose product class is not in their arguments. Read off the handlers, not guessed.
 IMPLIED_CLASS = {
@@ -291,7 +299,13 @@ def names_a_row(src, start, win):
     # has a name AND the identifier is taken in the same statement, several lines below the `x`.
     # Requiring the variable to be mentioned near the identifier excluded it, and audit_detectors_fire
     # reported ASLEEP on the very next run. Anything inside this statement belongs to this call.
-    if IDENT.search(src[start:statement_end(src, line_start)]):
+    # AFTER THE ARGUMENTS, NOT INCLUDING THEM. test_cooked_class_trap builds a nameContains filter
+    # out of a row belonging to a DIFFERENT listing - `{"nameContains": a.get("name", "")[:-2]}` -
+    # and uses this call's result only for its count. An identifier passed IN is not an identifier
+    # read OUT, and counting it flagged a count-only site.
+    after_args = src.find("}", start)
+    body = src[(after_args if after_args > 0 else start):statement_end(src, line_start)]
+    if IDENT.search(body):
         return True
     var = am.group(1)
     for hit in IDENT.finditer(win):
