@@ -52,6 +52,24 @@ HANDLER = re.compile(r'^\tvoid (H_\w+)\(', re.M)
 # about; a declared parameter that appears in no refusal at all is the invoke_editor_tab shape.
 FAIL_MSG = re.compile(r'Fail\s*\(\s*Out\s*,(.*?)\)\s*;', re.S)
 
+# A REFUSAL BUILT FROM A TABLE NAMES NOTHING THIS SCAN CAN SEE, and that is a real gap rather than a
+# hypothetical: create_procedural_mesh has seventeen shape-specific parameters and refuses each one
+# from a loop over a { name, shapes } table - `%s is only read by shape %s`. Writing seventeen literal
+# Fail() blocks the way sculpt_landscape writes two would be worse code for the same behaviour, so
+# this file would go on listing ten parameters of a handler that refuses all ten.
+#
+# WHY A MARKER RATHER THAN A SMARTER SCAN. That was tried first and it is instructive that it failed:
+# "the literal appears somewhere other than the accept-list and the accessors" cleared six handlers,
+# and reading them showed three were cleared for reasons that had nothing to do with refusals - a
+# range-for alias read `for (const TCHAR* Key : { TEXT("skeletonPath"), TEXT("path") })`, a
+# ReadVectorField helper, and `Out->SetStringField(TEXT("label"), ...)` which writes the RESPONSE.
+# Right answer, wrong reason, which does not count here. A parameter name appears in too many
+# innocent places for proximity to mean anything.
+#
+# So the handler says so explicitly, the reason is mandatory, and the count is printed on every run
+# whether or not anything is listed - the same shape as audit_fixture_adoption's ADOPTION-OK.
+MODE_OK = re.compile(r'//\s*MODE-PARAMS-OK:\s*(\S.*)')
+
 
 # Depth inside a handler body: 1 is the function's own braces, so a statement directly in the body
 # sits at 1 and anything within an if/else/loop is deeper.
@@ -95,7 +113,7 @@ def handlers(text):
 
 
 def main():
-    rows = []
+    rows, cleared = [], []
     for fname in sorted(os.listdir(SRC)):
         if not fname.endswith(".cpp"):
             continue
@@ -137,6 +155,12 @@ def main():
             if not unexplained:
                 continue
 
+            # READ AND CLEARED, by an explicit marker with a mandatory reason. See MODE_OK.
+            marked = MODE_OK.search(body)
+            if marked:
+                cleared.append((name[2:], marked.group(1).strip()))
+                continue
+
             # IS IT ACTUALLY CONDITIONAL? A parameter read at the handler's top level runs on every
             # path, so it cannot be mode-ignored no matter how many modes the handler has. Only a
             # read nested INSIDE a branch can be skipped.
@@ -166,8 +190,15 @@ def main():
               % (len(unexplained), total, ", ".join(unexplained)))
     print()
     print("=" * 78)
-    print("%d handler(s) worth a look. This is a REVIEW LIST, not a defect count - a parameter can" % len(rows))
-    print("be legitimately mode-independent and simply never mentioned in a refusal.")
+    print("%d handler(s) worth a look, %d marked MODE-PARAMS-OK. This is a REVIEW LIST, not a"
+          % (len(rows), len(cleared)))
+    print("defect count - a parameter can be legitimately mode-independent and simply never")
+    print("mentioned in a refusal.")
+    if cleared:
+        print("")
+        print("READ AND CLEARED - marked in the handler, with the reason given:")
+        for ep, why in cleared:
+            print("  %-30s %s" % (ep, why[:74]))
     print("=" * 78)
     return 0
 

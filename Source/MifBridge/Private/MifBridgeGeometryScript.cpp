@@ -213,6 +213,73 @@ namespace MifBridge
 			return;
 		}
 
+		// REFUSE A PARAMETER THIS SHAPE WOULD IGNORE, before anything is allocated or created.
+		//
+		// RejectUnknownParams cannot catch this: every name below IS declared, so `radius` with
+		// shape box passes the guard, is never read, and a default 100x100x100 box comes back under
+		// ok:true. The caller asked for a 200-unit sphere-ish thing and got a box, and nothing in the
+		// response disagreed with them. That is the invoke_editor_tab shape - found by
+		// audit_mode_params, which reported ten of this handler's nineteen parameters as declared and
+		// never named in any refusal.
+		//
+		// SAME SHAPE AS sculpt_landscape'S, DELIBERATELY. That handler refuses `amount` outside
+		// raise/lower and `targetZ` outside flatten, for the same reason and with the same wording:
+		// name the parameter, name the shapes that DO read it, name the shape given, and say what to
+		// use instead. A response field would be weaker - a caller who got the geometry wrong wants
+		// to be stopped, not informed afterwards.
+		//
+		// The table is the accepted-summary above, in code. Both have to agree, and the summary is
+		// what harvest_param_table publishes, so a drift between them is visible in the param table.
+		//
+		// MODE-PARAMS-OK: all 17 shape-specific parameters are refused from the table below
+		//
+		// audit_mode_params reads refusal MESSAGE LITERALS, and this handler's refusal builds the
+		// parameter name at runtime from the table, so the scan cannot see it. Seventeen literal
+		// Fail() blocks would be visible to it and worse code. The marker is the honest way to say
+		// "this was read and it is handled" - a smarter scan was tried first and cleared three other
+		// handlers for reasons that had nothing to do with refusals.
+		{
+			struct FShapeParam { const TCHAR* Name; const TCHAR* Shapes; };
+			static const FShapeParam kShapeOnly[] = {
+				{ TEXT("dimensionX"),  TEXT("box") },
+				{ TEXT("dimensionY"),  TEXT("box") },
+				{ TEXT("dimensionZ"),  TEXT("box") },
+				{ TEXT("steps"),       TEXT("box") },
+				{ TEXT("radius"),      TEXT("sphere, cylinder") },
+				{ TEXT("stepsPhi"),    TEXT("sphere") },
+				{ TEXT("stepsTheta"),  TEXT("sphere") },
+				{ TEXT("height"),      TEXT("cylinder, cone") },
+				{ TEXT("radialSteps"), TEXT("cylinder, cone") },
+				{ TEXT("heightSteps"), TEXT("cylinder, cone") },
+				{ TEXT("capped"),      TEXT("cylinder, cone") },
+				{ TEXT("baseRadius"),  TEXT("cone") },
+				{ TEXT("topRadius"),   TEXT("cone") },
+				{ TEXT("majorRadius"), TEXT("torus") },
+				{ TEXT("minorRadius"), TEXT("torus") },
+				{ TEXT("majorSteps"),  TEXT("torus") },
+				{ TEXT("minorSteps"),  TEXT("torus") },
+			};
+			for (const FShapeParam& P : kShapeOnly)
+			{
+				if (!In->HasField(P.Name))
+				{
+					continue;
+				}
+				// Substring match against the shape list is safe here because no shape name is a
+				// substring of another: box, sphere, cylinder, cone, torus.
+				if (FString(P.Shapes).Contains(Shape))
+				{
+					continue;
+				}
+				Fail(Out, FString::Printf(
+					TEXT("%s is only read by shape %s; shape '%s' would have ignored it and returned ")
+					TEXT("a default-sized %s under ok:true. Drop it, or use the shape that reads it. ")
+					TEXT("NOTHING was created."),
+					P.Name, P.Shapes, *Shape, *Shape));
+				return;
+			}
+		}
+
 		// Transient: this is scratch working memory for the generator, never the asset itself.
 		UDynamicMesh* DynMesh = NewObject<UDynamicMesh>(GetTransientPackage(), NAME_None, RF_Transient);
 		if (!DynMesh)
