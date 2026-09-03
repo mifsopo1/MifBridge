@@ -47,8 +47,12 @@ TRIAGED = {
     ("HANG", "describe_animation"):
         "SAME CAUSE as the CRASH row above - an already-unresponsive editor, not this endpoint.",
     ("GHOST_OK", "invoke_editor_tab"):
-        "NOT A BUG - the response says manager:'global', and `asset` is only consulted when "
-        "manager='assetEditor'. The ghost value was correctly irrelevant to the call that ran.",
+        "SUPERSEDED - it was triaged NOT A BUG because the response said manager:'global' and "
+        "`asset` is only consulted when manager='assetEditor', so the ghost value was irrelevant to "
+        "the call that ran. That reasoning was right and the endpoint no longer behaves that way: "
+        "it REFUSES `asset` outside assetEditor now, because irrelevant-but-accepted is how a "
+        "caller who forgot the mode got a global operation under ok:true. A ghost value can no "
+        "longer reach the branch this note describes.",
     ("GHOST_OK", "capture_viewport"):
         "NOT A BUG - `path` here is a WRITE destination ('where to write the PNG'), not a reference "
         "that must already exist, confirmed by reading the handler's own accepted-summary text. A "
