@@ -96,8 +96,12 @@ function main(input) {
     if (line.indexOf('tool_result') === -1) continue;
 
     // Only bother with entries that mention the bridge at all.
-    if (line.indexOf('8791') === -1 && line.indexOf('MifBridge') === -1 &&
-        line.indexOf('/api/') === -1) continue;
+    // Only bother with entries that mention EITHER backend. 8792 and MifBlender were missing
+    // until 2026-09-03, so this watched the UE half only and a Blender-side failure passed it
+    // silently - on a tool whose whole point is that it fronts two backends.
+    if (line.indexOf('8791') === -1 && line.indexOf('8792') === -1 &&
+        line.indexOf('MifBridge') === -1 && line.indexOf('MifBlender') === -1 &&
+        line.indexOf('bl_') === -1 && line.indexOf('/api/') === -1) continue;
     for (const [label, re] of SIGNATURES) {
       if (!re.test(line)) continue;
       if (!seen.has(label)) {

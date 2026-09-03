@@ -208,7 +208,13 @@ const RULES =
   "  * 'irrelevant to cooked modding' is NOT a valid reason to decline an item.\n" +
   "  * Verify coverage by READING handlers, never by endpoint name. self_audit is the live list.\n" +
   "  * Add new work as '- [ ]' lines so nothing is lost.\n" +
-  "  * Do NOT save assets, start PIE, or touch anything outside the SDK editor.\n" +
+  "  * MifBridge fronts TWO backends and BLENDER IS FIRST-CLASS, not a UE accessory. Judge the\n" +
+  "    addon for ALL of Blender - modelling, materials, UV, rigging, LIGHTING, cameras,\n" +
+  "    animation, geometry nodes, physics, particles, rendering, world, compositing - and not\n" +
+  "    only for what a DDS2 round trip happens to need. 'DDS2 does not use it' is NOT a reason\n" +
+  "    to decline, exactly as 'irrelevant to cooked modding' is not.\n" +
+  "  * Do NOT save assets or start PIE in an editor somebody else is using, and stay inside this\n" +
+  "    repo and its two backends.\n" +
   "  * Commit and push as you go. Touch tools/night_heartbeat.py every 10-15 min while working.";
 
 const reason =

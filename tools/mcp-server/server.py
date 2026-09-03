@@ -5020,6 +5020,30 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_set_light(object: str, type: str = None, energy: float = None, color: list = None,
+                 radius: float = None, size: float = None, size_y: float = None,
+                 shape: str = None, spot_angle: float = None, spot_blend: float = None,
+                 angle: float = None, shadow: bool = None, diffuse_factor: float = None,
+                 specular_factor: float = None, location: list = None,
+                 rotation: list = None) -> dict:
+    "Change a Blender light that already exists - energy, colour, cone, area size, shadow, or its TYPE. Until this existed a light could be created and never adjusted, which is most of lighting work. Type-specific settings are validated against the type the light will BE after the call, so retyping to SPOT and setting spot_angle together is legal while spot_angle on a POINT light is refused. Every refusal fires before any write. The response carries before, after and changedFields, so you can see what actually moved - including a property Blender DISCARDS on a retype. rotation and spot_angle/angle are RADIANS. Call mif_help(\"bl_set_light\") first."
+    # EVERY accepted key is forwarded, and every optional one defaults to None so _blender drops it.
+    # A concrete default here would be sent on every call, and set_light refuses a per-type key on
+    # the wrong type - which is exactly how six UE tools were made uncallable on 2026-09-03.
+    return _blender("set_light", object=object, type=type, energy=energy, color=color,
+                    radius=radius, size=size, sizeY=size_y, shape=shape, spotAngle=spot_angle,
+                    spotBlend=spot_blend, angle=angle, shadow=shadow,
+                    diffuseFactor=diffuse_factor, specularFactor=specular_factor,
+                    location=location, rotation=rotation)
+
+
+@mcp.tool()
+def bl_list_lights(name_contains: str = None, type: str = None) -> dict:
+    "List every light in the Blender file with its full state - type, energy, colour, cone, area size, shadow, transform - plus hideViewport/hideRender, because a perfectly configured light that is hidden from the render is the usual reason a scene comes back black. There was no read path for a light at all before this: bl_object_info returns early for a light and reports only the transform. sceneHasAnyLight answers the first question worth asking about a dark render. Call mif_help(\"bl_list_lights\") first."
+    return _blender("list_lights", nameContains=name_contains, type=type)
+
+
+@mcp.tool()
 def bl_create_camera(name: str = "", location: list = None, rotation: list = None,
                      look_at: list = None, lens: float = None, sensor_width: float = None,
                      type: str = None, ortho_scale: float = None, clip_start: float = None,

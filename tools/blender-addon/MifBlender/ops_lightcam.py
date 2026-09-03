@@ -59,6 +59,70 @@ def _valid_light_types():
     return {i.identifier for i in bpy.types.Light.bl_rna.properties["type"].enum_items}
 
 
+# THE PER-TYPE KEY MAP, SHARED. create_light validated these against the type being created and
+# set_light has to validate them against the type the light will BE after the call - the same rule
+# asked twice, so it lives once. A second copy is how allowEditConst got past one guard and not the
+# other in this repo on 2026-09-03.
+_MISPLACED_LIGHT_KEYS = (
+    (("spotAngle", "spotBlend"), ("SPOT",), "spotAngle/spotBlend"),
+    (("size", "sizeY", "shape"), ("AREA",), "size/sizeY/shape"),
+    (("angle",), ("SUN",), "angle"),
+    (("radius",), ("POINT", "SPOT"), "radius (the soft-shadow size)"),
+)
+
+
+def _refuse_misplaced_light_keys(params, kind, verb):
+    """Raise if a per-type key was given for a light that is not that type.
+
+    Called BEFORE anything is created or written, in both create_light and set_light, because a
+    typo must not leave a stray object or a half-applied change. `verb` completes the sentence so
+    the message says NOTHING was created or NOTHING was changed as appropriate - the two are
+    different claims and this codebase holds both to being literally true.
+    """
+    for keys, wants, label in _MISPLACED_LIGHT_KEYS:
+        present = [k for k in keys if k in params]
+        if present and kind not in wants:
+            raise MifOpError("%s only applies to a %s light and this one is %s (%s given). "
+                             "NOTHING was %s."
+                             % (label, " or ".join(wants), kind, ", ".join(present), verb))
+
+
+def _light_readback(obj, data):
+    """What the light IS, off the datablock. One reader for create, set and list.
+
+    Written once on purpose. Three near-identical response builders would drift, and a response
+    that disagrees with itself between the op that made a light and the op that lists it is the
+    kind of thing nobody notices until a caller diffs them.
+    """
+    out = {
+        "name": obj.name,
+        "dataName": data.name,
+        "type": data.type,
+        "location": rnd(list(obj.matrix_world.to_translation())),
+        "rotationEuler": rnd(list(obj.matrix_world.to_euler())),
+        "energy": round(float(data.energy), 6),
+        "color": rnd(list(data.color)),
+        "diffuseFactor": round(float(getattr(data, "diffuse_factor", 1.0)), 6),
+        "specularFactor": round(float(getattr(data, "specular_factor", 1.0)), 6),
+    }
+    if data.type in ("POINT", "SPOT"):
+        out["shadowSoftSize"] = round(float(data.shadow_soft_size), 6)
+    if data.type == "SPOT":
+        out["spotSize"] = round(float(data.spot_size), 6)
+        out["spotBlend"] = round(float(data.spot_blend), 6)
+    if data.type == "AREA":
+        out["size"] = round(float(data.size), 6)
+        out["sizeY"] = round(float(getattr(data, "size_y", data.size)), 6)
+        out["shape"] = data.shape
+    if data.type == "SUN":
+        out["angle"] = round(float(data.angle), 6)
+    # use_shadow moved off Light in 4.x for EEVEE Next; reported when present rather than assumed,
+    # the same way op_add_particles handles show_instancer_for_render.
+    if hasattr(data, "use_shadow"):
+        out["shadow"] = bool(data.use_shadow)
+    return out
+
+
 def _look_at_euler(frm, to):
     """Euler that points a Blender camera's -Z at `to`, with +Y up.
 
@@ -107,19 +171,8 @@ def op_create_light(params):
     # object in the scene for a caller who did nothing but make a typo. test_blender_anim's cleanup
     # check found it by refusing to ignore an A_Bad nobody meant to keep. Everywhere else in this
     # addon a refusal means NOTHING was created, and this now matches.
-    _MISPLACED = (
-        (("spotAngle", "spotBlend"), "SPOT", "spotAngle/spotBlend"),
-        (("size", "sizeY", "shape"), "AREA", "size/sizeY/shape"),
-        (("angle",), "SUN", "angle"),
-        (("radius",), ("POINT", "SPOT"), "radius (the soft-shadow size)"),
-    )
-    for keys, want, label in _MISPLACED:
-        present = [k for k in keys if k in params]
-        wants = want if isinstance(want, tuple) else (want,)
-        if present and kind not in wants:
-            raise MifOpError("%s only applies to a %s light and this one is %s (%s given). "
-                             "NOTHING was created."
-                             % (label, " or ".join(wants), kind, ", ".join(present)))
+    # Shared with set_light, which asks the same question about the type the light will BE.
+    _refuse_misplaced_light_keys(params, kind, "created")
 
     snap = selection_snapshot()
     try:
@@ -210,6 +263,167 @@ def op_create_light(params):
         return out
     finally:
         selection_restore(snap)
+
+
+_SET_LIGHT_KEYS = set(_LIGHT_KEYS) | {"object", "light"}
+
+
+def op_set_light(params):
+    """Change a light that already exists, and report what it IS afterwards.
+
+    WHY THIS EXISTS. Until 2026-09-03 a light could be created and never touched again: there was
+    no way to change its energy, colour, cone, size or shadow, and no way to READ any of it back -
+    object_info returns early for a light and reports only the transform. So the addon could build
+    a lighting rig and then not adjust it, which is most of what lighting work actually is. The
+    only route was run_python, i.e. the arbitrary-code switch a user may well have turned off.
+
+    params:
+      object / light / name (str)  which light. Required.
+      type (str)                   RETYPE the light - POINT | SUN | SPOT | AREA. Per-type keys in
+                                   the same call are validated against the NEW type.
+      energy / power (float)       watts for POINT/SPOT/AREA, irradiance for SUN
+      color [r,g,b]
+      radius (float)               soft-shadow size, POINT/SPOT only
+      size / sizeY / shape         AREA only
+      spotAngle / spotBlend        SPOT only, radians
+      angle (float)                SUN only, angular diameter in radians
+      shadow (bool)
+      diffuseFactor / specularFactor (float)
+      location / rotation {x,y,z}  moves the light OBJECT; rotation is radians
+
+    Every refusal fires before any write. A caller who names one bad key gets a light in exactly
+    the state it was in before the call.
+    """
+    reject_unknown(params, _SET_LIGHT_KEYS, "set_light")
+    want = take(params, "object", "light", "name", default=None, kind=str)
+    if not want:
+        raise MifOpError("'object' is required - the name of the light to change "
+                         "(list them with list_lights). NOTHING was changed.")
+    obj = bpy.data.objects.get(want)
+    if obj is None:
+        known = [o.name for o in bpy.data.objects if o.type == "LIGHT"][:25]
+        raise MifOpError("no object named '%s'. Lights present: %s. NOTHING was changed."
+                         % (want, ", ".join(known) if known else "<none>"))
+    if obj.type != "LIGHT":
+        raise MifOpError("'%s' is a %s, not a LIGHT. NOTHING was changed." % (want, obj.type))
+    data = obj.data
+
+    # THE TYPE THE LIGHT WILL BE, which is what the per-type keys must be judged against - not the
+    # type it is now. Retyping to SPOT and setting spotAngle in one call is legitimate and has to
+    # work; setting spotAngle while retyping to POINT is a caller bug and has to be refused.
+    new_type = take(params, "type", "lightType", "kind", default=None, kind=str)
+    if new_type is not None:
+        new_type = str(new_type).upper()
+        valid = _valid_light_types()
+        if new_type not in valid:
+            raise MifOpError("unknown light type '%s' for this Blender. Valid: %s. "
+                             "NOTHING was changed." % (new_type, ", ".join(sorted(valid))))
+    effective = new_type or data.type
+    _refuse_misplaced_light_keys(params, effective, "changed")
+
+    col = params.get("color")
+    if col is not None and (not isinstance(col, (list, tuple)) or len(col) < 3):
+        raise MifOpError("'color' must be [r,g,b] in 0..1, got %r. NOTHING was changed." % (col,))
+
+    before = _light_readback(obj, data)
+
+    # COMMIT. Nothing below can refuse.
+    if new_type is not None:
+        data.type = new_type
+    if "location" in params:
+        obj.location = _vec3(params, "location", tuple(obj.location))
+    if "rotation" in params:
+        obj.rotation_euler = _vec3(params, "rotation", tuple(obj.rotation_euler))
+    energy = take_float(params, "energy", "power", default=None)
+    if energy is not None:
+        data.energy = energy
+    if col is not None:
+        data.color = tuple(float(c) for c in col[:3])
+    sa = take_float(params, "spotAngle", default=None)
+    if sa is not None:
+        data.spot_size = sa
+    sb = take_float(params, "spotBlend", default=None)
+    if sb is not None:
+        data.spot_blend = sb
+    sz = take_float(params, "size", default=None)
+    if sz is not None:
+        data.size = sz
+    szy = take_float(params, "sizeY", default=None)
+    if szy is not None:
+        data.size_y = szy
+    shape = take(params, "shape", default=None, kind=str)
+    if shape:
+        data.shape = str(shape).upper()
+    ang = take_float(params, "angle", default=None)
+    if ang is not None:
+        data.angle = ang
+    if "radius" in params:
+        data.shadow_soft_size = take_float(params, "radius", default=0.1)
+    if "shadow" in params and hasattr(data, "use_shadow"):
+        data.use_shadow = take_bool(params, "shadow", default=True)
+    df = take_float(params, "diffuseFactor", default=None)
+    if df is not None:
+        data.diffuse_factor = df
+    sf = take_float(params, "specularFactor", default=None)
+    if sf is not None:
+        data.specular_factor = sf
+
+    bpy.context.view_layer.update()
+    after = _light_readback(obj, data)
+    # WHAT ACTUALLY MOVED, not what was asked for. A caller who sets energy to the value it already
+    # had should be able to see that nothing changed, and a retype that silently drops a per-type
+    # property - Blender does discard spot_size when you leave SPOT - shows up here rather than
+    # being discovered later in a render.
+    changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    return {
+        "light": obj.name,
+        "before": before,
+        "after": after,
+        "changedFields": changed,
+        "changedAnything": bool(changed),
+    }
+
+
+def op_list_lights(params):
+    """Every light in the file, with its full state. The read path that did not exist.
+
+    params:
+      nameContains (str)  optional substring filter, case-insensitive
+      type (str)          optional POINT | SUN | SPOT | AREA filter
+
+    Reports lights in bpy.data.objects, so a light datablock with no object is not listed - it
+    cannot illuminate anything until something links it, and clear_scene purges those.
+    """
+    reject_unknown(params, {"nameContains", "type"}, "list_lights")
+    sub = take(params, "nameContains", default=None, kind=str)
+    want = take(params, "type", default=None, kind=str)
+    if want:
+        want = str(want).upper()
+        valid = _valid_light_types()
+        if want not in valid:
+            raise MifOpError("unknown light type '%s'. Valid: %s."
+                             % (want, ", ".join(sorted(valid))))
+    rows = []
+    for obj in bpy.data.objects:
+        if obj.type != "LIGHT":
+            continue
+        if sub and sub.lower() not in obj.name.lower():
+            continue
+        if want and obj.data.type != want:
+            continue
+        row = _light_readback(obj, obj.data)
+        # VISIBILITY IS PART OF "is this lighting anything". A light hidden in the render still
+        # reads as a perfectly configured light in every other field, which is exactly the sort of
+        # thing somebody debugging a black render needs told.
+        row["hideViewport"] = bool(obj.hide_viewport)
+        row["hideRender"] = bool(obj.hide_render)
+        rows.append(row)
+    rows.sort(key=lambda r: r["name"])
+    return {
+        "count": len(rows),
+        "lights": rows,
+        "sceneHasAnyLight": any(not r["hideRender"] for r in rows),
+    }
 
 
 def op_create_camera(params):
@@ -331,5 +545,7 @@ def op_create_camera(params):
 
 OPS = {
     "create_light": op_create_light,
+    "set_light": op_set_light,
+    "list_lights": op_list_lights,
     "create_camera": op_create_camera,
 }
