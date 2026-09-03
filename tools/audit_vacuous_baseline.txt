@@ -7,21 +7,20 @@ test_blender_headless_guard.py:180	NO-COUNTEREXAMPLE over 'fake.seen' - G2 %s se
 test_cooked_class_trap.py:175	PRESENCE of 'cooked' - T755 every row carries a cooked flag
 test_enums.py:79	T300 and the DIFFERENT authored name the engine assigned
 test_find_tools.py:124	T780 every result's FULL description actually contains the keyword som
-test_list_bones.py:151	T223 no skeleton reports zero bones
-test_list_bones.py:241	T790 every virtual bone has its own generated name
-test_list_bones.py:354	T791 hasDataForLod:false never carries a vertexCount
-test_list_bones.py:88	PRESENCE of 'refPose' - T221 and present when asked for
+test_list_bones.py:155	T223 no skeleton reports zero bones
+test_list_bones.py:251	T790 every virtual bone has its own generated name
+test_list_bones.py:369	T791 hasDataForLod:false never carries a vertexCount
+test_list_bones.py:92	PRESENCE of 'refPose' - T221 and present when asked for
 test_material_params.py:72	PRESENCE of 'value' - T121 each carries a value
-test_niagara_params.py:126	PRESENCE of 'typeIndex' - T210 typeIndex is reported rather than a type na
-test_niagara_params.py:126	T210 typeIndex is reported rather than a type name
-test_niagara_params.py:191	NO-COUNTEREXAMPLE over 'widths.items()' - T212 one typeIndex always has one width
-test_niagara_params.py:201	T213 vector values report the right number of floats
-test_niagara_params.py:239	T216 and every object offset is a valid index into one of them
-test_niagara_user_params.py:95	NO-COUNTEREXAMPLE over 'valued' - T8200 every row with a decodable kind actual
+test_niagara_params.py:131	PRESENCE of 'typeIndex' - T210 typeIndex is reported rather than a type na
+test_niagara_params.py:131	T210 typeIndex is reported rather than a type name
+test_niagara_params.py:196	NO-COUNTEREXAMPLE over 'widths.items()' - T212 one typeIndex always has one width
+test_niagara_params.py:206	T213 vector values report the right number of floats
+test_niagara_params.py:244	T216 and every object offset is a valid index into one of them
+test_niagara_user_params.py:96	NO-COUNTEREXAMPLE over 'valued' - T8200 every row with a decodable kind actual
 test_physics_asset.py:293	T2906 and nothing below the hole moved
 test_pie_idle.py:63	NO-COUNTEREXAMPLE over 'idle_flags' - P200 every liveness flag is false while stop
 test_pie_idle.py:83	P201 %s - and every endpoint its advice names is really registered
-test_ported_anim.py:385	NO-COUNTEREXAMPLE over 'left' - T575 the scratch blend space this suite made
 test_project_paths.py:57	NO-COUNTEREXAMPLE over 'DIR_KEYS + ("projectFile",' - P100 and uses forward slashes throughout, so
 test_selfpin.py:130	PRESENCE of 'sourcesBefore' - T21 rows carry sourcesBefore/After
 test_spawn_many.py:188	T545 and each note carries its item index

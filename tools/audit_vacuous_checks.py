@@ -223,11 +223,33 @@ def counterexample_findings():
     return out
 
 
+def baseline_key(entry):
+    """(file, assertion text) - the identity of a finding, WITHOUT the line number.
+
+    A LINE NUMBER IS NOT AN IDENTITY, and treating it as one turns this release gate red for
+    edits that changed nothing about the assertions. On 2026-09-03 three comment blocks were added
+    ABOVE existing checks in test_list_bones, test_niagara_params and test_niagara_user_params;
+    six baselined entries moved by 1 to 15 lines, their text identical one-for-one, and the gate
+    went from rc 0 to rc 1 reporting ten "new" assertions that were the same ten as before.
+
+    This is the same mistake audit_suite_reach's own header records about mtimes: a stamp that
+    moves for reasons unrelated to content cannot stand in for content.
+
+    WHAT IS GIVEN UP, and it is worth naming rather than discovering later: a genuinely NEW
+    assertion whose text matches a baselined one in the same file is now accepted silently. That
+    is a real narrowing. It is the smaller loss - a duplicated assertion text in one file is a
+    near-miss, while an editor's comment reddening a gate is a certainty, and the second teaches
+    people to run --update-baseline without reading, which is the failure this file exists to stop.
+    """
+    where, _, label = entry.partition("\t")
+    return (where.rsplit(":", 1)[0], label)
+
+
 def load_baseline():
     if not os.path.isfile(BASELINE):
         return set()
-    return set(l.rstrip("\n") for l in io.open(BASELINE, encoding="utf-8") if l.strip()
-               and not l.startswith("#"))
+    return set(baseline_key(l.rstrip("\n")) for l in io.open(BASELINE, encoding="utf-8")
+               if l.strip() and not l.startswith("#"))
 
 
 # --------------------------------------------------------------------------- rule 4: unreachable
@@ -359,7 +381,7 @@ def main():
         return 0
     show_all = "--all" in sys.argv
     base = set() if show_all else load_baseline()
-    new = [f for f in found if f not in base]
+    new = [f for f in found if baseline_key(f) not in base]
     if not new:
         print("checks OK - %d candidate(s) across all four rules, none new against the baseline"
               % len(found))
