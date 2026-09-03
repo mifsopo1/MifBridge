@@ -7476,7 +7476,36 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       any suite that adopts a fixture has it - and the sweep is the only thing that surfaces it,
       because it only appears on the second pass.
 
-      NOT STARTED. Needs the editor; deferred at Andre's request 2026-09-01.
+      ALL TWELVE SITES FIXED 2026-09-02, AND STILL OPEN - the confirming run has not happened.
+
+      Surveyed all 176 suites: 22 candidates, 12 surviving an adversarial pass where each verifier
+      had to REFUTE the finding and name a suite that could create a matching object. All twelve are
+      now fixed and each suite runs green on its own:
+
+        test_landscape_heightmap  landscape, AND it stopped leaking the one it builds
+        test_material_graph       Material - it was self-contaminating, adopting its own leftover
+        test_ported_anim          Skeleton (it WRITES the retarget mode) and BlendSpace
+        test_niagara_emitter      NiagaraSystem
+        test_material_params      MaterialInstanceConstant
+        test_staticmesh_write_guard  the 20 meshes it writes bAllowCPUAccess on
+        test_uncovered_reads8     WidgetBlueprint and Texture2D
+        test_spline_landscape     the landscape it deforms and rewrites - it named none at all
+        test_blender_mesh / _ops / _rename_bones   objects in the live Blender scene, by Mif- name
+
+      Shared mechanism: mifaudit.is_scratch_fixture / pick_adoptable, covered by
+      test_scratch_discrimination.py at 12 checks with no bridge and no editor.
+
+      WHY THIS STAYS OPEN. Individual green runs are the WEAKEST possible evidence here, because
+      this bug class does not appear in an individual run - that is its defining property.
+      test_socket_authoring passes 34/34 alone and fails 33/1 in a sweep; test_landscape_heightmap
+      failed only on the SECOND pass. Twelve suites passing alone reproduces the exact condition
+      under which the bug was invisible for weeks.
+
+      The verification that counts is a full two-pass sweep coming back clean, and specifically
+      test_socket_authoring's T3104 and test_landscape_heightmap's T8002 - the two that actually
+      went red. Until that has run, this is a set of plausible fixes, not a fixed problem.
+
+      Blocked on the editor, which Andre is using.
 
 - [x] **six proposals were invisible to the backlog counter for weeks** - ALL SIX BUILT 2026-09-01
       FOUND 2026-09-01 with the spec reporting 0 open. It was reporting the truth about `- [ ]`
