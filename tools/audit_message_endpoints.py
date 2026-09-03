@@ -37,10 +37,12 @@ Usage:
 """
 import ast
 import io
+import io as _io
 import json
 import os
 import re
 import sys
+from contextlib import redirect_stdout as _redirect_stdout
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PRIVATE = os.path.join(HERE, "..", "Source", "MifBridge", "Private")
@@ -133,13 +135,62 @@ def registry():
 ADVISED_PARAMS = re.compile(r'\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\s*\{([a-zA-Z][a-zA-Z0-9, ]*)\}')
 
 
-def advised_param_findings(names, accepts):
-    """[(endpoint, param, where)] for advice naming a parameter that endpoint does not accept."""
+def _self_test(names):
+    """Prove the advised-parameter arm fires, without planting into Source/.
+
+    THE ARM THE HARNESS PLANT CANNOT REACH. See advised_param_findings' docstring for why the plant
+    stays on tool_help.json. This writes one probe .cpp into a temp directory and points the scan at
+    it, so it runs identically whether or not an editor is open - which is the whole reason it is
+    here rather than as a second registry entry.
+
+    Both directions, because a rule that only fires proves half of itself: the bad advice must be
+    reported AND the good advice beside it must not. Without the negative control, a scan that
+    flagged every `x {y}` in sight would pass this.
+    """
+    import shutil
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="mif_advparam_selftest_")
+    try:
+        # A real endpoint, so the `if ep not in names` guard does not clear the row for the wrong
+        # reason - a probe cleared as "a value shape, not advice" would look like a working detector.
+        ep = "save_package" if "save_package" in names else sorted(names)[0]
+        accepts = {ep: {"path"}}
+        io.open(os.path.join(tmp, "MifProbe.cpp"), "w", encoding="utf-8").write(
+            'void H_probe()\n{\n'
+            '\tFail(Out, TEXT("try %s {zzprobeparam} instead"));\n'
+            '\tFail(Out, TEXT("or %s {path} which is fine"));\n'
+            '}\n' % (ep, ep))
+        hits = advised_param_findings(names, accepts, private=tmp)
+        bad = [h for h in hits if "zzprobeparam" in str(h)]
+        good = [h for h in hits if "path" in str(h)]
+        ok = bool(bad) and not good
+        print("SELF-TEST  advised-parameter arm")
+        print("  a param the endpoint does NOT accept is reported : %s" % bool(bad))
+        print("  a param it DOES accept is not reported           : %s" % (not good))
+        print("")
+        print("%s" % ("OK - the arm the harness plant cannot reach does fire" if ok else
+                      "FAILED - a clean run of this arm would mean nothing"))
+        return 0 if ok else 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def advised_param_findings(names, accepts, private=None):
+    """[(endpoint, param, where)] for advice naming a parameter that endpoint does not accept.
+
+    `private` OVERRIDES the source directory, and exists so this arm can prove itself. The harness
+    plant for this tool targets tool_help.json - deliberately, because a tools/ file can be planted
+    while an editor is open where a Source/ plant is skipped - so it exercises the endpoint-NAME arm
+    and has never run this one. Re-aiming the plant at a .cpp would prove this arm and lose the
+    working one whenever anybody has the editor up, which is a swap rather than a fix. Injecting the
+    directory instead lets --self-test point at a scratch probe and costs the plant nothing.
+    """
     out = []
-    for fn in sorted(os.listdir(PRIVATE)):
+    root = private or PRIVATE
+    for fn in sorted(os.listdir(root)):
         if not fn.endswith(".cpp"):
             continue
-        path = os.path.join(PRIVATE, fn)
+        path = os.path.join(root, fn)
         for i, line in enumerate(io.open(path, encoding="utf-8",
                                          errors="replace").read().split("\n")):
             for lit in LITERAL.findall(line) + CONTINUATION.findall(line):
@@ -440,6 +491,30 @@ def main():
         print("could not read the endpoint registry")
         return 2
     found = scan(names)
+    if "--self-test" in sys.argv:
+        return _self_test(names)
+
+    # RUN ON EVERY INVOCATION, not only when asked. A self-test that has to be requested is one more
+    # thing that can rot unnoticed - the same objection that put audit_vacuous_checks' baseline_key
+    # proof INSIDE --check rather than beside it. This one costs a temp file and one scan.
+    #
+    # Returns 2, not 1: "the checker is broken" and "the checker found something" are different
+    # answers and a caller that conflates them will fix the wrong thing.
+    #
+    # THE REPORTING HAS TO HAPPEN OUTSIDE THE REDIRECT. The first version of this printed the
+    # captured output and the failure line from INSIDE the `with`, so both went straight back into
+    # the buffer they were meant to escape - a caller would have seen an empty screen and a bare
+    # rc 2. Caught by asserting on the message rather than only on the exit code, which is the
+    # difference between testing that it failed and testing that it SAID SO.
+    _quiet = _io.StringIO()
+    with _redirect_stdout(_quiet):
+        _st_rc = _self_test(names)
+    if _st_rc != 0:
+        print(_quiet.getvalue(), end="")
+        print("SELF-CHECK FAILED: the advised-parameter arm does not fire on a known instance, "
+              "so a clean run below would mean nothing about it.")
+        return 2
+
     tools = mcp_docstrings()
     found_mcp = scan_mcp(tools)
     found_bl = blender_helper_findings()

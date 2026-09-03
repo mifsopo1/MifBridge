@@ -11560,7 +11560,33 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       lines, which audit_citations cannot catch because it validates engine-source citations only).
       Read them before acting; this file's own rule is that a reading list is not a defect count.
 
-- [ ] **the message-endpoints plant covers one arm of three, and aiming it at the newest costs the one that works** (1 hour)
+- [x] **the message-endpoints plant covers one arm of three, and aiming it at the newest costs the one that works** (1 hour)
+      DONE 2026-09-03, and NOT by moving the plant. The trade named in this item was real: the
+      harness plant targets tool_help.json specifically so the tool stays provable while an editor
+      is open, and re-aiming it at a .cpp would have proved the new arm and lost the working one
+      whenever anybody has the editor up - which today was all day.
+
+      advised_param_findings now takes an optional `private` directory, so `--self-test` points it
+      at a scratch probe .cpp instead of planting into Source/. It runs identically whether or not
+      an editor is open, and the harness plant is untouched.
+
+      RUN ON EVERY INVOCATION, not only when asked, for the reason audit_vacuous_checks' baseline
+      proof sits inside --check rather than beside it: a self-test that has to be requested is one
+      more thing that can rot unnoticed. It returns 2 rather than 1, because "the checker is broken"
+      and "the checker found something" are different answers and a caller that conflates them fixes
+      the wrong thing.
+
+      PROVED IN THREE DIRECTIONS, in-process, because the first attempt proved nothing: copying the
+      module to a scratch dir and breaking it there returned rc 1 from a FileNotFoundError - PRIVATE
+      is resolved relative to the script, so the copy could not find Source/ at all. The same
+      script-relative trap made an audit_suite_reach comparison meaningless earlier the same day.
+      Monkeypatched in-process instead: unbroken rc 0; arm returning nothing rc 1; arm flagging
+      everything rc 1, which is the negative control doing its job.
+
+      One bug found in my own fix by testing the MESSAGE and not just the exit code: the failure
+      report was printed from inside the `redirect_stdout` block that captures the self-test, so it
+      went back into the buffer it was meant to escape and a caller would have seen an empty screen
+      with a bare rc 2. Moved outside the redirect.
       audit_message_endpoints runs three independent checks: endpoint-name advice,
       blender_helper_findings, and advised_param_findings added 2026-09-03. The harness plant covers
       the first only, so audit_detectors_fire prints a green line for the whole tool while the newest
