@@ -268,9 +268,22 @@ def main():
             if delta < 1.0:
                 agreed += 1
     if tried:
+        # NAME THE TERRAIN IN THE FAILURE DETAIL.
+        #
+        # This exact check failed on 2026-09-01 with "2 of 3 points agreed, worst delta 1590.62" and
+        # that number read as a collision bug for long enough to matter. It was a FIXTURE bug: the
+        # suite had adopted a leftover 2x2 landscape another suite created, and was measuring
+        # terrain whose heights it had never written. The endpoint was fine.
+        #
+        # The two failures are indistinguishable from the numbers alone and completely obvious once
+        # the actorPath is beside them - a /Game/_Mif* or a stranger's label says "wrong fixture" at
+        # a glance, and this suite's own scratch landscape says "look at the endpoint". Costs one
+        # string on a path that only runs when something is already wrong.
         check("T8002 the collision surface agrees with the heightmap at every probed point "
               "(worst delta %.2fuu) - collision was rebuilt, not left behind" % worst,
-              agreed == tried, "%d of %d points agreed, worst delta %.2f" % (agreed, tried, worst))
+              agreed == tried,
+              "%d of %d points agreed, worst delta %.2f, measured on %s"
+              % (agreed, tried, worst, target))
         # A landscape that is flat everywhere would pass the above trivially, so require that at
         # least one probe sat at a real elevation.
         check("T8002 and at least one probe was at a non-zero height, so the agreement is not "
