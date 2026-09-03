@@ -1198,6 +1198,24 @@ round trips that a listing would have saved.
 **Suggested fix:** `list_endpoints {filter?}` returning names plus the one-line summary
 `describe_endpoint` already holds.
 
+> **State on 2026-09-03, read from the source rather than assumed.** HALF of this is answered and
+> the half that is not is the interesting half, so the entry stays open with the gap narrowed.
+>
+> `self_audit` enumerates: `GetEndpointNames()` with `includeEndpoints` / `includeEndpointDetails`
+> (and `summaryOnly` for the compact form), so "discovering what exists" no longer means grepping
+> MifBridgeDescribe.cpp, and the three round trips that found `delete_level_actor` would not happen
+> today.
+>
+> But the SUMMARY half is still missing. `self_audit` sets `summary` only under
+> `if (Ext && !Ext->Summary.IsEmpty())` - EXTERNAL endpoints only. A built-in gets its name and its
+> flags (readOnly, selfManaged, compileHeavy) and no one-line description, so the listing still does
+> not tell you what a name DOES. That is the remaining work, and it is smaller than this entry
+> implies: the summaries already exist in describe_endpoint's tables, they are simply not joined
+> onto the listing.
+>
+> Nearly marked FIXED on the strength of `summary` appearing in the handler. It appears in one
+> branch that built-ins never enter.
+
 ## 3. `list_level_actors` defaults to 200 and truncates
 
 Default `limit` is 200. The response is honest — `count:200, matched:239, truncated:true` — but a
