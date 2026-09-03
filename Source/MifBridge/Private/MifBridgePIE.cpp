@@ -266,6 +266,40 @@ namespace MifBridge
 		const int32 Players = FMath::Clamp(JInt(In, TEXT("players"), 1), 1, 8);
 		const FString NetModeStr = JStr(In, TEXT("netMode")).ToLower();
 		const bool bWantsMulti = (Players > 1) || !NetModeStr.IsEmpty();
+
+		// REFUSE THE MULTIPLAYER-ONLY OPTIONS ON A SINGLE-PLAYER SESSION.
+		//
+		// MODE-PARAMS-OK: oneProcess/width/height are refused when the session is not multiplayer
+		//
+		// All three are read INSIDE the block below, so {"oneProcess":false, "width":1280,
+		// "height":720} with players=1 and no netMode skipped the whole thing: the window opened at
+		// whatever size the editor preferences say, oneProcess was ignored, and the response did not
+		// even echo the values back to disagree with. The accepted summary says "multiplayer only"
+		// and nothing enforced it - documentation is not a guard.
+		//
+		// THE GATE IS NOT netMode ALONE, which is what audit_mode_params saw. It is
+		// `players > 1 || netMode`, so a caller can enable these EITHER by asking for more players or
+		// by naming a net mode - and the refusal says both, because "multiplayer only" without
+		// saying how to get there sends people to the docs.
+		if (!bWantsMulti)
+		{
+			static const TCHAR* const kMultiOnly[] = { TEXT("oneProcess"), TEXT("width"),
+													   TEXT("height") };
+			for (const TCHAR* Key : kMultiOnly)
+			{
+				if (!In->HasField(Key))
+				{
+					continue;
+				}
+				Fail(Out, FString::Printf(
+					TEXT("%s only applies to a MULTIPLAYER play session and this one is single-player, "
+						 "so it would have been ignored and the window opened at the editor's own "
+						 "size. Pass players > 1 or netMode (standalone|listen|client) to make it "
+						 "multiplayer, or drop %s. NOTHING was started."), Key, Key));
+				return;
+			}
+		}
+
 		if (bWantsMulti)
 		{
 			ULevelEditorPlaySettings* Settings = DuplicateObject<ULevelEditorPlaySettings>(

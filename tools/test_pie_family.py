@@ -139,6 +139,45 @@ def main():
     # stops it in a finally, and asserts pie_status is back to state==stopped" - and the suite had
     # been written without it. Found by reading the file before running it against Andre's live
     # editor, which is why it cost nothing instead of costing him a session.
+    # T1610: the multiplayer-only options are refused on a single-player session rather than
+    # silently ignored. oneProcess/width/height are read INSIDE the multiplayer block, so
+    # {"width":1280} with players=1 and no netMode opened a window at the editor's own size and the
+    # response did not even echo the value back to disagree with.
+    #
+    # RUN BEFORE THE REAL start_pie, INSIDE THE SAME try, deliberately. This asserts that NOTHING
+    # STARTED, and the failure mode if the guard is broken is a PIE session nobody asked for - so it
+    # sits where the finally below will stop it, rather than in a suite that never expects PIE.
+    print("\n=== T1610: multiplayer-only options are refused on a single-player session ===")
+    try:
+        mp = M.raw_post("start_pie", {"width": 1280, "height": 720})
+        check("T1610 width/height on a single-player session are refused",
+              mp.get("ok") is False, json.dumps(mp)[:220])
+        check("T1610 and the refusal says HOW to make it multiplayer, not just that it is not",
+              "players > 1" in (mp.get("error") or "") and "netMode" in (mp.get("error") or ""),
+              (mp.get("error") or "")[:240])
+        # The postcondition is the assertion that matters: a handler that refused and started
+        # anyway would satisfy both checks above.
+        after = M.raw_post("pie_status", {}).get("state")
+        check("T1610 and NOTHING was started - judged by pie_status, not by the error string",
+              after in ("stopped", "none", None, ""), "pie_status.state=%r" % after)
+    except M.Timeout:
+        check("T1610 start_pie answered the refusal rather than hanging", False,
+              "start_pie did not respond - the refusal path must not reach RequestPlaySession")
+    finally:
+        # NOTHING SHOULD BE RUNNING HERE - the call above is supposed to refuse before
+        # RequestPlaySession is ever reached. This finally exists for the case where it does NOT,
+        # which is the exact failure this test was written to catch, and a test that catches a
+        # stranded-session bug by stranding a session is not worth having. audit_suite_teardown
+        # flagged the first draft for having no finally at all and it was right to: it cannot know
+        # a start_pie is meant to be refused, and neither can the next person to edit this.
+        _st = (M.raw_post("pie_status", {}) or {}).get("state")
+        if _st not in ("stopped", "none", None, ""):
+            print("  NOTE  the guard let a session start; stopping it.")
+            M.raw_post("stop_pie", {})
+            _back = wait_for_pie_state("stopped")
+            check("T1610 the session that broken guard started was stopped again",
+                  _back.get("state") == "stopped", _back)
+
     try:
         started = M.raw_post("start_pie", {})
         check("(setup) start_pie accepted", started.get("ok") is True, started)
