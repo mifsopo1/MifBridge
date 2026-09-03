@@ -11213,10 +11213,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       set_property is fine and the warning is scaremongering, or disabling is ALSO broken and the
       claim understates it. Nothing has ever checked it.
 
-      Needs a NiagaraSystem with at least one emitter. DDS2's are all COOKED, and create_asset
-      already refuses several cooked-hostile classes, so this may be out of reach here and ordinary
-      work on an uncooked project (Curfew). Establish which BEFORE writing the suite - "cannot be
-      tested here" is a finding worth recording, but only once it is measured rather than assumed.
+      REACHABILITY, narrowed by reading the source on 2026-09-03 rather than guessing. The first
+      guess - "DDS2's Niagara is cooked so this is out of reach" - is WRONG at the step it blames:
+
+      - Creating the system is FINE. create_asset special-cases UNiagaraSystem and runs
+        `UNiagaraSystemFactoryNew::InitializeSystem(sys, bCreateDefaultNodes=true)`
+        (MifBridgeUserTypes.cpp:1128), because a bare NewObject<UNiagaraSystem> crashes the editor -
+        found live 2026-08-29. So a fresh UNCOOKED system under /Game/_Mif is available.
+      - `duplicate_asset` refuses a COOKED Niagara asset (MifBridgeAssetOps.cpp:917) and that is a
+        crash guard, not an inconvenience - so the source cannot be obtained by duplication.
+      - The real gate is `add_niagara_emitter`, which requires `emitter` - a SOURCE UNiagaraEmitter
+        asset to add a COPY of - and whose own failure path is "the source emitter '%s' has no
+        editor data". Cooked assets are precisely what lacks editor data.
+
+      So the one question that decides this is: DOES THIS PROJECT CONTAIN ANY UNiagaraEmitter WITH
+      EDITOR DATA? One find_assets call and one add_niagara_emitter attempt answer it. If none, the
+      item is genuinely out of reach HERE and ordinary work on an uncooked project (Curfew) - and
+      that is worth recording as a measured fact, with the failing response quoted, rather than as
+      the assumption it started as.
 
       `preview_composite_widget` -> `list_live_widgets` (MifBridgeCompositePreview.cpp:336) is the
       other, and it needs a running PIE session, so it is attended-only and cannot go in an
