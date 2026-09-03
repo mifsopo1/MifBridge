@@ -25,7 +25,8 @@ import math
 
 import bpy
 
-from .ops_common import (MifOpError, object_info, reject_unknown, rnd,
+from .ops_common import (MifOpError, light_readback, object_info, reject_unknown,
+                         refuse_unsupported_shadow, rnd, shadow_attr,
                          selection_restore, selection_snapshot, take, take_bool, take_float)
 
 # Blender's own enum, read off the RNA rather than remembered - the same discipline ops_create uses
@@ -87,81 +88,6 @@ def _refuse_misplaced_light_keys(params, kind, verb):
                              % (label, " or ".join(wants), kind, ", ".join(present), verb))
 
 
-# THE SHADOW FLAG HAS MOVED BETWEEN VERSIONS, so it is looked up rather than assumed. Newest name
-# first, exactly as op_add_particles handles show_instancer_for_render - which is in this addon
-# because writing the old name raised AttributeError and took down a live build.
-_SHADOW_ATTRS = ("use_shadow", "use_shadow_jitter")
-
-
-def _shadow_attr(holder):
-    """The name this Blender uses for the light's shadow toggle, or None if it has none."""
-    for attr in _SHADOW_ATTRS:
-        if hasattr(holder, attr):
-            return attr
-    return None
-
-
-def _refuse_unsupported_shadow(params, verb):
-    """Refuse `shadow` up front on a Blender that has no such property, rather than ignoring it.
-
-    create_light used to accept the key and write it only `if hasattr(data, attr)`, so on a build
-    where the property had moved the caller asked for shadows off, got shadows on, and was told
-    nothing. A key this addon ACCEPTS and does not apply is the invoke_editor_tab shape, and the
-    house rule is that it is refused rather than silently reinterpreted.
-
-    Asked of the RNA CLASS, not an instance, so it can run before anything is created.
-    """
-    if "shadow" not in params:
-        return
-    # `in`, not hasattr: bl_rna.properties is a collection keyed by property name, so hasattr on it
-    # asks whether the COLLECTION has an attribute of that name, which is always False and would
-    # have made this guard fire on every Blender. Caught by writing it wrong first.
-    if any(a in bpy.types.Light.bl_rna.properties for a in _SHADOW_ATTRS):
-        return
-    raise MifOpError("this Blender's Light has no shadow toggle this op knows how to write (tried "
-                     "%s), so `shadow` would have been silently ignored. Control shadows through "
-                     "the render engine's own settings instead. NOTHING was %s."
-                     % (", ".join(_SHADOW_ATTRS), verb))
-
-
-def _light_readback(obj, data):
-    """What the light IS, off the datablock. One reader for create, set and list.
-
-    Written once on purpose. Three near-identical response builders would drift, and a response
-    that disagrees with itself between the op that made a light and the op that lists it is the
-    kind of thing nobody notices until a caller diffs them.
-    """
-    out = {
-        "name": obj.name,
-        "dataName": data.name,
-        "type": data.type,
-        "location": rnd(list(obj.matrix_world.to_translation())),
-        "rotationEuler": rnd(list(obj.matrix_world.to_euler())),
-        "energy": round(float(data.energy), 6),
-        "color": rnd(list(data.color)),
-        "diffuseFactor": round(float(getattr(data, "diffuse_factor", 1.0)), 6),
-        "specularFactor": round(float(getattr(data, "specular_factor", 1.0)), 6),
-    }
-    if data.type in ("POINT", "SPOT"):
-        out["shadowSoftSize"] = round(float(data.shadow_soft_size), 6)
-    if data.type == "SPOT":
-        out["spotSize"] = round(float(data.spot_size), 6)
-        out["spotBlend"] = round(float(data.spot_blend), 6)
-    if data.type == "AREA":
-        out["size"] = round(float(data.size), 6)
-        out["sizeY"] = round(float(getattr(data, "size_y", data.size)), 6)
-        out["shape"] = data.shape
-    if data.type == "SUN":
-        out["angle"] = round(float(data.angle), 6)
-    # Reported when this Blender has the property at all, through the same lookup the writers use,
-    # so the read and the write can never disagree about which attribute the shadow flag lives on.
-    _sh = _shadow_attr(data)
-    if _sh is not None:
-        out["shadow"] = bool(getattr(data, _sh))
-        out["shadowAttr"] = _sh
-    return out
-
-
 def _look_at_euler(frm, to):
     """Euler that points a Blender camera's -Z at `to`, with +Y up.
 
@@ -212,7 +138,7 @@ def op_create_light(params):
     # addon a refusal means NOTHING was created, and this now matches.
     # Shared with set_light, which asks the same question about the type the light will BE.
     _refuse_misplaced_light_keys(params, kind, "created")
-    _refuse_unsupported_shadow(params, "created")
+    refuse_unsupported_shadow(params, "created")
 
     snap = selection_snapshot()
     try:
@@ -267,7 +193,7 @@ def op_create_light(params):
 
         if "shadow" in params:
             # Refused up front on a Blender that has none, so this always lands.
-            setattr(data, _shadow_attr(data), take_bool(params, "shadow", default=True))
+            setattr(data, shadow_attr(data), take_bool(params, "shadow", default=True))
         df = take_float(params, "diffuseFactor", default=None)
         if df is not None:
             data.diffuse_factor = df
@@ -358,13 +284,13 @@ def op_set_light(params):
                              "NOTHING was changed." % (new_type, ", ".join(sorted(valid))))
     effective = new_type or data.type
     _refuse_misplaced_light_keys(params, effective, "changed")
-    _refuse_unsupported_shadow(params, "changed")
+    refuse_unsupported_shadow(params, "changed")
 
     col = params.get("color")
     if col is not None and (not isinstance(col, (list, tuple)) or len(col) < 3):
         raise MifOpError("'color' must be [r,g,b] in 0..1, got %r. NOTHING was changed." % (col,))
 
-    before = _light_readback(obj, data)
+    before = light_readback(obj, data)
 
     # COMMIT. Nothing below can refuse.
     if new_type is not None:
@@ -399,7 +325,7 @@ def op_set_light(params):
     if "radius" in params:
         data.shadow_soft_size = take_float(params, "radius", default=0.1)
     if "shadow" in params:
-        setattr(data, _shadow_attr(data), take_bool(params, "shadow", default=True))
+        setattr(data, shadow_attr(data), take_bool(params, "shadow", default=True))
     df = take_float(params, "diffuseFactor", default=None)
     if df is not None:
         data.diffuse_factor = df
@@ -408,7 +334,7 @@ def op_set_light(params):
         data.specular_factor = sf
 
     bpy.context.view_layer.update()
-    after = _light_readback(obj, data)
+    after = light_readback(obj, data)
     # WHAT ACTUALLY MOVED, not what was asked for. A caller who sets energy to the value it already
     # had should be able to see that nothing changed, and a retype that silently drops a per-type
     # property - Blender does discard spot_size when you leave SPOT - shows up here rather than
@@ -450,7 +376,7 @@ def op_list_lights(params):
             continue
         if want and obj.data.type != want:
             continue
-        row = _light_readback(obj, obj.data)
+        row = light_readback(obj, obj.data)
         # VISIBILITY IS PART OF "is this lighting anything". A light hidden in the render still
         # reads as a perfectly configured light in every other field, which is exactly the sort of
         # thing somebody debugging a black render needs told.

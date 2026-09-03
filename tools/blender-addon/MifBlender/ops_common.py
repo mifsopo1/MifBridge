@@ -217,6 +217,81 @@ def mesh_counts(obj):
     }
 
 
+# THE SHADOW FLAG HAS MOVED BETWEEN VERSIONS, so it is looked up rather than assumed. Newest name
+# first, exactly as op_add_particles handles show_instancer_for_render - which is in this addon
+# because writing the old name raised AttributeError and took down a live build.
+SHADOW_ATTRS = ("use_shadow", "use_shadow_jitter")
+
+
+def shadow_attr(holder):
+    """The name this Blender uses for the light's shadow toggle, or None if it has none."""
+    for attr in SHADOW_ATTRS:
+        if hasattr(holder, attr):
+            return attr
+    return None
+
+
+def refuse_unsupported_shadow(params, verb):
+    """Refuse `shadow` up front on a Blender that has no such property, rather than ignoring it.
+
+    create_light used to accept the key and write it only `if hasattr(data, attr)`, so on a build
+    where the property had moved the caller asked for shadows off, got shadows on, and was told
+    nothing. A key this addon ACCEPTS and does not apply is the invoke_editor_tab shape, and the
+    house rule is that it is refused rather than silently reinterpreted.
+
+    Asked of the RNA CLASS, not an instance, so it can run before anything is created.
+    """
+    if "shadow" not in params:
+        return
+    # `in`, not hasattr: bl_rna.properties is a collection keyed by property name, so hasattr on it
+    # asks whether the COLLECTION has an attribute of that name, which is always False and would
+    # have made this guard fire on every Blender. Caught by writing it wrong first.
+    if any(a in bpy.types.Light.bl_rna.properties for a in SHADOW_ATTRS):
+        return
+    raise MifOpError("this Blender's Light has no shadow toggle this op knows how to write (tried "
+                     "%s), so `shadow` would have been silently ignored. Control shadows through "
+                     "the render engine's own settings instead. NOTHING was %s."
+                     % (", ".join(SHADOW_ATTRS), verb))
+
+
+def light_readback(obj, data):
+    """What the light IS, off the datablock. One reader for create, set and list.
+
+    Written once on purpose. Three near-identical response builders would drift, and a response
+    that disagrees with itself between the op that made a light and the op that lists it is the
+    kind of thing nobody notices until a caller diffs them.
+    """
+    out = {
+        "name": obj.name,
+        "dataName": data.name,
+        "type": data.type,
+        "location": rnd(list(obj.matrix_world.to_translation())),
+        "rotationEuler": rnd(list(obj.matrix_world.to_euler())),
+        "energy": round(float(data.energy), 6),
+        "color": rnd(list(data.color)),
+        "diffuseFactor": round(float(getattr(data, "diffuse_factor", 1.0)), 6),
+        "specularFactor": round(float(getattr(data, "specular_factor", 1.0)), 6),
+    }
+    if data.type in ("POINT", "SPOT"):
+        out["shadowSoftSize"] = round(float(data.shadow_soft_size), 6)
+    if data.type == "SPOT":
+        out["spotSize"] = round(float(data.spot_size), 6)
+        out["spotBlend"] = round(float(data.spot_blend), 6)
+    if data.type == "AREA":
+        out["size"] = round(float(data.size), 6)
+        out["sizeY"] = round(float(getattr(data, "size_y", data.size)), 6)
+        out["shape"] = data.shape
+    if data.type == "SUN":
+        out["angle"] = round(float(data.angle), 6)
+    # Reported when this Blender has the property at all, through the same lookup the writers use,
+    # so the read and the write can never disagree about which attribute the shadow flag lives on.
+    _sh = shadow_attr(data)
+    if _sh is not None:
+        out["shadow"] = bool(getattr(data, _sh))
+        out["shadowAttr"] = _sh
+    return out
+
+
 def object_info(obj, with_counts=True):
     """The pre-image/post-image record. Every number a round-trip assertion
     might need, in both Blender units and Unreal units."""
@@ -232,6 +307,67 @@ def object_info(obj, with_counts=True):
             and all(abs(v - 1.0) < 1e-6 for v in obj.scale)
         ),
     }
+    # PER-TYPE DETAIL, because this early-returned for everything non-MESH until 2026-09-03 and this
+    # is the addon's most-used read op. A light came back as a name, a type and a transform - none
+    # of its energy, colour, cone or shadow - so nothing could diagnose a lighting rig it had not
+    # just built. Six of the fourteen ops modules had no read op at all; this gate is why fixing
+    # that anywhere else still left the general reader blind.
+    #
+    # The LIGHT branch calls the SAME light_readback that create_light, set_light and list_lights
+    # use, rather than a fourth copy - which is the whole reason that reader moved into this module.
+    if obj.type == "LIGHT" and obj.data is not None:
+        info["light"] = light_readback(obj, obj.data)
+        return info
+    if obj.type == "CAMERA" and obj.data is not None:
+        cam = obj.data
+        info["camera"] = {
+            "type": cam.type,
+            "lensMM": round(float(cam.lens), 6),
+            "sensorWidthMM": round(float(cam.sensor_width), 6),
+            "sensorHeightMM": round(float(getattr(cam, "sensor_height", 0.0)), 6),
+            "sensorFit": getattr(cam, "sensor_fit", None),
+            "clipStart": round(float(cam.clip_start), 6),
+            "clipEnd": round(float(cam.clip_end), 6),
+            "shiftX": round(float(cam.shift_x), 6),
+            "shiftY": round(float(cam.shift_y), 6),
+            "orthoScale": round(float(cam.ortho_scale), 6),
+            "dofEnabled": bool(getattr(getattr(cam, "dof", None), "use_dof", False)),
+            "dofDistance": round(float(getattr(getattr(cam, "dof", None),
+                                               "focus_distance", 0.0)), 6),
+            "fStop": round(float(getattr(getattr(cam, "dof", None), "aperture_fstop", 0.0)), 6),
+            # Whether THIS camera is the one a render will use. Obtainable nowhere else in the
+            # addon, and the first thing anybody asks about a camera.
+            "isSceneCamera": bpy.context.scene.camera is obj,
+        }
+        return info
+    if obj.type == "ARMATURE" and obj.data is not None:
+        arm = obj.data
+        info["armature"] = {
+            "boneCount": len(arm.bones),
+            "rootBones": [b.name for b in arm.bones if b.parent is None],
+            "poseMode": obj.mode,
+            "hasPose": obj.pose is not None and len(obj.pose.bones) > 0,
+        }
+        return info
+    if obj.type in ("CURVE", "FONT", "SURFACE") and obj.data is not None:
+        cu = obj.data
+        info["curve"] = {
+            "splineCount": len(getattr(cu, "splines", []) or []),
+            "dimensions": getattr(cu, "dimensions", None),
+            "bevelDepth": round(float(getattr(cu, "bevel_depth", 0.0)), 6),
+            "extrude": round(float(getattr(cu, "extrude", 0.0)), 6),
+            "body": getattr(cu, "body", None) if obj.type == "FONT" else None,
+        }
+        return info
+    if obj.type == "EMPTY":
+        info["empty"] = {
+            "displayType": obj.empty_display_type,
+            "displaySize": round(float(obj.empty_display_size), 6),
+            # An empty that instances a collection is a whole scene branch, not a null.
+            "instanceCollection": (obj.instance_collection.name
+                                   if obj.instance_collection else None),
+        }
+        return info
     if obj.type != "MESH":
         return info
 
