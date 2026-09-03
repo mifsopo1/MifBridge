@@ -468,7 +468,15 @@ name-holding leak usually survives one round.
 the stack, the source-level cause, the data-durability position, and three suggested fixes — all three
 of which were implemented. That is the standard to file at.
 
-## 10. User-defined enums: a write that lied and a read that lost the answer
+## 10. User-defined enums: a write that lied and a read that lost the answer — FIXED
+
+*(Heading marked 2026-09-03. The body below has said "Both are fixed" since it was written -
+the same heading/body disagreement as issue 14, and the same consequence: the section index
+counted a closed issue as open. Re-verified rather than taken from the body: `add_enum_value`
+now reads the name back through `GetDisplayNameTextByIndex` after `SetEnumeratorDisplayName`,
+which is exactly the hole described - that setter declined the name, returned void, and
+nothing noticed. `tools/test_enums.py` is present and has grown from the 32 checks the body
+cites to 41.)*
 
 Both found on 2026-08-26 by hunting the enum family, which `tools/coverage_gaps.py` had flagged as
 covered by no suite. Both are fixed, and `tools/test_enums.py` (32 checks) is the regression.
