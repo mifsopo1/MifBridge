@@ -211,8 +211,16 @@ def main():
         # EMPTY summary, and audit_suite_reach then read empty as the number zero and reported
         # "PASSED while running 0% of itself" against a suite that runs 29 assertions and passes
         # every one. A formatting difference became a five-alarm coverage finding two tools away.
+        # WIDENED 2026-09-03 to match the pattern audit_suite_reach reads records back with. This
+        # said `startswith("PASS ")` and `^\d+ PASS\s+\d+ FAIL` - one literal space after PASS in
+        # the first form and after the count in the second - while the consumer accepts \s+ at every
+        # gap. Producer and consumer disagreeing about whitespace is what caused the empty record
+        # described above; leaving them disagreeing in a NARROWER direction on the writing side just
+        # moves where the next one appears. A summary that cannot be stored cannot be re-read
+        # however tolerant the reader becomes.
         line = next((l for l in out.splitlines()
-                     if l.startswith("PASS ") or re.match(r"^\d+ PASS\s+\d+ FAIL", l)), "")
+                     if re.match(r"^PASS\s+\d+\s+FAIL\s+\d+", l)
+                     or re.match(r"^\d+\s+PASS\s+\d+\s+FAIL", l)), "")
         # BUSY IS NOT DEAD. A timeout here means the editor is alive and its game thread is
         # occupied - the bridge runs every endpoint on that thread - so relaunching starts a SECOND
         # editor beside a working one and both race for the port. That hung a 288-run sweep.
