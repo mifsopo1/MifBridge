@@ -11816,3 +11816,144 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       recursively (correct, but guarded_payload is on every suite call path and recursion changes
       its cost), or add batch to DENY (cheap, but removes a legitimate endpoint from every suite).
       Read mifaudit.guarded_payload and decide with a measurement, not a preference.
+
+
+## THE BLENDER HALF - what it is, and the order to fix it
+
+Mapped 2026-09-03 by eight domain analysts reading all 9,251 lines of the addon against Blender's
+own surface, on an explicit brief to judge it for ALL of Blender rather than for what a DDS2 round
+trip needs. 171 ops were proposed and cut to about 40 plus repairs. What follows is their build
+order with the reasoning kept, because the reasoning is the part that decays.
+
+THE SHAPE OF THE HOLE. MifBlender is a mesh-conditioning pipeline with one-op-deep stubs bolted
+onto seven other domains. The FBX spine is genuinely good - ops_mesh is 2,552 lines and the
+postconditions in bake_texture, assign_material_to_faces and export_mesh beat most commercial
+tooling. Outside it, three absences matter more than any single op:
+
+  NOTHING LEAVES, AND NOTHING SURVIVES.  There is no save_file; the addon never calls
+  wm.save_mainfile. Every light, camera, world, keyframe, physics setup and node group it authors
+  dies with the process. The only artefacts it can produce are one mesh FBX, one baked texture and
+  exactly one rendered frame. For DDS2 that does not bite, because the FBX IS the deliverable. For
+  everyone else the deliverable is a .blend or a movie and it can produce neither.
+
+  IT WRITES FAR MORE THAN IT READS.  15 of 68 ops are reads, and six modules - lightcam, render,
+  physics, world, viewport, create - had no read op at all. That is what makes it unresumable: once
+  a create response scrolls out of context the scene is unreadable, so nothing can diagnose a black
+  render or verify through a second path.
+
+  IT IS AN INITIALISER, NOT AN EDITOR.  create_light with no set_light, create_camera with no
+  set_camera, add_particles with no set_particles, set_keyframe with no delete_keyframe. Lighting
+  and animation are iterative by nature, and create-only forces delete-and-recreate, which loses
+  the name to Blender's .001 uniquify and drops keyframes on the datablock.
+
+AND ONE CONSTRAINT THAT DICTATES ARCHITECTURE: the 150-second main-thread job ceiling. Anything
+longer reports a timeout to the caller AND KEEPS RUNNING. The MCP wrapper's _timeout=600 does not
+raise the ceiling, it only makes the client wait longer for a failure. Nothing that takes minutes
+can be an in-process op, ever - which is not a reason to skip rendering, it is a reason to build it
+out-of-process the way ops_gen already does with gen_status.
+
+- [x] **Tier 0 - stop lying (7 repairs)** DONE 2026-09-03
+      Every one was a false claim the tool was making rather than a missing feature, which is why
+      they came before any new op: adding 40 ops onto a base that reports success unreliably
+      multiplies the problem. set_keyframe's path walk stripped subscripts so bones, modifiers,
+      shape keys and node inputs were unwritable - and keyframe_insert takes the FULL path, so the
+      key still landed holding the OLD value. keyframesTotal summed every fcurve on the object, so
+      it could never fall to zero. set_viewport_view had FOUR refusals after moving the pivot.
+      create_camera left a stray camera for a typo. render_still's wroteFile was satisfied by a
+      candidate's NAME, so a stale file passed. _apply_common changed resolution then refused.
+      `shadow` was accepted and silently ignored where the property moved, and export_mesh accepted
+      four objectTypes its selection could never contain.
+
+- [x] **the bake colour-space bug, found in the same pass** DONE 2026-09-03
+      Every NORMAL, ROUGHNESS, AO and SHADOW map this bridge ever wrote went to disk as sRGB,
+      because images.new() defaults to it and nothing set colorspace_settings. Wrong in Unreal,
+      Unity, Godot and glTF alike, and invisible: it still looks like a normal map, and the op's
+      magenta-sentinel signature asks whether the buffer CHANGED, not whether what landed is right.
+      A pixel signature cannot see a transfer curve.
+
+- [ ] **Tier 1 - the session survives and produces something** (5 ops)
+      What makes the tool credible to a film, archviz, mograph or print user, none of whom care
+      about UE.
+        save_file / open_file / file_info   new ops_file.py. Build FIRST. Save-a-copy semantics by
+                                            default - write a file, do NOT repoint bpy.data.filepath
+                                            - refuse to overwrite without an explicit flag. The
+                                            postcondition that matters is the count of datablocks
+                                            with users==0 and use_fake_user==False, because those
+                                            are what the save DESTROYS.
+        render_animation + render_status    the largest single hole. Must run OUT OF PROCESS on a
+                                            saved .blend and be polled like gen_status; in-process
+                                            is structurally impossible under the 150s wall.
+                                            Enumerate frame_path() with mtimes BEFORE rendering,
+                                            stat after; a frame counts only if its mtime moved.
+        render_info                         the read half of set_render_settings, which today
+                                            reports only the five fields it can write. This is what
+                                            answers "why is the render black" without run_python.
+        set_color_management                validate against the enum THIS OCIO config offers, not
+                                            a remembered list.
+
+- [ ] **Tier 2 - see and adjust what already exists** (8 ops + 1 repair)
+      Absences 2 and 3 closed for the families that already ship. set_light and list_lights are
+      DONE (2026-09-03). Remaining:
+        object_info per type (repair)  it early-returns for anything non-MESH, so a LIGHT reports a
+                                       name and a transform. One-line gate on the most-used read op.
+        list_cameras                   sceneCamera is currently unobtainable - scene_info omits it,
+                                       set_render_settings gives a bare boolean, render_still names
+                                       it only by blocking for a render. Report derived FOV too.
+        set_camera                     plus SWITCHING the scene camera, which today exists only at
+                                       birth, and sensor_fit/sensor_height, without which
+                                       sensorWidth is a half-answer and no real lens can be matched.
+        aim_object                     _look_at_euler already exists with its off-by-pi postmortem
+                                       in the source and exactly one caller; lights cannot be aimed
+                                       at all. Measure the ANGLE between world -Z and the target
+                                       direction, not the euler you just wrote.
+        set_object_visibility          hide_viewport/hide_render/ray visibility/holdout/shadow
+                                       catcher, for EVERY object type. Stopping a softbox appearing
+                                       as a white rectangle in reflections is the most-wanted toggle
+                                       in product and archviz work.
+        delete_keyframe                the correction path for an op that already ships.
+        list_animation_data            list_keyframes looks only at animation_data.action, so an
+                                       object driven entirely by DRIVERS reports curveCount 0. Not a
+                                       missing answer - a WRONG one, from an op whose purpose is
+                                       verification.
+
+- [ ] **Tier 3 - motion worth rendering** (11 ops)
+      Build evaluate_at_frame FIRST, before anything fun, because it is how everything after it gets
+      proven: every read in the addon reads the RAW property, which is not the evaluated value
+      whenever a constraint, driver, NLA stack, parent or cache is involved. Take a frame LIST, save
+      and restore frame_current, assert restoredFrame.
+      Then edit_fcurve (3 of Blender's 13 interpolations are reachable today, at insert time only,
+      and easing IS the craft in motion graphics); add_fcurve_modifier (there is no way to make an
+      animation LOOP - every turntable and idle is keyed by hand); create_action / assign_action /
+      list_actions (an object holds one action forever under whatever Blender auto-named it, and an
+      unlinked action is DELETED ON SAVE - data loss, and it is also the name glTF and FBX write
+      into the engine); set_bone_pose and set_shape_key (both unblocked by the Tier 0 path fix;
+      character animation has zero coverage today); markers with camera binding; bake_to_keyframes;
+      and set_frame_range's fps_base/frame_step/preview range.
+      bake_to_keyframes earns its own line: bake_physics bakes POINT CACHES, WHICH NO EXPORTER
+      READS. A rigid-body sim authored here can be rendered here and handed to nothing. Its
+      postcondition must sample the evaluated world matrix at K frames before baking, then again
+      with the sources muted, and report max position/rotation error - because producing the right
+      NUMBER of keys while losing the motion is the normal failure when visual keying is off.
+
+- [ ] **Tier 4 - procedural** (8 ops)
+      constraints and drivers, each as one module, plus set_custom_property and NLA strips.
+      Constraints are how camera work is actually done - a Track To on an empty is THE standard rig
+      and stays correct as the target moves, which a one-shot aim_object cannot. Drivers are the one
+      animation feature that fails completely silently.
+      MEASURE THROUGH evaluated_get(depsgraph).matrix_world, never the base object: a constraint
+      does not touch obj.matrix_world, so reading the base object reports every constraint as having
+      done nothing, and reading back the values you wrote is a proxy that cannot fail.
+
+- [ ] **Tier 5 - craft depth** (5 ops)
+      set_light_shadow (engine-specific half only), set_light_ies plus gobo/cookie projection which
+      is the same mechanism and more general, set_camera_panorama (closes a declared-and-unreachable
+      - create_camera accepts PANO and offers nothing to configure it), move_keyframes, and light
+      linking / lightgroups.
+
+- [~] **camera viewport-display ops - passepartout, guides, safe areas, background images**
+      Declined 2026-09-03 on the analysts' recommendation. None of it changes a render, and the
+      bridge cannot see the viewport, so it helps nobody on the far end of a socket. The safe-area
+      margins in pixels are the one defensible piece and belong in render_info as a derived field.
+      Background images are the cut most worth reversing, and only on one condition: if the workflow
+      is genuinely "agent preps a matchmove scene, human finishes it in the GUI". Otherwise a human
+      drags the image in faster than they can describe it.
