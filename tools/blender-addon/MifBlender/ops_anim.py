@@ -189,12 +189,29 @@ def op_set_keyframe(params):
         holder, leaf = owner, path
         if "." in path:
             head, leaf = path.rsplit(".", 1)
-            for part in head.split("."):
-                holder = getattr(holder, part.split("[")[0])
-                if holder is None:
-                    raise MifOpError("'%s' is None on '%s', so '%s' cannot be written. A rigid "
-                                     "body path needs add_rigid_body to have run first. NOTHING "
-                                     "was keyed." % (part, obj.name, path))
+            # RESOLVED BY BLENDER, NOT BY A HAND-ROLLED WALK. The previous version did
+            # `getattr(holder, part.split("[")[0])`, which STRIPS a subscript and never puts it
+            # back: for pose.bones["hand"].location it walked to the bones COLLECTION and then
+            # tried to set `location` on it. Every bracketed path was therefore unwritable, which
+            # is most of the interesting ones - bones, modifiers by name, shape keys, node inputs,
+            # constraints, particle settings. keyframe_insert below never had the problem because
+            # it takes the FULL path and Blender resolves it, so the op could key a path it could
+            # not write, and the caller got a keyframe holding the OLD value.
+            #
+            # path_resolve does the same resolution Blender does everywhere else, subscripts
+            # included. It raises ValueError for a path that does not exist, which is a better
+            # error than AttributeError naming only the leaf.
+            try:
+                holder = owner.path_resolve(head)
+            except (ValueError, AttributeError, TypeError) as exc:
+                raise MifOpError("could not resolve '%s' on '%s' (%s). Check the path against "
+                                 "Blender's own - right-click a field and Copy Full Data Path, "
+                                 "then drop the object prefix. NOTHING was keyed."
+                                 % (head, obj.name, exc))
+            if holder is None:
+                raise MifOpError("'%s' is None on '%s', so '%s' cannot be written. A rigid "
+                                 "body path needs add_rigid_body to have run first. NOTHING "
+                                 "was keyed." % (head, obj.name, path))
         try:
             if index is not None:
                 cur = getattr(holder, leaf)
@@ -212,8 +229,13 @@ def op_set_keyframe(params):
         if index is not None:
             kwargs["index"] = int(index)
         owner.keyframe_insert(**kwargs)
-        _apply_interpolation(owner, path, frame, interp)
-        written.append({"target": why, "dataPath": path})
+        # THE COUNT IS KEPT. _apply_interpolation returns how many keys it actually found AT THIS
+        # FRAME on this path, and it was being discarded - so the only per-call measurement that
+        # this keyframe exists went in the bin, leaving keyframesTotal below as the only evidence.
+        # That total sums every fcurve on the object and its data, so any PRIOR key keeps it
+        # non-zero and it cannot fail. Same shape as op_transfer_weights counting group membership.
+        keyed_here = _apply_interpolation(owner, path, frame, interp)
+        written.append({"target": why, "dataPath": path, "keysAtThisFrame": keyed_here})
 
     # READ BACK off the fcurves. keyframe_insert returns a bool, and a True that produced no curve
     # is exactly the silent success this bridge exists to refuse.
@@ -233,6 +255,11 @@ def op_set_keyframe(params):
         "interpolation": interp,
         "fcurves": curves,
         "keyframesTotal": total,
+        # WHAT THIS CALL DID, as opposed to what the object now holds. keyframesTotal is a scene
+        # measurement and cannot fall to zero once anything has ever been keyed, so on its own it
+        # can never report a failure. This is the per-call number, summed from the paths written
+        # above, and it IS zero when a call keyed nothing.
+        "keysWrittenAtThisFrame": sum(w.get("keysAtThisFrame") or 0 for w in written),
         "valueNote": ("keyframe_insert stores the property's CURRENT value, so the value passed was "
                       "WRITTEN to the object before being keyed - the object is left holding it."),
     }
