@@ -60,6 +60,15 @@ REFUSED_ON_PRESENCE = {
     "blueprint_breakpoint":   {"nodeGuid", "nodeId"},
     "start_pie":              {"oneProcess", "width", "height"},
     "list_sublevels":         {"netMode"},
+    # PRE-EXISTING, and the worst of the set: the wrapper defaulted mode to "flatten" AND amount
+    # to 0.0, so the tool's own default invocation posted an amount the chosen mode refuses. Not
+    # caused by the 2026-09-03 guards - sculpt_landscape has refused this since it was written,
+    # and is the exemplar audit_mode_params cites for how to write one. The guard was right and
+    # the wrapper defeated it. Found by asking whether the new hazard had older instances.
+    "sculpt_landscape":       {"amount", "targetZ"},
+    "set_actor_transform":    {"scale"},
+    "rename_asset":           {"path"},
+    "set_function_flags":     {"pure"},
 }
 
 

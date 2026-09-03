@@ -1841,9 +1841,17 @@ def export_landscape_heightmap(path: str = "", file: str = "", as_data: bool = F
 
 
 @mcp.tool()
-def sculpt_landscape(center: dict, radius: float, mode: str = "flatten", amount: float = 0.0,
+def sculpt_landscape(center: dict, radius: float, mode: str = "flatten", amount: float = None,
                      falloff: float = 0.5, target_z: float = None, landscape: str = None) -> dict:
-    "Sculpt terrain in WORLD units. mode: raise|lower|flatten|smooth. center/radius/amount/target_z are all world units - the vertex-space conversion happens inside."
+    """Sculpt terrain in WORLD units. mode: raise|lower|flatten|smooth. center/radius/amount/target_z are all world units - the vertex-space conversion happens inside.
+
+    amount is raise/lower ONLY and target_z is flatten ONLY; the endpoint refuses the wrong one
+    rather than silently ignoring it.
+
+    amount DEFAULTS TO None, NOT 0.0. _post sends anything that is not None, so a 0.0 default was
+    posted on every call - including the wrapper's own default mode "flatten", which refuses it.
+    The default invocation of this tool could not work through the MCP at all. Omitting amount on
+    raise/lower is still refused, by the handler, with "needs a non-zero amount"."""
     return _post("sculpt_landscape", center=center, radius=radius, mode=mode, amount=amount,
                  falloff=falloff, targetZ=target_z, landscape=landscape)
 
