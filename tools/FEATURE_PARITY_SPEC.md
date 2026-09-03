@@ -11221,14 +11221,28 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       That leaves the UE gap at: 0 unreachable parameters, 0 uncovered endpoints, 8 consequence
       fields, and the editor-closed batch.
 
-- [ ] **36 suites adopt a class another suite creates, and have never been asked about it** (a day)
+- [ ] **32 suites adopt a class another suite creates, and have never been asked about it** (half a day)
       FOUND 2026-09-03 by `audit_fixture_adoption`, which scores 8/8 recall against the known
       instances - so this list is not speculative, it is the same rule that catches all fourteen
-      confirmed sites, applied where nobody has looked. 55 sites, 5 of them beside a WRITE.
-      The 5 writing sites are the ones to read first; a read gives a wrong measurement, a write
-      mutates another suite's fixture and the failure lands in that suite, later, looking like a
-      defect in unrelated code. NOT all defects: a suite may adopt something that does not affect
-      its verdict. `python tools/audit_fixture_adoption.py` prints the list.
+      confirmed sites, applied where nobody has looked. NOT all defects: a suite may adopt something
+      that does not affect its verdict. `python tools/audit_fixture_adoption.py` prints the list.
+
+      FIRST PASS DONE 2026-09-03: 55 sites -> 37. Fourteen sites in ten suites fixed - all five that
+      WROTE, plus the StaticMesh, Skeleton, SkeletalMesh, FoliageType and UserDefinedStruct
+      adopters. A write mutates another suite's fixture and the failure lands in that suite, later,
+      looking like a defect in unrelated code; a read only gives a wrong measurement, which is why
+      the writing sites were read first.
+
+      AND THREE FALSE POSITIVES IN THE DETECTOR, found by reading its output rather than trusting
+      it - scoping through a derived variable, `startswith(<var>)` as an identity test, and
+      `startswith(SC.SCRATCH_PREFIXES)` as a third guard spelling. Recall stayed 8/8 through all
+      three, which is the only reason the narrowing is believable.
+
+      WORTH READING NEXT, in order: the low-maker-count classes still listed - NiagaraSystem (4
+      makers), DataTable, MaterialFunction, LevelSequence - then the `*actor*` group behind
+      list_level_actors / list_partition_actors, where 16 suites spawn actors and the Mif- label
+      convention is the only thing keeping them apart. That convention is a naming habit, not a
+      check: see the hole documented in mifaudit.is_scratch_fixture.
 
 - [ ] **22 hand-rolled copies of the scratch filter that mifaudit already owns** (2 hours)
       FOUND 2026-09-03. `if not a["path"].startswith("/Game/_Mif")` written inline across ~30
