@@ -241,7 +241,12 @@ def _run():
     # ------------------------------------------------------------------ T956 set_water_body_spline
     print("\n=== T956: set_water_body_spline - a scratch water body, a real 4-point loop ===")
     wx, wy = 1100000 + st, 1100000 + st
-    wb = M.call("create_water_body", {"type": "Lake", "x": wx, "y": wy, "z": 500000})
+    # LABELLED so mifaudit.is_scratch_fixture can see it. The cleanup below is the normal path, but
+    # anything raising between here and there leaves a water body in the editor world, and an
+    # unlabelled one is indistinguishable from project content to every suite hunting for something
+    # to adopt.
+    wb = M.call("create_water_body", {"type": "Lake", "x": wx, "y": wy, "z": 500000,
+                                      "label": "MifLakeT956_%d" % st})
     wb_path = wb.get("actorPath")
     check("T956 (setup) a scratch Lake water body is created", wb.get("ok") is True and bool(wb_path),
           json.dumps(wb)[:200])

@@ -497,14 +497,22 @@ def is_scratch_fixture(row):
     # (...PersistentLevel.BP_ASCFix46961_C_UAID_...), and those classes are BP_ASCFix, BP_NoASC,
     # BP_NS_, BP_Probe with no shared prefix, so there is nothing here to match on.
     #
-    # In practice no suite reaches that state today. Every spawn_actor_in_level call in tools/ passes
-    # a label, and every one of those labels is Mif-prefixed - MifAttachParent, MifGrp_A_,
-    # MifSnapFloorA, MifSnapTestActor and the rest - so the label branch above catches them all. The
-    # hole is in the code path, not in the suite set.
+    # THE SUITES are fine: every spawn_actor_in_level call in a test_*.py passes a Mif-prefixed
+    # label - MifAttachParent, MifGrp_A_, MifSnapFloorA, MifSnapTestActor and the rest - so the label
+    # branch above catches them all.
+    #
+    # tools/ IS WIDER THAN THE SUITES, and that is where this went wrong. Until 2026-09-03 this
+    # comment claimed every spawn in tools/ was Mif-prefixed and that "the hole is in the code path,
+    # not in the suite set". Measured that day across all 32 spawner call sites, it was false at two:
+    # audit_read_purity.py spawned "PureSpline_%d" and "PureWaterProbe_%d" into the EDITOR world and
+    # never removed them, so each run leaked two actors this function could not see and anything
+    # doing unscoped discovery could adopt. Both are now Mif-prefixed and torn down in a finally.
     #
     # It stays a hole worth knowing about because the thing keeping it shut is a naming convention,
-    # not a check. A suite that spawns without a label, or with one that is not Mif-prefixed, becomes
-    # adoptable by everything else and nothing here will say so.
+    # not a check. A caller that spawns without a label, or with one that is not Mif-prefixed,
+    # becomes adoptable by everything else and nothing here will say so. Re-measure rather than
+    # trusting this paragraph: the last claim of "none" here survived three days after it stopped
+    # being true, and audits are easy to forget because the eye goes to test_*.py.
     return False
 
 

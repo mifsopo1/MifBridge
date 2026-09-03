@@ -169,7 +169,15 @@ def scratch_fixtures():
         M.call("compile", {"blueprintId": sbid}, timeout=90)
         sp = M.call("spawn_actor_in_level", {"actorClass": "%s.BPSpline_%d_C" % (sbp, st),
                                              "location": {"x": 0, "y": 0, "z": 1800},
-                                             "label": "PureSpline_%d" % st}, timeout=90)
+                                             # Mif-PREFIXED ON PURPOSE. mifaudit.is_scratch_fixture
+                                             # recognises somebody else's scratch by a "Mif" label
+                                             # prefix or a /Game/_Mif path, and a LEVEL ACTOR has
+                                             # neither unless its label carries one. Labelled
+                                             # "PureSpline_*" this actor was invisible to that guard,
+                                             # so any suite hunting for something to adopt could take
+                                             # it - the exact bug that made test_landscape_heightmap
+                                             # measure the wrong terrain on 2026-09-01.
+                                             "label": "MifPureSpline_%d" % st}, timeout=90)
         ap = (sp.get("actor") or {}).get("actorPath")
         if ap:
             fx["splineActor"] = ap
@@ -184,7 +192,9 @@ def scratch_fixtures():
     # supply one, and list_water_bodies on a fresh/unpopulated level correctly reports zero. Spawning
     # one here is the only way to exercise it at all; found unexercised 2026-08-28 alongside the
     # /Game/-only pathPrefix bug above.
-    wb = M.call("create_water_body", {"type": "River", "label": "PureWaterProbe_%d" % st,
+    # Mif-prefixed for the same reason as the spline actor above: without it, is_scratch_fixture
+    # cannot tell this probe from the project's own content.
+    wb = M.call("create_water_body", {"type": "River", "label": "MifPureWaterProbe_%d" % st,
                                       "x": 900000, "y": 900000, "z": 900000,
                                       "points": [{"x": 900000, "y": 900000, "z": 900000},
                                                  {"x": 900100, "y": 900000, "z": 900000}]}, timeout=90)
@@ -219,11 +229,34 @@ def scratch_fixtures():
 def teardown_fixtures(fx):
     """Undo the fixtures that do NOT die with the editor. Returns what it removed, and what it could not.
 
-    Only the collection qualifies today. It is separated from scratch_fixtures rather than folded
-    into it because a teardown that runs alongside creation is a teardown that never runs when
-    something in between raises - which is the whole reason audit_suite_teardown exists.
+    It is separated from scratch_fixtures rather than folded into it because a teardown that runs
+    alongside creation is a teardown that never runs when something in between raises - which is the
+    whole reason audit_suite_teardown exists.
+
+    THE COLLECTION WAS NOT THE ONLY ONE, and this docstring said it was until 2026-09-03. The
+    module's cleanup strategy - "everything is an unsaved asset under /Game/_MifPure and dies with
+    the editor" - is sound for ASSETS and does not hold for LEVEL ACTORS, and two were added later:
+    a spline actor and a River water body. mifaudit.cleanup_level_actor's own docstring is explicit
+    that create_water_body and friends spawn into the EDITOR world via ActiveWorld() and survive PIE
+    stopping, accumulating one more per run. So both are removed here now.
+
+    Found by measuring the claim in mifaudit.is_scratch_fixture that every spawn in tools/ carries a
+    Mif-prefixed label. It was false at exactly these two sites, and because the labels did not carry
+    the prefix, the leaked actors were also invisible to the adopt-guard - a suite hunting for
+    something to adopt could take one.
     """
     removed, failed = [], []
+    # Level actors first: they are the ones that outlive the editor session's asset cleanup.
+    for key, what in (("splineActor", "scratch spline actor"),
+                      ("waterBodyActor", "scratch water body")):
+        path = fx.get(key)
+        if not path:
+            continue
+        try:
+            r = M.cleanup_level_actor(path, what)
+            (removed if r.get("ok") is not False else failed).append(path)
+        except Exception as exc:                      # noqa: BLE001 - reported, never swallowed
+            failed.append("%s (%s)" % (path, exc))
     cname = fx.get("collection")
     if cname:
         try:
