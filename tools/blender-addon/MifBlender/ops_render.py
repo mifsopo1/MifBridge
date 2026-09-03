@@ -189,28 +189,62 @@ def op_render_still(params):
                              % (parent, exc))
 
     write_still = take_bool(params, "writeStill", default=True)
-    before_size = os.path.getsize(target) if os.path.isfile(target) else -1
+
+    # WHERE BLENDER SAYS IT WILL WRITE, asked rather than guessed. frame_path() applies the format
+    # extension, the frame numbering and any # padding in the path - all three of which make
+    # `target + file_extension` wrong, in both directions, for a path ending in a separator or
+    # carrying a # run. Kept as the first candidate with the guesses behind it.
+    candidates = []
+    try:
+        fp = sc.render.frame_path(frame=sc.frame_current)
+        if fp:
+            candidates.append(fp)
+    except (AttributeError, TypeError, RuntimeError):
+        pass                      # older API or an unusual output path; the guesses still apply
+    candidates.append(target)
+    ext = sc.render.file_extension or ""
+    if ext and not target.lower().endswith(ext.lower()):
+        candidates.append(target + ext)
+    _seen = set()
+    candidates = [c for c in candidates if not (c in _seen or _seen.add(c))]
+
+    # EVERY CANDIDATE IS STAT'D BEFORE THE RENDER, not just `target`. The previous version captured
+    # before_size for `target` alone and then tested `cand != target or st != before_size` - and
+    # for the usual winning candidate, target + ext, `cand != target` is TRUE, so the freshness
+    # test was satisfied by the candidate's NAME rather than by anything about the file. A stale
+    # render from a previous run therefore reported wroteFile:true with its old byte count, which
+    # is the one thing this measurement exists to rule out.
+    before = {}
+    for c in candidates:
+        try:
+            if os.path.isfile(c):
+                before[c] = (os.path.getsize(c), os.path.getmtime(c))
+        except OSError:
+            pass
 
     t0 = time.time()
     bpy.ops.render.render(write_still=write_still)
     elapsed = time.time() - t0
 
     # THE MEASUREMENT. render() returns FINISHED whether or not anything reached disk, so the file
-    # is stat'd rather than trusted. Blender appends the extension for the chosen format, so the
-    # path it actually wrote may not be the string that was set.
-    ext = sc.render.file_extension or ""
-    candidates = [target]
-    if ext and not target.lower().endswith(ext.lower()):
-        candidates.append(target + ext)
-    wrote, size = None, -1
+    # is stat'd rather than trusted - and compared against what was there before.
+    wrote, size, stale = None, -1, None
     for cand in candidates:
-        if os.path.isfile(cand):
-            st = os.path.getsize(cand)
-            if st > 0 and (cand != target or st != before_size):
-                wrote, size = cand, st
-                break
-            if wrote is None:
-                wrote, size = cand, st
+        if not os.path.isfile(cand):
+            continue
+        try:
+            st, mt = os.path.getsize(cand), os.path.getmtime(cand)
+        except OSError:
+            continue
+        was = before.get(cand)
+        # Fresh means: it did not exist, or it changed. mtime is the primary signal because a
+        # re-render of the same scene legitimately produces the same byte count.
+        fresh = was is None or mt > was[1] or st != was[0]
+        if st > 0 and fresh:
+            wrote, size, stale = cand, st, False
+            break
+        if wrote is None:
+            wrote, size, stale = cand, st, True
 
     return {
         "rendered": True,
@@ -221,8 +255,13 @@ def op_render_still(params):
         "camera": sc.camera.name,
         "elapsedSeconds": round(elapsed, 3),
         "filePath": wrote or target,
-        "wroteFile": bool(wrote) and size > 0,
+        # FRESH, not merely present. `stale is False` means the file changed across the render;
+        # a file that was already there and did not change is reported as NOT written, with
+        # staleFileFound naming it, because "there is a png at that path" and "this call rendered
+        # one" are different claims and only the second is what a caller asked about.
+        "wroteFile": bool(wrote) and size > 0 and stale is False,
         "fileBytes": size,
+        "staleFileFound": bool(wrote) and stale is True,
         "applied": applied,
         "sizeNote": ("wroteFile and fileBytes are stat'd off disk. render() returns FINISHED even "
                      "when nothing was written - a bad path or a disabled format both look like "
