@@ -954,6 +954,54 @@ namespace MifBridge
 			return;
 		}
 
+		// REFUSE A PARAMETER THIS SHAPE WOULD IGNORE, while nothing has been traced yet.
+		//
+		// MODE-PARAMS-OK: radius/halfExtent/halfHeight are refused from the table below
+		//
+		// audit_mode_params reads refusal message literals and this refusal builds the name at
+		// runtime, so the marker above is how it knows this was dealt with - same as
+		// create_procedural_mesh.
+		//
+		// THE DEFAULT IS WHAT MAKES THIS BITE. `shape` defaults to LINE, so
+		// {"start":..., "end":..., "radius":100} - no shape at all - fires a line trace and drops the
+		// radius. The caller asked to sweep a 100-unit sphere and got a ray, which finds far fewer
+		// hits, and the response said ok:true with shape:"line". That is the invoke_editor_tab shape
+		// exactly: forget the mode, get the default mode, lose the parameter in silence. It is worse
+		// here than in create_procedural_mesh, because the answer is query results a caller ACTS on
+		// rather than an asset they can look at.
+		//
+		// drawDuration is on a different axis - it is read only inside `if (draw)` - so it is checked
+		// separately below rather than bent into a shape table.
+		{
+			struct FShapeParam { const TCHAR* Name; const TCHAR* Shapes; };
+			static const FShapeParam kShapeOnly[] = {
+				{ TEXT("radius"),     TEXT("sphere, capsule") },
+				{ TEXT("halfExtent"), TEXT("box") },
+				{ TEXT("halfHeight"), TEXT("capsule") },
+			};
+			for (const FShapeParam& P : kShapeOnly)
+			{
+				if (!In->HasField(P.Name) || FString(P.Shapes).Contains(Shape))
+				{
+					continue;
+				}
+				Fail(Out, FString::Printf(
+					TEXT("%s is only read by shape %s; shape '%s' would have ignored it and traced ")
+					TEXT("a %s anyway under ok:true. Set shape, or drop %s. NOTHING was traced."),
+					P.Name, P.Shapes, *Shape, *Shape, P.Name));
+				return;
+			}
+			// Same defect, different mode parameter: drawDuration is read only when draw is true, so
+			// passing it alone asks for a duration on a line nobody will see.
+			if (In->HasField(TEXT("drawDuration")) && !JBool(In, TEXT("draw"), false))
+			{
+				Fail(Out, TEXT("drawDuration is only read when draw is true; without it nothing is "
+							   "drawn and the duration would have been ignored. Pass draw:true, or "
+							   "drop drawDuration. NOTHING was traced."));
+				return;
+			}
+		}
+
 		TArray<FHitResult> Hits;
 		bool bAnyHit = false;
 		if (!bIsSweep)
