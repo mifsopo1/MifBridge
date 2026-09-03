@@ -317,6 +317,17 @@ def main():
         check("T4107 a material was created for the bake target and SAID so, rather than being "
               "invented silently",
               bool(bake.get("createdMaterial")), json.dumps(bake)[:200])
+        # THE TRANSFER CURVE, which no pixel signature can catch. images.new() defaults to sRGB and
+        # nothing set otherwise before 2026-09-03, so every AO, NORMAL, ROUGHNESS and SHADOW map
+        # this op wrote carried a gamma curve applied to data that is not colour. It still LOOKS
+        # like an AO map, the buffer still moves off the sentinel, and every engine reads it wrong
+        # in the same direction. The check has to be on the colour space, because that is the only
+        # place the defect is visible.
+        check("T4107 an AO bake is written as DATA, not sRGB - a gamma curve on an occlusion mask "
+              "is wrong in every engine and invisible to the pixel signature above",
+              str(bake.get("colorSpace") or "").lower() in
+              ("non-color", "non-colour", "raw", "generic data"),
+              bake.get("colorSpace"))
         if os.path.isfile(out):
             os.remove(out)
 

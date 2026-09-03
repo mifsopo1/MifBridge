@@ -530,6 +530,40 @@ def op_bake_texture(params):
     # from the start state, so "unchanged" means untouched and nothing else.
     image = bpy.data.images.new(image_name, width=width, height=height)
     image.generated_color = (1.0, 0.0, 1.0, 1.0)
+
+    # NON-COLOUR BAKES MUST NOT CARRY AN sRGB TRANSFER, and images.new() defaults to sRGB. Nothing
+    # here set colorspace_settings before 2026-09-03, so every NORMAL, ROUGHNESS, AO and SHADOW map
+    # this op has ever written went to disk with a gamma curve applied to data that is not colour -
+    # a surface direction, a scalar mask. Unreal, Unity, Godot and glTF all read those channels
+    # linearly, so the result is wrong everywhere in the same direction: normals too shallow,
+    # roughness too bright.
+    #
+    # It is invisible in review because the map still LOOKS like a normal map, and invisible in this
+    # op's own postcondition because the magenta-sentinel check asks whether the buffer CHANGED, not
+    # whether what landed in it is right. A pixel signature cannot catch a transfer curve.
+    #
+    # DIFFUSE, COMBINED, EMIT and GLOSSY are radiometric colour and stay sRGB. The split is by what
+    # the channel MEANS, which is why it is a table rather than a rule about scalars.
+    _NON_COLOUR_BAKES = {"NORMAL", "ROUGHNESS", "AO", "SHADOW"}
+    colour_space = None
+    if bake_type in _NON_COLOUR_BAKES:
+        # Named by the OCIO config, not remembered: 'Non-Color' on stock Blender, but a studio
+        # config may spell it differently, and silently leaving sRGB is the bug being fixed.
+        for want in ("Non-Color", "Non-Colour", "Raw", "Generic Data"):
+            try:
+                image.colorspace_settings.name = want
+                colour_space = want
+                break
+            except (TypeError, ValueError):
+                continue
+        if colour_space is None:
+            raise MifOpError(
+                "a %s bake must not be written with an sRGB transfer, and this Blender's colour "
+                "config offers none of Non-Color/Non-Colour/Raw/Generic Data to say so. Writing it "
+                "anyway would produce a map that is wrong in every engine while looking correct. "
+                "NOTHING was baked." % bake_type)
+    else:
+        colour_space = image.colorspace_settings.name
     if image.name != image_name:
         # Blender uniquifies silently, and a caller who then looks up image_name finds the OLD one.
         note_renamed = image.name
@@ -649,6 +683,12 @@ def op_bake_texture(params):
         "object": obj.name,
         "bakeType": bake_type,
         "image": image.name,
+        # WHICH TRANSFER THE FILE CARRIES. A normal or roughness map written as sRGB is wrong in
+        # every engine and looks fine to the eye, so the caller is told rather than left to assume.
+        # Read back off the image, not from the table, so it reports what was actually set.
+        "colorSpace": image.colorspace_settings.name,
+        "colorSpaceNote": ("NORMAL/ROUGHNESS/AO/SHADOW are data, not colour, and are written with "
+                           "no sRGB transfer. DIFFUSE/COMBINED/EMIT/GLOSSY are colour and keep it."),
         "width": width,
         "height": height,
         "samples": samples,
