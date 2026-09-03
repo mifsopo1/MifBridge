@@ -478,6 +478,19 @@ SCRATCH_ASSET_PREFIX = "/Game/_Mif"
 # maps here, so it is the only thing the sublevel family can be tested against. The Mif prefix does
 # NOT mean scratch in a package path; only the /Game/_Mif prefix does. Label and path are therefore
 # judged separately, and this list exists so the distinction is stated rather than remembered.
+#
+# CURRENTLY REDUNDANT, MEASURED 2026-09-03, and kept deliberately. Emptying this tuple changes no
+# outcome for any MifWeaponTest path: the only thing that marks a package path as scratch is
+# SCRATCH_ASSET_PREFIX "/Game/_Mif", which is not a substring of "/Game/Maps/MifWeaponTest", so the
+# fall-through already returns False. It becomes load-bearing the moment that prefix test loosens -
+# and S102 in test_scratch_discrimination pins the OUTCOME rather than this branch, so it goes red
+# in that case whether or not the exception survives. Kept because a dead guard that documents a
+# real distinction is cheaper than rediscovering the distinction.
+#
+# It sits AFTER the label branch on purpose and must stay there. A scratch actor spawned INTO that
+# map has an actorPath beginning /Game/Maps/MifWeaponTest, so hoisting this above the label check
+# would classify somebody's fixture as project content - the false-negative direction, which is the
+# one that causes the bug this whole function exists to prevent.
 NOT_SCRATCH_DESPITE_THE_NAME = ("/Game/Maps/MifWeaponTest",)
 
 

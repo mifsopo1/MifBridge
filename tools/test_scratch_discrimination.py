@@ -87,11 +87,17 @@ def main():
           M.is_scratch_fixture(WEAPON_TEST_MAP) is False, WEAPON_TEST_MAP)
 
     print("\n=== S103: the gap, asserted so it cannot be forgotten ===")
-    # MEASURED, so the gap is not overstated: every spawn_actor_in_level call in tools/ passes a
-    # label, and every one of those labels is Mif-prefixed (MifAttachParent, MifGrp_A_, MifSnapFloorA,
-    # MifSnapTestActor, ...), so the label branch catches all of them. The hole below is in the code
-    # path, not in the suite set - and what keeps it shut is a naming convention rather than a check,
-    # which is exactly why it is worth an assertion.
+    # MEASURED, and the first measurement was WRONG in a way worth keeping visible. This used to say
+    # every spawn_actor_in_level call in tools/ passes a Mif-prefixed label, so "the hole below is in
+    # the code path, not in the suite set". Swept across all 32 spawner call sites on 2026-09-03 and
+    # it was false at two: audit_read_purity spawned "PureSpline_%d" and "PureWaterProbe_%d" into the
+    # editor world and never removed them, so each run leaked two actors this function could not see.
+    # The SUITES were fine; tools/ is wider than the suites, and audits spawn too.
+    #
+    # Fixed, and the convention is now a check rather than a habit: audit_spawn_labels.py is in the
+    # release gate and goes red on a spawn whose label is not Mif-prefixed. The hole below is still
+    # real in the code path - an unlabelled actor is still undetectable here - but nothing is
+    # currently sitting in it, and something now notices if that changes.
     # An actor spawned from a scratch BLUEPRINT with no label is NOT detected - those classes are
     # BP_ASCFix, BP_NoASC, BP_NS_, BP_Probe with no shared prefix. Asserting the FALSE result rather
     # than leaving it undocumented: if someone later makes this detectable, this check goes red and
