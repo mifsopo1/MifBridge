@@ -474,6 +474,18 @@ def check_static_audits():
                        #
                        # Both are static - they read the addon source, not a running Blender - and
                        # together they add under a second.
+                       #
+                       # THE WHOLE TWIN SET WAS SWEPT 2026-09-03, so nobody has to redo it. Four
+                       # audit_blender_* tools have a UE counterpart. These two were asymmetric and
+                       # are fixed here. audit_read_purity and audit_blender_read_purity are BOTH
+                       # ungated and both need a live backend - symmetric and correct.
+                       #
+                       # audit_blender_postconditions LOOKS like the remaining asymmetry - its UE
+                       # twin is gated and it is not - and must stay that way. It needs a running
+                       # Blender and exits 2 SKIPPED without one, so gating it would fail every
+                       # release built on a machine where Blender is not open, for a reason that has
+                       # nothing to do with the release. The UE twin is static; that is the whole
+                       # difference. Do not "finish the pair".
                        ("audit_blender_consequence_fields.py", ["--check"]),
                        ("audit_blender_dead_params.py", [])):
         script = os.path.join(HERE, tool)
