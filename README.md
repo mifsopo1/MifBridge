@@ -87,7 +87,7 @@ The UE plugin answers each request on the game thread, applies it through the re
 
 | For | You need |
 |---|---|
-| 🎮 **UE plugin** | **Unreal Engine 5.3 or 5.7** — built and tested continuously against 5.3.2; last verified against a stock 5.7 on 2026-08-27, at 330 endpoints, which was the whole surface at that date. Editor‑only C++, so it must be built against the engine you actually run; a marketplace prebuilt will not ABI‑match a source build. Win64. |
+| 🎮 **UE plugin** | **Unreal Engine 5.3 or 5.7** — built and tested continuously against 5.3.2; against a stock 5.7 it COMPILES AND LINKS at the current 453-endpoint surface, rechecked 2026-09-03 and recorded in `tools/engine_probe_result.json` against the exact Source commit; the last time it was actually RUN in a 5.7 editor was 2026-08-27, at 330 endpoints. Those are different claims and the second is the weaker one. Editor‑only C++, so it must be built against the engine you actually run; a marketplace prebuilt will not ABI‑match a source build. Win64. |
 | 🐍 **MCP server** | **Python 3.10+**, with `mcp>=1.2.0` and `requests>=2.31.0`. Any OS — it only speaks loopback. |
 | 🎨 **Blender addon** | **Blender 4.4+** — the `bl_info` floor. Verified green on **3.6, 4.2, 4.4 and 5.0**; see `tools/blender-addon/README.md` for the matrix. Shipped as a zip; optional. |
 | 🤖 **Client** | Claude Code, or anything that speaks MCP over stdio. |
