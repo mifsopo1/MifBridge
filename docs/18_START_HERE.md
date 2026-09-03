@@ -31,6 +31,20 @@ directory.
 * **`tools/report_watch.py`** — polls GitHub every 45s for `bridge-report` issues. Plain Python, **no
   model, no tokens** while idle; it invokes `claude -p` only when a real report lands. Start it with
   `python tools/report_watch.py`.
+
+  **It auto-starts.** A Windows scheduled task, `MifBridge report watcher`, launches it at Andre's
+  logon and restarts it every 5 minutes if it dies. So it is probably already running before you do
+  anything — check with `Get-Process python` rather than starting a second one, and remove the task
+  with `Unregister-ScheduledTask "MifBridge report watcher"` if you need it gone.
+
+  **Two modes, and which one is live matters to you.** Without `--dry-run` it spawns an agent that
+  fixes the report — which BUILDS, and therefore closes the editor. With `--dry-run` it fetches,
+  vets, sanitises and queues, then stops. If somebody is using the editor, dry-run is the mode you
+  want; check the last `watching ...` line in `tools/report_watch.log`, which records it.
+
+  It ends by pinging the reporter on Discord (`tools/report_notify.py`) so they know to pull. That
+  needs `tools/report_discord.json`, which is gitignored because the webhook is a credential — if it
+  is absent the ping is skipped and nothing else changes.
 * **`mifbridge-autonomous-resume`** — a scheduled task, hourly. Checks
   `python tools/night_heartbeat.py`; if `someoneWorking` is true it exits immediately, otherwise it
   picks the work up. Its prompt is deliberately self-contained.
