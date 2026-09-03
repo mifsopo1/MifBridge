@@ -5020,6 +5020,26 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_edit_fcurve(object: str, data_path: str, index: int = None, frame: int = None,
+                   interpolation: str = None, easing: str = None, handle_type: str = None,
+                   extrapolation: str = None) -> dict:
+    "Change how a Blender curve moves BETWEEN its keys. bl_set_keyframe can set an interpolation at INSERT time and reaches three of Blender's thirteen; nothing could change one afterwards, and nothing could touch EASING at all - which is most of the craft in motion graphics, where BACK with ease-out versus LINEAR is the entire look. Retiming or re-feeling an existing animation meant deleting and re-keying it. Omit frame to apply to every key on the curve, omit index for every array element. All four enums are validated against this Blender's own RNA rather than a remembered list. Call mif_help(\"bl_edit_fcurve\") first."
+    return _blender("edit_fcurve", object=object, dataPath=data_path, index=index, frame=frame,
+                    interpolation=interpolation, easing=easing, handleType=handle_type,
+                    extrapolation=extrapolation)
+
+
+@mcp.tool()
+def bl_add_fcurve_modifier(object: str, data_path: str, type: str = None, index: int = None,
+                           mode_before: str = None, mode_after: str = None,
+                           strength: float = None, scale: float = None) -> dict:
+    "Put a modifier on a Blender curve - most usefully CYCLES, which is how an animation LOOPS. There was no way to loop anything: every turntable, idle, cycling fan and blinking light had to be keyed out to full length by hand, and a two-key rotation could not be made to repeat at all. A CYCLES modifier on a curve with fewer than two keyframes is REFUSED, because there is no cycle to repeat and Blender adds the modifier anyway and does nothing with it, which looks like success. The response counts modifiers off the curves before and after rather than trusting that the call returned an object. To prove the loop is actually live, sample past the last key with bl_evaluate_at_frame - a modifier existing is not the same as it having an effect. Call mif_help(\"bl_add_fcurve_modifier\") first."
+    return _blender("add_fcurve_modifier", object=object, dataPath=data_path, type=type,
+                    index=index, modeBefore=mode_before, modeAfter=mode_after,
+                    strength=strength, scale=scale)
+
+
+@mcp.tool()
 def bl_evaluate_at_frame(object: str, frames: list, data_paths: list = None) -> dict:
     "What a Blender object ACTUALLY is at given frames, read through the evaluated depsgraph. Every other read in this addon reads the RAW property off the datablock, which is not what the scene evaluates to whenever a constraint, driver, NLA stack, parent or simulation cache is involved - a constraint does not touch obj.matrix_world at all, so reading the base object reports every constraint as having done nothing. This is the substrate for verifying anything procedural: reading back the value you wrote is a proxy that cannot fail. Pass a LIST of frames; data_paths adds extra properties sampled at each one. The scene frame is restored and the restoration is ASSERTED, because leaving somebody's scene on frame 47 as a side effect of a READ is exactly the quiet damage this bridge refuses. movedAcrossFrames answers the question behind most uses - a list of identical matrices is what a dead driver, a muted NLA track and a bake that lost its motion all look like. Call mif_help(\"bl_evaluate_at_frame\") first."
     return _blender("evaluate_at_frame", object=object, frames=frames, dataPaths=data_paths)

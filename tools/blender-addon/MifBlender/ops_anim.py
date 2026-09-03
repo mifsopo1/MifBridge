@@ -616,6 +616,222 @@ def op_evaluate_at_frame(params):
     }
 
 
+def _curves_for(obj, path, index):
+    """Fcurves on the object or its data matching a data path, and optionally one array index."""
+    found = []
+    for holder in (obj, obj.data if obj.data is not None else None):
+        if holder is None:
+            continue
+        for fc in _fcurves(holder):
+            if fc.data_path != path:
+                continue
+            if index is not None and fc.array_index != int(index):
+                continue
+            found.append(fc)
+    return found
+
+
+def _enum_ids(rna_type, prop):
+    """Blender's own enum for a property, read off the RNA rather than remembered."""
+    try:
+        return {i.identifier for i in rna_type.bl_rna.properties[prop].enum_items}
+    except (KeyError, AttributeError):
+        return set()
+
+
+def op_edit_fcurve(params):
+    """Change how a curve moves BETWEEN its keys - interpolation, easing, handles, extrapolation.
+
+    set_keyframe can set an interpolation at INSERT time and reaches three of Blender's thirteen.
+    Nothing could change one afterwards, and nothing could touch easing at all - which is most of
+    the craft in motion graphics, where the difference between BACK/ease-out and LINEAR is the
+    entire look. Retiming or re-feeling an existing animation meant deleting and re-keying it.
+
+    params:
+      object (str, required)
+      dataPath (alias path, required)
+      index (int)              one array element; omitted means every curve on the path
+      frame (int)              one keyframe; omitted means every key on the curve
+      interpolation (str)      CONSTANT | LINEAR | BEZIER | SINE | QUAD | CUBIC | QUART | QUINT |
+                               EXPO | CIRC | BACK | BOUNCE | ELASTIC - validated against this
+                               Blender's own enum
+      easing (str)             AUTO | EASE_IN | EASE_OUT | EASE_IN_OUT - the DIRECTION an easing
+                               interpolation runs, and meaningless without one of the above
+      handleType (str)         FREE | ALIGNED | VECTOR | AUTO | AUTO_CLAMPED, both handles
+      extrapolation (str)      CONSTANT | LINEAR, on the curve rather than its keys
+
+    Every value is validated before anything is written.
+    """
+    reject_unknown(params, {"object", "name", "dataPath", "path", "index", "frame",
+                            "interpolation", "easing", "handleType", "extrapolation"},
+                   "edit_fcurve")
+    obj = get_object(take(params, "object", "name", required=True))
+    path = take(params, "dataPath", "path", default=None, kind=str)
+    if not path:
+        raise MifOpError("'dataPath' is required. NOTHING was changed.")
+    index = params.get("index")
+    frame = params.get("frame")
+
+    wants = {}
+    for key, prop, rna in (("interpolation", "interpolation", bpy.types.Keyframe),
+                           ("easing", "easing", bpy.types.Keyframe),
+                           ("handleType", "handle_left_type", bpy.types.Keyframe),
+                           ("extrapolation", "extrapolation", bpy.types.FCurve)):
+        raw = take(params, key, default=None, kind=str)
+        if raw is None:
+            continue
+        val = str(raw).upper()
+        valid = _enum_ids(rna, prop)
+        if valid and val not in valid:
+            raise MifOpError("unknown %s '%s'. Valid: %s. NOTHING was changed."
+                             % (key, val, ", ".join(sorted(valid))))
+        wants[key] = val
+    if not wants:
+        raise MifOpError("nothing to change - pass at least one of interpolation, easing, "
+                         "handleType or extrapolation. NOTHING was changed.")
+
+    curves = _curves_for(obj, path, index)
+    if not curves:
+        raise MifOpError("no fcurve on '%s' for dataPath '%s'%s - list them with list_keyframes. "
+                         "NOTHING was changed."
+                         % (obj.name, path, "" if index is None else " at index %s" % index))
+
+    before = sorted({kp.interpolation for fc in curves for kp in fc.keyframe_points})
+    touched = 0
+    for fc in curves:
+        if "extrapolation" in wants:
+            fc.extrapolation = wants["extrapolation"]
+        for kp in fc.keyframe_points:
+            if frame is not None and abs(kp.co[0] - float(frame)) > 1e-6:
+                continue
+            if "interpolation" in wants:
+                kp.interpolation = wants["interpolation"]
+            if "easing" in wants:
+                kp.easing = wants["easing"]
+            if "handleType" in wants:
+                kp.handle_left_type = wants["handleType"]
+                kp.handle_right_type = wants["handleType"]
+            touched += 1
+        fc.update()
+
+    if touched == 0 and frame is not None:
+        raise MifOpError("'%s' has no keyframe at frame %s, so nothing was edited. NOTHING was "
+                         "changed." % (path, frame))
+    after = sorted({kp.interpolation for fc in _curves_for(obj, path, index)
+                    for kp in fc.keyframe_points})
+    return {
+        "object": obj.name,
+        "dataPath": path,
+        "curves": len(curves),
+        "keyframesTouched": touched,
+        "applied": wants,
+        "interpolationBefore": before,
+        "interpolationAfter": after,
+        "extrapolation": [fc.extrapolation for fc in curves],
+    }
+
+
+def op_add_fcurve_modifier(params):
+    """Put a modifier on a curve - most usefully CYCLES, which is how an animation LOOPS.
+
+    There was no way to loop anything. Every turntable, idle, cycling fan and blinking light had
+    to be keyed out to its full length by hand, and a two-key rotation could not be made to repeat
+    at all. A CYCLES modifier is the one-call answer and Blender has had it forever.
+
+    params:
+      object (str, required)
+      dataPath (alias path, required)
+      index (int)          one array element; omitted means every curve on the path
+      type (str)           CYCLES | NOISE | GENERATOR | LIMITS | STEPPED | ENVELOPE | FNGENERATOR
+                           - validated against this Blender's own enum. Default CYCLES.
+      modeBefore/modeAfter (str)  CYCLES only: NONE | REPEAT | REPEAT_OFFSET | MIRROR
+      strength (float)     NOISE only
+      scale (float)        NOISE only
+
+    A curve with fewer than two keyframes is REFUSED for CYCLES: there is no cycle to repeat, and
+    Blender adds the modifier anyway and does nothing with it, which looks like success.
+    """
+    reject_unknown(params, {"object", "name", "dataPath", "path", "index", "type",
+                            "modeBefore", "modeAfter", "strength", "scale"},
+                   "add_fcurve_modifier")
+    obj = get_object(take(params, "object", "name", required=True))
+    path = take(params, "dataPath", "path", default=None, kind=str)
+    if not path:
+        raise MifOpError("'dataPath' is required. NOTHING was added.")
+    index = params.get("index")
+
+    kind = str(take(params, "type", default="CYCLES", kind=str)).upper()
+    valid = _enum_ids(bpy.types.FModifier, "type")
+    if valid and kind not in valid:
+        raise MifOpError("unknown fcurve modifier type '%s'. Valid: %s. NOTHING was added."
+                         % (kind, ", ".join(sorted(valid))))
+
+    modes = _enum_ids(bpy.types.FModifierCycles, "mode_before")
+    for key in ("modeBefore", "modeAfter"):
+        raw = take(params, key, default=None, kind=str)
+        if raw is None:
+            continue
+        if kind != "CYCLES":
+            raise MifOpError("%s applies to a CYCLES modifier and this one is %s. NOTHING was "
+                             "added." % (key, kind))
+        if modes and str(raw).upper() not in modes:
+            raise MifOpError("unknown %s '%s'. Valid: %s. NOTHING was added."
+                             % (key, raw, ", ".join(sorted(modes))))
+
+    curves = _curves_for(obj, path, index)
+    if not curves:
+        raise MifOpError("no fcurve on '%s' for dataPath '%s' - key it first with set_keyframe. "
+                         "NOTHING was added." % (obj.name, path))
+    if kind == "CYCLES":
+        thin = [fc for fc in curves if len(fc.keyframe_points) < 2]
+        if thin:
+            raise MifOpError(
+                "a CYCLES modifier needs at least TWO keyframes to have a cycle to repeat, and %d "
+                "of the matching curve(s) have fewer. Blender would add the modifier and do "
+                "nothing with it, which looks like success. NOTHING was added." % len(thin))
+
+    before_counts = [len(fc.modifiers) for fc in curves]
+    added = []
+    for fc in curves:
+        mod = fc.modifiers.new(type=kind)
+        if kind == "CYCLES":
+            mb = take(params, "modeBefore", default=None, kind=str)
+            ma = take(params, "modeAfter", default=None, kind=str)
+            if mb:
+                mod.mode_before = str(mb).upper()
+            if ma:
+                mod.mode_after = str(ma).upper()
+        if kind == "NOISE":
+            st = take_float(params, "strength", default=None)
+            sc_ = take_float(params, "scale", default=None)
+            if st is not None:
+                mod.strength = st
+            if sc_ is not None:
+                mod.scale = sc_
+        added.append({"index": fc.array_index,
+                      "type": mod.type,
+                      "modeBefore": getattr(mod, "mode_before", None),
+                      "modeAfter": getattr(mod, "mode_after", None)})
+        fc.update()
+
+    after_counts = [len(fc.modifiers) for fc in _curves_for(obj, path, index)]
+    return {
+        "object": obj.name,
+        "dataPath": path,
+        "type": kind,
+        "curves": len(curves),
+        "modifiersAdded": added,
+        "modifierCountBefore": before_counts,
+        "modifierCountAfter": after_counts,
+        # COUNTED OFF THE CURVES. fcurve.modifiers.new returns an object whether or not it stuck,
+        # and one modifier per curve is the postcondition - not "the call returned something".
+        "countsAgree": all(a == b + 1 for a, b in zip(after_counts, before_counts)),
+        "loopNote": ("A CYCLES modifier repeats the keyed range outside it. Sample with "
+                     "evaluate_at_frame beyond the last key to prove the loop is live - the "
+                     "modifier existing is not the same as it having an effect."),
+    }
+
+
 OPS = {
     "set_keyframe": op_set_keyframe,
     "set_frame_range": op_set_frame_range,
@@ -623,4 +839,6 @@ OPS = {
     "list_animation_data": op_list_animation_data,
     "delete_keyframe": op_delete_keyframe,
     "evaluate_at_frame": op_evaluate_at_frame,
+    "edit_fcurve": op_edit_fcurve,
+    "add_fcurve_modifier": op_add_fcurve_modifier,
 }
