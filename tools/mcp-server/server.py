@@ -5020,6 +5020,24 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_list_actions(name_contains: str = None) -> dict:
+    "Every action in the Blender file, who uses it, and whether it will SURVIVE A SAVE. An action with no users and no fake user is deleted the next time the file is saved - silently, by the save succeeding - so willBeDeletedOnSave names them before that happens. Each row carries curve and keyframe counts, frame range, and usedBy built by walking objects, because an action knows its user COUNT and not their names while 'which object is this clip on' is the actual question. Action names are also the CLIP NAMES glTF and FBX write into an engine, so an auto-generated 'Action.003' becomes a name somebody downstream has to live with. Call mif_help(\"bl_list_actions\") first."
+    return _blender("list_actions", nameContains=name_contains)
+
+
+@mcp.tool()
+def bl_create_action(name: str, object: str = None, fake_user: bool = None) -> dict:
+    "Create a NAMED Blender action, optionally assigning it. Naming is the entire point: an object gets whatever Blender auto-named its action, and that string is what glTF and FBX write into the engine as the clip name - so every clip exported through this bridge previously arrived downstream named after nothing. fake_user defaults TRUE, because a freshly created unassigned action has zero users by definition and would be deleted on the next save; the safe default is the one that does not lose work. The response reports nameWasTaken, since Blender uniquifies silently and a caller looking up the name they asked for would find a different action or none. Call mif_help(\"bl_create_action\") first."
+    return _blender("create_action", name=name, object=object, fakeUser=fake_user)
+
+
+@mcp.tool()
+def bl_assign_action(object: str, action: str = None, clear: bool = None) -> dict:
+    "Put an existing action on a Blender object, or clear it. An object held ONE action forever - bl_set_keyframe creates one on first use and nothing could swap it, so a second clip on the same rig was impossible. Pass clear:true to unlink instead, which is the dangerous direction and says so: an unlinked action with no fake user drops to zero users and is deleted on the next save, so the response reports whether the action you just unlinked will survive. The assignment is re-read afterwards and refuses to claim success if it did not take. Call mif_help(\"bl_assign_action\") first."
+    return _blender("assign_action", object=object, action=action, clear=clear)
+
+
+@mcp.tool()
 def bl_edit_fcurve(object: str, data_path: str, index: int = None, frame: int = None,
                    interpolation: str = None, easing: str = None, handle_type: str = None,
                    extrapolation: str = None) -> dict:

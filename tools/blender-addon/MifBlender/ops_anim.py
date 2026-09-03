@@ -832,6 +832,202 @@ def op_add_fcurve_modifier(params):
     }
 
 
+def _action_curves(act):
+    """Fcurves belonging to an ACTION, on any supported Blender.
+
+    _fcurves() above takes a HOLDER and goes through its animation_data, which is the right shape
+    for "what is animating this object" and the wrong one for "what is in this action" - an action
+    with no user has no holder to reach it through. Same 5.0 slotted-layout problem, one level up:
+    Action.fcurves is gone in 5.0 and the curves live under layers/strips/channelbags.
+    """
+    if hasattr(act, "fcurves"):
+        return list(act.fcurves)
+    out = []
+    for layer in getattr(act, "layers", ()):
+        for strip in getattr(layer, "strips", ()):
+            for cb in getattr(strip, "channelbags", ()):
+                out.extend(getattr(cb, "fcurves", ()))
+    return out
+
+
+def _action_row(act):
+    curves = _action_curves(act)
+    try:
+        frame_range = [round(float(v), 4) for v in act.frame_range]
+    except (AttributeError, TypeError):
+        frame_range = None
+    return {
+        "name": act.name,
+        "users": int(act.users),
+        "useFakeUser": bool(act.use_fake_user),
+        "curveCount": len(curves),
+        "keyframeTotal": sum(len(fc.keyframe_points) for fc in curves),
+        "frameRange": frame_range,
+        # THE FIELD THAT MATTERS. An action with no users and no fake user is DELETED the next time
+        # the file is saved - silently, and by the save succeeding. That is the same purge
+        # save_file reports as purgedOrphans, seen from the other side.
+        "survivesSave": bool(act.users) or bool(act.use_fake_user),
+    }
+
+
+def op_list_actions(params):
+    """Every action in the file, who uses it, and whether it will survive a save.
+
+    params:
+      nameContains (str)  optional substring filter, case-insensitive
+
+    An action is also the CLIP NAME glTF and FBX write into an engine, so "whatever Blender
+    auto-named it" becomes a name somebody has to live with downstream.
+    """
+    reject_unknown(params, ("nameContains",), "list_actions")
+    sub = take(params, "nameContains", default=None, kind=str)
+    rows = []
+    for act in bpy.data.actions:
+        if sub and sub.lower() not in act.name.lower():
+            continue
+        rows.append(_action_row(act))
+    rows.sort(key=lambda r: r["name"])
+
+    # WHO IS USING WHAT, built by walking objects rather than asked of the action - an action knows
+    # its user COUNT and not their names, and "which object is this clip on" is the question.
+    by_object = {}
+    for obj in bpy.data.objects:
+        for label, holder in (("object", obj), ("data", obj.data)):
+            ad = getattr(holder, "animation_data", None) if holder is not None else None
+            if ad is not None and ad.action is not None:
+                by_object.setdefault(ad.action.name, []).append("%s (%s)" % (obj.name, label))
+    for row in rows:
+        row["usedBy"] = sorted(by_object.get(row["name"], []))
+
+    doomed = [r["name"] for r in rows if not r["survivesSave"]]
+    return {
+        "count": len(rows),
+        "actions": rows,
+        "willBeDeletedOnSave": doomed,
+        "willBeDeletedOnSaveCount": len(doomed),
+    }
+
+
+def op_create_action(params):
+    """Create a named action, optionally assigning it. Naming is the point.
+
+    An object gets whatever Blender auto-named its action - "Action.003" - and that string is what
+    glTF and FBX write into the engine as the clip name. Nothing here could set it, so every clip
+    exported through this bridge arrived downstream named after nothing.
+
+    params:
+      name (str, required)
+      object (str)        assign it to this object as well
+      fakeUser (bool)     default TRUE. An action with no users and no fake user is deleted on the
+                          next save, and a freshly created unassigned one has no users by
+                          definition - so the safe default is the one that does not lose work.
+    """
+    reject_unknown(params, {"name", "object", "fakeUser"}, "create_action")
+    name = take(params, "name", default=None, kind=str)
+    if not name:
+        raise MifOpError("'name' is required - actions are the clip name an engine sees, so an "
+                         "auto-generated one is the thing this op exists to avoid. NOTHING was "
+                         "created.")
+    obj_name = take(params, "object", default=None, kind=str)
+    obj = None
+    if obj_name:
+        obj = bpy.data.objects.get(obj_name)
+        if obj is None:
+            raise MifOpError("no object named '%s' to assign to. NOTHING was created." % obj_name)
+
+    act = bpy.data.actions.new(name=str(name))
+    # DEFAULTS TRUE on purpose: a new unassigned action has zero users, so the default that loses
+    # the work is the one that does nothing.
+    act.use_fake_user = take_bool(params, "fakeUser", default=True)
+
+    assigned = False
+    if obj is not None:
+        if obj.animation_data is None:
+            obj.animation_data_create()
+        obj.animation_data.action = act
+        assigned = obj.animation_data.action is act
+
+    return {
+        "action": act.name,
+        "requestedName": str(name),
+        # Blender uniquifies silently, and a caller who then looks up the name they asked for finds
+        # a DIFFERENT action - or none.
+        "nameWasTaken": act.name != str(name),
+        "assignedTo": obj.name if assigned else None,
+        "assigned": assigned,
+        "info": _action_row(act),
+    }
+
+
+def op_assign_action(params):
+    """Put an existing action on an object, or clear it. The switch nothing could make.
+
+    An object held one action forever: set_keyframe creates one on first use and nothing could
+    swap it, so a second clip on the same rig was impossible.
+
+    params:
+      object (str, required)
+      action (str)       the action to assign. Omit with clear:true to unlink.
+      clear (bool)       unlink the current action instead of assigning one.
+
+    CLEARING IS THE DANGEROUS ONE and it says so: an unlinked action with no fake user drops to
+    zero users and is deleted on the next save. The response reports whether the action that was
+    unlinked will survive.
+    """
+    reject_unknown(params, {"object", "name", "action", "clear"}, "assign_action")
+    obj = get_object(take(params, "object", "name", required=True))
+    clear = take_bool(params, "clear", default=False)
+    want = take(params, "action", default=None, kind=str)
+    if clear and want:
+        raise MifOpError("pass an action to assign OR clear:true, not both. NOTHING was changed.")
+    if not clear and not want:
+        raise MifOpError("'action' is required unless clear:true. NOTHING was changed.")
+
+    if obj.animation_data is None:
+        if clear:
+            raise MifOpError("'%s' has no animation data, so there is no action to clear. NOTHING "
+                             "was changed." % obj.name)
+        obj.animation_data_create()
+
+    previous = obj.animation_data.action
+    prev_row = _action_row(previous) if previous is not None else None
+
+    if clear:
+        obj.animation_data.action = None
+        after = obj.animation_data.action
+        if after is not None:
+            raise MifOpError("asked to clear the action on '%s' but it still holds '%s'. Do not "
+                             "trust this state." % (obj.name, after.name))
+        # RE-READ the previous action AFTER unlinking: its user count has changed and that is the
+        # number that decides whether it survives the next save.
+        return {
+            "object": obj.name,
+            "cleared": True,
+            "previousAction": prev_row["name"] if prev_row else None,
+            "previousActionNow": _action_row(previous) if previous is not None else None,
+            "previousSurvivesSave": (bool(previous.users) or bool(previous.use_fake_user))
+                                    if previous is not None else None,
+        }
+
+    act = bpy.data.actions.get(str(want))
+    if act is None:
+        known = [a.name for a in bpy.data.actions][:20]
+        raise MifOpError("no action named '%s'. Present: %s. NOTHING was changed."
+                         % (want, ", ".join(known) if known else "<none>"))
+    obj.animation_data.action = act
+    if obj.animation_data.action is not act:
+        raise MifOpError("assigned '%s' to '%s' but it did not take. Do not trust this state."
+                         % (want, obj.name))
+    return {
+        "object": obj.name,
+        "action": act.name,
+        "previousAction": prev_row["name"] if prev_row else None,
+        "previousSurvivesSave": (bool(previous.users) or bool(previous.use_fake_user))
+                                if previous is not None else None,
+        "info": _action_row(act),
+    }
+
+
 OPS = {
     "set_keyframe": op_set_keyframe,
     "set_frame_range": op_set_frame_range,
@@ -841,4 +1037,7 @@ OPS = {
     "evaluate_at_frame": op_evaluate_at_frame,
     "edit_fcurve": op_edit_fcurve,
     "add_fcurve_modifier": op_add_fcurve_modifier,
+    "list_actions": op_list_actions,
+    "create_action": op_create_action,
+    "assign_action": op_assign_action,
 }
