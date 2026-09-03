@@ -215,7 +215,11 @@ chose to cut is worse than the bug it fixed.
   * Then run tools/report_reply.py to post the outcome back to the issue.
   * Finally run tools/report_notify.py to tell the reporter on Discord, e.g.
         python tools/report_notify.py --issue <n> --author <login> --outcome fixed \\
-            --summary "one line of what changed" --commit <sha>
+            --summary "one line of what changed" --commit <sha> --discord <their id>
+    Pass --discord with reported.discord from the queue file whenever the reporter supplied one -
+    that is how somebody who has never reported before still gets pinged, rather than only people
+    already in the hand-kept contacts map. It is untrusted input and report_notify validates it;
+    pass it through as-is rather than sanitising it yourself.
     outcome is one of fixed | explained | needs-you | update. This is a COURTESY, gated on the same
     trust file as everything else, and it always exits 0 - a ping that did not go out must never be
     treated as the report having failed. Say what changed in the summary and it will tell them to
