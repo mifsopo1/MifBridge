@@ -108,7 +108,19 @@ def main():
 
     # SOMEBODY MAY BE PLAYING ON THIS MACHINE. Checked before the lock and before any editor is
     # launched, because the cost of being wrong is half an hour of stutter in somebody's game.
+    # --offline IS EXEMPT, and the refusal below is why the exemption is needed rather than a
+    # convenience. This guard exists because a sweep costs "an editor plus ~350 suite runs of CPU
+    # for half an hour", which is a real theft from somebody playing. An offline run launches
+    # NOTHING and finishes in about two seconds. On 2026-09-03 the developer started the game, and
+    # the mode built for exactly that situation - somebody else is using the machine - was refused
+    # by a guard protecting against a cost it does not have.
     playing = running_shipping_builds()
+    if playing and "--offline" in flags:
+        print("a packaged UE build is running (%s) - proceeding anyway because --offline launches"
+              % ", ".join(playing))
+        print("  no editor and takes seconds. The refusal below is about a half-hour sweep.")
+        print("")
+        playing = []
     if playing and "--anyway" not in flags:
         print("REFUSING TO SWEEP - a packaged UE build is running: %s" % ", ".join(playing))
         print("  A sweep takes an editor plus ~350 suite runs of CPU for half an hour or more, and a")
