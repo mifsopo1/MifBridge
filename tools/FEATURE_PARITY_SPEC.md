@@ -11471,7 +11471,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       revert_inherited_component discards EVERY override on the component in one step,
       which is why override_inherited_component treats confirm as optional.
 
-- [ ] **the claims auditor exits 0 either way, so for three days nobody read its list** (1 hour)
+- [x] **the claims auditor exits 0 either way, so for three days nobody read its list** (1 hour)
+      DONE 2026-09-03. `--check` is differential against `cross_endpoint_claims_baseline.json`, and
+      the tool is now in `make_release.py`'s gate list WITH `--check` - gating the bare form would
+      have called a red tree green, the same trap audit_vacuous_checks and audit_consequence_fields
+      each carry a --check for.
+
+      PROVED IN BOTH DIRECTIONS, because a check that has never failed proves nothing. With the
+      baseline complete: rc 0, "2 claim(s) no suite compares, all recorded with a reason". With one
+      entry removed to simulate a new claim appearing: rc 1, naming `set_niagara_emitter ->
+      set_property` and its source line. Restored, rc 0 again. `make_release.py --gates` rc 0.
+
+      The baseline holds exactly the two originals and BOTH carry a written reason, because the
+      tool's own message is that an unexplained baseline is a list of ignored bugs. It also reports
+      a STALE entry - one nothing claims any more - so it cannot rot into a list of things that
+      stopped existing, and reports a REWORDED quote without failing on it.
+
       `audit_cross_endpoint_claims` was written 2026-08-31. `return 0` at line 207 is its ONLY
       success exit, and it is in no gate - `make_release.py` gated seven sibling audits
       (consequence_fields, loop_writes, modals, postconditions, promise_flags, suite_payloads,

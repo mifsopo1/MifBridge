@@ -38,6 +38,7 @@ Talks to nothing. Source and suites, both static.
 import argparse
 import glob
 import io
+import json
 import os
 import re
 import sys
@@ -161,11 +162,92 @@ def suite_endpoints():
     return out
 
 
+BASELINE = os.path.join(HERE, "cross_endpoint_claims_baseline.json")
+
+
+def check_against_baseline(unpaired, write=False):
+    """Differential check against the recorded claims. Returns a process exit code.
+
+    WHY THIS EXISTS AT ALL. Until 2026-09-03 `return 0` was this tool's only exit and it was in no
+    gate, so it printed a correct reading list on demand to a person with no standing reason to ask.
+    It was written 2026-08-31; the list was first read three days later, and 12 of the 14 claims in
+    it had never been compared by anything. The detector was never asleep - it is registered in
+    audit_detectors_fire with a real plant and goes red on it. What was missing was anything that
+    made somebody LOOK.
+
+    DIFFERENTIAL, NOT GATE-ON-ZERO. Zero is unreachable and is not the target: set_niagara_emitter ->
+    set_property needs an uncooked Niagara emitter with editor data, and preview_composite_widget ->
+    list_live_widgets needs a running PIE session. A gate demanding zero would be red forever, and a
+    permanently red gate is one somebody switches off - the same reasoning that keeps the release
+    badge out of make_release.py --gates.
+
+    KEYED ON (speaker, other). NOT the line number: audit_vacuous_checks keyed its baseline on
+    file:LINE and broke on 2026-09-03 when comment insertions shifted six entries whose text had not
+    changed at all. NOT the quote either: handler prose is reworded constantly and a baseline that
+    churns is one nobody keeps current, so a changed quote is REPORTED and does not fail. What this
+    deliberately misses is a SECOND, different claim between an already-recorded pair; that trade is
+    written here rather than left in somebody's head.
+    """
+    current = {}
+    for speaker, other, base, line, quote in unpaired:
+        current["%s -> %s" % (speaker, other)] = {"quote": quote, "at": "%s:%d" % (base, line)}
+
+    if write:
+        with io.open(BASELINE, "w", encoding="utf-8", newline="") as fh:
+            body = json.dumps({k: {"quote": v["quote"], "why": "RECORD A REASON HERE"}
+                               for k, v in sorted(current.items())},
+                              indent=1, ensure_ascii=False)
+            fh.write(body.replace("\n", "\r\n") + "\r\n")
+        print("wrote %d entry(ies) to %s" % (len(current), os.path.basename(BASELINE)))
+        print("EVERY entry needs a real 'why'. An unexplained baseline is a list of ignored bugs.")
+        return 0
+
+    try:
+        with io.open(BASELINE, encoding="utf-8") as fh:
+            base = json.load(fh)
+    except (OSError, ValueError):
+        print("NO BASELINE at %s - run --write-baseline once, then fill in each 'why'."
+              % os.path.basename(BASELINE))
+        return 2
+
+    new = sorted(k for k in current if k not in base)
+    gone = sorted(k for k in base if k not in current)
+    reworded = sorted(k for k in current
+                      if k in base and base[k].get("quote") != current[k]["quote"])
+
+    # A STALE ENTRY IS WORSE THAN NONE - it suppresses the error it was written around. Reported in
+    # both directions so a baseline cannot quietly rot into a list of things nobody claims any more.
+    for k in gone:
+        print("STALE BASELINE ENTRY - nothing claims this any more, prune it: %s" % k)
+    for k in reworded:
+        print("note: the wording changed (not a failure) for %s" % k)
+        print("      was: %s" % (base[k].get("quote") or "")[:100])
+        print("      now: %s" % current[k]["quote"][:100])
+
+    if not new:
+        print("OK  %d claim(s) no suite compares, all recorded with a reason." % len(current))
+        return 0
+
+    print("")
+    print("%d NEW cross-endpoint claim(s) that NO suite exercises both sides of:" % len(new))
+    for k in new:
+        print("  %s" % k)
+        print("      %s  %s" % (current[k]["at"], current[k]["quote"][:120]))
+    print("")
+    print("A handler now asserts something about ANOTHER endpoint's behaviour and nothing checks it.")
+    print("Either write a suite comparing both sides, or record it in the baseline WITH A REASON.")
+    return 1
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--all", action="store_true", help="list every mention, not just the unpaired")
     ap.add_argument("--navigation", action="store_true",
                     help="include the navigational hints too - 219 of them, mostly not claims")
+    ap.add_argument("--check", action="store_true",
+                    help="fail (rc 1) on a claim no suite compares that is not in the baseline")
+    ap.add_argument("--write-baseline", action="store_true",
+                    help="record today's unpaired claims; every entry then needs a real reason")
     args = ap.parse_args()
 
     names = endpoint_names()
@@ -204,6 +286,12 @@ def main():
     print("")
     print("A pair appearing in one suite proves only that both were CALLED there, never that the")
     print("claim was compared. This is a reading list - read the hits, do not count them.")
+
+    if args.check or args.write_baseline:
+        print("")
+        return check_against_baseline(unpaired, write=args.write_baseline)
+    # Report-style by default, deliberately: the reading list above is useful to a person browsing,
+    # and the DIFFERENTIAL verdict is what belongs in a gate. --check is the gated form.
     return 0
 
 

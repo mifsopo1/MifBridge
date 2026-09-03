@@ -1,0 +1,10 @@
+{
+ "preview_composite_widget -> list_live_widgets": {
+  "quote": "path produces the same result. For that, drive PIE and use list_live_widgets/",
+  "why": "BLOCKED ON A RUNNING PIE SESSION. The claim is that driving PIE and calling list_live_widgets produces the same result, and no unattended suite can arrange a PIE session to compare against - test_pie_family needs --with-pie and an attended run. Recorded 2026-09-03."
+ },
+ "set_niagara_emitter -> set_property": {
+  "quote": "set_property on EmitterHandles[N].bIsEnabled flips the same bool, and it is enough to DISABLE an emitter - but not to enable one, because it",
+  "why": "BLOCKED ON THE MACHINE, not on effort. Comparing the two needs an UNCOOKED UNiagaraEmitter with editor data: add_niagara_emitter requires a SOURCE emitter to copy and refuses one with no editor data, which is exactly what a cooked asset lacks, and duplicate_asset refuses a cooked Niagara asset as a crash guard. Creating the SYSTEM is fine (create_asset special-cases UNiagaraSystem). The probe is written - tools/probe_niagara_emitter_source.py - and needs a live editor to answer whether this project contains any emitter with editor data at all. Recorded 2026-09-03."
+ }
+}

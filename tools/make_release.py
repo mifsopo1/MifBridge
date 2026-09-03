@@ -407,7 +407,16 @@ def check_static_audits():
                        # Sits at zero findings across 32 call sites, and a deliberate exception has
                        # a `# SPAWN-LABEL-OK: <reason>` escape hatch, so this is a ratchet and not
                        # a tax on somebody's honest new spawn.
-                       ("audit_spawn_labels.py", [])):
+                       ("audit_spawn_labels.py", []),
+                       # JOINED 2026-09-03, and this one is the whole reason that day's gotcha got
+                       # written. audit_cross_endpoint_claims had `return 0` as its only exit and no
+                       # gate, so for three days it printed a correct list of twelve never-compared
+                       # equivalence claims to nobody. NEEDS --check: without it the tool is
+                       # report-style and always exits 0, so gating the bare form would call a red
+                       # tree green - the same trap audit_vacuous_checks and audit_consequence_fields
+                       # carry a --check for. Differential against a baseline of two entries, both
+                       # blocked on the machine and both carrying a written reason.
+                       ("audit_cross_endpoint_claims.py", ["--check"])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
