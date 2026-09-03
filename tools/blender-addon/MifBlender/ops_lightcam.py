@@ -449,6 +449,31 @@ def op_create_camera(params):
                          "question and there is no sensible way to combine them. NOTHING was "
                          "created.")
 
+    # VALIDATED BEFORE THE CAMERA EXISTS, the same way create_light was fixed. Three refusals used
+    # to fire after bpy.data.cameras.new() and the scene link. They were honest - each said "The
+    # camera WAS created" - and still left a stray camera in somebody's scene for nothing but a
+    # typo, which is what create_light's own comment objects to. Everywhere else in this addon a
+    # refusal means nothing was created, and this now matches.
+    #
+    # The effective type has to be decided up front for the same reason: lens is refused on a
+    # non-PERSP camera and orthoScale on a non-ORTHO one, and both questions are about the type the
+    # camera is being CREATED as, which is knowable from params without creating anything.
+    ctype = take(params, "type", default=None, kind=str)
+    if ctype:
+        valid = {i.identifier for i in bpy.types.Camera.bl_rna.properties["type"].enum_items}
+        ctype = str(ctype).upper()
+        if ctype not in valid:
+            raise MifOpError("unknown camera type '%s'. Valid: %s. NOTHING was created."
+                             % (ctype, ", ".join(sorted(valid))))
+    effective_type = ctype or "PERSP"      # Blender's own default for a new camera
+    if take_float(params, "lens", "focalLength", default=None) is not None \
+            and effective_type != "PERSP":
+        raise MifOpError("lens/focalLength applies to a PERSP camera and this one is %s - use "
+                         "orthoScale for ORTHO. NOTHING was created." % effective_type)
+    if take_float(params, "orthoScale", default=None) is not None and effective_type != "ORTHO":
+        raise MifOpError("orthoScale applies to an ORTHO camera and this one is %s. "
+                         "NOTHING was created." % effective_type)
+
     snap = selection_snapshot()
     try:
         data = bpy.data.cameras.new(name=str(take(params, "name", default="Camera", kind=str)))
@@ -462,29 +487,18 @@ def op_create_camera(params):
         else:
             obj.rotation_euler = _vec3(params, "rotation", (0.0, 0.0, 0.0))
 
-        ctype = take(params, "type", default=None, kind=str)
+        # Type and the two type-gated properties were validated above, before anything existed.
         if ctype:
-            valid = {i.identifier for i in bpy.types.Camera.bl_rna.properties["type"].enum_items}
-            ctype = str(ctype).upper()
-            if ctype not in valid:
-                raise MifOpError("unknown camera type '%s'. Valid: %s. The camera WAS created."
-                                 % (ctype, ", ".join(sorted(valid))))
             data.type = ctype
 
         lens = take_float(params, "lens", "focalLength", default=None)
         if lens is not None:
-            if data.type != "PERSP":
-                raise MifOpError("lens/focalLength applies to a PERSP camera and this one is %s - "
-                                 "use orthoScale for ORTHO. The camera WAS created." % data.type)
             data.lens = lens
         sw = take_float(params, "sensorWidth", default=None)
         if sw is not None:
             data.sensor_width = sw
         os_ = take_float(params, "orthoScale", default=None)
         if os_ is not None:
-            if data.type != "ORTHO":
-                raise MifOpError("orthoScale applies to an ORTHO camera and this one is %s. "
-                                 "The camera WAS created." % data.type)
             data.ortho_scale = os_
         cs = take_float(params, "clipStart", default=None)
         if cs is not None:
