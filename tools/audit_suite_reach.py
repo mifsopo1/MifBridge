@@ -91,7 +91,7 @@ def main():
         if isinstance(rec, dict) and rec.get("suite"):
             latest[rec["suite"]] = rec
 
-    rows, stale, used_file_mtime = [], [], set()
+    rows, stale, used_file_mtime, unparsed = [], [], set(), []
     for name, rec in sorted(latest.items()):
         path = os.path.join(HERE, name)
         if not os.path.isfile(path):
@@ -100,8 +100,31 @@ def main():
         defined = check_count(src)
         if defined < 8:                      # too small for the ratio to mean anything
             continue
-        m = re.search(r"PASS (\d+)\s+FAIL (\d+)", rec.get("summary") or "")
-        ran = (int(m.group(1)) + int(m.group(2))) if m else 0
+        # A SUMMARY THIS CANNOT PARSE IS NOT A SUITE THAT RAN NOTHING.
+        #
+        # `ran = ... if m else 0` turned every parse failure into the number zero, and zero is the
+        # input to the scariest line this tool prints: "PASSED while running 0% of itself". On
+        # 2026-09-03 that fired against test_blender_headless_guard, which actually runs 29
+        # assertions and passes all of them.
+        #
+        # THE ROOT CAUSE IS ONE LAYER EARLIER and is fixed there too: run_all_suites picked the
+        # summary with startswith("PASS "), and this suite ends "29 PASS  0 FAIL" while the other
+        # 177 write "PASS 29   FAIL 0". So the RUNNER stored an empty summary, and the line below
+        # turned empty into zero. A formatting difference became a five-alarm coverage finding two
+        # tools away from where it started.
+        #
+        # The regex here accepts both orderings as well, so a record written by an older runner
+        # still reads correctly. The `if m else 0`
+        # is the more important half though: it made a MEASUREMENT FAILURE indistinguishable from a
+        # measurement of nothing, in the direction that manufactures a five-alarm finding out of a
+        # tool that is working. Unparseable records are listed separately now and excluded from the
+        # ratio entirely, because a ratio computed from a number nobody could read is not a ratio.
+        m = re.search(r"PASS (\d+)\s+FAIL (\d+)|(\d+) PASS\s+(\d+) FAIL", rec.get("summary") or "")
+        if not m:
+            unparsed.append((name, (rec.get("summary") or "").strip()[:60]))
+            continue
+        got = [g for g in m.groups() if g is not None]
+        ran = int(got[0]) + int(got[1])
         rc = rec.get("rc")
         # MARKED, NOT DROPPED. Excluding stale rows outright left 11 of 151 measurable, because
         # nearly every suite imports mifaudit and one edit to it invalidates the lot. A number the
@@ -141,6 +164,13 @@ def main():
                 note = ""
             print("  %-34s %5d %8d  %-12s %s"
                   % (name, ran, defined, RC_MEANING.get(rc, "rc=%s" % rc), note))
+
+    if unparsed:
+        print()
+        print("SUMMARY NOT PARSEABLE - measured as NOTHING, not as zero. These are excluded from")
+        print("the ratio above rather than counted as suites that ran no assertions:")
+        for name, summary in unparsed:
+            print("  %-34s %s" % (name, summary or "(no summary recorded)"))
 
     if stale:
         print()

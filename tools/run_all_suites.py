@@ -206,7 +206,13 @@ def main():
                   "fine. Run it standalone to see whether it needs a full run's accumulated state."
                   % (which, name, TIMEOUT), flush=True)
         dt = time.time() - t0
-        line = next((l for l in out.splitlines() if l.startswith("PASS ")), "")
+        # BOTH ORDERINGS. 177 suites end with "PASS 29   FAIL 0" and one - the headless guard -
+        # writes "29 PASS  0 FAIL". startswith("PASS ") missed it, so its record was stored with an
+        # EMPTY summary, and audit_suite_reach then read empty as the number zero and reported
+        # "PASSED while running 0% of itself" against a suite that runs 29 assertions and passes
+        # every one. A formatting difference became a five-alarm coverage finding two tools away.
+        line = next((l for l in out.splitlines()
+                     if l.startswith("PASS ") or re.match(r"^\d+ PASS\s+\d+ FAIL", l)), "")
         # BUSY IS NOT DEAD. A timeout here means the editor is alive and its game thread is
         # occupied - the bridge runs every endpoint on that thread - so relaunching starts a SECOND
         # editor beside a working one and both race for the port. That hung a 288-run sweep.
