@@ -2735,3 +2735,42 @@ today, whenever anyone has the editor up. Recorded as open rather than swapped o
 **What to ask of any detector here:** not "does it have a plant" — the harness answers that — but
 "how many independent checks does it run, and which one does the plant reach?" `audit_detectors_fire`
 cannot ask that for you, and its own output is the reason nobody thinks to.
+
+## "The call failed" and "the answer is good" look identical to `.get()` — and the corpus is fine (2026-09-03)
+
+Two checks were fixed that day for reading a field straight out of a response into a truth test. A
+response that FAILED has no such field, `.get()` returns None, None is falsy or sits in the accepted
+tuple, and *could not ask* becomes indistinguishable from *the answer is good*:
+
+  * **L999** (`test_landscape_layer_register`) verified its own cleanup with
+    `find_assets(...).get("count")`. A failed `find_assets` has no count, so an unanswerable probe
+    scored as "the asset is gone" — in the one situation where cleanup verification matters most, a
+    bridge in trouble.
+  * **T1610** (`test_pie_family`) accepted `state` None as "nothing was started", which is exactly
+    what a failed `pie_status` yields. Its `finally` teardown then reused the identical tuple, so it
+    concluded nothing was running and skipped — in precisely the case the `finally` exists for.
+
+**A shape found twice is worth counting before it is worth automating.** Measured across every
+`test_*.py`: **1666** checks read a response field with `ok` already asserted in the same condition,
+against **21** candidates that do not — 3 accepting None in a tuple, 18 of the `not resp.get(x)`
+shape.
+
+**Every candidate read turned out to be correct or covered.** `test_spawn_many`'s
+`failed in (0, None)` sits directly under an assertion that `ok is True and spawned == 3`, and the
+key is legitimately absent on a clean call — the next check documents that convention.
+`test_transactions` is inside `if q.get("ok"):`. `test_self_audit_modes`' `not compact.get(...)` has
+`compact.get("ok") is True` on the line above. `test_blender_authoring`'s absent-warning check sits
+under `isSkeletal is True and bonesWritten > 0`. A failed call fails LOUDLY at the neighbour every
+time.
+
+**So no detector.** A scan that reads one `check()` at a time cannot see the sibling assertion that
+makes the site safe, and it would emit 21 rows of which zero are defects. That is the fifth measured
+refusal to build in this repo, for the fourth distinct reason — here it is not corpus size but
+CONTEXT: the guarantee lives in an adjacent statement the rule cannot reach.
+
+**What actually separates the two real bugs from the twenty-one safe ones** is worth stating,
+because it is the thing to check by eye rather than by tool: the two had **no sibling positive
+assertion**. L999's probe stood alone as the last line of a cleanup block, and T1610's weak check
+WAS the postcondition — there was nothing else in either place to fail. Ask not "does this accept
+None" but "if this response were an error, what else in this block would go red?" If the answer is
+nothing, the check is carrying the whole weight and has to require `ok` itself.
