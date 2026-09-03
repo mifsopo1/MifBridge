@@ -719,7 +719,36 @@ def main():
                     help="stamp a successful 5.3 build against the current Source commit")
     ap.add_argument("--force", action="store_true",
                     help="package even when the badge is stale (it will ship wrong)")
+    ap.add_argument("--gates", action="store_true",
+                    help="report whether the recorded builds still cover Source; changes nothing")
     args = ap.parse_args()
+
+    if args.gates:
+        # ASK THE GATES WITHOUT ATTEMPTING A RELEASE.
+        #
+        # Both engine records went stale on 2026-09-03 and neither was noticed until a release was
+        # nearly attempted: nine Source commits landed, the 5.3 record was re-taken after some of
+        # them, and the 5.7 probe still covered a commit from eight hours earlier. Every one of
+        # those nine had been parse-checked against 5.7 with cl /Zs, which is not a link, so the
+        # gate was the only thing that would have caught a shape change - and it was not being run.
+        #
+        # The gates themselves worked perfectly. What was missing was any way to ASK them without
+        # starting a packaging run, which nobody does casually. This is that question, and it
+        # deliberately reuses gate_53 and check_engine_probe rather than re-deriving the answer.
+        #
+        # The BADGE is deliberately not here: it is stale between releases BY DESIGN, so including
+        # it would make this red almost always and teach everyone to ignore it.
+        ok53, msg53 = gate_53()
+        ok57, msg57 = check_engine_probe()
+        print("5.3 build record : %s" % ("OK  " + msg53 if ok53 else "STALE - " + msg53))
+        print("5.7 probe record : %s" % ("OK  " + msg57 if ok57 else "STALE - " + msg57))
+        if ok53 and ok57:
+            print("\nboth engine records cover the current Source commit.")
+            return 0
+        print("\nRebuild and re-record before releasing. A stale record does not mean the build is")
+        print("broken - it means nothing has checked it since Source moved, which is the same thing")
+        print("as far as a release claim is concerned.")
+        return 1
 
     if args.update_badge:
         ok, msg = check_badge(update=True)
