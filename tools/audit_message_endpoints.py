@@ -106,8 +106,19 @@ def registry():
                      errors="replace").read()
     header = io.open(os.path.join(PRIVATE, "MifBridgeHandlers.h"), encoding="utf-8",
                      errors="replace").read()
-    names |= set(re.findall(r"MIF_BIND\((\w+)\)", common))
-    names |= set(re.findall(r"MIF_DECL\((\w+)\)", header))
+    # BOTH macros need the anchor, not just MIF_DECL. Fixing only the header left `Name` in the
+    # registry unchanged, because `#define MIF_BIND(Name) Map.Add(TEXT(#Name), &H_##Name)` in
+    # MifBridgeCommon.cpp:85 supplies it just as readily. Worth the note: the first fix LOOKED
+    # correct, the count did not move, and only re-running the check said so.
+    names |= set(re.findall(r"^\s*MIF_BIND\((\w+)\)", common, re.M))
+    # ANCHORED, because `#define MIF_DECL(Name) void H_##Name(...)` matches this pattern exactly as
+    # a real declaration does, and an unanchored findall put a phantom endpoint called `Name` in the
+    # registry. That is a FALSE-NEGATIVE source here: this set is what decides whether a name a
+    # message advises actually exists, so a bogus entry means advice saying "call Name" would be
+    # waved through. Third instance of the same off-by-one in one day - audit_param_guards reported
+    # an endpoint named `Name`, and every UE count in CHANGELOG.md was one too high for the same
+    # reason. The fix each time is the anchor.
+    names |= set(re.findall(r"^\s*MIF_DECL\((\w+)\)", header, re.M))
     return names
 
 
