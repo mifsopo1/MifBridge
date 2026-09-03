@@ -7507,6 +7507,22 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Blocked on the editor, which Andre is using.
 
+      A STATIC DETECTOR FOR THIS WAS TRIED AND ABANDONED, deliberately, because the alternative was
+      shipping noise. audit_fixture_adoption.py got three narrowing passes - discovery call, then
+      "result is subscripted rather than counted", then "and the function also WRITES" - and went
+      83 -> 61 -> 39 findings against the 12 an adversarial survey actually confirmed. Three times
+      more noise than signal, and it still flagged suites already fixed, because a nested def
+      truncates the enclosing function body so the filter it was looking for fell outside the text
+      it scanned.
+
+      The reason it cannot work is not the regex. Deciding whether an adopted object is a SUBJECT
+      or a wrong-target probe means reading what the suite asserts about it afterwards - that is a
+      judgement, and the survey agents made it by reading each file. A pattern match cannot.
+
+      So the repeatable check for this class is re-running the survey workflow over tools/test_*.py
+      with the adversarial verify stage, not a checker in tools/. It found 22 candidates and killed
+      10 of them; that ratio is the work, and it is the part a regex skips.
+
 - [x] **six proposals were invisible to the backlog counter for weeks** - ALL SIX BUILT 2026-09-01
       FOUND 2026-09-01 with the spec reporting 0 open. It was reporting the truth about `- [ ]`
       lines and nothing about the nine `- [category]` proposal lines sitting further down the file,
