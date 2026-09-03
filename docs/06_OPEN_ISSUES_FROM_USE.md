@@ -318,7 +318,17 @@ rather than in the rendered image.
 
 ---
 
-## 8. Cannot CREATE a DataTable asset — three routes, all closed
+## 8. Cannot CREATE a DataTable asset — three routes, all closed — FIXED, ROUTE A WAS BUILT
+
+*(Marked 2026-09-03. This entry says of Route A, a dedicated endpoint, "Does not exist" - and
+`create_datatable` now does. It takes `rowStruct`, resolves it to a `UScriptStruct` and creates
+the `UDataTable`, which is the whole ask: the two tables this entry names each need a row
+struct (RichTextStyleRow, RichImageRow) and a table without one is useless to a
+URichTextBlock. Verified in MifBridgeUserTypes.cpp, not inferred from the endpoint name.*
+
+*The entry's own observation that the bridge already created every OTHER user type -
+create_struct, create_enum, create_blueprint, create_material - and singled out DataTable as
+the gap is what makes this one clean to close: the asymmetry it pointed at is gone.)*
 
 **Found in use 2026-08-21** (build `Aug 19 2026 17:00`, 239 endpoints) while building the EddieWiki
 in-game wiki. Blocks the whole `URichTextBlock` workstream, which needs two DataTables that do not
