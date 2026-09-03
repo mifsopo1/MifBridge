@@ -109,6 +109,19 @@ REFUSED_ON_PRESENCE = {
     "bl_create_camera":       {"lookAt", "rotation"},
     "bl_set_viewport_view":   {"lookFrom", "azimuth", "elevation", "distance"},
 
+    # THE OTHER FIVE BLENDER EXCLUSIONS, added 2026-09-03. The addon raises MifOpError on seven
+    # "pass X OR Y, not both" pairs and this map covered two of them - so five ops with exactly the
+    # shape that produced six uncallable UE tools that same day were unwatched. All five are CORRECT
+    # today (every excluded parameter defaults to None, and bl_run_python uses `or None`), and they
+    # are listed for the reason the two above are: so they stay that way. A mutual exclusion is the
+    # sharpest form of this class, because a default on EITHER side makes the OTHER side unusable
+    # while the tool still looks fine from the side that was defaulted.
+    "bl_set_keyframe":        {"location", "rotation", "scale", "dataPath"},
+    "bl_create_primitive":    {"size", "radius"},
+    "bl_assign_material_to_faces": {"faces", "fromSlot"},
+    "bl_run_python":          {"code", "file"},
+    "bl_set_world":           {"hdri", "color"},
+
     # ADDED 2026-09-03, and the reason they were missing IS the weakness this map's own header
     # names. A multi-agent review of the day's tree found four more endpoints of exactly the shape
     # the two shipped bugs had, and every one of them was invisible here only because nobody had
