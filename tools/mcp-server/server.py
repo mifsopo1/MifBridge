@@ -5020,6 +5020,22 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_set_bone_pose(object: str, bone: str, location: list = None, rotation: list = None,
+                     quaternion: list = None, scale: list = None) -> dict:
+    "Pose a bone on a Blender armature. Character animation had zero coverage here - bones could be listed and renamed and nothing else - and this was unreachable through bl_set_keyframe until the same day, because its dotted-path walk stripped subscripts so pose.bones[\"x\"].location resolved to the bone COLLECTION. rotation (euler) and quaternion are refused against the bone's actual rotation_mode rather than silently ignored, and refused together. THE READ-BACK IS EVALUATED through the depsgraph: a bone with an IK chain, a Copy Rotation or a Limit does not end up where you put it, and pose_bone.matrix is the raw value. The response reports `written` and `evaluated*` separately - if they differ, that is the constraint working, not a fault. Call mif_help(\"bl_set_bone_pose\") first."
+    return _blender("set_bone_pose", object=object, bone=bone, location=location,
+                    rotation=rotation, quaternion=quaternion, scale=scale)
+
+
+@mcp.tool()
+def bl_set_shape_key(object: str, key: str, value: float = None, slider_min: float = None,
+                     slider_max: float = None, mute: bool = None) -> dict:
+    "Set a Blender shape key's influence, and optionally its slider range - the write half of bl_list_shape_keys, which could only read. The range is applied BEFORE the value, because setting a value outside the OLD range would be clamped to it and then look wrong even though the new range allows it. Blender CLAMPS SILENTLY: asking for 2.0 on a 0..1 key leaves 1.0 and reports nothing, so the response carries requestedValue, the actual value, and a `clamped` flag naming the difference rather than leaving it to be discovered in a render. Call mif_help(\"bl_set_shape_key\") first."
+    return _blender("set_shape_key", object=object, key=key, value=value, sliderMin=slider_min,
+                    sliderMax=slider_max, mute=mute)
+
+
+@mcp.tool()
 def bl_list_actions(name_contains: str = None) -> dict:
     "Every action in the Blender file, who uses it, and whether it will SURVIVE A SAVE. An action with no users and no fake user is deleted the next time the file is saved - silently, by the save succeeding - so willBeDeletedOnSave names them before that happens. Each row carries curve and keyframe counts, frame range, and usedBy built by walking objects, because an action knows its user COUNT and not their names while 'which object is this clip on' is the actual question. Action names are also the CLIP NAMES glTF and FBX write into an engine, so an auto-generated 'Action.003' becomes a name somebody downstream has to live with. Call mif_help(\"bl_list_actions\") first."
     return _blender("list_actions", nameContains=name_contains)

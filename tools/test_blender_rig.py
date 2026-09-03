@@ -286,6 +286,31 @@ def main():
         b = call("list_bones", object="MifTestArmature")
         check("T812 list_bones succeeds on the real armature", b.get("ok") is True, json.dumps(b)[:200])
         bones = {row["name"]: row for row in (b.get("bones") or [])}
+
+        # ------------------------------------------------------------------ T809 set_shape_key
+        print("=== T809: set_shape_key, and the clamp Blender does silently ===")
+        sk_ok = call("set_shape_key", object="MifTestMesh", key="Smile", value=0.5)
+        check("T809 setting a shape key value succeeds", sk_ok.get("ok") is not False,
+              json.dumps(sk_ok)[:200])
+        check("T809 and the value read back is the one asked for",
+              abs((sk_ok.get("value") or 0) - 0.5) < 1e-6, sk_ok.get("value"))
+        check("T809 and it is not reported as clamped", sk_ok.get("clamped") is False,
+              json.dumps(sk_ok)[:200])
+
+        # THE ASSERTION THAT MATTERS. Blender clamps to the slider range and says NOTHING - asking for
+        # 2.0 on a 0..1 key leaves 1.0 with no error anywhere. Without `clamped` a caller reads the
+        # success and moves on, and finds out in a render. The op has to name the difference.
+        sk_hi = call("set_shape_key", object="MifTestMesh", key="Smile", value=2.0)
+        check("T809 asking for 2.0 on a 0..1 key does NOT silently succeed at 2.0",
+              abs((sk_hi.get("value") or 0) - 1.0) < 1e-6, sk_hi.get("value"))
+        check("T809 and the clamp is REPORTED rather than left to be found in a render",
+              sk_hi.get("clamped") is True, json.dumps(sk_hi)[:200])
+        check("T809 with the value actually asked for still reported alongside it",
+              abs((sk_hi.get("requestedValue") or 0) - 2.0) < 1e-6, sk_hi.get("requestedValue"))
+        call("set_shape_key", object="MifTestMesh", key="Smile", value=0.0)
+
+        print("")
+
         check("T812 both bones are present", set(bones) == {"root", "child"}, sorted(bones))
         check("T812 boneCount matches", b.get("boneCount") == 2, b.get("boneCount"))
         if "root" in bones and "child" in bones:
