@@ -64,8 +64,18 @@ def main():
         mats = [a["path"] for a in
                 (M.call("find_assets", {"class": "Material", "limit": 20}).get("assets") or [])
                 if not M.is_scratch_fixture(a)]
+    # SKIP SCRATCH HERE TOO. This call was unguarded, and audit_fixture_adoption reported it as
+    # guarded anyway - the `not M.is_scratch_fixture(a)` three lines up belongs to the `mats`
+    # fallback, and it fell inside this call's search window. A guard that clears the statement
+    # NEXT DOOR is a false clear, which reads exactly like a site somebody checked. Three suites
+    # create scratch Texture2D assets under _MifTex, so there was something real to adopt.
+    # LIMIT RAISED FROM 1 TO 20 IN THE SAME BREATH, because a filter over a one-row result is a
+    # coin toss: if the single Texture2D that came back is somebody's scratch, `tex` empties and the
+    # suite SKIPS instead of testing - trading a silent adoption for a silent skip, which is no
+    # better. The `mats` fallback above already asks for 20 for the same reason.
     tex = [a["path"] for a in
-           (M.call("find_assets", {"class": "Texture2D", "limit": 1}).get("assets") or [])]
+           (M.call("find_assets", {"class": "Texture2D", "limit": 20}).get("assets") or [])
+           if not M.is_scratch_fixture(a)]
     check("(setup) two materials and a texture to work with", len(mats) >= 2 and len(tex) >= 1,
           "%d materials, %d textures" % (len(mats), len(tex)))
     if len(mats) < 2 or not tex:
