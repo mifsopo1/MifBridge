@@ -45,3 +45,8 @@ tools/report_results.json
 tools/report_watch.log
 tools/report_watch_state.json
 tools/suite_run_*.log
+
+# Discord webhook for the report loop. A CREDENTIAL - anyone holding this URL can post into
+# that channel as this integration. Also holds the GitHub-login to Discord-id map, which is an
+# identity pairing not worth publishing for a public repo. Never committed.
+tools/report_discord.json

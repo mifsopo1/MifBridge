@@ -212,7 +212,14 @@ not build a zip, do not bump the version in any manifest, and do not touch anyth
 Releasing is a deliberate, gated decision Andre makes by hand, and a fix arriving in a release nobody
 chose to cut is worse than the bug it fixed.
 
-  * Finally run tools/report_reply.py to post the outcome back to the issue.
+  * Then run tools/report_reply.py to post the outcome back to the issue.
+  * Finally run tools/report_notify.py to tell the reporter on Discord, e.g.
+        python tools/report_notify.py --issue <n> --author <login> --outcome fixed \\
+            --summary "one line of what changed" --commit <sha>
+    outcome is one of fixed | explained | needs-you | update. This is a COURTESY, gated on the same
+    trust file as everything else, and it always exits 0 - a ping that did not go out must never be
+    treated as the report having failed. Say what changed in the summary and it will tell them to
+    pull; "fixed" on its own reads as "already working for you", which it is not until they do.
 
 If you cannot reproduce it, or the fix needs a decision only Andre can make, stop and write what you
 found. An honest "here is what I know and here is what I need" is a better outcome than a guessed fix.
