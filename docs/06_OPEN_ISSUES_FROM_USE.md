@@ -1259,7 +1259,12 @@ through the bridge. Worked around by spawning the mesh and reading
 `get_actor_bounds(bOnlyCollidingComponents=true)`, which answers "does it collide" but not "with
 what shape". Relevant to any question about whether a prop blocks a pawn.
 
-## 5. `spawn_actor_in_level` requires `actorClass` even when `staticMesh` is given
+## 5. `spawn_actor_in_level` requires `actorClass` even when `staticMesh` is given — POSITIVE EXAMPLE, NOT A DEFECT
+
+*(Heading marked 2026-09-03. The body opens "Not a bug, and the error is genuinely good" and files
+this deliberately as a positive example - the refusal states the requirement AND why the permissive
+behaviour would be worse. Reading as an open defect in the index inverted its entire point: an entry
+kept to show what good looks like was being counted among the things that are wrong.)*
 
 Not a bug, and the error is genuinely good:
 

@@ -54,7 +54,13 @@ CLOSED = ("fixed", "resolved", "not a defect", "capability is built", "all seven
 # alone gives one true positive and none.
 BODY_FIXED = re.compile(
     r"(\*\*Fixed(?: and verified)?\*\*|\bboth are fixed\b|\bis fixed\b|\bare fixed\b|"
-    r"\bfixed and verified\b|\bnow fixed\b|\bhas been fixed\b|\*\*RESOLVED\b[^*]*\*\*)", re.I)
+    r"\bfixed and verified\b|\bnow fixed\b|\bhas been fixed\b|\*\*RESOLVED\b[^*]*\*\*|"
+    r"\bpositive example\b)", re.I)
+# `positive example` is a slightly different claim - not "this defect is closed" but "this was never
+# a defect, it is here as an example of good behaviour" - and it has the same consequence for a
+# reader: the heading asserts a problem the body denies. The phrase is exact for a reason. "Not a
+# bug" hits two entries, and in entry 21 it settles one of three sub-questions rather than the entry,
+# so it would report a live issue as answered.
 
 # A status-table row: | ... | <subject> | **FIXED ...** |  - the section it refers to is named as
 # a paragraph reference, and that is what ties a row to a heading.
