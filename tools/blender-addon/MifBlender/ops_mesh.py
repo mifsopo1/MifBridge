@@ -382,12 +382,32 @@ def op_export_mesh(params):
         if not isinstance(types, (list, tuple)) or not types:
             raise MifOpError("objectTypes must be a non-empty array, e.g. [\"MESH\", \"ARMATURE\"]. "
                              "NOTHING was written.")
+        # WHAT THE EXPORTER ACCEPTS IS NOT WHAT THIS OP CAN REACH. object_types is a FILTER applied
+        # to the selection, and the selection this op builds is meshes (want_mesh=True, or every
+        # MESH in the view layer) plus the armatures their modifiers point at - nothing else is ever
+        # selected. So EMPTY, CAMERA, LIGHT and OTHER were accepted, forwarded, and could not change
+        # the output by a single byte. That is a key the op declares and never really reads, which
+        # this addon refuses rather than tolerates.
+        #
+        # The comment a few lines down already makes this exact point for ARMATURE - "must be in the
+        # SELECTION, not merely allowed by object_types" - and the other four were never revisited
+        # in that light.
+        reachable = {"MESH", "ARMATURE"}
         valid = {"EMPTY", "CAMERA", "LIGHT", "ARMATURE", "MESH", "OTHER"}
         types = [str(t).upper() for t in types]
         bad = [t for t in types if t not in valid]
         if bad:
             raise MifOpError("unknown objectTypes %s. Accepted: %s. NOTHING was written."
                              % (", ".join("'%s'" % b for b in bad), ", ".join(sorted(valid))))
+        unreachable = [t for t in types if t not in reachable]
+        if unreachable:
+            raise MifOpError(
+                "objectTypes %s cannot affect this export. object_types filters the SELECTION, and "
+                "export_mesh selects meshes and the armatures their modifiers point at - never a "
+                "camera, light or empty - so naming them would have changed nothing while looking "
+                "like it did. Use %s. Exporting a whole scene including lights and cameras is a "
+                "different job than export_mesh. NOTHING was written."
+                % (", ".join("'%s'" % u for u in unreachable), " or ".join(sorted(reachable))))
         if "MESH" not in types:
             raise MifOpError("objectTypes must include MESH - this is export_mesh, and a file with "
                              "no mesh in it is not something any caller here wants. NOTHING was "
