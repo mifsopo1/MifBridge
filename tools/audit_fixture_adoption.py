@@ -243,6 +243,25 @@ def window_around(text, start):
 ASSIGNED = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[\(\[]?\s*$')
 
 
+def statement_end(src, line_start):
+    """Where the statement beginning at `line_start` ends - the first newline at bracket depth 0.
+
+    A statement, not a line: every one of these calls spans several, and the identifier that decides
+    whether a fixture is being adopted is routinely on the last of them.
+    """
+    depth, i = 0, line_start
+    while i < len(src):
+        c = src[i]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == "\n" and depth <= 0:
+            return i
+        i += 1
+    return len(src)
+
+
 def names_a_row(src, start, win):
     """Does THIS call's result get reduced to an identifier, or just a nearby call's?
 
@@ -267,6 +286,13 @@ def names_a_row(src, start, win):
     am = ASSIGNED.search(head)
     if not am:                                # chained inline - nothing else can own it
         return bool(IDENT.search(win))
+    # ASSIGNED AND CHAINED IS BOTH, and forgetting that put the detector to sleep. The commonest
+    # form in these suites is `x = (M.call(...).get("assets") or [{}])[0].get("path")` - the result
+    # has a name AND the identifier is taken in the same statement, several lines below the `x`.
+    # Requiring the variable to be mentioned near the identifier excluded it, and audit_detectors_fire
+    # reported ASLEEP on the very next run. Anything inside this statement belongs to this call.
+    if IDENT.search(src[start:statement_end(src, line_start)]):
+        return True
     var = am.group(1)
     for hit in IDENT.finditer(win):
         near = win[max(0, hit.start() - 90):hit.end() + 40]
@@ -470,19 +496,35 @@ def plant():
             fh.write(u'import mifaudit as M\n\n\ndef main():\n'
                      u'    M.call("create_procedural_mesh", {"path": "/Game/_MifP/SM_x"})\n')
         victim = os.path.join(tmp, "test_planted_adoption.py")
+        # THREE SHAPES, because one was not enough and that cost a live regression. On 2026-09-03
+        # this planted only the assign-then-index form; a dataflow narrowing landed the same hour,
+        # broke the CHAINED-AND-ASSIGNED form - the commonest one in these suites - and this plant
+        # went on passing. audit_detectors_fire caught it on the next run. A plant that exercises
+        # one shape of a three-shape rule proves a third of it.
         with io.open(victim, "w", encoding="utf-8", newline="\r\n") as fh:
             fh.write(u'import mifaudit as M\n\n\ndef main():\n'
                      u'    rows = M.call("find_assets", {"class": "StaticMesh",\n'
                      u'                                  "pathPrefix": "/Game/"}).get("assets")\n'
                      u'    target = rows[0].get("path")\n'
-                     u'    M.call("set_property", {"path": target, "name": "x", "value": 1})\n')
+                     u'    M.call("set_property", {"path": target, "name": "x", "value": 1})\n'
+                     u'\n\ndef chained():\n'
+                     u'    one = (M.call("find_assets", {"class": "StaticMesh",\n'
+                     u'                                  "pathPrefix": "/Game/"}).get("assets")\n'
+                     u'           or [{}])[0].get("path")\n'
+                     u'    return one\n'
+                     u'\n\ndef comprehended():\n'
+                     u'    return [a.get("path") for a in\n'
+                     u'            (M.call("find_assets", {"class": "StaticMesh"}).get("assets")\n'
+                     u'             or [])]\n')
         hits = [h for h in scan_file(victim, created_classes(tmp)) if h[2].startswith("ADOPTS")]
-        seen = bool(hits) and hits[0][3]
+        # ALL THREE, not "at least one" - the rule has three arms and a plant that only proves the
+        # first is the plant that let the regression through.
+        seen = len(hits) == 3 and hits[0][3]
         # And the same victim with nothing creating a StaticMesh must come back clean.
         os.remove(os.path.join(tmp, "test_planted_maker.py"))
         alone = [h for h in scan_file(victim, created_classes(tmp)) if h[2].startswith("ADOPTS")]
-        print("PLANT  adoption seen=%s  marked as a WRITE=%s  cleared when nothing creates one=%s"
-              % (bool(hits), bool(hits) and hits[0][3], not alone))
+        print("PLANT  3 shapes seen=%d of 3  marked as a WRITE=%s  cleared when nothing creates "
+              "one=%s" % (len(hits), bool(hits) and hits[0][3], not alone))
         ok = seen and not alone
         print("\n%s" % ("PLANT SEEN FOR THE RIGHT REASON - a clean run is worth something" if ok
                         else "PLANT NOT SEEN AS MINE - a clean run would mean NOTHING"))
