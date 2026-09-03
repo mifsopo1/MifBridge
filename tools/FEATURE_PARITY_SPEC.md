@@ -7523,6 +7523,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       with the adversarial verify stage, not a checker in tools/. It found 22 candidates and killed
       10 of them; that ratio is the work, and it is the part a regex skips.
 
+      THE TEN KILLS WERE SPOT-CHECKED rather than taken on trust, since a wrongly-killed finding is
+      an unfixed site nobody is looking for. They hold up. The sharpest test was test_anim_notify,
+      whose refutation OPENS by conceding the suite adopts, mutates and asserts on a real project
+      AnimSequence - and then shows nothing can create a matching one: create_asset{class:
+      "AnimSequence"} is refused by design as a crash-regression guard, duplicate_asset refuses
+      cooked ones and all 514 of this project's AnimSequences are cooked, run_retarget's success path
+      is blocked by the same guard, and a grep of every creation call in tools/ finds no other
+      producer. That is the fourth exemption genuinely holding, not a dismissal.
+
+      ONE RESIDUAL IT RAISED, kept because it is a DIFFERENT shape and should not be filed under the
+      one above. test_sync_markers authors a marker onto a sequence chosen by a predicate that
+      overlaps test_anim_notify's. The interaction is real, but the verifier's point is that it is
+      FAIL-LOUD rather than a false pass - the affected check is a bare precondition that goes red
+      rather than a measurement that silently reports the wrong number. A cross-suite coupling that
+      shouts is worth fixing eventually and is not the danger this item is about, which is the ones
+      that stay green while measuring somebody else's object.
+
 - [x] **six proposals were invisible to the backlog counter for weeks** - ALL SIX BUILT 2026-09-01
       FOUND 2026-09-01 with the spec reporting 0 open. It was reporting the truth about `- [ ]`
       lines and nothing about the nine `- [category]` proposal lines sitting further down the file,
