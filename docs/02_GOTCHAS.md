@@ -2645,3 +2645,44 @@ statements; there is nothing further to report and a variable would make them wo
 same words. The distinction that matters — is the computed value one that could plausibly come back
 in several different ways? — is a judgement, and no cheap syntactic proxy for it survived contact
 with the corpus. Read the assertions you just wrote; do not build a tool to read them for you.
+
+## A detector can be awake, correct, and still report to nobody (2026-09-03)
+
+`audit_cross_endpoint_claims` was written 2026-08-31. It is registered in `audit_detectors_fire`
+with a real plant (`plant_cross_endpoint_claim`, probe `probeSameZz`) and it goes red on that plant,
+so by this repo's own standard it is a proven detector. It found **844** cross-endpoint mentions in
+handler text, narrowed them to **14** that assert EQUIVALENCE or COMPLETENESS rather than
+navigation, and named the ones no single suite exercises both sides of.
+
+Nobody read that list for three days.
+
+`return 0` at line 207 is its only success exit, and `make_release.py` runs nine sibling audits —
+consequence_fields, loop_writes, modals, postconditions, promise_flags, suite_payloads, suite_reach,
+vacuous_checks, value_discovery — and not this one. So it printed a correct answer, on demand, to a
+person who had no standing reason to ask. When the list was finally read, 12 of the 14 claims had
+never been compared by anything; eleven turned out true, one only partly, and one asymmetry was
+found that is still open.
+
+**These are two different failures and they need two different fixes.** `audit_detectors_fire`
+exists to catch the ASLEEP detector — the one whose plant stops making it fire, which happened to
+`audit_fixture_adoption` earlier the same day and was caught within the hour. It cannot catch this
+one, because this one fires perfectly. The question the harness does not ask is *"and does anything
+ever make a person look at the output?"* Registration proves a detector WORKS; a gate is what makes
+somebody LOOK. A repo with 39 detectors and 15 gates has, by construction, detectors in this state,
+and the way to find them is to ask which ones cannot fail rather than which ones are asleep.
+
+**The fix is differential, and gate-on-zero would have been the wrong shape.** Two of the 14 are
+blocked on the machine — `set_niagara_emitter` -> `set_property` needs an uncooked Niagara emitter
+with editor data, `preview_composite_widget` -> `list_live_widgets` needs a running PIE session — so
+a gate demanding zero is red forever, and a permanently red gate is one somebody switches off. That
+is the same reasoning that keeps the release badge out of `make_release.py --gates`: a check that is
+legitimately red between releases teaches people to ignore it. So a NEW unpaired claim fails and a
+recorded one does not.
+
+**Key the baseline on identity, not on position.** `(speaker, other)` — deliberately not the line
+number, because `audit_vacuous_checks` keyed its baseline on `file:LINE` and broke on this same day
+when comment insertions shifted six entries whose text had not changed at all, and deliberately not
+the quote, because handler prose is reworded constantly and a baseline that churns is one nobody
+keeps current. The quote is stored and a change is reported, but it does not fail. What this misses
+is a second, different claim between an already-recorded pair; that trade is written into the
+tool's own header rather than left in somebody's head.
