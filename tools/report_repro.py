@@ -70,6 +70,25 @@ def main():
         print("nothing to replay")
         return 0
 
+    # DO NOT WAIT FIFTEEN MINUTES FOR AN EDITOR THAT IS NOT THERE.
+    #
+    # This used to go straight into wait_for_bridge(timeout=900). Nothing here launches an editor, so
+    # when a report arrived with none running the replay sat for a QUARTER OF AN HOUR emitting
+    # "[waiting Ns - the bridge is not usable yet: ...]" onto the watcher's console. Andre killed the
+    # watcher over exactly that noise on 27 August, and the report pipeline has been down since.
+    #
+    # An editor that is ALREADY COMING UP is worth waiting for - the port binds before it can answer,
+    # and a cold start is genuinely slow. An editor that is not running at all is not going to start
+    # by itself, and waiting is just a long way to print the same answer. The two are distinguishable
+    # by asking once.
+    ok, why = M.require_sdk_bridge()
+    if not ok and not M.bridge_pid():
+        print("no editor is running, and nothing here starts one - so there is nothing to replay "
+              "against.")
+        print("  reason: %s" % why)
+        print("  The report stays QUEUED. Re-run this with an editor open, or let the watcher pick "
+              "it up next time.")
+        return 3          # distinct from 1: nothing was WRONG, there was just nowhere to replay
     if not M.wait_for_bridge(timeout=900):
         print("the bridge never came up - nothing was replayed")
         return 1
