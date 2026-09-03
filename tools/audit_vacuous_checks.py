@@ -240,6 +240,18 @@ def baseline_key(entry):
     is a real narrowing. It is the smaller loss - a duplicated assertion text in one file is a
     near-miss, while an editor's comment reddening a gate is a certainty, and the second teaches
     people to run --update-baseline without reading, which is the failure this file exists to stop.
+
+    AND THE NARROWING IS WIDER THAN "MATCHING TEXT", which is worth being precise about: the label
+    stored in an entry is TRUNCATED at the point it is written - 70, 48 or 44 characters depending
+    on which of the four rules produced it - so the collision window is a matching PREFIX, not a
+    matching assertion.
+
+    MEASURED 2026-09-03 rather than argued about, after a review raised it: across the 22 baseline
+    entries there are 22 distinct keys, no collisions, and no two labels in the same file share even
+    a 20-character prefix. Assertion labels here start with their test id (T101, T8502b), which is
+    unique per file and sits well inside every truncation. So the loss is real in principle and
+    empty in practice on this corpus. Re-measure before widening the truncation: if that gap ever
+    closes, the fix is to key on the FULL text and keep truncating only for display.
     """
     where, _, label = entry.partition("\t")
     return (where.rsplit(":", 1)[0], label)

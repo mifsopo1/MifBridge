@@ -106,9 +106,15 @@ def main():
     snapshot = os.path.join(HERE, "endpoints_current.json")
     names = json.load(open(snapshot, encoding="utf-8"))
 
+    # BOUND BEFORE THE BRANCH, not inside it. _live_decl_names() returns None when
+    # MifBridgeHandlers.h cannot be read, and this used to be assigned only on the not-None path
+    # while being read unconditionally 46 lines below - so the one case the None return exists to
+    # handle GRACEFULLY was the one that died with NameError. Introduced 2026-09-03 by the fix for a
+    # different NameError in this same block, which is its own lesson: moving a read past its write
+    # is not the same as making sure there is always a write.
+    stale_added = []
     live = _live_decl_names()
     if live is not None:
-        stale_added = []
         snap_set = set(names)
         added, removed = sorted(live - snap_set), sorted(snap_set - live)
         if added or removed:
