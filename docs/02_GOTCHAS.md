@@ -2774,3 +2774,44 @@ assertion**. L999's probe stood alone as the last line of a cleanup block, and T
 WAS the postcondition — there was nothing else in either place to fail. Ask not "does this accept
 None" but "if this response were an error, what else in this block would go red?" If the answer is
 nothing, the check is carrying the whole weight and has to require `ok` itself.
+
+## A hand-rolled plant fails silently, and the failure looks exactly like the answer (2026-09-03)
+
+The house rule is that a checker proves nothing until it is run against a known instance. Doing that
+by hand went wrong THREE TIMES in one day, and not once did it announce itself — every failure
+arrived wearing the result's clothes.
+
+**The plant did not land, and rc 1 came from somewhere else.** Copied a module to a scratch
+directory, broke it there, ran it, got rc 1, and nearly recorded "the self-test catches it". The rc 1
+was a `FileNotFoundError`: the module resolves its corpus relative to its own `__file__`, so the copy
+could not see `Source/` at all and died before reaching the code under test. The same
+script-relative trap had already made an `audit_suite_reach` before/after comparison meaningless
+earlier the same day — the "difference" was entirely the harness.
+
+**The anchor never matched, and the tool said so in a number nobody reads.** Patched a file with an
+inline `'\t'`, which the shell turned into a real tab while the source held the two characters
+`\` and `t`. `str.replace` matched nothing, wrote the file back unchanged, and the run exited 3 with
+"anchor not found" — one line above a banner that otherwise reads like a verdict.
+
+**The probe changed the wrong thing, and green looked like blindness.** To prove `parity_check`
+gates drift, renamed the wrapper FUNCTION `project_paths`. Still green — which reads as a blind
+detector and is not: parity_check compares the `_post("...")` LITERAL against `MIF_BIND`, and
+renaming a function does not touch the literal. Changing the literal gives rc 1 and names it.
+
+**The direction of the lie changes with the probe, which is why no single habit catches it.** Case
+one produced a FALSE PASS for the checker, case two a false failure, case three a false "the detector
+is asleep". What they share is that the PLANT failed, not the thing under test — and a failed plant
+is indistinguishable from a result unless something asserts it landed.
+
+**This repo already solved it for the automated harness and I kept relearning it by hand.**
+`audit_detectors_fire` takes an optional `must_vanish`: a string that must be ABSENT from the mutated
+text, so "the plant ran but the marker is still there" is reported as *plant-did-not-land* with an
+explicit "this says NOTHING about the tool - do not read it as ASLEEP". Its own comment records that
+diagnosing this cost more than the bug, twice.
+
+**So when ground-truthing by hand, assert the plant landed before reading the verdict.** Concretely:
+that the mutated text actually DIFFERS from the original; that the anchor was found at all, loudly,
+rather than as an exit code; and that the failure you get is the one you planted, by NAME, rather
+than any non-zero exit. Prefer monkeypatching the function in-process over copying files, because a
+copy inherits none of the module's path assumptions — every case above became easy the moment the
+plant moved in-process.
