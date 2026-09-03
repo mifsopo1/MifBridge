@@ -11434,11 +11434,24 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
           -> get_viewport_camera          true; "will fail the same way" needs an editor with NO
                                           level open, which no unattended suite can arrange.
 
-      ONE ASYMMETRY FOUND, recorded rather than fixed because it falsifies nothing: save_package
-      calls Package->MarkPackageDirty() before saving and save_blueprint does not. UPackage::
-      SavePackage writes regardless of the flag, so the file lands either way and the claim stands -
-      but two sibling endpoints doing the same job should probably not differ on it, and whichever
-      is right the other is guessing.
+      ONE ASYMMETRY FOUND, recorded rather than fixed: save_package calls
+      Package->MarkPackageDirty() before saving and save_blueprint does not. SavePackage writes
+      regardless of the flag, so the file lands either way and the equivalence claim stands.
+
+      WHERE IT BITES IS THE FAILURE PATH. On a package that was CLEAN, save_package marks it dirty
+      and then saves; if the save succeeds the flag is cleared and nothing is different. If the save
+      FAILS - read-only file, source control, a cook in progress - the package is left DIRTY when it
+      was clean before, so the editor now shows unsaved changes for an asset nobody edited and the
+      next save-all writes it. A failed write should leave the editor exactly as it found it, which
+      is the same standard every "NOTHING was changed" refusal in this codebase is held to.
+
+      NOT CHANGED, and the reason is worth stating rather than implied. It predates every documented
+      decision here - `git log -S` puts it in the initial commit with no comment - so it is more
+      likely vestigial than deliberate. But removing it is a behaviour change to a WRITE path that
+      cannot be tested without an editor, and the failure mode if SavePackage ever did depend on the
+      flag is that saves silently stop working, which is far worse than a leaked dirty bit. Settle
+      it with a live editor: save a clean asset to a read-only path through both endpoints and check
+      is_package_dirty afterwards. Two calls, one minute, and it needs the machine.
 
       SO THE ITEM IS DOWN TO ITS TWO ORIGINALS, both genuinely blocked: set_niagara_emitter ->
       set_property needs an UNCOOKED Niagara emitter with editor data (the probe is written -
