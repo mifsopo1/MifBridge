@@ -288,14 +288,33 @@ def main():
         lines = raw.replace(chr(13) + chr(10), chr(10)).split(chr(10))
         cur = None
         for line in lines:
-            m = re.match(r"\s*void (H_[a-z_0-9]+)\(", line)
-            if m:
-                cur = m.group(1)
+            # ANY function definition changes context, not just an H_ one. The old regex matched
+            # only `void H_...` and NEVER cleared `cur`, so a call site inside a later non-handler
+            # function was attributed to whichever handler happened to be defined above it. That is
+            # not hypothetical: RunEngineExec's own body contains GEngine->Exec and it is defined at
+            # MifBridgeCommon.cpp:2344, below H_project_paths at :1271 - so a first attempt at this
+            # widening reported `project_paths` as an Exec endpoint, which it is not.
+            #
+            # ONE TAB is the function level. Everything in these files sits inside a namespace, so
+            # definitions are indented exactly one tab and bodies are indented more - which is why
+            # a "starts at column 0" test finds nothing here and silently never resets.
+            fdef = re.match(r"\t(?:static\s+)?[A-Za-z_][A-Za-z0-9_:<>*&\s]*?"
+                            r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(", line)
+            if fdef:
+                cur = fdef.group(1) if fdef.group(1).startswith("H_") else None
             stripped = line.strip()
-            if ("RunEngineExec(" in line and cur and not stripped.startswith("//")
-                    and "bool RunEngineExec" not in line):
+            if stripped.startswith("//") or not cur:
+                continue
+            # BOTH ROUTES TO Exec. Scanning only for RunEngineExec missed exec_console, which calls
+            # GEngine->Exec directly (MifBridgeConsole.cpp:87) - so the one endpoint this test could
+            # not see was the one that does not use the shared helper. The gate DOES cover it
+            # (exec_console is in UnsafeEndpoints), which is exactly why the gap was invisible:
+            # nothing was broken, the test simply was not asking about it, and if somebody later
+            # dropped it from that list this test would have gone on passing.
+            if ("RunEngineExec(" in line and "bool RunEngineExec" not in line) \
+                    or "GEngine->Exec(" in line:
                 exec_eps.add(cur[2:])          # strip the H_ prefix
-    check("T636 the source scan found the Exec endpoints", len(exec_eps) >= 2, sorted(exec_eps))
+    check("T636 the source scan found the Exec endpoints", len(exec_eps) >= 3, sorted(exec_eps))
     print("    endpoints reaching UEngine::Exec: %s" % sorted(exec_eps))
 
     mode = (M.call("self_audit", {}, timeout=180) or {}).get("writeMode")
