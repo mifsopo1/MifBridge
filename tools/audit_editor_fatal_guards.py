@@ -93,6 +93,32 @@ CLASSISH = re.compile(r"\b(?:U|A|F)?([A-Z][A-Za-z0-9]*(?:Asset|Sequence|Mesh|Sys
 TEXT_LIT = re.compile(r'TEXT\(\s*((?:"(?:[^"\\]|\\.)*"\s*)+)\)')
 
 
+ONE_LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
+
+
+def joined_literal(body):
+    """The string the COMPILER builds, not the source text of the literals.
+
+    THIS IS NOT COSMETIC, AND ITS ABSENCE HID REAL GUARDS. TEXT_LIT captures a run of adjacent C++
+    string literals with the quotes and the line breaks between them still in it. This file wraps at
+    about 100 columns, so a phrase that matters lands across a wrap all the time:
+
+        TEXT("'%s' CANNOT be created ... would TERMINATE THE "
+             "EDITOR. A plain NewObject ...")
+
+    Matched against the raw body, `TERMINATE THE EDITOR` is not present - what is present is
+    `TERMINATE THE " "EDITOR`. So create_asset's UAnimSequence refusal, which exists precisely
+    because a bare NewObject terminated the editor on 2026-08-31, was invisible to an audit whose
+    entire job is finding editor-fatal guards. It appeared in NO list: not against the class, not
+    even under 'naming no class'.
+
+    That is the dangerous direction of error for this tool. Its own footer warns about the harmless
+    one - a reader who sees a function name loses ten seconds - while a guard it cannot see at all
+    reads as a guard that is not there.
+    """
+    return "".join(ONE_LITERAL.findall(body))
+
+
 def sites():
     """[(handler, class_or_None, file, line, quote)] for every fatal-sounding refusal string."""
     found = []
@@ -103,7 +129,10 @@ def sites():
         for fn, start, end in H.function_spans(raw, scrubbed):
             who = fn[2:] if fn.startswith("H_") else "helper " + fn
             for m in TEXT_LIT.finditer(raw, start, end):
-                body = m.group(1)
+                # Adjacent literals are joined FIRST - see joined_literal(). Matching the raw source
+                # text misses every phrase that straddles a line wrap, and in this file that is most
+                # of them.
+                body = joined_literal(m.group(1))
                 if not FATAL.search(body):
                     continue
                 line = raw.count("\n", 0, m.start()) + 1
@@ -151,9 +180,22 @@ def main():
         print("  %-22s %s%s" % (c, ", ".join(guards), flag))
     print("")
     if unclassed:
-        print("FATAL GUARDS NAMING NO CLASS - a condition rather than a type:")
+        # NOT ALL OF THESE ARE CONDITIONS, and calling them that was wrong. A refusal that
+        # interpolates the class - Fail(..., FString::Printf(TEXT("'%s' CANNOT be created ...")))
+        # - names a TYPE perfectly well; it just names it at runtime, where a static read cannot
+        # see it. create_asset's UAnimSequence guard is exactly that, and it is the guard for the
+        # type that terminated an editor on 2026-08-31.
+        interp = [u for u in unclassed if "%s" in u[3]]
+        print("FATAL GUARDS THIS CANNOT GROUP BY CLASS:")
         for who, base, line, quote in unclassed:
-            print("  %-32s %s:%d" % (who, base, line))
+            mark = "  <-- names its class at RUNTIME (%s)" if "%s" in quote else ""
+            print("  %-32s %s:%d%s" % (who, base, line, mark))
+        if interp:
+            print("")
+            print("  %d of those interpolate the class into the message, so the door list above is a"
+                  % len(interp))
+            print("  LOWER BOUND: a class can show ONE DOOR ONLY while a second door guards it by")
+            print("  name at runtime. Read these before believing any 'ONE DOOR ONLY' line.")
     print("")
     print("NOT EVERY NAME ABOVE IS A CLASS. The grouping reads capitalised identifiers out of the")
     print("refusal text, and those texts quote assert messages and callstacks - so DuplicateAsset is")
