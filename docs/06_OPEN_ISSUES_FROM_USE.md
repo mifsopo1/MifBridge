@@ -176,7 +176,15 @@ Arrays also come back as a single export-text string rather than a list, so `get
 
 ---
 
-## 4. No single-endpoint schema query
+## 4. No single-endpoint schema query — FIXED
+
+*(Marked FIXED 2026-09-03, re-verified rather than assumed. `describe_endpoint` exists and is
+exactly the ask: it returns the accepted parameter set and aliases, and `parity_check` asserts
+on every run that its table still matches the `RejectUnknownParams` guards. The TRIAGE NOTE
+below is satisfied too - MifBridgeDescribe.cpp:57-68 distinguishes "takes no parameters" from
+"parameters not declared for this endpoint", which is the exact dishonesty it warned about.
+The note's "only 84 of 199 handlers" is now 449 `RejectUnknownParams` call sites, and
+`audit_param_guards` reports no endpoint accepting unknown keys silently.)*
 
 `describe_endpoint`, `help`, `endpoint_info`, `describe_command` all 404. `self_audit` lists names and
 transaction buckets but not parameters.
@@ -1202,7 +1210,12 @@ first cleanup pass report 915 successful deletions while changing nothing at all
 
 ---
 
-## 14. `set_blendspace_samples` reports invalid samples as added
+## 14. `set_blendspace_samples` reports invalid samples as added — FIXED
+
+*(Heading marked FIXED on 2026-09-03. The body has said "Fixed" since it was written; the
+heading did not, so anyone scanning the section index read a closed issue as open. Re-verified
+in the source before marking: `valid` per sample at MifBridgeAnimation.cpp:1144 and
+`invalidCount` emitted UNCONDITIONALLY at :1169, which is the fix this entry describes.)*
 
 **FILED WRONG, THEN CORRECTED, 2026-08-26.** The correction is the useful part, so it is kept rather
 than tidied away.
