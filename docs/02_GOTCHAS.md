@@ -2693,3 +2693,45 @@ the quote, because handler prose is reworded constantly and a baseline that chur
 keeps current. The quote is stored and a change is reported, but it does not fail. What this misses
 is a second, different claim between an already-recorded pair; that trade is written into the
 tool's own header rather than left in somebody's head.
+
+## A plant proves an ARM, and the harness reports a TOOL (2026-09-03)
+
+`audit_detectors_fire` answers one question per detector: with a defect planted, does it go red? That
+is the right question and it has a blind spot that four tools fell into on a single day. A detector
+with several independent checks gets ONE plant, aimed at ONE of them, and the harness then prints a
+green line against the whole tool. Every other arm is unproven and reads as proven.
+
+Found by asking, of each detector changed that day, *which arm does its plant actually exercise?*
+
+| tool | plant exercised | the arm nobody was testing |
+|---|---|---|
+| `audit_mode_params` | a parameter declared and never read ANYWHERE (`read_depth` 99) | a parameter read ONLY inside a mode branch (`read_depth` 2) — the `invoke_editor_tab` shape the tool is NAMED for, and the one that day's branch-depth rewrite landed on |
+| `audit_vacuous_checks` | detection, via `--all` | `--all` sets `base = set()`, so `load_baseline()` and `baseline_key()` are never called — and the baseline re-keying that day was entirely inside them |
+| `parity_check` | CHECK 3, a bind with no `_post` wrapper | the "no `MIF_BIND` inside a `#if`" check added that day |
+| `audit_message_endpoints` | endpoint-name advice, planted into `tool_help.json` | `advised_param_findings`, added that day |
+
+**The pattern is not "old detectors rot".** In every case the unproven arm was the one that had just
+been WRITTEN or REWRITTEN. New work lands on a new arm, the plant still targets the old one, and the
+harness's green line is what stops anybody looking.
+
+**Three of the four were fixed by planting both arms and MOVING THE MARKER to the newer one.** The
+marker matters more than the extra plant: in `parity_check` both planted binds also trip CHECK 3, so
+a marker naming the probe would have appeared whether or not the new arm ran. The marker has to be
+text that ONLY the arm under test can emit — `"inside a preprocessor conditional"`, not
+`mif_probe_cond_zz`.
+
+**`audit_vacuous_checks` could not be fixed that way and needed a different answer.** Its `--all` is
+correct: without it, a planted finding that happened to match a baselined entry would be suppressed
+and the tool would read ASLEEP. So the baseline path proves itself with a `--self-test` run INSIDE
+`--check`, which is the gated path — a self-test beside the gate is one more thing that can rot on
+its own.
+
+**`audit_message_endpoints` is deliberately left with the gap, and the reason is a real trade.** Its
+new arm reads C++ source, while its plant targets `tool_help.json` precisely so the tool stays
+provable WHILE AN EDITOR IS OPEN — a `Source/` plant is skipped then, because Live Coding could
+compile it. Re-aiming the plant at a `.cpp` would prove the new arm and lose the arm that works
+today, whenever anyone has the editor up. Recorded as open rather than swapped one gap for another.
+
+**What to ask of any detector here:** not "does it have a plant" — the harness answers that — but
+"how many independent checks does it run, and which one does the plant reach?" `audit_detectors_fire`
+cannot ask that for you, and its own output is the reason nobody thinks to.

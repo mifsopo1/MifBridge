@@ -11560,6 +11560,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       lines, which audit_citations cannot catch because it validates engine-source citations only).
       Read them before acting; this file's own rule is that a reading list is not a defect count.
 
+- [ ] **the message-endpoints plant covers one arm of three, and aiming it at the newest costs the one that works** (1 hour)
+      audit_message_endpoints runs three independent checks: endpoint-name advice,
+      blender_helper_findings, and advised_param_findings added 2026-09-03. The harness plant covers
+      the first only, so audit_detectors_fire prints a green line for the whole tool while the newest
+      check has never been shown to fire. Same shape as audit_mode_params, audit_vacuous_checks and
+      parity_check on the same day - written up in 02_GOTCHAS as "A plant proves an ARM, and the
+      harness reports a TOOL".
+
+      NOT FIXED THE WAY THE OTHER THREE WERE, because here the obvious fix trades one gap for
+      another. advised_param_findings reads C++ under Source/, while the existing plant targets
+      tool_help.json SPECIFICALLY so this tool stays provable while an editor is open - a Source/
+      plant is skipped then, since Live Coding could compile the planted defect into somebody's
+      session. Re-aiming the plant at a .cpp would prove the new arm and lose the working one
+      whenever anybody has the editor up, which today was all day.
+
+      The way out is probably a --self-test pointing the module's PRIVATE at a scratch directory
+      holding one probe .cpp, the way audit_vacuous_checks proves baseline_key from inside --check
+      rather than beside it. It needs a small refactor first: advised_param_findings takes `names`
+      and `accepts` as arguments but reads PRIVATE itself, so the directory is not injectable yet.
+
 - [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
       THE OTHER TWELVE WERE READ 2026-09-03, which is what "paired" never meant. The tool says so
       itself - "a pair appearing in one suite proves only that both were CALLED there, never that
