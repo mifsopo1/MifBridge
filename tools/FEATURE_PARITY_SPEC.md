@@ -1433,6 +1433,20 @@ engine has no such class registered in this build, which is as definitive as it 
       therefore unexercised, and test_niagara_user_params exits 2 SKIPPED saying so rather than
       passing vacuously. It needs an UNCOOKED project with authored user parameters.
 
+      ALL 45 DECLINES WERE SWEPT for the same staleness on 2026-09-03 and this was the ONLY one.
+      The check: does any decline HEADING name an endpoint that is now MIF_DECL'd? Eight did, and
+      seven are declines ABOUT an existing endpoint's limitation rather than declines of building
+      it - connect_pins' fromNode/toNode, get_property vs UBodySetup::AggGeom, remove_pin's
+      same-direction duplicate. Those are correct as written.
+
+      The eighth is worth reading as the counter-example to this entry:
+      `set_mesh_build_settings / generate_lods` is MOSTLY DECLINED and says so, keeps the three
+      capabilities that set_property already reaches, and ends "Filed as its own small item rather
+      than smuggled in under a name that implies the other three" - with `generate_lods +
+      remove_lods (the LOD COUNT write only)` ticked immediately below it. Same situation as this
+      entry, handled correctly: the buildable part was SPLIT OUT and the decline narrowed to what
+      still stood, so neither heading ever lied.
+
       The original decline, verbatim:
       READING already works: `get_property` on a system's `ExposedParameters` returns the user
       parameters with names and types (`User.Color`, `User.FoamOpacity`, `User.FoamWidthLeft` on
