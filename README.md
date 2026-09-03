@@ -177,6 +177,21 @@ DLL and is the authority over any number written here.
 | `python tools/audit_dead_params.py` | a parameter the endpoint *accepts* and nothing ever reads |
 | `python tools/audit_vacuous_checks.py` | a test assertion that passes no matter what the code does |
 
+**Or ask all of them at once, plus both engine build records:**
+
+```bash
+python tools/make_release.py --gates   # 20 ratcheted checks, ~30s, changes nothing
+```
+
+This is the "is this tree releasable?" question without starting a packaging run — the two engine
+records, `parity_check`, and every ratcheted source audit including the four above. It needs no
+editor, no Blender and no bridge, and `test_release_gates` asserts that README and CHANGELOG come
+back byte-identical afterwards, so "changes nothing" is checked rather than promised.
+
+It is listed here because for a while it was not, which is this repo's most repeated failure in
+miniature: the command existed, ran twenty checks, and nothing pointed at it from anywhere a person
+looks. A check nobody is made to run reports to nobody.
+
 ---
 
 ## 🚀 Install
