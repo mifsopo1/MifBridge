@@ -35,15 +35,46 @@ import mifaudit as M
 TIMEOUT = 900
 
 
-KNOWN_FLAGS = {"--once", "--with-pie"}
+KNOWN_FLAGS = {"--once", "--with-pie", "--anyway"}
 
-USAGE = """usage: run_all_suites.py [--once] [--with-pie] [name-substring ...]
+
+def running_shipping_builds():
+    """UE game builds running right now, by process name. Empty list if it cannot tell.
+
+    A packaged UE game is always `<Project>-Win64-Shipping.exe` (or -Test/-Development), whatever
+    the project, so this is a general check and not a DDS2 one.
+
+    WHY A SWEEP CARES. "The editor is closed" does NOT mean "the machine is free". On 2026-09-03 the
+    editor was closed because the developer had gone to PLAY the game - the Steam build was running
+    the whole time - and an unattended sweep would have taken an editor plus 350 suite runs of CPU
+    out from under them. A shipping build running is the strongest available signal that a person is
+    sitting at this machine right now.
+    """
+    if os.name != "nt":
+        return []          # detection is Windows-only; everywhere else this is a no-op, not a pass
+    try:
+        out = subprocess.run(["tasklist", "/fo", "csv", "/nh"],
+                             capture_output=True, text=True, timeout=60).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found = []
+    for line in out.split("\n"):
+        name = line.split('","')[0].lstrip('"') if '","' in line else ""
+        if re.search(r"-Win64-(Shipping|Test|Development)\.exe$", name, re.I):
+            found.append(name)
+    return sorted(set(found))
+
+USAGE = """usage: run_all_suites.py [--once] [--with-pie] [--anyway] [name-substring ...]
 
   --once      one pass instead of two. TWO is the default because the second pass is what
               catches state surviving between runs - a suite that adopts a fixture another
               suite created passes alone and fails on pass 2, which is the point.
   --with-pie  include the PIE suites. They need an ATTENDED run: starting PIE stops the bridge
               answering while the editor stays alive, which hangs an unattended sweep.
+
+  --anyway    sweep even though a packaged UE game build is running. That build is the strongest
+              signal somebody is sitting at this machine, and a sweep costs them half an hour of
+              CPU, so it is refused by default.
 
   Bare words are suite-name substrings. One that matches NOTHING is an error, not an empty
   pass - see the comment at the filter below for the half hour that cost."""
@@ -70,6 +101,18 @@ def main():
         print("")
         print(USAGE)
         return 2
+
+    # SOMEBODY MAY BE PLAYING ON THIS MACHINE. Checked before the lock and before any editor is
+    # launched, because the cost of being wrong is half an hour of stutter in somebody's game.
+    playing = running_shipping_builds()
+    if playing and "--anyway" not in flags:
+        print("REFUSING TO SWEEP - a packaged UE build is running: %s" % ", ".join(playing))
+        print("  A sweep takes an editor plus ~350 suite runs of CPU for half an hour or more, and a")
+        print("  running game build is the strongest signal that somebody is at this machine now.")
+        print("  'The editor is closed' does not mean the machine is free - on 2026-09-03 it was")
+        print("  closed because the developer had gone to play the game.")
+        print("  Wait, or pass --anyway if you know the machine is yours.")
+        return 3
 
     here = os.path.dirname(__file__) or "."
     suites = sorted(os.path.basename(p) for p in glob.glob(os.path.join(here, "test_*.py")))
