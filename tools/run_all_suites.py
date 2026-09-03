@@ -133,9 +133,17 @@ def main():
     # passes with nothing running. Wrong in both directions, which is why the classifier here is an
     # exit code and the list is written down.
     #
-    # A FLOOR, NOT A CEILING. A new backend-free suite will not appear here on its own. What this
-    # list cannot do is go quietly wrong: run it and a member that starts needing a backend hangs or
-    # fails in front of you, because that is the whole point of running them with nothing listening.
+    # EXHAUSTIVE WHEN MEASURED, a floor thereafter. All 179 suites were run on 2026-09-03 with the
+    # bridge and Blender both down: exactly these 8 passed, 20 more detected the absence and exited
+    # 2 SKIPPED without verifying anything, and the remaining 151 hung on a connection that was
+    # never going to answer. So this is not a sample somebody stopped adding to - it was the whole
+    # set at that moment.
+    #
+    # It is still a floor going forward: a new backend-free suite will not appear here on its own.
+    # What it cannot do is go quietly wrong - run it and a member that starts needing a backend
+    # hangs or fails in front of you, which is the point of running them with nothing listening.
+    # Re-measure the same way rather than reasoning about imports; see the note above on why a grep
+    # gets this wrong in both directions.
     OFFLINE_SUITES = (
         "test_blender_headless_guard.py",   # starts its own fake servers
         "test_find_tools.py",
