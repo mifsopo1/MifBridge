@@ -70,8 +70,13 @@ def main():
     # ------------------------------------------------------------------ T572 the no-op write
     print("")
     print("=== T572: setting a bone to the mode it ALREADY has reports changed:false ===")
-    skels = M.call("find_assets", {"class": "Skeleton", "pathPrefix": "/Game/", "limit": 1},
-                   timeout=90).get("assets") or []
+    # SKIP SCRATCH. pathPrefix "/Game/" matches every scratch tree, and this suite WRITES the bone
+    # translation retargeting mode on whatever it picks. test_virtual_bone_authoring duplicates a
+    # real Skeleton into /Game/_MifVB, and test_blend_profiles into /Game/_MifBlendProf - adopting
+    # either means mutating another suite's fixture and measuring a mode nobody set.
+    skels = [a for a in (M.call("find_assets", {"class": "Skeleton", "pathPrefix": "/Game/",
+                                                "limit": 20}, timeout=90).get("assets") or [])
+             if not M.is_scratch_fixture(a)][:1]
     if not skels:
         check("T572 (not exercised: no Skeleton in /Game/)", True)
     else:
@@ -135,8 +140,11 @@ def main():
     # 2026-08-26 the handler read sampleCount back off the asset (correct) while reporting samples[]
     # from its pre-validation list, so one response could say sampleCount 3 and list 4 samples. The
     # detailed field a caller is most likely to read was the wrong one.
-    bs = M.call("find_assets", {"class": "BlendSpace", "pathPrefix": "/Game/", "limit": 1},
-                timeout=90).get("assets") or []
+    # SKIP SCRATCH: this reconciles sampleCount against samples[] on whatever it adopts, and a
+    # scratch BlendSpace another suite is mid-way through building has neither in a settled state.
+    bs = [a for a in (M.call("find_assets", {"class": "BlendSpace", "pathPrefix": "/Game/",
+                                             "limit": 20}, timeout=90).get("assets") or [])
+          if not M.is_scratch_fixture(a)][:1]
     if not bs:
         check("T574 (not exercised: this project ships no BlendSpace)", True)
     else:

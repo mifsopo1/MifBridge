@@ -53,8 +53,14 @@ def main():
         print("SKIPPED - read mode")
         return 0
 
+    # SKIP SCRATCH, the omission that already cost test_physics_asset a false failure and made it
+    # add the same filter. This suite WRITES bAllowCPUAccess on every mesh it adopts and claims in
+    # its log that it checked the project's meshes - a sample filled with GeometryScript boxes from
+    # test_geometryscript can never reach the cooked-mesh state the guard exists to probe, so it
+    # goes green while proving nothing and printing a false claim.
     meshes = [a["path"] for a in
-              (M.call("find_assets", {"class": "StaticMesh", "limit": 20}).get("assets") or [])]
+              (M.call("find_assets", {"class": "StaticMesh", "limit": 40}).get("assets") or [])
+              if not M.is_scratch_fixture(a)][:20]
     check("(setup) static meshes to probe", len(meshes) > 0, len(meshes))
     if not meshes:
         return 1

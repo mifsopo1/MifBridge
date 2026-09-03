@@ -95,8 +95,14 @@ def main():
     # arbitrarily and failed the "two kinds differ" check the day it happened to draw a 5-parameter
     # one. A deep instance inherits most of its parameters, which is what makes the mix observable.
     best, best_n = None, -1
+    # SKIP SCRATCH: several suites create MaterialInstanceConstants under /Game/_Mif*, and a fresh
+    # instance has almost no parameters - so it can win this "most parameters" contest only when the
+    # real ones are filtered out, but it can certainly LOSE it in a way that changes which asset is
+    # measured. Adopting one also means reading another suite's half-built fixture.
     for a in (M.call("find_assets", {"class": "MaterialInstanceConstant", "pathPrefix": "/Game/",
                                      "limit": 20}).get("assets") or []):
+        if M.is_scratch_fixture(a):
+            continue
         n = M.call("list_material_parameters", {"path": a.get("path")}).get("count") or 0
         if n > best_n:
             best, best_n = a.get("path"), n

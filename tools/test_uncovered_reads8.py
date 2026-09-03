@@ -95,7 +95,12 @@ def main():
               bad.get("ok") is True and bad.get("inserted", [{}])[0].get("ok") is False,
               json.dumps(bad.get("inserted"))[:200])
 
-        real_child = M.call("find_assets", {"class": "WidgetBlueprint", "limit": 1}).get("assets") or []
+        # SKIP SCRATCH: many suites create WidgetBlueprints under /Game/_Mif*, and this inserts the
+        # adopted one as a real child inside a composite preview. A half-built scratch widget makes
+        # that assertion about somebody else's fixture rather than about the endpoint.
+        real_child = [a for a in (M.call("find_assets", {"class": "WidgetBlueprint",
+                                                         "limit": 20}).get("assets") or [])
+                      if not M.is_scratch_fixture(a)][:1]
         if real_child:
             child_c = real_child[0].get("path").split(".")[0] + "." + real_child[0].get("name") + "_C"
             pv = M.call("preview_composite_widget", {
@@ -142,7 +147,14 @@ def main():
 
     # ------------------------------------------------------------------ T963 reimport_asset - honest refusal
     print("\n=== T963: reimport_asset - real content, real refusal (no recorded source path anywhere) ===")
-    textures = M.call("find_assets", {"class": "Texture2D", "pathPrefix": "/Game/", "limit": 1}).get("assets") or []
+    # SKIP SCRATCH, and here it decides the ASSERTION. T963 claims the adopted texture has NO
+    # recorded import source, so reimport_asset must refuse it. test_textures imports a texture from
+    # a real PNG into /Game/_MifTex - that one DOES carry AssetImportData with a source path, so
+    # adopting it either reimports another suite's fixture or refuses for a different reason, and
+    # T963 fails for a cause that has nothing to do with the endpoint.
+    textures = [a for a in (M.call("find_assets", {"class": "Texture2D", "pathPrefix": "/Game/",
+                                                   "limit": 20}).get("assets") or [])
+                if not M.is_scratch_fixture(a)][:1]
     check("T963 (setup) a real Texture2D exists to try", bool(textures), textures)
     if textures:
         tpath = textures[0].get("path")

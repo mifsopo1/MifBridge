@@ -52,7 +52,33 @@ def main():
         print("SKIPPED - read mode")
         return 0
 
-    probe = M.raw_post("export_landscape_heightmap", {})
+    # NAME THE LANDSCAPE, rather than letting the endpoint pick one.
+    #
+    # Every landscape call here omitted `landscape`, so FindLandscape(World, "") returned whichever
+    # ALandscape the engine iterated first. In the scratch level these sweeps run in, the only
+    # landscape present is usually one ANOTHER suite created and left - test_landscape_heightmap and
+    # test_landscape_info both build one - so this suite deformed, asserted against, and then
+    # rewrote a fixture it did not own. Its own docstring already admitted "the neighbouring
+    # heightmap suite leaves its generated terrain in place".
+    #
+    # Worse than the mutation: create_landscape leaves edit layers OFF while the project's real
+    # landscape has them, and the S101 branch below is chosen by exactly that - so whose landscape
+    # got adopted silently decided which half of this suite ran.
+    _pick = M.pick_adoptable(M.call("landscape_info", {}).get("landscapes"))
+    TARGET = (_pick or {}).get("actorPath")
+    if TARGET:
+        print("  targeting the level's own landscape: %s" % (_pick.get("label") or TARGET))
+    else:
+        print("  no non-scratch landscape in this level - falling back to the engine's choice")
+
+    def _land(payload=None):
+        """A payload naming TARGET, so every call in this suite addresses the SAME landscape."""
+        d = dict(payload or {})
+        if TARGET:
+            d.setdefault("landscape", TARGET)
+        return d
+
+    probe = M.raw_post("export_landscape_heightmap", _land())
     if probe.get("ok") is not True:
         # A PRECONDITION, NOT A PASS. With no landscape every assertion below is about nothing.
         print("SKIPPED - no landscape in the open level, so NOTHING was verified.")
@@ -67,7 +93,7 @@ def main():
     try:
         # ------------------------------------------------------------------ S100 the fixture
         print("\n=== S100: a spline actor, built rather than found ===")
-        before = M.raw_post("export_landscape_heightmap", {"asData": True})
+        before = M.raw_post("export_landscape_heightmap", _land({"asData": True}))
         check("S100 (setup) the landscape exports, so it can be put back afterwards",
               before.get("ok") is True and bool(before.get("file")), json.dumps(before)[:220])
         saved = before.get("file")
@@ -232,7 +258,7 @@ def main():
         else:
             print("  this landscape has NO edit layers, so no editLayer is passed")
 
-        r = M.raw_post("apply_spline_to_landscape", payload)
+        r = M.raw_post("apply_spline_to_landscape", _land(payload))
 
         # THE FIXTURE, ASSERTED BEFORE ITS RESULT IS TRUSTED. Without this a spline too short to
         # move anything reports verticesChanged 0 and reads as an endpoint defect - the suite
@@ -343,7 +369,8 @@ def main():
         # write - ok:true, zero mismatches, and byte-identical to the pre-import state two seconds
         # later. This cleanup used to read that ok:true and report a restore that never happened.
         if saved:
-            back = M.raw_post("import_landscape_heightmap", {"file": saved})
+            # _land() here too: the restore MUST go back to the same landscape the deform hit.
+            back = M.raw_post("import_landscape_heightmap", _land({"file": saved}))
             if edit_layers:
                 check("(cleanup) restoring a LAYERED landscape by heightmap import is REFUSED "
                       "rather than silently reverted a moment later",

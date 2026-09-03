@@ -70,8 +70,13 @@ def main():
         print("bridge never came up")
         return 1
 
+    # SKIP SCRATCH: test_create_asset mints NiagaraSystems under /Game/_MifAsset, and this suite
+    # measures emitter counts and filter behaviour on whatever it adopts - a freshly created,
+    # emitterless system answers those questions differently and tells you nothing about the
+    # project's real content.
     systems = [a["path"] for a in
-               (M.call("find_assets", {"class": "NiagaraSystem", "limit": 6}).get("assets") or [])]
+               (M.call("find_assets", {"class": "NiagaraSystem", "limit": 20}).get("assets") or [])
+               if not M.is_scratch_fixture(a)]
     check("(setup) the project has NiagaraSystems", len(systems) > 0, len(systems))
     if not systems:
         print("SKIPPED - no NiagaraSystem in this project.")
