@@ -1783,6 +1783,14 @@ Two irreducible differences remain, and both are reported rather than hidden:
   `runtimeProbeModel` field naming which checks actually ran, on both engines, rather than quietly
   dropping a check and leaving the verdict looking equally strong.
 
+### The cheap way to actually check: `tools/syntax_check.py`
+
+Compiling against both engines used to mean a full build and a closed editor, so in practice nobody
+did it for a single endpoint. `cl /Zs` parses without emitting anything, runs beside a live editor,
+and takes seconds - `tools/syntax_check.py` wraps that for both trees at once. It found the landscape
+row above. Use it on every change that touches engine API, and run `--plant` when you want to believe
+a clean result.
+
 ### Reading the headers is NOT sufficient, and here is the proof
 
 Directions A and B are findable by reading. C, D, E and F are not, in ascending order of how

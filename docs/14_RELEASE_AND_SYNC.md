@@ -119,6 +119,18 @@ and one takes a full engine build.
 | value discovery | an endpoint demands a value nothing can discover | fix the endpoint or record the exemption |
 | static audits | the tools/ checkers are not clean | run them and fix what they say |
 
+**Before you reach for either engine gate, run `tools/syntax_check.py`.** It parses changed `.cpp`
+against BOTH engines with `cl /Zs`, which writes nothing at all - no object, no PCH, no touch of any
+DLL - so it runs beside a live editor, in seconds, and does not need the editor closed the way a real
+build does. It exists because that requirement had a cost: a C++ edit made while somebody was using
+the editor could not be verified until they stopped, and `register_landscape_layer` sat uncompilable
+on 5.7 for two days behind exactly that.
+
+It is NOT either gate and must never be recorded as one - a parse is not a link, and it says nothing
+about unresolved externals. It is the cheap pre-check that catches the whole class gotchas 14 is
+about. Run `--plant` first if you doubt it: each engine's checker is shown an error it must see, and
+counting errors is not enough, because a stale PCH fails every file identically.
+
 `--record-53` runs BEFORE all seven, and that is deliberate. It used to sit after them, which made
 the 5.3 row's own fix instruction fail: you would build on 5.3 successfully, run `--record-53`, and be
 refused because the README badge was stale - which is the NORMAL state between releases. Recording a
