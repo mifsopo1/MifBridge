@@ -2852,6 +2852,39 @@ namespace MifBridge
 			return;
 		}
 
+		// REFUSE A NODE ARGUMENT ON A BLUEPRINT-WIDE OP - the same guard blueprint_watch carries, for
+		// the same reason and with the same harm.
+		//
+		// MODE-PARAMS-OK: nodeGuid/nodeId are refused on op list and clear, from the table below
+		//
+		// `clear` removes EVERY breakpoint on the blueprint. {"op":"clear", "nodeGuid":X} reads as
+		// "clear the breakpoint on this node", the node argument was dropped in silence, and the
+		// caller lost every other breakpoint they had set. Breakpoints are editor-only state, so
+		// there is nothing to undo it with.
+		//
+		// `enable` IS a substring of `disable`, which is harmless here because both are in the same
+		// list - but it is the reason this table is written out per parameter rather than matched
+		// against a joined string of "ops that are not list or clear".
+		{
+			static const TCHAR* const kNodeArgs[] = { TEXT("nodeGuid"), TEXT("nodeId") };
+			for (const TCHAR* Name : kNodeArgs)
+			{
+				if (!In->HasField(Name) || (Op != TEXT("list") && Op != TEXT("clear")))
+				{
+					continue;
+				}
+				Fail(Out, FString::Printf(
+					TEXT("%s is only read by op add, remove, enable or disable; op '%s' is "
+						 "blueprint-wide and would have ignored it%s NOTHING was changed."),
+					Name, *Op,
+					Op == TEXT("clear")
+						? TEXT(" - clearing EVERY breakpoint on the blueprint, not the one you "
+							   "named. Use op:remove to remove a single breakpoint.")
+						: TEXT(", listing every breakpoint on the blueprint rather than that one.")));
+				return;
+			}
+		}
+
 		const bool bNeedsNode = (Op != TEXT("list") && Op != TEXT("clear"));
 
 		UBlueprint* BP = nullptr;

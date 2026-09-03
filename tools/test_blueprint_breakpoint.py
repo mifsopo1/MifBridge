@@ -113,6 +113,24 @@ def main():
         check("T8401 two breakpoints are set",
               M.raw_post("blueprint_breakpoint", {"op": "list", "graphId": graph}).get("count") == 2,
               "expected two")
+        # T8401b, BEFORE the real clear and with TWO breakpoints standing, so a wrong answer is
+        # visibly destructive rather than a no-op. `clear` is blueprint-wide: {"op":"clear",
+        # "nodeGuid":X} reads as "clear the breakpoint on this node", the node argument was dropped
+        # in silence, and the caller lost every other breakpoint they had set. Same guard and same
+        # harm as blueprint_watch T8502b.
+        scoped = M.raw_post("blueprint_breakpoint", {"op": "clear", "graphId": graph,
+                                                     "nodeGuid": a})
+        check("T8401b clear with a nodeGuid is REFUSED rather than clearing everything",
+              scoped.get("ok") is False, json.dumps(scoped)[:220])
+        check("T8401b and it names op:remove as the verb that was meant",
+              "EVERY breakpoint" in (scoped.get("error") or "")
+              and "op:remove" in (scoped.get("error") or ""),
+              (scoped.get("error") or "")[:240])
+        check("T8401b and BOTH breakpoints survived - judged by what is still there, not by the "
+              "error string, which a handler that refused and cleared anyway would also produce",
+              M.raw_post("blueprint_breakpoint", {"op": "list", "graphId": graph}).get("count") == 2,
+              "the refusal came back but the breakpoints were cleared anyway")
+
         clr = M.raw_post("blueprint_breakpoint", {"op": "clear", "graphId": graph})
         check("T8401 clear succeeds and reports how many it removed",
               clr.get("ok") is True and clr.get("removed") == 2, json.dumps(clr)[:220])
