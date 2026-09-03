@@ -1414,8 +1414,8 @@ engine has no such class registered in this build, which is as definitive as it 
       (which is what a shipped mod actually contains), `run_console_captured` scrapes real per-emitter
       particle counts from `fx.Niagara.DumpComponents`, and spawning/binding a NiagaraComponent works
       today. No Niagara-named endpoint and no module dependency, and it still works.
-- [x] **Niagara User parameters** — DECLINED, THEN BUILT ANYWAY. The decline below stood for
-      six days and was superseded by 4518b63 (2026-08-28) without this heading changing, which is
+- [x] **Niagara User parameters** — DECLINED, THEN BUILT ANYWAY. The decline below was
+      superseded by 4518b63 on 2026-08-30 and this heading still read DECLINED four days later, which is
       the same failure the docs/06 sweep found twelve times: every layer that records a decision
       gets updated except the one people read. `list_niagara_user_parameters` and
       `set_niagara_user_parameter` are both MIF_DECL'd and both have suites
