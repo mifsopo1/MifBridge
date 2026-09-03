@@ -242,6 +242,49 @@ def scan_utils(only_class=None):
     return rows
 
 
+HERE_DIR = os.path.dirname(os.path.abspath(__file__))
+USERTYPES = os.path.join(HERE_DIR, "..", "Source", "MifBridge", "Private",
+                         "MifBridgeUserTypes.cpp")
+
+# CLASSES THAT ARE NOT ASSETS AND CANNOT BE ASKED FOR, so their absence from the warning list is
+# correct rather than a gap. Every entry was checked, not assumed:
+#   the three Niagara *ConversionContext types are transient objects the importer builds and throws
+#   away; WorldThumbnailInfo is a sub-object of a World; MaterialExpression is UCLASS(abstract) and
+#   create_asset refuses CLASS_Abstract before it ever reaches the warning; UBlueprint is refused
+#   outright a few lines further down; and the two *FactoryNew names are FACTORY classes rather than
+#   the assets they produce.
+NOT_AN_ASSET = {
+    "UNiagaraScriptConversionContext", "UNiagaraScriptConversionContextInput",
+    "UNiagaraSystemConversionContext", "UWorldThumbnailInfo", "UMaterialExpression",
+    "UBlueprint", "UMaterialFactoryNew", "UMaterialInstanceConstantFactoryNew",
+}
+
+
+def warning_list_drift(found_classes, handled):
+    """Classes this scan finds that create_asset's hardcoded FactoryInitClasses does NOT name.
+
+    WHY THIS IS THE PART WORTH AUTOMATING. create_asset carries a hand-written list of 32 class
+    names and emits factoryInitIncomplete for anything matching it. This tool derives the same
+    population from ENGINE SOURCE. Nothing compared them, so an engine upgrade that adds a
+    post-construct factory would leave create_asset minting that type silently - the exact gap the
+    warning exists to close, reopened by a version bump rather than by an edit anyone would review.
+
+    Checked on 2026-09-03 and the answer was zero real drift, which is only worth knowing because
+    it is now recomputed rather than remembered.
+    """
+    try:
+        text = io.open(USERTYPES, encoding="utf-8", errors="replace").read()
+    except Exception as exc:                       # noqa: BLE001
+        return None, "could not read MifBridgeUserTypes.cpp: %s" % exc
+    m = re.search(r'FactoryInitClasses\[\]\s*=\s*\{(.*?)\};', text, re.S)
+    if not m:
+        return None, "FactoryInitClasses[] not found - create_asset may have been restructured"
+    named = {"U" + n for n in re.findall(r'TEXT\("(\w+)"\)', m.group(1))}
+    drift = sorted(c for c in found_classes
+                   if c not in named and c not in handled and c not in NOT_AN_ASSET)
+    return drift, None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--class", dest="only", default=None,
@@ -282,6 +325,24 @@ def main():
     print("\n" + "=" * 78)
     print("%d factory/factories do post-construct work; %d of those classes are NOT handled by "
           "create_asset." % (len(rows), unhandled))
+
+    # DOES create_asset's HAND-WRITTEN WARNING LIST STILL COVER WHAT THIS FINDS?
+    drift, err = warning_list_drift({r[0] for r in rows}, handled)
+    if err:
+        # A checker that cannot run must not print a clean result.
+        print("\nWARNING-LIST DRIFT: NOT CHECKED - %s" % err)
+    elif drift:
+        print("\n%d class(es) this scan finds that create_asset's FactoryInitClasses does NOT name,"
+              % len(drift))
+        print("so it would be created with no factoryInitIncomplete warning at all:")
+        for c in drift:
+            print("   %s" % c)
+        print("Add it to FactoryInitClasses in MifBridgeUserTypes.cpp, or to NOT_AN_ASSET here with")
+        print("the reason it can never be asked for.")
+    else:
+        print("\nthe warning list still covers every class this finds - checked against")
+        print("FactoryInitClasses in MifBridgeUserTypes.cpp rather than assumed. An engine upgrade")
+        print("that adds a post-construct factory shows up HERE, not as a silently unwarned asset.")
     print()
     print("This is a HEURISTIC and these are CANDIDATES, not defects. A call here may be cosmetic")
     print("or may be the difference between an asset and a crash - only reading the factory says")
