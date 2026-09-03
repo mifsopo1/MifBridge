@@ -12,6 +12,12 @@ endpoint in every release since 0.3.0. Measured, and still wrong by one: being g
 number from going stale, not from a bug in the generator. The same off-by-one turned up the same day
 in `audit_param_guards`, which reported a phantom endpoint named `Name` for exactly this reason.
 
+`make_release.py` was never affected and needs no change — its counter matches on `[a-z_0-9]+`, and
+the macro's parameter is `Name` with a capital, so it could not match. That is why the README badge
+read 440 for 0.8.1 while this table read 441. Said here so the paragraph above does not send anyone
+hunting a generator bug that is not there: the badge is generated and was right, this table was
+measured by hand and was not.
+
 | version | date | UE endpoints | Blender ops |
 |---|---|---|---|
 | [Unreleased](#unreleased) | — | 453 | 68 |
