@@ -197,6 +197,43 @@ def main():
         check("P102 the Blender frame could not be read, so this arm proved NOTHING", False,
               "sent=%d frame=%r" % (len(sent), frame))
 
+    # ---------------------------------------------------------------- P103 the harness strip
+    print("")
+    print("=== P103: guarded_payload strips an authorising flag under EVERY spelling ===")
+    # THE OTHER PAYLOAD CONTRACT, and the one with teeth. _post decides what a WRAPPER sends;
+    # guarded_payload decides what a SUITE is allowed to send, and it is the only thing standing
+    # between an audit sweep and a confirm-gated destructive endpoint.
+    #
+    # FORBIDDEN_KEYS lists SPELLINGS, so a handler accepting an alias for the same flag is unguarded
+    # under the alias. Two were found that way on 2026-09-03: allowEditConst is a full alias for
+    # `force` in reset_property_to_default, and replaceRoot is a full alias for `confirm` in
+    # move_tree_widget, where it authorises replacing a root widget.
+    import mifaudit as MA
+    g = MA.guarded_payload
+    check("P103 a truthy confirm is stripped", "confirm" not in g({"confirm": True, "p": 1}),
+          sorted(g({"confirm": True, "p": 1})))
+    check("P103 a truthy force is stripped", "force" not in g({"force": True, "p": 1}),
+          sorted(g({"force": True, "p": 1})))
+    check("P103 allowEditConst is stripped - the alias for force",
+          "allowEditConst" not in g({"allowEditConst": True, "p": 1}),
+          sorted(g({"allowEditConst": True, "p": 1})))
+    check("P103 replaceRoot is stripped - the alias for confirm",
+          "replaceRoot" not in g({"replaceRoot": True, "p": 1}),
+          sorted(g({"replaceRoot": True, "p": 1})))
+    check("P103 the match is CASE-INSENSITIVE, since a caller picks the spelling",
+          "ALLOWEDITCONST" not in g({"ALLOWEDITCONST": True, "p": 1}),
+          sorted(g({"ALLOWEDITCONST": True, "p": 1})))
+    check("P103 the ordinary key beside it survives", g({"confirm": True, "p": 1}).get("p") == 1,
+          g({"confirm": True, "p": 1}))
+    # AND THE HALF THAT IS NOT A STRIP. An explicit false is a REFUSAL to authorise and has to reach
+    # the handler - override_inherited_component refuses outright on confirm:false where a stripped
+    # one succeeds, so flattening the two would change what the endpoint does.
+    check("P103 an explicit FALSE reaches the handler for an aliased flag",
+          g({"allowEditConst": False}).get("allowEditConst") is False, g({"allowEditConst": False}))
+    check("P103 and confirm:false is still stripped - it is excluded from AUTHORISING_ONLY on "
+          "purpose, so this must NOT follow the aliases",
+          g({"confirm": False}) == {}, g({"confirm": False}))
+
     print("")
     print("=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

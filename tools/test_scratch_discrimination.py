@@ -117,6 +117,32 @@ def main():
     check("S104 pick_adoptable([]) is None", M.pick_adoptable([]) is None)
     check("S104 pick_adoptable(None) is None", M.pick_adoptable(None) is None)
 
+    # ------------------------------------------------------------------ S105 the find_assets shape
+    print("\n=== S105: a find_assets ROW, which names its path differently ===")
+    # THE FIELD THAT WAS MISSING UNTIL 2026-09-03. is_scratch_fixture read actorPath/objectPath/path
+    # - the shape list_level_actors returns - and find_assets rows carry the package path under
+    # `packageName`. So every caller handing a find_assets row straight in got False for a scratch
+    # asset: the FALSE NEGATIVE direction, which the function's own docstring calls the actual bug.
+    # audit_fixture_adoption's IDENT pattern had the identical omission, for the identical reason -
+    # both field lists were written from list_level_actors' shape and never revisited.
+    check("S105 a scratch packageName is scratch",
+          M.is_scratch_fixture({"packageName": "/Game/_MifProbe/SM_x"}) is True,
+          "/Game/_MifProbe/SM_x")
+    check("S105 an ordinary packageName is not",
+          M.is_scratch_fixture({"packageName": "/Game/Meshes/SM_Rock"}) is False,
+          "/Game/Meshes/SM_Rock")
+    # ORDER MATTERS AND IS ASSERTED. packageName is read LAST, after path/objectPath/actorPath, so a
+    # row carrying both must be judged on the primary field rather than the fallback.
+    check("S105 an explicit path still wins over packageName",
+          M.is_scratch_fixture({"path": "/Game/_MifProbe/A", "packageName": "/Game/Real/B"}) is True,
+          "path scratch, packageName real")
+    check("S105 pick_adoptable skips a scratch row that only has packageName",
+          (M.pick_adoptable([{"packageName": "/Game/_MifProbe/A"},
+                             {"packageName": "/Game/Real/B"}]) or {}).get("packageName")
+          == "/Game/Real/B",
+          M.pick_adoptable([{"packageName": "/Game/_MifProbe/A"},
+                            {"packageName": "/Game/Real/B"}]))
+
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
     for name, detail in FAIL:
