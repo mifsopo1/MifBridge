@@ -852,7 +852,7 @@ def remove_node(node_guid: str, confirm: bool = False, graph_id: str = None) -> 
 
 @mcp.tool()
 def blueprint_watch(op: str, graph_id: str = "", blueprint_id: str = "",
-                    node_guid: str = "", pin: str = "") -> dict:
+                    node_guid: str = None, pin: str = None) -> dict:
     """Watch a Blueprint pin and read its live value, without editing the asset.
 
     op: add | remove | list | clear | read. add/remove/read need node_guid, pin (the pin NAME) and
@@ -872,7 +872,7 @@ def blueprint_watch(op: str, graph_id: str = "", blueprint_id: str = "",
 
 @mcp.tool()
 def blueprint_breakpoint(op: str, graph_id: str = "", blueprint_id: str = "",
-                         node_guid: str = "") -> dict:
+                         node_guid: str = None) -> dict:
     """Set, clear and list Blueprint breakpoints without editing the asset.
 
     op: add | remove | enable | disable | list | clear. add/remove/enable/disable need node_guid and
@@ -1977,11 +1977,21 @@ def check_overlaps(actor_path: str = "", name_contains: str = "", ignore_ground:
 
 @mcp.tool()
 def trace(start: dict, end: dict = None, direction: dict = None, distance: float = 10000.0,
-          shape: str = "line", radius: float = 50.0, half_extent: dict = None,
-          half_height: float = 100.0, channel: str = "worldStatic", trace_complex: bool = True,
+          shape: str = "line", radius: float = None, half_extent: dict = None,
+          half_height: float = None, channel: str = "worldStatic", trace_complex: bool = True,
           multi: bool = False, ignore_actors: list = None, draw: bool = False,
-          draw_duration: float = 5.0) -> dict:
-    "Trace a ray or sweep a shape through the world."
+          draw_duration: float = None) -> dict:
+    """Trace a ray or sweep a shape through the world.
+
+    radius (sphere/capsule), half_extent (box) and half_height (capsule) are SHAPE-SPECIFIC and the
+    endpoint refuses one that the chosen shape would ignore - `shape` defaults to "line", so setting
+    a radius and forgetting the shape used to fire a ray and silently drop the radius. Same for
+    draw_duration without draw.
+
+    THEIR DEFAULTS ARE None ON PURPOSE. _post drops None and sends everything else, so a numeric
+    default here is sent on EVERY call - which meant a plain trace(start, end) posted radius:50.0
+    alongside shape:"line" and was refused by that guard. The handler carries the real defaults
+    (radius 50, halfHeight 100, drawDuration 5); this signature must not carry them too."""
     return _post("trace", start=start, end=end, direction=direction, distance=distance,
                  shape=shape, radius=radius, halfExtent=half_extent, halfHeight=half_height,
                  channel=channel, traceComplex=trace_complex, multi=multi,
@@ -2020,9 +2030,17 @@ def get_perf_stats() -> dict:
 
 @mcp.tool()
 def draw_debug(shape: str = "point", start: dict = None, end: dict = None, center: dict = None,
-               radius: float = 100.0, extent: dict = None, text: str = "",
-               color: str = "green", duration: float = 5.0, thickness: float = 2.0) -> dict:
-    "Draw a debug shape in the viewport: line, sphere, box, point, arrow or string."
+               radius: float = None, extent: dict = None, text: str = None,
+               color: str = "green", duration: float = None, thickness: float = None) -> dict:
+    """Draw a debug shape in the viewport: line, sphere, box, point, arrow or string.
+
+    The geometry arguments are per-shape and the endpoint refuses one the chosen shape would
+    ignore: start/end for line and arrow, center for sphere/box/point/string, radius for sphere,
+    extent for box, text for string.
+
+    radius/text/duration/thickness default to None here rather than to a value, because _post sends
+    anything that is not None - so a plain draw_debug(center=...) posted radius:100.0 with the
+    default shape "point" and was refused. The handler holds the real defaults."""
     return _post("draw_debug", shape=shape, start=start, end=end, center=center, radius=radius,
                  extent=extent, text=text, color=color, duration=duration, thickness=thickness)
 
@@ -3821,7 +3839,7 @@ def set_layer_visibility(visible: bool, layer: str = "", layers: list = None) ->
 
 
 @mcp.tool()
-def list_sublevels(world: str = "editor", net_mode: str = "server") -> dict:
+def list_sublevels(world: str = "editor", net_mode: str = None) -> dict:
     "List the sublevels of a world: persistent{}, sublevels[{packagePath, objectPath, streamingClass, loaded, visible, editorVisible, pending, ...}], count/loadedCount/visibleCount/pendingCount, currentLevel, isPartitioned, ready, and ops[]"
     return _post("list_sublevels", world=world, netMode=net_mode)
 
