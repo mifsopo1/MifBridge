@@ -5020,6 +5020,12 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_evaluate_at_frame(object: str, frames: list, data_paths: list = None) -> dict:
+    "What a Blender object ACTUALLY is at given frames, read through the evaluated depsgraph. Every other read in this addon reads the RAW property off the datablock, which is not what the scene evaluates to whenever a constraint, driver, NLA stack, parent or simulation cache is involved - a constraint does not touch obj.matrix_world at all, so reading the base object reports every constraint as having done nothing. This is the substrate for verifying anything procedural: reading back the value you wrote is a proxy that cannot fail. Pass a LIST of frames; data_paths adds extra properties sampled at each one. The scene frame is restored and the restoration is ASSERTED, because leaving somebody's scene on frame 47 as a side effect of a READ is exactly the quiet damage this bridge refuses. movedAcrossFrames answers the question behind most uses - a list of identical matrices is what a dead driver, a muted NLA track and a bake that lost its motion all look like. Call mif_help(\"bl_evaluate_at_frame\") first."
+    return _blender("evaluate_at_frame", object=object, frames=frames, dataPaths=data_paths)
+
+
+@mcp.tool()
 def bl_set_object_visibility(object: str, hide_viewport: bool = None, hide_render: bool = None,
                              visible_camera: bool = None, visible_diffuse: bool = None,
                              visible_glossy: bool = None, visible_transmission: bool = None,

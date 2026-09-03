@@ -514,10 +514,113 @@ def op_delete_keyframe(params):
     }
 
 
+def op_evaluate_at_frame(params):
+    """What an object ACTUALLY is at given frames, through the depsgraph.
+
+    THE VERIFICATION SUBSTRATE, and the reason it comes before the rest of the animation work.
+    Every read in this addon reads the RAW property off the datablock, and that is not the value
+    the scene evaluates to whenever a constraint, driver, NLA stack, parent or simulation cache is
+    involved. A constraint does not touch obj.matrix_world at all: reading the base object reports
+    every constraint as having done nothing, and reading back the value you just wrote is a proxy
+    that cannot fail. Anything built on top of drivers or constraints cannot be proven without
+    this.
+
+    params:
+      object (str, required)
+      frames (list[int], required)  the frames to sample. A single int is accepted.
+      dataPaths (list[str])         extra properties to read at each frame, evaluated. The world
+                                    matrix is always reported.
+
+    THE SCENE FRAME IS RESTORED and the restoration is ASSERTED, not assumed - this op moves
+    frame_current to sample, and leaving somebody's scene on frame 47 because a read had a side
+    effect is exactly the kind of quiet damage this codebase refuses.
+    """
+    reject_unknown(params, {"object", "name", "frames", "frame", "dataPaths", "paths"},
+                   "evaluate_at_frame")
+    obj = get_object(take(params, "object", "name", required=True))
+
+    raw_frames = params.get("frames", params.get("frame"))
+    if raw_frames is None:
+        raise MifOpError("'frames' is required - which frames to sample. NOTHING was read.")
+    if isinstance(raw_frames, (int, float)):
+        raw_frames = [raw_frames]
+    if not isinstance(raw_frames, (list, tuple)) or not raw_frames:
+        raise MifOpError("'frames' must be a non-empty list of frame numbers, got %r. NOTHING was "
+                         "read." % (raw_frames,))
+    try:
+        frames = [int(f) for f in raw_frames]
+    except (TypeError, ValueError) as exc:
+        raise MifOpError("every entry in 'frames' must be a number: %s. NOTHING was read." % exc)
+
+    paths = take(params, "dataPaths", "paths", default=None)
+    if paths is not None and not isinstance(paths, (list, tuple)):
+        raise MifOpError("'dataPaths' must be a list of property paths. NOTHING was read.")
+    paths = [str(p) for p in (paths or [])]
+
+    sc = bpy.context.scene
+    started_on = sc.frame_current
+    samples = []
+    try:
+        for f in frames:
+            sc.frame_set(f)
+            # RE-FETCHED EVERY FRAME. The evaluated object is a temporary owned by the depsgraph
+            # and is invalidated by the frame change; holding one across frames reads stale data
+            # that looks perfectly plausible.
+            dg = bpy.context.evaluated_depsgraph_get()
+            ev = obj.evaluated_get(dg)
+            mw = ev.matrix_world
+            row = {
+                "frame": f,
+                "location": rnd(list(mw.to_translation())),
+                "rotationEuler": rnd(list(mw.to_euler())),
+                "scale": rnd(list(mw.to_scale())),
+            }
+            if paths:
+                values = {}
+                for p in paths:
+                    try:
+                        v = ev.path_resolve(p)
+                    except (ValueError, AttributeError, TypeError) as exc:
+                        values[p] = {"error": str(exc)[:120]}
+                        continue
+                    try:
+                        values[p] = rnd(list(v))
+                    except TypeError:
+                        values[p] = round(float(v), 6) if isinstance(v, (int, float)) else str(v)
+                row["values"] = values
+            samples.append(row)
+    finally:
+        sc.frame_set(started_on)
+
+    restored = sc.frame_current
+    if restored != started_on:
+        raise MifOpError("sampled the frames but the scene was left on frame %d instead of %d. Do "
+                         "not trust the scene state - set the frame yourself."
+                         % (restored, started_on))
+
+    # DID ANYTHING ACTUALLY MOVE. A caller verifying a constraint, a driver or a bake needs to know
+    # the samples DIFFER, and a list of identical matrices is the normal failure - it is what a
+    # dead driver, a muted NLA track or a bake that lost its motion all look like.
+    locs = [tuple(s["location"]) for s in samples]
+    rots = [tuple(s["rotationEuler"]) for s in samples]
+    return {
+        "object": obj.name,
+        "frames": frames,
+        "samples": samples,
+        "frameRestored": restored == started_on,
+        "startedOnFrame": started_on,
+        "movedAcrossFrames": len(set(locs)) > 1 or len(set(rots)) > 1,
+        "evaluatedNote": ("Read through evaluated_get(depsgraph), so constraints, drivers, NLA, "
+                          "parents and simulation caches are all applied. obj.matrix_world on the "
+                          "base object shows none of them."),
+    }
+
+
 OPS = {
     "set_keyframe": op_set_keyframe,
     "set_frame_range": op_set_frame_range,
     "list_keyframes": op_list_keyframes,
     "list_animation_data": op_list_animation_data,
     "delete_keyframe": op_delete_keyframe,
+    "evaluate_at_frame": op_evaluate_at_frame,
 }
