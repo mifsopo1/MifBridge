@@ -1414,8 +1414,26 @@ engine has no such class registered in this build, which is as definitive as it 
       (which is what a shipped mod actually contains), `run_console_captured` scrapes real per-emitter
       particle counts from `fx.Niagara.DumpComponents`, and spawning/binding a NiagaraComponent works
       today. No Niagara-named endpoint and no module dependency, and it still works.
-- [~] **Niagara User parameters** — declined, and the investigation was worth more than the endpoint
-      would have been.
+- [x] **Niagara User parameters** — DECLINED, THEN BUILT ANYWAY. The decline below stood for
+      six days and was superseded by 4518b63 (2026-08-28) without this heading changing, which is
+      the same failure the docs/06 sweep found twelve times: every layer that records a decision
+      gets updated except the one people read. `list_niagara_user_parameters` and
+      `set_niagara_user_parameter` are both MIF_DECL'd and both have suites
+      (test_niagara_user_params.py, test_niagara_set_user_param.py).
+
+      THE DECLINE'S REASONING IS KEPT BELOW because it is still true about the ROUTE, and it is
+      why the endpoint that exists is shaped the way it is: reading was always possible through
+      get_property, the write side was NOT cheap, and probing it crashed the editor. What
+      changed is that the crash was understood and guarded first - see the cooked-duplication
+      item immediately below, which came out of this same investigation.
+
+      WHAT IT STILL CANNOT DO, so the tick is not read as more than it is: set_niagara_user_
+      parameter REFUSES a cooked system, because the parameter store is runtime data that
+      cannot be saved or recompiled. On DDS2 - entirely cooked Niagara - the write path is
+      therefore unexercised, and test_niagara_user_params exits 2 SKIPPED saying so rather than
+      passing vacuously. It needs an UNCOOKED project with authored user parameters.
+
+      The original decline, verbatim:
       READING already works: `get_property` on a system's `ExposedParameters` returns the user
       parameters with names and types (`User.Color`, `User.FoamOpacity`, `User.FoamWidthLeft` on
       BoatFoamTrail). It is an awkward shape — a redirect map keyed by
