@@ -153,6 +153,17 @@ EXPECTED = {
         "verify. The cost is accepted and written down at the call site: a handler could claim in a "
         "comment to verify and not do it. Mutation is the claim worth doubting, because a false "
         "mutation flag sends a reader to a handler with nothing wrong with it.",
+    "audit_mode_params":
+        "same trade as audit_postconditions, and made deliberately on 2026-09-03. Its READING LIST "
+        "is computed from scrubbed code; its SUPPRESSIONS are a comment idiom, '// MODE-PARAMS-OK: "
+        "<reason>', so blanking comments brings nine handlers back. The alternative was a smarter "
+        "scan and it was tried first: 'the parameter literal appears somewhere other than the "
+        "accept-list and the accessors' cleared six handlers and three of them for reasons that had "
+        "nothing to do with refusals - a range-for alias read, a ReadVectorField helper, and an "
+        "Out->SetStringField writing the RESPONSE. Right answer, wrong reason. THE COST, stated "
+        "rather than discovered: a handler can carry the marker and refuse nothing, and this file "
+        "cannot tell. It is bounded by the reason being mandatory and the suppressed count being "
+        "printed on every run, including when it is zero.",
 }
 
 
