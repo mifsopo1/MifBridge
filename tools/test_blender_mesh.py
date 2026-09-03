@@ -79,9 +79,15 @@ def check(name, cond, detail=""):
 
 
 def first_mesh():
-    """The name of some MESH in the scene, or None."""
+    """The name of some MESH in the scene that is not another suite's fixture, or None."""
+    # SKIP ANOTHER SUITE'S FIXTURE. Blender objects have no /Game path, so the convention that
+    # identifies scratch here is the NAME: every suite prefixes its objects Mif (MifTestArmature,
+    # MifC_Merge, MifA_Fixture, MifRB_*). These suites share one Blender when run against a live
+    # instance, and adopting a neighbour's half-built object means asserting about their fixture.
     listing = call("list_objects")
     for o in (listing.get("objects") or []):
+        if str(o.get("name") or "").startswith("Mif"):
+            continue
         if str(o.get("type", "")).upper() == "MESH":
             return o.get("name")
     return None

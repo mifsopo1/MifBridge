@@ -42,11 +42,23 @@ def check(name, cond, detail=""):
         print("  FAIL  %s\n        %s" % (name, str(detail)[:400]))
 
 
-def find_armature():
+def find_armature(own=None):
+    # SKIP ANOTHER SUITE'S FIXTURE. Blender objects have no /Game path, so the convention that
+    # identifies scratch here is the NAME: every suite prefixes its objects Mif (MifTestArmature,
+    # MifC_Merge, MifA_Fixture, MifRB_*). These suites share one Blender when run against a live
+    # instance, and adopting a neighbour's half-built object means asserting about their fixture.
     r = call("list_objects", {"type": "ARMATURE"})
     for o in (r.get("objects") or []):
         name = o.get("name")
-        if name and (call("list_bones", {"object": name}).get("boneCount") or 0) >= 2:
+        if not name:
+            continue
+        # `own` is THIS suite's fixture, which is Mif-prefixed like everyone else's and must not be
+        # filtered out by the rule that skips everyone else's. Leaving that out made the suite skip
+        # itself: it built MifRenameFixture, then refused to find it, and reported "verified
+        # nothing" - which is worse than the adoption it was meant to prevent.
+        if name != own and name.startswith("Mif"):
+            continue
+        if (call("list_bones", {"object": name}).get("boneCount") or 0) >= 2:
             return name
     return None
 
@@ -91,7 +103,7 @@ def build_armature():
     r = call("run_python", {"code": ARMATURE_CODE})
     if r.get("ok") is False:
         return None
-    return find_armature()
+    return find_armature(own="MifRenameFixture")
 
 
 def main():

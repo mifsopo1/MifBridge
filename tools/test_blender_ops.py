@@ -126,9 +126,14 @@ def main():
         check("T700 built a scratch cube to work on", True)
     else:
         # Adopt an existing MESH. list_objects reports what is there; take the first mesh.
+        # SKIP ANOTHER SUITE'S FIXTURE. Blender objects have no /Game path, so the convention that
+        # identifies scratch here is the NAME - every suite prefixes its objects Mif. This one
+        # REWRITES the adopted object's material slots, so adopting a neighbour's fixture mutates
+        # it mid-run.
         listing = call("list_objects")
         meshes = [o for o in (listing.get("objects") or [])
-                  if str(o.get("type", "")).upper() == "MESH"]
+                  if str(o.get("type", "")).upper() == "MESH"
+                  and not str(o.get("name") or "").startswith("Mif")]
         if not meshes:
             print("")
             print("SKIPPED - nothing was verified.")
