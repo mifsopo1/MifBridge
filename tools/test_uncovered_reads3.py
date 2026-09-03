@@ -176,7 +176,10 @@ def main():
         check("T842 %s has real x/y/z" % key,
               all(isinstance(v.get(a), (int, float)) for a in ("x", "y", "z")), v)
 
-    actors = (M.call("list_level_actors", {"limit": 1}).get("actors") or [])
+    # SKIP SCRATCH: limit 1 into a level sixteen suites spawn into. T842 asserts actorCount == 1,
+    # and an actor deleted between the listing and the focus answers "no actor at" instead.
+    actors = [a for a in (M.call("list_level_actors", {"limit": 20}).get("actors") or [])
+              if not M.is_scratch_fixture(a)]
     if actors:
         r2 = M.call("focus_viewport", {"actorPath": actors[0].get("actorPath")})
         check("T842 framing one real actor answers", r2.get("ok") is True, json.dumps(r2)[:200])

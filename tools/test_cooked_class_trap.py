@@ -195,6 +195,7 @@ def main():
         plain = gen_cls.replace("GeneratedClass", "")
         gen_only = []
         for a in listed:
+            # ADOPTION-OK: only p's COUNT is read; the identifier comes from `listed`, not from p
             p = M.call("find_assets", {"class": plain, "nameContains": a.get("name", "")[:-2],
                                        "limit": 3})
             if (p.get("count") or 0) == 0:

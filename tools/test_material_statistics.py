@@ -153,8 +153,12 @@ def main():
 
     # ------------------------------------------------------------------ T7403 wrong asset types
     print("\n=== T7403: things that have no statistics are refused, not answered with zeros ===")
+    # SKIP SCRATCH - same reasoning as the wrong-class guards in test_ik_rig and test_list_bones.
+    # A scratch MaterialFunction is refused identically, but one deleted mid-run answers
+    # "no asset at" rather than "no shader map of its own", failing T7403 for the wrong cause.
     fn = [x["path"] for x in
-          (M.call("find_assets", {"class": "MaterialFunction", "limit": 1}).get("assets") or [])]
+          (M.call("find_assets", {"class": "MaterialFunction", "limit": 20}).get("assets") or [])
+          if not M.is_scratch_fixture(x)]
     if fn:
         f = M.raw_post("material_statistics", {"path": fn[0]})
         check("T7403 a MaterialFunction is refused", f.get("ok") is False, json.dumps(f)[:200])

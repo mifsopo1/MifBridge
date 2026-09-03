@@ -137,7 +137,12 @@ def main():
     # ------------------------------------------------------------------ T271 reads agree
     print("\n=== T271 [teeth]: a read must not report rows it did not read ===")
     src = None
+    # SKIP SCRATCH: the 3-rows gate below screens out a freshly created table, but not one
+    # test_factory_init populated - and T271 cross-checks a read against a table that has to stay
+    # still while it does so.
     for a in (M.call("find_assets", {"class": "DataTable", "limit": 200}).get("assets") or []):
+        if M.is_scratch_fixture(a):
+            continue
         r = M.call("read_datatable", {"path": a.get("path")})
         if r.get("ok") and len(r.get("rows") or []) >= 3:
             src = a.get("path")
@@ -187,7 +192,12 @@ def main():
         check("T271b %s names what to do" % label,
               any(w in err for w in ("required", "not found", "no asset", "no such", "expected")),
               (q.get("error") or "")[:120])
-    notatable = (M.call("find_assets", {"class": "Material", "limit": 1}).get("assets") or [{}])[0].get("path")
+    # SKIP SCRATCH - the same wrong-class guard as test_ik_rig, test_list_bones and
+    # test_niagara_params. A scratch Material is equally not a DataTable, but one deleted
+    # mid-run is refused for being missing rather than for its class.
+    notatable = (M.pick_adoptable(M.call("find_assets", {"class": "Material",
+                                                         "limit": 20}).get("assets"))
+                 or {}).get("path")
     q = M.call("read_datatable", {"path": notatable})
     check("T271b a non-DataTable asset is refused by class",
           q.get("ok") is False, (q.get("error") or "")[:150])

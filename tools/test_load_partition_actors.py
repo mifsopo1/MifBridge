@@ -184,6 +184,7 @@ def main():
 
         # ------------------------------------------------------------------ T2604 the read filter
         print("\n=== T2604: the READ half's bounds filter, and the actors matching ANY box ===")
+        # ADOPTION-OK: only flat's `matched` count is used, as the baseline the bounds query narrows
         flat = M.call("list_partition_actors", {"limit": 400})
         check("T2604 an unfiltered listing reports boundsFiltered:false",
               flat.get("boundsFiltered") is False, json.dumps(flat)[:200])

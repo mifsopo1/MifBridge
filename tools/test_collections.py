@@ -57,7 +57,11 @@ def main():
         return 1
 
     name = "MifTest%d" % (int(time.time()) % 100000)
-    assets = [a["path"] for a in (M.call("find_assets", {"limit": 4}).get("assets") or [])]
+    # SKIP SCRATCH: a collection is a list of PATHS, and this suite reads its membership back and
+    # asserts on it. Collecting four assets other suites are mid-way through creating and
+    # deleting means the read-back is against a set that changed underneath it.
+    assets = [a["path"] for a in (M.call("find_assets", {"limit": 20}).get("assets") or [])
+              if not M.is_scratch_fixture(a)][:4]
     check("(setup) some assets to collect", len(assets) >= 3, len(assets))
     if len(assets) < 3:
         return 1

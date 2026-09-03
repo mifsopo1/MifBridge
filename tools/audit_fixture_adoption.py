@@ -120,7 +120,11 @@ _ROW_ID = (r'(?:\.get\(\s*"(?:path|actorPath|objectPath|name|label)"\s*\)'
 # one line and compares it on the next; a newline-anchored pattern called that an adoption. Bounded
 # to 140 characters rather than the whole window so an unrelated == further down cannot clear a site.
 IDENTITY = re.compile(_ROW_ID + r'[^!<>=]{0,140}==|==[^\n]*' + _ROW_ID + r'|'
-                      + _ROW_ID + r'[^\n]{0,30}\.startswith\(\s*[A-Za-z_]')
+                      + _ROW_ID + r'[^\n]{0,30}\.startswith\(\s*[A-Za-z_]|'
+                      + _ROW_ID + r'\s+in\s+[A-Za-z_]')
+# The last arm is `target.get("label") in labels` - test_load_partition_actors asking whether the
+# actor whose bounds it used comes back inside the region. A membership test on a row identifier is
+# always asking whether one KNOWN thing is present; there is no choice of fixture in it.
 
 # AN IDENTITY LOOKUP WITH A FIRST-ROW FALLBACK IS STILL ADOPTION, and this is not hypothetical:
 # test_spline_landscape asks for its own landscape by actorPath and then, if that finds nothing,
