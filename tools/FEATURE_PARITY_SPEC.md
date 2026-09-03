@@ -11523,6 +11523,43 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Draft written 2026-09-03, not yet applied.
 
+- [ ] **two accepted summaries advertise a parameter the same handler refuses** (30 min + a rebuild)
+      Both are `TEXT()` literals inside `RejectUnknownParams`, which is the text `describe_endpoint`
+      publishes and `harvest_param_table` generates its table from - so the contract a caller reads
+      before writing the call disagrees with the guard that answers it. Both VERIFIED by reading the
+      handler on 2026-09-03, not inferred from the review that raised them.
+
+        start_pie   MifBridgePIE.cpp:209 publishes "oneProcess (default true), width, height
+                    (client window size, multiplayer only)". The "multiplayer only" qualifier
+                    attaches to width/height, so oneProcess reads as always available - and
+                    kMultiOnly[] at :286 is { oneProcess, width, height }, all three refused on a
+                    single-player session.
+        trace       MifBridgeSpatial.cpp:833 publishes "drawDuration (seconds, default 5)" with no
+                    condition, and :996 refuses drawDuration unless draw is true.
+
+      BOTH ARE THE SAME SHAPE AS THE BUG THEY DOCUMENT. MifBridgeStreaming.cpp:518 already names it
+      about a third handler: "the contract was written down and not enforced ... a summary is read by
+      whoever is writing the call, and ignored by whoever forgot the mode". These two are the
+      converse - enforced and not written down - and they mislead in the more expensive direction,
+      because the caller only finds out at runtime.
+
+      BLOCKED ON A REBUILD, not on effort. Changing a TEXT() literal changes the binary, the 5.3
+      build record then no longer covers the Source commit, and `make_release.py --gates` goes red
+      until MifBridge is rebuilt - which needs the editor closed, because it holds the plugin DLLs.
+      The editor has been open since 13:41 and is somebody else's. Fix and rebuild together, or the
+      tree is left with a red gate for no gain.
+
+      FOUR MORE C++ FINDINGS from the same review are NOT verified and are listed as a reading list
+      rather than as claims: MifBridgeExport.cpp:726 (ignoredOptions said to be contradicted by
+      mesh.lodExported and by three FBX-flag warnings not gated on bIsFbx), MifBridgeLandscape.cpp:981
+      (the 5.7 branch of register_landscape_layer said not to be behaviourally equivalent to the 5.3
+      branch it replaces - it also runs Modify() and PostEditChangeProperty and replaces by name
+      rather than appending), MifBridgeIntrospect.cpp:1413 (ignoredFlags gated on bIsLocal computed
+      from the untrimmed scope string while the variable was created using the trimming resolver's
+      bScopeLocal), and MifBridgeSafety.cpp:98 (two in-repo line citations stale by hundreds of
+      lines, which audit_citations cannot catch because it validates engine-source citations only).
+      Read them before acting; this file's own rule is that a reading list is not a defect count.
+
 - [ ] **two cross-endpoint EQUIVALENCE claims that no suite has ever compared** (half a day)
       THE OTHER TWELVE WERE READ 2026-09-03, which is what "paired" never meant. The tool says so
       itself - "a pair appearing in one suite proves only that both were CALLED there, never that

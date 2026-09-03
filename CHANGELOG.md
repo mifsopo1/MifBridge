@@ -128,7 +128,7 @@ declared — it is simply never read on the branch you reached. Found by reading
 | `blueprint_watch` | `nodeGuid`/`nodeId`/`pin` on `op:list` or `op:clear` | **`clear` removed EVERY watch on the blueprint**, not the one you named, and `removed: 7` read like confirmation |
 | `blueprint_breakpoint` | `nodeGuid`/`nodeId` on `op:list` or `op:clear` | same — every breakpoint gone. Both are editor-only state, so nothing undoes it |
 | `start_pie` | `oneProcess`/`width`/`height` on a single-player session | window opened at the editor's own size, values not even echoed back |
-| `list_sublevels` | `netMode` when `world` is not `"pie"` | defaulted to the **editor** world and answered about that instead |
+| `list_sublevels` | `netMode` when `world` resolves to `"editor"` — including the default, which is `"editor"` | defaulted to the **editor** world and answered about that instead |
 
 The two `clear` guards are the ones to check first if you drive this from a script: the fix is to
 use `op:remove`, which the refusal now names.
