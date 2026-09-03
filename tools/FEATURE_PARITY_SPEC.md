@@ -11267,6 +11267,31 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       fields, and the editor-closed batch.
 
 - [ ] **every adoption site has now been read - and not one of the fixes is verified** (the sweep)
+      TRIAGE ORDER FOR A RED SWEEP, built 2026-09-03 from the day's diff so a failure is attributable
+      rather than a bisect. 46 suites were touched, and they are not equally risky:
+
+        13 CHANGED AN ASSERTION - read these first. test_audit_fixes, test_blueprint_breakpoint,
+           test_blueprint_watch, test_landscape_layer_register, test_level_instances,
+           test_modal_hazards, test_pie_family, test_ported_anim, test_safety_gate, test_structs,
+           test_uncovered_reads2, test_uncovered_reads7, test_viewport_bookmarks. If one of these
+           goes red, the edit is the first suspect and the diff says exactly what moved.
+        26 CHANGED SETUP OR A FIXTURE - a scratch filter, a probe, a label. Second place to look.
+         5 ARE MECHANICAL - a guard or a comment, no assertion touched: test_cooked_class_trap,
+           test_geometryscript, test_load_partition_actors, test_niagara_set_user_param,
+           test_niagara_user_params. A red here is much more likely to be a real defect the guard
+           newly exposed than a mistake in the guard.
+         2 ARE ALREADY VERIFIED and need nothing from the sweep - test_payload_contract and
+           test_scratch_discrimination run with no backend at all and pass, 29/29 and 16/16.
+
+      TWO THAT WENT RED BEFORE and are the ones to watch: test_socket_authoring T3104 and
+      test_landscape_heightmap T8002. Both now PRINT the observation on failure rather than an
+      interpretation - T3104 dumps delete_asset's blockedBy object graph (read memoryReferencers,
+      not registryReferencers), T8002 names the terrain it measured.
+
+      AND THE SECOND PASS IS THE POINT for the adoption work specifically. Those suites pass alone
+      and fail on pass 2 - not appearing in a single run is the defining property of the class, so
+      `--once` proves nothing about them. Run the cheap half first anyway, because it covers every
+      handler guard in minutes and a failure there is cheaper to find.
       RUN THE CHEAP HALF FIRST. Two different kinds of change are waiting and only ONE of them needs
       a two-pass sweep, which was not obvious and cost nothing to work out in advance:
 
