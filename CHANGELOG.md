@@ -57,6 +57,26 @@ this now", proven by then calling it.
 Also: the autonomous report loop went live and worked its first real report end to end, and now pings
 the reporter on Discord so they know to pull.
 
+### Fixed: `sculpt_landscape` flatten and smooth never worked through the MCP — v0.3.0 to v0.8.1
+
+If you drove terrain sculpting through the MCP server rather than posting to the bridge directly,
+**`mode: "flatten"` and `mode: "smooth"` have been refused since v0.3.0** — eight tagged releases.
+The default invocation, `sculpt_landscape(center, radius)` with nothing else supplied, was among
+them.
+
+The wrapper declared `mode="flatten"` and `amount=0.0`. `_post` sends anything that is not `None`,
+so every call carried `amount: 0.0`, and the endpoint refuses `amount` unless the mode is
+raise/lower. The **endpoint was right** — that refusal is deliberate and is the one the codebase
+cites as the model for the whole silent-ignore class. The wrapper defeated it by carrying a default
+the handler already had.
+
+`amount` now defaults to `None`. Omitting it on raise/lower is still refused, by the handler, with
+"needs a non-zero amount" — which is the correct answer to that call. Posting to the bridge directly
+was never affected.
+
+A check now covers the class: `tools/audit_mcp_default_sends.py` asks whether any MCP wrapper sends,
+by default, a key its endpoint refuses for being present. Eleven endpoints, plant-proven.
+
 ### Nine calls that used to succeed now REFUSE — read this before upgrading
 
 Every one of them was accepted, silently ignored, and answered `ok:true`. That is the shape the
