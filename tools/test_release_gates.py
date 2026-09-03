@@ -2,38 +2,45 @@
 
 WHY THIS EXISTS. make_release.py will not package when the README badge is stale, and (since
 2026-09-02) will not package when CHANGELOG.md's top row disagrees with the tree. Both are gates
-whose entire value is going red at the right moment, and neither had ever been proven to do so.
-
-The changelog gate exists because the badge gate's absence had a twin: the badge was checked and the
+whose entire value is going red at the right moment, and neither had ever been proven to do so. The
+changelog gate exists because the badge gate's absence had a twin - the badge was checked and the
 changelog was not, so the changelog's UE column sat one too high for six releases while the correct
-number lived two files away. A gate nobody tests is the same shape of gap one level up.
+number lived two files away. A gate nobody tests is that same gap one level up.
 
-NO BRIDGE AND NO EDITOR. These are pure file checks, so this runs anywhere, which is the point - a
-gate that can only be tested during a release is a gate that gets tested during a release.
+IT NEVER TOUCHES A TRACKED FILE, and the first version of this suite did.
 
-IT MUTATES TRACKED FILES and puts them back. Every plant is wrapped in try/finally, the originals are
-held in memory as bytes, and R100 asserts both files are byte-identical afterwards. If that check
-ever fails, `git checkout -- README.md CHANGELOG.md` is the recovery and nothing else was touched.
+That version planted into the real README.md and CHANGELOG.md and restored them in a finally. It
+worked, and it was still wrong: this file lives in tools/test_*.py, so run_all_suites picks it up,
+and a sweep killed mid-plant would leave one of those two files corrupted in the working tree. Two
+sweeps were killed during the session that wrote it. A finally does not survive the process being
+terminated.
+
+It now copies both files into a temp directory and points make_release's ROOT at the copy for the
+duration. The counters are unaffected - BIND_FILE and the addon path are module-level constants
+resolved at import - so the gates read REAL numbers against PLANTED documents, which is exactly the
+comparison under test.
+
+THESE ARE RELEASE-TIME GATES, NOT ALWAYS-TRUE INVARIANTS. The badge is regenerated when a release is
+packaged, so between releases it legitimately lags the tree. This asserts the gates ANSWER, and that
+they go red on a planted disagreement - never that today's tree happens to be green.
 
 Usage:  python tools/test_release_gates.py
 Exit:   0 passed   1 failed
 """
-import importlib
 import io
-import re
 import os
+import re
+import shutil
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 import make_release as R
 
 PASS, FAIL = [], []
-
-CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
-README = os.path.join(ROOT, "README.md")
 
 
 def check(name, cond, detail=""):
@@ -45,52 +52,43 @@ def check(name, cond, detail=""):
         print("  FAIL  %s\n        %s" % (name, str(detail)[:300]))
 
 
-def read(path):
-    return io.open(path, "rb").read()
+def plant(sandbox, fname, old, new):
+    """Rewrite a COPY inside the sandbox. The tracked file is never opened for writing."""
+    p = os.path.join(sandbox, fname)
+    text = io.open(p, encoding="utf-8").read()
+    assert old in text, "plant anchor %r not found in the %s copy" % (old, fname)
+    io.open(p, "w", encoding="utf-8").write(text.replace(old, new, 1))
 
 
-def write(path, data):
-    io.open(path, "wb").write(data)
-
-
-def planted(path, old, new):
-    """Replace `old` with `new` in a tracked file, returning the original bytes for restoration."""
-    orig = read(path)
-    text = orig.decode("utf-8")
-    assert old in text, "plant anchor not found in %s" % os.path.basename(path)
-    write(path, text.replace(old, new, 1).encode("utf-8"))
-    return orig
+def restore(sandbox, fname):
+    shutil.copy2(os.path.join(REPO, fname), os.path.join(sandbox, fname))
 
 
 def main():
-    before_ch, before_rm = read(CHANGELOG), read(README)
+    before = {f: io.open(os.path.join(REPO, f), "rb").read()
+              for f in ("README.md", "CHANGELOG.md")}
 
-    # ------------------------------------------------------------------ R101 the clean tree
-    #
-    # THESE ARE RELEASE-TIME GATES, NOT ALWAYS-TRUE INVARIANTS, and the first version of this suite
-    # got that wrong. The badge is regenerated when a release is packaged, so between releases it
-    # legitimately lags the tree - it read 440/525/168 against a tree at 453/538/178 while this was
-    # being written, which is correct behaviour and exactly what the gate is for: it fires at the
-    # moment somebody tries to package, not continuously.
-    #
-    # So this asserts the gate ANSWERS, not that the answer is yes. A gate that cannot go red is the
-    # bug; a gate that is red between releases is the design.
-    print("=== R101: both gates return a verdict on the tree as it stands ===")
-    okc, msgc = R.check_changelog()
-    check("R101 the changelog gate returns a verdict with a reason",
-          isinstance(okc, bool) and bool(msgc), (okc, msgc))
-    okb, msgb = R.check_badge()
-    check("R101 the badge gate returns a verdict with a reason",
-          isinstance(okb, bool) and bool(msgb), (okb, msgb))
-    print("       changelog: %s" % ("current" if okc else "stale (expected between releases)"))
-    print("       badge:     %s" % ("current" if okb else "stale (expected between releases)"))
-
-    # ------------------------------------------------------------------ R102 changelog goes red
-    print("\n=== R102: a wrong number in the changelog's top row is REFUSED ===")
-    top = R.endpoint_count()
-    orig = planted(CHANGELOG, "| %d | 68 |" % top, "| %d | 68 |" % (top + 7))
+    sandbox = tempfile.mkdtemp(prefix="mif_release_gate_")
+    for f in ("README.md", "CHANGELOG.md"):
+        shutil.copy2(os.path.join(REPO, f), os.path.join(sandbox, f))
+    real_root = R.ROOT
+    R.ROOT = sandbox
     try:
-        importlib.reload(R)
+        # -------------------------------------------------------------- R101
+        print("=== R101: both gates return a verdict on the tree as it stands ===")
+        okc, msgc = R.check_changelog()
+        check("R101 the changelog gate returns a verdict with a reason",
+              isinstance(okc, bool) and bool(msgc), (okc, msgc))
+        okb, msgb = R.check_badge()
+        check("R101 the badge gate returns a verdict with a reason",
+              isinstance(okb, bool) and bool(msgb), (okb, msgb))
+        print("       changelog: %s" % ("current" if okc else "stale (expected between releases)"))
+        print("       badge:     %s" % ("current" if okb else "stale (expected between releases)"))
+
+        # -------------------------------------------------------------- R102
+        print("\n=== R102: a wrong number in the changelog's top row is REFUSED ===")
+        top = R.endpoint_count()
+        plant(sandbox, "CHANGELOG.md", "| %d | 68 |" % top, "| %d | 68 |" % (top + 7))
         ok, msg = R.check_changelog()
         check("R102 a top row that disagrees with the tree is refused", ok is False, msg)
         check("R102 and the message gives both numbers, not just 'stale'",
@@ -98,39 +96,36 @@ def main():
         # THE WARNING THAT MATTERS: the obvious wrong fix is to 'correct' every historical row.
         check("R102 and it says historical rows must NOT be edited",
               "must NOT be edited" in msg, msg)
-    finally:
-        write(CHANGELOG, orig)
-        importlib.reload(R)
+        restore(sandbox, "CHANGELOG.md")
+        check("R102 and it passes again once the copy is restored",
+              R.check_changelog()[0] == okc, "verdict should match the pre-plant one")
 
-    # ------------------------------------------------------------------ R103 badge goes red
-    print("\n=== R103: a stale badge is REFUSED ===")
-    # Plant against what the badge ACTUALLY says, not against the generated count - between
-    # releases those differ, and asserting they match was the same mistake as R101's.
-    text = read(README).decode("utf-8")
-    m = re.search(r"\*\*(\d+) UE endpoints\*\*", text)
-    marker = "**%s UE endpoints**" % m.group(1) if m else None
-    if not marker:
-        check("R103 (setup) the badge carries a UE endpoint figure", False, "no match in README")
-    else:
-        orig = planted(README, marker, "**1 UE endpoints**")
-        try:
-            importlib.reload(R)
+        # -------------------------------------------------------------- R103
+        print("\n=== R103: a stale badge is REFUSED ===")
+        # Planted against what the badge ACTUALLY says, not the generated count - between releases
+        # those differ, and comparing them was a bug in this suite's first version.
+        text = io.open(os.path.join(sandbox, "README.md"), encoding="utf-8").read()
+        m = re.search(r"\*\*(\d+) UE endpoints\*\*", text)
+        check("R103 (setup) the badge carries a UE endpoint figure", bool(m), "no match in README")
+        if m:
+            plant(sandbox, "README.md", m.group(0), "**1 UE endpoints**")
             ok, msg = R.check_badge()
             check("R103 a stale badge is refused", ok is False, msg)
-            check("R103 and it names --update-badge as the fix",
-                  "--update-badge" in msg, msg)
-        finally:
-            write(README, orig)
-            importlib.reload(R)
+            check("R103 and it names --update-badge as the fix", "--update-badge" in msg, msg)
+            restore(sandbox, "README.md")
+    finally:
+        R.ROOT = real_root
+        shutil.rmtree(sandbox, ignore_errors=True)
 
-    # ------------------------------------------------------------------ R100 the tree is back
+    # ------------------------------------------------------------------ R100
     print("")
-    # LAST, because it is about everything above. A suite that edits tracked files and does not
-    # prove it put them back is worse than one that never edited them.
-    check("R100 CHANGELOG.md is byte-identical to before this run",
-          read(CHANGELOG) == before_ch, "run: git checkout -- CHANGELOG.md")
-    check("R100 README.md is byte-identical to before this run",
-          read(README) == before_rm, "run: git checkout -- README.md")
+    # LAST, and it is about the whole run: this suite must be incapable of changing the repository.
+    after = {f: io.open(os.path.join(REPO, f), "rb").read()
+             for f in ("README.md", "CHANGELOG.md")}
+    check("R100 README.md is byte-identical - the tracked file was never written",
+          after["README.md"] == before["README.md"], "the sandbox leaked")
+    check("R100 CHANGELOG.md is byte-identical - the tracked file was never written",
+          after["CHANGELOG.md"] == before["CHANGELOG.md"], "the sandbox leaked")
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
