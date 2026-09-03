@@ -34,8 +34,12 @@ measured by hand and was not.
 
 ## Unreleased
 
-**Not tagged, not packaged.** 43 commits sit past `v0.8.1` and the UE 5.7 compile probe has not been
-re-run since the C++ in them changed, so `make_release.py` will refuse to package this until it is.
+**Not tagged, not packaged.** 153 commits sit past `v0.8.1`. The 5.7 probe no longer blocks
+packaging: both engine records were re-taken on 2026-09-03 and cover the current Source commit —
+5.3 built, 5.7 compile-probed and linked. `python tools/make_release.py --gates` answers that
+without starting a release, which is new, and exists because both records had gone stale unnoticed
+across nine Source commits while every one of them was being parse-checked against 5.7 with
+`cl /Zs` — which is not a link.
 
 Thirteen new endpoints — `set_node_state`; `group_actors` / `ungroup_actors`;
 `register_landscape_layer`; four viewport bookmark ops; `set_material_layers`; and four blend-profile
@@ -52,6 +56,35 @@ this now", proven by then calling it.
 
 Also: the autonomous report loop went live and worked its first real report end to end, and now pings
 the reporter on Discord so they know to pull.
+
+### Nine calls that used to succeed now REFUSE — read this before upgrading
+
+Every one of them was accepted, silently ignored, and answered `ok:true`. That is the shape the
+`invoke_editor_tab` bug had, and `RejectUnknownParams` cannot catch it because the parameter *is*
+declared — it is simply never read on the branch you reached. Found by reading
+`audit_mode_params`' review list, which exits 0 either way and had therefore never been read.
+
+| endpoint | what is refused now | what used to happen |
+|---|---|---|
+| `trace` | `radius` / `halfExtent` / `halfHeight` on a shape that does not read them; `drawDuration` without `draw` | **`shape` defaults to `line`**, so setting `radius` and forgetting `shape` fired a ray instead of a sweep and returned a line's much smaller hit set |
+| `draw_debug` | `start`/`end`/`center`/`radius`/`extent`/`text` on a shape that does not read them | drew a default-sized shape and threw the argument away under `drawn:true` |
+| `create_procedural_mesh` | any of 17 shape-specific parameters on the wrong shape | `{"shape":"box","radius":200}` returned a default 100³ box |
+| `blueprint_watch` | `nodeGuid`/`nodeId`/`pin` on `op:list` or `op:clear` | **`clear` removed EVERY watch on the blueprint**, not the one you named, and `removed: 7` read like confirmation |
+| `blueprint_breakpoint` | `nodeGuid`/`nodeId` on `op:list` or `op:clear` | same — every breakpoint gone. Both are editor-only state, so nothing undoes it |
+| `start_pie` | `oneProcess`/`width`/`height` on a single-player session | window opened at the editor's own size, values not even echoed back |
+| `list_sublevels` | `netMode` when `world` is not `"pie"` | defaulted to the **editor** world and answered about that instead |
+
+The two `clear` guards are the ones to check first if you drive this from a script: the fix is to
+use `op:remove`, which the refusal now names.
+
+Two more endpoints already warned rather than ignoring, and the warning did not say *what* it had
+dropped: `add_variable` named three of sixteen flags and an ellipsis, `export_asset` named none of
+its eight FBX-only options. Both now list exactly what was passed and carry it as an array —
+`ignoredFlags` and `ignoredOptions` — so a caller need not parse prose to react.
+
+Also fixed, and invisible from outside: `draw_debug`'s unknown-shape refusal sat inside the
+`center` branch, so `{"shape":"blob"}` answered *"shape 'blob' needs center"* — sending you off to
+supply a centre for a shape that does not exist.
 
 ---
 
