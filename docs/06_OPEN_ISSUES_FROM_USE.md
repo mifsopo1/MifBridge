@@ -42,7 +42,7 @@ waste is why the "FIXED — do not re-file" section below is kept rather than de
 ## Status
 
 > **This table is a SNAPSHOT, not the current state.** It was written against the
-> **2026-07-29 11:21 build (220 endpoints)**; the surface is now 434 own endpoints. Every row in it
+> **2026-07-29 11:21 build (220 endpoints)**; the surface was 453 own endpoints at 2026-09-02. Every row in it
 > was verified by a live call at the time, so nothing here is wrong about *then* - but a table headed
 > "Status" reads as a claim about NOW, and after a month it is not one.
 >
