@@ -500,6 +500,48 @@ def record_53_build(ok, detail=""):
     return rec
 
 
+def check_changelog():
+    r"""Does CHANGELOG.md's top row agree with the numbers this file generates?
+
+    WHY THIS EXISTS, and it is a different failure from the badge gate above.
+
+    The badge was WRONG because nothing regenerated it. The changelog table was wrong because it was
+    measured by hand with a slightly different regex - `MIF_DECL\((\w+)\)` unanchored, which also
+    matches `#define MIF_DECL(Name) ...` and counted the macro's own parameter as an endpoint. Every
+    UE column in it was one too high from 0.3.0 through 0.8.1, and the badge sat two lines away in
+    another file reading the correct number the whole time.
+
+    Nothing compared them, so they drifted in silence for six releases. That is the actual defect
+    here: not either number, but that two sources of the same fact had no relationship. This gate is
+    the relationship.
+
+    Checks the FIRST data row of the table only. Historical rows describe tags and must not be
+    rewritten to match today's tree - they were right about then.
+    """
+    path = os.path.join(ROOT, "CHANGELOG.md")
+    try:
+        text = io.open(path, encoding="utf-8", errors="replace").read()
+    except OSError:
+        return True, "no CHANGELOG.md to check"
+
+    rows = re.findall(r"^\|\s*\[([^\]]+)\]\([^)]*\)\s*\|[^|]*\|\s*(\d+)\s*\|\s*(\d+)\s*\|",
+                      text, re.M)
+    if not rows:
+        return True, "CHANGELOG.md has no version table to check"
+
+    name, ue, ops = rows[0]
+    ue, ops = int(ue), int(ops)
+    want_ue, want_ops = endpoint_count(), blender_op_count()
+    if ue == want_ue and ops == want_ops:
+        return True, "changelog top row (%s) agrees: %d endpoints, %d Blender ops" % (name, ue, ops)
+    return False, ("CHANGELOG.md's top row (%s) disagrees with the tree.\n"
+                   "  have: %d UE endpoints, %d Blender ops\n"
+                   "  want: %d UE endpoints, %d Blender ops\n"
+                   "  Historical rows are snapshots and must NOT be edited - they were right about\n"
+                   "  their own tag. Fix the top row, or add an Unreleased row with these figures."
+                   % (name, ue, ops, want_ue, want_ops))
+
+
 def gate_53():
     """(ok, message) - the 5.3 half of the same question gate_57 asks.
 
@@ -697,6 +739,18 @@ def main():
         if not args.force:
             return 1
         print("  --force given: packaging anyway, with a badge that is wrong.")
+
+    # The changelog is checked SEPARATELY from the badge because they fail differently: the badge
+    # goes stale because nothing rewrites it, the changelog goes wrong because somebody measured it
+    # by hand. Both end up as a confident number that is not true, and until now nothing compared
+    # the two - which is how they disagreed for six releases with the answer sitting in both files.
+    okc, msgc = check_changelog()
+    print("  %s" % msgc if okc else "")
+    if not okc:
+        print("REFUSING TO PACKAGE - %s" % msgc)
+        if not args.force:
+            return 1
+        print("  --force given: packaging anyway, with a changelog that is wrong.")
 
     if getattr(args, "record_53", False):
         rec = record_53_build(True, "recorded by --record-53 after a successful 5.3 build")
