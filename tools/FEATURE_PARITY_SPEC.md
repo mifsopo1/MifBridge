@@ -11769,3 +11769,50 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       other, and it needs a running PIE session, so it is attended-only and cannot go in an
       unattended sweep.
 
+- [ ] **handlers that MUTATE and then answer "NOTHING was changed"** (half a day + a rebuild)
+      A false claim of that exact sentence is the worst outcome available here, because every
+      refusal in this codebase is held to it and callers are told to trust it. Six sites named by a
+      multi-agent review 2026-09-03; ONE verified by hand so far, the rest are single-agent and
+      unread:
+
+        H_set_collision            VERIFIED. MifBridgeCollision.cpp calls
+                                   Prim->SetCollisionProfileName(...) and THEN validates
+                                   collisionEnabled, refusing an unrecognised value with "NOTHING
+                                   was changed" - after the profile has landed on the component.
+                                   The wrapper half of this was fixed the same day (it used to send
+                                   collisionEnabled by default); the handler still does it when a
+                                   caller passes both keys and gets the second one wrong.
+        H_set_sequence_keys        reported: Channel->Reset() and key writes happen before the
+                                   per-key type dispatch can fail. UNREAD.
+        H_set_material_parameter   reported: scalars and vectors applied before the textures and
+                                   switches loops can fail. UNREAD.
+        op_set_viewport_view       reported: writes focus into r3d.view_location before three
+                                   refusals that each claim nothing changed. UNREAD.
+        _vec3 (ops_lightcam)       reported: says "NOTHING was created" at five call sites that all
+                                   run AFTER the object exists and is linked. UNREAD.
+        op_add_particles           reported: resolves instanceObject after the particle system is
+                                   created, so a typo leaves an orphan. UNREAD.
+
+      READ THE FIVE BEFORE FIXING ANY. This project has had single detectors produce 23, 22 and 12
+      false findings in one run, and only two of the review's thirteen verifier agents survived a
+      session limit, so these are unconfirmed by design rather than by neglect.
+
+      THE C++ ONES NEED A REBUILD, which needs the editor closed, so they are blocked the same way
+      the accepted-summaries item is. The two Blender ones are not blocked.
+
+- [ ] **guarded_payload strips only the TOP level, and `batch` nests a whole payload** (2 hours)
+      VERIFIED 2026-09-03: `guarded_payload({"ops":[{"endpoint":"delete_asset","payload":{"path":
+      "/Game/Real/X","confirm":true}}]})` returns the confirm untouched, and `batch` is not in
+      mifaudit.DENY. So the audit harness's confirm-strip - the thing standing between a sweep and
+      a confirm-gated destructive endpoint - can be walked past by nesting.
+
+      Latent rather than live: a suite would have to construct that shape deliberately, and none
+      does today. But the bridge manual already calls batch the sharpest destructive case, because
+      it returns ok:false on the first failing op with EVERY PRIOR OP ALREADY COMMITTED, so a batch
+      is not a unit of work. A strip that stops at the top level is exactly the wrong shape for the
+      one endpoint that carries other endpoints as data.
+
+      Two candidate fixes, and the choice is a real decision rather than an obvious one: strip
+      recursively (correct, but guarded_payload is on every suite call path and recursion changes
+      its cost), or add batch to DENY (cheap, but removes a legitimate endpoint from every suite).
+      Read mifaudit.guarded_payload and decide with a measurement, not a preference.
