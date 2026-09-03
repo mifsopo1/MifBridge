@@ -1165,6 +1165,19 @@ namespace MifBridge
 		FString Kind;
 		FString TargetName;
 
+		// MODE-PARAMS-OK: path/functionName/name are ALTERNATIVE SELECTORS, read on the branch that uses them
+		//
+		// audit_mode_params reports them as read inside a branch and never named in a refusal, which
+		// is true and is not a defect. This endpoint takes its target by nodeGuid OR graphId OR
+		// blueprintId+function; the name spellings are read only on the third branch, which is
+		// reached precisely when the caller supplied neither of the first two. You pass one of the
+		// three and the handler reads the one you passed.
+		//
+		// That is structurally identical to a mode-ignored parameter and semantically the opposite,
+		// and it is the last row on that list - every other one was either fixed or cleared for a
+		// mechanical reason the tool could be taught. This one needs the judgement, so it is written
+		// down here rather than encoded.
+		//
 		// "nodeId" is accepted by ResolveNodeField too — the selector must know every spelling or a
 		// caller using it silently falls through to the function-graph branch.
 		const FString NodeGuid = JStrAny(In, { TEXT("nodeGuid"), TEXT("node"), TEXT("guid"), TEXT("nodeId") });

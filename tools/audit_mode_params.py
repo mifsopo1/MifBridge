@@ -132,9 +132,29 @@ TOP_LEVEL = 1
 #   * MifBridgeHandlers.h DECLARES the same signatures, and a declaration ends in `;` - brace
 #     matching from one runs into whatever function follows and attributes its reads to the wrong
 #     resolver. The body must be REQUIRED, not assumed.
+#   * `In` IS NOT ALWAYS THE FIRST ARGUMENT. MifBridgeNiagara2 calls `ResolveActor(Sub, In, Out)`,
+#     so anchoring to the first parameter missed it and set_niagara_component_parameter went on
+#     being listed for actorPath/actor that resolver reads.
 RESOLVER_DEF = re.compile(r'\b(\w*(?:Resolve|Wants)\w*)\s*\('
-                          r'\s*const\s+TSharedRef<FJsonObject>\s*&\s*In\b')
-RESOLVER_CALL = re.compile(r'\b(\w*(?:Resolve|Wants)\w*)\s*\(\s*In\s*,')
+                          r'(?:[^()]*?,)?\s*const\s+TSharedRef<FJsonObject>\s*&\s*In\b')
+RESOLVER_CALL = re.compile(r'\b(\w*(?:Resolve|Wants)\w*)\s*\((?:[^()]*?,)?\s*In\s*[,)]')
+
+# THE FIELD NAME IS SOMETIMES PASSED TO THE RESOLVER rather than baked into it:
+# `ResolveClassStrictField(In, { TEXT("widgetClass") }, nullptr, Out)`. The literal is at the CALL
+# SITE, so no amount of scanning the resolver's body will find it - preview_widget's widgetClass was
+# the last row standing on that account. A TEXT literal on a line that calls a resolver is being
+# handed to it, so it is read there.
+#
+# KNOWN IMPRECISION, small and in the safe direction: some resolvers take a CONTEXT label the same
+# way - `MifDetailsResolveWritableTarget(In, Out, TEXT("reset_property_to_default"))` - and that
+# label is treated as a field name too. It only matters if a label ever exactly equals a declared
+# parameter of the same handler, and the cost then is one row dropped from a review list.
+
+# A RANGE-FOR OVER ALIAS SPELLINGS is a read as well:
+#     for (const TCHAR* Key : { TEXT("skeletonPath"), TEXT("path") })
+#         if (In->TryGetStringField(Key, Path) && !Path.IsEmpty()) { break; }
+# The literals never touch a J* accessor, so nothing above sees them.
+RANGE_FOR_ALIAS = re.compile(r'for\s*\([^)]*:\s*\{([^}]*)\}\s*\)')
 
 
 def _body_after(text, sig_end):
@@ -274,11 +294,15 @@ def read_depth(body, param, resolvers=None):
         # The alias group's literals count as read HERE even when they sit on continuation lines.
         if param in aliases.get(i, ()):
             best = min(best, depth)
-        # A CALL TO A SHARED RESOLVER READS WHAT THAT RESOLVER READS, at this depth.
-        if resolvers:
-            for call in RESOLVER_CALL.finditer(line):
-                if param in resolvers.get(call.group(1), ()):
-                    best = min(best, depth)
+        # A CALL TO A SHARED RESOLVER READS WHAT THAT RESOLVER READS, at this depth - and any field
+        # name handed TO it on the same line, which is how ResolveClassStrictField is addressed.
+        for call in RESOLVER_CALL.finditer(line):
+            if pattern in line or param in (resolvers or {}).get(call.group(1), ()):
+                best = min(best, depth)
+        # A range-for over alias spellings, read one at a time inside the loop.
+        for rf in RANGE_FOR_ALIAS.finditer(line):
+            if param in PARAM.findall(rf.group(1)):
+                best = min(best, depth)
         opens = line.count("{")
         closes = line.count("}")
         bare = (stripped == "{"
