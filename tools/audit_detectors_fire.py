@@ -476,6 +476,15 @@ def plant_mode_param(text):
     The real defect this generalises: invoke_editor_tab declares `asset`, and UiResolveTabManager
     returns early for manager:"global" without ever reading it, so a caller who meant an
     asset-editor tab and forgot to set manager got a global operation under ok:true.
+
+    TWO ARMS, because until 2026-09-03 this planted only the first and the tool is NAMED for the
+    second. `probeOnly_zz` is declared and NEVER read anywhere (read_depth 99). `branchOnly_zz` is
+    read ONLY inside the mode branch (read_depth 2) - the invoke_editor_tab shape itself, and the
+    arm the branch-depth work of that same day rewrote. A plant that exercises the arm nobody
+    touched cannot notice when the arm somebody DID touch stops firing.
+
+    The MARKER is branchOnly_zz for that reason: it asserts the founding arm specifically. Both
+    probes are planted, so the tool's output names both and a reader sees the pair.
     """
     m = re.search(r"\n(\t*)void\s+H_[A-Za-z0-9_]+\s*\(\s*const\s+TSharedRef<FJsonObject>&\s*In",
                   text)
@@ -489,6 +498,18 @@ def plant_mode_param(text):
              + t + "\t\tTEXT(\"mode, probeOnly_zz\"))) { return; }\n"
              + t + "\tconst FString Mode = JStr(In, TEXT(\"mode\"));\n"
              + t + "\tif (Mode == TEXT(\"alpha\")) { return; }\n"
+             + t + "}\n"
+             + t + "void H_mif_probe_branch_zz(const TSharedRef<FJsonObject>& In, "
+                   "const TSharedRef<FJsonObject>& Out)\n"
+             + t + "{\n"
+             + t + "\tif (RejectUnknownParams(In, Out, { TEXT(\"mode\"), TEXT(\"branchOnly_zz\") },\n"
+             + t + "\t\tTEXT(\"mode, branchOnly_zz\"))) { return; }\n"
+             + t + "\tconst FString Mode = JStr(In, TEXT(\"mode\"));\n"
+             + t + "\tif (Mode == TEXT(\"alpha\"))\n"
+             + t + "\t{\n"
+             + t + "\t\tconst FString V = JStr(In, TEXT(\"branchOnly_zz\"));\n"
+             + t + "\t\tOut->SetStringField(TEXT(\"v\"), V);\n"
+             + t + "\t}\n"
              + t + "}\n")
     return text[:m.start() + 1] + probe + text[m.start() + 1:]
 
@@ -795,8 +816,12 @@ PLANTS = {
                                   "audit_blocking"),
     # gate=False: it is a review list and returns 0 whatever it finds, deliberately - deciding
     # whether a declared parameter is genuinely ignored on a branch needs a person.
+    # MARKER MOVED to branchOnly_zz 2026-09-03. probeOnly_zz proved the "declared and never read
+    # anywhere" arm, which nothing had changed; branchOnly_zz proves the arm this tool is named for
+    # - a parameter read ONLY inside a mode branch - which is the one the branch-depth rewrite of
+    # that day actually touched. Both probes are still planted; only the assertion moved.
     "audit_mode_params.py": (os.path.join(PRIV, "MifBridgeWorld.cpp"), plant_mode_param,
-                             "probeOnly_zz", False),
+                             "branchOnly_zz", False),
     # NOT "RULE 4" - that string is in the rules footer this tool prints on every red run, and the
     # already-red guard correctly refused to call that proof. The marker has to be text only a
     # FINDING can produce.
