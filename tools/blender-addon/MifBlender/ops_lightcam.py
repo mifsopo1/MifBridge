@@ -87,6 +87,43 @@ def _refuse_misplaced_light_keys(params, kind, verb):
                              % (label, " or ".join(wants), kind, ", ".join(present), verb))
 
 
+# THE SHADOW FLAG HAS MOVED BETWEEN VERSIONS, so it is looked up rather than assumed. Newest name
+# first, exactly as op_add_particles handles show_instancer_for_render - which is in this addon
+# because writing the old name raised AttributeError and took down a live build.
+_SHADOW_ATTRS = ("use_shadow", "use_shadow_jitter")
+
+
+def _shadow_attr(holder):
+    """The name this Blender uses for the light's shadow toggle, or None if it has none."""
+    for attr in _SHADOW_ATTRS:
+        if hasattr(holder, attr):
+            return attr
+    return None
+
+
+def _refuse_unsupported_shadow(params, verb):
+    """Refuse `shadow` up front on a Blender that has no such property, rather than ignoring it.
+
+    create_light used to accept the key and write it only `if hasattr(data, attr)`, so on a build
+    where the property had moved the caller asked for shadows off, got shadows on, and was told
+    nothing. A key this addon ACCEPTS and does not apply is the invoke_editor_tab shape, and the
+    house rule is that it is refused rather than silently reinterpreted.
+
+    Asked of the RNA CLASS, not an instance, so it can run before anything is created.
+    """
+    if "shadow" not in params:
+        return
+    # `in`, not hasattr: bl_rna.properties is a collection keyed by property name, so hasattr on it
+    # asks whether the COLLECTION has an attribute of that name, which is always False and would
+    # have made this guard fire on every Blender. Caught by writing it wrong first.
+    if any(a in bpy.types.Light.bl_rna.properties for a in _SHADOW_ATTRS):
+        return
+    raise MifOpError("this Blender's Light has no shadow toggle this op knows how to write (tried "
+                     "%s), so `shadow` would have been silently ignored. Control shadows through "
+                     "the render engine's own settings instead. NOTHING was %s."
+                     % (", ".join(_SHADOW_ATTRS), verb))
+
+
 def _light_readback(obj, data):
     """What the light IS, off the datablock. One reader for create, set and list.
 
@@ -116,10 +153,12 @@ def _light_readback(obj, data):
         out["shape"] = data.shape
     if data.type == "SUN":
         out["angle"] = round(float(data.angle), 6)
-    # use_shadow moved off Light in 4.x for EEVEE Next; reported when present rather than assumed,
-    # the same way op_add_particles handles show_instancer_for_render.
-    if hasattr(data, "use_shadow"):
-        out["shadow"] = bool(data.use_shadow)
+    # Reported when this Blender has the property at all, through the same lookup the writers use,
+    # so the read and the write can never disagree about which attribute the shadow flag lives on.
+    _sh = _shadow_attr(data)
+    if _sh is not None:
+        out["shadow"] = bool(getattr(data, _sh))
+        out["shadowAttr"] = _sh
     return out
 
 
@@ -173,6 +212,7 @@ def op_create_light(params):
     # addon a refusal means NOTHING was created, and this now matches.
     # Shared with set_light, which asks the same question about the type the light will BE.
     _refuse_misplaced_light_keys(params, kind, "created")
+    _refuse_unsupported_shadow(params, "created")
 
     snap = selection_snapshot()
     try:
@@ -226,10 +266,8 @@ def op_create_light(params):
             data.shadow_soft_size = take_float(params, "radius", default=0.1)
 
         if "shadow" in params:
-            val = take_bool(params, "shadow", default=True)
-            for attr in ("use_shadow",):
-                if hasattr(data, attr):
-                    setattr(data, attr, val)
+            # Refused up front on a Blender that has none, so this always lands.
+            setattr(data, _shadow_attr(data), take_bool(params, "shadow", default=True))
         df = take_float(params, "diffuseFactor", default=None)
         if df is not None:
             data.diffuse_factor = df
@@ -320,6 +358,7 @@ def op_set_light(params):
                              "NOTHING was changed." % (new_type, ", ".join(sorted(valid))))
     effective = new_type or data.type
     _refuse_misplaced_light_keys(params, effective, "changed")
+    _refuse_unsupported_shadow(params, "changed")
 
     col = params.get("color")
     if col is not None and (not isinstance(col, (list, tuple)) or len(col) < 3):
@@ -359,8 +398,8 @@ def op_set_light(params):
         data.angle = ang
     if "radius" in params:
         data.shadow_soft_size = take_float(params, "radius", default=0.1)
-    if "shadow" in params and hasattr(data, "use_shadow"):
-        data.use_shadow = take_bool(params, "shadow", default=True)
+    if "shadow" in params:
+        setattr(data, _shadow_attr(data), take_bool(params, "shadow", default=True))
     df = take_float(params, "diffuseFactor", default=None)
     if df is not None:
         data.diffuse_factor = df
