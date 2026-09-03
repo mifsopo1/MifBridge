@@ -214,6 +214,22 @@ def main():
     check("S104 with real bytes in it", (rr.get("fileBytes") or 0) > 500, rr.get("fileBytes"))
     check("S104 at the resolution asked for", rr.get("resolution") == [160, 90],
           rr.get("resolution"))
+    # FRESH, NOT MERELY PRESENT. Before 2026-09-03 the freshness test was satisfied by the
+    # candidate path's NAME - `cand != target` is true for target+ext - so a leftover render from a
+    # previous run reported wroteFile:true with its old byte count. staleFileFound is the other
+    # half of that answer and must be False when the render really wrote.
+    check("S104 and it is not a stale file from a previous run",
+          rr.get("staleFileFound") is False, json.dumps(rr)[:240])
+
+    # THE RE-RENDER, which is where a freshness check goes wrong in the OTHER direction. The file
+    # now exists and a second render of the same scene produces the same byte count, so anything
+    # comparing size alone would call a real render stale. mtime is what separates them, and this
+    # is the case that proves it - deliberately WITHOUT deleting the file first.
+    rr2 = B.call("render_still", {"filePath": out}, timeout=600.0)
+    check("S104 re-rendering OVER an existing identical file still counts as written",
+          rr2.get("wroteFile") is True, json.dumps(rr2)[:240])
+    check("S104 and the re-render is not reported as stale either",
+          rr2.get("staleFileFound") is False, json.dumps(rr2)[:240])
     try:
         os.remove(rr.get("filePath"))
     except OSError:
