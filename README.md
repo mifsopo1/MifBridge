@@ -180,13 +180,18 @@ DLL and is the authority over any number written here.
 **Or ask all of them at once, plus both engine build records:**
 
 ```bash
-python tools/make_release.py --gates   # 20 ratcheted checks, ~30s, changes nothing
+python tools/make_release.py --gates   # ~30s, changes nothing, prints what it ran
 ```
 
 This is the "is this tree releasable?" question without starting a packaging run — the two engine
-records, `parity_check`, and every ratcheted source audit including the four above. It needs no
+records, `parity_check`, and every ratcheted source audit including all four above. It needs no
 editor, no Blender and no bridge, and `test_release_gates` asserts that README and CHANGELOG come
 back byte-identical afterwards, so "changes nothing" is checked rather than promised.
+
+It deliberately does **not** say how many checks that is. The first version of this line quoted a
+count and was stale within the hour, because two more checks were added — the same drift this file
+warns about a few sections down. The command names every check it ran, so the count lives in one
+place and is always the true one.
 
 It is listed here because for a while it was not, which is this repo's most repeated failure in
 miniature: the command existed, ran twenty checks, and nothing pointed at it from anywhere a person

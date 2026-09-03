@@ -535,7 +535,23 @@ def check_static_audits():
                        # gating it changes is that a stale EXEMPTION now blocks a release rather
                        # than sitting in a report - which is the whole point, since this file's own
                        # header says an exemption is a decision and a stale one is worse than none.
-                       ("parity_check.py", [])):
+                       ("parity_check.py", []),
+                       # THE OTHER TWO AUDITS THE README TELLS PEOPLE TO RUN. It names four;
+                       # audit_dead_params and audit_vacuous_checks were already here and these two
+                       # were not, so half the list a reader is pointed at was advisory. If a check
+                       # is worth recommending in the front-door document, it is worth failing a
+                       # release for.
+                       #
+                       # spec_check guards the spec against a claim this project makes constantly -
+                       # an item ticked [x] while its own body still says it is not built. 416 items,
+                       # 123ms, and directly relevant on any day items get ticked.
+                       #
+                       # audit_message_endpoints catches an error message advising a caller to call
+                       # something that does not exist, or naming a parameter its endpoint does not
+                       # accept. It also SELF-TESTS on every invocation now, so gating it gates a
+                       # checker that proves its own newest arm before reporting.
+                       ("spec_check.py", []),
+                       ("audit_message_endpoints.py", [])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
