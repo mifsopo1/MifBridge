@@ -399,7 +399,7 @@ def check_static_audits():
     # one that runs entirely offline - "no editor, no bridge", per its own docstring. It regression-
     # tests the fuzzer's detectors, EMPTY_INTERP among them since 2026-08-31. Gating the suite rather
     # than fuzz_endpoints --self-test keeps one home for those cases instead of two.
-    failed = []
+    failed, ran = [], []
     #
     # audit_vacuous_checks and audit_consequence_fields JOINED 2026-08-31, on Andre's call, and both
     # need --check: without it they REPORT and exit 0, so the gate would call a red tree green.
@@ -439,7 +439,31 @@ def check_static_audits():
                        # tree green - the same trap audit_vacuous_checks and audit_consequence_fields
                        # carry a --check for. Differential against a baseline of two entries, both
                        # blocked on the machine and both carrying a written reason.
-                       ("audit_cross_endpoint_claims.py", ["--check"])):
+                       ("audit_cross_endpoint_claims.py", ["--check"]),
+                       # THREE MORE JOINED 2026-09-03, after asking which detectors CAN fail and are
+                       # not in this tuple. All three are static, all three run in under two seconds
+                       # together, and all three sit at zero - so each is a ratchet at zero rather
+                       # than a tax on anybody's new work.
+                       #
+                       # audit_mcp_default_sends is the one that matters most and was the most
+                       # surprising omission: it found FOUR uncallable MCP tools that same day
+                       # (map_legacy_input in both modes, set_struct_member, set_enum_value's
+                       # bitflags mode, and set_collision, which applied a change and then reported
+                       # "NOTHING was changed"), on top of the two shipped bugs found that morning.
+                       # A tool that has caught six real defects in one day belongs in the gate that
+                       # decides whether a release goes out.
+                       ("audit_mcp_default_sends.py", []),
+                       # Catches a NameError in a suite before the suite is run - which matters most
+                       # for the suites that need a live editor, because there the alternative is
+                       # discovering it thirty minutes into a sweep. It caught two of my own that
+                       # day: a NUL byte written into a fallback, and a variable named for the wrong
+                       # suite's convention.
+                       ("audit_undefined_names.py", []),
+                       # A parameter an endpoint ACCEPTS and never reads is the invoke_editor_tab
+                       # shape one step earlier - RejectUnknownParams says yes and the handler
+                       # ignores it. 2483 accepted parameters across 451 endpoints, currently zero
+                       # dead.
+                       ("audit_dead_params.py", [])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
@@ -451,10 +475,16 @@ def check_static_audits():
                          or "misclassified" in l or "FAILED:" in l),
                         lines[-1] if lines else "no output")
             failed.append("%s -> %s" % (tool, head[:110]))
+        else:
+            ran.append(tool)
     if not failed:
-        return True, ("audit_loop_writes, audit_postconditions, audit_modals, audit_vacuous_checks "
-                      "and audit_consequence_fields at baseline; test_fuzz_detector's and "
-                      "layout_graph's offline regressions pass")
+        # COUNTED, NOT LISTED BY HAND. This used to name five audits and two self-tests in a literal
+        # string, and by 2026-09-03 the tuple above held fourteen entries - so the success message
+        # was reporting a set that had not been current for some time, in the one place a reader
+        # looks to see what was actually checked. A hand-written list beside a real one is a second
+        # source of truth, which is the objection this file raises about manifests elsewhere.
+        return True, ("%d ratcheted source checks at baseline: %s"
+                      % (len(ran), ", ".join(sorted(t[:-3] for t in ran))))
     return False, ("a ratcheted source audit reports something NEW:\n    %s\n"
                    "  Read it and either fix it or accept it with that tool's --update-baseline,\n"
                    "  saying why in the commit. Do not package past it."
@@ -801,16 +831,34 @@ def main():
         #
         # The BADGE is deliberately not here: it is stale between releases BY DESIGN, so including
         # it would make this red almost always and teach everyone to ignore it.
+        # THE SOURCE AUDITS WERE MISSING FROM THIS, and that undercut the whole point. The comment
+        # above says the problem was having "no way to ASK them without starting a packaging run" -
+        # and then asked the ENGINE half only, so the ratcheted source audits still had no way to be
+        # asked casually. Found 2026-09-03 by timing it: the whole run took 243ms while
+        # audit_undefined_names alone takes 1273ms, which is how you notice a check is not running.
+        #
+        # check_value_discovery is deliberately NOT here: it drives the live bridge, so it belongs to
+        # packaging rather than to a question anybody can ask at any moment. Every tool in
+        # check_static_audits is static and the set runs in about two seconds.
         ok53, msg53 = gate_53()
         ok57, msg57 = check_engine_probe()
+        okaud, msgaud = check_static_audits()
         print("5.3 build record : %s" % ("OK  " + msg53 if ok53 else "STALE - " + msg53))
         print("5.7 probe record : %s" % ("OK  " + msg57 if ok57 else "STALE - " + msg57))
-        if ok53 and ok57:
-            print("\nboth engine records cover the current Source commit.")
+        print("source audits    : %s" % ("OK  " + msgaud if okaud else "FAILING - " + msgaud))
+        if ok53 and ok57 and okaud:
+            print("\nboth engine records cover the current Source commit, and every ratcheted source")
+            print("audit is at its baseline.")
             return 0
-        print("\nRebuild and re-record before releasing. A stale record does not mean the build is")
-        print("broken - it means nothing has checked it since Source moved, which is the same thing")
-        print("as far as a release claim is concerned.")
+        if not (ok53 and ok57):
+            print("\nRebuild and re-record before releasing. A stale record does not mean the build "
+                  "is")
+            print("broken - it means nothing has checked it since Source moved, which is the same "
+                  "thing")
+            print("as far as a release claim is concerned.")
+        if not okaud:
+            print("\nA ratcheted source audit reports something NEW. That is not a veto on the work -")
+            print("it is the one moment somebody is asked to look at it before it ships.")
         return 1
 
     if args.update_badge:
