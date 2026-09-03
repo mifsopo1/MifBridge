@@ -487,7 +487,26 @@ def check_static_audits():
                        # nothing to do with the release. The UE twin is static; that is the whole
                        # difference. Do not "finish the pair".
                        ("audit_blender_consequence_fields.py", ["--check"]),
-                       ("audit_blender_dead_params.py", [])):
+                       ("audit_blender_dead_params.py", []),
+                       # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
+                       # asking which suites have NO record in suite_results.json at all - five did,
+                       # and these two turned out to be static, so they had never been run for no
+                       # reason other than being newer than the last sweep. Both passed first time:
+                       # 12/12 and 11/11.
+                       #
+                       # test_release_gates guards THIS FILE. It was changed five times today -
+                       # gate_53's dirty-NOW check, its fail-closed exit, _porcelain_paths, --gates
+                       # learning to run the source audits, and seven new entries in this tuple -
+                       # and R100 asserts README and CHANGELOG come back byte-identical, which is
+                       # what makes "--gates changes nothing" a checked claim rather than a promise.
+                       #
+                       # test_scratch_discrimination guards mifaudit.is_scratch_fixture, the
+                       # adopt-guard that three of today's defects turned on, and it exercises it
+                       # with plain dicts - no bridge, no editor. Together they add under half a
+                       # second. test_fuzz_detector and layout_graph are already here for the same
+                       # reason: a static self-test belongs where somebody is made to run it.
+                       ("test_release_gates.py", []),
+                       ("test_scratch_discrimination.py", [])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
