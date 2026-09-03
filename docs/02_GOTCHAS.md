@@ -2307,6 +2307,34 @@ or None` collapses `""` to absent, which is the intent. It is wrong for a bool, 
 value rather than an absence. One was introduced and removed the same night (`list_objects.detail`);
 the other 30 predate it and are fine today.
 
+## Scanning C++ string literals: JOIN THE ADJACENT ONES FIRST
+
+Any tool that reads message text out of `TEXT("...")` must concatenate adjacent literals the way the
+compiler does, before matching anything. Source wraps at about 100 columns here, so the phrase a
+checker is looking for lands across a wrap constantly:
+
+```cpp
+TEXT("'%s' CANNOT be created ... and the attempt would TERMINATE THE "
+     "EDITOR. A plain NewObject leaves the sequencer data model ...")
+```
+
+Matched against the SOURCE text, `TERMINATE THE EDITOR` is not in there. What is in there is
+`TERMINATE THE " "EDITOR`. The string the compiler builds - and the string the user reads - contains
+the phrase; the bytes on disk do not.
+
+**This is not hypothetical and the direction of the error decides how bad it is.**
+`audit_editor_fatal_guards` matched raw bodies and therefore could not see `create_asset`'s
+`UAnimSequence` refusal, which is the guard for the one type that has actually terminated this editor.
+It appeared in no list at all - not under its class, not even under "names no class". An audit whose
+whole purpose is inventorying editor-fatal guards was silently missing two of them (2026-09-03).
+
+A checker that scans line-by-line has the same blindness with a safer failure: the phrase is missed,
+so a waiver does not apply, so it reports a FALSE POSITIVE rather than staying silent.
+`audit_message_endpoints` is built that way and is currently clean, which is why it was left alone -
+but a surprising hit from it should be checked against this before being believed.
+
+The fix is four lines: `"".join(re.findall(r'"((?:[^"\]|\.)*)"', body))`.
+
 ## A checker can be right and unreachable at the same time - mutation-test the CLI, not the function
 
 `mcp_static_check` gained a lossy-bool check. It printed:
