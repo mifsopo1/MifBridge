@@ -11222,6 +11222,26 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       fields, and the editor-closed batch.
 
 - [ ] **every adoption site has now been read - and not one of the fixes is verified** (the sweep)
+      RUN THE CHEAP HALF FIRST. Two different kinds of change are waiting and only ONE of them needs
+      a two-pass sweep, which was not obvious and cost nothing to work out in advance:
+
+        python tools/run_all_suites.py --once geometryscript trace_debug modal_hazards \
+            safety_gate blueprint_watch blueprint_breakpoint uncovered_reads7 audit_fixes
+
+      Eight suites, ONE pass, minutes. That covers every handler guard added 2026-09-03 - they are
+      ordinary refusal tests and a second pass tells you nothing extra about them. It includes the
+      two DESTRUCTIVE ones (blueprint_watch T8502b, blueprint_breakpoint T8401b), which are the
+      first results worth looking at: each sets up TWO items and asserts both SURVIVED, because "the
+      refusal came back" is not the same claim as "nothing was cleared".
+
+      test_pie_family T1610 (start_pie's multiplayer-only guard) is deliberately NOT in that list:
+      it needs --with-pie and an ATTENDED run, since starting PIE stops the bridge answering.
+
+      THEN the full two-pass sweep, which is the only thing that can verify the ADOPTION work -
+      a suite that adopts another suite's fixture passes alone and fails on pass 2, which is the
+      defining property of the bug and the reason 31 green individual runs would prove nothing.
+      Watch specifically for test_socket_authoring T3104 and test_landscape_heightmap T8002, the
+      two that actually went red.
       FOUND 2026-09-03 by `audit_fixture_adoption`, which scores 8/8 recall against the known
       instances - so this list is not speculative, it is the same rule that catches all fourteen
       confirmed sites, applied where nobody has looked. NOT all defects: a suite may adopt something
