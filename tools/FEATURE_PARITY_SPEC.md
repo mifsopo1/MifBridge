@@ -11871,7 +11871,16 @@ out-of-process the way ops_gen already does with gen_status.
       magenta-sentinel signature asks whether the buffer CHANGED, not whether what landed is right.
       A pixel signature cannot see a transfer curve.
 
-- [ ] **Tier 1 - the session survives and produces something** (5 ops)
+- [ ] **Tier 1 - the session survives and produces something** (2 of 5 left)
+      DONE 2026-09-03: save_file / open_file / file_info (new ops_file.py) and render_info.
+      save_file was the whole point - nothing this addon authored survived the process before it.
+      Its postcondition is purgedOrphans, what the save DESTROYED, counted before the write
+      because afterwards they do not exist to count. render_info answers the black-render question
+      with a measured `blockers` list rather than a census.
+      set_color_management is no longer urgent: the correctness bug behind it was the BAKE colour
+      space, fixed separately - images.new() defaults to sRGB and every NORMAL/ROUGHNESS/AO/SHADOW
+      map written through this bridge carried a gamma curve.
+      STILL OPEN, and the largest single hole in the surface:
       What makes the tool credible to a film, archviz, mograph or print user, none of whom care
       about UE.
         save_file / open_file / file_info   new ops_file.py. Build FIRST. Save-a-copy semantics by
@@ -11891,7 +11900,26 @@ out-of-process the way ops_gen already does with gen_status.
         set_color_management                validate against the enum THIS OCIO config offers, not
                                             a remembered list.
 
-- [ ] **Tier 2 - see and adjust what already exists** (8 ops + 1 repair)
+- [x] **Tier 2 - see and adjust what already exists** (8 ops + 1 repair) DONE 2026-09-03
+      All of it. object_info's non-MESH early return removed - it now reports per type for LIGHT,
+      CAMERA, ARMATURE, CURVE/FONT/SURFACE and EMPTY, which was one gate blinding the addon's
+      most-used read op. set_light, list_lights, set_camera, list_cameras, aim_object,
+      set_object_visibility, delete_keyframe, list_animation_data all landed.
+
+      THREE OF THEM FIXED WRONG ANSWERS RATHER THAN ADDING CAPABILITY. list_keyframes reported
+      curveCount 0 for an object animated entirely by drivers, because it walks
+      animation_data.action and drivers live on animation_data.drivers - so list_animation_data
+      covers action, drivers AND nla, and list_keyframes now states what it did not look at.
+      list_cameras reports sceneCamera, which was obtainable NOWHERE. set_camera can switch the
+      scene camera, which previously existed only at creation.
+
+      aim_object's postcondition is the ANGLE between world -Z and the target direction, measured
+      after the write - not the euler that was written, which cannot disagree with itself. The
+      derivation it uses was once wrong by exactly pi.
+
+      READERS ARE SHARED, NOT COPIED. light_readback and camera_readback moved into ops_common so
+      object_info, the setters and the listers all use one each. Two near-copies were caught
+      mid-write and hoisted instead.
       Absences 2 and 3 closed for the families that already ship. set_light and list_lights are
       DONE (2026-09-03). Remaining:
         object_info per type (repair)  it early-returns for anything non-MESH, so a LIGHT reports a
