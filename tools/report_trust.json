@@ -11,13 +11,22 @@
   ],
   "trusted": [
     "631Brando",
-    "infectedcoolpat-jpg"
+    "infectedcoolpat-jpg",
+    "mifsopo1"
   ],
   "_who": [
     "631Brando           - Brando, author of the DDS2 SDK this plugin builds against.",
     "infectedcoolpat-jpg - Infected, the QOLCrafting_P mod team.",
+    "mifsopo1            - Andre. Added 2026-09-02 at his request, so a report he files himself is",
+    "                      auto-processed instead of parked.",
     "",
-    "Both logins were confirmed to EXIST on GitHub before being added. That is the limit of what can be",
+    "mifsopo1 is the ONE entry here that is properly verified rather than merely confirmed to exist.",
+    "It is the account this machine is authenticated as (gh auth status) and the owner of the origin",
+    "remote, so the login provably belongs to the person running the loop. It also grants nothing new:",
+    "he can already push to this repository directly, so auto-processing his own bug reports is strictly",
+    "less privileged than what that account can do by hand.",
+    "",
+    "The other two were confirmed to EXIST on GitHub before being added. That is the limit of what can be",
     "verified from here: a login existing does not prove it belongs to the person Andre talks to.",
     "",
     "2026-08-26: 'theinfector' was briefly trusted here in error - Andre gave that login, then corrected",
