@@ -1136,9 +1136,30 @@ All four parked items are resolved by asking the asset registry what DDS2 actual
 than assuming. Counts are from `find_assets` against the live editor; "class does not exist" means the
 engine has no such class registered in this build, which is as definitive as it gets.
 
-- [~] **GAS Abilities / Attribute Sets** — declined. `GameplayAbilities` is not enabled in
-      DrugDealerSimulator2.uproject, and `find_assets` cannot even resolve the `GameplayAbility` or
-      `AttributeSet` classes. DDS2 does not use GAS, so the entire category is a non-feature here.
+- [~] **GAS Abilities / Attribute Sets** — declined, ON REASONING THAT IS NOT VALID HERE, and
+      partly overtaken by work done anyway. Re-read 2026-09-02.
+
+      The original decline: "`GameplayAbilities` is not enabled in DrugDealerSimulator2.uproject, and
+      `find_assets` cannot even resolve the `GameplayAbility` or `AttributeSet` classes. DDS2 does not
+      use GAS, so the entire category is a non-feature here."
+
+      Both facts are true and neither is a reason. MifBridge is a general UE5 tool; DDS2 and Curfew
+      are what it is TESTED on, not the limit of who it is for, and GAS is a first-class engine
+      feature that a great many UE5 projects are built on. "This project does not use it" is the
+      same shape as "irrelevant to cooked modding", which this spec already rules out explicitly.
+
+      It was also overtaken without anyone revisiting the entry. The build now carries
+      `describe_ability_system`, `add_gameplay_effect_modifier`, `add_gameplay_tag`,
+      `describe_gameplay_tag` and `list_gameplay_tags`, and `test_ability_system.py` runs 16/0
+      against a fixture it BUILDS - an ASC added to a scratch actor - precisely because the project
+      ships no GAS content to borrow. So the premise that the category cannot be tested here was
+      wrong too.
+
+      WHAT IS ACTUALLY STILL MISSING is narrower than the decline implies: authoring the ASSETS -
+      creating a UGameplayAbility or UAttributeSet subclass - as opposed to reading an ASC, editing
+      effect modifiers and managing tags, which all exist. That is the item worth keeping open, and
+      it is left as a decline only because nobody has asked for it, which is a different sentence
+      from the one that was written.
       CORRECTED 2026-08-28, found stale while auditing declined items against the post-2026-08-26
       judging rule: this reasoning is exactly the superseded "irrelevant to cooked modding" pattern -
       judged for DDS2 alone, and DDS2 genuinely has no GAS content, but MifBridge serves Curfew too.
