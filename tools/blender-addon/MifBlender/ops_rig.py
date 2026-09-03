@@ -43,6 +43,7 @@ from .ops_common import (
     selection_snapshot,
     take,
     take_bool,
+    take_float,
     take_int,
 )
 
@@ -886,7 +887,171 @@ def op_rename_bones(params):
     return result
 
 
+def op_set_bone_pose(params):
+    """Pose a bone, and read the result back through the DEPSGRAPH.
+
+    Character animation had zero coverage here: bones could be listed and renamed and nothing
+    else. This was also unreachable through set_keyframe until the same day, because its dotted-
+    path walk stripped subscripts and pose.bones["x"].location resolved to the bone COLLECTION.
+
+    params:
+      object (str, required)   the ARMATURE object
+      bone (str, required)     pose bone name
+      location [x,y,z]         in the bone's own space, as Blender stores it
+      rotation [x,y,z]         euler radians; applied in the bone's current rotation mode
+      quaternion [w,x,y,z]     for a bone in QUATERNION mode - refused together with rotation
+      scale [x,y,z]
+
+    THE READ-BACK IS EVALUATED. A pose bone with a constraint on it - an IK chain, a copy
+    rotation, a limit - does not end up where you put it, and pose_bone.matrix is the raw value
+    rather than the result. Reporting what you wrote back at you would be a proxy that cannot fail,
+    so this reports both and says which is which.
+    """
+    reject_unknown(params, {"object", "name", "bone", "location", "rotation", "quaternion",
+                            "scale"}, "set_bone_pose")
+    obj = get_object(take(params, "object", "name", required=True))
+    if obj.type != "ARMATURE":
+        raise MifOpError("'%s' is a %s, not an ARMATURE. NOTHING was changed."
+                         % (obj.name, obj.type))
+    bone_name = take(params, "bone", default=None, kind=str)
+    if not bone_name:
+        raise MifOpError("'bone' is required - which pose bone to move. NOTHING was changed.")
+    if obj.pose is None:
+        raise MifOpError("'%s' has no pose data. NOTHING was changed." % obj.name)
+    pb = obj.pose.bones.get(str(bone_name))
+    if pb is None:
+        known = [b.name for b in obj.pose.bones][:25]
+        raise MifOpError("no bone named '%s' on '%s'. Present: %s. NOTHING was changed."
+                         % (bone_name, obj.name, ", ".join(known) if known else "<none>"))
+
+    if "rotation" in params and "quaternion" in params:
+        raise MifOpError("pass rotation OR quaternion, not both - they are two answers to the same "
+                         "question. NOTHING was changed.")
+
+    def _vec(key, n):
+        v = params.get(key)
+        if v is None:
+            return None
+        if isinstance(v, dict):
+            order = ("w", "x", "y", "z") if n == 4 else ("x", "y", "z")
+            return [float(v.get(k, 0.0)) for k in order]
+        if isinstance(v, (list, tuple)) and len(v) == n:
+            return [float(x) for x in v]
+        raise MifOpError("'%s' must be a %d-list%s, got %r. NOTHING was changed."
+                         % (key, n, " or {x,y,z}" if n == 3 else " or {w,x,y,z}", v))
+
+    loc = _vec("location", 3)
+    rot = _vec("rotation", 3)
+    quat = _vec("quaternion", 4)
+    scl = _vec("scale", 3)
+    if quat is not None and pb.rotation_mode != "QUATERNION":
+        raise MifOpError("'%s' is in %s rotation mode, so a quaternion would be ignored - set "
+                         "rotation instead, or change the bone's mode first. NOTHING was changed."
+                         % (bone_name, pb.rotation_mode))
+    if rot is not None and pb.rotation_mode == "QUATERNION":
+        raise MifOpError("'%s' is in QUATERNION rotation mode, so a euler would be ignored - pass "
+                         "quaternion instead. NOTHING was changed." % bone_name)
+    if loc is None and rot is None and quat is None and scl is None:
+        raise MifOpError("nothing to set - pass location, rotation, quaternion or scale. NOTHING "
+                         "was changed.")
+
+    if loc is not None:
+        pb.location = loc
+    if rot is not None:
+        pb.rotation_euler = rot
+    if quat is not None:
+        pb.rotation_quaternion = quat
+    if scl is not None:
+        pb.scale = scl
+
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = obj.evaluated_get(dg)
+    epb = ev.pose.bones.get(str(bone_name)) if ev.pose is not None else None
+    return {
+        "object": obj.name,
+        "bone": pb.name,
+        "rotationMode": pb.rotation_mode,
+        # WHAT WAS WRITTEN, off the raw pose bone.
+        "written": {
+            "location": rnd(list(pb.location)),
+            "rotationEuler": rnd(list(pb.rotation_euler)),
+            "rotationQuaternion": rnd(list(pb.rotation_quaternion)),
+            "scale": rnd(list(pb.scale)),
+        },
+        # WHERE IT ACTUALLY ENDED UP, after constraints. An IK chain, a Copy Rotation or a Limit
+        # will move it somewhere else entirely, and pose_bone.matrix is the raw value.
+        "evaluatedHeadWorld": rnd(list((ev.matrix_world @ epb.head))) if epb else None,
+        "evaluatedTailWorld": rnd(list((ev.matrix_world @ epb.tail))) if epb else None,
+        "constraints": [c.type for c in pb.constraints],
+        "constrainedNote": ("evaluated* is read through the depsgraph and is where the bone really "
+                            "is. With a constraint on the bone it will NOT match `written`, and "
+                            "that difference is the constraint working rather than a fault."),
+    }
+
+
+def op_set_shape_key(params):
+    """Set a shape key's value, and optionally its range. The other half of list_shape_keys.
+
+    params:
+      object (str, required)
+      key (str, required)      the shape key name
+      value (float)            the influence, normally 0..1
+      sliderMin / sliderMax    the allowed range
+      mute (bool)
+
+    A value outside the slider range is CLAMPED BY BLENDER SILENTLY, so this reports what the key
+    actually holds afterwards rather than what was asked for, and says when they differ.
+    """
+    reject_unknown(params, {"object", "name", "key", "shapeKey", "value", "sliderMin",
+                            "sliderMax", "mute"}, "set_shape_key")
+    obj = get_object(take(params, "object", "name", required=True))
+    if obj.data is None or getattr(obj.data, "shape_keys", None) is None:
+        raise MifOpError("'%s' has no shape keys. NOTHING was changed." % obj.name)
+    key_name = take(params, "key", "shapeKey", default=None, kind=str)
+    if not key_name:
+        raise MifOpError("'key' is required - which shape key. NOTHING was changed.")
+    blocks = obj.data.shape_keys.key_blocks
+    kb = blocks.get(str(key_name))
+    if kb is None:
+        raise MifOpError("no shape key named '%s' on '%s'. Present: %s. NOTHING was changed."
+                         % (key_name, obj.name, ", ".join(b.name for b in blocks) or "<none>"))
+
+    smin = take_float(params, "sliderMin", default=None)
+    smax = take_float(params, "sliderMax", default=None)
+    if smin is not None and smax is not None and smin > smax:
+        raise MifOpError("sliderMin %g is above sliderMax %g. NOTHING was changed." % (smin, smax))
+
+    requested = take_float(params, "value", default=None)
+    # RANGE FIRST, then the value: setting a value outside the OLD range would be clamped to it
+    # and then look wrong even though the new range would have allowed it.
+    if smin is not None:
+        kb.slider_min = smin
+    if smax is not None:
+        kb.slider_max = smax
+    if requested is not None:
+        kb.value = requested
+    if "mute" in params:
+        kb.mute = take_bool(params, "mute", default=False)
+
+    actual = round(float(kb.value), 6)
+    return {
+        "object": obj.name,
+        "key": kb.name,
+        "requestedValue": requested,
+        "value": actual,
+        # BLENDER CLAMPS SILENTLY to the slider range. Asking for 2.0 on a 0..1 key leaves 1.0 and
+        # reports nothing, so the difference is named rather than left to be discovered in a render.
+        "clamped": requested is not None and abs(actual - requested) > 1e-6,
+        "sliderMin": round(float(kb.slider_min), 6),
+        "sliderMax": round(float(kb.slider_max), 6),
+        "mute": bool(kb.mute),
+    }
+
+
 OPS = {
+    "set_bone_pose": op_set_bone_pose,
+    "set_shape_key": op_set_shape_key,
     "list_bones": op_list_bones,
     "list_shape_keys": op_list_shape_keys,
     "list_vertex_groups": op_list_vertex_groups,

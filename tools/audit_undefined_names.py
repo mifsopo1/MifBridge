@@ -196,7 +196,22 @@ def undefined_in(path):
 
 
 def main():
-    paths = sys.argv[1:] or sorted(glob.glob(os.path.join(HERE, "*.py")))
+    # THE BLENDER ADDON WAS OUTSIDE THIS SCAN UNTIL 2026-09-03, and it is 9,251 lines of Python -
+    # a third of what this tool exists to protect. The default was tools/*.py, which is where the
+    # UE-side helpers live, so the entire other backend went unchecked by the one detector written
+    # for exactly its failure mode.
+    #
+    # Found by walking into the bug: ops_rig.py gained three take_float() calls with no import for
+    # it. That compiles, passes every other check here, and raises NameError on the first real
+    # call - which is the shape of GitHub issue #1, the move_tree_widget wrapper this file's own
+    # docstring is written around. Reported from OUTSIDE by a user, because nothing here looked.
+    #
+    # The MCP server directory is included for the same reason: it is a third tree of Python that
+    # nothing else name-checks (mcp_static_check asks a narrower question about wrappers only).
+    paths = sys.argv[1:] or sorted(
+        glob.glob(os.path.join(HERE, "*.py"))
+        + glob.glob(os.path.join(HERE, "blender-addon", "MifBlender", "*.py"))
+        + glob.glob(os.path.join(HERE, "mcp-server", "*.py")))
     seen = set()
     bad = 0
     for path in paths:
