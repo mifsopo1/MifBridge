@@ -506,7 +506,20 @@ def check_static_audits():
                        # second. test_fuzz_detector and layout_graph are already here for the same
                        # reason: a static self-test belongs where somebody is made to run it.
                        ("test_release_gates.py", []),
-                       ("test_scratch_discrimination.py", [])):
+                       ("test_scratch_discrimination.py", []),
+                       # THE CONTRACT SIX SHIPPED BUGS TURNED ON, and nothing tested it until
+                       # 2026-09-03. Both transports drop None and SEND every other falsy value, and
+                       # every one of those six - sculpt_landscape, override_inherited_component,
+                       # map_legacy_input, set_struct_member, set_enum_value, set_collision -
+                       # depended on that single line behaving exactly so.
+                       #
+                       # audit_mcp_default_sends watches the WRAPPERS for concrete defaults; this
+                       # pins the rule those wrappers are written against. If the filter ever
+                       # dropped falsy values instead of None, every `or None` in server.py would
+                       # become redundant, every row in that audit would go quiet, and the tools
+                       # would start working BY ACCIDENT - until somebody needed to send a
+                       # deliberate false, which mifaudit.AUTHORISING_ONLY depends on being able to.
+                       ("test_payload_contract.py", [])):
         script = os.path.join(HERE, tool)
         if not os.path.isfile(script):
             failed.append("%s is MISSING" % tool)
