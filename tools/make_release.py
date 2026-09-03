@@ -566,6 +566,18 @@ def check_static_audits():
                        # exits 0. What it guards is an engine upgrade adding a post-construct
                        # factory that create_asset would then mint silently - the exact shape that
                        # terminated the editor twice.
+                       #
+                       # IT IS THE MOST EXPENSIVE MEMBER HERE, 15.9s of the roughly 60 this tuple
+                       # costs, because it walks the engine tree under D:/UE532. Worth stating
+                       # beside the exclusion of audit_prose_dependence a few lines down, which is
+                       # kept out for BEING SLOW: 58s against 15.9s is a 3.6x difference, and what
+                       # the two buy is not comparable - one guards a class that has terminated the
+                       # editor twice, the other asks whether a tool reads prose as evidence. The
+                       # line is drawn on cost against consequence, not on cost alone.
+                       #
+                       # If this tuple keeps growing, split it into fast and slow rather than
+                       # letting the whole thing drift past what somebody will run casually. A gate
+                       # nobody runs fails the same way as a gate nobody reads.
                        ("audit_factory_init.py", ["--check"]),
                        # NOT audit_prose_dependence, and the reason is measured rather than a
                        # shrug: it runs 17 candidate tools THREE times each - plain, with comments

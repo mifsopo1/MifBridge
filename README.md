@@ -180,7 +180,7 @@ DLL and is the authority over any number written here.
 **Or ask all of them at once, plus both engine build records:**
 
 ```bash
-python tools/make_release.py --gates   # ~30s, changes nothing, prints what it ran
+python tools/make_release.py --gates   # about a minute, changes nothing, prints what it ran
 ```
 
 This is the "is this tree releasable?" question without starting a packaging run — the two engine
