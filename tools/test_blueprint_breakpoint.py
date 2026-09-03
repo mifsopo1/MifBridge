@@ -126,10 +126,17 @@ def main():
               "EVERY breakpoint" in (scoped.get("error") or "")
               and "op:remove" in (scoped.get("error") or ""),
               (scoped.get("error") or "")[:240])
+        # HOISTED so the detail reports the COUNT rather than asserting an interpretation. Inline,
+        # a failure could only say "they were cleared anyway", which is wrong when the count is
+        # None (the list call failed) or above 2 (something added one). Same reason T8002 now names
+        # the terrain it measured: report the observation, not the conclusion drawn from it.
+        after_scoped = M.raw_post("blueprint_breakpoint",
+                                  {"op": "list", "graphId": graph}).get("count")
         check("T8401b and BOTH breakpoints survived - judged by what is still there, not by the "
               "error string, which a handler that refused and cleared anyway would also produce",
-              M.raw_post("blueprint_breakpoint", {"op": "list", "graphId": graph}).get("count") == 2,
-              "the refusal came back but the breakpoints were cleared anyway")
+              after_scoped == 2,
+              "expected 2 breakpoints to survive the refused clear; list reports count=%r"
+              % (after_scoped,))
 
         clr = M.raw_post("blueprint_breakpoint", {"op": "clear", "graphId": graph})
         check("T8401 clear succeeds and reports how many it removed",

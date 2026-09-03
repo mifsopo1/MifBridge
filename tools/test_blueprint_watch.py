@@ -166,10 +166,17 @@ def main():
               "EVERY watch" in (scoped.get("error") or "")
               and "op:remove" in (scoped.get("error") or ""),
               (scoped.get("error") or "")[:240])
+        # HOISTED SO THE DETAIL CAN REPORT WHAT WAS SEEN. Inline, the count is unavailable to the
+        # failure message, which then has to ASSERT an interpretation - "the watch was cleared
+        # anyway" - that is wrong whenever the count is anything other than 0: None means the list
+        # call itself failed, and a number above 1 means something ADDED one. Say the observation
+        # and let the reader draw the conclusion.
+        after_scoped = M.raw_post("blueprint_watch", {"op": "list", "graphId": graph}).get("count")
         check("T8502b and the watch is STILL THERE - the refusal is judged by what survived, not "
               "by the error string",
-              M.raw_post("blueprint_watch", {"op": "list", "graphId": graph}).get("count") == 1,
-              "the refusal came back but the watch was cleared anyway")
+              after_scoped == 1,
+              "expected 1 watch to survive the refused clear; list reports count=%r"
+              % (after_scoped,))
         M.raw_post("blueprint_watch", {"op": "clear", "graphId": graph})
 
         # ------------------------------------------------------------------ T8503 refusals
