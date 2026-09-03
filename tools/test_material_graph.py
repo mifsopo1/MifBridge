@@ -40,8 +40,21 @@ def main():
 
     # ------------------------------------------------------------------ T351 the cooked hazard
     print("\n=== T351 [the hazard]: a real COOKED material must not crash the editor ===")
-    cooked = (M.call("find_assets", {"class": "Material", "pathPrefix": "/Game/", "limit": 1})
-              .get("assets") or [{}])[0].get("path")
+    # SKIP SCRATCH, INCLUDING THIS SUITE'S OWN. pathPrefix "/Game/" matches every scratch tree in
+    # the project, and limit:1 with unstable find_assets ordering makes which one you get a lottery.
+    # This suite creates /Game/_MifMat/M_<stamp> below and does not delete it, so it self-contaminates
+    # on the second pass of a sweep without any help from another suite - and the checks that follow
+    # EXPECT a cooked material to refuse writes. Against a live uncooked scratch material they would
+    # succeed instead, silently mutating somebody's fixture mid-run and reporting the wrong verdict.
+    #
+    # NOT A COOKEDNESS PROBE, and that gap is real: this only guarantees the candidate is not scratch,
+    # not that it is cooked. test_set_struct_member and test_create_struct_init both go further and
+    # probe for an actual COOKED refusal before trusting the fixture; doing the same here is the
+    # better fix and is filed rather than done.
+    cand = M.pick_adoptable(
+        M.call("find_assets", {"class": "Material", "pathPrefix": "/Game/", "limit": 20})
+        .get("assets"))
+    cooked = (cand or {}).get("path")
     check("T351 a cooked material was found to test against", bool(cooked), cooked)
     if cooked:
         print("   using %s" % cooked)
@@ -197,6 +210,20 @@ def main():
                 "toInput": "A"})
     check("T355 connecting from an expression that does not exist is refused",
           q.get("ok") is False, json.dumps(q)[:160])
+
+    # REMOVE THE MATERIAL THIS SUITE BUILT. It never did, and that is what made this suite
+    # self-contaminating: /Game/_MifMat/M_<stamp> is a Material under /Game/, so on the next sweep
+    # pass the T351 selector above could pick it as the "cooked" fixture - and T351's whole point is
+    # that the writes REFUSE. Against a live uncooked material they succeed, so the suite would go
+    # red while mutating its own leftover.
+    import scratch_confirm as SC
+    try:
+        SC.confirm_call("delete_asset", {"path": mpath})
+    except Exception as exc:
+        print("  cleanup: %s" % str(exc)[:140])
+    left = M.call("find_assets", {"pathPrefix": "/Game/_MifMat"}).get("count")
+    if left:
+        print("  NOTE  %s scratch material(s) still held - an editor restart releases them." % left)
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

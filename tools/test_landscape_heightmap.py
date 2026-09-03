@@ -73,11 +73,18 @@ def main():
     # if the level has none.
     made_landscape = None
     target = None
-    for row in (M.call("landscape_info", {}).get("landscapes") or []):
-        if not row.get("editLayers"):
-            target = row.get("actorPath")
-            print("using the level's own non-layered landscape: %s" % row.get("label"))
-            break
+    # SKIP ANOTHER SUITE'S SCRATCH. This loop used to take the first landscape with no edit layers,
+    # which was safe only because this project's own landscape HAS them, so the branch never fired.
+    # test_landscape_layer_register and test_landscape_info both create landscapes through
+    # create_landscape - which deliberately leaves edit layers OFF - and neither reliably removes
+    # them. On the second pass of a sweep this adopted one of those and measured collision against
+    # heights it had never set, reporting 1590uu of error against a perfectly good endpoint. The
+    # suite was right; it was measuring the wrong terrain.
+    row = M.pick_adoptable(M.call("landscape_info", {}).get("landscapes"),
+                           lambda r: not r.get("editLayers"))
+    if row:
+        target = row.get("actorPath")
+        print("using the level's own non-layered landscape: %s" % row.get("label"))
     if target is None:
         st = int(time.time()) % 100000
         mk = M.raw_post("create_landscape", {"location": {"x": 300000, "y": 300000, "z": 0},
@@ -312,6 +319,16 @@ def main():
 
     check("T8003 - the editor is still alive", M.call("self_audit", {}).get("ok") is True,
           "a bad stride or an over-long write into landscape height data is not a survivable error")
+
+    # REMOVE THE FIXTURE THIS SUITE BUILT. `made_landscape` was assigned and then never read - the
+    # scratch landscape stayed in the level for the rest of the sweep, where the next suite looking
+    # for "a landscape with no edit layers" would adopt it. That is the same bug as the one guarded
+    # against above, seen from the other end: not adopting somebody's leftovers is only half of it,
+    # the other half is not leaving any.
+    if made_landscape:
+        c = M.cleanup_level_actor(made_landscape, "scratch heightmap landscape")
+        check("T8004 (cleanup) the scratch landscape this suite built is removed",
+              c.get("ok") is True, c.get("error"))
 
     print("\n" + "=" * 72)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))
