@@ -493,6 +493,24 @@ def plant_mode_param(text):
     return text[:m.start() + 1] + probe + text[m.start() + 1:]
 
 
+def plant_factory_init_drift(text):
+    """Drop one class from create_asset's FactoryInitClasses, in OUR source, not the engine's.
+
+    audit_factory_init was filed under NOT_OURS on the grounds that its corpus is the engine tree.
+    That is true of one half and false of the other: it ALSO reads this repo's own
+    MifBridgeUserTypes.cpp and reports drift between the engine-derived population and the
+    hand-written warning list. That half is plantable here without touching D:/UE532 at all.
+
+    The engine half remains unplantable and that boundary is unchanged - a plant that failed to
+    restore somebody else's shared engine tree would be a very bad day. What changes is that
+    "cannot be proven here" was covering a check that could.
+
+    PoseAsset because the scan genuinely finds UPoseAsset (SkeletonFactory/PoseAssetFactory both do
+    post-construct work), so removing its name produces real drift rather than a no-op.
+    """
+    return text.replace('TEXT("PoseAsset"), ', "", 1)
+
+
 def plant_spawn_label(text):
     """An actor spawned into the editor world with a label the adopt-guard cannot recognise.
 
@@ -806,6 +824,14 @@ PLANTS = {
     # that is present before the plant would pass for the wrong reason.
     "audit_spawn_labels.py": (os.path.join(HERE, "test_group_actors.py"),
                               plant_spawn_label, "ZzSpawnProbe", True),
+    # REPORT-STYLE (gate False): drift prints and the exit code stays 0, so the marker is the whole
+    # test. The marker is a phrase from the DRIFT BLOCK rather than the dropped class name, because
+    # UPoseAsset already appears in this tool's ordinary NOT HANDLED listing - a class-name marker
+    # would be present before the plant and the harness would rightly reject it as already-red.
+    # must_vanish proves the plant actually landed rather than silently matching nothing.
+    "audit_factory_init.py": (os.path.join(PRIV, "MifBridgeUserTypes.cpp"),
+                              plant_factory_init_drift, "does NOT name", False,
+                              'TEXT("PoseAsset"), '),
 }
 
 # Detectors that drive the RUNNING editor. A planted defect in a source file cannot prove one of
@@ -834,10 +860,15 @@ LIVE = {
 #
 # Recorded rather than left in the "no plant written yet" pile, because those two states call for
 # opposite actions: one is work, this is a boundary.
-NOT_OURS = {
-    "audit_factory_init.py": "its corpus is the ENGINE source, which this repo must not modify - "
-                             "not even briefly, not even with a restore",
-}
+# EMPTIED 2026-09-03, and the reasoning it held is preserved in plant_factory_init_drift rather
+# than deleted. audit_factory_init was the only entry, filed here because it scans D:/UE532. That is
+# true of half of it: it also compares the engine-derived population against create_asset's
+# hand-written FactoryInitClasses in THIS repo's MifBridgeUserTypes.cpp, and that half plants
+# locally with no engine edit at all. "Not ours to plant" was covering a check that was ours.
+#
+# The category stays rather than being removed, because the distinction it draws is real and the
+# next tool that scans somebody else's tree belongs in it.
+NOT_OURS = {}
 
 # Extra argv some tools need to report everything rather than only new-against-baseline findings.
 ARGS = {"audit_vacuous_checks.py": ["--all"],
