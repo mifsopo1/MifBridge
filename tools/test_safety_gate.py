@@ -140,6 +140,36 @@ def main():
             except OSError as exc:
                 print("  NOTE  could not remove %s (%s) - left behind." % (_landed, exc))
 
+    # T632b: the FBX-only options do not reach an OBJ export, and the response has to name WHICH ones
+    # it dropped. Placed here for the same reason T632 is - read-only, non-destructive, and it must
+    # run in every mode, because the silent-ignore it guards against is mode-independent.
+    #
+    # The warning used to say "FBX option fields were supplied" and leave the caller to work out
+    # which of the eight it meant. The LIST is asserted rather than the prose: prose is what changes.
+    print("")
+    print("=== T632b: FBX-only options are named, not lumped, when the format is not FBX ===")
+    _obj = M.call("export_asset", {"asset": _sphere, "file": "MifT632bProbe.obj",
+                                   "ascii": True, "collision": True}, timeout=300)
+    if _obj.get("ok") is not True:
+        print("  NOTE  the OBJ export did not run (%s), so T632b is UNEXERCISED"
+              % str(_obj.get("error"))[:120])
+    else:
+        check("T632b ignoredOptions names EVERY FBX-only field passed, and nothing else",
+              sorted(_obj.get("ignoredOptions") or []) == ["ascii", "collision"],
+              json.dumps(_obj.get("ignoredOptions")))
+        _warn = " ".join(_obj.get("warnings") or []) or str(_obj.get("warning") or "")
+        # GUARDED FIRST: all([]) is True, so without the bool() a missing ignoredOptions makes this
+        # pass while proving nothing - rule 1 of audit_vacuous_checks.
+        _named = _obj.get("ignoredOptions") or []
+        check("T632b and the warning names them too, so prose and field agree",
+              bool(_named) and all(n in _warn for n in _named), _warn[:220])
+        _objpath = str(_obj.get("resolvedPath") or _obj.get("file") or "")
+        if _objpath and os.path.isfile(_objpath):
+            try:
+                os.remove(_objpath)
+            except OSError as exc:
+                print("  NOTE  could not remove %s (%s) - left behind." % (_objpath, exc))
+
     # FAIL-SAFE, and it is the important line in this file. The probes below deliberately call
     # save_package and start_pie, which is safe ONLY because the gate refuses them. Against an older
     # DLL with no gate, writeMode is absent and `mode` is None - and a naive `mode != "full"` test

@@ -706,15 +706,43 @@ namespace MifBridge
 			Options->Collision         = JBool(In, TEXT("collision"), false);
 			Options->bExportSourceMesh = bSourceMesh;
 		}
-		else if (JHasAny(In, { TEXT("fbxCompatibility"), TEXT("ascii"), TEXT("vertexColor"),
-			TEXT("levelOfDetail"), TEXT("lod"), TEXT("collision"), TEXT("exportSourceMesh"),
-			TEXT("forceFrontXAxis") }))
+		else
 		{
+			// MODE-PARAMS-OK: FBX-only options are NAMED in a warning when format is not FBX
+			//
 			// Saying nothing here would be the silent-ignore bug class RejectUnknownParams exists to
 			// kill: the keys ARE accepted, they just do not reach a non-FBX exporter.
-			AddWarning(Out, FString::Printf(
-				TEXT("FBX option fields were supplied but format is '%s' — they are UFbxExportOption fields and ")
-				TEXT("only reach the FBX exporter. They had NO effect on this export."), *Format));
+			//
+			// NAME THE ONES ACTUALLY PASSED. The warning used to say "FBX option fields were
+			// supplied" and leave the caller to work out which of the eight it meant - the same
+			// weakness add_variable's scope=local warning had, fixed the same way and for the same
+			// reason: a message that does not name the caller's parameter makes them re-read the
+			// docs to find out whether it was theirs.
+			static const TCHAR* const kFbxOnly[] = {
+				TEXT("fbxCompatibility"), TEXT("ascii"), TEXT("vertexColor"), TEXT("levelOfDetail"),
+				TEXT("lod"), TEXT("collision"), TEXT("exportSourceMesh"), TEXT("forceFrontXAxis")
+			};
+			TArray<FString> Supplied;
+			for (const TCHAR* Key : kFbxOnly)
+			{
+				if (In->HasField(Key)) { Supplied.Add(FString(Key)); }
+			}
+			if (Supplied.Num() > 0)
+			{
+				AddWarning(Out, FString::Printf(
+					TEXT("%s %s supplied but format is '%s' — %s UFbxExportOption field%s and only reach ")
+					TEXT("the FBX exporter. %s NO effect on this export."),
+					*FString::Join(Supplied, TEXT(", ")),
+					Supplied.Num() == 1 ? TEXT("was") : TEXT("were"), *Format,
+					Supplied.Num() == 1 ? TEXT("it is a") : TEXT("they are"),
+					Supplied.Num() == 1 ? TEXT("") : TEXT("s"),
+					Supplied.Num() == 1 ? TEXT("It had") : TEXT("They had")));
+				// The list as a field as well as prose, for the same reason add_variable carries
+				// ignoredFlags: a caller should not have to parse a sentence to react to it.
+				TArray<TSharedPtr<FJsonValue>> Arr;
+				for (const FString& S : Supplied) { Arr.Add(MakeShared<FJsonValueString>(S)); }
+				Out->SetArrayField(TEXT("ignoredOptions"), Arr);
+			}
 		}
 
 		// --- expected output files (hazard 4) -------------------------------------------------------
