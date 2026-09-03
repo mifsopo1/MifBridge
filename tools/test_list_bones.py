@@ -190,7 +190,9 @@ def main():
 
     # ------------------------------------------------------------------ T225 guards
     print("\n=== T225: guards ===")
-    notskel = (M.call("find_assets", {"class": "Material", "limit": 1}).get("assets") or [{}])[0].get("path")
+    # SKIP SCRATCH - see the identical guard in test_ik_rig and test_niagara_params.
+    notskel = (M.pick_adoptable(M.call("find_assets", {"class": "Material",
+                                                       "limit": 20}).get("assets")) or {}).get("path")
     for label, payload, expect in (
         ("no path", {}, "path is required"),
         ("missing asset", {"path": "/Game/NoSuchSkeleton_zz"}, "no asset at"),

@@ -185,6 +185,13 @@ def resolve_scoping(args, src):
     argument text says it is not. Resolves a bare identifier against assignments in the same file -
     which covers the constant-at-the-top form every suite here uses.
     """
+    # ORIGIN CONTAINER IS A SCRATCH EXCLUSION, and it is one by definition rather than by
+    # convention. MifBridgeAssetOps.cpp:1690: "a package name the registry knows but which has no
+    # loose file is container content." An asset a suite creates in-session is a loose package or
+    # not on disk at all, so it can never come back from this filter. test_consolidate asks for
+    # container-origin Materials on purpose and was reported as an unguarded adopter for it.
+    if re.search(r'"origin"\s*:\s*"container"', args):
+        return True
     if SCRATCH_SCOPED.search(args):
         return True
     # TWO LEVELS, because one was not enough. test_duplicate_cooked_guard confirms its own duplicate

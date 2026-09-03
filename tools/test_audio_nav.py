@@ -62,7 +62,12 @@ def main():
         check("T171 %s refused" % name, q.get("ok") is False, json.dumps(q)[:150])
         check("T171 %s explains" % name, expect in (q.get("error") or ""), (q.get("error") or "")[:130])
     # A non-sound asset must be named, not silently ignored.
-    notsound = (M.call("find_assets", {"class": "Material", "limit": 1}).get("assets") or [{}])[0].get("path")
+    # SKIP SCRATCH: the assertion is about CLASS and a scratch Material fails it identically -
+    # but test_material_graph deletes the ones it makes, and an asset that vanishes mid-run
+    # returns "no asset at" instead of "not a USoundBase", failing this guard for the wrong
+    # reason and charging it to audition_sound.
+    notsound = (M.pick_adoptable(M.call("find_assets", {"class": "Material",
+                                                        "limit": 20}).get("assets")) or {}).get("path")
     q = M.call("audition_sound", {"path": notsound})
     check("T171 a non-sound is refused by class name",
           q.get("ok") is False and "not a USoundBase" in (q.get("error") or ""),

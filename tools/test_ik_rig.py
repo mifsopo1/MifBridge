@@ -195,7 +195,11 @@ def main():
 
     # ------------------------------------------------------------------ T235 guards
     print("\n=== T235: guards ===")
-    notrig = (M.call("find_assets", {"class": "Material", "limit": 1}).get("assets") or [{}])[0].get("path")
+    # SKIP SCRATCH - same reason as the identical guard in test_list_bones and
+    # test_niagara_params: a scratch Material is equally not an IKRigDefinition, but one deleted
+    # mid-run answers "no asset at" and fails this for a cause that is not about list_ik_rig.
+    notrig = (M.pick_adoptable(M.call("find_assets", {"class": "Material",
+                                                      "limit": 20}).get("assets")) or {}).get("path")
     for label, payload, expect in (
         ("no path", {}, "path is required"),
         ("missing asset", {"path": "/Game/NoSuchRig_zz"}, "no asset at"),
