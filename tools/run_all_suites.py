@@ -322,16 +322,70 @@ def main():
                         # Wrong in the direction that gets believed rather than re-checked.
                         "ranAt": time.time(),
                         "tail": "\n".join(out.splitlines()[-25:]) if rc != 0 else ""})
+        # `is False`, NOT falsy - the same distinction the summary block below already makes, and
+        # this line was getting it wrong while the line that records it got it right. An offline run
+        # sets alive to None meaning NOT APPLICABLE, so every offline suite printed "EDITOR DIED"
+        # directly above a summary reading "no editor was involved". Both cannot be true, and the
+        # loud one is the false one.
         print("  [%d] %-32s rc=%-4s %-22s %5.1fs%s"
-              % (which, name, rc, line.strip(), dt, "" if alive else "   EDITOR DIED"))
+              % (which, name, rc, line.strip(), dt,
+                 "   EDITOR DIED" if alive is False else ""))
 
     try:
         os.remove(M.SWEEP_LOCK)
     except Exception:
         pass
 
-    with open(os.path.join(here, "suite_results.json"), "w") as f:
-        json.dump(results, f, indent=1)
+    # MERGE, DO NOT REPLACE. This was `json.dump(results, ...)` until 2026-09-03, and it meant a
+    # PARTIAL run silently DELETED the record of every suite it did not run. Found by looking at a
+    # git diff before a commit: an --offline run had taken the file from 346 records to 9.
+    #
+    # It is not an --offline-only problem, and that is the part worth stating. THREE paths above
+    # narrow `suites`, and one of them is the DEFAULT: PIE suites are skipped unless --with-pie, so
+    # an ordinary full sweep was erasing their results every single time. A name filter does the
+    # same. So the records most likely to be missing were the ones hardest to produce.
+    #
+    # The damage is invisible in the worst way. audit_suite_reach reports a suite with no record as
+    # NEVER RUN, which is indistinguishable from one whose record was deleted a minute ago, and its
+    # own docstring already complains that this file cost it "two false leads out of five". A
+    # deletion that reads as an honest absence is worse than a stale record, because a stale record
+    # at least carries a ranAt somebody can disbelieve.
+    #
+    # Untouched records keep their OLD ranAt deliberately. That is the honest state: the suite was
+    # not run just now, and audit_suite_reach should go on calling it stale against the source. The
+    # one thing that IS dropped is a record for a suite file that no longer exists - a merge that
+    # never forgets would resurrect deleted suites forever, and the offline-list guard above already
+    # treats a named-but-missing suite as an error rather than a shrug.
+    # THE KEY IS (suite, pass), NOT suite. Each suite is run TWICE by default - the second pass is
+    # what catches state a first pass left behind - and both records are kept. Keying on the name
+    # alone silently halves the file, which is how the first version of this merge behaved: it
+    # carried 168 records forward where 337 were expected, turning one kind of data loss into a
+    # quieter one. Measured rather than assumed: HEAD held 346 records over 173 suites, exactly two
+    # apiece.
+    #
+    # A --once run therefore leaves the previous pass-2 record in place, which is deliberate and the
+    # same reasoning as the ranAt paragraph above: that record is STALE, not absent, and it carries
+    # its own ranAt for anybody to disbelieve. Absence is the reading that misleads.
+    path = os.path.join(here, "suite_results.json")
+    merged = {}
+    try:
+        with open(path) as f:
+            for rec in json.load(f):
+                merged[(rec.get("suite"), rec.get("pass"))] = rec
+    except Exception:
+        pass                      # no file, or an unreadable one: this run becomes the whole record
+    for rec in results:
+        merged[(rec["suite"], rec["pass"])] = rec
+    kept = [merged[k] for k in sorted(merged, key=lambda k: (str(k[0]), k[1]))
+            if os.path.isfile(os.path.join(here, str(k[0])))]
+    dropped = sorted({str(k[0]) for k in merged} - {r["suite"] for r in kept})
+    if dropped:
+        print("dropped record(s) for %d suite(s) that no longer exist: %s"
+              % (len(dropped), ", ".join(dropped)))
+    print("recorded %d suite(s) from this run; %d record(s) carried forward from earlier runs"
+          % (len(results), len(kept) - len(results)))
+    with open(path, "w") as f:
+        json.dump(kept, f, indent=1)
 
     # EXIT CODE 2 MEANS SKIPPED, NOT FAILED, and the distinction is the whole reason a suite bothers to
     # return it. test_blender_ops cannot run without Blender listening, which it usually is not. A
