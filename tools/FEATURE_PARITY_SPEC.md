@@ -14357,9 +14357,42 @@ out-of-process the way ops_gen already does with gen_status.
 
       Zero state findings. Gated in make_release.py as the 27th ratcheted source check.
 
-- [ ] **the UE half of mutate-then-deny is still unaudited**
-      audit_mutate_then_deny reads the Blender addon only. The C++ handlers make the same promise in
-      the same words and nothing checks them; the shape is a Modify()/property write above a
-      RejectUnknownParams or a validation that returns an error. Needs a Clang-level or
-      text-with-AST-discipline pass rather than a port of this file, since the precision rules here
-      are all Python AST.
+- [x] **the UE half of mutate-then-deny** DONE 2026-09-04
+      tools/audit_mutate_then_deny_ue.py. 50 sites across 33 endpoints.
+
+      THE QUESTION IS NOT THE SAME ONE, and the tool says so rather than borrowing the Blender
+      half's headline. Modify() writes no property - it opens a transaction and DIRTIES THE PACKAGE.
+      So most of these sentences are true about the property and silent about the package: the asset
+      is left dirty, the next save-all writes a change nobody made into an asset nobody edited, and
+      the diff is unattributable. remove_virtual_bone is the case that proves the distinction is
+      real - "NOTHING was removed" is accurate, nothing was removed, and the skeleton is still
+      dirty. 34 of the 50 use changed/created/added, where a dirty package makes the sentence false
+      as well; the other 16 promise something narrower and keep it.
+
+      Structure without a parser: brace-matching over harvest_param_table's scrubber, which
+      preserves offsets so the raw text still lines up for reading the message, and
+      audit_postconditions' handler_bodies rather than a second copy of its brace-matcher.
+
+      TWO RULES CAME FROM READING CORRECT CODE. An else-if chain is ONE choice - edit_container
+      dispatches through eight arms, and pairing each block only with the one before it made arm 1
+      and arm 4 look unrelated, producing 24 findings from that handler alone. And the
+      `if (!bDidMutate)` guard, whose refusal is unreachable once a branch has mutated because every
+      such branch sets the flag: a data correlation no brace structure shows. 72 -> 50.
+
+      --selftest drives eight synthetic handlers through the same code path, each rule with a case
+      it must catch and a case it must not, because a rule that only ever suppresses is
+      indistinguishable from one that suppresses everything. 8/8.
+
+- [ ] **the 50 dirty-refusal sites in the C++ handlers**
+      Found by audit_mutate_then_deny_ue.py, NOT fixed: the editor holds UnrealEditor-MifBridge.dll,
+      so none of it can be compiled or tested in this session and an untested C++ edit is worth less
+      than a filed one. Run `python tools/audit_mutate_then_deny_ue.py --by-endpoint` for the list
+      with absolute file lines.
+
+      The shape of the fix is the same one the Blender side took: move every check that CAN refuse
+      above the first Modify(). Where the ordering is load-bearing - a validation that needs the
+      object transacted first - the transaction has to be cancelled or the refusal reworded to stop
+      promising about the package.
+
+      Gate it at zero once they are fixed and a build has verified them. It is deliberately ungated
+      now: a gate nobody can turn green is a gate people learn to skip.
