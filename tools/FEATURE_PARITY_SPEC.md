@@ -12541,22 +12541,42 @@ out-of-process the way ops_gen already does with gen_status.
       Exit code exercised BOTH WAYS before gating, because gating depends on it and "returns 1 by
       construction" is not evidence: 1 with a planted AttributeError, 0 clean.
 
-- [ ] **40 of 132 ops refuse on every build, so the matrix says nothing about their bpy calls** (2 hours)
-      The reach report added the same day makes this visible instead of leaving "zero raw
-      exceptions" to sound stronger than it is. 72 ops reach their bpy calls and return ok, 20 are
-      deliberately skipped with a reason, and 40 refuse on every version - exercised as far as their
-      guards and no further.
+- [x] **the matrix could not reach a third of the op table** DONE 2026-09-03
+      Was 40 of 132 refusing on every build. Now 3 of 137, and reach went 72 -> 113 of the 117
+      runnable ops. Two causes, both mine.
 
-      That is not a failure of those ops; it is a gap in the PAYLOADS table, which only carries
-      enough to get past the required-parameter refusals for the ops somebody has bothered to fill
-      in. The 40 include the whole animation-editing family (add_driver, edit_fcurve, add_nla_strip,
-      bake_to_keyframes, evaluate_at_frame, delete_keyframe), the node-group authoring ops beyond
-      the first, and several mesh edits (boolean_op, join_objects, extrude_skirt, apply_modifier).
+      PAYLOAD GUESSES WRITTEN FROM MEMORY rather than from the ops' own accept lists - width for
+      offset, "to" for mode, ORIGIN_GEOMETRY for geometry, start/end for frameStart/frameEnd. Each
+      rewritten from the refusal message the op actually returns.
 
-      Worth doing because the compositor bug lived PAST the first guard: an op refused at the door
-      would have hidden it just as effectively as no test at all. Each needs a fixture built in the
-      default scene first - a second object for boolean_op, an action for the fcurve ops - so it is
-      payload work plus a small amount of scene setup, not a redesign.
+      AND THE SWEEP EATING ITS OWN FIXTURES. It runs alphabetically, so a mutating op destroys what
+      a later one needs: join_objects MERGED MifSpare into Cube and six ops after it then refused
+      for a missing object, and assign_action REPLACED the action holding the f-curve that the whole
+      animation-editing family depends on. Both now have their own throwaways. A mutating sweep
+      needs private fixtures, not shared ones.
+
+      IT IMMEDIATELY FOUND A SECOND OP THAT HAD NEVER WORKED. bake_to_keyframes called
+      select_only(obj) where every one of the other eight call sites passes select_only([obj]) - the
+      helper iterates its argument, so it raised "TypeError: 'Object' object is not iterable" on
+      3.6, 4.2, 4.4 and 5.0. It had been refusing for a bad payload and never reaching that line,
+      which is exactly the argument for measuring reach rather than counting green.
+
+- [ ] **nothing in the addon creates a VERTEX GROUP or a SHAPE KEY** (3 hours)
+      Found by the three ops the matrix still cannot reach. list_vertex_groups, normalize_weights
+      and transfer_weights all operate on vertex groups, and list_shape_keys and set_shape_key on
+      shape keys - and grepping the whole addon for vertex_groups.new and shape_key_add returns
+      NOTHING. Same consume-but-cannot-produce shape as collections, empties, curves and armatures
+      before them, and the fourth time that question has paid.
+
+      So a rig imported with weights can be normalised and transferred, and one built here cannot be
+      weighted at all; a mesh with shape keys can have them driven, and one without cannot be given
+      any. transfer_weights refuses rather than producing an unskinned result, which is the op being
+      honest about a hole it cannot fill.
+
+      Wants create_vertex_group (with an optional vertex list and weights), assign_vertex_weights,
+      and add_shape_key (from the current mesh or as a copy of another key). The postcondition for
+      the weight ops is the DEFORMED result, not the group's existence - a group that exists with
+      every weight at zero deforms nothing and reads back perfectly.
 
 - [x] **a second UV channel + lightmap pack - it already worked, and nothing could tell** DONE 2026-09-03
       Item 6 of the measured gap list, and the premise turned out to be wrong. uv_unwrap with

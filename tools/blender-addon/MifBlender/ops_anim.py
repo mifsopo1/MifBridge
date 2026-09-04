@@ -1149,7 +1149,13 @@ def op_bake_to_keyframes(params):
 
     snap = selection_snapshot()
     try:
-        select_only(obj)
+        # A LIST, not a bare object. select_only iterates its argument, so passing the
+        # object itself raises "TypeError: 'Object' object is not iterable" - and this was
+        # the ONLY one of nine call sites getting it wrong, so bake_to_keyframes had NEVER
+        # WORKED on any Blender since it was written. Found 2026-09-03 by
+        # blender_version_matrix, and only after a payload fix let the op past its own
+        # guards - it had been refusing for a bad argument and never reaching this line.
+        select_only([obj])
         try:
             bpy.ops.nla.bake(frame_start=f0, frame_end=f1, step=step,
                              only_selected=True, visual_keying=visual,

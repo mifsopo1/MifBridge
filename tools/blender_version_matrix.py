@@ -94,7 +94,9 @@ PAYLOADS = {
     "aim_object": {"object": "Camera", "target": "Cube"},
     "set_light_ies": {"object": "Light", "clear": True},
     "set_light_linking": {"object": "Light", "clearReceivers": True},
-    "set_camera_panorama": {"object": "Camera", "panoramaType": "EQUIRECTANGULAR"},
+    # THE CAMERA MUST BE PANO FIRST - the op refuses on a PERSP camera because the settings
+    # "would be stored and never used", which is the op working. A fixture retypes MifPano.
+    "set_camera_panorama": {"object": "MifPano", "panoramaType": "EQUIRECTANGULAR"},
     "create_primitive": {"kind": "cube", "name": "MifSweepCube"},
     "create_light": {"type": "POINT"},
     "create_camera": {},
@@ -116,10 +118,10 @@ PAYLOADS = {
     "set_render_settings": {"samples": 4},
     "set_color_management": {"exposure": 0.0},
     "add_constraint": {"object": "Cube", "type": "TRACK_TO", "target": "Camera"},
-    "remove_constraint": {"object": "MifSpare", "index": 0},
+    "remove_constraint": {"object": "MifSpare", "constraintName": "Track To"},
     "add_modifier": {"object": "Cube", "type": "SUBSURF"},
-    "remove_modifier": {"object": "MifSpare", "name": "Subdivision"},
-    "apply_modifier": {"object": "MifSpare", "name": "Subdivision"},
+    "remove_modifier": {"object": "MifSpare", "modifier": "Subsurf"},
+    "apply_modifier": {"object": "MifApply", "modifier": "Subsurf"},
     # THE ANIMATION FAMILY, all of which need the f-curve the fixtures lay down first.
     "set_keyframe": {"object": "Cube", "location": [0, 0, 1], "frame": 20},
     "delete_keyframe": {"object": "Cube", "path": "location", "frame": 10},
@@ -128,11 +130,14 @@ PAYLOADS = {
     "move_keyframes": {"object": "Cube", "path": "location", "offset": 2},
     "add_fcurve_modifier": {"object": "Cube", "path": "location", "index": 2, "type": "CYCLES"},
     "evaluate_at_frame": {"object": "Cube", "paths": ["location"], "frame": 5},
-    "bake_to_keyframes": {"object": "Cube", "start": 1, "end": 5},
+    "bake_to_keyframes": {"object": "Cube", "frameStart": 1, "frameEnd": 5},
     "add_driver": {"object": "Cube", "path": "scale", "index": 0, "expression": "1.0"},
     "remove_driver": {"object": "Cube", "path": "scale", "index": 0},
-    "add_nla_strip": {"object": "Cube", "action": "MifMatrixAction"},
-    "assign_action": {"object": "Cube", "action": "MifMatrixAction"},
+    "add_nla_strip": {"object": "MifAnim", "action": "MifMatrixAction"},
+    # ITS OWN OBJECT. Pointed at Cube this REPLACED the action holding the f-curve fixture, so
+    # delete_keyframe, edit_fcurve and move_keyframes - all later alphabetically - then refused
+    # with "no fcurve". The same shape as join_objects eating MifSpare, one family over.
+    "assign_action": {"object": "MifAnim", "action": "MifMatrixAction"},
     "set_frame_range": {"start": 1, "end": 10},
     "create_action": {"name": "MifMatrixAction"},
     "list_actions": {},
@@ -147,7 +152,9 @@ PAYLOADS = {
     "create_material": {"name": "MifSweepMat"},
     "set_material_properties": {"material": "MifMatrixMat", "baseColor": [1, 0, 0]},
     "describe_material": {"material": "MifMatrixMat"},
-    "set_material_slots": {"object": "MifSpare", "slots": ["MifMatrixMat"]},
+    # allowResize, because CHANGING THE COUNT re-indexes every polygon material_index and the op
+    # refuses to do that silently - which is the op working, not a payload to route around.
+    "set_material_slots": {"object": "MifSpare", "slots": ["MifMatrixMat"], "allowResize": True},
     "assign_material_to_faces": {"object": "Cube", "faces": [0], "slot": 0},
     "create_node_group": {"name": "MifSweepGroup"},
     "add_group_node": {"group": "MifMatrixGroup", "type": "GeometryNodeSetPosition"},
@@ -162,18 +169,22 @@ PAYLOADS = {
     "transform_object": {"object": "Cube", "location": [1, 0, 0]},
     "apply_transform": {"object": "Cube"},
     # mode, NOT "to" - the accept list is location, mode, name, object.
-    "set_origin": {"object": "Cube", "mode": "ORIGIN_GEOMETRY"},
+    "set_origin": {"object": "Cube", "mode": "geometry"},
     # EVERY STEP OFF IS REFUSED outright: "clean_mesh was asked to do nothing".
     "clean_mesh": {"object": "Cube", "recalcNormals": True},
     "decimate_mesh": {"object": "MifSpare", "ratio": 0.5},
     # offset, NOT width, and a selector is required.
     "bevel_edges": {"object": "MifSpare", "allEdges": True, "offset": 0.02, "segments": 2},
     "select_edges": {"object": "Cube", "allEdges": True},
-    "extrude_skirt": {"object": "MifGrid", "boundaryOnly": True, "distance": 0.1},
+    "extrude_skirt": {"object": "MifGrid", "boundaryOnly": True, "depth": 0.1},
     "separate_mesh": {"object": "MifSpare", "mode": "LOOSE"},
     "boolean_op": {"target": "Cube", "cutter": "MifCutter", "operation": "DIFFERENCE",
                    "deleteCutter": False},
-    "join_objects": {"target": "Cube", "objects": ["MifSpare"]},
+    # ITS OWN THROWAWAY. Pointed at MifSpare, this MERGED the shared fixture into Cube and every
+    # op after it alphabetically that referenced MifSpare - list_modifiers, remove_modifier,
+    # separate_mesh, set_material_slots, unlink_objects, list_constraints - then refused for a
+    # missing object. A mutating sweep needs throwaways of its own, not shared ones.
+    "join_objects": {"target": "MifJoinA", "objects": ["MifJoinB"]},
     "transfer_weights": {"source": "MifCutter", "destination": "Cube"},
     "normalize_weights": {"object": "Cube"},
     "rename_bones": {"object": "MifRig", "map": {"tip": "tip_renamed"}},
@@ -192,7 +203,7 @@ PAYLOADS = {
     "list_cameras": {},
     "list_materials": {},
     "frame_viewport": {},
-    "set_viewport_view": {"view": "FRONT"},
+    "set_viewport_view": {"azimuth": 45.0, "elevation": 30.0, "distance": 10.0},
     "ping": {},
 }
 
@@ -234,6 +245,14 @@ FIXTURES = [
     ("add_modifier", {"object": "MifSpare", "type": "SUBSURF"}),
     ("add_constraint", {"object": "MifSpare", "type": "TRACK_TO", "target": "Camera"}),
     ("set_custom_property", {"object": "Cube", "key": "mif_probe", "value": 1}),
+    ("create_action", {"name": "MifMatrixAction"}),
+    ("create_primitive", {"kind": "cube", "name": "MifJoinA", "location": [8, 0, 0]}),
+    ("create_primitive", {"kind": "cube", "name": "MifJoinB", "location": [8.5, 0, 0]}),
+    ("create_primitive", {"kind": "cube", "name": "MifApply", "location": [12, 0, 0]}),
+    ("add_modifier", {"object": "MifApply", "type": "SUBSURF"}),
+    ("create_camera", {"name": "MifPano"}),
+    ("create_primitive", {"kind": "cube", "name": "MifAnim", "location": [16, 0, 0]}),
+    ("set_camera", {"object": "MifPano", "type": "PANO"}),
 ]
 
 # Ops deliberately NOT run, with the reason. Each would leave the throwaway process doing something
