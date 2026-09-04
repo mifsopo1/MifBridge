@@ -157,6 +157,21 @@ def install_stub():
     sys.modules["bpy.types"] = types_mod
     sys.modules["bpy.utils"] = types.ModuleType("bpy.utils")
 
+    # THE OTHER BLENDER-ONLY MODULES. ops_mesh imports bmesh at module scope, and the wider sweep
+    # in B110 has to import EVERY ops module to build the op table - so a missing stub here is not
+    # a gap in one test, it stops the whole surface being swept. Stubbed as bare modules because
+    # nothing is called on them before reject_unknown, which is the only thing B110 reaches.
+    for _mod in ("bmesh", "bpy_extras", "gpu", "bl_math"):
+        if _mod not in sys.modules:
+            sys.modules[_mod] = types.ModuleType(_mod)
+    bmesh = sys.modules["bmesh"]
+    bmesh.ops = types.SimpleNamespace()
+    bmesh.new = lambda *a, **k: None
+    bmesh.from_edit_mesh = lambda *a, **k: None
+    _oe = types.ModuleType("bpy_extras.object_utils")
+    sys.modules["bpy_extras.object_utils"] = _oe
+    sys.modules["bpy_extras"].object_utils = _oe
+
     mu = types.ModuleType("mathutils")
 
     class Vector(list):
@@ -389,6 +404,32 @@ def main():
     ):
         ok, detail = refuses(fn, params, *words)
         check("B109 %s" % label, ok, detail)
+
+    print("")
+    print("=== B110: EVERY op refuses an unknown key - the whole surface, swept ===")
+    # THE SYSTEMATIC ONE. The hand-written checks above cover the ops added 2026-09-03; the other
+    # ~70 have 242 refusal paths between them that are only reachable with a live Blender, so
+    # nothing checked any of them on an ordinary run.
+    #
+    # reject_unknown is the FIRST statement of 102 of the 103 ops (measured, not assumed), so a
+    # bogus key reaches it before anything touches bpy. That makes one property checkable across
+    # the entire surface at once: an op that silently ignores a misspelled parameter is the
+    # "ran but did nothing" bug this addon's guard exists to prevent, and it is exactly the class
+    # that let invoke_editor_tab and export_mesh's objectTypes sit wrong for months on the UE side.
+    from MifBlender import server as _bl_server
+    table = _bl_server._op_table()
+    swept, missed = 0, []
+    for name, fn in sorted(table.items()):
+        swept += 1
+        ok, _detail = refuses(fn, {"zzbogus_param": 1}, "unknown param", "zzbogus_param")
+        if not ok:
+            missed.append(name)
+    check("B110 all %d registered ops reject an unknown parameter by name" % swept,
+          not missed, "ops that did NOT: %s" % ", ".join(missed[:12]))
+    # A SWEEP THAT FOUND NOTHING MUST PROVE IT LOOKED. Zero ops swept would satisfy the check
+    # above trivially, and an op table that failed to build would look identical to a clean run.
+    check("B110 and the sweep actually covered the whole table, not an empty one",
+          swept >= 100, "swept %d ops" % swept)
 
     print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
