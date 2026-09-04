@@ -13645,3 +13645,38 @@ out-of-process the way ops_gen already does with gen_status.
       Verified on 3.6.23 and 5.0.1: FOV 90 on create, FOV 45 on set with both fields moving, focus
       on a real object with use_dof confirmed by readback, and three refusals - lens and fov
       together, a 200-degree FOV, and a focus object that does not exist.
+
+- [x] **the physics solver could be reported and not configured** DONE 2026-09-04
+      Third family in a row where the read side knew more than the write side. physics_info has
+      always reported substeps and solverIterations and nothing could write either, so the addon
+      could add rigid bodies, bake them, and describe exactly how the solver was set up while being
+      unable to change any of it. Those two are what you raise when bodies jitter or tunnel through
+      a floor, and scene gravity drives every rigid body in the file.
+
+      A GRAVITY VECTOR IS INERT WHILE use_gravity IS OFF - the third instance today of the same
+      shape, after a light's cutoff distance and a camera's focus object. Blender stores the value
+      either way, the field reads back perfectly, and nothing happens. Passing gravity turns the
+      toggle on unless told otherwise, and both directions were verified: it auto-enables when the
+      toggle was off, and respects an explicit useGravity:false.
+
+      CHANGING A SOLVER SETTING DOES NOT RE-SIMULATE, and that is the postcondition worth having.
+      An existing bake stays on disk and stays marked valid, so every frame afterwards was computed
+      with the OLD substeps while looking exactly as convincing. cacheIsBaked and cacheIsOutdated
+      are reported, and a bake the change just made stale is named.
+
+      The world-level keys are REFUSED when the scene has no rigid body world, rather than creating
+      one. A scene-wide simulation is not a side effect a settings call should have - the same
+      reason set_compositing refuses to switch use_nodes on from a read. Scene gravity needs no
+      world and works before one exists, which the probe confirms.
+
+      Verified on 3.6.23 and 5.0.1: refused with no world, gravity applied without one, substeps 20
+      and solver 30 applied once a rigid body existed with a readback, timeScale and splitImpulse
+      applied, and an empty call refused.
+
+- [ ] **particles, world and compositing have not had this pass**
+      Lighting, cameras and physics each turned out to have a real gap when the read side was
+      compared against the write side, after I had said the well was dry. The three families the
+      spec names that have NOT been checked the same way are particles (add_particles /
+      list_particles), world (set_world / world_info) and compositing (set_compositing /
+      compositor_info). Same method: read what the info op reports, diff it against what the setter
+      accepts, and measure the difference on all four builds before believing it.

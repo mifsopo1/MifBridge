@@ -206,6 +206,10 @@ PAYLOADS = {
     # CLOTH REFUSES 8 VERTICES - "a quad has nothing to bend" - so it gets the grid.
     "add_cloth": {"object": "MifGrid"},
     "add_collision": {"object": "Cube"},
+    # add_rigid_body runs at 'a', before this at 's', so the rigid body world exists by
+    # the time the sweep gets here - the same already-built-and-unused fixture bake_physics
+    # turned out to have. Gravity is scene-level and needs no world at all.
+    "set_physics_world": {"substeps": 12, "solverIterations": 15},
     "physics_info": {},
     # 32x32 AT ONE SAMPLE, to a throwaway. The postcondition worth reaching is wroteFile,
     # which is stat'd off disk because bpy.ops.render.render() returns FINISHED whether or

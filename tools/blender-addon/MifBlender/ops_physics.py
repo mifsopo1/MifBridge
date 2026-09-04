@@ -20,8 +20,8 @@ right in the viewport only if you happened to scrub through it.
 """
 import bpy
 
-from .ops_common import (MifOpError, get_object, reject_unknown, take, take_bool,
-                         take_float)
+from .ops_common import (MifOpError, get_object, reject_unknown, rnd, take, take_bool,
+                         take_float, take_int)
 
 _RB_KEYS = {"object", "name", "type", "mass", "friction", "bounciness", "restitution",
             "collisionShape", "kinematic", "margin", "linearDamping", "angularDamping"}
@@ -426,10 +426,152 @@ def op_physics_info(params):
         "readyToRender": not blockers,
     }
 
+
+_PHYSWORLD_KEYS = {"gravity", "useGravity", "substeps", "solverIterations", "timeScale",
+                   "splitImpulse", "enabled", "cacheStart", "cacheEnd", "cacheStep"}
+
+# The keys that need a RIGID BODY WORLD to exist, as opposed to living on the scene itself.
+_NEEDS_WORLD = {"substeps", "solverIterations", "timeScale", "splitImpulse", "enabled",
+                "cacheStart", "cacheEnd", "cacheStep"}
+
+
+def op_set_physics_world(params):
+    """The scene-level simulation settings - gravity, substeps, solver iterations, time scale.
+
+    THE ASYMMETRY THIS CLOSES. physics_info has always reported substeps and solverIterations and
+    nothing could write either, so the addon could add rigid bodies, bake them, and report exactly
+    how the solver was configured while being unable to change any of it. Those two are the knobs
+    that fix a simulation which jitters or tunnels through a floor, and scene gravity drives every
+    rigid body in the file - none of it was reachable.
+
+    A GRAVITY VECTOR IS INERT WHILE use_gravity IS OFF. Blender stores the vector either way, so
+    setting it alone changes three numbers and not the simulation, and every field reads back
+    exactly as written. Passing gravity turns the toggle on unless useGravity says otherwise - the
+    same shape as cutoffDistance on a light and a focus object on a camera, and the response says
+    when it happened.
+
+    CHANGING A SOLVER SETTING DOES NOT RE-SIMULATE. An existing bake stays on disk and stays marked
+    valid, so the next frame you look at was computed with the OLD substeps - a stale cache is
+    exactly as convincing as a fresh one. is_baked and is_outdated are reported afterwards, and a
+    bake that is now stale is named rather than left to be discovered as "the change did nothing".
+
+    params:
+      gravity [x,y,z] (list)      metres per second squared. Blender's default is [0,0,-9.81].
+      useGravity (bool)
+      substeps (int)              substeps_per_frame - raise this when bodies tunnel or jitter
+      solverIterations (int)      constraint solver iterations per substep
+      timeScale (float)           simulation speed multiplier; 0 freezes the sim
+      splitImpulse (bool)         use_split_impulse - reduces bounce on stacked bodies
+      enabled (bool)              the whole rigid body world on or off
+      cacheStart / cacheEnd / cacheStep (int)   the point cache's frame range
+    """
+    reject_unknown(params, _PHYSWORLD_KEYS, "set_physics_world")
+    sc = bpy.context.scene
+    asked = [k for k in _PHYSWORLD_KEYS if params.get(k) is not None]
+    if not asked:
+        raise MifOpError("nothing to do - pass at least one of %s. NOTHING was changed."
+                         % ", ".join(sorted(_PHYSWORLD_KEYS)))
+
+    rbw = getattr(sc, "rigidbody_world", None)
+    needs = [k for k in asked if k in _NEEDS_WORLD]
+    if needs and rbw is None:
+        # REFUSED RATHER THAN CREATED. A rigid body world is scene-wide state, and conjuring one
+        # from a settings call would be a side effect nobody asked for - the same reason
+        # set_compositing refuses to switch use_nodes on from a read.
+        raise MifOpError(
+            "this scene has no rigid body world, so %s cannot be set. One appears when the first "
+            "rigid body is added - call add_rigid_body on any object first. Creating a scene-wide "
+            "simulation from a settings call would be a side effect nobody asked for. NOTHING was "
+            "changed." % ", ".join(sorted(needs)))
+
+    applied = {}
+    grav = params.get("gravity")
+    if grav is not None:
+        if not isinstance(grav, (list, tuple)) or len(grav) < 3:
+            raise MifOpError("'gravity' must be [x, y, z] in m/s^2, got %r. NOTHING was changed."
+                             % (grav,))
+        sc.gravity = [float(v) for v in grav[:3]]
+        applied["gravity"] = [float(v) for v in grav[:3]]
+    if params.get("useGravity") is not None:
+        sc.use_gravity = take_bool(params, "useGravity", default=True)
+        applied["useGravity"] = sc.use_gravity
+
+    # THE TOGGLE THAT MAKES THE VECTOR MEAN ANYTHING.
+    auto_gravity = False
+    if "gravity" in applied and "useGravity" not in applied and not sc.use_gravity:
+        sc.use_gravity = True
+        auto_gravity = True
+
+    if rbw is not None:
+        for key, attr, cast in (("substeps", "substeps_per_frame", int),
+                                ("solverIterations", "solver_iterations", int),
+                                ("timeScale", "time_scale", float),
+                                ("splitImpulse", "use_split_impulse", bool),
+                                ("enabled", "enabled", bool)):
+            if params.get(key) is None:
+                continue
+            value = (take_bool(params, key, default=True) if cast is bool
+                     else (take_int(params, key) if cast is int else take_float(params, key)))
+            setattr(rbw, attr, value)
+            applied[key] = value
+        pc = getattr(rbw, "point_cache", None)
+        if pc is not None:
+            for key, attr in (("cacheStart", "frame_start"), ("cacheEnd", "frame_end"),
+                              ("cacheStep", "frame_step")):
+                if params.get(key) is None:
+                    continue
+                setattr(pc, attr, take_int(params, key))
+                applied[key] = getattr(pc, attr)
+
+    # READ BACK. substeps and solver_iterations are CLAMPED by Blender rather than refused, so
+    # echoing the request would report a value the solver does not have.
+    after = {"gravity": rnd(list(sc.gravity)), "useGravity": bool(sc.use_gravity)}
+    clamped = {}
+    if rbw is not None:
+        after.update({
+            "substeps": int(rbw.substeps_per_frame),
+            "solverIterations": int(rbw.solver_iterations),
+            "timeScale": round(float(rbw.time_scale), 6),
+            "splitImpulse": bool(rbw.use_split_impulse),
+            "enabled": bool(rbw.enabled),
+        })
+        for key in ("substeps", "solverIterations", "timeScale"):
+            if key in applied and after.get(key) != applied[key]:
+                clamped[key] = {"requested": applied[key], "stored": after[key]}
+
+    pc = getattr(rbw, "point_cache", None) if rbw is not None else None
+    was_baked = bool(getattr(pc, "is_baked", False)) if pc is not None else False
+    solver_touched = [k for k in applied
+                      if k in ("substeps", "solverIterations", "timeScale", "splitImpulse",
+                               "gravity", "useGravity")]
+    return {
+        "ok": True,
+        "scene": sc.name,
+        "hasRigidBodyWorld": rbw is not None,
+        "applied": after,
+        "clamped": clamped or None,
+        "gravityWasEnabledAutomatically": auto_gravity,
+        # THE CACHE STATE, because a solver change does not re-simulate and the old bake stays
+        # marked valid. is_outdated is Blender's own answer to "does this need re-baking".
+        "cacheIsBaked": was_baked,
+        "cacheIsOutdated": bool(getattr(pc, "is_outdated", False)) if pc is not None else None,
+        "cacheFrameRange": ([int(pc.frame_start), int(pc.frame_end)]
+                            if pc is not None else None),
+        "note": ("use_gravity was OFF, so the gravity vector would have been stored and ignored - "
+                 "it has been turned ON. Pass useGravity:false to store it without applying it."
+                 if auto_gravity else
+                 ("%s changed and this scene already has a BAKED cache. Changing a solver setting "
+                  "does not re-simulate - the existing bake stays on disk and stays convincing, so "
+                  "every frame you look at was computed with the OLD settings. Re-run bake_physics "
+                  "with clear:true and then bake again."
+                  % ", ".join(sorted(solver_touched))) if (was_baked and solver_touched) else None),
+    }
+
 OPS = {
     "add_rigid_body": op_add_rigid_body,
     "add_cloth": op_add_cloth,
     "add_collision": op_add_collision,
     "bake_physics": op_bake_physics,
     "physics_info": op_physics_info,
+    "set_physics_world": op_set_physics_world,
 }

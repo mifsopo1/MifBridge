@@ -5668,6 +5668,19 @@ def bl_add_collision(object: str, damping: float = None, friction: float = None,
 
 
 @mcp.tool()
+def bl_set_physics_world(gravity: list = None, use_gravity: bool = None,
+                         substeps: int = None, solver_iterations: int = None,
+                         time_scale: float = None, split_impulse: bool = None,
+                         enabled: bool = None, cache_start: int = None,
+                         cache_end: int = None, cache_step: int = None) -> dict:
+    "The SCENE-level Blender simulation settings. bl_physics_info has always reported substeps and solverIterations and nothing could write either, so the addon could add rigid bodies, bake them, and report exactly how the solver was configured while being unable to change any of it. Those two are what you raise when bodies jitter or tunnel through a floor, and scene gravity drives every rigid body in the file. A GRAVITY VECTOR IS INERT WHILE use_gravity IS OFF - Blender stores it either way, so setting it alone changes three numbers and not the simulation, and passing gravity turns the toggle on unless you say otherwise. CHANGING A SOLVER SETTING DOES NOT RE-SIMULATE: an existing bake stays on disk and stays marked valid, so every frame you look at was computed with the OLD settings - cacheIsBaked and cacheIsOutdated are reported, and a bake made stale by the change is named. The rigid-body-world keys are REFUSED when the scene has no world rather than conjuring one, because a scene-wide simulation is not a side effect a settings call should have; add a rigid body first."
+    return _blender("set_physics_world", gravity=gravity, useGravity=use_gravity,
+                    substeps=substeps, solverIterations=solver_iterations,
+                    timeScale=time_scale, splitImpulse=split_impulse, enabled=enabled,
+                    cacheStart=cache_start, cacheEnd=cache_end, cacheStep=cache_step)
+
+
+@mcp.tool()
 def bl_physics_info(object: str = None) -> dict:
     "What the Blender physics setup IS - the read half of a family that could only write. bl_add_rigid_body, bl_add_cloth, bl_add_collision and bl_bake_physics all set and nothing reported what they had set; bl_scene_info carries no physics at all, and a rigid body is NOT a modifier (it lives on obj.rigid_body) so bl_list_modifiers cannot see it either. Catches the inert state that settings cannot reveal: an object can carry a fully configured rigid body - mass, friction, shape, all reading back perfectly - and never simulate, because the sim only acts on objects in the RigidBodyWorld's COLLECTION, so it hangs in the air. Reported as inSimulation. Also flags unbaked caches (a late frame shows the REST state and a render of it is simply wrong) and BAKED-BUT-SHORT ones, where a bake made before the frame range was extended stays valid while the frames past its end silently fall back."
     return _blender("physics_info", object=object)
