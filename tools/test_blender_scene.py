@@ -274,6 +274,38 @@ def main():
           rm.get("countsAgree") is True and rm.get("constraintCountAfter") == 0,
           json.dumps(rm)[:220])
 
+    # ---------------------------------------------------------------- S106 custom properties
+    print("")
+    print("=== S106: custom properties, and the type Blender quietly changes ===")
+    cp = B.call("set_custom_property", {"object": "S_Cam", "key": "S_Rig", "value": 0.25,
+                                        "min": 0.0, "max": 1.0,
+                                        "description": "suite probe"})
+    check("S106 setting a custom property succeeds", cp.get("ok") is not False,
+          json.dumps(cp)[:220])
+    check("S106 and the UI range was accepted - a slider without one is not a control",
+          cp.get("uiRangeSet") is True, json.dumps(cp)[:220])
+    check("S106 the stored type is reported, because Blender coerces silently",
+          bool(cp.get("storedType")), json.dumps(cp)[:220])
+
+    lcp = B.call("list_custom_properties", {"object": "S_Cam"})
+    keys = [r.get("key") for r in (lcp.get("properties") or [])]
+    check("S106 list_custom_properties finds it", "S_Rig" in keys, json.dumps(lcp)[:220])
+    # THE FILTER IS PART OF THE ANSWER. Blender's own cycles settings live in the same namespace,
+    # so a count that folded them in would be wrong in a confusing way - and one that dropped them
+    # silently would leave a caller unable to tell an empty object from a filtered one.
+    check("S106 and a user key is NOT counted among the internal ones it filtered",
+          "S_Rig" not in (lcp.get("skippedInternalKeys") or []),
+          json.dumps(lcp.get("skippedInternalKeys")))
+    check("S106 with the filtered internal keys named rather than silently dropped",
+          isinstance(lcp.get("skippedInternalKeys"), list),
+          json.dumps(lcp)[:220])
+
+    gone = B.call("set_custom_property", {"object": "S_Cam", "key": "S_Rig", "delete": True})
+    check("S106 deleting it reports the remaining set rather than a bare ok",
+          gone.get("deleted") is True
+          and "S_Rig" not in [r.get("key") for r in (gone.get("properties") or [])],
+          json.dumps(gone)[:220])
+
     # ---------------------------------------------------------------- cleanup
     print("")
     for n in ("S_Ground", "S_Crate", "S_Mote", "S_Cam", "S_Sun"):

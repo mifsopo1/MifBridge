@@ -12,7 +12,7 @@ from contextlib import redirect_stdout, redirect_stderr
 import bpy
 
 from .ops_common import (
-    MifOpError, jsonable, object_info, mesh_counts, take, take_bool,
+    MifOpError, jsonable, object_info, mesh_counts, take, take_bool, take_float,
     reject_unknown, get_object, UU_PER_BU,
 )
 
@@ -449,7 +449,163 @@ def op_set_object_visibility(params):
     }
 
 
+_CUSTOM_SKIP = {"_RNA_UI", "cycles", "cycles_visibility"}
+
+
+def _custom_holder(obj, bone_name, verb):
+    """Object or pose bone. Custom properties live on both and mean the same thing on each."""
+    if not bone_name:
+        return obj, "object"
+    if obj.type != "ARMATURE" or obj.pose is None:
+        raise MifOpError("'bone' was given but '%s' is not a posed ARMATURE. NOTHING was %s."
+                         % (obj.name, verb))
+    pb = obj.pose.bones.get(str(bone_name))
+    if pb is None:
+        raise MifOpError("no bone named '%s' on '%s'. NOTHING was %s."
+                         % (bone_name, obj.name, verb))
+    return pb, "bone '%s'" % pb.name
+
+
+def _custom_rows(holder):
+    rows = []
+    for key in holder.keys():
+        if key in _CUSTOM_SKIP:
+            continue
+        try:
+            raw = holder[key]
+        except (KeyError, TypeError):
+            continue
+        try:
+            value = list(raw) if hasattr(raw, "__len__") and not isinstance(raw, str) else raw
+        except TypeError:
+            value = str(raw)
+        row = {"key": key, "value": value, "type": type(raw).__name__}
+        # UI metadata is a separate store from the value, and a rig slider is useless without it.
+        try:
+            ui = holder.id_properties_ui(key).as_dict()
+            row["min"] = ui.get("min")
+            row["max"] = ui.get("max")
+            row["description"] = ui.get("description") or None
+        except (AttributeError, TypeError, KeyError):
+            row["min"] = row["max"] = row["description"] = None
+        rows.append(row)
+    return sorted(rows, key=lambda r: r["key"])
+
+
+def op_list_custom_properties(params):
+    """Custom properties on an object or pose bone, with their UI range.
+
+    params:
+      object (str, required)
+      bone (str)   read the pose bone's instead
+
+    Custom properties are how a rig exposes controls, and glTF writes them into the engine as
+    `extras` - so they are metadata that travels, not just annotations. The UI min/max is a
+    separate store from the value and is reported alongside, because a slider without a range is
+    not a control.
+    """
+    reject_unknown(params, {"object", "name", "bone"}, "list_custom_properties")
+    obj = get_object(take(params, "object", "name", required=True))
+    holder, label = _custom_holder(obj, take(params, "bone", default=None, kind=str), "read")
+    rows = _custom_rows(holder)
+    return {
+        "object": obj.name,
+        "owner": label,
+        "count": len(rows),
+        "properties": rows,
+        # Named rather than silently filtered: cycles settings live in the same namespace and are
+        # not user metadata, so a count that included them would be wrong in a confusing way.
+        "skippedInternalKeys": sorted(k for k in holder.keys() if k in _CUSTOM_SKIP),
+    }
+
+
+def op_set_custom_property(params):
+    """Set a custom property, and its UI range, on an object or pose bone.
+
+    params:
+      object (str, required)
+      key (str, required)
+      value                    number, bool, string or list
+      bone (str)
+      min / max (float)        UI range - a rig slider without one is not a control
+      description (str)
+      delete (bool)            remove the property instead
+
+    THE TYPE IS REPORTED BACK because Blender coerces silently: an int written where a float is
+    expected stays an int, and a driver or an exporter reading it later gets a different type than
+    the caller thinks they stored.
+    """
+    reject_unknown(params, {"object", "name", "key", "value", "bone", "min", "max",
+                            "description", "delete"}, "set_custom_property")
+    obj = get_object(take(params, "object", "name", required=True))
+    holder, label = _custom_holder(obj, take(params, "bone", default=None, kind=str), "changed")
+    key = take(params, "key", default=None, kind=str)
+    if not key:
+        raise MifOpError("'key' is required. NOTHING was changed.")
+    key = str(key)
+    if key in _CUSTOM_SKIP:
+        raise MifOpError("'%s' is an internal key, not user metadata - writing it would collide "
+                         "with Blender's own storage. NOTHING was changed." % key)
+
+    if take_bool(params, "delete", default=False):
+        if key not in holder.keys():
+            raise MifOpError("no custom property '%s' on %s to delete. NOTHING was changed."
+                             % (key, label))
+        del holder[key]
+        if key in holder.keys():
+            raise MifOpError("deleted '%s' but it is still present. Do not trust this state." % key)
+        return {"object": obj.name, "owner": label, "key": key, "deleted": True,
+                "properties": _custom_rows(holder)}
+
+    if "value" not in params:
+        raise MifOpError("'value' is required unless delete:true. NOTHING was changed.")
+    value = params.get("value")
+    if isinstance(value, (list, tuple)):
+        value = list(value)
+    holder[key] = value
+
+    lo = take_float(params, "min", default=None)
+    hi = take_float(params, "max", default=None)
+    desc = take(params, "description", default=None, kind=str)
+    if lo is not None and hi is not None and lo > hi:
+        raise MifOpError("min %g is above max %g. The value WAS written; the range was not."
+                         % (lo, hi))
+    ui_set = False
+    if lo is not None or hi is not None or desc:
+        try:
+            ui = holder.id_properties_ui(key)
+            kwargs = {}
+            if lo is not None:
+                kwargs["min"] = lo
+            if hi is not None:
+                kwargs["max"] = hi
+            if desc:
+                kwargs["description"] = str(desc)
+            ui.update(**kwargs)
+            ui_set = True
+        except (AttributeError, TypeError, KeyError) as exc:
+            raise MifOpError("the value was written but this Blender would not take the UI range "
+                             "for '%s' (%s). The property EXISTS and has no slider bounds."
+                             % (key, exc))
+
+    rows = [r for r in _custom_rows(holder) if r["key"] == key]
+    return {
+        "object": obj.name,
+        "owner": label,
+        "key": key,
+        "property": rows[0] if rows else None,
+        "uiRangeSet": ui_set,
+        # BLENDER COERCES SILENTLY. An int written where a float was meant stays an int, and an
+        # exporter or a driver reading it later gets a type the caller did not think they stored.
+        "storedType": type(holder[key]).__name__,
+        "requestedType": type(value).__name__,
+        "typeChanged": type(holder[key]).__name__ != type(value).__name__,
+    }
+
+
 OPS = {
+    "list_custom_properties": op_list_custom_properties,
+    "set_custom_property": op_set_custom_property,
     "ping": op_ping,
     "scene_info": op_scene_info,
     "list_objects": op_list_objects,

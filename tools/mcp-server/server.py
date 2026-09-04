@@ -5020,6 +5020,21 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_list_custom_properties(object: str, bone: str = None) -> dict:
+    "Custom properties on a Blender object or pose bone, with their UI range. These are how a rig exposes controls, and glTF writes them into the engine as `extras` - so they are metadata that TRAVELS, not just annotations. The UI min/max is a separate store from the value and is reported alongside it, because a slider without a range is not a control. Blender's own internal keys (cycles settings, _RNA_UI) share the namespace and are named under skippedInternalKeys rather than silently folded into the count. Call mif_help(\"bl_list_custom_properties\") first."
+    return _blender("list_custom_properties", object=object, bone=bone)
+
+
+@mcp.tool()
+def bl_set_custom_property(object: str, key: str, value=None, bone: str = None,
+                           min: float = None, max: float = None, description: str = None,
+                           delete: bool = None) -> dict:
+    "Set a custom property, and its UI range, on a Blender object or pose bone. THE TYPE IS REPORTED BACK because Blender coerces silently: an int written where a float was meant stays an int, and a driver or an exporter reading it later gets a different type than the caller thinks they stored - typeChanged names that. min/max set the UI range, without which a rig slider is not a control; if this Blender will not take the range the op says the value WAS written and the bounds were not, rather than reporting a clean success. Pass delete:true to remove one. Writing an internal key (cycles, _RNA_UI) is refused rather than allowed to collide with Blender's own storage. Call mif_help(\"bl_set_custom_property\") first."
+    return _blender("set_custom_property", object=object, key=key, value=value, bone=bone,
+                    min=min, max=max, description=description, delete=delete)
+
+
+@mcp.tool()
 def bl_add_driver(object: str, data_path: str, index: int = None, expression: str = None,
                   variables: list = None) -> dict:
     "Wire a Blender property to an expression, and prove the driver actually EVALUATES. Drivers are the one animation feature that fails completely silently: a broken expression, or a variable pointing at an object that no longer exists, stays in place and evaluates to ZERO - nothing errors, nothing warns, and every field a caller can read looks perfectly correct. Blender shows it as a coloured field in the UI and reports it nowhere else. So this refuses a data_path that does not resolve (Blender would create the driver permanently invalid), refuses a variable whose target object does not exist, refuses a second driver on a path that already has one, and reports isValid plus the driven property read back through the depsgraph. variables is a list of {name, object, dataPath}. Read them back with bl_list_animation_data. Call mif_help(\"bl_add_driver\") first."
