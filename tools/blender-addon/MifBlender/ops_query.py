@@ -39,8 +39,8 @@ import bpy
 import mathutils
 import mathutils.bvhtree
 
-from .ops_common import (MifOpError, get_object, reject_unknown, rnd, take, take_bool, take_float,
-                         take_int)
+from .ops_common import (MifOpError, finite_floats, get_object, reject_unknown, rnd, take,
+                         take_bool, take_float, take_int)
 
 _RAY_KEYS = {"origin", "direction", "target", "object", "name", "distance", "evaluated"}
 # NO "name" ALIAS HERE. object is required and unambiguous, and param_reach flagged the alias
@@ -59,17 +59,19 @@ def _vec(params, key, required=False, default=None):
         if required:
             raise MifOpError("'%s' is required and must be [x,y,z]." % key)
         return None if default is None else mathutils.Vector(default)
+    # FINITE, because a non-finite ray is not an error the caller ever sees otherwise. Measured on
+    # 5.0.1: ray_cast{origin: [nan, 0, 0]} and a direction of -inf were both ACCEPTED and answered
+    # "hit": false. That is worse than an exception - it is a WRONG ANSWER shaped like data, and a
+    # caller reads it as "there is nothing there" rather than "the query was malformed".
     if isinstance(raw, dict):
         try:
-            return mathutils.Vector((float(raw["x"]), float(raw["y"]), float(raw["z"])))
-        except (KeyError, TypeError, ValueError):
+            xyz = [raw["x"], raw["y"], raw["z"]]
+        except KeyError:
             raise MifOpError("'%s' as an object needs x, y and z, got %r." % (key, raw))
+        return mathutils.Vector(finite_floats(xyz, key))
     if not isinstance(raw, (list, tuple)) or len(raw) < 3:
         raise MifOpError("'%s' must be [x,y,z] or {x,y,z}, got %r." % (key, raw))
-    try:
-        return mathutils.Vector((float(raw[0]), float(raw[1]), float(raw[2])))
-    except (TypeError, ValueError):
-        raise MifOpError("'%s' must be three numbers, got %r." % (key, raw))
+    return mathutils.Vector(finite_floats(list(raw)[:3], key))
 
 
 def _normal_to_world(obj, local_normal):
