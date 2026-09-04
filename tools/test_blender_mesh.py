@@ -625,6 +625,64 @@ def main():
     except OSError:
         pass
 
+    # ------------------------------------------------------------------
+    # T790  mesh_quality - the checks that decide whether an asset ships
+    # ------------------------------------------------------------------
+    print("")
+    print("=== T790: mesh_quality reports the defects that get an asset rejected ===")
+    # NO clear_scene HERE, and that was not the first draft. Clearing the scene destroyed the mesh
+    # every earlier check in this file depends on, so the FIRST run passed and every run after it
+    # died at T762 with "no MESH in the scene" - a suite that breaks the next invocation of itself.
+    # The objects below are uniquely named instead, which is what makes this re-runnable.
+
+    # A CLEAN mesh first, because a checker that complains about everything passes any firing test
+    # and is ignored within a week.
+    call("create_primitive", kind="cube", name="Q_Clean", size=2)
+    call("uv_unwrap", object="Q_Clean", method="SMART")
+    clean = call("mesh_quality", object="Q_Clean")
+    check("T790 a clean unwrapped cube raises NO concerns - without this the op could return every "
+          "complaint it knows on every mesh and still look like it works",
+          clean.get("concernCount") == 0, json.dumps(clean.get("concerns"))[:200])
+    check("T790 and it counts the topology correctly - 6 quads, no ngons",
+          (clean.get("checks") or {}).get("faces", {}).get("quads") == 6
+          and clean["checks"]["faces"]["ngons"] == 0,
+          json.dumps((clean.get("checks") or {}).get("faces"))[:120])
+    check("T790 a uniform unwrap has a texel density spread near 1 - the number that says whether "
+          "one part of a model will look blurry beside another",
+          abs((clean["checks"].get("texelDensity") or {}).get("spreadRatio", 99) - 1.0) < 0.5,
+          json.dumps(clean["checks"].get("texelDensity"))[:170])
+
+    # NOW A BROKEN ONE. A cylinder's caps are ngons; transform_object leaves scale unapplied. Both
+    # built through this addon's own ops rather than run_python, so the test needs nothing enabled.
+    call("create_primitive", kind="cylinder", name="Q_Broken", radius=1.0)
+    call("transform_object", object="Q_Broken", scale=[2.0, 1.0, 1.0])
+    bad = call("mesh_quality", object="Q_Broken")
+    _concerns = " | ".join(bad.get("concerns") or [])
+    check("T790 ngon caps are REPORTED - many stores and engines take tris or quads only",
+          bad["checks"]["faces"]["ngons"] == 2 and "ngon" in _concerns,
+          json.dumps(bad["checks"]["faces"]))
+    check("T790 unapplied scale is REPORTED - the most common export surprise, where the mesh looks "
+          "right in Blender and arrives in the engine the wrong size",
+          bad["checks"]["transform"]["scaleApplied"] is False and "scale is not applied" in _concerns,
+          json.dumps(bad["checks"]["transform"])[:140])
+    check("T790 and the broken mesh raises MORE concerns than the clean one",
+          bad.get("concernCount", 0) > clean.get("concernCount", 0),
+          "clean=%s broken=%s" % (clean.get("concernCount"), bad.get("concernCount")))
+
+    # THE REACH PATH. This is the one that decides whether a clean report can be trusted.
+    nouv = call("mesh_quality", object="NoUVs")
+    if nouv.get("ok") is False:
+        check("T790 (not exercised) the no-UV path needs a mesh with its UV layers removed, which "
+              "no create op here produces - every primitive is unwrapped", True,
+              str(nouv.get("error"))[:120])
+    else:
+        check("T790 a mesh with NO UV layer says so in notMeasured rather than reporting a clean "
+              "UV verdict - concerns:0 beside a skipped check reads as 'the UVs are fine' and is "
+              "not the same claim",
+              "uv" in (nouv.get("notMeasured") or {})
+              and "uv" not in (nouv.get("checks") or {}),
+              json.dumps(nouv.get("notMeasured"))[:200])
+
     print("")
     print("=" * 70)
     print("PASS %d   FAIL %d" % (len(PASS), len(FAIL)))

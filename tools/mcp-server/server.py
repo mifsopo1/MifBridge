@@ -4820,6 +4820,13 @@ def bl_mesh_stats(object: str, evaluated: bool = None) -> dict:
 
 
 @mcp.tool()
+def bl_mesh_quality(object: str, uv_layer: str = None, texel_density_for: float = None) -> dict:
+    "Measure the objectively checkable things that get an asset REJECTED from a store: ngons, non-manifold edges, loose verts and edges, zero-area faces, unapplied scale and rotation, empty material slots, UV loops outside the 0-1 tile, and texel density spread across faces. Returns every NUMBER plus `concerns`, which lists only defects with a defensible objective threshold - it says NOTHING about whether the asset looks good and does not pretend to. READ notMeasured BEFORE TRUSTING A CLEAN REPORT: a mesh with no UV layer gets no UV verdict at all, which is an absence of data rather than a pass, and an empty concerns list beside a skipped check is not a clean bill of health. Measures the mesh AS AUTHORED, not the evaluated result, because that is what exports and what a store inspects - a subdivision modifier would make every ngon and density figure describe something the file does not contain."
+    return _blender("mesh_quality", object=object, uvLayer=uv_layer,
+                    texelDensityFor=texel_density_for)
+
+
+@mcp.tool()
 def bl_create_collision_hull(object: str, index: int = None, name: str = None,
                              prefix: str = None, world_space: bool = None,
                              max_vertices: int = None, collection: str = None) -> dict:

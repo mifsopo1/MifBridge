@@ -84,7 +84,8 @@ import bmesh
 import bpy
 from mathutils import Vector
 
-from .ops_common import (MifOpError, UU_PER_BU, axis_index, check_output_path, finite_floats,
+from .ops_common import (MifOpError, UU_PER_BU, axis_index, check_output_path,
+                         edit_mode_stale, finite_float, finite_floats,
                          get_object, mesh_counts, object_info, reject_unknown, require_editable,
                          rnd, select_only, selection_restore, selection_snapshot,
                          shared_data_note, take, take_bool, take_float, take_int)
@@ -3432,6 +3433,217 @@ def op_set_uv_layer(params):
                   % active_now if switched else None)),
     }
 
+# ---------------------------------------------------------------------------
+# mesh_quality
+# ---------------------------------------------------------------------------
+
+# Faces smaller than this in square metres are treated as degenerate. Not zero: a float-exact zero
+# almost never occurs, and a face of 1e-12 m2 is a defect that exports and renders as nothing.
+_DEGENERATE_FACE_AREA = 1e-9
+# UV coordinates are compared against 0-1 with a tolerance, because an unwrap that lands a vertex at
+# 1.0000001 is not a defect and reporting it as one is how a check gets ignored.
+_UV_BOUND_EPS = 1e-4
+
+
+def _uv_area(face, uv_layer):
+    """Signed UV area of one face, by the shoelace formula over its loops."""
+    total = 0.0
+    loops = face.loops
+    n = len(loops)
+    for i in range(n):
+        x1, y1 = loops[i][uv_layer].uv
+        x2, y2 = loops[(i + 1) % n][uv_layer].uv
+        total += (x1 * y2) - (x2 * y1)
+    return abs(total) * 0.5
+
+
+def op_mesh_quality(params):
+    """Measure the objectively checkable things that get an asset rejected.
+
+    NOT A VERDICT ON THE ART. Everything here is a number a machine can defend: topology, UV bounds,
+    texel density spread, applied transforms, loose and degenerate geometry. Whether the thing is
+    beautiful is not in scope and is not claimed.
+
+    params:
+      object (str, required)   the mesh to measure
+      uvLayer (str)            which UV layer to judge; default is the active one
+      texelDensityFor (float)  texture size in pixels used for the density figure, default 1024
+    """
+    reject_unknown(params, {"object", "name", "uvLayer", "texelDensityFor"}, "mesh_quality")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+
+    # A read off mesh.polygons is STALE in edit mode - the live data is in a BMesh nobody has
+    # written back. Reporting numbers from it would describe the mesh as it was before the user
+    # started editing, confidently.
+    stale = edit_mode_stale(obj)
+
+    tex_px = take_float(params, "texelDensityFor", default=1024.0)
+    tex_px = finite_float(tex_px, "texelDensityFor")
+    if tex_px <= 0:
+        raise MifOpError("texelDensityFor is a texture size in PIXELS and must be positive - got "
+                         "%r. NOTHING was measured." % tex_px)
+
+    mesh = obj.data
+    skipped = {}
+    checks = {}
+    concerns = []
+
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(mesh)
+        bm.faces.ensure_lookup_table()
+        bm.verts.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+
+        # ---- topology -------------------------------------------------------------------
+        tris = quads = ngons = 0
+        degenerate = []
+        world = obj.matrix_world
+        world_area = 0.0
+        for f in bm.faces:
+            n = len(f.verts)
+            if n == 3:
+                tris += 1
+            elif n == 4:
+                quads += 1
+            else:
+                ngons += 1
+            # Area in WORLD space, because a metre is what texel density is per - an object scaled
+            # 100x has the same local area and a hundredth of the density.
+            a = f.calc_area() * (world.to_scale().x * world.to_scale().y)
+            world_area += a
+            if a < _DEGENERATE_FACE_AREA:
+                degenerate.append(f.index)
+
+        checks["faces"] = {"total": len(bm.faces), "tris": tris, "quads": quads, "ngons": ngons}
+        checks["degenerateFaces"] = {"count": len(degenerate), "indices": degenerate[:50]}
+
+        # An edge on 0 faces is loose; on 1 it is a boundary (legitimate on an open mesh); on 3+ it
+        # is non-manifold and will confuse every baker and engine downstream. Counted separately
+        # because only the last is unambiguously wrong.
+        loose_edges = [e.index for e in bm.edges if len(e.link_faces) == 0]
+        boundary = [e.index for e in bm.edges if len(e.link_faces) == 1]
+        nonmanifold = [e.index for e in bm.edges if len(e.link_faces) > 2]
+        loose_verts = [v.index for v in bm.verts if len(v.link_edges) == 0]
+        checks["looseVerts"] = {"count": len(loose_verts), "indices": loose_verts[:50]}
+        checks["looseEdges"] = {"count": len(loose_edges), "indices": loose_edges[:50]}
+        checks["boundaryEdges"] = {"count": len(boundary),
+                                   "note": "legitimate on an open mesh; a closed one should have 0"}
+        checks["nonManifoldEdges"] = {"count": len(nonmanifold), "indices": nonmanifold[:50]}
+
+        # ---- UVs ------------------------------------------------------------------------
+        want_layer = take(params, "uvLayer", default=None, kind=str)
+        uv_layer = None
+        if not bm.loops.layers.uv:
+            skipped["uv"] = ("this mesh has NO UV layer, so UV bounds and texel density were not "
+                             "measured - that is an absence of data, not a pass")
+        else:
+            if want_layer:
+                uv_layer = bm.loops.layers.uv.get(want_layer)
+                if uv_layer is None:
+                    raise MifOpError(
+                        "no UV layer named '%s' on '%s'. Layers: %s. NOTHING was measured."
+                        % (want_layer, obj.name, ", ".join(bm.loops.layers.uv.keys()) or "(none)"))
+            else:
+                uv_layer = bm.loops.layers.uv.verify()
+
+        if uv_layer is not None:
+            outside = 0
+            uv_total = 0.0
+            densities = []
+            for f in bm.faces:
+                ua = _uv_area(f, uv_layer)
+                uv_total += ua
+                for loop in f.loops:
+                    u, v = loop[uv_layer].uv
+                    if (u < -_UV_BOUND_EPS or u > 1.0 + _UV_BOUND_EPS
+                            or v < -_UV_BOUND_EPS or v > 1.0 + _UV_BOUND_EPS):
+                        outside += 1
+                wa = f.calc_area() * (world.to_scale().x * world.to_scale().y)
+                if wa > _DEGENERATE_FACE_AREA and ua > 0.0:
+                    # px per metre: the texture edge in pixels times the UV edge length, over the
+                    # world edge length. Using areas, that is sqrt(uv_area)/sqrt(world_area)*px.
+                    densities.append((ua ** 0.5) / (wa ** 0.5) * tex_px)
+
+            checks["uv"] = {
+                "layer": uv_layer.name if hasattr(uv_layer, "name") else str(want_layer or "active"),
+                "loopsOutside01": outside,
+                "uvAreaTotal": round(uv_total, 6),
+                "note": ("uvAreaTotal well above 1.0 means islands overlap or spill outside the "
+                         "tile; it does NOT prove overlap on its own, and this op does not do "
+                         "island intersection."),
+            }
+            if densities:
+                densities.sort()
+                lo, hi = densities[0], densities[-1]
+                mid = densities[len(densities) // 2]
+                checks["texelDensity"] = {
+                    "pixelsPerMetreMin": round(lo, 2),
+                    "pixelsPerMetreMedian": round(mid, 2),
+                    "pixelsPerMetreMax": round(hi, 2),
+                    "spreadRatio": round(hi / lo, 2) if lo > 0 else None,
+                    "forTextureSize": tex_px,
+                    "note": ("spreadRatio is max/min across faces. A uniform unwrap sits near 1; a "
+                             "large number means some faces get far more texture than others, "
+                             "which is what makes one part of a model look blurry beside another."),
+                }
+            else:
+                skipped["texelDensity"] = ("no face had both a non-zero world area and a non-zero "
+                                           "UV area, so density is undefined rather than 0")
+    finally:
+        bm.free()
+
+    # ---- transforms -----------------------------------------------------------------------
+    sc = tuple(round(v, 6) for v in obj.scale)
+    rot = tuple(round(v, 6) for v in obj.rotation_euler)
+    checks["transform"] = {
+        "scale": list(sc),
+        "scaleApplied": sc == (1.0, 1.0, 1.0),
+        "rotationEuler": list(rot),
+        "rotationApplied": rot == (0.0, 0.0, 0.0),
+        "note": ("unapplied scale is the most common export surprise: the mesh looks right in "
+                 "Blender and arrives in the engine at a different size or with broken normals."),
+    }
+
+    slots = [s.material.name if s.material else None for s in obj.material_slots]
+    checks["materials"] = {"slots": len(slots), "empty": sum(1 for s in slots if s is None),
+                           "names": [s for s in slots if s]}
+
+    # ---- the only judgements made, and each one is defensible -------------------------------
+    if ngons:
+        concerns.append("%d ngon(s) - many stores and engines require tris or quads only" % ngons)
+    if nonmanifold:
+        concerns.append("%d non-manifold edge(s) - these break bakes, booleans and collision"
+                        % len(nonmanifold))
+    if loose_verts or loose_edges:
+        concerns.append("%d loose vert(s) and %d loose edge(s) - geometry that renders as nothing "
+                        "and still costs file size" % (len(loose_verts), len(loose_edges)))
+    if degenerate:
+        concerns.append("%d zero-area face(s) - they export, shade unpredictably and show as "
+                        "artefacts" % len(degenerate))
+    if not checks["transform"]["scaleApplied"]:
+        concerns.append("scale is not applied (%s) - apply it before export" % (list(sc),))
+    if checks["materials"]["empty"]:
+        concerns.append("%d empty material slot(s)" % checks["materials"]["empty"])
+    if "uv" in checks and checks["uv"]["loopsOutside01"]:
+        concerns.append("%d UV loop(s) outside the 0-1 tile" % checks["uv"]["loopsOutside01"])
+
+    out = {
+        "object": obj.name,
+        "checks": checks,
+        "concerns": concerns,
+        "concernCount": len(concerns),
+        # REACH, NOT GREEN. An empty concerns list next to a skipped check is not a clean bill of
+        # health, and saying so here is what stops it being read as one.
+        "notMeasured": skipped,
+        "reachNote": ("concerns lists only defects with an objective threshold. It says NOTHING "
+                      "about whether the asset looks good, and anything in notMeasured was not "
+                      "judged at all - an absence of data rather than a pass."),
+    }
+    out.update(stale)
+    out.update(shared_data_note(obj))
+    return out
+
 OPS = {
     "import_mesh": op_import_mesh,
     "decimate_mesh": op_decimate_mesh,
@@ -3440,6 +3652,7 @@ OPS = {
     "rename_object": op_rename_object,
     "set_vertex_color": op_set_vertex_color,
     "mesh_stats": op_mesh_stats,
+    "mesh_quality": op_mesh_quality,
     "export_mesh": op_export_mesh,
     "select_edges": op_select_edges,
     "bevel_edges": op_bevel_edges,

@@ -7,7 +7,7 @@
 *Compile a Blueprint and get the errors mapped to node and pin. Build, light, animate and render a Blender scene. One agent, two DCCs, one round trip.*
 
 <!-- MIFBRIDGE-VERSION-LINE -->
-`v0.9.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **453 UE endpoints** &nbsp;·&nbsp; 🧱 **151 Blender ops** &nbsp;·&nbsp; 🧰 **621 MCP tools** &nbsp;·&nbsp; 🧪 **180 test suites**
+`v0.9.0` &nbsp;·&nbsp; 🎮 **UE 5.3 + 5.7** &nbsp;·&nbsp; 🎨 **Blender 3.6–5.0** &nbsp;·&nbsp; 🔌 **453 UE endpoints** &nbsp;·&nbsp; 🧱 **152 Blender ops** &nbsp;·&nbsp; 🧰 **622 MCP tools** &nbsp;·&nbsp; 🧪 **180 test suites**
 
 </div>
 
