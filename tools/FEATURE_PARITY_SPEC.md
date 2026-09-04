@@ -14929,3 +14929,29 @@ out-of-process the way ops_gen already does with gen_status.
 
       When it is done, the shape is already decided elsewhere in this repo: a `limit` with a
       reported `truncated` flag, so a caller can never mistake a partial answer for a complete one.
+
+- [x] **ray_cast answered "no hit" for a NaN origin instead of refusing** DONE 2026-09-04
+      ops_query's vector parser converted with a bare float(), so on 5.0.1 both
+      ray_cast{origin: [nan,0,0]} and a direction of -inf were ACCEPTED and answered "hit": false.
+
+      That is worse than an exception. It is a WRONG ANSWER shaped like data - the caller reads
+      "there is nothing there" when the query was malformed - and a raycast returning a confident
+      false negative is exactly the kind of result that gets believed and acted on. Both go through
+      finite_floats now and refuse by name and index.
+
+      FOUND BY PUTTING ANDRE'S OWN GAP-LIST ENDPOINTS THROUGH TODAY'S LENSES. He measured that gap
+      himself - 13 of 21 escapes to run_python that day were ray casting, 15 were reading per-face
+      material - so ray_cast, face_info, select_faces and assign_material_to_faces exist because of
+      it, and all four predate the finiteness, bounds and list-sentinel work. Re-testing what was
+      built earlier against a lens built later is cheap and this is what it is for.
+
+      The rest held: face indices bounds-checked in both directions, select_faces refuses a NaN
+      angle and a NaN box corner, assign_material_to_faces refuses an out-of-range face. A `limit`
+      larger than the mesh is harmless and stays accepted. All four have matrix payloads and none is
+      skipped.
+
+- [x] **all 151 registered addon ops are named by the matrix** DONE 2026-09-04
+      Checked rather than assumed, by reading the registration tables and comparing against the
+      matrix's PAYLOADS/SKIP/FIXTURES/TEARDOWN. Zero registered ops are unknown to it, so the 7 that
+      do not reach their bpy calls are the deliberate skips and nothing has slipped in unnoticed.
+      A negative result, recorded so the next person does not have to re-derive it.
