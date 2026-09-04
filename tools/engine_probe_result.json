@@ -4,8 +4,12 @@
  "succeeded": true,
  "inconclusive": false,
  "why": "",
- "head": "a0c4a32470d18a1189f263207ef6e420924d59d6",
+ "head": "a7d03cdc0cd44a5c585d38c6e097136284b14b15",
  "sourceCommit": "a0c4a32470d18a1189f263207ef6e420924d59d6",
  "sourceCommitDate": "2026-09-04T16:15:07-04:00",
- "sourceDirty": []
+ "sourceDirty": [
+  "ource/MifBridge/Private/MifBridgeDescribe.cpp",
+  "Source/MifBridge/Private/MifBridgePIE.cpp",
+  "Source/MifBridge/Private/MifBridgeSpatial.cpp"
+ ]
 }

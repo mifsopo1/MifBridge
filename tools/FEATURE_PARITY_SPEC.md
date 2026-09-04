@@ -11571,7 +11571,18 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
 
       Draft written 2026-09-03, not yet applied.
 
-- [ ] **two accepted summaries advertise a parameter the same handler refuses** (30 min + a rebuild)
+- [x] **two accepted summaries advertise a parameter the same handler refuses** DONE 2026-09-04
+      Both fixed and rebuilt once the editor was free. start_pie now says oneProcess, width and
+      height are MULTIPLAYER ONLY with the condition attached to each rather than trailing the list;
+      trace says drawDuration is only read when draw is true. describe_endpoint and the harvested
+      table both agree with the guards now.
+
+      A THIRD BUG FELL OUT OF FIXING THEM, and it is the useful part: I put an explanatory // comment
+      BETWEEN the TEXT() literals. harvest_param_table copies those literals verbatim into generated
+      C++, so the comment was swept into the string and MifBridgeDescribe.cpp stopped compiling -
+      "cannot convert from nullptr to int32" at the row it mangled. Comments about a summary have to
+      live ABOVE the RejectUnknownParams call, never inside it. Written down at the site, because
+      nothing about the literal block says it is machine-read.
       Both are `TEXT()` literals inside `RejectUnknownParams`, which is the text `describe_endpoint`
       publishes and `harvest_param_table` generates its table from - so the contract a caller reads
       before writing the call disagrees with the guard that answers it. Both VERIFIED by reading the

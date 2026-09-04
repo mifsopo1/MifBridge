@@ -830,7 +830,8 @@ namespace MifBridge
 				 "shape (line|sphere|box|capsule, default line), radius (sphere/capsule), "
 				 "halfExtent:{x,y,z} (box), halfHeight (capsule), channel (default worldStatic), "
 				 "traceComplex (default true), multi (default false), ignoreActors:[names or paths], "
-				 "draw (bool - leave the ray in the viewport), drawDuration (seconds, default 5)"),
+				 "draw (bool - leave the ray in the viewport), drawDuration (seconds, default 5 - "
+				 "ONLY read when draw is true, and refused without it)"),
 			{ { TEXT("from"), TEXT("the parameter is 'start' (trace_ground uses fromZ/toZ because it is Z-only; this one takes full vectors)") },
 			  { TEXT("to"), TEXT("the parameter is 'end'") },
 			  { TEXT("ignoreActor"), TEXT("this one takes ignoreActors:[...] - a list, since a general trace usually needs to exclude several") } }))

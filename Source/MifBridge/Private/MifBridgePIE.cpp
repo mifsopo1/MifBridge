@@ -202,12 +202,23 @@ namespace MifBridge
 	// REQUESTS the session and returns. Poll pie_status until state=="running".
 	void H_start_pie(const TSharedRef<FJsonObject>& In, const TSharedRef<FJsonObject>& Out)
 	{
+		// EACH CONDITION ON ITS OWN PARAMETER, and this comment lives ABOVE the call rather than
+		// inside it: harvest_param_table copies the summary literals VERBATIM into the generated
+		// table, so a // comment placed between them is swept into the string and the generated C++
+		// stops compiling. Measured - it did exactly that.
+		//
+		// The summary used to read "oneProcess (default true), width, height (client window size,
+		// multiplayer only)". That qualifier trailed a list and was meant to distribute backwards
+		// over all three, so oneProcess read as always available while kMultiOnly[] below refuses it
+		// on a single-player session just as hard.
 		if (RejectUnknownParams(In, Out,
 			{ TEXT("simulate"), TEXT("startLocation"), TEXT("startRotation"), TEXT("players"),
 			  TEXT("netMode"), TEXT("oneProcess"), TEXT("width"), TEXT("height") },
 			TEXT("simulate, startLocation {x,y,z}, startRotation {x,y,z}, players (1-8), ")
-			TEXT("netMode (standalone|listen|client; default listen when players>1), oneProcess (default true), ")
-			TEXT("width, height (client window size, multiplayer only)"),
+			TEXT("netMode (standalone|listen|client; default listen when players>1), ")
+			TEXT("oneProcess (MULTIPLAYER ONLY - refused unless players>1 or netMode is set; ")
+			TEXT("default true), width, height (client window size, MULTIPLAYER ONLY - same ")
+			TEXT("condition)"),
 			{ { TEXT("location"), TEXT("use startLocation — and note startRotation is only read when startLocation is supplied too") },
 			  { TEXT("rotation"), TEXT("use startRotation; it is only read when startLocation is supplied as well") },
 			  { TEXT("clients"), TEXT("use players (clamped to 1-8)") },
