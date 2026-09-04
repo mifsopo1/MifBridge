@@ -588,6 +588,19 @@ def check_static_audits():
                        # quaternion, and set_frame_range raised a bare ValueError from inside
                        # Blender. Eleven files were fixed by hand; this stops the twelfth.
                        ("audit_unguarded_numbers.py", ["--check"]),
+                       # AND NO SUITE ADOPTING AN OBJECT ANOTHER SUITE CREATES, gated at zero on
+                       # 2026-09-04. The detector was written 2026-09-03 and scored against ground
+                       # truth at 8a626bc^ - 8 of 8 known-bad suites flagged before the fix, 0 of 8
+                       # after - and it has been green and UNGATED ever since, because it had no
+                       # failing exit path: every branch of its main() returned 0. It has a --check
+                       # now, and its plant runs through that path rather than the report, so what
+                       # is proven is the route this gate actually takes.
+                       #
+                       # Worth gating precisely because a single suite run cannot find this class.
+                       # test_landscape_heightmap failed only on the SECOND pass of a sweep;
+                       # test_socket_authoring passes 34/34 alone and 33/1 in one. The sweep that
+                       # would catch it needs a live editor and half an hour; this needs neither.
+                       ("audit_fixture_adoption.py", ["--check"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
                        # and these two turned out to be static, so they had never been run for no

@@ -603,7 +603,43 @@ def main():
             print("  %-28s %2d  %s%s" % (cls, len(who), ", ".join(w[5:-3] for w in who[:4]),
                                          ", ..." if len(who) > 4 else ""))
         return 0
-    report(HERE, include_cleared="--all" in sys.argv)
+    found = report(HERE, include_cleared="--all" in sys.argv)
+
+    # --check IS THE ONLY PATH THAT CAN FAIL, and until 2026-09-04 there wasn't one. This detector
+    # was scored against ground truth, had a proven plant, and reported OK - and was absent from
+    # make_release's gates, because every path here returned 0. It could not be added: a gate that
+    # cannot fail is worse than no gate, since it looks like coverage in a list of 33 and is not.
+    #
+    # Its own plant had been saying so. audit_detectors_fire reported "proven ... (report-style
+    # tool - it always exits 0, so the exit code proves nothing)" - the plant proved the tool
+    # NOTICES, and nothing proved it OBJECTS.
+    #
+    # AT ZERO RATHER THAN RATCHETED, unlike audit_mutate_then_deny_ue beside it in that tuple. That
+    # one is ratcheted because its sites wait on a rebuild nobody can perform while an editor holds
+    # the DLL, so zero would be a gate nobody can turn green. All fourteen sites here are fixed, so
+    # the strongest gate available is the honest one.
+    #
+    # No baseline file, because this file already has a better mechanism: an ADOPTION-OK marker
+    # written beside the call with its reason, which report() counts and prints even when it is
+    # zero. A baseline is an exception list kept somewhere else, and adding an invisible one next to
+    # a visible one would undo the point of having the visible one.
+    if "--check" in sys.argv:
+        if found:
+            sites = sum(len(v) for v in found.values())
+            print("")
+            print("BLOCKING: %d site(s) across %d suite(s) adopt an object another suite creates."
+                  % (sites, len(found)))
+            print("This bug class does not show up in a single suite run - that is its defining")
+            print("property. test_landscape_heightmap failed only on the SECOND pass of a sweep,")
+            print("and test_socket_authoring passes 34/34 alone and 33/1 in a sweep. So it is")
+            print("caught here, statically, or it is caught by somebody weeks later.")
+            print("")
+            print("Scope the discovery call to your own scratch (mifaudit.pick_adoptable), or if")
+            print("the adoption really is safe, say why beside the call with an ADOPTION-OK marker")
+            print("so the reason is readable where the code is.")
+            return 1
+        print("")
+        print("no suite adopts an object another suite creates - gated at zero")
     return 0
 
 

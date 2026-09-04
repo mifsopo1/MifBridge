@@ -1100,8 +1100,14 @@ PLANTS = {
     # PLANTED SUITE'S NAME, which works only because test_pie_family is not in the report already -
     # checked, not assumed. If it ever starts appearing there for its own reasons, this entry stops
     # proving anything and needs a different target.
+    # gate FLIPPED TO TRUE 2026-09-04, together with giving the tool a --check. It was False
+    # because the tool genuinely could not fail - every path in main() returned 0 - so prove() had
+    # to fall back to "did the output name the marker", and said so in its result line. Now that
+    # --check exits 1 on an un-suppressed adoption, the EXIT CODE is the proof, which is the same
+    # path make_release's gate takes. Proving a tool through a route the gate does not use is how a
+    # gate ends up green for a reason unrelated to the thing it guards.
     "audit_fixture_adoption.py": (os.path.join(HERE, "test_pie_family.py"),
-                                  plant_fixture_adoption, "test_pie_family.py", False),
+                                  plant_fixture_adoption, "test_pie_family.py"),
     "audit_nested_field_reads.py": (os.path.join(HERE, "test_uncovered_reads2.py"),
                                     plant_nested_field_read,
                                     'writes "arrayDim" only into a sub-object'),
@@ -1165,6 +1171,13 @@ ARGS = {"audit_vacuous_checks.py": ["--all"],
         "audit_stale_counts.py": ["--check"],
         "audit_mutate_then_deny.py": ["--check"],
         "audit_mutate_then_deny_ue.py": ["--check"],
+        # --check RATHER THAN THE BARE REPORT, added 2026-09-04. Until that day this tool had
+        # NO failing exit path, and the plant said so in its own result line: "proven ...
+        # (report-style tool - it always exits 0, so the exit code proves nothing)". That
+        # proved the tool NOTICES; nothing proved it OBJECTS - which is also why it was
+        # missing from make_release's gated tuple. Running the plant through --check is what
+        # makes the gate's own path the one under test.
+        "audit_fixture_adoption.py": ["--check"],
         "audit_created_name_reported.py": ["--check"],
         "audit_output_paths.py": ["--check"],
         "audit_unguarded_numbers.py": ["--check"],
