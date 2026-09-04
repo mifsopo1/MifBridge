@@ -578,6 +578,27 @@ def _apply_modifier_settings(mod, settings, mod_type):
     return sorted(applied)
 
 
+def _evaluated_counts(obj):
+    """What the modifier stack currently PRODUCES, not what the mesh data holds.
+
+    THE TWO ARE DIFFERENT AND THAT IS THE WHOLE POINT. obj.data is the mesh before any modifier;
+    the depsgraph result is what renders and what exports. A modifier that empties the object
+    changes the second and not the first.
+    """
+    try:
+        deps = bpy.context.evaluated_depsgraph_get()
+        ev = obj.evaluated_get(deps)
+        mesh = ev.to_mesh()
+        out = {"verts": len(mesh.vertices), "edges": len(mesh.edges),
+               "faces": len(mesh.polygons)}
+        ev.to_mesh_clear()
+        return out
+    except Exception:  # noqa: BLE001
+        # A REPORTING FIELD MUST NOT BE ABLE TO BREAK THE OP. If the depsgraph cannot be read here,
+        # the answer is "unknown" rather than a raised exception from a diagnostic.
+        return {}
+
+
 def op_add_modifier(params):
     """Add a modifier to a mesh object's stack - the write half of list_modifiers.
 
@@ -616,6 +637,9 @@ def op_add_modifier(params):
                          "object. NOTHING was changed." % (obj.name, mod_name))
 
     before = [m.name for m in obj.modifiers]
+    # WHAT THE STACK PRODUCES NOW, so what it produces after is comparable. See the postcondition
+    # at the end of this function for why a modifier's own fields cannot answer this.
+    evaluated_before = _evaluated_counts(obj)
     mod = obj.modifiers.new(name=mod_name, type=mod_type)
     if mod is None:
         raise MifOpError("Blender refused to create a %s modifier on '%s'. NOTHING was changed."
@@ -651,6 +675,23 @@ def op_add_modifier(params):
     # READ BACK through the same describer list_modifiers uses, so add and read speak one
     # vocabulary and a settings value that did not take is visible rather than assumed.
     row = _modifier_dict(obj.modifiers[mod.name])
+
+    # WHAT THE MODIFIER ACTUALLY DOES TO THE OBJECT, evaluated rather than inferred from its fields.
+    #
+    # A MASK modifier added with no vertex group masks EVERYTHING: the object evaluates to zero
+    # vertices and disappears from the viewport and from every export, while this op returned a
+    # clean success. Measured on 4.4 - a default cube, 8 vertices, evaluates to 0 the moment a bare
+    # MASK is added. Nothing in the modifier's own properties says so, which is why reading them
+    # back through _modifier_dict was not enough.
+    #
+    # The same measurement answers the quieter half. Most modifier types need to be POINTED at
+    # something - a shrinkwrap target, a lattice, a hook, a curve - and until they are they sit in
+    # the stack doing nothing. An inert modifier and a working one are identical in every field.
+    evaluated_after = _evaluated_counts(obj)
+    became_empty = (evaluated_before.get("verts", 0) > 0
+                    and evaluated_after.get("verts", 1) == 0)
+    inert = evaluated_before == evaluated_after
+
     return {
         "object": obj.name,
         "modifier": mod.name,
@@ -658,6 +699,21 @@ def op_add_modifier(params):
         "settingsApplied": applied,
         "stackBefore": before,
         "stackAfter": [m.name for m in obj.modifiers],
+        "evaluatedBefore": evaluated_before,
+        "evaluatedAfter": evaluated_after,
+        # THE FIELD THAT MATTERS. True means the object is GONE from every render and every export
+        # while still sitting in the outliner looking normal.
+        "evaluatesToEmpty": became_empty,
+        "evaluatedUnchanged": inert,
+        "effectWarning": (
+            "'%s' evaluates to ZERO vertices with this modifier on it - the object will not render "
+            "and will export as an empty mesh, while still looking present in the outliner. A MASK "
+            "with no vertex group does exactly this. Configure it or remove it."
+            % obj.name) if became_empty else (
+            "this modifier changed nothing about the evaluated mesh. Most types have to be POINTED "
+            "at something - a target, a lattice, a curve, a vertex group - before they do anything, "
+            "and an unconfigured one is indistinguishable from a working one in every field here."
+            if inert else None),
         "index": list(obj.modifiers).index(obj.modifiers[mod.name]),
         "readBack": row,
         "note": ("added to the stack, NOT applied - it will still affect what export_mesh writes "

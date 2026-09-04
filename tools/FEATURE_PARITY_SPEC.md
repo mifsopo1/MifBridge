@@ -13245,3 +13245,29 @@ out-of-process the way ops_gen already does with gen_status.
       warns about - and it was removed rather than exposed. audit_message_endpoints found the
       docstring citing describe_material, which is not a tool name; a caller following it would have
       been told it is not an endpoint on this build.
+
+- [x] **add_modifier reported success while the object evaluated to nothing** DONE 2026-09-04
+      A MASK modifier added with no vertex group masks EVERYTHING. Measured on 4.4: a default cube
+      goes from 8 evaluated vertices to ZERO the moment a bare MASK is added. The object vanishes
+      from the viewport, renders as nothing and exports as an empty mesh, while still sitting in the
+      outliner looking entirely normal - and add_modifier returned a clean success with a full
+      settings read-back. Reading the modifier's own properties could never have caught it, because
+      nothing in them says so.
+
+      Fixed GENERICALLY rather than by special-casing MASK: the op now evaluates the object through
+      the depsgraph before and after, and reports evaluatedBefore, evaluatedAfter, evaluatesToEmpty
+      and evaluatedUnchanged. obj.data is the mesh before any modifier; the depsgraph result is what
+      renders and what exports, and only the second one moved.
+
+      The same measurement answers the quieter half of the finding - "16 types add and do nothing".
+      Most modifier types have to be POINTED at something (a shrinkwrap target, a lattice, a hook, a
+      curve) and until they are they sit in the stack inert, identical in every field to a working
+      one. evaluatedUnchanged says so.
+
+      Three cases on 4.4 including a negative control: MASK reports evaluatesToEmpty with a loud
+      warning; an unconfigured SHRINKWRAP reports evaluatedUnchanged with a note about needing a
+      target; a SUBSURF at levels 1 goes 8 -> 26 and produces NO warning at all. A check that
+      warns about everything is a check people turn off.
+
+      _evaluated_counts swallows its own exceptions and returns {} rather than raising - a field
+      that exists to report on the operation must not be able to break it.
