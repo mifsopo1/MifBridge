@@ -1,3 +1,7 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     "Copy everything below the line into a session" - a prompt for expanding the plugin.
+     The buyer is using the plugin, not extending its endpoint surface. Internal.
+     Still version-controlled: kept in git, kept out of the zip. -->
 # Fable session prompt — exhaustive MifBridge endpoint discovery
 
 Copy everything below the line into a fresh Fable session. It is written for a long unattended run

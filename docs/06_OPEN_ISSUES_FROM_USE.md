@@ -1,3 +1,7 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     "FILE BUGS HERE" - our own bug list. A customer files bugs on GitHub, not in a text file
+     inside the zip they downloaded. Internal.
+     Still version-controlled: kept in git, kept out of the zip. -->
 # MifBridge — open issues found in use
 
 ## FILE BUGS HERE

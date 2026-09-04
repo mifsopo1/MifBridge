@@ -1,3 +1,7 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     A plan for a demo that has not been built. Internal until it is, at which point the DEMO
+     ships and the plan still does not.
+     Still version-controlled: kept in git, kept out of the zip. -->
 # Small-town build — plan
 
 Build a 7-building town entirely through MifBridge, then play it in PIE. This is both a deliverable

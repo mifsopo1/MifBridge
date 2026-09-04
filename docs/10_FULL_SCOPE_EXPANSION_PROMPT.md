@@ -1,3 +1,6 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     As above, and it also drives MifKismetReconstructor, which is not in the package. Internal.
+     Still version-controlled: kept in git, kept out of the zip. -->
 # Fable 5 session prompt — full-scope endpoint expansion (MifBridge + MifKismetReconstructor)
 
 Copy everything below the line into a fresh Fable 5 session. Written for an unattended multi-hour run.

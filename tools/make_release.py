@@ -90,6 +90,12 @@ FAB_EXCLUDE_PATTERNS = (
     re.compile(r"^tools/probe_[^/]+\.py$"),
     re.compile(r"^tools/mif_[^/]+\.py$"),
     re.compile(r"^skills/"),                      # this repo's own agent skills
+    # 53 FILES OF ENDPOINT-AUDIT WORKING NOTES from 2026-07-26 - ranked batches, progress trackers,
+    # per-axis specs. Measured: they hold 316 of the 553 references to the game this plugin was
+    # developed against, 57% of that whole problem, and a buyer has no use for a single one of them.
+    # Excluded under --fab only: the audit trail is plausibly interesting to someone reading the
+    # public repo, and is merely noise to someone who paid.
+    re.compile(r"^docs/audit/"),
 )
 
 # KEPT UNDER --fab NO MATTER WHAT, because a pattern above would otherwise catch them and the buyer
@@ -98,6 +104,27 @@ FAB_EXCLUDE_PATTERNS = (
 FAB_KEEP_PREFIXES = (
     "tools/mcp-server/",      # how an agent talks to any of this
     "tools/blender-addon/",   # the optional second backend
+)
+
+# TOP-LEVEL tools/ IS ALLOW-LISTED, and the DIRECTION of the list is the point.
+#
+# The exclude patterns above dropped test_/audit_/probe_/mif_ and left 48 files, which turned out to
+# be our entire development and release infrastructure - including report_trust.json, a file that
+# describes itself as "the security boundary of the whole autonomous loop" and names the GitHub
+# logins allowed to have issues auto-processed. Every buyer would have received it.
+#
+# The comment above FAB_EXCLUDE_PATTERNS is right that a hand-kept list is one forgotten entry away
+# from shipping something internal - and that is an argument against an EXCLUDE list specifically.
+# Invert it and the failure mode inverts too: forget an entry here and a useful tool is MISSING,
+# which is visible, harmless, and fixed in one line. Forget one there and a credential ships.
+#
+# Subdirectories are deliberately not covered - FAB_KEEP_PREFIXES already takes them wholesale,
+# because adding a file to the MCP server should not require editing this list.
+FAB_KEEP_TOOLS = (
+    "tools/verify_install.py",        # "did I install this correctly?" - the first thing anyone runs
+    "tools/scratch_confirm.py",       # issues the confirm token the write endpoints demand
+    "tools/bench_bridge_latency.py",  # per-call latency, and whether the editor had focus
+    "tools/make_demo.py",             # generates the capability demo end to end - a working example
 )
 
 
@@ -964,9 +991,14 @@ def tracked_files():
         # r"\.log$" matched only a path literally beginning with ".log" - i.e. nothing. The first
         # patterns here happened to work because they began with ^tools/, which hid the mistake until
         # the zip was listed and ten artifacts were found still shipping.
-        if FAB_MODE[0] and not rel.startswith(FAB_KEEP_PREFIXES) \
-                and any(p.search(rel) for p in FAB_EXCLUDE_PATTERNS):
-            continue
+        if FAB_MODE[0] and not rel.startswith(FAB_KEEP_PREFIXES):
+            # A top-level tools/ file ships only if it is named. See FAB_KEEP_TOOLS: the list is
+            # allow rather than deny so a mistake loses a utility instead of leaking one.
+            top_level_tool = (rel.startswith("tools/") and rel.count("/") == 1)
+            if top_level_tool and rel not in FAB_KEEP_TOOLS:
+                continue
+            if any(p.search(rel) for p in FAB_EXCLUDE_PATTERNS):
+                continue
         if any(p.search(rel) for p in EXCLUDE_PATTERNS):
             continue
         if is_dev_only(os.path.join(ROOT, rel)):

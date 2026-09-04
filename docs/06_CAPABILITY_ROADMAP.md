@@ -1,3 +1,7 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     Says of itself "STALE AS A WHOLE". A stale roadmap in a paid package is worse than none,
+     because a buyer reads it as a promise. Internal.
+     Still version-controlled: kept in git, kept out of the zip. -->
 # MifBridge — capability roadmap
 
 > **STALE AS A WHOLE, RE-CHECKED 2026-08-29 - READ THIS BEFORE TRUSTING ANY ITEM BELOW.** This file is

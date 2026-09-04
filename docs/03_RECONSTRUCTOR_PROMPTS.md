@@ -1,3 +1,7 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     Handoff prompts for MifKismetReconstructor, which is GPL-3.0 and deliberately not bundled.
+     Work instructions for a plugin we do not ship. Internal.
+     Still version-controlled: kept in git, kept out of the zip. -->
 # Handoff prompts — MifKismetReconstructor
 
 Two pieces of work that belong to **MifKismetReconstructor**, not MifBridge. MifBridge edits live

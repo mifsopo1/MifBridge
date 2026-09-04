@@ -1,3 +1,7 @@
+<!-- MIFBRIDGE-DEV-ONLY -- excluded from release zips by tools/make_release.py.
+     How to cut a MifBridge release and keep a second copy honest. Not a thing a customer does.
+     Internal.
+     Still version-controlled: kept in git, kept out of the zip. -->
 # Releasing MifBridge, and keeping a second copy honest
 
 ## The problem this solves, measured
