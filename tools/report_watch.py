@@ -61,6 +61,7 @@ import argparse
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -301,6 +302,30 @@ Choose the status honestly - `fixed` is the only one that closes the issue. If t
 fix of ours, say so plainly rather than defending it. %(push)s
 """
 
+def claude_exe():
+    """Absolute path to the claude CLI, or None. Resolved ONCE and announced.
+
+    THE BARE-NAME LESSON, APPLIED ONE LAYER DOWN. The scheduled task that runs this file used to
+    execute the bare word "python"; Task Scheduler does not search PATH, so every run failed with
+    0x80070002 and the watcher never started for a single report. Python's subprocess DOES search
+    PATH, so spawning bare "claude" works today - but it is the same assumption, and if it ever
+    stops holding the failure looks like a watcher that noticed a report and quietly did nothing.
+    """
+    if _CLAUDE[0] is _UNSET:
+        _CLAUDE[0] = shutil.which("claude")
+        if _CLAUDE[0]:
+            log("  agent binary: %s" % _CLAUDE[0])
+        else:
+            # LOUD, AND AT STARTUP. This is the one failure that would otherwise be discovered on
+            # the night it matters, by which time the report has already been marked seen.
+            log("  WARNING: 'claude' is NOT on PATH - reports will be noticed and NO agent can be "
+                "spawned. Fix PATH or this watcher is only a logger.")
+    return _CLAUDE[0]
+
+
+_CLAUDE = [_UNSET]
+
+
 def escalate(issue, push, dry_run):
     """Wake a model - the ONLY step in this file that costs anything."""
     head = "#%s %s" % (issue["number"], (issue.get("title") or "")[:60])
@@ -312,7 +337,12 @@ def escalate(issue, push, dry_run):
         "push": "Push it." if push else
                 "Do NOT push - leave the commit local for Andre to review.",
     }
-    cmd = ["claude", "-p", prompt,
+    exe = claude_exe()
+    if not exe:
+        log("  CANNOT SPAWN - 'claude' is not on PATH. The report stays marked seen; fix PATH and "
+            "re-run this report by hand.")
+        return
+    cmd = [exe, "-p", prompt,
            "--max-budget-usd", BUDGET_USD,
            "--permission-mode", "acceptEdits"]
     log("  spawning agent for %s (budget $%s, push=%s)" % (head, BUDGET_USD, push))
@@ -339,7 +369,12 @@ def escalate_comment(issue, comment, push, dry_run):
         "push": "Push it." if push else
                 "Do NOT push - leave any commit local for Andre to review.",
     }
-    cmd = ["claude", "-p", prompt,
+    exe = claude_exe()
+    if not exe:
+        log("  CANNOT SPAWN - 'claude' is not on PATH. The report stays marked seen; fix PATH and "
+            "re-run this report by hand.")
+        return
+    cmd = [exe, "-p", prompt,
            "--max-budget-usd", BUDGET_USD,
            "--permission-mode", "acceptEdits"]
     log("  spawning agent for %s (budget $%s, push=%s)" % (head, BUDGET_USD, push))
@@ -425,6 +460,9 @@ def main():
 
     log("watching '%s' every %ds (dry_run=%s push=%s). Idle polls cost NO tokens."
         % (LABEL, a.interval, a.dry_run, a.push))
+    # RESOLVED NOW, not when a report lands. See claude_exe() - the whole point is that a missing
+    # binary is discovered while somebody is watching the log, not at 4am.
+    claude_exe()
     state = load_state()
     seen = set(state.get("seen") or [])
     # A MISSING KEY IS NOT AN EMPTY ONE. Absent means this state file predates comment watching, so
