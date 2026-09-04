@@ -15014,3 +15014,30 @@ out-of-process the way ops_gen already does with gen_status.
 
       Both word sets are known now and anything in neither is refused, naming both. Numbers and real
       booleans unchanged; 0/false/no/off still mean false.
+
+- [x] **set_shading reported success in EDIT mode and changed nothing** DONE 2026-09-04
+      It wrote poly.use_smooth onto mesh.polygons, which Blender keeps STALE while edit mode is open
+      - the live geometry is in a separate BMesh and the write is discarded on the way out. Measured
+      on 5.0.1: in EDIT mode it returned ok with a facesChanged count and every polygon stayed flat;
+      the same call from OBJECT mode worked. bisect_plane's docstring already names the trap.
+
+      Found by asking which ops drive bpy.ops or touch mesh data without a mode check. Sixteen have
+      no explicit guard and nearly all are fine, because get_object(want_mesh=True) carries the
+      check and every mesh-WRITING op uses it. set_shading resolved its object without it.
+
+      Fixed by writing the check out rather than switching to want_mesh=True, which would have
+      replaced this op's own type message with the generic one - and its own is better, saying what
+      is missing rather than what the object is not. B123 asserts that wording and was right to;
+      switching broke it, which is how the difference surfaced.
+
+      THE READ SIDE HAS THE MIRROR PROBLEM. face_info reads the same stale mesh.polygons: deleting a
+      face in edit mode left it reporting 6 while the live mesh had 5, with nothing saying which
+      number it was. Those are FLAGGED rather than refused - editModeStale plus a note - because
+      this addon drives a live editor where somebody may be in edit mode on something else, and
+      refusing every query for the duration removes a capability to prevent a mistake the caller can
+      now see. Writes are refused, reads are labelled, and the asymmetry is the point.
+
+      The new fields have a real check in test_blender_consequence. It took two tries: the stub
+      suite cannot reach face_info (no mesh.polygons, no material_slots) and the socket suites
+      cannot enter edit mode, so it goes through run_python with the graceful skip A101 uses when
+      that switch is off. A check that cannot run is worse than none.
