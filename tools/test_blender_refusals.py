@@ -1780,6 +1780,101 @@ def main():
     check("B123 set_shading on a non-MESH is refused", ok, msg)
 
     print("")
+    print("=== B124: the compositor on BLENDER 5.0, where scene.node_tree does not exist ===")
+    # THIS BLOCK EXISTS BECAUSE THE SHIPPED CODE WAS DEAD ON 5.0 AND EVERY GATE WAS GREEN. A live
+    # call to compositor_info returned "AttributeError: 'Scene' object has no attribute 'node_tree'"
+    # hours after the compositor work was committed. Probing all four installs headless established:
+    #
+    #   3.6 / 4.2 / 4.4   scene.node_tree, embedded, gated by use_nodes (default FALSE)
+    #   5.0               node_tree ABSENT; scene.compositing_node_group holds a real node group,
+    #                     and use_nodes defaults TRUE while that group is still None
+    #
+    # and that CompositorNodeComposite is UNDEFINED on 5.0 - the compositor is a node group there,
+    # so it terminates in NodeGroupOutput. B116 covers the old era; this covers the new one, because
+    # a stub that only models one of them is how the whole family shipped broken.
+    bpy = sys.modules["bpy"]
+    sc = bpy.context.scene
+    _saved_tree = getattr(sc, "node_tree", None)
+    _saved_use = sc.use_nodes
+    try:
+        class _NG(object):
+            def __init__(self, name="Compositing"):
+                self.bl_idname, self.name, self.nodes, self.links = "CompositorNodeTree", name, [], []
+
+        class _N5(object):
+            def __init__(self, kind, name):
+                self.bl_idname, self.name, self.label, self.mute = kind, name, "", False
+                self.inputs, self.outputs = [], []
+
+        class _L5(object):
+            def __init__(self, fn, tn):
+                self.from_node, self.to_node = fn, tn
+
+        # A 5.0-SHAPED SCENE: no node_tree attribute at all, and use_nodes already True.
+        del sc.node_tree
+        sc.use_nodes = True
+        sc.compositing_node_group = None
+        sc.render.use_compositing = True
+
+        era, attr = ON._tree.__globals__["compositor_era"](sc)
+        check("B124 a scene carrying compositing_node_group is detected as the NEW era",
+              era == "new" and attr == "compositing_node_group", "got %s/%s" % (era, attr))
+        check("B124 and compositor_tree returns None rather than raising when no group is assigned",
+              ON._tree.__globals__["compositor_tree"](sc) is None, "did not return None")
+
+        res, err = succeeds(ON.op_compositor_info, {})
+        check("B124 with no group assigned the blocker says use_nodes MEANS NOTHING on 5.0 - the "
+              "trap is that the scene looks compositing-enabled out of the box",
+              any("means nothing by itself" in b for b in res.get("blockers", [])),
+              err or "got %s" % res.get("blockers"))
+        check("B124 and the response names which API it is talking to, so a reader is never "
+              "guessing which Blender the answer describes",
+              "compositing_node_group" in (res.get("compositorApi") or ""),
+              err or "got %s" % res.get("compositorApi"))
+
+        # THE GUARD THAT USED TO BE ON use_nodes. On 5.0 that is True out of the box, so a
+        # use_compositing blocker keyed on it would fire on every fresh scene with no compositor.
+        sc.render.use_compositing = False
+        res, err = succeeds(ON.op_compositor_info, {})
+        check("B124 the use_compositing blocker does NOT fire when there is no tree at all - keyed "
+              "on use_nodes it would have fired on every fresh 5.0 scene",
+              not any("use_compositing is OFF" in b for b in res.get("blockers", [])),
+              err or "got %s" % res.get("blockers"))
+        sc.render.use_compositing = True
+
+        # A CORRECTLY WIRED 5.0 TREE MUST NOT BE CALLED BROKEN. It terminates in NodeGroupOutput,
+        # and the first version of this looked for CompositorNodeComposite by name and reported a
+        # perfectly good compositor as writing nothing.
+        ng = _NG()
+        rl, go = _N5("CompositorNodeRLayers", "Render Layers"), _N5("NodeGroupOutput", "Group Output")
+        ng.nodes, ng.links = [rl, go], [_L5(rl, go)]
+        sc.compositing_node_group = ng
+        res, err = succeeds(ON.op_compositor_info, {})
+        check("B124 a tree wired Render Layers -> GROUP OUTPUT is reported as fine on 5.0 - looking "
+              "for a Composite node by name called a correct compositor broken",
+              res.get("blockers") == [] and res.get("compositeConnected") is True,
+              err or "got %s" % res.get("blockers"))
+        check("B124 and the output node types it looked for are reported, not left implicit",
+              "NodeGroupOutput" in (res.get("outputNodeTypes") or []),
+              err or "got %s" % res.get("outputNodeTypes"))
+
+        ng.links = []
+        res, err = succeeds(ON.op_compositor_info, {})
+        check("B124 an UNLINKED group output is still a blocker, and it is named by the 5.0 term "
+              "rather than by a node that does not exist on that build",
+              any("Group Output node" in b for b in res.get("blockers", [])),
+              err or "got %s" % res.get("blockers"))
+    finally:
+        # RESTORED. B119 left Cube in EDIT mode and cost five unrelated checks; a block that
+        # reshapes the stub's scene owes the same duty.
+        try:
+            del sc.compositing_node_group
+        except AttributeError:
+            pass
+        sc.node_tree = _saved_tree
+        sc.use_nodes = _saved_use
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is

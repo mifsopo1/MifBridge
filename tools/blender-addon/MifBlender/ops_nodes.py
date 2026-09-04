@@ -474,20 +474,61 @@ def _shader_tree(holder, label, key):
     return holder.node_tree
 
 
-def _scene_tree():
-    """The scene's compositing tree, or a refusal that says how to turn it on.
+# THE COMPOSITOR MOVED IN 5.0, AND THE OLD ATTRIBUTE IS GONE.
+#
+# Established empirically on 2026-09-03 by running all four installed Blenders headless, after a
+# LIVE call to compositor_info came back "AttributeError: 'Scene' object has no attribute
+# 'node_tree'". Everything shipped for the compositor earlier that day was dead on the newest
+# Blender this addon claims to support, and every static gate was green.
+#
+#   3.6 / 4.2 / 4.4   scene.node_tree, an EMBEDDED tree, gated by scene.use_nodes (default FALSE)
+#   5.0               scene.node_tree is ABSENT. scene.compositing_node_group holds a real node
+#                     group from bpy.data.node_groups, and scene.use_nodes defaults TRUE while the
+#                     group is still None - so "use_nodes is on" no longer implies a tree exists.
+#
+# AND THE OUTPUT NODE CHANGED WITH IT: CompositorNodeComposite does not exist on 5.0 at all. The
+# compositor is a genuine node group there, so its terminal is NodeGroupOutput. _TERMINALS already
+# lists both, which is why reachability survived the move and nothing else did.
+COMPOSITOR_ATTR_NEW = "compositing_node_group"      # 5.0+
+COMPOSITOR_ATTR_OLD = "node_tree"                   # <= 4.4
 
-    NOT a mutator. Enabling use_nodes here would mean a read op quietly switched compositing on for
+
+def compositor_era(scene=None):
+    """('new'|'old', attribute name) for this build - which compositor API is present."""
+    sc = scene or bpy.context.scene
+    if hasattr(sc, COMPOSITOR_ATTR_NEW):
+        return "new", COMPOSITOR_ATTR_NEW
+    return "old", COMPOSITOR_ATTR_OLD
+
+
+def compositor_tree(scene=None):
+    """The scene's compositing tree on either API, or None. Never raises, never mutates."""
+    sc = scene or bpy.context.scene
+    era, attr = compositor_era(sc)
+    if era == "old" and not getattr(sc, "use_nodes", False):
+        return None
+    return getattr(sc, attr, None)
+
+
+def _scene_tree():
+    """The scene's compositing tree, or a refusal that says how to make one.
+
+    NOT a mutator. Creating the tree here would mean a read op quietly switched compositing on for
     the whole scene, which changes what every subsequent render does - the same objection that keeps
     world_info off _background_node.
     """
     sc = bpy.context.scene
-    if not sc.use_nodes or sc.node_tree is None:
-        raise MifOpError("scene '%s' has no compositing tree - scene.use_nodes is off, so there is "
-                         "nothing to address. Turn it on with set_compositing, which can also wire "
-                         "the default Render Layers -> Composite pair. NOTHING was changed."
-                         % sc.name)
-    return sc.node_tree
+    tree = compositor_tree(sc)
+    if tree is None:
+        era, _ = compositor_era(sc)
+        why = ("scene.use_nodes is off" if era == "old" else
+               "scene.compositing_node_group is unset - on Blender 5.0 use_nodes defaults to TRUE "
+               "and means nothing on its own, so a scene can look compositing-enabled with no tree "
+               "at all")
+        raise MifOpError("scene '%s' has no compositing tree - %s. Make one with set_compositing, "
+                         "which also wires the default Render Layers -> output pair. NOTHING was "
+                         "changed." % (sc.name, why))
+    return tree
 
 
 def op_set_compositing(params):
@@ -520,6 +561,9 @@ def op_set_compositing(params):
               "useCompositing": bool(sc.render.use_compositing),
               "useSequencer": bool(sc.render.use_sequencer)}
 
+    era, attr = compositor_era(sc)
+    # use_nodes STILL EXISTS on 5.0 and is still worth writing - it is what the UI reflects - but on
+    # that build it does not create or destroy the tree, so the group is handled separately below.
     sc.use_nodes = enabled
     use_comp = params.get("useCompositing")
     sc.render.use_compositing = bool(use_comp) if use_comp is not None else enabled
@@ -527,14 +571,26 @@ def op_set_compositing(params):
         sc.render.use_sequencer = take_bool(params, "useSequencer", default=True)
 
     added = []
-    tree = sc.node_tree
+    tree = getattr(sc, attr, None)
+    if enabled and era == "new" and tree is None:
+        # ON 5.0 THE TREE IS A REAL NODE GROUP and has to be created and assigned; there is no
+        # embedded tree for use_nodes to bring into being. Verified headless: assigning a
+        # bpy.data.node_groups.new(name, "CompositorNodeTree") is the whole of it.
+        tree = bpy.data.node_groups.new("Compositing", "CompositorNodeTree")
+        setattr(sc, attr, tree)
     if enabled and tree is not None and take_bool(params, "withDefaultNodes", default=True):
         if not len(tree.nodes):
             rl = tree.nodes.new("CompositorNodeRLayers")
-            comp = tree.nodes.new("CompositorNodeComposite")
+            # THE OUTPUT NODE IS NOT THE SAME NODE. CompositorNodeComposite is UNDEFINED on 5.0 -
+            # `ng.nodes.new("CompositorNodeComposite")` raises "Node type undefined" - because the
+            # compositor is a node group there and terminates in NodeGroupOutput. Verified on all
+            # four installs rather than assumed.
+            out_type = "NodeGroupOutput" if era == "new" else "CompositorNodeComposite"
+            comp = tree.nodes.new(out_type)
             rl.location = (-300, 0)
             comp.location = (300, 0)
-            tree.links.new(rl.outputs["Image"], comp.inputs["Image"])
+            socket = comp.inputs[0] if era == "new" else comp.inputs["Image"]
+            tree.links.new(rl.outputs["Image"], socket)
             added = [rl.name, comp.name]
 
     after = {"useNodes": bool(sc.use_nodes),
@@ -552,6 +608,8 @@ def op_set_compositing(params):
         "before": before,
         "nodesAdded": added,
         "treeName": tree.name if tree is not None else None,
+        "compositorApi": ("scene.compositing_node_group (Blender 5.0+)" if era == "new"
+                          else "scene.node_tree (Blender <= 4.4)"),
         "addressAs": SCENE_COMPOSITOR,
         "note": ("address this tree from add_group_node, link_group_nodes and list_group_nodes by "
                  "passing tree:'%s' - it is the scene's own tree and is not in bpy.data.node_groups."
@@ -606,12 +664,20 @@ def op_compositor_info(params):
     }
     blockers = []
 
-    if not sc.use_nodes or sc.node_tree is None:
-        blockers.append("scene.use_nodes is OFF, so there is no compositing tree and the render is "
-                        "written unprocessed. Turn it on with set_compositing.")
+    era, _attr = compositor_era(sc)
+    out["compositorApi"] = ("scene.compositing_node_group (Blender 5.0+)" if era == "new"
+                            else "scene.node_tree (Blender <= 4.4)")
+    tree = compositor_tree(sc)
+    if tree is None:
+        blockers.append(
+            "scene.use_nodes is OFF, so there is no compositing tree and the render is written "
+            "unprocessed. Turn it on with set_compositing." if era == "old" else
+            "there is no compositing node group assigned, so the render is written unprocessed. On "
+            "Blender 5.0 use_nodes defaults to TRUE and means nothing by itself - the tree is a "
+            "real node group in scene.compositing_node_group and it is unset. Make one with "
+            "set_compositing.")
         out["nodeCount"] = 0
     else:
-        tree = sc.node_tree
         out["treeName"] = tree.name
         out["nodeCount"] = len(tree.nodes)
         by_type = {}
@@ -622,7 +688,13 @@ def op_compositor_info(params):
                          "muted": bool(getattr(n, "mute", False))} for n in tree.nodes]
         out["linkCount"] = len(tree.links)
 
-        composites = [n for n in tree.nodes if n.bl_idname == "CompositorNodeComposite"]
+        # THE OUTPUT NODE IS ERA-DEPENDENT, and hard-coding CompositorNodeComposite made this
+        # report a CORRECTLY WIRED 5.0 compositor as broken - a wrong answer, not a missing one,
+        # from the field whose whole job is telling you the tree is inert. Caught by running the op
+        # headless on 5.0 after the accessor was fixed, not by reading. Same fix _terminals already
+        # applies to list_group_nodes, reused here rather than restated.
+        terminals, _term_note = _terminals(tree)
+        composites = [n for n in tree.nodes if n.bl_idname in terminals]
         viewers = [n for n in tree.nodes if n.bl_idname == "CompositorNodeViewer"]
         rlayers = [n for n in tree.nodes if n.bl_idname == "CompositorNodeRLayers"]
         fed = {l.to_node.name for l in tree.links}
@@ -633,15 +705,18 @@ def op_compositor_info(params):
                                          for l in tree.links)
         out["mutedNodes"] = [n.name for n in tree.nodes if getattr(n, "mute", False)]
 
+        out["outputNodeTypes"] = sorted(terminals)
         if not composites:
-            blockers.append("there is no Composite node in the tree, so the compositor writes "
-                            "NOTHING to the render result%s."
+            blockers.append("there is no %s in the tree, so the compositor writes "
+                            "NOTHING to the render result%%s."
+                            % ("Group Output node" if era == "new" else "Composite node")
                             % (" - the Viewer node feeds the backdrop only, which is why it looks "
                                "right in the compositor and the saved file is wrong" if viewers
                                else ""))
         elif not out["compositeConnected"]:
-            blockers.append("the Composite node exists but nothing is linked into it, so the "
-                            "compositor writes nothing to the render result%s."
+            blockers.append(("the %s exists but nothing is linked into it, so the compositor "
+                             "writes nothing to the render result%%s."
+                             % ("Group Output node" if era == "new" else "Composite node"))
                             % (" - a Viewer node is connected, and that feeds the backdrop only"
                                if any(n.name in fed for n in viewers) else ""))
         if not rlayers:
@@ -654,7 +729,9 @@ def op_compositor_info(params):
             blockers.append("%d node(s) are MUTED and pass their input straight through: %s."
                             % (len(out["mutedNodes"]), ", ".join(out["mutedNodes"][:8])))
 
-    if sc.use_nodes and not sc.render.use_compositing:
+    # GUARDED ON THE TREE, NOT ON use_nodes, because on 5.0 use_nodes is TRUE out of the box and
+    # would make this fire on every fresh scene that has no compositor at all.
+    if tree is not None and not sc.render.use_compositing:
         blockers.append("scene.render.use_compositing is OFF, so the render pipeline SKIPS the "
                         "compositor entirely. The tree still exists, the backdrop still updates, "
                         "and the file on disk is completely unprocessed - the two switches are "
