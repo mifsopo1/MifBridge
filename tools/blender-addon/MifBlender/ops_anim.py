@@ -1523,7 +1523,121 @@ def op_remove_driver(params):
     }
 
 
+def op_add_nla_strip(params):
+    """Put an action on an NLA track as a strip - how several clips live on one object.
+
+    An object holds ONE active action at a time. The NLA is how a walk, an idle and a wave coexist
+    on the same rig and how they blend, and it is what glTF reads to export multiple clips. None of
+    it was reachable.
+
+    params:
+      object (str, required)
+      action (str, required)    the action to place
+      track (str)               track name; a new track is created if it does not exist
+      start (int)               first frame, default the action's own start
+      name (str)                strip name, default the action's name
+      blendType (str)           REPLACE | ADD | SUBTRACT | MULTIPLY
+      influence (float)         0..1
+      pushDownActive (bool)     default FALSE. See below - this is the trap.
+
+    THE ACTIVE ACTION SHADOWS THE NLA. Blender evaluates animation_data.action ON TOP of the whole
+    NLA stack, so an object with an active action set plays THAT and the strips appear to do
+    nothing. This op detects it and says so rather than leaving a stack that looks correct and is
+    inert; pushDownActive moves the active action onto its own track first, which is what the UI's
+    Push Down button does.
+    """
+    reject_unknown(params, {"object", "name", "action", "track", "start", "stripName",
+                            "blendType", "influence", "pushDownActive"}, "add_nla_strip")
+    obj = get_object(take(params, "object", "name", required=True))
+    act_name = take(params, "action", default=None, kind=str)
+    if not act_name:
+        raise MifOpError("'action' is required - which action to place. NOTHING was added.")
+    act = bpy.data.actions.get(str(act_name))
+    if act is None:
+        known = [a.name for a in bpy.data.actions][:20]
+        raise MifOpError("no action named '%s'. Present: %s. NOTHING was added."
+                         % (act_name, ", ".join(known) if known else "<none>"))
+
+    blend = take(params, "blendType", default=None, kind=str)
+    if blend:
+        blend = str(blend).upper()
+        valid = _enum_ids(bpy.types.NlaStrip, "blend_type")
+        if valid and blend not in valid:
+            raise MifOpError("unknown blendType '%s'. Valid: %s. NOTHING was added."
+                             % (blend, ", ".join(sorted(valid))))
+    influence = take_float(params, "influence", default=None)
+    if influence is not None and not (0.0 <= influence <= 1.0):
+        raise MifOpError("influence must be between 0 and 1, got %g. NOTHING was added."
+                         % influence)
+
+    if obj.animation_data is None:
+        obj.animation_data_create()
+    ad = obj.animation_data
+
+    pushed = None
+    if ad.action is not None and take_bool(params, "pushDownActive", default=False):
+        pushed = ad.action.name
+        tr = ad.nla_tracks.new()
+        tr.name = "%s_pushed" % pushed
+        try:
+            tr.strips.new(pushed, int(ad.action.frame_range[0]), ad.action)
+        except RuntimeError as exc:
+            raise MifOpError("could not push the active action '%s' down onto a track: %s. "
+                             "NOTHING was added." % (pushed, exc))
+        ad.action = None
+
+    track_name = take(params, "track", default=None, kind=str)
+    track = None
+    if track_name:
+        track = ad.nla_tracks.get(str(track_name))
+    if track is None:
+        track = ad.nla_tracks.new()
+        if track_name:
+            track.name = str(track_name)
+
+    start = take_float(params, "start", default=None)
+    start = int(start) if start is not None else int(act.frame_range[0])
+    strip_name = take(params, "stripName", default=None, kind=str) or act.name
+    try:
+        strip = track.strips.new(str(strip_name), start, act)
+    except RuntimeError as exc:
+        raise MifOpError("Blender refused to place '%s' at frame %d on track '%s': %s. A strip "
+                         "cannot overlap another on the same track. NOTHING was added."
+                         % (act.name, start, track.name, exc))
+    if blend:
+        strip.blend_type = blend
+    if influence is not None:
+        strip.influence = influence
+        strip.use_animated_influence = False
+
+    # THE TRAP, REPORTED. animation_data.action is evaluated ON TOP of the entire NLA stack, so a
+    # remaining active action makes every strip below it inert while the stack reads as correct.
+    shadowed = ad.action is not None
+    return {
+        "object": obj.name,
+        "track": track.name,
+        "strip": {
+            "name": strip.name,
+            "action": strip.action.name if strip.action else None,
+            "frameStart": round(float(strip.frame_start), 4),
+            "frameEnd": round(float(strip.frame_end), 4),
+            "blendType": strip.blend_type,
+            "influence": round(float(strip.influence), 6),
+        },
+        "trackCount": len(ad.nla_tracks),
+        "stripCount": sum(len(t.strips) for t in ad.nla_tracks),
+        "pushedDownActive": pushed,
+        "activeActionShadowsNla": shadowed,
+        # No static explanation field. activeActionShadowsNla is the measurement and carries the
+        # answer; the reason it matters belongs in the tool help, read BEFORE the call. Two such
+        # notes were removed elsewhere today for the same reason - a constant string is something
+        # no suite can check and no caller can act on differently.
+        "activeAction": ad.action.name if ad.action else None,
+    }
+
+
 OPS = {
+    "add_nla_strip": op_add_nla_strip,
     "add_driver": op_add_driver,
     "remove_driver": op_remove_driver,
     "list_markers": op_list_markers,

@@ -5020,6 +5020,16 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_add_nla_strip(object: str, action: str, track: str = None, start: int = None,
+                     strip_name: str = None, blend_type: str = None, influence: float = None,
+                     push_down_active: bool = None) -> dict:
+    "Put an action on an NLA track as a strip - how several clips live on one Blender object. An object holds ONE active action at a time; the NLA is how a walk, an idle and a wave coexist on the same rig, how they blend, and what glTF reads to export multiple clips. THE TRAP IS THAT THE ACTIVE ACTION SHADOWS THE WHOLE STACK: Blender evaluates animation_data.action ON TOP of the NLA, so an object with an active action set plays that and every strip below contributes nothing while the stack reads as perfectly correct. activeActionShadowsNla reports it, and push_down_active moves the active action onto its own track first - what the UI's Push Down button does. Overlapping strips on one track are refused by Blender and the message says so. Read the result back with bl_list_animation_data. Call mif_help(\"bl_add_nla_strip\") first."
+    return _blender("add_nla_strip", object=object, action=action, track=track, start=start,
+                    stripName=strip_name, blendType=blend_type, influence=influence,
+                    pushDownActive=push_down_active)
+
+
+@mcp.tool()
 def bl_list_custom_properties(object: str, bone: str = None) -> dict:
     "Custom properties on a Blender object or pose bone, with their UI range. These are how a rig exposes controls, and glTF writes them into the engine as `extras` - so they are metadata that TRAVELS, not just annotations. The UI min/max is a separate store from the value and is reported alongside it, because a slider without a range is not a control. Blender's own internal keys (cycles settings, _RNA_UI) share the namespace and are named under skippedInternalKeys rather than silently folded into the count. Call mif_help(\"bl_list_custom_properties\") first."
     return _blender("list_custom_properties", object=object, bone=bone)
