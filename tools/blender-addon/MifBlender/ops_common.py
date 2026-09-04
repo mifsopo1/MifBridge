@@ -84,6 +84,30 @@ def take(params, *names, default=None, required=False, kind=None):
     """Read the first present key out of `names`. Aliases are first-class here
     because MifBridge's UE side accepts them too, and a caller should not have
     to remember which side it is talking to."""
+    # TWO SPELLINGS OF ONE PARAMETER, TWO DIFFERENT VALUES, is a caller who believes something
+    # untrue - not a preference to be resolved by argument order. Found on 2026-09-04 by asking
+    # add_modifier for a modifier named MifSub and getting Subsurf: there `name` aliases the
+    # OBJECT and `modifier` names the modifier, so "MifSub" was read as an object name, lost the
+    # tie to "object", and was dropped in silence. The reasoning is take_bool's, thirty lines
+    # below - a word it does not know is a typo, not a false, because "a false is a decision; a
+    # typo is not".
+    #
+    # EQUAL VALUES PASS. Sending both spellings on purpose is exactly the use this function's
+    # docstring says aliases exist for, and refusing it would punish the careful caller.
+    present = [n for n in names if n in params and params[n] is not None]
+    if len(present) > 1:
+        first = params[present[0]]
+        clashing = [n for n in present[1:] if params[n] != first]
+        if clashing:
+            # NO PROMISE ABOUT STATE. take() is a shared reader with hundreds of call sites and no
+            # idea whether one of them has already written; a "NOTHING was changed" here is the
+            # defect that took audit_mutate_then_deny from 0 findings to 103.
+            raise MifOpError(
+                "'%s' and '%s' are two names for the same parameter and were given different "
+                "values (%r and %r). Send one, or send the same value for both - this op cannot "
+                "tell which you meant."
+                % (present[0], clashing[0], first, params[clashing[0]]))
+
     for name in names:
         if name in params and params[name] is not None:
             value = params[name]

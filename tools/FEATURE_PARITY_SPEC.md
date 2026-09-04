@@ -15299,3 +15299,55 @@ out-of-process the way ops_gen already does with gen_status.
       happens to hit. Wants the table keyed by (file, marker) so one tool can carry several plants.
       Filed rather than fixed because it changes a shared table that every detector entry depends
       on, and that deserves its own change.
+
+- [x] **two spellings of one parameter, two values, one silently thrown away** DONE 2026-09-04
+      take() returned the first alias present and discarded the rest without a word, so any caller
+      who guessed the wrong spelling of an aliased parameter was told nothing.
+
+      FOUND SIDEWAYS, while probing candidates to widen audit_blender_postconditions: add_modifier
+      was asked for a modifier named MifSub and produced one named Subsurf. In that op `name`
+      aliases the OBJECT and `modifier` names the modifier - a coherent grammar - so "MifSub" was
+      read as an object name, lost the tie to "object", and vanished. The op was not wrong; the
+      shared reader under it was.
+
+      THE REASONING WAS ALREADY IN THE FILE, thirty lines below, in take_bool: a word it does not
+      know is a TYPO, not a false, because "a false is a decision; a typo is not". Two conflicting
+      values for one parameter is that same argument one level up, and it had not been made.
+
+      Equal values under both spellings still pass - that is precisely the use take()'s docstring
+      says aliases exist for, and refusing it would punish the careful caller. A None beside a real
+      value is not a conflict either: absent is how take() has always read None.
+
+      NO PROMISE ABOUT STATE in the message. take() is a shared reader with hundreds of call sites
+      and no idea whether one of them has already written; a "NOTHING was changed" here is the
+      defect that took audit_mutate_then_deny from 0 findings to 103 the same day.
+
+      BLAST RADIUS MEASURED, not assumed: 555 checks across seven suites, zero regressions. The
+      first run appeared to break two of them and did not - a restarted scratch Blender had no
+      mesh, and the two failures were the missing fixture. Comparing against a real HEAD run is
+      what separated those; the same run also surfaced a PRE-EXISTING failure in test_blender_scene
+      that has nothing to do with this change, filed below.
+
+- [ ] **test_blender_scene S105 fails at HEAD - a constraint reported valid when its target is null**
+      Found while baselining the alias change: test_blender_scene is 66 PASS / 1 FAIL both before
+      and after, so it is nobody's regression and was simply not being looked at. S105 says
+      list_constraints should report a constraint INVALID once its target is gone - "the whole
+      reason invalidCount exists, because every other field still looks healthy" - and the response
+      shows target:null with the constraint not counted as invalid. Needs reading before it is
+      called a defect: the fixture may not be arranging what the check believes.
+
+- [ ] **audit_blender_postconditions independently re-verifies 7 of 93 write ops**
+      It ends on "all 7 write ops' claimed effects independently re-verified", which reads as the
+      whole surface and is 7.5% of it. No REACH line, in a repo whose rule is that every audit
+      prints how much of its surface it can judge - the same defect as read_purity's 4 of 28,
+      larger, and its UE twin prints no reach either.
+
+      Widening is real work per op, unlike read_purity's list: each case needs a bespoke
+      INDEPENDENT read-back, and a postcondition that re-reads the op's own response proves
+      nothing. Probed by hand and confirmed as cheap and genuinely independent:
+      transform_object -> object_info.locationBU, add_modifier -> list_modifiers,
+      add_shape_key -> list_shape_keys, rename_object -> object_info.name. set_shading,
+      set_object_visibility and set_custom_property need their read-back fields identified first.
+
+      The REACH line should land first and on its own: it is the honest number, it is cheap, and
+      it stops "all 7" from reading as complete while the widening is still being written.

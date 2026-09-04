@@ -2113,6 +2113,53 @@ def main():
           "scene" in ORD2._ANIM_KEYS, "keys=%s" % sorted(ORD2._ANIM_KEYS))
 
     print("")
+    print("=== B131: two spellings of one parameter, given two different values ===")
+    # FOUND by asking add_modifier for a modifier named MifSub and getting one named Subsurf. In
+    # that op `name` is an alias for the OBJECT and `modifier` names the modifier - a coherent
+    # grammar - so "MifSub" was read as an object name, lost the tie to "object", and was dropped
+    # without a word. take() returned the first alias present and discarded the rest.
+    #
+    # THE REASONING IS take_bool's, and it is already written in ops_common: a word it does not
+    # know is a TYPO, not a false, because "a false is a decision; a typo is not". Two conflicting
+    # values for one parameter is that same argument one level up.
+    from MifBlender.ops_common import MifOpError as _MOE
+    from MifBlender.ops_common import take as _take
+
+    ok, msg = True, ""
+    try:
+        _take({"object": "A", "name": "B"}, "object", "name", required=True, kind=str)
+        ok, msg = False, "no refusal - 'B' was silently discarded"
+    except _MOE as exc:
+        msg = str(exc)
+        for phrase in ("two names for the same parameter", "'object'", "'name'", "'A'", "'B'"):
+            if phrase.lower() not in msg.lower():
+                ok, msg = False, "message never says %s: %s" % (phrase, msg)
+                break
+    check("B131 two aliases with different values are refused, and the message names BOTH "
+          "spellings and BOTH values - without which the caller cannot see which one was dropped",
+          ok, msg)
+
+    # NO PROMISE ABOUT STATE. take() is a shared reader with hundreds of call sites and no way to
+    # know whether one of them has already written. A "NOTHING was changed" here is the exact
+    # defect that took audit_mutate_then_deny from 0 findings to 103 earlier the same day.
+    check("B131 and it does NOT claim nothing was changed - take() cannot know that",
+          "nothing was" not in msg.lower(), msg)
+
+    # THE NEGATIVE CONTROLS, without which a check that refused everything would pass. Sending both
+    # spellings with the SAME value is what the aliases exist for: a caller who does not want to
+    # remember which backend it is talking to.
+    same = _take({"object": "A", "name": "A"}, "object", "name", required=True, kind=str)
+    check("B131 the same value under both spellings is ACCEPTED - redundant is not wrong, and "
+          "aliases exist so a caller need not remember which side it is talking to", same == "A",
+          repr(same))
+    check("B131 one spelling alone still resolves",
+          _take({"name": "A"}, "object", "name", required=True, kind=str) == "A", "alias only")
+    check("B131 a None alongside a real value is not a conflict - absent is how take() has always "
+          "read None, and treating it as a second opinion would refuse ordinary payloads",
+          _take({"object": "A", "name": None}, "object", "name", required=True, kind=str) == "A",
+          "None beside a value")
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is
