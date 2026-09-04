@@ -75,6 +75,8 @@ would only be able to make it wrong.
 
 from __future__ import annotations
 
+import array
+import hashlib
 import math
 import os
 
@@ -1770,6 +1772,32 @@ def op_uv_unwrap(params):
     mesh.uv_layers.active = target
     active_name = target.name
 
+    # A FINGERPRINT OF EVERY OTHER LAYER, TAKEN BEFORE THE UNWRAP.
+    #
+    # THE DEFAULT FAILURE OF A SECOND UV CHANNEL IS WRITING INTO THE FIRST ONE. uv_layers.new()
+    # does NOT make the new layer active - measured on 3.6.23, 4.2.17, 4.4.0 and 5.0.1, where
+    # active_index stayed 0 after creating a layer - and every UV operator writes to the ACTIVE
+    # layer. Miss the `uv_layers.active = target` line above and lightmap_pack silently repacks the
+    # base colour UVs while the layer you asked for stays empty. Nothing raises, the response looks
+    # correct, and it is found at bake time.
+    #
+    # This op sets active correctly. What it could not do until now is PROVE it: activeLayer and
+    # createdLayer both report what was INTENDED, and neither can disagree with itself. So the
+    # other layers are fingerprinted before and after, and the answer is a measurement.
+    #
+    # foreach_get, not a Python loop - it is a C-level bulk copy, so this costs almost nothing on a
+    # mesh where a per-loop comprehension would be the expensive part of the whole op.
+    def _uv_fingerprint(layer):
+        n = len(layer.data)
+        if not n:
+            return (0, b"")
+        buf = array.array("f", [0.0]) * (2 * n)
+        layer.data.foreach_get("uv", buf)
+        return (n, hashlib.sha256(buf.tobytes()).digest())
+
+    others_before = {uv.name: _uv_fingerprint(uv) for uv in mesh.uv_layers
+                     if uv.name != active_name}
+
     prev_active = bpy.context.view_layer.objects.active
     prev_mode = obj.mode
     try:
@@ -1889,6 +1917,9 @@ def op_uv_unwrap(params):
                 % (min(us), max(us), min(vs), max(vs)))
 
     after = [uv.name for uv in mesh.uv_layers]
+    _clobbered = sorted(n for n, fp in others_before.items()
+                        if n in mesh.uv_layers and _uv_fingerprint(mesh.uv_layers[n]) != fp)
+    _active_render = next((uv.name for uv in mesh.uv_layers if uv.active_render), None)
     return {
         "object": obj.name,
         "method": method,
@@ -1896,6 +1927,15 @@ def op_uv_unwrap(params):
         "uvLayersAfter": after,
         "activeLayer": active_name,
         "createdLayer": created,
+        # MEASURED, NOT ASSERTED. See the fingerprint above: this is the difference between
+        # "the op meant to write to the layer you named" and "no other layer moved".
+        "otherLayersUnchanged": not _clobbered,
+        "layersClobbered": _clobbered,
+        # WHICH LAYER THE RENDERER READS FOR TEXTURES, which is not the same as the active one and
+        # is what a caller adding a lightmap channel needs to see stayed put. Unreal reads the base
+        # colour from active_render and the lightmap from a second channel; if a lightmap pass has
+        # moved active_render, the material is now sampling the lightmap layout.
+        "activeRenderLayer": _active_render,
         "angleLimitDeg": angle_deg if method == "SMART" else None,
         "islandMargin": margin,
         "faces": len(mesh.polygons),

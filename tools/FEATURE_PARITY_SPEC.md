@@ -12558,6 +12558,38 @@ out-of-process the way ops_gen already does with gen_status.
       default scene first - a second object for boolean_op, an action for the fcurve ops - so it is
       payload work plus a small amount of scene setup, not a redesign.
 
+- [x] **a second UV channel + lightmap pack - it already worked, and nothing could tell** DONE 2026-09-03
+      Item 6 of the measured gap list, and the premise turned out to be wrong. uv_unwrap with
+      method:'LIGHTMAP' and uvLayer:'Lightmap' ALREADY creates the second channel, packs
+      non-overlapping islands into 0-1, leaves the base UVs untouched and leaves active_render on
+      the base colour layer. Established by RUNNING it on 4.4 and 5.0 before writing anything - the
+      standing rule is to verify coverage by reading handlers rather than by names, and it applies
+      to a gap list as much as to an endpoint list.
+
+      So no new op. Building pack_lightmap beside it would have been a parallel system doing the
+      same job, which is the one thing the engineering rules forbid outright.
+
+      WHAT WAS ACTUALLY MISSING WAS EVIDENCE AND DISCOVERABILITY.
+
+      The MCP docstring was TRUNCATED MID-SENTENCE and never mentioned LIGHTMAP, uvLayer, or the
+      Unreal workflow at all - so a caller reading the tool could not learn the capability existed.
+      Rewritten to say plainly that this is how a second channel is made, and to name the default
+      failure.
+
+      AND THE RESPONSE COULD NOT DISAGREE WITH ITSELF. activeLayer and createdLayer both report
+      what was INTENDED. The default failure of a second UV channel is writing into the FIRST one -
+      uv_layers.new() does not make the new layer active on ANY Blender (measured: active_index
+      stays 0 on 3.6.23, 4.2.17, 4.4.0 and 5.0.1) and every UV operator writes to the active layer,
+      so a lightmap pass silently repacks the base colour UVs while the named layer stays empty,
+      and it surfaces at bake time.
+
+      Every other layer is now FINGERPRINTED before and after with foreach_get plus sha256 - a
+      C-level bulk copy, so it costs almost nothing next to the unwrap itself - and the response
+      carries otherLayersUnchanged, layersClobbered and activeRenderLayer as MEASUREMENTS.
+      Ground-truthed by deleting the `uv_layers.active = target` line: clobbered comes back
+      ['UVMap'] on 4.4 and 5.0 while activeLayer still cheerfully says 'Lightmap', which is the
+      whole point in one line.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 
