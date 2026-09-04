@@ -1382,6 +1382,86 @@ def main():
           "and the API will happily let you get there", ok, msg)
 
     print("")
+    print("=== B119: creating the object types that existing ops already DEPEND on ===")
+    # FOUND BY ASKING WHAT THE ADDON CONSUMES AND CANNOT PRODUCE, the same question that turned up
+    # collections. add_constraint and aim_object both take a TARGET and nothing could create an
+    # Empty, which is what people overwhelmingly use as one. add_constraint accepts FOLLOW_PATH and
+    # nothing could make a curve. ops_rig has twelve ops and not one creates an armature, so the
+    # whole rigging family could only edit rigs somebody else had made.
+    #
+    # WHAT THESE CHECKS ARE FOR. Building an object from datablocks rather than through bpy.ops
+    # means the failure mode is a half-made thing left behind, so every refusal here has to fire
+    # BEFORE the first datablock exists. The stub has no .new() on bpy.data.curves or .armatures,
+    # which makes that measurable for free: a validation that ran too late shows up as an
+    # AttributeError rather than a MifOpError, and refuses() reports the difference.
+    from MifBlender import ops_create as OCR
+
+    ok, msg = refuses(OCR.op_create_empty, {"displayType": "SQUIGGLE"}, "not one Blender offers")
+    check("B119 an unknown Empty display type is refused with the valid list", ok, msg)
+
+    ok, msg = refuses(OCR.op_create_curve, {"points": [[0, 0, 0]]}, "at least 2", "no length")
+    check("B119 a curve with one point is refused - nothing can follow a curve with no length",
+          ok, msg)
+    ok, msg = refuses(OCR.op_create_curve, {"points": [[0, 0, 0], [1, 1]]}, "must be [x,y,z]")
+    check("B119 a malformed point is refused naming its index", ok, msg)
+    ok, msg = refuses(OCR.op_create_curve,
+                      {"points": [[0, 0, 0], [1, 0, 0]], "splineType": "CATMULL"},
+                      "POLY, BEZIER or NURBS")
+    check("B119 an unknown spline type is refused BEFORE the curve datablock is made - POLY and "
+          "BEZIER points live in different collections, so a wrong type builds an empty spline "
+          "and raises nothing", ok, msg)
+
+    ok, msg = refuses(OCR.op_create_text, {"body": ""}, "renders nothing")
+    check("B119 an empty text body is refused - such an object exists perfectly and renders "
+          "nothing", ok, msg)
+
+    # THE ARMATURE VALIDATIONS. Each of these has to fire before the mode change, because a refusal
+    # partway through leaves an armature with half its bones AND Blender stuck in an editor.
+    ok, msg = refuses(OCR.op_create_armature, {"bones": [{"head": [0, 0, 0], "tail": [0, 0, 1]}]},
+                      "needs a 'name'")
+    check("B119 a bone with no name is refused", ok, msg)
+    ok, msg = refuses(OCR.op_create_armature,
+                      {"bones": [{"name": "a", "head": [0, 0, 0]}]}, "'tail'", "[x,y,z]")
+    check("B119 a bone missing an endpoint is refused naming which one", ok, msg)
+    ok, msg = refuses(OCR.op_create_armature,
+                      {"bones": [{"name": "a", "head": [0, 0, 0], "tail": [0, 0, 1]},
+                                 {"name": "a", "head": [0, 0, 1], "tail": [0, 0, 2]}]},
+                      "repeats the name")
+    check("B119 a duplicate bone name is refused", ok, msg)
+    ok, msg = refuses(OCR.op_create_armature,
+                      {"bones": [{"name": "child", "head": [0, 0, 0], "tail": [0, 0, 1],
+                                  "parent": "root"},
+                                 {"name": "root", "head": [0, 0, 1], "tail": [0, 0, 2]}]},
+                      "not defined ABOVE it", "Parents must come first")
+    check("B119 a bone naming a parent defined BELOW it is refused - edit_bones resolves parents "
+          "by lookup, so a forward reference is a KeyError deep inside a mode switch", ok, msg)
+    ok, msg = refuses(OCR.op_create_armature, {"bones": "not a list"}, "must be a list")
+    check("B119 a non-list bones parameter is refused by type", ok, msg)
+
+    # AND ALL OF THEM BEFORE THE MODE CHANGE. Every refusal above was reported as a MifOpError,
+    # which is only possible if it ran before the code that touches bpy.data.armatures.new - the
+    # stub has no such method, so reaching it raises AttributeError instead.
+    check("B119 every armature refusal above fired BEFORE any datablock was created - the stub has "
+          "no bpy.data.armatures.new, so a validation that ran too late would have surfaced as an "
+          "AttributeError rather than a refusal",
+          not hasattr(sys.modules["bpy"].data.armatures, "new"),
+          "the stub grew a .new(), so this check no longer proves anything")
+
+    # THE MODE GUARD, which protects whatever somebody is editing rather than the new armature.
+    _obj = sys.modules["bpy"].data.objects["Cube"]
+    _obj.mode = "EDIT"
+    sys.modules["bpy"].context.object = _obj
+    ok, msg = refuses(OCR.op_create_armature, {}, "EDIT mode", "NOTHING was created")
+    check("B119 creating an armature from EDIT mode is refused - the mode switch it needs would "
+          "drop whatever is being edited", ok, msg)
+    sys.modules["bpy"].context.object = None
+
+    ok, msg = refuses(OCR.op_create_empty, {"collection": "NoSuchColl"}, "no collection named",
+                      "create_collection")
+    check("B119 creating into a collection that does not exist is refused and points at "
+          "create_collection", ok, msg)
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is

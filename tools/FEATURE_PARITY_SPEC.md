@@ -12368,6 +12368,49 @@ out-of-process the way ops_gen already does with gen_status.
       render_animation's. param_reach caught both. An accepted parameter that is silently ignored
       is worse than an absent one, and every key set added today was then swept for the same thing.
 
+- [x] **object types the addon CONSUMED and could not produce** (4 ops) DONE 2026-09-03
+      create_empty, create_curve, create_text, create_armature, in ops_create.py.
+
+      THE SAME QUESTION THAT FOUND COLLECTIONS: what does the addon depend on that nothing here can
+      make. Blender object creation covered mesh primitives, lights and cameras. Three of the gaps
+      were load-bearing rather than merely absent:
+
+        an Empty         is what a Track To or Copy Location constraint points AT, what a rig is
+                         controlled by, what aim_object aims at, and what things are parented to
+                         for a shared pivot. add_constraint and aim_object both take a target and
+                         neither could create the object people overwhelmingly use as one.
+        a curve          is what FOLLOW_PATH requires, and add_constraint accepts FOLLOW_PATH.
+        an armature      is what all TWELVE ops_rig ops operate on, and not one of them makes one.
+                         Nothing could be rigged from scratch through the typed path.
+
+      Text is the one added for its own sake rather than to unblock something - titles, labels and
+      mograph are ordinary Blender work and the standing rule says to judge the addon for all of it.
+
+      BUILT FROM DATABLOCKS, NOT bpy.ops.*_add, which suits a headless bridge - no context override,
+      no selection dance, no user preference deciding whether it lands in edit mode. The cost is
+      that a half-made object is a real failure mode, so the shared postcondition checks existence,
+      TYPE and collection membership; a wrong datablock class produces an object that exists, is
+      not what was asked for, and reads back fine on every other field.
+
+      THE ARMATURE IS THE HARD ONE. Bones exist only in EDIT mode - armature.edit_bones is absent
+      outside it - so the op switches mode, builds, and switches back, and RESTORING THE MODE IS A
+      POSTCONDITION rather than a courtesy: left in edit mode it strands every op that follows,
+      the same failure create_primitive forces enter_editmode off to avoid. Every bone is validated
+      in full before the mode change, and the count is taken from data.bones AFTER leaving it, not
+      from the edit_bones the op made - those exist only inside.
+
+      B119 CAUGHT A REAL BUG IN THIS CODE BEFORE IT SHIPPED, which is the part worth recording. The
+      collection was looked up AFTER bpy.data.objects.new(), so naming one that does not exist left
+      the object behind: in bpy.data, in no collection, therefore in no scene - invisible,
+      unrendered, absent from the outliner, surviving the save. Exactly the state the helper's own
+      comment describes as the thing to avoid, produced by the refusal meant to prevent it. Split
+      into _resolve_collection and _link_new so every op resolves first and creates second.
+
+      Thirteen checks. The stub having no .new() on bpy.data.armatures is used deliberately: a
+      validation that ran too late surfaces as an AttributeError rather than a refusal, so "every
+      armature refusal fires before any datablock exists" is measurable rather than asserted. Four
+      plants, each caught - including putting the ordering bug back.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 

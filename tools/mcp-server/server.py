@@ -5406,6 +5406,48 @@ def bl_render_status(job_id: str = None, log_lines: int = None) -> dict:
     return _blender("render_status", jobId=job_id, logLines=log_lines)
 
 @mcp.tool()
+def bl_create_empty(name: str = None, location: list = None, rotation: list = None,
+                    display_type: str = None, display_size: float = None,
+                    collection: str = None) -> dict:
+    "Create a Blender Empty - the most-used object in Blender that this addon could not make. An Empty is what a Track To or Copy Location constraint points AT, what a rig is controlled by, what a camera is aimed at, and what objects are parented to for one shared pivot. bl_add_constraint and bl_aim_object both take a target and neither could create the object people overwhelmingly use as one, so a constraint could only be set up against something that already existed. It has no geometry and renders nothing; display_size is viewport only."
+    return _blender("create_empty", name=name, location=location, rotation=rotation,
+                    displayType=display_type, displaySize=display_size, collection=collection)
+
+
+@mcp.tool()
+def bl_create_curve(points: list, name: str = None, spline_type: str = None,
+                    cyclic: bool = None, bevel_depth: float = None,
+                    bevel_resolution: int = None, extrude: float = None, resolution: int = None,
+                    use_path: bool = None, location: list = None, rotation: list = None,
+                    dimensions: str = None, collection: str = None) -> dict:
+    "Create a Blender curve - a path to follow, a profile to bevel, or a cable. bl_add_constraint accepts FOLLOW_PATH and nothing could make the one object it requires. THE SPLINE TYPE DECIDES WHAT THE POINTS MEAN: POLY and NURBS points live in spline.points with a 4th weight component while BEZIER points live in spline.bezier_points with handles - different collections with different lengths, so building into the wrong one produces a curve with no points and no error, and the point count is checked afterwards. use_path defaults ON because a Follow Path constraint evaluates to NOTHING without it while the constraint and the curve both read back perfectly."
+    return _blender("create_curve", points=points, name=name, splineType=spline_type,
+                    cyclic=cyclic, bevelDepth=bevel_depth, bevelResolution=bevel_resolution,
+                    extrude=extrude, resolution=resolution, usePath=use_path, location=location,
+                    rotation=rotation, dimensions=dimensions, collection=collection)
+
+
+@mcp.tool()
+def bl_create_text(body: str, name: str = None, size: float = None, extrude: float = None,
+                   bevel_depth: float = None, align: str = None, align_y: str = None,
+                   location: list = None, rotation: list = None, collection: str = None) -> dict:
+    "Create a Blender text object - titles, labels, mograph, anything with words in the render. An empty body is refused because such an object renders nothing while existing perfectly. align/align_y are validated against the enum this Blender offers. Says so when extrude is 0, since flat text is right for a 2D title and wrong for anything meant to catch a light."
+    return _blender("create_text", body=body, name=name, size=size, extrude=extrude,
+                    bevelDepth=bevel_depth, align=align, alignY=align_y, location=location,
+                    rotation=rotation, collection=collection)
+
+
+@mcp.tool()
+def bl_create_armature(name: str = None, bones: list = None, display_type: str = None,
+                       show_in_front: bool = None, location: list = None, rotation: list = None,
+                       collection: str = None) -> dict:
+    "Create a Blender armature with its bones - without which the whole rigging family could only EDIT. ops_rig has twelve ops and not one creates an armature, so nothing could be rigged from scratch. BONES ONLY EXIST IN EDIT MODE (armature.edit_bones is absent outside it), so this switches mode, builds, and switches back - and restoring the mode is a POSTCONDITION, not a courtesy, because being left in edit mode strands every op that follows. Every bone is validated in full BEFORE any mode change, so a bad entry cannot leave a half-built rig with Blender stuck in an editor. Bones are counted from data.bones after leaving edit mode, not from the edit_bones the op made, since those only exist inside it. Parents must be listed before their children."
+    return _blender("create_armature", name=name, bones=bones, displayType=display_type,
+                    showInFront=show_in_front, location=location, rotation=rotation,
+                    collection=collection)
+
+
+@mcp.tool()
 def bl_create_collection(name: str, parent: str = None, objects: list = None,
                          link: bool = None, color_tag: str = None) -> dict:
     "Create a Blender collection and LINK it into the scene, because bpy.data.collections.new() alone makes one that belongs to no scene - its objects are outside the view layer, outside the depsgraph and outside the render, while every field on it reads perfectly. Before this the only collection creation anywhere in the addon was a private helper inside bl_set_light_linking that made an EMPTY one, so light linking could reach only its broken state (litsNothing) and nothing could fix it without bl_run_python. Pass objects to fill it at birth. The postcondition is REACHABILITY from the scene collection, not existence."

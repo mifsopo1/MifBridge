@@ -45,7 +45,7 @@ import bpy
 
 from .ops_common import (MifOpError, get_object, mesh_counts, object_info, reject_unknown,
                          rnd, selection_restore, selection_snapshot, take, take_bool,
-                         take_float)
+                         take_float, take_int)
 
 # What each primitive really accepts. `size` is that operator's own size-like kwarg, or None when it
 # has none at all. `extras` is every other per-kind kwarg. Verified against bpy.ops RNA.
@@ -583,10 +583,380 @@ def op_separate_mesh(params):
     return out
 
 
+_EMPTY_KEYS = {"name", "location", "rotation", "displayType", "displaySize", "collection"}
+_CURVE_KEYS = {"name", "location", "rotation", "points", "splineType", "cyclic", "bevelDepth",
+               "bevelResolution", "extrude", "resolution", "usePath", "collection", "dimensions"}
+_TEXT_KEYS = {"name", "location", "rotation", "body", "size", "extrude", "align", "alignY",
+              "collection", "bevelDepth"}
+_ARM_KEYS = {"name", "location", "rotation", "bones", "displayType", "showInFront", "collection"}
+
+_EMPTY_TYPES = ("PLAIN_AXES", "ARROWS", "SINGLE_ARROW", "CIRCLE", "CUBE", "SPHERE", "CONE",
+                "IMAGE")
+
+
+def _resolve_collection(params):
+    """Where a new object will be linked - RESOLVED BEFORE ANYTHING IS CREATED.
+
+    Split out from the linking on 2026-09-03 because the first version did the lookup after
+    bpy.data.objects.new(), so naming a collection that does not exist left the object BEHIND: in
+    bpy.data, in no collection, therefore in no scene - invisible, unrendered, absent from the
+    outliner, surviving the save with nothing to warn anybody. Precisely the state _link_new's own
+    comment describes as the thing to avoid, produced by the refusal meant to prevent it.
+
+    Found by a check asserting the refusal, not by reading. Every op in this module now resolves
+    first and creates second, which is the same rule stated everywhere else here: a refusal fires
+    BEFORE a mutation.
+    """
+    name = take(params, "collection", kind=str)
+    if not name:
+        return bpy.context.scene.collection
+    coll = bpy.data.collections.get(name)
+    if coll is None:
+        known = sorted(c.name for c in bpy.data.collections)[:25]
+        raise MifOpError("no collection named '%s'. Present: %s. Make one with create_collection. "
+                         "NOTHING was created."
+                         % (name, ", ".join(known) if known else "<none>"))
+    return coll
+
+
+def _link_new(obj, coll):
+    """Link a freshly made object into an ALREADY-RESOLVED collection.
+
+    LINKED SOMEWHERE ALWAYS. bpy.data.objects.new() creates an object that belongs to NO collection,
+    which means it is in no scene: invisible in the viewport, absent from the render, missing from
+    the outliner, and it survives the save with nothing to warn anybody. The same inert shape
+    ops_collection was written around, and the default outcome of the obvious API call.
+    """
+    coll.objects.link(obj)
+    return coll
+
+
+def _place(obj, params):
+    obj.location = _vec3(params, "location", (0.0, 0.0, 0.0))
+    obj.rotation_euler = _vec3(params, "rotation", (0.0, 0.0, 0.0))
+
+
+def _created(obj, coll, want_type, verb):
+    """The shared postcondition: it exists, it is the RIGHT TYPE, and it is in a scene.
+
+    Type is checked because these ops build objects out of datablocks rather than through
+    bpy.ops.*_add, so a wrong datablock class produces an object that exists and is not what was
+    asked for - and every other field on it would read back fine.
+    """
+    if obj.name not in bpy.data.objects:
+        raise MifOpError("%s reported success and '%s' is not in bpy.data.objects." % (verb, obj.name))
+    if obj.type != want_type:
+        raise MifOpError("%s made '%s' but its type is %s, not %s." % (verb, obj.name, obj.type,
+                                                                       want_type))
+    if not any(obj.name in c.objects for c in
+               list(bpy.data.collections) + [bpy.context.scene.collection]):
+        raise MifOpError("%s made '%s' and it is in NO collection, so it is in no scene - "
+                         "invisible, unrendered and absent from the outliner." % (verb, obj.name))
+    return {"ok": True, "name": obj.name, "type": obj.type, "collection": coll.name,
+            "location": rnd(list(obj.location)), "rotation": rnd(list(obj.rotation_euler))}
+
+
+def op_create_empty(params):
+    """An Empty - the most-used object in Blender that this addon could not make.
+
+    WHY IT WAS THE FIRST GAP WORTH CLOSING in object creation. An Empty is what a Track To or Copy
+    Location constraint points AT, what a rig is controlled by, what a camera is aimed at, and what
+    a set of objects is parented to for one shared pivot. add_constraint and aim_object both take a
+    target and neither could create the object people overwhelmingly use as one, so the typed path
+    could set up a constraint only against something that already existed.
+
+    params:
+      name (str)             default "Empty"
+      location / rotation    3-lists
+      displayType (str)      PLAIN_AXES | ARROWS | SINGLE_ARROW | CIRCLE | CUBE | SPHERE | CONE
+      displaySize (float)    viewport size only - an Empty has no geometry and renders nothing
+      collection (str)       link into this collection instead of the scene root
+    """
+    reject_unknown(params, _EMPTY_KEYS, "create_empty")
+    kind = str(take(params, "displayType", default="PLAIN_AXES", kind=str)).upper()
+    if kind not in _EMPTY_TYPES:
+        raise MifOpError("displayType '%s' is not one Blender offers. Valid: %s. NOTHING was "
+                         "created." % (kind, ", ".join(_EMPTY_TYPES)))
+    size = take_float(params, "displaySize", default=None)
+
+    # AN EMPTY IS AN OBJECT WITH NO DATA - objects.new(name, None). There is no "empty datablock",
+    # which is why this cannot follow the create_light shape of make-data-then-object.
+    coll = _resolve_collection(params)
+    obj = bpy.data.objects.new(str(take(params, "name", default="Empty", kind=str)), None)
+    _link_new(obj, coll)
+    _place(obj, params)
+    obj.empty_display_type = kind
+    if size is not None:
+        obj.empty_display_size = size
+
+    out = _created(obj, coll, "EMPTY", "create_empty")
+    out.update({"displayType": obj.empty_display_type,
+                "displaySize": round(float(obj.empty_display_size), 6),
+                "note": "an Empty has no geometry and renders nothing - displaySize is viewport "
+                        "only. It exists to be a target, a parent or a pivot."})
+    return out
+
+
+def op_create_curve(params):
+    """A curve - a path to follow, a profile to bevel, or a cable.
+
+    A curve is what a Follow Path constraint needs, what a bevel turns into a pipe or a cable, and
+    what text can be laid along. add_constraint accepts FOLLOW_PATH and nothing here could make the
+    one object it requires.
+
+    THE SPLINE TYPE DECIDES WHAT THE POINTS MEAN. POLY and NURBS points live in spline.points with
+    a 4th weight component; BEZIER points live in spline.bezier_points and have handles instead.
+    They are different collections with different lengths, so the type is chosen first and the
+    points are added to the right one - mixing them up produces a curve with no points and no error.
+
+    params:
+      name (str)
+      points (list)          [[x,y,z], ...] - at least 2. Required.
+      splineType (str)       POLY | BEZIER | NURBS. Default POLY.
+      cyclic (bool)          close the loop
+      bevelDepth (float)     round profile radius - this is what makes a cable out of a line
+      bevelResolution (int)
+      extrude (float)        flat extrusion, an alternative to bevel
+      resolution (int)       preview resolution per segment
+      usePath (bool)         default true - a Follow Path constraint does NOTHING without it
+      location / rotation / collection
+    """
+    reject_unknown(params, _CURVE_KEYS, "create_curve")
+    raw = params.get("points")
+    if not isinstance(raw, (list, tuple)) or len(raw) < 2:
+        raise MifOpError("'points' is required and needs at least 2 points, each [x,y,z]. A curve "
+                         "with fewer has no length and nothing can follow it. NOTHING was created.")
+    pts = []
+    for i, p in enumerate(raw):
+        if not isinstance(p, (list, tuple)) or len(p) < 3:
+            raise MifOpError("points[%d] must be [x,y,z], got %r. NOTHING was created." % (i, p))
+        pts.append([float(p[0]), float(p[1]), float(p[2])])
+
+    stype = str(take(params, "splineType", default="POLY", kind=str)).upper()
+    if stype not in ("POLY", "BEZIER", "NURBS"):
+        raise MifOpError("splineType must be POLY, BEZIER or NURBS, got '%s'. NOTHING was created."
+                         % stype)
+
+    coll = _resolve_collection(params)
+    data = bpy.data.curves.new(str(take(params, "name", default="Curve", kind=str)), type="CURVE")
+    data.dimensions = str(take(params, "dimensions", default="3D", kind=str)).upper()
+    spline = data.splines.new(stype)
+    if stype == "BEZIER":
+        # add() is relative to the ONE point a new spline already has, for both collections - so
+        # this adds len-1 and then writes all of them, rather than adding len and leaving a stray.
+        spline.bezier_points.add(len(pts) - 1)
+        for bp, xyz in zip(spline.bezier_points, pts):
+            bp.co = xyz
+            bp.handle_left_type = bp.handle_right_type = "AUTO"
+    else:
+        spline.points.add(len(pts) - 1)
+        for sp, xyz in zip(spline.points, pts):
+            sp.co = (xyz[0], xyz[1], xyz[2], 1.0)      # POLY/NURBS points are 4-component
+    spline.use_cyclic_u = take_bool(params, "cyclic", default=False)
+
+    for key, attr in (("bevelDepth", "bevel_depth"), ("extrude", "extrude")):
+        v = take_float(params, key, default=None)
+        if v is not None:
+            setattr(data, attr, v)
+    for key, attr in (("bevelResolution", "bevel_resolution"), ("resolution", "resolution_u")):
+        v = take_int(params, key, default=None)
+        if v is not None:
+            setattr(data, attr, v)
+    # DEFAULT TRUE, and not a detail: a Follow Path constraint evaluates to NOTHING when use_path is
+    # off, with the constraint and the curve both reading back perfectly.
+    data.use_path = take_bool(params, "usePath", default=True)
+
+    obj = bpy.data.objects.new(data.name, data)
+    _link_new(obj, coll)
+    _place(obj, params)
+
+    # THE POINT COUNT IS THE POSTCONDITION, taken from the collection the type actually uses. A
+    # spline built into the wrong collection has zero points and raises nothing.
+    made = len(spline.bezier_points) if stype == "BEZIER" else len(spline.points)
+    if made != len(pts):
+        raise MifOpError("asked for %d points and the %s spline holds %d afterwards."
+                         % (len(pts), stype, made))
+    out = _created(obj, coll, "CURVE", "create_curve")
+    out.update({"splineType": stype, "pointCount": made, "cyclic": bool(spline.use_cyclic_u),
+                "bevelDepth": round(float(data.bevel_depth), 6),
+                "usePath": bool(data.use_path),
+                "note": (None if data.use_path else
+                         "usePath is OFF, so a Follow Path constraint against this curve will "
+                         "evaluate to nothing while the constraint and the curve both read back "
+                         "correctly.")})
+    return out
+
+
+def op_create_text(params):
+    """A text object - titles, labels, mograph, and anything with words in the render.
+
+    params:
+      name (str)
+      body (str)            the text itself. Required - an empty text object renders nothing.
+      size (float)          font size
+      extrude (float)       depth, which is what turns flat text into 3D
+      bevelDepth (float)
+      align (str)           horizontal: LEFT | CENTER | RIGHT | JUSTIFY | FLUSH
+      alignY (str)          vertical: TOP | TOP_BASELINE | CENTER | BOTTOM | BOTTOM_BASELINE
+      location / rotation / collection
+    """
+    reject_unknown(params, _TEXT_KEYS, "create_text")
+    body = take(params, "body", required=True, kind=str)
+    if not str(body):
+        raise MifOpError("'body' is empty, and a text object with no body renders nothing while "
+                         "existing perfectly. NOTHING was created.")
+
+    coll = _resolve_collection(params)
+    data = bpy.data.curves.new(str(take(params, "name", default="Text", kind=str)), type="FONT")
+    data.body = str(body)
+    for key, attr in (("size", "size"), ("extrude", "extrude"), ("bevelDepth", "bevel_depth")):
+        v = take_float(params, key, default=None)
+        if v is not None:
+            setattr(data, attr, v)
+    for key, attr in (("align", "align_x"), ("alignY", "align_y")):
+        v = take(params, key, kind=str)
+        if v is None:
+            continue
+        valid = {i.identifier for i in data.bl_rna.properties[attr].enum_items}
+        if str(v).upper() not in valid:
+            raise MifOpError("%s '%s' is not one this Blender offers. Valid: %s. NOTHING was "
+                             "created." % (key, v, ", ".join(sorted(valid))))
+        setattr(data, attr, str(v).upper())
+
+    obj = bpy.data.objects.new(data.name, data)
+    _link_new(obj, coll)
+    _place(obj, params)
+
+    out = _created(obj, coll, "FONT", "create_text")
+    out.update({"body": data.body, "size": round(float(data.size), 6),
+                "extrude": round(float(data.extrude), 6),
+                "align": data.align_x, "alignY": data.align_y,
+                "note": ("extrude is 0, so this text is a flat plane with no thickness - which is "
+                         "correct for a 2D title and wrong for anything meant to catch a light.")
+                if not data.extrude else None})
+    return out
+
+
+def op_create_armature(params):
+    """An armature, with its bones - without which the whole rigging family could only EDIT.
+
+    ops_rig has twelve ops and not one of them creates an armature: list_bones, rename_bones,
+    set_bone_pose, the vertex-group and weight ops all operate on a rig that already exists. So
+    nothing could be rigged from scratch through the typed path.
+
+    BONES CAN ONLY BE CREATED IN EDIT MODE, which is the whole difficulty. armature.edit_bones does
+    not exist outside it, so this switches mode, builds, and switches back - and RESTORING THE MODE
+    IS A POSTCONDITION, not a courtesy: being left in edit mode strands every op that follows,
+    which is the same failure create_primitive forces enter_editmode off to avoid.
+
+    params:
+      name (str)
+      bones (list)          [{"name","head":[x,y,z],"tail":[x,y,z],"parent":"...","connect":bool}]
+                            Parents must appear BEFORE their children.
+      displayType (str)     OCTAHEDRAL | STICK | BBONE | ENVELOPE | WIRE
+      showInFront (bool)    draw the rig over the mesh - default true, because a rig inside a body
+                            is invisible and looks like it was never created
+      location / rotation / collection
+    """
+    reject_unknown(params, _ARM_KEYS, "create_armature")
+    bones = params.get("bones") or []
+    if not isinstance(bones, (list, tuple)):
+        raise MifOpError("'bones' must be a list of {name, head, tail}. NOTHING was created.")
+    # VALIDATED IN FULL BEFORE ANY MODE CHANGE. A refusal partway through would leave an armature
+    # with half its bones AND Blender in edit mode.
+    seen = set()
+    for i, b in enumerate(bones):
+        if not isinstance(b, dict) or not b.get("name"):
+            raise MifOpError("bones[%d] needs a 'name'. NOTHING was created." % i)
+        for end in ("head", "tail"):
+            v = b.get(end)
+            if not isinstance(v, (list, tuple)) or len(v) < 3:
+                raise MifOpError("bones[%d]['%s'] must be [x,y,z], got %r. NOTHING was created."
+                                 % (i, end, v))
+        if b["name"] in seen:
+            raise MifOpError("bones[%d] repeats the name '%s'. NOTHING was created."
+                             % (i, b["name"]))
+        parent = b.get("parent")
+        if parent and parent not in seen:
+            raise MifOpError("bones[%d] ('%s') names parent '%s', which is not defined ABOVE it. "
+                             "Parents must come first. NOTHING was created."
+                             % (i, b["name"], parent))
+        seen.add(b["name"])
+
+    mode_before = bpy.context.object.mode if bpy.context.object else "OBJECT"
+    if mode_before != "OBJECT":
+        raise MifOpError("Blender is in %s mode. Creating an armature has to switch modes, and "
+                         "doing that from anything but OBJECT mode would drop whatever is being "
+                         "edited. NOTHING was created." % mode_before)
+
+    coll = _resolve_collection(params)
+    data = bpy.data.armatures.new(str(take(params, "name", default="Armature", kind=str)))
+    disp = take(params, "displayType", kind=str)
+    if disp:
+        valid = {i.identifier for i in data.bl_rna.properties["display_type"].enum_items}
+        if str(disp).upper() not in valid:
+            bpy.data.armatures.remove(data)
+            raise MifOpError("displayType '%s' is not one this Blender offers. Valid: %s. NOTHING "
+                             "was created." % (disp, ", ".join(sorted(valid))))
+        data.display_type = str(disp).upper()
+    obj = bpy.data.objects.new(data.name, data)
+    _link_new(obj, coll)
+    _place(obj, params)
+    obj.show_in_front = take_bool(params, "showInFront", default=True)
+
+    made = []
+    if bones:
+        snap = selection_snapshot()
+        try:
+            bpy.context.view_layer.objects.active = obj
+            obj.select_set(True)
+            bpy.ops.object.mode_set(mode="EDIT")
+            ebs = data.edit_bones
+            for b in bones:
+                eb = ebs.new(str(b["name"]))
+                eb.head = [float(x) for x in b["head"][:3]]
+                eb.tail = [float(x) for x in b["tail"][:3]]
+                if b.get("parent"):
+                    eb.parent = ebs[str(b["parent"])]
+                    eb.use_connect = bool(b.get("connect", False))
+                made.append(eb.name)
+        finally:
+            # ALWAYS, and this is the postcondition rather than the tidy-up. Left in edit mode,
+            # every op after this one fails on an editor nobody asked to be in.
+            try:
+                bpy.ops.object.mode_set(mode="OBJECT")
+            except RuntimeError:
+                pass
+            selection_restore(snap)
+
+    mode_after = bpy.context.object.mode if bpy.context.object else "OBJECT"
+    if mode_after != "OBJECT":
+        raise MifOpError("created '%s' but Blender is left in %s mode, which strands every op "
+                         "after this one." % (obj.name, mode_after))
+    # BONES COUNTED FROM data.bones, NOT from the edit_bones list built above. edit_bones only
+    # exist in edit mode; the real bones appear when it is left, and a bone that failed to survive
+    # that transition would still be in the list this op made.
+    if len(data.bones) != len(bones):
+        raise MifOpError("asked for %d bone(s) and the armature holds %d after leaving edit mode."
+                         % (len(bones), len(data.bones)))
+
+    out = _created(obj, coll, "ARMATURE", "create_armature")
+    out.update({"bones": [b.name for b in data.bones], "boneCount": len(data.bones),
+                "displayType": data.display_type, "showInFront": bool(obj.show_in_front),
+                "modeAfter": mode_after,
+                "note": (None if bones else
+                         "created with NO bones - an armature with none deforms nothing and shows "
+                         "nothing in the viewport. Add them with the bones parameter.")})
+    return out
+
 OPS = {
     "create_primitive": op_create_primitive,
     "transform_object": op_transform_object,
     "boolean_op": op_boolean_op,
     "join_objects": op_join_objects,
     "separate_mesh": op_separate_mesh,
+    "create_empty": op_create_empty,
+    "create_curve": op_create_curve,
+    "create_text": op_create_text,
+    "create_armature": op_create_armature,
 }
