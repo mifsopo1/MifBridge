@@ -681,10 +681,51 @@ for name in sorted(table):
     if not base:
         continue
     out["leakStats"]["opsCovered"] += 1
+    # ONE LEVEL DOWN AS WELL AS THE TOP. The pass corrupted only top-level payload values, and
+    # the interesting ones are nested: a node's `inputs` and `properties`, a modifier's `settings`,
+    # a bone's head and tail. Replacing the whole `properties` dict only reaches the "is this a
+    # dict" guard; replacing a value INSIDE it reaches the writer.
+    #
+    # That is not hypothetical - it is where add_group_node's boolean defect was found BY HAND on
+    # 2026-09-04, because this pass could not see it. properties:{"use_clamp":{...}} switched the
+    # clamp on and reported success, since bool({...}) is True.
+    _targets = []
     for key in sorted(base):
+        _targets.append((key, None))
+        if isinstance(base[key], dict):
+            for subkey in sorted(base[key]):
+                _targets.append((key, subkey))
+        # A LIST OF DICTS is the other nested shape and the more interesting one: add_bones takes
+        # bones:[{name, head, tail, parent}], and a mistyped head is exactly the sort of thing that
+        # reaches a float() or gets silently defaulted. Only the FIRST element is corrupted - the
+        # others are the same shape, so a second copy would test the same code path twice.
+        elif (isinstance(base[key], (list, tuple)) and base[key]
+              and isinstance(base[key][0], dict)):
+            for subkey in sorted(base[key][0]):
+                _targets.append((key, ("[0]", subkey)))
+
+    for key, subkey in _targets:
       for _sentinel in _LEAK_SENTINELS:
         variant = dict(base)
-        variant[key] = _sentinel
+        if subkey is None:
+            variant[key] = _sentinel
+        elif isinstance(subkey, tuple):
+            rows = [dict(r) for r in base[key]]
+            rows[0][subkey[1]] = _sentinel
+            variant[key] = rows
+        else:
+            inner = dict(base[key])
+            inner[subkey] = _sentinel
+            variant[key] = inner
+        # A SEPARATE NAME, because `key` is the loop variable and reassigning it made the
+        # SECOND sentinel look up base["inputs.Object"] and die with KeyError. The first
+        # sentinel always passed, so a single-sentinel run would have hidden it.
+        #
+        # %%s AND %%%% ARE DOUBLED: INNER is a %%-format template, and that is the third time
+        # today it has bitten - a single %%s dies at template-fill time, before Blender starts.
+        label = (key if subkey is None else
+                 ("%%s%%s.%%s" %% (key, subkey[0], subkey[1])
+                  if isinstance(subkey, tuple) else "%%s.%%s" %% (key, subkey)))
         before = _leak_counts()
         out["leakStats"]["cases"] += 1
         try:
@@ -695,15 +736,15 @@ for name in sorted(table):
             # where a value belongs, and the ways it happens are quiet: bool({...}) is True and
             # str({...}) is "{'mif': 'not-a-value'}". Both write something the caller never asked
             # for and report success.
-            if isinstance(_sentinel, dict) and (name, key) not in _DICT_IS_LEGAL:
-                out["dictAccepted"].append({"op": name, "key": key})
+            if isinstance(_sentinel, dict) and (name, label) not in _DICT_IS_LEGAL:
+                out["dictAccepted"].append({"op": name, "key": label})
             continue
         except MifOpError as exc:
             out["leakStats"]["refused"] += 1
             after = _leak_counts()
             if after != before:
                 grew = dict((k, [before[k], after[k]]) for k in after if before[k] != after[k])
-                out["leaks"].append({"op": name, "key": key, "left": grew,
+                out["leaks"].append({"op": name, "key": label, "left": grew,
                                      "detail": str(exc)[:150]})
         except Exception as exc:
             # A RAW EXCEPTION FROM A BAD VALUE IS ALSO A DEFECT, and this pass used to skip
@@ -714,7 +755,7 @@ for name in sorted(table):
             # ever sends GOOD payloads, so this is the only pass that reaches them.
             out["leakStats"]["raised"] += 1
             out["badValueRaises"].append(
-                {"op": name, "key": key,
+                {"op": name, "key": label,
                  "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:120])})
             continue
 

@@ -900,8 +900,11 @@ def op_create_armature(params):
     # with half its bones AND Blender in edit mode.
     seen = set()
     for i, b in enumerate(bones):
-        if not isinstance(b, dict) or not b.get("name"):
-            raise MifOpError("bones[%d] needs a 'name'. NOTHING was created." % i)
+        # A STRING, not merely truthy. A dict name passed this guard and then reached a set()
+        # of seen names, raising TypeError: unhashable type - a raw exception out of the op.
+        if not isinstance(b, dict) or not isinstance(b.get("name"), str) or not b["name"]:
+            raise MifOpError("bones[%d] needs a 'name' as text, got %r. NOTHING was created."
+                             % (i, b.get("name") if isinstance(b, dict) else b))
         for end in ("head", "tail"):
             v = b.get(end)
             if not isinstance(v, (list, tuple)) or len(v) < 3:

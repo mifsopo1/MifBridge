@@ -1718,9 +1718,14 @@ def op_add_bones(params):
     existing = {b.name for b in data.bones}
     planned = set()
     for i, b in enumerate(bones):
-        if not isinstance(b, dict) or not b.get("name"):
-            raise MifOpError("bones[%d] needs a 'name'. NOTHING was changed." % i)
-        nm = str(b["name"])
+        # A STRING, not merely truthy - and str() would have hidden it. A dict name passed
+        # this guard and str({...}) turned it into a bone literally called
+        # "{'mif': 'not-a-value'}", ACCEPTED and reported as created. My own code from the
+        # same day, found by the matrix pass once it learned to corrupt list-of-dict entries.
+        if not isinstance(b, dict) or not isinstance(b.get("name"), str) or not b["name"]:
+            raise MifOpError("bones[%d] needs a 'name' as text, got %r. NOTHING was changed."
+                             % (i, b.get("name") if isinstance(b, dict) else b))
+        nm = b["name"]
         if len(nm) > _ID_NAME_LIMIT:
             raise MifOpError("bones[%d] name is %d characters and Blender truncates at %d, so the "
                              "bone you get would not be the one you named. NOTHING was changed."

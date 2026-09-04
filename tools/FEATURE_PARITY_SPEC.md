@@ -14196,3 +14196,34 @@ out-of-process the way ops_gen already does with gen_status.
       The distinction worth keeping: what varies is the SHAPE, what repeats is the RULE. Sharing the
       rule cost nine lines and removed six copies; sharing the shape would have cost more than it
       saved.
+
+- [x] **the pass reaches nested values now, and found two more** DONE 2026-09-04
+      Its known blind spot was that it corrupted only TOP-LEVEL payload values. That was not a
+      theoretical gap: add_group_node's boolean defect lives in `properties`, one level down, and
+      had to be found by hand because of it.
+
+      NESTED DICTS ADDED TEN CASES AND FOUND NOTHING, which is the honest result - payloads rarely
+      carry them, and the one defect in that space was already fixed. LISTS OF DICTS were the space
+      worth reaching: add_bones takes bones:[{name, head, tail}], and a mistyped entry is exactly
+      where a value gets silently defaulted. Only the first element is corrupted; the rest are the
+      same shape and would test the same path twice.
+
+      TWO FOUND, both on the bone name:
+
+        create_armature   a dict name passed `not b.get("name")` and then reached a set() of seen
+                          names - TypeError: unhashable type: 'dict', a raw exception out of the op.
+        add_bones         the same guard, then nm = str(b["name"]) turned it into a bone literally
+                          called "{'mif': 'not-a-value'}". ACCEPTED and reported as created. My own
+                          code from the same day.
+
+      Both guards now require a STRING rather than something truthy. str() is the thing that hid it:
+      a guard reading `not b.get("name")` looks like it checks the name, and then str() accepts
+      whatever survived.
+
+      TWO BUGS IN MY OWN PATCH, both caught before they shipped. Reassigning the loop variable `key`
+      made the SECOND sentinel look up base["inputs.Object"] and die with KeyError - a
+      single-sentinel run would have passed. And a bare %s in code injected into INNER, which is a
+      %-format template, died at template-fill time before Blender started; that is the third time
+      today the same template has bitten.
+
+      522 cases per build now, 490 judged refusals, 6.4s for four builds.
