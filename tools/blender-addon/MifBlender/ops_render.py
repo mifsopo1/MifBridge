@@ -375,12 +375,18 @@ def op_render_info(params):
     return out
 
 
-# NO "scene" KEY. Rendering a DIFFERENT scene out of process is a real Blender feature (-S), and it
-# was in the first draft of this set - then removed, because frame_path() would still have been
-# computed on bpy.context.scene while the child rendered another one, so every path in the response
-# and every mtime in the postcondition would have described the wrong scene. A parameter that is
-# accepted and quietly wrong is worse than one that is absent. Tracked in the spec instead.
-_ANIM_KEYS = {"frameStart", "frameEnd", "start", "end", "frameStep", "step"}
+# THE `scene` KEY IS BACK, and properly this time. It was removed on 2026-09-03 rather than shipped
+# half-working: frame_path() was still being computed on bpy.context.scene while the child rendered
+# another one, so every path in the response and every mtime in the postcondition would have
+# described the wrong scene - confidently. Now the NAMED scene is resolved first and everything
+# downstream reads it: the camera check, the frame range, the output paths, the writable-directory
+# probe and the before-mtimes.
+#
+# AND THE NAME IS VALIDATED HERE BECAUSE BLENDER WILL NOT. Measured on 5.0.1: `blender -b file.blend
+# -S BadName` SILENTLY renders the saved active scene instead - no error, no warning, exit 0. So a
+# typo would render the wrong scene and report success against paths taken from the right one,
+# which is the exact failure the missing output override exists to prevent.
+_ANIM_KEYS = {"frameStart", "frameEnd", "start", "end", "frameStep", "step", "scene"}
 _STATUS_KEYS = {"jobId", "job", "id", "logLines"}
 
 # THE JOB TABLE. A render outlives the request that started it, which is the whole point of this
@@ -449,9 +455,22 @@ def op_render_animation(params):
       frameStart / start (int)   default scene.frame_start
       frameEnd / end (int)       default scene.frame_end
       frameStep / step (int)     default scene.frame_step
+      scene (str)                render a DIFFERENT scene in the same file. Default the active one.
+                                 Validated here, because Blender's -S silently falls back to the
+                                 saved active scene on a name it does not know.
     """
     reject_unknown(params, _ANIM_KEYS, "render_animation")
-    sc = bpy.context.scene
+    scene_name = take(params, "scene", kind=str)
+    if scene_name:
+        sc = bpy.data.scenes.get(str(scene_name))
+        if sc is None:
+            known = sorted(s.name for s in bpy.data.scenes)
+            raise MifOpError("no scene named '%s' in this file. Present: %s. Blender's own -S flag "
+                             "would SILENTLY render the saved active scene instead of failing, so "
+                             "this is checked here. NOTHING was started."
+                             % (scene_name, ", ".join(known)))
+    else:
+        sc = bpy.context.scene
     r = sc.render
 
     blend = bpy.data.filepath
@@ -459,7 +478,20 @@ def op_render_animation(params):
         raise MifOpError("this session has never been saved, so there is no file to render out of "
                          "process. Save it with save_file first (repointSession:true, or pass the "
                          "path here after saving). NOTHING was started.")
-    if bpy.data.is_dirty:
+    # THE DIRTY GUARD CANNOT DO ITS JOB IN BACKGROUND MODE, so it does not pretend to.
+    #
+    # bpy.data.is_dirty is ALWAYS True under `blender -b` - measured on 4.4.0 and 5.0.1, where it
+    # reads True before a save, immediately AFTER save_as_mainfile, after an edit, and after a
+    # second save_mainfile. It never clears. So refusing on it in background mode refuses ALWAYS,
+    # and this op - whose whole purpose is spawning a background render - was unusable from a
+    # headless bridge, which is a legitimate way to run this addon.
+    #
+    # In a GUI session the flag works and the guard is worth having, because rendering a stale file
+    # silently produces the wrong frames. So it is enforced there and DOWNGRADED TO A WARNING here,
+    # with the risk stated rather than an unverifiable claim of safety. Suppressing the refusal
+    # while saying nothing would be the worse of the three options.
+    dirty_checkable = not bpy.app.background
+    if dirty_checkable and bpy.data.is_dirty:
         raise MifOpError("the session has unsaved changes, so the file on disk is NOT the scene you "
                          "are looking at - rendering it would silently produce the wrong frames. "
                          "Save first with save_file (repointSession:true). NOTHING was started.")
@@ -517,7 +549,12 @@ def op_render_animation(params):
     _JOB_SEQ[0] += 1
     job_id = "ranim%d_%d" % (os.getpid(), _JOB_SEQ[0])
     log_path = os.path.join(outdir, "%s.log" % job_id)
-    argv = [exe, "-b", blend, "-s", str(start), "-e", str(end), "-j", str(step), "-a"]
+    # -S BEFORE -a, and only when a scene was named. Blender applies these left to right and -a
+    # starts the render, so anything after it is ignored.
+    argv = [exe, "-b", blend]
+    if scene_name:
+        argv += ["-S", sc.name]
+    argv += ["-s", str(start), "-e", str(end), "-j", str(step), "-a"]
 
     started = time.time()
     try:
@@ -543,6 +580,16 @@ def op_render_animation(params):
         "jobId": job_id,
         "pid": popen.pid,
         "blendFile": blend,
+        "scene": sc.name,
+        "sceneWasNamed": bool(scene_name),
+        # SAID, NOT ASSUMED. In background mode the staleness of the file on disk is UNKNOWN to
+        # this op, and a caller relying on it deserves to be told rather than reassured.
+        "unsavedChangesChecked": dirty_checkable,
+        "unsavedChangesWarning": (None if dirty_checkable else
+                                  "bpy.data.is_dirty is always True under blender -b and never "
+                                  "clears, so this op CANNOT tell whether the file on disk matches "
+                                  "this session. If anything changed since the last save, the child "
+                                  "is rendering the older scene."),
         "frameStart": start, "frameEnd": end, "frameStep": step,
         "framesExpected": len(frames),
         "outputDir": outdir,

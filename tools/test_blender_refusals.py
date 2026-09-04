@@ -225,7 +225,10 @@ def install_stub():
         objects=objects, actions=_Coll(), lights=_Coll(), cameras=_Coll(),
         materials=_Coll(), images=_Coll(), meshes=_Coll(), node_groups=_Coll(),
         textures=_Coll(), armatures=_Coll(), worlds=_Coll(), curves=_Coll(),
-        collections=_Coll(), filepath="", is_dirty=False)
+        collections=_Coll(), filepath="", is_dirty=False,
+        # scenes, because render_animation resolves a NAMED scene through bpy.data.scenes
+        # and Blender's own -S flag silently renders the wrong one on a typo.
+        scenes=_Coll({"Scene": types.SimpleNamespace(name="Scene")}))
     scene = types.SimpleNamespace(
         frame_current=1, frame_start=1, frame_end=250, frame_step=1,
         frame_preview_start=1, frame_preview_end=250, use_preview_range=False,
@@ -671,7 +674,14 @@ def main():
             fh.write(b"not really a blend, and nothing here opens it")
 
         bpy.data.filepath, bpy.data.is_dirty = real, True
+        # A GUI SESSION, deliberately. bpy.data.is_dirty is ALWAYS True under blender -b and
+        # never clears even after a save - measured on 4.4.0 and 5.0.1 - so the op enforces
+        # this guard only when NOT in background mode, or it would refuse every headless
+        # call forever. The check has to model the session where the guard applies.
+        _was_bg = bpy.app.background
+        bpy.app.background = False
         ok, msg = refuses(ops_render.op_render_animation, {}, "unsaved changes", "NOT the scene")
+        bpy.app.background = _was_bg
         check("B112 a DIRTY session is refused - the file on disk is not the scene you are looking "
               "at, so the render would silently produce the wrong frames", ok, msg)
 
@@ -2065,6 +2075,26 @@ def main():
     check("B129 every documented key maps to a real property path and an availability note - the "
           "table is what turns 'this build lacks it' into a sentence naming which builds have it",
           not _bad_rows and len(OL._SHADOW_MAP) >= 15, "malformed rows: %s" % _bad_rows)
+
+    print("")
+    print("=== B130: render_animation's scene parameter, and the guard Blender will not do ===")
+    # THE KEY WAS REMOVED ON 2026-09-03 rather than shipped half-working: frame_path() was still
+    # computed on bpy.context.scene while the child rendered another, so every path in the response
+    # and every mtime in the postcondition would have described the wrong scene, confidently.
+    #
+    # BLENDER WILL NOT CATCH A TYPO. Measured on 5.0.1: `blender -b file.blend -S BadName` SILENTLY
+    # renders the saved active scene - no error, no warning, exit 0. So a wrong name would render
+    # the wrong scene and report success against paths taken from the right one, which is the exact
+    # failure the missing output override exists to prevent. Hence the check here.
+    from MifBlender import ops_render as ORD2
+
+    ok, msg = refuses(ORD2.op_render_animation, {"scene": "NoSuchScene"},
+                      "no scene named", "silently render")
+    check("B130 an unknown scene is refused, and the message says Blender's own -S would have "
+          "silently rendered the wrong one", ok, msg)
+    check("B130 'scene' is on the accepted key list - it was removed once and this is the check "
+          "that it came back",
+          "scene" in ORD2._ANIM_KEYS, "keys=%s" % sorted(ORD2._ANIM_KEYS))
 
     print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")

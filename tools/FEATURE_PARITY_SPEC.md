@@ -11769,24 +11769,33 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       other, and it needs a running PIE session, so it is attended-only and cannot go in an
       unattended sweep.
 
-- [ ] **render_animation cannot render a scene other than the active one** (2 hours)
-      A `scene` parameter was in the first draft of render_animation and was taken out before
-      commit. Blender renders another scene with `-S <name>`, so the child half is one flag;
-      the reason it came out is the OTHER half. Every path in the response and every mtime in
-      the postcondition is computed from bpy.context.scene.render.frame_path(), so a child
-      rendering scene B while this op measured scene A would report progress against files
-      nobody was writing - and report it confidently. An accepted parameter that is quietly
-      wrong is worse than an absent one, so it was removed rather than shipped.
+- [x] **render_animation can now render a named scene** DONE 2026-09-04
+      The `scene` key is back, and properly. It was removed on 2026-09-03 rather than shipped
+      half-working: frame_path() was still computed on bpy.context.scene while the child rendered
+      another, so every path in the response and every mtime in the postcondition would have
+      described the wrong scene, confidently. The named scene is now resolved first and everything
+      downstream reads it - the camera check, the frame range, the output paths, the
+      writable-directory probe and the before-mtimes.
 
-      Doing it properly means taking the render settings, output path and frame range from the
-      NAMED scene throughout, and refusing a name that does not exist in bpy.data.scenes with
-      the list of ones that do. The camera check, the range check and the writable-directory
-      probe all have to move to that scene too - each of them currently reads
-      bpy.context.scene, and three of the five would silently pass on the wrong one.
+      THE NAME IS VALIDATED HERE BECAUSE BLENDER WILL NOT. Measured on 5.0.1:
+      `blender -b file.blend -S BadName` SILENTLY renders the saved active scene - no error, no
+      warning, exit 0. A typo would render the wrong scene and report success against paths taken
+      from the right one, which is the exact failure the missing output override exists to prevent.
 
-      Worth doing: multi-scene files are normal in mograph and previs, where a file holds a
-      shot per scene and a batch render walks them. Not urgent: a caller can switch the active
-      scene, save, and render, which is what the current op supports honestly.
+      Verified end to end on 5.0: with the active scene set to Shot_B, asking for "Scene" produced
+      Scene_0001.png from a child that exited 0, and render_status reported 1 of 1 frames. The file
+      on disk names the scene that was asked for, not the one that was active.
+
+      AND IT TURNED UP A REASON THE OP COULD NEVER RUN HEADLESS AT ALL. bpy.data.is_dirty is ALWAYS
+      True under blender -b - measured on 4.4.0 and 5.0.1, where it reads True before a save,
+      immediately after save_as_mainfile, after an edit, and after a second save_mainfile. It never
+      clears. So the unsaved-changes guard refused EVERY call from a headless bridge, which is a
+      legitimate way to run this addon.
+
+      The guard is right in a GUI session, where the flag works and a stale file silently renders
+      the wrong frames. So it is enforced there and DOWNGRADED TO A WARNING in background mode,
+      with unsavedChangesChecked saying which the caller got. Suppressing it silently would have
+      been the worst of the three options.
 
 - [ ] **handlers that MUTATE and then answer "NOTHING was changed"** (half a day + a rebuild)
       A false claim of that exact sentence is the worst outcome available here, because every
