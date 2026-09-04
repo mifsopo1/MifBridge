@@ -14643,3 +14643,29 @@ out-of-process the way ops_gen already does with gen_status.
 
       Verified both ways - every op refuses with a sentence and writes nothing, and the matrix still
       reaches 143/144/144/144, so the good paths still export, bake and render.
+
+- [x] **the check that stops the sixth writer repeating the .exr** DONE 2026-09-04
+      tools/audit_output_paths.py, gated at zero. The defect was fixed five times today, once per
+      op; this is what stops the next op that writes a file from doing it again. Remembering is what
+      failed the first five times.
+
+      It finds ops that resolve a caller-supplied path and then write - bpy.ops.export_*, wm.save_*,
+      image.save*, a render with write_still - and requires check_output_path above the first write.
+
+      TWO THINGS IT HAD TO LEARN BEFORE IT WAS WORTH GATING:
+
+        the exporters are called DYNAMICALLY. export_scene resolves its operator by name because
+        which exporters a build ships varies, so there is no dotted bpy.ops.export_scene.gltf to
+        match. Matching only the static form saw two of the five writers and called the rest clean,
+        which is a green that means nothing - the same failure this project keeps naming.
+
+        readers are not writers, and that dynamic match cannot tell them apart: import_scene
+        resolves its importer exactly the way export_scene resolves its exporter. A path an importer
+        cannot open fails at the open, before any work - the behaviour this audit exists to produce.
+        Firing on them would be firing on correct code, and an audit that does that gets silenced.
+
+      save_file gained the shared check as well. It was already refusing with a sentence, because
+      save_as_mainfile fails immediately and wastes no work, but an op that writes a file and skips
+      the shared check is what the gate is for.
+
+      Mutation-tested: removing bake_texture's guard makes --check name it and exit 1.
