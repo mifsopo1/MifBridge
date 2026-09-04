@@ -5454,6 +5454,12 @@ def bl_set_world(color: list = None, strength: float = None, hdri: str = None,
 
 
 @mcp.tool()
+def bl_world_info(name: str = None) -> dict:
+    "What the Blender world actually IS - the read half of bl_set_world, which had none. The family was write-only: bl_scene_info omits the world entirely and bl_render_info reports only its NAME, so 'what is my world set to' was unanswerable on the one datablock that decides whether an interior renders black. Every answer is taken from the LINK rather than the node, because that is where a shader tree's effect lives: backgroundConnected (a Background node not wired to the world output accepts every write and contributes nothing), and environmentTextureDriving, found by walking backwards from the Colour socket so a Mapping in between still counts while a texture left unlinked correctly does not. Also reports useNodes, because a world with it off IGNORES the whole tree and renders its flat colour while every node reads perfectly. blockers is the diagnosis, not the inputs to it. A scene with no world returns a blocker rather than an error - that is the commonest black-render cause, not a failure."
+    return _blender("world_info", name=name)
+
+
+@mcp.tool()
 def bl_add_rigid_body(object: str, type: str = None, mass: float = None, friction: float = None,
                       bounciness: float = None, collision_shape: str = None,
                       kinematic: bool = None, margin: float = None, linear_damping: float = None,

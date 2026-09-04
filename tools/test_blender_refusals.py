@@ -815,6 +815,112 @@ def main():
           "got %s" % res)
 
     print("")
+    print("=== B114: world_info's link-vs-node logic - pure graph walking, so it is checkable ===")
+    # THE SECOND FAMILY WHOSE LOGIC IS REAL DATA rather than evaluation. A shader tree is nodes and
+    # links; walking it needs no depsgraph and no render, so these assert what the walk actually
+    # FINDS rather than only that a refusal fired.
+    #
+    # WHAT THEY GUARD. set_world reported `hasEnvironmentTexture` by asking whether a
+    # TEX_ENVIRONMENT node existed anywhere in the tree. Its own flat-colour branch removes the
+    # LINK into Background.Color and leaves the node behind, so once an HDRI had ever been set that
+    # field stayed true forever - reporting an environment in play while the render used the flat
+    # colour. In a node tree the effect lives on the link, and that is the whole point of this walk.
+    from MifBlender import ops_world as OW
+
+    class _S(object):
+        def __init__(self, name):
+            self.name = name
+            self.default_value = [0.0, 0.0, 0.0, 1.0]
+
+    class _N(object):
+        def __init__(self, kind, name, inputs=()):
+            self.type = kind
+            self.name = name
+            self.inputs = [_S(i) for i in inputs]
+            self.outputs = [_S("out")]
+
+        def sock(self, name):
+            return next(s for s in self.inputs if s.name == name)
+
+    class _L(object):
+        def __init__(self, fn, tn, ts):
+            self.from_node, self.to_node, self.to_socket = fn, tn, ts
+
+    class _T(object):
+        def __init__(self, nodes, links):
+            self.nodes, self.links = nodes, links
+
+    tex = _N("TEX_ENVIRONMENT", "Env")
+    bg = _N("BACKGROUND", "Background", ("Color", "Strength"))
+    out = _N("OUTPUT_WORLD", "World Output", ("Surface",))
+
+    direct = _T([tex, bg, out], [_L(tex, bg, bg.sock("Color")),
+                                 _L(bg, out, out.sock("Surface"))])
+    check("B114 a directly linked environment texture is found",
+          OW._trace_to_texture(direct, bg.sock("Color")) is tex, "not found")
+
+    # THROUGH A MAPPING NODE - the case a naive "is it linked directly" test gets wrong, and a
+    # perfectly ordinary graph: set_world itself inserts Mapping and TexCoord when given a rotation.
+    mapping = _N("MAPPING", "Mapping", ("Vector", "Rotation"))
+    through = _T([tex, mapping, bg, out],
+                 [_L(mapping, tex, tex.inputs[0] if tex.inputs else _S("x")),
+                  _L(tex, bg, bg.sock("Color")), _L(bg, out, out.sock("Surface"))])
+    check("B114 and one reached THROUGH a Mapping node is still found - set_world inserts exactly "
+          "that pair when given a rotation, so a direct-link test would answer no on its own output",
+          OW._trace_to_texture(through, bg.sock("Color")) is tex, "not found through Mapping")
+
+    # THE ACTUAL BUG. Node present, link gone - which is the state set_world's flat-colour branch
+    # leaves behind, and the state the old field reported as an environment in play.
+    unlinked = _T([tex, bg, out], [_L(bg, out, out.sock("Surface"))])
+    check("B114 a texture PRESENT but not linked is correctly NOT driving - the exact state "
+          "set_world leaves after replacing an HDRI with a flat colour",
+          OW._trace_to_texture(unlinked, bg.sock("Color")) is None, "reported as driving")
+
+    # A CYCLE MUST TERMINATE. Blender's UI will not build one, but this walks files the addon did
+    # not author, and a reader that hangs is worse than one that gives up.
+    #
+    # THIS CHECK PASSES WITH THE SEEN-SET REMOVED, which was found by planting exactly that and is
+    # worth stating rather than quietly leaving a check that looks like it guards more than it
+    # does. Termination comes from the DEPTH LIMIT; the seen-set only stops a diamond graph being
+    # re-walked once per path. The assertion - that this returns rather than hanging or blowing the
+    # stack - is real and still worth holding. What it is not is a test of the seen-set.
+    a = _N("MIX", "A", ("In",))
+    b = _N("MIX", "B", ("In",))
+    cyc = _T([a, b, bg], [_L(b, a, a.sock("In")), _L(a, b, b.sock("In")),
+                          _L(a, bg, bg.sock("Color"))])
+    res, err = succeeds(lambda _: OW._trace_to_texture(cyc, bg.sock("Color")), None)
+    check("B114 a cyclic graph terminates instead of hanging or overflowing", err is None, err)
+
+    # _find_background: the OTHER link-vs-node question, on the Background node itself.
+    node, connected = OW._find_background(types.SimpleNamespace(node_tree=direct))
+    check("B114 a Background wired to the world output reports connected",
+          node is bg and connected is True, "got %s/%s" % (node, connected))
+
+    stray = _T([bg, out], [])
+    node, connected = OW._find_background(types.SimpleNamespace(node_tree=stray))
+    check("B114 a Background node NOT wired to the output is found but reports connected:false - "
+          "it accepts every write and changes no light",
+          node is bg and connected is False, "got %s/%s" % (node, connected))
+
+    empty = _T([out], [])
+    node, connected = OW._find_background(types.SimpleNamespace(node_tree=empty))
+    check("B114 a tree with no Background node at all answers None rather than raising",
+          node is None and connected is False, "got %s/%s" % (node, connected))
+
+    noout = _T([bg], [])
+    check("B114 a tree with no world output answers None for its surface source",
+          OW._surface_source(types.SimpleNamespace(node_tree=noout)) is None, "not None")
+
+    # AND THE READER MUST NOT AUTHOR NODES. _background_node creates a Background and wires it when
+    # the tree has none, which is right for a setter and disqualifying for a reader: an info op that
+    # silently makes two nodes describes a world it just invented.
+    before = len(empty.nodes)
+    OW._find_background(types.SimpleNamespace(node_tree=empty))
+    check("B114 _find_background is PURE - it created nothing, unlike _background_node which the "
+          "setters use", len(empty.nodes) == before, "node count moved %d -> %d"
+          % (before, len(empty.nodes)))
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is

@@ -12202,6 +12202,63 @@ out-of-process the way ops_gen already does with gen_status.
       succeeds() helper beside refuses(), because a harness that dies on the first defect hides the
       rest - which is exactly what B111 forbids in the ops themselves.
 
+- [x] **world_info - the read half of a write-only family, on the datablock that decides black** DONE 2026-09-03
+      set_world could write a colour, a strength, an HDRI, a rotation and mist, and NOTHING could
+      read any of it back. scene_info omits the world entirely - checked by reading its return, not
+      by its name - and render_info reports only worldName. So "what is my world actually set to"
+      was unanswerable through the typed path, on the one datablock most likely to be the reason an
+      interior renders black.
+
+      FOUND BY A ROUND CHECK FOR WRITE-ONLY FAMILIES rather than by wanting the feature: for every
+      ops module, is there a reader. Three came back write-only - world, physics and viewport. This
+      closes world. Physics is filed below; viewport is arguably unreadable over a socket and the
+      spec already declines part of it on those grounds.
+
+      EVERY ANSWER IS TAKEN FROM THE LINK, NOT THE NODE, and reading set_world to write this turned
+      up a live defect doing the opposite. Its response reported hasEnvironmentTexture by asking
+      whether a TEX_ENVIRONMENT node existed ANYWHERE in the tree - while its own flat-colour branch
+      removes the LINK into Background.Color and leaves the node behind. So once an HDRI had ever
+      been set, that field stayed true forever, reporting an environment in play while the render
+      used the flat colour. Split into environmentTexturePresent and environmentTextureDriving, the
+      second found by walking backwards from the Colour socket so a Mapping in between still counts.
+      That is the same class 02_GOTCHAS records for IES: in a node tree the effect lives on the link.
+
+      TWO MORE INERT STATES GET NAMED. A Background node not wired to the world output accepts every
+      write and contributes nothing (backgroundConnected). A world with use_nodes FALSE ignores its
+      whole tree and renders the flat world.color instead, with every node reading perfectly.
+
+      AND THE READER IS PURE. _background_node CREATES a Background node and wires it when the tree
+      has none - right for a setter, disqualifying for a reader, since an info op that silently
+      authors two nodes describes a world it just invented. world_info uses its own _find_background
+      and a check asserts it creates nothing.
+
+      B114 covers the graph walking offline - a shader tree is nodes and links, so it needs no
+      Blender. Ground-truthed with three plants; TWO were caught and the THIRD was not, which is
+      the useful one. Removing the seen-set changed nothing, because termination comes from the
+      DEPTH LIMIT and the seen-set only stops a diamond graph being re-walked per path. The comment
+      in both files credited the wrong mechanism and was corrected rather than the check being
+      quietly kept as if it guarded more than it does.
+
+- [ ] **physics is a write-only family - four ops that set and nothing that reads** (3 hours)
+      add_rigid_body, add_cloth, add_collision and bake_physics all write, and no op anywhere
+      reports what they wrote. Verified by reading ops_physics (four op_ functions, all setters)
+      and scene_info's return (no physics of any kind), not by scanning names.
+
+      So a caller cannot ask what mass or friction a rigid body has, which collision shape it uses,
+      whether an object is kinematic, or whether a cloth modifier is even present. list_modifiers
+      would show a CLOTH modifier, but a rigid body is NOT a modifier - it lives on obj.rigid_body -
+      so it is unreadable by any route.
+
+      THE ONE THAT MATTERS MOST IS WHETHER A CACHE IS BAKED. bake_physics writes a point cache and
+      nothing can confirm it afterwards, which is the postcondition-shaped question: a scene jumped
+      to a late frame shows a rigid body AT REST unless the sim has been stepped or baked, so
+      "did the bake happen" decides whether a render is right or silently wrong.
+
+      Wants: per-object rigid body settings, cloth and collision presence with their key
+      parameters, the scene rigidbody_world's existence and its point cache frame range, and
+      pointCacheBaked per cache. Also worth reporting is whether the cache range COVERS the scene
+      frame range - a bake made before the range was extended is stale in a way nothing announces.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 
