@@ -135,8 +135,16 @@ def check_modifier_tables():
     about: a type added to the read side and forgotten on the write side is an asymmetry nobody
     notices until someone tries to set a field that reads back fine.
 
-    This runs in-process against the addon source rather than over the socket, because it is a
-    property of the CODE, not of a running Blender.
+    HOW THIS IS ASKED CHANGED ON 2026-09-04. It used to compare the KEYS of the two literals, and
+    that stopped being answerable from source the moment _MODIFIER_FIELDS began deriving its extra
+    entries from _MODIFIER_WRITES at import - the literal has seven, the real table has twenty, and
+    a source-reading check would report an asymmetry that no longer exists, forever.
+
+    So the write table is still parsed from source (it is still a literal, and it is now the single
+    source of truth for both halves), and the READ side is asked of the running addon: add each
+    writable type and see whether list_modifiers describes it. That is a stronger question than
+    whether two dicts have the same keys, and it is the one the asymmetry actually mattered for - a
+    read entry that exists and returns nothing would pass the old check and fail this one.
     """
     import os as _os
     import re as _re
@@ -159,13 +167,45 @@ def check_modifier_tables():
     check("R900 both modifier tables are found in ops_rig.py",
           bool(read_keys) and bool(write_keys),
           "read=%s write=%s" % (read_keys, write_keys))
-    if not read_keys or not write_keys:
+    if not write_keys:
         return
-    check("R901 the read and write modifier tables describe the SAME types - a type on one side "
-          "and not the other is a silent asymmetry",
-          read_keys == write_keys,
-          "read-only: %s   write-only: %s" % (sorted(read_keys - write_keys),
-                                              sorted(write_keys - read_keys)))
+
+    # ASKED OF THE RUNNING ADDON, not of the source. Every type add_modifier accepts must come back
+    # described by list_modifiers - fourteen of them did not until today, so an agent could point a
+    # Shrinkwrap at a target and have no way to confirm it landed. A value you can write and never
+    # verify is worse than one you cannot write: ok:true is not proof.
+    host = "R901_Host"
+    call("delete_object", object=host)
+    made = call("create_primitive", kind="cube", name=host, size=2)
+    if made.get("ok") is False:
+        check("R901 (setup) a host object for the modifier round trip", False,
+              str(made.get("error"))[:160])
+        return
+
+    unreadable, unaddable = [], []
+    for mod_type in sorted(write_keys):
+        label = "R901_%s" % mod_type
+        add = call("add_modifier", object=host, type=mod_type, modifier=label)
+        if add.get("ok") is False:
+            # NOT A FAILURE OF THIS CHECK. A build without the type, or one that refuses a bare
+            # modifier, says nothing about whether the read side describes it - and calling that an
+            # asymmetry would be the false failure this check was just rewritten to avoid.
+            unaddable.append("%s (%s)" % (mod_type, str(add.get("error"))[:40]))
+            continue
+        lm = call("list_modifiers", object=host)
+        row = [m for m in (lm.get("modifiers") or []) if m.get("name") == label]
+        if not row or not isinstance(row[0].get("settings"), dict) or not row[0]["settings"]:
+            unreadable.append(mod_type)
+        call("remove_modifier", object=host, modifier=label)
+
+    check("R901 every modifier type add_modifier can WRITE is also described by list_modifiers - "
+          "a value you can set and never read back is worse than one you cannot set, because "
+          "ok:true is not proof",
+          not unreadable,
+          "write-only (settable, unreadable): %s" % sorted(unreadable))
+    if unaddable:
+        print("       not exercised on this build: %s" % ", ".join(unaddable))
+    call("delete_object", object=host)
 
 
 def io_open(path):

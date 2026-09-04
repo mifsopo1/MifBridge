@@ -337,11 +337,38 @@ def _rolled_back_by_except(mpath, rpath, rollbacks):
 
 
 def _except_rolls_back(node):
-    """Does any handler on this try remove something and re-raise?"""
+    """Does any handler on this try UNDO its write and re-raise?
+
+    Two shapes of undo, because there are two kinds of damage:
+
+      removed    the thing was created, so delete it - .remove / .unlink
+      restored   the thing already existed and was overwritten, so put it back - a call to
+                 something named *restore*
+
+    ONLY THE FIRST WAS RECOGNISED UNTIL 2026-09-04, and the second was already accepted twenty lines
+    below by _restored_by_finally, whose own docstring says a call named *restore* "is a whole-state
+    restore and needs no name matching". The two clauses were answering the same question by
+    different rules, and the except clause was the stricter one for no reason anybody had written
+    down. Found by a settings applier that snapshots the attributes it is about to write and puts
+    them all back when a later key refuses - correct code, reported as a finding.
+
+    This inherits that heuristic's stated limitation exactly: it cannot tell a complete restore from
+    a partial one. That trade was already made in this file; making it in one clause and refusing it
+    in the other is the part that was wrong.
+    """
     for h in node.handlers:
         raises = any(isinstance(s, ast.Raise) for s in ast.walk(h))
-        cleans = any(isinstance(s, ast.Call) and isinstance(s.func, ast.Attribute)
-                     and s.func.attr in CLEANUP for s in ast.walk(h))
+        cleans = False
+        for s in ast.walk(h):
+            if not isinstance(s, ast.Call):
+                continue
+            if isinstance(s.func, ast.Attribute) and s.func.attr in CLEANUP:
+                cleans = True
+                break
+            fname = getattr(s.func, "id", None) or getattr(s.func, "attr", "") or ""
+            if "restore" in fname.lower():
+                cleans = True
+                break
         if raises and cleans:
             return True
     return False
@@ -645,6 +672,13 @@ def _mutating_call(stmt, writers):
     if isinstance(stmt, ast.Raise):
         return None
     for sub in _own_nodes(stmt):
+        # A RESTORE IS NOT DAMAGE. _is_restore already says so for an ASSIGNMENT putting a saved
+        # value back; a call to a helper that does the same thing was still counted as a write, so
+        # a handler that undid its changes and re-raised was reported as breaking its own promise -
+        # the rollback itself read as the mutation. Same *restore* rule the rest of this file uses.
+        if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name)
+                and "restore" in sub.func.id.lower()):
+            continue
         if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id in writers:
             what = writers[sub.func.id] if isinstance(writers, dict) else None
             return "%s() writes %s" % (sub.func.id, " ".join(sorted(what))) if what \
@@ -886,6 +920,59 @@ def scan_source(name, src):
 # is indistinguishable from one that suppresses everything, and both lists this audit prints now read
 # zero - which is the right answer and also the moment nobody can tell a working rule from a dead one.
 SELFTEST = [
+    # --- an except that RESTORES, added 2026-09-04 -------------------------------------------
+    # _except_rolls_back only recognised .remove/.unlink - "delete the thing you created". A write
+    # to something that ALREADY EXISTED is undone by putting the old value back, and that shape was
+    # invisible, while _restored_by_finally twenty lines below already accepted it for the other
+    # clause. These four cases fix the allowance in place.
+    ("except restores the overwritten value and re-raises", False, """
+def op_probe(params):
+    try:
+        obj.location = params["loc"]
+        if bad:
+            raise MifOpError("bad. NOTHING was changed.")
+    except MifOpError:
+        _restore_settings(obj, saved)
+        raise
+"""),
+    # THE NEGATIVE THAT MATTERS. Same shape, but the handler does something that is not an undo -
+    # if this stopped being reported, the allowance above would be excusing every try/except that
+    # re-raises, which is most of them.
+    ("except re-raises WITHOUT undoing anything", True, """
+def op_probe(params):
+    try:
+        obj.location = params["loc"]
+        if bad:
+            raise MifOpError("bad. NOTHING was changed.")
+    except MifOpError:
+        log("something went wrong")
+        raise
+"""),
+    # A RESTORE IS NOT DAMAGE. The rollback helper calls setattr, so once helper calls counted as
+    # writes the rollback itself read as the mutation and the handler was reported against its own
+    # cleanup.
+    ("a restoring helper above a raise is not a write", False, """
+def op_probe(params):
+    try:
+        pass
+    except Exception as exc:
+        _restore_settings(obj, saved)
+        raise MifOpError("could not set it. NOTHING was changed.")
+"""),
+    # ...and the same statement with a helper that is NOT a restore must still be caught, or the
+    # exclusion above is simply "ignore helper calls in handlers".
+    ("a NON-restoring helper above a raise is still a write", True, """
+def _apply_defaults(obj):
+    obj.location = [0, 0, 0]
+
+
+def op_probe(params):
+    try:
+        pass
+    except Exception as exc:
+        _apply_defaults(obj)
+        raise MifOpError("could not set it. NOTHING was changed.")
+"""),
     ("plain mutate then deny", True, """
 def op_probe(params):
     obj.location = params["loc"]

@@ -577,6 +577,11 @@ def _idx_setter(i):
         axes = list(mod.use_axis)
         axes[i] = bool(value)
         mod.use_axis = axes
+    # WHAT IT WRITES, declared. Every other entry in _MODIFIER_WRITES holds an attribute name and
+    # can be snapshotted by it; a callable cannot. _apply_modifier_settings reads this to roll the
+    # value back when a later setting refuses. Hard-coding "use_axis" at the snapshot site would be
+    # correct today and silently wrong the first time a second callable setter is added.
+    setter.writes = "use_axis"
     return setter
 
 
@@ -717,12 +722,45 @@ def _apply_modifier_settings(mod, settings, mod_type):
             % (mod_type, ", ".join("'%s'" % u for u in unknown), mod_type,
                ", ".join(sorted(table)) or "(none yet)"))
 
+    # SNAPSHOT BEFORE THE FIRST WRITE, so a refusal on the fifth setting does not leave the first
+    # four standing under a message that says NOTHING was changed. That was true before the pointer
+    # check below existed - the loop has always walked one key at a time - it simply had no refusal
+    # that could fire after a write in the same breath, so nothing made it visible.
+    restore = {}
+    for key in settings:
+        target = table[key][0]
+        attr = target if isinstance(target, str) else getattr(target, "writes", None)
+        if attr and attr not in restore:
+            try:
+                restore[attr] = getattr(mod, attr)
+            except Exception:                                       # noqa: BLE001
+                pass
+
     applied = []
     for key, value in settings.items():
         target, coerce = table[key]
         try:
             if coerce in _DATABLOCK_COERCE:
-                setattr(mod, target, _resolve_datablock(coerce, value, key))
+                wanted = _resolve_datablock(coerce, value, key)
+                setattr(mod, target, wanted)
+                # DID IT TAKE? Blender puts a poll on most datablock pointers and a value the poll
+                # rejects is dropped in SILENCE - no exception, no warning, the pointer simply
+                # stays None. Measured on 5.0.1: a CURVE modifier's object accepts only a curve and
+                # a LATTICE's only a lattice, while HOOK and MESH_DEFORM take a mesh. So this is
+                # per-property and cannot be answered by a hand-written table of what goes where;
+                # asking the pointer afterwards is the only reliable question.
+                #
+                # Without this the response said ok:true with settingsApplied ["object"] and the
+                # modifier sat inert - settingsApplied listing what was ASKED FOR as though it were
+                # what happened.
+                if wanted is not None and getattr(mod, target, None) is None:
+                    kind = getattr(wanted, "type", None) or type(wanted).__name__
+                    raise MifOpError(
+                        "Blender refused '%s' (a %s) as '%s' for a %s modifier. That pointer only "
+                        "accepts certain kinds, and an assignment it rejects raises NOTHING - the "
+                        "pointer is simply left empty and the modifier sits in the stack doing "
+                        "nothing. NOTHING was changed."
+                        % (getattr(wanted, "name", value), kind, key, mod_type))
             elif coerce == "vgroup":
                 # A STRING PROPERTY THAT MUST NAME A REAL GROUP. Blender takes any string here and
                 # a name matching nothing is not an error - it just selects no vertices. On a MASK
@@ -755,12 +793,28 @@ def _apply_modifier_settings(mod, settings, mod_type):
                 else:
                     setattr(mod, target, cast)
         except MifOpError:
+            _restore_settings(mod, restore)
             raise
         except Exception as exc:  # noqa: BLE001
+            _restore_settings(mod, restore)
             raise MifOpError("could not set '%s' on the %s modifier: %s. NOTHING was changed."
                              % (key, mod_type, exc))
         applied.append(key)
     return sorted(applied)
+
+
+def _restore_settings(mod, restore):
+    """Put every attribute back the way it was found. Never raises.
+
+    A rollback that throws on its way out replaces a clear refusal with an obscure one and leaves
+    the object half-written anyway, so each attribute is restored independently and a failure on one
+    does not abandon the rest.
+    """
+    for attr, old in restore.items():
+        try:
+            setattr(mod, attr, old)
+        except Exception:                                           # noqa: BLE001
+            pass
 
 
 def _evaluated_counts(obj):
