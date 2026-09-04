@@ -767,6 +767,17 @@ def op_edit_fcurve(params):
                          % (obj.name, path, "" if index is None else " at index %s" % index))
 
     before = sorted({kp.interpolation for fc in curves for kp in fc.keyframe_points})
+
+    # COUNTED BEFORE ANYTHING IS WRITTEN. This refusal used to live below the loop, and the loop
+    # writes fc.extrapolation on EVERY curve before it ever looks at a keyframe - so
+    # edit_fcurve({extrapolation: "LINEAR", frame: 999}) changed the extrapolation of every curve on
+    # the object and then answered "NOTHING was changed". The frame filter only gates the per-KEY
+    # writes, which is what made the two look consistent.
+    if frame is not None and not any(abs(kp.co[0] - float(frame)) <= 1e-6
+                                     for fc in curves for kp in fc.keyframe_points):
+        raise MifOpError("'%s' has no keyframe at frame %s, so nothing was edited. NOTHING was "
+                         "changed." % (path, frame))
+
     touched = 0
     for fc in curves:
         if "extrapolation" in wants:
@@ -784,9 +795,6 @@ def op_edit_fcurve(params):
             touched += 1
         fc.update()
 
-    if touched == 0 and frame is not None:
-        raise MifOpError("'%s' has no keyframe at frame %s, so nothing was edited. NOTHING was "
-                         "changed." % (path, frame))
     after = sorted({kp.interpolation for fc in _curves_for(obj, path, index)
                     for kp in fc.keyframe_points})
     return {
@@ -1610,15 +1618,33 @@ def op_add_nla_strip(params):
         obj.animation_data_create()
     ad = obj.animation_data
 
+    # EVERY TRACK THIS OP MAKES, so a refusal below can put the stack back exactly as it found it.
+    # Both refusals here promise "NOTHING was added" and neither used to keep it: a failed push left
+    # a named empty track behind, and a strip that would not fit left BOTH that track and a second
+    # one - plus the active action already cleared, which is the damaging half. A caller retrying
+    # after the refusal found its animation gone and two tracks it never asked for.
+    made_tracks = []
+    restore_action = None
+
+    def _undo_and_refuse(message):
+        for made in reversed(made_tracks):
+            ad.nla_tracks.remove(made)
+        del made_tracks[:]
+        if restore_action is not None:
+            ad.action = restore_action
+        raise MifOpError(message)
+
     pushed = None
     if ad.action is not None and take_bool(params, "pushDownActive", default=False):
         pushed = ad.action.name
+        restore_action = ad.action
         tr = ad.nla_tracks.new()
+        made_tracks.append(tr)
         tr.name = "%s_pushed" % pushed
         try:
             tr.strips.new(pushed, int(ad.action.frame_range[0]), ad.action)
         except RuntimeError as exc:
-            raise MifOpError("could not push the active action '%s' down onto a track: %s. "
+            _undo_and_refuse("could not push the active action '%s' down onto a track: %s. "
                              "NOTHING was added." % (pushed, exc))
         ad.action = None
 
@@ -1628,6 +1654,7 @@ def op_add_nla_strip(params):
         track = ad.nla_tracks.get(str(track_name))
     if track is None:
         track = ad.nla_tracks.new()
+        made_tracks.append(track)
         if track_name:
             track.name = str(track_name)
 
@@ -1637,7 +1664,7 @@ def op_add_nla_strip(params):
     try:
         strip = track.strips.new(str(strip_name), start, act)
     except RuntimeError as exc:
-        raise MifOpError("Blender refused to place '%s' at frame %d on track '%s': %s. A strip "
+        _undo_and_refuse("Blender refused to place '%s' at frame %d on track '%s': %s. A strip "
                          "cannot overlap another on the same track. NOTHING was added."
                          % (act.name, start, track.name, exc))
     if blend:

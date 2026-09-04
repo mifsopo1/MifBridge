@@ -256,17 +256,25 @@ def _refusing_helpers(tree):
     One round of transitivity - a helper that calls a refusing helper also refuses. Deeper chains
     exist in principle and none is in this addon today.
     """
+    # NESTED defs count too. op_add_nla_strip's refusals live in a local _undo_and_refuse(), and a
+    # walker that skips nested functions simply stops seeing them - which looks like the finding was
+    # fixed. It was, but the audit would then miss a future regression in the same place, so the
+    # reach has to survive the refactor that the audit itself prompted.
+    candidates = [n for n in ast.walk(tree)
+                  if isinstance(n, ast.FunctionDef) and not n.name.startswith("op_")]
     direct = {}
-    for fn in tree.body:
-        if not isinstance(fn, ast.FunctionDef) or fn.name.startswith("op_"):
-            continue
+    for fn in candidates:
         for sub in ast.walk(fn):
             claim = _claim_text(sub)
             if claim:
-                direct[fn.name] = claim
+                # A helper that CLEANS UP before refusing is keeping the promise, not breaking it.
+                inner, iterm, iowner = [], {}, {}
+                _walk_body(fn.body, [], inner, iterm, iowner)
+                if not _undone_before(sub, iowner):
+                    direct[fn.name] = claim
                 break
-    for fn in tree.body:
-        if not isinstance(fn, ast.FunctionDef) or fn.name in direct or fn.name.startswith("op_"):
+    for fn in candidates:
+        if fn.name in direct:
             continue
         for sub in ast.walk(fn):
             if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id in direct:
@@ -275,12 +283,55 @@ def _refusing_helpers(tree):
     return direct
 
 
-def _refusing_calls(stmt, helpers):
-    """Every call inside this statement that can refuse, as (name, claim)."""
+def _cleaning_helpers(tree):
+    """Functions that REMOVE something before they raise - they keep the promise, not break it."""
+    out = set()
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        inner, iterm, iowner = [], {}, {}
+        _walk_body(fn.body, [], inner, iterm, iowner)
+        for sub in ast.walk(fn):
+            if isinstance(sub, ast.Raise) and _undone_before(sub, iowner):
+                out.add(fn.name)
+                break
+    return out
+
+
+def _refusing_calls(stmt, helpers, cleaners):
+    """Every call inside this statement that can refuse, as (name, claim).
+
+    TWO WAYS A CALL REFUSES, and the second one is why the first is not enough.
+
+    It calls a helper that raises with a promise of its own - _vec3, _pick_enum, _socket_value.
+
+    Or it PASSES the promise in. op_add_nla_strip's local _undo_and_refuse takes the message as an
+    argument and raises `MifOpError(message)`, so the helper's own body holds no string to match and
+    the claim only exists at the call site. Matching argument strings catches it, and catches any
+    future helper written the same way. A call to something that cleans up first is skipped: that is
+    the honest version of this shape and it is what _undo_and_refuse actually does.
+    """
+    if isinstance(stmt, ast.Raise):
+        return []          # already counted by _claim_text; do not report it twice
     found = []
     for sub in ast.walk(stmt):
-        if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id in helpers:
-            found.append((sub.func.id, helpers[sub.func.id]))
+        if not isinstance(sub, ast.Call):
+            continue
+        callee = sub.func.id if isinstance(sub.func, ast.Name) else None
+        if callee == "MifOpError" or callee in cleaners:
+            continue
+        if callee in helpers:
+            found.append((callee, helpers[callee]))
+            continue
+        for arg in sub.args:
+            claim = None
+            for node in ast.walk(arg):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)                         and GLOBAL_CLAIM.search(node.value):
+                    claim = " ".join(node.value.split())
+                    break
+            if claim:
+                found.append((callee or "<call>", claim))
+                break
     return found
 
 
@@ -289,6 +340,7 @@ def scan_file(path):
     tree = ast.parse(src)
     name = os.path.basename(path)
     helpers = _refusing_helpers(tree)
+    cleaners = _cleaning_helpers(tree)
     findings, delegating, reachable = [], [], []
     for fn in tree.body:
         if not isinstance(fn, ast.FunctionDef):
@@ -302,7 +354,7 @@ def scan_file(path):
         raises = [(s, p, c, h) for s, p, c, h in raises if c and not _undone_before(s, owner)]
         # ...and the calls that refuse on the op's behalf. See _refusing_helpers.
         for s, p in stmts:
-            for helper, claim in _refusing_calls(s, helpers):
+            for helper, claim in _refusing_calls(s, helpers, cleaners):
                 if not _undone_before(s, owner):
                     raises.append((s, p, claim, helper))
 
