@@ -12109,6 +12109,31 @@ out-of-process the way ops_gen already does with gen_status.
       than changing unilaterally, because the current split is a considered design and not an
       oversight.
 
+      THE PREMISE OF THIS ITEM EXPIRED THE SAME DAY IT WAS WRITTEN, and the decision is now much
+      smaller than it was. audit_stale_counts was written hours later, IS in --gates, and scans
+      README - so "no pre-commit check said so" stopped being true almost immediately.
+
+      MEASURED 2026-09-04 in both directions rather than reasoned about. All four badge numbers
+      broken at once - 999 endpoints, 888 ops, 777 tools, 666 suites - and audit_stale_counts
+      --check reports FOUR findings on README.md:10 and exits 1. Restored, it exits 0 and reports
+      clean. README is byte-identical afterwards.
+
+      So four of the badge's five assertions are already gated pre-commit, from a different
+      angle: audit_stale_counts compares numbers written in current-state DOCS against the tools
+      that compute them, and the badge line is one of those. Today it caught the op count going
+      stale four separate times as ops were added, and each was fixed with --update-badge before
+      the commit landed.
+
+      WHAT IS STILL UNGATED is the badge's VERSION STRING and its structure - check_badge builds
+      the whole line from plugin_version() and compares it verbatim under the
+      MIFBRIDGE-VERSION-LINE marker, so it also catches a stale `v0.8.1`, a missing marker, and a
+      malformed line. audit_stale_counts cannot see any of those: it reads numbers next to nouns.
+
+      The question left for Andre is therefore NOT "should the badge be gated" - most of it is -
+      but "should the VERSION and the line's shape be gated too". That is a much narrower call,
+      and the churn argument is weaker than when this was written, because the op-count churn it
+      was worried about is already happening and is already being absorbed.
+
 - [x] **audit_stale_counts - the front-door numbers, checked against the tools that compute them** DONE 2026-09-04
       Written because this failed FOUR TIMES in one working day, and the fourth was found by
       accident while reading the docs for an unrelated reason.
