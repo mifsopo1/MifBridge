@@ -14669,3 +14669,26 @@ out-of-process the way ops_gen already does with gen_status.
       the shared check is what the gate is for.
 
       Mutation-tested: removing bake_texture's guard makes --check name it and exit 1.
+
+- [x] **reach 87 -> 93 of 100, and three rules that had to NARROW to get there** DONE 2026-09-04
+      Two more kinds of write closed: a bpy.ops operator (transform_apply, modifier_apply,
+      save_as_mainfile and the exporters all change the file, and an op driving one has no attribute
+      assignment to find) and frame_set, which moves the scene.
+
+      frame_set produced two findings immediately and both were wrong, in bake_to_keyframes, which
+      steps the timeline to sample world matrices and restores it in a finally. Each correction made
+      a rule narrower, not wider:
+
+        a write in a `finally` is CLEANUP, so counting one reports the restore as the damage
+        a helper's label must NAME what it writes, or a finally restoring the same call cannot be
+          matched to it - "_sample_world() writes" became "_sample_world() writes frame_set"
+        the raise does NOT have to be inside the try. Requiring it missed the commoner and safer
+          case: a write in a try whose finally restores it and a refusal further down, where the
+          finally has ALREADY run. More certainly restored than the inside case.
+
+      And list_/get_/describe_/find_ ops left the denominator. A reader that refuses for a missing
+      target writes nothing, so calling it UNJUDGED overstated the gap against ops that are
+      correctly clean - the same reason audit_read_purity uses that prefix set.
+
+      The docstring no longer quotes the reach numbers. It carried a hard figure three times in one
+      day and was wrong within the hour each time; the REACH line prints on every run.
