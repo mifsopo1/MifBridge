@@ -269,6 +269,10 @@ PAYLOADS = {
                            "vertices": [0], "weight": 0.25},
     "add_shape_key": {"object": "MifCutter", "name": "MifSweepKey"},
     "normalize_weights": {"object": "Cube"},
+    # PARENTED TO A BONE THAT ALREADY EXISTS, which is the case create_armature cannot cover
+    # and the reason add_bones exists - a socket on an imported skeleton.
+    "add_bones": {"object": "MifRig", "bones": [{"name": "MifSocket", "head": [0, 0, 1],
+                                                 "tail": [0, 0.2, 1], "parent": "root"}]},
     "rename_bones": {"object": "MifRig", "map": {"tip": "tip_renamed"}},
     "set_bone_pose": {"object": "MifRig", "bone": "root", "location": [0, 0, 0.1]},
     "set_shape_key": {"object": "MifKeys", "shapeKey": "MifDent", "value": 0.5},

@@ -13391,3 +13391,31 @@ out-of-process the way ops_gen already does with gen_status.
       lowercase 'subtract' accepted and reported back as SUBTRACT; and three refusals - an unknown
       property, an invalid enum naming the valid ones, and a denied key that has its own argument.
       The matrix now writes transform_space on every build.
+
+- [x] **a bone could only be created at the moment the armature was** DONE 2026-09-04
+      edit_bones appeared in exactly ONE place in the whole addon - inside create_armature - and
+      every other rigging op edits what already exists: list_bones, rename_bones, set_bone_pose, the
+      weight ops. So a skeleton that arrived through import_mesh could be renamed, posed and
+      weighted and never given another bone. Adding a socket, or an ik_hand_gun beside the hand, is
+      ordinary skeletal work for a game engine and had no typed path at all.
+
+      add_bones takes the same mode discipline create_armature established - validate everything
+      BEFORE the mode change, so a bad entry cannot leave a half-built rig with Blender stuck in an
+      editor; restore OBJECT mode in a finally and ASSERT it afterwards, because being left in edit
+      mode strands every call that follows. Bones are counted from data.bones after leaving edit
+      mode, never from the edit_bones list the op built, since those exist only inside it.
+
+      The difference from create_armature is the parent lookup: it resolves against the LIVE
+      edit_bones list, so a bone already on an imported skeleton is a legal parent. That is the
+      whole point.
+
+      TWO REFUSALS THAT ARE MEASUREMENTS, not caution. A bone whose head equals its tail has zero
+      length and Blender DELETES it when edit mode is left, silently, so it is refused up front
+      rather than surfacing later as a confusing count mismatch. And a name already on the rig is
+      refused because Blender adds '.001' beside it, and everything looking that name up
+      afterwards - the vertex groups that skin it included - then finds the wrong bone.
+
+      Verified on 3.6.23 and 5.0.1, identical: a socket bone parented to a PRE-EXISTING bone, two
+      bones where the second parents to the first in the same call, and four refusals - zero
+      length, duplicate name, unknown parent, and a non-armature object. Readback confirms
+      ik_hand_gun's parent is hand and the mode is OBJECT. In the matrix on every build.

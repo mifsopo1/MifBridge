@@ -1663,6 +1663,153 @@ def op_add_shape_key(params):
         if basis_created else None,
     }
 
+
+_ADDBONES_KEYS = {"object", "name", "armature", "bones", "replaceExisting"}
+
+
+def op_add_bones(params):
+    """Add bones to an armature that already exists - which nothing could do.
+
+    THE HOLE THIS CLOSES. create_armature builds bones and every other rigging op edits what is
+    already there: list_bones, rename_bones, set_bone_pose, the weight ops. edit_bones appears in
+    exactly ONE place in the whole addon, inside create_armature, so a skeleton that arrived through
+    import_mesh could be renamed, posed and weighted and never given another bone. Adding a socket
+    bone, or an ik_hand_gun beside the hand, is ordinary skeletal work for a game engine and was
+    impossible through the typed path.
+
+    BONES ONLY EXIST IN EDIT MODE, which is the whole difficulty, and RESTORING THE MODE IS A
+    POSTCONDITION rather than a courtesy - being left in edit mode strands every op that follows.
+    Same discipline as create_armature, and the mode is asserted afterwards rather than assumed.
+
+    A PARENT MAY BE A BONE THAT WAS ALREADY THERE or one created in this same call, which is the
+    difference from create_armature: it resolves against the live edit_bones list, so an imported
+    skeleton's existing bone is a legal parent.
+
+    A ZERO-LENGTH BONE IS REFUSED. Blender DELETES a bone whose head equals its tail when edit mode
+    is left - silently, with no error - so the count check at the end would catch it and the caller
+    would get a confusing failure instead of the real reason.
+
+    params:
+      object / name / armature (str)  the armature object. Required.
+      bones (list)   [{"name","head":[x,y,z],"tail":[x,y,z],"parent":"...","connect":bool,
+                       "roll":float}]   Parents must exist already or appear earlier in the list.
+      replaceExisting (bool)   default false. Adding a bone whose name is taken gives it a .001
+                               suffix, and anything looking it up by name afterwards finds the wrong
+                               one - so it is refused unless this says otherwise.
+    """
+    reject_unknown(params, _ADDBONES_KEYS, "add_bones")
+    obj = get_object(take(params, "object", "name", "armature", required=True, kind=str))
+    if obj.type != "ARMATURE":
+        raise MifOpError("'%s' is a %s, not an ARMATURE. NOTHING was changed."
+                         % (obj.name, obj.type))
+    data = obj.data
+    bones = params.get("bones")
+    if not isinstance(bones, (list, tuple)) or not bones:
+        raise MifOpError("'bones' must be a non-empty list of {name, head, tail}. NOTHING was "
+                         "changed.")
+
+    # VALIDATED IN FULL BEFORE ANY MODE CHANGE, for create_armature's reason: a refusal partway
+    # through would leave the armature half-built AND Blender sitting in edit mode.
+    replace = take_bool(params, "replaceExisting", default=False)
+    existing = {b.name for b in data.bones}
+    planned = set()
+    for i, b in enumerate(bones):
+        if not isinstance(b, dict) or not b.get("name"):
+            raise MifOpError("bones[%d] needs a 'name'. NOTHING was changed." % i)
+        nm = str(b["name"])
+        if len(nm) > _ID_NAME_LIMIT:
+            raise MifOpError("bones[%d] name is %d characters and Blender truncates at %d, so the "
+                             "bone you get would not be the one you named. NOTHING was changed."
+                             % (i, len(nm), _ID_NAME_LIMIT))
+        if nm in existing and not replace:
+            raise MifOpError(
+                "'%s' already has a bone named '%s'. Blender would add '%s.001' beside it and "
+                "anything looking the name up afterwards would find the wrong bone - including the "
+                "vertex groups that skin it. Pass replaceExisting:true to add it anyway, or pick "
+                "another name. NOTHING was changed." % (obj.name, nm, nm))
+        if nm in planned:
+            raise MifOpError("bones[%d] repeats the name '%s' inside this call. NOTHING was "
+                             "changed." % (i, nm))
+        planned.add(nm)
+        for end in ("head", "tail"):
+            v = b.get(end)
+            if not isinstance(v, (list, tuple)) or len(v) < 3:
+                raise MifOpError("bones[%d] needs '%s' as [x,y,z]. NOTHING was changed." % (i, end))
+        head = [float(x) for x in b["head"][:3]]
+        tail = [float(x) for x in b["tail"][:3]]
+        if head == tail:
+            raise MifOpError(
+                "bones[%d] ('%s') has head == tail, so it has ZERO length. Blender DELETES a "
+                "zero-length bone when edit mode is left, silently and with no error, so this would "
+                "report a confusing count mismatch instead of the real reason. NOTHING was changed."
+                % (i, nm))
+        parent = b.get("parent")
+        if parent is not None and str(parent) not in existing and str(parent) not in planned:
+            known = sorted(existing)[:25]
+            raise MifOpError(
+                "bones[%d] ('%s') names parent '%s', which is neither on '%s' already nor earlier "
+                "in this list. Existing bones: %s. NOTHING was changed."
+                % (i, nm, parent, obj.name, ", ".join(known) if known else "(none)"))
+
+    count_before = len(data.bones)
+    snap = selection_snapshot()
+    made = []
+    try:
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
+        bpy.ops.object.mode_set(mode="EDIT")
+        ebs = data.edit_bones
+        for b in bones:
+            eb = ebs.new(str(b["name"]))
+            eb.head = [float(x) for x in b["head"][:3]]
+            eb.tail = [float(x) for x in b["tail"][:3]]
+            if b.get("roll") is not None:
+                eb.roll = float(b["roll"])
+            if b.get("parent"):
+                eb.parent = ebs[str(b["parent"])]
+                # use_connect MOVES THE CHILD'S HEAD onto the parent's tail. Off by default, because
+                # a socket bone placed at a deliberate offset would silently jump.
+                eb.use_connect = bool(b.get("connect", False))
+            made.append(eb.name)
+    finally:
+        # ALWAYS. Left in edit mode, every op after this one fails on an editor nobody asked for.
+        try:
+            bpy.ops.object.mode_set(mode="OBJECT")
+        except RuntimeError:
+            pass
+        selection_restore(snap)
+
+    mode_after = bpy.context.object.mode if bpy.context.object else "OBJECT"
+    if mode_after != "OBJECT":
+        raise MifOpError("added bones to '%s' but Blender is left in %s mode, which strands every "
+                         "op after this one." % (obj.name, mode_after))
+
+    # COUNTED FROM data.bones, NOT from the edit_bones list above. edit_bones exist only in edit
+    # mode; the real bones appear when it is left, and one that did not survive the transition
+    # would still be in the list this op built.
+    now = {b.name for b in data.bones}
+    landed = [n for n in made if n in now]
+    if len(landed) != len(bones):
+        lost = [n for n in made if n not in now]
+        raise MifOpError("asked for %d bone(s); %d survived leaving edit mode. Missing: %s."
+                         % (len(bones), len(landed), ", ".join(lost) or "(renamed)"))
+
+    return {
+        "ok": True,
+        "object": obj.name,
+        "added": landed,
+        "boneCountBefore": count_before,
+        "boneCountAfter": len(data.bones),
+        "bones": sorted(now),
+        # THE MODE IS REPORTED because it is the postcondition that matters to the NEXT call, not
+        # to this one.
+        "modeAfter": mode_after,
+        "parentedTo": {str(b["name"]): str(b["parent"]) for b in bones if b.get("parent")} or None,
+        "note": ("these bones deform NOTHING until a mesh is weighted to them - add_bones only "
+                 "builds the skeleton. set_vertex_weights puts weights on the groups that match "
+                 "them, and a vertex group whose name matches no bone is skinned to nothing."),
+    }
+
 OPS = {
     "set_bone_pose": op_set_bone_pose,
     "set_shape_key": op_set_shape_key,
@@ -1673,6 +1820,7 @@ OPS = {
     "normalize_weights": op_normalize_weights,
     "set_vertex_weights": op_set_vertex_weights,
     "add_shape_key": op_add_shape_key,
+    "add_bones": op_add_bones,
     "transfer_weights": op_transfer_weights,
     "add_modifier": op_add_modifier,
     "remove_modifier": op_remove_modifier,

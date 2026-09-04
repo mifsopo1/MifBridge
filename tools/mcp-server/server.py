@@ -5514,6 +5514,12 @@ def bl_create_text(body: str, name: str = None, size: float = None, extrude: flo
 
 
 @mcp.tool()
+def bl_add_bones(object: str, bones: list, replace_existing: bool = False) -> dict:
+    "Add bones to an armature that ALREADY EXISTS. bl_create_armature builds bones and every other rigging tool edits what is there - bl_list_bones, bl_rename_bones, bl_set_bone_pose, the weight tools - so edit_bones appeared in exactly one place in the whole addon and a skeleton that arrived through bl_import_mesh could be renamed, posed and weighted but never given another bone. Adding a socket bone, or an ik_hand_gun beside the hand, is ordinary skeletal work for a game engine and had no typed path. A parent may be a bone that was already on the rig OR one created earlier in the same call. `bones` is [{name, head:[x,y,z], tail:[x,y,z], parent, connect, roll}]. TWO REFUSALS WORTH KNOWING: a bone whose head equals its tail has ZERO length and Blender DELETES it when edit mode is left - silently, with no error - so it is refused up front rather than surfacing later as a confusing count mismatch. And a name already on the rig is refused, because Blender would add '.001' beside it and everything looking that name up afterwards, including the vertex groups that skin it, would find the wrong bone. Restoring OBJECT mode is a postcondition rather than tidy-up: left in edit mode, every call after this one fails on an editor nobody asked for, so the mode is asserted afterwards and reported."
+    return _blender("add_bones", object=object, bones=bones, replaceExisting=replace_existing)
+
+
+@mcp.tool()
 def bl_create_armature(name: str = None, bones: list = None, display_type: str = None,
                        show_in_front: bool = None, location: list = None, rotation: list = None,
                        collection: str = None) -> dict:
