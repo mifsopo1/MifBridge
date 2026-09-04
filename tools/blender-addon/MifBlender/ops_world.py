@@ -57,6 +57,31 @@ def op_set_world(params):
       useAsLight (bool)                 whether the world contributes to lighting at all
     """
     reject_unknown(params, _WORLD_KEYS, "set_world")
+
+    # CHECKED BEFORE _ensure_world, which is not a reader: on a scene with no world it CREATES one
+    # and turns use_nodes on. So set_world({hdri, color}) used to build a World datablock, enable
+    # its node tree, and then refuse with "NOTHING was changed" - leaving a world in a file that had
+    # none. The conflict needs nothing but params, so there was never a reason for it to be below.
+    hdri = take(params, "hdri", "hdriPath", default=None, kind=str)
+    col = params.get("color", params.get("backgroundColor"))
+    if hdri and col is not None:
+        raise MifOpError("pass an hdri OR a colour, not both - the environment texture replaces "
+                         "the flat colour, so one of them would silently do nothing. NOTHING was "
+                         "changed.")
+
+    # The file check moves up for the same reason: it needs a path and the filesystem, nothing from
+    # the world, and it was refusing "NOTHING was changed" with a freshly built World in the file.
+    hdri_path = bpy.path.abspath(str(hdri)) if hdri else None
+    if hdri_path is not None and not os.path.isfile(hdri_path):
+        raise MifOpError("no such HDRI file: %s. Blender would create a broken image "
+                         "datablock and render black rather than failing. NOTHING was changed."
+                         % hdri_path)
+
+    # And the colour's SHAPE, for the third time the same argument: it is a check on the argument,
+    # it needs no world, and below _ensure_world it was refusing with one already created.
+    if col is not None and (not isinstance(col, (list, tuple)) or len(col) < 3):
+        raise MifOpError("colour must be [r,g,b], got %r. NOTHING was changed." % (col,))
+
     world = _ensure_world(take(params, "name", default=None, kind=str))
     bg = _background_node(world)
 
@@ -70,20 +95,9 @@ def op_set_world(params):
             if _trace_to_texture(world.node_tree, bg.inputs["Color"]) is not None else None),
     }
 
-    hdri = take(params, "hdri", "hdriPath", default=None, kind=str)
-    col = params.get("color", params.get("backgroundColor"))
-    if hdri and col is not None:
-        raise MifOpError("pass an hdri OR a colour, not both - the environment texture replaces "
-                         "the flat colour, so one of them would silently do nothing. NOTHING was "
-                         "changed.")
-
     used_hdri = None
     if hdri:
-        path = bpy.path.abspath(str(hdri))
-        if not os.path.isfile(path):
-            raise MifOpError("no such HDRI file: %s. Blender would create a broken image "
-                             "datablock and render black rather than failing. NOTHING was changed."
-                             % path)
+        path = hdri_path
         tex = next((n for n in world.node_tree.nodes if n.type == "TEX_ENVIRONMENT"), None)
         if tex is None:
             tex = world.node_tree.nodes.new("ShaderNodeTexEnvironment")
@@ -103,8 +117,6 @@ def op_set_world(params):
                 world.node_tree.links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
             mapping.inputs["Rotation"].default_value[2] = rot
     elif col is not None:
-        if not isinstance(col, (list, tuple)) or len(col) < 3:
-            raise MifOpError("colour must be [r,g,b], got %r. NOTHING was changed." % (col,))
         # Unlink any environment texture first, or the flat colour is written and then overridden
         # by the texture that is still plugged in - a change that reports success and does nothing.
         for link in list(world.node_tree.links):

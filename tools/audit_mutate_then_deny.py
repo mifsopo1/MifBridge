@@ -424,6 +424,40 @@ def _exclusive(a, b, terminal):
     return False
 
 
+_BODY_FIELDS = ("body", "orelse", "handlers", "finalbody")
+
+
+def _own_nodes(stmt):
+    """Nodes belonging to this statement itself, not to the statements nested inside it.
+
+    An `if`'s test is its own; the statements in its body are not. Without this a try/if/for is
+    credited with every call underneath it, at the compound statement's line number.
+    """
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return
+    for field, value in ast.iter_fields(stmt):
+        if field in _BODY_FIELDS:
+            continue
+        for item in (value if isinstance(value, list) else [value]):
+            if isinstance(item, ast.AST):
+                for node in ast.walk(item):
+                    yield node
+
+
+def _mutating_call(stmt, writers):
+    """Label for a call to a helper that writes, or None.
+
+    Skips a statement that is itself already a mutation - `obj.foo = _helper()` is one write, not
+    two, and reporting it twice would put the same line in the list under two names.
+    """
+    if isinstance(stmt, ast.Raise):
+        return None
+    for sub in _own_nodes(stmt):
+        if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id in writers:
+            return "%s() writes" % sub.func.id
+    return None
+
+
 def _refusing_helpers(tree):
     """Module-level helpers that can refuse with a GLOBAL promise, and the promise they make.
 
@@ -499,7 +533,7 @@ def _refusing_calls(stmt, helpers, cleaners):
     if isinstance(stmt, ast.Raise):
         return []          # already counted by _claim_text; do not report it twice
     found = []
-    for sub in ast.walk(stmt):
+    for sub in _own_nodes(stmt):
         if not isinstance(sub, ast.Call):
             continue
         callee = sub.func.id if isinstance(sub.func, ast.Name) else None
@@ -544,7 +578,12 @@ def scan_file(path):
         stmts, terminal, owner, finals, rollbacks = [], {}, {}, {}, {}
         _walk_body(fn.body, [], stmts, terminal, owner, finals, rollbacks)
 
-        mutations = [(s, p, _is_mutation(s)) for s, p in stmts]
+        # A CALL TO A HELPER THAT WRITES IS A WRITE. The UE twin went blind to a whole file this
+        # way - eleven IKRig endpoints wrapping every write in one helper - and here it hid three:
+        # op_set_keyframe delegating to _apply_interpolation, and both particle ops to
+        # _apply_particle_settings. The helper is judged on its own too; this is about where the
+        # CALLER puts the call relative to its own refusal.
+        mutations = [(s, p, _is_mutation(s) or _mutating_call(s, writers)) for s, p in stmts]
         mutations = [(s, p, m) for s, p, m in mutations if m
                      and m.split(".")[0] not in removed
                      and not (scratch_until is not None and s.lineno < scratch_until)
@@ -577,6 +616,11 @@ def scan_file(path):
             continue
         for mstmt, mpath, label in mutations:
             for rstmt, rpath, claim, helper in raises:
+                # ONE CALL IS NOT A PAIR. _apply_common both writes and refuses, so the single
+                # statement `applied = _apply_common(sc, params)` was reported against itself once
+                # helper calls started counting as writes.
+                if rstmt is mstmt:
+                    continue
                 if rstmt.lineno <= mstmt.lineno or _exclusive(mpath, rpath, terminal):
                     continue
                 if _restored_by_finally(mpath, rpath, finals)                         or _rolled_back_by_except(mpath, rpath, rollbacks):
