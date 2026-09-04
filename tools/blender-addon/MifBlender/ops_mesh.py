@@ -226,7 +226,7 @@ def _resolve_out_path(path):
 
 def op_import_mesh(params):
     reject_unknown(params, {"file", "filepath", "path", "clearScene", "clear_scene",
-                            "useCustomNormals", "rename"}, "import_mesh")
+                            "useCustomNormals", "importAnimation", "rename"}, "import_mesh")
     raw = take(params, "file", "filepath", "path", required=True, kind=str)
     path = os.path.abspath(bpy.path.abspath(raw))
     _check_format(path, "import_mesh")
@@ -253,10 +253,31 @@ def op_import_mesh(params):
             "normals come from the file, or are generated per the spec when absent. Drop the "
             "parameter for a %s import rather than assuming it did nothing." % ext)
 
+    # THE SAME VERB BEHAVED OPPOSITELY BY EXTENSION, and said nothing either way. FBX_IMPORT_ARGS
+    # pinned use_anim False with no parameter reaching it, so every FBX animation was dropped; the
+    # glTF importer has NO animation option at all - measured on 3.6.23, 4.2.17, 4.4.0 and 5.0.1,
+    # where the only animation properties on the operators are fbx's use_anim and anim_offset and
+    # gltf has none - so it always imports them. An animated cube written to both and imported back
+    # on 4.4 came in with no action from FBX and with one from glTF.
+    #
+    # importAnimation reaches use_anim on FBX. On glTF it can only be refused when false, for
+    # useCustomNormals' reason one paragraph up: accepting a parameter that cannot do anything is
+    # the class this bridge refuses on principle.
+    want_anim = params.get("importAnimation")
+    if is_gltf and want_anim is not None and not take_bool(params, "importAnimation", default=True):
+        raise MifOpError(
+            "importAnimation:false cannot be honoured for %s - Blender's glTF importer has no "
+            "animation option on any supported build (3.6, 4.2, 4.4, 5.0) and always imports "
+            "them. Import, then delete the action if it is unwanted. Refused rather than "
+            "accepted and ignored." % ext)
+
     # The import operators return {'FINISHED'}, never the objects they made, so
     # capture by set difference. (bpy.ops.import_scene.fbx has no other handle, and
     # import_scene.gltf has none either.)
     before = set(bpy.data.objects)
+    # ACTIONS TOO, because whether an animation arrived is the thing that was going unreported and
+    # it cannot be read off the request - use_anim True on a file with no animation creates nothing.
+    actions_before = set(bpy.data.actions)
     if is_gltf:
         # NO axis or scale arguments, deliberately, and for a different reason than FBX's: the glTF
         # spec fixes +Y up / metres and Blender's importer converts from it. Passing a conversion
@@ -266,6 +287,9 @@ def op_import_mesh(params):
         args = dict(FBX_IMPORT_ARGS)
         if "useCustomNormals" in params:
             args["use_custom_normals"] = take_bool(params, "useCustomNormals", default=True)
+        # DEFAULT STAYS FALSE so nothing silently changes for callers who have been importing static
+        # meshes; what changed is that the response now SAYS an animation was left behind.
+        args["use_anim"] = take_bool(params, "importAnimation", default=False)
         bpy.ops.import_scene.fbx(filepath=path, **args)
     bpy.context.view_layer.update()
     created = [o for o in bpy.data.objects if o not in before]
@@ -283,7 +307,17 @@ def op_import_mesh(params):
                              % (len(created), ", ".join(o.name for o in created)))
         created[0].name = str(rename)
 
+    new_actions = [a.name for a in bpy.data.actions if a not in actions_before]
+    animated = [o.name for o in created
+                if getattr(o, "animation_data", None) and o.animation_data.action]
+
     warnings = []
+    if not is_gltf and not args.get("use_anim") and not new_actions:
+        warnings.append(
+            "animation was NOT imported - import_mesh passes use_anim:false to the FBX importer "
+            "by default, so any animation in this file was dropped. Pass importAnimation:true to "
+            "keep it. glTF imports animation unconditionally, so the same call behaves differently "
+            "by extension; that is now said out loud rather than left to be discovered.")
     non_identity = [o.name for o in created if not object_info(o)["isIdentityTransform"]]
     if non_identity:
         warnings.append(
@@ -311,6 +345,11 @@ def op_import_mesh(params):
         "fileSizeBytes": size,
         "importedCount": len(created),
         "imported": [object_info(o) for o in created],
+        # MEASURED, NOT REQUESTED. use_anim:true on a file with no animation creates
+        # nothing, so asking what was requested answers a different question.
+        "animationImported": bool(new_actions),
+        "actionsCreated": new_actions,
+        "objectsWithAction": animated,
         "warnings": warnings,
     }
 

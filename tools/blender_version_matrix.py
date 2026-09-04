@@ -66,7 +66,12 @@ PAYLOADS = {
     # THE ROUND TRIP. Written to a throwaway temp dir; {TMP} is substituted inside Blender.
     "export_mesh": {"object": "MifCutter", "file": "{TMP}/mif_rt.fbx"},
     "export_scene": {"objects": ["MifCutter"], "file": "{TMP}/mif_rt.obj"},
-    "import_mesh": {"file": "{TMP}/mif_rt.fbx"},
+    # importAnimation ON PURPOSE. It reaches the FBX importer's use_anim, which was pinned
+    # False with no parameter able to touch it until 2026-09-04. The round-trip file has no
+    # animation in it (export_mesh pins bake_anim False), so animationImported stays False -
+    # what this proves is that the argument is ACCEPTED by the importer on every build,
+    # which is the half that silently rots when Blender renames an operator property.
+    "import_mesh": {"file": "{TMP}/mif_rt.fbx", "importAnimation": True},
     "import_scene": {"file": "{TMP}/mif_rt.obj"},
     "save_file": {"filepath": "{TMP}/mif_rt.blend"},
     # THE READ-ONLY QUERIES GET THEIR OWN PRISTINE CUBE, and this is not tidiness.

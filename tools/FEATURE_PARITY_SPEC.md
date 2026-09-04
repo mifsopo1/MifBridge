@@ -13138,3 +13138,27 @@ out-of-process the way ops_gen already does with gen_status.
       raised it anywhere a caller reads. A note rather than a refusal, because exporting a
       transformed object is legitimate when you mean it. Verified on 4.4 with a negative control:
       silent for an object at the origin, named for one that was moved.
+
+- [x] **import_mesh dropped every FBX animation and kept every glTF one, silently** DONE 2026-09-04
+      FBX_IMPORT_ARGS pinned use_anim:False and no parameter reached it, so the whole
+      animate-in-Blender leg was closed at the door. Measured on 4.4 rather than reasoned: an
+      animated cube written to both formats and imported back came in with NO action from FBX and
+      WITH one from glTF. Same op, same verb, opposite behaviour decided by the file extension, and
+      nothing in the response said which had happened.
+
+      The glTF half cannot be made symmetric, and that was measured too: the glTF importer has NO
+      animation property at all on 3.6.23, 4.2.17, 4.4.0 or 5.0.1 - the only animation properties on
+      either operator are fbx's use_anim and anim_offset. So importAnimation reaches use_anim on FBX
+      and is REFUSED when false for glTF, following useCustomNormals' precedent in the same
+      function: accepting a parameter that cannot do anything is the class this bridge refuses.
+
+      The FBX default stays False so nothing silently changes for callers importing static meshes.
+      What changed is that the response now says so - animationImported, actionsCreated and
+      objectsWithAction, all measured from what arrived rather than from what was asked for, because
+      use_anim:true on a file with no animation creates nothing.
+
+      Verified on 4.4, four cases: fbx default drops it and warns, fbx importAnimation:true recovers
+      the action, glb default keeps it, glb importAnimation:false is refused naming why.
+
+      parity_check went red on the commit and was right: the addon accepted a parameter no MCP tool
+      could send. Exposed as bl_import_mesh(import_animation=...) rather than baselined.

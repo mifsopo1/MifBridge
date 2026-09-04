@@ -4763,16 +4763,22 @@ def bl_list_modifiers(object_name: str) -> dict:
 
 @mcp.tool()
 def bl_import_mesh(file: str, clear_scene: bool = True,
-                   use_custom_normals: bool = None) -> dict:
-    "Import an FBX or glTF/GLB file into Blender and report what arrived. Those two only - OBJ and everything else are hard-refused, because FBX and glTF are the formats whose axis and unit round trip is verified: glTF because its SPEC fixes the convention (+Y up, metres) and FBX because it carries its own metadata in the file. UE's OBJ exporter swaps Y/Z, de-indexes and writes no normals, and the file cannot tell you it did. NOTE for glTF: it has no shared-vertex-with-split-normals concept, so vertices are de-indexed per corner and a cube's 8 come back as 24 - the geometry is identical, so compare DIMENSIONS rather than vertex counts across a round trip. use_custom_normals is an FBX option and is refused for glTF rather than silently ignored."
+                   use_custom_normals: bool = None,
+                   import_animation: bool = None) -> dict:
+    "Import an FBX or glTF/GLB file into Blender and report what arrived. Those two only - OBJ and everything else are hard-refused, because FBX and glTF are the formats whose axis and unit round trip is verified: glTF because its SPEC fixes the convention (+Y up, metres) and FBX because it carries its own metadata in the file. UE's OBJ exporter swaps Y/Z, de-indexes and writes no normals, and the file cannot tell you it did. NOTE for glTF: it has no shared-vertex-with-split-normals concept, so vertices are de-indexed per corner and a cube's 8 come back as 24 - the geometry is identical, so compare DIMENSIONS rather than vertex counts across a round trip. use_custom_normals is an FBX option and is refused for glTF rather than silently ignored. ANIMATION: the FBX importer is told use_anim:false by default, so an animated FBX arrives as a static mesh - pass import_animation:true to keep the action. glTF has NO animation option on any supported build and always imports them, so import_animation:false is refused for glTF rather than accepted and ignored. The response reports animationImported and actionsCreated, measured from what arrived rather than from what was asked for."
     # use_custom_normals reads the FBX's authored normals instead of letting Blender recompute
     # them. The addon has always accepted it (ops_mesh.py:177-178) and nothing sent it, so a mesh
     # whose normals were authored deliberately - hard edges, a normal-map bake target - came in with
     # Blender's own. The export half of this pair gained useTspace the same night, for the same
     # reason: what survives the round trip is what Unreal ends up rendering.
     # None means unset; _blender drops it and the addon's default stands.
+    # import_animation reaches the FBX importer's use_anim, which was PINNED False with no
+    # parameter able to touch it until 2026-09-04 - so the same call dropped every FBX
+    # animation and kept every glTF one, silently. Measured on 4.4: an animated cube written
+    # to both came back with no action from FBX and with one from glTF.
     return _blender("import_mesh", file=file, clearScene=clear_scene,
-                    useCustomNormals=use_custom_normals)
+                    useCustomNormals=use_custom_normals,
+                    importAnimation=import_animation)
 
 
 @mcp.tool()
