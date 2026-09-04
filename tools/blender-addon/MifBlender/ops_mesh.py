@@ -2898,11 +2898,334 @@ def op_create_collision_hull(params):
                        "cannot be checked from inside Blender."),
     }
 
+_RENAME_KEYS = {"object", "name", "to", "newName", "renameData", "allowCollision"}
+_VCOL_KEYS = {"object", "name", "color", "domain", "dataType", "faces", "makeActive",
+              "makeRender"}
+_STATS_KEYS = {"object", "name", "evaluated"}
+
+# Blender's ID name limit on 3.6 through 4.4. It rose at 5.0 - a 200-character name truncates to 63
+# on the older three and is stored whole on 5.0.1 - which means two names differing only past
+# character 63 collide on one build and stay distinct on another. Measured, not remembered.
+_ID_NAME_LIMIT = 63
+
+
+def op_rename_object(params):
+    """Rename an object, refusing a collision instead of letting Blender resolve it.
+
+    THE COLLISION RESOLVES IN OPPOSITE DIRECTIONS ACROSS THE 3.6 / 4.x LINE, and that is not a
+    curiosity - it is silent corruption of an object the caller never mentioned.
+
+    Measured on all four builds. With an existing object called 'Alpha', setting another object's
+    name to 'Alpha' gives:
+
+        3.6.23              the RENAMER takes 'Alpha' and the INCUMBENT becomes 'Alpha.001'
+        4.2 / 4.4 / 5.0     the incumbent keeps 'Alpha' and the RENAMER becomes 'Alpha.001'
+
+    So the same script renames a different object depending on the Blender running it, and on 3.6 it
+    quietly renames something nobody asked it to touch - which then breaks every STRING reference to
+    that object elsewhere in the file. Refusing makes the behaviour identical everywhere.
+
+    THE DATA NAME DOES NOT FOLLOW. After obj.name = 'Renamed', obj.data.name is still whatever it
+    was - objects and meshes live in separate namespaces. A mesh still named after the old object
+    survives into the FBX and confuses anybody reading it later, so renameData defaults ON.
+
+    POINTERS SURVIVE A RENAME AND STRINGS DO NOT. Modifier .object, constraint .target and driver
+    variable targets are pointers and are unaffected - verified live. What breaks is anything
+    holding the NAME: a vertex group named after a bone, a shape key driver expression, an exporter
+    convention like UCX_<name>_00. Those are reported so the caller can see what may need following.
+
+    params:
+      object (str)                which object. Required.
+      to / newName / name (str)   the new name. Required.
+      renameData (bool)           rename the object's DATA to match. Default true.
+      allowCollision (bool)       let Blender resolve a clash its own way. Default false, and
+                                  turning it on means accepting a different outcome per version.
+    """
+    reject_unknown(params, _RENAME_KEYS, "rename_object")
+    src = take(params, "object", required=True, kind=str)
+    wanted = take(params, "to", "newName", "name", required=True, kind=str)
+    wanted = str(wanted)
+    if not wanted.strip():
+        raise MifOpError("the new name is empty. NOTHING was changed.")
+    allow = take_bool(params, "allowCollision", default=False)
+    rename_data = take_bool(params, "renameData", default=True)
+
+    obj = get_object(src)
+    if obj.name == wanted:
+        return {"ok": True, "object": obj.name, "renamedFrom": obj.name, "changed": False,
+                "dataName": getattr(obj.data, "name", None),
+                "note": "the object is already called that - nothing to do."}
+
+    clash = bpy.data.objects.get(wanted)
+    if clash is not None and clash is not obj and not allow:
+        raise MifOpError(
+            "an object named '%s' already exists, and letting Blender resolve that does DIFFERENT "
+            "things on different builds: on 3.6 the RENAMED object takes the name and the existing "
+            "'%s' is silently renamed to '%s.001' - corrupting an object you did not ask to touch - "
+            "while on 4.2 and later this object would become '%s.001' instead. Pick another name, "
+            "rename the existing one first, or pass allowCollision:true to accept a per-version "
+            "outcome. NOTHING was changed." % (wanted, wanted, wanted, wanted))
+
+    if len(wanted) > _ID_NAME_LIMIT and bpy.app.version < (5, 0, 0):
+        raise MifOpError(
+            "'%s' is %d characters and this Blender (%s) truncates object names at %d, so the name "
+            "you get back would not be the one you asked for - and two names differing only past "
+            "that point would collide here and not on 5.0. Shorten it. NOTHING was changed."
+            % (wanted, len(wanted), bpy.app.version_string, _ID_NAME_LIMIT))
+
+    was = obj.name
+    other_before = clash.name if clash is not None else None
+    obj.name = wanted
+    # THE POSTCONDITION, and it is the whole point on a name assignment: Blender resolves silently,
+    # so the only way to know what happened is to read it back.
+    if obj.name != wanted:
+        raise MifOpError("asked for '%s' and Blender stored '%s' - the name was resolved rather "
+                         "than refused." % (wanted, obj.name))
+    data_name = None
+    if rename_data and getattr(obj, "data", None) is not None:
+        try:
+            obj.data.name = wanted
+            data_name = obj.data.name
+        except (AttributeError, TypeError):
+            data_name = getattr(obj.data, "name", None)
+
+    stolen = (clash is not None and clash.name != other_before)
+    return {
+        "ok": True,
+        "object": obj.name,
+        "renamedFrom": was,
+        "changed": True,
+        "dataName": data_name if rename_data else getattr(obj.data, "name", None),
+        "dataRenamed": bool(rename_data and data_name == wanted),
+        # ONLY REACHABLE WITH allowCollision. Reported because on 3.6 this is how an untouched
+        # object ends up renamed, and a caller who opted in should still be told it happened.
+        "otherObjectRenamed": ({"was": other_before, "now": clash.name} if stolen else None),
+        "note": ("pointers survive a rename - modifier targets, constraint targets and driver "
+                 "variables all still point at this object. What breaks is anything holding the "
+                 "old NAME as a string, such as an exporter convention like UCX_%s_00." % was),
+    }
+
+
+def op_set_vertex_color(params):
+    """Write a colour attribute - what games use for masks, wear and blend weights.
+
+    mesh.vertex_colors is the legacy path; color_attributes is the one that exists on every build
+    this addon supports, so there is no branch here. BYTE_COLOR on the CORNER domain is the default
+    because it is what Blender's own legacy call produced and what survives an FBX round trip.
+
+    THE NAME CAN SILENTLY FAIL. color_attributes.new() with an over-long name TRUNCATES to 63
+    characters on 3.6 and RETURNS None on 4.2, 4.4 and 5.0 - measured, with no exception on any of
+    them. The next line taking .name off None is an AttributeError from the middle of an op, so the
+    length is checked first and the None is guarded anyway.
+
+    params:
+      object (str)          required, must be a MESH
+      name (str)            attribute name. Default 'Col'.
+      color [r,g,b] or [r,g,b,a]   linear float. Required unless the attribute already exists.
+      domain (str)          CORNER (per face-corner, the default) or POINT (per vertex)
+      dataType (str)        BYTE_COLOR (default) or FLOAT_COLOR
+      faces (list[int])     colour only these faces. CORNER domain only.
+      makeActive (bool)     make it the active colour attribute. Default true.
+      makeRender (bool)     make it the one the renderer uses. Default true.
+    """
+    reject_unknown(params, _VCOL_KEYS, "set_vertex_color")
+    src = take(params, "object", required=True, kind=str)
+    name = str(take(params, "name", default="Col", kind=str))
+    if len(name) > _ID_NAME_LIMIT:
+        raise MifOpError("the attribute name is %d characters and Blender's limit is %d. Past it, "
+                         "3.6 silently TRUNCATES and 4.2+ silently returns None - neither raises, "
+                         "so a longer name fails differently on different builds. NOTHING was "
+                         "created." % (len(name), _ID_NAME_LIMIT))
+    domain = str(take(params, "domain", default="CORNER", kind=str)).upper()
+    if domain not in ("CORNER", "POINT"):
+        raise MifOpError("domain must be CORNER (per face-corner) or POINT (per vertex), got '%s'. "
+                         "NOTHING was created." % domain)
+    dtype = str(take(params, "dataType", default="BYTE_COLOR", kind=str)).upper()
+    if dtype not in ("BYTE_COLOR", "FLOAT_COLOR"):
+        raise MifOpError("dataType must be BYTE_COLOR or FLOAT_COLOR, got '%s'. NOTHING was "
+                         "created." % dtype)
+    faces = params.get("faces")
+    if faces is not None:
+        if domain != "CORNER":
+            raise MifOpError("'faces' selects face corners, so it needs domain CORNER - got %s. "
+                             "NOTHING was created." % domain)
+        if not isinstance(faces, (list, tuple)):
+            raise MifOpError("'faces' must be a list of face indices, got %s. NOTHING was created."
+                             % type(faces).__name__)
+    raw = params.get("color")
+    if raw is not None:
+        if not isinstance(raw, (list, tuple)) or len(raw) not in (3, 4):
+            raise MifOpError("'color' must be [r,g,b] or [r,g,b,a], got %r. NOTHING was created."
+                             % (raw,))
+        colour = tuple(float(c) for c in raw) + ((1.0,) if len(raw) == 3 else ())
+    else:
+        colour = None
+
+    obj = get_object(src, want_mesh=True)
+    mesh = obj.data
+    if not mesh.polygons:
+        raise MifOpError("'%s' has no faces, so there are no corners to colour." % obj.name)
+
+    existed = name in mesh.color_attributes
+    if not existed:
+        if colour is None:
+            raise MifOpError("'%s' has no colour attribute named '%s' and no 'color' was given, so "
+                             "there is nothing to create it with. NOTHING was created."
+                             % (obj.name, name))
+        attr = mesh.color_attributes.new(name=name, type=dtype, domain=domain)
+        if attr is None:
+            raise MifOpError("color_attributes.new() returned None for '%s' - Blender signals "
+                             "failure that way rather than raising. NOTHING was created." % name)
+    else:
+        attr = mesh.color_attributes[name]
+        if attr.domain != domain or attr.data_type != dtype:
+            raise MifOpError("'%s' already exists as %s/%s and was asked for as %s/%s. Changing "
+                             "either would rewrite every value; delete it first if that is what "
+                             "you want. NOTHING was changed."
+                             % (name, attr.domain, attr.data_type, domain, dtype))
+
+    written = 0
+    if colour is not None:
+        if faces is not None:
+            highest = len(mesh.polygons) - 1
+            bad = sorted(i for i in faces if not isinstance(i, int) or i < 0 or i > highest)
+            if bad:
+                raise MifOpError("face index %s is out of range - '%s' has %d face(s). The "
+                                 "attribute WAS created." % (bad[0], obj.name, len(mesh.polygons)))
+            for fi in faces:
+                for li in mesh.polygons[fi].loop_indices:
+                    attr.data[li].color = colour
+                    written += 1
+        else:
+            for entry in attr.data:
+                entry.color = colour
+            written = len(attr.data)
+
+    if take_bool(params, "makeActive", default=True):
+        mesh.color_attributes.active_color = attr
+    if take_bool(params, "makeRender", default=True):
+        try:
+            mesh.color_attributes.render_color_index = mesh.color_attributes.find(name)
+        except (AttributeError, TypeError):
+            pass
+    mesh.update()
+
+    # READ BACK FROM THE MESH, not from the value that was written. A colour written to a
+    # BYTE_COLOR attribute is quantised to 8 bits per channel, so what comes back is not what went
+    # in, and reporting the request would hide that entirely.
+    sample = list(attr.data[0].color) if len(attr.data) else None
+    return {
+        "ok": True,
+        "object": obj.name,
+        "attribute": attr.name,
+        "created": not existed,
+        "domain": attr.domain,
+        "dataType": attr.data_type,
+        "elements": len(attr.data),
+        "elementsWritten": written,
+        "requestedColor": rnd(list(colour)) if colour else None,
+        "storedColor": rnd(sample) if sample else None,
+        "quantised": bool(colour and sample and
+                          any(abs(a - b) > 1e-4 for a, b in zip(colour, sample))),
+        "activeColor": getattr(getattr(mesh.color_attributes, "active_color", None), "name", None),
+        "note": ("BYTE_COLOR stores 8 bits per channel, so storedColor differs from what was asked "
+                 "for. That is the format doing its job, not a failure - use FLOAT_COLOR if the "
+                 "exact value matters more than the file size.")
+        if (colour and sample and any(abs(a - b) > 1e-4 for a, b in zip(colour, sample))) else None,
+    }
+
+
+def op_mesh_stats(params):
+    """Counts and a world bounding box - computed from vertices, never from bound_box.
+
+    obj.bound_box IS CACHED AND STALE. Measured on all four builds: move a vertex to z=50 and
+    bound_box[6] still reads the old extent. mesh.update() does NOT refresh it - only
+    bpy.context.view_layer.update() does. So a box read straight off bound_box after any edit is
+    quietly wrong, which is the worst kind of wrong for a number people position things against.
+
+    This computes the box from the vertices directly, so there is nothing to be stale.
+
+    THE EVALUATED COUNTS ARE THE ONES THAT MATTER FOR EXPORT. A mesh with a Subsurf modifier has a
+    base count and a rendered count that differ by an order of magnitude, and both are reported
+    rather than one being chosen for the caller.
+
+    params:
+      object (str)      required, must be a MESH
+      evaluated (bool)  include the modifier-result counts and box. Default true.
+    """
+    reject_unknown(params, _STATS_KEYS, "mesh_stats")
+    obj = get_object(take(params, "object", "name", required=True, kind=str), want_mesh=True)
+    want_eval = take_bool(params, "evaluated", default=True)
+    mesh = obj.data
+
+    def _box(points):
+        if not points:
+            return None
+        lo = [min(p[i] for p in points) for i in range(3)]
+        hi = [max(p[i] for p in points) for i in range(3)]
+        return {"min": rnd(lo), "max": rnd(hi),
+                "size": rnd([hi[i] - lo[i] for i in range(3)]),
+                "center": rnd([(hi[i] + lo[i]) / 2.0 for i in range(3)])}
+
+    mw = obj.matrix_world
+    local_pts = [v.co for v in mesh.vertices]
+    world_pts = [mw @ v.co for v in mesh.vertices]
+    mesh.calc_loop_triangles()
+    out = {
+        "ok": True,
+        "object": obj.name,
+        "base": {
+            "vertices": len(mesh.vertices),
+            "edges": len(mesh.edges),
+            "faces": len(mesh.polygons),
+            "triangles": len(mesh.loop_triangles),
+            "loops": len(mesh.loops),
+        },
+        "bboxLocal": _box(local_pts),
+        "bboxWorld": _box(world_pts),
+        "uvLayers": [uv.name for uv in mesh.uv_layers],
+        "colorAttributes": [a.name for a in mesh.color_attributes],
+        "materialSlots": [s.material.name if s.material else None for s in obj.material_slots],
+        "modifiers": [m.name for m in obj.modifiers],
+        "bboxNote": ("computed from vertices, NOT from obj.bound_box - that is cached and does not "
+                     "refresh after a vertex edit until view_layer.update() runs, so it reports the "
+                     "previous extent with nothing to say so."),
+    }
+    if want_eval and obj.modifiers:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        source = obj.evaluated_get(depsgraph)
+        # evaluated_get SILENTLY RETURNS THE UNEVALUATED OBJECT when the object is not in the
+        # active view layer's depsgraph, so the identity is checked rather than assumed.
+        if source.data is mesh:
+            out["evaluated"] = None
+            out["evaluatedNote"] = ("evaluated_get returned the BASE mesh - the object is not in "
+                                    "the active view layer's depsgraph, so no modifier result "
+                                    "exists to measure. This is silent in Blender.")
+        else:
+            emesh = source.to_mesh()
+            try:
+                emesh.calc_loop_triangles()
+                epts = [source.matrix_world @ v.co for v in emesh.vertices]
+                out["evaluated"] = {
+                    "vertices": len(emesh.vertices), "edges": len(emesh.edges),
+                    "faces": len(emesh.polygons), "triangles": len(emesh.loop_triangles),
+                    "bboxWorld": _box(epts),
+                }
+            finally:
+                source.to_mesh_clear()
+    elif want_eval:
+        out["evaluated"] = None
+        out["evaluatedNote"] = "no modifiers, so the evaluated mesh is the base mesh."
+    return out
+
 OPS = {
     "import_mesh": op_import_mesh,
     "decimate_mesh": op_decimate_mesh,
     "uv_unwrap": op_uv_unwrap,
     "create_collision_hull": op_create_collision_hull,
+    "rename_object": op_rename_object,
+    "set_vertex_color": op_set_vertex_color,
+    "mesh_stats": op_mesh_stats,
     "export_mesh": op_export_mesh,
     "select_edges": op_select_edges,
     "bevel_edges": op_bevel_edges,

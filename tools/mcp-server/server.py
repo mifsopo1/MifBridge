@@ -4790,6 +4790,30 @@ def bl_select_edges(object_name: str, selector: dict = None, max_reported: int =
 
 
 @mcp.tool()
+def bl_rename_object(object: str, to: str, rename_data: bool = None,
+                     allow_collision: bool = None) -> dict:
+    "Rename a Blender object, REFUSING a name collision instead of letting Blender resolve it - because Blender resolves it in OPPOSITE DIRECTIONS across the 3.6/4.x line. Measured on all four builds: with an existing 'Alpha', renaming another object to 'Alpha' makes the RENAMER take the name and silently renames the INCUMBENT to 'Alpha.001' on 3.6, while on 4.2/4.4/5.0 the incumbent keeps it and the renamer becomes 'Alpha.001'. So the same script renames a different object depending on the Blender running it, and on 3.6 it corrupts an object nobody asked it to touch. THE DATA NAME DOES NOT FOLLOW - obj.data.name keeps its old value, and a mesh named after the old object survives into the FBX - so rename_data defaults on. Pointers survive a rename (modifier targets, constraint targets, driver variables); STRING references do not, such as an exporter convention like UCX_<name>_00. The addon had bl_rename_bones and no way to rename an object."
+    return _blender("rename_object", object=object, to=to, renameData=rename_data,
+                    allowCollision=allow_collision)
+
+
+@mcp.tool()
+def bl_set_vertex_color(object: str, name: str = None, color: list = None, domain: str = None,
+                        data_type: str = None, faces: list = None, make_active: bool = None,
+                        make_render: bool = None) -> dict:
+    "Write a Blender colour attribute - what games use for masks, wear and blend weights, and which the addon could not touch at all. Uses color_attributes, which exists on every supported build, rather than the legacy vertex_colors. Defaults to BYTE_COLOR on the CORNER domain: that is what Blender's own legacy call produced and what survives an FBX round trip. THE NAME CAN FAIL SILENTLY - color_attributes.new() with an over-long name TRUNCATES on 3.6 and RETURNS None on 4.2/4.4/5.0, neither raising - so the length is refused up front and the None guarded anyway. The stored colour is READ BACK rather than echoed: BYTE_COLOR quantises to 8 bits per channel, so asking for 0.25 stores 0.250158, and `quantised` says so instead of pretending the request was the result."
+    return _blender("set_vertex_color", object=object, name=name, color=color, domain=domain,
+                    dataType=data_type, faces=faces, makeActive=make_active,
+                    makeRender=make_render)
+
+
+@mcp.tool()
+def bl_mesh_stats(object: str, evaluated: bool = None) -> dict:
+    "Vertex/edge/face/triangle counts and a world bounding box for a Blender mesh, plus the EVALUATED counts after modifiers - a Subsurf mesh has a base count and a rendered count differing by an order of magnitude, and both are reported rather than one chosen for you. THE BOX IS COMPUTED FROM VERTICES, NEVER FROM obj.bound_box, which is CACHED AND STALE: measured on all four builds, move a vertex to z=50 and bound_box still reports the old extent - mesh.update() does not refresh it, only view_layer.update() does. A box read off bound_box after any edit is quietly wrong, which is the worst kind of wrong for a number people position things against. Also guards the case where evaluated_get silently returns the UNevaluated object, which happens when the object is not in the active view layer's depsgraph."
+    return _blender("mesh_stats", object=object, evaluated=evaluated)
+
+
+@mcp.tool()
 def bl_create_collision_hull(object: str, index: int = None, name: str = None,
                              prefix: str = None, world_space: bool = None,
                              max_vertices: int = None, collection: str = None) -> dict:

@@ -12660,6 +12660,38 @@ out-of-process the way ops_gen already does with gen_status.
       Subsampling is by STRIDE rather than truncation: taking the first N points samples one corner
       of a large mesh, which is a different question from the one asked.
 
+- [x] **vertex colours, rename_object, mesh stats/bbox** DONE 2026-09-03
+      Item 9, the last of the measured gap list. Three small ops, and two of them turned up
+      version behaviour worth more than the features.
+
+      RENAMING RESOLVES A COLLISION IN OPPOSITE DIRECTIONS ACROSS THE 3.6/4.x LINE. Measured on all
+      four builds: with an existing 'Alpha', setting another object's name to 'Alpha' gives the
+      RENAMER the name and silently renames the INCUMBENT to 'Alpha.001' on 3.6.23, while on 4.2,
+      4.4 and 5.0 the incumbent keeps it and the renamer becomes 'Alpha.001'. So the same script
+      renames a DIFFERENT object depending on the Blender running it, and on 3.6 it corrupts an
+      object nobody asked it to touch - which then breaks every string reference to that object.
+      rename_object refuses the collision, making behaviour identical everywhere.
+
+      obj.data.name does NOT follow obj.name, so a mesh named after the old object survives into the
+      FBX; renameData defaults on. Pointers survive a rename - modifier targets, constraint targets,
+      driver variables - and STRING references do not, which the response says.
+
+      obj.bound_box IS CACHED AND STALE. Move a vertex to z=50 and it still reports the old extent
+      on every build; mesh.update() does not refresh it and only view_layer.update() does. mesh_stats
+      computes the box from vertices so there is nothing to be stale, and reports base AND evaluated
+      counts because a Subsurf mesh differs by an order of magnitude between them. It also guards
+      evaluated_get silently returning the UNevaluated object, which happens when the object is not
+      in the active view layer's depsgraph.
+
+      set_vertex_color uses color_attributes rather than the legacy vertex_colors, defaults to
+      BYTE_COLOR on CORNER - what Blender's own legacy call produced and what survives an FBX round
+      trip - and READS THE COLOUR BACK rather than echoing it: BYTE_COLOR quantises to 8 bits, so
+      0.25 stores as 0.250158 and `quantised` says so. An over-long attribute name is refused up
+      front because past the limit 3.6 TRUNCATES and 4.2+ returns None, neither raising.
+
+      All three verified on 3.6, 4.4 and 5.0, and all three are exercised on every build by
+      blender_version_matrix.
+
 - [ ] **Tier 5 - craft depth** (1 of 5 left)
       DONE 2026-09-03: set_camera_panorama, move_keyframes, set_light_ies, set_light_linking.
 

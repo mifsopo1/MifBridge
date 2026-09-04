@@ -1955,6 +1955,45 @@ def main():
           ok, msg)
 
     print("")
+    print("=== B127: rename_object, set_vertex_color, mesh_stats ===")
+    # THE RENAME GUARD IS THE ONE THAT MATTERS, and it is not a tidiness rule. Blender resolves a
+    # name collision in OPPOSITE DIRECTIONS across the 3.6/4.x line - measured on all four builds:
+    # with an existing 'Alpha', renaming another object to 'Alpha' makes the RENAMER take the name
+    # and silently renames the INCUMBENT on 3.6, and the reverse on 4.2+. So a naive rename corrupts
+    # an object the caller never mentioned, on exactly one of the builds this addon supports.
+    from MifBlender import ops_mesh as OM2
+
+    ok, msg = refuses(OM2.op_rename_object, {"object": "Cube"}, "'to' is required")
+    check("B127 a rename with no new name is refused", ok, msg)
+    ok, msg = refuses(OM2.op_rename_object, {"object": "Cube", "to": "   "}, "empty")
+    check("B127 a blank name is refused rather than stored", ok, msg)
+
+    ok, msg = refuses(OM2.op_set_vertex_color, {"object": "Cube", "name": "Z" * 80},
+                      "3.6 silently TRUNCATES", "returns None")
+    check("B127 an over-long colour attribute name is refused UP FRONT, because past the limit 3.6 "
+          "truncates and 4.2+ returns None and neither raises", ok, msg)
+    ok, msg = refuses(OM2.op_set_vertex_color, {"object": "Cube", "domain": "EDGE"},
+                      "CORNER", "POINT")
+    check("B127 an unsupported colour domain is refused", ok, msg)
+    ok, msg = refuses(OM2.op_set_vertex_color, {"object": "Cube", "dataType": "HALF"},
+                      "BYTE_COLOR or FLOAT_COLOR")
+    check("B127 an unknown colour data type is refused", ok, msg)
+    ok, msg = refuses(OM2.op_set_vertex_color, {"object": "Cube", "domain": "POINT",
+                                                "faces": [0]}, "needs domain CORNER")
+    check("B127 selecting faces on the POINT domain is refused - a face selects CORNERS, and a "
+          "per-vertex attribute has none to select", ok, msg)
+    ok, msg = refuses(OM2.op_set_vertex_color, {"object": "Cube", "color": [1, 0]},
+                      "[r,g,b]")
+    check("B127 a two-component colour is refused by shape", ok, msg)
+    ok, msg = refuses(OM2.op_set_vertex_color, {"object": "Lamp", "color": [1, 0, 0]}, "MESH")
+    check("B127 colouring a non-MESH is refused", ok, msg)
+
+    ok, msg = refuses(OM2.op_mesh_stats, {"object": "Lamp"}, "MESH")
+    check("B127 mesh_stats on a non-MESH is refused", ok, msg)
+    ok, msg = refuses(OM2.op_mesh_stats, {}, "'object' is required")
+    check("B127 mesh_stats with no object is refused", ok, msg)
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is

@@ -70,6 +70,9 @@ PAYLOADS = {
     "set_shading": {"object": "Cube", "smooth": True},
     "bisect_plane": {"object": "Cube", "planeCo": [0, 0, 0], "axis": "Z"},
     "uv_info": {"object": "Cube"},
+    "mesh_stats": {"object": "Cube"},
+    "set_vertex_color": {"object": "Cube", "name": "MifWear", "color": [1, 0, 0]},
+    "rename_object": {"object": "MifSweepCube", "to": "MifRenamed"},
     "uv_unwrap": {"object": "Cube"},
     # MifCutter, NOT MifGrid - a grid is COPLANAR and the hull audit correctly refuses it with
     # "4 boundary edge(s)", which is the audit working and a useless payload. A collision hull
