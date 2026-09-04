@@ -14273,3 +14273,24 @@ out-of-process the way ops_gen already does with gen_status.
       Verified on 3.6.23 and 5.0.1: create_primitive, create_lattice and create_empty each place
       their object correctly with a good vector, and each refuses a bad one with leaked=False -
       object, lattice, curve and armature counts all unchanged.
+
+- [x] **the leak pass could not see a leaked MODIFIER** DONE 2026-09-04
+      It counted fifteen bpy.data collections, and a modifier is not a datablock. Neither is a
+      constraint, a vertex group, a material slot, a particle system or a UV layer - all of them are
+      things an op ADDS TO AN OBJECT, none appears in bpy.data, and every one is exactly what a
+      refusal firing after the add leaves behind.
+
+      add_particles' leak was caught earlier only because a particle system drags a ParticleSettings
+      datablock with it. That was luck rather than reach, and it would not have repeated for
+      add_modifier, add_constraint or set_vertex_weights.
+
+      Object-level collections are counted now, summed across every object - the question is "did
+      anything appear", and a per-object breakdown would be noise around the one bit that matters.
+
+      MUTATION-TESTED, because a check that cannot fire is not a check. Temporarily removing
+      add_particles' modifier cleanup makes the pass report obj.modifiers 5->6 and
+      obj.particle_systems 1->2 alongside the datablock it already saw - the object-level leak
+      named explicitly rather than inferred. Restored, and the run is clean.
+
+      Nothing was found once it could look, which is the right outcome: every op that adds to an
+      object and can then refuse was already fixed today, most of them by this same pass.

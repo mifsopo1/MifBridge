@@ -661,12 +661,38 @@ _LEAK_COLLECTIONS = ("objects", "meshes", "materials", "images", "lights", "came
                      "particles", "worlds")
 
 
+# WHAT LIVES ON AN OBJECT RATHER THAN IN bpy.data. A leaked MODIFIER is the obvious hole: it is not
+# a datablock, so counting bpy.data collections could never see one. add_particles' leak was caught
+# only because a particle system drags a ParticleSettings datablock along with it - luck, not reach.
+#
+# Constraints, vertex groups, material slots and UV layers are the same shape: all of them are
+# things an op adds to an object, none of them appears in bpy.data, and every one is left behind by
+# a refusal that fires after the add.
+_OBJECT_COLLECTIONS = ("modifiers", "constraints", "vertex_groups", "material_slots",
+                       "particle_systems")
+
+
 def _leak_counts():
     out = {}
     for cname in _LEAK_COLLECTIONS:
         coll = getattr(bpy.data, cname, None)
         if coll is not None:
             out[cname] = len(coll)
+    # Summed across every object rather than per object: the question is "did anything appear",
+    # and a per-object breakdown would be a lot of noise for the one bit that matters.
+    for cname in _OBJECT_COLLECTIONS:
+        total = 0
+        for ob in bpy.data.objects:
+            coll = getattr(ob, cname, None)
+            if coll is not None:
+                total += len(coll)
+        out["obj." + cname] = total
+    for ob in bpy.data.objects:
+        me = ob.data if ob.type == "MESH" else None
+        if me is not None:
+            out["mesh.uv_layers"] = out.get("mesh.uv_layers", 0) + len(me.uv_layers)
+            out["mesh.color_attributes"] = (out.get("mesh.color_attributes", 0)
+                                            + len(me.color_attributes))
     return out
 
 
