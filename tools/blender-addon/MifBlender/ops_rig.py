@@ -1296,6 +1296,16 @@ def op_set_bone_pose(params):
             return None
         if isinstance(v, dict):
             order = ("w", "x", "y", "z") if n == 4 else ("x", "y", "z")
+            # SIXTH COPY OF THIS PARSER IN THE ADDON, and the defect was in all six: a dict read
+            # with .get(axis, 0.0) turns {"mif":"typo"} into a zero vector - or a zero QUATERNION,
+            # which is not even a rotation - and reports success.
+            _unknown = sorted(set(v) - set(order))
+            if _unknown or not (set(v) & set(order)):
+                raise MifOpError(
+                    "'%s' as an object takes %s - got %r. %s NOTHING was changed."
+                    % (key, "/".join(order), v,
+                       ("Unrecognised: %s." % ", ".join(_unknown)) if _unknown
+                       else "It names none of them."))
             return [float(v.get(k, 0.0)) for k in order]
         if isinstance(v, (list, tuple)) and len(v) == n:
             return [float(x) for x in v]

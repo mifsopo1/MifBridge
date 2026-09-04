@@ -72,6 +72,19 @@ def _vec3(params, key, default, verb="created"):
     if v is None:
         return tuple(default)
     if isinstance(v, dict):
+        # AT LEAST ONE OF x/y/z, AND NOTHING ELSE. A dict was read with .get(..., default) for
+        # each axis, so {"mif":"typo"} returned the DEFAULT vector and the call reported
+        # success - a misspelled key silently placed the object at the origin, or left it where
+        # it was, and every field in the response agreed. Partial dicts stay legal ({"z": 2} is
+        # a useful thing to write); a dict that names none of them is a typo, not a request.
+        _axes = {"x", "y", "z"}
+        _unknown = sorted(set(v) - _axes)
+        if _unknown or not (set(v) & _axes):
+            raise MifOpError(
+                "'%s' as an object takes x, y and/or z - got %r. %s NOTHING was changed."
+                % (key, v,
+                   ("Unrecognised: %s." % ", ".join(_unknown)) if _unknown
+                   else "It names none of them."))
         return (float(v.get("x", default[0])), float(v.get("y", default[1])),
                 float(v.get("z", default[2])))
     if isinstance(v, (list, tuple)) and len(v) == 3:

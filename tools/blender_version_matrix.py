@@ -645,6 +645,16 @@ for name in sorted(table):
 # because a string parameter takes a string and the call simply succeeded - so those refusal
 # paths were never reached at all. A dict is accepted almost nowhere, and the two together
 # push a corrupted value down whichever branch a handler actually has.
+# THE ONE PLACE A DICT IS THE RIGHT ANSWER, and it is exempted with the measurement rather than
+# with a shrug. Blender ID properties are genuinely nested: set_custom_property with
+# {"a": 1, "b": "two"} stores an IDPropertyGroup and reads back with both keys intact on 3.6.23 and
+# 5.0.1. Refusing it would remove a real capability to satisfy a check.
+#
+# Everything else on that list turned out to be a defect - six copies of a vector parser that read
+# {"mif":"typo"} as a zero vector, two booleans coerced by bool({...}) being True, and a collection
+# hidden from every render because a dict reached setattr.
+_DICT_IS_LEGAL = {("set_custom_property", "value")}
+
 _LEAK_SENTINELS = ("\x00mif-not-a-value", {"mif": "not-a-value"})
 _LEAK_COLLECTIONS = ("objects", "meshes", "materials", "images", "lights", "cameras", "actions",
                      "node_groups", "textures", "lattices", "collections", "armatures", "curves",
@@ -662,6 +672,7 @@ def _leak_counts():
 
 out["leaks"] = []
 out["badValueRaises"] = []
+out["dictAccepted"] = []
 out["leakStats"] = {"cases": 0, "refused": 0, "accepted": 0, "raised": 0, "opsCovered": 0}
 for name in sorted(table):
     if (only and name not in only) or name in skip:
@@ -679,7 +690,14 @@ for name in sorted(table):
         try:
             table[name](variant)
             out["leakStats"]["accepted"] += 1
-            continue                      # sentinel accepted - nothing to judge
+            # ACCEPTING THE DICT IS ITSELF A FINDING. A string sentinel is legitimately accepted by
+            # any string parameter, so those stay silent - but almost nothing should take a MAPPING
+            # where a value belongs, and the ways it happens are quiet: bool({...}) is True and
+            # str({...}) is "{'mif': 'not-a-value'}". Both write something the caller never asked
+            # for and report success.
+            if isinstance(_sentinel, dict) and (name, key) not in _DICT_IS_LEGAL:
+                out["dictAccepted"].append({"op": name, "key": key})
+            continue
         except MifOpError as exc:
             out["leakStats"]["refused"] += 1
             after = _leak_counts()
@@ -1005,6 +1023,20 @@ def main():
                 continue
             seen_pairs.add(pair)
             print("  %-24s bad %-18s %s" % (row["op"], row["key"], row["detail"][:70]))
+
+    dict_ok = []
+    for r in reports:
+        for row in r.get("dictAccepted", []) or []:
+            if (row["op"], row["key"]) not in [(d["op"], d["key"]) for d in dict_ok]:
+                dict_ok.append(row)
+    if dict_ok:
+        print("")
+        print("A DICT WAS ACCEPTED WHERE A VALUE BELONGS - %d. Not a refusal and not a crash, which"
+              % len(dict_ok))
+        print("is what makes it worse: bool({...}) is True and str({...}) is text, so the handler")
+        print("wrote something nobody asked for and reported success:")
+        for row in dict_ok[:20]:
+            print("  %-26s %s" % (row["op"], row["key"]))
 
     print("")
     print("REACH - how far the calls actually got, which is not the same as the findings above:")

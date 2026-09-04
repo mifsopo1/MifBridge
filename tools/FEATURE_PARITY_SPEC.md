@@ -14135,3 +14135,45 @@ out-of-process the way ops_gen already does with gen_status.
       THE SHAPE WORTH REMEMBERING is that a guard written as hasattr(x, "__len__") admits dicts,
       strings and every mapping - it is a duck-type where the code meant "a sequence of numbers".
       This one had an isinstance(val, str) beside it, which is what made it look complete.
+
+- [x] **a dict being ACCEPTED is the third finding class, and it found nine more** DONE 2026-09-04
+      The pass judged refusals and raises, and treated "the sentinel was accepted" as nothing to
+      see. But accepting a MAPPING where a value belongs is its own defect, and a quiet one:
+      bool({"mif":"bad"}) is True and str({...}) is "{'mif': 'bad'}". Both write something the
+      caller never asked for and report SUCCESS, which is worse than a crash because the response
+      agrees with them.
+
+      Found by hand first, on a NESTED value the pass cannot reach - it corrupts top-level payload
+      keys, and node `properties` lives one level down. add_group_node with
+      properties:{"use_clamp":{"mif":"bad"}} switched the clamp ON and reported it applied. That is
+      my own code from the same day. So the class was real before the check for it existed.
+
+      SIX COPIES OF ONE VECTOR PARSER, and the defect was in every one. A dict read with
+      .get(axis, default) turns {"mif":"typo"} into the DEFAULT vector - the origin, or wherever the
+      object already was - and reports success. ops_create, ops_lightcam, ops_anim, ops_viewport,
+      ops_nodes (2D, for a node location) and a local closure inside set_bone_pose, where a
+      mistyped quaternion became a ZERO quaternion, which is not a rotation at all. All six now
+      require at least one real axis and refuse an unrecognised key.
+
+      THREE MORE OF THE bool()/str() SHAPE: _write_node_property's BOOLEAN and STRING branches and
+      _socket_value's NodeSocketBool - all mine, all written today - plus
+      set_collection_visibility, where a dict reached setattr and hid the collection from every
+      render because Blender coerced it to True.
+
+      ONE IS LEGITIMATE AND IS EXEMPTED WITH THE MEASUREMENT, not with a shrug. Blender ID
+      properties are genuinely nested: set_custom_property with {"a":1,"b":"two"} stores an
+      IDPropertyGroup that reads back with both keys intact on 3.6.23 and 5.0.1. Refusing it would
+      remove a real capability to satisfy a check.
+
+      THE PASS NOW HAS THREE QUESTIONS - did the refusal leave something behind, did a bad value
+      raise instead of refusing, and was a mapping accepted where a value belongs. Between them they
+      found sixteen defects today in code that was green under every other check in this repo.
+
+- [ ] **six hand-rolled copies of one vector parser, and ops_common already exists**
+      Filed rather than done, because the fix is five modules wide and the behaviour is now guarded.
+      The {x,y,z}-or-[x,y,z] parse exists six times - ops_create, ops_lightcam, ops_anim,
+      ops_viewport, ops_nodes and a closure in ops_rig - and the same defect was in all six, which
+      is exactly the argument this repo makes about parallel implementations everywhere else.
+      ops_common already hosts take/take_bool/take_int/take_float; one _vec3 belongs beside them.
+      The variants are real (2D for a node location, 4-component for a quaternion, differing
+      defaults) so it needs reading rather than sed.

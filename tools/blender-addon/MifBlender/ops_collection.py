@@ -454,6 +454,12 @@ def op_set_collection_visibility(params):
     per_layer = {"exclude": "exclude", "hideInViewLayer": "hide_viewport",
                  "indirectOnly": "indirect_only", "holdout": "holdout"}
     wanted_layer = {k: params[k] for k in per_layer if params.get(k) is not None}
+    # CHECKED AS BOOLEANS FIRST. These went straight to setattr, and Blender coerces - a dict
+    # became True, so a caller who sent garbage hid the collection from every render and was told
+    # it had worked. take_bool refuses anything that is not a boolean, a number or a yes/no string.
+    for _k in ("hideViewport", "hideRender"):
+        if params.get(_k) is not None:
+            take_bool(params, _k)
     wanted_global = {k: params[k] for k in ("hideViewport", "hideRender")
                      if params.get(k) is not None}
     if not wanted_layer and not wanted_global:

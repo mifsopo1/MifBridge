@@ -88,6 +88,17 @@ def _fcurves(holder):
 def _vec3(params, key):
     v = params.get(key)
     if isinstance(v, dict):
+        # AT LEAST ONE OF x/y/z, AND NOTHING ELSE - see ops_create for why. Fifth copy of this
+        # parser in the addon and the defect was in every one: a dict read with .get(axis,
+        # default) turns {"mif":"typo"} into the DEFAULT vector and reports success.
+        _axes = {"x", "y", "z"}
+        _unknown = sorted(set(v) - _axes)
+        if _unknown or not (set(v) & _axes):
+            raise MifOpError(
+                "'%s' as an object takes x, y and/or z - got %r. %s NOTHING was changed."
+                % (key, v,
+                   ("Unrecognised: %s." % ", ".join(_unknown)) if _unknown
+                   else "It names none of them."))
         return (float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0)))
     if isinstance(v, (list, tuple)) and len(v) == 3:
         return tuple(float(x) for x in v)

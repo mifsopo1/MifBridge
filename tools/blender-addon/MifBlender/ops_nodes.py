@@ -177,6 +177,12 @@ def _socket_value(kind, sock_name, val, where):
     if kind in ("NodeSocketString", "NodeSocketMenu"):
         return str(val)
     if kind == "NodeSocketBool":
+        # bool() ACCEPTS ANYTHING - bool({"mif":"bad"}) is True - so a garbage default became a
+        # silent True. Same shape as _write_node_property's boolean branch, in code I wrote the
+        # same day, found by the matrix reporting that a DICT had been accepted.
+        if not isinstance(val, bool) and val not in (0, 1):
+            raise MifOpError("a %s default is true or false, got %r. NOTHING was changed."
+                             % (kind, val))
         return bool(val)
     if kind == "NodeSocketInt":
         return int(val)
@@ -238,16 +244,48 @@ def _write_node_property(node, key, value):
                                 ", ".join(valid)))
         setattr(node, key, match[0])
     elif kind == "BOOLEAN":
+        # bool() ACCEPTS ANYTHING, and that is the whole defect this replaced: bool({"mif":"bad"})
+        # is True, so a caller who sent garbage got use_clamp switched ON and a response saying it
+        # had been applied. Accepted-and-wrong is worse than a raw exception, because the response
+        # agrees with them. Found by hand-probing a NESTED value, which the matrix's bad-value pass
+        # could not reach - it corrupts top-level payload keys, and this one lives inside
+        # `properties`.
+        if not isinstance(value, bool) and value not in (0, 1):
+            raise MifOpError("'%s' on a %s is a boolean, so it takes true or false - got %r. The "
+                             "node WAS added." % (key, node.bl_idname, value))
         setattr(node, key, bool(value))
     elif kind == "INT":
-        setattr(node, key, int(value))
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            raise MifOpError("'%s' on a %s is a whole number, got %r. The node WAS added."
+                             % (key, node.bl_idname, value))
+        try:
+            setattr(node, key, int(value))
+        except (TypeError, ValueError):
+            raise MifOpError("'%s' on a %s is a whole number, got %r. The node WAS added."
+                             % (key, node.bl_idname, value))
     elif kind == "FLOAT":
-        if hasattr(value, "__len__") and not isinstance(value, str):
-            setattr(node, key, [float(v) for v in value])
+        if isinstance(value, (list, tuple)):
+            try:
+                setattr(node, key, [float(v) for v in value])
+            except (TypeError, ValueError):
+                raise MifOpError("'%s' on a %s takes numbers, got %r. The node WAS added."
+                                 % (key, node.bl_idname, value))
         else:
-            setattr(node, key, float(value))
+            if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+                raise MifOpError("'%s' on a %s is a number, got %r. The node WAS added."
+                                 % (key, node.bl_idname, value))
+            try:
+                setattr(node, key, float(value))
+            except (TypeError, ValueError):
+                raise MifOpError("'%s' on a %s is a number, got %r. The node WAS added."
+                                 % (key, node.bl_idname, value))
     elif kind == "STRING":
-        setattr(node, key, str(value))
+        # str() ACCEPTS ANYTHING TOO, so a dict became the literal text "{'mif': 'bad'}" and was
+        # written into the property without complaint. Same shape as the boolean above.
+        if not isinstance(value, str):
+            raise MifOpError("'%s' on a %s is text, got %r. The node WAS added."
+                             % (key, node.bl_idname, value))
+        setattr(node, key, value)
     elif kind == "POINTER":
         raise MifOpError(
             "'%s' on a %s holds a datablock, which this parameter does not resolve. nodeGroup "
@@ -289,6 +327,13 @@ def op_add_group_node(params):
         node.label = lbl
     loc = params.get("location")
     if isinstance(loc, dict):
+        # TWO AXES HERE, not three - a node location is 2D. Same defect as the vector parsers:
+        # {"mif":"typo"} put the node at the origin and reported success.
+        _axes = {"x", "y"}
+        _unknown = sorted(set(loc) - _axes)
+        if _unknown or not (set(loc) & _axes):
+            raise MifOpError("'location' as an object takes x and/or y - got %r. The node "
+                             "WAS added as '%s'." % (loc, node.name))
         node.location = (float(loc.get("x", 0.0)), float(loc.get("y", 0.0)))
     elif isinstance(loc, (list, tuple)) and len(loc) >= 2:
         node.location = (float(loc[0]), float(loc[1]))
