@@ -343,8 +343,20 @@ def main():
                     # GitHub's output and that was misread as a malformed report. It would never have
                     # been retried; Andre asked about it by hand. So handle() can ask for the mark to
                     # be taken back, and the two cases are now distinguishable rather than guessed.
+                    #
+                    # A DRY RUN DOES NOT PERSIST THE MARK. It is a preview, and everywhere else in
+                    # this loop it already behaves like one - escalate() spawns no model,
+                    # report_reply posts nothing, report_notify sends nothing. The state file was
+                    # the single place a preview left a permanent trace, and it cost a real report:
+                    # #2 was previewed on 2026-09-02, marked seen, never escalated because dry_run
+                    # returns early, and answered by a human two days later. A live watchdog would
+                    # have skipped it for good.
+                    #
+                    # It still joins the IN-MEMORY set, so a long dry run does not re-announce the
+                    # same issue every poll - it just does not survive the process.
                     seen.add(issue["number"])
-                    save_state({"seen": sorted(seen)})
+                    if not a.dry_run:
+                        save_state({"seen": sorted(seen)})
                     try:
                         verdict = handle(issue, a.push, a.dry_run)
                     except Exception as exc:
@@ -352,7 +364,8 @@ def main():
                         verdict = "retry"     # our fault, not the reporter's
                     if verdict == "retry":
                         seen.discard(issue["number"])
-                        save_state({"seen": sorted(seen)})
+                        if not a.dry_run:
+                            save_state({"seen": sorted(seen)})
                         log("  #%s left UNSEEN - the next poll will try it again" % issue["number"])
         if a.once:
             return 0
