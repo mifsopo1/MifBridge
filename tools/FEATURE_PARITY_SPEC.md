@@ -13162,3 +13162,25 @@ out-of-process the way ops_gen already does with gen_status.
 
       parity_check went red on the commit and was right: the addon accepted a parameter no MCP tool
       could send. Exposed as bl_import_mesh(import_animation=...) rather than baselined.
+
+- [x] **apply_modifier called every deforming modifier a no-op, in words** DONE 2026-09-04
+      changedGeometry was `counts_before != counts_after`, and mesh_counts is vertex/edge/face
+      COUNTS. Every deforming modifier - SHRINKWRAP, LATTICE, CAST, DISPLACE, SIMPLE_DEFORM, WAVE,
+      WARP, HOOK, SMOOTH, ARMATURE - moves vertices and changes no count, so all of them read as
+      unchanged. The response then stated a conclusion: "it was either disabled, or its settings
+      amounted to a no-op on this mesh."
+
+      A shrinkwrap that had just conformed an entire mesh to terrain reported having done nothing,
+      in the confident register the rest of this addon earns. That is worse than silence, because
+      somebody acts on it - the whole point of these responses is that they can be trusted.
+
+      Topology and movement are different questions and it now asks both. changedTopology is the
+      count comparison; movedVertices and maxVertexDelta come from a foreach_get coordinate
+      signature, the same technique _uv_fingerprint uses. movedVertices is None when the topology
+      changed, because two meshes with different vertex counts have no correspondence and a number
+      there would be invented.
+
+      Verified on 4.4 with three cases including a negative control: a CAST factor 0.8 on a grid
+      reports 120 vertices moved by up to 0.510932 where it used to say no-op; a zero-angle TWIST
+      still correctly reports that nothing changed; a SUBSURF reports changedTopology with
+      movedVertices None.

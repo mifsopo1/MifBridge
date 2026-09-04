@@ -30,6 +30,8 @@ see the commit this file was added in for the exact live-call transcript.
 
 from __future__ import annotations
 
+import array
+
 import bpy
 
 from .ops_common import (
@@ -697,6 +699,19 @@ def op_remove_modifier(params):
     }
 
 
+def _vertex_coords(mesh):
+    """Every vertex position as a flat array, for comparing a mesh against itself.
+
+    foreach_get RATHER THAN A PYTHON LOOP, the same technique _uv_fingerprint uses: a hundred
+    thousand vertices through attribute access is seconds, and this runs on the main thread while
+    Blender is blocked.
+    """
+    n = len(mesh.vertices)
+    buf = array.array("f", [0.0]) * (3 * n)
+    mesh.vertices.foreach_get("co", buf)
+    return buf
+
+
 def op_apply_modifier(params):
     """Bake a modifier into the mesh data. Destructive, and it says what it cost.
 
@@ -725,6 +740,8 @@ def op_apply_modifier(params):
                ", ".join(m.name for m in obj.modifiers) or "(none)"))
 
     counts_before = mesh_counts(obj)
+    # POSITIONS TOO. See the postcondition below for why counts were not enough.
+    coords_before = _vertex_coords(obj.data)
     row = _modifier_dict(mod)
 
     if take_bool(params, "dryRun", default=False):
@@ -759,6 +776,29 @@ def op_apply_modifier(params):
             "have been changed - counts before %s, after %s." % (mod_name, obj.name,
                                                                  counts_before, counts_after))
 
+    # TOPOLOGY AND MOVEMENT ARE DIFFERENT QUESTIONS, and this used to ask only the first.
+    #
+    # changedGeometry was `counts_before != counts_after`, and mesh_counts is vertex/edge/face
+    # COUNTS. Every DEFORMING modifier - SHRINKWRAP, LATTICE, CAST, DISPLACE, SIMPLE_DEFORM, WAVE,
+    # WARP, HOOK, SMOOTH, ARMATURE - moves vertices and changes no count, so all of them read as
+    # unchanged. The note then stated a conclusion: "it was either disabled, or its settings
+    # amounted to a no-op on this mesh". A shrinkwrap that had just conformed an entire mesh to
+    # terrain was reported as having done nothing, in the confident register the rest of this addon
+    # earns - which is worse than saying nothing, because somebody acts on it.
+    changed_topology = counts_before != counts_after
+    coords_after = _vertex_coords(obj.data)
+    moved, max_delta = 0, 0.0
+    if not changed_topology and len(coords_before) == len(coords_after):
+        for i in range(0, len(coords_before), 3):
+            dx = abs(coords_after[i] - coords_before[i])
+            dy = abs(coords_after[i + 1] - coords_before[i + 1])
+            dz = abs(coords_after[i + 2] - coords_before[i + 2])
+            worst = max(dx, dy, dz)
+            if worst > 1e-6:
+                moved += 1
+                if worst > max_delta:
+                    max_delta = worst
+
     out = {
         "object": obj.name,
         "modifier": mod_name,
@@ -766,14 +806,26 @@ def op_apply_modifier(params):
         "wasApplied": row,
         "countsBefore": counts_before,
         "countsAfter": counts_after,
-        "changedGeometry": counts_before != counts_after,
+        "changedTopology": changed_topology,
+        # HOW MANY VERTICES ACTUALLY MOVED. None when the topology changed, because the two meshes
+        # have no vertex-to-vertex correspondence to compare and a number there would be invented.
+        "movedVertices": None if changed_topology else moved,
+        "maxVertexDelta": None if changed_topology else round(max_delta, 6),
+        # KEPT, and now true. It was False for every deforming modifier ever applied through here.
+        "changedGeometry": changed_topology or moved > 0,
         "stackAfter": [m.name for m in obj.modifiers],
     }
     if not out["changedGeometry"]:
         out["note"] = (
-            "the modifier applied cleanly and the vertex/face counts are identical - it was either "
-            "disabled, or its settings amounted to a no-op on this mesh. Said in words rather than "
-            "returned as a bare ok, because the operator reports FINISHED either way.")
+            "the modifier applied cleanly and NOTHING changed - same vertex/face counts and not one "
+            "vertex moved by more than 1e-6. It was either disabled, or its settings amounted to a "
+            "no-op on this mesh. Said in words rather than returned as a bare ok, because the "
+            "operator reports FINISHED either way.")
+    elif not changed_topology:
+        out["note"] = (
+            "the counts are identical and %d vertex/vertices MOVED, by up to %.6f - a deforming "
+            "modifier does exactly this, and judging by counts alone would have called it a no-op."
+            % (moved, max_delta))
     return out
 
 
