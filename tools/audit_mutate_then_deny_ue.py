@@ -49,6 +49,16 @@ import harvest_param_table as H          # the one comment/string scrubber, shar
 from audit_postconditions import handler_bodies, SILENT_APIS   # the one handler brace-matcher
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+BASELINE = os.path.join(HERE, "audit_mutate_then_deny_ue_baseline.txt")
+
+# KEYED WITHOUT LINE NUMBERS, deliberately. The 50 sites are waiting on a rebuild that cannot happen
+# while the editor holds the DLL, so this baseline has to survive months of unrelated edits to the
+# same files - and a key carrying a line number would go stale on the next inserted comment and
+# retrain everyone to run --update-baseline without reading. The cost is that a SECOND site in an
+# endpoint already listed for the same call and verb does not show as new; a new endpoint, a new
+# mutator, or a changed promise all do.
+def _key(row):
+    return "%s:%s:%s:%s" % (row["file"], row["endpoint"], row["call"], row["verb"])
 
 # Calls that reach real state. Modify and MarkPackageDirty dirty the package by themselves; the rest
 # change the object. SILENT_APIS is audit_postconditions' curated list of UE mutators that cannot
@@ -449,15 +459,31 @@ def selftest():
         bad += 0 if ok else 1
         print("  %-4s %-42s expected %-5s got %s"
               % ("ok" if ok else "FAIL", name, should_fire, fired))
+    # THE SCOPED LIST REPORTS ZERO ON THE REAL SOURCE, so nothing else exercises this split. A
+    # handler that dirties an asset and then says "NOTHING was traced" has told the truth, and the
+    # difference between that and "NOTHING was changed" is the whole reason the two lists exist.
+    findings, scoped, delegating = [], [], []
+    scan_body("selftest.cpp", "probe", """{
+        Obj->Modify();
+        if (Bad) { Fail(Out, TEXT("bad. NOTHING was traced.")); return; }
+    }""", 0, findings, scoped, delegating)
+    ok = len(scoped) == 1 and not findings
+    bad += 0 if ok else 1
+    print("  %-4s %-42s expected %-5s got %s"
+          % ("ok" if ok else "FAIL", "operation verb lands in scoped", True, ok))
+
     print("")
     print("selftest: %d case(s), %d failure(s)"
-          % (len(SELFTEST) + len(HELPER_SELFTEST), bad))
+          % (len(SELFTEST) + len(HELPER_SELFTEST) + 1, bad))
     return bad
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--check", action="store_true", help="exit 1 on any finding")
+    ap.add_argument("--check", action="store_true",
+                    help="exit 1 on any finding NEW since the baseline")
+    ap.add_argument("--update-baseline", action="store_true",
+                    help="accept the current findings; say why in the commit")
     ap.add_argument("--show-delegating", action="store_true",
                     help="handlers that promise but write through a helper this cannot follow")
     ap.add_argument("--by-endpoint", action="store_true", help="one line per endpoint")
@@ -509,7 +535,40 @@ def main():
         print("%d of the %d also CONTRADICT themselves: the verb is changed/created/added, and a"
               % (len(contradicted), len(findings)))
         print("dirty package is a change. The rest promise something narrower and keep it.")
-    return 1 if (args.check and findings) else 0
+    keys = set(_key(r) for r in findings)
+    if args.update_baseline:
+        with io.open(BASELINE, "w", encoding="utf-8", newline="\r\n") as fh:
+            fh.write("# Accepted dirty-refusal sites. Regenerate deliberately with:\n")
+            fh.write("#   python tools/audit_mutate_then_deny_ue.py --update-baseline\n")
+            fh.write("# Each of these leaves the asset dirty on a refusal. They are ACCEPTED as\n")
+            fh.write("# known, not as correct - see the spec item for the fix ordering.\n")
+            for key in sorted(keys):
+                fh.write(key + "\n")
+        print("")
+        print("baseline updated: %d entries" % len(keys))
+        return 0
+
+    try:
+        base = set(l.strip() for l in io.open(BASELINE, encoding="utf-8")
+                   if l.strip() and not l.startswith("#"))
+    except OSError:
+        base = set()
+    gone, fresh = sorted(base - keys), sorted(keys - base)
+    if gone:
+        print("")
+        for key in gone:
+            print("  FIXED    %s  (drop it from the baseline)" % key)
+    if fresh:
+        print("")
+        print("NEW since the baseline - a refusal that leaves the asset dirty was ADDED:")
+        for key in fresh:
+            print("  %s" % key)
+        print("")
+        print("Accept with --update-baseline once judged, and say why in the commit.")
+    elif base:
+        print("")
+        print("OK  no NEW dirty-refusal sites (%d known)" % len(base))
+    return 1 if (args.check and fresh) else 0
 
 
 if __name__ == "__main__":

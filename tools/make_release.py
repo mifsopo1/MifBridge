@@ -501,6 +501,13 @@ def check_static_audits():
                        # identical. --selftest drives eleven synthetic ops through the same code
                        # path, each rule with a case it must catch and a case it must not.
                        ("audit_mutate_then_deny.py", ["--selftest"]),
+                       # THE C++ HALF, RATCHETED rather than ungated. Its 50 sites wait on a rebuild
+                       # that cannot happen while the editor holds the DLL, so a gate at zero would
+                       # be one nobody can turn green - which is a gate people learn to skip. Gated
+                       # at the CURRENT state instead, the same shape as audit_postconditions: the
+                       # known sites are accepted as KNOWN, not as correct, and a new one fails.
+                       ("audit_mutate_then_deny_ue.py", ["--check"]),
+                       ("audit_mutate_then_deny_ue.py", ["--selftest"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
                        # and these two turned out to be static, so they had never been run for no

@@ -14411,8 +14411,21 @@ out-of-process the way ops_gen already does with gen_status.
       object transacted first - the transaction has to be cancelled or the refusal reworded to stop
       promising about the package.
 
-      Gate it at zero once they are fixed and a build has verified them. It is deliberately ungated
-      now: a gate nobody can turn green is a gate people learn to skip.
+      RATCHETED 2026-09-04, not ungated. "A gate nobody can turn green is a gate people learn to
+      skip" argued against gating at ZERO while these wait on a rebuild; it never argued against
+      gating at the CURRENT state, which is the shape audit_postconditions has used here all along.
+      The 38 keys in audit_mutate_then_deny_ue_baseline.txt are accepted as KNOWN, not as correct,
+      and a new dirty-refusal site fails the gate.
+
+      The key carries no line number on purpose: these sites will sit through months of unrelated
+      edits to the same files, and a key that goes stale on the next inserted comment retrains
+      everyone to run --update-baseline without reading. The cost is that a second site in an
+      endpoint already listed for the same call and verb does not show as new; a new endpoint, a new
+      mutator or a changed promise all do.
+
+      Mutation-tested: removing one baseline entry makes --check name it and exit 1.
+
+      Gate it at zero once they are fixed and a build has verified them.
 
 - [x] **both audits were blind to a write inside a helper** DONE 2026-09-04
       Each had a --show-delegating list advertising this hole, and both lists measured the wrong
