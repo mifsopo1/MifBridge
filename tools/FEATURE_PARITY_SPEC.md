@@ -11889,6 +11889,23 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
                                one. This op never claims nothing happened."
         _vec3                  CONFIRMED, at every call site, and worse than reported. FIXED below.
 
+      THE THREE C++ ROWS ARE NO LONGER UNREAD, 2026-09-04. tools/audit_mutate_then_deny_ue.py finds
+      all three without being told about them, with absolute file lines:
+
+        set_collision            MifBridgeCollision.cpp      Modify 201, refuses 216
+        set_sequence_keys        MifBridgeSequencerWrite.cpp Modify 806, refuses 920
+        set_material_parameter   MifBridgeAuthoring.cpp      Modify 925, refuses 935
+
+      That is worth more than three confirmations. Two of these were single-agent and unverified
+      because thirteen verifier agents did not survive a session limit, and the standing rule here is
+      that a single detector's output is unconfirmed by design - this project has had one produce 23,
+      22 and 12 false findings in a run. A deterministic tool reproducing them from the source, with
+      no knowledge of the review, is the independent second opinion those rows were waiting for.
+
+      It also found THIRTY MORE endpoints the review did not reach. The full list and the fix
+      ordering live in the "50 dirty-refusal sites" item; this row is the subset a review had already
+      pointed at. Still blocked on the same rebuild.
+
       _vec3 REFUSES, so WHERE it is called decides whether its refusal is true - and all four ops
       called it after the mutation:
 
