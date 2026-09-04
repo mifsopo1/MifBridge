@@ -990,7 +990,89 @@ def op_set_light_ies(params):
     }
 
 
+def op_set_light_linking(params):
+    """Control WHICH objects a light affects - light linking and shadow blocking.
+
+    "This key light hits the product and not the backdrop" is a routine request in product and
+    archviz work and is impossible to fake: moving the light changes the look, flagging it off with
+    geometry changes the reflections, and turning it down changes everything. Light linking is the
+    only correct answer and nothing here could reach it.
+
+    params:
+      object (str, required)          the LIGHT
+      receiverCollection (str)        only objects in this collection are lit by it. Created if it
+                                      does not exist.
+      blockerCollection (str)         only objects in this collection cast its shadows
+      clearReceivers / clearBlockers (bool)
+
+    BLENDER 4.2+. Older builds have no light_linking at all, and this refuses by name rather than
+    accepting the keys and doing nothing - which is what a hasattr-skip would have done, and is the
+    mistake create_light's `shadow` key made until it was fixed today.
+    """
+    reject_unknown(params, {"object", "light", "name", "receiverCollection", "blockerCollection",
+                            "clearReceivers", "clearBlockers"}, "set_light_linking")
+    want = take(params, "object", "light", "name", default=None, kind=str)
+    if not want:
+        raise MifOpError("'object' is required - which light. NOTHING was changed.")
+    obj = bpy.data.objects.get(want)
+    if obj is None:
+        raise MifOpError("no object named '%s'. NOTHING was changed." % want)
+    if obj.type != "LIGHT":
+        raise MifOpError("'%s' is a %s, not a LIGHT. NOTHING was changed." % (want, obj.type))
+
+    linking = getattr(obj, "light_linking", None)
+    if linking is None:
+        raise MifOpError("this Blender has no light_linking on an object - it arrived in 4.2, and "
+                         "this build is %s. Every key here would be silently ignored, so the call "
+                         "is refused instead. NOTHING was changed."
+                         % ".".join(str(v) for v in bpy.app.version))
+
+    recv = take(params, "receiverCollection", default=None, kind=str)
+    block = take(params, "blockerCollection", default=None, kind=str)
+    clear_r = take_bool(params, "clearReceivers", default=False)
+    clear_b = take_bool(params, "clearBlockers", default=False)
+    if recv and clear_r:
+        raise MifOpError("pass receiverCollection OR clearReceivers, not both. NOTHING was "
+                         "changed.")
+    if block and clear_b:
+        raise MifOpError("pass blockerCollection OR clearBlockers, not both. NOTHING was changed.")
+    if not any((recv, block, clear_r, clear_b)):
+        raise MifOpError("nothing to do - pass receiverCollection, blockerCollection, "
+                         "clearReceivers or clearBlockers. NOTHING was changed.")
+
+    def _collection(name):
+        c = bpy.data.collections.get(str(name))
+        if c is None:
+            c = bpy.data.collections.new(str(name))
+        return c
+
+    if clear_r:
+        linking.receiver_collection = None
+    elif recv:
+        linking.receiver_collection = _collection(recv)
+    if clear_b:
+        linking.blocker_collection = None
+    elif block:
+        linking.blocker_collection = _collection(block)
+
+    rc = getattr(linking, "receiver_collection", None)
+    bc = getattr(linking, "blocker_collection", None)
+    return {
+        "light": obj.name,
+        "receiverCollection": rc.name if rc else None,
+        "receiverCount": len(rc.objects) if rc else 0,
+        "blockerCollection": bc.name if bc else None,
+        "blockerCount": len(bc.objects) if bc else 0,
+        # AN EMPTY RECEIVER COLLECTION LIGHTS NOTHING AT ALL. That is a legitimate state to be
+        # mid-setup in and a catastrophic one to render from, and it looks identical to a correct
+        # link from every other field - so it is named rather than left to be discovered.
+        "litsNothing": bool(rc) and len(rc.objects) == 0,
+        "blenderVersion": ".".join(str(v) for v in bpy.app.version),
+    }
+
+
 OPS = {
+    "set_light_linking": op_set_light_linking,
     "set_light_ies": op_set_light_ies,
     "set_camera_panorama": op_set_camera_panorama,
     "create_light": op_create_light,

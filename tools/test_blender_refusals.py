@@ -266,6 +266,20 @@ def main():
     check("B102b a missing .ies is refused BEFORE the node tree is touched", ok, detail)
 
     print("")
+    print("=== B102c: light linking, including the version it needs ===")
+    ok, detail = refuses(ops_lightcam.op_set_light_linking, {"object": "Cube",
+                                                             "receiverCollection": "C"},
+                         "not a LIGHT")
+    check("B102c set_light_linking on a mesh refuses", ok, detail)
+    # The stub's objects carry no light_linking, which is exactly a pre-4.2 Blender - so this
+    # exercises the version refusal itself rather than simulating it.
+    ok, detail = refuses(ops_lightcam.op_set_light_linking,
+                         {"object": "Lamp", "receiverCollection": "C"},
+                         "no light_linking", "4.2")
+    check("B102c a build without light_linking is refused BY NAME with the version, not "
+          "silently ignored", ok, detail)
+
+    print("")
     print("=== B103: a missing object is refused and the message helps ===")
     ok, detail = refuses(ops_lightcam.op_set_light, {"object": "NoSuchZz"}, "no object named")
     check("B103 set_light names the object that does not exist", ok, detail)

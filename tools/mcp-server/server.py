@@ -5020,6 +5020,16 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_set_light_linking(object: str, receiver_collection: str = None,
+                         blocker_collection: str = None, clear_receivers: bool = None,
+                         clear_blockers: bool = None) -> dict:
+    "Control WHICH objects a Blender light affects. 'This key light hits the product and not the backdrop' is routine in product and archviz work and cannot be faked - moving the light changes the look, flagging it with geometry changes the reflections, and turning it down changes everything. Light linking is the only correct answer and nothing here could reach it. receiver_collection limits what the light illuminates; blocker_collection limits what casts its shadows; both are created if they do not exist. Requires Blender 4.2+, and an older build is REFUSED BY NAME with the version rather than accepting the keys and doing nothing. litsNothing is reported because an EMPTY receiver collection illuminates nothing at all - a legitimate state mid-setup and a catastrophic one to render from, and identical to a correct link from every other field. Call mif_help(\"bl_set_light_linking\") first."
+    return _blender("set_light_linking", object=object, receiverCollection=receiver_collection,
+                    blockerCollection=blocker_collection, clearReceivers=clear_receivers,
+                    clearBlockers=clear_blockers)
+
+
+@mcp.tool()
 def bl_set_light_ies(object: str, filepath: str = None, text: str = None,
                      strength: float = None, clear: bool = None) -> dict:
     "Give a Blender light a real-world IES photometric profile, or clear it. An IES file is a MEASURED distribution from a fixture manufacturer - the shape of light a real luminaire throws - and it is how archviz and product lighting stop looking like computer graphics. No amount of energy, radius or spot-angle adjustment substitutes for one. A LIGHT'S DISTRIBUTION IS NOT A PROPERTY, IT IS A NODE TREE: Blender wires an IES Texture node into the Strength of an Emission shader, which is why this is its own op rather than a key on bl_set_light, and the addon had never touched a light's node tree at all. Pass filepath for an external .ies, or text for the data inline; both together are refused, and a filepath that does not exist is refused BEFORE the tree is built, because a half-built tree on a light that then renders black is worse than no change. linkedToEmission is the postcondition - an IES node sitting unconnected changes nothing and looks entirely correct in the node list. Call mif_help(\"bl_set_light_ies\") first."
