@@ -1152,11 +1152,11 @@ def op_bake_to_keyframes(params):
                    "bake_to_keyframes")
     obj = get_object(take(params, "object", "name", required=True))
     sc = bpy.context.scene
-    f0 = int(take_float(params, "frameStart", default=sc.frame_start))
-    f1 = int(take_float(params, "frameEnd", default=sc.frame_end))
+    f0 = finite_int(take_float(params, "frameStart", default=sc.frame_start), "frameStart")
+    f1 = finite_int(take_float(params, "frameEnd", default=sc.frame_end), "frameEnd")
     if f1 < f0:
         raise MifOpError("frameEnd (%d) is before frameStart (%d). NOTHING was baked." % (f1, f0))
-    step = int(take_float(params, "step", default=1))
+    step = finite_int(take_float(params, "step", default=1), "step")
     if step < 1:
         raise MifOpError("step must be at least 1, got %d. NOTHING was baked." % step)
     visual = take_bool(params, "visualKeying", default=True)

@@ -523,6 +523,13 @@ def check_static_audits():
                        # by calling every create op twice. The addon had already chosen the fix four
                        # times and nothing checked that the next op used it.
                        ("audit_created_name_reported.py", ["--check"]),
+                       # AND NO BARE float()/int() ON CALLER INPUT, gated 2026-09-04 at zero.
+                       # Python's json module parses NaN and Infinity by default, float() takes
+                       # them, int() has no 32-bit bound, and Blender stores all of it - so
+                       # ray_cast answered "hit": false for a NaN origin, set_bone_pose took a NaN
+                       # quaternion, and set_frame_range raised a bare ValueError from inside
+                       # Blender. Eleven files were fixed by hand; this stops the twelfth.
+                       ("audit_unguarded_numbers.py", ["--check"]),
                        # TWO SUITES THAT NEED NO EDITOR, joined 2026-09-03. Both were found by
                        # asking which suites have NO record in suite_results.json at all - five did,
                        # and these two turned out to be static, so they had never been run for no
