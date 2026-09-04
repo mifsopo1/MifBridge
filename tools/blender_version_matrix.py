@@ -214,6 +214,11 @@ PAYLOADS = {
     # payload exercises the op everywhere instead of refusing on half the matrix. The
     # version-split keys are covered by the direct probes, which is where a refusal is the
     # expected answer rather than a gap.
+    # 8x8 AT ONE SAMPLE. The postcondition worth reaching is the PIXEL SIGNATURE: bake
+    # returns FINISHED over an untouched image when nothing is wired, which is the
+    # silent success that op is arranged around.
+    "bake_texture": {"object": "MifBakeTex", "type": "AO", "width": 8, "height": 8,
+                     "samples": 1},
     "set_material_settings": {"material": "MifMatrixMat", "blendMethod": "BLEND"},
     "set_material_texture": {"material": "MifMatrixMat", "input": "normal",
                              "file": "{TMP}/mif_still.png"},
@@ -361,6 +366,16 @@ FIXTURES = [
     ("create_lattice", {"name": "MifLattice", "resolution": [3, 3, 3],
                         "location": [40, 0, 0]}),
     ("create_texture", {"name": "MifTexture", "type": "CLOUDS"}),
+    # A BAKE TARGET. bake_texture was skipped twice on reasons that were never measured:
+    # first "slow", then "needs a material with an ACTIVE image-texture node that no op
+    # here can build". Both wrong - it CREATES its own target node and makes it active,
+    # and an 8x8 one-sample AO bake takes under 0.1s on all four builds. What it really
+    # needs is a mesh with a material SLOT and a UV layer, which is all this is.
+    ("create_primitive", {"kind": "cube", "name": "MifBakeTex", "location": [44, 0, 0]}),
+    ("create_material", {"name": "MifBakeMat"}),
+    ("set_material_slots", {"object": "MifBakeTex", "slots": ["MifBakeMat"],
+                            "allowResize": True}),
+    ("uv_unwrap", {"object": "MifBakeTex"}),
     ("create_primitive", {"kind": "grid", "name": "MifGrid", "location": [0, 4, 0]}),
     ("create_material", {"name": "MifMatrixMat"}),
     ("set_material_slots", {"object": "Cube", "slots": ["MifMatrixMat"]}),
@@ -445,12 +460,6 @@ SKIP = {
     # both places: skipped here so the sweep leaves it alone, run by TEARDOWN with a real
     # file to open.
     "open_file": "replaces the scene wholesale - run LAST of all by TEARDOWN instead",
-    # STILL SKIPPED, and the reason is a real fixture rather than the cost: a bake
-    # needs a material carrying an ACTIVE image-texture node, which no op here can
-    # build. Without one bpy.ops.object.bake returns FINISHED over an untouched
-    # image - the exact silent success that op is arranged around - so a payload
-    # that skipped the fixture would test the failure it exists to catch.
-    "bake_texture": "needs a material with an ACTIVE image texture node - no op here can build one",
     "gen_asset": "reaches an external generator over the network",
     "gen_image": "reaches an external generator over the network",
     "gen_mesh": "reaches an external generator over the network",

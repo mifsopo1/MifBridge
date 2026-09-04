@@ -13509,3 +13509,26 @@ out-of-process the way ops_gen already does with gen_status.
       refused; on 4.4 the reverse, each naming the builds that have it. blendMethod BLEND applies on
       both with a readback. The matrix payload uses blendMethod only - the one key present
       everywhere - so it exercises the op on all four builds instead of refusing on half of them.
+
+- [x] **bake_texture was skipped twice on reasons I never measured** DONE 2026-09-04
+      First "slow, and writes an image". Then, this morning, I "corrected" that to "needs a material
+      with an ACTIVE image-texture node - no op here can build one". BOTH WERE WRONG, and the second
+      was written by me while fixing this exact class of assumption elsewhere.
+
+      bake_texture CREATES its own ShaderNodeTexImage target and makes it active - that is twenty
+      lines into the handler, and reading it would have been enough. What it actually needs is a
+      mesh with a material SLOT and a UV layer. And an 8x8 one-sample AO bake takes under 0.1s on
+      every one of the four builds, so "slow" was wrong too.
+
+      Now in the sweep with its own fixture, reaching on all four builds. The postcondition it
+      exercises is the pixel signature: bpy.ops.object.bake returns FINISHED over an untouched image
+      when nothing is wired, which is the silent success that op was arranged around.
+
+      Reach is 138 of 145, and the seven left are unrunnable for reasons that hold: five gen_* ops
+      reach a network service and would submit real jobs if one happened to be running,
+      render_animation spawns a second Blender, and run_python needs an addon preference that does
+      not exist under --factory-startup. That list is now honest.
+
+      The lesson is the one the whole day kept teaching: a reason written into a SKIP is a claim,
+      and an unmeasured claim in a skip list is invisible forever, because nothing ever runs the
+      thing that would contradict it.
