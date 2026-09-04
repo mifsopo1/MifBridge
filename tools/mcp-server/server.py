@@ -5020,6 +5020,20 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_list_markers() -> dict:
+    "Every timeline marker in the Blender scene, and which CAMERA each one cuts to. Camera binding is the reason markers matter beyond being labels: a marker with a camera bound makes the scene switch to it at that frame, which is how a multi-camera edit is done in Blender and is invisible from everywhere else in this addon - bl_list_cameras reports which camera is active NOW, this reports which one each part of the timeline uses. sceneCutsBetweenCameras says outright whether the scene changes camera mid-render, in which case scene.camera only describes the frames before the first binding. No parameters. Call mif_help(\"bl_list_markers\") first."
+    return _blender("list_markers")
+
+
+@mcp.tool()
+def bl_set_marker(name: str, frame: int = None, camera: str = None, unbind_camera: bool = None,
+                  rename: str = None, delete: bool = None) -> dict:
+    "Create, move, rename, camera-bind or delete a Blender timeline marker. Binding a camera makes the scene CUT to it at that frame. Markers are matched BY NAME and Blender permits duplicates, so the response reports how many matched - acting on several silently is how a caller ends up moving the wrong one. Binding a non-camera object is refused by type rather than accepted and ignored, and passing both a camera and unbind_camera is refused as two answers to one question. Call mif_help(\"bl_set_marker\") first."
+    return _blender("set_marker", name=name, frame=frame, camera=camera,
+                    unbindCamera=unbind_camera, rename=rename, delete=delete)
+
+
+@mcp.tool()
 def bl_bake_to_keyframes(object: str, frame_start: int = None, frame_end: int = None,
                          step: int = None, visual_keying: bool = None,
                          clear_constraints: bool = None, clear_parents: bool = None,

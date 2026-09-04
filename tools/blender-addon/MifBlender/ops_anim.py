@@ -1218,7 +1218,125 @@ def op_bake_to_keyframes(params):
     }
 
 
+def _marker_row(m):
+    return {
+        "name": m.name,
+        "frame": int(m.frame),
+        # THE BOUND CAMERA is the whole reason markers matter beyond being labels: binding one
+        # makes the scene CUT to that camera at that frame, which is how a multi-camera edit is
+        # actually done in Blender and is invisible from anywhere else in this addon.
+        "camera": m.camera.name if getattr(m, "camera", None) else None,
+    }
+
+
+def op_list_markers(params):
+    """Every timeline marker, and which camera each one cuts to.
+
+    No parameters. A marker with a bound camera makes the scene switch to it at that frame, so a
+    render can use several cameras without anything else in the file recording that - list_cameras
+    reports which camera is active NOW, and this reports which one each part of the timeline uses.
+    """
+    reject_unknown(params, (), "list_markers")
+    sc = bpy.context.scene
+    rows = sorted((_marker_row(m) for m in sc.timeline_markers), key=lambda r: r["frame"])
+    bound = [r for r in rows if r["camera"]]
+    return {
+        "count": len(rows),
+        "markers": rows,
+        "boundCameraCount": len(bound),
+        # A scene with ANY bound marker cuts between cameras, and scene.camera is then only the
+        # camera for frames before the first binding. Worth saying outright.
+        "sceneCutsBetweenCameras": len(bound) > 1,
+        "sceneCamera": sc.camera.name if sc.camera else None,
+    }
+
+
+def op_set_marker(params):
+    """Create, move, rename, camera-bind or delete a timeline marker.
+
+    params:
+      name (str, required)   the marker to act on, matched by name
+      frame (int)            create it here, or MOVE it here if it already exists
+      camera (str)           bind a camera - the scene cuts to it at this marker's frame
+      unbindCamera (bool)    clear the binding
+      rename (str)           new name
+      delete (bool)          remove the marker
+
+    Markers are matched BY NAME, and Blender allows duplicates - two markers can share one. The
+    response reports how many matched, because acting on the first of several silently is how a
+    caller ends up moving the wrong one.
+    """
+    reject_unknown(params, {"name", "frame", "camera", "unbindCamera", "rename", "delete"},
+                   "set_marker")
+    sc = bpy.context.scene
+    name = take(params, "name", default=None, kind=str)
+    if not name:
+        raise MifOpError("'name' is required - which marker. NOTHING was changed.")
+    matches = [m for m in sc.timeline_markers if m.name == str(name)]
+
+    if take_bool(params, "delete", default=False):
+        if not matches:
+            raise MifOpError("no marker named '%s' to delete. NOTHING was changed." % name)
+        for m in list(matches):
+            sc.timeline_markers.remove(m)
+        remaining = [m for m in sc.timeline_markers if m.name == str(name)]
+        if remaining:
+            raise MifOpError("removed %d marker(s) named '%s' but %d remain. Do not trust this "
+                             "state." % (len(matches), name, len(remaining)))
+        return {"name": str(name), "deleted": len(matches),
+                "markers": len(sc.timeline_markers)}
+
+    frame = take_float(params, "frame", default=None)
+    cam_name = take(params, "camera", default=None, kind=str)
+    cam = None
+    if cam_name:
+        cam = bpy.data.objects.get(str(cam_name))
+        if cam is None:
+            raise MifOpError("no object named '%s' to bind. NOTHING was changed." % cam_name)
+        if cam.type != "CAMERA":
+            raise MifOpError("'%s' is a %s, not a CAMERA - only a camera can be bound to a "
+                             "marker. NOTHING was changed." % (cam_name, cam.type))
+    if cam_name and take_bool(params, "unbindCamera", default=False):
+        raise MifOpError("pass a camera to bind OR unbindCamera, not both. NOTHING was changed.")
+
+    created = False
+    if not matches:
+        if frame is None:
+            raise MifOpError("no marker named '%s' exists, so 'frame' is required to create one. "
+                             "NOTHING was changed." % name)
+        m = sc.timeline_markers.new(str(name), frame=int(frame))
+        created = True
+        matches = [m]
+    else:
+        if frame is not None:
+            for m in matches:
+                m.frame = int(frame)
+
+    for m in matches:
+        if cam is not None:
+            m.camera = cam
+        elif take_bool(params, "unbindCamera", default=False):
+            m.camera = None
+        new_name = take(params, "rename", default=None, kind=str)
+        if new_name:
+            m.name = str(new_name)
+
+    final_name = matches[0].name
+    rows = [_marker_row(m) for m in sc.timeline_markers if m.name == final_name]
+    return {
+        "name": final_name,
+        "created": created,
+        # NAMED because Blender permits duplicates and this op acts on ALL of them: a caller who
+        # thinks they moved one marker and moved three should be told, not left to discover it.
+        "matched": len(matches),
+        "markers": rows,
+        "totalMarkers": len(sc.timeline_markers),
+    }
+
+
 OPS = {
+    "list_markers": op_list_markers,
+    "set_marker": op_set_marker,
     "bake_to_keyframes": op_bake_to_keyframes,
     "set_keyframe": op_set_keyframe,
     "set_frame_range": op_set_frame_range,
