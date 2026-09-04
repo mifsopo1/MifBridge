@@ -85,7 +85,8 @@ import bpy
 from mathutils import Vector
 
 from .ops_common import (
-    MifOpError, axis_index, get_object, mesh_counts, object_info, reject_unknown, rnd,
+    MifOpError, axis_index, check_output_path, get_object, mesh_counts, object_info,
+    reject_unknown, rnd,
     select_only, selection_restore, selection_snapshot, take, take_bool,
     take_float, take_int, UU_PER_BU,
 )
@@ -380,6 +381,11 @@ def op_export_mesh(params):
 
     raw = take(params, "file", "filepath", "path", required=True, kind=str)
     path = _resolve_out_path(raw)
+    # BEFORE THE EXPORT RUNS. A control character in the path survives every guard here and then
+    # collapses inside the exporter, which comes back as a bare RuntimeError carrying a Python
+    # traceback - measured on 5.0.1 with an FBX export. Every other refusal in this addon is a
+    # sentence.
+    check_output_path(raw, path, "exported")
     _check_format(path, "export_mesh", _EXPORT_FORMATS)
 
     if os.path.exists(path) and not take_bool(params, "overwrite", "replaceExisting",

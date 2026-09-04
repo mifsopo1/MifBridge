@@ -8,6 +8,7 @@ background mode). bpy calls are therefore legal below this line.
 from __future__ import annotations
 
 import math
+import os
 
 import bpy
 
@@ -141,6 +142,35 @@ def check_axis_dict(value, key, axes, tail="NOTHING was changed."):
             % (key, "/".join(axes), value,
                ("Unrecognised: %s." % ", ".join(unknown)) if unknown
                else "It names none of them.", tail))
+
+def check_output_path(raw, resolved, verb="written"):
+    """Refuse an output path Blender cannot write, BEFORE the work that depends on it runs.
+
+    Blender does not tell you until afterwards. A path containing a NUL or a control character
+    collapses on the way to the filesystem: the render or bake or export RUNS, and then the save
+    fails with a bare RuntimeError carrying a Python traceback - a raw exception escaping the op's
+    contract, where every other refusal in this addon is a sentence.
+
+    And where the format can be written to a relative path it does not fail at all. render_still
+    silently produced a file called ".exr" - the extension alone - in the process's working
+    directory, on every run of the version matrix, and it was noticed by a stray line in
+    `git status` rather than by any check.
+
+    SHARED, because the rule is identical at every op that writes a file and the failure is not
+    local to any of them: set_render_settings STORES a path that render_still USES, so validating
+    only at the point of use let one endpoint accept an unusable value, answer ok, and hand the
+    failure to a different endpoint against a caller already told it worked.
+    """
+    if any(ord(ch) < 32 for ch in resolved):
+        raise MifOpError("the output path contains a control character, which collapses to nothing "
+                         "on the way to the filesystem - Blender does the work first and then fails "
+                         "to save, or silently writes a file named after the extension alone in the "
+                         "working directory. Got %r. NOTHING was %s." % (raw or resolved, verb))
+    if not os.path.basename(resolved.rstrip("/\\")):
+        raise MifOpError("the output path '%s' names a directory, not a file - Blender would write "
+                         "a file called after the format's extension alone. Pass a full path "
+                         "including a file name. NOTHING was %s." % (raw or resolved, verb))
+
 
 def reject_unknown(params, accepted, endpoint):
     """Fail loudly on a key we do not understand.

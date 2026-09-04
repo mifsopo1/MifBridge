@@ -30,7 +30,8 @@ import time
 
 import bpy
 
-from .ops_common import (MifOpError, reject_unknown, take, take_bool, take_float,
+from .ops_common import (MifOpError, check_output_path, reject_unknown, take, take_bool,
+                         take_float,
                          take_int)
 
 _SETTINGS_KEYS = {
@@ -95,34 +96,6 @@ def _apply_common(sc, params):
     return applied
 
 
-def _check_output_path(raw, resolved, verb):
-    """Refuse an output path Blender cannot write, BEFORE anything depends on it.
-
-    Blender does not tell you until it has finished rendering. A filePath containing a NUL or a
-    control character collapses on the way to the filesystem: the render runs, then the save fails
-    with a bare RuntimeError - a RAW EXCEPTION escaping the op's contract, in a codebase where every
-    other refusal is a sentence. And with a format Blender can write to a relative path it does not
-    fail at all: it silently wrote a file called ".exr" into the process's working directory. That
-    turned up as an untracked file in this repo, produced by the version matrix on every run, and
-    was noticed by a stray line in `git status` rather than by any check.
-
-    SHARED BY BOTH OPS THAT TAKE ONE. set_render_settings STORES the path and render_still USES it,
-    so validating only at render time meant set_render_settings accepted an unusable path, answered
-    ok, and left the failure to surface later in a different endpoint against a caller who had
-    already been told it worked. Same rule, one implementation - the shape this file keeps arriving
-    at whenever two ops answer the same question.
-    """
-    if any(ord(ch) < 32 for ch in resolved):
-        raise MifOpError("filePath contains a control character, which collapses to nothing on the "
-                         "way to the filesystem - Blender renders first and then fails to save, or "
-                         "silently writes a file named after the extension alone in the working "
-                         "directory. Got %r. NOTHING was %s." % (raw or resolved, verb))
-    if not os.path.basename(resolved.rstrip("/\\")):
-        raise MifOpError("filePath '%s' names a directory, not a file - Blender would write a file "
-                         "called after the format's extension alone. Pass a full path including a "
-                         "file name. NOTHING was %s." % (raw or resolved, verb))
-
-
 def op_set_render_settings(params):
     """Configure the render, and report what the scene ACTUALLY holds afterwards."""
     reject_unknown(params, _SETTINGS_KEYS, "set_render_settings")
@@ -141,7 +114,7 @@ def op_set_render_settings(params):
     resolved_path = None
     if out_path:
         resolved_path = bpy.path.abspath(str(out_path))
-        _check_output_path(out_path, resolved_path, "changed")
+        check_output_path(out_path, resolved_path, "changed")
 
     engine = take(params, "engine", default=None, kind=str)
     if engine:
@@ -284,7 +257,7 @@ def op_render_still(params):
         raise MifOpError("no output path is set - pass filePath, or set one with "
                          "set_render_settings. NOTHING was rendered.")
 
-    _check_output_path(out_path, target, "rendered")
+    check_output_path(out_path, target, "rendered")
 
     # The directory too: it needs the target and the filesystem, nothing from the scene, and below
     # the settings write it was refusing "NOTHING was rendered" with the render settings and the

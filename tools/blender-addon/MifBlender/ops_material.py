@@ -37,7 +37,8 @@ import os
 
 import bpy
 
-from .ops_common import (MifOpError, get_object, jsonable, reject_unknown, rnd, take,
+from .ops_common import (MifOpError, check_output_path, get_object, jsonable, reject_unknown,
+                         rnd, take,
                          take_bool, take_float, take_int,
                          select_only, selection_restore, selection_snapshot)
 
@@ -568,6 +569,11 @@ def op_bake_texture(params):
     margin = take_int(params, "margin", default=4)
     image_name = take(params, "imageName") or ("MifBake_%s_%s" % (obj.name, bake_type))
     filepath = take(params, "filepath")
+    # BEFORE THE BAKE, which is the expensive part. A control character here let the whole bake run
+    # and then failed inside image.save_render with a bare RuntimeError - the work done, the
+    # contract broken, and nothing written.
+    if filepath:
+        check_output_path(filepath, bpy.path.abspath(str(filepath)), "baked")
     keep_node = bool(take(params, "keepNode"))
 
     # A material is where the bake TARGET lives, so one is required. Created rather than refused,

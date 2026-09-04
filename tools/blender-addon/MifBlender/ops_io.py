@@ -38,7 +38,8 @@ import time
 
 import bpy
 
-from .ops_common import MifOpError, get_object, reject_unknown, take, take_bool, take_int
+from .ops_common import (MifOpError, check_output_path, get_object, reject_unknown, take,
+                         take_bool, take_int)
 
 _EXPORT_KEYS = {"file", "filepath", "path", "objects", "object", "name", "selectedOnly",
                 "applyModifiers", "frameStart", "frameEnd", "overwrite", "replaceExisting",
@@ -130,6 +131,10 @@ def op_export_scene(params):
     reject_unknown(params, _EXPORT_KEYS, "export_scene")
     raw = take(params, "file", "filepath", "path", required=True, kind=str)
     path = bpy.path.abspath(str(raw))
+    # Checked before the extension is read, so an unusable path is refused as one rather than as a
+    # missing format. The glTF exporter otherwise fails deep inside itself and the traceback ends up
+    # pasted into this op's message.
+    check_output_path(raw, path, "written")
     ext = os.path.splitext(path)[1].lower()
     if not ext:
         raise MifOpError("'%s' has no file extension, and the format is taken from it. Give one of: "
