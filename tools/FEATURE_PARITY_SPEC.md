@@ -11875,6 +11875,42 @@ re-derived it independently. Effort estimates are the vetter's, not the proposer
       THE C++ ONES NEED A REBUILD, which needs the editor closed, so they are blocked the same way
       the accepted-summaries item is. The two Blender ones are not blocked.
 
+      THE THREE BLENDER ROWS ARE ALL RESOLVED 2026-09-04. Two were already fixed and this list did
+      not know, which is the more useful half of the result:
+
+        op_set_viewport_view   ALREADY FIXED, and the source says so. It carries a comment reading
+                               "This block used to write r3d.view_location as soon as `focus` was
+                               parsed and then run FOUR more refusals below it" and computes the
+                               whole target state before committing. The review found a real defect
+                               that had already been corrected.
+        op_add_particles       ALREADY DISMISSED, in the source, by name. The instanceObject
+                               resolution is wrapped and ends "The system WAS created.", and the
+                               comment above it says: "Reported as a mutate-then-refuse; it is not
+                               one. This op never claims nothing happened."
+        _vec3                  CONFIRMED, at every call site, and worse than reported. FIXED below.
+
+      _vec3 REFUSES, so WHERE it is called decides whether its refusal is true - and all four ops
+      called it after the mutation:
+
+        create_light :157      bpy.data.lights.new, objects.new AND collection.objects.link all ran
+        create_camera :504     first, so a malformed location left a light or a camera sitting in
+                               the caller's scene under the sentence "NOTHING was created".
+        set_light :306         both sat one line BELOW a comment reading "COMMIT. Nothing below can
+        set_camera :665        refuse", immediately after data.type had been applied. So
+                               set_light({type:"SPOT", location:"bad"}) retyped the light and then
+                               denied doing anything - a false refusal under a comment promising
+                               refusals were impossible.
+
+      Every call site now parses up front, which is the shape op_set_viewport_view adopted for this
+      exact reason. _vec3 also takes a verb, because "NOTHING was created" is the wrong noun for a
+      setter: true, irrelevant, and it hides that something WAS changed.
+
+      Verified on 3.6.23 and 5.0.1, measuring the leak rather than the message: a bad location on
+      create_light and create_camera leaves the light/camera/object counts UNCHANGED where it
+      previously left an object behind; set_light with a bad location leaves the type at POINT
+      instead of flipping it to SPOT and says "NOTHING was changed"; and the happy paths still land
+      their vectors, including set_camera's lookAt resolved against the location the call ends with.
+
 - [x] **guarded_payload strips only the TOP level, and `batch` nests a whole payload** (2 hours)
       DONE 2026-09-03 by recursion, and the choice was settled by the measurement this item asked
       for rather than by preference.

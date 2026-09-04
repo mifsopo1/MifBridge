@@ -51,7 +51,23 @@ _CAMERA_KEYS = {
 }
 
 
-def _vec3(params, key, default):
+def _vec3(params, key, default, verb="created"):
+    """Parse a vector, or refuse. CALL THIS BEFORE ANYTHING EXISTS.
+
+    IT REFUSES, so where it is called decides whether the refusal is true. Until 2026-09-04 all four
+    ops here called it AFTER bpy.data.*.new and objects.link, so a malformed `location` left a light
+    or a camera sitting in the caller's scene and then said "NOTHING was created". The two setters
+    were worse: they called it below a comment reading "COMMIT. Nothing below can refuse", one line
+    after the type had been applied, so set_light({type:"SPOT", location:"bad"}) retyped the light
+    and then denied doing anything.
+
+    That sentence is what every refusal in MifBridge is held to and callers are told to trust, so a
+    false one is worse than an ordinary bug. Every call site now parses up front, which is the shape
+    op_set_viewport_view adopted for exactly this reason.
+
+    `verb` exists because "NOTHING was created" is the wrong noun for a setter - it is true and
+    irrelevant, and it hides that something WAS changed.
+    """
     v = params.get(key)
     if v is None:
         return tuple(default)
@@ -60,7 +76,8 @@ def _vec3(params, key, default):
                 float(v.get("z", default[2])))
     if isinstance(v, (list, tuple)) and len(v) == 3:
         return tuple(float(x) for x in v)
-    raise MifOpError("'%s' must be {x,y,z} or a 3-list, got %r. NOTHING was created." % (key, v))
+    raise MifOpError("'%s' must be {x,y,z} or a 3-list, got %r. NOTHING was %s."
+                     % (key, v, verb))
 
 
 def _valid_light_types():
@@ -147,6 +164,11 @@ def op_create_light(params):
     _refuse_misplaced_light_keys(params, kind, "created")
     refuse_unsupported_shadow(params, "created")
 
+    # PARSED BEFORE ANYTHING EXISTS. These used to be read after the light was created AND linked,
+    # so a malformed vector left a light in the scene and said "NOTHING was created".
+    want_loc = _vec3(params, "location", (0.0, 0.0, 0.0))
+    want_rot = _vec3(params, "rotation", (0.0, 0.0, 0.0))
+
     snap = selection_snapshot()
     try:
         data = bpy.data.lights.new(name=str(take(params, "name", default="Light", kind=str)),
@@ -154,8 +176,8 @@ def op_create_light(params):
         obj = bpy.data.objects.new(data.name, data)
         bpy.context.scene.collection.objects.link(obj)
 
-        obj.location = _vec3(params, "location", (0.0, 0.0, 0.0))
-        obj.rotation_euler = _vec3(params, "rotation", (0.0, 0.0, 0.0))
+        obj.location = want_loc
+        obj.rotation_euler = want_rot
 
         energy = take_float(params, "energy", "power", default=None)
         if energy is not None:
@@ -299,13 +321,21 @@ def op_set_light(params):
 
     before = light_readback(obj, data)
 
+    # PARSED ABOVE THE COMMIT, because _vec3 CAN refuse and this comment used to be false: a
+    # malformed location was read one line after data.type had been applied, so the op retyped the
+    # light and then answered "NOTHING was created".
+    set_loc = _vec3(params, "location", tuple(obj.location), "changed") \
+        if "location" in params else None
+    set_rot = _vec3(params, "rotation", tuple(obj.rotation_euler), "changed") \
+        if "rotation" in params else None
+
     # COMMIT. Nothing below can refuse.
     if new_type is not None:
         data.type = new_type
-    if "location" in params:
-        obj.location = _vec3(params, "location", tuple(obj.location))
-    if "rotation" in params:
-        obj.rotation_euler = _vec3(params, "rotation", tuple(obj.rotation_euler))
+    if set_loc is not None:
+        obj.location = set_loc
+    if set_rot is not None:
+        obj.rotation_euler = set_rot
     energy = take_float(params, "energy", "power", default=None)
     if energy is not None:
         data.energy = energy
@@ -495,18 +525,19 @@ def op_create_camera(params):
         raise MifOpError("orthoScale applies to an ORTHO camera and this one is %s. "
                          "NOTHING was created." % effective_type)
 
+    # PARSED BEFORE ANYTHING EXISTS, same reason as create_light above.
+    loc = _vec3(params, "location", (0.0, 0.0, 0.0))
+    want_rot = (_look_at_euler(loc, _vec3(params, "lookAt", (0.0, 0.0, 0.0)))
+                if "lookAt" in params else _vec3(params, "rotation", (0.0, 0.0, 0.0)))
+
     snap = selection_snapshot()
     try:
         data = bpy.data.cameras.new(name=str(take(params, "name", default="Camera", kind=str)))
         obj = bpy.data.objects.new(data.name, data)
         bpy.context.scene.collection.objects.link(obj)
 
-        loc = _vec3(params, "location", (0.0, 0.0, 0.0))
         obj.location = loc
-        if "lookAt" in params:
-            obj.rotation_euler = _look_at_euler(loc, _vec3(params, "lookAt", (0.0, 0.0, 0.0)))
-        else:
-            obj.rotation_euler = _vec3(params, "rotation", (0.0, 0.0, 0.0))
+        obj.rotation_euler = want_rot
 
         # Type and the two type-gated properties were validated above, before anything existed.
         if ctype:
@@ -658,16 +689,24 @@ def op_set_camera(params):
 
     before = camera_readback(obj, cam)
 
+    # PARSED ABOVE THE COMMIT, same as set_light. lookAt is resolved against the location this
+    # call will END with, not the one the object had, so the two orders cannot disagree.
+    set_loc = _vec3(params, "location", tuple(obj.location), "changed") \
+        if "location" in params else None
+    final_loc = set_loc if set_loc is not None else tuple(obj.location)
+    set_rot = None
+    if "lookAt" in params:
+        set_rot = _look_at_euler(final_loc, _vec3(params, "lookAt", (0.0, 0.0, 0.0), "changed"))
+    elif "rotation" in params:
+        set_rot = _vec3(params, "rotation", tuple(obj.rotation_euler), "changed")
+
     # COMMIT. Nothing below can refuse.
     if ctype:
         cam.type = ctype
-    if "location" in params:
-        obj.location = _vec3(params, "location", tuple(obj.location))
-    if "lookAt" in params:
-        obj.rotation_euler = _look_at_euler(tuple(obj.location),
-                                            _vec3(params, "lookAt", (0.0, 0.0, 0.0)))
-    elif "rotation" in params:
-        obj.rotation_euler = _vec3(params, "rotation", tuple(obj.rotation_euler))
+    if set_loc is not None:
+        obj.location = set_loc
+    if set_rot is not None:
+        obj.rotation_euler = set_rot
     for key, attr in (("lens", "lens"), ("focalLength", "lens"),
                       ("sensorWidth", "sensor_width"), ("sensorHeight", "sensor_height"),
                       ("orthoScale", "ortho_scale"), ("clipStart", "clip_start"),
