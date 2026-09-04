@@ -11944,7 +11944,48 @@ out-of-process the way ops_gen already does with gen_status.
                                        missing answer - a WRONG one, from an op whose purpose is
                                        verification.
 
-- [ ] **Tier 3 - motion worth rendering** (4 of 11 left)
+- [ ] **Tier 3 - motion worth rendering** (1 of 11 left)
+      DONE 2026-09-03: evaluate_at_frame, edit_fcurve, add_fcurve_modifier, create_action /
+      assign_action / list_actions, set_bone_pose, set_shape_key, bake_to_keyframes, markers with
+      camera binding, and the set_frame_range extension.
+
+      bake_to_keyframes is judged by the MOTION, not the key count - the evaluated matrix is
+      sampled across the range before and after, because producing the right NUMBER of keys while
+      losing the motion is the normal failure when visual keying is off. The probe frames are
+      spread across the range rather than taken from one end, since a bake that loses the motion
+      still matches at the first frame where nothing has moved yet.
+
+      set_frame_range also fixed a live bug found in the Tier 0 sweep and not folded in at the
+      time: durationSeconds divided by fps alone, ignoring fps_base, so every NTSC rate was
+      reported 0.1% SHORT - a frame and a half over an hour. fps_base could not be set either, so
+      29.97 was unreachable and a caller asking for 30 on an NTSC scene silently got 29.97.
+
+      STILL OPEN: a generic server-level batch. Left deliberately - it is an architecture decision
+      that interacts with the 150s job ceiling and the single serialised socket, not an op to bolt
+      on at the end of a long stretch.
+
+- [x] **Tier 4 - procedural** (8 ops) DONE 2026-09-03
+      Constraints (add/list/remove, one module for objects AND bones), drivers (add/remove),
+      custom properties (set/list), NLA strips.
+
+      THE PATTERN ACROSS ALL FOUR IS THE POINT, more than the ops. An invalid constraint, a dead
+      driver and a shadowed NLA stack ALL look perfectly correct in the data and do nothing:
+
+        a constraint whose target was deleted  stays on the stack with type, influence and target
+                                               name all reading fine. is_valid is the only tell and
+                                               Blender surfaces it as a red field and nowhere else.
+        a driver with a broken expression      evaluates to ZERO. No error, no warning.
+        an NLA stack under an active action    contributes nothing, because animation_data.action
+                                               is evaluated ON TOP of the whole stack.
+
+      So each op reports a MEASUREMENT that separates working from inert - isValid, evaluates,
+      activeActionShadowsNla - and add_constraint measures the evaluated matrix moving, because a
+      constraint does not touch obj.matrix_world and reading the base object would report every
+      constraint as having done nothing.
+
+      TWO OPS FEWER THAN THE REVIEW PROPOSED, deliberately. It asked for list_drivers and
+      list_nla_tracks; list_animation_data already reports both with validity and frame ranges, and
+      a second reader for the same data is the mistake this repo recorded four times the same day.
       DONE 2026-09-03: evaluate_at_frame, edit_fcurve, add_fcurve_modifier, create_action /
       assign_action / list_actions, set_bone_pose, set_shape_key.
 
@@ -11993,15 +12034,6 @@ out-of-process the way ops_gen already does with gen_status.
       postcondition must sample the evaluated world matrix at K frames before baking, then again
       with the sources muted, and report max position/rotation error - because producing the right
       NUMBER of keys while losing the motion is the normal failure when visual keying is off.
-
-- [ ] **Tier 4 - procedural** (8 ops)
-      constraints and drivers, each as one module, plus set_custom_property and NLA strips.
-      Constraints are how camera work is actually done - a Track To on an empty is THE standard rig
-      and stays correct as the target moves, which a one-shot aim_object cannot. Drivers are the one
-      animation feature that fails completely silently.
-      MEASURE THROUGH evaluated_get(depsgraph).matrix_world, never the base object: a constraint
-      does not touch obj.matrix_world, so reading the base object reports every constraint as having
-      done nothing, and reading back the values you wrote is a proxy that cannot fail.
 
 - [ ] **Tier 5 - craft depth** (5 ops)
       set_light_shadow (engine-specific half only), set_light_ies plus gobo/cookie projection which
