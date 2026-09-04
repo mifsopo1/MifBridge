@@ -15336,7 +15336,29 @@ out-of-process the way ops_gen already does with gen_status.
       shows target:null with the constraint not counted as invalid. Needs reading before it is
       called a defect: the fixture may not be arranging what the check believes.
 
-- [ ] **audit_blender_postconditions independently re-verifies 7 of 93 write ops**
+- [x] **audit_blender_postconditions independently re-verifies 7 of 93 write ops** DONE 2026-09-04
+      It ended on "all 7 write ops' claimed effects independently re-verified", which reads as the
+      whole surface. It now prints REACH: 12 of roughly 122, labelled as an estimate because the
+      addon has no authoritative list of write ops and publishing a heuristic unlabelled would
+      trade one confident wrong number for another.
+
+      THE TYPED 7 WAS ALREADY WRONG BY ONE. Both the pass line and the failure line carried a
+      literal 7; the audit was verifying 8, because import_mesh's postcondition is checked and
+      counted while the summary was written when it was not. Derived now - the same
+      stale-denominator bug as read_purity's "exercised: %d/5" this morning, in the same week, in
+      the file next to it.
+
+      Four ops added, each with a read-back probed by hand first: transform_object ->
+      object_info.locationBU, add_modifier -> list_modifiers, add_shape_key -> list_shape_keys,
+      rename_object -> scene_info. rename goes last and hands its new name to delete_object, so a
+      rename that did not take fails twice - a read answering once is a weaker statement than the
+      rest of the pipeline still being able to find the object.
+
+      All four shown FAILING before being believed, by sending a value different from the one
+      asserted. The chain propagated exactly as designed: breaking rename also broke delete.
+
+      add_modifier is checked with `modifier`, not `name` - in that op `name` aliases the OBJECT,
+      and asking with the wrong one is what surfaced take()'s silent alias drop the same day.
       It ends on "all 7 write ops' claimed effects independently re-verified", which reads as the
       whole surface and is 7.5% of it. No REACH line, in a repo whose rule is that every audit
       prints how much of its surface it can judge - the same defect as read_purity's 4 of 28,

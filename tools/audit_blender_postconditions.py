@@ -42,8 +42,38 @@ def _find_fbx():
     return candidates[0] if candidates else None
 
 
+VERIFIED = []
+
+
 def _ok(step, detail=""):
+    VERIFIED.append(step)
     print("  OK    %-16s %s" % (step, detail))
+
+
+# Names shaped like reads. Used ONLY to size the write surface for the reach line - the audit does
+# not decide what to check from this.
+_READ_PREFIXES = ("list_", "describe_", "get_")
+_READ_SUFFIXES = ("_info",)
+
+
+def _write_surface():
+    """(verified, roughly-how-many-write-ops, whether the count is trustworthy).
+
+    A HEURISTIC, AND IT SAYS SO WHEN IT PRINTS. The addon has no authoritative list of write ops,
+    so this counts the ops whose names are not read-shaped and not the handful that neither read
+    nor write the scene. Publishing a heuristic without labelling it would trade one confident
+    wrong number for another, which is the whole failure this line exists to end.
+    """
+    try:
+        ops = _call("ping", {}, timeout=5.0).get("ops") or []
+    except Exception:                                               # noqa: BLE001
+        return len(VERIFIED), None, False
+    if not ops:
+        return len(VERIFIED), None, False
+    writes = [o for o in ops
+              if not o.startswith(_READ_PREFIXES) and not o.endswith(_READ_SUFFIXES)
+              and o not in ("ping",)]
+    return len(VERIFIED), len(writes), True
 
 
 def _fail(findings, step, detail):
@@ -218,6 +248,70 @@ def main():
               % (r.get("ok"), tris_before, tris_after))
 
     # ---- delete_object ------------------------------------------------------------------------
+    # ---- transform_object ----------------------------------------------------------------------
+    # locationBU is the object's own transform read back off the datablock, not an echo of what was
+    # sent - object_info cannot know what the caller asked for.
+    want_loc = [1.0, 2.0, 3.0]
+    r = _call("transform_object", {"object": obj, "location": want_loc})
+    oi = _call("object_info", {"object": obj}).get("object") or {}
+    got = oi.get("locationBU")
+    if r.get("ok") and got and all(abs(a - b) < 1e-6 for a, b in zip(got, want_loc)):
+        _ok("transform_object", "object_info independently confirms locationBU == %r" % want_loc)
+    elif not r.get("ok"):
+        _refused(findings, "transform_object", r)
+    else:
+        _fail(findings, "transform_object", "object_info.locationBU:%r (want %r)"
+              % (got, want_loc))
+
+    # ---- add_modifier --------------------------------------------------------------------------
+    # THE MODIFIER'S NAME IS `modifier`, NOT `name` - `name` aliases the OBJECT here. Asking with
+    # the wrong one is what surfaced take()'s silent alias drop on 2026-09-04; getting it right is
+    # what makes this a postcondition rather than a second copy of that bug.
+    mod_name = "MifAuditSub"
+    r = _call("add_modifier", {"object": obj, "type": "SUBSURF", "modifier": mod_name})
+    lm = _call("list_modifiers", {"object": obj})
+    stack = [m.get("name") for m in (lm.get("modifiers") or [])]
+    if r.get("ok") and mod_name in stack:
+        _ok("add_modifier", "list_modifiers independently confirms '%s' is on the stack %r"
+            % (mod_name, stack))
+    elif not r.get("ok"):
+        _refused(findings, "add_modifier", r)
+    else:
+        _fail(findings, "add_modifier", "list_modifiers stack:%r (want %r present)"
+              % (stack, mod_name))
+
+    # ---- add_shape_key -------------------------------------------------------------------------
+    key_name = "MifAuditKey"
+    r = _call("add_shape_key", {"object": obj, "name": key_name})
+    sk = _call("list_shape_keys", {"object": obj})
+    keys = [k.get("name") for k in (sk.get("shapeKeys") or [])]
+    if r.get("ok") and key_name in keys:
+        _ok("add_shape_key", "list_shape_keys independently confirms '%s' among %r"
+            % (key_name, keys))
+    elif not r.get("ok"):
+        _refused(findings, "add_shape_key", r)
+    else:
+        _fail(findings, "add_shape_key", "list_shape_keys:%r (want %r present)"
+              % (keys, key_name))
+
+    # ---- rename_object -------------------------------------------------------------------------
+    # PROVED BY THE NEXT OP, not only by a read. delete_object below is given the NEW name, so a
+    # rename that did not take fails there too - a read answering once is a weaker statement than
+    # the rest of the pipeline being able to find the object again.
+    new_name = "MifAuditRenamed"
+    r = _call("rename_object", {"object": obj, "newName": new_name})
+    si = _call("scene_info", {})
+    names = [o["name"] for o in (si.get("objects") or [])]
+    if r.get("ok") and new_name in names and obj not in names:
+        _ok("rename_object", "scene_info independently confirms '%s' -> '%s' and the old name is "
+                             "gone" % (obj, new_name))
+        obj = new_name
+    elif not r.get("ok"):
+        _refused(findings, "rename_object", r)
+    else:
+        _fail(findings, "rename_object", "scene_info.objects:%r (want %r present, %r absent)"
+              % (names, new_name, obj))
+
     r = _call("delete_object", {"object": obj})
     si = _call("scene_info", {})
     names = [o["name"] for o in (si.get("objects") or [])]
@@ -228,13 +322,27 @@ def main():
               % (r.get("ok"), obj, names))
 
     print("")
+    checked, surface, sized = _write_surface()
     if findings:
-        print("%d of 7 postconditions FAILED - the op's own ok:true was not backed by reality:" %
-              len(findings))
+        # DERIVED. Both this line and the pass line below carried a literal 7, so an eighth check
+        # would have left both of them lying - the same stale denominator read_purity's
+        # "exercised: %d/5" carried until this morning.
+        print("%d of %d postconditions FAILED - the op's own ok:true was not backed by reality:"
+              % (len(findings), checked + len(findings)))
         for step, detail in findings:
             print("  %-16s %s" % (step, detail))
         return 1
-    print("OK  all 7 write ops' claimed effects independently re-verified via a separate call")
+    print("OK  %d write op(s) independently re-verified via a separate call: %s"
+          % (checked, ", ".join(VERIFIED)))
+    if sized:
+        # REACH, NOT GREEN. This line is the point of the change: "all 7" read as the whole write
+        # surface and is a fourteenth of it. Every op not named above is UNJUDGED here, which is a
+        # different thing from clean.
+        print("REACH - roughly %d op(s) in this addon write something; %d are checked here (%d%%)."
+              % (surface, checked, round(100.0 * checked / surface) if surface else 0))
+        print("        The %d is a name-shaped estimate, not an authoritative list - the addon has"
+              % surface)
+        print("        no such list. Everything not named above is UNJUDGED, not clean.")
     return 0
 
 
