@@ -202,6 +202,10 @@ PAYLOADS = {
     "assign_action": {"object": "MifAnim", "action": "MifMatrixAction"},
     "set_frame_range": {"start": 1, "end": 10},
     "create_action": {"name": "MifMatrixAction"},
+    # MifMatrixAction is created at fixture time and assigned to MifAnim, so it HAS a user
+    # here - this exercises the protect path rather than the warning path. The warning is
+    # covered by the direct probes, where an unprotected action is the point.
+    "set_action": {"action": "MifMatrixAction", "fakeUser": True},
     "list_actions": {},
     "set_marker": {"name": "MifMark2", "frame": 7},
     "list_markers": {},

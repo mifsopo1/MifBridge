@@ -1780,6 +1780,78 @@ def op_move_keyframes(params):
     }
 
 
+
+_SETACTION_KEYS = {"action", "name", "fakeUser", "rename"}
+
+
+def op_set_action(params):
+    """Protect an action from being destroyed by the next save, or rename it.
+
+    THE SHARPEST ASYMMETRY IN THIS FILE. _action_row computes survivesSave and its own comment says
+    what it means: "An action with no users and no fake user is DELETED the next time the file is
+    saved - silently, and by the save succeeding." list_actions reports it for every action, and
+    assign_action reports previousSurvivesSave for the action it just displaced - which is precisely
+    the moment one drops to zero users.
+
+    So the addon told you your work was about to be destroyed, in two places, and there was nothing
+    you could do about it: use_fake_user was writable only by create_action, at birth. An action
+    imported with a mesh, or displaced by assign_action, could not be protected at all.
+
+    A FAKE USER IS THE WHOLE MECHANISM. Blender purges datablocks with no users on save; a fake user
+    is a deliberate reference that says "keep this even though nothing points at it". It is the same
+    purge save_file reports as purgedOrphans, seen from the side that can prevent it.
+
+    params:
+      action / name (str)   which action. Required.
+      fakeUser (bool)       keep it through a save even with no users
+      rename (str)          a new name. Blender suffixes a clash rather than refusing, so the name
+                            you get is reported and may not be the one you asked for.
+    """
+    reject_unknown(params, _SETACTION_KEYS, "set_action")
+    want = take(params, "action", "name", required=True, kind=str)
+    act = bpy.data.actions.get(str(want))
+    if act is None:
+        have = sorted(a.name for a in bpy.data.actions)[:25]
+        raise MifOpError("no action named '%s'. This file has: %s. NOTHING was changed."
+                         % (want, ", ".join(have) if have else "(none)"))
+
+    if params.get("fakeUser") is None and params.get("rename") is None:
+        raise MifOpError("nothing to do - pass fakeUser, rename, or both. NOTHING was changed.")
+
+    before = _action_row(act)
+    if params.get("fakeUser") is not None:
+        act.use_fake_user = take_bool(params, "fakeUser", default=True)
+
+    renamed_to = None
+    new_name = take(params, "rename", default=None, kind=str)
+    if new_name is not None:
+        asked = str(new_name)
+        if len(asked) > 63:
+            raise MifOpError("the name is %d characters and Blender truncates at 63, so the action "
+                             "you get would not be the one you named. The fake-user change, if any, "
+                             "stands." % len(asked))
+        act.name = asked
+        renamed_to = act.name
+
+    after = _action_row(act)
+    return {
+        "ok": True,
+        "action": act.name,
+        "before": before,
+        "after": after,
+        "renamedTo": renamed_to,
+        # BLENDER SUFFIXES A CLASHING NAME rather than refusing, so anything looking this up by the
+        # name it asked for would find the wrong action - or nothing.
+        "nameWasSuffixed": bool(renamed_to and renamed_to != str(new_name)),
+        "changedFields": sorted(k for k in set(before) | set(after)
+                                if before.get(k) != after.get(k)),
+        "note": ("this action has no users and no fake user, so the next save DELETES it - silently, "
+                 "and by the save succeeding. Pass fakeUser:true to keep it."
+                 if not after["survivesSave"] else
+                 ("it had no users and would have been purged by the next save; the fake user now "
+                  "keeps it." if not before["survivesSave"] else None)),
+    }
+
 OPS = {
     "move_keyframes": op_move_keyframes,
     "add_nla_strip": op_add_nla_strip,
@@ -1798,5 +1870,6 @@ OPS = {
     "add_fcurve_modifier": op_add_fcurve_modifier,
     "list_actions": op_list_actions,
     "create_action": op_create_action,
+    "set_action": op_set_action,
     "assign_action": op_assign_action,
 }

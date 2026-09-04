@@ -13751,3 +13751,37 @@ out-of-process the way ops_gen already does with gen_status.
       audit_message_endpoints caught a bare op name in the docstring for the THIRD time today, after
       describe_material and set_light. The slip is consistent - addon-op names written while
       composing MCP-tool prose - and the audit has caught every one.
+
+- [x] **the addon warned that an action was about to be destroyed and could not prevent it** DONE 2026-09-04
+      The sharpest read/write asymmetry found today, and the animation family's one real gap.
+      _action_row computes survivesSave, and its own comment says what that means: "An action with
+      no users and no fake user is DELETED the next time the file is saved - silently, and by the
+      save succeeding." list_actions reports it for every action. assign_action reports
+      previousSurvivesSave for the action it just displaced - which is EXACTLY the moment one drops
+      to zero users.
+
+      So the addon said, in two places, that a piece of work was about to be destroyed, and offered
+      no way to act on it: use_fake_user was writable only by create_action, at birth. An action
+      that arrived with an imported mesh, or was displaced by an assignment, could not be protected
+      at all.
+
+      set_action sets the fake user on an action that already exists and reports survivesSave before
+      and after, so the warning and the remedy are the same vocabulary. It renames too, reporting
+      the name actually obtained, because Blender suffixes a clash rather than refusing and anything
+      looking the action up by the name it asked for would then miss.
+
+      Verified on 3.6.23 and 5.0.1: an unprotected action warns that the next save deletes it;
+      protecting it moves survivesSave False to True with useFakeUser and users both in
+      changedFields (Blender counts the fake user as a user); rename works; and two refusals fire.
+
+- [ ] **an NLA track's mute is reported and not writable**
+      Found in the same pass and left rather than bundled. list_keyframes reports mute per NLA
+      track; nothing writes it, and a muted track keeps its strips and does nothing - the same
+      reads-back-perfectly-does-nothing shape as an unprotected action. It needs track addressing
+      that no op currently has (add_nla_strip creates tracks and does not name them for later), so
+      it is a small design decision rather than a parameter, and worth doing deliberately.
+
+- [ ] **modelling is the last family in the spec's list that has not had this pass**
+      materials, UV, rigging, geometry nodes, lighting, cameras, physics, particles, world,
+      compositing, rendering and animation have all been diffed read-side against write-side today.
+      ops_mesh.py has not, and it is the largest module in the addon.

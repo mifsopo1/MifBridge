@@ -5262,6 +5262,12 @@ def bl_list_actions(name_contains: str = None) -> dict:
 
 
 @mcp.tool()
+def bl_set_action(action: str, fake_user: bool = None, rename: str = None) -> dict:
+    "Protect a Blender action from being destroyed by the next save, or rename it. THE ADDON ALREADY TOLD YOU THIS WAS COMING AND COULD NOT HELP: bl_list_actions reports survivesSave for every action, and bl_assign_action reports previousSurvivesSave for the action it just displaced - which is exactly the moment one drops to zero users. An action with no users and no fake user is DELETED the next time the file is saved, silently, BY THE SAVE SUCCEEDING; it is the same purge bl_save_file reports as purgedOrphans, seen from the side that can prevent it. use_fake_user was writable only by bl_create_action, at birth, so an action that arrived with an imported mesh or was displaced by an assignment could not be protected at all. A fake user is a deliberate reference meaning \"keep this even though nothing points at it\". Renaming reports the name you actually got, because Blender suffixes a clash rather than refusing and anything looking the action up by the name it asked for would then miss."
+    return _blender("set_action", action=action, fakeUser=fake_user, rename=rename)
+
+
+@mcp.tool()
 def bl_create_action(name: str, object: str = None, fake_user: bool = None) -> dict:
     "Create a NAMED Blender action, optionally assigning it. Naming is the entire point: an object gets whatever Blender auto-named its action, and that string is what glTF and FBX write into the engine as the clip name - so every clip exported through this bridge previously arrived downstream named after nothing. fake_user defaults TRUE, because a freshly created unassigned action has zero users by definition and would be deleted on the next save; the safe default is the one that does not lose work. The response reports nameWasTaken, since Blender uniquifies silently and a caller looking up the name they asked for would find a different action or none. Call mif_help(\"bl_create_action\") first."
     return _blender("create_action", name=name, object=object, fakeUser=fake_user)
