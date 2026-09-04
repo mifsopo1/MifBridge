@@ -14049,3 +14049,37 @@ out-of-process the way ops_gen already does with gen_status.
       mutation". _vec3 in ops_lightcam (existing code), set_material_texture (mine, hours old) and
       set_physics_world (mine, hours old). Knowing the rule did not stop me breaking it twice while
       fixing it once, which is the argument for the leak-measuring probe rather than for care.
+
+- [x] **the leak probe is general now, and it found two defects on its first run** DONE 2026-09-04
+      Three defects of one shape were found by hand today - _vec3, set_material_texture,
+      set_physics_world - and I hand-wrote a probe for each. The third made the case: knowing the
+      rule did not stop me writing it twice in one session while fixing it once. Care does not
+      scale; a count does.
+
+      HOW IT PROVOKES A REFUSAL. Take each op's own working payload and corrupt ONE value at a time
+      to a sentinel almost nothing accepts, then compare fifteen bpy.data collections before and
+      after. That reaches refusals DEEP in a handler - past reject_unknown at the door, which is the
+      only place the normal sweep ever gets to. If the sentinel is accepted the call succeeds and
+      the case is skipped; only an actual refusal is judged.
+
+      This is the automation the read/write lens could NOT support, and the difference is worth
+      naming: "did this refusal leave something behind" has a mechanical answer, and "is this
+      response key a setting somebody forgot" needs to know what a field means.
+
+      TWO FOUND, both real, no false positives, on all four builds, costing 0.2s of the run:
+
+        create_collection   the postcondition tested the REQUESTED name against the scene tree, not
+                            coll.name. Blender sanitises a name - control characters stripped, 63
+                            characters truncated - so for every adjusted name the collection WAS
+                            linked and reachable, the check reported a false failure, and that path
+                            left it in the file. The colorTag path two blocks up always cleaned up
+                            and this one never did. Now uses coll.name, removes on failure, and
+                            reports requestedName and nameWasAdjusted.
+        add_particles       a typo'd count refused with the system already on the mesh.
+
+      AND THE FIX FOR add_particles WAS WRONG THE FIRST TIME, caught by re-running the pass.
+      Removing the modifier takes the system off the object and leaves bpy.data.particles holding an
+      orphaned ParticleSettings - a different collection with a different lifetime. My hand probes
+      would have stopped at "the system is gone", because that is the part you think to look at.
+      set_particles deliberately does NOT clean up this way: it edits a system that already existed,
+      so removing one on a refusal would destroy something the caller made earlier.

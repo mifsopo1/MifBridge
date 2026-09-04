@@ -177,14 +177,30 @@ def op_create_collection(params):
     # THE POSTCONDITION IS REACHABILITY, not existence. `bpy.data.collections.get(name)` would be
     # true for an orphan too, which is exactly the state this op exists to avoid producing by
     # accident, so it is measured by walking the scene tree instead.
-    in_scene = name in _in_scene_names()
+    # THE NAME BLENDER GAVE IT, not the one that was asked for. Blender sanitises a name -
+    # control characters removed, 63-character truncation - so the two differ more often than
+    # "a clash got a .001 suffix". Checking the REQUESTED name made this postcondition report
+    # a false failure for every adjusted name: the collection was linked and reachable, under
+    # a slightly different string, and the op refused anyway AND left it behind. Found by the
+    # matrix leak pass on its first run, not by reading.
+    made_name = coll.name
+    in_scene = made_name in _in_scene_names()
     if link and not in_scene:
+        # AND IT IS REMOVED. This refusal used to leave the collection in the file while
+        # saying it had failed - the colorTag path above always cleaned up and this one did
+        # not, which is what per-site cleanup looks like when a second site appears.
+        bpy.data.collections.remove(coll)
         raise MifOpError("created '%s' and linked it under '%s', but it is NOT reachable from the "
-                         "scene collection afterwards - it would be invisible and render nothing."
-                         % (name, parent.name))
+                         "scene collection afterwards - it would be invisible and render nothing. "
+                         "It was removed again, NOTHING was changed."
+                         % (made_name, parent.name))
     return {
         "ok": True,
-        "collection": name,
+        "collection": made_name,
+        "requestedName": name,
+        # BLENDER ADJUSTS A NAME SILENTLY. Anything looking this collection up by the string
+        # it asked for needs to know it will not find it.
+        "nameWasAdjusted": made_name != name,
         "parent": parent.name if link else None,
         "inScene": in_scene,
         "objectCount": len(coll.objects),

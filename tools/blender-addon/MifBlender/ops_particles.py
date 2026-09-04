@@ -284,7 +284,35 @@ def op_add_particles(params):
     mod = obj.modifiers.new(name=str(take(params, "systemName", default="ParticleSystem",
                                           kind=str)), type="PARTICLE_SYSTEM")
     psys = obj.particle_systems[-1]
-    _apply_particle_settings(obj, psys, params, kind)
+    # THE SETTINGS DATABLOCK IS CAPTURED SEPARATELY. modifiers.remove() takes the system off
+    # the object and leaves bpy.data.particles holding an orphaned ParticleSettings - which
+    # is a different collection and a different lifetime. The leak pass caught this on the
+    # SECOND run, after the first fix removed only the modifier: my hand probes would have
+    # stopped at "the system is gone", because that is the part you think to look at.
+    _settings = psys.settings
+    # THE SYSTEM GOES IF THE SETTINGS REFUSE. The writer validates deep - enums against the
+    # live RNA, per-type keys, instanceObject resolution - and every one of those refusals
+    # used to fire with the system already on the mesh. Its messages say "The system WAS
+    # created", which was honest but is not what a caller wants: a typo'd count left a
+    # particle system behind on their object. Found by the matrix leak pass, which corrupts
+    # one payload value at a time and compares bpy.data - the same three-defect shape it was
+    # built for. set_particles does NOT do this: it edits a system that already existed, so
+    # removing one on a refusal would destroy something the caller made earlier.
+    try:
+        _apply_particle_settings(obj, psys, params, kind)
+    except MifOpError as exc:
+        try:
+            obj.modifiers.remove(mod)
+        except Exception:  # noqa: BLE001 - cleanup must not mask the real refusal
+            pass
+        try:
+            if _settings is not None and _settings.users == 0:
+                bpy.data.particles.remove(_settings)
+        except Exception:  # noqa: BLE001
+            pass
+        raise MifOpError(str(exc).replace("The system WAS created.",
+                                          "The system was removed again, NOTHING was "
+                                          "created."))
     st = psys.settings
 
     return _particle_row(obj, psys)

@@ -627,6 +627,60 @@ for name in sorted(table):
     except Exception as exc:
         out["results"][name] = {"status": "RAISED",
                                 "detail": "%%s: %%s" %% (type(exc).__name__, str(exc)[:220])}
+# LEAK PASS. Does a refusal leave anything behind?
+#
+# THE RULE IS "a refusal fires before a mutation", and this measures it instead of trusting it.
+# Three violations were found by hand on 2026-09-04 - _vec3 in ops_lightcam, set_material_texture
+# and set_physics_world - and the last two were written the SAME DAY as the fix for the first. Care
+# demonstrably does not scale; a count does.
+#
+# HOW A REFUSAL IS PROVOKED: take the op's own working payload and corrupt ONE value at a time to a
+# sentinel that almost nothing accepts. That reaches refusals DEEP in a handler - past
+# reject_unknown at the door, which is the only place the normal sweep ever gets to. If the sentinel
+# happens to be accepted the call succeeds and the case is skipped; only an actual refusal is judged.
+#
+# WHAT IS COUNTED is every bpy.data collection that an op could plausibly add to. A refusal that
+# changes any of them left something in the caller's file after saying it had not.
+_LEAK_SENTINEL = "\x00mif-not-a-value"
+_LEAK_COLLECTIONS = ("objects", "meshes", "materials", "images", "lights", "cameras", "actions",
+                     "node_groups", "textures", "lattices", "collections", "armatures", "curves",
+                     "particles", "worlds")
+
+
+def _leak_counts():
+    out = {}
+    for cname in _LEAK_COLLECTIONS:
+        coll = getattr(bpy.data, cname, None)
+        if coll is not None:
+            out[cname] = len(coll)
+    return out
+
+
+out["leaks"] = []
+for name in sorted(table):
+    if (only and name not in only) or name in skip:
+        continue
+    base = payloads.get(name)
+    if not base:
+        continue
+    for key in sorted(base):
+        variant = dict(base)
+        variant[key] = _LEAK_SENTINEL
+        before = _leak_counts()
+        try:
+            table[name](variant)
+            continue                      # sentinel accepted - nothing to judge
+        except MifOpError as exc:
+            after = _leak_counts()
+            if after != before:
+                grew = dict((k, [before[k], after[k]]) for k in after if before[k] != after[k])
+                out["leaks"].append({"op": name, "key": key, "left": grew,
+                                     "detail": str(exc)[:150]})
+        except Exception:
+            # A RAW exception here is already reported by the sweep above for the good payload, and
+            # a bad-payload raw exception is a separate question this pass does not answer.
+            continue
+
 # TEARDOWN, after every op has been swept. Recorded in results like anything else, so a delete that
 # raises is a finding rather than a quiet end to the run.
 teardown = _sub(json.loads(r"""%(teardown)s"""))
@@ -897,6 +951,24 @@ def main():
         print("no NEW cross-build value drift (%d known difference(s) accepted in %s)."
               % (len(value_diffs), os.path.basename(VALUE_BASELINE)))
 
+    leaks = []
+    for r in reports:
+        for row in r.get("leaks", []) or []:
+            leaks.append((r.get("version", "?"), row))
+    if leaks:
+        print("")
+        print("REFUSALS THAT LEFT SOMETHING BEHIND - %d. The op refused, and bpy.data changed:"
+              % len(leaks))
+        for v, row in leaks[:24]:
+            print("  %-12s %-24s bad %-18s left %s"
+                  % (v, row["op"], row["key"],
+                     ", ".join("%s %d->%d" % (k, a, b) for k, (a, b) in
+                               sorted(row["left"].items()))))
+        print("")
+        print("  Every refusal in this addon is held to \"NOTHING was changed\", and a caller is")
+        print("  told to trust it. Move the parse above the first write - see set_light_influence")
+        print("  or set_physics_world for the shape.")
+
     print("")
     print("REACH - how far the calls actually got, which is not the same as the findings above:")
     for r in reports:
@@ -930,7 +1002,7 @@ def main():
     print("A refusal is NOT a finding - an op declining because the default scene has no armature")
     print("is the op working. Raw exceptions and divergences are the findings; REACH is how much of")
     print("the table those findings actually cover.")
-    return 1 if (raised or fatal or suspect or new_diffs or leaked) else 0
+    return 1 if (raised or fatal or suspect or new_diffs or leaked or leaks) else 0
 
 
 if __name__ == "__main__":
