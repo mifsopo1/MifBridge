@@ -13294,7 +13294,7 @@ out-of-process the way ops_gen already does with gen_status.
       and offset, a MASK takes a real group, and three refusals fire - bogus group, missing object,
       invalid enum.
 
-- [ ] **I reproduced the counts-not-positions bug in the helper I wrote to fix it**
+- [x] **I reproduced the counts-not-positions bug in the helper I wrote to fix it** DONE 2026-09-04
       _evaluated_counts, written for add_modifier's postcondition, compared vertex/edge/face counts.
       One hour earlier apply_modifier had been fixed for exactly that: a deforming modifier moves
       vertices and changes no count. So a SHRINKWRAP pointed at a real target reported
@@ -13305,3 +13305,15 @@ out-of-process the way ops_gen already does with gen_status.
       next function - which is the argument for the check living in one place instead of being
       remembered. Worth a sweep for other count-only comparisons standing in for "did anything
       change".
+
+      SWEPT, as the entry above asked. Only one other count comparison stood in for "did anything
+      change": remove_modifier's meshUnchanged, and it turned out to be a different fault. It
+      compares mesh_counts(obj) before and after, and modifiers.remove never touches obj.data - so
+      it compares the original mesh against itself and CANNOT report anything but True. A field that
+      cannot be wrong, restating the note beside it rather than being evidence for it.
+
+      Kept, with a comment saying it is true by construction, and joined by the field that can be
+      wrong: evaluatedChanged, from the same fingerprinted helper. Removing a working SUBSURF
+      reports 26 -> 8 evaluated vertices and evaluatedChanged:true; removing an inert SHRINKWRAP
+      reports 8 -> 8 and false - which tells a caller who removed something hoping to fix a problem
+      that it was contributing nothing in the first place. Verified on 4.4 with both cases.

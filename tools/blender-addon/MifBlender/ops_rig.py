@@ -873,6 +873,8 @@ def op_remove_modifier(params):
 
     before = [m.name for m in obj.modifiers]
     counts_before = mesh_counts(obj)
+    # WHAT THE STACK PRODUCED, which is the half that can actually change here.
+    evaluated_before = _evaluated_counts(obj)
     obj.modifiers.remove(mod)
     after = [m.name for m in obj.modifiers]
 
@@ -880,13 +882,26 @@ def op_remove_modifier(params):
     if mod_name in after:
         raise MifOpError("Blender reported no error but '%s' is still on the stack." % mod_name)
 
+    evaluated_after = _evaluated_counts(obj)
+
     return {
         "object": obj.name,
         "modifier": mod_name,
         "removed": True,
         "stackBefore": before,
         "stackAfter": after,
+        # TRUE BY CONSTRUCTION, and kept only because it is documented. modifiers.remove
+        # never touches obj.data, so this compares the original mesh against itself and
+        # cannot report anything else - it is a restatement of the note below, not
+        # evidence. The field that can actually be wrong is the evaluated one.
         "meshUnchanged": mesh_counts(obj) == counts_before,
+        "evaluatedBefore": evaluated_before,
+        "evaluatedAfter": evaluated_after,
+        # WHAT THE REMOVAL ACTUALLY DID. The mesh data is untouched either way; what moved
+        # is what RENDERS and what export_mesh writes. False here means the modifier was
+        # contributing nothing - it was inert, or already disabled - which is worth knowing
+        # before concluding that removing it fixed something.
+        "evaluatedChanged": bool(evaluated_before) and evaluated_before != evaluated_after,
         "note": ("removed WITHOUT applying - the mesh data is untouched, and whatever this modifier "
                  "was contributing to the viewport and to export_mesh is gone."),
     }
