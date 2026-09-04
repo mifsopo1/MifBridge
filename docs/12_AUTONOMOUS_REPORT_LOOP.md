@@ -235,16 +235,99 @@ Three things hold that down, and none of them is "the model will notice":
 
 ### Making it survive a reboot
 
-The watcher is an ordinary process, so it dies with whatever started it. To have it start at logon:
+The watcher is an ordinary process, so it dies with whatever started it. It runs from a Windows
+scheduled task, `MifBridge report watcher`.
+
+**This section used to give a `schtasks` line that did not work, and it is worth reading before
+copying anything below.** It said:
 
 ```
-schtasks /create /tn "MifBridge report watch" /sc onlogon /rl limited ^
-  /tr "python D:\DDS2SDK\Game\Plugins\MifBridge\tools\report_watch.py"
+/tr "python D:\DDS2SDK\Game\Plugins\MifBridge\tools\report_watch.py"
 ```
 
-Deliberately left as a command to run rather than something set up automatically: it is persistent
+`python` there is a bare name. **Task Scheduler does not search PATH.** So the task failed with
+`0x80070002` (FILE_NOT_FOUND) on every run it ever made, reporting exactly that in `LastTaskResult`
+where nobody was looking, and the watcher never started for a single report — reports #1, #2 and #3
+were all found by hand. Python *is* on the PATH, which is why the command always worked when pasted
+into a terminal and never once worked from the scheduler.
+
+What the task needs, and why each part is there:
+
+| setting | value | why |
+|---|---|---|
+| Execute | the **absolute** path to `pythonw.exe` | a bare name is not resolved by the scheduler; see above |
+| Arguments | `-u tools\report_watch.py` | `-u` so the log is not lost in a buffer if the process is killed |
+| WorkingDirectory | the plugin root | every path in the script is relative to it |
+| Triggers | AtLogon **and** a 30-minute repetition | logon alone gives ONE attempt; if it fails nothing retries until the next logon, which on a machine left up for days is never |
+| MultipleInstances | **IgnoreNew** | the repetition would otherwise start a second watcher every 30 minutes. `report_watch.py` has no self-lock, so this task setting is the only thing preventing it |
+| RestartCount / Interval | 3 / 5 min | a crash restarts instead of ending the day |
+| ExecutionTimeLimit | none | it is a daemon; a time limit would kill it mid-day |
+| Hidden | true | see below |
+
+**`pythonw.exe`, not `python.exe`.** A console window is a liability here: closing it kills the
+watcher, and Windows QuickEdit means a stray *click* inside it blocks the process on its next write
+to stdout — the watcher then stays alive, the scheduler still sees a running instance, and nothing is
+polled. Looks healthy, does nothing.
+
+Two things had to change to make a console-less run safe, and both are the kind of detail that only
+shows up when you try it:
+
+* `log()` guarded its file write but not its `print`. Under `pythonw` `sys.stdout` is `None`, so
+  `print` raises and the watcher would have died on its **first log line**.
+* Removing the watcher's console gives one to every child it launches, because there is no console
+  left to inherit — so `gh`, polled every 45 seconds, flashed a window every 45 seconds. Every
+  `subprocess.run` here passes `CREATE_NO_WINDOW`, held in one constant so a new call site has to opt
+  out rather than remember to opt in.
+
+**It is still `LogonType: Interactive`** — it runs while Andre is logged in. Polling with the machine
+locked or nobody logged on needs a stored-credential task, which is a different grant and has not
+been made.
+
+Setting it up remains a deliberate act rather than something a script does for you: it is persistent
 configuration on Andre's machine and a standing grant of unattended editor operation to whoever is on
 the trust list. That should be a decision, not a side effect.
+
+### What wakes it, which is more than it used to be
+
+**A new issue, and now a REPLY.** `poll()` originally asked only for open issues and tracked them by
+number, so a comment on an issue already seen was invisible. That is not a corner case — a report's
+most useful information usually arrives in the conversation afterwards. On 2026-09-04 the reporter of
+#2 retested against a proposed fix, showed it did not work and cited engine source, and nothing
+noticed.
+
+Two things make comment watching safe rather than dangerous:
+
+* **Our own comments are excluded.** `report_reply.py` posts as the authenticated `gh` account, so
+  without this a reply would create a comment, which wakes an agent, which replies — forever, paying
+  each turn. The account is read once from `gh api user`. If that read *fails*, the watcher escalates
+  **nothing** and marks everything seen: treating our own replies as reports spends money in a
+  circle, so silence is the safe failure.
+* **The first run bootstraps.** A state file with no `seenComments` key records what is already there
+  and escalates none of it, and says so in the log. Otherwise every historical comment would spawn an
+  agent apiece.
+
+Comments go through the same trust gate as a new report, and it fails closed the same way. That
+matters more here than for the issue itself, because anyone can comment on a public issue.
+
+### The agent binary is resolved, not assumed
+
+`escalate()` spawned the bare word `claude` — the same shape as the bare `python` above. It is not
+broken, because Python's `subprocess` *does* search PATH where Task Scheduler does not. But it is the
+same assumption one layer down, and its failure mode is a watcher that notices a report at 4am and
+silently spawns nothing.
+
+It is resolved once with `shutil.which` **at startup** and logged:
+
+```
+watching 'bridge-report' every 45s (dry_run=False push=False). Idle polls cost NO tokens.
+  agent binary: C:\Users\andre\.local\bin\claude.EXE
+  posting identity: mifsopo1
+```
+
+The timing is the point. A missing binary is discovered on the first line of a run, while somebody is
+watching, rather than on the night a report finally arrives — by which time the issue is already
+marked seen and the moment has passed. Those three lines are what a healthy start looks like; if the
+second says `WARNING: 'claude' is NOT on PATH`, the watcher is only a logger.
 
 
 ## The loop now closes its own issues
