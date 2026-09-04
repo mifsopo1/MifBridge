@@ -12142,6 +12142,41 @@ out-of-process the way ops_gen already does with gen_status.
       an op leaves it green. 0.23s. Ground-truthed both ways - a planted "99 Blender ops" fails with
       the file, line and both numbers; a planted historical quote is correctly ignored.
 
+- [ ] **audit_family_asymmetry is blind to the Blender addon, and that is where the shape kept paying** (half a day)
+      It reads MIF_BIND out of the C++ and nothing else, so it covers 453 UE endpoints and none of
+      the 140 addon ops. It reports "none - every family with two or more writers is readable
+      somewhere", and that reads as an answer about the whole product when it is an answer about
+      half of it.
+
+      THE PATTERN IT DETECTS PAID FOUR TIMES ON THE BLENDER SIDE on 2026-09-03/04, every one found
+      BY HAND: nothing could create a COLLECTION though set_light_linking required one and could
+      only reach its broken state; nothing could create an EMPTY, a CURVE or an ARMATURE though
+      add_constraint, aim_object and twelve rigging ops needed them; nothing could create a VERTEX
+      GROUP or a SHAPE KEY though five ops consumed them. The tool that exists to find exactly this
+      could not see any of them.
+
+      ATTEMPTED 2026-09-04 AND REVERTED, which is the useful part of this entry. A straight port -
+      same family grouping, same "does any response field carry this noun" check - produced 17
+      candidates and essentially all of them were false. Adding the C++ half's token-overlap
+      suppression took it to 13, still nearly all false.
+
+      THE REASON IS STRUCTURAL, not a tuning problem. The addon's readers are GENERIC where the
+      C++ ones are specific: physics_info reads cloth AND collision AND rigid bodies, object_info
+      reads visibility AND transform AND custom properties, render_info reads colour management.
+      None of them share a family noun with what they read, and the thing they report appears as a
+      VALUE ("CLOTH" in a modifier type) rather than as a response-field KEY - so the field-name
+      check that took the C++ half from 18 candidates to 1 cannot fire at all here.
+
+      Shipping it anyway would have been worse than not having it: 13 findings that are all false
+      is not a reading list, it is a check people learn to scroll past, which this repo's own
+      header calls out as the failure mode.
+
+      What it probably needs is a different verification for the addon half - matching a family
+      against the VALUES a reader can emit, or a hand-maintained map from generic reader to the
+      families it covers (physics_info -> cloth, collision, rigid_body, soft_body). The second is a
+      second source of truth and would need its own guard, so it is a design decision rather than
+      an afternoon.
+
 - [ ] **Tier 3 - motion worth rendering** (1 of 11 left)
       DONE 2026-09-03: evaluate_at_frame, edit_fcurve, add_fcurve_modifier, create_action /
       assign_action / list_actions, set_bone_pose, set_shape_key, bake_to_keyframes, markers with
