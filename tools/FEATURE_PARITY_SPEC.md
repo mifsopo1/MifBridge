@@ -13060,3 +13060,53 @@ out-of-process the way ops_gen already does with gen_status.
 
       Nothing had ever looked at boolean_op's OUTPUT before, which is why a degenerate fixture
       survived. Worth checking the other fixtures for the same shape.
+
+- [x] **a node socket could hold a number and nothing else** DONE 2026-09-04
+      The sweep's load-bearing finding, and it is one line of cause. The socket writer coerced every
+      non-list value with float(), so Object, Collection, Material, Image and Texture sockets were
+      all unreachable - and so was String, because float("Cube") and float("hello") fail the same
+      way. A caller got "cannot write 'Cube' to socket 'Object'" and no route at all.
+
+      That is not a corner of geometry nodes, it is most of what they are for: scatter one thing
+      over another, instance a collection, use this material, read this image. Six findings in the
+      sweep were this one gap wearing different clothes.
+
+      _socket_value resolves by the socket's DECLARED type, taking the type string rather than a
+      socket object because the two callers hold different things - add_group_node has a real socket
+      with .bl_idname, assign_node_group has only the group interface, where the type is
+      it.socket_type on 4.x and s.bl_socket_idname on 3.6. A bad name is refused naming every
+      datablock of that kind in the file. None CLEARS a pointer, which is distinct from leaving it.
+
+      assign_node_group needed it more than add_group_node did: mod[key] = "Cube" is ACCEPTED by
+      Blender, stored as a string, and then ignored - the modifier reads an empty socket, the
+      scatter produces nothing, and nothing anywhere reports an error. It now resolves, writes, and
+      READS BACK.
+
+      Verified on 3.6.23 and 5.0.1: Object:"Tree" applies and the socket genuinely holds the object
+      on readback rather than echoing the request; Object:"Nope" is refused listing the five objects
+      present. The matrix payload now uses a GeometryNodeObjectInfo with an Object input, so the
+      pointer path is exercised on every build every run.
+
+- [x] **bake_to_keyframes had no honest fixture in either direction** DONE 2026-09-04
+      Surfaced by the value comparison, and only by accident: it reported motionPreserved:FALSE on
+      all four builds, which a cross-build check cannot see, and became visible only when 4.4
+      flipped to True on about one run in three. A field that is uniformly wrong everywhere is
+      INVISIBLE to a comparison across builds - worth knowing about the whole approach.
+
+      Pointed at the shared Cube, the op inherited a TRACK_TO constraint, an ACTIVE rigid body, a
+      SUBSURF, keyframes, a CYCLES f-curve modifier and a driver from earlier alphabetical ops, and
+      a live rigid body is not deterministic. Sixth instance of the shared-Cube problem today.
+
+      Run in ISOLATION it reported motionPreserved:True with error 0.0 - and that was vacuous rather
+      than a pass: outside the sweep nothing has keyed Cube, so it baked a static object and
+      trivially preserved its lack of motion. Both readings were worthless for opposite reasons.
+
+      MifBake is keyed in FIXTURES, moves 4 units over 4 frames, and nothing else drives it.
+      motionPreserved:True, error 0.0, 45 keys, identical on all four builds and stable across runs.
+
+      THE ACCEPTED-DIFFERENCE COUNT WENT DOWN, 66 to 60, which is the part worth reading twice. Six
+      of the differences previously accepted as Blender version drift - list_keyframes curveCount,
+      curves[] and keyframeTotal, set_keyframe fcurves[] and keyframesTotal, bake_to_keyframes'
+      own counts - were PHANTOMS created by bake_to_keyframes writing per-version key counts onto
+      the shared Cube that later ops then read. One badly scoped fixture manufactured six
+      cross-build divergences, and they had been accepted as Blender's fault.

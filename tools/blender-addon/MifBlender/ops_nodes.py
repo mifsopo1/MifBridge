@@ -121,6 +121,63 @@ def op_create_node_group(params):
                         "deprecated.")}
 
 
+# WHICH bpy.data COLLECTION A POINTER SOCKET DRAWS FROM.
+#
+# THE HOLE THIS CLOSES. The socket writer coerced every non-list value with float(), so the only
+# thing a socket could hold was a number. Every datablock socket - Object, Collection, Material,
+# Image, Texture - was unreachable, and so was String, because float("Cube") and float("hello")
+# fail the same way. That is not a corner: "scatter this on that", "instance this collection",
+# "use this material", "read this image" are what geometry nodes are FOR, and all of them need a
+# name to become a pointer. A caller got "cannot write 'Cube' to socket 'Object'" and no route.
+#
+# THE NAME IS RESOLVED HERE rather than left to Blender, because assigning a string to a pointer
+# socket raises a TypeError naming the type and not the mistake. Refusing with the datablocks that
+# ARE present turns "that failed" into "you meant one of these".
+_POINTER_SOCKETS = {
+    "NodeSocketObject": ("objects", "object"),
+    "NodeSocketCollection": ("collections", "collection"),
+    "NodeSocketMaterial": ("materials", "material"),
+    "NodeSocketImage": ("images", "image"),
+    "NodeSocketTexture": ("textures", "texture"),
+}
+
+
+def _socket_value(kind, sock_name, val, where):
+    """Coerce a JSON value for a socket of type `kind`. Raises MifOpError naming the options.
+
+    TAKES THE TYPE STRING, NOT A SOCKET, because the two callers hold different things: the node
+    writer has a real socket with .bl_idname, and assign_node_group has only the group's INTERFACE,
+    where the type is it.socket_type on 4.x and s.bl_socket_idname on 3.6. Passing the resolved
+    string keeps one implementation instead of two that drift.
+    """
+    if kind in _POINTER_SOCKETS:
+        attr, noun = _POINTER_SOCKETS[kind]
+        # None CLEARS a pointer socket, which is a legitimate thing to want and is not the same as
+        # leaving it alone - an unset Object socket and one pointed at the wrong object look
+        # identical in a response that only echoes what was sent.
+        if val is None:
+            return None
+        if not isinstance(val, str):
+            raise MifOpError("socket '%s' on %s holds a %s, so it needs the NAME of one as a "
+                             "string - got %r. NOTHING was changed."
+                             % (sock_name, where, noun, val))
+        coll = getattr(bpy.data, attr)
+        found = coll.get(val)
+        if found is None:
+            have = sorted(d.name for d in coll)[:25]
+            raise MifOpError("no %s named '%s'. This file has: %s. NOTHING was changed."
+                             % (noun, val, ", ".join(have) if have else "(none)"))
+        return found
+    # A MENU SOCKET IS AN ENUM and a String socket is text; float() destroyed both.
+    if kind in ("NodeSocketString", "NodeSocketMenu"):
+        return str(val)
+    if kind == "NodeSocketBool":
+        return bool(val)
+    if kind == "NodeSocketInt":
+        return int(val)
+    return float(val)
+
+
 def op_add_group_node(params):
     """Add a node to a group and optionally set its input defaults.
 
@@ -181,7 +238,10 @@ def op_add_group_node(params):
                 elif isinstance(val, bool):
                     sock.default_value = val
                 else:
-                    sock.default_value = float(val)
+                    sock.default_value = _socket_value(sock.bl_idname, sock.name, val,
+                                                      "'%s'" % node.name)
+            except MifOpError:
+                raise
             except (AttributeError, TypeError, ValueError) as exc:
                 raise MifOpError("cannot write %r to socket '%s' of '%s': %s. The node WAS added."
                                  % (val, sock_name, node.name, exc))
@@ -341,23 +401,34 @@ def op_assign_node_group(params):
         # The modifier addresses exposed inputs by IDENTIFIER (Socket_2), not by name, which is the
         # single most confusing thing about driving geometry nodes from script. Resolve the name to
         # its identifier rather than making a caller know that.
+        # THE TYPE IS CARRIED BESIDE THE IDENTIFIER. Without it an Object input took the string
+        # "Cube" straight into mod[key], which Blender stores as a string and then ignores - the
+        # modifier reads an empty socket and the scatter produces nothing, with no error anywhere.
+        # Where the type lives moved: it.socket_type on 4.x, s.bl_socket_idname on 3.6.
         ident = {}
         if hasattr(tree, "interface"):
             for it in tree.interface.items_tree:
                 if getattr(it, "item_type", "SOCKET") == "SOCKET" and it.in_out == "INPUT":
-                    ident[it.name] = it.identifier
+                    ident[it.name] = (it.identifier, getattr(it, "socket_type", ""))
         else:
             for s in tree.inputs:
-                ident[s.name] = s.identifier
+                ident[s.name] = (s.identifier, getattr(s, "bl_socket_idname", ""))
         for k, v in given.items():
-            key = ident.get(k)
-            if key is None:
+            entry = ident.get(k)
+            if entry is None:
                 refused[k] = "not an exposed input; this group exposes: %s" % (
                     ", ".join(sorted(ident)) or "(none)")
                 continue
+            key, kind = entry
             try:
-                mod[key] = v
-                applied[k] = v
+                mod[key] = _socket_value(kind, k, v, "modifier '%s'" % mod.name)
+                # READ BACK, because a pointer socket accepts a wrong-typed value silently on some
+                # paths and simply does not hold it. Reporting the NAME rather than the datablock
+                # keeps the response JSON-safe.
+                got = mod.get(key)
+                applied[k] = getattr(got, "name", got)
+            except MifOpError as exc:
+                refused[k] = str(exc)
             except (TypeError, KeyError) as exc:
                 refused[k] = str(exc)
 

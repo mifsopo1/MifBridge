@@ -1,15 +1,11 @@
 [
  [
+  "add_group_node",
+  "outputs[]"
+ ],
+ [
   "add_shape_key",
   "value"
- ],
- [
-  "bake_to_keyframes",
-  "curveCount"
- ],
- [
-  "bake_to_keyframes",
-  "keyframeTotal"
  ],
  [
   "boolean_op",
@@ -140,18 +136,6 @@
   "bytes"
  ],
  [
-  "list_keyframes",
-  "curveCount"
- ],
- [
-  "list_keyframes",
-  "curves[]"
- ],
- [
-  "list_keyframes",
-  "keyframeTotal"
- ],
- [
   "list_materials",
   "unusedNote"
  ],
@@ -226,14 +210,6 @@
  [
   "set_compositing",
   "treeName"
- ],
- [
-  "set_keyframe",
-  "fcurves[]"
- ],
- [
-  "set_keyframe",
-  "keyframesTotal"
  ],
  [
   "set_light_shadow",

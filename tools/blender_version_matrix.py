@@ -155,7 +155,21 @@ PAYLOADS = {
     "move_keyframes": {"object": "Cube", "path": "location", "offset": 2},
     "add_fcurve_modifier": {"object": "Cube", "path": "location", "index": 2, "type": "CYCLES"},
     "evaluate_at_frame": {"object": "Cube", "paths": ["location"], "frame": 5},
-    "bake_to_keyframes": {"object": "Cube", "frameStart": 1, "frameEnd": 5},
+    # ITS OWN ANIMATED OBJECT, because neither of the two obvious fixtures was a real test.
+    #
+    # Pointed at the shared Cube it reported motionPreserved:False, maxPositionError 0.009362, on
+    # every build - and 4.4 flipped to True on about one run in three. By the time the sweep reaches
+    # 'b', Cube is carrying a TRACK_TO constraint, an ACTIVE rigid body, a SUBSURF, keyframes, a
+    # CYCLES f-curve modifier and a driver, all piled on by earlier ops, and a live rigid body is
+    # not deterministic. Sixth instance of the shared-Cube problem.
+    #
+    # Run in ISOLATION it reported motionPreserved:True with error 0.0 - and that was VACUOUS, not
+    # a pass: without the sweep, nothing has keyed Cube at all, so the op baked a static object and
+    # trivially preserved its lack of motion. A green that cannot fail.
+    #
+    # MifBake is keyed in FIXTURES, moves 4 units over 4 frames, and nothing else touches it. Now
+    # motionPreserved has something to be wrong about.
+    "bake_to_keyframes": {"object": "MifBake", "frameStart": 1, "frameEnd": 5},
     "add_driver": {"object": "Cube", "path": "scale", "index": 0, "expression": "1.0"},
     "remove_driver": {"object": "Cube", "path": "scale", "index": 0},
     "add_nla_strip": {"object": "MifAnim", "action": "MifMatrixAction"},
@@ -187,7 +201,12 @@ PAYLOADS = {
     "set_material_slots": {"object": "MifSpare", "slots": ["MifMatrixMat"], "allowResize": True},
     "assign_material_to_faces": {"object": "Cube", "faces": [0], "slot": 0},
     "create_node_group": {"name": "MifSweepGroup"},
-    "add_group_node": {"group": "MifMatrixGroup", "type": "GeometryNodeSetPosition"},
+    # AN OBJECT SOCKET, ON PURPOSE. Until 2026-09-04 every non-list socket value went through
+    # float(), so a datablock socket could not be written at all and this payload would have
+    # refused. The value comparison watches inputsApplied, so the pointer resolving to a real
+    # object is checked on every build every run.
+    "add_group_node": {"group": "MifMatrixGroup", "type": "GeometryNodeObjectInfo",
+                       "inputs": {"Object": "MifProbe"}},
     "add_group_interface": {"group": "MifMatrixGroup", "name": "Amount",
                             "socketType": "NodeSocketFloat"},
     "link_group_nodes": {"group": "MifMatrixGroup", "fromNode": "MifNodeA",
@@ -339,6 +358,11 @@ FIXTURES = [
     ("add_modifier", {"object": "MifApply", "type": "SUBSURF"}),
     ("create_camera", {"name": "MifPano"}),
     ("create_primitive", {"kind": "cube", "name": "MifAnim", "location": [16, 0, 0]}),
+    # KEYED HERE so bake_to_keyframes has real motion to reproduce. Two keys four frames
+    # apart and nothing else driving it - no constraint, no rigid body, no modifier.
+    ("create_primitive", {"kind": "cube", "name": "MifBake", "location": [36, 0, 0]}),
+    ("set_keyframe", {"object": "MifBake", "location": [36, 0, 0], "frame": 1}),
+    ("set_keyframe", {"object": "MifBake", "location": [36, 0, 4], "frame": 5}),
     ("set_camera", {"object": "MifPano", "type": "PANO"}),
 ]
 
