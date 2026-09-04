@@ -14396,3 +14396,40 @@ out-of-process the way ops_gen already does with gen_status.
 
       Gate it at zero once they are fixed and a build has verified them. It is deliberately ungated
       now: a gate nobody can turn green is a gate people learn to skip.
+
+- [x] **both audits were blind to a write inside a helper** DONE 2026-09-04
+      Each had a --show-delegating list advertising this hole, and both lists measured the wrong
+      thing. Blender named every helper a promising op called - _counts, _orphans, _op_exists, pure
+      readers - 31 rows for 3 real ones. UE took the first capitalised call in the body, which is
+      the handler's OWN signature, and reported 80 handlers as delegating to themselves. A blind
+      spot advertised as bigger than it is is its own kind of wrong.
+
+      Requiring the helper to actually mutate made UE's list worth reading: eleven IKRig endpoints
+      route every write through one IKMarkDirty wrapper, so that file had been invisible by
+      construction. Counting a call to a file-local writer as a write closes it - and those eleven
+      turned out clean, which is the answer, not a disappointment.
+
+      "CONTAINS A MUTATOR" WAS TOO COARSE BY EXACTLY ONE FINDING, and it was wrong.
+      WaterApplySpline validates every point and only then calls Modify(), so every `return false`
+      in it is above the first write and set_water_body_spline's "NOTHING was changed" is true. The
+      rule is now the same question one level down - can the helper write and THEN fail? - using the
+      same blocks() and exclusive(). Self-test 8 -> 11 cases, both directions for the new rule.
+
+      The Blender side needed two corrections of its own, both found by reading findings rather than
+      counting them. One call is not a pair: _apply_common writes AND refuses, so the single
+      statement `applied = _apply_common(sc, params)` was reported against itself. And a compound
+      statement must not inherit its body's calls - _walk_body records the `try` as well as what is
+      inside it, and ast.walk on the try descends into the whole body, so that same call was seen
+      twice as two different statement objects and walked past the same-statement guard. Scanning
+      only a statement's OWN nodes took 5 findings to 1, and the 1 was real.
+
+- [x] **set_world built a world and then said NOTHING was changed** DONE 2026-09-04
+      _ensure_world is not a reader: on a scene with no world it creates one and turns use_nodes on.
+      Three of set_world's refusals sat below it. Measured on 5.0.1 from a world-less scene, all
+      three - a conflicting hdri+colour, a missing HDRI file, a malformed colour - refused with
+      worlds 0 -> 1 and the scene pointing at the new one.
+
+      Every one of those checks needs only the arguments, so none had a reason to be below the call
+      that builds the world. Hoisted; the refusals now leave the scene worldless and the happy path
+      still creates a world and applies colour and strength. The probe fails on the pre-fix file and
+      passes on the fixed one, which is the only reason to believe it.
