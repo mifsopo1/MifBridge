@@ -12035,7 +12035,50 @@ out-of-process the way ops_gen already does with gen_status.
       with the sources muted, and report max position/rotation error - because producing the right
       NUMBER of keys while losing the motion is the normal failure when visual keying is off.
 
-- [ ] **Tier 5 - craft depth** (5 ops)
+- [ ] **Tier 5 - craft depth** (3 of 5 left)
+      DONE 2026-09-03: set_camera_panorama and move_keyframes.
+
+      set_camera_panorama closed a DECLARED-AND-UNREACHABLE, which is the class this project keeps
+      finding: create_camera validated PANO against Blender's own enum and accepted it, and then
+      nothing could set a single panorama property - so a PANO camera could be created and was
+      unusable. Declaring a capability and not reaching it is worse than not offering it, because
+      the caller has no way to tell. Same shape as export_mesh accepting four objectTypes its
+      selection could never contain.
+
+      move_keyframes carries the detail a hand-rolled retime gets wrong: a bezier HANDLE is stored
+      in absolute frame coordinates, so moving only the key leaves its handles behind and silently
+      reshapes the curve while the interpolation still reads BEZIER. Keys are moved later-first
+      when shifting forwards, because Blender keeps them sorted and a key crossing one that has not
+      moved yet makes the walk skip or revisit keys.
+
+      STILL OPEN: set_light_shadow (the engine-specific half), set_light_ies plus gobo/cookie
+      projection, and light linking / lightgroups. All three are genuine craft depth rather than
+      structural gaps - the tool is usable for lighting without them, which was not true this
+      morning.
+
+- [x] **the Blender work is no longer entirely unverified** DONE 2026-09-03
+      THE PROBLEM WAS MINE. The addon went from 68 ops to 101 in one session and not one line could
+      be run: Blender was open on this machine but its addon was not listening, and 12 of the 20
+      Blender suites need a live backend. So the largest addition this addon has ever had sat
+      entirely unverified, and "the static gates are green" was the strongest available claim.
+      Adding a 102nd op would not have improved that.
+
+      It was a gap in the TOOLING rather than an unavoidable fact. Every refusal path in this addon
+      is pure parameter validation that runs BEFORE anything touches bpy - which is exactly the
+      discipline the ops were written to, a refusal fires before a mutation - so they are testable
+      against a stub. tools/test_blender_refusals.py: 46 assertions, no Blender, about a second,
+      and it is in run_all_suites --offline.
+
+      EVERY CHECK ASSERTS ON THE MESSAGE, not on the fact of a raise. A refusal firing for the
+      wrong reason is harder to notice than no refusal, because it still looks like the guard
+      working. B107 is a negative control: without it a guard that refused everything would score
+      full marks on every other check in the file.
+
+      WHAT IT CANNOT DO is written into the file rather than left to be assumed. It proves required
+      keys, mutual exclusions, unknown-key rejection, enum validation and per-type rules. It proves
+      NOTHING about whether an op does what it says once Blender is real - every postcondition
+      (evaluated matrices, purged orphans, colour spaces, motion preserved) needs a live backend
+      and stays unverified until a suite runs there.
       set_light_shadow (engine-specific half only), set_light_ies plus gobo/cookie projection which
       is the same mechanism and more general, set_camera_panorama (closes a declared-and-unreachable
       - create_camera accepts PANO and offers nothing to configure it), move_keyframes, and light
