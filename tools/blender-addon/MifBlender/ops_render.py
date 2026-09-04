@@ -36,7 +36,7 @@ from .ops_common import (MifOpError, reject_unknown, take, take_bool, take_float
 _SETTINGS_KEYS = {
     "engine", "resolutionX", "resolutionY", "percentage", "samples",
     "filePath", "output", "fileFormat", "filmTransparent", "colorMode",
-    "useDenoising", "exposure",
+    "useDenoising", "exposure", "colorDepth",
 }
 _RENDER_KEYS = {"filePath", "output", "frame", "samples", "resolutionX", "resolutionY",
                 "percentage", "writeStill"}
@@ -129,12 +129,57 @@ def op_set_render_settings(params):
     if out_path:
         sc.render.filepath = bpy.path.abspath(str(out_path))
     fmt = take(params, "fileFormat", default=None, kind=str)
+    # CAPTURED BEFORE THE FORMAT IS WRITTEN, not after. The first version of the colorDepth
+    # rollback below read the "before" value AFTER this block had already changed it, so it
+    # restored JPEG to JPEG and did nothing - caught by a probe that set PNG/16, asked for
+    # JPEG/32, and found PNG had not come back. Depth is captured too, because changing the
+    # format CLAMPS it: going to JPEG drops a stored 16 to 8, so putting the format back
+    # without the depth restores half the state.
+    fmt_before = sc.render.image_settings.file_format
+    depth_before = sc.render.image_settings.color_depth
     if fmt:
         valid = {i.identifier for i in
                  bpy.types.ImageFormatSettings.bl_rna.properties["file_format"].enum_items}
         if str(fmt).upper() not in valid:
             raise MifOpError("unknown fileFormat '%s'. Valid: %s." % (fmt, ", ".join(sorted(valid))))
         sc.render.image_settings.file_format = str(fmt).upper()
+    # COLOUR DEPTH, AND IT MUST BE WRITTEN AFTER file_format ABOVE. render_info has always
+    # reported colorDepth and nothing could set it - an 8-bit normal map or HDR pass is
+    # quantised, exists, and looks roughly right, which is the failure this repo is built
+    # around.
+    #
+    # THE ENUM LIES AND THE SETTER DOES NOT. bl_rna.properties["color_depth"].enum_items
+    # reports 8,10,12,16,32 for EVERY format including JPEG - measured on 3.6 and 5.0 - so
+    # validating against it would accept "32" on a JPEG. Assigning it raises TypeError
+    # naming the REAL set: enum "32" not found in ('8'). So the attempt IS the validation,
+    # and Blender's own message is passed through because it knows what this format allows
+    # and the introspection does not.
+    #
+    # Order matters for the same reason: a depth written before the format is checked
+    # against the OLD format, so fileFormat:OPEN_EXR with colorDepth:32 in one call would
+    # fail against whatever was set before.
+    depth = take(params, "colorDepth", default=None)
+    if depth is not None:
+        # THE FORMAT IS PUT BACK IF THE DEPTH IS REFUSED. Because the only way to know a
+        # depth is legal is to assign it, and that needs the new format already in place, a
+        # failure here would otherwise leave the format changed and the depth not - a
+        # half-applied call, which is the shape this addon refuses everywhere else. It
+        # cannot be a full transaction (engine and resolution above are already written) and
+        # the message says exactly what was and was not undone rather than claiming more.
+        try:
+            sc.render.image_settings.color_depth = str(int(depth))
+        except (TypeError, ValueError) as exc:
+            bad_fmt = sc.render.image_settings.file_format
+            if fmt is not None:
+                sc.render.image_settings.file_format = fmt_before
+                sc.render.image_settings.color_depth = depth_before
+            raise MifOpError(
+                "colorDepth %r is not one the %s format accepts: %s. The enum's own item "
+                "list reports 8, 10, 12, 16 and 32 for EVERY format and is wrong - Blender "
+                "validates on assignment instead, so this is its own message. The file "
+                "format was %s; anything set before it in this call stands."
+                % (depth, bad_fmt, exc,
+                   "put back to %s" % fmt_before if fmt is not None else "not touched"))
     cm = take(params, "colorMode", default=None, kind=str)
     if cm:
         sc.render.image_settings.color_mode = str(cm).upper()

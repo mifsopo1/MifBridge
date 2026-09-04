@@ -13718,3 +13718,36 @@ out-of-process the way ops_gen already does with gen_status.
       has two and none is named, refuses an unknown name, refuses when there is no system at all,
       and its enum refusal reads "The system WAS MODIFIED." rather than "created". The readback
       confirms two systems changed in place rather than four systems existing.
+
+- [x] **colorDepth was reported by render_info and writable by nothing** DONE 2026-09-04
+      Continuing the family enumeration - rendering this time. Most of what render_info reports IS
+      writable (via set_render_settings or set_frame_range, which gained fps_base earlier). One was
+      not: color_depth. An 8-bit normal map or HDR pass is quantised, exists, and looks roughly
+      right, which is the failure this repo is built around.
+
+      TWO THINGS MAKE IT AWKWARD AND BOTH ARE MEASURED, not assumed.
+
+      THE ENUM LIES. bl_rna.properties["color_depth"].enum_items reports 8, 10, 12, 16 and 32 for
+      EVERY format including JPEG, on 3.6 and 5.0 - so validating against it would have accepted
+      "32" on a JPEG. Blender validates on ASSIGNMENT instead and raises naming the real set
+      (enum "32" not found in ('8')). So the attempt IS the validation and its own message is passed
+      through, because it knows what the format allows and the introspection does not.
+
+      ORDER MATTERS. A depth is checked against whatever format is set at that moment, so the format
+      is applied FIRST and fileFormat:OPEN_EXR with colorDepth:32 works in one call. That pairing is
+      now the matrix payload, so a regression in the ordering fails on every build.
+
+      MY FIRST ROLLBACK DID NOTHING AND A PROBE CAUGHT IT. On a refused depth the format has already
+      been written, which is a half-applied call. I added a restore - and captured the "before" value
+      AFTER the format block had already changed it, so it put JPEG back to JPEG. The probe set
+      PNG/16, asked for JPEG/32, and found PNG had not come back. The capture moved above the format
+      write, and the DEPTH is captured too, because changing format CLAMPS it - going to JPEG drops
+      a stored 16 to 8, so restoring the format alone leaves half the state.
+
+      Verified on 3.6.23 and 5.0.1: EXR/32 and PNG/16 each in one call, JPEG/32 refused with
+      Blender's own message, depth alone against the current format, and a refusal that leaves
+      PNG/16 exactly as it found them.
+
+      audit_message_endpoints caught a bare op name in the docstring for the THIRD time today, after
+      describe_material and set_light. The slip is consistent - addon-op names written while
+      composing MCP-tool prose - and the audit has caught every one.

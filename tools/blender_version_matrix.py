@@ -155,7 +155,7 @@ PAYLOADS = {
     "set_world": {"strength": 0.5},
     "set_compositing": {"enabled": True},
     "compositor_info": {},
-    "set_render_settings": {"samples": 4},
+    "set_render_settings": {"samples": 4, "fileFormat": "OPEN_EXR", "colorDepth": 32},
     "set_color_management": {"exposure": 0.0},
     "add_constraint": {"object": "Cube", "type": "TRACK_TO", "target": "Camera"},
     "remove_constraint": {"object": "MifSpare", "constraintName": "Track To"},

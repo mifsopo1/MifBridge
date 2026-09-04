@@ -5461,12 +5461,12 @@ def bl_set_render_settings(engine: str = None, resolution_x: int = None, resolut
                            percentage: int = None, samples: int = None, file_path: str = None,
                            file_format: str = None, film_transparent: bool = None,
                            color_mode: str = None, use_denoising: bool = None,
-                           exposure: float = None) -> dict:
-    "Configure the Blender render: engine (EEVEE/CYCLES aliases resolve to whatever THIS build calls them), resolution, samples, output path and format. The sample count lives in a different property per engine and writing the wrong one is a silent no-op, so this routes it and says which property it used. Warns when there is no scene camera, since a render would then fail."
+                           exposure: float = None, color_depth: int = None) -> dict:
+    "Configure the Blender render: engine (EEVEE/CYCLES aliases resolve to whatever THIS build calls them), resolution, samples, output path and format. The sample count lives in a different property per engine and writing the wrong one is a silent no-op, so this routes it and says which property it used. Warns when there is no scene camera, since a render would then fail. COLOUR DEPTH: bl_render_info has always reported colorDepth and nothing could set it, so an 8-bit normal map or HDR pass was quantised, existed, and looked roughly right. Two things make it awkward and both are handled. The enum LIES - bl_rna.properties['color_depth'].enum_items reports 8, 10, 12, 16 and 32 for EVERY format including JPEG, measured on 3.6 and 5.0 - while Blender validates on ASSIGNMENT and raises naming the real set, so the attempt is the validation and its own message is passed through. And order matters: the format is applied FIRST, so file_format='OPEN_EXR' with color_depth=32 works in one call. If the depth is then refused, the format AND the depth are put back, because changing format clamps depth and restoring one without the other leaves half the state."
     return _blender("set_render_settings", engine=engine, resolutionX=resolution_x,
                     resolutionY=resolution_y, percentage=percentage, samples=samples,
                     filePath=file_path, fileFormat=file_format, filmTransparent=film_transparent,
-                    colorMode=color_mode, useDenoising=use_denoising, exposure=exposure)
+                    colorMode=color_mode, useDenoising=use_denoising, exposure=exposure, colorDepth=color_depth)
 
 
 @mcp.tool()
