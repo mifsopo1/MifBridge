@@ -40,6 +40,7 @@
 #include "FindInBlueprintManager.h"   // FDisableGatheringDataOnScope - see the retype below
 #include "Kismet2/CompilerResultsLog.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Subsystems/AssetEditorSubsystem.h"   // FindEditorForAsset - is a Blueprint editor open for this asset
 #include "Logging/TokenizedMessage.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
@@ -1847,6 +1848,10 @@ namespace MifBridge
 		// is unchanged and still decides what is reported, so a suppressed dialog cannot turn a
 		// refusal into a false ok.
 		Blueprint->Modify();
+		// Captured across the branch below because only the MEMBER path can summon a search - see the
+		// comment on the ChangeMemberVariableType call - and it is reported either way so a caller
+		// does not have to know which path its request took.
+		bool bEditorWasOpen = false;
 		if (bLocal)
 		{
 			// ChangeLocalVariableType wants the SCOPE struct (the generated function), not the graph.
@@ -1901,12 +1906,45 @@ namespace MifBridge
 			// until it is next compiled normally, which is the cost and is the same cost the engine
 			// already accepts wherever it uses this guard itself.
 			//
+			// AND IT IS NOT ENOUGH - CORRECTED 2026-09-04 AFTER THE REPORTER DISPROVED IT. He
+			// retested on this exact commit with the widget toolkit deliberately open and the ensure
+			// fired anyway. The chain above is real but incomplete in the one way that matters:
+			//
+			//   ChangeMemberVariableType calls SummonSearchUI DIRECTLY - BlueprintEditorUtils.cpp
+			//   :5160, bSetFindWithinBlueprint=false - which is the call he guessed first and my
+			//   reply wrongly said was not involved. It is guarded by bBreakingVariableConnections
+			//   (:5040, true whenever any node references the variable) AND by FindEditorForAsset
+			//   being valid (:5141), i.e. the asset editor being OPEN. That second guard is why it
+			//   never fired in our own logs: the toolkit was closed.
+			//
+			//   The ensure at FindInBlueprintManager.cpp:408 is reached from
+			//   FStreamSearch::GetFilteredImaginaryResults (:1430) and ContinueSearchQuery (:2823) -
+			//   the SEARCH path. bEnableGatheringData is consulted only by the INDEXING path at
+			//   :2542. So this guard was aimed at a door the search does not use, and no scope
+			//   around this call can cover work the FiB window does after it returns.
+			//
+			// THE GUARD STAYS ANYWAY: suppressing the re-index is a real saving on cooked content,
+			// just not the whole story. What the caller gets instead is the truth plus the one thing
+			// that actually avoids the search - see blueprintEditorOpen in the response below.
+			//
 			// NOT CLAIMED AS A CRASH FIX. The reporter saw the editor exit near this ensure and was
-			// careful not to assert the ensure caused it; neither is asserted here. This removes a
-			// package read that CANNOT succeed on cooked content. Whether that read was also what
-			// terminated the editor is unestablished.
+			// careful not to assert the ensure caused it; neither is asserted here, and his retest
+			// showed the editor SURVIVING the ensure, which weakens that link further.
 			FMifScopedDialogSuppression NoModal(TEXT("ChangeVariableType_Warning"));
 			FDisableGatheringDataOnScope NoFiB;
+			// THE SAME QUESTION, THROUGH A DIFFERENT DOOR, and the difference is worth stating rather
+			// than glossing. ChangeMemberVariableType guards its search on
+			// FToolkitManager::Get().FindEditorForAsset(Blueprint).IsValid() (:5141) - but
+			// FToolkitManager is not linkable from this module: it resolves to two unresolved
+			// externals, measured, not assumed. UAssetEditorSubsystem::FindEditorForAsset answers
+			// the same question - is an asset editor open for this Blueprint - and is what
+			// BlueprintEditorUtils itself reaches for elsewhere (:1883). They agree for a Blueprint
+			// open in the editor, which is the only case this reports on; if they ever diverge, this
+			// field is the thing that is wrong.
+			if (UAssetEditorSubsystem* AES = GEditor ? GEditor->GetEditorSubsystem<UAssetEditorSubsystem>() : nullptr)
+			{
+				bEditorWasOpen = (AES->FindEditorForAsset(Blueprint, /*bFocusIfOpen=*/false) != nullptr);
+			}
 			FBlueprintEditorUtils::ChangeMemberVariableType(Blueprint, FName(*Name), NewType);
 		}
 
@@ -2023,6 +2061,28 @@ namespace MifBridge
 		// having to notice an absent field.
 		Out->SetNumberField(TEXT("nodesWithOrphanedPin"), NodesWithOrphanedPin);
 		Out->SetNumberField(TEXT("orphanedPinsRemaining"), OrphanedPinsRemaining);
+
+		// WHAT THE ENGINE DID THAT NOBODY ASKED FOR, and how to avoid it. When the asset editor is
+		// open, ChangeMemberVariableType summons a Find-in-Blueprints search itself
+		// (BlueprintEditorUtils.cpp:5160). On COOKED content that search tries to open pak-resident
+		// packages to read their file summaries and ensures at FindInBlueprintManager.cpp:408.
+		// Nothing this endpoint can scope prevents it - the search runs after the call returns, and
+		// the only flag we can flip covers indexing rather than searching (issue #2).
+		//
+		// Reported rather than suppressed, because the workaround is real and belongs with the
+		// caller: close the Blueprint tab first and the search is never summoned at all.
+		Out->SetBoolField(TEXT("blueprintEditorOpen"), bEditorWasOpen);
+		if (bEditorWasOpen)
+		{
+			Out->SetStringField(TEXT("findInBlueprintsNote"),
+				TEXT("The Blueprint's asset editor was OPEN, so the engine summoned a Find-in-Blueprints ")
+				TEXT("search of its own during this retype - nothing requested it and nothing here can ")
+				TEXT("stop it. On a COOKED project that search ensures ('FiB: Unable to open package to ")
+				TEXT("read file summary') because the packages live inside a .pak with no loose file. It ")
+				TEXT("is an ensure, not a crash, and the retype above still applied. To avoid it ")
+				TEXT("entirely, close the Blueprint tab before retyping: the engine only summons the ")
+				TEXT("search when an editor is open for that asset."));
+		}
 		if (OrphanedPinsRemaining > 0)
 		{
 			Out->SetStringField(TEXT("note"), FString::Printf(
