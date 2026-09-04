@@ -12,7 +12,7 @@ from contextlib import redirect_stdout, redirect_stderr
 import bpy
 
 from .ops_common import (MifOpError, UU_PER_BU, get_object, jsonable, mesh_counts, object_info,
-                         reject_unknown, take, take_bool, take_float)
+                         reject_unknown, require_editable, take, take_bool, take_float)
 
 ADDON_VERSION = (0, 1, 0)
 
@@ -411,6 +411,10 @@ def op_set_object_visibility(params):
     obj = bpy.data.objects.get(want)
     if obj is None:
         raise MifOpError("no object named '%s'. NOTHING was changed." % want)
+    # hide_viewport AND hide_render LIVE ON THE OBJECT DATABLOCK, not on the local scene's base, so
+    # on linked data they are as unsaveable as a transform. Measured on 5.0.1: this hid a linked
+    # cube and reported before/after as fact, and the hide is gone on the next reload.
+    require_editable(obj, "hide or show")
 
     # RESOLVE EVERY REQUESTED FLAG BEFORE WRITING ANY, so a flag this build lacks refuses the whole
     # call rather than leaving half of them applied.

@@ -15078,8 +15078,20 @@ out-of-process the way ops_gen already does with gen_status.
       understands bmesh, setattr, bpy.ops and helper calls. Recorded here so the next attempt starts
       from that rather than from a fresh detector with the same blind spot.
 
-- [ ] **two ops untested against linked data**
-      clean_mesh and set_object_visibility both refused the linked-data probe for unrelated reasons
-      - clean_mesh because it was asked to do nothing, set_object_visibility on a parameter name -
-      so their behaviour on a linked object is UNKNOWN rather than confirmed. Cheap to settle: fix
-      the probe's parameters and re-run it. Recorded rather than counted as covered.
+- [x] **two ops untested against linked data** DONE 2026-09-04
+      Settled by fixing the probe's parameters, and BOTH were defects rather than the confirmations
+      the phrasing invited:
+
+        set_object_visibility  hid a linked cube and reported before/after as fact. hide_viewport
+                               and hide_render live on the OBJECT datablock, not on the local
+                               scene's base, so on linked data they are as unsaveable as a
+                               transform - gone on the next reload.
+        clean_mesh             ran, changed nothing, answered ok with a full before/after. The
+                               quiet half of the same failure the transform had loudly.
+
+      Both refuse now. Eight write ops verified against a real linked cube.
+
+      WORTH THE PARAGRAPH: this item existed because two probe calls failed for reasons that had
+      nothing to do with what was being tested - one wrong parameter name and one op asked to do
+      nothing. Reading "refused" as "handled" would have closed the whole linked-data question two
+      defects short, and the only thing that caught it was writing UNKNOWN down instead of a count.

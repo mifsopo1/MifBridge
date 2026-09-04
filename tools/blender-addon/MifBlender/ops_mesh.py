@@ -2452,6 +2452,9 @@ def op_clean_mesh(params):
                             "dissolveDegenerate", "triangulate", "recalcNormals", "force"),
                    "clean_mesh")
     obj = get_object(take(params, "object", "name", required=True), want_mesh=True)
+    # A LINKED MESH CANNOT BE CLEANED. Measured on 5.0.1: this ran, changed nothing, and answered
+    # ok with a full before/after - the quiet half of the failure the transform had loudly.
+    require_editable(obj, "clean")
 
     merge_distance = take_float(params, "mergeDistance", default=0.0)
     do_loose = take_bool(params, "removeLoose", default=False)
