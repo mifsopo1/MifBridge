@@ -13110,3 +13110,31 @@ out-of-process the way ops_gen already does with gen_status.
       own counts - were PHANTOMS created by bake_to_keyframes writing per-version key counts onto
       the shared Cube that later ops then read. One badly scoped fixture manufactured six
       cross-build divergences, and they had been accepted as Blender's fault.
+
+- [x] **uv_unwrap's islandMargin was inert from 0.01 up, its own default included** DONE 2026-09-04
+      On the LIGHTMAP path it passed PREF_MARGIN_DIV=max(0.001, margin * 100.0). That property's
+      hard_max is 1.0 - read off its rna_type on 3.6.23, 4.2.17, 4.4.0 and 5.0.1, identical on all
+      four. islandMargin is validated to [0, 1), so every value from 0.01 upward multiplied past the
+      cap and RNA clamped it to exactly 1.0. The whole declared range above 0.01 was ONE value, and
+      the op's own default of 0.02 was in it.
+
+      The response echoed the requested islandMargin back as though it had applied, which is what
+      made it invisible. A parameter that reports itself applied and does nothing is worse than a
+      missing one, because nobody goes looking for it.
+
+      Passed through directly now, floored at the operator's minimum, and lightmapMarginDiv reports
+      what was actually handed over. Measured on 4.4: 0.001/0.01/0.05/0.2/0.6 now give div
+      0.001/0.01/0.05/0.2/0.6 and five different unwraps; before, four of those five were div 1.0
+      and identical.
+
+- [x] **export_mesh measured the transform and never mentioned it** DONE 2026-09-04
+      import_mesh REFUSES a non-identity transform on the way in. Export was silent on the way out,
+      which is the half that costs something: a non-identity object transform means loc/rot/scale is
+      not baked into the mesh data, so the receiving engine applies it AGAIN on top of what is in
+      the file - a mesh that arrives double-scaled or offset from its own origin, discovered in
+      Unreal rather than here.
+
+      isIdentityTransform was ALREADY in the response, per object, nested inside `exported`. Nothing
+      raised it anywhere a caller reads. A note rather than a refusal, because exporting a
+      transformed object is legitimate when you mean it. Verified on 4.4 with a negative control:
+      silent for an object at the origin, named for one that was moved.

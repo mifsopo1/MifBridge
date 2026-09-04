@@ -478,6 +478,24 @@ def op_export_mesh(params):
                     for k, v in args.items()},
     }
 
+    # THE OTHER DIRECTION OF A CHECK THIS FILE ALREADY MAKES. import_mesh REFUSES a non-identity
+    # transform on the way in; export was silent on the way out, which is the costly half. A
+    # non-identity object transform means the pivot has moved and the loc/rot/scale is NOT
+    # baked into the mesh data, so the receiving engine applies it again on top - a mesh that
+    # is double-scaled or offset from its own origin, discovered in Unreal rather than here.
+    # isIdentityTransform was ALREADY in the response, per object, inside `exported`; nothing
+    # raised it to where somebody reads it. A note rather than a refusal, because exporting a
+    # transformed object is legitimate when you mean it - apply_transform is the fix when you
+    # do not.
+    moved = [o["name"] for o in out["exported"] if not o.get("isIdentityTransform", True)]
+    if moved:
+        out["nonIdentityTransformWarning"] = (
+            "%s do NOT have an identity transform, so their loc/rot/scale is not baked into "
+            "the mesh data and the importing engine will apply it AGAIN on top of what is in "
+            "the file. Call apply_transform first if the mesh should arrive where it looks "
+            "like it is. The file was written either way."
+            % ", ".join("'%s'" % n for n in moved))
+
     # THE WARNING THAT MATTERS. Silent pose-baking is what this whole block exists to stop, so a
     # mesh whose deforming armature was left out of the file is named, not left for the caller to
     # discover on import.
@@ -1732,6 +1750,10 @@ def op_uv_unwrap(params):
             "note": "nothing was modified. Drop dryRun to apply.",
         }
 
+    # Defaulted here because it is only set on the LIGHTMAP branch, and a response field that
+    # exists on some paths and raises NameError on others is its own bug.
+    lightmap_div = None
+
     # The layer has to exist BEFORE the unwrap, and be the ACTIVE one, or the operator writes
     # into whichever channel happened to be active - which is how a lightmap lands on top of
     # the base UVs and nobody notices until the bake.
@@ -1810,7 +1832,20 @@ def op_uv_unwrap(params):
                                      island_margin=margin,
                                      correct_aspect=correct_aspect)
         elif method == "LIGHTMAP":
-            bpy.ops.uv.lightmap_pack(PREF_MARGIN_DIV=max(0.001, margin * 100.0))
+            # PREF_MARGIN_DIV IS CAPPED AT 1.0, read off its own rna_type on 3.6.23, 4.2.17, 4.4.0
+            # and 5.0.1 - hard_min 0.001, hard_max 1.0 on every one of them.
+            #
+            # This used to pass `margin * 100.0`. islandMargin is validated to [0, 1), so anything
+            # from 0.01 upward multiplied past the cap and was clamped by RNA to exactly 1.0 -
+            # INCLUDING this op's own default of 0.02. The entire declared range above 0.01 was one
+            # value, and the response echoed the requested margin back as though it had applied.
+            # A parameter that reports itself applied and does nothing is worse than one that is
+            # missing, because nobody goes looking.
+            #
+            # Passed through directly now, floored at the operator's own minimum. What was actually
+            # handed over is reported, so a caller can see it rather than infer it.
+            lightmap_div = max(0.001, min(1.0, margin))
+            bpy.ops.uv.lightmap_pack(PREF_MARGIN_DIV=lightmap_div)
         else:
             # fill_holes IS PINNED, and that is not tidiness. Its DEFAULT FLIPPED at 4.4:
             # True on 3.6.23 and 4.2.17, False on 4.4.0 and 5.0.1 - read off the operator's own
@@ -1938,6 +1973,11 @@ def op_uv_unwrap(params):
         "activeRenderLayer": _active_render,
         "angleLimitDeg": angle_deg if method == "SMART" else None,
         "islandMargin": margin,
+        # WHAT THE OPERATOR ACTUALLY GOT, on the one path where it is not the margin
+        # itself. None on every other method. Reported because this value was silently
+        # pinned at its 1.0 cap for every islandMargin from 0.01 up, the default among
+        # them, while this response echoed the request back.
+        "lightmapMarginDiv": lightmap_div,
         "faces": len(mesh.polygons),
         "seams": seams,
         "packed": bool(take_bool(params, "uvPack", default=False)),
