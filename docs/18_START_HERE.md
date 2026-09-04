@@ -176,6 +176,10 @@ COMMITTED"*, and a compile is not a test.
 > per version. **Read its REACH line, not just its green**: an op refused at the door hides a break
 > exactly as well as no test at all.
 >
+> Since 2026-09-04 it also compares the RESULT VALUES across builds, not just success/failure —
+> ratcheted in `blender_version_matrix_values.json`, so only a field that STARTS differing is a
+> finding. Accept a new one with `--update-value-baseline` after reading it, never before.
+>
 > `run_blender_suites.py` still needs a live Blender and still proves things the matrix cannot —
 > postconditions that depend on evaluation. The two are complementary, not alternatives.
 

@@ -60,6 +60,10 @@ light a scene and cannot show it has not finished the job.
     every static gate green. "Almost" is load-bearing: a handful reach a network service, spawn a
     second Blender or need a fixture no op here can build. It PRINTS that list on every run, and
     the number that matters is REACH - an op refused at the door is green and proves nothing.
+    It compares two different things across builds: whether each op still SUCCEEDS, and whether
+    it still returns the SAME ANSWER. The second was missing until 2026-09-04 and is the one that
+    catches an op quietly changing its results - and it found a geometry query reading a fixture
+    ten earlier ops had reshaped on its first real run.
 
 Both are in `make_release --gates`.
 
