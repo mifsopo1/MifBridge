@@ -15057,17 +15057,29 @@ out-of-process the way ops_gen already does with gen_status.
       file can change selected properties, so testing only `.library` would refuse the one case
       overrides were invented for.
 
-- [ ] **which other ops write to an object they did not check is editable**
-      require_editable is applied to the two ops measured above, deliberately and not more. 43 sites
-      pass want_mesh=True and not all of them WRITE - boolean_op resolves its CUTTER that way, and
-      booleaning against a linked object is a perfectly good thing to do. Putting the check in
-      get_object would trade one silent failure for a broken workflow.
+- [x] **which other ops write to an object they did not check is editable** DONE 2026-09-04
+      Swept the same session rather than deferred, because it turned out to be four ops rather than
+      a surface: assign_action, set_keyframe, rename_object and set_material_slots all write to the
+      object they resolve. All four refuse linked data now, and all six write ops are verified
+      against a real linked cube - build a source .blend, link it into a fresh file, point each op
+      at it.
 
-      The sweep is: for each op that resolves an object, does it WRITE to that object, and if so is
-      the object checked for editability. That is the same read-the-handler discipline
-      audit_mutate_then_deny needed, and it wants the same treatment - an audit rather than a list,
-      so the next op written gets it too.
+      STILL NOT AT get_object. 43 sites pass want_mesh=True and not all of them WRITE: boolean_op
+      resolves its CUTTER that way, and booleaning against a linked object is entirely legitimate.
+      A blanket guard trades one silent failure for a broken workflow.
 
-      Worth doing next time this area is open. The two fixed are the ones a caller hits first
-      (moving something, shading something); the rest are mesh operations that a linked object would
-      usually not be the target of.
+      AND NO AUDIT, which is the measurement rather than the shortcut. The static sweep that found
+      these four only sees DIRECT attribute assignment on the resolved name - every op that reshapes
+      geometry through bmesh writes to obj.data without ever assigning an attribute on obj, and is
+      invisible to it. Four is a floor. An audit built on that detector would read as coverage while
+      missing the whole mesh-editing half, which is the failure this project keeps naming.
+
+      The honest version reuses audit_mutate_then_deny's mutation detection, which already
+      understands bmesh, setattr, bpy.ops and helper calls. Recorded here so the next attempt starts
+      from that rather than from a fresh detector with the same blind spot.
+
+- [ ] **two ops untested against linked data**
+      clean_mesh and set_object_visibility both refused the linked-data probe for unrelated reasons
+      - clean_mesh because it was asked to do nothing, set_object_visibility on a parameter name -
+      so their behaviour on a linked object is UNKNOWN rather than confirmed. Cheap to settle: fix
+      the probe's parameters and re-run it. Recorded rather than counted as covered.
