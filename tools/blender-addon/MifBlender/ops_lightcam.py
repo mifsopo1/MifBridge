@@ -22,6 +22,7 @@ entries and each is its own engine surface; doing them badly alongside these two
 than leaving them recorded.
 """
 import math
+import os
 
 import bpy
 import mathutils
@@ -871,7 +872,126 @@ def op_set_camera_panorama(params):
     return out
 
 
+def op_set_light_ies(params):
+    """Give a light a real-world IES profile, or clear it.
+
+    An IES file is a MEASURED photometric distribution from a fixture manufacturer - the shape of
+    the light a real luminaire throws. It is how archviz and product lighting stop looking like
+    computer graphics, and no amount of energy/radius/spot-angle fiddling substitutes for one.
+
+    A LIGHT'S DISTRIBUTION IS NOT A PROPERTY, it is a NODE TREE, which is why this needs an op of
+    its own rather than a key on set_light. Blender does it with an IES Texture node feeding the
+    strength of an Emission shader - three nodes and two links that nothing here could author,
+    because the addon had never touched a light's node tree at all.
+
+    params:
+      object (str, required)
+      filepath (str)     an .ies file on disk. Loaded as EXTERNAL, so the .blend references it.
+      text (str)         the IES data inline, as an INTERNAL text datablock instead
+      strength (float)   the emission strength the profile scales
+      clear (bool)       remove the tree and return the light to its plain properties
+
+    filepath and text are refused together - two answers to the same question - and a filepath that
+    does not exist is refused BEFORE the tree is built, because a half-built node tree on a light
+    that then renders black is worse than no change.
+    """
+    reject_unknown(params, {"object", "light", "name", "filepath", "text", "strength", "clear"},
+                   "set_light_ies")
+    want = take(params, "object", "light", "name", default=None, kind=str)
+    if not want:
+        raise MifOpError("'object' is required - which light. NOTHING was changed.")
+    obj = bpy.data.objects.get(want)
+    if obj is None:
+        raise MifOpError("no object named '%s'. NOTHING was changed." % want)
+    if obj.type != "LIGHT":
+        raise MifOpError("'%s' is a %s, not a LIGHT. NOTHING was changed." % (want, obj.type))
+    data = obj.data
+
+    if take_bool(params, "clear", default=False):
+        had = bool(getattr(data, "use_nodes", False))
+        data.use_nodes = False
+        return {"light": obj.name, "cleared": True, "hadNodeTree": had,
+                "useNodes": bool(getattr(data, "use_nodes", False))}
+
+    path = take(params, "filepath", default=None, kind=str)
+    text = take(params, "text", default=None, kind=str)
+    if path and text:
+        raise MifOpError("pass filepath OR text, not both - they are two answers to the same "
+                         "question. NOTHING was changed.")
+    if not path and not text:
+        raise MifOpError("pass filepath (an .ies file) or text (the IES data inline), or "
+                         "clear:true. NOTHING was changed.")
+    if path:
+        path = os.path.abspath(os.path.expanduser(str(path)))
+        if not os.path.isfile(path):
+            raise MifOpError("no IES file at '%s'. Refused before building the node tree, because "
+                             "a half-built tree on a light that then renders black is worse than "
+                             "no change. NOTHING was changed." % path)
+
+    strength = take_float(params, "strength", default=None)
+
+    # THE TREE. Blender's light nodes are Emission -> Light Output, and an IES Texture drives the
+    # emission STRENGTH rather than its colour.
+    data.use_nodes = True
+    nt = data.node_tree
+    if nt is None:
+        raise MifOpError("this Blender gave the light no node tree even with use_nodes set, so "
+                         "there is nowhere to put an IES profile. NOTHING was changed.")
+
+    out_node = next((n for n in nt.nodes if n.type == "OUTPUT_LIGHT"), None)
+    emit = next((n for n in nt.nodes if n.type == "EMISSION"), None)
+    if emit is None:
+        emit = nt.nodes.new("ShaderNodeEmission")
+        emit.location = (-200, 0)
+    if out_node is None:
+        out_node = nt.nodes.new("ShaderNodeOutputLight")
+        out_node.location = (0, 0)
+    if not any(l.to_node is out_node and l.from_node is emit for l in nt.links):
+        nt.links.new(emit.outputs[0], out_node.inputs[0])
+
+    ies = next((n for n in nt.nodes if n.type == "TEX_IES"), None)
+    if ies is None:
+        try:
+            ies = nt.nodes.new("ShaderNodeTexIES")
+        except RuntimeError as exc:
+            raise MifOpError("this Blender has no IES texture node (%s), so a photometric profile "
+                             "cannot be applied. NOTHING usable was built." % exc)
+        ies.location = (-450, 0)
+
+    if path:
+        ies.mode = "EXTERNAL"
+        ies.filepath = path
+    else:
+        ies.mode = "INTERNAL"
+        blk = bpy.data.texts.new("%s_IES" % obj.name)
+        blk.from_string(str(text))
+        ies.ies = blk
+    if strength is not None:
+        ies.inputs["Strength"].default_value = strength
+
+    linked = any(l.from_node is ies and l.to_node is emit for l in nt.links)
+    if not linked:
+        nt.links.new(ies.outputs[0], emit.inputs["Strength"])
+        linked = any(l.from_node is ies and l.to_node is emit for l in nt.links)
+
+    return {
+        "light": obj.name,
+        "useNodes": bool(data.use_nodes),
+        "iesNode": ies.name,
+        "mode": ies.mode,
+        "filepath": getattr(ies, "filepath", "") or None,
+        "internalText": ies.ies.name if getattr(ies, "ies", None) else None,
+        "strength": round(float(ies.inputs["Strength"].default_value), 6),
+        # THE POSTCONDITION IS THE LINK. An IES node sitting unconnected in the tree changes
+        # nothing at all and looks entirely correct in the node list - the same right-looking,
+        # inert shape as an invalid constraint or a dead driver.
+        "linkedToEmission": linked,
+        "nodeCount": len(nt.nodes),
+    }
+
+
 OPS = {
+    "set_light_ies": op_set_light_ies,
     "set_camera_panorama": op_set_camera_panorama,
     "create_light": op_create_light,
     "set_light": op_set_light,

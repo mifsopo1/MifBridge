@@ -5020,6 +5020,14 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_set_light_ies(object: str, filepath: str = None, text: str = None,
+                     strength: float = None, clear: bool = None) -> dict:
+    "Give a Blender light a real-world IES photometric profile, or clear it. An IES file is a MEASURED distribution from a fixture manufacturer - the shape of light a real luminaire throws - and it is how archviz and product lighting stop looking like computer graphics. No amount of energy, radius or spot-angle adjustment substitutes for one. A LIGHT'S DISTRIBUTION IS NOT A PROPERTY, IT IS A NODE TREE: Blender wires an IES Texture node into the Strength of an Emission shader, which is why this is its own op rather than a key on bl_set_light, and the addon had never touched a light's node tree at all. Pass filepath for an external .ies, or text for the data inline; both together are refused, and a filepath that does not exist is refused BEFORE the tree is built, because a half-built tree on a light that then renders black is worse than no change. linkedToEmission is the postcondition - an IES node sitting unconnected changes nothing and looks entirely correct in the node list. Call mif_help(\"bl_set_light_ies\") first."
+    return _blender("set_light_ies", object=object, filepath=filepath, text=text,
+                    strength=strength, clear=clear)
+
+
+@mcp.tool()
 def bl_move_keyframes(object: str, data_path: str = None, index: int = None,
                       offset: float = None, scale: float = None, pivot: float = None,
                       frame_start: float = None, frame_end: float = None) -> dict:

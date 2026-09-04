@@ -245,6 +245,25 @@ def main():
     ok, detail = refuses(ops_lightcam.op_set_camera_panorama, {"object": "Cube"},
                          "not a CAMERA")
     check("B102 set_camera_panorama on a mesh refuses", ok, detail)
+    ok, detail = refuses(ops_lightcam.op_set_light_ies, {"object": "Cube", "filepath": "/x.ies"},
+                         "not a LIGHT", "MESH")
+    check("B102 set_light_ies on a mesh says it is a MESH", ok, detail)
+
+    print("")
+    print("=== B102b: set_light_ies refuses before it builds a node tree ===")
+    ok, detail = refuses(ops_lightcam.op_set_light_ies, {"object": "Lamp"},
+                         "filepath", "text", "clear")
+    check("B102b with neither a file, inline text nor clear", ok, detail)
+    ok, detail = refuses(ops_lightcam.op_set_light_ies,
+                         {"object": "Lamp", "filepath": "/x.ies", "text": "IESNA"},
+                         "not both")
+    check("B102b filepath and text together are refused", ok, detail)
+    # THE ORDER IS THE POINT. A missing file must be caught BEFORE use_nodes is set, or the light
+    # is left with a half-built tree and renders black - which is why the message says so.
+    ok, detail = refuses(ops_lightcam.op_set_light_ies,
+                         {"object": "Lamp", "filepath": "/zz/no/such/profile.ies"},
+                         "no IES file at", "before building")
+    check("B102b a missing .ies is refused BEFORE the node tree is touched", ok, detail)
 
     print("")
     print("=== B103: a missing object is refused and the message helps ===")
