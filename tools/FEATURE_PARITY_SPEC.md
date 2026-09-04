@@ -14294,3 +14294,72 @@ out-of-process the way ops_gen already does with gen_status.
 
       Nothing was found once it could look, which is the right outcome: every op that adds to an
       object and can then refuse was already fixed today, most of them by this same pass.
+
+- [~] **the fourth question - does a refusal claiming NOTHING actually change nothing** DECLINED as
+      a dynamic check, 2026-09-04
+      A leak is something NEW; this is something CHANGED, and counting collections could never see
+      it. set_light({type:"SPOT", location:"bad"}) retyped the light and answered "NOTHING was
+      created" with no datablock appearing anywhere.
+
+      Built it: fingerprint objects, lights, cameras, materials and scene settings around every
+      corrupted-payload call, and judge the op only against its own sentence. It reported zero.
+      Restoring the morning's set_light defect underneath it still reported zero.
+
+      The reason is structural, not a bug in the check. The leak pass runs AFTER the sweep has
+      applied each op's good payload, so corrupting one key and re-calling an idempotent set_* op
+      re-applies values that are ALREADY set - `data.type = "SPOT"` on a light that is already SPOT
+      changes nothing, the fingerprint holds, and the check is RIGHT to stay silent. It could only
+      fire on ops whose effect depends on prior state, which is close to none of the ones it was
+      built for. Moving the pass ahead of the sweep would fix that and contaminate the sweep, since
+      32 cases legitimately accept the sentinel.
+
+      Removed, exit condition included, rather than kept as decoration. Same treatment as the
+      read/write-asymmetry lens: measured, found not to reach, and withdrawn with the measurement.
+      The question is answered statically instead - see below.
+
+- [x] **the sentence every refusal makes, checked against the lines above it** DONE 2026-09-04
+      tools/audit_mutate_then_deny.py. Every MifBlender refusal ends with a promise about state and
+      callers are told to trust it; when it is false the caller has been misled by the one line it
+      was told to rely on.
+
+      THE REACH THAT MATTERED IS THE CALLEE. op_set_light has no raise after `data.type = new_type`
+      at all - it calls _vec3, and the refusal lives in there. Looking only for raise statements in
+      the op's own body gave 22 findings with the defect restored and 22 without: it missed the
+      defect it was written for. Counting a call to a refusing helper as a refusal point is what
+      makes it fire (54 -> 56, naming the exact pair), and the verb is often interpolated -
+      "NOTHING was %s." from _vec3's verb argument - which hid 12 more messages.
+
+      SEVEN OPS WERE BREAKING IT. set_camera moved the camera, its lens and its sensor while saying
+      nothing had changed, under a line reading "# COMMIT. Nothing below can refuse."; create_camera
+      built and linked a camera then said "NOTHING was created"; edit_fcurve rewrote every curve's
+      extrapolation before discovering no keyframe matched; add_nla_strip left two tracks and a
+      cleared active action behind; create_text leaked a FONT curve; set_render_settings left the
+      scene on the new engine; set_color_management moved the display device and view transform.
+      Two of the seven were written that same morning, in the session that fixed this shape
+      elsewhere.
+
+      PRECISION CAME FROM READING. It opened at 48 and every rule that cut it came from finding
+      correct code: a SCOPED promise ("NOTHING was changed to the preview range"), a branch that
+      RETURNS, a removal before the raise, a `finally` that restores, an `except` that rolls back, a
+      name handed to .remove() in a handler, a restore assignment, and a scratch bmesh that has not
+      reached the mesh yet. Each is recorded in the audit with the case that produced it so none can
+      later be mistaken for a hedge.
+
+      NOT EVERY PROMISE IS ABOUT STATE. "NOTHING was baked" covers the bake, so bake_texture
+      switching the active UV layer has not broken it. Those four are listed separately and do not
+      gate - what they leave behind is a leak question the matrix judges. Listed rather than
+      dropped.
+
+      MUTATION-TESTED BOTH WAYS. The set_light defect restored: 54 -> 56. add_nla_strip's cleanup
+      deleted: 24 -> 27. A bogus allow-list entry: --check exits 1, which is why a DEAD entry is a
+      failure - the list opened with three, two were dead, and one of those named the wrong FILE so
+      it had never matched anything and never would have said so.
+
+      Zero state findings. Gated in make_release.py as the 27th ratcheted source check.
+
+- [ ] **the UE half of mutate-then-deny is still unaudited**
+      audit_mutate_then_deny reads the Blender addon only. The C++ handlers make the same promise in
+      the same words and nothing checks them; the shape is a Modify()/property write above a
+      RejectUnknownParams or a validation that returns an error. Needs a Clang-level or
+      text-with-AST-discipline pass rather than a port of this file, since the precision rules here
+      are all Python AST.
