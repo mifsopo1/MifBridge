@@ -108,6 +108,10 @@ PAYLOADS = {
     "list_animation_data": {"object": "Cube"},
     "list_keyframes": {"object": "Cube"},
     "list_custom_properties": {"object": "Cube"},
+    # add_particles runs at 'a' and makes exactly one system on Cube, so this reaches the
+    # single-system path. The ambiguity refusal needs two systems and is covered by the
+    # direct probes, where a refusal is the expected answer rather than a gap.
+    "set_particles": {"object": "Cube", "count": 42},
     "list_particles": {"object": "Cube"},
     "list_bones": {"object": "MifRig"},
     "set_object_visibility": {"object": "Cube", "hideRender": False},

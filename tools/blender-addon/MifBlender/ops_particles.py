@@ -15,14 +15,24 @@ import bpy
 
 from .ops_common import MifOpError, get_object, reject_unknown, take, take_bool, take_float
 
-_PS_KEYS = {
-    "object", "name", "systemName", "type", "count", "seed",
+# A CORE PLUS A UNION EACH WAY, and the shape is dictated by parity_check rather than taste.
+# It resolves a set literal, a module-level name bound to one, and A | B - and REFUSES a
+# subtraction, which is right: an accepted-key list it cannot read statically is exactly
+# where drift hides. The first version of set_particles wrote (set(_PS_KEYS) - {...}) | {...}
+# and the checker failed it by name, so the core moved out instead.
+#
+# systemName NAMES a system being created; system ADDRESSES one that exists. Neither op
+# accepts the other's, so a caller sending systemName to set_particles is refused rather
+# than having it silently ignored.
+_PS_CORE = {
+    "object", "name", "type", "count", "seed",
     "frameStart", "frameEnd", "lifetime", "lifetimeRandom",
     "emitFrom", "distribution", "useModifierStack",
     "physicsType", "normalFactor", "randomFactor", "gravityFactor", "dampingFactor",
     "size", "sizeRandom", "renderType", "instanceObject", "instanceCollection",
     "hairLength", "childCount", "showEmitter", "rotationMode", "useRotations",
 }
+_PS_KEYS = _PS_CORE | {"systemName"}
 _LIST_KEYS = {"object", "name"}
 
 
@@ -30,50 +40,33 @@ def _enum(rna_type, prop):
     return {i.identifier for i in rna_type.bl_rna.properties[prop].enum_items}
 
 
-def op_add_particles(params):
-    """Add a particle system. Returns the settings read back off the datablock.
+def _apply_particle_settings(obj, psys, params, kind):
+    """Every particle setting, written once and called from BOTH ops.
 
-    params:
-      object (str, required)   the emitter
-      type                     EMITTER (default) | HAIR
-      count (int)              number of particles
-      frameStart / frameEnd    EMITTER only - the emission window
-      lifetime                 EMITTER only
-      hairLength / childCount  HAIR only
-      emitFrom                 VERT | FACE | VOLUME
-      physicsType              NO | NEWTON | KEYED | BOIDS | FLUID
-      normalFactor / randomFactor / gravityFactor / dampingFactor
-      size / sizeRandom
-      renderType               NONE | HALO | PATH | OBJECT | COLLECTION
-      instanceObject           the object to instance - REQUIRED when renderType is OBJECT
-      showEmitter (bool)
+    LIFTED OUT OF op_add_particles ON 2026-09-04, unchanged in substance, because a
+    particle system could be created and never adjusted. add_particles stacks a NEW
+    system on every call - three calls give three systems, all emitting - so the only
+    way to change a count was to add another system beside the one you meant to edit.
+    Multiple systems on one object are legitimate (dust and sparks), which is why
+    add_particles still stacks; what was missing was a way to reach one that exists.
+
+    ONE WRITER, for the reason this file already knows twice over - the useModifierStack
+    comment below records three keys that were accepted and read nowhere, and
+    ops_lightcam records allowEditConst getting past one guard and not the other. Two
+    copies of this would drift the same way.
+
+    THE MESSAGES SAY "created" AND ARE LEFT ALONE. The first version of this extraction
+    tried to parameterise them and broke the arity of every multi-line format expression,
+    because % binds tighter than + and the injected operator landed before the argument
+    tuple. set_particles adapts the two trailing sentences when it re-raises - one place
+    rather than nine, and no format string is touched.
     """
-    reject_unknown(params, _PS_KEYS, "add_particles")
-    obj = get_object(take(params, "object", "name", required=True), want_mesh=True)
-    kind = str(take(params, "type", default="EMITTER", kind=str)).upper()
-    if kind not in ("EMITTER", "HAIR"):
-        raise MifOpError("particle type must be EMITTER or HAIR, got '%s'. NOTHING was created."
-                         % kind)
-
-    # REFUSED BEFORE ANYTHING IS CREATED, the same way create_light does it - a typo should not
-    # leave a half-built particle system on somebody's mesh.
-    for keys, want, label in ((("frameStart", "frameEnd", "lifetime", "lifetimeRandom"),
-                               "EMITTER", "frameStart/frameEnd/lifetime"),
-                              (("hairLength", "childCount"), "HAIR", "hairLength/childCount")):
-        present = [k for k in keys if k in params]
-        if present and kind != want:
-            raise MifOpError("%s applies to a %s system and this one is %s (%s given). NOTHING was "
-                             "created." % (label, want, kind, ", ".join(present)))
-
+    # RE-READ HERE, not passed in. Both were computed in the caller's validation block
+    # and used inside this span, so lifting it left them undefined -
+    # audit_undefined_names caught that on the first run, which is exactly the failure
+    # that audit exists for: a NameError on a path no green test reaches.
     render_type = take(params, "renderType", default=None, kind=str)
     inst = take(params, "instanceObject", default=None, kind=str)
-    if render_type and str(render_type).upper() == "OBJECT" and not inst:
-        raise MifOpError("renderType OBJECT needs instanceObject - without it the system renders "
-                         "NOTHING and Blender reports no error at all. NOTHING was created.")
-
-    mod = obj.modifiers.new(name=str(take(params, "systemName", default="ParticleSystem",
-                                          kind=str)), type="PARTICLE_SYSTEM")
-    psys = obj.particle_systems[-1]
     st = psys.settings
     st.type = kind
 
@@ -216,7 +209,16 @@ def op_add_particles(params):
                              "(tried show_instancer_for_render/_viewport and use_render_emitter), "
                              "so showEmitter would have been silently ignored. The system WAS "
                              "created.")
+    return psys
 
+
+def _particle_row(obj, psys):
+    """What a particle system IS, off the datablock. One reader for add_particles and set_particles.
+
+    Extracted with the writer on 2026-09-04 for the same reason: two ops answering the same question
+    in two places is how they drift.
+    """
+    st = psys.settings
     return {
         "object": obj.name,
         "system": psys.name,
@@ -238,6 +240,56 @@ def op_add_particles(params):
     }
 
 
+def op_add_particles(params):
+    """Add a particle system. Returns the settings read back off the datablock.
+
+    params:
+      object (str, required)   the emitter
+      type                     EMITTER (default) | HAIR
+      count (int)              number of particles
+      frameStart / frameEnd    EMITTER only - the emission window
+      lifetime                 EMITTER only
+      hairLength / childCount  HAIR only
+      emitFrom                 VERT | FACE | VOLUME
+      physicsType              NO | NEWTON | KEYED | BOIDS | FLUID
+      normalFactor / randomFactor / gravityFactor / dampingFactor
+      size / sizeRandom
+      renderType               NONE | HALO | PATH | OBJECT | COLLECTION
+      instanceObject           the object to instance - REQUIRED when renderType is OBJECT
+      showEmitter (bool)
+    """
+    reject_unknown(params, _PS_KEYS, "add_particles")
+    obj = get_object(take(params, "object", "name", required=True), want_mesh=True)
+    kind = str(take(params, "type", default="EMITTER", kind=str)).upper()
+    if kind not in ("EMITTER", "HAIR"):
+        raise MifOpError("particle type must be EMITTER or HAIR, got '%s'. NOTHING was created."
+                         % kind)
+
+    # REFUSED BEFORE ANYTHING IS CREATED, the same way create_light does it - a typo should not
+    # leave a half-built particle system on somebody's mesh.
+    for keys, want, label in ((("frameStart", "frameEnd", "lifetime", "lifetimeRandom"),
+                               "EMITTER", "frameStart/frameEnd/lifetime"),
+                              (("hairLength", "childCount"), "HAIR", "hairLength/childCount")):
+        present = [k for k in keys if k in params]
+        if present and kind != want:
+            raise MifOpError("%s applies to a %s system and this one is %s (%s given). NOTHING was "
+                             "created." % (label, want, kind, ", ".join(present)))
+
+    render_type = take(params, "renderType", default=None, kind=str)
+    inst = take(params, "instanceObject", default=None, kind=str)
+    if render_type and str(render_type).upper() == "OBJECT" and not inst:
+        raise MifOpError("renderType OBJECT needs instanceObject - without it the system renders "
+                         "NOTHING and Blender reports no error at all. NOTHING was created.")
+
+    mod = obj.modifiers.new(name=str(take(params, "systemName", default="ParticleSystem",
+                                          kind=str)), type="PARTICLE_SYSTEM")
+    psys = obj.particle_systems[-1]
+    _apply_particle_settings(obj, psys, params, kind)
+    st = psys.settings
+
+    return _particle_row(obj, psys)
+
+
 def op_list_particles(params):
     """Every particle system on an object, read off the datablocks - the verification half."""
     reject_unknown(params, _LIST_KEYS, "list_particles")
@@ -255,7 +307,87 @@ def op_list_particles(params):
     return {"object": obj.name, "systems": out, "count": len(out)}
 
 
+
+_SET_PS_KEYS = _PS_CORE | {"system"}
+
+
+def op_set_particles(params):
+    """Change a particle system that already exists - which nothing could do.
+
+    add_particles STACKS: three calls give three systems on one object, all emitting. That is right
+    for particles, where dust and sparks on one mesh is ordinary - and it meant the only way to
+    change a count was to add a fourth system beside the one you meant to edit. Same absence
+    set_light closed for lights and set_camera for cameras.
+
+    THE SYSTEM IS NAMED, OR THERE MUST BE EXACTLY ONE. An object with two systems and no `system`
+    argument is refused rather than guessed at, because editing the wrong emitter looks like the
+    edit doing nothing.
+
+    RETYPING IS ALLOWED, like set_light's, and the per-type key check runs against the type the
+    system will BE after the call rather than the one it was - the same rule asked in the same
+    place, because the writer is shared.
+
+    params:
+      object / name (str)     required
+      system (str)            which system, when the object has more than one
+      type (str)              EMITTER | HAIR - retyping is allowed
+      ...                     every key add_particles takes except systemName
+    """
+    reject_unknown(params, _SET_PS_KEYS, "set_particles")
+    obj = get_object(take(params, "object", "name", required=True), want_mesh=True)
+    if not obj.particle_systems:
+        raise MifOpError("'%s' has no particle system to change. add_particles makes one. NOTHING "
+                         "was changed." % obj.name)
+
+    want = take(params, "system", default=None, kind=str)
+    if want is None:
+        if len(obj.particle_systems) > 1:
+            raise MifOpError(
+                "'%s' has %d particle systems (%s) and no 'system' was given. Editing the wrong "
+                "emitter looks exactly like the edit doing nothing, so it is refused rather than "
+                "guessed. NOTHING was changed."
+                % (obj.name, len(obj.particle_systems),
+                   ", ".join(p.name for p in obj.particle_systems)))
+        psys = obj.particle_systems[0]
+    else:
+        psys = obj.particle_systems.get(str(want))
+        if psys is None:
+            raise MifOpError("'%s' has no particle system named '%s'. It has: %s. NOTHING was "
+                             "changed." % (obj.name, want,
+                                           ", ".join(p.name for p in obj.particle_systems)))
+
+    # THE TYPE THE SYSTEM WILL BE AFTER THIS CALL, not the one it is - the per-type guards inside
+    # the writer have to validate against the outcome, which is set_light's rule for the same reason.
+    kind = str(take(params, "type", default=psys.settings.type, kind=str)).upper()
+    if kind not in ("EMITTER", "HAIR"):
+        raise MifOpError("particle type must be EMITTER or HAIR, got '%s'. NOTHING was changed."
+                         % kind)
+
+    before = _particle_row(obj, psys)
+    try:
+        _apply_particle_settings(obj, psys, params, kind)
+    except MifOpError as exc:
+        # THE WRITER'S MESSAGES SAY "created", because it was lifted out of add_particles unchanged
+        # and its format strings are left alone deliberately. Adapting the two trailing sentences
+        # here is one place rather than nine, and it stops a set_particles refusal claiming a system
+        # was created when nothing was.
+        text = str(exc).replace("The system WAS created.", "The system WAS MODIFIED.")
+        text = text.replace("NOTHING was created.", "NOTHING was changed.")
+        raise MifOpError(text)
+
+    after = _particle_row(obj, psys)
+    changed = sorted(k for k in set(before) | set(after)
+                     if k != "bakeNote" and before.get(k) != after.get(k))
+    out = dict(after)
+    out.update({
+        "before": before,
+        "changedFields": changed,
+        "changedAnything": bool(changed),
+    })
+    return out
+
 OPS = {
     "add_particles": op_add_particles,
     "list_particles": op_list_particles,
+    "set_particles": op_set_particles,
 }

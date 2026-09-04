@@ -5722,6 +5722,32 @@ def bl_add_particles(object: str, type: str = None, count: int = None, seed: int
 
 
 @mcp.tool()
+def bl_set_particles(object: str, system: str = None, type: str = None, count: int = None, seed: int = None,
+                     frame_start: float = None, frame_end: float = None, lifetime: float = None,
+                     lifetime_random: float = None, emit_from: str = None,
+                     distribution: str = None, physics_type: str = None,
+                     normal_factor: float = None, random_factor: float = None,
+                     gravity_factor: float = None, damping_factor: float = None,
+                     size: float = None, size_random: float = None, render_type: str = None,
+                     instance_object: str = None, instance_collection: str = None,
+                     hair_length: float = None, child_count: int = None,
+                     show_emitter: bool = None,
+                     use_modifier_stack: bool = None, rotation_mode: str = None,
+                     use_rotations: bool = None) -> dict:
+    "Change a Blender particle system that ALREADY EXISTS. bl_add_particles STACKS - three calls give three systems on one object, all emitting - which is right for particles, where dust and sparks on one mesh is ordinary, and it meant the only way to change a count was to add a fourth system beside the one you meant to edit. THE SYSTEM IS NAMED, OR THERE MUST BE EXACTLY ONE: an object with two systems and no `system` argument is refused rather than guessed at, because editing the wrong emitter looks exactly like the edit doing nothing. Retyping between EMITTER and HAIR is allowed, and the per-type key checks run against the type the system will BE after the call. Every setting goes through the same writer bl_add_particles uses, so the two cannot drift. The response carries before/changedFields alongside the current state."
+    return _blender("set_particles", object=object, system=system, type=type, count=count, seed=seed,
+                    frameStart=frame_start, frameEnd=frame_end, lifetime=lifetime,
+                    lifetimeRandom=lifetime_random, emitFrom=emit_from, distribution=distribution,
+                    physicsType=physics_type, normalFactor=normal_factor,
+                    randomFactor=random_factor, gravityFactor=gravity_factor,
+                    dampingFactor=damping_factor, size=size, sizeRandom=size_random,
+                    renderType=render_type, instanceObject=instance_object,
+                    instanceCollection=instance_collection, hairLength=hair_length,
+                    childCount=child_count, showEmitter=show_emitter, useModifierStack=use_modifier_stack, rotationMode=rotation_mode,
+                    useRotations=use_rotations)
+
+
+@mcp.tool()
 def bl_list_particles(object: str) -> dict:
     "Read every particle system on a Blender object off its datablocks - the verification half of bl_add_particles. Flags a system that renders nothing because render_type is OBJECT with no instance object."
     return _blender("list_particles", object=object)

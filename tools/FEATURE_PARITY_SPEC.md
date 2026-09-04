@@ -13673,10 +13673,48 @@ out-of-process the way ops_gen already does with gen_status.
       and solver 30 applied once a rigid body existed with a readback, timeScale and splitImpulse
       applied, and an empty call refused.
 
-- [ ] **particles, world and compositing have not had this pass**
+- [x] **particles, world and compositing have not had this pass** DONE 2026-09-04
       Lighting, cameras and physics each turned out to have a real gap when the read side was
       compared against the write side, after I had said the well was dry. The three families the
       spec names that have NOT been checked the same way are particles (add_particles /
       list_particles), world (set_world / world_info) and compositing (set_compositing /
       compositor_info). Same method: read what the info op reports, diff it against what the setter
       accepts, and measure the difference on all four builds before believing it.
+
+      DONE. World and compositing came back CLEAN: what their info ops report and their setters do
+      not accept is DERIVED - node counts, the compositor API era, the world's flat colour, the
+      blocker list - not settings that were forgotten. A negative result, and worth having looked.
+
+      Particles had the gap, and it was a different shape: no read/write asymmetry at all, but no
+      SETTER. add_particles stacks a NEW system on every call - three calls give three systems on
+      one object, all emitting - so the only way to change a count was to add a fourth system beside
+      the one you meant to edit. Multiple systems per object are legitimate for particles, unlike
+      the duplicate geometry-node modifiers fixed this morning, so add_particles still stacks; what
+      was missing was a way to reach one that exists.
+
+      THE WRITER WAS EXTRACTED RATHER THAN COPIED, ~120 lines, because this file already carries two
+      records of what a second copy costs - three keys accepted and read nowhere, and ops_lightcam's
+      allowEditConst getting past one guard and not the other.
+
+      THREE TOOLS CAUGHT THREE DIFFERENT MISTAKES IN THAT EXTRACTION, which is the argument for
+      doing a refactor of this size inside this repo rather than somewhere without them:
+
+        audit_undefined_names   render_type and inst were computed in the caller's validation block
+                                and used inside the lifted span - a NameError on a path no green
+                                test reaches, caught on the first run.
+        the version probes      my first attempt parameterised the "created"/"changed" wording by
+                                rewriting the message literals, which broke the arity of every
+                                multi-line format expression - % binds tighter than +, so the
+                                injected operator landed before the argument tuple. Reverted; the
+                                messages are untouched and set_particles adapts the two trailing
+                                sentences when it re-raises, one place instead of nine.
+        parity_check            _SET_PS_KEYS was (set(_PS_KEYS) - {...}) | {...} and the checker
+                                REFUSED it - correctly, since an accepted-key list it cannot read
+                                statically is where drift hides. A shared _PS_CORE with a union each
+                                way is the shape it can verify.
+
+      Verified on 3.6.23 and 5.0.1: add_particles still round-trips all eighteen of its settings
+      and all three of its refusals; set_particles changes the only system, refuses when an object
+      has two and none is named, refuses an unknown name, refuses when there is no system at all,
+      and its enum refusal reads "The system WAS MODIFIED." rather than "created". The readback
+      confirms two systems changed in place rather than four systems existing.
