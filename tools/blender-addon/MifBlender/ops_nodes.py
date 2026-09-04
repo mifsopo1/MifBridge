@@ -33,7 +33,7 @@ from .ops_common import MifOpError, get_object, reject_unknown, take, take_bool,
 
 _CREATE_KEYS = {"name", "type", "withGroupIO"}
 _ADDNODE_KEYS = {"group", "tree", "type", "nodeType", "name", "location", "inputs", "label",
-                 "operation", "dataType", "domain", "mode"}
+                 "operation", "dataType", "domain", "mode", "nodeGroup"}
 _LINK_KEYS = {"group", "tree", "fromNode", "fromSocket", "toNode", "toSocket"}
 _LIST_KEYS = {"group", "tree"}
 _IFACE_KEYS = {"group", "tree", "name", "socketType", "inOut", "default", "min", "max"}
@@ -182,6 +182,13 @@ def _socket_value(kind, sock_name, val, where):
     return float(val)
 
 
+# WHICH NODE TYPES HOLD ANOTHER TREE. A Group node is the only way to compose procedural systems,
+# and add_group_node could create one and never point it at anything: node_tree stayed None, so the
+# node had no inputs, no outputs and no effect, and the op reported success with "inputs": [].
+_GROUP_NODE_TYPES = ("GeometryNodeGroup", "ShaderNodeGroup", "CompositorNodeGroup",
+                     "TextureNodeGroup")
+
+
 def op_add_group_node(params):
     """Add a node to a group and optionally set its input defaults.
 
@@ -223,6 +230,40 @@ def op_add_group_node(params):
                              % (ntype, key, node.name))
         setattr(node, attr, str(params[key]).upper())
 
+    # THE CONTAINED TREE, and it has to be set before `inputs` is read: a Group node has NO sockets
+    # at all until it points at something, so an inputs dict would refuse every key as unknown.
+    want_group = take(params, "nodeGroup", default=None, kind=str)
+    if want_group is not None:
+        if ntype not in _GROUP_NODE_TYPES:
+            raise MifOpError(
+                "'nodeGroup' only applies to a Group node (%s), and this is a %s. Accepting it here "
+                "and writing nothing is how a caller believes they nested a group they did not. The "
+                "node WAS added as '%s'." % (", ".join(_GROUP_NODE_TYPES), ntype, node.name))
+        inner = bpy.data.node_groups.get(str(want_group))
+        if inner is None:
+            have = sorted(g.name for g in bpy.data.node_groups)[:25]
+            tree.nodes.remove(node)
+            raise MifOpError("no node group named '%s'. This file has: %s. NOTHING was added."
+                             % (want_group, ", ".join(have) if have else "(none)"))
+        if inner.bl_idname != tree.bl_idname:
+            tree.nodes.remove(node)
+            raise MifOpError(
+                "'%s' is a %s and '%s' is a %s - a group node can only contain a tree of its own "
+                "kind. NOTHING was added." % (inner.name, inner.bl_idname, tree.name, tree.bl_idname))
+        node.node_tree = inner
+        # READ BACK, because Blender rejects a RECURSIVE assignment SILENTLY. Measured on 3.6.23,
+        # 4.4.0 and 5.0.1: pointing a group node at its own tree, directly or through a second
+        # group, leaves node_tree at None and raises nothing at all. An inert Group node is
+        # indistinguishable from a working one in the outliner, so this is refused rather than
+        # returned as a success with an empty socket list.
+        if node.node_tree is not inner:
+            tree.nodes.remove(node)
+            raise MifOpError(
+                "Blender would not put '%s' inside '%s' and reported no error - node_tree stayed "
+                "empty. That happens when it would be RECURSIVE: a group cannot contain itself, "
+                "directly or through another group that contains it. The node was removed rather "
+                "than left holding nothing. NOTHING was added." % (inner.name, tree.name))
+
     applied = {}
     given = params.get("inputs")
     if given is not None:
@@ -252,6 +293,10 @@ def op_add_group_node(params):
             applied[sock_name] = val
 
     return {"group": tree.name, "node": node.name, "type": ntype,
+            # WHAT THIS NODE CONTAINS, if anything. A Group node with None here has no sockets and
+            # does nothing, which is the state this parameter exists to make reachable and visible.
+            "containsGroup": (node.node_tree.name
+                              if getattr(node, "node_tree", None) is not None else None),
             "location": [round(node.location[0], 3), round(node.location[1], 3)],
             "inputs": [s.name for s in node.inputs],
             "outputs": [s.name for s in node.outputs],

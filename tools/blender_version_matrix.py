@@ -326,6 +326,11 @@ FIXTURES = [
                         "name": "MifNodeA"}),
     ("add_group_node", {"group": "MifMatrixGroup", "type": "GeometryNodeSetPosition",
                         "name": "MifNodeB"}),
+    # A NESTED GROUP. Until 2026-09-04 a Group node could be created and never pointed at a
+    # tree, so it held nothing and had no sockets. MifInnerGroup exists only to be nested.
+    ("create_node_group", {"name": "MifInnerGroup", "type": "GeometryNodeTree"}),
+    ("add_group_node", {"group": "MifMatrixGroup", "type": "GeometryNodeGroup",
+                        "name": "MifNested", "nodeGroup": "MifInnerGroup"}),
     ("create_armature", {"name": "MifRig",
                          "bones": [{"name": "root", "head": [0, 0, 0], "tail": [0, 0, 1]},
                                    {"name": "tip", "head": [0, 0, 1], "tail": [0, 0, 2],

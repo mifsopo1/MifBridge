@@ -13340,3 +13340,25 @@ out-of-process the way ops_gen already does with gen_status.
       offset 0.25 alongside wrapMethod and wrapMode; the NODES modifier reports group 'G' with
       inputs {Amount: 3.5, Which: 'Terrain'} - the Object pointer resolved to its name - and
       outputConnected false.
+
+- [x] **a Group node could be created and never pointed at a group** DONE 2026-09-04
+      add_group_node would happily add a GeometryNodeGroup and leave node_tree at None, so the node
+      held nothing, had NO sockets at all, did nothing - and the op returned success with
+      "inputs": []. Node groups could not be nested, which is the whole of composing one procedural
+      system out of another. Third instance today of the same root cause: a name that could not
+      become a pointer.
+
+      `nodeGroup` is set BEFORE `inputs` is read, deliberately - a Group node has no sockets until
+      it contains a tree, so an inputs dict would otherwise refuse every key as unknown.
+
+      THE RECURSION GUARD IS NOT DEFENSIVE PROGRAMMING, it is a measured silent failure. On 3.6.23,
+      4.4.0 and 5.0.1, pointing a group node at its own tree - directly, or through a second group
+      that contains it - leaves node_tree at None and RAISES NOTHING. An inert Group node looks
+      exactly like a working one. So the assignment is read back and the node removed with an
+      explanation, rather than returned as a success holding nothing.
+
+      Verified on 3.6.23 and 5.0.1, six cases: nesting works and the node gains its sockets
+      ('Geometry', 'Amount') where it previously had none; an input on the nested group is written
+      and reads back as 7.5; and four refusals fire - self-nesting, a ShaderNodeTree inside a
+      GeometryNodeTree, a missing group, and nodeGroup passed to a node that is not a Group node.
+      A nested group is now built in the matrix fixtures on every build.

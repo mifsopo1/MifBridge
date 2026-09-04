@@ -5715,11 +5715,12 @@ def bl_create_node_group(name: str = None, type: str = None, with_group_io: bool
 @mcp.tool()
 def bl_add_group_node(group: str, type: str, name: str = None, location: list = None,
                       inputs: dict = None, label: str = None, operation: str = None,
-                      data_type: str = None, domain: str = None, mode: str = None) -> dict:
-    "Add a node to a Blender node group. `inputs` is {socketName: value} and a name that does not match a real socket is refused with the sockets the node actually has - a value written to a socket that is not there vanishes without a word. The `group` argument also addresses trees that are OWNED by something rather than living in bpy.data.node_groups: 'scene:compositor', 'scene:world', 'material:<name>' and 'world:<name>'. That is how a MATERIAL's shader graph is authored - bl_describe_material could read one in full while bl_set_material_properties could write only the Principled BSDF's own sockets, so the addon could describe a graph in detail and not add a node to it."
+                      data_type: str = None, domain: str = None, mode: str = None,
+                      node_group: str = None) -> dict:
+    "Add a node to a Blender node group. `inputs` is {socketName: value} and a name that does not match a real socket is refused with the sockets the node actually has - a value written to a socket that is not there vanishes without a word. The `group` argument also addresses trees that are OWNED by something rather than living in bpy.data.node_groups: 'scene:compositor', 'scene:world', 'material:<name>' and 'world:<name>'. That is how a MATERIAL's shader graph is authored - bl_describe_material could read one in full while bl_set_material_properties could write only the Principled BSDF's own sockets, so the addon could describe a graph in detail and not add a node to it. NESTING: pass node_group to make a Group node CONTAIN another tree - without it a Group node points at nothing, has no sockets at all and does nothing, while reporting success. Set it in the same call as `inputs`, because the node has no sockets to write until it holds a tree. A RECURSIVE nest is refused: Blender rejects one SILENTLY, leaving node_tree empty and raising nothing, so the assignment is read back and the node removed rather than left inert."
     return _blender("add_group_node", group=group, type=type, name=name, location=location,
                     inputs=inputs, label=label, operation=operation, dataType=data_type,
-                    domain=domain, mode=mode)
+                    domain=domain, mode=mode, nodeGroup=node_group)
 
 
 @mcp.tool()
