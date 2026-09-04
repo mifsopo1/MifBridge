@@ -5020,6 +5020,18 @@ def bl_create_light(type: str = "POINT", name: str = "", location: list = None,
 
 
 @mcp.tool()
+def bl_set_camera_panorama(object: str, panorama_type: str = None, fisheye_fov: float = None,
+                           fisheye_lens: float = None, latitude_min: float = None,
+                           latitude_max: float = None, longitude_min: float = None,
+                           longitude_max: float = None) -> dict:
+    "Configure a panoramic Blender camera - the settings bl_create_camera could accept a PANO type for and never reach. That made PANO a declared-and-unreachable: the type validated, the camera was created, and nothing in the addon could set a single panorama property, which is worse than not offering the type. A camera that is not PANO is refused rather than having the settings stored where they will never be used. Panorama settings moved between versions - camera.cycles in 3.x, the camera data in 4.x+ - so both are tried and storedOn reports which one this Blender uses. PANORAMIC RENDERING IS A CYCLES FEATURE: engineHonoursPanorama says whether the current engine will actually use any of this, rather than leaving it to be discovered when the render comes back rectilinear. Call mif_help(\"bl_set_camera_panorama\") first."
+    return _blender("set_camera_panorama", object=object, panoramaType=panorama_type,
+                    fisheyeFov=fisheye_fov, fisheyeLens=fisheye_lens, latitudeMin=latitude_min,
+                    latitudeMax=latitude_max, longitudeMin=longitude_min,
+                    longitudeMax=longitude_max)
+
+
+@mcp.tool()
 def bl_add_nla_strip(object: str, action: str, track: str = None, start: int = None,
                      strip_name: str = None, blend_type: str = None, influence: float = None,
                      push_down_active: bool = None) -> dict:

@@ -742,7 +742,137 @@ def op_aim_object(params):
     }
 
 
+# PANORAMA SETTINGS MOVED between versions: they were on camera.cycles in 3.x and are on the
+# camera data itself in 4.x+. Both are tried, newest first, the same way the light shadow flag and
+# the object ray-visibility flags are handled - a hardcoded single location is a silent no-op on
+# half the Blenders this addon supports.
+_PANO_FIELDS = (
+    ("panoramaType", "panorama_type"),
+    ("fisheyeFov", "fisheye_fov"),
+    ("fisheyeLens", "fisheye_lens"),
+    ("latitudeMin", "latitude_min"),
+    ("latitudeMax", "latitude_max"),
+    ("longitudeMin", "longitude_min"),
+    ("longitudeMax", "longitude_max"),
+)
+
+
+# A LITERAL, for the same reason _VISIBILITY_KEYS is one in ops_scene: parity_check resolves
+# accepted-key sets statically and is fail-closed, refusing a set comprehension rather than
+# skipping a check it cannot read. The duplication of _PANO_FIELDS' keys is therefore forced, so it
+# is GUARDED at import - a key present in _PANO_FIELDS and missing here would be refused at the
+# door while every other part of the op supports it.
+_PANO_KEYS = {
+    "object", "camera", "name",
+    "panoramaType", "fisheyeFov", "fisheyeLens",
+    "latitudeMin", "latitudeMax", "longitudeMin", "longitudeMax",
+}
+
+_pano_missing = {k for k, _a in _PANO_FIELDS} - _PANO_KEYS
+if _pano_missing:
+    raise RuntimeError(
+        "MifBlender ops_lightcam: _PANO_FIELDS names %s but _PANO_KEYS does not, so those keys "
+        "would be refused by reject_unknown while the rest of the op supports them. Add them to "
+        "the literal - it is duplicated on purpose so parity_check can read it."
+        % ", ".join(sorted(_pano_missing)))
+
+
+def _pano_holder(cam):
+    """Where this Blender keeps the panorama settings, or None if it keeps them nowhere."""
+    if hasattr(cam, "panorama_type"):
+        return cam
+    cyc = getattr(cam, "cycles", None)
+    if cyc is not None and hasattr(cyc, "panorama_type"):
+        return cyc
+    return None
+
+
+def op_set_camera_panorama(params):
+    """Configure a panoramic camera - the settings create_camera could accept a type for and
+    never reach.
+
+    A DECLARED-AND-UNREACHABLE, closed. create_camera validates PANO against Blender's own enum and
+    accepts it, and then nothing in this addon could set a single panorama property - so a PANO
+    camera could be created and was unusable, which is worse than not offering the type at all.
+
+    params:
+      object (str, required)          must already be a PANO camera
+      panoramaType (str)              EQUIRECTANGULAR | FISHEYE_EQUIDISTANT | FISHEYE_EQUISOLID |
+                                      MIRRORBALL | ... validated against this Blender's own enum
+      fisheyeFov / fisheyeLens (float)
+      latitudeMin / latitudeMax (float)     radians, EQUIRECTANGULAR framing
+      longitudeMin / longitudeMax (float)
+
+    Panoramic rendering is a CYCLES feature. On EEVEE the settings are stored and ignored, which is
+    reported rather than left to be discovered in a render that comes back rectilinear.
+    """
+    reject_unknown(params, _PANO_KEYS, "set_camera_panorama")
+    want = take(params, "object", "camera", "name", default=None, kind=str)
+    if not want:
+        raise MifOpError("'object' is required - which camera. NOTHING was changed.")
+    obj = bpy.data.objects.get(want)
+    if obj is None:
+        raise MifOpError("no object named '%s'. NOTHING was changed." % want)
+    if obj.type != "CAMERA":
+        raise MifOpError("'%s' is a %s, not a CAMERA. NOTHING was changed." % (want, obj.type))
+    cam = obj.data
+    if cam.type != "PANO":
+        raise MifOpError("'%s' is a %s camera, not PANO - these settings would be stored and never "
+                         "used. Set its type to PANO first with set_camera. NOTHING was changed."
+                         % (want, cam.type))
+
+    holder = _pano_holder(cam)
+    if holder is None:
+        raise MifOpError("this Blender exposes no panorama settings on a camera (tried the camera "
+                         "data and camera.cycles), so every key here would be silently ignored. "
+                         "NOTHING was changed.")
+
+    ptype = take(params, "panoramaType", default=None, kind=str)
+    if ptype:
+        ptype = str(ptype).upper()
+        try:
+            valid = {i.identifier for i in
+                     holder.bl_rna.properties["panorama_type"].enum_items}
+        except (KeyError, AttributeError):
+            valid = set()
+        if valid and ptype not in valid:
+            raise MifOpError("unknown panoramaType '%s'. Valid: %s. NOTHING was changed."
+                             % (ptype, ", ".join(sorted(valid))))
+
+    # Every requested field is resolved BEFORE any is written, so a build missing one refuses the
+    # whole call rather than applying half of them.
+    plan = []
+    for key, attr in _PANO_FIELDS:
+        if key not in params:
+            continue
+        if not hasattr(holder, attr):
+            raise MifOpError("this Blender has no '%s' on its panorama settings, so '%s' would be "
+                             "silently ignored. NOTHING was changed." % (attr, key))
+        value = ptype if key == "panoramaType" else take_float(params, key, default=None)
+        plan.append((attr, value))
+    if not plan:
+        raise MifOpError("nothing to set - pass at least one of %s. NOTHING was changed."
+                         % ", ".join(k for k, _a in _PANO_FIELDS))
+
+    for attr, value in plan:
+        setattr(holder, attr, value)
+
+    out = {"camera": obj.name, "type": cam.type,
+           "storedOn": "camera" if holder is cam else "camera.cycles"}
+    for key, attr in _PANO_FIELDS:
+        if hasattr(holder, attr):
+            v = getattr(holder, attr)
+            out[key] = v if isinstance(v, str) else round(float(v), 6)
+    # PANORAMIC RENDERING IS A CYCLES FEATURE. On any other engine these are stored and ignored,
+    # and a caller finds out when the render comes back rectilinear. Said here instead.
+    engine = bpy.context.scene.render.engine
+    out["renderEngine"] = engine
+    out["engineHonoursPanorama"] = "CYCLES" in engine
+    return out
+
+
 OPS = {
+    "set_camera_panorama": op_set_camera_panorama,
     "create_light": op_create_light,
     "set_light": op_set_light,
     "list_lights": op_list_lights,
