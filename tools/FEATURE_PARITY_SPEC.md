@@ -15328,7 +15328,42 @@ out-of-process the way ops_gen already does with gen_status.
       what separated those; the same run also surfaced a PRE-EXISTING failure in test_blender_scene
       that has nothing to do with this change, filed below.
 
-- [ ] **test_blender_scene S105 fails at HEAD - a constraint reported valid when its target is null**
+- [x] **test_blender_scene S105 fails at HEAD - a constraint reported valid when its target is null** DONE 2026-09-04
+      A real defect, and the check had been proving it for as long as it had been failing.
+
+      MEASURED ON 5.0.1, both halves, because they need opposite conclusions:
+        created with no target   Blender's is_valid is correctly FALSE for 19 of the 20
+                                 target-taking constraint types. The flag is not broken.
+        target DELETED after     is_valid stays TRUE. Through view_layer.update(), update_tag(),
+                                 a depsgraph update, and on the evaluated copy. Never recomputed.
+
+      So the flag works in every case except the one op_list_constraints' docstring is about - "a
+      constraint whose target has been deleted... is_valid is the only programmatic tell". It was
+      the only tell and it was the wrong one. isValid is now derived: Blender's flag AND not
+      (needs a target and has none).
+
+      PIVOT IS EXCLUDED AND THE EXCLUSION IS REAL, not a fudge. It is the one target-taking type
+      whose is_valid is TRUE with no target, because a Pivot constraint with no target pivots
+      around the object's own point. Folding it in would report correct configuration as broken,
+      and a false failure is worse than a false pass - it teaches the reader to ignore the field.
+      Checked as a negative control in the suite.
+
+      targetMissing was added beside isValid so the caller can tell WHICH kind of invalid it is -
+      re-point the constraint, or ask why the target was deleted, are different fixes and one
+      boolean cannot carry both. audit_blender_consequence_fields caught it immediately as a field
+      nothing reads, which is that audit doing its job; the answer was a check, not a baseline.
+
+      test_blender_scene 66 PASS / 1 FAIL -> 69 PASS / 0 FAIL.
+
+- [ ] **14 modifier types can be WRITTEN but not READ BACK**
+      test_blender_rig R901 fails at HEAD, and is nobody's regression - it was simply not being
+      looked at, the same as S105. _MODIFIER_WRITES accepts ARRAY, BOOLEAN, CAST, CURVE, DISPLACE,
+      HOOK, LATTICE, MASK, MESH_DEFORM, SHRINKWRAP, SIMPLE_DEFORM, SMOOTH, WELD and WIREFRAME;
+      the read table describes none of them. So an agent can configure an Array modifier and
+      list_modifiers will not tell it what it set - it can write a value it can never verify.
+
+      This is the read/write asymmetry shape that has paid out repeatedly here, and the suite has
+      been naming it in its own output the whole time.
       Found while baselining the alias change: test_blender_scene is 66 PASS / 1 FAIL both before
       and after, so it is nobody's regression and was simply not being looked at. S105 says
       list_constraints should report a constraint INVALID once its target is gone - "the whole

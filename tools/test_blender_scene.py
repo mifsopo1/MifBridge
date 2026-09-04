@@ -258,8 +258,14 @@ def main():
           lc.get("invalidCount") == 0 and lc.get("invalid") == [], json.dumps(lc)[:220])
 
     # THE SILENT FAILURE THIS FIELD EXISTS FOR. Delete the target and the constraint STAYS, with
-    # its type, influence and target name all still reading fine. is_valid is the only tell, and
-    # Blender surfaces it nowhere an API caller can reach.
+    # its type, influence and target name all still reading fine.
+    #
+    # AND is_valid IS NOT THE TELL, which is what this check spent its life proving while nobody
+    # read the result. Measured on 5.0.1: created with no target, Blender's is_valid is correctly
+    # False for 19 of the 20 target-taking constraint types. Have the target DELETED afterwards
+    # and it stays TRUE - through view_layer.update(), update_tag(), a depsgraph update, and on
+    # the evaluated copy. It is never recomputed. So the flag works in every case except the one
+    # this block is about, and the addon now derives the answer instead of trusting it.
     B.call("delete_object", {"object": "S_Crate"})
     lc2 = B.call("list_constraints", {"object": "S_Cam"})
     check("S105 with the target DELETED the constraint is still on the stack",
@@ -268,6 +274,27 @@ def main():
           "every other field still looks healthy",
           lc2.get("invalidCount") == 1 and "S_Track" in (lc2.get("invalid") or []),
           json.dumps(lc2)[:220])
+
+    row2 = (lc2.get("constraints") or [{}])[0]
+    check("S105 and targetMissing says WHICH kind of invalid it is - re-point it, or ask why the "
+          "target was deleted, are different fixes and one boolean cannot carry both",
+          row2.get("targetMissing") is True and row2.get("target") is None,
+          json.dumps(row2)[:220])
+
+    # THE NEGATIVE CONTROL, and it is a real distinction rather than a formality. PIVOT is the one
+    # target-taking type whose is_valid is TRUE with no target, because a Pivot constraint with no
+    # target pivots around the object's own point. Folding it in with the other nineteen would
+    # report a correctly configured constraint as broken - and a false failure is worse than a
+    # false pass, because it teaches the reader to ignore the field.
+    B.call("add_constraint", {"object": "S_Cam", "type": "PIVOT", "constraintName": "S_Pivot"})
+    lc3 = B.call("list_constraints", {"object": "S_Cam"})
+    pivot = [c for c in (lc3.get("constraints") or []) if c.get("name") == "S_Pivot"]
+    check("S105 a PIVOT with no target is NOT reported missing one - it pivots around the "
+          "object's own point, so demanding a target would fail correct configuration",
+          len(pivot) == 1 and pivot[0].get("targetMissing") is False
+          and pivot[0].get("isValid") is True,
+          json.dumps(pivot)[:220])
+    B.call("remove_constraint", {"object": "S_Cam", "constraintName": "S_Pivot"})
 
     rm = B.call("remove_constraint", {"object": "S_Cam", "constraintName": "S_Track"})
     check("S105 removing it counts the stack rather than trusting the call",

@@ -61,11 +61,36 @@ def _constraint_row(c):
         "target": tgt.name if tgt is not None else None,
         "subtarget": getattr(c, "subtarget", None) or None,
         # A CONSTRAINT WITH A MISSING TARGET IS THE SILENT FAILURE. Blender leaves it in place,
-        # contributes nothing, and shows a red field in the UI that no API caller can see. is_valid
-        # is the only programmatic tell.
-        "isValid": bool(getattr(c, "is_valid", True)),
+        # contributes nothing, and shows a red field in the UI that no API caller can see.
+        #
+        # is_valid ALONE IS NOT ENOUGH, measured on 5.0.1 and it used to be all this read. Created
+        # with no target, is_valid is correctly False for 19 of the 20 target-taking types. Have
+        # the target DELETED afterwards and it stays TRUE - through view_layer.update(),
+        # update_tag(), a depsgraph update, and on the evaluated copy. It is simply never
+        # recomputed. That is the exact case this docstring describes and the exact case the flag
+        # could not report, so a deleted target read as a healthy constraint.
+        "isValid": bool(getattr(c, "is_valid", True)) and not _target_missing(c),
         "needsTarget": hasattr(c, "target"),
+        # WHICH OF THE TWO IT WAS. isValid false because Blender says so, and isValid false because
+        # the target is gone, want different fixes - re-point it, or look at why it was deleted -
+        # and collapsing them into one boolean loses that.
+        "targetMissing": _target_missing(c),
     }
+
+
+# PIVOT is the ONE target-taking type whose is_valid is TRUE with no target, and it is right: a
+# Pivot constraint with no target pivots around the object's own point. Measured across all 29
+# types on 5.0.1 - 20 have a .target, 19 of those report is_valid False when created without one.
+# Treating PIVOT like the other nineteen would report a correctly configured constraint as broken,
+# and a false failure is worse than a false pass because it teaches the reader to ignore the field.
+_TARGET_OPTIONAL = ("PIVOT",)
+
+
+def _target_missing(c):
+    """True when this constraint NEEDS a target and has none."""
+    if not hasattr(c, "target") or c.type in _TARGET_OPTIONAL:
+        return False
+    return getattr(c, "target", None) is None
 
 
 def _evaluated_matrix(obj):
