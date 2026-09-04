@@ -364,9 +364,9 @@
   "pass": 1,
   "rc": 0,
   "summary": "29 PASS  0 FAIL",
-  "seconds": 0.8,
+  "seconds": 0.7,
   "editorSurvived": null,
-  "ranAt": 1788520813.2134552,
+  "ranAt": 1788521393.2800434,
   "tail": ""
  },
  {
@@ -376,7 +376,7 @@
   "summary": "29 PASS  0 FAIL",
   "seconds": 0.7,
   "editorSurvived": null,
-  "ranAt": 1788520814.8282483,
+  "ranAt": 1788521394.8640733,
   "tail": ""
  },
  {
@@ -442,22 +442,22 @@
  {
   "suite": "test_blender_refusals.py",
   "pass": 1,
-  "rc": 1,
-  "summary": "PASS 254   FAIL 1",
+  "rc": 0,
+  "summary": "PASS 256   FAIL 0",
   "seconds": 0.2,
   "editorSurvived": null,
-  "ranAt": 1788520813.373604,
-  "tail": "=== B129: set_light_shadow - refusing what a build cannot do ===\n  PASS  B129 shadow settings on a non-LIGHT are refused\n  PASS  B129 a call with no settings at all is refused\n  PASS  B129 a two-component shadow colour is refused by shape\n  PASS  B129 an unknown object is refused\n  PASS  B129 the shadow map is populated at all - all([]) is True, so the shape check below would pass on an empty table\n  PASS  B129 every documented key maps to a real property path and an availability note - the table is what turns 'this build lacks it' into a sentence naming which builds have it\n\n=== B130: render_animation's scene parameter, and the guard Blender will not do ===\n  PASS  B130 an unknown scene is refused, and the message says Blender's own -S would have silently rendered the wrong one\n  PASS  B130 'scene' is on the accepted key list - it was removed once and this is the check that it came back\n\n=== B107: a refusal that must NOT fire - the legal combination ===\n  PASS  B107 retyping to SPOT while setting spotAngle is ALLOWED - the negative control, without which a guard that refused everything would pass every check above\n\n========================================================================\nPASS 254   FAIL 1\n  FAILED: B123 set_shading on a non-MESH is refused\n          object 'Lamp' is a LIGHT, not a MESH\n========================================================================\nRefusal contracts, plus the ONE family whose postconditions are pure data: B113 asserts\nreal collection membership and reachability, because linking is a name-keyed set with\nnothing evaluated. Everywhere else the claim stands unchanged - no evaluated matrix, no\ncolour space, no purge count and no rendered frame is verified here, and none of it can\nbe without a live Blender."
+  "ranAt": 1788521393.443187,
+  "tail": ""
  },
  {
   "suite": "test_blender_refusals.py",
   "pass": 2,
-  "rc": 1,
-  "summary": "PASS 254   FAIL 1",
+  "rc": 0,
+  "summary": "PASS 256   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520814.971467,
-  "tail": "=== B129: set_light_shadow - refusing what a build cannot do ===\n  PASS  B129 shadow settings on a non-LIGHT are refused\n  PASS  B129 a call with no settings at all is refused\n  PASS  B129 a two-component shadow colour is refused by shape\n  PASS  B129 an unknown object is refused\n  PASS  B129 the shadow map is populated at all - all([]) is True, so the shape check below would pass on an empty table\n  PASS  B129 every documented key maps to a real property path and an availability note - the table is what turns 'this build lacks it' into a sentence naming which builds have it\n\n=== B130: render_animation's scene parameter, and the guard Blender will not do ===\n  PASS  B130 an unknown scene is refused, and the message says Blender's own -S would have silently rendered the wrong one\n  PASS  B130 'scene' is on the accepted key list - it was removed once and this is the check that it came back\n\n=== B107: a refusal that must NOT fire - the legal combination ===\n  PASS  B107 retyping to SPOT while setting spotAngle is ALLOWED - the negative control, without which a guard that refused everything would pass every check above\n\n========================================================================\nPASS 254   FAIL 1\n  FAILED: B123 set_shading on a non-MESH is refused\n          object 'Lamp' is a LIGHT, not a MESH\n========================================================================\nRefusal contracts, plus the ONE family whose postconditions are pure data: B113 asserts\nreal collection membership and reachability, because linking is a name-keyed set with\nnothing evaluated. Everywhere else the claim stands unchanged - no evaluated matrix, no\ncolour space, no purge count and no rendered frame is verified here, and none of it can\nbe without a live Blender."
+  "ranAt": 1788521395.005206,
+  "tail": ""
  },
  {
   "suite": "test_blender_reject_unknown.py",
@@ -1106,7 +1106,7 @@
   "summary": "PASS 22   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520813.455398,
+  "ranAt": 1788521393.5255854,
   "tail": ""
  },
  {
@@ -1116,7 +1116,7 @@
   "summary": "PASS 22   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520815.0493107,
+  "ranAt": 1788521395.0854712,
   "tail": ""
  },
  {
@@ -1186,7 +1186,7 @@
   "summary": "PASS 24   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520813.5565999,
+  "ranAt": 1788521393.6265645,
   "tail": ""
  },
  {
@@ -1196,7 +1196,7 @@
   "summary": "PASS 24   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520815.148097,
+  "ranAt": 1788521395.1821861,
   "tail": ""
  },
  {
@@ -1866,7 +1866,7 @@
   "summary": "PASS 25   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520813.6192977,
+  "ranAt": 1788521393.6906092,
   "tail": ""
  },
  {
@@ -1876,7 +1876,7 @@
   "summary": "PASS 25   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520815.2050405,
+  "ranAt": 1788521395.2415388,
   "tail": ""
  },
  {
@@ -2186,7 +2186,7 @@
   "summary": "PASS 29   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520813.7291484,
+  "ranAt": 1788521393.801979,
   "tail": ""
  },
  {
@@ -2196,7 +2196,7 @@
   "summary": "PASS 29   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520815.312885,
+  "ranAt": 1788521395.3541358,
   "tail": ""
  },
  {
@@ -2466,7 +2466,7 @@
   "summary": "PASS 16   FAIL 0",
   "seconds": 0.2,
   "editorSurvived": null,
-  "ranAt": 1788520813.9034822,
+  "ranAt": 1788521393.9753263,
   "tail": ""
  },
  {
@@ -2476,7 +2476,7 @@
   "summary": "PASS 16   FAIL 0",
   "seconds": 0.2,
   "editorSurvived": null,
-  "ranAt": 1788520815.4859118,
+  "ranAt": 1788521395.527324,
   "tail": ""
  },
  {
@@ -2506,7 +2506,7 @@
   "summary": "PASS 40   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520814.006667,
+  "ranAt": 1788521394.0780199,
   "tail": ""
  },
  {
@@ -2516,7 +2516,7 @@
   "summary": "PASS 40   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520815.5824296,
+  "ranAt": 1788521395.6272147,
   "tail": ""
  },
  {
@@ -2606,7 +2606,7 @@
   "summary": "PASS 16   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520814.108415,
+  "ranAt": 1788521394.1798775,
   "tail": ""
  },
  {
@@ -2616,7 +2616,7 @@
   "summary": "PASS 16   FAIL 0",
   "seconds": 0.1,
   "editorSurvived": null,
-  "ranAt": 1788520815.6775732,
+  "ranAt": 1788521395.7247603,
   "tail": ""
  },
  {

@@ -44,8 +44,8 @@ pipeline wants and is NOT how you place a second object next to a first.
 import bpy
 
 from .ops_common import (MifOpError, check_axis_dict, finite_float, finite_floats, finite_int,
-                         get_object, mesh_counts, object_info, reject_unknown, rnd,
-                         selection_restore, selection_snapshot, take, take_bool, take_float,
+                         get_object, mesh_counts, object_info, reject_unknown, require_editable,
+                         rnd, selection_restore, selection_snapshot, take, take_bool, take_float,
                          take_int)
 
 # What each primitive really accepts. `size` is that operator's own size-like kwarg, or None when it
@@ -263,6 +263,9 @@ def op_transform_object(params):
     reject_unknown(params, ("object", "name", "location", "rotation", "scale", "relative"),
                    "transform_object")
     obj = get_object(take(params, "object", "name", required=True))
+    # A LINKED OBJECT CANNOT BE MOVED BY THIS FILE. Measured on 5.0.1: this accepted the move,
+    # reported the new location as fact, and the change is unsaveable - gone on the next reload.
+    require_editable(obj, "move")
     relative = take_bool(params, "relative", default=False)
     if not any(k in params for k in ("location", "rotation", "scale")):
         raise MifOpError("nothing to set - pass location, rotation and/or scale. NOTHING was "

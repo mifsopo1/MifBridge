@@ -40,7 +40,7 @@ import mathutils
 import mathutils.bvhtree
 
 from .ops_common import (MifOpError, edit_mode_stale, finite_floats, get_object, reject_unknown,
-                         rnd, take, take_bool, take_float, take_int)
+                         require_editable, rnd, take, take_bool, take_float, take_int)
 
 _RAY_KEYS = {"origin", "direction", "target", "object", "name", "distance", "evaluated"}
 # NO "name" ALIAS HERE. object is required and unambiguous, and param_reach flagged the alias
@@ -860,6 +860,9 @@ def op_set_shading(params):
     # is the generic "is a %s, not a MESH" and this op's own is better - it says what is missing
     # rather than what the object is not. test_blender_refusals B123 asserts that wording, and it
     # was right to.
+    # A LINKED MESH CANNOT BE RESHADED HERE EITHER, and this one was quieter than the transform:
+    # it changed nothing at all and still answered ok.
+    require_editable(obj, "reshade")
     if obj.mode != "OBJECT":
         raise MifOpError("'%s' is in %s mode. Shading is written onto the mesh data, which Blender "
                          "keeps in a separate edit BMesh while you are in edit mode - the write "

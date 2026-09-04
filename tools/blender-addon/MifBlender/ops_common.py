@@ -345,6 +345,32 @@ def get_object(name, want_mesh=False):
     return obj
 
 
+def require_editable(obj, what="changed"):
+    """Refuse a write to a LIBRARY-LINKED datablock, which Blender can never save.
+
+    Linked data belongs to another .blend and the local file may not modify it. Blender's RNA does
+    not always stop you: measured on 5.0.1, transform_object moved a linked cube, reported the new
+    location as fact, and the move is unsaveable and gone on the next reload. set_shading was worse
+    in one way - it changed nothing at all and still answered ok.
+
+    A LIBRARY OVERRIDE IS NOT LINKED DATA for this purpose. An override exists precisely so the
+    local file can change selected properties, so obj.override_library being set means the write is
+    legitimate. Checking only `.library` would refuse the case overrides were invented for.
+
+    Nothing in this addon mentioned .library before 2026-09-04 - not once - and linking is how
+    production files are assembled, so an agent driving a real scene meets this immediately.
+    """
+    lib = getattr(obj, "library", None)
+    if lib is None or getattr(obj, "override_library", None) is not None:
+        return
+    raise MifOpError(
+        "'%s' is LINKED from %s, so this file cannot %s it - Blender would either drop the change "
+        "silently or lose it on the next reload. Make a library override for it, or open %s and "
+        "edit it there. NOTHING was changed."
+        % (getattr(obj, "name", "?"), getattr(lib, "filepath", "another .blend"), what,
+           getattr(lib, "filepath", "the source file")))
+
+
 def edit_mode_stale(obj):
     """A response fragment warning that this object's mesh data is not what the caller can see.
 
