@@ -1127,6 +1127,130 @@ def main():
     sc.render.use_sequencer = False
 
     print("")
+    print("=== B117: colour management validates against THIS config, not a remembered list ===")
+    # THE DIFFERENCE THAT MAKES THIS WORTH TESTING. Every other enum in the addon is checked against
+    # bpy.types.X.bl_rna - light type, camera type, constraint type - because those sets are fixed
+    # by the build. Colour management is not: the OCIO config populates view_transform, look and
+    # display_device at RUNTIME. A hard-coded list would refuse the only values that work on a
+    # studio config, and Blender's own default moved from Filmic to AgX in 4.0.
+    from MifBlender import ops_render as ORD
+
+    class _Enum2(object):
+        def __init__(self, ids):
+            self.enum_items = [types.SimpleNamespace(identifier=i) for i in ids]
+
+    class _Props(object):
+        def __init__(self, m):
+            self._m = m
+
+        def __getitem__(self, k):
+            return _Enum2(self._m[k])
+
+    class _VS(object):
+        """A view_settings that behaves like Blender's in the TWO ways that matter here.
+
+        The look list depends on the current transform, AND ASSIGNING A TRANSFORM SILENTLY RESETS
+        THE LOOK to None. The second was added after a ground-truth plant proved the read-back check
+        was untestable without it: with a stub where every assignment simply sticks, deleting that
+        check changed nothing and the plant went uncaught. Modelling the real coercion is what gives
+        the guard something to catch - and it is the coercion the guard was written for.
+        """
+
+        def __init__(self):
+            self._vt = "AgX"
+            self.look = "None"
+            self.exposure = 0.0
+            self.gamma = 1.0
+            self.use_curve_mapping = False
+
+        @property
+        def view_transform(self):
+            return self._vt
+
+        @view_transform.setter
+        def view_transform(self, value):
+            if value != self._vt:
+                self.look = "None"        # Blender drops a look that belongs to another transform
+            self._vt = value
+
+        @property
+        def bl_rna(self):
+            looks = {"AgX": ["None", "AgX - Punchy", "AgX - Greyscale"],
+                     "Filmic": ["None", "Filmic - High Contrast"],
+                     "Standard": ["None"]}
+            return types.SimpleNamespace(properties=_Props({
+                "view_transform": ["Standard", "Filmic", "AgX", "StudioLookXYZ"],
+                "look": looks.get(self.view_transform, ["None"])}))
+
+    bpy = sys.modules["bpy"]
+    sc = bpy.context.scene
+    vs = _VS()
+    sc.view_settings = vs
+    sc.display_settings = types.SimpleNamespace(display_device="sRGB")
+    sc.display_settings.bl_rna = types.SimpleNamespace(
+        properties=_Props({"display_device": ["sRGB", "Rec.1886", "StudioDisplayXYZ"]}))
+    sc.sequencer_colorspace_settings = None
+
+    check("B117 the available set is read from the INSTANCE, so a config-specific name is offered",
+          "StudioLookXYZ" in (ORD.enum_ids(vs, "view_transform") or set()),
+          "got %s" % ORD.enum_ids(vs, "view_transform"))
+
+    ok, msg = refuses(ORD.op_set_color_management, {"viewTransform": "Filmick"},
+                      "not a view transform", "OCIO config actually loaded")
+    check("B117 an unknown view transform is refused and the message says the list came from the "
+          "loaded config rather than a remembered one", ok, msg)
+
+    ok, msg = refuses(ORD.op_set_color_management, {}, "nothing to do")
+    check("B117 a call with no settings at all is refused", ok, msg)
+
+    # THE ORDERING RULE. "Filmic - High Contrast" is not offered while the transform is AgX, so a
+    # version that validated the look against the OLD transform would refuse a legal combination.
+    res, err = succeeds(ORD.op_set_color_management,
+                        {"viewTransform": "Filmic", "look": "Filmic - High Contrast"})
+    check("B117 a transform and a look set TOGETHER succeed - the look is validated against what "
+          "the NEW transform offers, not the one in force on entry",
+          res.get("viewTransform") == "Filmic" and res.get("look") == "Filmic - High Contrast",
+          err or "got %s" % res)
+
+    # AND THE CONVERSE: a look that belongs to a DIFFERENT transform must still be refused.
+    ok, msg = refuses(ORD.op_set_color_management,
+                      {"viewTransform": "Standard", "look": "AgX - Punchy"}, "not a look")
+    check("B117 but a look the new transform does NOT offer is still refused - the ordering fix "
+          "must not become an excuse to accept anything", ok, msg)
+
+    # THE COERCION THE READ-BACK GUARD EXISTS FOR. Blender drops the look when the transform
+    # changes, so an op that set the look FIRST would apply it, have it silently wiped, and return a
+    # success built from the values it was handed. Order plus read-back is what makes this survive.
+    #
+    # WHAT PLANTING PROVED, stated because it is not what was expected. Removing the op's read-back
+    # guard ALONE does not fail this - the response reads `after` from the scene either way, so it
+    # stays honest. Removing the ORDERING alone fails three checks. Removing BOTH fails the same
+    # three, and that is the case the guard is really for: the op would answer look:'None', ok:true,
+    # to a caller who asked for something else. So this covers the outcome, and the guard by itself
+    # is defence in depth rather than something a single plant can isolate.
+    vs.view_transform = "AgX"
+    vs.look = "AgX - Punchy"
+    res, err = succeeds(ORD.op_set_color_management,
+                        {"viewTransform": "Filmic", "look": "Filmic - High Contrast"})
+    check("B117 the look SURVIVES a transform change in the same call - Blender wipes the look "
+          "when the transform moves, so this only holds because the transform is applied first and "
+          "the result is read back from the scene rather than echoed",
+          res.get("look") == "Filmic - High Contrast" and vs.look == "Filmic - High Contrast",
+          err or "response=%s scene=%s" % (res.get("look"), vs.look))
+
+    ok, msg = refuses(ORD.op_set_color_management, {"displayDevice": "Rec.709"},
+                      "not a display device")
+    check("B117 an unknown display device is refused against the config's own list", ok, msg)
+
+    res, err = succeeds(ORD.op_set_color_management, {"exposure": -1.5, "gamma": 1.2})
+    check("B117 exposure and gamma are plain floats and are read back from the scene",
+          res.get("exposure") == -1.5 and res.get("gamma") == 1.2, err or "got %s" % res)
+    check("B117 and the response carries the config's available lists so a caller can recover from "
+          "a refusal without guessing",
+          "StudioLookXYZ" in (res.get("availableViewTransforms") or []),
+          err or "got %s" % res.get("availableViewTransforms"))
+
+    print("")
     print("=== B107: a refusal that must NOT fire - the legal combination ===")
     # THE NEGATIVE CONTROL. Every check above proves something is refused; without this, a guard
     # that refused EVERYTHING would score full marks. Retyping to SPOT while setting spotAngle is

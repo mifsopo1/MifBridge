@@ -5382,6 +5382,17 @@ def bl_render_still(file_path: str = None, frame: float = None, samples: int = N
 
 
 @mcp.tool()
+def bl_set_color_management(view_transform: str = None, look: str = None, exposure: float = None,
+                            gamma: float = None, display_device: str = None,
+                            sequencer_colorspace: str = None,
+                            use_curve_mapping: bool = None) -> dict:
+    "View transform, look, exposure and gamma - the settings that silently change every pixel of every render and saved image, and the usual answer to 'why does this look washed out'. EVERY ENUM IS VALIDATED AGAINST THE OCIO CONFIG ACTUALLY LOADED, read from the instance rather than bpy.types, because unlike light or camera type these sets are populated at runtime: a studio config renames all of them, and the stock default moved from Filmic to AgX in 4.0. A hard-coded list would refuse the only values that work. The LOOK IS NAMESPACED BY THE VIEW TRANSFORM (\"AgX - Punchy\"), so the transform is applied first and the look is validated against what the NEW transform offers - and because Blender silently resets look when the transform changes, every requested write is read back from the scene rather than echoed."
+    return _blender("set_color_management", viewTransform=view_transform, look=look,
+                    exposure=exposure, gamma=gamma, displayDevice=display_device,
+                    sequencerColorspace=sequencer_colorspace, useCurveMapping=use_curve_mapping)
+
+
+@mcp.tool()
 def bl_render_animation(frame_start: int = None, frame_end: int = None,
                         frame_step: int = None) -> dict:
     "Render a frame RANGE out of process and return immediately with a jobId to poll - the only shape that works, because every addon op runs on Blender's main thread under a 150s job timeout, so an in-process animation render freezes the bridge and the MCP gives up while the render carries on. It renders the SAVED .blend, not this session, so it refuses on an unsaved or dirty file rather than silently rendering the wrong scene; there is deliberately no output override, because -o would desynchronise the frame paths from the ones progress is measured against. Every expected frame path is stat'd BEFORE the render so a leftover file from an earlier run cannot be counted as progress. Poll with bl_render_status."

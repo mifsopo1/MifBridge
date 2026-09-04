@@ -11910,7 +11910,31 @@ out-of-process the way ops_gen already does with gen_status.
       magenta-sentinel signature asks whether the buffer CHANGED, not whether what landed is right.
       A pixel signature cannot see a transfer curve.
 
-- [ ] **Tier 1 - the session survives and produces something** (1 of 5 left)
+- [x] **Tier 1 - the session survives and produces something** (5 of 5) DONE 2026-09-03
+      CLOSED by set_color_management, the last of the five.
+
+      IT IS THE ONE ENUM IN THIS ADDON THAT CANNOT BE VALIDATED AGAINST bpy.types. Light
+      type, camera type and constraint type are fixed by the build, so every other op reads
+      the TYPE's bl_rna. Colour management is populated at runtime by the OCIO config, so
+      the enums are read from the INSTANCE - a studio config renames every view transform
+      and look, and stock Blender moved from Filmic to AgX at 4.0. A remembered list would
+      refuse the only values that work.
+
+      THE LOOK IS NAMESPACED BY THE TRANSFORM ("AgX - Punchy"), so the transform is applied
+      FIRST and the look validated against what the NEW one offers - the same rule set_light
+      already follows for per-type keys. Blender also WIPES the look when the transform
+      moves, so the result is read back from the scene rather than echoed.
+
+      B117, nine checks. Ground-truthing produced a result worth recording rather than
+      smoothing over: removing the read-back guard ALONE fails nothing, because the response
+      reads from the scene either way and stays honest. Removing the ORDERING fails three.
+      Removing BOTH fails the same three, and that is what the guard is for - the op would
+      answer look:"None", ok:true, to a caller who asked for something else. So the outcome
+      is covered and the guard alone is defence in depth; both files say so instead of
+      implying a plant proved it.
+
+      The stub had to learn Blender's coercion before any of this could be tested - with
+      assignments that simply stick, the guard has nothing to catch.
       DONE 2026-09-03: render_animation + render_status, built to the design below rather
       than around it. Out of process on the SAVED .blend, returning a jobId immediately;
       polled by render_status, which measures frames ON DISK with an mtime at or after the

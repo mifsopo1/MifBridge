@@ -676,10 +676,181 @@ def _close_log(job):
             pass
 
 
+_CM_KEYS = {"viewTransform", "look", "exposure", "gamma", "displayDevice",
+            "sequencerColorspace", "useCurveMapping"}
+
+
+def enum_ids(holder, prop):
+    """The identifiers an enum ACTUALLY offers on this holder, or None if there is no such property.
+
+    READ FROM THE INSTANCE, NOT THE TYPE, and that is the whole point for colour management.
+    Everywhere else in this addon an enum is validated against bpy.types.X.bl_rna - light type,
+    camera type, constraint type - because those sets are fixed by the build. Colour management is
+    not: the OCIO config populates view_transform, look and display_device at runtime, so
+    bpy.types.ColorManagedViewSettings.bl_rna gives the DEFAULT set while the scene in front of you
+    may offer something else entirely. A studio config renames all of them, and Blender's own set
+    changed under us - Filmic through 3.x, AgX from 4.0, with Khronos PBR Neutral added later.
+
+    So a remembered list would be wrong on any config that is not stock, and wrong on stock Blender
+    of a different version. The instance knows.
+    """
+    try:
+        return {i.identifier for i in holder.bl_rna.properties[prop].enum_items}
+    except (KeyError, AttributeError, TypeError):
+        return None
+
+
+def _pick_enum(holder, prop, value, label, verb):
+    ids = enum_ids(holder, prop)
+    if ids is None:
+        raise MifOpError("this Blender has no '%s' property for %s, so it cannot be set here. "
+                         "NOTHING was changed." % (prop, label))
+    if value not in ids:
+        raise MifOpError("'%s' is not a %s this configuration offers. Available: %s. This list "
+                         "comes from the OCIO config actually loaded, not a remembered one - a "
+                         "studio config renames all of them. NOTHING was changed."
+                         % (value, label, ", ".join(sorted(ids))))
+    return value
+
+
+def op_set_color_management(params):
+    """View transform, look, exposure and gamma - the settings that change every pixel silently.
+
+    THE LAST OF THE FIVE Tier 1 gaps, and the one behind "why does this look washed out". Colour
+    management is applied to every render and every saved image, it is invisible in the scene data,
+    and its default has CHANGED under this addon's supported range: Filmic through 3.x, AgX from
+    4.0, with more added since. Nothing here could set it and only render_info could read it.
+
+    EVERY ENUM IS VALIDATED AGAINST THIS CONFIG, not a list in this file - see enum_ids. That is a
+    real difference rather than a nicety: a studio OCIO config renames every view transform and
+    look, so a hard-coded set would refuse the only values that work and accept none of them.
+
+    THE LOOK IS NAMESPACED BY THE VIEW TRANSFORM, which is why the order here matters. In 4.x a
+    look reads as "AgX - Punchy", so a look valid under one transform is not offered under another,
+    and setting both at once against the OLD transform's list would refuse a legal combination. So
+    the transform is applied FIRST and the look is then validated against what the NEW transform
+    offers - the same rule set_light already follows for per-type keys, validating against the type
+    the light will BE rather than the one it was.
+
+    params:
+      viewTransform (str)        e.g. AgX, Filmic, Standard - whatever this config offers
+      look (str)                 validated against the view transform in force AFTER this call
+      exposure (float)           stops, applied before the transform
+      gamma (float)
+      displayDevice (str)        sRGB, Rec.1886, ... from the config
+      sequencerColorspace (str)
+      useCurveMapping (bool)
+    """
+    reject_unknown(params, _CM_KEYS, "set_color_management")
+    sc = bpy.context.scene
+    vs = getattr(sc, "view_settings", None)
+    ds = getattr(sc, "display_settings", None)
+    if vs is None:
+        raise MifOpError("this scene has no view_settings, so colour management cannot be set. "
+                         "NOTHING was changed.")
+
+    before = {
+        "viewTransform": getattr(vs, "view_transform", None),
+        "look": getattr(vs, "look", None),
+        "exposure": round(float(getattr(vs, "exposure", 0.0)), 6),
+        "gamma": round(float(getattr(vs, "gamma", 1.0)), 6),
+        "displayDevice": getattr(ds, "display_device", None) if ds else None,
+    }
+
+    vt = take(params, "viewTransform", kind=str)
+    look = take(params, "look", kind=str)
+    dev = take(params, "displayDevice", kind=str)
+    seq = take(params, "sequencerColorspace", kind=str)
+    exposure = take_float(params, "exposure", default=None)
+    gamma = take_float(params, "gamma", default=None)
+    curve = params.get("useCurveMapping")
+    if not any(v is not None for v in (vt, look, dev, seq, exposure, gamma, curve)):
+        raise MifOpError("nothing to do - pass at least one of viewTransform, look, exposure, "
+                         "gamma, displayDevice, sequencerColorspace or useCurveMapping. NOTHING "
+                         "was changed.")
+
+    # THE DISPLAY DEVICE GOES FIRST because it can re-populate the view transform list: the
+    # transforms on offer are those the config defines FOR THAT DISPLAY. Validating a transform
+    # against the old device's set would refuse a value that is about to become legal.
+    if dev is not None:
+        if ds is None:
+            raise MifOpError("this scene has no display_settings, so displayDevice cannot be set. "
+                             "NOTHING was changed.")
+        ds.display_device = _pick_enum(ds, "display_device", str(dev), "display device",
+                                       "set_color_management")
+    if vt is not None:
+        vs.view_transform = _pick_enum(vs, "view_transform", str(vt), "view transform",
+                                       "set_color_management")
+    if look is not None:
+        # VALIDATED AFTER the transform was applied, against what it NOW offers. See the docstring.
+        vs.look = _pick_enum(vs, "look", str(look), "look", "set_color_management")
+    if exposure is not None:
+        vs.exposure = exposure
+    if gamma is not None:
+        vs.gamma = gamma
+    if curve is not None and hasattr(vs, "use_curve_mapping"):
+        vs.use_curve_mapping = take_bool(params, "useCurveMapping", default=False)
+    if seq is not None:
+        scs = getattr(sc, "sequencer_colorspace_settings", None)
+        if scs is None:
+            raise MifOpError("this Blender has no sequencer_colorspace_settings. Everything else "
+                             "requested was applied; sequencerColorspace was not.")
+        ids = enum_ids(scs, "name")
+        if ids is not None and str(seq) not in ids:
+            raise MifOpError("'%s' is not a colour space this configuration offers. Available: %s."
+                             % (seq, ", ".join(sorted(ids))))
+        scs.name = str(seq)
+
+    after = {
+        "viewTransform": getattr(vs, "view_transform", None),
+        "look": getattr(vs, "look", None),
+        "exposure": round(float(getattr(vs, "exposure", 0.0)), 6),
+        "gamma": round(float(getattr(vs, "gamma", 1.0)), 6),
+        "displayDevice": getattr(ds, "display_device", None) if ds else None,
+        "sequencerColorspace": getattr(getattr(sc, "sequencer_colorspace_settings", None),
+                                       "name", None),
+        "useCurveMapping": bool(getattr(vs, "use_curve_mapping", False)),
+    }
+    # EACH REQUESTED WRITE VERIFIED. Blender SILENTLY RESETS look to 'None' when the view transform
+    # changes out from under it, so a call that set both could apply the transform, drop the look,
+    # and report a success.
+    #
+    # WHAT THIS ADDS, MEASURED RATHER THAN ASSUMED. `after` is read from the scene, so the response
+    # is honest with or without the check below - deleting it alone changed nothing in B117, which
+    # was established by planting exactly that. What it adds is turning a silently WRONG outcome
+    # into a loud one: with the ordering also broken, the op would return look:'None' to a caller
+    # who asked for something else, ok:true and all. The two together are caught by B117; this
+    # guard on its own is defence in depth, and saying so is more useful than implying a plant
+    # proved it.
+    wrong = {}
+    for key, want in (("viewTransform", vt), ("look", look), ("displayDevice", dev),
+                      ("sequencerColorspace", seq)):
+        if want is not None and after.get(key) != str(want):
+            wrong[key] = (str(want), after.get(key))
+    if wrong:
+        raise MifOpError("wrote %s but the scene reads back %s afterwards. Blender resets `look` "
+                         "when the view transform changes, so a look must be one the NEW transform "
+                         "offers."
+                         % ({k: v[0] for k, v in wrong.items()},
+                            {k: v[1] for k, v in wrong.items()}))
+    return {
+        "ok": True,
+        "scene": sc.name,
+        "before": before,
+        "availableViewTransforms": sorted(enum_ids(vs, "view_transform") or []),
+        "availableLooks": sorted(enum_ids(vs, "look") or []),
+        "availableDisplayDevices": sorted(enum_ids(ds, "display_device") or []) if ds else [],
+        "note": ("these lists come from the OCIO config actually loaded, not from a remembered "
+                 "set - the defaults changed from Filmic to AgX in 4.0 and a studio config renames "
+                 "all of them."),
+        **after,
+    }
+
 OPS = {
     "set_render_settings": op_set_render_settings,
     "render_still": op_render_still,
     "render_info": op_render_info,
     "render_animation": op_render_animation,
     "render_status": op_render_status,
+    "set_color_management": op_set_color_management,
 }
