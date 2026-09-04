@@ -162,6 +162,15 @@ PAYLOADS = {
     "add_cloth": {"object": "MifGrid"},
     "add_collision": {"object": "Cube"},
     "physics_info": {},
+    # TWO FRAMES OF ONE RIGID BODY. add_rigid_body sits at 'a' and runs BEFORE this at
+    # 'b', so the world and the cache already exist by the time the sweep gets here - the
+    # fixture was already being built and nothing was using it.
+    "bake_physics": {"start": 1, "end": 2},
+    # 32x32 AT ONE SAMPLE, to a throwaway. The postcondition worth reaching is wroteFile,
+    # which is stat'd off disk because bpy.ops.render.render() returns FINISHED whether or
+    # not a file appeared.
+    "render_still": {"filePath": "{TMP}/mif_still.png", "resolutionX": 32,
+                     "resolutionY": 32, "samples": 1},
     "create_material": {"name": "MifSweepMat"},
     "set_material_properties": {"material": "MifMatrixMat", "baseColor": [1, 0, 0]},
     "describe_material": {"material": "MifMatrixMat"},
@@ -249,6 +258,12 @@ TEARDOWN = [
     ("delete_collection", {"collection": "MifDoomedColl"}),
     ("delete_view_layer", {"name": "MifDoomedVL"}),
     ("clear_scene", {}),
+    # THE ROUND TRIP, and it has to be last: open_file replaces bpy.data wholesale, so
+    # anything after it would be looking at a different scene. save_file wrote this at
+    # 's' during the sweep, and until something reads it back the only thing proven is
+    # that a write did not raise. discardUnsaved is REQUIRED rather than tidy -
+    # bpy.data.is_dirty is always True under --background, so the guard always fires.
+    ("open_file", {"filepath": "{TMP}/mif_rt.blend", "discardUnsaved": True}),
 ]
 
 FIXTURES = [
@@ -315,9 +330,7 @@ FIXTURES = [
 # import_mesh and import_scene at 'i', so the files exist by the time they are read.
 SKIP = {
     "run_python": "executes arbitrary code - nothing to learn and everything to go wrong",
-    "render_still": "renders a frame; minutes per version for no API information",
     "render_animation": "spawns a SECOND Blender per version",
-    "open_file": "replaces the scene mid-run and invalidates every later op",
     # THESE FOUR STAY IN SKIP so the ALPHABETICAL sweep does not run them - clear_scene sits at
     # 'c' and emptied the scene before almost every other op, which took reach from 124 to 70 the
     # moment they were merely un-skipped. They are run by TEARDOWN instead, after the sweep, on
@@ -326,8 +339,18 @@ SKIP = {
     "delete_collection": "destructive - run by TEARDOWN after the sweep instead",
     "delete_view_layer": "destructive - run by TEARDOWN after the sweep instead",
     "clear_scene": "empties everything - run LAST by TEARDOWN",
-    "bake_texture": "slow, and writes an image",
-    "bake_physics": "slow",
+    # SAME TREATMENT AS THE DELETES, and for the same reason. Taking it out of SKIP
+    # entirely put it into the ALPHABETICAL sweep at 'o', where it ran with no payload and
+    # refused for a missing filepath - which then masked the teardown result. It belongs in
+    # both places: skipped here so the sweep leaves it alone, run by TEARDOWN with a real
+    # file to open.
+    "open_file": "replaces the scene wholesale - run LAST of all by TEARDOWN instead",
+    # STILL SKIPPED, and the reason is a real fixture rather than the cost: a bake
+    # needs a material carrying an ACTIVE image-texture node, which no op here can
+    # build. Without one bpy.ops.object.bake returns FINISHED over an untouched
+    # image - the exact silent success that op is arranged around - so a payload
+    # that skipped the fixture would test the failure it exists to catch.
+    "bake_texture": "needs a material with an ACTIVE image texture node - no op here can build one",
     "gen_asset": "reaches an external generator over the network",
     "gen_image": "reaches an external generator over the network",
     "gen_mesh": "reaches an external generator over the network",

@@ -54,10 +54,12 @@ light a scene and cannot show it has not finished the job.
   * `test_blender_refusals.py` runs with **no Blender at all**, against a stub. It proves refusal
     contracts and the few families whose logic is pure data. It cannot prove an op DOES anything —
     and worse, it agrees with whatever the author believed, because the same person wrote the stub.
-  * `blender_version_matrix.py` runs **every op on every installed Blender**, headless, in a
+  * `blender_version_matrix.py` runs **almost every op on every installed Blender**, headless, in a
     throwaway `--factory-startup` process. This is what catches version drift. On 2026-09-03 it
     found three ops that had never worked on ANY build, and the compositor family dead on 5.0 with
-    every static gate green.
+    every static gate green. "Almost" is load-bearing: a handful reach a network service, spawn a
+    second Blender or need a fixture no op here can build. It PRINTS that list on every run, and
+    the number that matters is REACH - an op refused at the door is green and proves nothing.
 
 Both are in `make_release --gates`.
 

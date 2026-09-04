@@ -12919,3 +12919,32 @@ out-of-process the way ops_gen already does with gen_status.
       Background images are the cut most worth reversing, and only on one condition: if the workflow
       is genuinely "agent preps a matchmove scene, human finishes it in the GUI". Otherwise a human
       drags the image in faster than they can describe it.
+
+- [x] **close three of the version matrix's blind spots** DONE 2026-09-04
+      The matrix reports REACH, and the doc note written that morning told a cold reader to read it
+      rather than the green. Eleven ops had NO reach at all, sitting in SKIP - and three of those
+      reasons did not survive being measured.
+
+      "slow" (bake_physics) and "minutes per version for no API information" (render_still) were
+      both ASSUMPTIONS. add_rigid_body already runs at 'a' and builds the world bake_physics needs,
+      and a 32x32 one-sample render is milliseconds. Both now reach on all four builds. The whole
+      matrix went from 3.0s to about 7s, which is what those two guesses were protecting.
+
+      open_file was skipped as "replaces the scene mid-run and invalidates every later op" - true
+      of the ALPHABETICAL sweep and not a reason to leave it unrun, exactly like the deletes. It now
+      runs LAST in TEARDOWN against the .blend save_file wrote at 's' during the sweep, so the
+      save-then-open round trip is proven rather than assumed. Until now the only thing known about
+      save_file was that writing it did not raise.
+
+      Taking open_file out of SKIP entirely was wrong and the run said so: the sweep picked it up at
+      'o' with no payload, refused for a missing filepath, and that masked the teardown result. It
+      belongs in SKIP *and* in TEARDOWN, which is the pattern the deletes already established.
+
+      Reach 129 -> 132 of 140. Eight remain deliberately unrun and the tool names them every run:
+      five gen_* ops reach a network service, render_animation spawns a second Blender, run_python
+      needs an addon preference that does not exist under --factory-startup, and bake_texture needs
+      a material with an ACTIVE image-texture node that no op here can build - a payload skipping
+      that fixture would exercise the silent success the op exists to catch.
+
+      Two overclaims fell out of this and were fixed in the same commit. README and 00_ARCHITECTURE
+      both said the matrix runs "every op" on all four builds. It never has.

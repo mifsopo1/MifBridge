@@ -160,7 +160,11 @@ COMMITTED"*, and a compile is not a test.
 > `python tools/blender_version_matrix.py` runs EVERY addon op on EVERY installed Blender
 > (3.6, 4.2, 4.4, 5.0) headlessly, each in a throwaway `--background --factory-startup` process
 > that touches no file and nobody's session — so even the mutating ops run. It is in `--gates`,
-> it takes about two seconds, and it is what catches VERSION DRIFT.
+> it costs seconds rather than minutes, and it is what catches VERSION DRIFT.
+>
+> (That sentence said "about two seconds" for one day. It was 3.0s when typed and 7s after
+> three more ops were un-skipped the next morning. A timing is a number nothing recomputes,
+> so `audit_stale_counts` cannot guard it — which is the argument for not writing one down.)
 >
 > It exists because the compositor family shipped DEAD on Blender 5.0 with thirteen offline checks
 > passing and every static gate green. `test_blender_refusals` could not have caught that: it runs
